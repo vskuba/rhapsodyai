@@ -1,8 +1,11 @@
 import asyncio
+import traceback
 from typing import Any
 
 import customtkinter as ctk
 from mcp import StdioServerParameters
+
+from source.logging_ import logger_info
 from source.mcp import mcp_config_load, mcp_config_save
 from source.queue import queue_get
 
@@ -280,7 +283,11 @@ class TabMcp:
                 queue_get()['tool'].put(True)
                 print("[OK] Отправлено уведомление в очередь 'tool': True")
             except Exception as e:
-                print(f"[!] Ошибка отправки в очередь 'tool': {e}")
+                backtrace = traceback.format_exc()
+                logger_info(
+                    f"❌ Ошибка отправки в очередь 'tool': {e}."
+                    f"Полный стек вызовов:\n{backtrace}"
+                )
 
         if self.master:
             def hide_indicator():

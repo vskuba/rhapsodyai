@@ -1,5 +1,6 @@
 import os
 import re
+import traceback
 from typing import Any, Callable
 
 from pydantic import BaseModel, create_model, Field
@@ -140,5 +141,9 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
             return task
 
         except Exception as e:
-            logger_info(f"Error: {e}.")
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка при создании задачи {name}: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
             raise

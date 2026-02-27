@@ -1,5 +1,6 @@
 import os
 import re
+import traceback
 from pathlib import Path
 
 import httpx
@@ -140,8 +141,13 @@ class AiPydanticFramework(AbstractAIFramework):
                 )
             )
         except Exception as e:
-            logger_info(f'Ошибка при выполнении задачи {task.name}: {e}')
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка при выполнении задачи {task.name}: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
             raise e
+
         finally:
             if task.mcp_servers:
                 logger_info(f'Закрываем MCP сессии для задачи {task.name}...')

@@ -2,6 +2,7 @@ import ast
 import functools
 import importlib
 import sys
+import traceback
 from pathlib import Path
 from typing import cast
 
@@ -62,7 +63,11 @@ def ai_tools_get() -> list[Callable]:
                         logger_info(f"Предупреждение: {name} в {filepath} не является callable")
 
         except Exception as e:
-            logger_info(f"Ошибка при обработке файла {filepath}: {e}")
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка при обработке файла {filepath}: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
 
     return all_tools
 
@@ -85,7 +90,11 @@ def ai_tool_monitoring(tool: Callable) -> Callable:
             logger_info(f"🛠 Инструмент '{name}' резудьтат  → {repr(result)}")
             return result
         except Exception as e:
-            logger_info(f"✗🛠 Инструмент '{name}' ошибка → {type(e).__name__}: {e}")
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ 🛠 Инструмент '{name}' ошибка → {type(e).__name__}: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
             raise
 
     return wrapper

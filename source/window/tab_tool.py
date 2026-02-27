@@ -1,6 +1,9 @@
+import traceback
+
 import customtkinter as ctk
 
 from source.ai.framework.pydanticai.ai_pydantic_tool import ai_pydantic_tools_get
+from source.logging_ import logger_info
 
 
 class TabTool:
@@ -46,15 +49,12 @@ class TabTool:
 
         # Локальные инструменты
         self.textbox.insert("end", "💻 Локальные функции\n\n")
-        try:
-            local_tools = list(ai_pydantic_tools_get())
-            print(f"[DEBUG] Локальных инструментов: {len(local_tools)}")
-            for tool in local_tools:
-                name = getattr(tool, '__name__', str(tool))
-                doc = getattr(tool, '__doc__', "Нет описания").strip().split('\n')[0]
-                self.textbox.insert("end", f"• {name} — {doc}\n")
-        except Exception as e:
-            self.textbox.insert("end", f"Ошибка локальных: {e}\n")
+
+        local_tools = list(ai_pydantic_tools_get())
+        for tool in local_tools:
+            name = getattr(tool, '__name__', str(tool))
+            doc = getattr(tool, '__doc__', "Нет описания").strip().split('\n')[0]
+            self.textbox.insert("end", f"• {name} — {doc}\n")
 
         # MCP инструменты
         try:
@@ -69,6 +69,11 @@ class TabTool:
                     desc = t.get('description', 'Нет описания')
                     self.textbox.insert("end", f"• {t['name']} — {desc}\n")
         except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка вывода MCP: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
             self.textbox.insert("end", f"Ошибка MCP: {e}\n")
 
         self.textbox.configure(state="disabled")

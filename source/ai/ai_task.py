@@ -1,3 +1,4 @@
+import traceback
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -119,7 +120,11 @@ class AbstractAiTaskManager(ABC):
 
             return task_dict
         except Exception as e:
-            logger_info(f"Task {name} validate error: {e}.")
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Файл {name}.yml validate ошибка: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
             raise
 
     def task_is_complete(self, task: AbstractAiTask) -> bool:
@@ -164,4 +169,8 @@ class AbstractAiTaskManager(ABC):
             logger_info(f"Обновлено: {key} = {value} в файле {name}")
 
         except Exception as e:
-            logger_info(f"Ошибка при обновлении YAML: {e}")
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка при обновлении YAML {name}.yml: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )

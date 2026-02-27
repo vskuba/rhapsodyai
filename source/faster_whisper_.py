@@ -1,6 +1,7 @@
 import threading
 
 import time
+import traceback
 
 import speech_recognition as sr
 import numpy as np
@@ -90,4 +91,8 @@ def faster_whisper_listening(
                 # print(">>> Слушаю далее... (говорите)")
 
             except Exception as e:
-                print(f"Ошибка: {e}")
+                backtrace = traceback.format_exc()
+                logger_info(
+                    f"❌ Ошибка: {e}."
+                    f"Полный стек вызовов:\n{backtrace}"
+                )

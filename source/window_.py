@@ -1,6 +1,8 @@
 import os
 import threading
 import time
+import traceback
+
 import queue
 import source.window
 import customtkinter as ctk
@@ -123,7 +125,11 @@ class WindowAi(ctk.CTk):
         except queue.Empty:
             pass
         except Exception as e:
-            logger_info(f"❌💬 Ошибка в queue_chat: {e}")
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ 💬 Ошибка в queue_chat: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
 
         self.after(100, self.queue_chat)
 
@@ -136,7 +142,11 @@ class WindowAi(ctk.CTk):
         except queue.Empty:
             pass
         except Exception as e:
-            print(f"❌🛠 Ошибка в queue_tools: {e}")
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ 🛠 Ошибка в queue_tools: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
 
         self.after(100, self.queue_tools)
 
@@ -158,9 +168,14 @@ class WindowAi(ctk.CTk):
                 )
                 window_chat_loading_stop()
                 window_chat_active_task_clear()
-                print(f"Поток задачи '{task.name}' завершён, слот освобождён.")
+
+                logger_info(f"Поток задачи '{task.name}' завершён, слот освобождён.")
             except Exception as e:
-                print(f"Ошибка при обновлении UI после завершения задачи {task.name}: {e}")
+                backtrace = traceback.format_exc()
+                logger_info(
+                    f"❌ Ошибка при обновлении UI после завершения задачи {task.name}: {e}."
+                    f"Полный стек вызовов:\n{backtrace}"
+                )
 
     def window_close(self):
         print("Закрытие приложения...")

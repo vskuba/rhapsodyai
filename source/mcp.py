@@ -1,8 +1,10 @@
 import json
 import os
+import traceback
 from typing import Any
 
 from source.config import config_get
+from source.logging_ import logger_info
 
 
 def mcp_config_filename() -> str:
@@ -29,17 +31,25 @@ def mcp_config_save(config: dict[str, Any]):
             json.dump(config, f, indent=4, ensure_ascii=False)
         print(f"Конфигурация MCP успешно сохранена в {filename}")
     except Exception as e:
-        print(f"Ошибка при сохранении MCP конфига: {e}")
+        backtrace = traceback.format_exc()
+        logger_info(
+            f"❌ Ошибка при сохранении MCP конфига: {e}."
+            f"Полный стек вызовов:\n{backtrace}"
+        )
 
 
 def mcp_config_load() -> dict[str, Any]:
     filename = mcp_config_filename()
     if not os.path.exists(filename):
-        return []
+        return {}
 
     try:
         with open(filename, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"Ошибка при чтении MCP конфига: {e}")
-        return []
+        backtrace = traceback.format_exc()
+        logger_info(
+            f"❌ Ошибка при чтении MCP конфига: {e}."
+            f"Полный стек вызовов:\n{backtrace}"
+        )
+        return {}

@@ -2,6 +2,7 @@ import asyncio
 import queue
 import threading
 import time
+import traceback
 
 from source.ai.ai_framework import AiFramework
 from source.ai.ai_task import AbstractAiTask
@@ -53,4 +54,8 @@ def ai_thread_framework_run(window_instance):
                 continue
 
         except Exception as e:
-            logger_info(f"❌ Сбой в запуске ai framework: {e}")
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Сбой в запуске ai framework: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
