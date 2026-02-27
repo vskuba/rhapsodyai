@@ -1,4 +1,5 @@
 import ast
+import functools
 import importlib
 import sys
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import cast
 
 from numba.core.types import Callable
 from source.config import config_get
+from source.logging_ import logger_info
 
 
 def ai_tools_get() -> list[Callable]:
@@ -53,11 +55,37 @@ def ai_tools_get() -> list[Callable]:
                 for name in func_names:
                     func = getattr(module, name, None)
                     if callable(func):
-                        all_tools.append(cast(Callable, func))
+                        all_tools.append(
+                            cast(Callable, func)
+                        )
                     else:
-                        print(f"Предупреждение: {name} в {filepath} не является callable")
+                        logger_info(f"Предупреждение: {name} в {filepath} не является callable")
 
         except Exception as e:
-            print(f"Ошибка при обработке файла {filepath}: {e}")
+            logger_info(f"Ошибка при обработке файла {filepath}: {e}")
 
     return all_tools
+
+
+def ai_tool_monitoring(tool: Callable) -> Callable:
+    """Оборачивает инструмент в логирование всех вызовов с сохранением сигнатуры"""
+
+    name = getattr(tool, "__name__", str(tool))
+
+    @functools.wraps(tool)  # <--- Это магическая строчка
+    async def wrapper(*args, **kwargs):
+        arg_str = ", ".join(repr(a) for a in args)
+        if kwargs:
+            arg_str += ", " + ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
+
+        logger_info(f"🛠 Инструмент '{name}' → ({arg_str})")
+
+        try:
+            result = await tool(*args, **kwargs)
+            logger_info(f"🛠 Инструмент '{name}' резудьтат  → {repr(result)}")
+            return result
+        except Exception as e:
+            logger_info(f"✗🛠 Инструмент '{name}' ошибка → {type(e).__name__}: {e}")
+            raise
+
+    return wrapper

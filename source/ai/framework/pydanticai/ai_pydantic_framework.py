@@ -2,6 +2,7 @@ import os
 import re
 from pathlib import Path
 
+import httpx
 from pydantic import TypeAdapter
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.groq import GroqModel
@@ -17,6 +18,8 @@ from source.config import config_get
 from pydantic_ai import Agent, AgentRunResult, ToolCallPart, ToolReturnPart, ModelMessage, ModelSettings
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
+
+from source.logging_ import log_request_body, log_response_body, logger_info
 
 
 class AIPydanticFrameworkHistory(AIFrameworkHistory):
@@ -37,15 +40,27 @@ class AiPydanticFramework(AbstractAIFramework):
         if index in self.engine_storage:
             return self.engine_storage[index]
 
+        http_client = httpx.AsyncClient(event_hooks={
+            'request': [log_request_body],
+            'response': [log_response_body]
+        })
+
         model = None
         model_name = config_get('llm')
 
         if 'claude' in model_name.lower():
-            provider = AnthropicProvider(api_key=config_get('ANTHROPIC_API_KEY'))
+            provider = AnthropicProvider(
+                api_key=config_get('ANTHROPIC_API_KEY'),
+                http_client=http_client
+            )
             model = AnthropicModel(model_name, provider=provider)
 
         if 'llama' in model_name.lower() or 'qwen' in model_name.lower():
-            provider = OpenAIProvider(base_url='http://localhost:11434/v1', api_key='ollama')
+            provider = OpenAIProvider(
+                base_url='http://localhost:11434/v1',
+                api_key='ollama',
+                http_client=http_client
+            )
             model_name = re.sub(r'^[^/]*/', '', model_name)
             model = OpenAIChatModel(
                 model_name=model_name,
@@ -53,7 +68,9 @@ class AiPydanticFramework(AbstractAIFramework):
             )
 
         if 'gemini' in model_name.lower():
-            model = GoogleModel(model_name=model_name.lower())
+            model = GoogleModel(
+                model_name=model_name.lower()
+            )
 
         if 'groq' in model_name.lower():
             if 'groq:' in model_name.lower():
@@ -61,11 +78,12 @@ class AiPydanticFramework(AbstractAIFramework):
 
             provider = GroqProvider(
                 api_key=os.getenv('GROQ_API_KEY'),
-                base_url='https://api.groq.com'
+                base_url='https://api.groq.com',
+                http_client=http_client
             )
             model = GroqModel(
                 model_name=model_name,
-                provider=provider
+                provider=provider,
             )
 
         if not model:
@@ -92,7 +110,6 @@ class AiPydanticFramework(AbstractAIFramework):
 
         prompt = task.prompt.format(**input_values)
         prompt = re.sub(r"\{(\w+)}", '', re.sub(r'\s+', ' ', prompt).strip())
-        # print('Prompt: %s' % prompt)
 
         task.prompt_finalized = prompt
 
@@ -101,6 +118,11 @@ class AiPydanticFramework(AbstractAIFramework):
                 [f"{k}: {str(v).strip()}" for k, v in input_values.items()])
             task.prompt_finalized = f"<input_data>\n{input_data}\n</input_data>\n\n{task.prompt_finalized}"
 
+        logger_info(
+            f'🧱 Подзадача {task.sub_task_current_index + 1}/{len(task.sub_task_list)}, '
+            f'prompt: {task.prompt_finalized}'
+        )
+
         engine = self.engine_storage[task.name]
         ai_mcp_manager = AiMcpManager()
         try:
@@ -108,8 +130,6 @@ class AiPydanticFramework(AbstractAIFramework):
                 mcp_sessions = await ai_mcp_manager.mcp_server_session(task.mcp_servers)
                 for mcp_server_name, session in mcp_sessions.items():
                     await ai_mcp_manager.mcp_server_add_tools(engine, mcp_server_name, session)
-
-            print(f'Prompt: \n{task.prompt_finalized}\n')
 
             return await engine.run(
                 user_prompt=task.prompt_finalized,
@@ -120,11 +140,11 @@ class AiPydanticFramework(AbstractAIFramework):
                 )
             )
         except Exception as e:
-            print(f'Ошибка при выполнении задачи {task.name}: {e}')
+            logger_info(f'Ошибка при выполнении задачи {task.name}: {e}')
             raise e
         finally:
             if task.mcp_servers:
-                print(f'Закрываем MCP сессии для задачи {task.name}...')
+                logger_info(f'Закрываем MCP сессии для задачи {task.name}...')
                 await ai_mcp_manager.mcp_server_close_all()
 
     def engine_result_handle(self, result: AgentRunResult, task: AiPydanticTask) -> AIFrameworkResult | None:

@@ -6,6 +6,7 @@ import source.window
 import customtkinter as ctk
 
 from source.ai.ai_task import AbstractAiTask
+from source.logging_ import logger_info
 from source.queue import queue_get
 from source.window.component import AiPopupWindow
 from source.window.tab_chat import TabChat
@@ -95,7 +96,7 @@ class WindowAi(ctk.CTk):
         global chat_message_last_get
         try:
             message = queue_get()['chat'].get_nowait()
-            print(f'Получено сообщение из очереди "chat": {message}')
+            logger_info(f'💬 Сообщение из очереди "chat": {message}')
 
             if chat_message_last_get == message:
                 self.after(100, self.queue_chat)
@@ -122,20 +123,20 @@ class WindowAi(ctk.CTk):
         except queue.Empty:
             pass
         except Exception as e:
-            print(f"Ошибка в queue_chat: {e}")
+            logger_info(f"❌💬 Ошибка в queue_chat: {e}")
 
         self.after(100, self.queue_chat)
 
     def queue_tools(self):
         try:
             message = queue_get()['tool'].get_nowait()
-            print(f"Пришло из очереди queue_tool на обновление {message}")
+            print(f"🛠 Сообщение из очереди queue_tool {message}")
             self.tab_tool._update_text_content()
 
         except queue.Empty:
             pass
         except Exception as e:
-            print(f"Ошибка в queue_tools: {e}")
+            print(f"❌🛠 Ошибка в queue_tools: {e}")
 
         self.after(100, self.queue_tools)
 

@@ -7,6 +7,7 @@ from source.ai.ai_task import AbstractAiTask
 from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
 from source.ai.framework.pydanticai.ai_pydantic_tool import chat_last_message_set
 from source.async_ import async_waiting_is_active, async_waiting_clear
+from source.logging_ import logger_info
 from source.queue import queue_get
 
 ai_task_manager = AiPydanticTaskManager()
@@ -36,7 +37,7 @@ def task_item_toggle(button, task: AbstractAiTask):
         task_item_animate_pulse(button, ["#7C2A2A", "#A93232", "#FF4C4C", "#A93232"], "⏹")
         # print(f"Задача {t_name} активна и пульсирует.")
         window_chat_loading_start()  # запуск индикатора под чатом
-        print(f'Отправляю задачу в очередь: "{task.title}"')
+        logger_info(f'▶ Отправляю задачу в очередь: "{task.title}"')
         queue_get()['task'].put(task)
     else:
         if task.name in source.ai.ai_thread.thread_task_started.keys():

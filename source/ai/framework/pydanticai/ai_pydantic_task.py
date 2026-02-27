@@ -7,6 +7,7 @@ from pydantic import BaseModel, create_model, Field
 from source.ai.ai_task import AbstractAiTaskManager, AbstractAiTask, AiSubTask
 from source.ai.framework.pydanticai.ai_pydantic_tool import ai_pydantic_tools_get
 from source.config import config_get
+from source.logging_ import logger_info
 
 
 class AiPydanticTask(AbstractAiTask):
@@ -139,5 +140,5 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
             return task
 
         except Exception as e:
-            print(f"Error: {e}.")
+            logger_info(f"Error: {e}.")
             raise

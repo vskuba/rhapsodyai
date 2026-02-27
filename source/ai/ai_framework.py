@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from source.ai.ai_task import AbstractAiTask, AbstractAiTaskManager
 from source.config import config_get
+from source.logging_ import logger_info
 from source.queue import queue_get
 from source.window.ui import window_chat_active_task_clear, window_chat_active_task_display
 
@@ -14,6 +15,7 @@ from source.window.ui import window_chat_active_task_clear, window_chat_active_t
 @dataclass
 class AIFrameworkResult:
     text: str
+
 
 @dataclass
 class AIFrameworkHistory(ABC):
@@ -77,13 +79,13 @@ class AbstractAIFramework(ABC):
 
             try:
                 queue_get()['task_abort'].get_nowait()
-                print(f'Получена команда на остановку задачи "{task.title}"')
+                logger_info(f'🛑 Команда на остановку задачи "{task.title}"')
                 return
             except queue.Empty:
                 pass
 
             if getattr(task, 'aborted', False):
-                print(f'🛑 Задача "{task.title}" прервана пользователем.')
+                logger_info(f'🛑 Задача "{task.title}" прервана пользователем.')
                 queue_get()['chat'].put({'text': f'Задача "{task.title}" прервана пользователем', 'who': 'agent'})
                 self.task_manager.task_active_set(None)
                 window_chat_active_task_clear()
@@ -91,14 +93,13 @@ class AbstractAIFramework(ABC):
 
             try:
                 if task_exception and task:
-                    print('Возобновляем задачу..')
+                    logger_info('Возобновляем задачу..')
                     task_exception = False
 
-                print('Получена задача из очереди: "%s"' % task.name)
+                logger_info('🚀 Задача из очереди: "%s"' % task.name)
                 self.task_manager.task_active_set(task)
                 window_chat_active_task_display(task)
 
-                print('Подзадача %d/%d' % (task.sub_task_current_index + 1, len(task.sub_task_list)))
                 self.engine_prepare(task)
 
                 result = await self.engine_run(task)
@@ -116,7 +117,7 @@ class AbstractAIFramework(ABC):
                     continue
 
             except Exception as e:
-                print(f"❌ Сбой в цикле агента: {e}.")
+                logger_info(f"❌🚀 Сбой в цикле агента: {e}.")
                 traceback.print_exc()
                 queue_get()['chat'].put({"text": 'Произошла ошибка: %s' % e, "who": 'agent'})
 

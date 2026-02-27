@@ -9,6 +9,7 @@ from faster_whisper import WhisperModel
 
 from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
 from source.config import config_get
+from source.logging_ import logger_info
 from source.microphone import microphone_create_microphone
 from source.queue import queue_get
 from source.window.ui import window_chat_voice_state_get
@@ -23,7 +24,7 @@ def faster_whisper_enable():
         ),
         daemon=True
     )).start()
-
+    logger_info('faster_whisper enabled')
 
 def faster_whisper_create_model(whisper_model_name: str) -> WhisperModel:
     """

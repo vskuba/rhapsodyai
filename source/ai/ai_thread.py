@@ -8,6 +8,7 @@ from source.ai.ai_task import AbstractAiTask
 from source.ai.framework.pydanticai.ai_pydantic_framework import AiPydanticFramework
 from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
 from source.async_ import async_loop_init
+from source.logging_ import logger_info
 from source.queue import queue_get
 
 thread_task_started: dict[str, AbstractAiTask] = {}
@@ -52,4 +53,4 @@ def ai_thread_framework_run(window_instance):
                 continue
 
         except Exception as e:
-            print(f"❌ Сбой в запуске ai framework: {e}")
+            logger_info(f"❌ Сбой в запуске ai framework: {e}")

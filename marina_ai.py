@@ -11,18 +11,16 @@ from pydantic import ConfigDict
 
 from source.ai.ai_thread import ai_thread_framework_run
 from source.faster_whisper_ import faster_whisper_enable
-from source.logging_ import logging_adjust, logging_http_adjust
+from source.logging_ import logging_init
 from source.queue import queue_set
 from source.window_ import WindowAi
 
 if __name__ == "__main__":
     load_dotenv()
+    logging_init()
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
     client = chromadb.Client(Settings(anonymized_telemetry=False))
-
-    logging_adjust()
-    logging_http_adjust()
 
     queue_set({
         'chat': queue.Queue(),

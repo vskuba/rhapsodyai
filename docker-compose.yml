@@ -1,0 +1,64 @@
+#version: '3.8'   # ← remove or comment if using modern Compose v2
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    container_name: opensearch
+    environment:
+      - cluster.name=dev-cluster
+      - node.name=opensearch-node1
+      - discovery.type=single-node
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock: -1
+      nofile: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - os-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.19.1
+    container_name: dashboards
+    ports:
+      - "5601:5601"
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+      uiSettings.overrides.defaultRoute: "/app/discover"
+    depends_on:
+      - opensearch
+    networks:
+      - os-net
+
+  logstash:
+    image: opensearchproject/logstash-oss-with-opensearch-output-plugin:8.9.0
+    container_name: logstash
+    volumes:
+      - ./docker/logstash:/usr/share/logstash/pipeline:ro
+      - ./data/log:/logs:ro                                        # keep logs read-only
+      - ./data/sincedb:/var/lib/logstash/sincedb:rw                # new writable dir for sincedb
+    environment:
+      - LS_JAVA_OPTS=-Xms512m -Xmx1g
+      - pipeline.ecs_compatibility=disabled
+    depends_on:
+      - opensearch
+    networks:
+      - os-net
+
+volumes:
+  opensearch-data:
+
+networks:
+  os-net:
+    driver: bridge

@@ -9,6 +9,7 @@ from pydantic import Field, BaseModel
 
 from source.ai.framework.pydanticai.ai_pydantic_tool import ai_pydantic_tools_get
 from source.config import config_get
+from source.logging_ import logger_info
 from source.mcp import mcp_config_load
 
 
@@ -64,7 +65,7 @@ class AbstractAiTask(ABC):
             if k not in values.keys():
                 raise ValueError("Input field '%s' is required, but not found in input set values: %s" % (k, values))
         self.input_values = values
-        # print('Задача %s, содержит значения для параметров: %s' % (self.name, values))
+        # logger_info('Задача %s, содержит значения для параметров: %s' % (self.name, values))
 
     def input_values_get(self):
         for k in self.input_fields:
@@ -118,7 +119,7 @@ class AbstractAiTaskManager(ABC):
 
             return task_dict
         except Exception as e:
-            print(f"Task {name} validate error: {e}.")
+            logger_info(f"Task {name} validate error: {e}.")
             raise
 
     def task_is_complete(self, task: AbstractAiTask) -> bool:
@@ -146,7 +147,7 @@ class AbstractAiTaskManager(ABC):
         path = Path(filepath)
 
         if not path.exists():
-            print(f"Ошибка: Файл {filepath} не найден.")
+            logger_info(f"Ошибка: Файл {filepath} не найден.")
             return
 
         try:
@@ -160,7 +161,7 @@ class AbstractAiTaskManager(ABC):
                 # sort_keys=False сохранит текущий порядок ключей
                 yaml.dump(data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
-            print(f"Обновлено: {key} = {value} в файле {name}")
+            logger_info(f"Обновлено: {key} = {value} в файле {name}")
 
         except Exception as e:
-            print(f"Ошибка при обновлении YAML: {e}")
+            logger_info(f"Ошибка при обновлении YAML: {e}")

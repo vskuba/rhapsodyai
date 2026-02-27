@@ -18,10 +18,7 @@ class TabChat:
             parent_frame = self.tabview.tab("Чат")
 
         if self._initialized:
-            print("[TabChat] Вкладка уже инициализирована — пропуск")
             return
-
-        print("[TabChat] Первичная инициализация чата")
 
         self.chat_frame = ctk.CTkFrame(parent_frame, corner_radius=10, fg_color="transparent")
         self.chat_frame.pack(fill="both", expand=True, padx=10, pady=10)
@@ -176,4 +173,3 @@ class TabChat:
             task_item_draw(name, chat_frame_tasks)
 
         self._initialized = True
-        print("[TabChat] Инициализация завершена")
