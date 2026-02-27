@@ -1,0 +1,21 @@
+# Виртуальное окружение (самое важное)
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Конфиги и секреты
+.env
+config.yaml
+*.log
+
+data/
+
+# Папки IDE
+.idea/
+.vscode/
+
+# Специфично для MCP/Node (если используешь npx)
+node_modules/
+npm-debug.log
