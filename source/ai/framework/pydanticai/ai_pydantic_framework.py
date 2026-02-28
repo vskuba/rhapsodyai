@@ -12,6 +12,7 @@ from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from source.ai.ai_mcp import AiMcpManager
+from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTask
 
 from source.ai.ai_framework import AbstractAIFramework, AIFrameworkResult, AIFrameworkHistory
@@ -41,10 +42,12 @@ class AiPydanticFramework(AbstractAIFramework):
         if index in self.engine_storage:
             return self.engine_storage[index]
 
-        http_client = httpx.AsyncClient(event_hooks={
-            'request': [log_request_body],
-            'response': [log_response_body]
-        })
+        http_client = httpx.AsyncClient(
+            event_hooks={
+                'request': [log_request_body],
+                'response': [log_response_body]
+            }
+        )
 
         model = None
         model_name = config_get('llm')
@@ -87,6 +90,14 @@ class AiPydanticFramework(AbstractAIFramework):
                 provider=provider,
             )
 
+        if 'grok' in model_name.lower():
+            provider = OpenAIProvider(
+                base_url='https://api.x.ai/v1',
+                api_key=os.getenv('XAI_API_KEY'),
+                http_client=http_client  # Твой клиент с хуками теперь БУДЕТ работать
+            )
+            model = OpenAIChatModel(model_name=model_name, provider=provider)
+
         if not model:
             model = OpenAIChatModel(model_name)
 
@@ -98,10 +109,9 @@ class AiPydanticFramework(AbstractAIFramework):
             output_retries=15
         )
 
-        for tool in task.tools:
-            engine.tool_plain(tool)
-
         self.engine_storage[task.name] = engine
+
+        self.engine_tools_local_add(engine, task)
 
         return engine
 
@@ -126,11 +136,10 @@ class AiPydanticFramework(AbstractAIFramework):
 
         engine = self.engine_storage[task.name]
         ai_mcp_manager = AiMcpManager()
+
         try:
             if task.mcp_servers:
-                mcp_sessions = await ai_mcp_manager.mcp_server_session(task.mcp_servers)
-                for mcp_server_name, session in mcp_sessions.items():
-                    await ai_mcp_manager.mcp_server_add_tools(engine, mcp_server_name, session)
+                await ai_mcp_manager.mcp_server_add_tools(engine, task)
 
             return await engine.run(
                 user_prompt=task.prompt_finalized,
@@ -208,6 +217,22 @@ class AiPydanticFramework(AbstractAIFramework):
         self.task_report(task, report)
 
         return AIFrameworkResult(text)
+
+    def engine_tools_local_add(self, engine, task: AiPydanticTask):
+        tools_local = ai_tools_get()
+        tools_mapping = {func.__name__: func for func in tools_local}
+        tools_local_added = []
+        for t_name in task.tools:
+            if t_name in tools_mapping:
+                engine.tool_plain(tools_mapping[t_name])
+                tools_local_added.append(t_name)
+
+        for t in ai_tools_permanent_get():
+            if t.__name__ not in tools_mapping:
+                engine.tool_plain(t)
+                tools_local_added.append(t.__name__)
+
+        logger_info('🛠 Local инструменты добавлены: ' + ', '.join(tools_local_added))
 
     def task_history_save(self, result, task: AiPydanticTask):
         messages = result.all_messages()

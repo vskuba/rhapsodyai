@@ -1,24 +1,24 @@
 import traceback
 import uuid
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import yaml
 from pydantic import Field, BaseModel
 
-from source.ai.framework.pydanticai.ai_pydantic_tool import ai_pydantic_tools_get
+from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.config import config_get
 from source.logging_ import logger_info
-from source.mcp import mcp_config_load
+from source.mcp import mcp_config_get
 
 
 class AiTaskYamlSubTask(BaseModel):
     name: str
     prompt: str
     inputs_default: dict[str, Any] = Field(default_factory=dict)
-    tools: list[str] = Field(default_factory=list)
+    tools: Optional[list[str]] = Field(default_factory=list)
 
 
 class AiTaskYaml(BaseModel):
@@ -33,8 +33,8 @@ class AiTaskYaml(BaseModel):
 class AiSubTask:
     name: str
     prompt: str
-    tools: list[Callable]
-    inputs_default: dict[str, str]
+    tools: list[Callable] = field(default_factory=list)
+    inputs_default: dict[str, str] = field(default_factory=dict)
 
 
 class AbstractAiTask(ABC):
@@ -100,23 +100,29 @@ class AbstractAiTaskManager(ABC):
             with open(self.filepath_get(name), 'r') as f:
                 task_dict = yaml.safe_load(f)
 
-            task_yaml = AiTaskYaml(**task_dict) #validate yaml by model class
+            task_yaml = AiTaskYaml(**task_dict)  # validate yaml by model class
 
-            #validate mcp_servers
+            # validate mcp_servers
+            mcp_tools = []
             if task_yaml.mcp_servers:
-                mcp_config = mcp_config_load()
                 for mcp_server_name in task_yaml.mcp_servers:
-                    if mcp_server_name.lower() not in {k.lower() for k in mcp_config.keys()}:
-                        raise ValueError(f"MCP сервер '{mcp_server_name}' не настроен в системе (tab_mcp).")
+                    mcp_server_name = mcp_server_name.lower()
+                    mcp_config = mcp_config_get(mcp_server_name)
 
-            # validate local tools
-            tools = ai_pydantic_tools_get()
+                    if not mcp_config:
+                        raise ValueError(f"MCP сервер '{mcp_server_name}' не найден")
+
+                    mcp_tools += [t.name for t in mcp_config.tools]
+
+            # validate tools
+            local_tools = [t.__name__ for t in ai_tools_get() + ai_tools_permanent_get()]
+
+            tools = local_tools + mcp_tools
             for sub_task in task_yaml.sub_task:
                 if sub_task.tools:
                     for tool_name in sub_task.tools:
-
-                        if not any(t.__name__ == tool_name for t in tools):
-                            raise ValueError(f"Инструмент '{tool_name}' не найден в доступных ai_tools.")
+                        if not any(t == tool_name for t in tools):
+                            raise ValueError(f"Инструмент '{tool_name}' не найден в доступных ai_tools и mcp_tools.")
 
             return task_dict
         except Exception as e:
@@ -144,8 +150,6 @@ class AbstractAiTaskManager(ABC):
             {},
             sub_task_index
         )
-
-
 
     def task_schema_yaml_update(self, name: str, key: str, value: str | bool):
         filepath = self.filepath_get(name)

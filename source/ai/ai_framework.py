@@ -119,14 +119,14 @@ class AbstractAIFramework(ABC):
             except Exception as e:
                 backtrace = traceback.format_exc()
                 logger_info(
-                    f"❌🚀 Сбой в цикле агента: {e}."
+                    f"❌ Сбой в цикле агента: {e}."
                     f"Полный стек вызовов:\n{backtrace}"
                 )
 
                 queue_get()['chat'].put({"text": 'Произошла ошибка: %s' % e, "who": 'agent'})
 
                 # rate limit handling
-                if getattr(e, 'status_code', None) == 429:
+                if getattr(e, 'status_code', None) in [429, 413]:
                     return
 
                 queue_get()['chat'].put({"text": 'Работа будет продолжена', "who": 'agent'})

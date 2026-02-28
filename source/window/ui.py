@@ -1,12 +1,13 @@
+import time
+
 import customtkinter as ctk
 import source.window
 import source.ai.ai_thread
 
-from data.tools.filesystem import open_file_in_editor
 from source.ai.ai_task import AbstractAiTask
 from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
-from source.ai.framework.pydanticai.ai_pydantic_tool import chat_last_message_set
 from source.async_ import async_waiting_is_active, async_waiting_clear
+from source.filesystem import open_file_in_editor
 from source.logging_ import logger_info
 from source.queue import queue_get
 
@@ -140,9 +141,11 @@ def window_chat_input_send(text: str) -> None:
     window_chat_loading_start()
 
     if async_waiting_is_active():
+        queue_get()['chat_response'].put(text)
+        time.sleep(0.05)
+
         async_waiting_clear()
         window_chat_loading_stop()
-        source.window.chat_agent_status_label.configure(text="")
 
 
 def window_chat_message_add(text: str, who: str) -> None:
@@ -165,8 +168,6 @@ def window_chat_message_add(text: str, who: str) -> None:
 
     source.window.chat_dialog_textbox.see("end")
     source.window.chat_dialog_textbox.configure(state="disabled")
-
-    chat_last_message_set(text)
 
 
 def window_chat_clear() -> None:

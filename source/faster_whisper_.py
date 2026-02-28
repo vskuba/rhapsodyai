@@ -25,7 +25,7 @@ def faster_whisper_enable():
         ),
         daemon=True
     )).start()
-    logger_info('faster_whisper enabled')
+    logger_info('🗣️ faster_whisper запущен в потоке')
 
 def faster_whisper_create_model(whisper_model_name: str) -> WhisperModel:
     """
@@ -93,6 +93,6 @@ def faster_whisper_listening(
             except Exception as e:
                 backtrace = traceback.format_exc()
                 logger_info(
-                    f"❌ Ошибка: {e}."
+                    f"❌ 🗣️ Ошибка: {e}."
                     f"Полный стек вызовов:\n{backtrace}"
                 )

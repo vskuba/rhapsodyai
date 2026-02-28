@@ -114,7 +114,7 @@ class WindowAi(ctk.CTk):
                 if message.get("need_response", False):
                     try:
                         source.window.chat_agent_status_label.configure(
-                            text="● Агент ждет вашего ответа",
+                            text="💬 Агент ждет вашего ответа..",
                             text_color="#A8E6CF"
                         )
                     except AttributeError:
@@ -136,8 +136,8 @@ class WindowAi(ctk.CTk):
     def queue_tools(self):
         try:
             message = queue_get()['tool'].get_nowait()
-            print(f"🛠 Сообщение из очереди queue_tool {message}")
-            self.tab_tool._update_text_content()
+            logger_info(f"🛠 Сообщение из очереди queue_tool {message}")
+            self.tab_tool.tab_tool_setup()
 
         except queue.Empty:
             pass
@@ -169,7 +169,7 @@ class WindowAi(ctk.CTk):
                 window_chat_loading_stop()
                 window_chat_active_task_clear()
 
-                logger_info(f"Поток задачи '{task.name}' завершён, слот освобождён.")
+                logger_info(f"🚀 Поток задачи '{task.name}' завершён, слот освобождён.")
             except Exception as e:
                 backtrace = traceback.format_exc()
                 logger_info(

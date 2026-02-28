@@ -2,9 +2,9 @@ import traceback
 
 import customtkinter as ctk
 
-from source.ai.framework.pydanticai.ai_pydantic_tool import ai_pydantic_tools_get
+from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.logging_ import logger_info
-
+from source.mcp import mcp_config_list_get, mcp_config_get
 
 class TabTool:
     def __init__(self, master=None):
@@ -12,8 +12,6 @@ class TabTool:
         self.textbox = None
 
     def tab_tool_setup(self, parent_frame=None):
-        print("[TabTool] tab_tool_setup вызван")
-
         if parent_frame is None:
             return
 
@@ -32,25 +30,28 @@ class TabTool:
                 wrap="word"
             )
             self.textbox.pack(padx=20, pady=20, fill="both", expand=True)
-            print("[TabTool] Textbox создан один раз")
 
         # Обновляем содержимое (без destroy, без новой структуры)
         self._update_text_content()
 
     def _update_text_content(self):
-        print("[TabTool] _update_text_content запущен")
-
         if not self.textbox:
-            print("[TabTool] textbox ещё не создан — пропуск")
             return
 
         self.textbox.configure(state="normal")
         self.textbox.delete("1.0", "end")
 
         # Локальные инструменты
-        self.textbox.insert("end", "💻 Локальные функции\n\n")
+        self.textbox.insert("end", "🖥️ Базовые функции (их не нужно прописывать в yml, доступны всегда)\n\n")
 
-        local_tools = list(ai_pydantic_tools_get())
+        local_permanent_tools = list(ai_tools_permanent_get())
+        for tool in local_permanent_tools:
+            name = getattr(tool, '__name__', str(tool))
+            doc = getattr(tool, '__doc__', "Нет описания").strip().split('\n')[0]
+            self.textbox.insert("end", f"• {name} — {doc}\n")
+
+        self.textbox.insert("end", "\n📂 Подгруженные из Data\n\n")
+        local_tools = list(ai_tools_get())
         for tool in local_tools:
             name = getattr(tool, '__name__', str(tool))
             doc = getattr(tool, '__doc__', "Нет описания").strip().split('\n')[0]
@@ -58,24 +59,23 @@ class TabTool:
 
         # MCP инструменты
         try:
-            from source.mcp import mcp_config_load
-            servers = mcp_config_load() or []
-            print(f"[DEBUG] MCP серверов: {len(servers)}")
-            for server in servers:
-                name = server.get('name', 'Без имени')
-                tools = server.get('tools_cache', [])
-                self.textbox.insert("end", f"\n🌐 MCP: {name} ({len(tools)} инструментов)\n\n")
+            mcp_config_list = mcp_config_list_get()
+            if not mcp_config_list:
+                return
+
+            for mcp_server_name in mcp_config_list:
+                mcp_config = mcp_config_get(mcp_server_name)
+                tools = [t for t in mcp_config.tools]
+                self.textbox.insert("end", f"\n📡 MCP: {mcp_config.title} ({len(tools)} инструментов)\n\n")
                 for t in tools:
-                    desc = t.get('description', 'Нет описания')
-                    self.textbox.insert("end", f"• {t['name']} — {desc}\n")
+                    self.textbox.insert("end", f"• {t.name} — {t.description}\n")
         except Exception as e:
             backtrace = traceback.format_exc()
             logger_info(
                 f"❌ Ошибка вывода MCP: {e}."
                 f"Полный стек вызовов:\n{backtrace}"
             )
-            self.textbox.insert("end", f"Ошибка MCP: {e}\n")
+            self.textbox.insert("end", f"\nОшибка MCP: {e}\n")
 
         self.textbox.configure(state="disabled")
         self.textbox.see("end")
-        print("[TabTool] Текст обновлён")

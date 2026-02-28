@@ -6,10 +6,8 @@ import customtkinter as ctk
 from mcp import StdioServerParameters
 
 from source.logging_ import logger_info
-from source.mcp import mcp_config_load, mcp_config_save
+from source.mcp import mcp_config_save, mcp_config_list_get, mcp_config_get, McpConfig, McpTool, mcp_config_delete
 from source.queue import queue_get
-
-
 
 
 class TabMcp:
@@ -103,7 +101,7 @@ class TabMcp:
             fg_color="#2D5A27",
             height=50,
             font=("Arial", 24, "bold"),
-            command=self.mcp_server_add
+            command=self._mcp_server_add
         )
         btn_add.grid(row=1, column=4, padx=10, pady=10)
 
@@ -116,26 +114,28 @@ class TabMcp:
         self.mcp_list_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
 
         # Первичная отрисовка списка
-        self.mcp_server_list_render()
+        self._mcp_server_list_render()
 
         self._initialized = True
         print("[TabMcp] Инициализация завершена")
 
-    def mcp_server_list_render(self):
-        mcp_data = mcp_config_load() or []
+    def _mcp_server_list_render(self):
+        mcp_config_list = mcp_config_list_get()
+        if mcp_config_list is None:
+            return
 
-        for server_name in mcp_data:
-            self.mcp_server_list_item_add(mcp_data[server_name] | {"name": server_name})
+        for mcp_server_name in mcp_config_list:
+            self._mcp_server_list_item_render(mcp_server_name, mcp_config_get(mcp_server_name))
 
-    def mcp_server_list_item_add(self, item: dict[str, Any]):
+    def _mcp_server_list_item_render(self, mcp_server_name: str, mcp_config: McpConfig):
         card = ctk.CTkFrame(self.mcp_list_frame, corner_radius=8, border_width=1)
         card.pack(fill="x", padx=5, pady=5)
-        self.mcp_servers_rendered[item.get('name')] = card
+        self.mcp_servers_rendered[mcp_server_name] = card
 
-        status_color = "#2ecc71" if item.get("status") == "active" else "#e74c3c"
+        status_color = "#2ecc71" if mcp_config.status == "active" else "#e74c3c"
         ctk.CTkLabel(card, text="●", text_color=status_color, font=("Arial", 27)).pack(side="left", padx=10)
 
-        info_text = f"{item.get('name')} ({item.get('cmd')} {item.get('args', '')})"
+        info_text = f"{mcp_config.title} ({mcp_config.cmd} {' '.join(mcp_config.args)})"
         ctk.CTkLabel(card, text=info_text, font=("Arial", 26, "bold")).pack(side="left", padx=10)
 
         btn_refresh = ctk.CTkButton(
@@ -145,7 +145,7 @@ class TabMcp:
             height=50,
             font=("Arial", 24),
             fg_color="#3d65a1",
-            command=lambda s=item['name']: self.mcp_server_tools_refresh(s)
+            command=lambda s=mcp_server_name: self._mcp_server_tools_refresh(s)
         )
         btn_refresh.pack(side="right", padx=15, pady=10)
 
@@ -156,49 +156,38 @@ class TabMcp:
             height=50,
             font=("Arial", 26),
             fg_color="#7C2A2A",
-            command=lambda s=item['name']: self.mcp_server_delete(s)
+            command=lambda s=mcp_server_name: self._mcp_server_delete(s)
         )
         btn_del.pack(side="right", padx=10)
 
-    def mcp_server_add(self):
-        name = self.mcp_name_entry.get().strip()
-        cmd = self.mcp_command_entry.get().strip()
-        args_raw = self.mcp_args_entry.get().strip()
-        env_raw = self.mcp_env_entry.get().strip()
+    def _mcp_server_add(self):
+        title = self.mcp_name_entry.get().strip()
+        mcp_server_name = title.lower().replace(' ', '_')
+        try:
+            mcp_config = McpConfig(**{
+                'title': title,
+                'cmd': self.mcp_command_entry.get().strip(),
+                'args': [a.strip() for a in self.mcp_args_entry.get().split(' ')],
+                'env': [a.strip() for a in self.mcp_env_entry.get().split(' ')],
+                'status': 'active',
+                'tools': []
+            })
+            mcp_config_save(mcp_server_name, mcp_config)
+            self._mcp_server_list_item_render(mcp_server_name, mcp_config)
+        except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка при добавлении MCP: '{mcp_server_name}': {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
 
-        if not name or not cmd:
-            print("Ошибка: Имя сервера и Команда обязательны.")
-            return
+    def _mcp_server_delete(self, mcp_server_name):
+        mcp_config_delete(mcp_server_name)
 
-        current_mcp_dict = mcp_config_load() or []
+        self.mcp_servers_rendered[mcp_server_name].destroy()
+        logger_info(f"🗑️ MCP Сервер '{mcp_server_name}' удалён.")
 
-        if any(server_name == name for server_name in current_mcp_dict):
-            print(f"Ошибка: Сервер '{name}' уже существует.")
-            return
-
-        current_mcp_dict[name] = {
-            "cmd": cmd,
-            "args": args_raw,
-            "env": env_raw.split(',') if env_raw else [],
-            "status": "active",
-            "tools_cache": []
-        }
-
-        mcp_config_save(current_mcp_dict)
-
-        self.mcp_server_list_item_add(current_mcp_dict[name] | {"name": name})
-
-    def mcp_server_delete(self, server_name):
-        current_mcp_dict = mcp_config_load() or {}
-
-        updated_dict = {s: current_mcp_dict[s] for s in current_mcp_dict if s != server_name}
-
-        mcp_config_save(updated_dict)
-
-        self.mcp_servers_rendered[server_name].destroy()
-        print(f"[-] MCP Сервер '{server_name}' удалён.")
-
-    def _show_loading_indicator(self, server_name):
+    def _show_loading_indicator(self, mcp_server_name):
         if not hasattr(self, 'loading_label') or not self.loading_label:
             self.loading_label = ctk.CTkLabel(
                 self.mcp_list_frame,
@@ -207,87 +196,69 @@ class TabMcp:
             )
             self.loading_label.pack(pady=10)
 
-        self.loading_label.configure(text=f"Обновление {server_name}...")
+        mcp_config = mcp_config_get(mcp_server_name)
+        self.loading_label.configure(text=f"Обновление {mcp_config.title}...")
         if self.master:
             self.master.update_idletasks()
 
-    def mcp_server_tools_refresh(self, server_name):
-        servers = mcp_config_load() or []
-        server_cfg = next((s for s in servers if s.get('name') == server_name), None)
+    def _mcp_server_tools_refresh(self, mcp_server_name):
+        mcp_config = mcp_config_get(mcp_server_name)
 
-        if not server_cfg:
-            print(f"[-] Конфигурация '{server_name}' не найдена.")
-            return
+        logger_info(f"🛠 Запрашиваю инструменты для {mcp_config.title}...")
 
-        print(f"[*] Запрашиваю инструменты для {server_name}...")
+        self._show_loading_indicator(mcp_server_name)
+        self._run_async_mcp_fetch_to_logs(mcp_server_name, mcp_config.cmd, mcp_config.args)
 
-        cmd = server_cfg.get('cmd')
-        args = server_cfg.get('args', "").split()
-
-        self._show_loading_indicator(server_name)
-
-        self._run_async_mcp_fetch_to_logs(server_name, cmd, args)
-
-    def _run_async_mcp_fetch_to_logs(self, server_name, command, args):
+    def _run_async_mcp_fetch_to_logs(self, mcp_server_name, command, args):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(self._fetch_tools_from_sdk(server_name, command, args))
+            return loop.run_until_complete(self._fetch_tools_from_sdk(mcp_server_name, command, args))
         finally:
             loop.close()
 
-    async def _fetch_tools_from_sdk(self, server_name, command, args):
+    async def _fetch_tools_from_sdk(self, mcp_server_name, command, args):
         from mcp.client.stdio import stdio_client
         from mcp import ClientSession
 
         server_params = StdioServerParameters(command=command, args=args)
-
-        tools = []
-        success = False
-
         try:
             async with stdio_client(server_params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     response = await session.list_tools()
 
-                    tools = [{"name": t.name, "description": t.description or ""} for t in response.tools]
-                    print(f"[OK] Получено {len(tools)} инструментов")
+                    tools = [{
+                        "name": t.name,
+                        "description": t.description,
+                        "inputSchema": t.inputSchema
+                    } for t in response.tools]
+                    logger_info(f"🛠 Получено {len(tools)} инструментов")
 
                     # Обновляем конфиг
-                    configs = mcp_config_load() or []
-                    for config_server_name in configs:
-                        if config_server_name == server_name:
-                            configs[config_server_name]['tools_cache'] = tools
-                            mcp_config_save(configs)
-                            print(f"[OK] Конфиг обновлён для {server_name}")
-                            success = True
-                            break
-                    else:
-                        print(f"[!] Сервер {server_name} не найден — кэш не обновлён")
+                    mcp_config = mcp_config_get(mcp_server_name)
+                    mcp_config.tools = [McpTool(**t) for t in tools]
+                    mcp_config_save(mcp_server_name, mcp_config)
+                    logger_info(f"🔄 Конфиг обновлён для {mcp_config.title}")
+
+                    try:
+                        queue_get()['tool'].put(True)
+                        logger_info("⛓️ Отправлено в очередь 'tool': True")
+                    except Exception as e:
+                        backtrace = traceback.format_exc()
+                        logger_info(
+                            f"❌ Ошибка отправки в очередь 'tool': {e}."
+                            f"Полный стек вызовов:\n{backtrace}"
+                        )
 
         except asyncio.TimeoutError:
             print("[!] Таймаут при общении с MCP SDK.")
         except Exception as e:
-            err_str = str(e).lower()
-            if "abort" in err_str or "aborted" in err_str:
-                print("[!] Пойман AbortError — используем полученные данные")
-                if 'response' in locals() and hasattr(response, 'tools'):
-                    tools = [{"name": t.name, "description": t.description or ""} for t in response.tools]
-                    success = True
-            else:
-                print(f"[!] Ошибка при опросе SDK: {e}")
-
-        if success:
-            try:
-                queue_get()['tool'].put(True)
-                print("[OK] Отправлено уведомление в очередь 'tool': True")
-            except Exception as e:
-                backtrace = traceback.format_exc()
-                logger_info(
-                    f"❌ Ошибка отправки в очередь 'tool': {e}."
-                    f"Полный стек вызовов:\n{backtrace}"
-                )
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка получение инструментов MCP: '{mcp_server_name}': {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
 
         if self.master:
             def hide_indicator():
@@ -296,5 +267,3 @@ class TabMcp:
                     # self.loading_label.pack_forget()  # если нужно скрыть полностью
 
             self.master.after(0, hide_indicator)
-
-        return tools

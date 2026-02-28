@@ -6,7 +6,6 @@ from typing import Any, Callable
 from pydantic import BaseModel, create_model, Field
 
 from source.ai.ai_task import AbstractAiTaskManager, AbstractAiTask, AiSubTask
-from source.ai.framework.pydanticai.ai_pydantic_tool import ai_pydantic_tools_get
 from source.config import config_get
 from source.logging_ import logger_info
 
@@ -111,17 +110,6 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
             matches = re.findall(pattern, prompt)
             input_fields = [name for name in matches]
 
-            tools_available = ai_pydantic_tools_get()
-            tools_map = {func.__name__: func for func in tools_available}
-            tools_yml = sub_task.tools
-
-            callable_tools = []
-            for tool_name in tools_yml:
-                if tool_name in tools_map:
-                    callable_tools.append(tools_map[tool_name])
-                else:
-                    raise ValueError(f"Предупреждение: Инструмент '{tool_name}' не найден в ai_tools_get()")
-
             task = AiPydanticTask(
                 name=name,
                 title=title,
@@ -129,7 +117,7 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
                 prompt=prompt,
                 input_fields=input_fields,
                 response_model=response_model,
-                tools=callable_tools,
+                tools=sub_task.tools,
                 sub_task_list=sub_task_list,
                 sub_task_current_index=sub_task_index,
                 mcp_servers=task_dict.get('mcp_servers', [])

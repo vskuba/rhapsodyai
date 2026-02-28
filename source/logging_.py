@@ -3,45 +3,91 @@ import uuid
 from logging.handlers import RotatingFileHandler
 
 import httpx
-
 from pathlib import Path
+import logfire
 from source.config import config_get
 from pythonjsonlogger.json import JsonFormatter
 
+level = logging.INFO
 logger: logging.Logger = logging.getLogger()
 trace_id: str = str(uuid.uuid4())
 
+
 def logger_info(msg: str, **kwargs):
-    logger.info(msg, extra={'trace_id': trace_id} | kwargs)
+    logger.info(msg[:5000], extra={'trace_id': trace_id} | kwargs)
 
 
 def logging_init():
     # Устанавливаем минимальный уровень логирования для главного логгера
-    logger.setLevel(logging.INFO)
+    logger.setLevel(level)
 
     formatter = JsonFormatter(
-        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+        fmt="%(asctime)s %(levelname)s %(name)s %(threadName)s %(message)s",
         rename_fields={"levelname": "severity", "asctime": "timestamp"},
     )
 
+    # Твой обязательный файловый хендлер
     log_handler = RotatingFileHandler(
-        logging_filename_get(),  # ваш текущий app.log
-        maxBytes=10 * 1024 * 1024,  # 10 MB
-        backupCount=7  # хранить 7 старых файлов
+        _logging_filename_get(),
+        maxBytes=10 * 1024 * 1024,
+        backupCount=7
     )
     log_handler.setFormatter(formatter)
     logger.addHandler(log_handler)
 
-    # 3. Настройка сторонних библиотек на подробный лог
-    for lib in ["github", "urllib3", "httpx", "mcp"]:
+    # 2. Настройка Logfire
+    logfire.configure(send_to_logfire=False)
+
+    # Исправление ошибки AttributeError:
+    # Вместо instrument_logging() добавляем специальный хендлер
+    logger.addHandler(logfire.LogfireLoggingHandler())
+
+    # Авто-логирование всех HTTP запросов (httpx) через Logfire
+    logfire.instrument_httpx(capture_all=True)
+
+    # 3. Настройка сторонних библиотек
+    for lib in [
+        "github",
+        "urllib3",
+        "httpx",
+        'httpcore',
+        "mcp",
+        'pydantic_ai',
+        'xai_sdk',
+        'stdio_client',
+        "mcp.client.stdio",
+        "anyio"
+    ]:
         lib_logger = logging.getLogger(lib)
-        lib_logger.setLevel(logging.DEBUG)
-        lib_logger.propagate = True  # Гарантируем передачу логов в наш FileHandler
+        lib_logger.setLevel(level)
 
-    logger_info('Logging system initialized', status='ready')
+    logger_info('📝 логирование включено', status='ready')
 
 
-def logging_filename_get() -> str:
+async def log_request_body(request: httpx.Request):
+    body = await request.aread()
+    logger_info(
+        f"🌐📤 HTTP Request: {request.method} {request.url}\n\n",
+        body=body.decode(errors='ignore')
+    )
+
+
+async def log_response_body(response: httpx.Response):
+    body = await response.aread()
+    http_status = response.status_code
+    http_status_icon = '✅' if http_status == 200 else '⚠️'
+    logger_info(
+        f"🌐📥 {http_status_icon} HTTP Response: {response.status_code}",
+        body=body.decode(errors='ignore')
+    )
+
+
+def logger_reset_trace_id():
+    global trace_id
+    trace_id = str(uuid.uuid4())
+
+
+def _logging_filename_get() -> str:
     """
     Получаем имя файла для логов
     """
@@ -54,19 +100,3 @@ def logging_filename_get() -> str:
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
     return filename
-
-
-async def log_request_body(request: httpx.Request):
-    body = await request.aread()
-    logger_info(f"HTTP Request: {request.method} {request.url}",
-                body=body.decode(errors='ignore'))
-
-
-async def log_response_body(response: httpx.Response):
-    body = await response.aread()
-    logger_info(f"HTTP Response: {response.status_code}",
-                body=body.decode(errors='ignore'))
-
-def logger_reset_trace_id():
-    global trace_id
-    trace_id = str(uuid.uuid4())
