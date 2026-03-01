@@ -117,6 +117,9 @@ class WindowAi(ctk.CTk):
                             text="💬 Агент ждет вашего ответа..",
                             text_color="#A8E6CF"
                         )
+                        source.window.chat_progress_bar.configure(
+                            progress_color="#E33D1B"
+                        )
                     except AttributeError:
                         print("[WARN] chat_agent_status_label не найден")
 

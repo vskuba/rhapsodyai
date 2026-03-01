@@ -1,3 +1,4 @@
+import inspect
 import traceback
 
 import customtkinter as ctk
@@ -5,6 +6,7 @@ import customtkinter as ctk
 from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.logging_ import logger_info
 from source.mcp import mcp_config_list_get, mcp_config_get
+
 
 class TabTool:
     def __init__(self, master=None):
@@ -30,6 +32,9 @@ class TabTool:
                 wrap="word"
             )
             self.textbox.pack(padx=20, pady=20, fill="both", expand=True)
+            self.textbox.tag_config("header", background="#333131", foreground="white")
+            self.textbox.tag_config("func", background="#B0C0E8", foreground="#04174D")
+            self.textbox.tag_config("highlight", background="#FFFF00", foreground="black")
 
         # Обновляем содержимое (без destroy, без новой структуры)
         self._update_text_content()
@@ -42,20 +47,18 @@ class TabTool:
         self.textbox.delete("1.0", "end")
 
         # Локальные инструменты
-        self.textbox.insert("end", "🖥️ Базовые функции (их не нужно прописывать в yml, доступны всегда)\n\n")
+        self.textbox.insert("end", "\n🖥️ Базовые функции (их не нужно прописывать в yml, доступны всегда)\n\n")
 
         local_permanent_tools = list(ai_tools_permanent_get())
-        for tool in local_permanent_tools:
-            name = getattr(tool, '__name__', str(tool))
-            doc = getattr(tool, '__doc__', "Нет описания").strip().split('\n')[0]
-            self.textbox.insert("end", f"• {name} — {doc}\n")
+        for t in local_permanent_tools:
+            self.textbox.insert("end", f"🔹 {t.__name__}{inspect.signature(t)}\n", "func")
+            self.textbox.insert("end", f"\n📜 {t.__doc__.strip()}\n\n", "header")
 
         self.textbox.insert("end", "\n📂 Подгруженные из Data\n\n")
         local_tools = list(ai_tools_get())
-        for tool in local_tools:
-            name = getattr(tool, '__name__', str(tool))
-            doc = getattr(tool, '__doc__', "Нет описания").strip().split('\n')[0]
-            self.textbox.insert("end", f"• {name} — {doc}\n")
+        for t in local_tools:
+            self.textbox.insert("end", f"🔹 {t.__name__}{inspect.signature(t)}\n", "func")
+            self.textbox.insert("end", f"\n📜 {t.__doc__.strip()}\n\n", "header")
 
         # MCP инструменты
         try:

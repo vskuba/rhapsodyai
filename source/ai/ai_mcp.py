@@ -1,11 +1,9 @@
 import contextlib
 import inspect
 import os
-from functools import wraps
-from typing import Callable, Dict, Tuple, Any, List
+from typing import Callable, Dict, Any
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
-from pydantic import Field, create_model, ValidationError
 
 from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTask
 from source.logging_ import logger_info
@@ -44,8 +42,6 @@ class AiMcpManager:
 
     def _mcp_tool_func_from_json(self, mcp_server_name: str, tool_json: dict[str, Any], session) -> Callable:
         async def mcp_tool_decorator(**kwargs) -> str:
-            logger_info(f"🛠️ Инструмент '{tool_json['name']}':kwargs → ({kwargs})")
-            kwargs = self._mcp_server_kwargs(mcp_server_name, kwargs)
 
             logger_info(f"🛠️ Инструмент '{tool_json['name']}' вызов → ({kwargs})")
             result = await session.call_tool(tool_json['name'], kwargs)
@@ -86,13 +82,6 @@ class AiMcpManager:
             logger_info(f"📡 Cессия для mcp сервера '{mcp_config.title}' создана и инициализирована")
             self.sessions[mcp_server_name] = session
         return self.sessions
-
-    def _mcp_server_kwargs(self, mcp_server_name, kwargs):
-        if mcp_server_name == 'jira':
-            if 'cloudId' not in kwargs:
-                kwargs['cloudId'] = os.getenv("JIRA_CLOUD_ID")
-
-        return kwargs
 
     def _mcp_tool_decorator_from_json_input_schema(
             self,

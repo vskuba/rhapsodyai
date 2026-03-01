@@ -83,7 +83,7 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
 
             # ожидаем final_result только если нужна model response
             response_model_fields = {
-                'text': (str, Field(description="Финальный результат"))
+                'text': (str, Field(description="Final result"))
             }
             response_model_fields_mapping = {}
 
@@ -97,8 +97,8 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
                 prompt = re.sub(r"\{([^}|]+)\|[^:]+:(" + "|".join(type_mapping) + r")}", r"\1", prompt)
 
                 prompt_extra = """
-                ВАЖНО: Твой ответ ОБЯЗАТЕЛЬНО должен быть в формате JSON. 
-                JSON должен содержать следующие ключи: "json_keys".
+                IMPORTANT: Your response MUST be in JSON format.
+                The JSON must contain the following keys: "json_keys".
                 """
                 json_keys = '", "'.join(list(response_model_fields.keys()))
                 prompt_extra = prompt_extra.replace('json_keys', json_keys)

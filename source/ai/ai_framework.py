@@ -17,17 +17,11 @@ class AIFrameworkResult:
     text: str
 
 
-@dataclass
-class AIFrameworkHistory(ABC):
-    @abstractmethod
-    def history_get(self):
-        pass
-
-
 class AbstractAIFramework(ABC):
     def __init__(self, task_manager: AbstractAiTaskManager):
         self.task_manager = task_manager
         self.engine_storage: dict[str, Any] = {}
+        self.history: list = []
 
     @abstractmethod
     def engine_prepare(self, task: AbstractAiTask):
@@ -54,7 +48,7 @@ class AbstractAIFramework(ABC):
         pass
 
     @abstractmethod
-    def task_history_load(self, task: AbstractAiTask) -> AIFrameworkHistory:
+    def task_history_load(self, task: AbstractAiTask) -> list:
         pass
 
     def task_report(self, task: AbstractAiTask, report: str) -> str:

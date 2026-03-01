@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import traceback
@@ -15,21 +16,13 @@ from source.ai.ai_mcp import AiMcpManager
 from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTask
 
-from source.ai.ai_framework import AbstractAIFramework, AIFrameworkResult, AIFrameworkHistory
+from source.ai.ai_framework import AbstractAIFramework, AIFrameworkResult
 from source.config import config_get
 from pydantic_ai import Agent, AgentRunResult, ToolCallPart, ToolReturnPart, ModelMessage, ModelSettings
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from source.logging_ import log_request_body, log_response_body, logger_info
-
-
-class AIPydanticFrameworkHistory(AIFrameworkHistory):
-    def __init__(self, messages):
-        self.messages: list = messages
-
-    def history_get(self):
-        return self.messages
 
 
 class AiPydanticFramework(AbstractAIFramework):
@@ -111,6 +104,9 @@ class AiPydanticFramework(AbstractAIFramework):
 
         self.engine_storage[task.name] = engine
 
+        if not self.history:
+            self.history = self.task_history_load(task)
+
         self.engine_tools_local_add(engine, task)
 
         return engine
@@ -125,13 +121,16 @@ class AiPydanticFramework(AbstractAIFramework):
         task.prompt_finalized = prompt
 
         if input_values:
-            input_data = "\n".join(
-                [f"{k}: {str(v).strip()}" for k, v in input_values.items()])
-            task.prompt_finalized = f"<input_data>\n{input_data}\n</input_data>\n\n{task.prompt_finalized}"
+            json_str = json.dumps(input_values, ensure_ascii=False)
+            task.prompt_finalized = f"<input_data>{json_str}</input_data>\n\n{task.prompt_finalized}"
 
         logger_info(
             f'🧱 Подзадача {task.sub_task_current_index + 1}/{len(task.sub_task_list)}, '
             f'prompt: {task.prompt_finalized}'
+        )
+        logger_info(
+            f'🧠 Передаем историю агенту:\n'
+            f'{self.history if self.history else "пока ничего нет"}'
         )
 
         engine = self.engine_storage[task.name]
@@ -143,7 +142,7 @@ class AiPydanticFramework(AbstractAIFramework):
 
             return await engine.run(
                 user_prompt=task.prompt_finalized,
-                message_history=self.task_history_load(task),
+                message_history=self.history,
                 model_settings=ModelSettings(
                     parallel_tool_calls=True,
                     temperature=0.0,
@@ -207,6 +206,14 @@ class AiPydanticFramework(AbstractAIFramework):
         report += "\n\n------- Input values refresh ------------------------------------------------------------\n\n"
         report += str(task.input_values)
 
+        messages_new = result.new_messages()
+        if messages_new:
+            self.history += result.new_messages()
+
+        logger_info(f'🧠 Получили новые сообщения истории в задаче "{task.title}"'
+                    f' ({task.sub_task_current_index + 1}/{len(task.sub_task_list)})\n'
+                    f' {self.history}')
+
         if task.history_save:
             self.task_history_save(result, task)
 
@@ -244,10 +251,12 @@ class AiPydanticFramework(AbstractAIFramework):
         with open(filename, 'wb') as f:
             f.write(TypeAdapter(list[ModelMessage]).dump_json(messages))
 
-    def task_history_load(self, task: AiPydanticTask):
+        logger_info('🧠 Сохранили историю в файл')
+
+    def task_history_load(self, task: AiPydanticTask) -> list[ModelMessage]:
         filename = self.task_history_filename_get(task)
         if not os.path.exists(filename):
-            return None
+            return []
 
         with open(filename, 'rb') as f:
             data = f.read()

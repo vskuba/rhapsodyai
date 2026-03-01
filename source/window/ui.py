@@ -118,17 +118,18 @@ def task_item_draw(task_name, parent_container):
         text="История",
         font=("Arial", 24),
         checkbox_width=32,
-        checkbox_height=32
+        checkbox_height=32,
+        state="disabled"
     )
     checkbox_history.pack(side="right", padx=5)
-    checkbox_history.configure(
-        command=lambda name=task_name: (
-            ai_task_manager.task_schema_yaml_update(
-                name, "history_save",
-                bool(checkbox_history.get())
-            )
-        )
-    )
+    # checkbox_history.configure(
+    #     command=lambda name=task_name: (
+    #         ai_task_manager.task_schema_yaml_update(
+    #             name, "history_save",
+    #             bool(checkbox_history.get())
+    #         )
+    #     )
+    # )
     if task and getattr(task, 'history_save', False):
         checkbox_history.select()
 
@@ -145,6 +146,9 @@ def window_chat_input_send(text: str) -> None:
         time.sleep(0.05)
 
         async_waiting_clear()
+        source.window.chat_progress_bar.configure(
+            progress_color="#2ecc71"
+        )
         window_chat_loading_stop()
 
 

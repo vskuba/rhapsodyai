@@ -1,4 +1,5 @@
 import ast
+import asyncio
 import functools
 import importlib
 import sys
@@ -19,9 +20,6 @@ all_tools_permanent: list[Callable] = []
 
 
 def ai_tools_get() -> list[Callable]:
-    """
-    Сканирует папку tools, импортирует файлы и возвращает список всех функций.
-    """
     global all_tools
     if all_tools:
         return all_tools
@@ -92,11 +90,13 @@ def ai_tools_permanent_get() -> list[Callable]:
         chat_me,
         chat_me_question,
 
-        # ------ Task
-        task_abort
     ]]
 
-    return all_tools_permanent
+    return all_tools_permanent + [
+
+        # ------ Task
+        task_abort # отдельно, потому что декоратор async
+    ]
 
 
 def ai_tools_mcp_get() -> list[str]:
@@ -113,8 +113,6 @@ def ai_tools_mcp_get() -> list[str]:
 
 
 def ai_tool_decorator(tool: Callable) -> Callable:
-    """Оборачивает инструмент в логирование всех вызовов с сохранением сигнатуры"""
-
     name = getattr(tool, "__name__", str(tool))
 
     @functools.wraps(tool)  # <--- Это магическая строчка
@@ -151,16 +149,14 @@ def task_abort(final_text: str) -> bool:
             "who": 'agent',
         }
     )
+
     return True
 
 
 async def chat_me_question(question: str) -> str:
     """
-    Этот инструмент чтобы задать вопрос и получить ответ.
-    Аргумент функции вопрос от тебя.
-    Функция вернет строку текст с ответом на вопрос.
-
-    Важно: не формируй final_result по результатам этой функции, если это не прописано.
+    This tool allows you to ask the user a question and receive an answer.
+    The function argument is 'question'. The function will return a text string containing the answer to the question.
     """
     queue_get()['chat'].put(
         {
@@ -181,9 +177,9 @@ async def chat_me_question(question: str) -> str:
 
 async def chat_me(text: str) -> str:
     """
-    Этот инструмент для твоих мыслей и сообшений. Используй его чтобы отправить сообщение.
-    Аргумент функции текстовая строка с твоим сообщением.
-    Инструмент вернет слово 'Принято' как результат, чтобы ты понимал, что сообщение было отправлено пользователю.
+    This is a messaging tool. Use it to send a message.
+    The argument is a text string containing your message.
+    The tool will return the word 'Accepted' as a result, indicating that the message was delivered to the user.
     """
     queue_get()['chat'].put(
         {
@@ -192,4 +188,4 @@ async def chat_me(text: str) -> str:
         }
     )
 
-    return 'Принято'
+    return 'Accepted'
