@@ -63,7 +63,8 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
                 'str': str,
                 'bool': bool,
                 'int': int,
-                'float': float
+                'float': float,
+                'list': list
             }
 
             prompt_system = task_dict.get('system_prompt', '')
@@ -96,12 +97,12 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
                 response_model_fields_mapping = {var: name for name, var, _ in matches}
                 prompt = re.sub(r"\{([^}|]+)\|[^:]+:(" + "|".join(type_mapping) + r")}", r"\1", prompt)
 
-                prompt_extra = """
-                IMPORTANT: Your response MUST be in JSON format.
-                The JSON must contain the following keys: "json_keys".
-                """
-                json_keys = '", "'.join(list(response_model_fields.keys()))
-                prompt_extra = prompt_extra.replace('json_keys', json_keys)
+                # json_response_model = [str({k: t[0].__name__ for k, t in response_model_fields.items()})]
+                # json_keys = ','.join(json_response_model)
+                # prompt_extra = f"""
+                # IMPORTANT: Your response MUST be in JSON format.
+                # The JSON must regarding follow structure: "{json_keys}".
+                # """
 
             # Создаем класс на лету, наследуясь от BaseModel
             response_model = create_model('ResponseModel', **response_model_fields)

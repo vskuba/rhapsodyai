@@ -77,19 +77,19 @@ async def log_request_body(request: httpx.Request):
         if 'messages' in json_data:
             messages = json_data['messages']
             for m in messages:
-                role = '🦾' if m['role'] == 'assistant' else ('🔧' if m['role'] == 'tool' else '👤')
+                role = '🧠' if m['role'] == 'assistant' else ('🔧' if m['role'] == 'tool' else '👤')
                 replica = m.get('reasoning') or m.get('content') or ''
                 tool_calls = []
                 if 'tool_calls' in m:
                     for tc in m['tool_calls']:
                         tool_calls.append(f"🔧 {tc['function']['name']} -> ({tc['function']['arguments']})")
                 if tool_calls:
-                    replica += '\n' + '\n'.join(tool_calls)
+                    replica += '\n\n' + '\n'.join(tool_calls)
                 dialog.append(f"\n{role}: {replica}\n")
 
     if dialog:
         logger_info(
-            f"👤🦾 Текущая история общения: \n"
+            f"👤-🧠 Текущая история общения: \n"
             f"{'\n'.join(dialog)}",
         )
 

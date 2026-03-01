@@ -94,12 +94,12 @@ class AiPydanticFramework(AbstractAIFramework):
         if not model:
             model = OpenAIChatModel(model_name)
 
-        print(f'System prompt: \n{task.system_prompt}\n')
         engine = Agent(
             model,
-            system_prompt=task.system_prompt,
+            system_prompt=task.system_prompt.strip(),
             output_type=task.response_model,
-            output_retries=15
+            retries=10,
+            output_retries=10
         )
 
         self.engine_storage[task.name] = engine
@@ -120,9 +120,16 @@ class AiPydanticFramework(AbstractAIFramework):
 
         task.prompt_finalized = prompt
 
+        input_and_expected_data = []
         if input_values:
-            json_str = json.dumps(input_values, ensure_ascii=False)
-            task.prompt_finalized = f"<input_data>{json_str}</input_data>\n\n{task.prompt_finalized}"
+            json_input_str = json.dumps(input_values, ensure_ascii=False)
+            input_and_expected_data.append(f"<input_data>{json_input_str}</input_data>")
+
+        json_response_model = task.response_model.model_json_schema()
+        json_response_model_str = {k: p['type'] for k, p in json_response_model['properties'].items()}
+        input_and_expected_data.append(f"<expect_data>{json_response_model_str}</expect_data>")
+
+        task.prompt_finalized = '\n'.join(input_and_expected_data) + f'\n\n{task.prompt_finalized}'
 
         logger_info(
             f'🧱 Подзадача {task.sub_task_current_index + 1}/{len(task.sub_task_list)}, '

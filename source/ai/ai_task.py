@@ -64,7 +64,9 @@ class AbstractAiTask(ABC):
     def input_values_set(self, values: dict[str, str]):
         for k in self.input_fields:
             if k not in values.keys():
-                raise ValueError("Input field '%s' is required, but not found in input set values: %s" % (k, values))
+                raise ValueError(
+                    f'Input field "{k}" is required, but not found in input set values: "{values}"'
+                )
         self.input_values = values
         # logger_info('Задача %s, содержит значения для параметров: %s' % (self.name, values))
 
@@ -124,6 +126,12 @@ class AbstractAiTaskManager(ABC):
                         if not any(t == tool_name for t in tools):
                             raise ValueError(f"Инструмент '{tool_name}' не найден в доступных ai_tools и mcp_tools.")
 
+            #validate input_fields
+            # input_fields = []
+            # for sub_task in task_yaml.sub_task:
+            #     input_fields += sub_task.inputs_default.keys()
+            # task_dict['input_fields'] = input_fields
+
             return task_dict
         except Exception as e:
             backtrace = traceback.format_exc()
@@ -132,6 +140,9 @@ class AbstractAiTaskManager(ABC):
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise
+
+    def task_yaml_inputs_get(self):
+        return []
 
     def task_is_complete(self, task: AbstractAiTask) -> bool:
         return len(task.sub_task_list) <= (task.sub_task_current_index + 1)
