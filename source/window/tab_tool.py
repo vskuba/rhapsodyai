@@ -3,9 +3,9 @@ import traceback
 
 import customtkinter as ctk
 
-from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
+from source.ai.ai_tool import ai_tools_permanent_get, ai_tools_get
 from source.logging_ import logger_info
-from source.mcp import mcp_config_list_get, mcp_config_get
+from source.mcp import mcp_config_list_get, mcp_config_get, mcp_config_tools_json_get
 
 
 class TabTool:
@@ -14,71 +14,89 @@ class TabTool:
         self.textbox = None
 
     def tab_tool_setup(self, parent_frame=None):
-        if parent_frame is None:
-            return
+        if parent_frame is None: return
 
-        tab_tools = parent_frame
-
-        # Создаём textbox только ОДИН РАЗ
         if self.textbox is None:
-            for widget in tab_tools.winfo_children():
+            # Очистка контейнера перед созданием
+            for widget in parent_frame.winfo_children():
                 widget.destroy()
 
+            # Настройка табов: первая колонка 400px, вторая следом
             self.textbox = ctk.CTkTextbox(
-                tab_tools,
-                font=("Arial", 30),
+                parent_frame,
+                font=("Consolas", 25),
                 fg_color="#1e1e1e",
                 text_color="#dddddd",
-                wrap="word"
+                wrap="none"
             )
-            self.textbox.pack(padx=20, pady=20, fill="both", expand=True)
-            self.textbox.tag_config("header", background="#333131", foreground="white")
-            self.textbox.tag_config("func", background="#B0C0E8", foreground="#04174D")
-            self.textbox.tag_config("highlight", background="#FFFF00", foreground="black")
+            self.textbox.pack(padx=10, pady=10, fill="both", expand=True)
 
-        # Обновляем содержимое (без destroy, без новой структуры)
-        self._update_text_content()
+            self.textbox._textbox.configure(
+                selectbackground="#4D4D4D",
+                selectforeground="black"
+            )
 
-    def _update_text_content(self):
-        if not self.textbox:
-            return
+            # Новые стили для документации
+            self.textbox.tag_config("group", background="#333131", foreground="#5DADE2", justify="center")
+            self.textbox.tag_config("func", foreground="#F39C12")
+            self.textbox.tag_config("signature", foreground="#85C1E9")  # Сигнатура другим цветом
+            self.textbox.tag_config("doc_body", foreground="#ABB2B9", lmargin1=50, lmargin2=50)  # Отступ слева
+            self.textbox.tag_config("border", foreground="#2C3E50")
 
+        self._update_table_content()
+
+    def _add_group_header(self, text):
+        width = 120
+        self.textbox.insert("end", f"\n{text.center(width)}\n", "group")
+        self.textbox.insert("end", "—" * width + "\n", "border")
+
+    def _add_row(self, name, signature, doc):
+        self.textbox.insert("end", f"🔹 {name}", "func")
+        self.textbox.insert("end", f"{signature}\n", "signature")
+
+        if doc:
+            lines = [line.strip() for line in doc.strip().split('\n') if line.strip()]
+            clean_doc = " ".join(lines)  # Собираем в один поток для компактности
+
+            self.textbox.insert("end", f"   📜 {clean_doc}\n", "doc_body")
+        else:
+            self.textbox.insert("end", "   📜 Нет описания\n", "doc_body")
+
+        self.textbox.insert("end", "—" * 80 + "\n", "border")
+
+    def _update_table_content(self):
         self.textbox.configure(state="normal")
         self.textbox.delete("1.0", "end")
 
-        # Локальные инструменты
-        self.textbox.insert("end", "\n🖥️ Базовые функции (их не нужно прописывать в yml, доступны всегда)\n\n")
+        # 1. Базовые функции
+        self._add_group_header("🖥️ БАЗОВЫЕ ФУНКЦИИ (ВСЕГДА ДОСТУПНЫ)")
+        for t in ai_tools_permanent_get():
+            self._add_row(t.__name__, str(inspect.signature(t)), t.__doc__ or "")
 
-        local_permanent_tools = list(ai_tools_permanent_get())
-        for t in local_permanent_tools:
-            self.textbox.insert("end", f"🔹 {t.__name__}{inspect.signature(t)}\n", "func")
-            self.textbox.insert("end", f"\n📜 {t.__doc__.strip()}\n\n", "header")
 
-        self.textbox.insert("end", "\n📂 Подгруженные из Data\n\n")
-        local_tools = list(ai_tools_get())
-        for t in local_tools:
-            self.textbox.insert("end", f"🔹 {t.__name__}{inspect.signature(t)}\n", "func")
-            self.textbox.insert("end", f"\n📜 {t.__doc__.strip()}\n\n", "header")
+        # 2. Подгруженные инструменты
+        self._add_group_header("📂 ИНСТРУМЕНТЫ ИЗ DATA")
+        for t in ai_tools_get():
+            self._add_row(t.__name__, str(inspect.signature(t)), t.__doc__ or "")
 
-        # MCP инструменты
+        # 3. MCP Инструменты
         try:
-            mcp_config_list = mcp_config_list_get()
-            if not mcp_config_list:
-                return
-
-            for mcp_server_name in mcp_config_list:
-                mcp_config = mcp_config_get(mcp_server_name)
-                tools = [t for t in mcp_config.tools]
-                self.textbox.insert("end", f"\n📡 MCP: {mcp_config.title} ({len(tools)} инструментов)\n\n")
-                for t in tools:
-                    self.textbox.insert("end", f"• {t.name} — {t.description}\n")
+            from source.ai.ai_mcp import AiMcpManager
+            mcp_manager = AiMcpManager()
+            for server in mcp_config_list_get():
+                config = mcp_config_get(server)
+                tools_json = mcp_config_tools_json_get(server)
+                self._add_group_header(f"📡 MCP: {config.title.upper()} ({len(tools_json)} TOOLS)")
+                for t in tools_json:
+                    # Создаем "быстрый" объект для получения сигнатуры
+                    t_func = mcp_manager.mcp_tool_func_from_json(t)
+                    self._add_row(t_func.__name__, str(inspect.signature(t_func)), t_func.__doc__ or "")
         except Exception as e:
             backtrace = traceback.format_exc()
             logger_info(
-                f"❌ Ошибка вывода MCP: {e}."
+                f"⚠️ Ошибка вывода MCP: {e}."
                 f"Полный стек вызовов:\n{backtrace}"
             )
             self.textbox.insert("end", f"\nОшибка MCP: {e}\n")
 
         self.textbox.configure(state="disabled")
-        self.textbox.see("end")

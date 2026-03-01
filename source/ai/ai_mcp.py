@@ -40,9 +40,12 @@ class AiMcpManager:
         await self.exit_stack.aclose()
         self.sessions.clear()
 
+    def mcp_tool_func_from_json(self, mcp_tool_json: dict[str, Any]) -> Callable:
+        func = lambda **kwargs: f"Вызван инструмент с аргументами: {kwargs}"
+        return self._mcp_tool_decorator_from_json_input_schema(func, mcp_tool_json)
+
     def _mcp_tool_func_from_json(self, mcp_server_name: str, tool_json: dict[str, Any], session) -> Callable:
         async def mcp_tool_decorator(**kwargs) -> str:
-
             logger_info(f"🛠️ Инструмент '{tool_json['name']}' вызов → ({kwargs})")
             result = await session.call_tool(tool_json['name'], kwargs)
             logger_info(f"🛠️ Инструмент '{tool_json['name']}' результат  → {repr(result)}")
