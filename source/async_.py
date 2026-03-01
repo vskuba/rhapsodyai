@@ -1,15 +1,16 @@
 import asyncio
-
 from source.logging_ import logger_info
 
 async_loop: asyncio.AbstractEventLoop | None = None
 waiting_event: asyncio.Event | None = None
+async_loop_task = None
 
 
-def async_loop_init(loop: asyncio.AbstractEventLoop):
-    global async_loop, waiting_event
+def async_loop_init(loop: asyncio.AbstractEventLoop, loop_task):
+    global async_loop, waiting_event, async_loop_task
     async_loop = loop
     waiting_event = asyncio.Event()
+    async_loop_task = loop_task
 
 
 async def async_waiting_start():
@@ -31,3 +32,8 @@ def async_waiting_is_active() -> bool:
         return not waiting_event.is_set()
     logger_info('Асинхронноее ожидание: не активно')
     return False
+
+
+def async_loop_task_cancel():
+    global async_loop, async_loop_task
+    async_loop.call_soon_threadsafe(async_loop_task.cancel)

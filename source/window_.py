@@ -184,13 +184,6 @@ class WindowAi(ctk.CTk):
         print("Закрытие приложения...")
 
         try:
-            from source.ai.ai_thread import thread_task_started
-            for task in list(thread_task_started.values()):
-                task.aborted = True
-        except:
-            pass
-
-        try:
             from source.async_ import async_waiting_clear
             async_waiting_clear()
         except:

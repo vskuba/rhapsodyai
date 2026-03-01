@@ -59,7 +59,6 @@ class AbstractAiTask(ABC):
         self.schema_error: str | None = None
         self.history_save: bool = False
         self.max_tool_calls: int | None = 1
-        self.aborted: bool = False
 
     def input_values_set(self, values: dict[str, str]):
         for k in self.input_fields:

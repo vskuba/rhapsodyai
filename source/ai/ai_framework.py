@@ -78,13 +78,6 @@ class AbstractAIFramework(ABC):
             except queue.Empty:
                 pass
 
-            if getattr(task, 'aborted', False):
-                logger_info(f'🛑 Задача "{task.title}" прервана пользователем.')
-                queue_get()['chat'].put({'text': f'Задача "{task.title}" прервана пользователем', 'who': 'agent'})
-                self.task_manager.task_active_set(None)
-                window_chat_active_task_clear()
-                return
-
             try:
                 if task_exception and task:
                     logger_info('Возобновляем задачу..')

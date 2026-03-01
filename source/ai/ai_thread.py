@@ -18,9 +18,12 @@ thread_task_started: dict[str, AbstractAiTask] = {}
 def ai_thread_run_async(ai_framework: AiFramework, task: AbstractAiTask):  # Добавили task
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    async_loop_init(loop)
     try:
-        loop.run_until_complete(ai_framework.framework_run(task))
+        loop_task = loop.create_task(ai_framework.framework_run(task))
+        async_loop_init(loop, loop_task)
+        loop.run_until_complete(loop_task)
+    except asyncio.CancelledError:
+        logger_info("🛑 Поток успешно отменен")
     finally:
         loop.close()
 
@@ -44,7 +47,6 @@ def ai_thread_framework_run(window_instance):
 
                     thread_task_started[task.name] = task
                     queue_get()['chat'].put({'text': f'Запускаю задачу {task.title}', 'who': 'agent'})
-                    task.aborted = False
 
                     # Запускаем монитор через окно, передав поток и имя задачи
                     window_instance.after(100, lambda: window_instance.thread_monitor(thread, task))
