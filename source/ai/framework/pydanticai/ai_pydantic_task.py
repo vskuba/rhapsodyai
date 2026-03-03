@@ -2,13 +2,15 @@ import json
 import os
 import re
 import traceback
-from typing import Any, Tuple, Type
+from typing import Any, Tuple, List
 
 from pydantic import BaseModel, create_model, Field
 
 from source.ai.ai_task import AbstractAiTaskManager, AbstractAiTask, AiTaskYaml
+from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.config import config_get
 from source.logging_ import logger_info
+from source.mcp import mcp_config_get
 
 
 class AiPydanticTask(AbstractAiTask):
@@ -71,29 +73,13 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
                     env_value = os.getenv(var_name, "")
                     prompt_system = prompt_system.replace(f"{{env:{var_name}}}", env_value)
 
-
             prompt = sub_task_current.prompt
-            prompt, response_model, response_model_input_values = self.response_model_create(prompt)
 
-            pattern = r"\{([^}]+)\}"
-            matches = re.findall(pattern, prompt)
-            input_fields = [name for name in matches]
+            prompt, response_model, response_model_input_values = self.prompt_parse_response_model(prompt)
 
             input_values = input_values | response_model_input_values
 
-            prompt = prompt.format(**input_values)
-            prompt = re.sub(r"\{(\w+)}", '', re.sub(r'\s+', ' ', prompt).strip())
-
-            input_and_expected_data = []
-            if input_values:
-                json_input_str = json.dumps(input_values, ensure_ascii=False)
-                input_and_expected_data.append(f"<input_data>{json_input_str}</input_data>")
-
-            json_response_model = response_model.model_json_schema()
-            json_response_model_str = {k: p['type'] for k, p in json_response_model['properties'].items()}
-            input_and_expected_data.append(f"<expect_data>{json_response_model_str}</expect_data>")
-
-            prompt = '\n'.join(input_and_expected_data) + f'\n\n{prompt}'
+            prompt, input_fields = self.prompt_parse_input_fields(prompt, input_values, response_model)
 
             task = AiPydanticTask(
                 name=task_yaml.filename,
@@ -120,7 +106,7 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
             )
             raise
 
-    def response_model_create(self, prompt: str) -> Tuple[str, BaseModel, dict[str, str]]:
+    def prompt_parse_response_model(self, prompt: str) -> Tuple[str, BaseModel, dict[str, str]]:
         type_mapping = {
             'str': str,
             'bool': bool,
@@ -156,3 +142,66 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
 
         # Создаем класс на лету, наследуясь от BaseModel
         return prompt, create_model('ResponseModel', **response_model_fields), response_model_input_values
+
+    def prompt_parse_input_fields(
+            self, prompt: str,
+            input_values: dict[str, Any],
+            response_model: BaseModel
+    ) -> Tuple[str, List[str]]:
+
+        pattern = r"\{([^}]+)\}"
+        matches = re.findall(pattern, prompt)
+        input_fields = [name for name in matches]
+
+        prompt = prompt.format(**input_values)
+        prompt = re.sub(r"\{(\w+)}", '', re.sub(r'\s+', ' ', prompt).strip())
+
+        input_and_expected_data = []
+        if input_values:
+            json_input_str = json.dumps(input_values, ensure_ascii=False)
+            input_and_expected_data.append(f"<input_data>{json_input_str}</input_data>")
+
+        json_response_model = response_model.model_json_schema()
+        json_response_model_str = {k: p['type'] for k, p in json_response_model['properties'].items()}
+        input_and_expected_data.append(f"<expect_data>{json_response_model_str}</expect_data>")
+
+        prompt = '\n'.join(input_and_expected_data) + f'\n\n{prompt}'
+
+        return prompt, input_fields
+
+    def validate(self, task_yaml: AiTaskYaml):
+        try:
+
+            mcp_tools = []
+            if task_yaml.mcp_servers:
+                for mcp_server_name in task_yaml.mcp_servers:
+                    mcp_server_name = mcp_server_name.lower()
+                    mcp_config = mcp_config_get(mcp_server_name)
+
+                    if not mcp_config:
+                        raise ValueError(f"MCP сервер '{mcp_server_name}' не найден")
+
+                    mcp_tools += [t.name for t in mcp_config.tools]
+            local_tools = [t.__name__ for t in ai_tools_get() + ai_tools_permanent_get()]
+            tools = local_tools + mcp_tools
+
+            input_values = {}
+            for sub_task in task_yaml.sub_tasks:
+
+                for tool_name in sub_task.tools:
+                    if not any(t == tool_name for t in tools):
+                        raise ValueError(f"Инструмент '{tool_name}' не найден в доступных ai_tools и mcp_tools.")
+
+                # validate input_fields
+                prompt = sub_task.prompt
+                prompt, response_model, response_model_input_values = self.prompt_parse_response_model(prompt)
+                input_values = input_values | response_model_input_values
+                self.prompt_parse_input_fields(prompt, input_values, response_model)
+
+        except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Файл {task_yaml.filename}.yml validate ошибка: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
+            raise Exception(f'Variable {e} is not defined in input fields.')

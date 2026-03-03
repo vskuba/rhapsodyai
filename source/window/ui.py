@@ -1,5 +1,6 @@
 import time
 
+import CTkToolTip
 import customtkinter as ctk
 import source.window
 import source.ai.ai_thread
@@ -49,10 +50,12 @@ def task_item_draw(task_name, parent_container):
     # Пытаемся загрузить задачу для проверки валидности
     task = None
     is_yml_valid = False
+    yml_error_text = ''
     try:
         task = ai_task_manager.load(task_name)
         is_yml_valid = True
-    except Exception:
+    except Exception as e:
+        yml_error_text = str(e)
         pass
 
     # Создаем фрейм-карточку
@@ -91,6 +94,18 @@ def task_item_draw(task_name, parent_container):
             command=lambda: open_file_in_editor(ai_task_manager.filepath_get(task_name))
         )
         btn_yml.pack(side="left", padx=10)
+        CTkToolTip.CTkToolTip(
+            btn_yml,
+            message=yml_error_text,
+            font=("Arial", 27),
+            padding=(15, 10),
+            border_width=2,
+            border_color="#ff0000",
+            bg_color="#2b2b2b",
+            text_color="#ffffff",
+            corner_radius=8
+        )
+
         task_item_animate_pulse(btn_yml, ["#e67e22", "#f39c12", "#d35400", "#f39c12"], "📄 .yml")
 
     else:

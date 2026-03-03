@@ -1,17 +1,13 @@
 import traceback
 import uuid
+import yaml
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
-
-import yaml
 from pydantic import Field, BaseModel
-
-from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
-from source.config import config_get
 from source.logging_ import logger_info
-from source.mcp import mcp_config_get
 
 
 class AiTaskYamlSubTask(BaseModel):
@@ -96,6 +92,10 @@ class AbstractAiTaskManager(ABC):
     def create(self, task_yaml: AiTaskYaml, input_values: dict[str, Any], sub_task_index: int = 0) -> AbstractAiTask:
         pass
 
+    @abstractmethod
+    def validate(self, task_yaml: AiTaskYaml):
+        pass
+
     def load(self, name: str) -> AbstractAiTask:
         try:
             with open(self.filepath_get(name), 'r') as f:
@@ -115,45 +115,6 @@ class AbstractAiTaskManager(ABC):
             backtrace = traceback.format_exc()
             logger_info(
                 f"❌ Файл {name}.yml загрузка ошибка: {e}."
-                f"Полный стек вызовов:\n{backtrace}"
-            )
-            raise
-
-    def validate(self, task_yaml: AiTaskYaml):
-        try:
-
-            # validate mcp_servers
-            mcp_tools = []
-            if task_yaml.mcp_servers:
-                for mcp_server_name in task_yaml.mcp_servers:
-                    mcp_server_name = mcp_server_name.lower()
-                    mcp_config = mcp_config_get(mcp_server_name)
-
-                    if not mcp_config:
-                        raise ValueError(f"MCP сервер '{mcp_server_name}' не найден")
-
-                    mcp_tools += [t.name for t in mcp_config.tools]
-
-            # validate tools
-            local_tools = [t.__name__ for t in ai_tools_get() + ai_tools_permanent_get()]
-
-            tools = local_tools + mcp_tools
-            for sub_task in task_yaml.sub_tasks:
-                if sub_task.tools:
-                    for tool_name in sub_task.tools:
-                        if not any(t == tool_name for t in tools):
-                            raise ValueError(f"Инструмент '{tool_name}' не найден в доступных ai_tools и mcp_tools.")
-
-            # validate input_fields
-            # input_fields = []
-            # for sub_task in task_yaml.sub_task:
-            #     input_fields += sub_task.inputs_default.keys()
-            # task_dict['input_fields'] = input_fields
-
-        except Exception as e:
-            backtrace = traceback.format_exc()
-            logger_info(
-                f"❌ Файл {task_yaml.filename}.yml validate ошибка: {e}."
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise
