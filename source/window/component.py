@@ -1,7 +1,5 @@
 import customtkinter as ctk
 
-from source.ai.ai_task import AbstractAiTask
-
 
 class StdoutRedirector:
     def __init__(self, text_widget):
@@ -41,7 +39,7 @@ class CustomTextbox(ctk.CTkTextbox):
 
 
 class AiPopupWindow(ctk.CTkToplevel):
-    def __init__(self, master, text: str, task: AbstractAiTask, yes_no: bool = False):
+    def __init__(self, master, text: str, yes_no: bool = False):
         super().__init__(master)
 
         self.result = None  # Сюда запишем результат (True/False/None)
@@ -56,7 +54,7 @@ class AiPopupWindow(ctk.CTkToplevel):
         # Кнопка с заголовком задачи
         self.title_button = ctk.CTkButton(
             self,
-            text=task.title,
+            text='Агент спрашивает',
             font=("Arial", 28),
             fg_color="#3d65a1"
         )

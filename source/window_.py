@@ -21,9 +21,9 @@ from source.window.ui import (
     window_chat_loading_stop,
     window_chat_active_task_clear,
 )
-from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
 
 chat_message_last_get = None
+
 
 class WindowAi(ctk.CTk):
     def __init__(self):
@@ -123,7 +123,7 @@ class WindowAi(ctk.CTk):
                     except AttributeError:
                         print("[WARN] chat_agent_status_label не найден")
 
-                    AiPopupWindow(self, text, AiPydanticTaskManager().task_active_get())
+                    AiPopupWindow(self, text)
 
         except queue.Empty:
             pass

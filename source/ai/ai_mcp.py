@@ -1,6 +1,7 @@
 import contextlib
 import inspect
 import os
+import traceback
 from typing import Callable, Dict, Any
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
@@ -16,25 +17,33 @@ class AiMcpManager:
         self.sessions: dict[str, ClientSession] = {}
 
     async def mcp_server_add_tools(self, engine, task: AiPydanticTask):
-        mcp_sessions = await self._mcp_server_session(task.mcp_servers)
-        mcp_tools_added = []
-        for mcp_server_name, session in mcp_sessions.items():
-            mcp_config_tools_json = mcp_config_tools_json_get(mcp_server_name)
-            for tool_json in mcp_config_tools_json:
+        try:
+            mcp_sessions = await self._mcp_server_session(task.mcp_servers)
+            mcp_tools_added = []
+            for mcp_server_name, session in mcp_sessions.items():
+                mcp_config_tools_json = mcp_config_tools_json_get(mcp_server_name)
+                for tool_json in mcp_config_tools_json:
 
-                if not tool_json.get('name', None) in task.tools:
-                    continue
+                    if not tool_json.get('name', None) in task.tools:
+                        continue
 
-                mcp_tool_func = self._mcp_tool_func_from_json(mcp_server_name, tool_json, session)
+                    mcp_tool_func = self._mcp_tool_func_from_json(mcp_server_name, tool_json, session)
 
-                mcp_tools_added.append(
-                    f"🔹 {mcp_tool_func.__name__}{inspect.signature(mcp_tool_func)}"
-                    f"- {tool_json['description']}"
-                )
+                    mcp_tools_added.append(
+                        f"🔹 {mcp_tool_func.__name__}{inspect.signature(mcp_tool_func)}"
+                        f"- {tool_json['description']}"
+                    )
 
-                engine.tool_plain(mcp_tool_func)
+                    engine.tool_plain(mcp_tool_func)
 
-        logger_info('🛠️ MCP инструменты добавлены: \n' + ',\n'.join(mcp_tools_added))
+            logger_info('🛠️ MCP инструменты добавлены: \n' + ',\n'.join(mcp_tools_added))
+        except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка при добавлении инструментов для mcp серверов: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
+            raise
 
     async def mcp_server_close_all(self):
         await self.exit_stack.aclose()
@@ -57,34 +66,42 @@ class AiMcpManager:
     async def _mcp_server_session(self, mcp_servers: list[str]):
         logger_info(f"📡 Создание сессий для mcp серверов")
 
-        for mcp_server_name in mcp_servers:
-            mcp_server_name = mcp_server_name.lower()
-            mcp_config = mcp_config_get(mcp_server_name)
-            if not mcp_config:
-                raise ValueError(f'MCP конфиг для "{mcp_server_name}" не найден')
+        try:
+            for mcp_server_name in mcp_servers:
+                mcp_server_name = mcp_server_name.lower()
+                mcp_config = mcp_config_get(mcp_server_name)
+                if not mcp_config:
+                    raise ValueError(f'MCP конфиг для "{mcp_server_name}" не найден')
 
-            logger_info(f"📡 Создаем сессию для mcp сервера {mcp_server_name}")
+                logger_info(f"📡 Создаем сессию для mcp сервера {mcp_server_name}")
 
-            envs: dict[str, str] = {}
-            for i in mcp_config.env:
-                value = os.getenv(i.upper())
-                if not value:
-                    raise ValueError(f"MCP сервер '{mcp_config.title}' не может найти env: {i.upper()}")
-                envs[i] = value
+                envs: dict[str, str] = {}
+                for i in mcp_config.env:
+                    value = os.getenv(i.upper())
+                    if not value:
+                        raise ValueError(f"MCP сервер '{mcp_config.title}' не может найти env: {i.upper()}")
+                    envs[i] = value
 
-            server_params = StdioServerParameters(
-                command=mcp_config.cmd,
-                args=mcp_config.args,
-                env=envs if envs else None
+                server_params = StdioServerParameters(
+                    command=mcp_config.cmd,
+                    args=mcp_config.args,
+                    env=envs if envs else None
+                )
+                # Открываем stdio и сессию, добавляем в стек для очистки в конце
+                read, write = await self.exit_stack.enter_async_context(stdio_client(server_params))
+                session = await self.exit_stack.enter_async_context(ClientSession(read, write))
+                await session.initialize()
+
+                logger_info(f"📡 Cессия для mcp сервера '{mcp_config.title}' создана и инициализирована")
+                self.sessions[mcp_server_name] = session
+            return self.sessions
+        except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка при создании сессий для mcp серверов: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
             )
-            # Открываем stdio и сессию, добавляем в стек для очистки в конце
-            read, write = await self.exit_stack.enter_async_context(stdio_client(server_params))
-            session = await self.exit_stack.enter_async_context(ClientSession(read, write))
-            await session.initialize()
-
-            logger_info(f"📡 Cессия для mcp сервера '{mcp_config.title}' создана и инициализирована")
-            self.sessions[mcp_server_name] = session
-        return self.sessions
+            raise
 
     def _mcp_tool_decorator_from_json_input_schema(
             self,

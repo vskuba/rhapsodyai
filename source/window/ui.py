@@ -32,7 +32,7 @@ def task_item_toggle(button, task: AbstractAiTask):
 
     if current_status == "▶":
         # проверяеи валидацию yml
-        ai_task_manager.load(task.name, {})
+        ai_task_manager.load(task.name)
         # СТАТУС 2: АКТИВНЫЙ (Запуск -> Пульсация красным)
         button.configure(text="⏹")
         task_item_animate_pulse(button, ["#7C2A2A", "#A93232", "#FF4C4C", "#A93232"], "⏹")
@@ -50,7 +50,7 @@ def task_item_draw(task_name, parent_container):
     task = None
     is_yml_valid = False
     try:
-        task = ai_task_manager.load(task_name, {})
+        task = ai_task_manager.load(task_name)
         is_yml_valid = True
     except Exception:
         pass
@@ -178,7 +178,7 @@ def window_chat_clear() -> None:
 
 def window_chat_active_task_display(task: AbstractAiTask):
     current_step = task.sub_task_current_index + 1
-    total_steps = len(task.sub_task_list)
+    total_steps = len(task.yaml.sub_tasks)
     progress_text = f"Задача: {task.title}  |  Прогресс: {current_step}/{total_steps}"
     source.window.chat_dialog_task_active_label.configure(
         text=progress_text,

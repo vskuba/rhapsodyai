@@ -95,12 +95,12 @@ class AbstractAIFramework(ABC):
                 if response is not None:
                     queue_get()['chat'].put({"text": response.text, "who": 'agent'})
 
-                if self.task_manager.task_is_complete(task):
+                if self.task_manager.is_complete(task):
                     self.task_manager.task_active_set(None)
                     window_chat_active_task_clear()
                     return
                 else:
-                    task = self.task_manager.task_continue(task)
+                    task = self.task_manager.switch_next_sub_task(task)
                     continue
 
             except Exception as e:

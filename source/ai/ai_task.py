@@ -26,7 +26,8 @@ class AiTaskYaml(BaseModel):
     history_save: bool = False
     mcp_servers: list[str] = Field(default_factory=list)
     system_prompt: str
-    sub_task: list[AiTaskYamlSubTask] = Field(default_factory=list)
+    sub_tasks: list[AiTaskYamlSubTask] = Field(default_factory=list)
+    filename: str | None = None
 
 
 @dataclass
@@ -34,7 +35,6 @@ class AiSubTask:
     name: str
     prompt: str
     tools: list[Callable] = field(default_factory=list)
-    inputs_default: dict[str, str] = field(default_factory=dict)
 
 
 class AbstractAiTask(ABC):
@@ -42,7 +42,8 @@ class AbstractAiTask(ABC):
             self,
             name: str,
             title: str,
-            sub_task_list: list[AiSubTask],
+            prompt: str,
+            system_prompt: str,
             sub_task_current_index: int,
             input_fields: list[str],
             mcp_servers: list[str],
@@ -50,15 +51,14 @@ class AbstractAiTask(ABC):
         self.id = str(uuid.uuid4())
         self.name = name
         self.title = title
-        self.sub_task_list = sub_task_list
+        self.prompt: str = prompt
+        self.system_prompt = system_prompt
         self.sub_task_current_index = sub_task_current_index
         self.input_fields = input_fields
         self.mcp_servers = mcp_servers
         self.input_values: dict[str, str] = {}
-        self.prompt_finalized: str | None = None
-        self.schema_error: str | None = None
+        self.yaml: AiTaskYaml | None = None
         self.history_save: bool = False
-        self.max_tool_calls: int | None = 1
 
     def input_values_set(self, values: dict[str, str]):
         for k in self.input_fields:
@@ -93,15 +93,34 @@ class AbstractAiTaskManager(ABC):
         pass
 
     @abstractmethod
-    def load(self, name: str, input_values: dict[str, str], sub_task_index: int = 0) -> AbstractAiTask:
+    def create(self, task_yaml: AiTaskYaml, input_values: dict[str, Any], sub_task_index: int = 0) -> AbstractAiTask:
         pass
 
-    def task_yaml_validate(self, name: str) -> dict[str, Any]:
+    def load(self, name: str) -> AbstractAiTask:
         try:
             with open(self.filepath_get(name), 'r') as f:
                 task_dict = yaml.safe_load(f)
 
-            task_yaml = AiTaskYaml(**task_dict)  # validate yaml by model class
+            task_yaml = AiTaskYaml(**task_dict)
+            task_yaml.filename = name
+
+            self.validate(task_yaml)
+
+            task = self.create(task_yaml, {}, 0)
+            task.yaml = task_yaml
+
+            return task
+
+        except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Файл {name}.yml загрузка ошибка: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
+            raise
+
+    def validate(self, task_yaml: AiTaskYaml):
+        try:
 
             # validate mcp_servers
             mcp_tools = []
@@ -119,47 +138,41 @@ class AbstractAiTaskManager(ABC):
             local_tools = [t.__name__ for t in ai_tools_get() + ai_tools_permanent_get()]
 
             tools = local_tools + mcp_tools
-            for sub_task in task_yaml.sub_task:
+            for sub_task in task_yaml.sub_tasks:
                 if sub_task.tools:
                     for tool_name in sub_task.tools:
                         if not any(t == tool_name for t in tools):
                             raise ValueError(f"Инструмент '{tool_name}' не найден в доступных ai_tools и mcp_tools.")
 
-            #validate input_fields
+            # validate input_fields
             # input_fields = []
             # for sub_task in task_yaml.sub_task:
             #     input_fields += sub_task.inputs_default.keys()
             # task_dict['input_fields'] = input_fields
 
-            return task_dict
         except Exception as e:
             backtrace = traceback.format_exc()
             logger_info(
-                f"❌ Файл {name}.yml validate ошибка: {e}."
+                f"❌ Файл {task_yaml.filename}.yml validate ошибка: {e}."
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise
 
-    def task_yaml_inputs_get(self):
-        return []
-
-    def task_is_complete(self, task: AbstractAiTask) -> bool:
-        return len(task.sub_task_list) <= (task.sub_task_current_index + 1)
-
-    def task_continue(self, task: AbstractAiTask) -> AbstractAiTask:
-        sub_task = self.load(task.name, task.input_values, task.sub_task_current_index + 1)
+    def switch_next_sub_task(self, task: AbstractAiTask) -> AbstractAiTask:
+        sub_task = self.create(task.yaml, task.input_values, task.sub_task_current_index + 1)
         sub_task.id = task.id
+        sub_task.yaml = task.yaml
+
         return sub_task
+
+    def is_complete(self, task: AbstractAiTask) -> bool:
+        return len(task.yaml.sub_tasks) <= (task.sub_task_current_index + 1)
 
     def task_active_set(self, task: AbstractAiTask | None):
         self.active_task = task
 
-    def task_active_get(self, sub_task_index: int = 0):
-        return self.active_task if self.active_task else self.load(
-            config_get('welcome_task_name'),
-            {},
-            sub_task_index
-        )
+    def task_active_get(self):
+        return self.active_task
 
     def task_schema_yaml_update(self, name: str, key: str, value: str | bool):
         filepath = self.filepath_get(name)

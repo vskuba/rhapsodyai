@@ -112,28 +112,9 @@ class AiPydanticFramework(AbstractAIFramework):
         return engine
 
     async def engine_run(self, task: AiPydanticTask):
-        input_values = task.input_values_get()
-        # print('Вводные данные: %s' % input_values)
-
-        prompt = task.prompt.format(**input_values)
-        prompt = re.sub(r"\{(\w+)}", '', re.sub(r'\s+', ' ', prompt).strip())
-
-        task.prompt_finalized = prompt
-
-        input_and_expected_data = []
-        if input_values:
-            json_input_str = json.dumps(input_values, ensure_ascii=False)
-            input_and_expected_data.append(f"<input_data>{json_input_str}</input_data>")
-
-        json_response_model = task.response_model.model_json_schema()
-        json_response_model_str = {k: p['type'] for k, p in json_response_model['properties'].items()}
-        input_and_expected_data.append(f"<expect_data>{json_response_model_str}</expect_data>")
-
-        task.prompt_finalized = '\n'.join(input_and_expected_data) + f'\n\n{task.prompt_finalized}'
-
         logger_info(
-            f'🧱 Подзадача {task.sub_task_current_index + 1}/{len(task.sub_task_list)}, '
-            f'prompt: {task.prompt_finalized}'
+            f'🧱 Подзадача {task.sub_task_current_index + 1}/{len(task.yaml.sub_tasks)}, '
+            f'prompt: {task.prompt}'
         )
         logger_info(
             f'🧠 Передаем историю агенту:\n'
@@ -148,8 +129,8 @@ class AiPydanticFramework(AbstractAIFramework):
                 await ai_mcp_manager.mcp_server_add_tools(engine, task)
 
             return await engine.run(
-                user_prompt=task.prompt_finalized,
-                message_history=self.history,
+                user_prompt=task.prompt,
+                # message_history=self.history,
                 model_settings=ModelSettings(
                     parallel_tool_calls=True,
                     temperature=0.0,
@@ -170,13 +151,13 @@ class AiPydanticFramework(AbstractAIFramework):
 
     def engine_result_handle(self, result: AgentRunResult, task: AiPydanticTask) -> AIFrameworkResult | None:
         report = "\n\n======== Ответ от LLM: \"%s\" (%d/%d) выполнена ==================================\n\n" % \
-                 (task.title, task.sub_task_current_index + 1, len(task.sub_task_list))
+                 (task.title, task.sub_task_current_index + 1, len(task.yaml.sub_tasks))
         if not result or not str(result).strip():
             return None
         report += "\n\n------- System prompt ------------------------------------------------------------\n\n"
         report += task.system_prompt
         report += "\n\n------- Prompt -------------------------------------------------------------------\n\n"
-        report += task.prompt_finalized
+        report += task.prompt
         report += "\n\n------- Expect response model ----------------------------------------------------\n\n"
         fields_info = "\n".join(
             f"  - {name}: {info.annotation} (desc: {info.description})"
@@ -218,7 +199,7 @@ class AiPydanticFramework(AbstractAIFramework):
             self.history += result.new_messages()
 
         logger_info(f'🧠 Получили новые сообщения истории в задаче "{task.title}"'
-                    f' ({task.sub_task_current_index + 1}/{len(task.sub_task_list)})\n'
+                    f' ({task.sub_task_current_index + 1}/{len(task.yaml.sub_tasks)})\n'
                     f' {self.history}')
 
         if task.history_save:

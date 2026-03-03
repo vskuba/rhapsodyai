@@ -88,7 +88,6 @@ def ai_tools_permanent_get() -> list[Callable]:
 
         # ------ Chat
         chat_me,
-        chat_me_question,
 
     ]]
 
@@ -139,7 +138,8 @@ def ai_tool_decorator(tool: Callable) -> Callable:
 
 def task_abort(final_text: str) -> bool:
     """
-    This function close active task.
+    This function close active task. Invoke this tool only if you have instruction exactly 'abort task'.
+    In case if you have instruction 'finish task', 'complete task' etc do not use this tool.
     Argument final_text is used for display in task report.
     """
     queue_get()['task_abort'].put(True)
@@ -170,6 +170,7 @@ async def chat_me_question(question: str) -> str:
 
     await async_waiting_start()
 
+    await asyncio.sleep(0.1)
     chat_last_message = queue_get()['chat_response'].get_nowait()
 
     return f"Пользователь ответил '{chat_last_message}'"

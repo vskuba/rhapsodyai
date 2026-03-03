@@ -1,14 +1,10 @@
 import threading
-
 import time
 import traceback
-
 import speech_recognition as sr
 import numpy as np
 
 from faster_whisper import WhisperModel
-
-from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
 from source.config import config_get
 from source.logging_ import logger_info
 from source.microphone import microphone_create_microphone
@@ -26,6 +22,7 @@ def faster_whisper_enable():
         daemon=True
     )).start()
     logger_info('🗣️ faster_whisper запущен в потоке')
+
 
 def faster_whisper_create_model(whisper_model_name: str) -> WhisperModel:
     """
@@ -82,11 +79,6 @@ def faster_whisper_listening(
                     "text": text,
                     "who": 'iam'
                 })
-
-                ai_task_manager = AiPydanticTaskManager()
-                welcome_task = ai_task_manager.load(config_get('welcome_task_name'), {'question': text})
-                if ai_task_manager.task_active_get().name == welcome_task.name:
-                    queue_get()['task'].put(welcome_task)
 
                 # print(">>> Слушаю далее... (говорите)")
 

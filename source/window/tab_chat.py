@@ -132,12 +132,12 @@ class TabChat:
 
         ctk.CTkButton(
             fast_btn_frame,
-            text="Да",
+            text="Yes",
             fg_color="#2D5A27",
             hover_color="#3E7B35",
             font=("Arial", 20, "bold"),
             height=45,
-            command=lambda: window_chat_input_send('Да')
+            command=lambda: window_chat_input_send('Yes')
         ).pack(side="left", expand=True, padx=5, fill="x")
 
         voice_check = ctk.CTkCheckBox(
@@ -150,12 +150,12 @@ class TabChat:
 
         ctk.CTkButton(
             fast_btn_frame,
-            text="Нет",
+            text="No",
             fg_color="#7C2A2A",
             hover_color="#A93232",
             font=("Arial", 20, "bold"),
             height=45,
-            command=lambda: window_chat_input_send('Нет')
+            command=lambda: window_chat_input_send('No')
         ).pack(side="left", expand=True, padx=5, fill="x")
 
         # Правая колонка: задачи

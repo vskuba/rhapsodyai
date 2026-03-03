@@ -1,11 +1,12 @@
+import json
 import os
 import re
 import traceback
-from typing import Any, Callable
+from typing import Any, Tuple, Type
 
 from pydantic import BaseModel, create_model, Field
 
-from source.ai.ai_task import AbstractAiTaskManager, AbstractAiTask, AiSubTask
+from source.ai.ai_task import AbstractAiTaskManager, AbstractAiTask, AiTaskYaml
 from source.config import config_get
 from source.logging_ import logger_info
 
@@ -15,19 +16,17 @@ class AiPydanticTask(AbstractAiTask):
             self,
             name: str,
             title: str,
-            sub_task_list: list[AiSubTask],
+            prompt: str,
+            system_prompt: str,
             sub_task_current_index: int,
             input_fields: list[str],
-            system_prompt: str,
-            prompt: str,
-            tools: list[Callable],
-            response_model: BaseModel | str = str,
-            mcp_servers: list[str] = list,
+            tools: list[str],
+            mcp_servers: list[str],
+            response_model: BaseModel | str,
+
     ):
-        super().__init__(name, title, sub_task_list, sub_task_current_index, input_fields, mcp_servers)
+        super().__init__(name, title, prompt, system_prompt, sub_task_current_index, input_fields, mcp_servers)
         self.name = name
-        self.system_prompt = system_prompt
-        self.prompt = prompt
         self.tools = tools
         self.response_model = response_model
 
@@ -51,13 +50,10 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
 
         return self.dir() + '/' + name + '.yml'
 
-    def load(self, name: str, input_values: dict[str, str], sub_task_index: int = 0) -> AiPydanticTask:
+    def create(self, task_yaml: AiTaskYaml, input_values: dict[str, Any], sub_task_index: int = 0) -> AiPydanticTask:
         try:
-            task_dict = self.task_yaml_validate(name)
-
-            title = task_dict['title']
-            sub_task_list = [AiSubTask(**({'inputs_default': {}} | item)) for item in task_dict.get('sub_task', [])]
-            sub_task = sub_task_list[sub_task_index]
+            title = task_yaml.title
+            sub_task_current = task_yaml.sub_tasks[sub_task_index]
 
             type_mapping = {
                 'str': str,
@@ -67,7 +63,7 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
                 'list': list
             }
 
-            prompt_system = task_dict.get('system_prompt', '')
+            prompt_system = task_yaml.system_prompt
             pattern = r"\{env:([^}]+)}"
             matches = re.findall(pattern, prompt_system)
             if matches:
@@ -75,64 +71,88 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
                     env_value = os.getenv(var_name, "")
                     prompt_system = prompt_system.replace(f"{{env:{var_name}}}", env_value)
 
-            prompt = sub_task.prompt
-            prompt_extra = ''
 
-            # Формируем поля для нашей модели
-            pattern = r"\{([^}|]+)\|([^:]+):(" + "|".join(type_mapping) + r")\}"
-            matches = re.findall(pattern, prompt)
-
-            # ожидаем final_result только если нужна model response
-            response_model_fields = {
-                'text': (str, Field(description="Final result"))
-            }
-            response_model_fields_mapping = {}
-
-            if matches:
-                response_model_fields \
-                    = {
-                          var: (type_mapping.get(t, Any), Field(description=desc)) for desc, var, t in
-                          matches
-                      } | response_model_fields
-                response_model_fields_mapping = {var: name for name, var, _ in matches}
-                prompt = re.sub(r"\{([^}|]+)\|[^:]+:(" + "|".join(type_mapping) + r")}", r"\1", prompt)
-
-                # json_response_model = [str({k: t[0].__name__ for k, t in response_model_fields.items()})]
-                # json_keys = ','.join(json_response_model)
-                # prompt_extra = f"""
-                # IMPORTANT: Your response MUST be in JSON format.
-                # The JSON must regarding follow structure: "{json_keys}".
-                # """
-
-            # Создаем класс на лету, наследуясь от BaseModel
-            response_model = create_model('ResponseModel', **response_model_fields)
+            prompt = sub_task_current.prompt
+            prompt, response_model, response_model_input_values = self.response_model_create(prompt)
 
             pattern = r"\{([^}]+)\}"
             matches = re.findall(pattern, prompt)
             input_fields = [name for name in matches]
 
+            input_values = input_values | response_model_input_values
+
+            prompt = prompt.format(**input_values)
+            prompt = re.sub(r"\{(\w+)}", '', re.sub(r'\s+', ' ', prompt).strip())
+
+            input_and_expected_data = []
+            if input_values:
+                json_input_str = json.dumps(input_values, ensure_ascii=False)
+                input_and_expected_data.append(f"<input_data>{json_input_str}</input_data>")
+
+            json_response_model = response_model.model_json_schema()
+            json_response_model_str = {k: p['type'] for k, p in json_response_model['properties'].items()}
+            input_and_expected_data.append(f"<expect_data>{json_response_model_str}</expect_data>")
+
+            prompt = '\n'.join(input_and_expected_data) + f'\n\n{prompt}'
+
             task = AiPydanticTask(
-                name=name,
+                name=task_yaml.filename,
                 title=title,
-                system_prompt=prompt_system + prompt_extra,
                 prompt=prompt,
+                system_prompt=prompt_system,
                 input_fields=input_fields,
                 response_model=response_model,
-                tools=sub_task.tools,
-                sub_task_list=sub_task_list,
+                tools=sub_task_current.tools,
                 sub_task_current_index=sub_task_index,
-                mcp_servers=task_dict.get('mcp_servers', [])
+                mcp_servers=task_yaml.mcp_servers
             )
 
-            task.input_values_set(sub_task.inputs_default | input_values | response_model_fields_mapping)
-            task.history_save = task_dict.get('history_save', False)
+            task.input_values_set(input_values)
+            task.history_save = task_yaml.history_save
 
             return task
 
         except Exception as e:
             backtrace = traceback.format_exc()
             logger_info(
-                f"❌ Ошибка при создании задачи {name}: {e}."
+                f"❌ Ошибка при создании задачи {task_yaml.filename}: {e}."
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise
+
+    def response_model_create(self, prompt: str) -> Tuple[str, BaseModel, dict[str, str]]:
+        type_mapping = {
+            'str': str,
+            'bool': bool,
+            'int': int,
+            'float': float,
+            'list': list
+        }
+        # Формируем поля для нашей модели
+        pattern = r"\{([^}|]+)\|([^:]+):(" + "|".join(type_mapping) + r")\}"
+        matches = re.findall(pattern, prompt)
+
+        # ожидаем final_result только если нужна model response
+        response_model_fields = {
+            'text': (str, Field(description="Final result"))
+        }
+        response_model_input_values = {}
+
+        if matches:
+            response_model_fields \
+                = {
+                      var: (type_mapping.get(t, Any), Field(description=desc)) for desc, var, t in
+                      matches
+                  } | response_model_fields
+            response_model_input_values = {var: name for name, var, _ in matches}
+            prompt = re.sub(r"\{([^}|]+)\|[^:]+:(" + "|".join(type_mapping) + r")}", r"\1", prompt)
+
+            # json_response_model = [str({k: t[0].__name__ for k, t in response_model_fields.items()})]
+            # json_keys = ','.join(json_response_model)
+            # prompt_extra = f"""
+            # IMPORTANT: Your response MUST be in JSON format.
+            # The JSON must regarding follow structure: "{json_keys}".
+            # """
+
+        # Создаем класс на лету, наследуясь от BaseModel
+        return prompt, create_model('ResponseModel', **response_model_fields), response_model_input_values
