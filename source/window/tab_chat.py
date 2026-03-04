@@ -4,7 +4,7 @@ from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManage
 
 from source.config import config_get, config_update_and_save
 from source.window.component import CustomTextbox
-from source.window.ui import task_item_draw, window_chat_input_send, window_chat_voice_toggle
+from source.window.ui import task_item_draw, window_chat_input_send, window_chat_voice_toggle, agent_item_draw
 
 ai_task_manager = AiPydanticTaskManager()
 
@@ -23,8 +23,9 @@ class TabChat:
         self.chat_frame = ctk.CTkFrame(parent_frame, corner_radius=10, fg_color="transparent")
         self.chat_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.chat_frame.grid_columnconfigure(0, weight=2)
-        self.chat_frame.grid_columnconfigure(1, weight=3)
+        self.chat_frame.grid_columnconfigure(0, weight=3)  # Чат (было 2)
+        self.chat_frame.grid_columnconfigure(1, weight=1)  # Агенты (НОВАЯ)
+        self.chat_frame.grid_columnconfigure(2, weight=2)  # Задачи (было 1)
         self.chat_frame.grid_rowconfigure(0, weight=1)
 
         # Диалог (левая колонка)
@@ -185,6 +186,22 @@ class TabChat:
             command=lambda: window_chat_input_send('No')
         ).pack(side="left", expand=True, padx=5, fill="x")
 
+        # 2. Колонку: Агенты
+        chat_frame_agents = ctk.CTkScrollableFrame(
+            self.chat_frame,
+            label_text="Агенты",
+            label_font=("Arial", 23, "bold"),
+            border_width=1
+        )
+        chat_frame_agents._label.configure(anchor="w")
+        chat_frame_agents.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=10, pady=10)
+
+        agents_list = ["Researcher", "Github Copilot", "OpenClaw"]
+        active_agent_name = "Researcher"  # Только один будет мигать
+
+        for agent in agents_list:
+            agent_item_draw(agent, chat_frame_agents, (agent == active_agent_name))
+
         # Правая колонка: задачи
         chat_frame_tasks = ctk.CTkScrollableFrame(
             self.chat_frame,
@@ -193,7 +210,7 @@ class TabChat:
             border_width=1
         )
         chat_frame_tasks._label.configure(anchor="w")
-        chat_frame_tasks.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=10, pady=10)
+        chat_frame_tasks.grid(row=0, column=2, rowspan=3, sticky="nsew", padx=10, pady=10)
 
         # Отрисовка задач
         for name in ai_task_manager.list():

@@ -13,6 +13,7 @@ from source.logging_ import logger_info
 from source.queue import queue_get
 
 ai_task_manager = AiPydanticTaskManager()
+agents_widgets_storage = {}
 
 
 def task_item_animate_pulse(button, colors, text_target, state=0):
@@ -225,3 +226,75 @@ def window_chat_loading_stop():
     source.window.chat_progress_bar.stop()
     source.window.chat_progress_bar.pack_forget()
     source.window.chat_agent_status_label.configure(text="")
+
+
+def agent_animate_pulse(widget, state=True):
+    if not widget.winfo_exists(): return
+
+    current_color = widget.cget("fg_color")
+    if current_color == "#444444":
+        return
+
+    color = "#3a7ebf" if state else "#1f3d5e"
+    widget.configure(fg_color=color)
+
+    widget.after(600, lambda: agent_animate_pulse(widget, not state))
+
+
+def agent_item_draw(agent_name: str, parent_frame, is_active: bool = False):
+    # Контейнер
+    agent_card = ctk.CTkFrame(
+        parent_frame,
+        fg_color="#3d424b" if is_active else "#2b2b2b",
+        corner_radius=8,
+        cursor="hand2"
+    )
+    agent_card.pack(fill="x", padx=5, pady=5)
+
+    # Индикатор
+    status_indicator = ctk.CTkButton(
+        agent_card, text="", width=24, height=24, corner_radius=7,
+        fg_color="#1f538d" if is_active else "#444444",
+        hover=False, state="disabled", cursor="hand2"
+    )
+    status_indicator.pack(side="left", padx=10, pady=10)
+
+    # Текст
+    name_label = ctk.CTkLabel(
+        agent_card, text=agent_name, font=("Arial", 26, "bold"),
+        text_color="#A8E6CF" if is_active else "white",
+        cursor="hand2"
+    )
+    name_label.pack(side="left", padx=5)
+
+    # Сохраняем в глобальный словарь
+    agents_widgets_storage[agent_name] = (agent_card, status_indicator, name_label)
+
+    # Функция-обертка для клика
+    def on_click(event):
+        select_agent(agent_name)
+
+    # Привязываем клик к фрейму и лейблу (чтобы попадать по всей области)
+    agent_card.bind("<Button-1>", on_click)
+    name_label.bind("<Button-1>", on_click)
+
+    if is_active:
+        agent_animate_pulse(status_indicator)
+
+    return agent_card
+
+
+def select_agent(selected_name):
+    for name, (card, indicator, label) in agents_widgets_storage.items():
+        if name == selected_name:
+            # Делаем активным
+            card.configure(fg_color="#3d424b")  # Подсветка карточки
+            indicator.configure(fg_color="#1f538d")
+            label.configure(text_color="#A8E6CF")
+            # Запускаем анимацию мигания (если еще не запущена)
+            agent_animate_pulse(indicator, True)
+        else:
+            # Делаем неактивным
+            card.configure(fg_color="#2b2b2b")
+            indicator.configure(fg_color="#444444")
+            label.configure(text_color="white")
