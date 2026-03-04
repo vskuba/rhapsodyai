@@ -140,13 +140,40 @@ class TabChat:
             command=lambda: window_chat_input_send('Yes')
         ).pack(side="left", expand=True, padx=5, fill="x")
 
-        voice_check = ctk.CTkCheckBox(
+        def mic_on(event):
+            mic_btn.configure(
+                text_color="#ff4444",  # Микрофон становится красным
+                fg_color="#6B0F0F",  # Кнопка визуально "вдавливается" (темнеет)
+                border_color="#753F3F"
+            )
+            window_chat_voice_toggle(True)
+
+        def mic_off(event):
+            mic_btn.configure(
+                text_color="black",  # Микрофон снова черный
+                fg_color="#3d424b",  # Кнопка возвращается в обычный вид
+                border_color="#2b2b2b"
+            )
+            window_chat_voice_toggle(False)
+
+        # 2. Создаем саму кнопку
+        mic_btn = ctk.CTkButton(
             fast_btn_frame,
-            text="🗣️",
-            font=("Arial", 24),
-            command=lambda: window_chat_voice_toggle(voice_check.get())
+            text="🎤",
+            font=("Arial", 35),
+            width=60,
+            height=60,
+            corner_radius=30,
+            fg_color="#3d424b",
+            text_color="black",
+            border_width=2,
+            border_color="#858282",
+            hover=False
         )
-        voice_check.pack(side="left", padx=20)
+        mic_btn.pack(side="left", padx=20)
+
+        mic_btn.bind("<Button-1>", mic_on)
+        mic_btn.bind("<ButtonRelease-1>", mic_off)
 
         ctk.CTkButton(
             fast_btn_frame,

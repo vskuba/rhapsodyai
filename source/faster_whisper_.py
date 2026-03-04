@@ -35,56 +35,53 @@ def faster_whisper_listening(
         whisper_model: WhisperModel,
         recognizer: sr.Recognizer
 ) -> None:
-    """
-    Слушает микрофон. Трансформирует звук в текст и отдает текст как результат.
-    """
+    recognizer.energy_threshold = 300
+
     with sr.Microphone(sample_rate=16000) as source:
-        print(">>> Я вас слушаю... (говорите)")
+        logger_info("🎙️ Микрофон готов к работе")
 
         while True:
             try:
-
                 if not window_chat_voice_state_get():
-                    time.sleep(0.3)
+                    time.sleep(0.05)  # Меньше задержка для отзывчивости
                     continue
 
-                # print('Язык распознавания: %s' % config['whisper_language'])
-                # Записываем фразу до наступления тишины
-                audio = recognizer.listen(source, phrase_time_limit=5)
+                print("🎤 Запись пошла (держите кнопку)...")
 
-                # Конвертируем байты в формат, который понимает Whisper (float32)
-                audio_data = np.frombuffer(audio.get_raw_data(), np.int16).flatten().astype(np.float32) / 32768.0
+                frames = []
+                while window_chat_voice_state_get():
+                    data = source.stream.read(1024)
+                    frames.append(data)
 
-                # Распознаем
-                segments, info = whisper_model.transcribe(
+                if not frames:
+                    continue
+
+                print("🎤 Кнопка отпущена. Обработка...")
+
+                # Склеиваем и конвертируем
+                raw_data = b"".join(frames)
+                audio_data = np.frombuffer(raw_data, np.int16).flatten().astype(np.float32) / 32768.0
+
+                # 3. Транскрибация
+                segments, _ = whisper_model.transcribe(
                     audio_data,
                     language=config_get('whisper_language'),
-                    beam_size=1,
-                    condition_on_previous_text=False,
-                    no_speech_threshold=0.5,
-                    repetition_penalty=1.0,
                     vad_filter=True,
-                    best_of=1
+                    beam_size=1  # Для максимальной скорости на CPU
                 )
 
                 text = "".join([segment.text for segment in segments]).strip()
 
-                # print("Результат звука в текст: %s" % text)
-
-                if not text or not window_chat_voice_state_get():
-                    time.sleep(0.3)
-                    continue
-
-                queue_get()['chat'].put({
-                    "text": text,
-                    "who": 'iam'
-                })
-
-                # print(">>> Слушаю далее... (говорите)")
+                if text:
+                    logger_info(f"🗣️️ Распознано: {text}")
+                    queue_get()['chat'].put({"text": text, "who": 'iam'})
+                else:
+                    logger_info("⚠️ Речь не распознана.")
 
             except Exception as e:
                 backtrace = traceback.format_exc()
                 logger_info(
-                    f"❌ 🗣️ Ошибка: {e}."
+                    f"❌ Ошибка аудио: {e}"
                     f"Полный стек вызовов:\n{backtrace}"
                 )
+                break
