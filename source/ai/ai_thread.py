@@ -4,10 +4,11 @@ import threading
 import time
 import traceback
 
-from source.ai.ai_framework import AiFramework
+
 from source.ai.ai_task import AbstractAiTask
-from source.ai.framework.pydanticai.ai_pydantic_framework import AiPydanticFramework
-from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
+from source.ai.ai_task_framework import AiFramework
+from source.ai.framework.pydanticai.ai_task_framework_pydantic import AiPydanticFramework
+from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTaskManager
 from source.async_ import async_loop_init
 from source.logging_ import logger_info
 from source.queue import queue_get

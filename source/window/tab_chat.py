@@ -1,6 +1,6 @@
 import customtkinter as ctk
 import source.window
-from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
+from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTaskManager
 
 from source.config import config_get, config_update_and_save
 from source.window.component import CustomTextbox

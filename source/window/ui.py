@@ -6,7 +6,7 @@ import source.window
 import source.ai.ai_thread
 
 from source.ai.ai_task import AbstractAiTask
-from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTaskManager
+from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTaskManager
 from source.async_ import async_waiting_is_active, async_waiting_clear, async_loop_task_cancel
 from source.filesystem import open_file_in_editor
 from source.logging_ import logger_info

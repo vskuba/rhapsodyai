@@ -1,4 +1,3 @@
-import json
 import os
 import re
 import traceback
@@ -13,10 +12,9 @@ from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from source.ai.ai_mcp import AiMcpManager
+from source.ai.ai_task_framework import AbstractAIFramework, AIFrameworkResult
 from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
-from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTask
-
-from source.ai.ai_framework import AbstractAIFramework, AIFrameworkResult
+from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTask
 from source.config import config_get
 from pydantic_ai import Agent, AgentRunResult, ToolCallPart, ToolReturnPart, ModelMessage, ModelSettings
 from pydantic_ai.models.anthropic import AnthropicModel

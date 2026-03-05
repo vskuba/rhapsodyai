@@ -6,7 +6,7 @@ from typing import Callable, Dict, Any
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
-from source.ai.framework.pydanticai.ai_pydantic_task import AiPydanticTask
+from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTask
 from source.logging_ import logger_info
 from source.mcp import mcp_config_get, McpTool, mcp_config_tools_json_get
 
