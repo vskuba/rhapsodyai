@@ -1,12 +1,12 @@
 import customtkinter as ctk
 import source.window
-from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTaskManager
 
+from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
 from source.config import config_get, config_update_and_save
 from source.window.component import CustomTextbox
 from source.window.ui import task_item_draw, window_chat_input_send, window_chat_voice_toggle, agent_item_draw
 
-ai_task_manager = AiPydanticTaskManager()
+ai_task_manager = AiFrameworkTaskManagerPydantic()
 
 class TabChat:
     def __init__(self):

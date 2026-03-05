@@ -2,12 +2,11 @@ import os
 import threading
 import time
 import traceback
-
 import queue
 import source.window
 import customtkinter as ctk
 
-from source.ai.ai_task import AbstractAiTask
+from source.ai.ai_framework_task import AbstractAiFrameworkTaskModel
 from source.logging_ import logger_info
 from source.queue import queue_get
 from source.window.component import AiPopupWindow
@@ -74,6 +73,7 @@ class WindowAi(ctk.CTk):
         # Запуск проверки очереди чата
         self.queue_chat()
         self.queue_tools()
+        self.queue_task_complete()
 
         self.protocol("WM_DELETE_WINDOW", self.window_close)
 
@@ -153,7 +153,24 @@ class WindowAi(ctk.CTk):
 
         self.after(100, self.queue_tools)
 
-    def thread_monitor(self, thread: threading.Thread, task: AbstractAiTask):
+    def queue_task_complete(self):
+        try:
+            message = queue_get()['task_complete'].get_nowait()
+            logger_info(f"🛠 Сообщение из очереди task_complete {message}")
+            window_chat_active_task_clear()
+
+        except queue.Empty:
+            pass
+        except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ 🛠 Ошибка в task_complete: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
+
+        self.after(100, self.queue_task_complete)
+
+    def thread_monitor(self, thread: threading.Thread, task: AbstractAiFrameworkTaskModel):
         if thread.is_alive():
             self.after(500, lambda: self.thread_monitor(thread, task))
         else:

@@ -6,9 +6,9 @@ from typing import Callable, Dict, Any
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
-from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTask
+from source.ai.framework.pydanticai.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
 from source.logging_ import logger_info
-from source.mcp import mcp_config_get, McpTool, mcp_config_tools_json_get
+from source.mcp import mcp_config_get, mcp_config_tools_json_get
 
 
 class AiMcpManager:
@@ -16,7 +16,7 @@ class AiMcpManager:
         self.exit_stack = contextlib.AsyncExitStack()  # Для авто-закрытия всех серверов
         self.sessions: dict[str, ClientSession] = {}
 
-    async def mcp_server_add_tools(self, engine, task: AiPydanticTask):
+    async def mcp_server_add_tools(self, engine, task: AiFrameworkTaskModelPydantic):
         try:
             mcp_sessions = await self._mcp_server_session(task.mcp_servers)
             mcp_tools_added = []

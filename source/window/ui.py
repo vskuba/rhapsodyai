@@ -1,18 +1,17 @@
 import time
-
 import CTkToolTip
 import customtkinter as ctk
 import source.window
 import source.ai.ai_thread
+from source.ai.ai_framework_task import AbstractAiFrameworkTaskModel
+from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
 
-from source.ai.ai_task import AbstractAiTask
-from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTaskManager
 from source.async_ import async_waiting_is_active, async_waiting_clear, async_loop_task_cancel
 from source.filesystem import open_file_in_editor
 from source.logging_ import logger_info
 from source.queue import queue_get
 
-ai_task_manager = AiPydanticTaskManager()
+ai_task_manager = AiFrameworkTaskManagerPydantic()
 agents_widgets_storage = {}
 
 
@@ -29,7 +28,7 @@ def task_item_animate_pulse(button, colors, text_target, state=0):
     button.after(220, lambda: task_item_animate_pulse(button, colors, text_target, next_state))
 
 
-def task_item_toggle(button, task: AbstractAiTask):
+def task_item_toggle(button, task: AbstractAiFrameworkTaskModel):
     current_status = button.cget("text")
 
     if current_status == "▶":
@@ -41,7 +40,8 @@ def task_item_toggle(button, task: AbstractAiTask):
         # print(f"Задача {t_name} активна и пульсирует.")
         window_chat_loading_start()  # запуск индикатора под чатом
         logger_info(f'▶ Отправляю задачу в очередь: "{task.title}"')
-        queue_get()['task'].put(task)
+        queue_get()['task'].put(task.name)
+        window_chat_active_task_display(task)
     else:
         async_loop_task_cancel()
         queue_get()['chat'].put({'text': f'Запрос на остановку задачи {task.title}', 'who': 'agent'})
@@ -192,7 +192,7 @@ def window_chat_clear() -> None:
     source.window.chat_dialog_textbox.delete("1.0", "end")
 
 
-def window_chat_active_task_display(task: AbstractAiTask):
+def window_chat_active_task_display(task: AbstractAiFrameworkTaskModel):
     current_step = task.sub_task_current_index + 1
     total_steps = len(task.yaml.sub_tasks)
     progress_text = f"Задача: {task.title}  |  Прогресс: {current_step}/{total_steps}"

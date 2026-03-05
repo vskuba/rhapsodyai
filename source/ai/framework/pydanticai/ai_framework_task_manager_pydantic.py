@@ -2,41 +2,21 @@ import json
 import os
 import re
 import traceback
+
+from pydantic import BaseModel, Field, create_model
 from typing import Any, Tuple, List
 
-from pydantic import BaseModel, create_model, Field
-
-from source.ai.ai_task import AbstractAiTaskManager, AbstractAiTask, AiTaskYaml
+from source.ai.ai_framework_task_manager import AbstractAiFrameworkTaskManager
+from source.ai.ai_framework_task_model import AiTaskYaml
 from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
+from source.ai.framework.pydanticai.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
 from source.config import config_get
-from source.logging_ import logger_info
+from source.logging_ import  logger_info
 from source.mcp import mcp_config_get
 
 
-class AiPydanticTask(AbstractAiTask):
-    def __init__(
-            self,
-            name: str,
-            title: str,
-            prompt: str,
-            system_prompt: str,
-            sub_task_current_index: int,
-            input_fields: list[str],
-            tools: list[str],
-            mcp_servers: list[str],
-            response_model: BaseModel | str,
+class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
 
-    ):
-        super().__init__(name, title, prompt, system_prompt, sub_task_current_index, input_fields, mcp_servers)
-        self.name = name
-        self.tools = tools
-        self.response_model = response_model
-
-    def input_values_get(self):
-        return super().input_values_get()
-
-
-class AiPydanticTaskManager(AbstractAiTaskManager):
     def dir(self) -> str:
         return config_get('data_dir') + '/' + config_get('task_dir')
 
@@ -52,7 +32,8 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
 
         return self.dir() + '/' + name + '.yml'
 
-    def create(self, task_yaml: AiTaskYaml, input_values: dict[str, Any], sub_task_index: int = 0) -> AiPydanticTask:
+    def create(self, task_yaml: AiTaskYaml, input_values: dict[str, Any],
+               sub_task_index: int = 0) -> AiFrameworkTaskModelPydantic:
         try:
             title = task_yaml.title
             sub_task_current = task_yaml.sub_tasks[sub_task_index]
@@ -81,7 +62,7 @@ class AiPydanticTaskManager(AbstractAiTaskManager):
 
             prompt, input_fields = self.prompt_parse_input_fields(prompt, input_values, response_model)
 
-            task = AiPydanticTask(
+            task = AiFrameworkTaskModelPydantic(
                 name=task_yaml.filename,
                 title=title,
                 prompt=prompt,

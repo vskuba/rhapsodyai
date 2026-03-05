@@ -27,6 +27,7 @@ if __name__ == "__main__":
         'chat_response': queue.Queue(),
         'task': queue.Queue(),
         'task_abort': queue.Queue(),
+        'task_complete': queue.Queue(),
         'tool': queue.Queue(),
     })
 

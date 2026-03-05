@@ -1,34 +1,40 @@
 import os
 import re
 import traceback
-from pathlib import Path
-
 import httpx
+
 from pydantic import TypeAdapter
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.providers.openai import OpenAIProvider
-
+from pathlib import Path
+from source.ai.ai_framework import AiFrameworkResult
+from source.ai.ai_framework_task import AbstractAiFrameworkTask
 from source.ai.ai_mcp import AiMcpManager
-from source.ai.ai_task_framework import AbstractAIFramework, AIFrameworkResult
 from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
-from source.ai.framework.pydanticai.ai_task_pydantic import AiPydanticTask
+from source.ai.framework.pydanticai.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
+from source.ai.framework.pydanticai.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
 from source.config import config_get
 from pydantic_ai import Agent, AgentRunResult, ToolCallPart, ToolReturnPart, ModelMessage, ModelSettings
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
-
 from source.logging_ import log_request_body, log_response_body, logger_info
 
 
-class AiPydanticFramework(AbstractAIFramework):
-    def engine_prepare(self, task: AiPydanticTask):
+class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
+    def __init__(self, framework_manager: AiFrameworkTaskManagerPydantic):
+        super().__init__(framework_manager)
+        self.framework_manager: AiFrameworkTaskManagerPydantic = framework_manager
+
+    def engine_prepare(self, framework_model: AiFrameworkTaskModelPydantic):
         """
         Создает типизированного агента Pydantic-AI.
         Результат работы агента всегда будет объектом ResponseModel.
         """
+        task = framework_model
+
         index = task.name + str(task.sub_task_current_index)
         if index in self.engine_storage:
             return self.engine_storage[index]
@@ -102,21 +108,23 @@ class AiPydanticFramework(AbstractAIFramework):
 
         self.engine_storage[task.name] = engine
 
-        if not self.history:
-            self.history = self.task_history_load(task)
+        if not self.message_history:
+            self.message_history = self.task_history_load(task)
 
         self.engine_tools_local_add(engine, task)
 
         return engine
 
-    async def engine_run(self, task: AiPydanticTask):
+    async def engine_run(self, framework_model: AiFrameworkTaskModelPydantic):
+        task = framework_model
+
         logger_info(
             f'🧱 Подзадача {task.sub_task_current_index + 1}/{len(task.yaml.sub_tasks)}, '
             f'prompt: {task.prompt}'
         )
         logger_info(
             f'🧠 Передаем историю агенту:\n'
-            f'{self.history if self.history else "пока ничего нет"}'
+            f'{self.message_history if self.message_history else "пока ничего нет"}'
         )
 
         engine = self.engine_storage[task.name]
@@ -147,7 +155,10 @@ class AiPydanticFramework(AbstractAIFramework):
                 logger_info(f'Закрываем MCP сессии для задачи {task.name}...')
                 await ai_mcp_manager.mcp_server_close_all()
 
-    def engine_result_handle(self, result: AgentRunResult, task: AiPydanticTask) -> AIFrameworkResult | None:
+    def engine_result_handle(self, result: AgentRunResult,
+                             framework_model: AiFrameworkTaskModelPydantic) -> AiFrameworkResult | None:
+        task = framework_model
+
         report = "\n\n======== Ответ от LLM: \"%s\" (%d/%d) выполнена ==================================\n\n" % \
                  (task.title, task.sub_task_current_index + 1, len(task.yaml.sub_tasks))
         if not result or not str(result).strip():
@@ -165,7 +176,7 @@ class AiPydanticFramework(AbstractAIFramework):
 
         # если ответ просто текст, а не модель
         if not result.output or isinstance(result.output, str):
-            return AIFrameworkResult(str(result.output))
+            return AiFrameworkResult(str(result.output))
         report += "\n\n------- Raw response --------------------------------------------------------------\n\n"
         report += str(result)
         report += "\n\n------- Instrument logs -----------------------------------------------------------\n\n"
@@ -194,11 +205,11 @@ class AiPydanticFramework(AbstractAIFramework):
 
         messages_new = result.new_messages()
         if messages_new:
-            self.history += result.new_messages()
+            self.message_history += result.new_messages()
 
         logger_info(f'🧠 Получили новые сообщения истории в задаче "{task.title}"'
                     f' ({task.sub_task_current_index + 1}/{len(task.yaml.sub_tasks)})\n'
-                    f' {self.history}')
+                    f' {self.message_history}')
 
         if task.history_save:
             self.task_history_save(result, task)
@@ -209,9 +220,9 @@ class AiPydanticFramework(AbstractAIFramework):
 
         self.task_report(task, report)
 
-        return AIFrameworkResult(text)
+        return AiFrameworkResult(text)
 
-    def engine_tools_local_add(self, engine, task: AiPydanticTask):
+    def engine_tools_local_add(self, engine, task: AiFrameworkTaskModelPydantic):
         tools_local = ai_tools_get()
         tools_mapping = {func.__name__: func for func in tools_local}
         tools_local_added = []
@@ -227,7 +238,7 @@ class AiPydanticFramework(AbstractAIFramework):
 
         logger_info('🛠 Local инструменты добавлены: ' + ', '.join(tools_local_added))
 
-    def task_history_save(self, result, task: AiPydanticTask):
+    def task_history_save(self, result, task: AiFrameworkTaskModelPydantic):
         messages = result.all_messages()
 
         filename = self.task_history_filename_get(task)
@@ -239,7 +250,7 @@ class AiPydanticFramework(AbstractAIFramework):
 
         logger_info('🧠 Сохранили историю в файл')
 
-    def task_history_load(self, task: AiPydanticTask) -> list[ModelMessage]:
+    def task_history_load(self, task: AiFrameworkTaskModelPydantic) -> list[ModelMessage]:
         filename = self.task_history_filename_get(task)
         if not os.path.exists(filename):
             return []
@@ -252,5 +263,5 @@ class AiPydanticFramework(AbstractAIFramework):
     def task_history_dir_get(self) -> str:
         return config_get('data_dir') + '/' + config_get('history_dir')
 
-    def task_history_filename_get(self, task: AiPydanticTask) -> str:
+    def task_history_filename_get(self, task: AiFrameworkTaskModelPydantic) -> str:
         return '%s/%s_history.json' % (self.task_history_dir_get(), task.name)
