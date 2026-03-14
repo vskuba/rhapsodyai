@@ -3,7 +3,7 @@ import uuid
 from dataclasses import field, dataclass
 from typing import Any, Callable, Optional
 from pydantic import BaseModel
-from source.ai.ai_framework import AiFrameworkModel
+from source.ai.framework.ai_framework import AiFrameworkModel
 
 
 class AiTaskYamlSubTask(BaseModel):

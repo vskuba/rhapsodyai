@@ -1,0 +1,57 @@
+import asyncio
+import queue
+import traceback
+
+from source.ai.framework.ai_framework import AbstractAiFramework, AiFrameworkModel
+from source.ai.framework.ai_framework_agent_manager import AbstractAiFrameworkAgentManager
+from source.logging_ import logger_info
+from source.queue import queue_get
+
+
+class AbstractAiFrameworkAgent(AbstractAiFramework):
+    def __init__(self, framework_manager: AbstractAiFrameworkAgentManager):
+        super().__init__(framework_manager)
+        self.framework_manager: AbstractAiFrameworkAgentManager = framework_manager
+
+    async def framework_run(self, framework_model: AiFrameworkModel):
+        catch_exception: bool = False
+        while True:
+            await asyncio.sleep(0.1)
+
+            try:
+                queue_get()['agent_abort'].get_nowait()
+                logger_info(f'🛑 Команда на остановку агента "{framework_model.name}"')
+                return
+            except queue.Empty:
+                pass
+
+            try:
+                if catch_exception and framework_model:
+                    logger_info('Возобновляем агента..')
+
+                self.engine_prepare(framework_model)
+
+                result = await self.engine_run(framework_model)
+                response = self.engine_result_handle(result, framework_model)
+
+                if response is not None:
+                    queue_get()['chat'].put({"text": response.text, "who": 'agent'})
+
+                return
+
+            except Exception as e:
+                backtrace = traceback.format_exc()
+                logger_info(
+                    f"❌ Сбой в цикле агента: {e}."
+                    f"Полный стек вызовов:\n{backtrace}"
+                )
+
+                queue_get()['chat'].put({"text": 'Произошла ошибка: %s' % e, "who": 'agent'})
+
+                # rate limit handling
+                if getattr(e, 'status_code', None) in [429, 413]:
+                    return
+
+                queue_get()['chat'].put({"text": 'Работа будет продолжена', "who": 'agent'})
+                catch_exception = True
+                continue

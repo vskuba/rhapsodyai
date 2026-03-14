@@ -29,6 +29,8 @@ if __name__ == "__main__":
         'task_abort': queue.Queue(),
         'task_complete': queue.Queue(),
         'tool': queue.Queue(),
+        'agent': queue.Queue(),
+        'agent_abort': queue.Queue(),
     })
 
     faster_whisper_enable()

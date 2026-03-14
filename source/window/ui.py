@@ -3,7 +3,10 @@ import CTkToolTip
 import customtkinter as ctk
 import source.window
 import source.ai.ai_thread
-from source.ai.ai_framework_task import AbstractAiFrameworkTaskModel
+from source.ai.framework.ai_framework import AiFrameworkModel
+from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
+from source.ai.framework.ai_framework_task import AbstractAiFrameworkTaskModel
+from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
 
 from source.async_ import async_waiting_is_active, async_waiting_clear, async_loop_task_cancel
@@ -12,7 +15,11 @@ from source.logging_ import logger_info
 from source.queue import queue_get
 
 ai_task_manager = AiFrameworkTaskManagerPydantic()
+ai_agent_manager = AiFrameworkAgentManagerPydantic()
 agents_widgets_storage = {}
+
+task_active: AbstractAiFrameworkTaskModel | None = None
+agent_active: AbstractAiFrameworkAgentModel | None = None
 
 
 def task_item_animate_pulse(button, colors, text_target, state=0):
@@ -41,7 +48,7 @@ def task_item_toggle(button, task: AbstractAiFrameworkTaskModel):
         window_chat_loading_start()  # запуск индикатора под чатом
         logger_info(f'▶ Отправляю задачу в очередь: "{task.title}"')
         queue_get()['task'].put(task.name)
-        window_chat_active_task_display(task)
+        window_chat_progress_title_display(task)
     else:
         async_loop_task_cancel()
         queue_get()['chat'].put({'text': f'Запрос на остановку задачи {task.title}', 'who': 'agent'})
@@ -155,15 +162,22 @@ def window_chat_input_send(text: str) -> None:
     window_chat_message_add(text, 'iam')
     window_chat_loading_start()
 
-    if async_waiting_is_active():
-        queue_get()['chat_response'].put(text)
-        time.sleep(0.05)
+    if agent_active:
+        agent_active.prompt = text
+        window_chat_progress_title_display(agent_active)
+        queue_get()['agent'].put(agent_active)
+        return
 
-        async_waiting_clear()
-        source.window.chat_progress_bar.configure(
-            progress_color="#2ecc71"
-        )
-        window_chat_loading_stop()
+    if task_active:
+        if async_waiting_is_active():
+            queue_get()['chat_response'].put(text)
+            time.sleep(0.05)
+
+            async_waiting_clear()
+            source.window.chat_progress_bar.configure(
+                progress_color="#2ecc71"
+            )
+            window_chat_loading_stop()
 
 
 def window_chat_message_add(text: str, who: str) -> None:
@@ -192,10 +206,22 @@ def window_chat_clear() -> None:
     source.window.chat_dialog_textbox.delete("1.0", "end")
 
 
-def window_chat_active_task_display(task: AbstractAiFrameworkTaskModel):
-    current_step = task.sub_task_current_index + 1
-    total_steps = len(task.yaml.sub_tasks)
-    progress_text = f"Задача: {task.title}  |  Прогресс: {current_step}/{total_steps}"
+def window_chat_progress_title_display(framework_model: AiFrameworkModel):
+    progress_text = ''
+
+    if isinstance(framework_model, AbstractAiFrameworkTaskModel):
+        task = framework_model
+        current_step = task.sub_task_current_index + 1
+        total_steps = len(task.yaml.sub_tasks)
+        progress_text = f"Задача: {task.title}  |  Прогресс: {current_step}/{total_steps}"
+        global task_active
+        task_active = task
+
+    if isinstance(framework_model, AbstractAiFrameworkAgentModel):
+        progress_text = f"Агент: {framework_model.title}"
+        global agent_active
+        agent_active = framework_model
+
     source.window.chat_dialog_task_active_label.configure(
         text=progress_text,
         fg_color="#1f538d"  # Меняем цвет на синий, когда задача активна
@@ -280,6 +306,8 @@ def agent_item_draw(agent_name: str, parent_frame, is_active: bool = False):
 
     if is_active:
         agent_animate_pulse(status_indicator)
+        global agent_active
+        agent_active = ai_agent_manager.load(agent_name)
 
     return agent_card
 
@@ -293,6 +321,8 @@ def select_agent(selected_name):
             label.configure(text_color="#A8E6CF")
             # Запускаем анимацию мигания (если еще не запущена)
             agent_animate_pulse(indicator, True)
+            global agent_active
+            agent_active = ai_agent_manager.load(selected_name)
         else:
             # Делаем неактивным
             card.configure(fg_color="#2b2b2b")

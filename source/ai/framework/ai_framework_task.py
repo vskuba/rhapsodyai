@@ -4,9 +4,9 @@ import traceback
 
 from abc import abstractmethod
 from pathlib import Path
-from source.ai.ai_framework import AbstractAiFramework, AiFrameworkModel
-from source.ai.ai_framework_task_manager import AbstractAiFrameworkTaskManager
-from source.ai.ai_framework_task_model import AbstractAiFrameworkTaskModel
+from source.ai.framework.ai_framework import AbstractAiFramework, AiFrameworkModel
+from source.ai.framework.ai_framework_task_manager import AbstractAiFrameworkTaskManager
+from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
 from source.config import config_get
 from source.logging_ import logger_info
 from source.queue import queue_get
@@ -55,7 +55,7 @@ class AbstractAiFrameworkTask(AbstractAiFramework):
 
             try:
                 queue_get()['task_abort'].get_nowait()
-                logger_info(f'🛑 Команда на остановку задачи "{framework_model.title}"')
+                logger_info(f'🛑 Команда на остановку задачи "{framework_model.name}"')
                 return
             except queue.Empty:
                 pass

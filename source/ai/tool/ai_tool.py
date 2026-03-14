@@ -8,7 +8,9 @@ from typing import cast
 
 from numba.core.types import Callable
 
-from source.ai.ai_chat import chat_me
+from source.ai.tool.ai_tool_chat import chat_me
+from source.ai.tool.ai_tool_memory import chromadb_memory_search, chromadb_memory_save
+from source.ai.tool.ai_tool_web import web_read_page
 from source.config import config_get
 from source.logging_ import logger_info
 from source.mcp import mcp_config_list_get, mcp_config_get
@@ -88,6 +90,12 @@ def ai_tools_permanent_get() -> list[Callable]:
         # ------ Chat
         chat_me,
 
+        # ------ Bank memory
+        chromadb_memory_save,
+        chromadb_memory_search,
+
+        # ------ Web
+        web_read_page
     ]]
 
     return all_tools_permanent + [

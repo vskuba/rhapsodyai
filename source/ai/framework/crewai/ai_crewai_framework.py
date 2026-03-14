@@ -6,7 +6,7 @@ from typing import Any
 
 from source.ai.framework.crewai.ai_crewai_task import AiCrewaiTask
 from source.ai.framework.crewai.ai_crewai_tools import ai_crewia_tools_get
-from source.ai.ai_framework import AbstractAIFramework, AIFrameworkResult
+from source.ai.framework.ai_framework import AbstractAIFramework, AIFrameworkResult
 from source.config import config_get
 
 

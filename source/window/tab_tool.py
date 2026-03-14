@@ -3,7 +3,7 @@ import traceback
 
 import customtkinter as ctk
 
-from source.ai.ai_tool import ai_tools_permanent_get, ai_tools_get
+from source.ai.tool.ai_tool import ai_tools_permanent_get, ai_tools_get
 from source.logging_ import logger_info
 from source.mcp import mcp_config_list_get, mcp_config_get, mcp_config_tools_json_get
 

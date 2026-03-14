@@ -6,7 +6,8 @@ import queue
 import source.window
 import customtkinter as ctk
 
-from source.ai.ai_framework_task import AbstractAiFrameworkTaskModel
+from source.ai.framework.ai_framework import AiFrameworkModel
+from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
 from source.logging_ import logger_info
 from source.queue import queue_get
 from source.window.component import AiPopupWindow
@@ -170,30 +171,32 @@ class WindowAi(ctk.CTk):
 
         self.after(100, self.queue_task_complete)
 
-    def thread_monitor(self, thread: threading.Thread, task: AbstractAiFrameworkTaskModel):
+    def thread_monitor(self, thread: threading.Thread, framework_model: AiFrameworkModel):
         if thread.is_alive():
-            self.after(500, lambda: self.thread_monitor(thread, task))
+            self.after(500, lambda: self.thread_monitor(thread, framework_model))
         else:
             try:
-                if task.name in source.ai.ai_thread.thread_task_started:
-                    del source.ai.ai_thread.thread_task_started[task.name]
+                if framework_model.name in source.ai.ai_thread.thread_started:
+                    del source.ai.ai_thread.thread_started[framework_model.name]
             except:
                 pass
 
             try:
-                source.window.chat_task_btn_state[task.name].configure(
-                    text="▶",
-                    fg_color="#2D5A27",
-                    hover_color="#3E7B35"
-                )
                 window_chat_loading_stop()
-                window_chat_active_task_clear()
 
-                logger_info(f"🚀 Поток задачи '{task.name}' завершён, слот освобождён.")
+                if isinstance(framework_model, AbstractAiFrameworkTaskModel):
+                    source.window.chat_task_btn_state[framework_model.name].configure(
+                        text="▶",
+                        fg_color="#2D5A27",
+                        hover_color="#3E7B35"
+                    )
+                    window_chat_active_task_clear()
+
+                logger_info(f"🚀 Поток '{framework_model.name}' завершён, слот освобождён.")
             except Exception as e:
                 backtrace = traceback.format_exc()
                 logger_info(
-                    f"❌ Ошибка при обновлении UI после завершения задачи {task.name}: {e}."
+                    f"❌ Ошибка при обновлении UI после завершения задачи {framework_model.name}: {e}."
                     f"Полный стек вызовов:\n{backtrace}"
                 )
 

@@ -4,8 +4,8 @@ import yaml
 from abc import abstractmethod
 from pathlib import Path
 from typing import Any
-from source.ai.ai_framework import AbstractAiFrameworkManager
-from source.ai.ai_framework_task_model import AbstractAiFrameworkTaskModel, AiTaskYaml
+from source.ai.framework.ai_framework import AbstractAiFrameworkManager
+from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel, AiTaskYaml
 from source.logging_ import logger_info
 
 

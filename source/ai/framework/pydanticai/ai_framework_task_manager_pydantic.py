@@ -6,9 +6,9 @@ import traceback
 from pydantic import BaseModel, Field, create_model
 from typing import Any, Tuple, List
 
-from source.ai.ai_framework_task_manager import AbstractAiFrameworkTaskManager
-from source.ai.ai_framework_task_model import AiTaskYaml
-from source.ai.ai_tool import ai_tools_get, ai_tools_permanent_get
+from source.ai.framework.ai_framework_task_manager import AbstractAiFrameworkTaskManager
+from source.ai.framework.ai_framework_task_model import AiTaskYaml
+from source.ai.tool.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.ai.framework.pydanticai.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
 from source.config import config_get
 from source.logging_ import  logger_info
