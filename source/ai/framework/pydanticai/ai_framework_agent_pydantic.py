@@ -14,7 +14,7 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
         super().__init__(framework_manager)
         self.framework_manager: AiFrameworkAgentManagerPydantic = framework_manager
 
-    def engine_prepare(self, framework_model: AiFrameworkAgentModelPydantic):
+    def engine_prepare(self, framework_model: AiFrameworkAgentModelPydantic) -> Agent:
         """
         Создает типизированного агента Pydantic-AI.
         Результат работы агента всегда будет объектом ResponseModel.

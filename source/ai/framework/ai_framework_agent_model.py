@@ -1,6 +1,14 @@
 import uuid
 
+from pydantic import BaseModel
+
 from source.ai.framework.ai_framework import AiFrameworkModel
+
+
+class AiAgentYaml(BaseModel):
+    title: str
+    system_prompt: str
+    filename: str | None = None
 
 
 class AbstractAiFrameworkAgentModel(AiFrameworkModel):

@@ -1,5 +1,6 @@
 import customtkinter as ctk
 import source.window
+from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 
 from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
 from source.config import config_get, config_update_and_save
@@ -7,6 +8,7 @@ from source.window.component import CustomTextbox
 from source.window.ui import task_item_draw, window_chat_input_send, window_chat_voice_toggle, agent_item_draw
 
 ai_task_manager = AiFrameworkTaskManagerPydantic()
+ai_agent_manager = AiFrameworkAgentManagerPydantic()
 
 class TabChat:
     def __init__(self):
@@ -196,11 +198,9 @@ class TabChat:
         chat_frame_agents._label.configure(anchor="w")
         chat_frame_agents.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=10, pady=10)
 
-        agents_list = ["Researcher", "Github Copilot", "OpenClaw"]
-        active_agent_name = "Researcher"  # Только один будет мигать
-
-        for agent in agents_list:
-            agent_item_draw(agent, chat_frame_agents, (agent == active_agent_name))
+        active_agent_name = "researcher"  # Только один будет мигать
+        for agent_name in ai_agent_manager.list():
+            agent_item_draw(agent_name, chat_frame_agents, (agent_name == active_agent_name))
 
         # Правая колонка: задачи
         chat_frame_tasks = ctk.CTkScrollableFrame(

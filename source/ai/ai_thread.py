@@ -33,8 +33,6 @@ def ai_thread_run_async(ai_framework: AbstractAiFramework, framework_model: AiFr
 
 
 def ai_thread_framework_run(window_instance):
-    framework_model = None
-
     ai_framework_manager_task = AiFrameworkTaskManagerPydantic()
     ai_framework_task = AiFrameworkTaskPydantic(ai_framework_manager_task)
 

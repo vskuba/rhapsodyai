@@ -13,13 +13,13 @@ from source.async_ import async_waiting_is_active, async_waiting_clear, async_lo
 from source.filesystem import open_file_in_editor
 from source.logging_ import logger_info
 from source.queue import queue_get
+from source.state import state_set, state_get
 
 ai_task_manager = AiFrameworkTaskManagerPydantic()
 ai_agent_manager = AiFrameworkAgentManagerPydantic()
 agents_widgets_storage = {}
 
 task_active: AbstractAiFrameworkTaskModel | None = None
-agent_active: AbstractAiFrameworkAgentModel | None = None
 
 
 def task_item_animate_pulse(button, colors, text_target, state=0):
@@ -162,10 +162,7 @@ def window_chat_input_send(text: str) -> None:
     window_chat_message_add(text, 'iam')
     window_chat_loading_start()
 
-    if agent_active:
-        agent_active.prompt = text
-        window_chat_progress_title_display(agent_active)
-        queue_get()['agent'].put(agent_active)
+    if agent_active_init(text):
         return
 
     if task_active:
@@ -219,8 +216,7 @@ def window_chat_progress_title_display(framework_model: AiFrameworkModel):
 
     if isinstance(framework_model, AbstractAiFrameworkAgentModel):
         progress_text = f"Агент: {framework_model.title}"
-        global agent_active
-        agent_active = framework_model
+        state_set('agent_active', framework_model)
 
     source.window.chat_dialog_task_active_label.configure(
         text=progress_text,
@@ -268,6 +264,8 @@ def agent_animate_pulse(widget, state=True):
 
 
 def agent_item_draw(agent_name: str, parent_frame, is_active: bool = False):
+    agent = ai_agent_manager.load(agent_name)
+
     # Контейнер
     agent_card = ctk.CTkFrame(
         parent_frame,
@@ -287,18 +285,18 @@ def agent_item_draw(agent_name: str, parent_frame, is_active: bool = False):
 
     # Текст
     name_label = ctk.CTkLabel(
-        agent_card, text=agent_name, font=("Arial", 26, "bold"),
+        agent_card, text=agent.title, font=("Arial", 26, "bold"),
         text_color="#A8E6CF" if is_active else "white",
         cursor="hand2"
     )
     name_label.pack(side="left", padx=5)
 
     # Сохраняем в глобальный словарь
-    agents_widgets_storage[agent_name] = (agent_card, status_indicator, name_label)
+    agents_widgets_storage[agent.name] = (agent_card, status_indicator, name_label)
 
     # Функция-обертка для клика
     def on_click(event):
-        select_agent(agent_name)
+        agent_active_switch(agent.name)
 
     # Привязываем клик к фрейму и лейблу (чтобы попадать по всей области)
     agent_card.bind("<Button-1>", on_click)
@@ -306,13 +304,12 @@ def agent_item_draw(agent_name: str, parent_frame, is_active: bool = False):
 
     if is_active:
         agent_animate_pulse(status_indicator)
-        global agent_active
-        agent_active = ai_agent_manager.load(agent_name)
+        state_set('agent_active', agent)
 
     return agent_card
 
 
-def select_agent(selected_name):
+def agent_active_switch(selected_name):
     for name, (card, indicator, label) in agents_widgets_storage.items():
         if name == selected_name:
             # Делаем активным
@@ -321,10 +318,20 @@ def select_agent(selected_name):
             label.configure(text_color="#A8E6CF")
             # Запускаем анимацию мигания (если еще не запущена)
             agent_animate_pulse(indicator, True)
-            global agent_active
-            agent_active = ai_agent_manager.load(selected_name)
+            state_set('agent_active', ai_agent_manager.load(selected_name))
         else:
             # Делаем неактивным
             card.configure(fg_color="#2b2b2b")
             indicator.configure(fg_color="#444444")
             label.configure(text_color="white")
+
+
+def agent_active_init(text: str) -> bool:
+    agent_active = state_get('agent_active')
+    if agent_active:
+        agent_active.prompt = text
+        window_chat_progress_title_display(agent_active)
+        queue_get()['agent'].put(agent_active)
+        window_chat_loading_start()
+        return True
+    return False

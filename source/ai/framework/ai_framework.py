@@ -4,6 +4,8 @@ import httpx
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
@@ -43,7 +45,7 @@ class AbstractAiFramework(ABC):
         self.message_history: list = []
 
     @abstractmethod
-    def engine_prepare(self, framework_model: AiFrameworkModel):
+    def engine_prepare(self, framework_model: AiFrameworkModel) -> Agent:
         pass
 
     @abstractmethod

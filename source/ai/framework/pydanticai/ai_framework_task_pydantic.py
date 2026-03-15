@@ -18,7 +18,7 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
         super().__init__(framework_manager)
         self.framework_manager: AiFrameworkTaskManagerPydantic = framework_manager
 
-    def engine_prepare(self, framework_model: AiFrameworkTaskModelPydantic):
+    def engine_prepare(self, framework_model: AiFrameworkTaskModelPydantic) -> Agent:
         """
         Создает типизированного агента Pydantic-AI.
         Результат работы агента всегда будет объектом ResponseModel.
@@ -86,8 +86,11 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
                 logger_info(f'Закрываем MCP сессии для задачи {framework_model.name}...')
                 await ai_mcp_manager.mcp_server_close_all()
 
-    def engine_result_handle(self, result: AgentRunResult,
-                             framework_model: AiFrameworkTaskModelPydantic) -> AiFrameworkResult | None:
+    def engine_result_handle(
+            self,
+            result: AgentRunResult,
+            framework_model: AiFrameworkTaskModelPydantic
+    ) -> AiFrameworkResult | None:
         task = framework_model
 
         report = "\n\n======== Ответ от LLM: \"%s\" (%d/%d) выполнена ==================================\n\n" % \

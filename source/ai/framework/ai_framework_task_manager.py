@@ -16,9 +16,9 @@ class AbstractAiFrameworkTaskManager(AbstractAiFrameworkManager):
     def load(self, name: str) -> AbstractAiFrameworkTaskModel:
         try:
             with open(self.filepath_get(name), 'r') as f:
-                task_dict = yaml.safe_load(f)
+                yaml_dict = yaml.safe_load(f)
 
-            task_yaml = AiTaskYaml(**task_dict)
+            task_yaml = AiTaskYaml(**yaml_dict)
             task_yaml.filename = name
 
             self.validate(task_yaml)

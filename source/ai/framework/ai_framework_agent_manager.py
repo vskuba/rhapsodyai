@@ -1,19 +1,26 @@
 import traceback
-from abc import abstractmethod
+import yaml
 
+from abc import abstractmethod
 from source.ai.framework.ai_framework import AbstractAiFrameworkManager
-from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
+from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel, AiAgentYaml
 from source.logging_ import logger_info
 
 
 class AbstractAiFrameworkAgentManager(AbstractAiFrameworkManager):
     @abstractmethod
-    def create(self, name: str) -> AbstractAiFrameworkAgentModel:
+    def create(self, agent_yaml: AiAgentYaml) -> AbstractAiFrameworkAgentModel:
         pass
 
     def load(self, name: str) -> AbstractAiFrameworkAgentModel:
         try:
-            return self.create(name)
+            with open(self.filepath_get(name), 'r') as f:
+                yaml_dict = yaml.safe_load(f)
+
+            agent_yaml = AiAgentYaml(**yaml_dict)
+            agent_yaml.filename = name
+
+            return self.create(agent_yaml)
 
         except Exception as e:
             backtrace = traceback.format_exc()
