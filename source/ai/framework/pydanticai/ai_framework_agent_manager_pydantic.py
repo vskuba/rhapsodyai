@@ -31,6 +31,7 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
             return AiFrameworkAgentModelPydantic(
                 name=agent_yaml.filename,
                 title=agent_yaml.title,
+                description=agent_yaml.description,
                 prompt='',
                 system_prompt=agent_yaml.system_prompt,
                 tools=agent_yaml.tools,

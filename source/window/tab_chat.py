@@ -198,9 +198,18 @@ class TabChat:
         chat_frame_agents._label.configure(anchor="w")
         chat_frame_agents.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=10, pady=10)
 
-        active_agent_name = "researcher"  # Только один будет мигать
-        for agent_name in ai_agent_manager.list():
-            agent_item_draw(agent_name, chat_frame_agents, (agent_name == active_agent_name))
+        all_agents = ai_agent_manager.list()
+        active_agent_name = "researcher"
+
+        if active_agent_name in all_agents:
+            all_agents.remove(active_agent_name)
+            all_agents.insert(0, active_agent_name)
+        elif all_agents:
+            active_agent_name = all_agents[0]
+
+        for agent_name in all_agents:
+            is_active = (agent_name == active_agent_name)
+            agent_item_draw(agent_name, chat_frame_agents, is_active)
 
         # Правая колонка: задачи
         chat_frame_tasks = ctk.CTkScrollableFrame(

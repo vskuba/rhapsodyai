@@ -23,9 +23,7 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
         Создает типизированного агента Pydantic-AI.
         Результат работы агента всегда будет объектом ResponseModel.
         """
-        task = framework_model
-
-        index = task.name + str(task.sub_task_current_index)
+        index = framework_model.name + str(framework_model.sub_task_current_index)
         if index in self.engine_storage:
             return self.engine_storage[index]
 
@@ -33,29 +31,31 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
 
         engine = Agent(
             model,
-            system_prompt=task.system_prompt.strip(),
-            output_type=task.response_model,
+            system_prompt=framework_model.system_prompt.strip(),
+            output_type=framework_model.response_model,
             retries=10,
             output_retries=10
         )
 
-        self.engine_storage[task.name] = engine
+        self.engine_storage[framework_model.name] = engine
 
         if not self.message_history:
-            self.message_history = self.task_history_load(task)
+            self.message_history[framework_model.name] = self.task_history_load(framework_model)
 
-        self.engine_tools_local_add(engine, task)
+        self.engine_tools_local_add(engine, framework_model)
 
         return engine
 
     async def engine_run(self, framework_model: AiFrameworkTaskModelPydantic):
+        message_history = self.message_history_get(framework_model)
+
         logger_info(
             f'🧱 Подзадача {framework_model.sub_task_current_index + 1}/{len(framework_model.yaml.sub_tasks)}, '
             f'prompt: {framework_model.prompt}'
         )
         logger_info(
             f'🧠 Передаем историю агенту:\n'
-            f'{self.message_history if self.message_history else "пока ничего нет"}'
+            f'{message_history if message_history else "пока ничего нет"}'
         )
 
         engine = self.engine_storage[framework_model.name]
@@ -139,7 +139,7 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
 
         messages_new = result.new_messages()
         if messages_new:
-            self.message_history += result.new_messages()
+            self.message_history_add(framework_model, result.new_messages())
 
         logger_info(f'🧠 Получили новые сообщения истории в задаче "{task.title}"'
                     f' ({task.sub_task_current_index + 1}/{len(task.yaml.sub_tasks)})\n'

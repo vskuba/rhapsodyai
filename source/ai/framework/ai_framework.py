@@ -42,7 +42,7 @@ class AbstractAiFramework(ABC):
     def __init__(self, framework_manager):
         self.framework_manager: AbstractAiFrameworkManager = framework_manager
         self.engine_storage: dict[str, Any] = {}
-        self.message_history: list = []
+        self.message_history: dict[str, list[Any]] = {}
 
     @abstractmethod
     def engine_prepare(self, framework_model: AiFrameworkModel) -> Agent:
@@ -59,6 +59,15 @@ class AbstractAiFramework(ABC):
     @abstractmethod
     async def framework_run(self, framework_model: AiFrameworkModel):
         pass
+
+    def message_history_get(self, framework_model: AiFrameworkModel) -> list[Any] | None:
+        message_history = None
+        if hasattr(self.message_history, framework_model.name):
+            message_history = self.message_history[framework_model.name]
+        return message_history
+
+    def message_history_add(self, framework_model: AiFrameworkModel, messages_new: list[Any]):
+        self.message_history[framework_model.name] += messages_new
 
     def llm_model_get(self, framework_model: AiFrameworkModel) -> Model:
         model_name = config_get('llm')

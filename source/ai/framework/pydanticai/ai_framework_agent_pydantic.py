@@ -36,9 +36,11 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
         return engine
 
     async def engine_run(self, framework_model: AiFrameworkAgentModelPydantic):
+        message_history = self.message_history_get(framework_model)
+
         logger_info(
             f'🧠 Передаем историю агенту:\n'
-            f'{self.message_history if self.message_history else "пока ничего нет"}'
+            f'{message_history if message_history else "пока ничего нет"}'
         )
 
         engine = self.engine_storage[framework_model.name]
@@ -46,7 +48,7 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
         try:
             return await engine.run(
                 user_prompt=framework_model.prompt,
-                message_history=self.message_history,
+                message_history=message_history,
                 model_settings=ModelSettings(
                     parallel_tool_calls=True,
                     temperature=0.0,
@@ -72,6 +74,6 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
 
         messages_new = result.new_messages()
         if messages_new:
-            self.message_history += result.new_messages()
+            self.message_history_add(framework_model, result.new_messages())
 
         return AiFrameworkResult(text)
