@@ -1,5 +1,7 @@
 import uuid
 
+from dataclasses import field
+from typing import Optional
 from pydantic import BaseModel
 
 from source.ai.framework.ai_framework import AiFrameworkModel
@@ -9,6 +11,7 @@ class AiAgentYaml(BaseModel):
     title: str
     system_prompt: str
     filename: str | None = None
+    tools: Optional[list[str]] = field(default_factory=list)
 
 
 class AbstractAiFrameworkAgentModel(AiFrameworkModel):

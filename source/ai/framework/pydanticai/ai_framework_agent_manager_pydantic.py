@@ -33,7 +33,7 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
                 title=agent_yaml.title,
                 prompt='',
                 system_prompt=agent_yaml.system_prompt,
-                tools=[],
+                tools=agent_yaml.tools,
                 response_model=create_model('ResponseModel', **{
                     'text': (str, Field(description="Final result"))
                 })
