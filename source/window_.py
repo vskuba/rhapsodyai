@@ -171,34 +171,25 @@ class WindowAi(ctk.CTk):
 
         self.after(100, self.queue_task_complete)
 
-    def thread_monitor(self, thread: threading.Thread, framework_model: AiFrameworkModel):
-        if thread.is_alive():
-            self.after(500, lambda: self.thread_monitor(thread, framework_model))
-        else:
-            try:
-                if framework_model.name in source.ai.ai_thread.thread_started:
-                    del source.ai.ai_thread.thread_started[framework_model.name]
-            except:
-                pass
+    def thread_monitor(self, framework_model: AiFrameworkModel):
+        try:
+            window_chat_loading_stop()
 
-            try:
-                window_chat_loading_stop()
-
-                if isinstance(framework_model, AbstractAiFrameworkTaskModel):
-                    source.window.chat_task_btn_state[framework_model.name].configure(
-                        text="▶",
-                        fg_color="#2D5A27",
-                        hover_color="#3E7B35"
-                    )
-                    window_chat_active_task_clear()
-
-                logger_info(f"🚀 Поток '{framework_model.name}' завершён, слот освобождён.")
-            except Exception as e:
-                backtrace = traceback.format_exc()
-                logger_info(
-                    f"❌ Ошибка при обновлении UI после завершения задачи {framework_model.name}: {e}."
-                    f"Полный стек вызовов:\n{backtrace}"
+            if isinstance(framework_model, AbstractAiFrameworkTaskModel):
+                source.window.chat_task_btn_state[framework_model.name].configure(
+                    text="▶",
+                    fg_color="#2D5A27",
+                    hover_color="#3E7B35"
                 )
+                window_chat_active_task_clear()
+
+            logger_info(f"🚀 Поток '{framework_model.name}' завершён, слот освобождён.")
+        except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Ошибка при обновлении UI после завершения задачи {framework_model.name}: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
 
     def window_close(self):
         print("Закрытие приложения...")

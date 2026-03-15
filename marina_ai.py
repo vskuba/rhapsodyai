@@ -31,6 +31,7 @@ if __name__ == "__main__":
         'tool': queue.Queue(),
         'agent': queue.Queue(),
         'agent_abort': queue.Queue(),
+        'agent_response': queue.Queue(),
     })
 
     faster_whisper_enable()

@@ -29,6 +29,8 @@ class AiFrameworkResult:
 class AiFrameworkModel:
     name: str
     tools: list[Callable] = field(default_factory=list)
+    on_complete: Callable | None = None
+    is_sub_thread: bool = False
 
 
 @dataclass
@@ -61,12 +63,11 @@ class AbstractAiFramework(ABC):
         pass
 
     def message_history_get(self, framework_model: AiFrameworkModel) -> list[Any] | None:
-        message_history = None
-        if hasattr(self.message_history, framework_model.name):
-            message_history = self.message_history[framework_model.name]
-        return message_history
+        return self.message_history.get(framework_model.name, [])
 
     def message_history_add(self, framework_model: AiFrameworkModel, messages_new: list[Any]):
+        if not hasattr(self.message_history, framework_model.name):
+            self.message_history[framework_model.name] = []
         self.message_history[framework_model.name] += messages_new
 
     def llm_model_get(self, framework_model: AiFrameworkModel) -> Model:

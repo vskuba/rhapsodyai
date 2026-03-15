@@ -263,9 +263,7 @@ def agent_animate_pulse(widget, state=True):
     widget.after(600, lambda: agent_animate_pulse(widget, not state))
 
 
-def agent_item_draw(agent_name: str, parent_frame, is_active: bool = False):
-    agent = ai_agent_manager.load(agent_name)
-
+def agent_item_draw(agent_model: AbstractAiFrameworkAgentModel, parent_frame, is_active: bool = False):
     # Контейнер
     agent_card = ctk.CTkFrame(
         parent_frame,
@@ -285,18 +283,18 @@ def agent_item_draw(agent_name: str, parent_frame, is_active: bool = False):
 
     # Текст
     name_label = ctk.CTkLabel(
-        agent_card, text=agent.title, font=("Arial", 26, "bold"),
+        agent_card, text=agent_model.title, font=("Arial", 26, "bold"),
         text_color="#A8E6CF" if is_active else "white",
         cursor="hand2"
     )
     name_label.pack(side="left", padx=5)
 
     # Сохраняем в глобальный словарь
-    agents_widgets_storage[agent.name] = (agent_card, status_indicator, name_label)
+    agents_widgets_storage[agent_model.name] = (agent_card, status_indicator, name_label)
 
     # Функция-обертка для клика
     def on_click(event):
-        agent_active_switch(agent.name)
+        agent_active_switch(agent_model.name)
 
     # Привязываем клик к фрейму и лейблу (чтобы попадать по всей области)
     agent_card.bind("<Button-1>", on_click)
@@ -304,7 +302,7 @@ def agent_item_draw(agent_name: str, parent_frame, is_active: bool = False):
 
     if is_active:
         agent_animate_pulse(status_indicator)
-        state_set('agent_active', agent)
+        state_set('agent_active', agent_model)
 
     return agent_card
 
