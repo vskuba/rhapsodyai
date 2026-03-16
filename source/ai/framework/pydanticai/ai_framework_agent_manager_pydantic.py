@@ -28,12 +28,20 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
     def create(self, agent_yaml: AiAgentYaml) -> AiFrameworkAgentModelPydantic:
         try:
 
+            system_prompt = """
+              ⚠️ CRITICAL INSTRUCTION:
+              Your FINAL response must ALWAYS be a valid JSON object with exactly one field: "text".
+              Do not include any explanations, markdown code blocks, or text outside of this JSON.
+              Example of the ONLY acceptable format: {"text": "Сегодня в Киеве солнечно, +20°C."}
+              
+              """
+
             return AiFrameworkAgentModelPydantic(
                 name=agent_yaml.filename,
                 title=agent_yaml.title,
                 description=agent_yaml.description,
                 prompt='',
-                system_prompt=agent_yaml.system_prompt,
+                system_prompt=system_prompt + agent_yaml.system_prompt,
                 tools=agent_yaml.tools,
                 response_model=create_model('ResponseModel', **{
                     'text': (str, Field(description="Final result"))

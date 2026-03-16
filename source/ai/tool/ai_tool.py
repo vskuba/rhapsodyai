@@ -10,7 +10,7 @@ from numba.core.types import Callable
 
 from source.ai.tool.ai_tool_agent import agent_list, agent_invoke
 from source.ai.tool.ai_tool_chat import chat_me
-from source.ai.tool.ai_tool_memory import chromadb_memory_search, chromadb_memory_save
+from source.ai.tool.ai_tool_memory import chromadb_memory_search, chromadb_memory_save, chromadb_memory_search_text
 from source.ai.tool.ai_tool_web import web_read_page
 from source.config import config_get
 from source.logging_ import logger_info
@@ -93,7 +93,7 @@ def ai_tools_permanent_get() -> list[Callable]:
 
         # ------ Bank memory
         chromadb_memory_save,
-        chromadb_memory_search,
+        chromadb_memory_search_text,
 
         # ------ Web
         web_read_page,

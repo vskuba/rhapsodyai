@@ -56,6 +56,16 @@ services:
     networks:
       - os-net
 
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: chroma
+    volumes:
+      - ./data/chroma_db:/chroma/data
+    ports:
+      - "8000:8000"
+    networks:
+      - os-net
+
 volumes:
   opensearch-data:
 
