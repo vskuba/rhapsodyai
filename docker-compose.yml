@@ -66,6 +66,18 @@ services:
     networks:
       - os-net
 
+  chroma-ui:
+    image: kimjunseok/chroma-ui:latest
+    container_name: chroma-ui
+    ports:
+      - "5173:3000"  # Админка будет доступна здесь
+    environment:
+      - CHROMA_SERVER_URL=http://chroma:8000
+    depends_on:
+      - chroma
+    networks:
+      - os-net
+
 volumes:
   opensearch-data:
 

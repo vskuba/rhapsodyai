@@ -96,7 +96,7 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
             'list': list
         }
         # Формируем поля для нашей модели
-        pattern = r"\{([^}|]+)\|([^:]+):(" + "|".join(type_mapping) + r")\}"
+        pattern = r"\{\{([^}|]+)\|([^:]+):(" + "|".join(type_mapping) + r")\}\}"
         matches = re.findall(pattern, prompt)
 
         # ожидаем final_result только если нужна model response
@@ -112,7 +112,7 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
                       matches
                   } | response_model_fields
             response_model_input_values = {var: name for name, var, _ in matches}
-            prompt = re.sub(r"\{([^}|]+)\|[^:]+:(" + "|".join(type_mapping) + r")}", r"\1", prompt)
+            prompt = re.sub(r"\{\{([^}|]+)\|[^:]+:(" + "|".join(type_mapping) + r")}}", r"\1", prompt)
 
             # json_response_model = [str({k: t[0].__name__ for k, t in response_model_fields.items()})]
             # json_keys = ','.join(json_response_model)
@@ -130,20 +130,33 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
             response_model: BaseModel
     ) -> Tuple[str, List[str]]:
 
-        pattern = r"\{([^}]+)\}"
-        matches = re.findall(pattern, prompt)
-        input_fields = [name for name in matches]
+        pattern = r"\{\{(.*?)\}\}"
+        input_fields = re.findall(pattern, prompt)
 
-        prompt = prompt.format(**input_values)
-        prompt = re.sub(r"\{(\w+)}", '', re.sub(r'\s+', ' ', prompt).strip())
+        # 2. БЕЗОПАСНАЯ ЗАМЕНА (Вместо prompt.format)
+        # Заменяем только те ключи, которые обернуты в двойные скобки
+        for key, value in input_values.items():
+            placeholder = f"{{{{{key}}}}}"  # Это строка "{{key}}"
+            if placeholder in prompt:
+                prompt = prompt.replace(placeholder, str(value))
 
+        # 3. Очистка: убираем лишние пробелы и оставшиеся неиспользованные {{...}}
+        # Важно: используем нежадный поиск .*?, чтобы не удалить лишнего между тегами
+        prompt = re.sub(r"\{\{.*?}}", '', prompt)
+        prompt = re.sub(r'\s+', ' ', prompt).strip()
+
+        # --- Далее ваш существующий код для блоков <input_data> и <expect_data> ---
         input_and_expected_data = []
         if input_values:
             json_input_str = json.dumps(input_values, ensure_ascii=False)
             input_and_expected_data.append(f"<input_data>{json_input_str}</input_data>")
 
         json_response_model = response_model.model_json_schema()
-        json_response_model_str = {k: p['type'] for k, p in json_response_model['properties'].items()}
+        # Безопасное получение типов для схемы
+        json_response_model_str = {
+            k: p.get('type', 'any')
+            for k, p in json_response_model.get('properties', {}).items()
+        }
         input_and_expected_data.append(f"<expect_data>{json_response_model_str}</expect_data>")
 
         prompt = '\n'.join(input_and_expected_data) + f'\n\n{prompt}'

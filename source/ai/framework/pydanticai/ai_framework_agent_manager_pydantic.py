@@ -29,10 +29,16 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
         try:
 
             system_prompt = """
-              ⚠️ CRITICAL INSTRUCTION:
-              Your FINAL response must ALWAYS be a valid JSON object with exactly one field: "text".
-              Do not include any explanations, markdown code blocks, or text outside of this JSON.
-              Example of the ONLY acceptable format: {"text": "Сегодня в Киеве солнечно, +20°C."}
+              ⚠️ STRICT API MODE:
+              1. Your response MUST be a single, valid JSON object.
+              2. NO markdown formatting (no ```json ... ```), NO preamble, NO conversational text outside the JSON.
+              3. If you are providing a final answer, use the "final_result" tool format or return a JSON object with a "text" field.
+              4. Output ONLY the tool call, function "final_result".
+                
+              JSON structure:
+              {"text": "Your concise response here."}
+                
+              REJECTION: Any output that is not valid JSON will be rejected.
               
               """
 

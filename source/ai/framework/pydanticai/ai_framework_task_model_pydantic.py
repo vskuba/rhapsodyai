@@ -18,7 +18,7 @@ class AiFrameworkTaskModelPydantic(AbstractAiFrameworkTaskModel):
     ):
         super().__init__(name, title, prompt, system_prompt, sub_task_current_index, input_fields, mcp_servers)
         self.name = name
-        self.tools = tools
+        self.tools = tools if tools is not None else []
         self.response_model = response_model
 
     def input_values_get(self):
