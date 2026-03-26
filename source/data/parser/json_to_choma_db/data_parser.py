@@ -68,6 +68,7 @@ class ParserChroma:
             # Пакетная загрузка в Chroma
             if documents:
                 collection.add(documents=documents, metadatas=metadatas, ids=ids)
+                print(f'Collection: {collection.name} has {len(documents)} documents')
 
     def _apply_template(self, data: Dict, template: str) -> str:
         """Динамическая сборка контента по шаблону из YAML"""
