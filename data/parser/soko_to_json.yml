@@ -1,0 +1,53 @@
+title: "Parse Soko site to JSON"
+source:
+  - type: "crawl4ai"
+    targets:
+      - { url: "https://soko.ps.me/category/roli", category_name: "Роли" }
+      - { url: "https://soko.ps.me/category/seti", category_name: "Сети" }
+      - { url: "https://soko.ps.me/category/bouli", category_name: "Боули" }
+      - { url: "https://soko.ps.me/category/bouli", category_name: "Макі" }
+      - { url: "https://soko.ps.me/category/gunkani", category_name: "Гункани" }
+      - { url: "https://soko.ps.me/category/nigiri", category_name: "Нігірі" }
+    schema: soko_menu_schema
+
+destination:
+  - type: "json_file"
+    file_name: "data/output/soko_full_menu.json"
+    schema: soko_menu_destination_schema
+
+schemas:
+  soko_menu_schema:
+    name: "Soko Menu Extraction"
+    baseSelector: "div[data-testid='product_block']"
+    fields:
+      - name: "title"
+        selector: "p[data-testid='product_name']"
+        type: "text"
+      - name: "price"
+        selector: "span[data-testid='product_price']"
+        type: "text"
+      - name: "description"
+        selector: "div[itemprop='description']"
+        type: "text"
+      - name: "image_url"
+        selector: "img"
+        type: "attribute"
+        attribute: "src"
+
+  # Схема для итогового JSON файла
+  soko_menu_destination_schema:
+    type: "object"
+    required: [ "category_name", "items" ]
+    properties:
+      category_name:
+        type: "string"
+      items:
+        type: "array"
+        items:
+          type: "object"
+          required: [ "title", "price" ]
+          properties:
+            title: { type: "string" }
+            description: { type: "string" }
+            price: { type: "string" }
+            image_url: { type: "string" }

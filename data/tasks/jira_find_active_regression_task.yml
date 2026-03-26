@@ -1,0 +1,71 @@
+title: Find last regression issue
+history_save: false
+
+mcp_servers:
+  - jira
+
+system_prompt: |
+  You are a strictly obedient executor. Follow every step exactly as written.
+  
+  RULES:
+  1. Always pass ALL required parameters to the tool.
+  2. Always wait for the tool response.
+  3. Do not invent tool names.
+  4. Use only real values from tool responses.
+  5. Do not ask me nothing
+
+sub_tasks:
+
+  - name: Step 1 — Get accountId
+    prompt: |
+      Step 1. Send message to user 'I started working on finding Jira accountId'
+      Step 2. Call tool `atlassianUserInfo`. Wait for the response.
+      Step 3. From the response {{find field 'account_id'|accountId:str}} and send message
+      to user 'I find out Jira accountId :accountId'
+      Step 4. Finish work.
+    tools:
+      - atlassianUserInfo
+
+  - name: Step 2 — Get cloudId
+    prompt: |
+      Step 1. Send message to user 'I started working on finding Jira cloudId'
+      Step 2. Call tool `getAccessibleAtlassianResources`. Wait for the response.
+      Step 3. From the response {{find field `cloudId`|cloudId:str}} (may be called `id`)
+      Step 4. Send message to user 'I find out Jira cloudId :cloudId'
+      Step 5. Finish work.
+    tools:
+      - getAccessibleAtlassianResources
+
+  - name: Step 3 — Find issue by JQL
+    prompt: |
+      Step 1. Send message to user 'I started working on make jql request to Jira for finding last regression task'
+      Step 2. Execute JQL query: 
+      'summary ~ "Regression testing*" and project = CAS ORDER BY created DESC'
+        with follow tool parameters:
+          maxResults: float = 1, 
+          fields: list = ['work item key']
+      Step 3. Wait for response
+      Step 4. You have the list of last regression task. Now find all task ID (key). It looks like this: 'CAS-xxxx'.
+              Remember {{the regression task key|issue_regression_key:str}}. 
+      Step 5. Send message to user 'I found out a regression task with number :issue_regression_key'
+      Step 6. Finish work.
+
+    tools:
+      - searchJiraIssuesUsingJql
+
+  - name: Step 4 — Check issue status
+    prompt: |
+      Step 1. Send message to user 'I started working on check regression task {{issue_regression_key}} status'
+      Step 2. Use tool `getJiraIssue` to get details for each task with follow tool parameters:
+        issueIdOrKey: task ID of issue from {{issue_regression_key}}, 
+        fields: list = ['status']
+      Step 3. Wait for response.
+      Step 4. When got response for find {{status of issue|issue_status:str}}. It can be: 'In Progress', 'To Do', 'Done'.
+      
+      Step 5. If status is 'Done' then abort task with text 'I found out regression task with status Done only. 
+      It means that regression testing is already done for this task.'
+      
+      Step 6. Send message to user 'Issue {{issue_regression_key}} have status :issue_status'
+      Step 7. Finish work
+    tools:
+      - getJiraIssue

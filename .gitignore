@@ -10,7 +10,11 @@ __pycache__/
 config.yaml
 *.log
 
-data/
+data/output
+data/log
+data/chroma_db
+data/report
+data/history
 
 # Папки IDE
 .idea/

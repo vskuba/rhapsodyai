@@ -1,0 +1,1338 @@
+{
+  "title": "Jira",
+  "cmd": "npx",
+  "args": [
+    "-y",
+    "mcp-remote",
+    "https://mcp.atlassian.com/v1/mcp"
+  ],
+  "status": "active",
+  "env": [
+    "JIRA_URL",
+    "JIRA_API_TOKEN",
+    "JIRA_EMAIL"
+  ],
+  "tools": [
+    {
+      "name": "atlassianUserInfo",
+      "description": "Get current user info",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getAccessibleAtlassianResources",
+      "description": "Get cloudid to make tool calls",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getConfluencePage",
+      "description": "Get a Confluence page by page ID, including body content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Confluence page ID from the page URL (e.g., 123456789)"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Page body content format: \"adf\" (Atlassian Document Format) or \"markdown\""
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "searchConfluenceUsingCql",
+      "description": "Search content with CQL",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "cql": {
+            "type": "string",
+            "description": "CQL query string (e.g., \"title ~ \"meeting\" AND type = page\")"
+          },
+          "cqlcontext": {
+            "type": "string",
+            "description": "CQL context"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "expand": {
+            "type": "string",
+            "description": "Properties to expand"
+          },
+          "limit": {
+            "type": "number",
+            "default": 10,
+            "description": "Max results (default: 10, max: 250)"
+          },
+          "prev": {
+            "type": "boolean",
+            "description": "Include previous page link"
+          },
+          "next": {
+            "type": "boolean",
+            "description": "Include next page link"
+          }
+        },
+        "required": [
+          "cloudId",
+          "cql"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getConfluenceSpaces",
+      "description": "Get spaces",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "ids": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              }
+            ],
+            "description": "Space IDs"
+          },
+          "keys": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Space keys"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "description": "Space type"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived"
+            ],
+            "description": "Space status"
+          },
+          "labels": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Space labels"
+          },
+          "favourite": {
+            "type": "boolean",
+            "description": "Favorite spaces only"
+          },
+          "favoritedBy": {
+            "type": "string",
+            "description": "User favorites"
+          },
+          "expand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Properties to expand"
+          },
+          "start": {
+            "type": "number",
+            "description": "Start index"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default: 25, max: 250)"
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getPagesInConfluenceSpace",
+      "description": "Get pages in space",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "spaceId": {
+            "type": "string",
+            "description": "Space ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results (default: 25, max: 250)"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived",
+              "deleted",
+              "trashed"
+            ],
+            "description": "Page status"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title filter"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "id",
+              "-id",
+              "created-date",
+              "-created-date",
+              "modified-date",
+              "-modified-date",
+              "title",
+              "-title"
+            ],
+            "description": "Sort order"
+          }
+        },
+        "required": [
+          "cloudId",
+          "spaceId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getConfluencePageFooterComments",
+      "description": "Get page footer comments",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max comments"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived",
+              "trashed",
+              "deleted",
+              "historical",
+              "draft"
+            ],
+            "default": "current",
+            "description": "Comment status"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "id",
+              "-id",
+              "created-date",
+              "-created-date"
+            ],
+            "description": "Sort order"
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getConfluencePageInlineComments",
+      "description": "Get page inline comments",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max comments"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived",
+              "trashed",
+              "deleted",
+              "historical",
+              "draft"
+            ],
+            "default": "current",
+            "description": "Comment status"
+          },
+          "resolutionStatus": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "open",
+              "dangling",
+              "reopened"
+            ],
+            "default": "open",
+            "description": "Resolution status"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "id",
+              "-id",
+              "created-date",
+              "-created-date"
+            ],
+            "description": "Sort order"
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getConfluenceCommentChildren",
+      "description": "Get reply(child) comments for a comment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "commentId": {
+            "type": "string",
+            "description": "Parent comment ID"
+          },
+          "commentType": {
+            "type": "string",
+            "enum": [
+              "footer",
+              "inline"
+            ],
+            "description": "Comment type"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max replies"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "id",
+              "-id",
+              "created-date",
+              "-created-date"
+            ],
+            "description": "Sort order"
+          }
+        },
+        "required": [
+          "cloudId",
+          "commentId",
+          "commentType"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getConfluencePageDescendants",
+      "description": "Get child pages of specificed page",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page ID"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max descendants"
+          },
+          "depth": {
+            "type": "number",
+            "description": "Max depth"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor"
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "createConfluencePage",
+      "description": "Create Confluence page",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "spaceId": {
+            "type": "string",
+            "description": "Space ID"
+          },
+          "title": {
+            "type": "string",
+            "description": "Page title"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent page ID"
+          },
+          "body": {
+            "type": "string",
+            "description": "Page content"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format: \"adf\" (Atlassian Document Format) or \"markdown\"."
+          },
+          "isPrivate": {
+            "type": "boolean",
+            "description": "Make private"
+          },
+          "subtype": {
+            "type": "string",
+            "enum": [
+              "live"
+            ],
+            "description": "Page subtype"
+          }
+        },
+        "required": [
+          "cloudId",
+          "spaceId",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "updateConfluencePage",
+      "description": "Update Confluence page",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page ID to update"
+          },
+          "title": {
+            "type": "string",
+            "description": "New title"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "draft"
+            ],
+            "default": "current",
+            "description": "Page status"
+          },
+          "spaceId": {
+            "type": "string",
+            "description": "Space ID"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent page ID"
+          },
+          "body": {
+            "type": "string",
+            "description": "Page content"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "adf"
+            ],
+            "description": "Content format: \"adf\" (Atlassian Document Format) or \"markdown\"."
+          },
+          "versionMessage": {
+            "type": "string",
+            "description": "Version message"
+          }
+        },
+        "required": [
+          "cloudId",
+          "pageId",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "createConfluenceFooterComment",
+      "description": "Create footer comment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page ID to comment on"
+          },
+          "parentCommentId": {
+            "type": "string",
+            "description": "Parent comment ID for replies"
+          },
+          "attachmentId": {
+            "type": "string",
+            "description": "Attachment ID to include"
+          },
+          "customContentId": {
+            "type": "string",
+            "description": "Custom content ID to include"
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment content in Markdown"
+          }
+        },
+        "required": [
+          "cloudId",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "createConfluenceInlineComment",
+      "description": "Create inline comment on specific text",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Page ID to comment on"
+          },
+          "parentCommentId": {
+            "type": "string",
+            "description": "Parent comment ID for replies"
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment content in Markdown"
+          },
+          "inlineCommentProperties": {
+            "type": "object",
+            "properties": {
+              "textSelection": {
+                "type": "string",
+                "description": "Text to highlight"
+              },
+              "textSelectionMatchCount": {
+                "type": "number",
+                "description": "Total matches on page"
+              },
+              "textSelectionMatchIndex": {
+                "type": "number",
+                "description": "Which match to highlight (0-based)"
+              }
+            },
+            "required": [
+              "textSelection",
+              "textSelectionMatchCount",
+              "textSelectionMatchIndex"
+            ],
+            "additionalProperties": false,
+            "description": "Text selection properties for highlighting"
+          }
+        },
+        "required": [
+          "cloudId",
+          "body"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getJiraIssue",
+      "description": "Get issue details",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fieldsByKeys": {
+            "type": "boolean"
+          },
+          "expand": {
+            "type": "string"
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updateHistory": {
+            "type": "boolean"
+          },
+          "failFast": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "editJiraIssue",
+      "description": "Update issue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey",
+          "fields"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "createJiraIssue",
+      "description": "Create issue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "projectKey": {
+            "type": "string",
+            "description": "Project key"
+          },
+          "issueTypeName": {
+            "type": "string",
+            "description": "Type (Task, Bug, Story)"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description (Markdown)"
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent for subtasks"
+          },
+          "assignee_account_id": {
+            "type": "string",
+            "description": "Assignee ID"
+          },
+          "additional_fields": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "cloudId",
+          "projectKey",
+          "issueTypeName",
+          "summary"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getTransitionsForJiraIssue",
+      "description": "Get transitions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "expand": {
+            "type": "string"
+          },
+          "transitionId": {
+            "type": "string"
+          },
+          "skipRemoteOnlyCondition": {
+            "type": "boolean"
+          },
+          "includeUnavailableTransitions": {
+            "type": "boolean"
+          },
+          "sortByOpsBarAndStatus": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getJiraIssueRemoteIssueLinks",
+      "description": "Get remote links",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "globalId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getVisibleJiraProjects",
+      "description": "Get projects",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "searchString": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "view",
+              "browse",
+              "edit",
+              "create"
+            ],
+            "default": "create"
+          },
+          "startAt": {
+            "type": "number",
+            "default": 0
+          },
+          "maxResults": {
+            "type": "number",
+            "maximum": 50,
+            "default": 50
+          },
+          "expandIssueTypes": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getJiraProjectIssueTypesMetadata",
+      "description": "Get issue types",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "projectIdOrKey": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "number",
+            "default": 0
+          },
+          "maxResults": {
+            "type": "number",
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        "required": [
+          "cloudId",
+          "projectIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getJiraIssueTypeMetaWithFields",
+      "description": "Get field metadata",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "projectIdOrKey": {
+            "type": "string"
+          },
+          "issueTypeId": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "number"
+          },
+          "maxResults": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "cloudId",
+          "projectIdOrKey",
+          "issueTypeId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "addCommentToJiraIssue",
+      "description": "Add comment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "commentBody": {
+            "type": "string",
+            "description": "Comment (Markdown)"
+          },
+          "commentVisibility": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group",
+                  "role"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey",
+          "commentBody"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "transitionJiraIssue",
+      "description": "Transition issue status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "transition": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "update": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            }
+          },
+          "historyMetadata": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "descriptionKey": {
+                "type": "string"
+              },
+              "activityDescription": {
+                "type": "string"
+              },
+              "activityDescriptionKey": {
+                "type": "string"
+              },
+              "emailDescription": {
+                "type": "string"
+              },
+              "emailDescriptionKey": {
+                "type": "string"
+              },
+              "actor": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "avatarUrl": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "generator": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "avatarUrl": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "cause": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "avatarUrl": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "extraData": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey",
+          "transition"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "searchJiraIssuesUsingJql",
+      "description": "Search issues with JQL",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "jql": {
+            "type": "string",
+            "description": "JQL query"
+          },
+          "maxResults": {
+            "type": "number",
+            "maximum": 100,
+            "default": 10,
+            "description": "Max (50-100)"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "summary",
+              "description",
+              "status",
+              "issuetype",
+              "priority",
+              "created"
+            ]
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "Page token"
+          }
+        },
+        "required": [
+          "cloudId",
+          "jql"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "lookupJiraAccountId",
+      "description": "Lookup user IDs",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "searchString": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudId",
+          "searchString"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "addWorklogToJiraIssue",
+      "description": "Add worklog",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Cloud ID (UUID or site URL)"
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue ID or key (e.g., PROJ-123 or 10000)"
+          },
+          "timeSpent": {
+            "type": "string",
+            "description": "Time (2h, 30m, 4d)"
+          },
+          "commentBody": {
+            "type": "string",
+            "description": "Comment (Markdown)"
+          },
+          "visibility": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group",
+                  "role"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey",
+          "timeSpent"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "search",
+      "description": "Search Jira and Confluence using Rovo Search, ALWAYS use this tool to search for Jira and Confluence content unless the word CQL or JQL is used in the context",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query to use for Rovo Search"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "fetch",
+      "description": "Get details of a Jira issue or Confluence page by ARI (Atlassian Resource Identifier), if the id is not an ARI, then use a different tool to fetch the content",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Atlassian Resource Identifier (ARI) from search results, e.g., \"ari:cloud:jira:cloudId:issue/10107\" or \"ari:cloud:confluence:cloudId:page/123456789\""
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  ]
+}
