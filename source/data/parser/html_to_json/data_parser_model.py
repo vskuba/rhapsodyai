@@ -34,7 +34,6 @@ class SourceModel:
 
 @dataclass
 class DestinationModel:
-    type: str
     file_name: str
     schema: str = Field(..., alias="schema")
 

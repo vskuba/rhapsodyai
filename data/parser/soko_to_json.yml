@@ -1,4 +1,4 @@
-title: "Parse Soko site to JSON"
+title: "Soko site menu to json"
 type: "html_to_json"
 source:
   - type: "crawl4ai"
@@ -12,8 +12,7 @@ source:
     schema: soko_menu_schema
 
 destination:
-  - type: "json_file"
-    file_name: "data/output/soko_full_menu.json"
+  - file_name: "data/output/soko_full_menu.json"
     schema: soko_menu_destination_schema
 
 schemas:

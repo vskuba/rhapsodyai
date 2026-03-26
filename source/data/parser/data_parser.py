@@ -4,7 +4,8 @@ import yaml
 from pathlib import Path
 from source.config import config_get
 from source.data.parser.data_parser_model import DataParserYaml
-from source.data.parser.html.data_parser_html_model import DataParserHtmlYaml
+from source.data.parser.html_to_json.data_parser_model import DataParserHtmlYaml
+from source.data.parser.json_to_choma_db.data_parser_model import DataParserChromaYaml
 
 
 def data_parser_dir() -> str:
@@ -43,4 +44,7 @@ def data_parser_load(parser_name: str) -> DataParserYaml:
         if parser_type == 'html_to_json':
             return DataParserHtmlYaml(**raw_config)
 
-        raise ValueError(f"Can't model for type {parser_type}")
+        if parser_type == 'json_to_chroma_db':
+            return DataParserChromaYaml(**raw_config)
+
+        raise ValueError(f"Can't find out model for type {parser_type}")

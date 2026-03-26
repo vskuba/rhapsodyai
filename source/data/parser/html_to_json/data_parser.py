@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, CacheMode, BrowserConfig
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
 
-from source.data.parser.html.data_parser_html_model import DataParserHtmlYaml
+from source.data.parser.html_to_json.data_parser_model import DataParserHtmlYaml
 
 
 class ParserHtml:
@@ -39,7 +39,7 @@ class ParserHtml:
 
         # 2. Сохранение в файлы (destination)
         for dest in self.config.get('destination', []):
-            if dest['type'] == 'json_file':
+            if self.config.get('type') == 'html_to_json' and dest['file_name']:
                 self._save_to_json(dest)
 
     async def _crawl_source(self, url: str, schema: Dict[str, Any]) -> List[Dict[str, Any]]:

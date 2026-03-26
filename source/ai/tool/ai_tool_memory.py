@@ -1,21 +1,19 @@
 import uuid
-import chromadb
 
 from datetime import datetime
-
 from chromadb import QueryResult
-
 from source.ai.tool.ai_tool_agent import agent_invoke
+from source.chroma_db import _chroma_db_get_client
 from source.logging_ import logger_info
 
-chroma_collection: chromadb.Collection | None = None
-
+chroma_db_collection_name = 'bank_memory'
 
 async def chromadb_memory_save(text: str):
     """This tool converts the input text into a high-dimensional vector embedding and stores
     it in the ChromaDB collection. This allows for persistent long-term memory, enabling the
     agent to perform semantic searches and retrieve relevant context in future interactions."""
-    collection = _chromadb_memory_auth()
+    client = _chroma_db_get_client()
+    collection = client.get_or_create_collection(chroma_db_collection_name)
     facts = await _chromadb_extract_facts_from_text(text)
 
     logger_info(f'🔍 Extracted facts from input text: {facts}')
@@ -69,30 +67,13 @@ async def _chromadb_memory_search(query: str) -> QueryResult:
     context or past information. It converts the query into an embedding and returns the most
     closely related documents, effectively providing the agent with access to its long-term memory
     and previously stored knowledge."""
-    results = _chromadb_memory_auth().query(
+    client = _chroma_db_get_client()
+    results = client.get_or_create_collection(chroma_db_collection_name).query(
         query_texts=[query],
         n_results=3
     )
 
     return results
-
-
-def _chromadb_memory_auth() -> chromadb.Collection:
-    """
-    Create chroma collection
-    """
-    global chroma_collection
-
-    if chroma_collection:
-        return chroma_collection
-
-    # chroma_client = chromadb.PersistentClient(path="./" + config_get('DATA_DIR') + "/chroma_db_memory")
-    # chroma_collection = chroma_client.get_or_create_collection("bank_memory")
-
-    chroma_client = chromadb.HttpClient(host='localhost', port=8000)
-    chroma_collection = chroma_client.get_or_create_collection("bank_memory")
-
-    return chroma_collection
 
 
 async def _chromadb_extract_facts_from_text(text: str) -> list[str]:

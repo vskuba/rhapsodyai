@@ -7,8 +7,10 @@ import source.window
 
 from source.data.parser.data_parser import data_parser_load, data_parser_dir
 from source.data.parser.data_parser_model import DataParserYaml
-from source.data.parser.html.data_parser_html import ParserHtml
-from source.data.parser.html.data_parser_html_model import DataParserHtmlYaml
+from source.data.parser.html_to_json.data_parser import ParserHtml
+from source.data.parser.html_to_json.data_parser_model import DataParserHtmlYaml
+from source.data.parser.json_to_choma_db.data_parser import ParserChroma
+from source.data.parser.json_to_choma_db.data_parser_model import DataParserChromaYaml
 from source.filesystem import open_file_in_editor
 from source.logging_ import logger_info
 from source.thread_ import thread_with_callback
@@ -37,6 +39,10 @@ def parser_toggle_run(button, parser_model: DataParserYaml):
 
     if isinstance(parser_model, DataParserHtmlYaml):
         parser = ParserHtml(parser_model)
+        thread_with_callback(lambda: parser.run(), lambda res: parser_complete(res, parser_model))
+
+    if isinstance(parser_model, DataParserChromaYaml):
+        parser = ParserChroma(parser_model)
         thread_with_callback(lambda: parser.run(), lambda res: parser_complete(res, parser_model))
 
 
@@ -121,3 +127,22 @@ def parser_item_draw(parser_name: str, parent_container):
             command=lambda: open_file_in_editor(os.path.join(data_parser_dir(), f"{parser_name}.yml"))
         )
         btn_yml.pack(side="left", padx=10)
+
+        # --- ЧИПСЫ (Тип парсера) ---
+        if hasattr(parser_model, 'type') and parser_model.type:
+            # Форматируем текст (например, html_to_json -> HTML ➜ JSON)
+            chip_text = parser_model.type.replace("_to_", " ➜ ").upper()
+
+            chip_frame = ctk.CTkFrame(actions_frame, fg_color="#3d424b", corner_radius=12)
+            chip_frame.pack(side="right", padx=(20, 5))  # Большой отступ слева, чтобы отделить от кнопок
+
+            lbl_chip = ctk.CTkLabel(
+                chip_frame,
+                text=chip_text,
+                font=("Arial", 18, "bold"),
+                text_color="#2ecc71"
+            )
+            lbl_chip.pack(padx=10, pady=2)
+
+            # Тултип для понимания, что это такое
+            CTkToolTip.CTkToolTip(chip_frame, message=f"Pipeline: {parser_model.type}", font=("Arial", 18))
