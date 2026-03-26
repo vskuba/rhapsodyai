@@ -7,7 +7,7 @@ from mcp import StdioServerParameters
 
 from source.logging_ import logger_info
 from source.mcp import mcp_config_save, mcp_config_list_get, mcp_config_get, McpConfig, McpTool, mcp_config_delete
-from source.queue import queue_get
+from source.queue_ import queue_get
 
 
 class TabMcp:

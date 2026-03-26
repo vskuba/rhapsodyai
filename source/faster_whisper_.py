@@ -8,7 +8,7 @@ from faster_whisper import WhisperModel
 from source.config import config_get
 from source.logging_ import logger_info
 from source.microphone import microphone_create_microphone
-from source.queue import queue_get
+from source.queue_ import queue_get
 from source.window.ui import window_chat_voice_state_get, agent_active_init
 
 

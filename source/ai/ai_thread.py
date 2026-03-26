@@ -14,7 +14,7 @@ from source.ai.framework.pydanticai.ai_framework_task_pydantic import \
     AiFrameworkTaskPydantic, AiFrameworkTaskManagerPydantic
 from source.async_ import async_loop_init, async_waiting_is_active, async_waiting_clear
 from source.logging_ import logger_info
-from source.queue import queue_get
+from source.queue_ import queue_get
 from source.window_ import WindowAi
 
 thread_started: dict[str, AiFrameworkModel] = {}
@@ -32,7 +32,7 @@ def ai_thread_run_async(ai_framework: AbstractAiFramework, framework_model: AiFr
         loop_task = loop.create_task(ai_framework.framework_run(framework_model))
 
         if not framework_model.is_sub_thread:
-            async_loop_init(loop, loop_task)
+            async_loop_init(loop, loop_task, framework_model.name)
 
         loop.run_until_complete(loop_task)
     except asyncio.CancelledError:

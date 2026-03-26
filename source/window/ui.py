@@ -12,7 +12,7 @@ from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFramewor
 from source.async_ import async_waiting_is_active, async_waiting_clear, async_loop_task_cancel
 from source.filesystem import open_file_in_editor
 from source.logging_ import logger_info
-from source.queue import queue_get
+from source.queue_ import queue_get
 from source.state import state_set, state_get
 
 ai_task_manager = AiFrameworkTaskManagerPydantic()
@@ -50,7 +50,7 @@ def task_item_toggle(button, task: AbstractAiFrameworkTaskModel):
         queue_get()['task'].put(task.name)
         window_chat_progress_title_display(task)
     else:
-        async_loop_task_cancel()
+        async_loop_task_cancel(task.name)
         queue_get()['chat'].put({'text': f'Запрос на остановку задачи {task.title}', 'who': 'agent'})
 
 
@@ -132,27 +132,6 @@ def task_item_draw(task_name, parent_container):
             command=lambda: open_file_in_editor(ai_task_manager.filepath_get(task_name))
         )
         btn_yml.pack(side="left", padx=10)
-
-    # Чекбокс истории
-    checkbox_history = ctk.CTkCheckBox(
-        actions_frame,
-        text="История",
-        font=("Arial", 24),
-        checkbox_width=32,
-        checkbox_height=32,
-        state="disabled"
-    )
-    checkbox_history.pack(side="right", padx=5)
-    # checkbox_history.configure(
-    #     command=lambda name=task_name: (
-    #         ai_task_manager.task_schema_yaml_update(
-    #             name, "history_save",
-    #             bool(checkbox_history.get())
-    #         )
-    #     )
-    # )
-    if task and getattr(task, 'history_save', False):
-        checkbox_history.select()
 
 
 def window_chat_input_send(text: str) -> None:
@@ -250,78 +229,138 @@ def window_chat_loading_stop():
     source.window.chat_agent_status_label.configure(text="")
 
 
-def agent_animate_pulse(widget, state=True):
+def agent_active_indicator_pulse(widget, state=True):
+    if not widget.winfo_exists(): return
+    if widget.cget("fg_color") == "#444444": return
+
+    color = "#2ecc71" if state else "#1e8449"
+    widget.configure(fg_color=color)
+    widget.after(700, lambda: agent_active_indicator_pulse(widget, not state))
+
+
+def agent_active_indicator_running_pulse(widget, state=0):
     if not widget.winfo_exists(): return
 
+    # Прекращаем, если кнопка перестала быть красной (остановили агента)
     current_color = widget.cget("fg_color")
-    if current_color == "#444444":
+    if current_color not in ["#7C2A2A", "#A93232", "#FF4C4C"]:
         return
 
-    color = "#3a7ebf" if state else "#1f3d5e"
-    widget.configure(fg_color=color)
+    colors = ["#7C2A2A", "#A93232", "#FF4C4C", "#A93232"]
+    next_state = (state + 1) % len(colors)
 
-    widget.after(600, lambda: agent_animate_pulse(widget, not state))
+    widget.configure(fg_color=colors[state])
+    widget.after(220, lambda: agent_active_indicator_running_pulse(widget, next_state))
+
+
+def agent_active_indicator_running_stop_pulse(button, agent_model):
+    async_loop_task_cancel(agent_model.name)
+    queue_get()['chat'].put({'text': f'Запрос на остановку агента {agent_model.title}', 'who': 'agent'})
+    logger_info(f"🛑 Запрос на остановку агента: {agent_model.title}")
+    button.configure(
+        state="disabled",
+        text="▶",
+        fg_color="#444444",
+        text_color_disabled="#888888"
+    )
+
+def agent_active_switch(target_name):
+    for name, widgets in agents_widgets_storage.items():
+        indicator = widgets["indicator"]
+        lbl = widgets["label"]
+        # btn = widgets["btn_state"] # Теперь кнопка статична, она нам тут не нужна
+
+        if name == target_name:
+            indicator.configure(fg_color="#2ecc71")  # Зеленый кружок
+            lbl.configure(text_color="#A8E6CF")
+            # ЗАПУСКАЕМ мигание кружка
+            agent_active_indicator_pulse(indicator)
+
+            # Системная активация
+            model = ai_agent_manager.load(name)
+            state_set('agent_active', model)
+            window_chat_progress_title_display(model)
+        else:
+            indicator.configure(fg_color="#444444")  # Серый кружок
+            lbl.configure(text_color="white")
+
+
+def agent_item_toggle(button, agent_model):
+    current_status = button.cget("text")
+
+    if current_status == "▶":
+        # Переводим в состояние ЗАПУЩЕН
+        button.configure(text="⏹", fg_color="#A93232")  # Красный квадрат
+        agent_active_indicator_running_pulse(button)
+        logger_info(f"🚀 Агент {agent_model.title} запущен")
+        # Здесь ваша логика запуска процесса агента
+    else:
+        # Возвращаем в состояние АКТИВНЫЙ (но не запущенный)
+        button.configure(text="▶", fg_color="#2D5A27")  # Зеленый плей
+        logger_info(f"🛑 Агент {agent_model.title} остановлен")
 
 
 def agent_item_draw(agent_model: AbstractAiFrameworkAgentModel, parent_frame, is_active: bool = False):
-    # Контейнер
-    agent_card = ctk.CTkFrame(
-        parent_frame,
-        fg_color="#3d424b" if is_active else "#2b2b2b",
-        corner_radius=8,
-        cursor="hand2"
-    )
-    agent_card.pack(fill="x", padx=5, pady=5)
+    agent_item = ctk.CTkFrame(parent_frame, fg_color="#2b2e34", corner_radius=6)
+    agent_item.pack(fill="x", padx=5, pady=3)
 
-    # Индикатор
-    status_indicator = ctk.CTkButton(
-        agent_card, text="", width=24, height=24, corner_radius=7,
-        fg_color="#1f538d" if is_active else "#444444",
-        hover=False, state="disabled", cursor="hand2"
-    )
-    status_indicator.pack(side="left", padx=10, pady=10)
+    # --- ВЕРХНЯЯ ЧАСТЬ (Индикатор + Название) ---
+    header_frame = ctk.CTkFrame(agent_item, fg_color="transparent")
+    header_frame.pack(side="top", fill="x", padx=10, pady=(8, 0))
 
-    # Текст
-    name_label = ctk.CTkLabel(
-        agent_card, text=agent_model.title, font=("Arial", 26, "bold"),
+    # 1. Тот самый ЗЕЛЕНЫЙ КРУЖОК (теперь он здесь)
+    indicator = ctk.CTkButton(
+        header_frame, text="",
+        width=20, height=20, corner_radius=10,  # Чуть меньше для заголовка
+        fg_color="#2ecc71" if is_active else "#444444",
+        hover=False,
+        command=lambda: agent_active_switch(agent_model.name)
+    )
+    indicator.pack(side="left", padx=(5, 10))
+
+    # 2. Название агента
+    lbl_name = ctk.CTkLabel(
+        header_frame, text=agent_model.title,
+        font=("Arial", 28, "bold"), anchor="w",
         text_color="#A8E6CF" if is_active else "white",
         cursor="hand2"
     )
-    name_label.pack(side="left", padx=5)
+    lbl_name.pack(side="left", fill="x")
+    lbl_name.bind("<Button-1>", lambda e: agent_active_switch(agent_model.name))
 
-    # Сохраняем в глобальный словарь
-    agents_widgets_storage[agent_model.name] = (agent_card, status_indicator, name_label)
+    # --- НИЖНЯЯ ЧАСТЬ (Кнопки действий) ---
+    actions_frame = ctk.CTkFrame(agent_item, fg_color="transparent")
+    actions_frame.pack(side="top", fill="x", padx=10, pady=10)
 
-    # Функция-обертка для клика
-    def on_click(event):
-        agent_active_switch(agent_model.name)
+    # Кнопка PLAY (СЕРАЯ, как на скрине)
+    btn_state = ctk.CTkButton(
+        actions_frame, text="▶", width=70, height=45,
+        font=("Arial", 28), fg_color="#444444",
+        state="disabled", text_color_disabled="#888888",
+        corner_radius=8
+    )
+    btn_state.pack(side="left", padx=5)
 
-    # Привязываем клик к фрейму и лейблу (чтобы попадать по всей области)
-    agent_card.bind("<Button-1>", on_click)
-    name_label.bind("<Button-1>", on_click)
+    # Кнопка YML
+    btn_yml = ctk.CTkButton(
+        actions_frame, text="📄 .yml", width=110, height=45,
+        font=("Arial", 24), fg_color="#3d65a1",
+        command=lambda: open_file_in_editor(ai_agent_manager.filepath_get(agent_model.name))
+    )
+    btn_yml.pack(side="left", padx=10)
+
+    # Обновляем ссылки в хранилище
+    agents_widgets_storage[agent_model.name] = {
+        "indicator": indicator,
+        "btn_state": btn_state,
+        "label": lbl_name
+    }
 
     if is_active:
-        agent_animate_pulse(status_indicator)
+        agent_active_indicator_pulse(indicator)
         state_set('agent_active', agent_model)
 
-    return agent_card
-
-
-def agent_active_switch(selected_name):
-    for name, (card, indicator, label) in agents_widgets_storage.items():
-        if name == selected_name:
-            # Делаем активным
-            card.configure(fg_color="#3d424b")  # Подсветка карточки
-            indicator.configure(fg_color="#1f538d")
-            label.configure(text_color="#A8E6CF")
-            # Запускаем анимацию мигания (если еще не запущена)
-            agent_animate_pulse(indicator, True)
-            state_set('agent_active', ai_agent_manager.load(selected_name))
-        else:
-            # Делаем неактивным
-            card.configure(fg_color="#2b2b2b")
-            indicator.configure(fg_color="#444444")
-            label.configure(text_color="white")
+    return agent_item
 
 
 def agent_active_init(text: str) -> bool:
@@ -331,5 +370,19 @@ def agent_active_init(text: str) -> bool:
         window_chat_progress_title_display(agent_active)
         queue_get()['agent'].put(agent_active)
         window_chat_loading_start()
+
+        widgets = agents_widgets_storage.get(agent_active.name)
+        if widgets:
+            btn = widgets["btn_state"]
+            # Делаем кнопку активной, меняем на красный Квадрат
+            btn.configure(
+                state="normal",
+                text="⏹",
+                fg_color="#A93232",
+                # При нажатии вызываем отмену
+                command=lambda b=btn, a=agent_active: agent_active_indicator_running_stop_pulse(b, a)
+            )
+            agent_active_indicator_running_pulse(btn)
+
         return True
     return False

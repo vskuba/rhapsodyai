@@ -9,7 +9,7 @@ import customtkinter as ctk
 from source.ai.framework.ai_framework import AiFrameworkModel
 from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
 from source.logging_ import logger_info
-from source.queue import queue_get
+from source.queue_ import queue_get
 from source.window.component import AiPopupWindow
 from source.window.tab_chat import TabChat
 from source.window.tab_log import TabLog

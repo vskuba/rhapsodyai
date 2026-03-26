@@ -9,7 +9,7 @@ from source.ai.framework.ai_framework_task_manager import AbstractAiFrameworkTas
 from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
 from source.config import config_get
 from source.logging_ import logger_info
-from source.queue import queue_get
+from source.queue_ import queue_get
 
 
 class AbstractAiFrameworkTask(AbstractAiFramework):

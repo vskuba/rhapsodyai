@@ -3,14 +3,14 @@ from source.logging_ import logger_info
 
 async_loop: asyncio.AbstractEventLoop | None = None
 waiting_event: asyncio.Event | None = None
-async_loop_task = None
+async_loop_tasks: dict = {}
 
 
-def async_loop_init(loop: asyncio.AbstractEventLoop, loop_task):
-    global async_loop, waiting_event, async_loop_task
+def async_loop_init(loop: asyncio.AbstractEventLoop, loop_task, tread_name):
+    global async_loop, waiting_event, async_loop_tasks
     async_loop = loop
     waiting_event = asyncio.Event()
-    async_loop_task = loop_task
+    async_loop_tasks[tread_name] = loop_task
 
 
 async def async_waiting_start():
@@ -34,6 +34,8 @@ def async_waiting_is_active() -> bool:
     return False
 
 
-def async_loop_task_cancel():
-    global async_loop, async_loop_task
-    async_loop.call_soon_threadsafe(async_loop_task.cancel)
+def async_loop_task_cancel(tread_name):
+    global async_loop, async_loop_tasks
+    loop_task = async_loop_tasks.get(tread_name, None)
+    if loop_task:
+        async_loop.call_soon_threadsafe(loop_task.cancel)

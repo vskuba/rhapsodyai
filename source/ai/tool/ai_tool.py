@@ -15,7 +15,7 @@ from source.ai.tool.ai_tool_web import web_read_page
 from source.config import config_get
 from source.logging_ import logger_info
 from source.mcp import mcp_config_list_get, mcp_config_get
-from source.queue import queue_get
+from source.queue_ import queue_get
 
 all_tools: list[Callable] = []
 all_tools_permanent: list[Callable] = []

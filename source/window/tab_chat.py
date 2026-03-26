@@ -1,3 +1,4 @@
+import CTkToolTip
 import customtkinter as ctk
 import source.window
 from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
@@ -10,6 +11,7 @@ from source.window.ui import task_item_draw, window_chat_input_send, window_chat
 
 ai_task_manager = AiFrameworkTaskManagerPydantic()
 ai_agent_manager = AiFrameworkAgentManagerPydantic()
+
 
 class TabChat:
     def __init__(self):
@@ -26,9 +28,13 @@ class TabChat:
         self.chat_frame = ctk.CTkFrame(parent_frame, corner_radius=10, fg_color="transparent")
         self.chat_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.chat_frame.grid_columnconfigure(0, weight=3)  # Чат (было 2)
-        self.chat_frame.grid_columnconfigure(1, weight=1)  # Агенты (НОВАЯ)
-        self.chat_frame.grid_columnconfigure(2, weight=2)  # Задачи (было 1)
+        # self.chat_frame.grid_columnconfigure(0, weight=3)  # Чат (было 2)
+        # self.chat_frame.grid_columnconfigure(1, weight=1)  # Агенты (НОВАЯ)
+        # self.chat_frame.grid_columnconfigure(2, weight=2)  # Задачи (было 1)
+
+        self.chat_frame.grid_columnconfigure(0, weight=3)
+        self.chat_frame.grid_columnconfigure(1, weight=0)
+        self.chat_frame.grid_columnconfigure(2, weight=2)
         self.chat_frame.grid_rowconfigure(0, weight=1)
 
         # Диалог (левая колонка)
@@ -189,18 +195,78 @@ class TabChat:
             command=lambda: window_chat_input_send('No')
         ).pack(side="left", expand=True, padx=5, fill="x")
 
-        # 2. Колонку: Агенты
-        chat_frame_agents = ctk.CTkScrollableFrame(
-            self.chat_frame,
-            label_text="Агенты",
-            label_font=("Arial", 23, "bold"),
-            border_width=1
+        # 1. Навигационная панель (кнопки-иконки)
+        nav_frame = ctk.CTkFrame(self.chat_frame, width=70, fg_color="transparent")
+        nav_frame.grid(row=0, column=1, rowspan=3, sticky="ns", padx=5, pady=10)
+
+        # 2. Общий контейнер для контента справа
+        self.right_content_container = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
+
+        self.right_content_container.grid_columnconfigure(0, weight=1)
+        self.right_content_container.grid_rowconfigure(0, weight=1)
+
+        self.right_content_container.grid(row=0, column=2, rowspan=3, sticky="nsew", padx=(0, 10), pady=10)
+
+        self.frame_agents = ctk.CTkScrollableFrame(
+            self.right_content_container, label_text="Агенты", label_font=("Arial", 23, "bold"), border_width=1
         )
-        chat_frame_agents._label.configure(anchor="w")
-        chat_frame_agents.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=10, pady=10)
+        self.frame_tasks = ctk.CTkScrollableFrame(
+            self.right_content_container, label_text="Задачи", label_font=("Arial", 23, "bold"), border_width=1
+        )
+        self.frame_db = ctk.CTkScrollableFrame(
+            self.right_content_container, label_text="Данные и память", label_font=("Arial", 23, "bold"), border_width=1
+        )
 
+        # 4. Функция переключения между панелями
+        def show_pane(pane_name):
+            # 1. Сброс стилей ВСЕХ кнопок
+            # (Проверьте, что переменные кнопок называются именно так)
+            for btn in [btn_agents, btn_tasks, btn_db]:
+                btn.configure(fg_color="#3d424b", border_width=1, border_color="#858282")
+
+            # 2. Прячем ВСЕ контентные фреймы через grid_forget
+            self.frame_agents.grid_forget()
+            self.frame_tasks.grid_forget()
+            self.frame_db.grid_forget()
+
+            # 3. Активируем нужную вкладку в row=0 column=0 контейнера right_content_container
+            if pane_name == "agents":
+                self.frame_agents.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+                btn_agents.configure(fg_color="#1f538d", border_color="#5a9ed9")
+            elif pane_name == "tasks":
+                self.frame_tasks.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+                btn_tasks.configure(fg_color="#1f538d", border_color="#5a9ed9")
+            elif pane_name == "db":
+                self.frame_db.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+                btn_db.configure(fg_color="#1f538d", border_color="#5a9ed9")
+
+        # 5. Кнопки навигации в nav_frame
+        btn_agents = ctk.CTkButton(
+            nav_frame, text="🤖", width=65, height=65, corner_radius=15,
+            font=("Arial", 36), fg_color="#3d424b", border_width=2, border_color="#858282",
+            command=lambda: show_pane("agents")
+        )
+        btn_agents.pack(pady=(20, 10), padx=(10, 5))
+        CTkToolTip.CTkToolTip(btn_agents, message="Список Агентов", font=("Arial", 20))
+
+        btn_tasks = ctk.CTkButton(
+            nav_frame, text="📋", width=65, height=65, corner_radius=15,
+            font=("Arial", 36), fg_color="#3d424b", border_width=2, border_color="#858282",
+            command=lambda: show_pane("tasks")
+        )
+        btn_tasks.pack(pady=10, padx=(10, 5))
+        CTkToolTip.CTkToolTip(btn_tasks, message="Доступные Задачи", font=("Arial", 20))
+
+        btn_db = ctk.CTkButton(
+            nav_frame, text="🗄️", width=65, height=65, corner_radius=15,
+            font=("Arial", 36), fg_color="#3d424b", border_width=2, border_color="#858282",
+            command=lambda: show_pane("db")
+        )
+        btn_db.pack(pady=10, padx=(10, 5))
+        CTkToolTip.CTkToolTip(btn_db, message="Данныи и память", font=("Arial", 20))
+
+        # 6. Отрисовка Агентов
         agent_name_list = ai_agent_manager.list()
-
         active_agent_name = "researcher"
         if active_agent_name in agent_name_list:
             agent_name_list.remove(active_agent_name)
@@ -212,23 +278,16 @@ class TabChat:
         for agent_name in agent_name_list:
             is_active = (agent_name == active_agent_name)
             agent_model = ai_agent_manager.load(agent_name)
-            agent_item_draw(agent_model, chat_frame_agents, is_active)
+            agent_item_draw(agent_model, self.frame_agents, is_active)
             agent_model_list.append(agent_model)
-
         state_set('agent_model_list', agent_model_list)
 
-        # Правая колонка: задачи
-        chat_frame_tasks = ctk.CTkScrollableFrame(
-            self.chat_frame,
-            label_text="Доступные задачи",
-            label_font=("Arial", 23, "bold"),
-            border_width=1
-        )
-        chat_frame_tasks._label.configure(anchor="w")
-        chat_frame_tasks.grid(row=0, column=2, rowspan=3, sticky="nsew", padx=10, pady=10)
+        # 7. Отрисовка Задач
+        for task_name in ai_task_manager.list():
+            # Отрисовываем в self.frame_tasks
+            task_item_draw(task_name, self.frame_tasks)
 
-        # Отрисовка задач
-        for name in ai_task_manager.list():
-            task_item_draw(name, chat_frame_tasks)
+        # 8. Установка начального состояния (Агенты открыты по умолчанию)
+        show_pane("agents")
 
         self._initialized = True

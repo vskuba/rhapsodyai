@@ -3,7 +3,7 @@ import queue
 
 from source.async_ import async_waiting_start, async_waiting_clear
 from source.logging_ import logger_info
-from source.queue import queue_get
+from source.queue_ import queue_get
 from source.state import state_get
 
 

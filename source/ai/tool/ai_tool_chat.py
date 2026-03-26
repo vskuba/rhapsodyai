@@ -2,7 +2,7 @@ import asyncio
 
 from source.async_ import async_waiting_start
 from source.logging_ import logger_info
-from source.queue import queue_get
+from source.queue_ import queue_get
 
 
 async def chat_me_question(question: str) -> str:

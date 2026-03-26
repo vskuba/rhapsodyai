@@ -5,7 +5,7 @@ import traceback
 from source.ai.framework.ai_framework import AbstractAiFramework, AiFrameworkModel
 from source.ai.framework.ai_framework_agent_manager import AbstractAiFrameworkAgentManager
 from source.logging_ import logger_info
-from source.queue import queue_get
+from source.queue_ import queue_get
 
 
 class AbstractAiFrameworkAgent(AbstractAiFramework):
