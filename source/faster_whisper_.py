@@ -9,7 +9,7 @@ from source.config import config_get
 from source.logging_ import logger_info
 from source.microphone import microphone_create_microphone
 from source.queue_ import queue_get
-from source.window.ui import window_chat_voice_state_get, agent_active_init
+from source.window.ui import window_chat_voice_state_get
 
 
 def faster_whisper_enable():
@@ -76,7 +76,7 @@ def faster_whisper_listening(
                     logger_info(f"🗣️️ Распознано: {text}")
                     queue_get()['chat'].put({"text": text, "who": 'iam'})
 
-                    agent_active_init(text)
+                    queue_get()['chat_input_send'].put(text)
                 else:
                     logger_info("⚠️ Речь не распознана.")
 

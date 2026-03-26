@@ -7,7 +7,9 @@ from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFramewor
 from source.config import config_get, config_update_and_save
 from source.state import state_set
 from source.window.component import CustomTextbox
-from source.window.ui import task_item_draw, window_chat_input_send, window_chat_voice_toggle, agent_item_draw
+from source.window.ui import window_chat_input_send, window_chat_voice_toggle
+from source.window.ui_agent import agent_item_draw
+from source.window.ui_task import task_item_draw
 
 ai_task_manager = AiFrameworkTaskManagerPydantic()
 ai_agent_manager = AiFrameworkAgentManagerPydantic()
@@ -27,10 +29,6 @@ class TabChat:
 
         self.chat_frame = ctk.CTkFrame(parent_frame, corner_radius=10, fg_color="transparent")
         self.chat_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # self.chat_frame.grid_columnconfigure(0, weight=3)  # Чат (было 2)
-        # self.chat_frame.grid_columnconfigure(1, weight=1)  # Агенты (НОВАЯ)
-        # self.chat_frame.grid_columnconfigure(2, weight=2)  # Задачи (было 1)
 
         self.chat_frame.grid_columnconfigure(0, weight=3)
         self.chat_frame.grid_columnconfigure(1, weight=0)

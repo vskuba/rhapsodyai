@@ -7,6 +7,7 @@ import source.window
 import customtkinter as ctk
 
 from source.ai.framework.ai_framework import AiFrameworkModel
+from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
 from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
 from source.logging_ import logger_info
 from source.queue_ import queue_get
@@ -18,9 +19,10 @@ from source.window.tab_settings import TabSettings
 from source.window.tab_tool import TabTool
 from source.window.ui import (
     window_chat_message_add,
-    window_chat_loading_stop,
     window_chat_active_task_clear,
 )
+from source.window.ui_agent import agent_complete, agent_init
+from source.window.ui_task import task_complete, task_init
 
 chat_message_last_get = None
 
@@ -77,6 +79,9 @@ class WindowAi(ctk.CTk):
         self.queue_task_complete()
 
         self.protocol("WM_DELETE_WINDOW", self.window_close)
+
+        threading.Thread(target=agent_init, daemon=True).start()
+        threading.Thread(target=task_init, daemon=True).start()
 
     def on_tab_changed(self):
         tab_name = self.tabview.get()
@@ -173,15 +178,10 @@ class WindowAi(ctk.CTk):
 
     def thread_monitor(self, framework_model: AiFrameworkModel):
         try:
-            window_chat_loading_stop()
-
             if isinstance(framework_model, AbstractAiFrameworkTaskModel):
-                source.window.chat_task_btn_state[framework_model.name].configure(
-                    text="▶",
-                    fg_color="#2D5A27",
-                    hover_color="#3E7B35"
-                )
-                window_chat_active_task_clear()
+                task_complete(framework_model)
+            if isinstance(framework_model, AbstractAiFrameworkAgentModel):
+                agent_complete(framework_model)
 
             logger_info(f"🚀 Поток '{framework_model.name}' завершён, слот освобождён.")
         except Exception as e:

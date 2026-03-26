@@ -25,6 +25,7 @@ if __name__ == "__main__":
     queue_set({
         'chat': queue.Queue(),
         'chat_response': queue.Queue(),
+        'chat_input_send': queue.Queue(),
         'task': queue.Queue(),
         'task_abort': queue.Queue(),
         'task_complete': queue.Queue(),
