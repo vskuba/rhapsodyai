@@ -76,21 +76,6 @@ def agent_active_switch(target_name):
             lbl.configure(text_color="white")
 
 
-def agent_item_toggle(button, agent_model):
-    current_status = button.cget("text")
-
-    if current_status == "▶":
-        # Переводим в состояние ЗАПУЩЕН
-        button.configure(text="⏹", fg_color="#A93232")  # Красный квадрат
-        agent_active_indicator_running_pulse(button)
-        logger_info(f"🚀 Агент {agent_model.title} запущен")
-        # Здесь ваша логика запуска процесса агента
-    else:
-        # Возвращаем в состояние АКТИВНЫЙ (но не запущенный)
-        button.configure(text="▶", fg_color="#2D5A27")  # Зеленый плей
-        logger_info(f"🛑 Агент {agent_model.title} остановлен")
-
-
 def agent_item_draw(agent_model: AbstractAiFrameworkAgentModel, parent_frame, is_active: bool = False):
     agent_item = ctk.CTkFrame(parent_frame, fg_color="#2b2e34", corner_radius=6)
     agent_item.pack(fill="x", padx=5, pady=3)

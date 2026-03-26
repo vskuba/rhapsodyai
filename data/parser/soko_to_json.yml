@@ -1,13 +1,14 @@
 title: "Parse Soko site to JSON"
+type: "html_to_json"
 source:
   - type: "crawl4ai"
     targets:
-      - { url: "https://soko.ps.me/category/roli", category_name: "Роли" }
-      - { url: "https://soko.ps.me/category/seti", category_name: "Сети" }
-      - { url: "https://soko.ps.me/category/bouli", category_name: "Боули" }
-      - { url: "https://soko.ps.me/category/bouli", category_name: "Макі" }
-      - { url: "https://soko.ps.me/category/gunkani", category_name: "Гункани" }
-      - { url: "https://soko.ps.me/category/nigiri", category_name: "Нігірі" }
+      - { url: "https://soko.ps.me/category/roli"}
+      - { url: "https://soko.ps.me/category/seti"}
+      - { url: "https://soko.ps.me/category/bouli"}
+      - { url: "https://soko.ps.me/category/maki"}
+      - { url: "https://soko.ps.me/category/gunkani"}
+      - { url: "https://soko.ps.me/category/nigiri"}
     schema: soko_menu_schema
 
 destination:
@@ -17,24 +18,29 @@ destination:
 
 schemas:
   soko_menu_schema:
-    name: "Soko Menu Extraction"
-    baseSelector: "div[data-testid='product_block']"
     fields:
-      - name: "title"
-        selector: "p[data-testid='product_name']"
+      - name: "category_name"
+        selector: "section.scroll-spy h1"
         type: "text"
-      - name: "price"
-        selector: "span[data-testid='product_price']"
-        type: "text"
-      - name: "description"
-        selector: "div[itemprop='description']"
-        type: "text"
-      - name: "image_url"
-        selector: "img"
-        type: "attribute"
-        attribute: "src"
+        mandatory: true
+      - name: "items"
+        selector: "div[data-testid='product_block']"
+        type: "nested_list"
+        fields:
+          - name: "title"
+            selector: "p[data-testid='product_name']"
+            type: "text"
+          - name: "price"
+            selector: "span[data-testid='product_price']"
+            type: "text"
+          - name: "description"
+            selector: "div[itemprop='description']"
+            type: "text"
+          - name: "image_url"
+            selector: "img"
+            type: "attribute"
+            attribute: "src"
 
-  # Схема для итогового JSON файла
   soko_menu_destination_schema:
     type: "object"
     required: [ "category_name", "items" ]

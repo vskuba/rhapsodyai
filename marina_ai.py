@@ -13,6 +13,7 @@ from source.ai.ai_thread import ai_thread_framework_run
 from source.faster_whisper_ import faster_whisper_enable
 from source.logging_ import logging_init
 from source.queue_ import queue_set
+from source.state import state_set
 from source.window_ import WindowAi
 
 if __name__ == "__main__":
@@ -37,6 +38,7 @@ if __name__ == "__main__":
 
     faster_whisper_enable()
     window = WindowAi()
+    state_set('window', window)
 
     threading.Thread(target=ai_thread_framework_run, args=(window,), daemon=True).start()
 

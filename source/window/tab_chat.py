@@ -5,10 +5,12 @@ from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import A
 
 from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
 from source.config import config_get, config_update_and_save
+from source.data.parser.data_parser import data_parser_list
 from source.state import state_set
 from source.window.component import CustomTextbox
 from source.window.ui import window_chat_input_send, window_chat_voice_toggle
 from source.window.ui_agent import agent_item_draw
+from source.window.ui_parser import parser_item_draw
 from source.window.ui_task import task_item_draw
 
 ai_task_manager = AiFrameworkTaskManagerPydantic()
@@ -279,6 +281,9 @@ class TabChat:
             agent_item_draw(agent_model, self.frame_agents, is_active)
             agent_model_list.append(agent_model)
         state_set('agent_model_list', agent_model_list)
+
+        for data_parser_name in data_parser_list():
+            parser_item_draw(data_parser_name, self.frame_db)
 
         # 7. Отрисовка Задач
         for task_name in ai_task_manager.list():
