@@ -69,6 +69,7 @@ class AbstractAiFrameworkTask(AbstractAiFramework):
                     return
                 else:
                     framework_model = self.framework_manager.switch_next_sub_task(framework_model)
+                    await self.framework_report(framework_model)
                     continue
 
             except Exception as e:
