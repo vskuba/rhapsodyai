@@ -8,12 +8,12 @@ from source.logging_ import logger_info
 
 chroma_db_collection_name = 'bank_memory'
 
-async def chromadb_memory_save(text: str):
+async def chromadb_memory_save(text: str, collection_name: str = ''):
     """This tool converts the input text into a high-dimensional vector embedding and stores
     it in the ChromaDB collection. This allows for persistent long-term memory, enabling the
     agent to perform semantic searches and retrieve relevant context in future interactions."""
     client = _chroma_db_get_client()
-    collection = client.get_or_create_collection(chroma_db_collection_name)
+    collection = client.get_or_create_collection(collection_name if collection_name else chroma_db_collection_name)
     facts = await _chromadb_extract_facts_from_text(text)
 
     logger_info(f'🔍 Extracted facts from input text: {facts}')
@@ -49,12 +49,12 @@ async def chromadb_memory_save(text: str):
     return f"Extracted and saved {saved_count} facts."
 
 
-async def chromadb_memory_search_text(query: str) -> str:
+async def chromadb_memory_search_text(query: str, collection_name: str = '') -> str:
     """Performs a semantic similarity search within the ChromaDB collection to retrieve relevant
     context or past information. It converts the query into an embedding and returns the most
     closely related documents, effectively providing the agent with access to its long-term memory
     and previously stored knowledge."""
-    results = await _chromadb_memory_search(query)
+    results = await _chromadb_memory_search(query, collection_name)
     if results and results['documents'] and len(results['documents'][0]) > 0:
         # Склеиваем найденные документы в одну строку
         return "\n".join(results['documents'][0])
@@ -62,13 +62,13 @@ async def chromadb_memory_search_text(query: str) -> str:
     return "No relevant memories found."
 
 
-async def _chromadb_memory_search(query: str) -> QueryResult:
+async def _chromadb_memory_search(query: str, collection_name: str = '') -> QueryResult:
     """Performs a semantic similarity search within the ChromaDB collection to retrieve relevant
     context or past information. It converts the query into an embedding and returns the most
     closely related documents, effectively providing the agent with access to its long-term memory
     and previously stored knowledge."""
     client = _chroma_db_get_client()
-    results = client.get_or_create_collection(chroma_db_collection_name).query(
+    results = client.get_or_create_collection(collection_name if collection_name else chroma_db_collection_name).query(
         query_texts=[query],
         n_results=3
     )
