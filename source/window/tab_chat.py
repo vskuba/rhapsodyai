@@ -4,12 +4,14 @@ import source.window
 from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 
 from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
+from source.chroma_db import _chroma_db_get_client
 from source.config import config_get, config_update_and_save
 from source.data.parser.data_parser import data_parser_list
 from source.state import state_set
 from source.window.component import CustomTextbox
 from source.window.ui import window_chat_input_send, window_chat_voice_toggle
 from source.window.ui_agent import agent_item_draw
+from source.window.ui_db import db_item_draw
 from source.window.ui_parser import parser_item_draw
 from source.window.ui_task import task_item_draw
 
@@ -216,18 +218,22 @@ class TabChat:
         self.frame_db = ctk.CTkScrollableFrame(
             self.right_content_container, label_text="Данные и память", label_font=("Arial", 23, "bold"), border_width=1
         )
+        self.frame_parser = ctk.CTkScrollableFrame(
+            self.right_content_container, label_text="Парсеры и конверторы", label_font=("Arial", 23, "bold"), border_width=1
+        )
 
         # 4. Функция переключения между панелями
         def show_pane(pane_name):
             # 1. Сброс стилей ВСЕХ кнопок
             # (Проверьте, что переменные кнопок называются именно так)
-            for btn in [btn_agents, btn_tasks, btn_db]:
+            for btn in [btn_agents, btn_tasks, btn_db, btn_parser]:
                 btn.configure(fg_color="#3d424b", border_width=1, border_color="#858282")
 
             # 2. Прячем ВСЕ контентные фреймы через grid_forget
             self.frame_agents.grid_forget()
             self.frame_tasks.grid_forget()
             self.frame_db.grid_forget()
+            self.frame_parser.grid_forget()
 
             # 3. Активируем нужную вкладку в row=0 column=0 контейнера right_content_container
             if pane_name == "agents":
@@ -235,6 +241,9 @@ class TabChat:
                 btn_agents.configure(fg_color="#1f538d", border_color="#5a9ed9")
             elif pane_name == "tasks":
                 self.frame_tasks.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+                btn_tasks.configure(fg_color="#1f538d", border_color="#5a9ed9")
+            elif pane_name == "parsers":
+                self.frame_parser.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
                 btn_tasks.configure(fg_color="#1f538d", border_color="#5a9ed9")
             elif pane_name == "db":
                 self.frame_db.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
@@ -258,12 +267,20 @@ class TabChat:
         CTkToolTip.CTkToolTip(btn_tasks, message="Доступные Задачи", font=("Arial", 20))
 
         btn_db = ctk.CTkButton(
-            nav_frame, text="🗄️", width=65, height=65, corner_radius=15,
+            nav_frame, text="🗳️", width=65, height=65, corner_radius=15,
             font=("Arial", 36), fg_color="#3d424b", border_width=2, border_color="#858282",
             command=lambda: show_pane("db")
         )
         btn_db.pack(pady=10, padx=(10, 5))
         CTkToolTip.CTkToolTip(btn_db, message="Данныи и память", font=("Arial", 20))
+
+        btn_parser = ctk.CTkButton(
+            nav_frame, text="🧩", width=65, height=65, corner_radius=15,
+            font=("Arial", 36), fg_color="#3d424b", border_width=2, border_color="#858282",
+            command=lambda: show_pane("parsers")
+        )
+        btn_parser.pack(pady=10, padx=(10, 5))
+        CTkToolTip.CTkToolTip(btn_parser, message="Парсеры и конверторы", font=("Arial", 20))
 
         # 6. Отрисовка Агентов
         agent_name_list = ai_agent_manager.list()
@@ -282,8 +299,12 @@ class TabChat:
             agent_model_list.append(agent_model)
         state_set('agent_model_list', agent_model_list)
 
+        chroma_client = _chroma_db_get_client()
+        for chroma_collection in chroma_client.list_collections():
+            db_item_draw(chroma_collection, self.frame_db)
+
         for data_parser_name in data_parser_list():
-            parser_item_draw(data_parser_name, self.frame_db)
+            parser_item_draw(data_parser_name, self.frame_parser)
 
         # 7. Отрисовка Задач
         for task_name in ai_task_manager.list():
