@@ -91,68 +91,29 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
             result: AgentRunResult,
             framework_model: AiFrameworkTaskModelPydantic
     ) -> AiFrameworkResult | None:
-        task = framework_model
-
-        report = "\n\n======== Ответ от LLM: \"%s\" (%d/%d) выполнена ==================================\n\n" % \
-                 (task.title, task.sub_task_current_index + 1, len(task.yaml.sub_tasks))
         if not result or not str(result).strip():
             return None
-        report += "\n\n------- System prompt ------------------------------------------------------------\n\n"
-        report += task.system_prompt
-        report += "\n\n------- Prompt -------------------------------------------------------------------\n\n"
-        report += task.prompt
-        report += "\n\n------- Expect response model ----------------------------------------------------\n\n"
-        fields_info = "\n".join(
-            f"  - {name}: {info.annotation} (desc: {info.description})"
-            for name, info in task.response_model.model_fields.items()
-        )
-        report += f"{task.response_model.__name__}\nFields:\n{fields_info}"
 
         # если ответ просто текст, а не модель
         if not result.output or isinstance(result.output, str):
             return AiFrameworkResult(str(result.output))
-        report += "\n\n------- Raw response --------------------------------------------------------------\n\n"
-        report += str(result)
-        report += "\n\n------- Instrument logs -----------------------------------------------------------\n\n"
-        for msg in result.all_messages():
-            if hasattr(msg, 'parts'):
-                for part in msg.parts:
-                    if isinstance(part, ToolCallPart):
-                        report += f"🛠 Вызов инструмента: {part.tool_name} с аргументами: {part.args}"
-                    elif isinstance(part, ToolReturnPart):
-                        report += f"🛠 Инструмент {part.tool_name} вернул: {part.content}"
-        report += "\n\n------- Model result ---------------------------------------------------------------\n\n"
-        response_model_dict = result.output.model_dump()
-        fields_info = "\n".join(
-            f"  - {name}: {response_model_dict[name]}"
-            for name, _ in task.response_model.model_fields.items()
-        )
-        report += fields_info
 
         text = result.output.text
         response_model_dict = result.output.model_dump()
         del response_model_dict['text']
 
-        task.input_values = task.input_values | response_model_dict
-        report += "\n\n------- Input values refresh ------------------------------------------------------------\n\n"
-        report += str(task.input_values)
+        framework_model.input_values = framework_model.input_values | response_model_dict
 
         messages_new = result.new_messages()
         if messages_new:
             self.message_history_add(framework_model, result.new_messages())
 
-        logger_info(f'🧠 Получили новые сообщения истории в задаче "{task.title}"'
-                    f' ({task.sub_task_current_index + 1}/{len(task.yaml.sub_tasks)})\n'
+        logger_info(f'🧠 Получили новые сообщения истории в задаче "{framework_model.title}"'
+                    f' ({framework_model.sub_task_current_index + 1}/{len(framework_model.yaml.sub_tasks)})\n'
                     f' {self.message_history}')
 
-        if task.history_save:
-            self.task_history_save(result, task)
-
-        report += "\n\n------- Result processed ----------------------------------------------------------------\n\n"
-        report += text
-        report += "\n\n======= Конец ответа от LLM =============================================================\n\n"
-
-        self.task_report(task, report)
+        if framework_model.history_save:
+            self.task_history_save(result, framework_model)
 
         return AiFrameworkResult(text)
 

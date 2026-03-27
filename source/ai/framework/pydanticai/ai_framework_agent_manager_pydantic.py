@@ -30,16 +30,12 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
 
             system_prompt = """
               ⚠️ STRICT API MODE:
-              1. Your response MUST be a single, valid JSON object.
+              1. To provide the final answer, you MUST ALWAYS call the "final_result" tool.
               2. NO markdown formatting (no ```json ... ```), NO preamble, NO conversational text outside the JSON.
-              3. If you are providing a final answer, use the "final_result" tool format or return a JSON object with a "text" field.
-              4. Output ONLY the tool call, function "final_result".
                 
-              JSON structure:
-              {"text": "Your concise response here."}
-                
-              REJECTION: Any output that is not valid JSON will be rejected.
-              
+              Example JSON final response:
+              final_result({"text": "This is an example of your concise response here."})   
+                        
               """
 
             return AiFrameworkAgentModelPydantic(

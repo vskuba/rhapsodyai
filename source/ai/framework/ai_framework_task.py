@@ -33,21 +33,6 @@ class AbstractAiFrameworkTask(AbstractAiFramework):
     def task_history_load(self, task: AbstractAiFrameworkTaskModel) -> list:
         pass
 
-    def task_report(self, task: AbstractAiFrameworkTaskModel, report: str) -> str:
-        filename = f"{task.name}_{task.id}.txt"
-        path = '/'.join([
-            config_get('data_dir'),
-            config_get('report_dir'),
-            filename
-        ])
-        file_path = Path(path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(path, 'a', encoding='utf-8') as f:
-            f.write(report + "\n")
-
-        return path
-
     async def framework_run(self, framework_model: AiFrameworkModel):
         catch_exception: bool = False
         while True:
@@ -56,6 +41,7 @@ class AbstractAiFrameworkTask(AbstractAiFramework):
             try:
                 queue_get()['task_abort'].get_nowait()
                 logger_info(f'🛑 Команда на остановку задачи "{framework_model.name}"')
+                await self.framework_report(framework_model)
                 return
             except queue.Empty:
                 pass
@@ -79,6 +65,7 @@ class AbstractAiFrameworkTask(AbstractAiFramework):
                 if self.framework_manager.is_complete(framework_model):
                     self.framework_manager.task_active_set(None)
                     queue_get()['task_complete'].put(True)
+                    await self.framework_report(framework_model)
                     return
                 else:
                     framework_model = self.framework_manager.switch_next_sub_task(framework_model)
@@ -95,6 +82,7 @@ class AbstractAiFrameworkTask(AbstractAiFramework):
 
                 # rate limit handling
                 if getattr(e, 'status_code', None) in [429, 413]:
+                    await self.framework_report(framework_model)
                     return
 
                 queue_get()['chat'].put({"text": 'Работа будет продолжена', "who": 'agent'})

@@ -1,5 +1,8 @@
 import os
 import re
+import uuid
+from pathlib import Path
+
 import httpx
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -42,6 +45,7 @@ class AbstractAiFrameworkManager(ABC):
 
 class AbstractAiFramework(ABC):
     def __init__(self, framework_manager):
+        self.uuid = str(uuid.uuid4()).split('-')[0]
         self.framework_manager: AbstractAiFrameworkManager = framework_manager
         self.engine_storage: dict[str, Any] = {}
         self.message_history: dict[str, list[Any]] = {}
@@ -147,3 +151,95 @@ class AbstractAiFramework(ABC):
                 tools_local_added.append(t.__name__)
 
         logger_info('🛠 Local инструменты добавлены: ' + ', '.join(tools_local_added))
+
+    async def framework_report(self, framework_model: AiFrameworkModel):
+        report = []
+        total_tokens = 0
+
+        if self.message_history:
+            for agent_name, messages in self.message_history.items():
+                report.append(f"=== АГЕНТ: {agent_name} ===\n")
+
+                for m in messages:
+                    role = '❓'
+                    parts = []
+
+                    # 1. ЗАПРОС (System / User)
+                    if hasattr(m, 'kind') and m.kind == 'request':
+                        role = '👤'
+                        if hasattr(m, 'parts'):
+                            for p in m.parts:
+                                content = getattr(p, 'content', '')
+                                if not content: continue
+
+                                p_type = str(type(p))
+                                if "SystemPromptPart" in p_type:
+                                    role = '⚙️'
+                                elif "ToolReturnPart" in p_type or "ToolResult" in p_type:
+                                    role = '🔧'  # Меняем иконку на ключ для ответов инструментов
+                                    content = f"РЕЗУЛЬТАТ: {content}"
+
+                                parts.append(content)
+
+                    # 2. ОТВЕТ (Assistant / AI)
+                    elif hasattr(m, 'kind') and m.kind == 'response':
+                        role = '🧠'
+                        thinking = getattr(m, 'thinking', None)
+                        if thinking:
+                            parts.append(f"<think>\n{thinking}\n</think>")
+
+                        text = getattr(m, 'text', None)
+                        if text: parts.append(text)
+
+                        # Вызовы инструментов (Assistant говорит: "Я хочу вызвать...")
+                        tool_calls = getattr(m, 'tool_calls', [])
+                        if tool_calls:
+                            role = '🧠'  # Оставляем иконку мозга, так как это намерение AI
+                            for tc in tool_calls:
+                                name = getattr(tc, 'tool_name', 'unknown')
+                                args = getattr(tc, 'args', '{}')
+                                parts.append(f"🔧 ВЫЗОВ: {name}({args})")
+
+                    # 3. ОТВЕТ ИНСТРУМЕНТА (Результат выполнения)
+                    # Проверяем по имени класса или атрибутам
+                    elif "ToolReturn" in str(type(m)) or "ToolResult" in str(type(m)):
+                        role = '🔧'  # Тот самый значок для ответа
+                        # Извлекаем результат (обычно в поле content или result)
+                        content = getattr(m, 'content', '') or getattr(m, 'result', '')
+                        if content:
+                            parts.append(f"РЕЗУЛЬТАТ: {str(content)}")
+
+                    elif "ResponseModel" in str(type(m)):
+                        role = "🎯"  # Иконка цели/финиша
+                        # Согласно скриншоту, текст лежит прямо в атрибуте 'text'
+                        final_text = getattr(m, 'text', '')
+                        if final_text:
+                            # Чистим от спец-пробелов для красоты
+                            final_text = final_text.replace('\u202f', ' ')
+                            parts.append(f"ИТОГОВЫЙ ОТВЕТ: {final_text}")
+
+                    # Если сообщение пустое (техническое), не добавляем его в отчет
+                    if not parts:
+                        continue
+
+                    replica = "\n\n".join(parts)
+                    report.append(f"{role}: {replica}\n")
+
+            filename = f"{framework_model.name}_{self.uuid}.txt"
+
+            # Собираем путь
+            path = Path(config_get('data_dir')) / config_get('report_dir') / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Добавляем заголовок в самое начало списка
+            header = f"👤-🧠 Текущая история общения: {'(total_tokens: ' + str(total_tokens) + ')' if total_tokens > 0 else ''}\n"
+            report.insert(0, header)
+            report.insert(1, "=" * 50 + "\n")
+
+            # Записываем всё в файл (используем 'w', так как имя файла уникальное по времени)
+            with open(path, 'a', encoding='utf-8') as f:
+                # Добавляем пару пустых строк перед новым отчетом для визуального разделения
+                f.write("\n\n" + "=" * 60 + "\n")
+                f.write('\n'.join(report) + "\n")
+
+            print(f"✅ Отчет сохранен: {path}")

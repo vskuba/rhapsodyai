@@ -74,6 +74,6 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
 
         messages_new = result.new_messages()
         if messages_new:
-            self.message_history_add(framework_model, result.new_messages())
+            self.message_history_add(framework_model, result.new_messages() + [result.output])
 
         return AiFrameworkResult(text)

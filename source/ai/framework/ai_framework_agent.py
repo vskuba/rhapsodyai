@@ -21,6 +21,7 @@ class AbstractAiFrameworkAgent(AbstractAiFramework):
             try:
                 queue_get()['agent_abort'].get_nowait()
                 logger_info(f'🛑 Команда на остановку агента "{framework_model.name}"')
+                await self.framework_report(framework_model)
                 return
             except queue.Empty:
                 pass
@@ -43,6 +44,7 @@ class AbstractAiFrameworkAgent(AbstractAiFramework):
 
                     queue_get()['chat'].put({"text": response.text, "who": 'agent'})
 
+                await self.framework_report(framework_model)
                 return
 
             except Exception as e:
@@ -56,6 +58,7 @@ class AbstractAiFrameworkAgent(AbstractAiFramework):
 
                 # rate limit handling
                 if getattr(e, 'status_code', None) in [429, 413]:
+                    await self.framework_report(framework_model)
                     return
 
                 queue_get()['chat'].put({"text": 'Работа будет продолжена', "who": 'agent'})
