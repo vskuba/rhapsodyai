@@ -83,3 +83,8 @@ def window_chat_loading_stop():
     source.window.chat_progress_bar.stop()
     source.window.chat_progress_bar.pack_forget()
     source.window.chat_agent_status_label.configure(text="")
+
+def container_clear(container):
+    """Удаляет все дочерние виджеты из контейнера"""
+    for widget in container.winfo_children():
+        widget.destroy()

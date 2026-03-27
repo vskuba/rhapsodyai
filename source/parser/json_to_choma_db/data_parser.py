@@ -7,7 +7,7 @@ from chromadb.utils import embedding_functions
 from source.chroma_db import _chroma_db_get_client
 
 
-class ParserChroma:
+class ParserJsonToChroma:
     def __init__(self, model: Any):
         self.config = model
         self.chroma_client = _chroma_db_get_client()

@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Union, Any
 from pydantic import Field
 from pydantic.dataclasses import dataclass, rebuild_dataclass
 
-from source.data.parser.data_parser_model import DataParserYaml
+from source.parser.data_parser_model import DataParserYaml
 
 
 @dataclass
@@ -34,7 +34,7 @@ class JsonSchemaModel:
 
 
 @dataclass
-class DataParserChromaYaml(DataParserYaml):
+class DataParserJsonToChromaYaml(DataParserYaml):
     title: str
     type: str
     source: List[SourceModelChroma]
@@ -42,4 +42,4 @@ class DataParserChromaYaml(DataParserYaml):
     schemas: Dict[str, Union[JsonSchemaModel, Any]]
 
 
-rebuild_dataclass(DataParserChromaYaml)
+rebuild_dataclass(DataParserJsonToChromaYaml)

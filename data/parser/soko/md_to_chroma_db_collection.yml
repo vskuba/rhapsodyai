@@ -1,0 +1,24 @@
+name: soko_logic_to_chroma
+title: "Order logic to collection 'soko_logic'"
+type: "md_to_chroma_db"
+
+source:
+  - file_path: "data/md/soko.md"
+    split_strategy: "markdown_header"
+    header_levels: [1, 2, 3] # Список уровней заголовков
+    schema: md_input_schema
+
+destination:
+  - collection_name: "soko_logic"
+    embedding_model: "all-MiniLM-L6-v2" # Теперь лежит прямо в destination
+    distance_metric: "cosine"
+    document_template: "{Header_2}\n{content}" # Используем новый формат шаблона
+    metadata_fields: [ "source_file", "Header_1", "Header_2" ] # Поля для метаданных
+
+schemas:
+  md_input_schema:
+    type: "object"
+    properties:
+      header: { type: "string" }
+      content: { type: "string" }
+      header_level: { type: "integer" }

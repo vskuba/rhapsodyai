@@ -6,11 +6,11 @@ from typing import List, Dict, Any
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, CacheMode, BrowserConfig
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
 
-from source.data.parser.html_to_json.data_parser_model import DataParserHtmlYaml
+from source.parser.html_to_json.data_parser_model import DataParserHtmlToJsonYaml
 
 
-class ParserHtml:
-    def __init__(self, model: DataParserHtmlYaml):
+class ParserHtmlToJson:
+    def __init__(self, model: DataParserHtmlToJsonYaml):
         self.config = asdict(model) if not isinstance(model, dict) else model
         self.results = []
 

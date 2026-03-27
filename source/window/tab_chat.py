@@ -1,3 +1,5 @@
+import os
+
 import CTkToolTip
 import customtkinter as ctk
 import source.window
@@ -6,10 +8,10 @@ from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import A
 from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
 from source.chroma_db import _chroma_db_get_client
 from source.config import config_get, config_update_and_save
-from source.data.parser.data_parser import data_parser_list
+from source.parser.data_parser import data_parser_path_list
 from source.state import state_set
 from source.window.component import CustomTextbox
-from source.window.ui import window_chat_input_send, window_chat_voice_toggle
+from source.window.ui import window_chat_input_send, window_chat_voice_toggle, container_clear
 from source.window.ui_agent import agent_item_draw
 from source.window.ui_db import db_item_draw
 from source.window.ui_parser import parser_item_draw
@@ -34,7 +36,7 @@ class TabChat:
         self.chat_frame = ctk.CTkFrame(parent_frame, corner_radius=10, fg_color="transparent")
         self.chat_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.chat_frame.grid_columnconfigure(0, weight=3)
+        self.chat_frame.grid_columnconfigure(0, weight=2)
         self.chat_frame.grid_columnconfigure(1, weight=0)
         self.chat_frame.grid_columnconfigure(2, weight=2)
         self.chat_frame.grid_rowconfigure(0, weight=1)
@@ -244,10 +246,16 @@ class TabChat:
                 btn_tasks.configure(fg_color="#1f538d", border_color="#5a9ed9")
             elif pane_name == "parsers":
                 self.frame_parser.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-                btn_tasks.configure(fg_color="#1f538d", border_color="#5a9ed9")
+                btn_parser.configure(fg_color="#1f538d", border_color="#5a9ed9")
             elif pane_name == "db":
                 self.frame_db.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
                 btn_db.configure(fg_color="#1f538d", border_color="#5a9ed9")
+
+                # --- Рендерим список баз данных
+                container_clear(self.frame_db)
+                chroma_client = _chroma_db_get_client()
+                for chroma_collection in chroma_client.list_collections():
+                    db_item_draw(chroma_collection, self.frame_db)
 
         # 5. Кнопки навигации в nav_frame
         btn_agents = ctk.CTkButton(
@@ -282,7 +290,8 @@ class TabChat:
         btn_parser.pack(pady=10, padx=(10, 5))
         CTkToolTip.CTkToolTip(btn_parser, message="Парсеры и конверторы", font=("Arial", 20))
 
-        # 6. Отрисовка Агентов
+        # --- Рендер списока агентов
+
         agent_name_list = ai_agent_manager.list()
         active_agent_name = "researcher"
         if active_agent_name in agent_name_list:
@@ -299,17 +308,54 @@ class TabChat:
             agent_model_list.append(agent_model)
         state_set('agent_model_list', agent_model_list)
 
-        chroma_client = _chroma_db_get_client()
-        for chroma_collection in chroma_client.list_collections():
-            db_item_draw(chroma_collection, self.frame_db)
+        # --- Список задач
 
-        for data_parser_name in data_parser_list():
-            parser_item_draw(data_parser_name, self.frame_parser)
-
-        # 7. Отрисовка Задач
         for task_name in ai_task_manager.list():
             # Отрисовываем в self.frame_tasks
             task_item_draw(task_name, self.frame_tasks)
+
+        # --- Список парсеров
+
+        for item in data_parser_path_list():
+            if isinstance(item, list):
+                # --- ГРУППА ФАЙЛОВ (ПОДПАПКА) ---
+                if item:
+                    # Извлекаем имя папки из пути первого файла в списке
+                    # Например, из 'social/telegram' получим 'SOCIAL'
+                    folder_path = os.path.dirname(item[0])
+                    folder_name = os.path.basename(folder_path).upper()
+
+                    # 1. Создаем контейнер для сепаратора
+                    sep_container = ctk.CTkFrame(self.frame_parser, fg_color="transparent")
+                    sep_container.pack(fill="x", padx=10, pady=(20, 10))
+
+                    # 2. Левая линия
+                    line_left = ctk.CTkFrame(sep_container, height=2, fg_color="#3d424b")
+                    line_left.pack(side="left", fill="x", expand=True, padx=(5, 10))
+
+                    # 3. Текст с названием папки
+                    lbl_folder = ctk.CTkLabel(
+                        sep_container,
+                        text=f"📁 {folder_name}",
+                        font=("Arial", 19, "bold"),
+                        text_color="#7f8c8d"
+                    )
+                    lbl_folder.pack(side="left")
+
+                    # 4. Правая линия
+                    line_right = ctk.CTkFrame(sep_container, height=2, fg_color="#3d424b")
+                    line_right.pack(side="left", fill="x", expand=True, padx=(10, 5))
+
+                # Отрисовка элементов группы
+                for sub_item in item:
+                    parser_item_draw(sub_item, self.frame_parser)
+
+                # Небольшой отступ после завершения группы
+                ctk.CTkLabel(self.frame_parser, text="", height=5).pack()
+
+            else:
+                # --- ОБЫЧНЫЙ ФАЙЛ (КОРЕНЬ) ---
+                parser_item_draw(item, self.frame_parser)
 
         # 8. Установка начального состояния (Агенты открыты по умолчанию)
         show_pane("agents")

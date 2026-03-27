@@ -1,4 +1,4 @@
-title: "Soko site menu to json"
+title: "Site menu to json"
 type: "html_to_json"
 source:
   - type: "crawl4ai"

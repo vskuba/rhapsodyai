@@ -1,4 +1,4 @@
-title: "Soko json to Chroma DB"
+title: "Json menu to collection 'soko_menu'"
 type: "json_to_chroma_db"
 
 source:

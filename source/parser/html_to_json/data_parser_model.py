@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict, Union, Any
 from pydantic import Field
 
-from source.data.parser.data_parser_model import DataParserYaml
+from source.parser.data_parser_model import DataParserYaml
 
 
 @dataclass
@@ -54,7 +54,7 @@ class DestinationSchemaModel:
 
 
 @dataclass
-class DataParserHtmlYaml(DataParserYaml):
+class DataParserHtmlToJsonYaml(DataParserYaml):
     source: List[SourceModel]
     destination: List[DestinationModel]
     schemas: Dict[str, Union[SourceSchemaModel, DestinationSchemaModel]]
