@@ -222,7 +222,14 @@ class AbstractAiFramework(ABC):
                     if not parts:
                         continue
 
-                    replica = "\n\n".join(parts)
+                    string_parts = []
+                    for p in parts:
+                        if isinstance(p, list):
+                            string_parts.append(" ".join(map(str, p)))
+                        else:
+                            string_parts.append(str(p))
+
+                    replica = "\n\n".join(string_parts)
                     report.append(f"{role}: {replica}\n")
 
             filename = f"{framework_model.name}_{self.uuid}.txt"

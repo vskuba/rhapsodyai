@@ -1,5 +1,6 @@
 import os
 import traceback
+from functools import partial
 
 from pydantic import create_model, Field
 from source.ai.framework.ai_framework_agent_manager import AbstractAiFrameworkAgentManager
@@ -7,6 +8,7 @@ from source.ai.framework.ai_framework_agent_model import AiAgentYaml
 from source.ai.framework.pydanticai.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
 from source.config import config_get
 from source.logging_ import logger_info
+from source.queue_ import queue_get
 
 
 class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
@@ -38,7 +40,13 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
                         
               """
 
-            return AiFrameworkAgentModelPydantic(
+            async def on_complete(response_text: str, framework_model: AiFrameworkAgentModelPydantic):
+                if framework_model.interaction == 'chat':
+                    queue_get()['chat'].put({"text": response_text, "who": 'agent'})
+                if framework_model.interaction == 'telegram':
+                    queue_get()['telegram_response'].put({"text": response_text, "framework_model": framework_model})
+
+            framework_model = AiFrameworkAgentModelPydantic(
                 name=agent_yaml.filename,
                 title=agent_yaml.title,
                 description=agent_yaml.description,
@@ -47,8 +55,13 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
                 tools=agent_yaml.tools,
                 response_model=create_model('ResponseModel', **{
                     'text': (str, Field(description="Final result"))
-                })
+                }),
+                interaction=agent_yaml.interaction if agent_yaml.interaction else 'chat',
             )
+
+            framework_model.on_complete=partial(on_complete, framework_model=framework_model)
+
+            return framework_model
 
         except Exception as e:
             backtrace = traceback.format_exc()

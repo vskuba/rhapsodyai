@@ -36,13 +36,8 @@ class AbstractAiFrameworkAgent(AbstractAiFramework):
                 response = self.engine_result_handle(result, framework_model)
 
                 if response is not None:
-
-                    if framework_model.is_sub_thread:
-                        if framework_model.on_complete:
-                            await framework_model.on_complete(response.text)
-                        return
-
-                    queue_get()['chat'].put({"text": response.text, "who": 'agent'})
+                    if framework_model.on_complete:
+                        await framework_model.on_complete(response.text)
 
                 await self.framework_report(framework_model)
                 return
