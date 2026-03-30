@@ -18,13 +18,17 @@ ai_agent_manager = AiFrameworkAgentManagerPydantic()
 agents_widgets_storage = {}
 
 
-def agent_active_indicator_pulse(widget, state=True):
+def agent_active_indicator_pulse(widget, agent_name, state=True):
     if not widget.winfo_exists(): return
-    if widget.cget("fg_color") == "#444444": return
+
+    active_agent = state_get('agent_active')
+    if not active_agent or active_agent.name != agent_name:
+        widget.configure(fg_color="#444444")
+        return
 
     color = "#2ecc71" if state else "#1e8449"
     widget.configure(fg_color=color)
-    widget.after(700, lambda: agent_active_indicator_pulse(widget, not state))
+    widget.after(400, lambda: agent_active_indicator_pulse(widget, agent_name, not state))
 
 
 def agent_active_indicator_running_pulse(widget, state=0):
@@ -55,23 +59,22 @@ def agent_active_indicator_running_stop_pulse(button, agent_model):
 
 
 def agent_active_switch(target_name):
+    target_data = agents_widgets_storage.get(target_name)
+    if not target_data: return
+
+    state_set('agent_active', target_data["model"])
+    window_chat_progress_title_display(target_data["model"])
+
     for name, widgets in agents_widgets_storage.items():
         indicator = widgets["indicator"]
         lbl = widgets["label"]
-        # btn = widgets["btn_state"] # Теперь кнопка статична, она нам тут не нужна
 
         if name == target_name:
-            indicator.configure(fg_color="#2ecc71")  # Зеленый кружок
+            indicator.configure(fg_color="#2ecc71")
             lbl.configure(text_color="#A8E6CF")
-            # ЗАПУСКАЕМ мигание кружка
-            agent_active_indicator_pulse(indicator)
-
-            # Системная активация
-            model = ai_agent_manager.load(name)
-            state_set('agent_active', model)
-            window_chat_progress_title_display(model)
+            agent_active_indicator_pulse(indicator, name)
         else:
-            indicator.configure(fg_color="#444444")  # Серый кружок
+            indicator.configure(fg_color="#444444")
             lbl.configure(text_color="white")
 
 
@@ -129,12 +132,13 @@ def agent_item_draw(agent_model: AbstractAiFrameworkAgentModel, parent_frame, is
     agents_widgets_storage[agent_model.name] = {
         "indicator": indicator,
         "btn_state": btn_state,
-        "label": lbl_name
+        "label": lbl_name,
+        "model": agent_model
     }
 
     if is_active:
-        agent_active_indicator_pulse(indicator)
         state_set('agent_active', agent_model)
+        agent_active_indicator_pulse(indicator, agent_model.name)
 
     return agent_item
 

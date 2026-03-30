@@ -19,7 +19,9 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
         if not os.path.exists(self.dir()):
             return []
 
-        return [os.path.splitext(f)[0] for f in os.listdir(self.dir()) if f.endswith('.yml')]
+        names = [os.path.splitext(f)[0] for f in os.listdir(self.dir()) if f.endswith('.yml')]
+
+        return sorted(names)
 
     def filepath_get(self, name: str) -> str:
         if name not in self.list():

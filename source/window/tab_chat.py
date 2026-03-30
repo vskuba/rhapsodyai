@@ -9,7 +9,7 @@ from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import A
 from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
 from source.chroma_db import _chroma_db_get_client
 from source.config import config_get, config_update_and_save
-from source.parser.data_parser import data_parser_path_list
+from source.parser.data_parser import data_parser_path_list, data_parser_load
 from source.state import state_set
 from source.window.component import CustomTextbox
 from source.window.ui import window_chat_input_send, window_chat_voice_toggle, container_clear
@@ -222,7 +222,8 @@ class TabChat:
             self.right_content_container, label_text="Данные и память", label_font=("Arial", 23, "bold"), border_width=1
         )
         self.frame_parser = ctk.CTkScrollableFrame(
-            self.right_content_container, label_text="Парсеры и конверторы", label_font=("Arial", 23, "bold"), border_width=1
+            self.right_content_container, label_text="Парсеры и конверторы", label_font=("Arial", 23, "bold"),
+            border_width=1
         )
 
         # 4. Функция переключения между панелями
@@ -291,113 +292,86 @@ class TabChat:
         btn_parser.pack(pady=10, padx=(10, 5))
         CTkToolTip.CTkToolTip(btn_parser, message="Парсеры и конверторы", font=("Arial", 20))
 
-        # --- Рендер списока агентов
-
-        threading.Thread(target=self._async_load_agents, daemon=True).start()
-
-        # agent_name_list = ai_agent_manager.list()
-        # active_agent_name = "researcher"
-        # if active_agent_name in agent_name_list:
-        #     agent_name_list.remove(active_agent_name)
-        #     agent_name_list.insert(0, active_agent_name)
-        # elif agent_name_list:
-        #     active_agent_name = agent_name_list[0]
-        #
-        # agent_model_list = []
-        # for agent_name in agent_name_list:
-        #     is_active = (agent_name == active_agent_name)
-        #     agent_model = ai_agent_manager.load(agent_name)
-        #     agent_item_draw(agent_model, self.frame_agents, is_active)
-        #     agent_model_list.append(agent_model)
-        # state_set('agent_model_list', agent_model_list)
-
-        # --- Список задач
-
-        for task_name in ai_task_manager.list():
-            # Отрисовываем в self.frame_tasks
-            task_item_draw(task_name, self.frame_tasks)
-
-        # --- Список парсеров
-
-        for item in data_parser_path_list():
-            if isinstance(item, list):
-                # --- ГРУППА ФАЙЛОВ (ПОДПАПКА) ---
-                if item:
-                    # Извлекаем имя папки из пути первого файла в списке
-                    # Например, из 'social/telegram' получим 'SOCIAL'
-                    folder_path = os.path.dirname(item[0])
-                    folder_name = os.path.basename(folder_path).upper()
-
-                    # 1. Создаем контейнер для сепаратора
-                    sep_container = ctk.CTkFrame(self.frame_parser, fg_color="transparent")
-                    sep_container.pack(fill="x", padx=10, pady=(20, 10))
-
-                    # 2. Левая линия
-                    line_left = ctk.CTkFrame(sep_container, height=2, fg_color="#3d424b")
-                    line_left.pack(side="left", fill="x", expand=True, padx=(5, 10))
-
-                    # 3. Текст с названием папки
-                    lbl_folder = ctk.CTkLabel(
-                        sep_container,
-                        text=f"📁 {folder_name}",
-                        font=("Arial", 19, "bold"),
-                        text_color="#7f8c8d"
-                    )
-                    lbl_folder.pack(side="left")
-
-                    # 4. Правая линия
-                    line_right = ctk.CTkFrame(sep_container, height=2, fg_color="#3d424b")
-                    line_right.pack(side="left", fill="x", expand=True, padx=(10, 5))
-
-                # Отрисовка элементов группы
-                for sub_item in item:
-                    parser_item_draw(sub_item, self.frame_parser)
-
-                # Небольшой отступ после завершения группы
-                ctk.CTkLabel(self.frame_parser, text="", height=5).pack()
-
-            else:
-                # --- ОБЫЧНЫЙ ФАЙЛ (КОРЕНЬ) ---
-                parser_item_draw(item, self.frame_parser)
-
-        # 8. Установка начального состояния (Агенты открыты по умолчанию)
+        threading.Thread(target=self._async_load_data, daemon=True).start()
         show_pane("agents")
 
         self._initialized = True
 
-    def _async_load_agents(self):
-        """Метод для выполнения в отдельном потоке"""
+    def _async_load_data(self):
+        """Единый метод для фоновой загрузки: Агенты + Задачи + Парсеры"""
         try:
-            agent_name_list = ai_agent_manager.list()
-            active_agent_name = "researcher"
-
-            if active_agent_name in agent_name_list:
-                agent_name_list.remove(active_agent_name)
-                agent_name_list.insert(0, active_agent_name)
-            elif agent_name_list:
-                active_agent_name = agent_name_list[0]
+            # --- 1. АГЕНТЫ (загрузка моделей) ---
+            agent_names = ai_agent_manager.list()
+            active_name = "researcher"
+            if active_name not in agent_names and agent_names:
+                active_name = agent_names[0]
 
             loaded_agents = []
-            for agent_name in agent_name_list:
-                # Тяжелая операция загрузки модели
-                agent_model = ai_agent_manager.load(agent_name)
-                is_active = (agent_name == active_agent_name)
-                loaded_agents.append((agent_model, is_active))
+            for name in agent_names:
+                model = ai_agent_manager.load(name)
+                loaded_agents.append((model, name == active_name))
 
-            # Передаем подготовленные данные в главный поток для отрисовки
-            self.chat_frame.after(0, lambda: self._draw_agents_ui(loaded_agents))
+            # --- 2. ЗАДАЧИ (просто список имен) ---
+            tasks = ai_task_manager.list()
+
+            # --- 3. ПАРСЕРЫ (загрузка моделей с сохранением структуры групп) ---
+            parsers_raw = data_parser_path_list()
+            loaded_parsers = []
+
+            for item in parsers_raw:
+                if isinstance(item, list):
+                    # Если это группа (папка), загружаем каждую модель в этой группе
+                    group_models = []
+                    for p_path in item:
+                        try:
+                            group_models.append(data_parser_load(p_path))
+                        except Exception as e:
+                            print(f"[ERROR] Ошибка загрузки парсера {p_path}: {e}")
+                    loaded_parsers.append(group_models)
+                else:
+                    # Одиночный парсер в корне
+                    try:
+                        loaded_parsers.append(data_parser_load(item))
+                    except Exception as e:
+                        print(f"[ERROR] Ошибка загрузки парсера {item}: {e}")
+
+            # Отправляем всё на отрисовку разом
+            self.chat_frame.after(0, lambda: self._ui_render_finish(loaded_agents, tasks, loaded_parsers))
 
         except Exception as e:
-            print(f"[ERROR] Ошибка при фоновой загрузке агентов: {e}")
+            print(f"[ERROR] Критическая ошибка загрузки данных: {e}")
 
-    def _draw_agents_ui(self, loaded_agents):
-        """Метод для отрисовки, выполняется в главном потоке"""
-        container_clear(self.frame_agents)  # Очищаем, если там было что-то временное
-
+    def _ui_render_finish(self, agents, tasks, parsers):
+        # 1. Отрисовка агентов
+        container_clear(self.frame_agents)
         agent_model_list = []
-        for agent_model, is_active in loaded_agents:
-            agent_item_draw(agent_model, self.frame_agents, is_active)
-            agent_model_list.append(agent_model)
-
+        for model, is_active in agents:
+            agent_item_draw(model, self.frame_agents, is_active)
+            agent_model_list.append(model)
         state_set('agent_model_list', agent_model_list)
-        print(f"[DEBUG] Агенты отрисованы: {len(agent_model_list)} шт.")
+
+        # 2. Отрисовка задач
+        for t_name in tasks:
+            task_item_draw(t_name, self.frame_tasks)
+
+        # 3. Отрисовка парсеров (твоя логика с группами)
+        for item in parsers:
+            if isinstance(item, list):
+                if item:
+                    first_parser_obj = item[0]
+                    folder_path = os.path.dirname(first_parser_obj.path)
+                    folder_name = os.path.basename(folder_path).upper()
+
+                    self._draw_parser_separator(folder_name)
+
+                    for sub in item:
+                        parser_item_draw(sub, self.frame_parser)
+            else:
+                parser_item_draw(item, self.frame_parser)
+
+    def _draw_parser_separator(self, name):
+        sep = ctk.CTkFrame(self.frame_parser, fg_color="transparent")
+        sep.pack(fill="x", padx=10, pady=(20, 10))
+        ctk.CTkFrame(sep, height=2, fg_color="#3d424b").pack(side="left", fill="x", expand=True, padx=(5, 10))
+        ctk.CTkLabel(sep, text=f"📁 {name}", font=("Arial", 19, "bold"), text_color="#7f8c8d").pack(side="left")
+        ctk.CTkFrame(sep, height=2, fg_color="#3d424b").pack(side="left", fill="x", expand=True, padx=(10, 5))
