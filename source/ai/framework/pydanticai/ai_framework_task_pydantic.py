@@ -101,7 +101,7 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
 
         messages_new = result.new_messages()
         if messages_new:
-            self.message_history_add(framework_model, result.new_messages() + [result.output])
+            self.message_history_add(framework_model, result.new_messages())
 
         logger_info(f'🧠 Получили новые сообщения истории в задаче "{framework_model.title}"'
                     f' ({framework_model.sub_task_current_index + 1}/{len(framework_model.yaml.sub_tasks)})\n'

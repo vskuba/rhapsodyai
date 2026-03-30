@@ -38,14 +38,6 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
             title = task_yaml.title
             sub_task_current = task_yaml.sub_tasks[sub_task_index]
 
-            type_mapping = {
-                'str': str,
-                'bool': bool,
-                'int': int,
-                'float': float,
-                'list': list
-            }
-
             prompt_system = task_yaml.system_prompt
             pattern = r"\{env:([^}]+)}"
             matches = re.findall(pattern, prompt_system)
@@ -114,14 +106,6 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
             response_model_input_values = {var: name for name, var, _ in matches}
             prompt = re.sub(r"\{\{([^}|]+)\|[^:]+:(" + "|".join(type_mapping) + r")}}", r"\1", prompt)
 
-            # json_response_model = [str({k: t[0].__name__ for k, t in response_model_fields.items()})]
-            # json_keys = ','.join(json_response_model)
-            # prompt_extra = f"""
-            # IMPORTANT: Your response MUST be in JSON format.
-            # The JSON must regarding follow structure: "{json_keys}".
-            # """
-
-        # Создаем класс на лету, наследуясь от BaseModel
         return prompt, create_model('ResponseModel', **response_model_fields), response_model_input_values
 
     def prompt_parse_input_fields(
