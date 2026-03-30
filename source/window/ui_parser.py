@@ -107,7 +107,7 @@ def parser_item_draw(parser_model: DataParserYaml, parent_container):
     btn_yml = ctk.CTkButton(
         actions_frame, text="📄 .yml", width=110, height=45,
         font=("Arial", 24), fg_color="#3d65a1",
-        command=lambda: open_file_in_editor(os.path.join(data_parser_dir(), f"{parser_name}.yml"))
+        command=lambda: open_file_in_editor(os.path.join(data_parser_dir(), f"{parser_path}.yml"))
     )
     btn_yml.pack(side="left", padx=10)
 
