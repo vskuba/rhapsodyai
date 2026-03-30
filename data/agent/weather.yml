@@ -1,4 +1,5 @@
 title: Weather
+specialization: weather
 description: | 
   Agent which analyze and return weather information for customer request. 
   Agent retrieve weather information for specific city and day offset from current day.

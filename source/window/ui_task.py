@@ -156,23 +156,19 @@ def task_complete(framework_model: AbstractAiFrameworkTaskModel):
     task_active = None
 
 
-def task_init():
-    while True:
-        time.sleep(0.3)
+def task_check_queue(root):
+    try:
+        if state_get('agent_active_type') != 'task':
+            root.after(100, lambda: task_check_queue(root))
+            return
+
+        text = ''
         try:
-            if state_get('agent_active_type') != 'task':
-                continue
+            text = queue_get()['chat_input_send'].get_nowait()
+        except queue.Empty:
+            pass
 
-            text = ''
-            try:
-                text = queue_get()['chat_input_send'].get_nowait()
-            except queue.Empty:
-                time.sleep(0.1)
-                pass
-
-            if not text:
-                continue
-
+        if text:
             if task_active and async_waiting_is_active():
                 queue_get()['chat_response'].put(text)
                 time.sleep(0.05)
@@ -183,9 +179,11 @@ def task_init():
                 )
                 window_chat_loading_stop()
 
-        except Exception as e:
-            backtrace = traceback.format_exc()
-            logger_info(
-                f"❌ Сбой в запуске ai framework: {e}."
-                f"Полный стек вызовов:\n{backtrace}"
-            )
+    except Exception as e:
+        backtrace = traceback.format_exc()
+        logger_info(
+            f"❌ Сбой в запуске ai framework: {e}."
+            f"Полный стек вызовов:\n{backtrace}"
+        )
+
+    root.after(100, lambda: task_check_queue(root))

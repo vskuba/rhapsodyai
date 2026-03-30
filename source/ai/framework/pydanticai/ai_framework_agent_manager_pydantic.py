@@ -57,6 +57,7 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
                     'text': (str, Field(description="Final result"))
                 }),
                 interaction=agent_yaml.interaction if agent_yaml.interaction else 'chat',
+                mcp_servers=agent_yaml.mcp_servers
             )
 
             framework_model.on_complete=partial(on_complete, framework_model=framework_model)

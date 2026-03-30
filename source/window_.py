@@ -6,6 +6,7 @@ import queue
 import source.window
 import customtkinter as ctk
 
+from typing import Dict, Any
 from source.ai.framework.ai_framework import AiFrameworkModel
 from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
 from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
@@ -21,8 +22,8 @@ from source.window.ui import (
     window_chat_message_add,
     window_chat_active_task_clear,
 )
-from source.window.ui_agent import agent_complete, agent_init
-from source.window.ui_task import task_complete, task_init
+from source.window.ui_agent import agent_complete, agent_check_queue
+from source.window.ui_task import task_complete, task_check_queue
 
 chat_message_last_get = None
 
@@ -50,55 +51,64 @@ class WindowAi(ctk.CTk):
         self.tabview = ctk.CTkTabview(self)
         self.tabview.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-        self.tabview.add("Настройки")
-        self.tabview.add("Чат")
-        self.tabview.add("Логи")
-        self.tabview.add("Инструменты")
-        self.tabview.add("MCP серверы")
+        # Настраиваем структуру вкладок (здесь только ссылки на классы, объекты не создаем!)
+        self.tabs_metadata: Dict[str, Dict[str, Any]] = {
+            "Настройки": {"class": TabSettings, "instance": None},
+            "Чат": {"class": TabChat, "instance": None},
+            "Логи": {"class": TabLog, "instance": None},
+            "Инструменты": {"class": TabTool, "instance": None},
+            "MCP серверы": {"class": TabMcp, "instance": None},
+        }
 
-        self.tabview.set("Чат")
+        # Добавляем сами вкладки в UI
+        for name in self.tabs_metadata:
+            self.tabview.add(name)
 
         self.tabview._segmented_button.configure(font=("Arial", 27, "bold"))
-
-        # Экземпляры вкладок
-        self.tab_settings = TabSettings()
-        self.tab_chat = TabChat()
-        self.tab_log = TabLog()
-        self.tab_tool = TabTool(master=self)
-        self.tab_mcp = TabMcp(master=self)
-
-        # Биндим переключение вкладок
         self.tabview.configure(command=self.on_tab_changed)
 
-        # Первичная отрисовка активной вкладки
+        # Ставим фокус на "Чат" и триггерим отрисовку ТОЛЬКО этой вкладки
+        self.tabview.set("Чат")
         self.on_tab_changed()
 
-        # Запуск проверки очереди чата
+        # Очереди и протоколы
         self.queue_chat()
         self.queue_tools()
         self.queue_task_complete()
 
         self.protocol("WM_DELETE_WINDOW", self.window_close)
-
-        threading.Thread(target=agent_init, daemon=True).start()
-        threading.Thread(target=task_init, daemon=True).start()
+        self.after(100, lambda: agent_check_queue(self))
+        self.after(100, lambda: task_check_queue(self))
 
     def on_tab_changed(self):
         tab_name = self.tabview.get()
-        print(f"[DEBUG] Открыта вкладка: {tab_name}")
+        info = self.tabs_metadata.get(tab_name)
 
-        parent_frame = self.tabview.tab(tab_name)
+        if info and info["instance"] is None:
+            print(f"[DEBUG] Ленивая загрузка вкладки: {tab_name}")
+            parent_frame = self.tabview.tab(tab_name)
 
-        if tab_name == "Настройки":
-            self.tab_settings.tab_settings_setup(parent_frame)
-        elif tab_name == "Чат":
-            self.tab_chat.tab_chat_setup(parent_frame)
-        elif tab_name == "Логи":
-            self.tab_log.tab_log_setup(parent_frame)
-        elif tab_name == "Инструменты":
-            self.tab_tool.tab_tool_setup(parent_frame)
-        elif tab_name == "MCP серверы":
-            self.tab_mcp.tab_mcp_setup(parent_frame)
+            # 1. Создаем экземпляр
+            if tab_name in ["Инструменты", "MCP серверы"]:
+                info["instance"] = info["class"](master=self)
+            else:
+                info["instance"] = info["class"]()
+
+            mapping = {
+                "Настройки": "tab_settings_setup",
+                "Чат": "tab_chat_setup",
+                "Логи": "tab_log_setup",
+                "Инструменты": "tab_tool_setup",
+                "MCP серверы": "tab_mcp_setup"
+            }
+
+            method_name = mapping.get(tab_name)
+
+            if method_name:
+                setup_method = getattr(info["instance"], method_name)
+                setup_method(parent_frame)
+            else:
+                print(f"[ERROR] Не найден метод setup для вкладки: {tab_name}")
 
     def queue_chat(self):
         global chat_message_last_get
@@ -146,7 +156,12 @@ class WindowAi(ctk.CTk):
         try:
             message = queue_get()['tool'].get_nowait()
             logger_info(f"🛠 Сообщение из очереди queue_tool {message}")
-            self.tab_tool.tab_tool_setup()
+
+            tab_tool_info = self.tabs_metadata.get("Инструменты")
+            if tab_tool_info and tab_tool_info["instance"]:
+                tab_tool_info["instance"].tab_tool_setup()
+            else:
+                logger_info("🛠 Вкладка 'Инструменты' еще не инициализирована, пропускаем обновление UI")
 
         except queue.Empty:
             pass

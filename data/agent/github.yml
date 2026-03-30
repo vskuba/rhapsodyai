@@ -1,0 +1,12 @@
+title: Github
+specialization: github
+description: | 
+  Agent which can work with Github.
+
+system_prompt: |
+  Your are agent which work with Github. You have list of Github tools for creating, reading and processing merge request. 
+
+tools:
+  - github_search_repo_by_last_commit
+  - github_search_branch_with_last_commit
+  - github_check_and_merge_url_get

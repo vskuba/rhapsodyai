@@ -14,6 +14,7 @@ class AiAgentYaml(BaseModel):
     filename: str | None = None
     interaction: str | None = None
     tools: Optional[list[str]] = field(default_factory=list)
+    mcp_servers: list[str] = field(default_factory=list)
 
 
 class AbstractAiFrameworkAgentModel(AiFrameworkModel):
@@ -24,7 +25,7 @@ class AbstractAiFrameworkAgentModel(AiFrameworkModel):
             description: str,
             prompt: str,
             system_prompt: str,
-            interaction: str,
+            interaction: str
     ):
         self.id = str(uuid.uuid4())
         self.name = name

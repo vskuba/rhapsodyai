@@ -1,5 +1,6 @@
 import traceback
 
+from source.ai.ai_mcp import AiMcpManager
 from source.ai.framework.ai_framework import AiFrameworkResult
 from source.ai.framework.ai_framework_agent import AbstractAiFrameworkAgent
 from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
@@ -44,8 +45,12 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
         )
 
         engine = self.engine_storage[framework_model.name]
+        ai_mcp_manager = AiMcpManager()
 
         try:
+            if framework_model.mcp_servers:
+                await ai_mcp_manager.mcp_server_add_tools(engine, framework_model)
+
             return await engine.run(
                 user_prompt=framework_model.prompt,
                 message_history=message_history,
@@ -61,6 +66,11 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise e
+
+        finally:
+            if framework_model.mcp_servers:
+                logger_info(f'Закрываем MCP сессии для задачи {framework_model.name}...')
+                await ai_mcp_manager.mcp_server_close_all()
 
     def engine_result_handle(
             self, result: AgentRunResult,

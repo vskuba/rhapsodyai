@@ -1,5 +1,4 @@
 import queue
-import time
 import traceback
 import source.window
 import customtkinter as ctk
@@ -153,23 +152,19 @@ def agent_complete(framework_model: AbstractAiFrameworkAgentModel):
     state_set('agent_active_type', None)
 
 
-def agent_init():
-    while True:
-        time.sleep(0.3)
+def agent_check_queue(root):
+    try:
+        if state_get('agent_active_type'):
+            root.after(100, lambda: agent_check_queue(root))
+            return
+
+        text = ''
         try:
-            if state_get('agent_active_type'):
-                continue
+            text = queue_get()['chat_input_send'].get_nowait()
+        except queue.Empty:
+            pass
 
-            text = ''
-            try:
-                text = queue_get()['chat_input_send'].get_nowait()
-            except queue.Empty:
-                time.sleep(0.1)
-                pass
-
-            if not text:
-                continue
-
+        if text:
             agent_active = state_get('agent_active')
             if agent_active:
                 state_set('agent_active_type', 'agent')
@@ -191,9 +186,11 @@ def agent_init():
                     )
                     agent_active_indicator_running_pulse(btn)
 
-        except Exception as e:
-            backtrace = traceback.format_exc()
-            logger_info(
-                f"❌ Сбой в запуске ai framework: {e}."
-                f"Полный стек вызовов:\n{backtrace}"
-            )
+    except Exception as e:
+        backtrace = traceback.format_exc()
+        logger_info(
+            f"❌ Сбой в запуске ai framework: {e}."
+            f"Полный стек вызовов:\n{backtrace}"
+        )
+
+    root.after(100, lambda: agent_check_queue(root))

@@ -1,0 +1,10 @@
+title: Jira
+specialization: jira
+description: | 
+  Agent which can work with Jira.
+
+mcp_servers:
+  - jira
+
+system_prompt: |
+  Your are agent which work with Jira. You have list of jira tools for creating, reading and processing jira rask issues. 

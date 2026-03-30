@@ -6,7 +6,7 @@ from typing import Callable, Dict, Any
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
-from source.ai.framework.pydanticai.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
+from source.ai.framework.ai_framework import AiFrameworkModel
 from source.logging_ import logger_info
 from source.mcp import mcp_config_get, mcp_config_tools_json_get
 
@@ -16,15 +16,15 @@ class AiMcpManager:
         self.exit_stack = contextlib.AsyncExitStack()  # Для авто-закрытия всех серверов
         self.sessions: dict[str, ClientSession] = {}
 
-    async def mcp_server_add_tools(self, engine, task: AiFrameworkTaskModelPydantic):
+    async def mcp_server_add_tools(self, engine, framework_model: AiFrameworkModel):
         try:
-            mcp_sessions = await self._mcp_server_session(task.mcp_servers)
+            mcp_sessions = await self._mcp_server_session(framework_model.mcp_servers)
             mcp_tools_added = []
             for mcp_server_name, session in mcp_sessions.items():
                 mcp_config_tools_json = mcp_config_tools_json_get(mcp_server_name)
                 for tool_json in mcp_config_tools_json:
 
-                    if not tool_json.get('name', None) in task.tools:
+                    if not tool_json.get('name', None) in framework_model.tools:
                         continue
 
                     mcp_tool_func = self._mcp_tool_func_from_json(mcp_server_name, tool_json, session)
