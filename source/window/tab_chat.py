@@ -1,4 +1,5 @@
 import os
+import threading
 
 import CTkToolTip
 import customtkinter as ctk
@@ -27,10 +28,10 @@ class TabChat:
         self.chat_frame = None  # можно хранить ссылки, если нужно
 
     def tab_chat_setup(self, parent_frame=None):
-        if parent_frame is None:
-            parent_frame = self.tabview.tab("Чат")
-
         if self._initialized:
+            return
+
+        if parent_frame is None:
             return
 
         self.chat_frame = ctk.CTkFrame(parent_frame, corner_radius=10, fg_color="transparent")
@@ -292,21 +293,23 @@ class TabChat:
 
         # --- Рендер списока агентов
 
-        agent_name_list = ai_agent_manager.list()
-        active_agent_name = "researcher"
-        if active_agent_name in agent_name_list:
-            agent_name_list.remove(active_agent_name)
-            agent_name_list.insert(0, active_agent_name)
-        elif agent_name_list:
-            active_agent_name = agent_name_list[0]
+        threading.Thread(target=self._async_load_agents, daemon=True).start()
 
-        agent_model_list = []
-        for agent_name in agent_name_list:
-            is_active = (agent_name == active_agent_name)
-            agent_model = ai_agent_manager.load(agent_name)
-            agent_item_draw(agent_model, self.frame_agents, is_active)
-            agent_model_list.append(agent_model)
-        state_set('agent_model_list', agent_model_list)
+        # agent_name_list = ai_agent_manager.list()
+        # active_agent_name = "researcher"
+        # if active_agent_name in agent_name_list:
+        #     agent_name_list.remove(active_agent_name)
+        #     agent_name_list.insert(0, active_agent_name)
+        # elif agent_name_list:
+        #     active_agent_name = agent_name_list[0]
+        #
+        # agent_model_list = []
+        # for agent_name in agent_name_list:
+        #     is_active = (agent_name == active_agent_name)
+        #     agent_model = ai_agent_manager.load(agent_name)
+        #     agent_item_draw(agent_model, self.frame_agents, is_active)
+        #     agent_model_list.append(agent_model)
+        # state_set('agent_model_list', agent_model_list)
 
         # --- Список задач
 
@@ -361,3 +364,40 @@ class TabChat:
         show_pane("agents")
 
         self._initialized = True
+
+    def _async_load_agents(self):
+        """Метод для выполнения в отдельном потоке"""
+        try:
+            agent_name_list = ai_agent_manager.list()
+            active_agent_name = "researcher"
+
+            if active_agent_name in agent_name_list:
+                agent_name_list.remove(active_agent_name)
+                agent_name_list.insert(0, active_agent_name)
+            elif agent_name_list:
+                active_agent_name = agent_name_list[0]
+
+            loaded_agents = []
+            for agent_name in agent_name_list:
+                # Тяжелая операция загрузки модели
+                agent_model = ai_agent_manager.load(agent_name)
+                is_active = (agent_name == active_agent_name)
+                loaded_agents.append((agent_model, is_active))
+
+            # Передаем подготовленные данные в главный поток для отрисовки
+            self.chat_frame.after(0, lambda: self._draw_agents_ui(loaded_agents))
+
+        except Exception as e:
+            print(f"[ERROR] Ошибка при фоновой загрузке агентов: {e}")
+
+    def _draw_agents_ui(self, loaded_agents):
+        """Метод для отрисовки, выполняется в главном потоке"""
+        container_clear(self.frame_agents)  # Очищаем, если там было что-то временное
+
+        agent_model_list = []
+        for agent_model, is_active in loaded_agents:
+            agent_item_draw(agent_model, self.frame_agents, is_active)
+            agent_model_list.append(agent_model)
+
+        state_set('agent_model_list', agent_model_list)
+        print(f"[DEBUG] Агенты отрисованы: {len(agent_model_list)} шт.")

@@ -1,6 +1,5 @@
 import os
 import threading
-import time
 import traceback
 import queue
 import source.window
@@ -207,18 +206,18 @@ class WindowAi(ctk.CTk):
             )
 
     def window_close(self):
-        print("Закрытие приложения...")
+        print("Принудительное завершение...")
+
+        # 1. Останавливаем обработку событий Tkinter
+        self.withdraw()  # Сразу прячем окно с экрана, чтобы юзер не ждал
 
         try:
+            # 2. Быстрая очистка асинхронки (если она не зависает)
             from source.async_ import async_waiting_clear
             async_waiting_clear()
         except:
             pass
 
-        time.sleep(0.3)
-
-        self.quit()
-        self.destroy()
-
-        print("Принудительное завершение процесса...")
+        # 3. Полный выход без церемоний
+        # Мы не вызываем self.quit() и destroy(), если хотим мгновенно убить процесс
         os._exit(0)
