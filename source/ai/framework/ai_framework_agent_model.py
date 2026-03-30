@@ -11,6 +11,7 @@ class AiAgentYaml(BaseModel):
     title: str
     description: str
     system_prompt: str
+    specialization: str | None = None
     filename: str | None = None
     interaction: str | None = None
     tools: Optional[list[str]] = field(default_factory=list)
@@ -25,7 +26,8 @@ class AbstractAiFrameworkAgentModel(AiFrameworkModel):
             description: str,
             prompt: str,
             system_prompt: str,
-            interaction: str
+            interaction: str,
+            specialization: str
     ):
         self.id = str(uuid.uuid4())
         self.name = name
@@ -34,3 +36,4 @@ class AbstractAiFrameworkAgentModel(AiFrameworkModel):
         self.prompt: str = prompt
         self.system_prompt = system_prompt
         self.interaction = interaction
+        self.specialization = specialization

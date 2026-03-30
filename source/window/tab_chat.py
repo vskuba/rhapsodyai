@@ -39,7 +39,7 @@ class TabChat:
 
         self.chat_frame.grid_columnconfigure(0, weight=2)
         self.chat_frame.grid_columnconfigure(1, weight=0)
-        self.chat_frame.grid_columnconfigure(2, weight=2)
+        self.chat_frame.grid_columnconfigure(2, weight=3)
         self.chat_frame.grid_rowconfigure(0, weight=1)
 
         # Диалог (левая колонка)
@@ -211,6 +211,7 @@ class TabChat:
         self.right_content_container.grid_rowconfigure(0, weight=1)
 
         self.right_content_container.grid(row=0, column=2, rowspan=3, sticky="nsew", padx=(0, 10), pady=10)
+        self.right_content_container.grid_propagate(False)
 
         self.frame_agents = ctk.CTkScrollableFrame(
             self.right_content_container, label_text="Агенты", label_font=("Arial", 23, "bold"), border_width=1
@@ -252,12 +253,6 @@ class TabChat:
             elif pane_name == "db":
                 self.frame_db.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
                 btn_db.configure(fg_color="#1f538d", border_color="#5a9ed9")
-
-                # --- Рендерим список баз данных
-                container_clear(self.frame_db)
-                chroma_client = _chroma_db_get_client()
-                for chroma_collection in chroma_client.list_collections():
-                    db_item_draw(chroma_collection, self.frame_db)
 
         # 5. Кнопки навигации в nav_frame
         btn_agents = ctk.CTkButton(
@@ -344,11 +339,26 @@ class TabChat:
     def _ui_render_finish(self, agents, tasks, parsers):
         # 1. Отрисовка агентов
         container_clear(self.frame_agents)
-        agent_model_list = []
-        for model, is_active in agents:
+
+        # 1. Разделяем на две группы
+        # agents_data — это список кортежей (model, is_active)
+        main_agents = [a for a in agents if not a[0].specialization]
+        sub_agents = [a for a in agents if a[0].specialization]
+
+        # 2. Рендерим основных агентов (сверху)
+        for model, is_active in main_agents:
             agent_item_draw(model, self.frame_agents, is_active)
-            agent_model_list.append(model)
-        state_set('agent_model_list', agent_model_list)
+
+        # 3. Рисуем ОДИН разделитель, если есть субагенты
+        if sub_agents:
+            self._draw_section_separator(self.frame_agents, "🛠️ СУБАГЕНТЫ И СПЕЦИАЛИЗАЦИИ")
+
+        # 4. Рендерим субагентов (снизу)
+        for model, is_active in sub_agents:
+            agent_item_draw(model, self.frame_agents, is_active)
+
+        # Сохраняем общий список в стейт для работы логики переключения
+        state_set('agent_model_list', [a[0] for a in agents])
 
         # 2. Отрисовка задач
         for t_name in tasks:
@@ -362,16 +372,41 @@ class TabChat:
                     folder_path = os.path.dirname(first_parser_obj.path)
                     folder_name = os.path.basename(folder_path).upper()
 
-                    self._draw_parser_separator(folder_name)
+                    self._draw_section_separator(self.frame_parser, f"📂 {folder_name}")
 
                     for sub in item:
                         parser_item_draw(sub, self.frame_parser)
             else:
                 parser_item_draw(item, self.frame_parser)
 
-    def _draw_parser_separator(self, name):
-        sep = ctk.CTkFrame(self.frame_parser, fg_color="transparent")
-        sep.pack(fill="x", padx=10, pady=(20, 10))
-        ctk.CTkFrame(sep, height=2, fg_color="#3d424b").pack(side="left", fill="x", expand=True, padx=(5, 10))
-        ctk.CTkLabel(sep, text=f"📁 {name}", font=("Arial", 19, "bold"), text_color="#7f8c8d").pack(side="left")
-        ctk.CTkFrame(sep, height=2, fg_color="#3d424b").pack(side="left", fill="x", expand=True, padx=(10, 5))
+        # --- Рендерим список баз данных
+        container_clear(self.frame_db)
+        chroma_client = _chroma_db_get_client()
+        for chroma_collection in chroma_client.list_collections():
+            db_item_draw(chroma_collection, self.frame_db)
+
+    def _draw_section_separator(self, container, title):
+        """Разделитель в стиле заголовка CTkScrollableFrame"""
+        # 1. Создаем контейнер с отступами
+        sep_wrapper = ctk.CTkFrame(container, fg_color="transparent")
+        sep_wrapper.pack(fill="x", padx=2, pady=(20, 10))
+
+        # 2. Сама плашка (фон как у стандартного заголовка)
+        # Цвет #3d424b — стандарт для темной темы customtkinter
+        bg_bar = ctk.CTkFrame(
+            sep_wrapper,
+            height=34,
+            fg_color="#3d424b",
+            corner_radius=6
+        )
+        bg_bar.pack(fill="x")
+        bg_bar.pack_propagate(False)  # Чтобы фрейм держал высоту
+
+        # 3. Текст по центру
+        lbl = ctk.CTkLabel(
+            bg_bar,
+            text=title,
+            font=("Arial", 16, "bold"),
+            text_color="#DCE4EE"  # Светлый текст, как в оригинале
+        )
+        lbl.place(relx=0.5, rely=0.5, anchor="center")

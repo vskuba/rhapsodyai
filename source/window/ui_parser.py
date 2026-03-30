@@ -102,12 +102,13 @@ def parser_item_draw(parser_model: DataParserYaml, parent_container):
 
     # Сохраняем ссылку на кнопку для обратного переключения после завершения
     source.window.chat_task_btn_state[parser_model.path] = btn_state
+    full_yml_path = os.path.join(data_parser_dir(), f"{parser_model.path}.yml")
 
     # Кнопка YML (синяя "📄 .yml")
     btn_yml = ctk.CTkButton(
         actions_frame, text="📄 .yml", width=110, height=45,
         font=("Arial", 24), fg_color="#3d65a1",
-        command=lambda: open_file_in_editor(os.path.join(data_parser_dir(), f"{parser_path}.yml"))
+        command=lambda: open_file_in_editor(full_yml_path)
     )
     btn_yml.pack(side="left", padx=10)
 
