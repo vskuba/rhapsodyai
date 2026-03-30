@@ -383,9 +383,9 @@ class TabChat:
         # --- Рендерим список баз данных
         container_clear(self.frame_db)
 
-        self._draw_section_separator(self.frame_db, f"🧠 Sqllite3", 'http://localhost:8084')
+        self._draw_section_separator(self.frame_db, f"🗳️ Sqllite3", 'http://localhost:8084')
 
-        self._draw_section_separator(self.frame_db, f"🧠 ChromaDb коллекции")
+        self._draw_section_separator(self.frame_db, f"🗳️ ChromaDb коллекции")
         chroma_client = _chroma_db_get_client()
         for chroma_collection in chroma_client.list_collections():
             db_item_draw(chroma_collection, self.frame_db)
