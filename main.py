@@ -6,7 +6,6 @@ import chromadb
 
 from functools import partial
 from chromadb import Settings
-from dotenv import load_dotenv
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 from source.ai.ai_thread import ai_thread_framework_run
@@ -19,7 +18,6 @@ from source.thread_ import thread_with_callback
 from source.window_ import WindowAi
 
 if __name__ == "__main__":
-    load_dotenv()
     logging_init()
 
     ChatCompletion.model_config = ConfigDict(extra='allow')

@@ -94,11 +94,6 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
         if not result or not str(result).strip():
             return None
 
-        # если ответ просто текст, а не модель
-        if not result.output or isinstance(result.output, str):
-            return AiFrameworkResult(str(result.output))
-
-        text = result.output.text
         response_model_dict = result.output.model_dump()
         del response_model_dict['text']
 
@@ -106,7 +101,7 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
 
         messages_new = result.new_messages()
         if messages_new:
-            self.message_history_add(framework_model, result.new_messages())
+            self.message_history_add(framework_model, result.new_messages() + [result.output])
 
         logger_info(f'🧠 Получили новые сообщения истории в задаче "{framework_model.title}"'
                     f' ({framework_model.sub_task_current_index + 1}/{len(framework_model.yaml.sub_tasks)})\n'
@@ -115,7 +110,7 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
         if framework_model.history_save:
             self.task_history_save(result, framework_model)
 
-        return AiFrameworkResult(text)
+        return AiFrameworkResult(result.output.text)
 
     def task_history_save(self, result, task: AiFrameworkTaskModelPydantic):
         messages = result.all_messages()

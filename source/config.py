@@ -1,7 +1,8 @@
 import os
-from dotenv import find_dotenv, set_key
+from dotenv import find_dotenv, set_key, load_dotenv
 from typing import Any
 
+load_dotenv()
 
 def config_get(key: str, default: str = '') -> Any:
     """

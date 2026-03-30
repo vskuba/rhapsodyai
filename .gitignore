@@ -13,6 +13,7 @@ config.yaml
 data/output
 data/log
 data/chroma_db
+data/sqllite3
 data/report
 data/history
 

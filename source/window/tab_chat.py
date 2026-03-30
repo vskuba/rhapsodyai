@@ -1,5 +1,6 @@
 import os
 import threading
+import webbrowser
 
 import CTkToolTip
 import customtkinter as ctk
@@ -381,18 +382,20 @@ class TabChat:
 
         # --- Рендерим список баз данных
         container_clear(self.frame_db)
+
+        self._draw_section_separator(self.frame_db, f"🧠 Sqllite3", 'http://localhost:8084')
+
         self._draw_section_separator(self.frame_db, f"🧠 ChromaDb коллекции")
         chroma_client = _chroma_db_get_client()
         for chroma_collection in chroma_client.list_collections():
             db_item_draw(chroma_collection, self.frame_db)
 
-    def _draw_section_separator(self, container, title):
-        # 1. Создаем контейнер с отступами
+    def _draw_section_separator(self, container, title, url=None):
+        # 1. Основной контейнер
         sep_wrapper = ctk.CTkFrame(container, fg_color="transparent")
         sep_wrapper.pack(fill="x", padx=2, pady=(20, 10))
 
-        # 2. Сама плашка (фон как у стандартного заголовка)
-        # Цвет #3d424b — стандарт для темной темы customtkinter
+        # 2. Плашка заголовка
         bg_bar = ctk.CTkFrame(
             sep_wrapper,
             height=34,
@@ -400,13 +403,35 @@ class TabChat:
             corner_radius=6
         )
         bg_bar.pack(fill="x")
-        bg_bar.pack_propagate(False)  # Чтобы фрейм держал высоту
+        bg_bar.pack_propagate(False)
 
-        # 3. Текст по центру
+        # Контейнер для текста (чтобы всё было по центру)
+        content_frame = ctk.CTkFrame(bg_bar, fg_color="transparent")
+        content_frame.place(relx=0.5, rely=0.5, anchor="center")
+
+        # 3. Основной текст
         lbl = ctk.CTkLabel(
-            bg_bar,
+            content_frame,
             text=title,
             font=("Arial", 23, "bold"),
-            text_color="#DCE4EE"  # Светлый текст, как в оригинале
+            text_color="#DCE4EE"
         )
-        lbl.place(relx=0.5, rely=0.5, anchor="center")
+        lbl.pack(side="left")
+
+        # 4. Проверка: если URL передан, добавляем кликабельный значок
+        if url:
+            link_icon = ctk.CTkLabel(
+                content_frame,
+                text=" 🔗",  # Смайлик ссылки или 🗄️
+                font=("Arial", 18),
+                text_color="#1f6aa5",  # Синеватый цвет ссылки
+                cursor="hand2"
+            )
+            link_icon.pack(side="left", padx=(5, 0))
+
+            # Обработка клика
+            link_icon.bind("<Button-1>", lambda e: webbrowser.open_new_tab(url))
+
+            # Эффект при наведении (опционально)
+            link_icon.bind("<Enter>", lambda e: link_icon.configure(text_color="#3b8ed0"))
+            link_icon.bind("<Leave>", lambda e: link_icon.configure(text_color="#1f6aa5"))

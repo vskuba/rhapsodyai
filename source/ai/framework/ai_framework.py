@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelMessagesTypeAdapter, ModelRequest
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
@@ -21,6 +21,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from source.ai.tool.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.config import config_get
 from source.logging_ import log_request_body, log_response_body, logger_info
+from source.sqllite3.llm_short_memory import sqllite3_llm_short_memory_message_add, sqllite3_llm_short_memory_messages
 
 
 @dataclass
@@ -68,12 +69,26 @@ class AbstractAiFramework(ABC):
         pass
 
     def message_history_get(self, framework_model: AiFrameworkModel) -> list[Any] | None:
-        return self.message_history.get(framework_model.name, [])
+        all_messages = []
+        for msg_json in sqllite3_llm_short_memory_messages('default_id', framework_model.name):
+            msg_obj_list = ModelMessagesTypeAdapter.validate_json(msg_json)
+            all_messages.extend(msg_obj_list)
+
+        return all_messages
 
     def message_history_add(self, framework_model: AiFrameworkModel, messages_new: list[Any]):
-        if not hasattr(self.message_history, framework_model.name):
-            self.message_history[framework_model.name] = []
-        self.message_history[framework_model.name] += messages_new
+        for msg in messages_new:
+            role = 'user'
+            if not isinstance(msg, ModelRequest):
+                role = 'assistant'
+
+            msg_json = ModelMessagesTypeAdapter.dump_json([msg]).decode('utf-8')
+            sqllite3_llm_short_memory_message_add(
+                'default_id',
+                role,
+                framework_model.name,
+                msg_json
+            )
 
     def llm_model_get(self, framework_model: AiFrameworkModel) -> Model:
         model_name = config_get('llm')

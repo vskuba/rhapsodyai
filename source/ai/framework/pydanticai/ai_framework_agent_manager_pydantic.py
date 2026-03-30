@@ -32,15 +32,17 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
     def create(self, agent_yaml: AiAgentYaml) -> AiFrameworkAgentModelPydantic:
         try:
 
-            system_prompt = """
-              ⚠️ STRICT API MODE:
-              1. To provide the final answer, you MUST ALWAYS call the "final_result" tool.
-              2. NO markdown formatting (no ```json ... ```), NO preamble, NO conversational text outside the JSON.
-                
-              Example JSON final response:
-              final_result({"text": "This is an example of your concise response here."})   
-                        
-              """
+            # system_prompt = """
+            #   ⚠️ STRICT API MODE:
+            #   1. To provide the final answer, you MUST ALWAYS call the "final_result" tool.
+            #   2. NO markdown formatting (no ```json ... ```), NO preamble, NO conversational text outside the JSON.
+            #
+            #   Example JSON final response:
+            #   final_result({"text": "This is an example of your concise response here."})
+            #
+            #   """
+
+            system_prompt = ''
 
             async def on_complete(response_text: str, framework_model: AiFrameworkAgentModelPydantic):
                 if framework_model.interaction == 'chat':
