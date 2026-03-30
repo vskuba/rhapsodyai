@@ -352,7 +352,7 @@ class TabChat:
 
         # 3. Рисуем ОДИН разделитель, если есть субагенты
         if sub_agents:
-            self._draw_section_separator(self.frame_agents, "🛠️ Субагенты и специализации")
+            self._draw_section_separator(self.frame_agents, "🤖 Субагенты и специализации")
 
         # 4. Рендерим субагентов (снизу)
         for model, is_active in sub_agents:
