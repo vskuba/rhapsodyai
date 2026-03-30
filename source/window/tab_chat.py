@@ -351,7 +351,7 @@ class TabChat:
 
         # 3. Рисуем ОДИН разделитель, если есть субагенты
         if sub_agents:
-            self._draw_section_separator(self.frame_agents, "🛠️ СУБАГЕНТЫ И СПЕЦИАЛИЗАЦИИ")
+            self._draw_section_separator(self.frame_agents, "🛠️ Субагенты и специализации")
 
         # 4. Рендерим субагентов (снизу)
         for model, is_active in sub_agents:
@@ -381,12 +381,12 @@ class TabChat:
 
         # --- Рендерим список баз данных
         container_clear(self.frame_db)
+        self._draw_section_separator(self.frame_db, f"🧠 ChromaDb коллекции")
         chroma_client = _chroma_db_get_client()
         for chroma_collection in chroma_client.list_collections():
             db_item_draw(chroma_collection, self.frame_db)
 
     def _draw_section_separator(self, container, title):
-        """Разделитель в стиле заголовка CTkScrollableFrame"""
         # 1. Создаем контейнер с отступами
         sep_wrapper = ctk.CTkFrame(container, fg_color="transparent")
         sep_wrapper.pack(fill="x", padx=2, pady=(20, 10))
@@ -406,7 +406,7 @@ class TabChat:
         lbl = ctk.CTkLabel(
             bg_bar,
             text=title,
-            font=("Arial", 16, "bold"),
+            font=("Arial", 23, "bold"),
             text_color="#DCE4EE"  # Светлый текст, как в оригинале
         )
         lbl.place(relx=0.5, rely=0.5, anchor="center")

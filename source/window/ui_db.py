@@ -5,8 +5,6 @@ import customtkinter as ctk
 
 
 def db_item_draw(chroma_collection, parent_container):
-    """Отрисовка карточки коллекции ChromaDB с кнопкой-ссылкой"""
-
     coll_name = chroma_collection.name
     count = 0
     is_accessible = False
