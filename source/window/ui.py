@@ -1,10 +1,13 @@
 import time
 import source.window
 import source.ai.ai_thread
+
 from source.ai.framework.ai_framework import AiFrameworkModel
 from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
 from source.ai.framework.ai_framework_task import AbstractAiFrameworkTaskModel
+from source.filesystem import open_file_in_editor
 from source.queue_ import queue_get
+from source.state import state_get
 
 
 def window_chat_input_send(text: str) -> None:
@@ -60,7 +63,15 @@ def window_chat_progress_title_display(framework_model: AiFrameworkModel):
 
 
 def window_chat_active_task_clear():
-    source.window.chat_dialog_task_active_label.configure(text='Нет активной задачи')
+    last_report = state_get('last_report_path')
+    label = source.window.chat_dialog_task_active_label
+
+    if last_report:
+        label.configure(text='Последний отчет', cursor="hand2")
+        label.bind("<Button-1>", lambda e: open_file_in_editor(str(last_report)))
+    else:
+        label.configure(text='Нет активной задачи')
+        label.unbind("<Button-1>")
 
 
 def window_chat_voice_toggle(state: int):

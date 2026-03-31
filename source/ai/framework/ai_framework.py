@@ -22,6 +22,7 @@ from source.ai.tool.ai_tool import ai_tools_get, ai_tools_permanent_get
 from source.config import config_get
 from source.logging_ import log_request_body, log_response_body, logger_info
 from source.sqllite3.llm_short_memory import sqllite3_llm_short_memory_message_add, sqllite3_llm_short_memory_messages
+from source.state import state_set
 
 
 @dataclass
@@ -233,6 +234,16 @@ class AbstractAiFramework(ABC):
                                 args = getattr(tc, 'args', '{}')
                                 parts.append(f"🔧 ВЫЗОВ: {name}({args})")
 
+                        # ИЗВЛЕКАЕМ ТОКЕНЫ
+                        usage = getattr(m, 'usage', None)
+                        if usage:
+                            # Суммируем для заголовка отчета
+                            total_tokens += getattr(usage, 'total_tokens', 0)
+
+                            # Можно добавить инфо о токенах прямо в replica для этого сообщения
+                            tokens_info = f"[Tokens: {usage.request_tokens} -> {usage.response_tokens}]"
+                            parts.append(tokens_info)
+
                     # 3. ОТВЕТ ИНСТРУМЕНТА (Результат выполнения)
                     # Проверяем по имени класса или атрибутам
                     elif "ToolReturn" in str(type(m)) or "ToolResult" in str(type(m)):
@@ -283,3 +294,4 @@ class AbstractAiFramework(ABC):
                 f.write('\n'.join(report) + "\n")
 
             print(f"✅ Отчет сохранен: {path}")
+            state_set('last_report_path', path)
