@@ -56,10 +56,12 @@ def window_chat_progress_title_display(framework_model: AiFrameworkModel):
     if isinstance(framework_model, AbstractAiFrameworkAgentModel):
         progress_text = f"Агент: {framework_model.title}"
 
-    source.window.chat_dialog_task_active_label.configure(
+    label = source.window.chat_dialog_task_active_label
+    label.configure(
         text=progress_text,
         fg_color="#1f538d"  # Меняем цвет на синий, когда задача активна
     )
+    label.unbind("<Button-1>")
 
 
 def window_chat_active_task_clear():

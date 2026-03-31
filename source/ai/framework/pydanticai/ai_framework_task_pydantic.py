@@ -39,24 +39,24 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
 
         self.engine_storage[framework_model.name] = engine
 
-        if not self.message_history:
-            self.message_history[framework_model.name] = self.task_history_load(framework_model)
+        # if not self.message_history:
+        #     self.message_history[framework_model.name] = self.task_history_load(framework_model)
 
         self.engine_tools_local_add(engine, framework_model)
 
         return engine
 
     async def engine_run(self, framework_model: AiFrameworkTaskModelPydantic):
-        message_history = self.message_history_get(framework_model)
+        # message_history = self.message_history_get(framework_model)
 
         logger_info(
             f'🧱 Подзадача {framework_model.sub_task_current_index + 1}/{len(framework_model.yaml.sub_tasks)}, '
             f'prompt: {framework_model.prompt}'
         )
-        logger_info(
-            f'🧠 Передаем историю агенту:\n'
-            f'{message_history if message_history else "пока ничего нет"}'
-        )
+        # logger_info(
+        #     f'🧠 Передаем историю агенту:\n'
+        #     f'{message_history if message_history else "пока ничего нет"}'
+        # )
 
         engine = self.engine_storage[framework_model.name]
         ai_mcp_manager = AiMcpManager()
