@@ -294,11 +294,10 @@ class TabChat:
         self._initialized = True
 
     def _async_load_data(self):
-        """Единый метод для фоновой загрузки: Агенты + Задачи + Парсеры"""
         try:
             # --- 1. АГЕНТЫ (загрузка моделей) ---
             agent_names = ai_agent_manager.list()
-            active_name = "researcher"
+            active_name = "my_assistant"
             if active_name not in agent_names and agent_names:
                 active_name = agent_names[0]
 

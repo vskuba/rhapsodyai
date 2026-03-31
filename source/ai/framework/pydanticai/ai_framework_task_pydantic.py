@@ -91,17 +91,12 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
             result: AgentRunResult,
             framework_model: AiFrameworkTaskModelPydantic
     ) -> AiFrameworkResult | None:
-        if not result or not str(result).strip():
-            return None
+        super().engine_result_handle(result, framework_model)
 
         response_model_dict = result.output.model_dump()
         del response_model_dict['text']
 
         framework_model.input_values = framework_model.input_values | response_model_dict
-
-        messages_new = result.new_messages()
-        if messages_new:
-            self.message_history_add(framework_model, result.new_messages())
 
         logger_info(f'🧠 Получили новые сообщения истории в задаче "{framework_model.title}"'
                     f' ({framework_model.sub_task_current_index + 1}/{len(framework_model.yaml.sub_tasks)})\n'

@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from pydantic_ai import Agent, ModelMessagesTypeAdapter, ModelRequest
+from pydantic_ai import Agent, ModelMessagesTypeAdapter, ModelRequest, ModelResponse
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
@@ -62,6 +62,20 @@ class AbstractAiFramework(ABC):
 
     @abstractmethod
     def engine_result_handle(self, result, framework_model: AiFrameworkModel) -> AiFrameworkResult | None:
+        # save short memory
+        messages_new = result.new_messages()
+        if messages_new:
+            output_message = []
+            if not isinstance(result.output, str):
+                output_message = [result.output]
+            self.message_history_add(framework_model, messages_new + output_message)
+
+        # create report
+        model_name = framework_model.name
+        if model_name not in self.message_history:
+            self.message_history[model_name] = []
+        self.message_history[model_name] += result.all_messages()
+
         pass
 
     @abstractmethod
@@ -78,6 +92,9 @@ class AbstractAiFramework(ABC):
 
     def message_history_add(self, framework_model: AiFrameworkModel, messages_new: list[Any]):
         for msg in messages_new:
+            if not isinstance(msg, (ModelRequest, ModelResponse)):
+                continue
+
             role = 'user'
             if not isinstance(msg, ModelRequest):
                 role = 'assistant'
@@ -260,7 +277,7 @@ class AbstractAiFramework(ABC):
             report.insert(1, "=" * 50 + "\n")
 
             # Записываем всё в файл (используем 'w', так как имя файла уникальное по времени)
-            with open(path, 'a', encoding='utf-8') as f:
+            with open(path, 'w', encoding='utf-8') as f:
                 # Добавляем пару пустых строк перед новым отчетом для визуального разделения
                 f.write("\n\n" + "=" * 60 + "\n")
                 f.write('\n'.join(report) + "\n")

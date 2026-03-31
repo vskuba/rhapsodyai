@@ -57,8 +57,7 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
                 model_settings=ModelSettings(
                     parallel_tool_calls=True,
                     temperature=0.0,
-                ),
-                output_type = str
+                )
             )
         except Exception as e:
             backtrace = traceback.format_exc()
@@ -77,13 +76,7 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
             self, result: AgentRunResult,
             framework_model: AiFrameworkTaskModelPydantic
     ) -> AiFrameworkResult | None:
-
-        messages_new = result.new_messages()
-        if messages_new:
-            output_message = []
-            if not isinstance(result.output, str):
-                output_message = [result.output]
-            self.message_history_add(framework_model, result.new_messages() + output_message)
+        super().engine_result_handle(result, framework_model)
 
         # если ответ просто текст, а не модель
         if not result.output or isinstance(result.output, str):

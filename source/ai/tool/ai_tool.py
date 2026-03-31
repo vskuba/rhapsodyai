@@ -9,7 +9,7 @@ from typing import cast
 from numba.core.types import Callable
 
 from source.ai.tool.ai_tool_agent import agent_list, agent_invoke
-from source.ai.tool.ai_tool_chat import chat_me
+from source.ai.tool.ai_tool_chat import chat_me, chat_me_question
 from source.ai.tool.ai_tool_memory import chromadb_memory_save, chromadb_memory_search_text
 from source.ai.tool.ai_tool_web import web_read_page
 from source.config import config_get
@@ -90,6 +90,7 @@ def ai_tools_permanent_get() -> list[Callable]:
 
         # ------ Chat
         chat_me,
+        chat_me_question,
 
         # ------ Bank memory
         chromadb_memory_save,

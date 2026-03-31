@@ -57,9 +57,6 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
                 prompt='',
                 system_prompt=system_prompt + agent_yaml.system_prompt,
                 tools=agent_yaml.tools,
-                response_model=create_model('ResponseModel', **{
-                    'text': (str, Field(description="Final result"))
-                }),
                 interaction=agent_yaml.interaction if agent_yaml.interaction else 'chat',
                 mcp_servers=agent_yaml.mcp_servers,
                 specialization=agent_yaml.specialization

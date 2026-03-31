@@ -3,13 +3,12 @@ import queue
 import traceback
 
 from abc import abstractmethod
-from pathlib import Path
 from source.ai.framework.ai_framework import AbstractAiFramework, AiFrameworkModel
 from source.ai.framework.ai_framework_task_manager import AbstractAiFrameworkTaskManager
 from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
-from source.config import config_get
 from source.logging_ import logger_info
 from source.queue_ import queue_get
+from source.window.ui import window_chat_progress_title_display
 
 
 class AbstractAiFrameworkTask(AbstractAiFramework):
@@ -69,6 +68,7 @@ class AbstractAiFrameworkTask(AbstractAiFramework):
                     return
                 else:
                     framework_model = self.framework_manager.switch_next_sub_task(framework_model)
+                    window_chat_progress_title_display(framework_model)
                     await self.framework_report(framework_model)
                     continue
 
