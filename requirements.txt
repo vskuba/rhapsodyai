@@ -1,0 +1,17 @@
+aiogram
+pydantic-ai==0.0.18
+chromadb
+aiosqlite
+pysqlite3-binary
+openai
+anthropic
+google-generativeai
+groq
+httpx
+python-dotenv
+faster-whisper
+gTTS
+edge-tts
+SpeechRecognition
+pydantic
+click

@@ -89,6 +89,23 @@ services:
       - SQLITE_DATABASE=/data/llm_short_memory.db
     restart: unless-stopped
 
+  marina_ai:
+    build: .
+    image: ghcr.io/vskuba/marina-ai:latest
+    container_name: marina_ai
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - IS_DOCKER=true
+    volumes:
+      - ./data:/app/data
+    networks:
+      - os-net
+    depends_on:
+      - chroma
+      - opensearch
+
 volumes:
   opensearch-data:
 

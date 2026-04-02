@@ -2,6 +2,7 @@
 .venv/
 venv/
 env/
+ssh/
 __pycache__/
 *.pyc
 
