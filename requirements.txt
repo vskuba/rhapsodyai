@@ -1,5 +1,5 @@
 aiogram
-pydantic-ai==0.0.18
+pydantic-ai>=0.0.24
 chromadb
 aiosqlite
 pysqlite3-binary

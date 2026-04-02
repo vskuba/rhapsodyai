@@ -7,8 +7,9 @@ import httpx
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable
+from pydantic import TypeAdapter
 
-from pydantic_ai import Agent, ModelMessagesTypeAdapter, ModelRequest, ModelResponse
+from pydantic_ai import Agent, ModelRequest, ModelResponse
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
@@ -86,7 +87,7 @@ class AbstractAiFramework(ABC):
     def message_history_get(self, framework_model: AiFrameworkModel) -> list[Any] | None:
         all_messages = []
         for msg_json in sqllite3_llm_short_memory_messages('default_id', framework_model.name):
-            msg_obj_list = ModelMessagesTypeAdapter.validate_json(msg_json)
+            msg_obj_list = TypeAdapter.validate_json(msg_json)
             all_messages.extend(msg_obj_list)
 
         return all_messages
@@ -100,7 +101,7 @@ class AbstractAiFramework(ABC):
             if not isinstance(msg, ModelRequest):
                 role = 'assistant'
 
-            msg_json = ModelMessagesTypeAdapter.dump_json([msg]).decode('utf-8')
+            msg_json = TypeAdapter.dump_json([msg]).decode('utf-8')
             sqllite3_llm_short_memory_message_add(
                 'default_id',
                 role,
