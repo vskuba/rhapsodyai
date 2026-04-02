@@ -2,10 +2,8 @@ aiogram
 pydantic-ai>=0.0.24
 chromadb
 aiosqlite
-pysqlite3-binary
 openai
 anthropic
-google-generativeai
 groq
 httpx
 python-dotenv
@@ -18,3 +16,5 @@ click
 python-json-logger
 beautifulsoup4
 dacite
+PyGithub
+crawl4ai

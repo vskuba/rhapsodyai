@@ -29,7 +29,7 @@ services:
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.19.1
-    container_name: dashboards
+    container_name: opensearch-dashboards
     ports:
       - "5601:5601"
     environment:
@@ -89,22 +89,25 @@ services:
       - SQLITE_DATABASE=/data/llm_short_memory.db
     restart: unless-stopped
 
-  marina_ai:
-    build: .
+  marina_ai_telegram_bot:
+    build:
+      context: .
+      dockerfile: docker/telegram_bot/dockerfile
     image: ghcr.io/vskuba/marina-ai:latest
-    container_name: marina_ai
+    container_name: marina_ai_telegram_bot
     restart: always
     env_file:
       - .env
-    environment:
-      - IS_DOCKER=true
     volumes:
       - ./data:/app/data
     networks:
       - os-net
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     depends_on:
       - chroma
-      - opensearch
+      - opensearch-dashboards
 
 volumes:
   opensearch-data:

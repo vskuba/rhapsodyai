@@ -117,20 +117,22 @@ class AbstractAiFramework(ABC):
         model = None
 
         http_client = httpx.AsyncClient(
+            http2=False,
+            timeout=httpx.Timeout(60.0, connect=10.0),
             event_hooks={
                 'request': [log_request_body],
                 'response': [log_response_body]
             }
         )
 
-        if 'claude' in model_name.lower():
+        if model_name.lower().startswith('claude'):
             provider = AnthropicProvider(
                 api_key=config_get('ANTHROPIC_API_KEY'),
                 http_client=http_client
             )
             model = AnthropicModel(model_name, provider=provider)
 
-        if 'llama' in model_name.lower() or 'qwen' in model_name.lower():
+        if model_name.lower().startswith('ollama'):
             provider = OpenAIProvider(
                 base_url='http://localhost:11434/v1',
                 api_key='ollama',
@@ -142,14 +144,13 @@ class AbstractAiFramework(ABC):
                 provider=provider
             )
 
-        if 'gemini' in model_name.lower():
+        if model_name.lower().startswith('gemini'):
             model = GoogleModel(
                 model_name=model_name.lower()
             )
 
-        if 'groq' in model_name.lower():
-            if 'groq:' in model_name.lower():
-                model_name = re.sub(r'^groq:', '', model_name, flags=re.IGNORECASE)
+        if model_name.lower().startswith('groq'):
+            model_name = re.sub(r'^groq:', '', model_name, flags=re.IGNORECASE)
 
             provider = GroqProvider(
                 api_key=os.getenv('GROQ_API_KEY'),
@@ -161,7 +162,7 @@ class AbstractAiFramework(ABC):
                 provider=provider,
             )
 
-        if 'grok' in model_name.lower():
+        if model_name.lower().startswith('grok'):
             provider = OpenAIProvider(
                 base_url='https://api.x.ai/v1',
                 api_key=os.getenv('XAI_API_KEY'),
