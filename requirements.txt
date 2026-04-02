@@ -17,3 +17,4 @@ pydantic
 click
 python-json-logger
 beautifulsoup4
+dacite
