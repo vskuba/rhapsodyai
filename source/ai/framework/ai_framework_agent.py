@@ -49,13 +49,16 @@ class AbstractAiFrameworkAgent(AbstractAiFramework):
                     f"Полный стек вызовов:\n{backtrace}"
                 )
 
-                queue_get()['chat'].put({"text": 'Произошла ошибка: %s' % e, "who": 'agent'})
+                if framework_model.is_gui_mode:
+                    queue_get()['chat'].put({"text": 'Произошла ошибка: %s' % e, "who": 'agent'})
 
                 # rate limit handling
                 if getattr(e, 'status_code', None) in [429, 413]:
                     await self.framework_report(framework_model)
                     return
 
-                queue_get()['chat'].put({"text": 'Работа будет продолжена', "who": 'agent'})
+                if framework_model.is_gui_mode:
+                    queue_get()['chat'].put({"text": 'Работа будет продолжена', "who": 'agent'})
+
                 catch_exception = True
                 continue

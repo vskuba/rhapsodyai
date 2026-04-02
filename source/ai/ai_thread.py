@@ -15,7 +15,6 @@ from source.ai.framework.pydanticai.ai_framework_task_pydantic import \
 from source.async_ import async_loop_init, async_waiting_is_active, async_waiting_clear
 from source.logging_ import logger_info
 from source.queue_ import queue_get
-from source.window_ import WindowAi
 
 thread_started: dict[str, AiFrameworkModel] = {}
 
@@ -41,7 +40,7 @@ def ai_thread_run_async(ai_framework: AbstractAiFramework, framework_model: AiFr
         loop.close()
 
 
-def ai_thread_framework_run(window: WindowAi):
+def ai_thread_framework_run(window = None):
     while True:
         try:
             framework_model = None
@@ -61,19 +60,22 @@ def ai_thread_framework_run(window: WindowAi):
                 continue
 
             ai_framework = None
-
             if isinstance(framework_model, AiFrameworkTaskModelPydantic):
-                queue_get()['chat'].put({'text': f'Запускаю задачу {framework_model.title}', 'who': 'agent'})
                 ai_framework = ai_framework_task
             if isinstance(framework_model, AiFrameworkAgentModelPydantic):
-                if framework_model.is_sub_thread:
-                    queue_get()['chat'].put({
-                        'text': f'Спрашиваю у агента "{framework_model.title}": ' + framework_model.prompt,
-                        'who': 'agent'}
-                    )
-                else:
-                    queue_get()['chat'].put({'text': f'Запускаю агента "{framework_model.title}"', 'who': 'agent'})
                 ai_framework = ai_framework_agent
+
+            if window:
+                if isinstance(framework_model, AiFrameworkTaskModelPydantic):
+                    queue_get()['chat'].put({'text': f'Запускаю задачу {framework_model.title}', 'who': 'agent'})
+                if isinstance(framework_model, AiFrameworkAgentModelPydantic):
+                    if framework_model.is_sub_thread:
+                        queue_get()['chat'].put({
+                            'text': f'Спрашиваю у агента "{framework_model.title}": ' + framework_model.prompt,
+                            'who': 'agent'}
+                        )
+                    else:
+                        queue_get()['chat'].put({'text': f'Запускаю агента "{framework_model.title}"', 'who': 'agent'})
 
             if not ai_framework:
                 raise ValueError(f'Не могу определить ai_framework')
@@ -86,11 +88,11 @@ def ai_thread_framework_run(window: WindowAi):
                 )
                 thread.start()
 
+                logger_info(f'Старт нового потока "{framework_model.name}"')
                 thread_started[framework_model.name] = framework_model
 
                 framework_model_monitor = copy.deepcopy(framework_model)
-
-                window.after(500, lambda: thread_monitor(window, thread, framework_model_monitor))
+                thread_monitor(window, thread, framework_model_monitor)
 
         except Exception as e:
             backtrace = traceback.format_exc()
@@ -100,9 +102,9 @@ def ai_thread_framework_run(window: WindowAi):
             )
 
 
-def thread_monitor(window: WindowAi, thread: threading.Thread, framework_model: AiFrameworkModel):
+def thread_monitor(window, thread: threading.Thread, framework_model: AiFrameworkModel):
     if thread.is_alive():
-        window.after(500, lambda: thread_monitor(window, thread, framework_model))
+        threading.Timer(0.5, thread_monitor, args=(window, thread, framework_model)).start()
     else:
         if framework_model.name in thread_started:
             del thread_started[framework_model.name]
@@ -111,4 +113,5 @@ def thread_monitor(window: WindowAi, thread: threading.Thread, framework_model: 
             async_waiting_clear()
 
         if not framework_model.is_sub_thread:
-            window.thread_monitor(framework_model)
+            if window:
+                window.thread_monitor(framework_model)

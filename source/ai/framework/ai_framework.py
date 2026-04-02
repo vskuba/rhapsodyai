@@ -40,6 +40,7 @@ class AiFrameworkModel:
     mcp_servers: list[str] = field(default_factory=list)
     on_complete: Callable | None = None
     is_sub_thread: bool = False
+    is_gui_mode: bool = True
 
 
 @dataclass

@@ -12,10 +12,9 @@ class AiFrameworkAgentModelPydantic(AbstractAiFrameworkAgentModel):
             system_prompt: str,
             tools: list[str],
             mcp_servers: list[str],
-            interaction: str,
             specialization: str
     ):
-        super().__init__(name, title, description, prompt, system_prompt, interaction, specialization)
+        super().__init__(name, title, description, prompt, system_prompt, specialization)
         self.tools = tools if tools is not None else []
         self.mcp_servers = mcp_servers
         self.response_model = str

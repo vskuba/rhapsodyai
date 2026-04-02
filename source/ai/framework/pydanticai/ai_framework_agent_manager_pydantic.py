@@ -2,7 +2,6 @@ import os
 import traceback
 from functools import partial
 
-from pydantic import create_model, Field
 from source.ai.framework.ai_framework_agent_manager import AbstractAiFrameworkAgentManager
 from source.ai.framework.ai_framework_agent_model import AiAgentYaml
 from source.ai.framework.pydanticai.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
@@ -44,11 +43,8 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
 
             system_prompt = ''
 
-            async def on_complete(response_text: str, framework_model: AiFrameworkAgentModelPydantic):
-                if framework_model.interaction == 'chat':
-                    queue_get()['chat'].put({"text": response_text, "who": 'agent'})
-                if framework_model.interaction == 'telegram':
-                    queue_get()['telegram_response'].put({"text": response_text, "framework_model": framework_model})
+            async def on_complete(response_text: str):
+                queue_get()['chat'].put({"text": response_text, "who": 'agent'})
 
             framework_model = AiFrameworkAgentModelPydantic(
                 name=agent_yaml.filename,
@@ -57,12 +53,11 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
                 prompt='',
                 system_prompt=system_prompt + agent_yaml.system_prompt,
                 tools=agent_yaml.tools,
-                interaction=agent_yaml.interaction if agent_yaml.interaction else 'chat',
                 mcp_servers=agent_yaml.mcp_servers,
                 specialization=agent_yaml.specialization
             )
 
-            framework_model.on_complete=partial(on_complete, framework_model=framework_model)
+            framework_model.on_complete=partial(on_complete)
 
             return framework_model
 
