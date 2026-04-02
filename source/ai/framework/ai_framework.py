@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 from pydantic import TypeAdapter
 
-from pydantic_ai import Agent, ModelRequest, ModelResponse
+from pydantic_ai import Agent, ModelRequest, ModelResponse, ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
@@ -25,6 +25,8 @@ from source.logging_ import log_request_body, log_response_body, logger_info
 from source.sqllite3.llm_short_memory import sqllite3_llm_short_memory_message_add, sqllite3_llm_short_memory_messages
 from source.state import state_set
 
+
+message_adapter = TypeAdapter(list[ModelMessage])
 
 @dataclass
 class AiFrameworkResult:
@@ -87,7 +89,7 @@ class AbstractAiFramework(ABC):
     def message_history_get(self, framework_model: AiFrameworkModel) -> list[Any] | None:
         all_messages = []
         for msg_json in sqllite3_llm_short_memory_messages('default_id', framework_model.name):
-            msg_obj_list = TypeAdapter.validate_json(msg_json)
+            msg_obj_list = message_adapter.validate_json(msg_json)
             all_messages.extend(msg_obj_list)
 
         return all_messages
@@ -101,7 +103,7 @@ class AbstractAiFramework(ABC):
             if not isinstance(msg, ModelRequest):
                 role = 'assistant'
 
-            msg_json = TypeAdapter.dump_json([msg]).decode('utf-8')
+            msg_json = message_adapter.dump_json([msg]).decode('utf-8')
             sqllite3_llm_short_memory_message_add(
                 'default_id',
                 role,
