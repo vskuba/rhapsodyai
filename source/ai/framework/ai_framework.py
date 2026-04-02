@@ -19,14 +19,14 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from source.ai.tool.ai_tool import ai_tools_get, ai_tools_permanent_get
+from source.ai.tool.ai_tool import ai_tools_get, ai_tools_permanent_get, ai_tools_permanent_get_non_gui
 from source.config import config_get
 from source.logging_ import log_request_body, log_response_body, logger_info
 from source.sqllite3.llm_short_memory import sqllite3_llm_short_memory_message_add, sqllite3_llm_short_memory_messages
 from source.state import state_set
 
-
 message_adapter = TypeAdapter(list[ModelMessage])
+
 
 @dataclass
 class AiFrameworkResult:
@@ -184,7 +184,8 @@ class AbstractAiFramework(ABC):
                 engine.tool_plain(tools_mapping[t_name])
                 tools_local_added.append(t_name)
 
-        for t in ai_tools_permanent_get():
+        ai_tools_permanent = ai_tools_permanent_get() if framework_model.is_gui_mode else ai_tools_permanent_get_non_gui()
+        for t in ai_tools_permanent:
             if t.__name__ not in tools_mapping:
                 engine.tool_plain(t)
                 tools_local_added.append(t.__name__)

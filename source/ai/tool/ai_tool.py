@@ -17,6 +17,7 @@ from source.queue_ import queue_get
 
 all_tools: list[Callable] = []
 all_tools_permanent: list[Callable] = []
+all_tools_permanent_non_gui: list[Callable] = []
 
 
 def ai_tools_get() -> list[Callable]:
@@ -107,6 +108,20 @@ def ai_tools_permanent_get() -> list[Callable]:
         # ------ Task
         task_abort # отдельно, потому что декоратор async
     ]
+
+
+def ai_tools_permanent_get_non_gui() -> list[Callable]:
+    global all_tools_permanent_non_gui
+    if all_tools_permanent_non_gui:
+        return all_tools_permanent_non_gui
+
+    all_tools_permanent_non_gui = [ai_tool_decorator(t) for t in [
+
+        # ------ Bank memory
+        chromadb_memory_search_text,
+    ]]
+
+    return all_tools_permanent_non_gui
 
 
 def ai_tools_mcp_get() -> list[str]:
