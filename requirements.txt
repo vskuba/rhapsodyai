@@ -16,3 +16,4 @@ SpeechRecognition
 pydantic
 click
 python-json-logger
+beautifulsoup4
