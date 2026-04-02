@@ -15,3 +15,4 @@ edge-tts
 SpeechRecognition
 pydantic
 click
+python-json-logger
