@@ -4,9 +4,7 @@ import importlib
 import sys
 import traceback
 from pathlib import Path
-from typing import cast
-
-from numba.core.types import Callable
+from typing import cast, Callable
 
 from source.ai.tool.ai_tool_agent import agent_list, agent_invoke
 from source.ai.tool.ai_tool_chat import chat_me, chat_me_question
