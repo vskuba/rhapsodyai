@@ -46,37 +46,49 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@://github.com{{ github.repository }}.git"
-            
-            # Проверяем наличие папки, если нет — клонируем с токеном
-            if [ ! -d "$HOME/marina_ai/.git" ]; then
-              echo "Клонируем приватный репозиторий..."
-              git clone $REPO_URL $HOME/marina_ai
+            set -e  # Останавливаем скрипт при любой ошибке
+
+            REPO_DIR="$HOME/marina_ai"
+            REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+
+            echo "🔄 Подготовка репозитория..."
+
+            # Если папки нет или это не git-репозиторий — клонируем заново
+            if [ ! -d "$REPO_DIR/.git" ]; then
+              echo "📥 Клонируем репозиторий..."
+              git clone "$REPO_URL" "$REPO_DIR"
             fi
-            
-            cd $HOME/marina_ai
-            
-            # Обновляем URL (на случай если токен в этом запуске новый)
-            git remote set-url origin $REPO_URL
-            
-            echo "Обновляем код..."
-            git fetch origin master
+
+            cd "$REPO_DIR"
+
+            # Обновляем URL remote (на случай смены токена)
+            git remote set-url origin "$REPO_URL"
+
+            echo "⬇️ Получаем последние изменения с GitHub..."
+            git fetch origin master --prune
+
+            echo "🔄 Жёстко сбрасываем рабочую директорию на состояние master..."
             git reset --hard origin/master
-            
-            # 2. Создаем .env и дальше по списку...
-            cat <<EOF > .env
+
+            # Дополнительно очищаем untracked файлы и папки (очень важно!)
+            git clean -fd
+
+            echo "📝 Создаём .env файл..."
+            cat << 'EOF' > .env
             ${{ secrets.ENV_FILE }}
             EOF
-            
-            # 3. Авторизация в GHCR
+
+            echo "🔑 Логинимся в GHCR..."
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            
-            # 4. Перезапуск
-            echo "Обновляем контейнеры..."
+
+            echo "🚀 Обновляем и перезапускаем контейнеры..."
             docker compose pull
-            docker compose up -d --remove-orphans
-            
-            # 5. Права и чистка
+            docker compose up -d --remove-orphans --force-recreate
+
+            echo "🧹 Очистка..."
             mkdir -p ./data/log/sincedb
             sudo chown -R 1000:1000 ./data/log/sincedb
             docker image prune -f
+
+            echo "✅ Деплой завершён успешно! Текущий коммит:"
+            git log -1 --oneline
