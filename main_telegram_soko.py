@@ -16,7 +16,7 @@ from source.telegram_bot import init_telegram_bot
 from source.thread_ import thread_with_callback
 
 if __name__ == "__main__":
-    # 1. Инициализация логов
+    # 1. Инициализация логов, тест
     logging_init()
     print("Starting MarinaAI in Bot-only mode...")
 
