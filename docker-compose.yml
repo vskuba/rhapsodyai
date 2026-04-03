@@ -94,7 +94,7 @@ services:
       context: .
       dockerfile: docker/telegram_soko/dockerfile
     image: ghcr.io/vskuba/marina-ai:latest
-    container_name: marina_ai_telegram_bot
+    container_name: telegram_soko
     restart: always
     env_file:
       - .env
