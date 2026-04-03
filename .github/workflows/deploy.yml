@@ -44,31 +44,29 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            # 1. Проверяем наличие git и папки, клонируем или обновляем
-            if [ ! -d "~/marina_ai/.git" ]; then
+            # 1. Клонируем в папку marina_ai, если её нет
+            if [ ! -d "$HOME/marina_ai/.git" ]; then
               echo "Клонируем репозиторий..."
-              git clone https://github.com ~/marina_ai
+              git clone https://github.com/vskuba/marina_ai.git $HOME/marina_ai
             fi
             
-            cd ~/marina_ai
-            echo "Обновляем код из репозитория..."
+            cd $HOME/marina_ai
+            echo "Обновляем код..."
             git fetch origin master
             git reset --hard origin/master
             
-            # 2. Создаем .env из секретов GitHub
+            # 2. Создаем .env
             echo "${{ secrets.ENV_FILE }}" > .env
             
-            # 3. Авторизация в реестре GitHub (GHCR)
+            # 3. Авторизация в GHCR
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            # 4. Запуск контейнеров
-            echo "Подтягиваем новые образы и перезапускаем..."
+            # 4. Перезапуск
+            echo "Обновляем контейнеры..."
             docker compose pull
             docker compose up -d --remove-orphans
             
-            # 5. Исправление прав (Sincedb)
+            # 5. Права и чистка
             mkdir -p ./data/log/sincedb
             sudo chown -R 1000:1000 ./data/log/sincedb
-            
-            # Очистка старых образов
             docker image prune -f
