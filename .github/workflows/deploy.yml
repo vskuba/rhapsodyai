@@ -1,0 +1,61 @@
+name: Deploy to Oracle Cloud
+
+on:
+  push:
+    branches: [ main ] # или master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Собираем только бота, остальные образы возьмем готовые
+      - name: Build and push Bot image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/telegram_soko/dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/vskuba/marina-ai:latest
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            mkdir -p ~/marina-ai
+            cd ~/marina-ai
+            
+            # Обновляем docker-compose файл и конфиги
+            # (Если репозиторий публичный, можно просто git pull)
+            
+            echo "${{ secrets.ENV_FILE }}" > .env
+            
+            # Авторизация в реестре на сервере
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Деплой
+            docker compose pull
+            docker compose up -d --remove-orphans
+            
+            # Фикс прав после деплоя, если папки пересоздались
+            sudo chown -R 1000:1000 ./data/log/sincedb
+            docker image prune -f
