@@ -65,25 +65,18 @@ async def github_search_branch_with_last_commit(repo_full_name: str) -> str | No
 
     try:
         repo = g.get_repo(repo_full_name)
-        branches = repo.get_branches()
+        # Получаем только последнее событие пуша
+        events = repo.get_events()
+        for event in events:
+            if event.type == "PushEvent":
+                # ref имеет формат 'refs/heads/branch_name'
+                branch_name = event.payload['ref'].replace('refs/heads/', '')
+                return branch_name
 
-        last_commit_date = None
-        target_branch = None
-
-        for branch in branches:
-            # Получаем самый свежий коммит в текущей ветке
-            commit = repo.get_commit(branch.commit.sha)
-            commit_date = commit.commit.author.date
-
-            # Сравниваем даты, чтобы найти самый поздний
-            if last_commit_date is None or commit_date > last_commit_date:
-                last_commit_date = commit_date
-                target_branch = branch.name
-
-        return target_branch
-
+        # Если событий пуша нет, возвращаем дефолтную ветку
+        return repo.default_branch
     except Exception as e:
-        print(f"Ошибка при поиске ветки: {e}")
+        print(f"Ошибка: {e}")
         return None
 
 
