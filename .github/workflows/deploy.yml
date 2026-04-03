@@ -2,7 +2,7 @@ name: Deploy to Oracle Cloud
 
 on:
   push:
-    branches: [ main ] # или master
+    branches: [ master ] # или master
 
 jobs:
   deploy:
