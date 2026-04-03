@@ -89,10 +89,10 @@ services:
       - SQLITE_DATABASE=/data/llm_short_memory.db
     restart: unless-stopped
 
-  marina_ai_telegram_bot:
+  telegram_soko:
     build:
       context: .
-      dockerfile: docker/telegram_bot/dockerfile
+      dockerfile: docker/telegram_soko/dockerfile
     image: ghcr.io/vskuba/marina-ai:latest
     container_name: marina_ai_telegram_bot
     restart: always
