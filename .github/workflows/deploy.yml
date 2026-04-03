@@ -56,7 +56,9 @@ jobs:
             git reset --hard origin/master
             
             # 2. Создаем .env
-            echo "${{ secrets.ENV_FILE }}" > .env
+            cat <<EOF > .env
+            ${{ secrets.ENV_FILE }}
+            EOF
             
             # 3. Авторизация в GHCR
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
