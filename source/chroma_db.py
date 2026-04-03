@@ -15,7 +15,7 @@ def _chroma_db_get_client() -> ClientAPI:
     # chroma_client = chromadb.PersistentClient(path="./" + config_get('DATA_DIR') + "/chroma_db_memory")
     # chroma_collection = chroma_client.get_or_create_collection("bank_memory")
 
-    chroma_client = chromadb.HttpClient(host='localhost', port=8000)
+    chroma_client = chromadb.HttpClient(host='chroma', port=8000)
     # chroma_collection = chroma_client.get_or_create_collection(collection_name)
 
     return chroma_client
