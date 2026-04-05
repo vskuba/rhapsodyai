@@ -98,8 +98,9 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     depends_on:
-      - chroma
+      - qdrant
       - opensearch-dashboards
+      - sqlite-web
 
 volumes:
   opensearch-data:
