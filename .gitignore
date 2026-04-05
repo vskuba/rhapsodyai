@@ -6,6 +6,8 @@ ssh/
 __pycache__/
 *.pyc
 
+docker/logstash/*
+
 # Конфиги и секреты
 .env
 config.yaml
@@ -14,6 +16,7 @@ config.yaml
 data/output
 data/log
 data/chroma_db
+data/qdrant_storage
 data/sqllite3
 data/report
 data/history
