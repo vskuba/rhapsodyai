@@ -1,6 +1,5 @@
 aiogram
 pydantic-ai>=0.0.24
-chromadb
 aiosqlite
 openai
 anthropic
