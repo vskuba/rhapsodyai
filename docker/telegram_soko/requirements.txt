@@ -16,6 +16,5 @@ python-json-logger
 beautifulsoup4
 dacite
 PyGithub
-crawl4ai
 qdrant_client
 sentence_transformers
