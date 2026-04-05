@@ -3,10 +3,8 @@
 import queue
 import threading
 import time
-import chromadb
 
 from functools import partial
-from chromadb import Settings
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 from source.ai.ai_thread import ai_thread_framework_run
@@ -21,7 +19,6 @@ if __name__ == "__main__":
     print("Starting MarinaAI in Bot-only mode...")
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
-    client = chromadb.Client(Settings(anonymized_telemetry=False))
 
     queue_set({
         # 'chat': queue.Queue(),
