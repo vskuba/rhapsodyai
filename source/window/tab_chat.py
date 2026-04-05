@@ -8,14 +8,12 @@ import source.window
 from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 
 from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
-from source.chroma_db import _chroma_db_get_client
 from source.config import config_get, config_update_and_save
 from source.parser.data_parser import data_parser_path_list, data_parser_load
 from source.state import state_set
 from source.window.component import CustomTextbox
 from source.window.ui import window_chat_input_send, window_chat_voice_toggle, container_clear
 from source.window.ui_agent import agent_item_draw
-from source.window.ui_db import db_item_draw
 from source.window.ui_parser import parser_item_draw
 from source.window.ui_task import task_item_draw
 
@@ -383,11 +381,7 @@ class TabChat:
         container_clear(self.frame_db)
 
         self._draw_section_separator(self.frame_db, f"🗳️ Sqllite3", 'http://localhost:8084')
-
-        self._draw_section_separator(self.frame_db, f"🗳️ ChromaDb коллекции")
-        chroma_client = _chroma_db_get_client()
-        for chroma_collection in chroma_client.list_collections():
-            db_item_draw(chroma_collection, self.frame_db)
+        self._draw_section_separator(self.frame_db, f"🗳️ Qdrant", 'http://localhost:6333/dashboard')
 
     def _draw_section_separator(self, container, title, url=None):
         # 1. Основной контейнер

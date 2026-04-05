@@ -5,8 +5,8 @@ from pathlib import Path
 from source.config import config_get
 from source.parser.data_parser_model import DataParserYaml
 from source.parser.html_to_json.data_parser_model import DataParserHtmlToJsonYaml
-from source.parser.json_to_choma_db.data_parser_model import DataParserJsonToChromaYaml
-from source.parser.md_to_choma_db.data_parser_model import DataParserMdToChromaYaml
+from source.parser.json_to_qdrant.data_parser_model import DataParserJsonToQdrantYaml
+from source.parser.md_to_qdrant.data_parser_model import DataParserMdToQdrantYaml
 
 
 def data_parser_dir() -> str:
@@ -64,10 +64,10 @@ def data_parser_load(parser_path: str) -> DataParserYaml:
         if parser_type == 'html_to_json':
             return DataParserHtmlToJsonYaml(**raw_config)
 
-        if parser_type == 'json_to_chroma_db':
-            return DataParserJsonToChromaYaml(**raw_config)
+        if parser_type == 'json_to_qdrant':
+            return DataParserJsonToQdrantYaml(**raw_config)
 
-        if parser_type == 'md_to_chroma_db':
-            return DataParserMdToChromaYaml(**raw_config)
+        if parser_type == 'md_to_qdrant':
+            return DataParserMdToQdrantYaml(**raw_config)
 
         raise ValueError(f"Can't find out model for type {parser_type}")

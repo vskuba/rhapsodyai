@@ -9,12 +9,12 @@ from source.parser.data_parser import data_parser_dir
 from source.parser.data_parser_model import DataParserYaml
 from source.parser.html_to_json.data_parser import ParserHtmlToJson
 from source.parser.html_to_json.data_parser_model import DataParserHtmlToJsonYaml
-from source.parser.json_to_choma_db.data_parser import ParserJsonToChroma
-from source.parser.json_to_choma_db.data_parser_model import DataParserJsonToChromaYaml
+from source.parser.json_to_qdrant.data_parser import ParserJsonToQdrant
+from source.parser.json_to_qdrant.data_parser_model import DataParserJsonToQdrantYaml
 from source.filesystem import open_file_in_editor
 from source.logging_ import logger_info
-from source.parser.md_to_choma_db.data_parser import ParserMdToChroma
-from source.parser.md_to_choma_db.data_parser_model import DataParserMdToChromaYaml
+from source.parser.md_to_qdrant.data_parser import ParserMdToQdrant
+from source.parser.md_to_qdrant.data_parser_model import DataParserMdToQdrantYaml
 from source.thread_ import thread_with_callback
 
 
@@ -43,11 +43,11 @@ def parser_toggle_run(button, parser_model: DataParserYaml):
     if isinstance(parser_model, DataParserHtmlToJsonYaml):
         parser = ParserHtmlToJson(parser_model)
 
-    if isinstance(parser_model, DataParserJsonToChromaYaml):
-        parser = ParserJsonToChroma(parser_model)
+    if isinstance(parser_model, DataParserJsonToQdrantYaml):
+        parser = ParserJsonToQdrant(parser_model)
 
-    if isinstance(parser_model, DataParserMdToChromaYaml):
-        parser = ParserMdToChroma(parser_model)
+    if isinstance(parser_model, DataParserMdToQdrantYaml):
+        parser = ParserMdToQdrant(parser_model)
 
     if not parser:
         raise ValueError(f'Cant find out parser for "{parser_model.title}"')
@@ -67,14 +67,6 @@ def parser_item_draw(parser_model: DataParserYaml, parent_container):
     """
     Принимает ОБЪЕКТ parser_model. Отрисовка происходит мгновенно.
     """
-    # 1. Извлекаем данные из модели
-    # Если путь в модели сохранен как 'social/telegram', берем 'telegram'
-    parser_path = parser_model.path
-    parser_name = parser_path.split('/')[-1]
-
-    # Так как модель уже загружена в фоне, считаем её валидной
-    is_valid = True
-
     # 1. Основной контейнер-карточка
     parser_item = ctk.CTkFrame(parent_container, fg_color="#2b2e34", corner_radius=6)
     parser_item.pack(fill="x", padx=5, pady=3)

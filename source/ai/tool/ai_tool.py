@@ -8,7 +8,8 @@ from typing import cast, Callable
 
 from source.ai.tool.ai_tool_agent import agent_list, agent_invoke
 from source.ai.tool.ai_tool_chat import chat_me, chat_me_question
-from source.ai.tool.ai_tool_memory import chromadb_memory_save, chromadb_memory_search_text
+from source.ai.tool.ai_tool_memory import qdrant_memory_search_text, \
+    qdrant_memory_save
 from source.ai.tool.ai_tool_web import web_read_page
 from source.config import config_get
 from source.logging_ import logger_info
@@ -92,8 +93,8 @@ def ai_tools_permanent_get() -> list[Callable]:
         chat_me_question,
 
         # ------ Bank memory
-        chromadb_memory_save,
-        chromadb_memory_search_text,
+        qdrant_memory_save,
+        qdrant_memory_search_text,
 
         # ------ Web
         web_read_page,
@@ -118,7 +119,7 @@ def ai_tools_permanent_get_non_gui() -> list[Callable]:
     all_tools_permanent_non_gui = [ai_tool_decorator(t) for t in [
 
         # ------ Bank memory
-        chromadb_memory_search_text,
+        qdrant_memory_search_text,
     ]]
 
     return all_tools_permanent_non_gui

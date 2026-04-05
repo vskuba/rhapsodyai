@@ -15,7 +15,6 @@ config.yaml
 
 data/output
 data/log
-data/chroma_db
 data/qdrant_storage
 data/sqllite3
 data/report

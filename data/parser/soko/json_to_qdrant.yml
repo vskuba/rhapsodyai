@@ -1,5 +1,5 @@
 title: "Json menu to collection 'soko_menu'"
-type: "json_to_chroma_db"
+type: "json_to_qdrant"
 
 source:
   - file_name: "data/output/soko_full_menu.json"
@@ -12,7 +12,7 @@ source:
 destination:
   - collection_name: "soko_menu"
     vector_settings:
-      embedding_model: "all-MiniLM-L6-v2"
+      embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
     # Инструкция для сборки вектора (из полей объекта + контекста)
     document_content: "category_name + ' ' + title + ' ' + description"
     # Список полей, которые пойдут в метаданные Chroma

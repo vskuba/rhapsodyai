@@ -67,6 +67,7 @@ async def log_request_body(request: httpx.Request):
         headers=dict(request.headers)
     )
 
+
 async def log_response_body(response: httpx.Response):
     body_response = await response.aread()
     request = response.request

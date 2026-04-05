@@ -6,7 +6,7 @@ from source.parser.data_parser_model import DataParserYaml
 
 
 @dataclass
-class SourceModelChroma:
+class SourceModelQdrant:
     file_name: str
     schema_name: str = Field(..., alias="schema")
     iterator_key: Optional[str] = None
@@ -21,7 +21,7 @@ class VectorSettings:
 
 
 @dataclass
-class DestinationModelChroma:
+class DestinationModelQdrant:
     collection_name: str
     vector_settings: Optional[VectorSettings] = None
     document_content: Optional[str] = None
@@ -34,12 +34,12 @@ class JsonSchemaModel:
 
 
 @dataclass
-class DataParserJsonToChromaYaml(DataParserYaml):
+class DataParserJsonToQdrantYaml(DataParserYaml):
     title: str
     type: str
-    source: List[SourceModelChroma]
-    destination: List[DestinationModelChroma]
+    source: List[SourceModelQdrant]
+    destination: List[DestinationModelQdrant]
     schemas: Dict[str, Union[JsonSchemaModel, Any]]
 
 
-rebuild_dataclass(DataParserJsonToChromaYaml)
+rebuild_dataclass(DataParserJsonToQdrantYaml)

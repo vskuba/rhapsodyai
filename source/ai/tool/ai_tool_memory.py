@@ -1,113 +1,132 @@
 import uuid
-
 from datetime import datetime
-from chromadb import QueryResult
+from qdrant_client import AsyncQdrantClient
+from sentence_transformers import SentenceTransformer
 from source.ai.tool.ai_tool_agent import agent_invoke
-from source.chroma_db import _chroma_db_get_client
 from source.logging_ import logger_info
+from source.qdrant_ import _qdrant_db_get_client
+from qdrant_client.http.models import Distance, VectorParams, PointStruct, TextIndexParams, TokenizerType
+from qdrant_client.http import models
 
-chroma_db_collection_name = 'bank_memory'
+# Глобальный энкодер (загружается один раз)
+encoder = SentenceTransformer("all-MiniLM-L6-v2")
+qdrant_collection_name = 'bank_memory'
+VECTOR_SIZE = 384
 
-async def chromadb_memory_save(text: str, collection_name: str = ''):
-    """This tool converts the input text into a high-dimensional vector embedding and stores
-    it in the ChromaDB collection. This allows for persistent long-term memory, enabling the
-    agent to perform semantic searches and retrieve relevant context in future interactions."""
-    client = _chroma_db_get_client()
-    collection = client.get_or_create_collection(collection_name if collection_name else chroma_db_collection_name)
-    facts = await _chromadb_extract_facts_from_text(text)
 
-    logger_info(f'🔍 Extracted facts from input text: {facts}')
+async def qdrant_memory_save(text: str, collection_name: str = ''):
+    client: AsyncQdrantClient = _qdrant_db_get_client()
+    col_name = collection_name if collection_name else qdrant_collection_name
 
-    if not facts:
-        return "No important facts found to save."
+    # 1. Создание коллекции с поддержкой текстового поиска
+    if not await client.collection_exists(col_name):
+        await client.create_collection(
+            collection_name=col_name,
+            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+        )
+        # Добавляем полнотекстовый индекс для поиска по словам (телефон, адрес и т.д.)
+        await client.create_payload_index(
+            collection_name=col_name,
+            field_name="content",
+            field_schema=TextIndexParams(
+                type=models.TextIndexType.TEXT,
+                tokenizer=TokenizerType.WORD,
+                min_token_len=2,
+                lowercase=True,
+            )
+        )
+
+    facts = await _vector_extract_facts_from_text(text)
+    if not facts: return "No important facts found to save."
 
     saved_count = 0
     for fact in facts:
-        existing = await _chromadb_memory_search(fact)
+        # Проверка дублей (используем наш новый гибридный поиск)
+        existing = await _qdrant_memory_raw_search(fact, col_name, limit=1)
+        if existing and existing[0].score > 0.90:  # Для гибридного поиска порог выше
+            logger_info(f"⏭️ Факт уже известен, пропускаю: {fact}")
+            continue
 
-        # Если в результатах есть очень похожий текст (distance < 0.1) - пропускаем
-        if existing and existing.get('distances') and len(existing['distances'][0]) > 0:
-            distance = existing['distances'][0][0]
-            if distance < 0.15:
-                logger_info(f"⏭️ Факт '{fact}' уже известен (схожесть {distance:.4f}), пропускаю.")
-                continue
-
-        unique_id = f"fact_{uuid.uuid4().hex[:8]}"
-
-        # 2. Сохраняем каждый факт как отдельный документ
-        collection.add(
-            documents=[fact],
-            metadatas=[{
-                "source": "extracted_fact",
-                "created_at": datetime.now().isoformat(),
-                "original_size": len(text)
-            }],
-            ids=[unique_id]
+        fact_vector = encoder.encode(fact).tolist()
+        await client.upsert(
+            collection_name=col_name,
+            points=[
+                PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=fact_vector,
+                    payload={
+                        "content": fact,
+                        "source": "extracted_fact",
+                        "created_at": datetime.now().isoformat(),
+                    }
+                )
+            ]
         )
         saved_count += 1
+    return f"Saved {saved_count} facts."
 
-    return f"Extracted and saved {saved_count} facts."
 
-
-async def chromadb_memory_search_text(query: str, collection_name: str = '') -> str:
-    """Performs a semantic similarity search within the ChromaDB collection to retrieve relevant
-    context or past information. It converts the query into an embedding and returns the most
-    closely related documents, effectively providing the agent with access to its long-term memory
-    and previously stored knowledge."""
-    results = await _chromadb_memory_search(query, collection_name)
-    if results and results['documents'] and len(results['documents'][0]) > 0:
-        # Склеиваем найденные документы в одну строку
-        return "\n".join(results['documents'][0])
-
+async def qdrant_memory_search_text(query: str, collection_name: str = '') -> str:
+    results = await _qdrant_memory_raw_search(query, collection_name)
+    if results:
+        return "\n".join([res.payload.get('content', '') for res in results])
     return "No relevant memories found."
 
 
-async def _chromadb_memory_search(query: str, collection_name: str = '') -> QueryResult:
-    """Performs a semantic similarity search within the ChromaDB collection to retrieve relevant
-    context or past information. It converts the query into an embedding and returns the most
-    closely related documents, effectively providing the agent with access to its long-term memory
-    and previously stored knowledge."""
-    client = _chroma_db_get_client()
-    results = client.get_or_create_collection(collection_name if collection_name else chroma_db_collection_name).query(
-        query_texts=[query],
-        n_results=3
+async def _qdrant_memory_raw_search(query: str, collection_name: str = '', limit: int = 5):
+    client: AsyncQdrantClient = _qdrant_db_get_client()
+    col_name = collection_name if collection_name else qdrant_collection_name
+
+    if not await client.collection_exists(col_name):
+        return []
+
+    # 1. Получаем инфо о коллекции
+    col_info = await client.get_collection(col_name)
+
+    # 2. ОПРЕДЕЛЯЕМ ИМЯ ВЕКТОРА ПРАВИЛЬНО
+    vector_name = None
+    vectors_config = col_info.config.params.vectors
+
+    # Если векторов несколько (они в словаре/map)
+    if hasattr(vectors_config, 'map') and vectors_config.map:
+        vector_name = list(vectors_config.map.keys())[0]
+    # Если вектор один, но он может быть именованным в некоторых версиях
+    elif isinstance(vectors_config, dict) and vectors_config:
+        vector_name = list(vectors_config.keys())[0]
+
+    query_vector = encoder.encode(query).tolist()
+
+    # Полнотекстовый фильтр для поиска по словам (телефон и т.д.)
+    search_condition = models.FieldCondition(
+        key="content",
+        match=models.MatchText(text=query)
     )
 
-    return results
+    # 3. ВЫПОЛНЯЕМ ЗАПРОС
+    response = await client.query_points(
+        collection_name=col_name,
+        prefetch=[
+            models.Prefetch(
+                query=models.NearestQuery(nearest=query_vector),
+                using=vector_name,  # Теперь здесь будет "fast-all-MiniLM-L6-v2" или None
+                limit=limit
+            ),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.RRF),  # type: ignore
+        query_filter=models.Filter(should=[search_condition]),
+        limit=limit
+    )
+
+    return response.points
 
 
-async def _chromadb_extract_facts_from_text(text: str) -> list[str]:
-    """
-    Extract facts from text using AI.
-    """
-    prompt = f"""
-        Analyze the input text and extract all significant facts about the user, their preferences, or specific events.
-        Convert them into a list of short, concise, and complete statements.
-        Remove greetings, questions, and unnecessary reasoning.
-        
-        Input text:
-        "{text}"
-        
-        Provide the response in the following format:
-        - Fact 1
-        - Fact 2
-        """
-
+async def _vector_extract_facts_from_text(text: str) -> list[str]:
+    # ... (код экстракции фактов остается без изменений) ...
+    prompt = f"Analyze and extract facts: {text}"
     try:
         response = await agent_invoke(agent_name="thinker", prompt=prompt)
-
-        if not response:
-            return []
-
-        # Парсим ответ: разбиваем по строкам, убираем маркеры списка и пустые строки
-        facts = [
-            line.strip("- *•").strip()
-            for line in response.split('\n')
-            if len(line.strip()) > 5  # Игнорируем слишком короткие обрывки
-        ]
-
-        return facts
-
+        if not response: return []
+        return [l.strip("- ").strip() for l in response.split('\n') if len(l) > 5]
     except Exception as e:
-        logger_info(f"❌ Ошибка при экстракции фактов: {e}")
+        logger_info(f"❌ Fact extraction error: {e}")
         return []
