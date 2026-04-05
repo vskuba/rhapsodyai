@@ -18,3 +18,4 @@ dacite
 PyGithub
 crawl4ai
 qdrant_client
+sentence_transformers
