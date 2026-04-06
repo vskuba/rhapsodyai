@@ -6,8 +6,6 @@ ssh/
 __pycache__/
 *.pyc
 
-docker/logstash/*
-
 # Конфиги и секреты
 .env
 config.yaml
