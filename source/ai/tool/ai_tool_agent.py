@@ -65,7 +65,6 @@ async def agent_invoke(agent_name: str, prompt: str) -> str:
 
     await async_waiting_start()
 
-    agent_response_text = None
     try:
         while True:
             try:

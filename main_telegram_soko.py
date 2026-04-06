@@ -14,9 +14,9 @@ from source.telegram_bot import init_telegram_bot
 from source.thread_ import thread_with_callback
 
 if __name__ == "__main__":
-    # 1. Инициализация логов, тест
     logging_init()
-    print("Starting MarinaAI in Bot-only mode...")
+
+    print("Starting Soko telegram bot-only mode...")
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
 
@@ -42,7 +42,7 @@ if __name__ == "__main__":
         callback_func=lambda res: print(f"Bot status: {res}")
     )
 
-    print("MarinaAI Bot is running. Press Ctrl+C to stop.")
+    print("Soko bot is running. Press Ctrl+C to stop.")
     try:
         while True:
             time.sleep(1)
