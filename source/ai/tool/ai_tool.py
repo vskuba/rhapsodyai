@@ -10,7 +10,6 @@ from source.ai.tool.ai_tool_agent import agent_list, agent_invoke
 from source.ai.tool.ai_tool_chat import chat_me, chat_me_question
 from source.ai.tool.ai_tool_memory import qdrant_memory_search_text, \
     qdrant_memory_save
-from source.ai.tool.ai_tool_web import web_read_page
 from source.config import config_get
 from source.logging_ import logger_info
 from source.mcp import mcp_config_list_get, mcp_config_get
@@ -95,6 +94,8 @@ def ai_tools_permanent_get() -> list[Callable]:
     ]
 
     if state_get('mode_gui'):
+        from source.ai.tool.ai_tool_web import web_read_page
+
         tools_inbuilt = [
             # ------ Chat
             chat_me,
