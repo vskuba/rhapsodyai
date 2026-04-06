@@ -6,7 +6,7 @@ import threading
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 from source.ai.ai_thread import ai_thread_framework_run
-from source.faster_whisper_ import faster_whisper_enable
+from source.faster_whisper.faster_whisper_ import faster_whisper_enable
 from source.logging_ import logging_init
 from source.queue_ import queue_set
 from source.state import state_set
