@@ -36,7 +36,7 @@ COPY . .
 RUN mkdir -p data/qdrant_storage data/history data/log data/report data/sqlite3
 
 # Добавляем права на запись (777 гарантирует доступ любому пользователю внутри контейнера)
-RUN chmod -R 777 data/qdrant_storage data/history data/log data/report data/sqlite3
+RUN chmod -R 777 data/qdrant_storage data/history data/log data/report data/sqlite3 docker/logstash
 
 # Указываем переменную окружения, чтобы Python не буферизировал логи
 ENV PYTHONUNBUFFERED=1
