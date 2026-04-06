@@ -5,10 +5,10 @@ import speech_recognition as sr
 import numpy as np
 
 from faster_whisper import WhisperModel
+from py_modules.microphone.microphone import microphone_create_microphone
 from source.config import config_get
 from source.faster_whisper.faster_whisper_model import faster_whisper_create_model
 from source.logging_ import logger_info
-from source.microphone import microphone_create_microphone
 from source.queue_ import queue_get
 from source.window.ui import window_chat_voice_state_get
 
