@@ -81,23 +81,23 @@ services:
       - SQLITE_DATABASE=/data/llm_short_memory.db
     restart: unless-stopped
 
-#  telegram_soko:
-#    image: ghcr.io/vskuba/marina-ai:latest
-#    container_name: telegram_soko
-#    restart: always
-#    env_file:
-#      - .env
-#    volumes:
-#      - ./data:/app/data
-#    networks:
-#      - os-net
-#    dns:
-#      - 8.8.8.8
-#      - 8.8.4.4
-#    depends_on:
-#      - qdrant
-#      - opensearch-dashboards
-#      - sqlite-web
+  telegram_soko:
+    image: ghcr.io/vskuba/marina-ai:latest
+    container_name: telegram_soko
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    networks:
+      - os-net
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    depends_on:
+      - qdrant
+      - opensearch-dashboards
+      - sqlite-web
 
 volumes:
   opensearch-data:
