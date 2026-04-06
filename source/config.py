@@ -17,4 +17,3 @@ def config_update_and_save(key: str, value: Any):
     """
     set_key(find_dotenv(), key.upper(), value)
     os.environ[key.upper()] = value
-
