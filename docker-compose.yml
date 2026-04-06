@@ -47,7 +47,7 @@ services:
     image: opensearchproject/logstash-oss-with-opensearch-output-plugin:8.9.0
     container_name: logstash
     volumes:
-      - ./docker/logstash/read-app-logs${APP_ENV:+_$APP_ENV}.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./docker/logstash/read-app-logs${APP_ENV}.conf:/usr/share/logstash/pipeline/logstash.conf:ro
       - ./data/log:/logs:ro
       - ./data/log/sincedb:/var/lib/logstash/sincedb:rw
     environment:
@@ -81,23 +81,23 @@ services:
       - SQLITE_DATABASE=/data/llm_short_memory.db
     restart: unless-stopped
 
-  telegram_soko:
-    image: ghcr.io/vskuba/marina-ai:latest
-    container_name: telegram_soko
-    restart: always
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data
-    networks:
-      - os-net
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    depends_on:
-      - qdrant
-      - opensearch-dashboards
-      - sqlite-web
+#  telegram_soko:
+#    image: ghcr.io/vskuba/marina-ai:latest
+#    container_name: telegram_soko
+#    restart: always
+#    env_file:
+#      - .env
+#    volumes:
+#      - ./data:/app/data
+#    networks:
+#      - os-net
+#    dns:
+#      - 8.8.8.8
+#      - 8.8.4.4
+#    depends_on:
+#      - qdrant
+#      - opensearch-dashboards
+#      - sqlite-web
 
 volumes:
   opensearch-data:
