@@ -4,9 +4,7 @@ import traceback
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Optional, Any
-
-from dacite import from_dict
-
+from pydantic import BaseModel, Field
 from source.config import config_get
 from source.logging_ import logger_info
 
@@ -32,14 +30,13 @@ class McpTool:
     inputSchema: McpToolInputSchema = field(default_factory=McpToolInputSchema)
 
 
-@dataclass
-class McpConfig:
+class McpConfig(BaseModel):
     title: str
     cmd: str
     args: list[str]
     status: str
     env: list[str]
-    tools: list[McpTool] = field(default_factory=list)
+    tools: list[McpTool] = Field(default_factory=list)
 
 
 def mcp_config_list_get() -> list[str]:
@@ -56,7 +53,7 @@ def mcp_config_get(name: str) -> McpConfig | None:
 
     try:
         with open(filename, 'r', encoding='utf-8') as f:
-            return from_dict(McpConfig, json.load(f))
+            return McpConfig.model_validate(json.load(f))
     except Exception as e:
         backtrace = traceback.format_exc()
         logger_info(

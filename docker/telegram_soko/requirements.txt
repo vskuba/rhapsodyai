@@ -7,13 +7,9 @@ groq
 httpx
 python-dotenv
 faster-whisper
-gTTS
-edge-tts
-SpeechRecognition
 pydantic
 click
 python-json-logger
-dacite
 PyGithub
 qdrant_client
 sentence_transformers
