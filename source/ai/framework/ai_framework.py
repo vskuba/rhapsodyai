@@ -41,6 +41,7 @@ class AiFrameworkModel:
     on_complete: Callable | None = None
     is_sub_thread: bool = False
     is_gui_mode: bool = True
+    memory_short_disabled: bool = False
 
 
 @dataclass
@@ -88,6 +89,9 @@ class AbstractAiFramework(ABC):
         pass
 
     def message_history_get(self, framework_model: AiFrameworkModel) -> list[Any] | None:
+        if framework_model.memory_short_disabled:
+            return None
+
         all_messages = []
         for msg_json in sqllite3_llm_short_memory_messages('default_id', framework_model.name):
             msg_obj_list = message_adapter.validate_json(msg_json)
@@ -96,6 +100,9 @@ class AbstractAiFramework(ABC):
         return all_messages
 
     def message_history_add(self, framework_model: AiFrameworkModel, messages_new: list[Any]):
+        if framework_model.memory_short_disabled:
+            return None
+
         for msg in messages_new:
             if not isinstance(msg, (ModelRequest, ModelResponse)):
                 continue

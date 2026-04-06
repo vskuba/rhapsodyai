@@ -12,6 +12,7 @@ class AiAgentYaml(BaseModel):
     description: str
     system_prompt: str
     specialization: str | None = None
+    memory_short_disabled: bool | None = False
     filename: str | None = None
     tools: Optional[list[str]] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
