@@ -84,6 +84,7 @@ services:
   telegram_soko:
     image: ghcr.io/vskuba/marina-ai:latest
     container_name: telegram_soko
+    profiles: ["on_prod_only"]
     restart: always
     env_file:
       - .env
