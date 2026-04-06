@@ -13,7 +13,6 @@ SpeechRecognition
 pydantic
 click
 python-json-logger
-beautifulsoup4
 dacite
 PyGithub
 qdrant_client
