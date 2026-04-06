@@ -11,10 +11,10 @@ class AiFrameworkAgentModelPydantic(AbstractAiFrameworkAgentModel):
             tools: list[str],
             mcp_servers: list[str],
             specialization: str,
-            memory_short_enabled: bool
+            memory_short_disabled: bool
     ):
         super().__init__(name, title, description, prompt, system_prompt, specialization)
         self.tools = tools if tools is not None else []
         self.mcp_servers = mcp_servers
         self.response_model = str
-        self.memory_short_enabled = memory_short_enabled
+        self.memory_short_disabled = memory_short_disabled

@@ -55,7 +55,7 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
                 tools=agent_yaml.tools,
                 mcp_servers=agent_yaml.mcp_servers,
                 specialization=agent_yaml.specialization,
-                memory_short_enabled=True if agent_yaml.memory_short_disabled is not None else False
+                memory_short_disabled=True if agent_yaml.memory_short_disabled is not None else False
             )
 
             framework_model.on_complete=partial(on_complete)
