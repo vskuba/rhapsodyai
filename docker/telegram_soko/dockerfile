@@ -14,11 +14,16 @@ RUN ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
 # Создаем рабочую директорию
 WORKDIR /app
 
-# Копируем файл зависимостей
-COPY docker/telegram_soko/requirements.txt .
+# === Установка PyTorch CPU-only ПЕРЕД остальными зависимостями ===
+# Это важно: torch должен установиться с CPU-индекса, иначе pip возьмёт CUDA-версию из PyPI
+RUN pip install --no-cache-dir \
+    torch \
+    torchvision \
+    torchaudio \
+    --index-url https://download.pytorch.org/whl/cpu
 
-# Устанавливаем библиотеки
-# --no-cache-dir экономит место в образе
+# Копируем и устанавливаем остальные зависимости
+COPY docker/telegram_soko/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN python3 -c "from faster_whisper import download_model; download_model('base')"

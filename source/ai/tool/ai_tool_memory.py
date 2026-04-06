@@ -9,7 +9,7 @@ from qdrant_client.http.models import Distance, VectorParams, PointStruct, TextI
 from qdrant_client.http import models
 
 # Глобальный энкодер (загружается один раз)
-encoder = SentenceTransformer("all-MiniLM-L6-v2")
+encoder = SentenceTransformer("all-MiniLM-L6-v2", device='cpu')
 qdrant_collection_name = 'bank_memory'
 VECTOR_SIZE = 384
 
