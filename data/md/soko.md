@@ -105,7 +105,7 @@ Payment is possible upon receipt of the order by the courier
 Cash or card
 
 ### 4. Contacts and feedback
-## Telephone
+## Phone
 Contact phone: +380501468925
 ## Address
 Address: Kyiv, Lvivska Street, 15-B, 03115
