@@ -17,7 +17,7 @@ def faster_whisper_enable():
     (threading.Thread(
         target=faster_whisper_listening,
         args=(
-            faster_whisper_create_model(config_get('whisper_model_name')),
+            faster_whisper_create_model(),
             microphone_create_microphone()
         ),
         daemon=True

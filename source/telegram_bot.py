@@ -36,9 +36,13 @@ async def init_telegram_bot(agent_name: str):
             file_path = f"temp_{file_id}.ogg"
             await message.bot.download_file(file.file_path, file_path)
 
-            # Конвертируем голос в текст через faster-whisper
-            # (Предполагается, что модель whisper инициализирована заранее)
-            segments, info = faster_whisper_create_model(config_get('whisper_model_name')).transcribe(file_path, beam_size=5)
+            segments, info = faster_whisper_create_model().transcribe(
+                file_path,
+                beam_size=5,
+                best_of=5,
+                language=None,
+                condition_on_previous_text=False
+            )
             user_text = " ".join([segment.text for segment in segments])
 
             logger_info(f"Распознанный текст: {user_text}")
