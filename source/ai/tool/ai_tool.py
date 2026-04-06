@@ -15,6 +15,7 @@ from source.config import config_get
 from source.logging_ import logger_info
 from source.mcp import mcp_config_list_get, mcp_config_get
 from source.queue_ import queue_get
+from source.state import state_get
 
 all_tools: list[Callable] = []
 all_tools_permanent: list[Callable] = []
@@ -86,29 +87,43 @@ def ai_tools_permanent_get() -> list[Callable]:
     if all_tools_permanent:
         return all_tools_permanent
 
-    all_tools_permanent = [ai_tool_decorator(t) for t in [
-
-        # ------ Chat
-        chat_me,
-        chat_me_question,
+    tools_inbuilt = [
 
         # ------ Bank memory
-        qdrant_memory_save,
         qdrant_memory_search_text,
 
-        # ------ Web
-        web_read_page,
-
-        # ------ Agent
-        agent_list,
-        agent_invoke
-    ]]
-
-    return all_tools_permanent + [
-
-        # ------ Task
-        task_abort # отдельно, потому что декоратор async
     ]
+
+    if state_get('mode_gui'):
+        tools_inbuilt = [
+            # ------ Chat
+            chat_me,
+            chat_me_question,
+
+            # ------ Bank memory
+            qdrant_memory_save,
+            qdrant_memory_search_text,
+
+            # ------ Web
+            web_read_page,
+
+            # ------ Agent
+            agent_list,
+            agent_invoke
+        ]
+
+    all_tools_permanent = [ai_tool_decorator(t) for t in tools_inbuilt]
+
+    tools_inbuilt_async = []
+
+    if state_get('mode_gui'):
+        tools_inbuilt_async = [
+
+            # ------ Task
+            task_abort  # отдельно, потому что декоратор async
+        ]
+
+    return all_tools_permanent + tools_inbuilt_async
 
 
 def ai_tools_permanent_get_non_gui() -> list[Callable]:
