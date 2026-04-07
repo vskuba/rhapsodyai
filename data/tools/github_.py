@@ -88,33 +88,12 @@ async def github_search_repo_by_last_commit() -> str | None:
     This function does not accept any arguments. The authorized user is used.
     """
     g = _github_auth()
-
     user = g.get_user()
-    my_login = user.login
 
-    events = g.get_user(my_login).get_events()
+    repos = user.get_repos(sort='pushed', direction='desc')
 
-    create_event_repo = None
-    create_event_commit = None
-    for event in events:
-        if event.type in "PushEvent":
-            if create_event_commit:
-                print('Коммит в ветке %s %s' % (create_event_commit.commit.author.date,
-                                                create_event_commit.commit.author.name))
-                print('Коммит в event %s %s' % (event.created_at, event.actor.login))
-                if (
-                        create_event_commit.commit.author.date > event.created_at
-                        and create_event_commit.commit.author.name == event.actor.login
-                ):
-                    return create_event_repo
-
-            return event.repo.full_name
-        if event.type in "CreateEvent" and not create_event_commit:
-            create_event_repo = event.repo.full_name
-            create_event_commit = github_get_branch_last_commit(create_event_repo, event.payload["ref"])
-
-    if create_event_repo:
-        return create_event_repo
+    for repo in repos:
+        return repo.full_name
 
     return None
 
