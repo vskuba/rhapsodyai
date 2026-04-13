@@ -5,15 +5,14 @@ import traceback
 import CTkToolTip
 import customtkinter as ctk
 import source.window
-import source.ai.ai_thread
-from source.ai.framework.ai_framework_task import AbstractAiFrameworkTaskModel
-from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
+from ai.framework.ai_framework_task import AbstractAiFrameworkTaskModel
+from source.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
 
-from source.async_ import async_loop_task_cancel, async_waiting_is_active, async_waiting_clear
+from async_.async_ import async_loop_task_cancel, async_waiting_is_active, async_waiting_clear
 from source.filesystem import open_file_in_editor
-from source.logging_ import logger_info
-from source.queue_ import queue_get
-from source.state import state_get, state_set
+from logging_.logging_ import logger_info
+from queue_.queue_ import queue_get
+from state.state import state_get, state_set
 from source.window.ui import window_chat_loading_start, window_chat_progress_title_display, \
     window_chat_active_task_clear, window_chat_loading_stop
 
@@ -50,7 +49,7 @@ def task_item_toggle(button, task: AbstractAiFrameworkTaskModel):
         # print(f"Задача {t_name} активна и пульсирует.")
         window_chat_loading_start()  # запуск индикатора под чатом
         logger_info(f'▶ Отправляю задачу в очередь: "{task.title}"')
-        queue_get()['task'].put(task.name)
+        queue_get()['task'].put(task)
         window_chat_progress_title_display(task)
         global task_active
         task_active = task

@@ -3,14 +3,15 @@ import traceback
 
 from pydantic import TypeAdapter
 from pathlib import Path
-from source.ai.framework.ai_framework import AiFrameworkResult
-from source.ai.framework.ai_framework_task import AbstractAiFrameworkTask
-from source.ai.ai_mcp import AiMcpManager
-from source.ai.framework.pydanticai.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
-from source.ai.framework.pydanticai.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
-from source.config import config_get
-from pydantic_ai import Agent, AgentRunResult, ToolCallPart, ToolReturnPart, ModelMessage, ModelSettings
-from source.logging_ import logger_info
+from pydantic_ai import Agent, AgentRunResult, ModelMessage, ModelSettings
+
+from ai.ai_mcp import AiMcpManager
+from ai.framework.ai_framework import AiFrameworkResult
+from ai.framework.ai_framework_task import AbstractAiFrameworkTask
+from config.config import config_get
+from logging_.logging_ import logger_info
+from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
+from source.ai_pydantic.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
 
 
 class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):

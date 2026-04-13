@@ -1,7 +1,7 @@
 import os
 import sqlite3
 
-from source.config import config_get
+from config.config import config_get
 
 db_path = os.path.join(
     config_get('data_dir'),

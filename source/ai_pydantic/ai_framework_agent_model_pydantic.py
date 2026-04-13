@@ -1,4 +1,5 @@
-from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
+from ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
+
 
 class AiFrameworkAgentModelPydantic(AbstractAiFrameworkAgentModel):
     def __init__(

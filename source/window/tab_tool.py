@@ -3,9 +3,9 @@ import traceback
 
 import customtkinter as ctk
 
-from source.ai.tool.ai_tool import ai_tools_permanent_get, ai_tools_get
-from source.logging_ import logger_info
-from source.mcp import mcp_config_list_get, mcp_config_get, mcp_config_tools_json_get
+from ai.tool.ai_tool import ai_tools_permanent_get, ai_tools_get
+from logging_.logging_ import logger_info
+from mcp_.mcp_ import mcp_config_list_get, mcp_config_get, mcp_config_tools_json_get
 
 
 class TabTool:
@@ -81,7 +81,7 @@ class TabTool:
 
         # 3. MCP Инструменты
         try:
-            from source.ai.ai_mcp import AiMcpManager
+            from ai.ai_mcp import AiMcpManager
             mcp_manager = AiMcpManager()
             for server in mcp_config_list_get():
                 config = mcp_config_get(server)

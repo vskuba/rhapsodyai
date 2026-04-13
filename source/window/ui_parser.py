@@ -12,7 +12,7 @@ from source.parser.html_to_json.data_parser_model import DataParserHtmlToJsonYam
 from source.parser.json_to_qdrant.data_parser import ParserJsonToQdrant
 from source.parser.json_to_qdrant.data_parser_model import DataParserJsonToQdrantYaml
 from source.filesystem import open_file_in_editor
-from source.logging_ import logger_info
+from logging_.logging_ import logger_info
 from source.parser.md_to_qdrant.data_parser import ParserMdToQdrant
 from source.parser.md_to_qdrant.data_parser_model import DataParserMdToQdrantYaml
 from source.thread_ import thread_with_callback

@@ -1,6 +1,6 @@
 import customtkinter as ctk
 
-from source.config import config_get, config_update_and_save
+from config.config import config_get, config_update_and_save
 
 
 class TabSettings:

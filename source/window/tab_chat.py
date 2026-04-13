@@ -1,16 +1,15 @@
 import os
 import threading
 import webbrowser
-
 import CTkToolTip
 import customtkinter as ctk
 import source.window
-from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 
-from source.ai.framework.pydanticai.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
-from source.config import config_get, config_update_and_save
+from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
+from config.config import config_get, config_update_and_save
+from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
 from source.parser.data_parser import data_parser_path_list, data_parser_load
-from source.state import state_set
+from state.state import state_set
 from source.window.component import CustomTextbox
 from source.window.ui import window_chat_input_send, window_chat_voice_toggle, container_clear
 from source.window.ui_agent import agent_item_draw

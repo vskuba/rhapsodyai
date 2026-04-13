@@ -2,17 +2,19 @@ import json
 import os
 import re
 import traceback
+from functools import partial
 
 from pydantic import BaseModel, Field, create_model
 from typing import Any, Tuple, List
 
-from source.ai.framework.ai_framework_task_manager import AbstractAiFrameworkTaskManager
-from source.ai.framework.ai_framework_task_model import AiTaskYaml
-from source.ai.tool.ai_tool import ai_tools_get, ai_tools_permanent_get
-from source.ai.framework.pydanticai.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
-from source.config import config_get
-from source.logging_ import  logger_info
-from source.mcp import mcp_config_get
+from ai.framework.ai_framework_task_manager import AbstractAiFrameworkTaskManager
+from ai.framework.ai_framework_task_model import AiTaskYaml
+from ai.tool.ai_tool import ai_tools_get, ai_tools_permanent_get
+from config.config import config_get
+from logging_.logging_ import logger_info
+from mcp_.mcp_ import mcp_config_get
+from queue_.queue_ import queue_get
+from source.ai_pydantic.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
 
 
 class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
@@ -54,7 +56,7 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
 
             prompt, input_fields = self.prompt_parse_input_fields(prompt, input_values, response_model)
 
-            task = AiFrameworkTaskModelPydantic(
+            framework_model = AiFrameworkTaskModelPydantic(
                 name=task_yaml.filename,
                 title=title,
                 prompt=prompt,
@@ -66,10 +68,15 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
                 mcp_servers=task_yaml.mcp_servers
             )
 
-            task.input_values_set(input_values)
-            task.history_save = task_yaml.history_save
+            framework_model.input_values_set(input_values)
+            framework_model.history_save = task_yaml.history_save
 
-            return task
+            async def on_complete(response_text: str):
+                queue_get()['chat'].put({"text": response_text, "who": 'agent'})
+
+            framework_model.on_complete=partial(on_complete)
+
+            return framework_model
 
         except Exception as e:
             backtrace = traceback.format_exc()

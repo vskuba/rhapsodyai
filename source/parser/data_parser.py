@@ -2,7 +2,7 @@ import os
 import yaml
 
 from pathlib import Path
-from source.config import config_get
+from config.config import config_get
 from source.parser.data_parser_model import DataParserYaml
 from source.parser.html_to_json.data_parser_model import DataParserHtmlToJsonYaml
 from source.parser.json_to_qdrant.data_parser_model import DataParserJsonToQdrantYaml

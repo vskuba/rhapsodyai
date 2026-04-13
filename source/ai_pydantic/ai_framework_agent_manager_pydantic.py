@@ -2,12 +2,12 @@ import os
 import traceback
 from functools import partial
 
-from source.ai.framework.ai_framework_agent_manager import AbstractAiFrameworkAgentManager
-from source.ai.framework.ai_framework_agent_model import AiAgentYaml
-from source.ai.framework.pydanticai.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
-from source.config import config_get
-from source.logging_ import logger_info
-from source.queue_ import queue_get
+from ai.framework.ai_framework_agent_manager import AbstractAiFrameworkAgentManager
+from ai.framework.ai_framework_agent_model import AiAgentYaml
+from config.config import config_get
+from logging_.logging_ import logger_info
+from queue_.queue_ import queue_get
+from source.ai_pydantic.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
 
 
 class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
@@ -43,9 +43,6 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
 
             system_prompt = ''
 
-            async def on_complete(response_text: str):
-                queue_get()['chat'].put({"text": response_text, "who": 'agent'})
-
             framework_model = AiFrameworkAgentModelPydantic(
                 name=agent_yaml.filename,
                 title=agent_yaml.title,
@@ -57,6 +54,9 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
                 specialization=agent_yaml.specialization,
                 memory_short_disabled=agent_yaml.memory_short_disabled
             )
+
+            async def on_complete(response_text: str):
+                queue_get()['chat'].put({"text": response_text, "who": 'agent'})
 
             framework_model.on_complete=partial(on_complete)
 

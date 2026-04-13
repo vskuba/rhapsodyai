@@ -5,7 +5,7 @@ from typing import Dict, Any
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import PointStruct, VectorParams, Distance
 from sentence_transformers import SentenceTransformer
-from source.qdrant_ import _qdrant_db_get_client
+from qdrant_.qdrant_ import _qdrant_db_get_client
 
 
 class ParserJsonToQdrant:

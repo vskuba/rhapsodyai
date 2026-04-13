@@ -1,13 +1,13 @@
 import time
 import source.window
-import source.ai.ai_thread
 
-from source.ai.framework.ai_framework import AiFrameworkModel
-from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
-from source.ai.framework.ai_framework_task import AbstractAiFrameworkTaskModel
+from ai.framework.ai_framework import AiFrameworkModel
+from ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
+from ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
+
+from queue_.queue_ import queue_get
 from source.filesystem import open_file_in_editor
-from source.queue_ import queue_get
-from source.state import state_get
+from state.state import state_get
 
 
 def window_chat_input_send(text: str) -> None:

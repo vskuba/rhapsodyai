@@ -1,13 +1,14 @@
 import traceback
 
-from source.ai.ai_mcp import AiMcpManager
-from source.ai.framework.ai_framework import AiFrameworkResult
-from source.ai.framework.ai_framework_agent import AbstractAiFrameworkAgent
-from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
-from source.ai.framework.pydanticai.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
-from source.ai.framework.pydanticai.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
 from pydantic_ai import Agent, AgentRunResult, ModelSettings
-from source.logging_ import logger_info
+
+from ai.ai_mcp import AiMcpManager
+from ai.framework.ai_framework import AiFrameworkResult
+from ai.framework.ai_framework_agent import AbstractAiFrameworkAgent
+from logging_.logging_ import logger_info
+from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
+from source.ai_pydantic.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
+from source.ai_pydantic.ai_framework_task_model_pydantic import AiFrameworkTaskModelPydantic
 
 
 class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):

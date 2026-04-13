@@ -4,7 +4,7 @@ from typing import Any, Dict
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
-from source.qdrant_ import _qdrant_db_get_client
+from qdrant_.qdrant_ import _qdrant_db_get_client
 
 
 class ParserMdToQdrant:

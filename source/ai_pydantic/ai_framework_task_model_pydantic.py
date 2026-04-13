@@ -1,5 +1,6 @@
 from pydantic import BaseModel
-from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
+
+from ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
 
 
 class AiFrameworkTaskModelPydantic(AbstractAiFrameworkTaskModel):

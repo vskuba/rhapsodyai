@@ -2,7 +2,7 @@ import threading
 import asyncio
 
 from typing import Callable
-from source.state import state_get
+from state.state import state_get
 
 
 def thread_with_callback(init_func: Callable, callback_func: Callable):

@@ -6,11 +6,11 @@ import source.window
 import customtkinter as ctk
 
 from typing import Dict, Any
-from source.ai.framework.ai_framework import AiFrameworkModel
-from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
-from source.ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
-from source.logging_ import logger_info
-from source.queue_ import queue_get
+from ai.framework.ai_framework import AiFrameworkModel
+from ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
+from ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
+from logging_.logging_ import logger_info
+from queue_.queue_ import queue_get
 from source.window.component import AiPopupWindow
 from source.window.tab_chat import TabChat
 from source.window.tab_log import TabLog
@@ -19,7 +19,7 @@ from source.window.tab_settings import TabSettings
 from source.window.tab_tool import TabTool
 from source.window.ui import (
     window_chat_message_add,
-    window_chat_active_task_clear,
+    window_chat_active_task_clear, window_chat_progress_title_display,
 )
 from source.window.ui_agent import agent_complete, agent_check_queue
 from source.window.ui_task import task_complete, task_check_queue
@@ -74,6 +74,7 @@ class WindowAi(ctk.CTk):
         self.queue_chat()
         self.queue_tools()
         self.queue_task_complete()
+        self.queue_task_continue()
 
         self.protocol("WM_DELETE_WINDOW", self.window_close)
         self.after(100, lambda: agent_check_queue(self))
@@ -190,6 +191,23 @@ class WindowAi(ctk.CTk):
 
         self.after(100, self.queue_task_complete)
 
+    def queue_task_continue(self):
+        try:
+            task = queue_get()['task_continue'].get_nowait()
+            logger_info(f"🛠 Сообщение из очереди task_continue")
+            window_chat_progress_title_display(task)
+
+        except queue.Empty:
+            pass
+        except Exception as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ 🛠 Ошибка в task_continue: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
+
+        self.after(100, self.queue_task_continue)
+
     def thread_monitor(self, framework_model: AiFrameworkModel):
         try:
             if isinstance(framework_model, AbstractAiFrameworkTaskModel):
@@ -213,7 +231,7 @@ class WindowAi(ctk.CTk):
 
         try:
             # 2. Быстрая очистка асинхронки (если она не зависает)
-            from source.async_ import async_waiting_clear
+            from async_.async_ import async_waiting_clear
             async_waiting_clear()
         except:
             pass

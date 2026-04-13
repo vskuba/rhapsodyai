@@ -1,5 +1,5 @@
 from faster_whisper import WhisperModel
-from source.config import config_get
+from config.config import config_get
 
 
 def faster_whisper_create_model() -> WhisperModel:

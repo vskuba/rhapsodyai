@@ -3,14 +3,14 @@ import traceback
 import source.window
 import customtkinter as ctk
 
-from source.ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
-from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
+from ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
+from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 
-from source.async_ import async_loop_task_cancel
+from async_.async_ import async_loop_task_cancel
 from source.filesystem import open_file_in_editor
-from source.logging_ import logger_info
-from source.queue_ import queue_get
-from source.state import state_set, state_get
+from logging_.logging_ import logger_info
+from queue_.queue_ import queue_get
+from state.state import state_set, state_get
 from source.window.ui import window_chat_progress_title_display, window_chat_loading_start, window_chat_loading_stop, \
     window_chat_active_task_clear
 

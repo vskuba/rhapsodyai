@@ -4,12 +4,12 @@ from functools import partial
 
 from aiogram import Bot, Dispatcher, types
 
-from source.ai.framework.pydanticai.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
-from source.ai.framework.pydanticai.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
-from source.config import config_get
+from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
+from source.ai_pydantic.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
+from config.config import config_get
 from source.faster_whisper.faster_whisper_model import faster_whisper_create_model
-from source.logging_ import logger_info
-from source.queue_ import queue_get
+from logging_.logging_ import logger_info
+from queue_.queue_ import queue_get
 
 agent_manager = AiFrameworkAgentManagerPydantic()
 
