@@ -1,0 +1,29 @@
+# Используем легкий образ Python
+FROM python:3.11-slim
+
+# Устанавливаем временную зону системы внутри контейнера
+RUN ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем файл с зависимостями
+COPY docker/uvicorn/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+RUN python3 -c "from faster_whisper import download_model; download_model('small')"
+RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
+# Копируем весь код проекта в контейнер
+COPY . /app
+ENV PYTHONPATH="${PYTHONPATH}:/app/py_modules"
+
+# Создаем папки для данных, если их нет (чтобы не было ошибок доступа)
+RUN mkdir -p data/qdrant_storage data/history data/log data/report data/sqlite3
+
+# Добавляем права на запись (777 гарантирует доступ любому пользователю внутри контейнера)
+RUN chmod -R 777 data/qdrant_storage data/history data/log data/report data/sqlite3 docker/logstash
+
+# Запускаем Uvicorn
+# --host 0.0.0.0 обязателен, чтобы контейнер был доступен снаружи
+CMD ["uvicorn", "main_web:app", "--host", "0.0.0.0", "--port", "8000"]

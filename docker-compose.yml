@@ -81,6 +81,26 @@ services:
       - SQLITE_DATABASE=/data/llm_short_memory.db
     restart: unless-stopped
 
+  uvicorn:
+    build:
+      context: .
+      dockerfile: docker/uvicorn/dockerfile
+    container_name: uvicorn
+    ports:
+      - "8011:8000"                  # Пробрасываем порт наружу
+    volumes:
+      - ./:/app
+    env_file:
+      - .env
+    depends_on:
+      opensearch:
+        condition: service_healthy    # Ждем, пока OpenSearch реально ответит на healthcheck
+      qdrant:
+        condition: service_started
+    networks:
+      - os-net
+    restart: always
+
   telegram_soko:
     image: ghcr.io/vskuba/marina-ai:latest
     container_name: telegram_soko
