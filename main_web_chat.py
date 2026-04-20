@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import os
 import queue
 import threading
 
@@ -8,6 +8,9 @@ from pydantic import ConfigDict
 from fastapi import FastAPI
 
 from contextlib import asynccontextmanager
+
+from starlette.staticfiles import StaticFiles
+
 from ai.ai_thread import ai_thread_framework_run
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_set
@@ -15,7 +18,7 @@ from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAg
 from source.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
 from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
 from source.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
-from source.routers import chat, index, agent
+from source.web.chat.routers import agent, index, chat
 
 
 @asynccontextmanager
@@ -58,6 +61,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+static_path = os.path.join(current_dir, "data", "web", "chat", "public")
+
+app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 app.state.agent_manager = AiFrameworkAgentManagerPydantic()
 

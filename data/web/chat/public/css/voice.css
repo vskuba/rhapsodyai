@@ -1,0 +1,18 @@
+.mic-button {
+    background: #f0f0f0;
+    color: #333;
+    border: 1px solid #ddd;
+    margin-left: 0;
+    margin-right: 10px;
+    width: 45px;
+    font-size: 20px;
+    transition: all 0.2s;
+}
+
+/* Эффект при записи */
+.mic-button.recording {
+    background: #ff4d4d;
+    color: white;
+    box-shadow: 0 0 10px rgba(255, 77, 77, 0.5);
+    transform: scale(1.1);
+}

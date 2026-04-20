@@ -1,0 +1,12 @@
+
+/* Левая часть: Чат */
+.chat-container { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #eee; }
+.chat-messages { flex: 1; padding: 20px; overflow-y: auto; border-bottom: 1px solid #eee; display: flex; flex-direction: column; }
+
+
+/* Стили элементов управления */
+.message { margin-bottom: 15px; padding: 10px; border-radius: 8px; max-width: 85%; font-size: 14px; }
+.user-msg { background: #007bff; color: white; align-self: flex-end; }
+.ai-msg { background: #e9e9eb; color: #333; align-self: flex-start; }
+
+.chat-input-area { display: flex; padding: 15px; }

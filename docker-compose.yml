@@ -81,20 +81,20 @@ services:
       - SQLITE_DATABASE=/data/llm_short_memory.db
     restart: unless-stopped
 
-  uvicorn:
+  uvicorn_chat:
     build:
       context: .
-      dockerfile: docker/uvicorn/dockerfile
+      dockerfile: docker/uvicorn_chat/dockerfile
     container_name: uvicorn
     ports:
-      - "8011:8000"                  # Пробрасываем порт наружу
+      - "8011:8000"
     volumes:
       - ./:/app
     env_file:
       - .env
     depends_on:
       opensearch:
-        condition: service_healthy    # Ждем, пока OpenSearch реально ответит на healthcheck
+        condition: service_healthy
       qdrant:
         condition: service_started
     networks:

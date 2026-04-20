@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+
+<div class="main-wrapper">
+    <!-- Основная зона чата -->
+    <div class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+            <div class="message ai-msg">Привет! Выберите агента и начнем.</div>
+        </div>
+
+        <div id="topProgressBar" class="progress-bar-container">
+            <div class="progress-bar-fill"></div>
+        </div>
+
+        <div class="chat-input-area">
+            <button id="micBtn" class="mic-button">🎤</button>
+            <textarea id="userInput"></textarea>
+            <button id="sendBtn">Отправить</button>
+        </div>
+    </div>
+
+    <!-- Правая колонка -->
+    <div class="sidebar">
+        <div class="sidebar-label">Активный агент</div>
+        <select id="agentSelect" size="10">
+            <option value="loading">Загрузка...</option>
+        </select>
+    </div>
+</div>
+
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

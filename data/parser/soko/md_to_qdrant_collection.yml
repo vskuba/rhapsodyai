@@ -2,7 +2,7 @@ title: "Soko Logic ETL"
 type: "md_to_qdrant"
 
 source:
-  - file_path: "data/md/soko.md"
+  - file_path: "data/md/soko/soko.md"
     header_levels: [1, 2, 3]
 
 destination:
