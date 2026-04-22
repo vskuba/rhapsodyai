@@ -15,7 +15,7 @@ from source.filesystem import open_file_in_editor
 from logging_.logging_ import logger_info
 from source.parser.md_to_qdrant.data_parser import ParserMdToQdrant
 from source.parser.md_to_qdrant.data_parser_model import DataParserMdToQdrantYaml
-from source.thread_ import thread_with_callback
+from thread_.thread_ import thread_with_callback
 
 
 def parser_item_animate_pulse(button, colors, text_target, state=0):
@@ -52,7 +52,7 @@ def parser_toggle_run(button, parser_model: DataParserYaml):
     if not parser:
         raise ValueError(f'Cant find out parser for "{parser_model.title}"')
 
-    thread_with_callback(lambda: parser.run(), lambda res: parser_complete(res, parser_model))
+    thread_with_callback(lambda: parser.run(), lambda res: parser_complete(res, parser_model), button)
 
 
 def parser_complete(result, parser_model):

@@ -8,13 +8,13 @@ from functools import partial
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 
-from py_modules.ai.ai_thread import ai_thread_framework_run
-from py_modules.logging_.logging_ import logging_init
-from py_modules.queue_.queue_ import queue_set
+from ai.ai_thread import ai_thread_framework_run
+from logging_.logging_ import logging_init
+from queue_.queue_ import queue_set
 from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 from source.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
 from source.telegram_bot import init_telegram_bot
-from source.thread_ import thread_with_callback
+from thread_.thread_ import thread_with_callback
 
 if __name__ == "__main__":
     logging_init()
