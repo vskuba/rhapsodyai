@@ -104,6 +104,15 @@ def parser_item_draw(parser_model: DataParserYaml, parent_container):
     )
     btn_yml.pack(side="left", padx=10)
 
+    if isinstance(parser_model, DataParserMdToQdrantYaml):
+        lbl_langs = ctk.CTkLabel(
+            actions_frame,
+            text=" (" + ", ".join(parser_model.source[0].languages) + ")",
+            font=("Arial", 24, "bold"),
+            text_color="#FFFFFF"
+        )
+        lbl_langs.pack(side="left")
+
     # --- ЧИПСЫ (Тип парсера) ---
     if hasattr(parser_model, 'type') and parser_model.type:
         chip_text = parser_model.type.replace("_to_", " ➜ ").upper()

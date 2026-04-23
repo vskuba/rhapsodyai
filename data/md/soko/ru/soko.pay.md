@@ -1,5 +1,3 @@
-# Оплата в суши-баре
-
 ## Способы и виды оплаты
 group_id: payment_methods_main
 category: оплата

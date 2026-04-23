@@ -9,6 +9,8 @@ from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAg
 from config.config import config_get, config_update_and_save
 from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
 from source.parser.data_parser import data_parser_path_list, data_parser_load
+from source.translator.translator_md import translator_md_list
+from source.window.ui_translator import translator_item_draw
 from state.state import state_set
 from source.window.component import CustomTextbox
 from source.window.ui import window_chat_input_send, window_chat_voice_toggle, container_clear
@@ -224,6 +226,10 @@ class TabChat:
             self.right_content_container, label_text="Парсеры и конверторы", label_font=("Arial", 23, "bold"),
             border_width=1
         )
+        self.frame_translator = ctk.CTkScrollableFrame(
+            self.right_content_container, label_text="Переводчики", label_font=("Arial", 23, "bold"),
+            border_width=1
+        )
 
         # 4. Функция переключения между панелями
         def show_pane(pane_name):
@@ -237,6 +243,7 @@ class TabChat:
             self.frame_tasks.grid_forget()
             self.frame_db.grid_forget()
             self.frame_parser.grid_forget()
+            self.frame_translator.grid_forget()
 
             # 3. Активируем нужную вкладку в row=0 column=0 контейнера right_content_container
             if pane_name == "agents":
@@ -251,6 +258,9 @@ class TabChat:
             elif pane_name == "db":
                 self.frame_db.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
                 btn_db.configure(fg_color="#1f538d", border_color="#5a9ed9")
+            elif pane_name == "translators":
+                self.frame_translator.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+                btn_translator.configure(fg_color="#1f538d", border_color="#5a9ed9")
 
         # 5. Кнопки навигации в nav_frame
         btn_agents = ctk.CTkButton(
@@ -284,6 +294,14 @@ class TabChat:
         )
         btn_parser.pack(pady=10, padx=(10, 5))
         CTkToolTip.CTkToolTip(btn_parser, message="Парсеры и конверторы", font=("Arial", 20))
+
+        btn_translator = ctk.CTkButton(
+            nav_frame, text="🌐", width=65, height=65, corner_radius=15,
+            font=("Arial", 36), fg_color="#3d424b", border_width=2, border_color="#858282",
+            command=lambda: show_pane("translators")
+        )
+        btn_translator.pack(pady=10, padx=(10, 5))
+        CTkToolTip.CTkToolTip(btn_translator, message="Переводчики", font=("Arial", 20))
 
         threading.Thread(target=self._async_load_data, daemon=True).start()
         show_pane("agents")
@@ -327,13 +345,16 @@ class TabChat:
                     except Exception as e:
                         print(f"[ERROR] Ошибка загрузки парсера {item}: {e}")
 
+            # --- 4. ПЕРЕВОДЧИКИ ---
+            md_translators = translator_md_list()
+
             # Отправляем всё на отрисовку разом
-            self.chat_frame.after(0, lambda: self._ui_render_finish(loaded_agents, tasks, loaded_parsers))
+            self.chat_frame.after(0, lambda: self._ui_render_finish(loaded_agents, tasks, loaded_parsers, md_translators))
 
         except Exception as e:
             print(f"[ERROR] Критическая ошибка загрузки данных: {e}")
 
-    def _ui_render_finish(self, agents, tasks, parsers):
+    def _ui_render_finish(self, agents, tasks, parsers, translators):
         # 1. Отрисовка агентов
         container_clear(self.frame_agents)
 
@@ -375,6 +396,10 @@ class TabChat:
                         parser_item_draw(sub, self.frame_parser)
             else:
                 parser_item_draw(item, self.frame_parser)
+
+        # 2. Отрисовка переводчиков
+        for translator in translators:
+            translator_item_draw(translator, self.frame_translator)
 
         # --- Рендерим список баз данных
         container_clear(self.frame_db)

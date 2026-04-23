@@ -76,37 +76,59 @@ class ParserMdToQdrant:
 
     def _process_file(self, file_path: Path, lang: str, dest: Any) -> Tuple[List[str], List[Dict]]:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            full_content = f.read()
 
-        sections = [s.strip() for s in content.split("===") if s.strip()]
-
+        # Теперь мы не сплитим вручную по ===
+        # MarkdownHeaderTextSplitter сам создаст чанки на основе ##
         headers_to_split_on = [("#", "Header_1"), ("##", "Header_2")]
-        splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
+        splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=True)
 
         docs, payloads = [], []
 
-        for section in sections:
-            chunks = splitter.split_text(section)
-            for chunk in chunks:
-                # Разделяем метаданные и тело текста по ---
-                internal_meta, content_body = self._extract_metadata_and_body(chunk.page_content)
+        # Передаем весь текст файла сразу
+        chunks = splitter.split_text(full_content)
 
-                # Объединяем заголовки и внутренние метаданные
-                full_metadata = {**chunk.metadata, **internal_meta}
-                full_metadata["language"] = lang
-                full_metadata["source_file"] = file_path.name
+        for chunk in chunks:
+            # Если чанк пустой (например, текст между # и ##), пропускаем
+            if not chunk.page_content.strip():
+                continue
 
-                # Собираем финальный текст для эмбеддинга по шаблону
-                doc_text = self._apply_template(content_body, full_metadata, dest.document_template)
+            # 1. Извлекаем внутренние метаданные (group_id, tags) и тело текста
+            internal_meta, content_body = self._extract_metadata_and_body(chunk.page_content)
 
-                # Формируем payload только из полей, указанных в metadata_fields
-                payload = {field: full_metadata.get(field, "") for field in dest.metadata_fields}
-                payload["content"] = doc_text  # Обязательно для индекса поиска
+            # 2. Формируем метаданные
+            full_metadata = {**chunk.metadata, **internal_meta}
+            full_metadata["language"] = lang
+            full_metadata["source_file"] = file_path.name
 
-                docs.append(doc_text)
-                payloads.append(payload)
+            # Устанавливаем краткий заголовок для поля 'document'
+            short_title = full_metadata.get("Header_2") or full_metadata.get("Header_1") or file_path.stem
+            full_metadata["document"] = short_title.strip()
+
+            # 3. Собираем текст по шаблону из YAML
+            doc_text = self._apply_template(content_body, full_metadata, dest.document_template)
+
+            # 4. Формируем итоговый payload
+            payload = {field: full_metadata.get(field, "") for field in dest.metadata_fields}
+            payload["content"] = doc_text
+
+            docs.append(doc_text)
+            payloads.append(payload)
 
         return docs, payloads
+
+    def _apply_template(self, content_body: str, metadata: Dict, template: str) -> str:
+        """Безопасно подставляет данные в шаблон, включая заголовки"""
+        render_data = {
+            "Header_1": metadata.get("Header_1", ""),
+            "Header_2": metadata.get("Header_2", ""),
+            "content_body": content_body
+        }
+        try:
+            # Убираем лишние пробелы, если какого-то заголовка нет
+            return template.format(**render_data).replace(" > \n", "\n").strip()
+        except (KeyError, ValueError):
+            return content_body
 
     def _extract_metadata_and_body(self, text: str) -> Tuple[Dict[str, Any], str]:
         """Извлекает блок 'ключ: значение' из текста над разделителем ---"""
@@ -129,17 +151,3 @@ class ParserMdToQdrant:
                     metadata[clean_key] = clean_value
 
         return metadata, body_part.strip()
-
-    def _apply_template(self, content_body: str, metadata: Dict, template: str) -> str:
-        """Безопасно подставляет данные в шаблон"""
-        # Готовим данные для format, включая Header_1/2
-        render_data = {
-            "Header_1": metadata.get("Header_1", ""),
-            "Header_2": metadata.get("Header_2", ""),
-            "content_body": content_body
-        }
-        try:
-            return template.format(**render_data)
-        except (KeyError, ValueError):
-            # Если шаблон не совпал, возвращаем просто тело
-            return content_body

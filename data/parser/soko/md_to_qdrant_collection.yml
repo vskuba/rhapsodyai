@@ -5,12 +5,14 @@ source:
   - files_path: "data/md/soko"
     languages:
       - ru
+      - en
 
 destination:
   - collection_name: "soko_logic"
     embedding_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     document_template: "### {Header_1} > {Header_2}\n{content_body}"
     metadata_fields:
+      - "document"
       - "group_id"
       - "category"
       - "language"
