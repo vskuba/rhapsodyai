@@ -56,7 +56,7 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
             )
 
             async def on_complete(response_text: str):
-                queue_get()['chat'].put({"text": response_text, "who": 'agent'})
+                queue_get('chat').put({"text": response_text, "who": 'agent'})
 
             framework_model.on_complete=partial(on_complete)
 

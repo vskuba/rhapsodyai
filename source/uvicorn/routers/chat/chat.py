@@ -33,7 +33,7 @@ async def ask_ai(request: Request, json_request: JsonRequest):
     framework_model.on_complete = on_complete
 
     try:
-        queue_get()['agent'].put(framework_model)
+        queue_get('agent').put(framework_model)
 
         result_text = await asyncio.wait_for(future, timeout=60.0)
 

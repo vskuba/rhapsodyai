@@ -242,7 +242,7 @@ class TabMcp:
                     logger_info(f"🔄 Конфиг обновлён для {mcp_config.title}")
 
                     try:
-                        queue_get()['tool'].put(True)
+                        queue_get('tool').put(True)
                         logger_info("⛓️ Отправлено в очередь 'tool': True")
                     except Exception as e:
                         backtrace = traceback.format_exc()

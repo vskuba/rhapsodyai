@@ -113,7 +113,7 @@ class WindowAi(ctk.CTk):
     def queue_chat(self):
         global chat_message_last_get
         try:
-            message = queue_get()['chat'].get_nowait()
+            message = queue_get('chat').get_nowait()
             logger_info(f'💬 Сообщение из очереди "chat": {message}')
 
             if chat_message_last_get == message:
@@ -154,7 +154,7 @@ class WindowAi(ctk.CTk):
 
     def queue_tools(self):
         try:
-            message = queue_get()['tool'].get_nowait()
+            message = queue_get('tool').get_nowait()
             logger_info(f"🛠 Сообщение из очереди queue_tool {message}")
 
             tab_tool_info = self.tabs_metadata.get("Инструменты")
@@ -176,7 +176,7 @@ class WindowAi(ctk.CTk):
 
     def queue_task_complete(self):
         try:
-            message = queue_get()['task_complete'].get_nowait()
+            message = queue_get('task_complete').get_nowait()
             logger_info(f"🛠 Сообщение из очереди task_complete {message}")
             window_chat_active_task_clear()
 
@@ -193,7 +193,7 @@ class WindowAi(ctk.CTk):
 
     def queue_task_continue(self):
         try:
-            task = queue_get()['task_continue'].get_nowait()
+            task = queue_get('task_continue').get_nowait()
             logger_info(f"🛠 Сообщение из очереди task_continue")
             window_chat_progress_title_display(task)
 

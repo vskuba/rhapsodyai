@@ -49,14 +49,14 @@ def task_item_toggle(button, task: AbstractAiFrameworkTaskModel):
         # print(f"Задача {t_name} активна и пульсирует.")
         window_chat_loading_start()  # запуск индикатора под чатом
         logger_info(f'▶ Отправляю задачу в очередь: "{task.title}"')
-        queue_get()['task'].put(task)
+        queue_get('task').put(task)
         window_chat_progress_title_display(task)
         global task_active
         task_active = task
         state_set('agent_active_type', 'task')
     else:
         async_loop_task_cancel(task.name)
-        queue_get()['chat'].put({'text': f'Запрос на остановку задачи {task.title}', 'who': 'agent'})
+        queue_get('chat').put({'text': f'Запрос на остановку задачи {task.title}', 'who': 'agent'})
         task_active = None
         state_set('agent_active_type', None)
 
@@ -163,13 +163,13 @@ def task_check_queue(root):
 
         text = ''
         try:
-            text = queue_get()['chat_input_send'].get_nowait()
+            text = queue_get('chat_input_send').get_nowait()
         except queue.Empty:
             pass
 
         if text:
             if task_active and async_waiting_is_active():
-                queue_get()['chat_response'].put(text)
+                queue_get('chat_response').put(text)
                 time.sleep(0.05)
 
                 async_waiting_clear()

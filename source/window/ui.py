@@ -17,7 +17,7 @@ def window_chat_input_send(text: str) -> None:
     window_chat_message_add(text, 'iam')
     window_chat_loading_start()
 
-    queue_get()['chat_input_send'].put(text)
+    queue_get('chat_input_send').put(text)
 
 def window_chat_message_add(text: str, who: str) -> None:
     if not text or not text.strip():

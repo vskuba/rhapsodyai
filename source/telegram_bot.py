@@ -54,7 +54,7 @@ async def init_telegram_bot(agent_name: str):
         framework_model.is_gui_mode = False
 
         async def on_complete(response_text: str, framework_model: AiFrameworkAgentModelPydantic):
-            queue_get()['telegram_response'].put({"text": response_text, "framework_model": framework_model})
+            queue_get('telegram_response').put({"text": response_text, "framework_model": framework_model})
 
         framework_model.on_complete = partial(on_complete, framework_model=framework_model)
 
@@ -64,7 +64,7 @@ async def init_telegram_bot(agent_name: str):
         while True:
             response = {}
             try:
-                response = queue_get()['telegram_response'].get_nowait()
+                response = queue_get('telegram_response').get_nowait()
             except queue.Empty:
                 await asyncio.sleep(0.1)
 

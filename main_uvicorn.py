@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
+
 import os
-import queue
 import threading
 
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 from fastapi import FastAPI
-
 from contextlib import asynccontextmanager
-
 from starlette.staticfiles import StaticFiles
 
 from ai.ai_thread import ai_thread_framework_run
 from config.config import config_get
 from logging_.logging_ import logging_init
-from queue_.queue_ import queue_set
+from queue_.queue_ import queue_init
 from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 from source.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
 from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
@@ -30,19 +28,19 @@ async def lifespan(app: FastAPI):
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
 
-    queue_set({
-        'chat': queue.Queue(),
-        'chat_response': queue.Queue(),
-        'chat_input_send': queue.Queue(),
-        'task': queue.Queue(),
-        'task_abort': queue.Queue(),
-        'task_complete': queue.Queue(),
-        'task_continue': queue.Queue(),
-        'tool': queue.Queue(),
-        'agent': queue.Queue(),
-        'agent_abort': queue.Queue(),
-        'agent_response': queue.Queue(),
-    })
+    queue_init([
+        'chat',
+        'chat_response',
+        'chat_input_send',
+        'task',
+        'task_abort',
+        'task_complete',
+        'task_continue',
+        'tool',
+        'agent',
+        'agent_abort',
+        'agent_response',
+    ])
 
     # ======================== Chat ===========================
 

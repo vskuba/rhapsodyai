@@ -69,9 +69,9 @@ def faster_whisper_listening(
 
                 if text:
                     logger_info(f"🗣️️ Распознано: {text}")
-                    queue_get()['chat'].put({"text": text, "who": 'iam'})
+                    queue_get('chat').put({"text": text, "who": 'iam'})
 
-                    queue_get()['chat_input_send'].put(text)
+                    queue_get('chat_input_send').put(text)
                 else:
                     logger_info("⚠️ Речь не распознана.")
 

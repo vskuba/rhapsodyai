@@ -48,7 +48,7 @@ def agent_active_indicator_running_pulse(widget, state=0):
 
 def agent_active_indicator_running_stop_pulse(button, agent_model):
     async_loop_task_cancel(agent_model.name)
-    queue_get()['chat'].put({'text': f'Запрос на остановку агента {agent_model.title}', 'who': 'agent'})
+    queue_get('chat').put({'text': f'Запрос на остановку агента {agent_model.title}', 'who': 'agent'})
     logger_info(f"🛑 Запрос на остановку агента: {agent_model.title}")
     button.configure(
         state="disabled",
@@ -164,7 +164,7 @@ def agent_check_queue(root):
 
         text = ''
         try:
-            text = queue_get()['chat_input_send'].get_nowait()
+            text = queue_get('chat_input_send').get_nowait()
         except queue.Empty:
             pass
 
@@ -174,7 +174,7 @@ def agent_check_queue(root):
                 state_set('agent_active_type', 'agent')
                 agent_active.prompt = text
                 window_chat_progress_title_display(agent_active)
-                queue_get()['agent'].put(agent_active)
+                queue_get('agent').put(agent_active)
                 window_chat_loading_start()
 
                 widgets = agents_widgets_storage.get(agent_active.name)
