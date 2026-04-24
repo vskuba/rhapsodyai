@@ -118,6 +118,46 @@ services:
     depends_on:
       - uvicorn
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    networks:
+      - os-net
+    restart: always
+
+  rq-dashboard:
+    build:
+      context: .
+      dockerfile: docker/uvicorn/dockerfile
+    container_name: rq_dashboard
+    # Устанавливаем dashboard прямо при старте и запускаем его
+    command: >
+      sh -c "pip install rq-dashboard && rq-dashboard --redis-url redis://redis:6379"
+    ports:
+      - "9181:9181"
+    depends_on:
+      - redis
+    networks:
+      - os-net
+    restart: always
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/uvicorn/dockerfile
+    container_name: worker
+    command: rq worker --url redis://redis:6379 default google_ping # слушает очередь default и google_ping
+    volumes:
+      - ./:/app
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - uvicorn
+    networks:
+      - os-net
+    restart: always
+
   telegram:
     image: ghcr.io/vskuba/marina-ai:latest
     container_name: telegram

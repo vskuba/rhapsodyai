@@ -13,6 +13,7 @@ from ai.ai_thread import ai_thread_framework_run
 from config.config import config_get
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
+from redis_queue.redis_queue import redis_queue_init
 from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 from source.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
 from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
@@ -41,6 +42,10 @@ async def lifespan(app: FastAPI):
         'agent',
         'agent_abort',
         'agent_response',
+    ])
+
+    redis_queue_init([
+        'default',
     ])
 
     # ======================== Chat ===========================
