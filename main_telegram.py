@@ -19,7 +19,7 @@ from thread_.thread_ import thread_with_callback
 if __name__ == "__main__":
     logging_init()
 
-    print("Starting Soko telegram bot-only mode...")
+    print("Starting telegram bot-only mode...")
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
 
@@ -45,13 +45,17 @@ if __name__ == "__main__":
         None,
     ), daemon=True).start()
 
+    #========== Soko Telegram Bot ==========
+
     telegram_bot_agent_soko = partial(init_telegram_bot, agent_name='soko')
     thread_with_callback(
         init_func=telegram_bot_agent_soko,
-        callback_func=lambda res: print(f"Bot status: {res}")
+        callback_func=lambda res: print(f"Telegram bot Soko status: {res}")
     )
 
-    print("Soko bot is running. Press Ctrl+C to stop.")
+    # ========== Soko Telegram Bot End ==========
+
+    print("Telegram bot is running. Press Ctrl+C to stop.")
     try:
         while True:
             time.sleep(1)

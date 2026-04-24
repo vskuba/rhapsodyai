@@ -81,10 +81,10 @@ services:
       - SQLITE_DATABASE=/data/llm_short_memory.db
     restart: unless-stopped
 
-  uvicorn_chat:
+  uvicorn:
     build:
       context: .
-      dockerfile: docker/uvicorn_chat/dockerfile
+      dockerfile: docker/uvicorn/dockerfile
     container_name: uvicorn
     ports:
       - "8011:8000"
@@ -93,17 +93,34 @@ services:
     env_file:
       - .env
     depends_on:
-      opensearch:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
+      - qdrant
     networks:
       - os-net
     restart: always
 
-  telegram_soko:
+  cronicle:
+    image: soulteary/cronicle:latest
+    container_name: cronicle
+    restart: always
+    ports:
+      - "3012:3012"
+    env_file:
+      - .env
+    environment:
+      - CRONICLE_foreground=1
+      - CRONICLE_echo=1
+    volumes:
+      - ./:/app
+      - cronicle-data:/opt/cronicle/data
+      - cronicle-logs:/opt/cronicle/logs
+    networks:
+      - os-net
+    depends_on:
+      - uvicorn
+
+  telegram:
     image: ghcr.io/vskuba/marina-ai:latest
-    container_name: telegram_soko
+    container_name: telegram
     profiles: ["on_prod_only"]
     restart: always
     env_file:
@@ -122,6 +139,8 @@ services:
 
 volumes:
   opensearch-data:
+  cronicle-data:
+  cronicle-logs:
 
 networks:
   os-net:

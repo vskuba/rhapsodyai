@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu
 
 # Копируем и устанавливаем остальные зависимости
-COPY docker/telegram_soko/requirements.txt .
+COPY docker/telegram/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN python3 -c "from faster_whisper import download_model; download_model('small')"
@@ -43,4 +43,4 @@ ENV PYTHONUNBUFFERED=1
 ENV HF_HUB_OFFLINE=1
 
 # Команда запуска (соответствует вашему main.py)
-CMD ["python", "main_telegram_soko.py"]
+CMD ["python", "main_telegram.py"]

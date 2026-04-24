@@ -8,7 +8,7 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 async def default():
-    with open(config_get('DATA_DIR') + '/' + config_get('WEB_DIR') +"/chat/index.html", "r", encoding="utf-8") as f:
+    with open(config_get('DATA_DIR') + '/' + config_get('UVICORN_DIR') +"/chat/index.html", "r", encoding="utf-8") as f:
         return f.read()
 
 

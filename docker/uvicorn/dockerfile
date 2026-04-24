@@ -8,7 +8,7 @@ RUN ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
 WORKDIR /app
 
 # Копируем файл с зависимостями
-COPY docker/uvicorn_chat/requirements.txt .
+COPY docker/uvicorn/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN python3 -c "from faster_whisper import download_model; download_model('small')"
@@ -26,4 +26,4 @@ RUN chmod -R 777 data/qdrant_storage data/history data/log data/report data/sqli
 
 # Запускаем Uvicorn
 # --host 0.0.0.0 обязателен, чтобы контейнер был доступен снаружи
-CMD ["uvicorn", "main_web_chat:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main_uvicorn:app", "--host", "0.0.0.0", "--port", "8000"]

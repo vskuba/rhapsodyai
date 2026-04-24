@@ -12,19 +12,21 @@ from contextlib import asynccontextmanager
 from starlette.staticfiles import StaticFiles
 
 from ai.ai_thread import ai_thread_framework_run
+from config.config import config_get
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_set
 from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
 from source.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
 from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
 from source.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
-from source.web.chat.routers import agent, index, chat
+from source.uvicorn.routers.chat import agent, index as chat_index, chat
+from source.uvicorn.routers.cronjob import index as cronjob_index
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging_init()
-    print("Starting Web (Fast-Api) mode...")
+    print("Starting Uvicorn (Fast-Api) mode...")
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
 
@@ -42,7 +44,8 @@ async def lifespan(app: FastAPI):
         'agent_response': queue.Queue(),
     })
 
-    # Запускаем фоновый поток
+    # ======================== Chat ===========================
+
     thread = threading.Thread(target=ai_thread_framework_run, args=(
         [
             AiFrameworkAgentPydantic(AiFrameworkAgentManagerPydantic()),
@@ -54,6 +57,8 @@ async def lifespan(app: FastAPI):
 
     print("Background thread started.")
 
+    # ======================== Chat End ===========================
+
     yield
 
     # Код здесь выполнится ПРИ ОСТАНОВКЕ (аналог shutdown)
@@ -63,12 +68,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-static_path = os.path.join(current_dir, "data", "web", "chat", "public")
 
-app.mount("/static", StaticFiles(directory=static_path), name="static")
+# ======================== Chat ===========================
+
+chat_static_path = os.path.join(current_dir, config_get('DATA_DIR'), config_get('UVICORN_DIR'), "chat", "public")
+
+app.mount("/static", StaticFiles(directory=chat_static_path), name="static")
 
 app.state.agent_manager = AiFrameworkAgentManagerPydantic()
 
 app.include_router(chat.router)
-app.include_router(index.router)
+app.include_router(chat_index.router)
 app.include_router(agent.router)
+
+# ======================== Chat End ===========================
+
+# ======================== Cronjob ===========================
+
+app.include_router(cronjob_index.router)
+
+# ======================== Cronjob End ===========================

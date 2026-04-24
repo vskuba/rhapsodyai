@@ -13,14 +13,14 @@ from source.faster_whisper.faster_whisper_model import faster_whisper_create_mod
 router = APIRouter()
 
 
-class ChatRequest(BaseModel):
+class JsonRequest(BaseModel):
     question: str
 
 
 @router.post("/chat/ask")
-async def ask_ai(request: Request, chat_request: ChatRequest):
+async def ask_ai(request: Request, json_request: JsonRequest):
     framework_model = request.app.state.agent_manager.load('my_assistant')
-    framework_model.prompt = chat_request.question
+    framework_model.prompt = json_request.question
     framework_model.is_gui_mode = False
 
     loop = asyncio.get_running_loop()
