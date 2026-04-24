@@ -19,6 +19,7 @@ from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTas
 from source.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
 from source.uvicorn.routers.chat import agent, index as chat_index, chat
 from source.uvicorn.routers.cronjob import index as cronjob_index
+from source.uvicorn.routers.queue import index as queue_index
 
 
 @asynccontextmanager
@@ -86,3 +87,9 @@ app.include_router(agent.router)
 app.include_router(cronjob_index.router)
 
 # ======================== Cronjob End ===========================
+
+# ======================== Queues Admin ===========================
+
+app.include_router(queue_index.router)
+
+# ======================== Queues Admin End ===========================
