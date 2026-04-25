@@ -21,8 +21,8 @@ nav {
 .nav-item {
     display: flex;
     flex-direction: column;
-    align-items: flex-end; /* Выравнивание всего блока по правому краю */
-    min-width: 180px;      /* Немного увеличил ширину для отступа */
+    align-items: flex-start; /* Выравнивание всего блока по правому краю */
+    min-width: 170px;      /* Немного увеличил ширину для отступа */
 }
 
 /* 4. Заголовок (Чат, Инструменты) */
@@ -30,11 +30,11 @@ nav {
     color: #ecf0f1;
     text-decoration: none;
     font-size: 14px;
-    padding: 15px 20px 8px 20px;
+    padding: 15px 0 8px 0;
     font-weight: bold;
     display: flex;
     width: 100%;
-    justify-content: flex-end; /* Текст внутри ссылки вправо */
+    justify-content: flex-start; /* Текст внутри ссылки вправо */
     box-sizing: border-box;
 }
 
@@ -42,7 +42,7 @@ nav {
 .submenu {
     display: flex;
     flex-direction: column;
-    align-items: flex-end; /* Сами li липнут к правому краю */
+    align-items: flex-start; /* Сами li липнут к правому краю */
     list-style: none;
     padding: 0 20px 15px 0; /* Отступ справа 20px, чтобы текст был под текстом заголовка */
     margin: 0;
@@ -53,7 +53,10 @@ nav {
 .submenu li {
     width: 100%;
     display: flex;
-    justify-content: flex-end;
+    justify-content: flex-start;
+    padding-left: 13px;
+    margin-left: 7px;
+    border-left: 2px #bdc3c7 solid;
 }
 
 .submenu li a {
@@ -61,7 +64,7 @@ nav {
     text-decoration: none;
     font-size: 13px;
     display: flex;
-    justify-content: flex-end; /* Содержимое ссылки вправо */
+    justify-content: flex-start; /* Содержимое ссылки вправо */
     align-items: center;
     gap: 10px;
     white-space: nowrap;
