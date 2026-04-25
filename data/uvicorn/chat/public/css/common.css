@@ -1,24 +1,30 @@
 body {
-    font-family: sans-serif;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column; /* Меню сверху, контент снизу */
+    height: 100vh;
     background-color: #f4f4f9;
+}
+
+.page-content {
+    flex: 1; /* Занимает всё оставшееся место */
     display: flex;
     justify-content: center;
     align-items: center;
-    /* Убираем фиксированную высоту здесь, если хотим отступы */
-    height: 100vh;
-    margin: 0;
-    padding: 20px; /* Чтобы чат не прилипал к краям экрана */
+    padding: 20px;
     box-sizing: border-box;
 }
 
+/* 4. Сам блок чата — ограничиваем ширину */
 .main-wrapper {
     display: flex;
-    width: 100%;       /* Растягиваем по ширине */
-    max-width: 1000px; /* Но ограничиваем разумным пределом */
-    height: 100%;      /* Занимает всю высоту body (за вычетом padding) */
+    width: 100%;
+    max-width: 1100px; /* Ширина самого интерфейса чата */
+    height: 90%;       /* Высота относительно доступной зоны */
     background: white;
-    border-radius: 10px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
     overflow: hidden;
 }
 

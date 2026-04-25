@@ -1,0 +1,72 @@
+nav {
+    width: 100%;
+    background-color: #2c3e50 !important; /* Принудительно возвращаем цвет */
+    flex-shrink: 0;
+}
+
+/* 2. Контейнер меню (центрирован над чатом) */
+.top-nav {
+    max-width: 1100px;
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    justify-content: flex-start;
+    align-items: flex-start;
+    list-style: none;
+    padding: 0;
+    background-color: #2c3e50;
+}
+
+/* 3. Блок пункта (Чат, Инструменты) */
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end; /* Выравнивание всего блока по правому краю */
+    min-width: 180px;      /* Немного увеличил ширину для отступа */
+}
+
+/* 4. Заголовок (Чат, Инструменты) */
+.nav-item > a, .nav-item > span {
+    color: #ecf0f1;
+    text-decoration: none;
+    font-size: 14px;
+    padding: 15px 20px 8px 20px;
+    font-weight: bold;
+    display: flex;
+    width: 100%;
+    justify-content: flex-end; /* Текст внутри ссылки вправо */
+    box-sizing: border-box;
+}
+
+/* 5. ПОДМЕНЮ: ВЕРТИКАЛЬНО ПО ПРАВОМУ КРАЮ */
+.submenu {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end; /* Сами li липнут к правому краю */
+    list-style: none;
+    padding: 0 20px 15px 0; /* Отступ справа 20px, чтобы текст был под текстом заголовка */
+    margin: 0;
+    gap: 10px;
+    width: 100%;
+}
+
+.submenu li {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.submenu li a {
+    color: #bdc3c7;
+    text-decoration: none;
+    font-size: 13px;
+    display: flex;
+    justify-content: flex-end; /* Содержимое ссылки вправо */
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+}
+
+.submenu li a:hover {
+    color: #3498db;
+}

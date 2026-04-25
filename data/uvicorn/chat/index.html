@@ -7,33 +7,78 @@
     <link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body>
+    <nav>
+        <ul class="top-nav">
+            <li class="nav-item">
+                <a href="/">💬 Чат</a>
+            </li>
 
-<div class="main-wrapper">
-    <!-- Основная зона чата -->
-    <div class="chat-container">
-        <div class="chat-messages" id="chatMessages">
-            <div class="message ai-msg">Привет! Выберите агента и начнем.</div>
-        </div>
+            <li class="nav-item">
+                <a href="#">📜 Логи</a>
+                <ul class="submenu">
+                  <li><a target="_blank" href="http://localhost:5601/app/data-explorer/discover">Opensearch</a></li>
+                </ul>
+            </li>
 
-        <div id="topProgressBar" class="progress-bar-container">
-            <div class="progress-bar-fill"></div>
-        </div>
+            <li class="nav-item">
+                <a href="/">🔄 Конверторы</a>
+                <ul class="submenu">
+                  <li><a target="_blank" href="/convert/text-to-md">Text to MD</a></li>
+                </ul>
+            </li>
 
-        <div class="chat-input-area">
-            <button id="micBtn" class="mic-button">🎤</button>
-            <textarea id="userInput"></textarea>
-            <button id="sendBtn">Отправить</button>
+            <li class="nav-item">
+                <a href="#">📊 Очереди</a>
+                <ul class="submenu">
+                  <li><a target="_blank" href="/admin/queues">Local in-memory</a></li>
+                  <li><a target="_blank" href="http://localhost:9181/">Redis️ queues</a></li>
+                </ul>
+            </li>
+            <li class="nav-item">
+                <a href="#">🗄️ Базы данных</a>
+                <ul class="submenu">
+                  <li><a target="_blank" href="http://localhost:8084">SQLite Web</a></li>
+                  <li><a target="_blank" href="http://localhost:6333/dashboard">Qdrant</a></li>
+                </ul>
+            </li>
+
+            <li class="nav-item">
+                <span>⏰️ Планировщик</span>
+                <ul class="submenu">
+                    <li><a href="http://localhost:3012" target="_blank">Cronicle</a></li>
+                </ul>
+            </li>
+        </ul>
+    </nav>
+
+    <div class="page-content">
+        <div class="main-wrapper">
+            <!-- Основная зона чата -->
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message ai-msg">Привет! Выберите агента и начнем.</div>
+                </div>
+
+                <div id="topProgressBar" class="progress-bar-container">
+                    <div class="progress-bar-fill"></div>
+                </div>
+
+                <div class="chat-input-area">
+                    <button id="micBtn" class="mic-button">🎤</button>
+                    <textarea id="userInput"></textarea>
+                    <button id="sendBtn">Отправить</button>
+                </div>
+            </div>
+
+            <!-- Правая колонка -->
+            <div class="sidebar">
+                <div class="sidebar-label">Активный агент</div>
+                <select id="agentSelect" size="10">
+                    <option value="loading">Загрузка...</option>
+                </select>
+            </div>
         </div>
     </div>
-
-    <!-- Правая колонка -->
-    <div class="sidebar">
-        <div class="sidebar-label">Активный агент</div>
-        <select id="agentSelect" size="10">
-            <option value="loading">Загрузка...</option>
-        </select>
-    </div>
-</div>
 
 <script type="module" src="/static/js/main.js"></script>
 </body>
