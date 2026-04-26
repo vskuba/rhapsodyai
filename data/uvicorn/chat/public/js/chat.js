@@ -3,6 +3,7 @@ import { postData } from './api.js';
 const chatMessages = document.getElementById('chatMessages');
 const userInput = document.getElementById('userInput');
 const agentSelect = document.getElementById('agentSelect');
+const userSelect = document.getElementById('userSelect');
 
 export function addMessage(text, role) {
     const div = document.createElement('div');
@@ -23,6 +24,7 @@ export async function sendMessage(showLoading) {
     try {
         const data = await postData('/chat/ask', {
             question: text,
+            user_id: userSelect.value,
             agent: agentSelect.value
         });
         addMessage(data.result, 'ai');

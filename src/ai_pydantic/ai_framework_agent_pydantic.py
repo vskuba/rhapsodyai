@@ -73,11 +73,11 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
                 logger_info(f'Закрываем MCP сессии для задачи {framework_model.name}...')
                 await ai_mcp_manager.mcp_server_close_all()
 
-    def engine_result_handle(
+    async def engine_result_handle(
             self, result: AgentRunResult,
             framework_model: AiFrameworkTaskModelPydantic
     ) -> AiFrameworkResult | None:
-        super().engine_result_handle(result, framework_model)
+        await super().engine_result_handle(result, framework_model)
 
         # если ответ просто текст, а не модель
         if not result.output or isinstance(result.output, str):

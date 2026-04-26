@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+import asyncio
 import os
-import threading
 
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
@@ -58,14 +58,13 @@ async def lifespan(app: FastAPI):
 
     # ======================== Chat ===========================
 
-    thread = threading.Thread(target=ai_thread_framework_run, args=(
+    asyncio.create_task(ai_thread_framework_run(
         [
             AiFrameworkAgentPydantic(AiFrameworkAgentManagerPydantic()),
             AiFrameworkTaskPydantic(AiFrameworkTaskManagerPydantic()),
         ],
-        None,
-    ), daemon=True)
-    thread.start()
+        None
+    ))
 
     print("Background thread started.")
 

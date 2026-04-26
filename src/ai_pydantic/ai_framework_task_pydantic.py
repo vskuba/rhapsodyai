@@ -87,12 +87,12 @@ class AiFrameworkTaskPydantic(AbstractAiFrameworkTask):
                 logger_info(f'Закрываем MCP сессии для задачи {framework_model.name}...')
                 await ai_mcp_manager.mcp_server_close_all()
 
-    def engine_result_handle(
+    async def engine_result_handle(
             self,
             result: AgentRunResult,
             framework_model: AiFrameworkTaskModelPydantic
     ) -> AiFrameworkResult | None:
-        super().engine_result_handle(result, framework_model)
+        await super().engine_result_handle(result, framework_model)
 
         response_model_dict = result.output.model_dump()
         del response_model_dict['text']

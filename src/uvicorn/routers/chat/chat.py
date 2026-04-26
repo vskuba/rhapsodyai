@@ -15,6 +15,7 @@ router = APIRouter()
 
 class JsonRequest(BaseModel):
     question: str
+    user_id: int
 
 
 @router.post("/chat/ask")
@@ -22,6 +23,7 @@ async def ask_ai(request: Request, json_request: JsonRequest):
     framework_model = request.app.state.agent_manager.load('my_assistant')
     framework_model.prompt = json_request.question
     framework_model.is_gui_mode = False
+    framework_model.user_id = json_request.user_id
 
     loop = asyncio.get_running_loop()
     future = loop.create_future()
