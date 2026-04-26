@@ -1,6 +1,7 @@
 import { loadAgents } from './agent.js';
 import { sendMessage, addMessage } from './chat.js';
 import { initVoice } from './voice.js';
+import {loadUsers} from "./user.js";
 
 const progressBar = document.getElementById('topProgressBar');
 const userInput = document.getElementById('userInput');
@@ -14,6 +15,7 @@ function toggleLoading(show) {
 document.addEventListener('DOMContentLoaded', () => {
     // 1. Инициализация агентов
     loadAgents(toggleLoading);
+    loadUsers(toggleLoading);
 
     // 2. Инициализация голоса (передаем функцию, что делать с текстом)
     initVoice(toggleLoading, (text) => {
