@@ -10,8 +10,10 @@ openai
 pydantic
 pydantic-ai>=0.0.24
 PyGithub
+pymysql
 python-dotenv
 python-json-logger
 qdrant_client
 sentence_transformers
 uvicorn[standard]
+yoyo-migrations

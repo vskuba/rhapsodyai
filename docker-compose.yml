@@ -158,6 +158,25 @@ services:
       - os-net
     restart: always
 
+  mysql:
+    platform: linux/x86_64
+    image: mysql:8.0
+    command: mysqld --sql-mode="NO_ENGINE_SUBSTITUTION"
+    ports:
+      - "3302:3306"
+    networks:
+      - os-net
+    volumes:
+      - ./backups/:/backups/
+      - ./docker/mysql/:/docker-entrypoint-initdb.d/
+    environment:
+      - MYSQL_DATABASE=project
+      - MYSQL_USER=developer
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_PASSWORD=password
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-p$$MYSQL_ROOT_PASSWORD","--protocol","tcp" ]
+
   telegram:
     image: ghcr.io/vskuba/marina-ai:latest
     container_name: telegram
@@ -176,6 +195,22 @@ services:
       - qdrant
       - opensearch-dashboards
       - sqlite-web
+
+  phpmyadmin:
+    platform: linux/x86_64
+    image: phpmyadmin/phpmyadmin
+    networks:
+      - os-net
+    links:
+      - mysql:mysql
+    ports:
+      - 9634:80
+    depends_on:
+      - mysql
+    environment:
+      MYSQL_USERNAME: developer
+      MYSQL_ROOT_PASSWORD: password
+      PMA_HOST: mysql
 
 volumes:
   opensearch-data:

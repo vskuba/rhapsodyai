@@ -9,12 +9,12 @@ from ai.ai_thread import ai_thread_framework_run
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
 from state.state import state_set
-from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
-from source.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
-from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
-from source.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
-from source.faster_whisper.faster_whisper_ import faster_whisper_enable
-from source.window_ import WindowAi
+from src.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
+from src.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
+from src.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
+from src.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
+from src.faster_whisper.faster_whisper_ import faster_whisper_enable
+from src.window_ import WindowAi
 
 if __name__ == "__main__":
     logging_init()

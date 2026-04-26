@@ -12,20 +12,23 @@ from starlette.staticfiles import StaticFiles
 from ai.ai_thread import ai_thread_framework_run
 from config.config import config_get
 from logging_.logging_ import logging_init
+from mysql_.migration.mysql_migration_up import mysql_migration_up
 from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
-from source.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
-from source.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
-from source.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
-from source.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
-from source.uvicorn.routers.chat import agent, index as chat_index, chat
-from source.uvicorn.routers.cronjob import index as cronjob_index
-from source.uvicorn.routers.queue import index as queue_index
+from src.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
+from src.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
+from src.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
+from src.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
+from src.uvicorn.routers.chat import agent, index as chat_index, chat
+from src.uvicorn.routers.cronjob import index as cronjob_index
+from src.uvicorn.routers.queue import index as queue_index
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging_init()
+    mysql_migration_up()
+
     print("Starting Uvicorn (Fast-Api) mode...")
 
     ChatCompletion.model_config = ConfigDict(extra='allow')

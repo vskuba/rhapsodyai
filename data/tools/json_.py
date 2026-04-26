@@ -4,7 +4,7 @@ from pathlib import Path
 import aiofiles
 from pydantic import json
 
-from source.config import config_get
+from src.config import config_get
 
 
 async def json_to_file(filename: str, json_data: dict) -> bool:
