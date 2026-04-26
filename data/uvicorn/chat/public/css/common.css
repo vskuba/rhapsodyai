@@ -8,12 +8,13 @@ body {
 }
 
 .page-content {
-    flex: 1; /* Занимает всё оставшееся место */
+    flex: 1;
     display: flex;
     justify-content: center;
-    align-items: center;
+    /* align-items: center; <-- Можно закомментировать, если чат прыгает */
     padding: 20px;
     box-sizing: border-box;
+    overflow: hidden; /* Гарантируем отсутствие скролла всей страницы */
 }
 
 /* 4. Сам блок чата — ограничиваем ширину */

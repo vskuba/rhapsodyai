@@ -5,17 +5,27 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0; /* Важно: позволяет контейнеру сжиматься меньше содержимого */
     border-right: 1px solid #eee;
 }
 
 .chat-messages {
     flex: 1;
-    overflow-y: auto;
+    overflow-y: auto; /* Включает прокрутку */
     padding: 20px;
+    display: flex;         /* Добавляем флекс */
+    flex-direction: column; /* Сообщения друг под другом */
 }
 
-/* Стили элементов управления */
-.message { margin-bottom: 15px; padding: 10px; border-radius: 8px; max-width: 85%; font-size: 14px; }
+.message {
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 8px;
+    max-width: 85%;
+    font-size: 14px;
+    word-wrap: break-word; /* Чтобы длинные слова не рвали верстку */
+}
+
 .user-msg { background: #007bff; color: white; align-self: flex-end; }
 .ai-msg { background: #e9e9eb; color: #333; align-self: flex-start; }
 
