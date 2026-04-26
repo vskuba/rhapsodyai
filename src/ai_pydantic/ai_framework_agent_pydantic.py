@@ -38,7 +38,7 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
         return engine
 
     async def engine_run(self, framework_model: AiFrameworkAgentModelPydantic):
-        message_history = self.message_history_get(framework_model)
+        message_history = await self.message_history_get(framework_model)
 
         logger_info(
             f'🧠 Передаем историю агенту:\n'
