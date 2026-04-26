@@ -19,14 +19,14 @@
 
 .message {
     margin-bottom: 15px;
-    padding: 10px;
+    padding: 4px;
     border-radius: 8px;
     max-width: 85%;
     font-size: 14px;
     word-wrap: break-word; /* Чтобы длинные слова не рвали верстку */
 }
 
-.user-msg { background: #007bff; color: white; align-self: flex-end; }
-.ai-msg { background: #e9e9eb; color: #333; align-self: flex-start; }
+.user-msg { background: #f0913d; color: white; align-self: flex-end; }
+.ai-msg { background: #f6f4f4; color: #333; align-self: flex-start; }
 
 .chat-input-area { display: flex; padding: 15px; }
