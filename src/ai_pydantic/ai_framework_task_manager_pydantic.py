@@ -5,7 +5,7 @@ import traceback
 from functools import partial
 
 from pydantic import BaseModel, Field, create_model
-from typing import Any, Tuple, List
+from typing import Any, Tuple, List, Type
 
 from ai.framework.ai_framework_task_manager import AbstractAiFrameworkTaskManager
 from ai.framework.ai_framework_task_model import AiTaskYaml
@@ -34,8 +34,12 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
 
         return self.dir() + '/' + name + '.yml'
 
-    def create(self, task_yaml: AiTaskYaml, input_values: dict[str, Any],
-               sub_task_index: int = 0) -> AiFrameworkTaskModelPydantic:
+    def create(
+            self,
+            task_yaml: AiTaskYaml,
+            input_values: dict[str, Any],
+            sub_task_index: int = 0
+    ) -> AiFrameworkTaskModelPydantic:
         try:
             title = task_yaml.title
             sub_task_current = task_yaml.sub_tasks[sub_task_index]
@@ -57,31 +61,33 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
             prompt, input_fields = self.prompt_parse_input_fields(prompt, input_values, response_model)
 
             framework_model = AiFrameworkTaskModelPydantic(
-                name=task_yaml.filename,
                 title=title,
-                prompt=prompt,
-                system_prompt=prompt_system,
-                input_fields=input_fields,
-                response_model=response_model,
-                tools=sub_task_current.tools,
+                yaml=task_yaml,
                 sub_task_current_index=sub_task_index,
-                mcp_servers=task_yaml.mcp_servers
+                input_fields=input_fields,
+                tools=sub_task_current.tools if sub_task_current.tools else [],
+                mcp_servers=task_yaml.mcp_servers,
+                response_model=response_model,
             )
 
+            framework_model.name = task_yaml.name
+            framework_model.prompt = prompt
+            framework_model.system_prompt = prompt_system
+            framework_model.input_values_set(input_values)
             framework_model.input_values_set(input_values)
             framework_model.history_save = task_yaml.history_save
 
             async def on_complete(response_text: str):
                 queue_get('chat').put({"text": response_text, "who": 'agent'})
 
-            framework_model.on_complete=partial(on_complete)
+            framework_model.on_complete = partial(on_complete)
 
             return framework_model
 
         except Exception as e:
             backtrace = traceback.format_exc()
             logger_info(
-                f"❌ Ошибка при создании задачи {task_yaml.filename}: {e}."
+                f"❌ Ошибка при создании задачи {task_yaml.name}: {e}."
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise
@@ -113,7 +119,7 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
             response_model_input_values = {var: name for name, var, _ in matches}
             prompt = re.sub(r"\{\{([^}|]+)\|[^:]+:(" + "|".join(type_mapping) + r")}}", r"\1", prompt)
 
-        return prompt, create_model('ResponseModel', **response_model_fields), response_model_input_values
+        return prompt, create_model('ResponseModel', **response_model_fields)(), response_model_input_values
 
     def prompt_parse_input_fields(
             self, prompt: str,
@@ -173,7 +179,7 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
             input_values = {}
             for sub_task in task_yaml.sub_tasks:
 
-                for tool_name in sub_task.tools:
+                for tool_name in sub_task.tools or []:
                     if not any(t == tool_name for t in tools):
                         raise ValueError(f"Инструмент '{tool_name}' не найден в доступных ai_tools и mcp_tools.")
 
@@ -186,7 +192,7 @@ class AiFrameworkTaskManagerPydantic(AbstractAiFrameworkTaskManager):
         except Exception as e:
             backtrace = traceback.format_exc()
             logger_info(
-                f"❌ Файл {task_yaml.filename}.yml validate ошибка: {e}."
+                f"❌ Файл {task_yaml.name}.yml validate ошибка: {e}."
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise Exception(f'Variable {e} is not defined in input fields.')
