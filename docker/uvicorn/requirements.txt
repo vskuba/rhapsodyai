@@ -3,8 +3,8 @@ aiofiles
 aiomysql
 anthropic
 click
+crawl4ai
 fastapi
-faster-whisper
 groq
 httpx
 openai
@@ -15,6 +15,5 @@ pymysql
 python-dotenv
 python-json-logger
 qdrant_client
-sentence_transformers
 uvicorn[standard]
 yoyo-migrations

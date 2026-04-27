@@ -9,13 +9,21 @@ class AiFrameworkAgentModelPydantic(AbstractAiFrameworkAgentModel):
             description: str,
             prompt: str,
             system_prompt: str,
+            specialization: str | None,
             tools: list[str],
             mcp_servers: list[str],
-            specialization: str,
-            memory_short_disabled: bool
+            memory_short_disabled: bool,
+            memory_short_length: int
     ):
-        super().__init__(name, title, description, prompt, system_prompt, specialization)
-        self.tools = tools if tools is not None else []
+        self.name = name
+        self.title = title
+        self.description = description
+        self.prompt = prompt
+        self.system_prompt = system_prompt
+        self.specialization = specialization
+        self.tools = tools
         self.mcp_servers = mcp_servers
-        self.response_model = str
         self.memory_short_disabled = memory_short_disabled
+        self.memory_short_length = memory_short_length
+
+        self.response_model = str

@@ -24,6 +24,7 @@
     max-width: 85%;
     font-size: 14px;
     word-wrap: break-word; /* Чтобы длинные слова не рвали верстку */
+    white-space: pre-wrap; 
 }
 
 .user-msg { background: #f0913d; color: white; align-self: flex-end; }

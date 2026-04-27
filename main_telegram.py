@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import threading
+import asyncio
 import time
 
 from functools import partial
@@ -30,12 +30,12 @@ if __name__ == "__main__":
         'telegram_response'
     ])
 
-    threading.Thread(target=ai_thread_framework_run, args=(
+    asyncio.create_task(ai_thread_framework_run(
         [
             AiFrameworkAgentPydantic(AiFrameworkAgentManagerPydantic()),
         ],
-        None,
-    ), daemon=True).start()
+        None
+    ))
 
     #========== Soko Telegram Bot ==========
 

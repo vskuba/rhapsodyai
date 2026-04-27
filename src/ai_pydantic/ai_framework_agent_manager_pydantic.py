@@ -44,15 +44,16 @@ class AiFrameworkAgentManagerPydantic(AbstractAiFrameworkAgentManager):
             system_prompt = ''
 
             framework_model = AiFrameworkAgentModelPydantic(
-                name=agent_yaml.filename,
+                name=agent_yaml.name,
                 title=agent_yaml.title,
                 description=agent_yaml.description,
                 prompt='',
                 system_prompt=system_prompt + agent_yaml.system_prompt,
-                tools=agent_yaml.tools,
+                tools=agent_yaml.tools if agent_yaml.tools else [],
                 mcp_servers=agent_yaml.mcp_servers,
                 specialization=agent_yaml.specialization,
-                memory_short_disabled=agent_yaml.memory_short_disabled
+                memory_short_disabled=agent_yaml.memory_short_disabled,
+                memory_short_length=agent_yaml.memory_short_length
             )
 
             async def on_complete(response_text: str):

@@ -14,13 +14,14 @@ router = APIRouter()
 
 
 class JsonRequest(BaseModel):
+    agent: str
     question: str
     user_id: int
 
 
 @router.post("/chat/ask")
 async def ask_ai(request: Request, json_request: JsonRequest):
-    framework_model = request.app.state.agent_manager.load('my_assistant')
+    framework_model = request.app.state.agent_manager.load(json_request.agent)
     framework_model.prompt = json_request.question
     framework_model.is_gui_mode = False
     framework_model.user_id = json_request.user_id
@@ -37,7 +38,7 @@ async def ask_ai(request: Request, json_request: JsonRequest):
     try:
         queue_get('agent').put(framework_model)
 
-        result_text = await asyncio.wait_for(future, timeout=60.0)
+        result_text = await asyncio.wait_for(future, timeout=20.0)
 
         return {"result": result_text}
     except asyncio.TimeoutError:

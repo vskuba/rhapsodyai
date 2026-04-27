@@ -4,14 +4,29 @@ FROM python:3.11-slim
 # Устанавливаем временную зону системы внутри контейнера
 RUN ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
 
+RUN apt-get update && apt-get install -y \
+    git \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Устанавливаем рабочую директорию
 WORKDIR /app
+
+# Устанавливаем САМЫЕ тяжелые пакеты отдельно с увеличенным таймаутом
+# Faster-whisper и Sentence-transformers тянут за собой много зависимостей
+RUN pip install --no-cache-dir --default-timeout=1000 \
+    faster-whisper \
+    sentence-transformers \
+    nvidia-cublas-cu12 \
+    nvidia-cudnn-cu12 \
+    torch --extra-index-url https://download.pytorch.org/whl/cu121
 
 # Копируем файл с зависимостями
 COPY docker/uvicorn/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python3 -c "from faster_whisper import download_model; download_model('small')"
+RUN python3 -c "from faster_whisper import download_model; download_model('base')"
 RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 RUN pip install rq rq-dashboard redis

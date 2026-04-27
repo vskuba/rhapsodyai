@@ -42,7 +42,7 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
 
         logger_info(
             f'🧠 Передаем историю агенту:\n'
-            f'{message_history if message_history else "пока ничего нет"}'
+            f'{message_history if message_history else "В истории пусто или отключена"}'
         )
 
         engine = self.engine_storage[framework_model.name]
