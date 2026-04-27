@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>{% block title %}AI System{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/main.css">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -17,8 +16,9 @@
             <li class="nav-item">
                 <a href="#">🧠 LLM</a>
                 <ul class="submenu">
-                  <li><a target="_blank" href="/admin/agent">Агенты</a></li>
-                  <li><a target="_blank" href="/llm/report">Отчеты</a></li>
+                  <li><a href="/admin/agent">Агенты</a></li>
+                  <li><a href="/admin/report">Отчеты</a></li>
+                  <li><a href="/admin/fact">Факты</a></li>
                 </ul>
             </li>
 
@@ -32,7 +32,7 @@
             <li class="nav-item">
                 <a href="/data/uvicorn/public">🔄 Конверторы</a>
                 <ul class="submenu">
-                  <li><a target="_blank" href="/convert/text-to-md">Text to MD</a></li>
+                  <li><a target="_blank" href="/admin/converter/text-to-fact">Text to Fact</a></li>
                 </ul>
             </li>
 

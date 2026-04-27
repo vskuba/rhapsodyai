@@ -1,0 +1,47 @@
+.column-header {
+    height: 45px;
+    padding: 0 15px;
+    background: #f1f1f1;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+    font-size: 13px;
+    color: #555;
+}
+
+.column-footer {
+    height: 60px;
+    padding: 0 20px;
+    background: #f1f1f1;
+    border-top: 1px solid #ddd;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+/* Настройки редактора */
+.CodeMirror {
+    flex: 1;
+    height: 100% !important;
+    width: 100%;
+    font-family: 'Fira Code', monospace;
+    font-size: 14px;
+}
+
+/* Кнопки */
+.btn-action {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.2s;
+}
+
+.btn-extract { background: #007bff; color: white; }
+.btn-extract:hover { background: #0056b3; }
+
+.btn-add { background: #28a745; color: white; }
+.btn-add:hover { background: #218838; }
+.btn-add:disabled { background: #ccc; cursor: not-allowed; }

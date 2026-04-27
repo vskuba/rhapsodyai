@@ -25,6 +25,7 @@ from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import admin
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.cronjob import cronjob
+from src.uvicorn.routers.fact import fact
 from src.uvicorn.routers.user import user
 
 
@@ -95,3 +96,4 @@ app.include_router(chat.router)
 app.include_router(agent.router)
 app.include_router(user.router)
 app.include_router(cronjob.router)
+app.include_router(fact.router)

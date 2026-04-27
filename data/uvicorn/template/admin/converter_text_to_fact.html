@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Экстрактор фактов{% endblock %}
+
+{% block head %}
+
+<link rel="stylesheet" href="/static/css/common.css">
+<link rel="stylesheet" href="/static/css/menu_top.css">
+
+<link rel="stylesheet" href="/static/css/converter_text_to_fact.css">
+<link rel="stylesheet" href="/static/css/code_mirror_md.css">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+
+{% endblock %}
+
+{% block content %}
+<div class="extractor-container">
+    <!-- 1. Левая колонка: Коллекции -->
+    <div class="collection-sidebar">
+        <div class="column-header">Коллекции фактов</div>
+        <div class="collection-list" id="collectionList">
+            <!-- Сюда JS загрузит список как в агентах -->
+        </div>
+    </div>
+
+    <!-- 2. Центральная колонка: Ввод текста -->
+    <div class="column-io" style="border-right: 1px solid #eee;">
+        <div class="column-header">📥 Исходный текст</div>
+        <textarea id="inputText" placeholder="Вставьте текст для анализа..."></textarea>
+        <div class="column-footer">
+            <button class="btn-action btn-extract" id="extractBtn">Извлечь факты ⚡</button>
+        </div>
+    </div>
+
+    <!-- Разделитель-стрелка -->
+    <div class="arrow-divider">➜</div>
+
+    <!-- 3. Правая колонка: Результат (Markdown) -->
+    <div class="column-io">
+        <div class="column-header">📝 Извлеченные факты (Markdown)</div>
+        <textarea id="mdEditorRaw"></textarea>
+        <div class="column-footer">
+            <button class="btn-action btn-add" id="addToCollectionBtn" disabled>Добавить в коллекцию +</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/markdown/markdown.min.js"></script>
+
+<script type="module">
+    // Импортируем функцию инициализации и обработчики из твоего нового модуля
+    import { initFactManager, extractFacts, saveToCollection } from "/static/js/fact.js";
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        // 1. Инициализация CodeMirror для Markdown
+        const mdEditor = CodeMirror.fromTextArea(document.getElementById('mdEditorRaw'), {
+            mode: 'markdown',
+            theme: 'dracula',
+            lineNumbers: true,
+            lineWrapping: true,
+            matchBrackets: true
+        });
+
+        // 2. Запускаем менеджер фактов и передаем ему объект редактора
+        // Эта функция сама загрузит коллекции и привяжет кнопки
+        await initFactManager(mdEditor);
+
+        // 3. (Опционально) Добавляем горячие клавиши
+        window.addEventListener('keydown', (e) => {
+            // Ctrl + Enter для быстрого извлечения
+            if (e.ctrlKey && e.key === 'Enter') {
+                extractFacts();
+            }
+            // Ctrl + S для сохранения в коллекцию
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveToCollection();
+            }
+        });
+    });
+</script>
+
+{% endblock %}

@@ -42,6 +42,14 @@ async def queue_status_ui(request: Request):
     )
 
 
+@router.get("/admin/converter/text-to-fact", response_class=HTMLResponse)
+async def default(request: Request):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/converter_text_to_fact.html"
+    )
+
+
 @router.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return Response(status_code=204)  # 204 No Content

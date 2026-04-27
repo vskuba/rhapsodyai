@@ -15,20 +15,28 @@ CREATE TABLE `settings` (
     CONSTRAINT `fk_settings_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `fact_collection` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(40) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Таблица фактов
 CREATE TABLE `fact` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `collection_id` INT NOT NULL,
     `document` CHAR(250) NOT NULL,
     `group_id` CHAR(250) DEFAULT NULL,
     `category` CHAR(20) DEFAULT NULL,
-    `language` CHAR(2) NOT NULL, -- В вашем списке было дважды, оставил один
+    `language` CHAR(2) NOT NULL,
     `source_file` CHAR(50) DEFAULT NULL,
     `content` LONGTEXT,
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+    `qdrant_synced` INT NOT NULL DEFAULT 0,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_fact_fact_collection` FOREIGN KEY (`collection_id`) REFERENCES `fact_collection` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица тегов (связь с фактами)
-CREATE TABLE `tags` (
+CREATE TABLE `fact_tags` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `fact_id` INT NOT NULL,
     `name` CHAR(100) NOT NULL,

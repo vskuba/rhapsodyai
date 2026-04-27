@@ -4,8 +4,8 @@ import src.window
 
 from pathlib import Path
 from src.parser.data_parser import data_parser_load
-from src.parser.md_to_model.data_parser import ParserMdToModel
-from src.parser.md_to_model.data_parser_model import MdEntry
+from src.parser.md_to_fact.data_parser import ParserMdToFact
+from src.parser.md_to_fact.data_parser_model import MdEntry
 from src.translator.translator_md import TranslatorMd
 from thread_.thread_ import thread_with_callback
 from translator.translator import translate_text
@@ -60,7 +60,7 @@ def translator_toggle_run(button, translator_model: TranslatorMd, target_lang):
                 return f"Ошибка: Исходная папка {source_dir} не найдена"
 
             target_dir.mkdir(parents=True, exist_ok=True)
-            parser = ParserMdToModel(source_dir)
+            parser = ParserMdToFact(source_dir)
             entries = await parser.parse()
 
             # 2. Переводим каждую модель
