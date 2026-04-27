@@ -8,6 +8,7 @@ from pydantic import ConfigDict
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from starlette.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
 
 from ai.ai_thread import ai_thread_framework_run
 from config.config import config_get
@@ -21,10 +22,9 @@ from src.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
 from src.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
 from src.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
 from src.uvicorn.routers.chat import chat
-from src.uvicorn.routers import index
+from src.uvicorn.routers import admin
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.cronjob import cronjob
-from src.uvicorn.routers.queue import queue
 from src.uvicorn.routers.user import user
 
 
@@ -82,15 +82,16 @@ app = FastAPI(lifespan=lifespan)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-chat_static_path = os.path.join(current_dir, config_get('DATA_DIR'), config_get('UVICORN_DIR'), "chat", "public")
-
-app.mount("/static", StaticFiles(directory=chat_static_path), name="static")
+public_static_path = os.path.join(current_dir, config_get('DATA_DIR'), config_get('UVICORN_DIR'), "public")
+jinja2_template_path = os.path.join(current_dir, config_get('DATA_DIR'), config_get('UVICORN_DIR'), "template")
 
 app.state.agent_manager = AiFrameworkAgentManagerPydantic()
+app.state.jinja2_template = Jinja2Templates(directory=jinja2_template_path)
 
-app.include_router(index.router)
+app.mount("/static", StaticFiles(directory=public_static_path), name="static")
+
+app.include_router(admin.router)
 app.include_router(chat.router)
 app.include_router(agent.router)
 app.include_router(user.router)
 app.include_router(cronjob.router)
-app.include_router(queue.router)

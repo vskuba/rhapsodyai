@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Чат с агентом{% endblock %}
+
+{% block content %}
+<div class="main-wrapper">
+    <!-- Основная зона чата -->
+    <div class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+            <div class="message ai-msg">Привет! Выберите агента и начнем.</div>
+        </div>
+
+        <div id="topProgressBar" class="progress-bar-container">
+            <div class="progress-bar-fill"></div>
+        </div>
+
+        <div class="chat-input-area">
+            <button id="micBtn" class="mic-button">🎤</button>
+            <textarea id="userInput"></textarea>
+            <button id="sendBtn">Отправить</button>
+        </div>
+    </div>
+
+    <!-- Правая колонка -->
+    <div class="sidebar">
+        <div class="sidebar-label">Активный агент</div>
+        <select id="agentSelect" size="10">
+            <option value="loading">Загрузка...</option>
+        </select>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-label">Пользователи</div>
+        <select id="userSelect" size="10">
+            <option value="loading">Загрузка...</option>
+        </select>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/main.js"></script>
+{% endblock %}

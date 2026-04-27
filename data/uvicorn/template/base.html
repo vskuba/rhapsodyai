@@ -2,11 +2,12 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chat</title>
+    <title>{% block title %}AI System{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/main.css">
+    {% block head %}{% endblock %}
 </head>
 <body>
+
     <nav>
         <ul class="top-nav">
             <li class="nav-item">
@@ -16,6 +17,7 @@
             <li class="nav-item">
                 <a href="#">🧠 LLM</a>
                 <ul class="submenu">
+                  <li><a target="_blank" href="/admin/agent">Агенты</a></li>
                   <li><a target="_blank" href="/llm/report">Отчеты</a></li>
                 </ul>
             </li>
@@ -28,7 +30,7 @@
             </li>
 
             <li class="nav-item">
-                <a href="/">🔄 Конверторы</a>
+                <a href="/data/uvicorn/public">🔄 Конверторы</a>
                 <ul class="submenu">
                   <li><a target="_blank" href="/convert/text-to-md">Text to MD</a></li>
                 </ul>
@@ -37,7 +39,7 @@
             <li class="nav-item">
                 <a href="#">📊 Очереди</a>
                 <ul class="submenu">
-                  <li><a target="_blank" href="/admin/queues">Local in-memory</a></li>
+                  <li><a target="_blank" href="/admin/queue">Local in-memory</a></li>
                   <li><a target="_blank" href="http://localhost:9181/">Redis️ queues</a></li>
                 </ul>
             </li>
@@ -60,42 +62,9 @@
     </nav>
 
     <div class="page-content">
-        <div class="main-wrapper">
-            <!-- Основная зона чата -->
-            <div class="chat-container">
-                <div class="chat-messages" id="chatMessages">
-                    <div class="message ai-msg">Привет! Выберите агента и начнем.</div>
-                </div>
-
-                <div id="topProgressBar" class="progress-bar-container">
-                    <div class="progress-bar-fill"></div>
-                </div>
-
-                <div class="chat-input-area">
-                    <button id="micBtn" class="mic-button">🎤</button>
-                    <textarea id="userInput"></textarea>
-                    <button id="sendBtn">Отправить</button>
-                </div>
-            </div>
-
-            <!-- Правая колонка -->
-            <div class="sidebar">
-                <div class="sidebar-label">Активный агент</div>
-                <select id="agentSelect" size="10">
-                    <option value="loading">Загрузка...</option>
-                </select>
-            </div>
-
-            <div class="sidebar">
-                <div class="sidebar-label">Пользователи</div>
-                <select id="userSelect" size="10">
-                    <option value="loading">Загрузка...</option>
-                </select>
-            </div>
-
-        </div>
+        {% block content %}{% endblock %}
     </div>
 
-<script type="module" src="/static/js/main.js"></script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>
