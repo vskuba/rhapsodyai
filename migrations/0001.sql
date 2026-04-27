@@ -44,7 +44,7 @@ CREATE TABLE `fact_tags` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица памяти (история диалогов/действий)
-CREATE TABLE `memory` (
+CREATE TABLE `memory_short` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `agent` CHAR(30) NOT NULL,
     `role` CHAR(30) NOT NULL,
