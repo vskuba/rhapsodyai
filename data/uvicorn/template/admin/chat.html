@@ -40,5 +40,44 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/main.js"></script>
+<script type="module" src="/static/js/api.js"></script>
+<script type="module" src="/static/js/chat.js"></script>
+<script type="module" src="/static/js/user.js"></script>
+<script type="module" src="/static/js/voice.js"></script>
+<script type="module" src="/static/js/agent.js"></script>
+<script type="module" src="/static/js/ui.js"></script>
+
+<script type="module">
+    import {loadUsers} from "/static/js/user.js";
+    import {loadAgents} from "/static/js/agent.js";
+    import {sendMessage} from "/static/js/chat.js";
+    import {initVoice} from "/static/js/voice.js";
+    import {toggleLoading} from "/static/js/ui.js";
+
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // 1. Инициализация агентов
+        loadAgents(toggleLoading);
+        loadUsers(toggleLoading);
+
+        // 2. Инициализация голоса (передаем функцию, что делать с текстом)
+        initVoice(toggleLoading, (text) => {
+            userInput.value = text;
+            sendMessage(toggleLoading);
+        });
+
+        // 3. Обработчики текста
+        sendBtn.addEventListener('click', () => sendMessage(toggleLoading));
+
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage(toggleLoading);
+            }
+        });
+    });
+</script>
+
 {% endblock %}

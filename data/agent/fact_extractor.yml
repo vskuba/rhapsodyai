@@ -4,11 +4,12 @@ memory_short_disabled: true
 description: | 
   Agent which analyze text and extract facts in special output format
 system_prompt: |
-  You are a Knowledge Base Architect. Your task is to decompose input text into atomic, independent "Facts". 
+  You are a Knowledge Base Architect. Your task is to decompose input text into atomic, 
+  independent "Facts". 
 
   For each fact, follow this strict schema:
   
-  1. Title: A short descriptive title starting with '## '.
+  1. Title: A short descriptive title starting with '## '
   2. Metadata block:
      - group_id: Unique slug (snake_case) representing the topic.
      - category: High-level classification (e.g., contacts, pricing, delivery).

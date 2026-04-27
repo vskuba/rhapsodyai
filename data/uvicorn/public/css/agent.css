@@ -17,4 +17,88 @@
 #agentSelect option:checked {
     background-color: #007bff !important;
     color: white;
+    box-shadow: 0 0 10px 100px #007bff inset !important;
+}
+
+.agents-sidebar {
+    width: 260px;
+    background-color: #f8f9fa;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+    user-select: none; /* Чтобы текст не выделялся при частых кликах */
+}
+
+/* Заголовок списка */
+.sidebar-header {
+    padding: 15px 20px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #6c757d;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #eee;
+}
+
+/* Контейнер элементов (с прокруткой) */
+.agent-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Элемент списка */
+.agent-item {
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.15s ease-in-out;
+    border-left: 3px solid transparent; /* Заготовка под активную полоску */
+}
+
+/* Ховер-эффект */
+.agent-item:hover {
+    background-color: #e9ecef;
+    color: #000;
+}
+
+/* Активное состояние (выбранный агент) */
+.agent-item.active {
+    background-color: #fff;
+    color: #007bff;
+    font-weight: 600;
+    border-left: 3px solid #007bff;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
+}
+
+/* Иконка-заглушка перед именем (опционально) */
+.agent-item::before {
+    content: "🤖";
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+.agent-item.active::before {
+    opacity: 1;
+}
+
+/* Кастомизация скроллбара для сайдбара */
+.agent-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.agent-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.agent-list::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 10px;
+}
+
+.agent-list::-webkit-scrollbar-thumb:hover {
+    background: #bbb;
 }

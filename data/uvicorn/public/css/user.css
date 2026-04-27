@@ -17,4 +17,5 @@
 #userSelect option:checked {
     background-color: #007bff !important;
     color: white;
+    box-shadow: 0 0 10px 100px #007bff inset !important;
 }

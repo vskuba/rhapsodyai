@@ -1,0 +1,83 @@
+.page-content, .main-wrapper {
+    display: flex;
+    justify-content: center; /* Центрируем редактор на странице */
+    padding: 20px 0 !important;
+}
+
+.editor-page-container {
+    display: flex;
+    width: 1050px; /* 300px sidebar + 750px editor */
+    height: 700px; /* Фиксированная высота, чтобы кнопка не уплыла */
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+/* Левая колонка */
+.agents-sidebar {
+    width: 300px;
+    min-width: 300px;
+    background: #f8f9fa;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Правая часть: Редактор */
+.editor-section {
+    width: 750px; /* Возвращаем как было удобно */
+    display: flex;
+    flex-direction: column;
+    background: #282a36;
+}
+
+.editor-header {
+    height: 50px;
+    padding: 0 20px;
+    background: #f1f1f1;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #333;
+}
+
+/* CodeMirror - теперь он не вытолкнет футер */
+.CodeMirror {
+    flex: 1;
+    height: calc(100% - 110px) !important; /* 50px header + 60px footer */
+    font-family: 'Fira Code', monospace;
+    font-size: 14px;
+}
+
+/* Нижняя панель с кнопкой - теперь всегда видна */
+.editor-footer {
+    height: 60px;
+    padding: 0 20px;
+    background: #f1f1f1;
+    border-top: 1px solid #ddd;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    z-index: 10;
+}
+
+.btn-save {
+    padding: 10px 25px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.btn-save:hover { background: #218838; }
+.btn-save:disabled { background: #ccc; cursor: not-allowed; }
+
+#statusLabel {
+    margin-right: 15px;
+    font-size: 13px;
+}

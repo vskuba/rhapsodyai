@@ -1,44 +1,71 @@
 {% extends "base.html" %}
 
-{% block title %}Чат с агентом{% endblock %}
+{% block title %}Агенты{% endblock %}
+
+{% block head %}
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+
+{% endblock %}
 
 {% block content %}
-<div class="main-wrapper">
-    <!-- Основная зона чата -->
-    <div class="chat-container">
-        <div class="chat-messages" id="chatMessages">
-            <div class="message ai-msg">Привет! Выберите агента и начнем.</div>
-        </div>
-
-        <div id="topProgressBar" class="progress-bar-container">
-            <div class="progress-bar-fill"></div>
-        </div>
-
-        <div class="chat-input-area">
-            <button id="micBtn" class="mic-button">🎤</button>
-            <textarea id="userInput"></textarea>
-            <button id="sendBtn">Отправить</button>
+<div class="editor-page-container">
+    <!-- Левая часть (стили из agent.css) -->
+    <div class="agents-sidebar">
+        <div class="sidebar-header">Доступные агенты</div>
+        <div class="agent-list" id="agentList">
+            <!-- Сюда JS будет рендерить .agent-item -->
         </div>
     </div>
 
-    <!-- Правая колонка -->
-    <div class="sidebar">
-        <div class="sidebar-label">Активный агент</div>
-        <select id="agentSelect" size="10">
-            <option value="loading">Загрузка...</option>
-        </select>
-    </div>
+    <!-- Правая часть (стили из editor_yml.css) -->
+    <div class="editor-section">
+        <div class="editor-header">
+            <span id="currentAgentName">Выберите файл для редактирования</span>
+            <div id="statusLabel"></div>
+        </div>
 
-    <div class="sidebar">
-        <div class="sidebar-label">Пользователи</div>
-        <select id="userSelect" size="10">
-            <option value="loading">Загрузка...</option>
-        </select>
-    </div>
+        <textarea id="yamlEditorRaw"></textarea>
 
+        <div class="editor-footer">
+            <button class="btn-save" id="saveBtn" disabled>Сохранить YAML</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/main.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/yaml/yaml.min.js"></script>
+
+<script type="module">
+    import { initAgentsManager, saveAgentConfig } from "/static/js/agent.js";
+
+    const saveBtn = document.getElementById('saveBtn');
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // 1. Инициализируем редактор CodeMirror на месте textarea
+        const editor = CodeMirror.fromTextArea(document.getElementById('yamlEditorRaw'), {
+            mode: 'yaml',             // Подсветка YAML
+            theme: 'dracula',          // Темная тема (проверь наличие CSS в блоке head)
+            lineNumbers: true,         // Номера строк
+            indentUnit: 2,             // Размер отступа
+            smartIndent: true,         // Умные отступы
+            matchBrackets: true        // Подсветка парных скобок
+        });
+
+        // 2. Загружаем список агентов и передаем объект редактора,
+        // чтобы при клике на агента текст вставлялся именно в него
+        initAgentsManager(editor);
+
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                saveAgentConfig(editor);
+            });
+        }
+    });
+</script>
+
 {% endblock %}
