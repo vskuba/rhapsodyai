@@ -8,6 +8,7 @@ from fastapi import UploadFile, File
 
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
+from src.ai_pydantic.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 
 router = APIRouter()
@@ -17,14 +18,16 @@ class JsonRequest(BaseModel):
     agent: str
     question: str
     user_id: int
+    llm: str
 
 
 @router.post("/chat/ask")
 async def ask_ai(request: Request, json_request: JsonRequest):
-    framework_model = request.app.state.agent_manager.load(json_request.agent)
+    framework_model: AiFrameworkAgentModelPydantic = request.app.state.agent_manager.load(json_request.agent)
     framework_model.prompt = json_request.question
     framework_model.is_gui_mode = False
     framework_model.user_id = json_request.user_id
+    framework_model.llm = json_request.llm
 
     loop = asyncio.get_running_loop()
     future = loop.create_future()

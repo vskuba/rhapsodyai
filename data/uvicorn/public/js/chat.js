@@ -5,6 +5,7 @@ export const userInput = document.getElementById('userInput');
 export const agentSelect = document.getElementById('agentSelect');
 export const userSelect = document.getElementById('userSelect');
 export const progressBar = document.getElementById('topProgressBar');
+export const llmModelSelect = document.getElementById('llmModelSelect');
 
 export function addMessage(text, role) {
     const div = document.createElement('div');
@@ -26,7 +27,8 @@ export async function sendMessage(showLoading) {
         const data = await postData('/chat/ask', {
             question: text,
             user_id: userSelect.value,
-            agent: agentSelect.value
+            agent: agentSelect.value,
+            llm: llmModelSelect.value
         });
         addMessage(data.result, 'ai');
     } catch (e) {

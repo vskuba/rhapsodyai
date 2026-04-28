@@ -7,7 +7,7 @@ from mysql_.mysql_ import mysql_get_db_async
 router = APIRouter()
 
 
-@router.post("/agent/list")
+@router.get("/agent/list")
 async def agent_list(request: Request):
     try:
         agent_names = request.app.state.agent_manager.list()

@@ -7,14 +7,16 @@ CREATE TABLE `user` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица настроек (связь с user)
-CREATE TABLE `settings` (
+CREATE TABLE `setting` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(50) NOT NULL,
+    `key` CHAR(50) NOT NULL,
     `user_id` INT DEFAULT NULL,
     `value` LONGTEXT,
     CONSTRAINT `fk_settings_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE setting ADD UNIQUE INDEX idx_key_user (`key`, user_id);
 
+-- Таблица фактов (коллекция фактов)
 CREATE TABLE `fact_collection` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(40) NOT NULL

@@ -68,24 +68,51 @@
 
 .chat-messages {
     flex: 1;
-    overflow-y: auto; /* Включает прокрутку */
-    padding: 20px;
-    display: flex;         /* Добавляем флекс */
-    flex-direction: column; /* Сообщения друг под другом */
-    height: calc(100% - 50px);
+    overflow-y: auto;
+    padding: 25px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* Расстояние между бабблами */
+    background-color: #fcfcfc; /* Очень светлый фон для контраста */
+    height: calc(100% - 60px);
 }
 
+/* Общий стиль сообщения */
 .message {
-    margin-bottom: 15px;
-    padding: 4px;
-    border-radius: 8px;
-    max-width: 85%;
+    padding: 10px 16px;
+    border-radius: 18px; /* Более скругленные углы */
+    max-width: 80%;
     font-size: 14px;
-    word-wrap: break-word; /* Чтобы длинные слова не рвали верстку */
+    line-height: 1.5;
+    word-wrap: break-word;
     white-space: pre-wrap;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05); /* Легкая тень для объема */
 }
 
-.user-msg { background: #f0913d; color: white; align-self: flex-end; }
-.ai-msg { background: #f6f4f4; color: #333; align-self: flex-start; }
+/* Сообщение пользователя: Мягкий синий (Indigo) */
+.user-msg {
+    background: #4a90e2;
+    color: white;
+    align-self: flex-end;
+    border-bottom-right-radius: 4px; /* "Хвостик" сообщения */
+}
+
+/* Сообщение AI: Светло-серый с легким бортиком */
+.ai-msg {
+    background: #ffffff;
+    color: #2c3e50;
+    align-self: flex-start;
+    border: 1px solid #edf2f7;
+    border-bottom-left-radius: 4px; /* "Хвостик" сообщения */
+}
+
+/* Стилизация скроллбара для красоты */
+.chat-messages::-webkit-scrollbar {
+    width: 6px;
+}
+.chat-messages::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+}
 
 .chat-input-area { display: flex; padding: 15px; }

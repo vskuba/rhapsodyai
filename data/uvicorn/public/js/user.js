@@ -1,11 +1,10 @@
-import { postData } from './api.js';
+import { getData } from './api.js';
 
 export const userSelect = document.getElementById('userSelect');
 
-export async function loadUsers(showLoading) {
-    showLoading(true);
+export async function loadUsers() {
     try {
-        const data = await postData('/user/list');
+        const data = await getData('/user/list');
         userSelect.innerHTML = '';
         data.result.forEach(user => {
             const option = document.createElement('option');
@@ -16,7 +15,5 @@ export async function loadUsers(showLoading) {
         if (data.result.length > 0) userSelect.selectedIndex = 0;
     } catch (e) {
         console.error("Ошибка загрузки пользователей:", e);
-    } finally {
-        showLoading(false);
     }
 }
