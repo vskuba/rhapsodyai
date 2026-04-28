@@ -18,6 +18,7 @@ CREATE TABLE `settings` (
 CREATE TABLE `fact_collection` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(40) NOT NULL
+    `language` CHAR(40) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица фактов
@@ -44,11 +45,13 @@ CREATE TABLE `fact_tags` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица памяти (история диалогов/действий)
-CREATE TABLE `memory_short` (
+CREATE TABLE `agent_memory_short` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_uuid` CHAR(36) NOT NULL,
     `agent` CHAR(30) NOT NULL,
     `role` CHAR(30) NOT NULL,
     `user_id` INT DEFAULT NULL,
+    `kind_type` CHAR(20) NOT NULL,
     `content` LONGTEXT,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
