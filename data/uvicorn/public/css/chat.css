@@ -1,3 +1,60 @@
+.chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: #ffffff;
+    border-bottom: 1px solid #eee;
+    height: 50px;
+}
+
+.header-block {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #666;
+}
+
+/* Блок 1: Select */
+#llmModelSelect {
+    padding: 3px 8px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    outline: none;
+    font-size: 13px;
+}
+
+/* Блок 2: ID сессии (центр) */
+.session-current {
+    flex: 1;
+    justify-content: right;
+}
+
+#sessionDisplay {
+    font-family: 'Courier New', monospace;
+    background: #fdf2e9; /* Светлый оттенок оранжевого */
+    color: #d35400;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+/* Блок 3: Кнопка */
+.action-btn {
+    background: #f0913d; /* В цвет ваших сообщений пользователя */
+    color: white;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.2s;
+}
+
+.action-btn:hover {
+    background: #d87d2a;
+}
 
 /* Левая часть: Чат */
 .chat-container {
@@ -15,6 +72,7 @@
     padding: 20px;
     display: flex;         /* Добавляем флекс */
     flex-direction: column; /* Сообщения друг под другом */
+    height: calc(100% - 50px);
 }
 
 .message {
@@ -24,7 +82,7 @@
     max-width: 85%;
     font-size: 14px;
     word-wrap: break-word; /* Чтобы длинные слова не рвали верстку */
-    white-space: pre-wrap; 
+    white-space: pre-wrap;
 }
 
 .user-msg { background: #f0913d; color: white; align-self: flex-end; }

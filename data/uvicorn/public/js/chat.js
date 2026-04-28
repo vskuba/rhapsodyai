@@ -1,9 +1,10 @@
-import { postData } from './api.js';
+import {postData} from './api.js';
 
-const chatMessages = document.getElementById('chatMessages');
-const userInput = document.getElementById('userInput');
-const agentSelect = document.getElementById('agentSelect');
-const userSelect = document.getElementById('userSelect');
+export const chatMessages = document.getElementById('chatMessages');
+export const userInput = document.getElementById('userInput');
+export const agentSelect = document.getElementById('agentSelect');
+export const userSelect = document.getElementById('userSelect');
+export const progressBar = document.getElementById('topProgressBar');
 
 export function addMessage(text, role) {
     const div = document.createElement('div');
@@ -34,4 +35,9 @@ export async function sendMessage(showLoading) {
     } finally {
         showLoading(false);
     }
+}
+
+// Единая функция индикации загрузки
+export function toggleLoading(show) {
+    progressBar.classList.toggle('progress-active', show);
 }

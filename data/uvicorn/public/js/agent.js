@@ -1,8 +1,13 @@
-import { postData, getData, putData } from './api.js';
+import {postData, getData, putData} from './api.js';
 
 export const agentSelect = document.getElementById('agentSelect'); // Для чата
+export const userSelect = document.getElementById('userSelect');
 export const agentListContainer = document.getElementById('agentList'); // Для менеджера
 export const saveBtn = document.getElementById('saveBtn');
+
+const sessionDisplay = document.getElementById('sessionDisplay');
+
+let currentSessionId = null;
 
 /**
  * Загрузка агентов в выпадающий список (для страницы ЧАТА)
@@ -88,7 +93,7 @@ export async function saveAgentConfig(editor) {
     if (statusLabel) statusLabel.textContent = '⏳ Сохранение...';
 
     try {
-        await putData(`/agent/${agentName}`, { yaml_content: content });
+        await putData(`/agent/${agentName}`, {yaml_content: content});
         if (statusLabel) {
             statusLabel.textContent = '✅ Сохранено';
             setTimeout(() => statusLabel.textContent = '', 3000);
@@ -98,5 +103,33 @@ export async function saveAgentConfig(editor) {
         if (statusLabel) statusLabel.textContent = `❌ Ошибка: ${e.message}`;
     } finally {
         saveBtn.disabled = false;
+    }
+}
+
+export async function getAgentSessionLastEntry() {
+    const agent = agentSelect.value;
+    const userId = userSelect.value;
+
+    if (!agent || !userId) return;
+
+    try {
+        const response = await fetch(`/agent/${agent}/user/${userId}/session_last_entry`);
+        const data = await response.json();
+
+        // API возвращает {"result": "uuid-строка"} или {"result": null}
+        updateSessionUI(data.result);
+    } catch (e) {
+        console.error("Ошибка получения сессии:", e);
+        updateSessionUI(null);
+    }
+}
+
+function updateSessionUI(memory_short_entry) {
+    currentSessionId = memory_short_entry.session_uuid;
+    if (currentSessionId) {
+        sessionDisplay.innerText = currentSessionId.substring(0, 8) + '...';
+        sessionDisplay.title = currentSessionId; // Полный ID при наведении
+    } else {
+        sessionDisplay.innerText = 'Нет сессии';
     }
 }

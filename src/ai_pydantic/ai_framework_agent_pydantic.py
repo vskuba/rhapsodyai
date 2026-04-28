@@ -52,6 +52,8 @@ class AiFrameworkAgentPydantic(AbstractAiFrameworkAgent):
             if framework_model.mcp_servers:
                 await ai_mcp_manager.mcp_server_add_tools(engine, framework_model)
 
+            logger_info(f'🚀 Запускаем модель агента... {framework_model}')
+
             return await engine.run(
                 user_prompt=framework_model.prompt,
                 message_history=message_history,

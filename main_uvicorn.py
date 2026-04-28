@@ -2,17 +2,19 @@
 
 import asyncio
 import os
+import traceback
 
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from ai.ai_thread import ai_thread_framework_run
 from config.config import config_get
-from logging_.logging_ import logging_init
+from logging_.logging_ import logging_init, logger_info
 from mysql_.migration.mysql_migration_up import mysql_migration_up
 from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from queue_.queue_ import queue_init
@@ -80,6 +82,33 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def catch_exceptions_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        # Формируем полный стек ошибки
+        err_stack = traceback.format_exc()
+
+        # Логируем ошибку с деталями запроса
+        logger_info(
+            f"❌ Сбой в роутере: {request.url.path}\n"
+            f"Ошибка: {str(e)}\n"
+            f"Стек вызовов:\n{err_stack}"
+        )
+
+        # Возвращаем клиенту понятный JSON, чтобы фронтенд не гас
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": "Внутренняя ошибка сервера",
+                "details": str(e)  # В продакшене лучше скрыть детали
+            }
+        )
+
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 

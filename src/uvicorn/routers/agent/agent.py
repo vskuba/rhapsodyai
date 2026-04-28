@@ -1,5 +1,8 @@
 import yaml
-from fastapi import APIRouter, Request, HTTPException
+
+from fastapi import APIRouter, Request, HTTPException, Depends
+
+from mysql_.mysql_ import mysql_get_db_async
 
 router = APIRouter()
 
@@ -59,3 +62,15 @@ async def save_agent_yml(request: Request, name: str, data: dict):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Системная ошибка: {str(e)}")
+
+
+@router.get("/agent/{agent}/user/{user_id}/session_last_entry")
+async def agent_session_active_get(request: Request, agent: str, user_id: int, db=Depends(mysql_get_db_async)):
+    async with db.cursor() as cursor:
+        await cursor.execute(
+            "SELECT session_uuid "
+            "FROM agent_memory_short "
+            "WHERE agent = %s AND user_id = %s "
+            "ORDER BY created_at DESC LIMIT 1", (agent, user_id)
+        )
+        return {"result": await cursor.fetchone()}

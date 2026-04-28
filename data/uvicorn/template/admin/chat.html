@@ -19,6 +19,28 @@
 <div class="main-wrapper">
     <!-- Основная зона чата -->
     <div class="chat-container">
+
+        <!-- НОВАЯ ПАНЕЛЬ УПРАВЛЕНИЯ (Блоки 1, 2, 3) -->
+        <div class="chat-header">
+            <div class="header-block">
+                <label>LLM:</label>
+                <select id="llmModelSelect">
+                    <option value="gpt-4o">GPT-4o</option>
+                    <option value="claude-3-5">Claude 3.5</option>
+                    <option value="gemini-pro">Gemini Pro</option>
+                </select>
+            </div>
+
+            <div class="header-block session-current">
+                <span class="session-label">Session ID:</span>
+                <span id="sessionDisplay">f47ac10b...</span>
+            </div>
+
+            <div class="header-block">
+                <button id="newSessionBtn" class="action-btn">New Session</button>
+            </div>
+        </div>
+
         <div class="chat-messages" id="chatMessages">
             <div class="message ai-msg">Привет! Выберите агента и начнем.</div>
         </div>
@@ -29,12 +51,12 @@
 
         <div class="chat-input-area">
             <button id="micBtn" class="mic-button">🎤</button>
-            <textarea id="userInput"></textarea>
+            <textarea id="userInput" placeholder="Напишите сообщение..."></textarea>
             <button id="sendBtn">Отправить</button>
         </div>
     </div>
 
-    <!-- Правая колонка -->
+    <!-- Правая колонка остается без изменений -->
     <div class="sidebar">
         <div class="sidebar-label">Активный агент</div>
         <select id="agentSelect" size="10">
@@ -48,32 +70,28 @@
             <option value="loading">Загрузка...</option>
         </select>
     </div>
-
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/api.js"></script>
-<script type="module" src="/static/js/chat.js"></script>
-<script type="module" src="/static/js/user.js"></script>
-<script type="module" src="/static/js/voice.js"></script>
-<script type="module" src="/static/js/agent.js"></script>
-<script type="module" src="/static/js/ui.js"></script>
 
 <script type="module">
     import {loadUsers} from "/static/js/user.js";
-    import {loadAgents} from "/static/js/agent.js";
-    import {sendMessage} from "/static/js/chat.js";
+    import {agentSelect, userSelect, loadAgents, getAgentSessionLastEntry} from "/static/js/agent.js";
+    import {sendMessage, toggleLoading} from "/static/js/chat.js";
     import {initVoice} from "/static/js/voice.js";
-    import {toggleLoading} from "/static/js/ui.js";
 
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         // 1. Инициализация агентов
-        loadAgents(toggleLoading);
-        loadUsers(toggleLoading);
+        await Promise.all([
+            loadAgents(toggleLoading),
+            loadUsers(toggleLoading)
+        ]);
+
+        await getAgentSessionLastEntry()
 
         // 2. Инициализация голоса (передаем функцию, что делать с текстом)
         initVoice(toggleLoading, (text) => {
@@ -90,6 +108,9 @@
                 sendMessage(toggleLoading);
             }
         });
+
+        agentSelect.addEventListener('change', getAgentSessionLastEntry);
+        userSelect.addEventListener('change', getAgentSessionLastEntry);
     });
 </script>
 
