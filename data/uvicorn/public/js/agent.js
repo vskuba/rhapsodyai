@@ -122,11 +122,14 @@ export async function getAgentSessionLastEntry() {
 }
 
 function updateSessionUI(memory_short_entry) {
-    currentSessionId = memory_short_entry.session_uuid;
-    if (currentSessionId) {
+    if (!memory_short_entry) {
+        currentSessionId = crypto.randomUUID();
+    } else {
+        currentSessionId = memory_short_entry.session_uuid;
+    }
+
+    if (sessionDisplay) {
         sessionDisplay.innerText = currentSessionId.substring(0, 8) + '...';
         sessionDisplay.title = currentSessionId; // Полный ID при наведении
-    } else {
-        sessionDisplay.innerText = 'Нет сессии';
     }
 }

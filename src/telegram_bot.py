@@ -4,8 +4,8 @@ from functools import partial
 
 from aiogram import Bot, Dispatcher, types
 
-from src.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
-from src.ai_pydantic.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
+from ai.framework.pydantic.ai_framework_manager_agent_pydantic import AiFrameworkAgentManagerPydantic
+from ai.framework.pydantic.ai_framework_model_agent_pydantic import AiFrameworkAgentModelPydantic
 from config.config import config_get
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 from logging_.logging_ import logger_info

@@ -7,8 +7,8 @@ import customtkinter as ctk
 
 from typing import Dict, Any
 from ai.framework.ai_framework import AiFrameworkModel
-from ai.framework.ai_framework_agent_model import AbstractAiFrameworkAgentModel
-from ai.framework.ai_framework_task_model import AbstractAiFrameworkTaskModel
+from ai.framework.ai_framework_model_agent import AbstractAiFrameworkAgentModel
+from ai.framework.ai_framework_model_task import AbstractAiFrameworkTaskModel
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
 from src.window.component import AiPopupWindow

@@ -6,9 +6,9 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
+from ai.framework.pydantic.ai_framework_model_agent_pydantic import AiFrameworkAgentModelPydantic
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
-from src.ai_pydantic.ai_framework_agent_model_pydantic import AiFrameworkAgentModelPydantic
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 
 router = APIRouter()
@@ -23,6 +23,8 @@ class JsonRequest(BaseModel):
 
 @router.post("/chat/ask")
 async def ask_ai(request: Request, json_request: JsonRequest):
+    logger_info('Чат запрос: ' + str(json_request))
+
     framework_model: AiFrameworkAgentModelPydantic = request.app.state.agent_manager.load(json_request.agent)
     framework_model.prompt = json_request.question
     framework_model.is_gui_mode = False

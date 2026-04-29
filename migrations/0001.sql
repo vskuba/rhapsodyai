@@ -35,6 +35,8 @@ CREATE TABLE `fact` (
     `content` LONGTEXT,
     `qdrant_synced` INT NOT NULL DEFAULT 0,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_qdrant_synced` (`qdrant_synced`), -- Для фоновой синхронизации
+    INDEX `idx_collection_lang` (`collection_id`, `language`), -- Для поиска по контексту
     CONSTRAINT `fk_fact_fact_collection` FOREIGN KEY (`collection_id`) REFERENCES `fact_collection` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -56,5 +58,7 @@ CREATE TABLE `agent_memory_short` (
     `kind_type` CHAR(20) NOT NULL,
     `content` LONGTEXT,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_session` (`session_uuid`), -- Для быстрой выборки истории
+    INDEX `idx_agent_user` (`agent`, `user_id`, `created_at`),
     CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

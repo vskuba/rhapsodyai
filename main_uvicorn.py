@@ -13,16 +13,16 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from ai.ai_thread import ai_thread_framework_run
+from ai.framework.pydantic.ai_framework_manager_agent_pydantic import AiFrameworkAgentManagerPydantic
+from ai.framework.pydantic.ai_framework_manager_task_pydantic import AiFrameworkTaskManagerPydantic
 from config.config import config_get
 from logging_.logging_ import logging_init, logger_info
 from mysql_.migration.mysql_migration_up import mysql_migration_up
 from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
-from src.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
-from src.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
-from src.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
-from src.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
+from ai.framework.pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
+from ai.framework.pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import admin
 from src.uvicorn.routers.agent import agent

@@ -8,11 +8,12 @@ from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 
 from ai.ai_thread import ai_thread_framework_run
+from ai.framework.pydantic.ai_framework_manager_agent_pydantic import AiFrameworkAgentManagerPydantic
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
-from src.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
-from src.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
+from ai.framework.pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
 from src.telegram_bot import init_telegram_bot
+from state.state import state_set
 from thread_.thread_ import thread_with_callback
 
 if __name__ == "__main__":
@@ -36,6 +37,8 @@ if __name__ == "__main__":
         ],
         None
     ))
+
+    state_set('mode_telegram', True)
 
     #========== Soko Telegram Bot ==========
 

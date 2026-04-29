@@ -7,13 +7,13 @@ from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 
 from ai.ai_thread import ai_thread_framework_run
+from ai.framework.pydantic.ai_framework_manager_agent_pydantic import AiFrameworkAgentManagerPydantic
+from ai.framework.pydantic.ai_framework_manager_task_pydantic import AiFrameworkTaskManagerPydantic
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
 from state.state import state_set
-from src.ai_pydantic.ai_framework_agent_manager_pydantic import AiFrameworkAgentManagerPydantic
-from src.ai_pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
-from src.ai_pydantic.ai_framework_task_manager_pydantic import AiFrameworkTaskManagerPydantic
-from src.ai_pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
+from ai.framework.pydantic.ai_framework_agent_pydantic import AiFrameworkAgentPydantic
+from ai.framework.pydantic.ai_framework_task_pydantic import AiFrameworkTaskPydantic
 from src.faster_whisper.faster_whisper_ import faster_whisper_enable
 from src.window_ import WindowAi
 
