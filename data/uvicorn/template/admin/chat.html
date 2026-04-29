@@ -78,7 +78,7 @@
 <script type="module">
     import {loadUsers} from "/static/js/user.js";
     import {agentSelect, userSelect, loadAgents, getAgentSessionLastEntry} from "/static/js/agent.js";
-    import {sendMessage, toggleLoading} from "/static/js/chat.js";
+    import {sendMessage, toggleLoading, newSessionBtn, startNewSession} from "/static/js/chat.js";
     import {initVoice} from "/static/js/voice.js";
     import {saveUserSetting, loadAndApplySetting} from "/static/js/setting.js";
     import {loadLLMs} from "/static/js/llm.js";
@@ -135,6 +135,8 @@
             await saveUserSetting('llm_active', model, userId);
             toggleLoading(false);
         });
+
+        newSessionBtn.addEventListener('click', startNewSession);
     });
 </script>
 

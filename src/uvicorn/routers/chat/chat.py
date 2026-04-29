@@ -19,6 +19,7 @@ class JsonRequest(BaseModel):
     question: str
     user_id: int
     llm: str
+    session_uuid: str | None = None
 
 
 @router.post("/chat/ask")
@@ -31,6 +32,9 @@ async def ask_ai(request: Request, json_request: JsonRequest):
     framework_model.user_id = json_request.user_id
     framework_model.llm = json_request.llm
 
+    if json_request.session_uuid:
+        framework_model.memory_session_uuid = json_request.session_uuid
+
     loop = asyncio.get_running_loop()
     future = loop.create_future()
 
@@ -39,17 +43,18 @@ async def ask_ai(request: Request, json_request: JsonRequest):
             loop.call_soon_threadsafe(future.set_result, response_text)
 
     framework_model.on_complete = on_complete
+    timeout = 60.0
 
     try:
         queue_get('agent').put(framework_model)
 
-        result_text = await asyncio.wait_for(future, timeout=20.0)
+        result_text = await asyncio.wait_for(future, timeout=timeout)
 
         return {"result": result_text}
     except asyncio.TimeoutError:
         # Пытаемся отменить future, чтобы не висела в памяти
         future.cancel()
-        raise HTTPException(status_code=504, detail="AI response timeout")
+        raise HTTPException(status_code=504, detail=f"AI response timeout: {timeout}")
     except Exception as e:
         backtrace = traceback.format_exc()
         logger_info(

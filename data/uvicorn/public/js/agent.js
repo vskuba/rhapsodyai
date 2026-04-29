@@ -4,8 +4,7 @@ export const agentSelect = document.getElementById('agentSelect'); // Для ч�
 export const userSelect = document.getElementById('userSelect');
 export const agentListContainer = document.getElementById('agentList'); // Для менеджера
 export const saveBtn = document.getElementById('saveBtn');
-
-const sessionDisplay = document.getElementById('sessionDisplay');
+export const sessionDisplay = document.getElementById('sessionDisplay');
 
 let currentSessionId = null;
 
@@ -121,7 +120,7 @@ export async function getAgentSessionLastEntry() {
     }
 }
 
-function updateSessionUI(memory_short_entry) {
+export function updateSessionUI(memory_short_entry) {
     if (!memory_short_entry) {
         currentSessionId = crypto.randomUUID();
     } else {

@@ -97,6 +97,8 @@ services:
     networks:
       - os-net
     restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   cronicle:
     image: soulteary/cronicle:latest
@@ -157,6 +159,8 @@ services:
     networks:
       - os-net
     restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   mysql:
     platform: linux/x86_64

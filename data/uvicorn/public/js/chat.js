@@ -1,5 +1,7 @@
 import {postData} from './api.js';
+import {sessionDisplay} from './agent.js';
 
+export const newSessionBtn = document.getElementById('newSessionBtn');
 export const chatMessages = document.getElementById('chatMessages');
 export const userInput = document.getElementById('userInput');
 export const agentSelect = document.getElementById('agentSelect');
@@ -24,11 +26,19 @@ export async function sendMessage(showLoading) {
     showLoading(true);
 
     try {
+        let currentSessionUuid = null;
+
+        if (newSessionBtn.dataset.newSession) {
+            currentSessionUuid = newSessionBtn.dataset.newSession;
+            delete newSessionBtn.dataset.newSession;
+        }
+
         const data = await postData('/chat/ask', {
             question: text,
             user_id: userSelect.value,
             agent: agentSelect.value,
-            llm: llmModelSelect.value
+            llm: llmModelSelect.value,
+            session_uuid: currentSessionUuid
         });
         addMessage(data.result, 'ai');
     } catch (e) {
@@ -42,4 +52,13 @@ export async function sendMessage(showLoading) {
 // Единая функция индикации загрузки
 export function toggleLoading(show) {
     progressBar.classList.toggle('progress-active', show);
+}
+
+export function startNewSession() {
+    newSessionBtn.dataset.newSession = crypto.randomUUID();
+
+    if (sessionDisplay) {
+        sessionDisplay.innerText = newSessionBtn.dataset.newSession.substring(0, 8) + '...';
+        sessionDisplay.title = newSessionBtn.dataset.newSession; // Полный ID при наведении
+    }
 }
