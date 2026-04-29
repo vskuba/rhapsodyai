@@ -2,19 +2,20 @@ import asyncio
 import os
 import traceback
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
 from ai.framework.pydantic.ai_framework_model_agent_pydantic import AiFrameworkAgentModelPydantic
 from logging_.logging_ import logger_info
+from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_get
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 
 router = APIRouter()
 
 
-class JsonRequest(BaseModel):
+class ChatAskJsonRequest(BaseModel):
     agent: str
     question: str
     user_id: int
@@ -22,8 +23,13 @@ class JsonRequest(BaseModel):
     session_uuid: str | None = None
 
 
+class ChatMessagesJsonRequest(BaseModel):
+    session_uuid: str
+    limit: int = 10
+
+
 @router.post("/chat/ask")
-async def ask_ai(request: Request, json_request: JsonRequest):
+async def ask_ai(request: Request, json_request: ChatAskJsonRequest):
     logger_info('Чат запрос: ' + str(json_request))
 
     framework_model: AiFrameworkAgentModelPydantic = request.app.state.agent_manager.load(json_request.agent)
@@ -62,6 +68,20 @@ async def ask_ai(request: Request, json_request: JsonRequest):
             f"Полный стек вызовов:\n{backtrace}"
         )
         raise
+
+
+@router.post("/chat/messages")
+async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest, db=Depends(mysql_get_db_async)):
+    async with db.cursor() as cursor:
+        await cursor.execute(
+            "SELECT content, role "
+            "FROM agent_memory_short "
+            "WHERE kind_type in ('user-prompt', 'response-final') AND session_uuid = %s "
+            "ORDER BY created_at DESC, id DESC LIMIT %s", (json_request.session_uuid, json_request.limit)
+        )
+        rows = await cursor.fetchall()
+
+        return {"result": list(reversed(rows))}
 
 
 @router.post("/chat/voice")

@@ -62,3 +62,24 @@ export function startNewSession() {
         sessionDisplay.title = newSessionBtn.dataset.newSession; // Полный ID при наведении
     }
 }
+
+export async function getChatMessagesCurrentSession() {
+    if (!sessionDisplay.title) return;
+
+    try {
+        const data = await postData('/chat/messages', {
+            session_uuid: sessionDisplay.title,
+            limit: 10
+        });
+
+        chatMessages.innerHTML = '';
+        if (data.result && data.result.length > 0) {
+            data.result.forEach(msg => {
+                let role = msg.role === 'user' ? 'user' : 'ai';
+                addMessage(msg.content, role);
+            });
+        }
+    } catch (e) {
+        console.error("Ошибка загрузки сообщений:", e);
+    }
+}
