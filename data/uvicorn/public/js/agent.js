@@ -1,4 +1,4 @@
-import {postData, getData, putData} from './api.js';
+import {getData, putData} from './api.js';
 
 export const agentSelect = document.getElementById('agentSelect'); // Для чата
 export const userSelect = document.getElementById('userSelect');
@@ -35,7 +35,7 @@ export async function initAgentsManager(editor) {
     if (!agentListContainer) return;
 
     try {
-        const data = await postData('/agent/list');
+        const data = await getData('/agent/list');
         agentListContainer.innerHTML = '';
 
         data.result.forEach(name => {

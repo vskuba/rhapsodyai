@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Сессии{% endblock %}
+
+{% block head %}
+
+<link rel="stylesheet" href="/static/css/common.css">
+<link rel="stylesheet" href="/static/css/menu_top.css">
+
+<link rel="stylesheet" href="/static/css/session.css">
+
+{% endblock %}
+
+{% block content %}
+<div class="main-wrapper session-layout">
+
+    <!-- БЛОК 1: Фильтры (Сверху) -->
+    <div class="session-header-filters" id="block-1">
+        <div class="filter-item">
+            <span class="sidebar-label">Агент</span>
+            <select id="agentFilter"><option>Загрузка...</option></select>
+        </div>
+        <div class="filter-item">
+            <span class="sidebar-label">Пользователь</span>
+            <select id="userFilter"><option>Загрузка...</option></select>
+        </div>
+        <button id="refreshSessions" class="action-btn">Обновить</button>
+    </div>
+
+    <div class="session-body-container">
+        <!-- БЛОК 2: Список сессий (Слева) -->
+        <div class="sidebar session-sidebar-list" id="block-2">
+            <div class="sidebar-label">Список сессий</div>
+            <div class="session-list" id="sessionList"></div>
+        </div>
+
+        <!-- БЛОК 3: Сообщения (Справа) -->
+        <div class="session-detail-view" id="block-3">
+            <div class="detail-header" id="activeSessionTitle">Выберите сессию из списка</div>
+            <div id="messagesContainer">
+                <div class="placeholder">Поток сообщений будет отображен здесь</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+<script type="module">
+    import {initFilters, loadSessions} from "/static/js/session.js";
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('refreshSessions').onclick = loadSessions;
+        initFilters();
+    });
+</script>
+
+{% endblock %}

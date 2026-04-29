@@ -29,6 +29,7 @@ from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.cronjob import cronjob
 from src.uvicorn.routers.fact import fact
 from src.uvicorn.routers.llm import llm
+from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
 from src.uvicorn.routers.user import user
 
@@ -130,3 +131,4 @@ app.include_router(cronjob.router)
 app.include_router(fact.router)
 app.include_router(setting.router)
 app.include_router(llm.router)
+app.include_router(session.router)

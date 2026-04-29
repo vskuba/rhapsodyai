@@ -60,6 +60,8 @@ export function startNewSession() {
     if (sessionDisplay) {
         sessionDisplay.innerText = newSessionBtn.dataset.newSession.substring(0, 8) + '...';
         sessionDisplay.title = newSessionBtn.dataset.newSession; // Полный ID при наведении
+
+        chatMessages.innerHTML = '';
     }
 }
 
