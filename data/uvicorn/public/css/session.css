@@ -215,6 +215,12 @@
     border: 1px solid #e2e8f0;
 }
 
+.chip-token {
+    background-color: #e0f0d7;
+    color: #1a4c95;
+    border: 1px solid #e2e8f0;
+}
+
 .admin-msg-content {
     font-size: 12px;
     line-height: 1.4;

@@ -47,7 +47,7 @@ async def session_messages(request: Request, json_request: SessionMessagesJsonRe
     async with db.cursor() as cursor:
         # Выбираем ВСЕ поля и ВСЕ типы сообщений для инспекции
         sql = """
-            SELECT role, kind_type, content, created_at 
+            SELECT role, kind_type, content, token, created_at 
             FROM agent_memory_short 
             WHERE session_uuid = %s 
             ORDER BY id ASC 

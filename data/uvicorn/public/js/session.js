@@ -96,6 +96,7 @@ export async function loadSessionDetails(uuid, element) {
                 <div class="chips-container">
                     <span class="chip ${roleClass}">${m.role}</span>
                     <span class="chip chip-kind">${m.kind_type}</span>
+                    ${m.token ? `<span class="chip chip-token">Токены: ${m.token}</span>` : ''}
                     <span class="chip-date">${time}</span>
                 </div>
                 <div class="admin-msg-content">${m.content || ''}</div>
