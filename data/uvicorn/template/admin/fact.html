@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Управление фактами{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/common.css">
+<link rel="stylesheet" href="/static/css/menu_top.css">
+<link rel="stylesheet" href="/static/css/fact.css">
+{% endblock %}
+
+{% block content %}
+<div class="fact-layout">
+
+    <!-- БЛОК 1: Фильтры, Коллекции и Поиск (Сверху) -->
+    <div class="fact-header-filters" id="block-1">
+
+        <div class="filter-item search-box">
+            <span class="sidebar-label">Поиск по контенту</span>
+            <input type="text" id="factSearch" placeholder="Введите текст...">
+        </div>
+
+        <!-- Перенесенный список коллекций -->
+        <div class="filter-item">
+            <span class="sidebar-label">Коллекция знаний</span>
+            <select id="collectionSelect" class="admin-select">
+                <option value="">Загрузка...</option>
+            </select>
+        </div>
+
+        <div class="filter-item">
+            <span class="sidebar-label">Статус Qdrant</span>
+            <select id="statusFilter">
+                <option value="all">Все</option>
+                <option value="1">Синхронизировано</option>
+                <option value="0">Ожидает</option>
+            </select>
+        </div>
+
+        <!-- Кнопка "Добавить факт" удалена -->
+    </div>
+
+    <div class="fact-body-container">
+        <!-- БЛОК 2 (Боковая панель) удален или скрыт, так как коллекции теперь вверху -->
+
+        <!-- БЛОК 3: Список фактов (На всю ширину) -->
+        <div class="fact-detail-view" id="block-3" style="flex: 1;">
+            <div class="detail-header">
+                <span id="activeCollectionTitle">Выберите коллекцию</span>
+                <div class="pagination-controls" id="paginationTop">
+                    <!-- Можно дублировать кнопки пагинации сюда для удобства -->
+                </div>
+            </div>
+
+            <div id="factsContainer">
+                <table class="fact-table">
+                    <thead>
+                        <tr>
+                            <th>Документ</th>
+                            <th>Контент</th>
+                            <th>Group ID</th>
+                            <th>Категория</th>
+                            <th>Таги</th>
+                            <th>Статус</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="factTableBody">
+                        <tr><td colspan="5" class="placeholder">Загрузка данных...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Подвал с пагинацией -->
+            <div class="detail-footer">
+                <div class="pagination-info" id="paginationInfo"></div>
+                <div class="pagination-buttons" id="paginationActions">
+                    <button id="prevPage" class="btn-sm" disabled>⬅️</button>
+                    <button id="nextPage" class="btn-sm" disabled>➡️</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import { initFactManager } from "/static/js/fact.js";
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initFactManager();
+    });
+</script>
+{% endblock %}

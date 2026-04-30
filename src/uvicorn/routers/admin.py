@@ -31,6 +31,14 @@ async def default(request: Request):
     )
 
 
+@router.get("/admin/fact", response_class=HTMLResponse)
+async def default(request: Request):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/fact.html"
+    )
+
+
 @router.get("/admin/queue", response_class=HTMLResponse)
 async def queue_status_ui(request: Request):
     queues = queue_get_all()

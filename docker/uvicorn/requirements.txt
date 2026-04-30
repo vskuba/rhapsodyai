@@ -5,6 +5,7 @@ anthropic
 click
 crawl4ai
 fastapi
+fastembed
 groq
 httpx
 openai

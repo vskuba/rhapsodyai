@@ -19,7 +19,7 @@ ALTER TABLE setting ADD UNIQUE INDEX idx_key_user (`key`, user_id);
 -- Таблица фактов (коллекция фактов)
 CREATE TABLE `fact_collection` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(40) NOT NULL
+    `name` CHAR(40) NOT NULL,
     `language` CHAR(40) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
