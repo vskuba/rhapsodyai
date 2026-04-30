@@ -11,13 +11,15 @@
         <ul class="top-nav">
             <li class="nav-item">
                 <a href="/">💬 Чат</a>
+                <ul class="submenu">
+                  <li><a href="/admin/session">Сессии</a></li>
+                </ul>
             </li>
 
             <li class="nav-item">
                 <a href="#">🧠 LLM</a>
                 <ul class="submenu">
                   <li><a href="/admin/agent">Агенты</a></li>
-                  <li><a href="/admin/session">Сессии</a></li>
                   <li><a href="/admin/fact">Факты</a></li>
                 </ul>
             </li>
@@ -30,7 +32,7 @@
             </li>
 
             <li class="nav-item">
-                <a href="/data/uvicorn/public">🔄 Конверторы</a>
+                <a href="#">🔄 Конверторы</a>
                 <ul class="submenu">
                   <li><a target="_blank" href="/admin/converter/text-to-fact">Text to Fact</a></li>
                 </ul>
@@ -53,7 +55,7 @@
             </li>
 
             <li class="nav-item">
-                <span>⏰️ Планировщик</span>
+                <a href="#">⏰️ Планировщик</a>
                 <ul class="submenu">
                     <li><a href="http://localhost:3012" target="_blank">Cronicle</a></li>
                 </ul>
