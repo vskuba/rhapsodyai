@@ -57,6 +57,7 @@ CREATE TABLE `agent_memory_short` (
     `user_id` INT DEFAULT NULL,
     `kind_type` CHAR(20) NOT NULL,
     `content` LONGTEXT,
+    `token` INT DEFAULT NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_session` (`session_uuid`), -- Для быстрой выборки истории
     INDEX `idx_agent_user` (`agent`, `user_id`, `created_at`),
