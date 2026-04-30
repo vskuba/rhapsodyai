@@ -5,8 +5,8 @@ import traceback
 import CTkToolTip
 import customtkinter as ctk
 import src.window
-from ai.framework.ai_framework_task import AbstractAiFrameworkTaskModel
-from ai.framework.pydantic.ai_framework_task_pydantic import AiFrameworkTaskManagerPydantic
+from ai.framework.task.ai_framework import AbstractAiFrameworkTaskModel
+from ai.framework.task.ai_framework_pydantic import AiFrameworkTaskManagerPydantic
 
 from async_.async_ import async_loop_task_cancel, async_waiting_is_active, async_waiting_clear
 from src.filesystem import open_file_in_editor

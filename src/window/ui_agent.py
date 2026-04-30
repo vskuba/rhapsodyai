@@ -3,8 +3,8 @@ import traceback
 import src.window
 import customtkinter as ctk
 
-from ai.framework.ai_framework_model_agent import AbstractAiFrameworkAgentModel
-from ai.framework.pydantic.ai_framework_manager_agent_pydantic import AiFrameworkAgentManagerPydantic
+from ai.framework.agent.ai_framework_model import AbstractAiFrameworkAgentModel
+from ai.framework.agent.ai_framework_manager_pydantic import AiFrameworkAgentManagerPydantic
 from async_.async_ import async_loop_task_cancel
 from src.filesystem import open_file_in_editor
 from logging_.logging_ import logger_info

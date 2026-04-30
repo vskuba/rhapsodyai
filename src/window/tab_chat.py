@@ -5,8 +5,8 @@ import CTkToolTip
 import customtkinter as ctk
 import src.window
 
-from ai.framework.pydantic.ai_framework_manager_agent_pydantic import AiFrameworkAgentManagerPydantic
-from ai.framework.pydantic.ai_framework_manager_task_pydantic import AiFrameworkTaskManagerPydantic
+from ai.framework.agent.ai_framework_manager_pydantic import AiFrameworkAgentManagerPydantic
+from ai.framework.task.ai_framework_manager_pydantic import AiFrameworkTaskManagerPydantic
 from config.config import config_get, config_update_and_save
 from src.parser.data_parser import data_parser_path_list, data_parser_load
 from src.translator.translator_md import translator_md_list

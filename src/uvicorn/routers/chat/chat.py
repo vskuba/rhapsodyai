@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
-from ai.framework.pydantic.ai_framework_model_agent_pydantic import AiFrameworkAgentModelPydantic
+from ai.framework.agent.ai_framework_model_pydantic import AiFrameworkAgentModelPydantic
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_get
