@@ -27,16 +27,16 @@ async def agent_list_with_criteria(request: Request, data: AgentJsonRequest):
 @router.get("/agent/{agent_id}")
 async def agent_get(request: Request, agent_id: int):
     repo = AgentRepository()
-    return {"result": await repo.find_one_by({'id': agent_id})}
+    return {"result": await repo.find(agent_id)}
 
 
 @router.get("/agent/{agent_id}/system_prompt/{collection_name}")
 async def agent_get_system_prompt(request: Request, agent_id: int, collection_name: str):
     repo = AgentRepository()
-    entity = await repo.find_one_by({'id': agent_id})
+    entity = await repo.find(agent_id)
 
     manager = AiFrameworkAgentManager()
-    system_prompt = manager.create_system_prompt(entity, {'collection_name': collection_name})
+    system_prompt = await manager.create_system_prompt(entity, {'collection_name': collection_name})
 
     return {"result": system_prompt}
 

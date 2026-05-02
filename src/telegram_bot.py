@@ -53,7 +53,7 @@ async def init_telegram_bot(agent_name: str):
         repo = AgentRepository()
         entity = await repo.find_one_by({"name": agent_name})
 
-        framework_model = agent_manager.create_framework_model(entity)
+        framework_model = await agent_manager.create_framework_model(entity)
         framework_model.chat_id = message.chat.id
         framework_model.prompt = user_text
         framework_model.is_gui_mode = False

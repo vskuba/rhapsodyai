@@ -310,7 +310,7 @@ class TabChat:
 
         self._initialized = True
 
-    def _async_load_data(self):
+    async def _async_load_data(self):
         try:
             # --- 1. АГЕНТЫ (загрузка моделей) ---
             repo = AgentRepository()
@@ -318,7 +318,7 @@ class TabChat:
 
             loaded_agents = []
             for agent_entity in entities:
-                model = ai_agent_manager.create_framework_model(agent_entity)
+                model = await ai_agent_manager.create_framework_model(agent_entity)
                 loaded_agents.append((model, agent_entity.get('name') == "my_assistant"))
 
             # --- 2. ЗАДАЧИ (просто список имен) ---

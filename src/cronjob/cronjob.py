@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 import sys
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 
 class CronjobJsonRequest(BaseModel):
     cronjob_path: str
+    metadata: dict = {}
     timeout: int = 120
 
 
@@ -32,9 +34,13 @@ class Cronjob:
             return CronjobJsonResponse(status="error", error_message=f"{file_path} не является файлом")
 
         try:
+            metadata = json.dumps(self.json_request.metadata)
+
             # Асинхронный запуск процесса
             current_process = await asyncio.create_subprocess_exec(
-                sys.executable, str(file_path),
+                sys.executable,
+                str(file_path),
+                metadata,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )

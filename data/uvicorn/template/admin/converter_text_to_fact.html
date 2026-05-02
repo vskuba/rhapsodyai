@@ -250,7 +250,7 @@
                 Извлечь факты ⚡
             </button>
             <button class="btn-action btn-add" id="addToCollectionBtn" disabled
-                    style="flex: 1; background: #28a745; color: #fff;">Добавить в коллекцию +
+                    style="flex: 1; background: #28a745; color: #fff;">Добавить в коллекцию
             </button>
         </div>
     </div>
@@ -263,14 +263,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/markdown/markdown.min.js"></script>
 
 <script type="module">
-    // Импортируем функцию инициализации и обработчики из твоего нового модуля
     import {postData, getData, putData} from "/static/js/api.js";
     import {SettingGet} from "/static/js/setting.js";
     import {showNotification} from '/static/js/notification.js';
 
     const collectionListContainer = document.getElementById('collectionList');
-    const extractorListContainer = document.getElementById('extractorList');
     const inputTextarea = document.getElementById('inputText');
+    const systemPromptTextarea = document.getElementById('systemPrompt');
     const extractBtn = document.getElementById('extractBtn');
     const addToCollectionBtn = document.getElementById('addToCollectionBtn');
 
@@ -316,6 +315,7 @@
             });
         } catch (e) {
             console.error("Ошибка загрузки коллекций:", e);
+            showNotification("Не удалось загрузить список коллекций", "error");
         }
     }
 
@@ -361,7 +361,7 @@
                 // Сохраняем ID агента в атрибут или замыкание
                 div.dataset.agentId = agent.id;
 
-                div.onclick = () => {
+                div.onclick = async () => {
                     // Убираем активный класс у всех и добавляем текущему
                     document.querySelectorAll('.extractor-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
@@ -369,6 +369,11 @@
                     // Запоминаем выбранный ID для дальнейшей работы
                     selectedExtractorId = agent.id;
                     console.log(`Выбран экстрактор ID: ${selectedExtractorId}`);
+
+                    if (selectedCollection) {
+                        const data = await getData(`/agent/${agent.id}/system_prompt/${selectedCollection.name}`);
+                        systemPromptTextarea.value = data.result || "";
+                    }
                 };
 
                 extractorListContainer.appendChild(div);
@@ -411,14 +416,18 @@
                 question: text,
                 user_id: 1,
                 agent_id: agent_id,
-                llm: await SettingGet('llm_active', 1)
+                llm: await SettingGet('llm_active', 1),
+                session_uuid: crypto.randomUUID(),
+                metadata: {
+                    collection_name: selectedCollection?.name || "",
+                }
             });
             if (mdEditor) {
                 mdEditor.setValue(res.result || "");
             }
         } catch (e) {
             console.error("Ошибка LLM:", e);
-            alert("Ошибка при извлечении фактов");
+            showNotification("Ошибка при извлечении фактов", "error");
         } finally {
             extractBtn.disabled = false;
             extractBtn.textContent = originalText;
@@ -439,14 +448,15 @@
 
         try {
             // Метод для добавления (append) фактов в существующий файл
-            await putData(`/fact/collection/${selectedCollection.id}`, {
-                content: content
-            });
-            alert(`Успешно добавлено в коллекцию: ${selectedCollection.name}`);
+            await putData(
+                `/fact/collection/${selectedCollection.id}`,
+                JSON.parse(content)
+            );
+            showNotification(`Успешно добавлено в коллекцию: ${selectedCollection.name}`, "success");
             mdEditor.setValue("");
         } catch (e) {
             console.error("Ошибка сохранения:", e);
-            alert("Не удалось сохранить в коллекцию");
+            showNotification("Не удалось сохранить в коллекцию", "error");
         } finally {
             addToCollectionBtn.disabled = false;
             addToCollectionBtn.textContent = originalText;

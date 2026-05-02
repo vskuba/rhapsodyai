@@ -22,6 +22,7 @@ class ChatAskJsonRequest(BaseModel):
     user_id: int
     llm: str
     session_uuid: str | None = None
+    metadata: dict | None = None
 
 
 class ChatMessagesJsonRequest(BaseModel):
@@ -36,7 +37,12 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest):
     repo = AgentRepository()
     agent = await repo.find_one_by({'id': json_request.agent_id})
 
-    framework_model: AiFrameworkAgentModel = request.app.state.agent_manager.create_framework_model(agent)
+    agent_manager = request.app.state.agent_manager
+    framework_model: AiFrameworkAgentModel = await agent_manager.create_framework_model(
+        agent,
+        json_request.metadata
+    )
+
     framework_model.prompt = json_request.question
     framework_model.is_gui_mode = False
     framework_model.user_id = json_request.user_id

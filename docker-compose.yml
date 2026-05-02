@@ -70,17 +70,6 @@ services:
       - os-net
     restart: always
 
-  sqlite-web:
-    image: coleifer/sqlite-web
-    container_name: sqlite_web
-    ports:
-      - "8084:8080"
-    volumes:
-      - ./data/sqllite3:/data
-    environment:
-      - SQLITE_DATABASE=/data/llm_short_memory.db
-    restart: unless-stopped
-
   uvicorn:
     build:
       context: .
