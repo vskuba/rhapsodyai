@@ -3,9 +3,266 @@
 {% block title %}Управление фактами{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="/static/css/common.css">
-<link rel="stylesheet" href="/static/css/menu_top.css">
-<link rel="stylesheet" href="/static/css/fact.css">
+
+<style>
+    .fact-layout {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 60px); /* Вычитаем высоту меню */
+        overflow: hidden;
+    }
+
+    /* БЛОК 1: Верхняя панель фильтров */
+    .fact-header-filters {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 15px 20px;
+        background: #fff;
+        border-bottom: 1px solid #e0e0e0;
+        justify-content: flex-start; /* Выравнивание фильтров по левому краю */
+        flex-wrap: wrap;
+    }
+
+    #factSearch {
+        min-width: 300px;
+    }
+
+    .admin-select {
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        min-width: 200px;
+        background: white;
+    }
+
+    .filter-item {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .filter-item input, .filter-item select {
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        min-width: 200px;
+    }
+
+    /* БЛОК 2 и 3: Тело страницы */
+    .fact-body-container {
+        display: block;
+        flex: 1;
+        overflow: hidden;
+        background: #f5f7f9;
+    }
+
+    /* Левая колонка (Коллекции) */
+    .fact-sidebar-list {
+        width: 280px;
+        background: #fff;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+        padding: 15px 0;
+    }
+
+    .sidebar-label {
+        font-weight: bold;
+        padding: 0 20px 10px;
+        color: #555;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+    }
+
+    .collection-item {
+        padding: 12px 20px;
+        cursor: pointer;
+        transition: background 0.2s;
+        border-left: 4px solid transparent;
+    }
+
+    .collection-item:hover {
+        background: #f0f4f8;
+    }
+
+    .collection-item.active {
+        background: #e1f5fe;
+        border-left-color: #03a9f4;
+        font-weight: 600;
+    }
+
+    /* Правая колонка (Таблица и контент) */
+    .fact-detail-view {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        overflow-y: auto;
+    }
+
+    .detail-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+
+    #activeCollectionTitle {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+
+    /* Стили таблицы */
+    .fact-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .fact-table th {
+        background: #f8f9fa;
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #dee2e6;
+        font-size: 0.9rem;
+    }
+
+    .fact-table td {
+        padding: 12px;
+        border-bottom: 1px solid #eee;
+        vertical-align: top;
+        font-size: 0.8rem;
+    }
+
+    /* Превью контента */
+    .content-preview {
+        max-height: 60px;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        color: #444;
+        line-height: 1.4;
+    }
+
+    .doc-name-cell {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+        color: #666;
+    }
+
+    /* Статусы Qdrant */
+    .status-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .status-badge.synced {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .status-badge.pending {
+        background: #fff3e0;
+        color: #ef6c00;
+    }
+
+    /* Пагинация в подвале */
+    .detail-footer {
+        margin-top: auto;
+        padding: 20px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .pagination-buttons {
+        display: flex;
+        gap: 10px;
+    }
+
+    .btn-sm {
+        padding: 5px 15px;
+        cursor: pointer;
+        border: 1px solid #ccc;
+        background: #fff;
+        border-radius: 4px;
+    }
+
+    .btn-sm:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Кнопки действий */
+    .btn-edit {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1.1rem;
+        opacity: 0.6;
+    }
+
+    .btn-edit:hover {
+        opacity: 1;
+    }
+
+    .success {
+        background-color: #28a745;
+        color: white;
+        border: none;
+    }
+
+    .actions-cell {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+
+    .btn-icon {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1.2rem;
+        padding: 4px;
+        border-radius: 4px;
+        transition: background 0.2s;
+    }
+
+    .btn-icon:hover {
+        background: #f0f0f0;
+    }
+
+    .btn-icon.delete:hover {
+        background: #ffebee; /* Легкий красный фон при наведении на корзину */
+    }
+
+    .tags-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .tag-chip {
+        background: #edf2f7;
+        color: #4a5568;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        white-space: nowrap;
+        border: 1px solid #cbd5e0;
+    }
+</style>
+
 {% endblock %}
 
 {% block content %}
@@ -21,7 +278,7 @@
 
         <!-- Перенесенный список коллекций -->
         <div class="filter-item">
-            <span class="sidebar-label">Коллекция знаний</span>
+            <span class="sidebar-label">Коллекции</span>
             <select id="collectionSelect" class="admin-select">
                 <option value="">Загрузка...</option>
             </select>
@@ -54,18 +311,20 @@
             <div id="factsContainer">
                 <table class="fact-table">
                     <thead>
-                        <tr>
-                            <th>Документ</th>
-                            <th>Контент</th>
-                            <th>Group ID</th>
-                            <th>Категория</th>
-                            <th>Таги</th>
-                            <th>Статус</th>
-                            <th></th>
-                        </tr>
+                    <tr>
+                        <th>Документ</th>
+                        <th>Контент</th>
+                        <th>Group ID</th>
+                        <th>Категория</th>
+                        <th>Таги</th>
+                        <th>Статус</th>
+                        <th></th>
+                    </tr>
                     </thead>
                     <tbody id="factTableBody">
-                        <tr><td colspan="5" class="placeholder">Загрузка данных...</td></tr>
+                    <tr>
+                        <td colspan="5" class="placeholder">Загрузка данных...</td>
+                    </tr>
                     </tbody>
                 </table>
             </div>
@@ -85,7 +344,261 @@
 
 {% block scripts %}
 <script type="module">
-    import { initFactManager } from "/static/js/fact.js";
+    import {postData, getData, putData} from '/static/js/api.js';
+
+    // --- Константы и глобальные переменные модуля ---
+    const inputTextarea = document.getElementById('inputText');
+    const extractBtn = document.getElementById('extractBtn');
+    const addToCollectionBtn = document.getElementById('addToCollectionBtn');
+
+    // Новые элементы для таблицы и пагинации
+    const collectionSelect = document.getElementById('collectionSelect');
+    const factTableBody = document.getElementById('factTableBody');
+    const factSearchInput = document.getElementById('factSearch');
+    const prevPageBtn = document.getElementById('prevPage');
+    const nextPageBtn = document.getElementById('nextPage');
+    const activeCollectionTitle = document.getElementById('activeCollectionTitle');
+
+    let mdEditor = null;
+    let selectedCollection = null;
+
+    // Состояние для таблицы фактов
+    let state = {
+        currentPage: 1,
+        limit: 20,
+        query: ""
+    };
+
+    /**
+     * Инициализация менеджера фактов
+     */
+    async function initFactManager(editorInstance) {
+        mdEditor = editorInstance;
+        await loadCollections();
+
+        if (collectionSelect) {
+            collectionSelect.onchange = (e) => {
+                const colName = e.target.value;
+                // Находим объект коллекции по имени для сохранения в state
+                selectedCollection = state.allCollections.find(c => c.name === colName);
+                state.currentPage = 1;
+                loadFacts();
+
+                if (activeCollectionTitle) {
+                    activeCollectionTitle.innerText = `Коллекция: ${collectionSelect.value}`;
+                }
+            };
+        }
+
+        // Привязываем события извлечения/сохранения
+        if (extractBtn) extractBtn.onclick = extractFacts;
+        if (addToCollectionBtn) addToCollectionBtn.onclick = saveToCollection;
+
+        // Привязываем события поиска и пагинации
+        if (factSearchInput) factSearchInput.oninput = debounce(handleSearch, 500);
+        if (prevPageBtn) prevPageBtn.onclick = () => changePage(-1);
+        if (nextPageBtn) nextPageBtn.onclick = () => changePage(1);
+    }
+
+    /**
+     * Загрузка коллекций в левую колонку
+     */
+    async function loadCollections() {
+        if (!collectionSelect) return;
+
+        try {
+            const data = await getData('/fact/collection/list');
+            state.allCollections = data.result; // Сохраняем для поиска объектов
+
+            collectionSelect.innerHTML = ''; // Очистка
+
+            data.result.forEach((col, index) => {
+                const colName = col.name || col;
+                const option = new Option(colName, colName);
+                collectionSelect.add(option);
+            });
+
+            // ПО УМОЛЧАНИЮ: Выбираем первую коллекцию
+            if (data.result.length > 0) {
+                selectedCollection = data.result[0];
+                collectionSelect.value = selectedCollection.name || selectedCollection;
+
+                if (activeCollectionTitle) {
+                    activeCollectionTitle.innerText = `Коллекция: ${collectionSelect.value}`;
+                }
+
+                // Сразу подгружаем факты
+                loadFacts();
+            }
+        } catch (e) {
+            console.error("Ошибка загрузки коллекций:", e);
+            collectionSelect.innerHTML = '<option>Ошибка загрузки</option>';
+        }
+    }
+
+    /**
+     * Загрузка списка фактов для таблицы (с пагинацией и поиском)
+     */
+    async function loadFacts() {
+        if (!selectedCollection || !factTableBody) return;
+
+        const colName = selectedCollection.name || selectedCollection;
+        const url = `/fact/collection/${colName}?page=${state.currentPage}&limit=${state.limit}&query=${state.query}`;
+
+        try {
+            const data = await getData(url);
+            renderTable(data.result);
+            renderPagination(data.pagination);
+        } catch (err) {
+            factTableBody.innerHTML = '<tr><td colspan="5" class="error">Ошибка загрузки данных</td></tr>';
+        }
+    }
+
+    function renderTable(facts) {
+        if (!factTableBody) return;
+
+        if (!facts || facts.length === 0) {
+            factTableBody.innerHTML = '<tr><td colspan="5" class="placeholder">Ничего не найдено</td></tr>';
+            return;
+        }
+
+        factTableBody.innerHTML = facts.map(f => `
+        <tr>
+            <td><div class="doc-name-cell" title="${f.document}">${f.document || '—'}</div></td>
+            <td><div class="content-preview">${escapeHtml(f.content)}</div></td>
+            <td><div class="content-preview">${escapeHtml(f.group_id)}</div></td>
+            <td><div class="content-preview">${escapeHtml(f.category)}</div></td>
+            <td>
+                <div class="tags-container">
+                    ${f.tags_list ? f.tags_list.split(',').map(tag =>
+            `<span class="tag-chip">${tag.trim()}</span>`
+        ).join('') : '—'}
+                </div>
+            </td>
+            <td>
+                <span class="status-badge ${f.qdrant_synced ? 'synced' : 'pending'}">
+                    ${f.qdrant_synced ? 'Синхрон.' : 'Ожидает'}
+                </span>
+            </td>
+            <td>
+                <div class="actions-cell">
+                    <button class="btn-icon delete" onclick="deleteFact(${f.id})" title="Удалить">🗑️</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+    }
+
+    function renderPagination(pg) {
+        const info = document.getElementById('paginationInfo');
+        if (info) info.innerText = `Стр. ${pg.current_page} из ${pg.total_pages}`;
+
+        if (prevPageBtn) prevPageBtn.disabled = pg.current_page <= 1;
+        if (nextPageBtn) nextPageBtn.disabled = pg.current_page >= pg.total_pages;
+    }
+
+    // --- Обработчики событий ---
+
+    function handleSearch(e) {
+        state.query = e.target.value;
+        state.currentPage = 1;
+        loadFacts();
+    }
+
+    function changePage(delta) {
+        state.currentPage += delta;
+        loadFacts();
+    }
+
+    // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+    async function extractFacts() {
+        const text = inputTextarea?.value;
+        if (!text) return alert("Введите текст для анализа");
+
+        extractBtn.disabled = true;
+        const originalText = extractBtn.textContent;
+        extractBtn.textContent = "⌛ Обработка...";
+
+        try {
+            const res = await postData('/chat/ask', {
+                question: text,
+                user_id: 1,
+                agent: 'fact_extractor'
+            });
+            if (mdEditor) mdEditor.setValue(res.result || "");
+        } catch (e) {
+            console.error("Ошибка LLM:", e);
+            alert("Ошибка при извлечении фактов");
+        } finally {
+            extractBtn.disabled = false;
+            extractBtn.textContent = originalText;
+        }
+    }
+
+    async function saveToCollection() {
+        if (!selectedCollection || !mdEditor) return;
+
+        const content = mdEditor.getValue();
+        if (!content) return alert("Нет контента для сохранения");
+
+        const colName = selectedCollection.name || selectedCollection;
+        const originalText = addToCollectionBtn.textContent;
+
+        addToCollectionBtn.disabled = true;
+        addToCollectionBtn.textContent = "💾 Сохранение...";
+
+        try {
+            await putData(`/fact/collection/${colName}`, {
+                content: content,
+                collection_id: selectedCollection.id
+            });
+            alert(`Успешно добавлено в коллекцию: ${colName}`);
+            mdEditor.setValue("");
+            loadFacts(); // Перезагружаем таблицу, чтобы увидеть новый факт
+        } catch (e) {
+            console.error("Ошибка сохранения:", e);
+            alert("Не удалось сохранить в коллекцию");
+        } finally {
+            addToCollectionBtn.disabled = false;
+            addToCollectionBtn.textContent = originalText;
+        }
+    }
+
+    function debounce(func, timeout = 300) {
+        let timer;
+        return (...args) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                func.apply(this, args);
+            }, timeout);
+        };
+    }
+
+    function escapeHtml(text) {
+        if (!text) return "";
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    window.deleteFact = async function (factId) {
+        if (!confirm(`Вы уверены, что хотите удалить факт #${factId}?`)) return;
+
+        try {
+            // Используем метод DELETE из вашего api.js (если есть) или стандартный fetch
+            const response = await fetch(`/admin/fact/${factId}`, {method: 'DELETE'});
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                // Перезагружаем список, чтобы факт исчез из таблицы
+                await loadFacts();
+            } else {
+                alert("Ошибка при удалении");
+            }
+        } catch (e) {
+            console.error("Ошибка удаления:", e);
+            alert("Не удалось связаться с сервером");
+        }
+    };
 
     document.addEventListener('DOMContentLoaded', () => {
         initFactManager();

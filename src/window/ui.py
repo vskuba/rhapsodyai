@@ -1,9 +1,9 @@
 import time
 import src.window
+from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 
 from ai.framework.ai_framework import AiFrameworkModel
-from ai.framework.agent.ai_framework_model import AbstractAiFrameworkAgentModel
-from ai.framework.task.ai_framework_model import AbstractAiFrameworkTaskModel
+from ai.framework.task.ai_framework_model import AiFrameworkTaskModel
 from queue_.queue_ import queue_get
 from src.filesystem import open_file_in_editor
 from state.state import state_get
@@ -47,12 +47,12 @@ def window_chat_clear() -> None:
 def window_chat_progress_title_display(framework_model: AiFrameworkModel):
     progress_text = ''
 
-    if isinstance(framework_model, AbstractAiFrameworkTaskModel):
+    if isinstance(framework_model, AiFrameworkTaskModel):
         current_step = framework_model.sub_task_current_index + 1
         total_steps = len(framework_model.yaml.sub_tasks)
         progress_text = f"Задача: {framework_model.title}  |  Прогресс: {current_step}/{total_steps}"
 
-    if isinstance(framework_model, AbstractAiFrameworkAgentModel):
+    if isinstance(framework_model, AiFrameworkAgentModel):
         progress_text = f"Агент: {framework_model.title}"
 
     label = src.window.chat_dialog_task_active_label

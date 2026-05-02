@@ -4,14 +4,250 @@
 
 {% block head %}
 
-<link rel="stylesheet" href="/static/css/common.css">
-<link rel="stylesheet" href="/static/css/menu_top.css">
+<style>
+    .chat-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 20px;
+        background: #ffffff;
+        border-bottom: 1px solid #eee;
+        height: 50px;
+    }
 
-<link rel="stylesheet" href="/static/css/chat.css">
-<link rel="stylesheet" href="/static/css/progress_bar.css">
-<link rel="stylesheet" href="/static/css/user.css">
-<link rel="stylesheet" href="/static/css/voice.css">
-<link rel="stylesheet" href="/static/css/agent.css">
+    .header-block {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        color: #666;
+    }
+
+    /* Блок 1: Select */
+    #llmModelSelect {
+        padding: 3px 8px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        outline: none;
+        font-size: 13px;
+    }
+
+    /* Блок 2: ID сессии (центр) */
+    .session-current {
+        flex: 1;
+        justify-content: right;
+    }
+
+    #sessionDisplay {
+        font-family: 'Courier New', monospace;
+        background: #fdf2e9; /* Светлый оттенок оранжевого */
+        color: #d35400;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+    }
+
+    /* Блок 3: Кнопка */
+    .action-btn {
+        background: #f0913d; /* В цвет ваших сообщений пользователя */
+        color: white;
+        border: none;
+        padding: 5px 12px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: 0.2s;
+    }
+
+    .action-btn:hover {
+        background: #d87d2a;
+    }
+
+    /* Левая часть: Чат */
+    .chat-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0; /* Важно: позволяет контейнеру сжиматься меньше содержимого */
+        border-right: 1px solid #eee;
+    }
+
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 25px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px; /* Расстояние между бабблами */
+        background-color: #fcfcfc; /* Очень светлый фон для контраста */
+        height: calc(100% - 60px);
+    }
+
+    /* Общий стиль сообщения */
+    .message {
+        padding: 10px 16px;
+        border-radius: 18px; /* Более скругленные углы */
+        max-width: 80%;
+        font-size: 14px;
+        line-height: 1.5;
+        word-wrap: break-word;
+        white-space: pre-wrap;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05); /* Легкая тень для объема */
+    }
+
+    /* Сообщение пользователя: Мягкий синий (Indigo) */
+    .user-msg {
+        background: #4a90e2;
+        color: white;
+        align-self: flex-end;
+        border-bottom-right-radius: 4px; /* "Хвостик" сообщения */
+    }
+
+    /* Сообщение AI: Светло-серый с легким бортиком */
+    .ai-msg {
+        background: #ffffff;
+        color: #2c3e50;
+        align-self: flex-start;
+        border: 1px solid #edf2f7;
+        border-bottom-left-radius: 4px; /* "Хвостик" сообщения */
+    }
+
+    /* Стилизация скроллбара для красоты */
+    .chat-messages::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb {
+        background: #e2e8f0;
+        border-radius: 10px;
+    }
+
+    .chat-input-area {
+        display: flex;
+        padding: 15px;
+    }
+
+
+    /* Контейнер с подложкой */
+    .progress-bar-container {
+        width: 100%;
+        height: 4px; /* Чуть толще */
+        background: #e0e0e0;
+        z-index: 10;
+        display: none;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Энергичная начинка */
+    .progress-bar-fill {
+        width: 100%;
+        height: 100%;
+        /* Более контрастный градиент: глубокий синий -> ярко-голубой -> глубокий синий */
+        background: linear-gradient(90deg,
+        #004cff 0%,
+        #00d4ff 25%,
+        #ffffff 50%,
+        #00d4ff 75%,
+        #004cff 100%
+        );
+        background-size: 200% 100%;
+        /* Ускоряем до 0.6s и меняем тип движения на волновой */
+        animation: fast-shimmer 0.6s infinite linear;
+        /* Добавляем свечение */
+        box-shadow: 0 0 8px #00d4ff;
+    }
+
+    @keyframes fast-shimmer {
+        0% {
+            background-position: 100% 0;
+        }
+        100% {
+            background-position: -100% 0;
+        }
+    }
+
+    .progress-active {
+        display: block;
+    }
+
+
+    #userSelect, #agentSelect {
+        width: 100%;
+        height: 100%; /* Заполнит sidebar */
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        background: white;
+        outline: none;
+        overflow-y: auto;
+    }
+
+    #userSelect option, #agentSelect option {
+        padding: 10px;
+        border-bottom: 1px solid #f0f0f0;
+        cursor: pointer;
+    }
+
+    #userSelect option:checked, #agentSelect option:checked {
+        background-color: #007bff !important;
+        color: white;
+        box-shadow: 0 0 10px 100px #007bff inset !important;
+    }
+
+
+    .mic-button {
+        background: #f0f0f0;
+        color: #333;
+        border: 1px solid #ddd;
+        margin-left: 0;
+        margin-right: 10px;
+        width: 45px;
+        font-size: 20px;
+        transition: all 0.2s;
+    }
+
+    /* Эффект при записи */
+    .mic-button.recording {
+        background: #ff4d4d;
+        color: white;
+        box-shadow: 0 0 10px rgba(255, 77, 77, 0.5);
+        transform: scale(1.1);
+    }
+
+
+    .group-header {
+        padding: 6px 10px 5px;
+        font-size: 11px;
+        color: #df983d;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .agent-item {
+        padding: 2px 10px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+    }
+
+    .agent-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .agent-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+        font-weight: 600;
+    }
+</style>
 
 {% endblock %}
 
@@ -26,8 +262,6 @@
                 <label>LLM:</label>
                 <select id="llmModelSelect">
                     <option value="gpt-4o">GPT-4o</option>
-                    <option value="claude-3-5">Claude 3.5</option>
-                    <option value="gemini-pro">Gemini Pro</option>
                 </select>
             </div>
 
@@ -76,16 +310,218 @@
 {% block scripts %}
 
 <script type="module">
-    import {loadUsers} from "/static/js/user.js";
-    import {agentSelect, userSelect, loadAgents, getAgentSessionLastEntry} from "/static/js/agent.js";
-    import {sendMessage, toggleLoading, newSessionBtn, startNewSession, getChatMessagesCurrentSession} from "/static/js/chat.js";
-    import {initVoice} from "/static/js/voice.js";
-    import {saveUserSetting, loadAndApplySetting} from "/static/js/setting.js";
-    import {loadLLMs} from "/static/js/llm.js";
+    import {postData, getData} from '/static/js/api.js';
+    import {SettingSet, SettingGet} from "/static/js/setting.js";
 
+    const userSelect = document.getElementById('userSelect');
+    const newSessionBtn = document.getElementById('newSessionBtn');
+    const chatMessages = document.getElementById('chatMessages');
     const userInput = document.getElementById('userInput');
-    const sendBtn = document.getElementById('sendBtn');
+    const agentSelect = document.getElementById('agentSelect');
+    const progressBar = document.getElementById('topProgressBar');
     const llmModelSelect = document.getElementById('llmModelSelect');
+    const sessionDisplay = document.getElementById('sessionDisplay');
+    const micBtn = document.getElementById('micBtn');
+    const sendBtn = document.getElementById('sendBtn');
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let currentSessionId = null;
+
+    async function loadUsers() {
+        try {
+            const data = await getData('/user/list');
+            userSelect.innerHTML = '';
+            data.result.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.id;
+                option.textContent = user.username;
+                userSelect.appendChild(option);
+            });
+            if (data.result.length > 0) userSelect.selectedIndex = 0;
+        } catch (e) {
+            console.error("Ошибка загрузки пользователей:", e);
+        }
+    }
+
+    function addMessage(text, role) {
+        const div = document.createElement('div');
+        div.className = `message ${role === 'user' ? 'user-msg' : 'ai-msg'}`;
+        div.textContent = text;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    async function sendMessage(showLoading) {
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        addMessage(text, 'user');
+        userInput.value = '';
+        showLoading(true);
+
+        try {
+            const data = await postData('/chat/ask', {
+                question: text,
+                user_id: userSelect.value,
+                agent_id: agentSelect.value,
+                llm: llmModelSelect.value,
+                session_uuid: currentSessionId
+            });
+            addMessage(data.result, 'ai');
+        } catch (e) {
+            console.error("Ошибка чата:", e);
+            addMessage("Ошибка сервера", 'ai');
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    function toggleLoading(show) {
+        progressBar.classList.toggle('progress-active', show);
+    }
+
+    function startNewSession() {
+        currentSessionId = crypto.randomUUID();
+
+        if (sessionDisplay) {
+            sessionDisplay.innerText = currentSessionId.substring(0, 8) + '...';
+            sessionDisplay.title = currentSessionId; // Полный ID при наведении
+
+            chatMessages.innerHTML = '';
+        }
+    }
+
+    async function getChatMessagesCurrentSession() {
+        if (!sessionDisplay.title) return;
+
+        try {
+            const data = await postData('/chat/messages', {
+                session_uuid: sessionDisplay.title,
+                limit: 10
+            });
+
+            chatMessages.innerHTML = '';
+            if (data.result && data.result.length > 0) {
+                data.result.forEach(msg => {
+                    let role = msg.role === 'user' ? 'user' : 'ai';
+                    addMessage(msg.content, role);
+                });
+            }
+        } catch (e) {
+            console.error("Ошибка загрузки сообщений:", e);
+        }
+    }
+
+    async function loadAgents() {
+        if (!agentSelect) return;
+        try {
+            const data = await getData('/agent/list');
+            agentSelect.innerHTML = '';
+            data.result.forEach(agent => {
+                const option = document.createElement('option');
+                option.value = agent.id;
+                option.textContent = agent.name;
+                agentSelect.appendChild(option);
+            });
+            if (data.result.length > 0) agentSelect.selectedIndex = 0;
+        } catch (e) {
+            console.error("Ошибка загрузки агентов для чата:", e);
+        }
+    }
+
+    async function getAgentSessionLastEntry() {
+        const agentId = agentSelect.value;
+        const userId = userSelect.value;
+
+        if (!agentId || !userId) return;
+
+        try {
+            const response = await fetch(`/agent/${agentId}/user/${userId}/session_last_entry`);
+            const data = await response.json();
+
+            // API возвращает {"result": "uuid-строка"} или {"result": null}
+            updateSessionUI(data.result);
+        } catch (e) {
+            console.error("Ошибка получения сессии:", e);
+            updateSessionUI(null);
+        }
+    }
+
+    function updateSessionUI(session_entity) {
+        if (!session_entity) {
+            currentSessionId = crypto.randomUUID();
+        } else {
+            currentSessionId = session_entity.session_uuid;
+        }
+
+        if (sessionDisplay) {
+            sessionDisplay.innerText = currentSessionId.substring(0, 8) + '...';
+            sessionDisplay.title = currentSessionId; // Полный ID при наведении
+        }
+    }
+
+    async function initVoice(showLoading, onTranscriptionReady) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, {type: 'audio/wav'});
+                audioChunks = [];
+
+                const formData = new FormData();
+                formData.append("file", audioBlob, "voice.wav");
+
+                showLoading(true);
+                try {
+                    const data = await postData('/chat/voice', formData);
+                    if (data.result) onTranscriptionReady(data.result);
+                } catch (err) {
+                    console.error("Ошибка голоса:", err);
+                } finally {
+                    showLoading(false);
+                }
+            };
+
+            // События кнопок
+            micBtn.addEventListener('mousedown', () => {
+                audioChunks = [];
+                mediaRecorder.start();
+                micBtn.classList.add('recording');
+            });
+
+            micBtn.addEventListener('mouseup', () => {
+                if (mediaRecorder.state === "recording") {
+                    mediaRecorder.stop();
+                    micBtn.classList.remove('recording');
+                }
+            });
+
+        } catch (err) {
+            console.error("Микрофон недоступен:", err);
+            micBtn.style.opacity = '0.5';
+        }
+    }
+
+    async function loadLLMs() {
+        if (!llmModelSelect) return;
+        try {
+            const data = await getData('/llm/list');
+            llmModelSelect.innerHTML = '';
+            data.result.forEach(llm => {
+                const option = document.createElement('option');
+                option.value = llm.name;
+                option.textContent = llm.name;
+                llmModelSelect.appendChild(option);
+            });
+            if (data.result.length > 0) llmModelSelect.selectedIndex = 0;
+        } catch (e) {
+            console.error("Ошибка загрузки llm для чата:", e);
+        }
+    }
 
     document.addEventListener('DOMContentLoaded', async () => {
         // 1. Инициализация агентов
@@ -97,7 +533,7 @@
 
         const loadSettings = async () => {
             const userId = userSelect.value;
-            const value = await loadAndApplySetting('llm_active', userId);
+            const value = await SettingGet('llm_active', userId);
 
             if (value && value !== 'null') {
                 llmModelSelect.value = value;
@@ -133,7 +569,7 @@
             const userId = userSelect.value;
             const model = llmModelSelect.value;
             toggleLoading(true);
-            await saveUserSetting('llm_active', model, userId);
+            await SettingSet('llm_active', model, userId);
             toggleLoading(false);
         });
 

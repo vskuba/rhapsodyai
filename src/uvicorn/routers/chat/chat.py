@@ -6,17 +6,18 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
-from ai.framework.agent.ai_framework_model_pydantic import AiFrameworkAgentModelPydantic
+from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_get
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
+from src.mysql_.repository.agent_repository import AgentRepository
 
 router = APIRouter()
 
 
 class ChatAskJsonRequest(BaseModel):
-    agent: str
+    agent_id: int
     question: str
     user_id: int
     llm: str
@@ -32,14 +33,17 @@ class ChatMessagesJsonRequest(BaseModel):
 async def ask_ai(request: Request, json_request: ChatAskJsonRequest):
     logger_info('Чат запрос: ' + str(json_request))
 
-    framework_model: AiFrameworkAgentModelPydantic = request.app.state.agent_manager.load(json_request.agent)
+    repo = AgentRepository()
+    agent = await repo.find_one_by({'id': json_request.agent_id})
+
+    framework_model: AiFrameworkAgentModel = request.app.state.agent_manager.create_framework_model(agent)
     framework_model.prompt = json_request.question
     framework_model.is_gui_mode = False
     framework_model.user_id = json_request.user_id
     framework_model.llm = json_request.llm
 
     if json_request.session_uuid:
-        framework_model.memory_session_uuid = json_request.session_uuid
+        framework_model.session_uuid = json_request.session_uuid
 
     loop = asyncio.get_running_loop()
     future = loop.create_future()
@@ -75,7 +79,7 @@ async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest,
     async with db.cursor() as cursor:
         await cursor.execute(
             "SELECT content, role "
-            "FROM agent_memory_short "
+            "FROM agent_session "
             "WHERE kind_type in ('user-prompt', 'response-final') AND session_uuid = %s "
             "ORDER BY created_at DESC, id DESC LIMIT %s", (json_request.session_uuid, json_request.limit)
         )

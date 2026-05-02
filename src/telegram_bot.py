@@ -1,17 +1,18 @@
 import asyncio
 import queue
-from functools import partial
 
+from functools import partial
 from aiogram import Bot, Dispatcher, types
 
-from ai.framework.agent.ai_framework_manager_pydantic import AiFrameworkAgentManagerPydantic
-from ai.framework.agent.ai_framework_model_pydantic import AiFrameworkAgentModelPydantic
+from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from config.config import config_get
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
+from src.mysql_.repository.agent_repository import AgentRepository
 
-agent_manager = AiFrameworkAgentManagerPydantic()
+agent_manager = AiFrameworkAgentManager()
 
 async def init_telegram_bot(agent_name: str):
     bot = Bot(token=config_get('telegram_token'))
@@ -48,12 +49,16 @@ async def init_telegram_bot(agent_name: str):
             logger_info(f"Распознанный текст: {user_text}")
 
         logger_info(f'Пришло сообщение из телеграм бота "{agent_name}": "{user_text}"')
-        framework_model = agent_manager.load(agent_name)
+
+        repo = AgentRepository()
+        entity = await repo.find_one_by({"name": agent_name})
+
+        framework_model = agent_manager.create_framework_model(entity)
         framework_model.chat_id = message.chat.id
         framework_model.prompt = user_text
         framework_model.is_gui_mode = False
 
-        async def on_complete(response_text: str, framework_model: AiFrameworkAgentModelPydantic):
+        async def on_complete(response_text: str, framework_model: AiFrameworkAgentModel):
             queue_get('telegram_response').put({"text": response_text, "framework_model": framework_model})
 
         framework_model.on_complete = partial(on_complete, framework_model=framework_model)

@@ -1,6 +1,6 @@
 import {postData} from './api.js';
 
-export async function saveUserSetting(key, value, userId) {
+export async function SettingSet(key, value, userId) {
     if (!userId || userId === 'loading') return;
 
     try {
@@ -14,7 +14,7 @@ export async function saveUserSetting(key, value, userId) {
     }
 }
 
-export async function loadAndApplySetting(key, userId) {
+export async function SettingGet(key, userId) {
     if (!userId || userId === 'loading') return;
 
     try {

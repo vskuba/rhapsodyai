@@ -7,7 +7,7 @@ router = APIRouter()
 
 
 class SessionJsonRequest(BaseModel):
-    agent_name: str | None = None
+    agent_id: int | None = None
     user_id: int | None = None
 
 
@@ -25,13 +25,13 @@ async def session_list(request: Request, json_request: SessionJsonRequest, db=De
                 kind_type,          
                 MAX(created_at) as last_message_at,
                 COUNT(*) as msg_count
-            FROM agent_memory_short 
+            FROM agent_session 
             WHERE 1=1
         """
         params = []
-        if json_request.agent_name:
-            sql += " AND agent = %s"
-            params.append(json_request.agent_name)
+        if json_request.agent_id:
+            sql += " AND agent_id = %s"
+            params.append(json_request.agent_id)
         if json_request.user_id:
             sql += " AND user_id = %s"
             params.append(json_request.user_id)
@@ -47,10 +47,11 @@ async def session_messages(request: Request, json_request: SessionMessagesJsonRe
     async with db.cursor() as cursor:
         # Выбираем ВСЕ поля и ВСЕ типы сообщений для инспекции
         sql = """
-            SELECT role, kind_type, content, token, created_at 
-            FROM agent_memory_short 
-            WHERE session_uuid = %s 
-            ORDER BY id ASC 
+            SELECT s.role, s.kind_type, s.content, s.token, s.created_at, l.name as llm_name
+            FROM agent_session s
+            LEFT JOIN llm l ON s.llm_id = l.id
+            WHERE s.session_uuid = %s 
+            ORDER BY s.id ASC 
             LIMIT %s
         """
         await cursor.execute(sql, (json_request.session_uuid, 500))

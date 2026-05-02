@@ -3,70 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <title>{% block title %}AI System{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/common.css">
+    <link rel="stylesheet" href="/static/css/menu_top.css">
+    <link rel="stylesheet" href="/static/css/notification.css">
     {% block head %}{% endblock %}
 </head>
 <body>
 
-    <nav>
-        <ul class="top-nav">
-            <li class="nav-item">
-                <a href="/">💬 Чат</a>
-                <ul class="submenu">
-                  <li><a href="/admin/session">Сессии</a></li>
-                </ul>
-            </li>
+<nav>
+    <ul class="top-nav">
+        <li class="nav-item">
+            <a href="/">💬 Главная</a>
+            <ul class="submenu">
+                <li><a href="/admin/session">Сессии</a></li>
+            </ul>
+        </li>
 
-            <li class="nav-item">
-                <a href="#">🧠 LLM</a>
-                <ul class="submenu">
-                  <li><a href="/admin/agent">Агенты</a></li>
-                  <li><a href="/admin/fact">Факты</a></li>
-                </ul>
-            </li>
+        <li class="nav-item">
+            <a href="#">🧠 Ноды</a>
+            <ul class="submenu">
+                <li><a href="/admin/agent">Агенты</a></li>
 
-            <li class="nav-item">
-                <a href="#">📜 Логи</a>
-                <ul class="submenu">
-                  <li><a target="_blank" href="http://localhost:5601/app/data-explorer/discover#?_a=(discover:(columns:!(message),isDirty:!f,sort:!()),metadata:(indexPattern:'9d4339a0-3761-11f1-82cd-c50d8f73f9fd',view:discover))&_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-15m,to:now))&_q=(filters:!(),query:(language:kuery,query:''))">Opensearch</a></li>
-                </ul>
-            </li>
+            </ul>
+        </li>
 
-            <li class="nav-item">
-                <a href="#">🔄 Конверторы</a>
-                <ul class="submenu">
-                  <li><a target="_blank" href="/admin/converter/text-to-fact">Text to Fact</a></li>
-                </ul>
-            </li>
+        <li class="nav-item">
+            <a href="#">🔄 Коллекции</a>
+            <ul class="submenu">
+                <li><a href="/admin/fact">Факты</a></li>
+                <li><a target="_blank" href="/admin/converter/text-to-fact">Текст в факты</a></li>
+            </ul>
+        </li>
+        
+        <li class="nav-item">
+            <a href="#">📜 Логи</a>
+            <ul class="submenu">
+                <li><a target="_blank"
+                       href="http://localhost:5601/app/data-explorer/discover#?_a=(discover:(columns:!(message),isDirty:!f,sort:!()),metadata:(indexPattern:'9d4339a0-3761-11f1-82cd-c50d8f73f9fd',view:discover))&_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-15m,to:now))&_q=(filters:!(),query:(language:kuery,query:''))">Opensearch</a>
+                </li>
+            </ul>
+        </li>
 
-            <li class="nav-item">
-                <a href="#">📊 Очереди</a>
-                <ul class="submenu">
-                  <li><a target="_blank" href="/admin/queue">Local in-memory</a></li>
-                  <li><a target="_blank" href="http://localhost:9181/">Redis️ queues</a></li>
-                </ul>
-            </li>
-            <li class="nav-item">
-                <a href="#">🗄️ Базы данных</a>
-                <ul class="submenu">
-                  <li><a target="_blank" href="http://localhost:9634">Phpmyadmin</a></li>
-                  <li><a target="_blank" href="http://localhost:6333/dashboard">Qdrant</a></li>
-                  <li><a target="_blank" href="http://localhost:8084">SQLite Web</a></li>
-                </ul>
-            </li>
+        <li class="nav-item">
+            <a href="#">📊 Очереди</a>
+            <ul class="submenu">
+                <li><a target="_blank" href="/admin/queue">Local in-memory</a></li>
+                <li><a target="_blank" href="http://localhost:9181/">Redis️ queues</a></li>
+            </ul>
+        </li>
+        <li class="nav-item">
+            <a href="#">🗄️ Базы данных</a>
+            <ul class="submenu">
+                <li><a target="_blank" href="http://localhost:9634">Phpmyadmin</a></li>
+                <li><a target="_blank" href="http://localhost:6333/dashboard">Qdrant</a></li>
+                <li><a target="_blank" href="http://localhost:8084">SQLite Web</a></li>
+            </ul>
+        </li>
 
-            <li class="nav-item">
-                <a href="#">⏰️ Планировщик</a>
-                <ul class="submenu">
-                    <li><a href="http://localhost:3012" target="_blank">Cronicle</a></li>
-                </ul>
-            </li>
-        </ul>
-    </nav>
+        <li class="nav-item">
+            <a href="#">⏰️ Планировщик</a>
+            <ul class="submenu">
+                <li><a href="http://localhost:3012" target="_blank">Cronicle</a></li>
+            </ul>
+        </li>
+    </ul>
+</nav>
 
-    <div class="page-content">
-        {% block content %}{% endblock %}
-    </div>
+<div id="event-notification"></div>
 
-    {% block scripts %}{% endblock %}
+<div class="page-content">
+    {% block content %}{% endblock %}
+</div>
+
+{% block scripts %}{% endblock %}
 </body>
 </html>

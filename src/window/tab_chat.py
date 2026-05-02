@@ -1,14 +1,16 @@
 import os
 import threading
 import webbrowser
+
 import CTkToolTip
 import customtkinter as ctk
 import src.window
+from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from ai.framework.task.ai_framework_manager import AiFrameworkTaskManager
 
-from ai.framework.agent.ai_framework_manager_pydantic import AiFrameworkAgentManagerPydantic
-from ai.framework.task.ai_framework_manager_pydantic import AiFrameworkTaskManagerPydantic
 from config.config import config_get, config_update_and_save
 from src.parser.data_parser import data_parser_path_list, data_parser_load
+from src.mysql_.repository.agent_repository import AgentRepository
 from src.translator.translator_md import translator_md_list
 from src.window.ui_translator import translator_item_draw
 from state.state import state_set
@@ -18,8 +20,8 @@ from src.window.ui_agent import agent_item_draw
 from src.window.ui_parser import parser_item_draw
 from src.window.ui_task import task_item_draw
 
-ai_task_manager = AiFrameworkTaskManagerPydantic()
-ai_agent_manager = AiFrameworkAgentManagerPydantic()
+ai_task_manager = AiFrameworkTaskManager()
+ai_agent_manager = AiFrameworkAgentManager()
 
 
 class TabChat:
@@ -311,15 +313,13 @@ class TabChat:
     def _async_load_data(self):
         try:
             # --- 1. АГЕНТЫ (загрузка моделей) ---
-            agent_names = ai_agent_manager.list()
-            active_name = "my_assistant"
-            if active_name not in agent_names and agent_names:
-                active_name = agent_names[0]
+            repo = AgentRepository()
+            entities = repo.find_by_non_async({})
 
             loaded_agents = []
-            for name in agent_names:
-                model = ai_agent_manager.load(name)
-                loaded_agents.append((model, name == active_name))
+            for agent_entity in entities:
+                model = ai_agent_manager.create_framework_model(agent_entity)
+                loaded_agents.append((model, agent_entity.get('name') == "my_assistant"))
 
             # --- 2. ЗАДАЧИ (просто список имен) ---
             tasks = ai_task_manager.list()

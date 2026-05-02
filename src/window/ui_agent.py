@@ -3,8 +3,8 @@ import traceback
 import src.window
 import customtkinter as ctk
 
-from ai.framework.agent.ai_framework_model import AbstractAiFrameworkAgentModel
-from ai.framework.agent.ai_framework_manager_pydantic import AiFrameworkAgentManagerPydantic
+from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from async_.async_ import async_loop_task_cancel
 from src.filesystem import open_file_in_editor
 from logging_.logging_ import logger_info
@@ -13,7 +13,7 @@ from state.state import state_set, state_get
 from src.window.ui import window_chat_progress_title_display, window_chat_loading_start, window_chat_loading_stop, \
     window_chat_active_task_clear
 
-ai_agent_manager = AiFrameworkAgentManagerPydantic()
+ai_agent_manager = AiFrameworkAgentManager()
 agents_widgets_storage = {}
 
 
@@ -77,7 +77,7 @@ def agent_active_switch(target_name):
             lbl.configure(text_color="white")
 
 
-def agent_item_draw(agent_model: AbstractAiFrameworkAgentModel, parent_frame, is_active: bool = False):
+def agent_item_draw(agent_model: AiFrameworkAgentModel, parent_frame, is_active: bool = False):
     agent_item = ctk.CTkFrame(parent_frame, fg_color="#2b2e34", corner_radius=6)
     agent_item.pack(fill="x", padx=5, pady=3)
 
@@ -142,7 +142,7 @@ def agent_item_draw(agent_model: AbstractAiFrameworkAgentModel, parent_frame, is
     return agent_item
 
 
-def agent_complete(framework_model: AbstractAiFrameworkAgentModel):
+def agent_complete(framework_model: AiFrameworkAgentModel):
     window_chat_loading_stop()
     window_chat_active_task_clear()
     src.window.chat_agent_btn_state[framework_model.name].configure(

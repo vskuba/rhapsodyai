@@ -3,75 +3,535 @@
 {% block title %}Агенты{% endblock %}
 
 {% block head %}
+<style>
+    /* 1. Базовая компоновка (Интеграция с common.css) */
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
 
-<link rel="stylesheet" href="/static/css/common.css">
-<link rel="stylesheet" href="/static/css/menu_top.css">
+    /* 2. Сайдбар */
+    .agents-sidebar {
+        width: 260px;
+        background: #fafafa;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+    }
 
-<link rel="stylesheet" href="/static/css/agent.css">
-<link rel="stylesheet" href="/static/css/code_mirror_yml.css">
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    .agent-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    /* Группировка и элементы списка */
+    .group-header {
+        padding: 6px 10px 5px;
+        font-size: 11px;
+        color: #df983d;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .agent-item {
+        padding: 2px 10px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+    }
+
+    .agent-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .agent-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+        font-weight: 600;
+    }
+
+    /* 3. Основная секция формы */
+    .editor-section {
+        flex: 1;
+        padding: 20px 40px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 10px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-header h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 20px;
+    }
+
+    /* 4. Двухколоночный макет формы */
+    .form-layout-grid {
+        display: flex;
+        gap: 30px;
+        align-items: stretch;
+        min-height: 450px;
+    }
+
+    .settings-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .prompt-column {
+        flex: 1.5;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    /* 5. Элементы управления */
+    .form-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        border-color: #3498db;
+        outline: none;
+        box-shadow: 0 0 5px rgba(52, 152, 219, 0.2);
+    }
+
+    .system-prompt-full {
+        flex: 1;
+        resize: none;
+        font-family: 'Consolas', 'Monaco', monospace;
+        line-height: 1.5;
+        background: #fdfdfd;
+        padding: 10px;
+    }
+
+    /* 6. Кнопки и Футер */
+    .editor-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 12px 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-save:hover {
+        background: #2980b9;
+    }
+
+    .btn-save:disabled {
+        background: #bdc3c7;
+        cursor: not-allowed;
+    }
+
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    #statusLabel {
+        font-size: 13px;
+        color: #27ae60;
+    }
+</style>
 
 {% endblock %}
 
 {% block content %}
-<div class="editor-page-container">
-    <!-- Левая часть (стили из agent.css) -->
-    <div class="agents-sidebar">
-        <div class="sidebar-header">Доступные агенты</div>
-        <div class="agent-list" id="agentList">
-            <!-- Сюда JS будет рендерить .agent-item -->
-        </div>
-    </div>
+<div class="page-content">
+    <div class="main-wrapper">
+        <div class="editor-container">
 
-    <!-- Правая часть (стили из editor_yml.css) -->
-    <div class="editor-section">
-        <div class="editor-header">
-            <span id="currentAgentName">Выберите файл для редактирования</span>
-            <div id="statusLabel"></div>
-        </div>
+            <!-- Список -->
+            <div class="agents-sidebar">
+                <div class="sidebar-header">
+                    <button class="btn-create" id="createNewAgent">+ Создать агента</button>
+                </div>
+                <div class="agent-list" id="agentList">
+                    <!-- JS контент -->
+                </div>
+            </div>
 
-        <textarea id="yamlEditorRaw"></textarea>
+            <!-- Форма -->
+            <div class="editor-section">
+                <div class="form-header">
+                    <h2 id="formTitle">Выберите агента</h2>
+                </div>
 
-        <div class="editor-footer">
-            <button class="btn-save" id="saveBtn" disabled>Сохранить YAML</button>
+                <form id="agentForm">
+                    <input type="hidden" id="agentId">
+
+                    <div class="form-layout-grid">
+                        <!-- Левая колонка: Все настройки -->
+                        <div class="settings-column">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>Название</label>
+                                    <input type="text" id="name" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Нода</label>
+                                    <select id="node_id" class="form-control">
+                                        <option value="">Вне ноды</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Заголовок (В меню)</label>
+                                <input type="text" id="title" class="form-control" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Краткое описание</label>
+                                <textarea id="description" class="form-control"
+                                          placeholder="Краткое описание функций агента"
+                                          style="height: 80px; resize: none;"></textarea>
+                            </div>
+
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>Модель LLM</label>
+                                    <select id="llm_id" class="form-control">
+                                        <option value="">По умолчанию</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Специализация</label>
+                                    <select id="specialization_id" class="form-control">
+                                        <option value="">Нет</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="flex-direction: row; align-items: center; margin-top: 10px;">
+                                <input type="checkbox" id="memory_short_disabled"
+                                       style="width:auto; margin-right:10px;">
+                                <label style="text-transform: none; font-weight: normal; margin-bottom: 0;"
+                                       for="memory_short_disabled">
+                                    Отключить краткосрочную память
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Правая колонка: Только System Prompt -->
+                        <div class="prompt-column">
+                            <div class="form-group" style="height: 100%; display: flex; flex-direction: column;">
+                                <label>Системный промпт (System Prompt)</label>
+                                <textarea id="system_prompt" class="form-control system-prompt-full"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="editor-footer">
+                        <span id="statusLabel"></span>
+                        <button type="submit" class="btn-save" id="saveBtn">Сохранить агента</button>
+                    </div>
+                </form>
+            </div>
+
         </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/yaml/yaml.min.js"></script>
-
 <script type="module">
-    import { initAgentsManager, saveAgentConfig } from "/static/js/agent.js";
+    import {getData, putData, postData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
 
+    const agentListContainer = document.getElementById('agentList');
     const saveBtn = document.getElementById('saveBtn');
+    const agentForm = document.getElementById('agentForm');
+
+    /**
+     * Инициализация менеджера: загрузка групп и списка агентов
+     */
+    async function initAgentsManager(currentNodeId = null, selectedLlm = null, selectedSpecialization = null) {
+        if (!agentListContainer) return;
+
+        try {
+            const [agentsRes, nodesRes, llmRes, specializationRes] = await Promise.all([
+                getData('/agent/list'),
+                getData('/node/list'),
+                getData('/llm/list'),
+                getData('/agent/specialization/list')
+            ]);
+
+            // 1. Сортируем группы по полю position (от меньшего к большему)
+            const nodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
+            const agents = agentsRes.result;
+            const llms = llmRes.result;
+            const specializations = specializationRes.result;
+
+            // 2. Заполняем Select групп (в отсортированном порядке)
+            const nodeSelect = document.getElementById('node_id');
+            nodeSelect.innerHTML = '<option value="">Вне ноды</option>';
+            nodes.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.id;
+                opt.textContent = g.name;
+                nodeSelect.appendChild(opt);
+            });
+
+            const llmSelect = document.getElementById('llm_id');
+            llmSelect.innerHTML = '<option value="">По умолчанию</option>';
+            llms.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.id;
+                opt.textContent = g.name;
+                llmSelect.appendChild(opt);
+            });
+
+            const specializationSelect = document.getElementById('specialization_id');
+            specializationSelect.innerHTML = '<option value="">Нет</option>';
+            specializations.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.id;
+                opt.textContent = g.name;
+                specializationSelect.appendChild(opt);
+            });
+
+            if (currentNodeId) {
+                nodeSelect.value = currentNodeId;
+            }
+
+            if (selectedLlm) {
+                llmSelect.value = selectedLlm;
+            }
+
+            if (selectedSpecialization) {
+                specializationSelect.value = selectedSpecialization;
+            }
+
+            renderNodeList(agents, nodes);
+
+        } catch (e) {
+            console.error("Ошибка инициализации:", e);
+        }
+    }
+
+    function renderNodeList(agents, nodes) {
+        agentListContainer.innerHTML = '';
+
+        // Группируем агентов по ID ноды
+        const agentsByNode = agents.reduce((acc, a) => {
+            const nid = a.node_id || 'none';
+            if (!acc[nid]) acc[nid] = [];
+            acc[nid].push(a);
+            return acc;
+        }, {});
+
+        // Функция для отрисовки блока группы
+        const createNodeSection = (nid, gName) => {
+            const nodeAgents = agentsByNode[nid];
+            if (!nodeAgents) return; // Не рисуем пустые ноды
+
+            const header = document.createElement('div');
+            header.className = 'group-header';
+            header.textContent = gName;
+            agentListContainer.appendChild(header);
+
+            // Сортируем агентов внутри группы по названию
+            nodeAgents.sort((a, b) => (a.title || a.name).localeCompare(b.title || b.name));
+
+            nodeAgents.forEach(agent => {
+                const div = document.createElement('div');
+                div.className = 'agent-item';
+                div.textContent = agent.title || agent.name;
+                div.onclick = () => selectAgentForEdit(agent.id, div);
+                agentListContainer.appendChild(div);
+            });
+        };
+
+        // Сначала рендерим агентов С ГРУППАМИ (в порядке position)
+        nodes.forEach(g => createNodeSection(g.id, g.name));
+
+        createNodeSection('none', 'Вне ноды');
+    }
+
+    /**
+     * Загрузка данных конкретного агента в форму
+     */
+    async function selectAgentForEdit(agentId, element) {
+        // Подсветка активного
+        document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        try {
+            const data = await getData(`/agent/${agentId}`);
+            const agent = data.result; // Данные из ответа (как на вашем скрине)
+
+            if (!agent) return;
+
+            // Безопасное заполнение полей
+            const fields = {
+                'agentId': agent.id,
+                'name': agent.name,
+                'node_id': agent.node_id || '',
+                'title': agent.title || '',
+                'description': agent.description || '',
+                'llm_id': agent.llm_id || '',
+                'specialization_id': agent.specialization_id || '',
+                'system_prompt': agent.system_prompt || ''
+            };
+
+            for (const [id, value] of Object.entries(fields)) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.value = value;
+                } else {
+                    console.error(`Элемент с id="${id}" не найден в HTML!`);
+                }
+            }
+
+            // Отдельно для чекбокса
+            const cb = document.getElementById('memory_short_disabled');
+            if (cb) cb.checked = Boolean(agent.memory_short_disabled);
+
+            document.getElementById('formTitle').textContent = `Редактирование: ${agent.name}`;
+
+            if (saveBtn) saveBtn.disabled = false;
+
+        } catch (e) {
+            console.error("Ошибка при заполнении формы:", e);
+        }
+    }
+
+    /**
+     * Сохранение (Создание или Обновление)
+     */
+    async function saveAgentConfig() {
+        const id = document.getElementById('agentId').value;
+        const currentNodeId = document.getElementById('node_id').value;
+        const currentLlmId = document.getElementById('llm_id').value;
+        const currentSpecializationId = document.getElementById('specialization_id').value;
+        const saveBtn = document.getElementById('saveBtn');
+
+        // Собираем данные из полей
+        const payload = {
+            name: document.getElementById('name').value,
+            node_id: document.getElementById('node_id').value || null,
+            title: document.getElementById('title').value,
+            llm_id: document.getElementById('llm_id').value || null,
+            specialization_id: document.getElementById('specialization_id').value || null,
+            system_prompt: document.getElementById('system_prompt').value,
+            memory_short_disabled: document.getElementById('memory_short_disabled').checked ? 1 : 0,
+            description: document.getElementById('description').value
+        };
+
+        // Блокируем кнопку на время запроса
+        if (saveBtn) saveBtn.disabled = true;
+
+        try {
+            if (id) {
+                await putData(`/agent/${id}`, payload);
+                showNotification(`Агент "${payload.title}" обновлен`, 'success');
+            } else {
+                await postData('/agent', payload);
+                showNotification(`Агент "${payload.title}" создан`, 'success');
+            }
+
+            await initAgentsManager(currentNodeId, currentLlmId, currentSpecializationId);
+
+        } catch (e) {
+            console.error("Ошибка сохранения:", e);
+            // Выводим уведомление об ошибке
+            showNotification(`Ошибка сохранения: ${e.message}`, 'error');
+        } finally {
+            // Всегда разблокируем кнопку в конце
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
 
     document.addEventListener('DOMContentLoaded', () => {
-        // 1. Инициализируем редактор CodeMirror на месте textarea
-        const editor = CodeMirror.fromTextArea(document.getElementById('yamlEditorRaw'), {
-            mode: 'yaml',             // Подсветка YAML
-            theme: 'dracula',          // Темная тема (проверь наличие CSS в блоке head)
-            lineNumbers: true,         // Номера строк
-            indentUnit: 2,             // Размер отступа
-            smartIndent: true,         // Умные отступы
-            matchBrackets: true        // Подсветка парных скобок
-        });
+        const form = document.getElementById('agentForm');
+        const createBtn = document.getElementById('createNewAgent');
 
-        // 2. Загружаем список агентов и передаем объект редактора,
-        // чтобы при клике на агента текст вставлялся именно в него
-        initAgentsManager(editor);
+        // 1. Инициализируем менеджер: загружаем группы в select и список агентов в сайдбар
+        initAgentsManager();
 
-        if (saveBtn) {
-            saveBtn.addEventListener('click', () => {
-                saveAgentConfig(editor);
+        // 2. Обработка кнопки "Создать агента" (очистка формы для новой записи)
+        if (createBtn) {
+            createBtn.addEventListener('click', () => {
+                form.reset();
+                document.getElementById('agentId').value = '';
+                document.getElementById('formTitle').textContent = 'Новый агент';
+
+                // Снимаем выделение с активного агента в списке
+                document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+            });
+        }
+
+        // 3. Обработка сохранения формы (и создание, и редактирование)
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault(); // Предотвращаем перезагрузку страницы
+                saveAgentConfig();
             });
         }
     });
 </script>
-
 {% endblock %}
