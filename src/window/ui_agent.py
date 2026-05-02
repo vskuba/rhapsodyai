@@ -5,6 +5,7 @@ import customtkinter as ctk
 
 from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
+from ai.framework.ai_framework_model import AiFrameworkModel
 from async_.async_ import async_loop_task_cancel
 from src.filesystem import open_file_in_editor
 from logging_.logging_ import logger_info
@@ -168,7 +169,7 @@ def agent_check_queue(root):
             pass
 
         if text:
-            agent_active = state_get('agent_active')
+            agent_active: AiFrameworkModel = state_get('agent_active')
             if agent_active:
                 state_set('agent_active_type', 'agent')
                 agent_active.prompt = text
