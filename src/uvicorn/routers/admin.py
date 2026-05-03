@@ -15,8 +15,16 @@ async def default(request: Request):
     )
 
 
+@router.get("/admin/node", response_class=HTMLResponse)
+async def node(request: Request):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/node.html"
+    )
+
+
 @router.get("/admin/agent", response_class=HTMLResponse)
-async def default(request: Request):
+async def agent(request: Request):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/agent.html"
@@ -24,7 +32,7 @@ async def default(request: Request):
 
 
 @router.get("/admin/session", response_class=HTMLResponse)
-async def default(request: Request):
+async def session(request: Request):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/session.html"
@@ -32,7 +40,7 @@ async def default(request: Request):
 
 
 @router.get("/admin/fact", response_class=HTMLResponse)
-async def default(request: Request):
+async def fact(request: Request):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/fact.html"
@@ -40,7 +48,7 @@ async def default(request: Request):
 
 
 @router.get("/admin/queue", response_class=HTMLResponse)
-async def queue_status_ui(request: Request):
+async def queue(request: Request):
     queues = queue_get_all()
 
     # Генерируем простые строки таблицы

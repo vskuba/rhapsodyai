@@ -1,0 +1,463 @@
+{% extends "base.html" %}
+
+{% block title %}Ноды{% endblock %}
+
+{% block head %}
+<style>
+    /* 1. Базовая компоновка (Идентично Агентам) */
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
+
+    /* 2. Сайдбар Нод */
+    .nodes-sidebar {
+        width: 260px;
+        background: #fafafa;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    .node-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    /* Элементы списка нод */
+    .node-item {
+        padding: 10px 15px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .node-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .node-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+        font-weight: 600;
+    }
+
+    /* Метка позиции в списке (опционально) */
+    .node-pos-badge {
+        font-size: 11px;
+        color: #bdc3c7;
+        background: #fff;
+        padding: 2px 6px;
+        border-radius: 10px;
+        border: 1px solid #eee;
+    }
+
+    /* 3. Основная секция формы */
+    .editor-section {
+        flex: 1;
+        padding: 20px 40px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 10px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-header h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 20px;
+    }
+
+    /* 4. Двухколоночный макет (Сохраняем структуру для единообразия) */
+    .form-layout-grid {
+        display: flex;
+        gap: 30px;
+        align-items: stretch;
+        min-height: 450px;
+    }
+
+    .settings-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    /* Правую колонку оставляем для симметрии или доп. инфо */
+    .info-column {
+        flex: 1.5;
+        display: flex;
+        flex-direction: column;
+        background: #fcfcfc;
+        border-radius: 8px;
+        padding: 20px;
+        border: 1px dashed #e0e0e0;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .form-group-name {
+        min-width: 250px;
+    }
+
+    .form-group-info {
+        font-size: 13px;
+        color: #353831;
+    }
+
+    /* 5. Элементы управления */
+    .form-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        border-color: #3498db;
+        outline: none;
+        box-shadow: 0 0 5px rgba(52, 152, 219, 0.2);
+    }
+
+    /* 6. Кнопки и Футер */
+    .editor-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 12px 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-save:hover {
+        background: #2980b9;
+    }
+
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .btn-delete {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 11px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+        margin-right: auto; /* Прижмет кнопку к левому краю футера */
+    }
+
+    .btn-delete:hover {
+        background: #e74c3c;
+        color: white;
+    }
+
+    #statusLabel {
+        font-size: 13px;
+        color: #27ae60;
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+<div class="page-content">
+    <div class="main-wrapper">
+        <div class="editor-container">
+
+            <!-- Список Нод (Левая колонка) -->
+            <div class="agents-sidebar">
+                <div class="sidebar-header">
+                    <button class="btn-create" id="createNewNode">+ Создать ноду</button>
+                </div>
+                <div class="agent-list" id="nodeList">
+                    <!-- Сюда JS будет рендерить список нод -->
+                </div>
+            </div>
+
+            <!-- Форма Ноды (Правая колонка) -->
+            <div class="editor-section">
+                <div class="form-header">
+                    <h2 id="formTitle">Выберите ноду</h2>
+                </div>
+
+                <form id="nodeForm">
+                    <input type="hidden" id="nodeId">
+
+                    <div class="form-layout-grid">
+                        <!-- Основные настройки -->
+                        <div class="settings-column">
+                            <div class="form-grid">
+                                <div class="form-group form-group-name">
+                                    <label>Название ноды</label>
+                                    <input type="text" id="name" class="form-control" required
+                                           placeholder="Напр: Workflow Engine">
+                                </div>
+                                <div class="form-group">
+                                    <label>Позиция</label>
+                                    <input type="number" id="position" class="form-control" value="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Пустая колонка для сохранения симметрии с агентами или под описание -->
+                        <div class="prompt-column">
+                            <div class="form-group form-group-info">
+                                <label>Инфо</label>
+                                Ноды используются для группировки агентов и определения логики их взаимодействия в
+                                рабочих процессах.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="editor-footer">
+                        <span id="statusLabel"></span>
+                        <!-- Кнопка удаления -->
+                        <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
+                            Удалить ноду
+                        </button>
+                        <button type="submit" class="btn-save" id="saveBtn">Сохранить ноду</button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const nodeListContainer = document.getElementById('nodeList');
+    const saveBtn = document.getElementById('saveBtn');
+    const nodeForm = document.getElementById('nodeForm');
+    const createNewNodeBtn = document.getElementById('createNewNode');
+    const deleteBtn = document.getElementById('deleteBtn');
+
+    /**
+     * Инициализация менеджера: загрузка списка нод
+     */
+    async function initNodesManager() {
+        if (!nodeListContainer) return;
+
+        try {
+            const response = await getData('/node/list');
+            const nodes = response.result;
+
+            // Сортируем ноды по полю position
+            nodes.sort((a, b) => (a.position || 0) - (b.position || 0));
+
+            renderNodeList(nodes);
+        } catch (e) {
+            console.error("Ошибка инициализации нод:", e);
+        }
+    }
+
+    /**
+     * Отрисовка списка в левой колонке
+     */
+    function renderNodeList(nodes) {
+        nodeListContainer.innerHTML = '';
+
+        if (nodes.length === 0) {
+            nodeListContainer.innerHTML = '<div style="padding:20px; color:#999; font-size:13px;">Нет созданных нод</div>';
+            return;
+        }
+
+        nodes.forEach(node => {
+            const div = document.createElement('div');
+            div.className = 'node-item';
+
+            // Добавляем имя и бейдж позиции для наглядности
+            div.innerHTML = `
+                <span>${node.name}</span>
+                <span class="node-pos-badge">${node.position}</span>
+            `;
+
+            div.onclick = () => selectNodeForEdit(node.id, div);
+            nodeListContainer.appendChild(div);
+        });
+    }
+
+    /**
+     * Загрузка данных конкретной ноды в форму
+     */
+    async function selectNodeForEdit(nodeId, element) {
+        // Подсветка активного элемента
+        document.querySelectorAll('.node-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        try {
+            const data = await getData(`/node/${nodeId}`);
+            const node = data.result;
+
+            if (!node) return;
+
+            // Заполнение полей формы
+            document.getElementById('nodeId').value = node.id;
+            document.getElementById('name').value = node.name;
+            document.getElementById('position').value = node.position || 0;
+
+            document.getElementById('formTitle').textContent = `Редактирование ноды: ${node.name}`;
+            if (saveBtn) saveBtn.disabled = false;
+
+            if (deleteBtn) deleteBtn.style.display = 'block';
+        } catch (e) {
+            console.error("Ошибка при получении данных ноды:", e);
+            showNotification('Не удалось загрузить данные ноды', 'error');
+        }
+    }
+
+    /**
+     * Очистка формы для создания новой ноды
+     */
+    function resetFormForCreate() {
+        document.querySelectorAll('.node-item').forEach(el => el.classList.remove('active'));
+        nodeForm.reset();
+        document.getElementById('nodeId').value = '';
+        document.getElementById('formTitle').textContent = 'Создание новой ноды';
+        document.getElementById('position').value = 0;
+        if (saveBtn) saveBtn.disabled = false;
+        if (deleteBtn) deleteBtn.style.display = 'none';
+    }
+
+    /**
+     * Сохранение (Создание или Обновление)
+     */
+    async function saveNodeConfig(e) {
+        if (e) e.preventDefault();
+
+        const id = document.getElementById('nodeId').value;
+        const payload = {
+            name: document.getElementById('name').value,
+            position: parseInt(document.getElementById('position').value) || 0
+        };
+
+        if (saveBtn) saveBtn.disabled = true;
+
+        try {
+            if (id) {
+                await putData(`/node/${id}`, payload);
+                showNotification(`Нода "${payload.name}" обновлена`, 'success');
+            } else {
+                await postData('/node', payload);
+                showNotification(`Нода "${payload.name}" создана`, 'success');
+            }
+
+            // Перезагружаем список
+            await initNodesManager();
+
+            // Если создавали новую — форма очистится, если редактировали — данные останутся
+            if (!id) resetFormForCreate();
+
+        } catch (e) {
+            console.error("Ошибка сохранения ноды:", e);
+            showNotification(`Ошибка: ${e.message}`, 'error');
+        } finally {
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    async function deleteNode() {
+        const id = document.getElementById('nodeId').value;
+        const name = document.getElementById('name').value;
+
+        if (!id) return;
+
+        if (confirm(`Вы уверены, что хотите удалить ноду "${name}"? Все агенты этой ноды останутся без привязки.`)) {
+            try {
+                await deleteData(`/node/${id}`);
+                showNotification(`Нода "${name}" удалена`, 'success');
+
+                resetFormForCreate();
+                await initNodesManager();
+            } catch (e) {
+                console.error("Ошибка удаления:", e);
+                showNotification(`Ошибка при удалении: ${e.message}`, 'error');
+            }
+        }
+    }
+
+    // Слушатели событий
+    document.addEventListener('DOMContentLoaded', () => {
+        // Инициализация списка
+        initNodesManager();
+
+        // Обработка отправки формы
+        if (nodeForm) {
+            nodeForm.addEventListener('submit', saveNodeConfig);
+        }
+
+        // Кнопка "Создать ноду"
+        if (createNewNodeBtn) {
+            createNewNodeBtn.addEventListener('click', resetFormForCreate);
+        }
+
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', deleteNode);
+        }
+    });
+</script>
+{% endblock %}
