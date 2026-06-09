@@ -43,17 +43,17 @@ async def agent_get_system_prompt(request: Request, agent_id: int, collection_na
 
 @router.get("/agent/specialization/list")
 async def agent_specialization_list(request: Request, db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
+    async with db:
         sql = """
             SELECT * FROM agent_specialization ORDER BY name ASC
         """
-        await cursor.execute(sql)
-        return {"result": await cursor.fetchall()}
+        await db.execute(sql)
+        return {"result": await db.fetchall()}
 
 
 @router.put("/agent/{agent_id}")
 async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
+    async with db:
         sql = """
             UPDATE agent 
             SET 
@@ -78,10 +78,10 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
             agent_id
         )
 
-        await cursor.execute(sql, values)
+        await db.execute(sql, values)
         await db.commit()
 
-        if cursor.rowcount == 0:
+        if db.rowcount == 0:
             return {"status": "error", "message": "Агент не найден"}
 
         return {"status": "success", "result": "Данные обновлены"}
@@ -89,11 +89,11 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
 
 @router.get("/agent/{agent_id}/user/{user_id}/session_last_entry")
 async def agent_session_active_get(request: Request, agent_id: int, user_id: int, db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
-        await cursor.execute(
+    async with db:
+        await db.execute(
             "SELECT session_uuid "
             "FROM agent_session "
             "WHERE agent_id = %s AND user_id = %s "
             "ORDER BY created_at DESC LIMIT 1", (agent_id, user_id)
         )
-        return {"result": await cursor.fetchone()}
+        return {"result": await db.fetchone()}

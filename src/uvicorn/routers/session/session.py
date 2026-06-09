@@ -17,7 +17,7 @@ class SessionMessagesJsonRequest(BaseModel):
 
 @router.post("/session/list")
 async def session_list(request: Request, json_request: SessionJsonRequest, db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
+    async with db:
         sql = """
             SELECT 
                 session_uuid, 
@@ -38,13 +38,13 @@ async def session_list(request: Request, json_request: SessionJsonRequest, db=De
 
         sql += " GROUP BY session_uuid ORDER BY last_message_at DESC"
 
-        await cursor.execute(sql, tuple(params))
-        return {"result": await cursor.fetchall()}
+        await db.execute(sql, tuple(params))
+        return {"result": await db.fetchall()}
 
 
 @router.post("/session/messages")
 async def session_messages(request: Request, json_request: SessionMessagesJsonRequest, db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
+    async with db:
         # Выбираем ВСЕ поля и ВСЕ типы сообщений для инспекции
         sql = """
             SELECT s.role, s.kind_type, s.content, s.token, s.created_at, l.name as llm_name
@@ -54,7 +54,7 @@ async def session_messages(request: Request, json_request: SessionMessagesJsonRe
             ORDER BY s.id ASC 
             LIMIT %s
         """
-        await cursor.execute(sql, (json_request.session_uuid, 500))
-        rows = await cursor.fetchall()
+        await db.execute(sql, (json_request.session_uuid, 500))
+        rows = await db.fetchall()
 
         return {"result": rows}

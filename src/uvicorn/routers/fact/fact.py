@@ -10,9 +10,9 @@ router = APIRouter()
 
 @router.get("/fact/collection/list")
 async def fact_collection_list(request: Request, db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
-        await cursor.execute("SELECT * FROM fact_collection")
-        return {"result": await cursor.fetchall()}
+    async with db:
+        await db.execute("SELECT * FROM fact_collection")
+        return {"result": await db.fetchall()}
 
 
 @router.get("/fact/collection/{collection_name}")
@@ -33,7 +33,7 @@ async def fact_list(
         search_condition = " AND f.content LIKE %s"
         params.append(f"%{query}%")
 
-    async with db.cursor() as cursor:
+    async with db:
         # 1. Считаем общее количество с учетом фильтра
         count_sql = f"""
             SELECT COUNT(*) as total FROM fact f
@@ -41,8 +41,8 @@ async def fact_list(
             WHERE fc.name = %s {search_condition}
         """
         # Важно: передаем params как кортеж или список
-        await cursor.execute(count_sql, params)
-        total_res = await cursor.fetchone()
+        await db.execute(count_sql, params)
+        total_res = await db.fetchone()
         total_count = total_res['total'] if total_res else 0
 
         # 2. Получаем данные страницы
@@ -58,8 +58,8 @@ async def fact_list(
                     ORDER BY f.id DESC
                     LIMIT %s OFFSET %s
                 """
-        await cursor.execute(sql, data_params)
-        facts = await cursor.fetchall()
+        await db.execute(sql, data_params)
+        facts = await db.fetchall()
 
         return {
             "result": facts,
@@ -99,7 +99,7 @@ async def fact_collection_save(request: Request, collection_id: int, data: list[
             missing = required_fields - set(entry.keys())
             raise HTTPException(status_code=400, detail=f"Entry {index} missing: {', '.join(missing)}")
 
-    async with db.cursor() as cursor:
+    async with db:
         try:
             for entry in data:
                 # --- ШАГ 1: Вставка в таблицу 'fact' ---
@@ -110,10 +110,10 @@ async def fact_collection_save(request: Request, collection_id: int, data: list[
                 f_placeholders = ", ".join(["%s"] * len(fact_fields))
 
                 sql_fact = f"INSERT INTO `fact` ({f_str}) VALUES ({f_placeholders})"
-                await cursor.execute(sql_fact, fact_values)
+                await db.execute(sql_fact, fact_values)
 
                 # Получаем ID только что созданной записи в 'fact'
-                new_fact_id = cursor.lastrowid
+                new_fact_id = db.lastrowid
 
                 # --- ШАГ 2: Вставка в динамическую таблицу ---
                 # Даже если доп. полей нет, мы должны создать запись для связи 1-to-1
@@ -124,7 +124,7 @@ async def fact_collection_save(request: Request, collection_id: int, data: list[
                 c_placeholders = ", ".join(["%s"] * len(coll_fields))
 
                 sql_coll = f"INSERT INTO `{dynamic_table}` ({c_str}) VALUES ({c_placeholders})"
-                await cursor.execute(sql_coll, coll_values)
+                await db.execute(sql_coll, coll_values)
 
             await db.commit()
         except Exception as e:
@@ -136,7 +136,7 @@ async def fact_collection_save(request: Request, collection_id: int, data: list[
 
 @router.delete("/fact/{fact_id}")
 async def delete_fact(fact_id: int, db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
+    async with db:
         # Проверяем существование
-        await cursor.execute("DELETE FROM fact WHERE id = %s", (fact_id,))
+        await db.execute("DELETE FROM fact WHERE id = %s", (fact_id,))
         return {"status": "success", "message": f"Fact {fact_id} deleted"}

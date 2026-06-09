@@ -82,14 +82,14 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest):
 
 @router.post("/chat/messages")
 async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest, db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
-        await cursor.execute(
+    async with db:
+        await db.execute(
             "SELECT content, role "
             "FROM agent_session "
             "WHERE kind_type in ('user-prompt', 'response-final') AND session_uuid = %s "
             "ORDER BY created_at DESC, id DESC LIMIT %s", (json_request.session_uuid, json_request.limit)
         )
-        rows = await cursor.fetchall()
+        rows = await db.fetchall()
 
         return {"result": list(reversed(rows))}
 

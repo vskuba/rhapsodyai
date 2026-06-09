@@ -16,6 +16,9 @@ DROP TABLE IF EXISTS `agent_specialization`;
 DROP TABLE IF EXISTS `llm`;
 DROP TABLE IF EXISTS `setting`;
 DROP TABLE IF EXISTS `user`;
+DROP TABLE IF EXISTS `workflow_step`;
+DROP TABLE IF EXISTS `workflow_step_type`;
+DROP TABLE IF EXISTS `workflow`;
 
 -- Включаем проверки обратно
 SET FOREIGN_KEY_CHECKS = 1;
@@ -92,6 +95,38 @@ CREATE TABLE `agent_session` (
     CONSTRAINT `fk_memory_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_memory_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Таблица задач
+CREATE TABLE `workflow` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `node_id` INT NULL,
+    `tid` CHAR(50) NOT NULL,
+    `title` CHAR(50) NOT NULL,
+    `description` CHAR(200) NOT NULL,
+    `position` INT NOT NULL DEFAULT 0,
+    CONSTRAINT `workflow_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
+    UNIQUE INDEX `ux_workflow_tid` (`tid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `workflow_step_type` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(50) NOT NULL,
+    `icon` CHAR(1) NOT NULL,
+    `description` CHAR(200) NOT NULL,
+    `metadata` LONGTEXT NOT NULL,
+    UNIQUE INDEX `ux_workflow_step_type_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `workflow_step` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `workflow_id` INT NULL,
+    `type_id` INT NULL,
+    `title` CHAR(50) NOT NULL,
+    `position` INT NOT NULL DEFAULT 0,
+    `metadata` LONGTEXT NOT NULL,
+    CONSTRAINT `workflow_step_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflow` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `workflow_step_workflow_step_type` FOREIGN KEY (`type_id`) REFERENCES `workflow_step_type` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 

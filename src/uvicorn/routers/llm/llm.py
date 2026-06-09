@@ -7,9 +7,9 @@ router = APIRouter()
 
 @router.get("/llm/list")
 async def llm_list(db=Depends(mysql_get_db_async)):
-    async with db.cursor() as cursor:
+    async with db:
         sql = """
             SELECT * FROM llm ORDER BY name ASC
         """
-        await cursor.execute(sql)
-        return {"result": await cursor.fetchall()}
+        await db.execute(sql)
+        return {"result": await db.fetchall()}
