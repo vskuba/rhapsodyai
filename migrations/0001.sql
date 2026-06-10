@@ -114,6 +114,7 @@ CREATE TABLE `workflow_step_type` (
     `name` CHAR(50) NOT NULL,
     `icon` CHAR(1) NOT NULL,
     `description` CHAR(200) NOT NULL,
+    `description_full` LONGTEXT DEFAULT NULL,
     `metadata` LONGTEXT NOT NULL,
     UNIQUE INDEX `ux_workflow_step_type_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -418,134 +418,196 @@
         align-items: center;
     }
 
+    .variable-column {
+        border-right: 1px solid #e5e7eb;
+        padding-right: 15px;
+        height: 100%;
+        min-height: 300px;
+    }
+
+    .variable-column label {
+        font-size: 14px;
+        font-weight: bold;
+        color: #333;
+        display: block;
+        margin-bottom: 15px;
+    }
+
+    /* Контейнер списка переменных */
+    #variablesList {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    /* Пример стиля для элемента переменной (если будете рендерить через JS) */
+    .variable-item {
+        font-size: 12px;
+        color: #4b5563;
+        background-color: #f3f4f6;
+        padding: 6px 10px;
+        border-radius: 4px;
+        border: 1px solid #e5e7eb;
+        word-break: break-all;
+    }
+
+    .variable-list-empty {
+        color: #9ca3af;
+        font-size: 12px;
+        font-style: italic;
+    }
+
+    .transitions-editor {
+        margin-top: 20px;
+        border-top: 1px solid #eee;
+        font-size: 15pt;
+    }
+
 </style>
 
 {% endblock %}
 
 {% block content %}
 <div class="page-content">
-    <div class="main-wrapper">
-        <div class="editor-container">
+    <div class="editor-container">
 
-            <!-- Список (Sidebar) -->
-            <div class="agents-sidebar">
-                <div class="sidebar-header">
-                    <button class="btn-create" id="createNewWorkflow">+ Создать workflow</button>
-                </div>
-                <div class="agent-list" id="workflowList">
-                    <!-- Заполняется JS -->
-                </div>
+        <!-- Список (Sidebar) -->
+        <div class="agents-sidebar">
+            <div class="sidebar-header">
+                <button class="btn-create" id="createNewWorkflow">+ Создать workflow</button>
+            </div>
+            <div class="agent-list" id="workflowList">
+                <!-- Заполняется JS -->
+            </div>
+        </div>
+
+        <!-- Секция формы -->
+        <div class="editor-section">
+            <div class="form-header">
+                <h2 id="formTitle">Выберите workflow</h2>
             </div>
 
-            <!-- Секция формы -->
-            <div class="editor-section">
-                <div class="form-header">
-                    <h2 id="formTitle">Выберите workflow</h2>
+            <form id="workflowForm">
+                <input type="hidden" id="workflowId">
+
+                <!-- 1. Контейнер ПАРАМЕТРОВ (скрывается при клике на название) -->
+                <div id="workflowSettingsView" class="form-layout-grid">
+                    <div class="settings-column">
+                        <div class="form-group">
+                            <label>Название workflow</label>
+                            <input type="text" id="title" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Технический ID (tid)</label>
+                            <input type="text" id="tid" class="form-control" required>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group"><label>Нода</label><select id="node_id"
+                                                                               class="form-control"></select></div>
+                            <div class="form-group"><label>Позиция</label><input type="number" id="position"
+                                                                                 class="form-control"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Описание</label>
+                            <textarea id="description" class="form-control"
+                                      style="height: 80px; resize: none;"></textarea>
+                        </div>
+                    </div>
+                    <div class="prompt-column">
+                        <!-- Здесь пусто или доп. инфо, так как шаги теперь в другом виде -->
+                    </div>
                 </div>
 
-                <form id="workflowForm">
-                    <input type="hidden" id="workflowId">
+                <!-- 2. Контейнер ШАГОВ (Две колонки) -->
+                <div id="stepsEditorView" class="form-layout-grid" style="display: none;">
+                    <!-- Колонки управления шагами -->
+                    <div class="settings-column" style="border-right: 1px solid #eee; padding-right: 15px;">
 
-                    <!-- 1. Контейнер ПАРАМЕТРОВ (скрывается при клике на название) -->
-                    <div id="workflowSettingsView" class="form-layout-grid">
-                        <div class="settings-column">
-                            <div class="form-group">
-                                <label>Название workflow</label>
-                                <input type="text" id="title" class="form-control" required>
+                        <!-- Блоки 1 и 2: Выбор и Кнопка Добавить -->
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <div style="flex: 1;">
+                                <label style="font-size: 10px; color: #999;">Доступные шаги</label>
+                                <select id="availableStepsSelect" class="form-control">
+                                    <option value="">Загрузка шагов...</option>
+                                </select>
                             </div>
-                            <div class="form-group">
-                                <label>Технический ID (tid)</label>
-                                <input type="text" id="tid" class="form-control" required>
-                            </div>
-                            <div class="form-grid">
-                                <div class="form-group"><label>Нода</label><select id="node_id"
-                                                                                   class="form-control"></select></div>
-                                <div class="form-group"><label>Позиция</label><input type="number" id="position"
-                                                                                     class="form-control"></div>
-                            </div>
-                            <div class="form-group">
-                                <label>Описание</label>
-                                <textarea id="description" class="form-control"
-                                          style="height: 80px; resize: none;"></textarea>
+                            <div style="align-self: flex-end;">
+                                <button type="button" class="btn-create" id="addStepToWorkflowBtn"
+                                        style="padding: 10px 20px;">+ Add
+                                </button>
                             </div>
                         </div>
-                        <div class="prompt-column">
-                            <!-- Здесь пусто или доп. инфо, так как шаги теперь в другом виде -->
+
+                        <!-- Блок 3: Список шагов текущей задачи (Drag & Drop) -->
+                        <label style="font-size: 10px; color: #999;">Шаги текущего workflow (перетащите для
+                            сортировки)</label>
+                        <div id="workflowStepsSortable" class="steps-sortable-list">
+                            <!-- Сюда JS отрисует шаги -->
                         </div>
                     </div>
 
-                    <!-- 2. Контейнер ШАГОВ (Две колонки) -->
-                    <div id="stepsEditorView" class="form-layout-grid" style="display: none;">
-                        <!-- Колонки управления шагами -->
-                        <div class="settings-column" style="border-right: 1px solid #eee; padding-right: 15px;">
 
-                            <!-- Блоки 1 и 2: Выбор и Кнопка Добавить -->
-                            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                                <div style="flex: 1;">
-                                    <label style="font-size: 10px; color: #999;">Доступные шаги</label>
-                                    <select id="availableStepsSelect" class="form-control">
-                                        <option value="">Загрузка шагов...</option>
-                                    </select>
-                                </div>
-                                <div style="align-self: flex-end;">
-                                    <button type="button" class="btn-create" id="addStepToWorkflowBtn"
-                                            style="padding: 10px 20px;">+ Add
-                                    </button>
-                                </div>
+                    <!-- Вторая колонка: Детали (как и было) -->
+                    <div class="prompt-column" id="stepDetailsView">
+                        <!-- Контейнер с контентом (скрыт по умолчанию) -->
+                        <div id="stepDetailsContent" style="display: none;">
+
+                            <div class="stepTitle">
+                                <label>Описание шага</label>
+                                <span id="stepDescriptionFull"></span>
                             </div>
 
-                            <!-- Блок 3: Список шагов текущей задачи (Drag & Drop) -->
-                            <label style="font-size: 10px; color: #999;">Шаги текущего workflow (перетащите для
-                                сортировки)</label>
-                            <div id="workflowStepsSortable" class="steps-sortable-list">
-                                <!-- Сюда JS отрисует шаги -->
+                            <!-- НОВЫЙ КОНТЕЙНЕР ДЛЯ КАСТОМНЫХ ПОЛЕЙ ТИПА ШАГА -->
+                            <div id="dynamicStepFieldsContainer"
+                                 style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                                <!-- Сюда JS будет рендерить инпуты/текстареа в зависимости от типа шага -->
+                            </div>
+
+                            <!-- Старую textarea скрываем с помощью display: none, чтобы не ломать остальной код сбора данных -->
+                            <textarea id="stepTextarea" class="form-control system-prompt-full"
+                                      style="display: none;"></textarea>
+
+                            <div class="transitions-editor">
+                                <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">Логика
+                                    переходов (Flow Control)</label>
+
+                                <div id="stepTransitionsList"
+                                     style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                                    <!-- Сюда JS будет рендерить строки условий -->
+                                </div>
+
+                                <button type="button" class="btn-create" id="addConditionBtn"
+                                        style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
+                                    + Добавить условие перехода
+                                </button>
+                            </div>
+
+                            <div class="stepTitle">
+                                <label>Название шага</label>
+                                <input type="text" id="stepTitle" required/>
                             </div>
                         </div>
 
-                        <!-- Вторая колонка: Детали (как и было) -->
-                        <div class="prompt-column" id="stepDetailsView">
-                            <label>Детали шага</label>
-
-                            <!-- Контейнер с контентом (скрыт по умолчанию) -->
-                            <div id="stepDetailsContent" style="display: none;">
-
-                                <div class="stepTitle">
-                                    <label>Название шага</label>
-                                    <input type="text" id="stepTitle" required/>
-                                </div>
-
-                                <textarea id="stepMetadata" class="form-control system-prompt-full"></textarea>
-
-                                <div class="transitions-editor"
-                                     style="margin-top: 20px; border-top: 1px solid #eee; pt-15">
-                                    <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">Логика
-                                        переходов (Flow Control)</label>
-
-                                    <div id="stepTransitionsList"
-                                         style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-                                        <!-- Сюда JS будет рендерить строки условий -->
-                                    </div>
-
-                                    <button type="button" class="btn-create" id="addConditionBtn"
-                                            style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
-                                        + Добавить условие перехода
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Заглушка (видна, когда шаг не выбран) -->
-                            <div id="noStepSelected" style="color: #999; text-align: center; margin-top: 50px;">
-                                Выберите шаг из списка слева
-                            </div>
+                        <!-- Заглушка (видна, когда шаг не выбран) -->
+                        <div id="noStepSelected" style="color: #999; text-align: center; margin-top: 50px;">
+                            Выберите шаг из списка слева
                         </div>
                     </div>
 
-                    <div class="editor-footer">
-                        <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
-                        <button type="submit" class="btn-save">Сохранить задачу</button>
+                    <div class="variable-column" id="stepVariableView">
+                        <label>Переменные</label>
+                        <div id="variablesList">
+                            <!-- Сюда JS будет рендерить список переменных текущего шага -->
+                            <div class="variable-list-empty">Нет переменных</div>
+                        </div>
                     </div>
-                </form>
-            </div>
+                </div>
+
+                <div class="editor-footer">
+                    <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
+                    <button type="submit" class="btn-save">Сохранить задачу</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -559,8 +621,60 @@
     const workflowListContainer = document.getElementById('workflowList');
     const workflowForm = document.getElementById('workflowForm');
     const deleteBtn = document.getElementById('deleteBtn');
-    const stepsList = document.getElementById('stepsList');
     const addStepBtn = document.getElementById('addStepBtn');
+
+    const WORKFLOW_STEP_CONFIG = {
+        'llm_to_string': [ // ID типа "Запрос LLM"
+            {
+                key: 'llm_to_string',
+                label: 'LLM запрос',
+                type: 'textarea',
+                placeholder: ''
+            }
+        ],
+        'llm_to_json': [ // ID типа "Инструменты"
+            {
+                key: 'llm_to_json',
+                label: 'Получить JSON',
+                type: 'textarea',
+                placeholder: ''
+            },
+            {key: 'timeout', label: 'Таймаут (сек)', type: 'number', default: 30}
+        ],
+        'tool_invoke': [ // ID типа "Инструменты"
+            {
+                key: 'tool_invoke',
+                label: 'Выберите инструмент',
+                type: 'select',
+                options: ['check_balance', 'send_sms', 'get_menu']
+            },
+            {key: 'timeout', label: 'Таймаут (сек)', type: 'number', default: 30}
+        ],
+        'response_return': [ // ID типа "Вернуть ответ"
+            {
+                key: 'response_return',
+                label: 'Шаблон ответа',
+                type: 'textarea',
+                placeholder: ''
+            }
+        ],
+        'collection_search': [
+            {
+                key: 'response_template',
+                label: 'Поиск в коллекции',
+                type: 'textarea',
+                placeholder: ''
+            }
+        ],
+        'default': [ // Дефолтные поля, если тип не опознан
+            {
+                key: 'textarea',
+                label: 'LLM запрос',
+                type: 'textarea',
+                placeholder: 'Введите параметры...'
+            }
+        ]
+    };
 
     let allCurrentStepsData = [];
     let allWorkflowStepsType = {};
@@ -738,7 +852,7 @@
         await loadWorkflowSteps(workflow.id);
 
         // 3. ОБНОВЛЯЕМ ЗАГОЛОВОК
-        document.getElementById('formTitle').textContent = `Шаги задачи: ${workflow.title}`;
+        document.getElementById('formTitle').textContent = `Шаги workflow: ${workflow.title}`;
     }
 
     /**
@@ -813,10 +927,27 @@
             // Это позволит функции добавления условий видеть актуальный список шагов
             allCurrentStepsData = data.result || [];
 
+            let activeStepId = null;
+            let currentStepData = null;
+            let currentStepBlock = null;
+
+            const activeStepBlock = document.querySelector('.step-item-block.active');
+            if (activeStepBlock) {
+                activeStepId = activeStepBlock.dataset.id;
+            }
+
             renderWorkflowSteps(allCurrentStepsData);
 
+            if (activeStepId) {
+                currentStepData = allCurrentStepsData.find(s => String(s.id) === String(activeStepId));
+                currentStepBlock = container.querySelector(`.step-item-block[data-id="${activeStepId}"]`);
+            }
+
             const firstStepBlock = container.querySelector('.step-item-block');
-            if (firstStepBlock) {
+
+            if (currentStepData) {
+                selectStep(currentStepData, currentStepBlock);
+            } else if (firstStepBlock) {
                 const firstStepData = allCurrentStepsData[0];
                 selectStep(firstStepData, firstStepBlock);
             } else {
@@ -854,7 +985,7 @@
                 opt.textContent = stepType.icon + ' ' + stepType.description;
                 select.appendChild(opt);
 
-                allWorkflowStepsType[stepType.id] = stepType.description
+                allWorkflowStepsType[stepType.id] = stepType
             });
         } catch (e) {
             select.innerHTML = '<option>Ошибка загрузки</option>';
@@ -922,17 +1053,112 @@
 
         const stepTitle = document.getElementById('stepTitle');
         if (stepTitle) {
-            stepTitle.value = step.title || allWorkflowStepsType[step.type_id] || '';
+            stepTitle.value = step.title || allWorkflowStepsType[step.type_id].description || '';
+        }
+
+        const stepDescriptionFull = document.getElementById('stepDescriptionFull');
+        if (stepDescriptionFull) {
+            stepDescriptionFull.innerHTML = allWorkflowStepsType[step.type_id].description_full || '';
         }
 
         // 4. Заполнение Метаданных (сырой текст в textarea)
-        const metadataField = document.getElementById('stepMetadata');
+        const metadataField = document.getElementById('stepTextarea');
         if (metadataField) {
             metadataField.value = metadata.textarea || '';
         }
 
+        renderCustomStepFields(step, metadata);
+
         // 5. Отрисовка переходов
         renderTransitions(step, allCurrentStepsData);
+    }
+
+    function renderCustomStepFields(step, metadata) {
+        const container = document.getElementById('dynamicStepFieldsContainer');
+        if (!container) return;
+        container.innerHTML = '';
+
+        let stepType = allWorkflowStepsType[step.type_id];
+
+        // Получаем схему полей для данного типа шага
+        const fieldsSchema = WORKFLOW_STEP_CONFIG[stepType.name] || WORKFLOW_STEP_CONFIG['default'];
+
+        fieldsSchema.forEach(field => {
+            const fieldWrapper = document.createElement('div');
+            fieldWrapper.className = 'form-group';
+            fieldWrapper.style = "display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;";
+
+            const label = document.createElement('label');
+            label.style = "font-size: 12px; font-weight: 600; color: #4a5568;";
+            label.textContent = field.label;
+            fieldWrapper.appendChild(label);
+
+            // Извлекаем текущее сохраненное значение или берем дефолтное
+            const currentValue = metadata[field.key] !== undefined ? metadata[field.key] : (field.default || '');
+
+            let inputElement;
+
+            // Создаем элемент в зависимости от указанного типа разметки
+            if (field.type === 'textarea') {
+                inputElement = document.createElement('textarea');
+                inputElement.id = `field_${field.key}`;
+                inputElement.className = 'form-control';
+                inputElement.style = "height: 100px; resize: vertical; font-size: 13px; padding: 8px;";
+                inputElement.placeholder = field.placeholder || '';
+                inputElement.value = currentValue;
+            } else if (field.type === 'select') {
+                inputElement = document.createElement('select');
+                inputElement.id = `field_${field.key}`;
+                inputElement.className = 'form-control';
+                inputElement.style = "padding: 6px; font-size: 13px;";
+
+                field.options.forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt;
+                    option.textContent = opt;
+                    if (opt === currentValue) option.selected = true;
+                    inputElement.appendChild(option);
+                });
+            } else { // Для 'text', 'number' и других стандартных инпутов
+                inputElement = document.createElement('input');
+                inputElement.id = `field_${field.key}`;
+                inputElement.type = field.type;
+                inputElement.className = 'form-control';
+                inputElement.style = "padding: 6px; font-size: 13px;";
+                if (field.min !== undefined) inputElement.min = field.min;
+                if (field.max !== undefined) inputElement.max = field.max;
+                if (field.step !== undefined) inputElement.step = field.step;
+                inputElement.value = currentValue;
+            }
+
+            // Автоматическое сохранение изменений инпута в metadata объекта "на лету"
+            const saveChanges = () => {
+                let latestMeta = {};
+                try {
+                    latestMeta = (typeof step.metadata === 'string') ? JSON.parse(step.metadata || '{}') : (step.metadata || {});
+                } catch (e) {
+                    latestMeta = {};
+                }
+
+                // Записываем новое значение по ключу конфигурации
+                let value = inputElement.value;
+                if (field.type === 'number') value = parseFloat(value) || 0;
+
+                latestMeta[field.key] = value;
+
+                // Сохраняем обратно в state шага в виде строки JSON
+                step.metadata = JSON.stringify(latestMeta);
+
+                // Дублируем в скрытую текстареа, чтобы сработал ваш старый метод сабмита формы
+                document.getElementById('stepTextarea').value = step.metadata;
+            };
+
+            inputElement.oninput = saveChanges;
+            inputElement.onchange = saveChanges;
+
+            fieldWrapper.appendChild(inputElement);
+            container.appendChild(fieldWrapper);
+        });
     }
 
     function renderTransitions(step, allSteps) {
@@ -1019,8 +1245,13 @@
         return transitions;
     }
 
-    async function deleteWorkflow(id, title) {
-        if (!confirm(`Удалить задачу "${title}" со всеми её шагами?`)) return;
+    async function deleteWorkflow() {
+        const id = document.getElementById('workflowId')?.value;
+        const title = document.getElementById('title')?.value;
+
+        if (!id || !confirm(`Удалить задачу "${title}" со всеми её шагами?`)) {
+            return;
+        }
 
         try {
             await deleteData(`/workflow/${id}`);
@@ -1065,17 +1296,43 @@
         e.preventDefault();
         const id = document.getElementById('workflowId').value;
 
-        // 1. Собираем переходы из интерфейса
+        const activeStepBlock = document.querySelector('.step-item-block.active');
+        const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
+        if (!currentStepData) return;
+
+        // 1. Сбор переходов из интерфейса
         const transitions = collectTransitions();
 
-        // 2. Формируем метаданные (берем старые и добавляем новые переходы)
+        // 2. Безопасное формирование метаданных активного шага
         let metadata = {};
-        try {
-            metadata = {
-                'textarea': document.getElementById('stepMetadata').value || '',
+        if (currentStepData) {
+            try {
+                // Берем за основу уже имеющиеся метаданные шага (чтобы не стереть скрытые бэк-ключи)
+                metadata = (typeof currentStepData.metadata === 'string')
+                    ? JSON.parse(currentStepData.metadata || '{}')
+                    : {...currentStepData.metadata};
+            } catch (err) {
+                metadata = {};
             }
-        } catch (e) {
-            metadata = {};
+
+            // Находим схему полей для ТЕКУЩЕГО типа шага
+            let stepType = allWorkflowStepsType[currentStepData.type_id];
+            const fieldsSchema = WORKFLOW_STEP_CONFIG[stepType.name] || WORKFLOW_STEP_CONFIG['default'];
+            const container = document.getElementById('dynamicStepFieldsContainer');
+
+            if (container) {
+                // Проходимся по схеме полей и собираем актуальные значения прямо из DOM-элементов
+                fieldsSchema.forEach(field => {
+                    const inputElement = document.getElementById(`field_${field.key}`);
+                    if (inputElement) {
+                        let value = inputElement.value;
+                        if (field.type === 'number') {
+                            value = parseFloat(value) || 0;
+                        }
+                        metadata[field.key] = value;
+                    }
+                });
+            }
         }
 
         metadata.transitions = transitions;
@@ -1126,7 +1383,6 @@
 
         deleteBtn.style.display = 'none';
         addStepBtn.style.display = 'none';
-        stepsList.innerHTML = '<div style="text-align:center; padding:20px; color:#999;">Сначала сохраните задачу, чтобы добавить шаги</div>';
     };
 
     document.getElementById('addStepToWorkflowBtn').onclick = async () => {

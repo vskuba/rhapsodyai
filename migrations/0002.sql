@@ -73,21 +73,23 @@ INSERT INTO `workflow` (`id`, `node_id`, `tid`, `title`, `description`) VALUES
 (2, 2, 'response_dating', 'Чат сайта знакомств', 'Ответить пользователю'),
 (3, 3, 'response_soko', 'Чат суши-бара', 'Ответить пользователю');
 
-INSERT INTO `workflow_step_type` (`id`, `name`, `icon`, `description`, `metadata`) VALUES
-(1, 'return_response', '↩', 'Вернуть ответ', ''),
-(2, 'llm_request', '🧠', 'Запрос LLM', ''),
-(3, 'tool_invoke', '🛠', 'Вызов инструмента', ''),
-(4, 'collection_search', '🔍', 'Поиск в коллекции', '');
+INSERT INTO `workflow_step_type` (`id`, `name`, `icon`, `description`, `description_full`, `metadata`) VALUES
+(1, 'response_return', '↩', 'Вернуть ответ', '', ''),
+(2, 'llm_to_string', '🧠', 'LLM ответ string', 'Ожидает ответ от LLM в виде текстовой строки', ''),
+(3, 'tool_invoke', '🛠', 'Вызов инструмента', '', ''),
+(4, 'collection_search', '🔍', 'Поиск в коллекции', '', ''),
+(5, 'llm_to_json', '𝐉son', 'LLM ответ JSON', 'Ожидает ответ от LLM в виде JSON. Далее каждый ключ JSON доступен в последующих шагах', '');
 
 
 INSERT INTO `workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) VALUES
-(1, 1, 1, 'мой ответ', 3, ''),
+(1, 1, 1, 'мой ответ', 4, ''),
 (2, 1, 3, 'мой инструмент', 1,'{"textarea":"ok","transitions":[{"condition":"ok","target_id":"1"}]}'),
 (3, 2, 1, 'мой ответ', 0, ''),
 (4, 3, 1, 'мой ответ', 0, ''),
 (5, 3, 4, 'мой поиск', 0, ''),
-(6, 1, 2, 'запрос LLM', 0, ''),
-(7, 1, 2, 'запрос LLM', 2, '');
+(6, 1, 5, 'запрос LLM', 0, ''),
+(7, 1, 2, 'запрос LLM', 3, ''),
+(8, 1, 4, 'Поиск в коллекции', 2, '');
 
 --
 
