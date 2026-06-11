@@ -418,43 +418,81 @@
         align-items: center;
     }
 
-    .variable-column {
-        border-right: 1px solid #e5e7eb;
-        padding-right: 15px;
-        height: 100%;
-        min-height: 300px;
+    .variables-section {
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 16px;
+        background-color: #f9f9f9;
     }
 
-    .variable-column label {
-        font-size: 14px;
-        font-weight: bold;
+    .variables-section h3 {
+        margin-top: 0;
+        margin-bottom: 12px;
+        font-size: 16px;
         color: #333;
-        display: block;
-        margin-bottom: 15px;
     }
 
-    /* Контейнер списка переменных */
-    #variablesList {
+    /* Строка добавления: инпут + кнопка */
+    .variable-add-form {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+
+    .variable-add-form .form-control {
+        flex-grow: 1;
+    }
+
+    .btn-add-var {
+        background-color: #28a745;
+        color: white;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .btn-add-var:hover {
+        background-color: #218838;
+    }
+
+    /* Список переменных */
+    .variables-list {
         display: flex;
         flex-direction: column;
         gap: 8px;
+        max-height: 250px;
+        overflow-y: auto;
     }
 
-    /* Пример стиля для элемента переменной (если будете рендерить через JS) */
+    /* Элемент списка */
     .variable-item {
-        font-size: 12px;
-        color: #4b5563;
-        background-color: #f3f4f6;
-        padding: 6px 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: white;
+        padding: 8px 12px;
+        border: 1px solid #e0e0e0;
         border-radius: 4px;
-        border: 1px solid #e5e7eb;
-        word-break: break-all;
+        font-family: monospace;
+        font-size: 14px;
     }
 
-    .variable-list-empty {
-        color: #9ca3af;
-        font-size: 12px;
-        font-style: italic;
+    /* Кнопка удаления переменной */
+    .btn-delete-var {
+        background: none;
+        border: none;
+        color: #dc3545;
+        font-size: 18px;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0 4px;
+    }
+
+    .btn-delete-var:hover {
+        color: #bd2130;
     }
 
     .transitions-editor {
@@ -520,6 +558,31 @@
 
                 <!-- 2. Контейнер ШАГОВ (Две колонки) -->
                 <div id="stepsEditorView" class="form-layout-grid" style="display: none;">
+
+                    <div class="settings-column">
+                        <div class="variables-section">
+                            <div class="variables-header">
+                                <h3>Переменные</h3>
+                                <div class="variable-add-form">
+                                    <input type="text" id="newVariableName" class="form-control"
+                                           placeholder="Имя переменной...">
+                                    <button type="button" class="btn-add-var" id="addVariableBtn">+ Add</button>
+                                </div>
+                            </div>
+
+                            <!-- Список добавленных переменных -->
+                            <div class="variables-list" id="variablesContainer">
+                                <!-- Пример элемента списка (будет генерироваться через JS) -->
+                                <!--
+                                <div class="variable-item">
+                                    <span class="variable-name">my_var_name</span>
+                                    <button type="button" class="btn-delete-var" data-name="my_var_name">&times;</button>
+                                </div>
+                                -->
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Колонки управления шагами -->
                     <div class="settings-column" style="border-right: 1px solid #eee; padding-right: 15px;">
 
@@ -594,13 +657,7 @@
                         </div>
                     </div>
 
-                    <div class="variable-column" id="stepVariableView">
-                        <label>Переменные</label>
-                        <div id="variablesList">
-                            <!-- Сюда JS будет рендерить список переменных текущего шага -->
-                            <div class="variable-list-empty">Нет переменных</div>
-                        </div>
-                    </div>
+
                 </div>
 
                 <div class="editor-footer">
@@ -678,6 +735,7 @@
 
     let allCurrentStepsData = [];
     let allWorkflowStepsType = {};
+    let allCurrentVariables = {};
 
     /**
      * Инициализация страницы: загрузка задач и нод для селекта
@@ -704,6 +762,7 @@
             }
 
             renderWorkflowList(workflows, nodes);
+            initVariablesHandlers();
 
             const firstWorkflowLink = workflowListContainer.querySelector('.workflow-name-link');
             if (firstWorkflowLink) {
@@ -875,13 +934,17 @@
         el.classList.add('active');
     }
 
-    function fillWorkflowForm(workflow) {
+    async function fillWorkflowForm(workflow) {
         document.getElementById('workflowId').value = workflow.id;
         document.getElementById('tid').value = workflow.tid || '';
         document.getElementById('title').value = workflow.title || '';
         document.getElementById('node_id').value = workflow.node_id || '';
         document.getElementById('position').value = workflow.position || 0;
         document.getElementById('description').value = workflow.description || '';
+
+        if (workflow.id) {
+            await loadWorkflowVariables(workflow.id);
+        }
 
         deleteBtn.style.display = 'block';
     }
@@ -971,6 +1034,30 @@
         } catch (e) {
             console.error("Ошибка загрузки шагов:", e);
             allCurrentStepsData = [];
+        }
+    }
+
+    async function loadWorkflowVariables(workflowId) {
+        const container = document.getElementById('variablesContainer');
+        if (!container) return;
+
+        try {
+            // 1. Делаем асинхронный запрос к выделенному эндпоинту переменных
+            const data = await getData(`/workflow/${workflowId}/variables`);
+
+            // 2. Сохраняем полученные переменные в глобальные стейты модуля.
+            // Это позволит функциям генерации полей и автодополнения видеть актуальный список.
+            allCurrentVariables = data.result || data || [];
+            window.allCurrentVariables = allCurrentVariables; // Дублируем для генератора динамических полей
+
+            // 3. Отрисовываем переменные в интерфейсе
+            renderWorkflowVariables(allCurrentVariables);
+
+        } catch (e) {
+            console.error("Ошибка загрузки переменных:", e);
+            allCurrentVariables = [];
+            window.allCurrentVariables = [];
+            container.innerHTML = ''; // Очищаем контейнер при ошибке
         }
     }
 
@@ -1161,6 +1248,118 @@
         });
     }
 
+    function renderWorkflowVariables(variables) {
+        const container = document.getElementById('variablesContainer');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const variablesArray = Array.isArray(variables) ? variables : [];
+
+        variablesArray.forEach(variable => {
+            const div = document.createElement('div');
+            div.className = 'variable-item';
+            div.setAttribute('data-name', variable.name);
+            div.setAttribute('data-id', variable.id); // Сохраняем ID переменной в дата-атрибут
+
+            div.innerHTML = `
+                <span class="variable-name">\{\{${variable.name}\}\}</span>
+            `;
+
+            if (variable.id > 0) {
+                div.innerHTML += `
+                    <button type="button" class="btn-delete-var" title="Удалить переменную">&times;</button>
+                `;
+
+                // Навешиваем обработчик клика на удаление
+                const deleteBtn = div.querySelector('.btn-delete-var');
+                deleteBtn.onclick = async () => {
+                    const workflowId = document.getElementById('workflowId').value;
+
+                    // Если workflow еще не создан (нет ID), удаляем только локально из UI и стейта
+                    if (!workflowId) {
+                        allCurrentVariables = allCurrentVariables.filter(v => v !== variable);
+                        window.allCurrentVariables = allCurrentVariables;
+                        div.remove();
+                        return;
+                    }
+
+                    if (!confirm(`Удалить переменную "${variable.name}"?`)) return;
+
+                    try {
+                        // Отправляем запрос на удаление по API
+                        await deleteData(`/workflow/${workflowId}/variable/${variable.id}`);
+
+                        // Удаляем элемент из глобального массива после успешного ответа сервера
+                        allCurrentVariables = allCurrentVariables.filter(v => v !== variable);
+                        window.allCurrentVariables = allCurrentVariables;
+
+                        // Удаляем блок из интерфейса
+                        div.remove();
+
+                        showNotification('Переменная успешно удалена', 'success');
+                    } catch (e) {
+                        console.error("Ошибка при удалении переменной:", e);
+                        showNotification(`Ошибка удаления: ${e.message}`, 'error');
+                    }
+                };
+            }
+
+            container.appendChild(div);
+        });
+    }
+
+    async function addWorkflowVariable() {
+        const workflowId = document.getElementById('workflowId').value;
+        const newVariableNameInput = document.getElementById('newVariableName');
+
+        if (!newVariableNameInput) return;
+
+        const varName = newVariableNameInput.value.trim();
+
+        // 1. Клиентская валидация перед отправкой
+        if (!varName) {
+            showNotification('Имя переменной не может быть пустым', 'error');
+            return;
+        }
+
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(varName)) {
+            showNotification('Недопустимый формат (разрешены буквы, цифры и _ начиная с буквы)', 'error');
+            return;
+        }
+
+        // Если workflow еще не сохранен (нет ID), мы не можем отправить запрос на бэкенд
+        if (!workflowId) {
+            showNotification('Сначала сохраните workflow, чтобы добавлять переменные', 'warning');
+            return;
+        }
+
+        // Проверяем дубликаты локально по свойству .name внутри объектов стейта
+        const isDuplicate = allCurrentVariables.some(v => v.name === varName);
+        if (isDuplicate) {
+            showNotification('Такая переменная уже существует в этом workflow', 'error');
+            return;
+        }
+
+        try {
+            // 2. Отправка POST-запроса на бэкенд
+            // Передаем payload (название поля 'name' подстройте под требования вашего API, если оно отличается)
+            await postData(`/workflow/${workflowId}/variable`, {name: varName});
+
+            showNotification('Переменная успешно добавлена', 'success');
+
+            // 3. Очищаем инпут ввода
+            newVariableNameInput.value = '';
+            newVariableNameInput.focus();
+
+            // 4. Перезагружаем список переменных с бэкенда для синхронизации UI
+            await loadWorkflowVariables(workflowId);
+
+        } catch (e) {
+            console.error("Ошибка при добавлении переменной:", e);
+            showNotification(`Ошибка добавления: ${e.message}`, 'error');
+        }
+    }
+
     function renderTransitions(step, allSteps) {
         const container = document.getElementById('stepTransitionsList');
         if (!container) return;
@@ -1262,6 +1461,26 @@
         } catch (e) {
             showNotification(`Ошибка удаления: ${e.message}`, 'error');
         }
+    }
+
+    function initVariablesHandlers() {
+        const addVariableBtn = document.getElementById('addVariableBtn');
+        const newVariableNameInput = document.getElementById('newVariableName');
+
+        if (!addVariableBtn || !newVariableNameInput) return;
+
+        // Клик по кнопке "+ Добавить"
+        addVariableBtn.onclick = async () => {
+            await addWorkflowVariable();
+        };
+
+        // Нажатие Enter внутри инпута ввода
+        newVariableNameInput.onkeydown = async (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Запрещаем сабмит основной формы workflowForm
+                await addWorkflowVariable();
+            }
+        };
     }
 
     document.getElementById('addConditionBtn').onclick = () => {

@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS `setting`;
 DROP TABLE IF EXISTS `user`;
 DROP TABLE IF EXISTS `workflow_step`;
 DROP TABLE IF EXISTS `workflow_step_type`;
+DROP TABLE IF EXISTS `workflow_variable`;
 DROP TABLE IF EXISTS `workflow`;
 
 -- Включаем проверки обратно
@@ -130,6 +131,12 @@ CREATE TABLE `workflow_step` (
     CONSTRAINT `workflow_step_workflow_step_type` FOREIGN KEY (`type_id`) REFERENCES `workflow_step_type` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `workflow_variable` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `workflow_id` INT NULL,
+    `name` CHAR(50) NOT NULL,
+    CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflow` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица фактов (коллекция фактов)
 CREATE TABLE `fact_collection` (

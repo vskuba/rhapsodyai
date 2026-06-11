@@ -91,6 +91,10 @@ INSERT INTO `workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`
 (7, 1, 2, 'запрос LLM', 3, ''),
 (8, 1, 4, 'Поиск в коллекции', 2, '');
 
+INSERT INTO `workflow_variable` (`id`, `workflow_id`, `name`) VALUES
+(1, 1, 'tags'),
+(2, 1, 'facts');
+
 --
 
 INSERT INTO `fact_collection` (`id`, `name`, `language`, `user_prompt_header`) VALUES
