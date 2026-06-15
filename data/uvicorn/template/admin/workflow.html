@@ -356,6 +356,8 @@
         flex-direction: column;
         gap: 8px;
         margin-top: 10px;
+        background-color: #f9f9f9;
+        font-size: 14px;
     }
 
     .stepTitle label {
@@ -662,7 +664,7 @@
 
                 <div class="editor-footer">
                     <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
-                    <button type="submit" class="btn-save">Сохранить задачу</button>
+                    <button type="submit" class="btn-save">Сохранить workflow</button>
                 </div>
             </form>
         </div>
@@ -684,19 +686,22 @@
         'llm_to_string': [ // ID типа "Запрос LLM"
             {
                 key: 'llm_to_string',
-                label: 'LLM запрос',
+                label: 'Prompt',
                 type: 'textarea',
                 placeholder: ''
             }
         ],
         'llm_to_json': [ // ID типа "Инструменты"
             {
-                key: 'llm_to_json',
-                label: 'Получить JSON',
-                type: 'textarea',
-                placeholder: ''
+                type: 'widget_json_variable',
             },
-            {key: 'timeout', label: 'Таймаут (сек)', type: 'number', default: 30}
+            {
+                key: 'llm_to_json_prompt',
+                label: 'Prompt',
+                type: 'textarea',
+                placeholder: '',
+                value: '\{\{user-prompt\}\}'
+            }
         ],
         'tool_invoke': [ // ID типа "Инструменты"
             {
@@ -711,14 +716,6 @@
             {
                 key: 'response_return',
                 label: 'Шаблон ответа',
-                type: 'textarea',
-                placeholder: ''
-            }
-        ],
-        'collection_search': [
-            {
-                key: 'response_template',
-                label: 'Поиск в коллекции',
                 type: 'textarea',
                 placeholder: ''
             }
@@ -1185,41 +1182,7 @@
 
             let inputElement;
 
-            // Создаем элемент в зависимости от указанного типа разметки
-            if (field.type === 'textarea') {
-                inputElement = document.createElement('textarea');
-                inputElement.id = `field_${field.key}`;
-                inputElement.className = 'form-control';
-                inputElement.style = "height: 100px; resize: vertical; font-size: 13px; padding: 8px;";
-                inputElement.placeholder = field.placeholder || '';
-                inputElement.value = currentValue;
-            } else if (field.type === 'select') {
-                inputElement = document.createElement('select');
-                inputElement.id = `field_${field.key}`;
-                inputElement.className = 'form-control';
-                inputElement.style = "padding: 6px; font-size: 13px;";
-
-                field.options.forEach(opt => {
-                    const option = document.createElement('option');
-                    option.value = opt;
-                    option.textContent = opt;
-                    if (opt === currentValue) option.selected = true;
-                    inputElement.appendChild(option);
-                });
-            } else { // Для 'text', 'number' и других стандартных инпутов
-                inputElement = document.createElement('input');
-                inputElement.id = `field_${field.key}`;
-                inputElement.type = field.type;
-                inputElement.className = 'form-control';
-                inputElement.style = "padding: 6px; font-size: 13px;";
-                if (field.min !== undefined) inputElement.min = field.min;
-                if (field.max !== undefined) inputElement.max = field.max;
-                if (field.step !== undefined) inputElement.step = field.step;
-                inputElement.value = currentValue;
-            }
-
-            // Автоматическое сохранение изменений инпута в metadata объекта "на лету"
-            const saveChanges = () => {
+            const saveChanges = (customValue) => {
                 let latestMeta = {};
                 try {
                     latestMeta = (typeof step.metadata === 'string') ? JSON.parse(step.metadata || '{}') : (step.metadata || {});
@@ -1227,23 +1190,252 @@
                     latestMeta = {};
                 }
 
-                // Записываем новое значение по ключу конфигурации
-                let value = inputElement.value;
-                if (field.type === 'number') value = parseFloat(value) || 0;
-
-                latestMeta[field.key] = value;
+                // Записываем значение (для обычных полей берем из инпута, для виджета передаем кастомный JSON)
+                if (customValue !== undefined) {
+                    latestMeta[field.key] = customValue;
+                } else if (inputElement) {
+                    let value = inputElement.value;
+                    if (field.type === 'number') value = parseFloat(value) || 0;
+                    latestMeta[field.key] = value;
+                }
 
                 // Сохраняем обратно в state шага в виде строки JSON
                 step.metadata = JSON.stringify(latestMeta);
 
-                // Дублируем в скрытую текстареа, чтобы сработал ваш старый метод сабмита формы
-                document.getElementById('stepTextarea').value = step.metadata;
+                // Дублируем в скрытую текстареа
+                const stepTextarea = document.getElementById('stepTextarea');
+                if (stepTextarea) {
+                    stepTextarea.value = step.metadata;
+                }
             };
 
-            inputElement.oninput = saveChanges;
-            inputElement.onchange = saveChanges;
+            // --- НОВЫЙ ТИП: widget_json_variable ---
+            if (field.type === 'widget_json_variable') {
+                const widgetContainer = document.createElement('div');
+                widgetContainer.id = `field_${field.key}`;
+                widgetContainer.style = "display: flex; flex-direction: column; gap: 8px; background: #f8fafc; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px;";
 
-            fieldWrapper.appendChild(inputElement);
+                const rowsContainer = document.createElement('div');
+                rowsContainer.className = 'widget-rows-list';
+                rowsContainer.style = "display: flex; flex-direction: column; gap: 8px;";
+                widgetContainer.appendChild(rowsContainer);
+
+                // Собираем актуальный массив данных из сохраненного JSON (ожидаем массив объектов)
+                let savedRows = [];
+                if (currentValue) {
+                    try {
+                        savedRows = typeof currentValue === 'string' ? JSON.parse(currentValue) : currentValue;
+                    } catch (e) {
+                        savedRows = [];
+                    }
+                }
+                if (!Array.isArray(savedRows)) savedRows = [];
+
+                // Функция сбора данных со всех строк виджета и записи их в metadata
+                const collectWidgetData = () => {
+                    const rows = rowsContainer.querySelectorAll('.widget-row');
+                    const data = [];
+                    rows.forEach(row => {
+                        const variableName = row.querySelector('.widget-select').value;
+                        const textValue = row.querySelector('.widget-textarea').value;
+                        data.push({
+                            variable: variableName,
+                            text: textValue
+                        });
+                    });
+                    saveChanges(data); // Сохраняем массив объектов в metadata
+                };
+
+                // Функция создания ОДНОЙ интерактивной строки виджета
+                const createWidgetRow = (initialVariable = '', initialText = '') => {
+                    const row = document.createElement('div');
+                    row.className = 'widget-row';
+                    row.style = "display: flex; gap: 8px; align-items: flex-start; background: white; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px;";
+
+                    // 1. Создаем селект с переменными из allCurrentVariables
+                    const select = document.createElement('select');
+                    select.className = 'form-control widget-select';
+                    select.style = "flex: 1; padding: 5px; font-size: 13px; height: 40px;";
+
+                    // Дефолтный пустой вариант
+                    select.innerHTML = '<option value="">Выбрать...</option>';
+                    if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
+                        window.allCurrentVariables.forEach(v => {
+                            const opt = document.createElement('option');
+                            opt.value = v.name;
+                            opt.textContent = v.name;
+                            if (v.name === initialVariable) opt.selected = true;
+                            select.appendChild(opt);
+                        });
+                    }
+
+                    // 2. Создаем текстовое поле textarea
+                    const txt = document.createElement('textarea');
+                    txt.className = 'form-control widget-textarea';
+                    txt.placeholder = 'Введите текст...';
+                    txt.style = "flex: 2; height: 40px; min-height: 40px; resize: vertical; padding: 5px; font-size: 13px;";
+                    txt.value = initialText;
+
+                    // 3. Кнопка удаления конкретной строки
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.type = 'button';
+                    deleteBtn.innerHTML = '&times;';
+                    deleteBtn.style = "background: none; border: none; color: #dc3545; font-size: 18px; cursor: pointer; padding: 0 4px; margin-top: 4px;";
+
+                    deleteBtn.onclick = () => {
+                        row.remove();
+                        collectWidgetData();
+                    };
+
+                    // Навешиваем живое автосохранение на изменение полей
+                    select.onchange = collectWidgetData;
+                    txt.oninput = collectWidgetData;
+
+                    row.appendChild(select);
+                    row.appendChild(txt);
+                    row.appendChild(deleteBtn);
+                    rowsContainer.appendChild(row);
+                };
+
+                // Отрисовываем ранее сохраненные строки (если они есть)
+                if (savedRows.length > 0) {
+                    savedRows.forEach(rowData => {
+                        createWidgetRow(rowData.variable, rowData.text);
+                    });
+                } else {
+                    createWidgetRow(); // Если данных нет, создаем одну пустую строку для удобства
+                }
+
+                const actionsContainer = document.createElement('div');
+                actionsContainer.className = 'widget-actions-row';
+                actionsContainer.style = "display: flex; gap: 8px; align-items: center; margin-top: 8px;";
+
+                // 4. Кнопка "+ Add" для добавления новой чистой строки внизу виджета
+                const addBtn = document.createElement('button');
+                addBtn.type = 'button';
+                addBtn.className = 'btn-add-widget-row';
+                addBtn.textContent = '+ Add';
+                addBtn.style = "align-self: flex-start; margin-top: 4px; padding: 4px 12px; font-size: 12px; font-weight: 500; background: #3182ce; color: white; border: none; border-radius: 4px; cursor: pointer;";
+
+                addBtn.onclick = () => {
+                    createWidgetRow(); // Создает пустую строку
+                    collectWidgetData(); // Обновляет JSON-структуру в метаданных
+                };
+
+                const refreshPromptBtn = document.createElement('button');
+                refreshPromptBtn.type = 'button';
+                refreshPromptBtn.className = 'btn-refresh-prompt';
+                refreshPromptBtn.textContent = '+ Обновить Prompt';
+                refreshPromptBtn.style = "align-self: flex-start; margin-top: 4px; margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 500; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;";
+
+                refreshPromptBtn.onclick = () => {
+                    // 1. Ищем поле промпта
+                    const targetTextarea = document.getElementById('field_llm_to_json_prompt') || document.querySelector('[id$="prompt"]');
+                    if (!targetTextarea) {
+                        showNotification('Целевое поле промпта не найдено на форме', 'error');
+                        return;
+                    }
+
+                    // 2. Считываем все текущие строки виджета
+                    const rows = rowsContainer.querySelectorAll('.widget-row');
+                    let descriptionJsonSchema = "";
+                    let exampleJsonSchema = {};
+
+                    rows.forEach(row => {
+                        const selectEl = row.querySelector('.widget-select');
+                        const txtEl = row.querySelector('.widget-textarea');
+
+                        if (selectEl && selectEl.value) {
+                            let variableName = selectEl.value.replace(/[{}]/g, '');
+                            let textValue = txtEl ? txtEl.value.trim() : '';
+
+                            descriptionJsonSchema += `- "${variableName}": ${textValue || 'Without description'}\n`;
+                            exampleJsonSchema[variableName] = textValue || "value";
+                        }
+                    });
+
+                    if (!descriptionJsonSchema) {
+                        showNotification('Нет заполненных переменных для генерации промпта', 'warning');
+                        return;
+                    }
+
+                    // 3. Формируем новый текст инструкции
+                    const systemInstructions = "Please return your response in JSON format. " +
+                        "The JSON response must contain follow keys: \n" + descriptionJsonSchema + "\n" +
+                        "Example of JSON response:\n" + JSON.stringify(exampleJsonSchema, null, 2);
+
+                    // Маркер-разделитель для безопасного удаления старой схемы
+                    const delimiter = "\n\n=== Important information about final response ===";
+                    let currentPrompt = targetTextarea.value;
+
+                    // 4. ПРОВЕРКА И ОЧИСТКА:
+                    // Если в поле уже есть маркер ИЛИ старый текст инструкции — отсекаем его
+                    if (currentPrompt.includes(delimiter)) {
+                        // Разделяем строку по маркеру и берем только первую часть (текст пользователя)
+                        currentPrompt = currentPrompt.split(delimiter)[0].trim();
+                    } else if (currentPrompt.includes("Please return your response in JSON format.")) {
+                        // Альтернативный фоллбек: если маркера еще нет, но есть старый текст, отрезаем всё, что идет до него
+                        currentPrompt = currentPrompt.split("Please return your response in JSON format.")[0].trim();
+                    }
+
+                    // 5. ВСТАВКА ОБНОВЛЕННОГО ТЕКСТА
+                    // Если у пользователя был свой текст, добавляем отступ, если поле было пустым — вставляем сразу
+                    const separator = currentPrompt ? "\n\n" : "";
+                    targetTextarea.value = currentPrompt + separator + "=== Important information about final response ===\n" + systemInstructions;
+
+                    // 6. Триггерим событие сохранения для обновления metadata в стейте шага
+                    targetTextarea.dispatchEvent(new Event('input'));
+
+                    showNotification('Промпт успешно обновлен', 'success');
+                };
+
+                actionsContainer.appendChild(addBtn);
+                actionsContainer.appendChild(refreshPromptBtn);
+
+                widgetContainer.appendChild(actionsContainer);
+
+                fieldWrapper.appendChild(widgetContainer);
+
+            } else {
+                // --- СТАНДАРТНАЯ ОТРИСОВКА ОСТАЛЬНЫХ ТИПОВ ПОЛЕЙ ---
+                if (field.type === 'textarea') {
+                    inputElement = document.createElement('textarea');
+                    inputElement.id = `field_${field.key}`;
+                    inputElement.className = 'form-control';
+                    inputElement.style = "height: 170px; resize: vertical; font-size: 13px; padding: 8px;";
+                    inputElement.placeholder = field.placeholder || '';
+                    inputElement.value = currentValue || field.value || '';
+                } else if (field.type === 'select') {
+                    inputElement = document.createElement('select');
+                    inputElement.id = `field_${field.key}`;
+                    inputElement.className = 'form-control';
+                    inputElement.style = "padding: 6px; font-size: 13px;";
+
+                    field.options.forEach(opt => {
+                        const option = document.createElement('option');
+                        option.value = opt;
+                        option.textContent = opt;
+                        if (opt === currentValue) option.selected = true;
+                        inputElement.appendChild(option);
+                    });
+                } else {
+                    inputElement = document.createElement('input');
+                    inputElement.id = `field_${field.key}`;
+                    inputElement.type = field.type;
+                    inputElement.className = 'form-control';
+                    inputElement.style = "padding: 6px; font-size: 13px;";
+                    if (field.min !== undefined) inputElement.min = field.min;
+                    if (field.max !== undefined) inputElement.max = field.max;
+                    if (field.step !== undefined) inputElement.step = field.step;
+                    inputElement.value = currentValue;
+                }
+
+                inputElement.oninput = () => saveChanges();
+                inputElement.onchange = () => saveChanges();
+
+                fieldWrapper.appendChild(inputElement);
+            }
+
             container.appendChild(fieldWrapper);
         });
     }
@@ -1513,79 +1705,67 @@
      */
     workflowForm.onsubmit = async (e) => {
         e.preventDefault();
-        const id = document.getElementById('workflowId').value;
 
+        const idEl = document.getElementById('workflowId');
+        const id = idEl ? idEl.value : '';
+
+        // 1. Безопасный сбор основного payload задачи
+        const payload = {
+            tid: document.getElementById('tid')?.value.trim() || '',
+            title: document.getElementById('title')?.value || '',
+            node_id: document.getElementById('node_id')?.value || null,
+            description: document.getElementById('description')?.value || '',
+            position: parseInt(document.getElementById('position')?.value) || 0,
+        };
+
+        // 2. Проверяем, открыто ли редактирование конкретного шага
         const activeStepBlock = document.querySelector('.step-item-block.active');
-        const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
-        if (!currentStepData) return;
 
-        // 1. Сбор переходов из интерфейса
-        const transitions = collectTransitions();
+        if (activeStepBlock && allCurrentStepsData.length > 0) {
+            const stepId = activeStepBlock.dataset.id;
+            const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(stepId));
 
-        // 2. Безопасное формирование метаданных активного шага
-        let metadata = {};
-        if (currentStepData) {
-            try {
-                // Берем за основу уже имеющиеся метаданные шага (чтобы не стереть скрытые бэк-ключи)
-                metadata = (typeof currentStepData.metadata === 'string')
-                    ? JSON.parse(currentStepData.metadata || '{}')
-                    : {...currentStepData.metadata};
-            } catch (err) {
-                metadata = {};
-            }
+            if (currentStepData) {
+                // Извлекаем текущие живые метаданные (они уже обновлены функциями ввода/oninput)
+                let metadata = {};
+                try {
+                    metadata = (typeof currentStepData.metadata === 'string')
+                        ? JSON.parse(currentStepData.metadata || '{}')
+                        : {...currentStepData.metadata};
+                } catch (err) {
+                    metadata = {};
+                }
 
-            // Находим схему полей для ТЕКУЩЕГО типа шага
-            let stepType = allWorkflowStepsType[currentStepData.type_id];
-            const fieldsSchema = WORKFLOW_STEP_CONFIG[stepType.name] || WORKFLOW_STEP_CONFIG['default'];
-            const container = document.getElementById('dynamicStepFieldsContainer');
+                // Интегрируем свежие переходы из UI в метаданные шага
+                metadata.transitions = collectTransitions();
 
-            if (container) {
-                // Проходимся по схеме полей и собираем актуальные значения прямо из DOM-элементов
-                fieldsSchema.forEach(field => {
-                    const inputElement = document.getElementById(`field_${field.key}`);
-                    if (inputElement) {
-                        let value = inputElement.value;
-                        if (field.type === 'number') {
-                            value = parseFloat(value) || 0;
-                        }
-                        metadata[field.key] = value;
-                    }
-                });
+                try {
+                    // Сохраняем данные конкретного шага
+                    const stepTitleEl = document.getElementById('stepTitle');
+                    await putData(`/workflow/${id}/step/${stepId}`, {
+                        metadata: JSON.stringify(metadata),
+                        title: stepTitleEl ? stepTitleEl.value : currentStepData.title
+                    });
+                } catch (stepErr) {
+                    console.error("Ошибка сохранения шага:", stepErr);
+                    showNotification(`Ошибка сохранения шага: ${stepErr.message}`, 'error');
+                    return; // Прерываем операцию, если шаг не сохранился
+                }
             }
         }
 
-        metadata.transitions = transitions;
-
-        // 3. Собираем основной payload задачи
-        const payload = {
-            tid: document.getElementById('tid').value.trim(),
-            title: document.getElementById('title').value,
-            node_id: document.getElementById('node_id').value || null,
-            description: document.getElementById('description').value,
-            position: parseInt(document.getElementById('position').value) || 0,
-            // Если у вас API сохраняет метаданные шага через этот же запрос,
-            // нужно передать их. Если нет — нужно отдельное API для шага.
-        };
-
+        // 3. Сохраняем общие параметры задачи (работает в обоих режимах)
         try {
-            // Если мы в режиме редактирования шагов, сохраняем конкретный шаг
-            const activeStep = document.querySelector('.step-item-block.active');
-            if (activeStep) {
-                const stepId = activeStep.dataset.id;
-                await putData(`/workflow/${id}/step/${stepId}`, {
-                    metadata: JSON.stringify(metadata),
-                    title: document.getElementById('stepTitle').value
-                });
-            }
-
-            // Сохраняем общие параметры задачи
             if (id) {
                 await putData(`/workflow/${id}`, payload);
-                showNotification('Задача и переходы сохранены', 'success');
+                showNotification('Изменения успешно сохранены', 'success');
+                await initWorkflowManager(); // Полностью обновляем списки в UI
+            } else {
+                // Фоллбек, если форма была отправлена в режиме создания новой задачи без ID
+                showNotification('Для сохранения новой задачи воспользуйтесь кнопкой создания', 'warning');
             }
-
-            await initWorkflowManager(); // Перезагружаем для обновления списка
         } catch (e) {
+            console.error("Ошибка сохранения воркфлоу:", e);
             showNotification(e.message, 'error');
         }
     };
@@ -1593,31 +1773,63 @@
     /**
      * Логика кнопки "Создать задачу"
      */
-    document.getElementById('createNewWorkflow').onclick = () => {
-        document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
-        workflowForm.reset();
-        document.getElementById('workflowId').value = '';
-        document.getElementById('tid').value = '';
-        document.getElementById('formTitle').textContent = 'Новая задача';
+    const createNewWorkflowBtn = document.getElementById('createNewWorkflow');
+    if (createNewWorkflowBtn) {
+        createNewWorkflowBtn.onclick = () => {
+            document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
 
-        deleteBtn.style.display = 'none';
-        addStepBtn.style.display = 'none';
-    };
+            if (workflowForm) workflowForm.reset();
 
-    document.getElementById('addStepToWorkflowBtn').onclick = async () => {
-        const workflowId = document.getElementById('workflowId').value;
-        const typeId = document.getElementById('availableStepsSelect').value;
+            const workflowIdEl = document.getElementById('workflowId');
+            const tidEl = document.getElementById('tid');
+            const formTitleEl = document.getElementById('formTitle');
 
-        if (!workflowId || !typeId) return;
+            if (workflowIdEl) workflowIdEl.value = '';
+            if (tidEl) tidEl.value = '';
+            if (formTitleEl) formTitleEl.textContent = 'Новый workflow';
 
-        try {
-            await postData(`/workflow/${workflowId}/step`, {type_id: typeId});
-            showNotification('Шаг добавлен', 'success');
-            await loadWorkflowSteps(workflowId); // Перезагружаем список
-        } catch (e) {
-            showNotification('Ошибка добавления', 'error');
-        }
-    };
+            // Безопасно скрываем кнопки управления шагами для нового воркфлоу
+            if (deleteBtn) deleteBtn.style.display = 'none';
+
+            const addStepContainer = document.getElementById('addStepToWorkflowBtn') || addStepBtn;
+            if (addStepContainer) addStepContainer.style.display = 'none';
+
+            // Скрываем редактор шагов и показываем базовую форму
+            const settingsView = document.getElementById('workflowSettingsView');
+            const stepsView = document.getElementById('stepsEditorView');
+            if (settingsView) settingsView.style.display = 'flex';
+            if (stepsView) stepsView.style.display = 'none';
+        };
+    }
+
+    const addStepToWorkflowBtn = document.getElementById('addStepToWorkflowBtn');
+    if (addStepToWorkflowBtn) {
+        addStepToWorkflowBtn.onclick = async () => {
+            const workflowIdEl = document.getElementById('workflowId');
+            const stepSelectEl = document.getElementById('availableStepsSelect');
+
+            if (!workflowIdEl || !stepSelectEl) return;
+
+            const workflowId = workflowIdEl.value;
+            const typeId = stepSelectEl.value;
+
+            if (!workflowId || !typeId) {
+                showNotification('Не выбран workflow или тип шага', 'warning');
+                return;
+            }
+
+            try {
+                await postData(`/workflow/${workflowId}/step`, {type_id: typeId});
+                showNotification('Шаг успешно добавлен', 'success');
+
+                // Перезагружаем список шагов для текущей задачи
+                await loadWorkflowSteps(workflowId);
+            } catch (e) {
+                console.error("Ошибка добавления шага:", e);
+                showNotification('Ошибка добавления шага', 'error');
+            }
+        };
+    }
 
     document.addEventListener('DOMContentLoaded', initWorkflowManager);
 </script>
