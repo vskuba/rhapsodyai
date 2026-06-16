@@ -16,6 +16,8 @@ DROP TABLE IF EXISTS `agent_specialization`;
 DROP TABLE IF EXISTS `llm`;
 DROP TABLE IF EXISTS `setting`;
 DROP TABLE IF EXISTS `user`;
+DROP TABLE IF EXISTS `tool`;
+DROP TABLE IF EXISTS `tool_group`;
 DROP TABLE IF EXISTS `workflow_step`;
 DROP TABLE IF EXISTS `workflow_step_type`;
 DROP TABLE IF EXISTS `workflow_variable`;
@@ -96,6 +98,23 @@ CREATE TABLE `agent_session` (
     CONSTRAINT `fk_memory_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_memory_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Таблица инструментов
+CREATE TABLE `tool_group` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(50) NOT NULL,
+    UNIQUE INDEX `ux_tool_group_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `tool` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(50) NOT NULL,
+    `group_id` INT NULL,
+    `description` LONGTEXT DEFAULT NULL,
+    `args` LONGTEXT DEFAULT NULL,
+    CONSTRAINT `fk_tool_group` FOREIGN KEY (`group_id`) REFERENCES `tool_group` (`id`) ON DELETE SET NULL,
+    UNIQUE INDEX `ux_tool_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица задач

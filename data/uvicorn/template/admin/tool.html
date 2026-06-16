@@ -1,0 +1,503 @@
+{% extends "base.html" %}
+
+{% block title %}Инструменты{% endblock %}
+
+{% block head %}
+<style>
+    /* 1. Базовая компоновка (Интеграция с common.css) */
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        overflow: hidden; /* ГАРАНТИРУЕТ СОХРАНЕНИЕ СКРУГЛЕНИЙ УГЛОВ РОДИТЕЛЬСКОГО .main-wrapper */
+    }
+
+    /* 2. Сайдбар */
+    .agents-sidebar {
+        width: 260px;
+        background: #fafafa;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    .agent-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    /* Кастомизация скроллбара для аккуратного вида */
+    .agent-list::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .agent-list::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .agent-list::-webkit-scrollbar-thumb {
+        background: #ddd;
+        border-radius: 3px;
+    }
+
+    .agent-list::-webkit-scrollbar-thumb:hover {
+        background: #ccc;
+    }
+
+    /* Группировка и элементы списка */
+    .group-header {
+        padding: 10px 14px;
+        font-size: 11px;
+        color: #df983d;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        cursor: pointer;
+        user-select: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        transition: background 0.2s;
+        border-radius: 4px;
+        margin: 2px 10px;
+    }
+
+    .group-header:hover {
+        background: #fdf6ec;
+    }
+
+    /* Иконка стрелочки */
+    .group-header::after {
+        content: '▼';
+        font-size: 9px;
+        transition: transform 0.2s ease;
+        display: inline-block;
+    }
+
+    /* Состояние, когда группа свернута */
+    .group-header.collapsed::after {
+        transform: rotate(-90deg);
+    }
+
+    /* Контейнер для элементов группы, чтобы скрывать их пачкой */
+    .group-wrapper {
+        display: flex;
+        flex-direction: column;
+        transition: max-height 0.2s ease-out;
+        overflow: hidden;
+    }
+
+    .group-wrapper.collapsed {
+        display: none;
+    }
+
+    .agent-item {
+        padding: 6px 12px; /* Сделали кликабельную область чуть выше */
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+    }
+
+    .agent-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .agent-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+        font-weight: 600;
+    }
+
+    /* 3. Основная секция просмотра */
+    .editor-section {
+        flex: 1;
+        padding: 20px 20px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 10px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-header h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 20px;
+    }
+
+    /* 4. Двухколоночный макет */
+    .form-layout-grid {
+        display: flex;
+        gap: 30px;
+        align-items: stretch;
+        min-height: 450px;
+    }
+
+    .settings-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .prompt-column {
+        flex: 1.5;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    /* 5. Кнопка синхронизации */
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .btn-create:hover {
+        background: #219653;
+    }
+
+    .btn-create:disabled {
+        background: #bdc3c7;
+        cursor: not-allowed;
+    }
+
+    /* 6. Кастомные стили для режима "Только чтение" */
+    .readonly-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+        background-color: #fcfcfc;
+        color: #2c3e50;
+        min-height: 40px;
+        word-break: break-word;
+    }
+
+    .readonly-textarea {
+        flex: 1;
+        white-space: pre-wrap;
+        font-family: 'Consolas', 'Monaco', monospace;
+        line-height: 1.5;
+        background: #fdfdfd;
+        padding: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-content">
+    <div class="main-wrapper">
+        <div class="editor-container">
+
+            <!-- Сайдбар со списком инструментов -->
+            <div class="agents-sidebar">
+                <div class="sidebar-header">
+                    <button class="btn-create" id="syncToolsBtn">🔄 Синхронизировать</button>
+                </div>
+                <div class="agent-list" id="toolList">
+                    <!-- Заполняется динамически через JS -->
+                </div>
+            </div>
+
+            <!-- Зона детального просмотра инструмента -->
+            <div class="editor-section">
+                <div class="form-header">
+                    <h2 id="viewTitle">Выберите инструмент из списка</h2>
+                </div>
+
+                <div class="form-layout-grid" id="detailsContainer" style="display: none;">
+                    <!-- Левая колонка: Информация и аргументы выстроены вертикально -->
+                    <div class="settings-column">
+
+                        <div class="form-group">
+                            <label>Входящие аргументы (`input`)</label>
+                            <div id="viewArgs" class="readonly-control"
+                                 style="min-height: 120px; background: #fafafa; font-family: monospace; font-size: 12px;">
+                                <!-- Заполняется динамически из JS -->
+                            </div>
+                        </div>
+
+                        <!-- Новый блок для отображения типа результата -->
+                        <div class="form-group">
+                            <label>Результат (`output`)</label>
+                            <div id="viewOutput" class="readonly-control"
+                                 style="background: #fafafa; font-family: monospace; font-size: 13px; font-weight: 600; color: #27ae60;">
+                                <!-- Заполняется динамически из JS -->
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Правая колонка: Описание / Документация -->
+                    <div class="prompt-column">
+                        <div class="form-group" style="height: 100%; display: flex; flex-direction: column;">
+                            <label>Описание инструмента (`description`)</label>
+                            <div id="viewDescription" class="readonly-control readonly-textarea"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, postData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const toolListContainer = document.getElementById('toolList');
+    const syncToolsBtn = document.getElementById('syncToolsBtn');
+    const detailsContainer = document.getElementById('detailsContainer');
+
+    // Кэш групп для быстрого сопоставления ID -> Имя без лишних запросов
+    let groupMap = {};
+
+    /**
+     * Инициализация менеджера: загрузка групп и списка инструментов
+     */
+    async function initToolsManager() {
+        if (!toolListContainer) return;
+
+        try {
+            const [toolsRes, groupsRes] = await Promise.all([
+                getData('/tool/list'),
+                getData('/tool/group/list')
+            ]);
+
+            const groups = groupsRes.result.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            const tools = toolsRes.result;
+
+            // Строим карту групп для текстового отображения в деталях
+            groupMap = {};
+            groups.forEach(g => {
+                groupMap[g.id] = g.name;
+            });
+
+            renderGroupList(tools, groups);
+
+        } catch (e) {
+            console.error("Ошибка инициализации:", e);
+            showNotification(`Ошибка инициализации: ${e.message}`, 'error');
+        }
+    }
+
+    /**
+     * Отрисовка списка инструментов с группировкой по категориям
+     */
+    function renderGroupList(tools, groups) {
+        toolListContainer.innerHTML = '';
+
+        const toolsByGroup = tools.reduce((acc, t) => {
+            const gid = t.group_id || 'none';
+            if (!acc[gid]) acc[gid] = [];
+            acc[gid].push(t);
+            return acc;
+        }, {});
+
+        const createGroupSection = (gid, gName) => {
+            const groupTools = toolsByGroup[gid];
+            if (!groupTools) return;
+
+            // 1. Создаем заголовок (свернут по умолчанию)
+            const header = document.createElement('div');
+            header.className = 'group-header collapsed';
+            header.textContent = gName;
+            toolListContainer.appendChild(header);
+
+            // 2. Создаем контейнер-обертку (свернут по умолчанию)
+            const wrapper = document.createElement('div');
+            wrapper.className = 'group-wrapper collapsed';
+            toolListContainer.appendChild(wrapper);
+
+            // Логика клика с эффектом аккордеона
+            header.onclick = () => {
+                const isCurrentlyCollapsed = header.classList.contains('collapsed');
+
+                // Сначала принудительно сворачиваем ВСЕ группы в сайдбаре
+                document.querySelectorAll('.group-header').forEach(h => h.classList.add('collapsed'));
+                document.querySelectorAll('.group-wrapper').forEach(w => w.classList.add('collapsed'));
+
+                // Если группа до клика была свернута — разворачиваем только её
+                if (isCurrentlyCollapsed) {
+                    header.classList.remove('collapsed');
+                    wrapper.classList.remove('collapsed');
+                }
+            };
+
+            groupTools.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+            groupTools.forEach(tool => {
+                const div = document.createElement('div');
+                div.className = 'agent-item';
+                div.textContent = tool.name;
+                div.onclick = () => showToolDetails(tool, div);
+                wrapper.appendChild(div);
+            });
+        };
+
+        groups.forEach(g => createGroupSection(g.id, g.name));
+        createGroupSection('none', 'Без группы');
+    }
+
+    /**
+     * Отображение данных конкретного инструмента в режиме просмотра
+     */
+    function showToolDetails(tool, element) {
+        document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        document.getElementById('viewTitle').textContent = `Инструмент: ${tool.name}`;
+        document.getElementById('viewDescription').textContent = tool.description || 'Описание отсутствует.';
+
+        // Рендеринг аргументов из поля args
+        const argsContainer = document.getElementById('viewArgs');
+        const outputContainer = document.getElementById('viewOutput');
+
+        if (argsContainer && outputContainer) {
+            argsContainer.innerHTML = '';
+            outputContainer.innerHTML = '';
+
+            try {
+                const argsObj = typeof tool.args === 'string' ? JSON.parse(tool.args) : tool.args;
+
+                // 1. Обработка входящих аргументов (input)
+                const inputData = argsObj?.input || {};
+                if (Object.keys(inputData).length > 0) {
+                    const ul = document.createElement('ul');
+                    ul.style.margin = '0';
+                    ul.style.paddingLeft = '20px';
+                    ul.style.lineHeight = '1.6';
+
+                    for (const [paramName, paramInfo] of Object.entries(inputData)) {
+                        const li = document.createElement('li');
+
+                        const isRequired = paramInfo.default === 'Required';
+                        const defaultText = isRequired
+                            ? '<span style="color: #e74c3c; font-weight: bold;">обязательный</span>'
+                            : `<span style="color: #7f8c8d;">default: ${paramInfo.default}</span>`;
+
+                        li.innerHTML = `<strong style="color: #2c3e50;">${paramName}</strong>: <span style="color: #3498db;">${paramInfo.type}</span> — ${defaultText}`;
+                        ul.appendChild(li);
+                    }
+                    argsContainer.appendChild(ul);
+                } else {
+                    argsContainer.textContent = 'Функция не принимает входящих аргументов.';
+                }
+
+                // 2. Обработка типа результата (output)
+                const outputData = argsObj?.output || {};
+            if (outputData && outputData.type) {
+                // Проверяем: если тип dict и в БД сохранился распарсенный массив ключей keys
+                if (outputData.type === 'dict' && outputData.keys && Object.keys(outputData.keys).length > 0) {
+                    let htmlContent = `<div style="margin-bottom: 5px;">→ dict:</div>`;
+                    htmlContent += `<ul style="margin: 0; padding-left: 20px; color: #2c3e50; font-weight: normal; list-style-type: disc;">`;
+
+                    for (const [keyName, keyInfo] of Object.entries(outputData.keys)) {
+                        htmlContent += `<li style="margin-bottom: 2px;">
+                            <strong style="color: #2c3e50;">${keyName}</strong>:
+                            <span style="color: #3498db;">${keyInfo.type}</span>
+                        </li>`;
+                    }
+
+                    htmlContent += `</ul>`;
+                    outputContainer.innerHTML = htmlContent;
+                } else {
+                    // Обычный текстовый вывод для простых типов (str, list, int и т.д.)
+                    outputContainer.textContent = `→ ${outputData.type}`;
+                }
+            } else {
+                outputContainer.textContent = '→ Any';
+            }
+
+            } catch (e) {
+                console.error("Ошибка отображения структуры аргументов:", e);
+                argsContainer.textContent = 'Ошибка чтения данных.';
+                outputContainer.textContent = '—';
+            }
+        }
+
+        if (detailsContainer) {
+            detailsContainer.style.display = 'flex';
+        }
+    }
+
+    // Регистрация событий
+    document.addEventListener('DOMContentLoaded', () => {
+        // 1. Первичная загрузка списка
+        initToolsManager();
+
+        // 2. Обработка кнопки Синхронизации
+        if (syncToolsBtn) {
+            syncToolsBtn.addEventListener('click', async () => {
+                syncToolsBtn.disabled = true;
+                const originalText = syncToolsBtn.textContent;
+                syncToolsBtn.textContent = '⏳ Синхронизация...';
+
+                try {
+                    // Отправляем POST запрос на синхронизацию (скорректируйте эндпоинт при необходимости)
+                    await postData('/tool/sync');
+                    showNotification('Инструменты успешно синхронизированы', 'success');
+
+                    // Сбрасываем правое окно просмотра и обновляем список
+                    if (detailsContainer) detailsContainer.style.display = 'none';
+                    document.getElementById('viewTitle').textContent = 'Выберите инструмент из списка';
+
+                    await initToolsManager();
+                } catch (e) {
+                    console.error("Ошибка синхронизации:", e);
+                    showNotification(`Ошибка синхронизации: ${e.message}`, 'error');
+                } finally {
+                    syncToolsBtn.disabled = false;
+                    syncToolsBtn.textContent = originalText;
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

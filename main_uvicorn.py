@@ -32,6 +32,7 @@ from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
+from src.uvicorn.routers.tool import tool
 from src.uvicorn.routers.workflow import workflow, workflow_step
 from src.uvicorn.routers.user import user
 
@@ -137,3 +138,4 @@ app.include_router(session.router)
 app.include_router(node.router)
 app.include_router(workflow.router)
 app.include_router(workflow_step.router)
+app.include_router(tool.router)

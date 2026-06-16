@@ -74,22 +74,18 @@ INSERT INTO `workflow` (`id`, `node_id`, `tid`, `title`, `description`) VALUES
 (3, 3, 'response_soko', 'Чат суши-бара', 'Ответить пользователю');
 
 INSERT INTO `workflow_step_type` (`id`, `name`, `icon`, `description`, `description_full`, `metadata`) VALUES
-(1, 'response_return', '↩', 'Вернуть ответ', '', ''),
-(2, 'llm_to_string', '🧠', 'LLM ответ string', 'Ожидает ответ от LLM в виде текстовой строки', ''),
-(3, 'tool_invoke', '🛠', 'Вызов инструмента', '', ''),
-(4, 'collection_search', '🔍', 'Поиск в коллекции', '', ''),
-(5, 'llm_to_json', '𝐉son', 'LLM ответ JSON', 'Ожидает ответ от LLM в виде JSON. Далее каждый ключ JSON доступен в последующих шагах', '');
-
+(1, 'response_return', '↩', 'Вернуть ответ', 'Собираем полный запрос на LLM с учетом короткой и длинной памяти, всей связанной информации в БД и отдаем LLM для формирования наиболее качественного ответа.', ''),
+(2, 'llm_to_json', '🧠', 'LLM ответ JSON', 'Ожидает ответ от LLM в виде JSON. Далее каждый ключ JSON доступен в последующих шагах', ''),
+(3, 'llm_to_string', '🧠', 'LLM ответ string', 'Ожидает ответ от LLM в виде текстовой строки', ''),
+(4, 'tool_invoke', '🛠', 'Вызов инструмента', 'Вызываем инструмент. Передаем в аргументы текущие переменные и сохраняем ответ в переменные.', '');
 
 INSERT INTO `workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) VALUES
-(1, 1, 1, 'мой ответ', 4, ''),
-(2, 1, 3, 'мой инструмент', 1,'{"textarea":"ok","transitions":[{"condition":"ok","target_id":"1"}]}'),
+(1, 1, 1, 'мой ответ', 2, '{"response_return":"%user-prompt%","transitions":[]}'),
+(2, 1, 4, 'мой инструмент', 1,'{"textarea":"ok","transitions":[{"condition":"ok","target_id":"1"}],"tool_invoke":{"tool_name":"github_user_info","inputs_map":{"random":"facts"},"outputs_map":{"login":"tags","name":"user-prompt","email":"facts"}}}'),
 (3, 2, 1, 'мой ответ', 0, ''),
 (4, 3, 1, 'мой ответ', 0, ''),
 (5, 3, 4, 'мой поиск', 0, ''),
-(6, 1, 5, 'запрос LLM', 0, ''),
-(7, 1, 2, 'запрос LLM', 3, ''),
-(8, 1, 4, 'Поиск в коллекции', 2, '');
+(7, 1, 2, 'запрос LLM', 0, '{"llm_to_json_variable":[{"variable":"tags","text":"распарсить текст на таги"}],"llm_to_json_prompt":"%user-prompt%\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"tags\\": распарсить текст на таги\n\nExample of JSON response:\n{\n  \\"tags\\": \\"распарсить текст на таги\\"\n}","transitions":[]}');
 
 INSERT INTO `workflow_variable` (`id`, `workflow_id`, `name`) VALUES
 (1, 1, 'tags'),

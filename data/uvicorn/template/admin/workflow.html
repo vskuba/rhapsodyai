@@ -680,7 +680,7 @@
     const workflowListContainer = document.getElementById('workflowList');
     const workflowForm = document.getElementById('workflowForm');
     const deleteBtn = document.getElementById('deleteBtn');
-    const addStepBtn = document.getElementById('addStepBtn');
+    const addStepBtn = document.getElementById('addStepToWorkflowBtn');
 
     const WORKFLOW_STEP_CONFIG = {
         'llm_to_string': [ // ID типа "Запрос LLM"
@@ -693,6 +693,7 @@
         ],
         'llm_to_json': [ // ID типа "Инструменты"
             {
+                key: 'llm_to_json_variable',
                 type: 'widget_json_variable',
             },
             {
@@ -700,17 +701,14 @@
                 label: 'Prompt',
                 type: 'textarea',
                 placeholder: '',
-                value: '\{\{user-prompt\}\}'
+                value: '%user-prompt%'
             }
         ],
         'tool_invoke': [ // ID типа "Инструменты"
             {
                 key: 'tool_invoke',
-                label: 'Выберите инструмент',
-                type: 'select',
-                options: ['check_balance', 'send_sms', 'get_menu']
+                type: 'widget_tool_invoke',
             },
-            {key: 'timeout', label: 'Таймаут (сек)', type: 'number', default: 30}
         ],
         'response_return': [ // ID типа "Вернуть ответ"
             {
@@ -733,16 +731,20 @@
     let allCurrentStepsData = [];
     let allWorkflowStepsType = {};
     let allCurrentVariables = {};
+    let allAvailableTools = [];
 
     /**
      * Инициализация страницы: загрузка задач и нод для селекта
      */
     async function initWorkflowManager() {
         try {
-            const [workflowsRes, nodesRes] = await Promise.all([
+            const [workflowsRes, nodesRes, toolsRes] = await Promise.all([
                 getData('/workflow/list'),
-                getData('/node/list')
+                getData('/node/list'),
+                getData('/tool/list')
             ]);
+
+            allAvailableTools = toolsRes.result || toolsRes || [];
 
             // Также загружаем типы шагов для селекта
             await loadAvailableStepTypes();
@@ -875,25 +877,48 @@
     function getWorkflowStepConditionsHtml(allSteps, currentStep) {
         let transitionInfo = '';
         try {
-            const meta = JSON.parse(currentStep.metadata || '{}');
-            if (meta.transitions && meta.transitions.length > 0) {
-                transitionInfo = meta.transitions.map(tr => {
-                    // Ищем целевой шаг по ID
+
+            let metadata = parseMetadata(currentStep.metadata);
+
+            if (metadata.transitions && metadata.transitions.length > 0) {
+                transitionInfo = metadata.transitions.map(tr => {
                     const target = allSteps.find(s => s.id == tr.target_id);
-                    // Формируем красивое название цели
                     const targetName = target
-                        ? `${target.title}`
+                        ? '' + target.title
                         : (tr.target_id === 'next' ? 'Next Step' : '???');
 
-                    return `<div style="font-size: 10px; color: #3498db; margin-top: 2px;">
-                            if <b>"${tr.condition}"</b> → ${targetName}
-                        </div>`;
+                    return '<div style="font-size: 10px; color: #3498db; margin-top: 2px;">' +
+                        'if <b>"' + tr.condition + '"</b> → ' + targetName +
+                        '</div>';
                 }).join('');
             }
         } catch (e) {
             console.error("Ошибка парсинга метаданных для условий:", e);
         }
         return transitionInfo;
+    }
+
+    function parseMetadata(metadataFieldValue) {
+        if (!metadataFieldValue) return {};
+        if (typeof metadataFieldValue !== 'string') return metadataFieldValue;
+
+        try {
+            // Пробуем распарсить напрямую
+            return JSON.parse(metadataFieldValue);
+        } catch (e) {
+            try {
+                // Если упало, лечим неэкранированные управляющие символы (переносы строк, табы)
+                let fixedStr = metadataFieldValue
+                    .replace(/[\n\u000a]/g, '\\n')
+                    .replace(/[\r\u000d]/g, '\\r')
+                    .replace(/[\t\u0009]/g, '\\t');
+                console.log('Исправленная строка метаданных для парсинга:', fixedStr);
+                return JSON.parse(fixedStr);
+            } catch (innerErr) {
+                console.warn("Критический сбой JSON. parse не справился, применен фоллбек {}:", innerErr);
+                return {}; // Полный фоллбек, гарантирующий, что интерфейс не упадет
+            }
+        }
     }
 
     async function openWorkflowSteps(workflow, element) {
@@ -1126,14 +1151,7 @@
             detailsContent.style.display = 'block';
         }
 
-        let metadata = {};
-        try {
-            metadata = (typeof step.metadata === 'string')
-                ? JSON.parse(step.metadata || '{}')
-                : (step.metadata || {});
-        } catch (e) {
-            console.error("Ошибка парсинга метаданных:", e);
-        }
+        let metadata = parseMetadata(step.metadata);
 
         const stepTitle = document.getElementById('stepTitle');
         if (stepTitle) {
@@ -1148,7 +1166,8 @@
         // 4. Заполнение Метаданных (сырой текст в textarea)
         const metadataField = document.getElementById('stepTextarea');
         if (metadataField) {
-            metadataField.value = metadata.textarea || '';
+            // Записываем весь объект metadata в виде строки, чтобы не терять кастомные поля
+            metadataField.value = typeof step.metadata === 'string' ? step.metadata : JSON.stringify(metadata);
         }
 
         renderCustomStepFields(step, metadata);
@@ -1191,12 +1210,19 @@
                 }
 
                 // Записываем значение (для обычных полей берем из инпута, для виджета передаем кастомный JSON)
+                const metaKey = field.key || 'widget_data';
+
                 if (customValue !== undefined) {
-                    latestMeta[field.key] = customValue;
+                    latestMeta[metaKey] = customValue;
                 } else if (inputElement) {
                     let value = inputElement.value;
                     if (field.type === 'number') value = parseFloat(value) || 0;
-                    latestMeta[field.key] = value;
+
+                    if (typeof value === 'string') {
+                        value = value.replace(/"/g, '\"');
+                    }
+
+                    latestMeta[metaKey] = value;
                 }
 
                 // Сохраняем обратно в state шага в виде строки JSON
@@ -1236,14 +1262,20 @@
                     const rows = rowsContainer.querySelectorAll('.widget-row');
                     const data = [];
                     rows.forEach(row => {
-                        const variableName = row.querySelector('.widget-select').value;
-                        const textValue = row.querySelector('.widget-textarea').value;
+                        const selectEl = row.querySelector('.widget-select');
+                        const txtEl = row.querySelector('.widget-textarea');
+
+                        // Безопасное извлечение значения селекта
+                        const variableName = selectEl ? selectEl.value : '';
+                        const textValue = txtEl ? txtEl.value : '';
+
+                        // Добавляем в массив только если выбрана переменная
                         data.push({
                             variable: variableName,
                             text: textValue
                         });
                     });
-                    saveChanges(data); // Сохраняем массив объектов в metadata
+                    saveChanges(data); // Сохраняем массив в metadata
                 };
 
                 // Функция создания ОДНОЙ интерактивной строки виджета
@@ -1329,14 +1361,12 @@
                 refreshPromptBtn.style = "align-self: flex-start; margin-top: 4px; margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 500; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;";
 
                 refreshPromptBtn.onclick = () => {
-                    // 1. Ищем поле промпта
                     const targetTextarea = document.getElementById('field_llm_to_json_prompt') || document.querySelector('[id$="prompt"]');
                     if (!targetTextarea) {
                         showNotification('Целевое поле промпта не найдено на форме', 'error');
                         return;
                     }
 
-                    // 2. Считываем все текущие строки виджета
                     const rows = rowsContainer.querySelectorAll('.widget-row');
                     let descriptionJsonSchema = "";
                     let exampleJsonSchema = {};
@@ -1346,11 +1376,14 @@
                         const txtEl = row.querySelector('.widget-textarea');
 
                         if (selectEl && selectEl.value) {
-                            let variableName = selectEl.value.replace(/[{}]/g, '');
+                            // Читаем значение напрямую, убирая возможные случайные пробелы
+                            let variableName = selectEl.value.trim();
                             let textValue = txtEl ? txtEl.value.trim() : '';
 
-                            descriptionJsonSchema += `- "${variableName}": ${textValue || 'Without description'}\n`;
-                            exampleJsonSchema[variableName] = textValue || "value";
+                            if (variableName) {
+                                descriptionJsonSchema += `- "${variableName}": ${textValue || 'Without description'}\n`;
+                                exampleJsonSchema[variableName] = textValue || "value";
+                            }
                         }
                     });
 
@@ -1395,6 +1428,240 @@
                 widgetContainer.appendChild(actionsContainer);
 
                 fieldWrapper.appendChild(widgetContainer);
+
+            } else if (field.type === 'widget_tool_invoke') {
+                const toolContainer = document.createElement('div');
+                toolContainer.id = `field_${field.key}`;
+                toolContainer.style = "display: flex; flex-direction: column; gap: 12px; background: #f8fafc; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px;";
+
+                // 1. Селект выбора самого инструмента
+                const selectElement = document.createElement('select');
+                selectElement.className = 'form-control tool-select';
+                selectElement.style = "width: 100%; padding: 6px; font-size: 13px; height: 36px; font-weight: 500;";
+                selectElement.innerHTML = '<option value="">-- Выберите инструмент --</option>';
+
+                // 2. Блок описания
+                const descContainer = document.createElement('div');
+                descContainer.className = 'tool-desc-text';
+                descContainer.style = "font-size: 11px; color: #64748b; font-style: italic; display: none; background: #fff; padding: 6px 10px; border: 1px dashed #cbd5e0; border-radius: 4px;";
+
+                // 3. Блок интерактивного маппинга аргументов
+                const mappingContainer = document.createElement('div');
+                mappingContainer.className = 'tool-mapping-block';
+                mappingContainer.style = "display: flex; flex-direction: column; gap: 10px; margin-top: 5px;";
+
+                // Группировка инструментов по optgroup
+                const groups = {};
+                allAvailableTools.forEach(t => {
+                    const groupName = t.group_name || t.group_id || 'Без группы';
+                    if (!groups[groupName]) groups[groupName] = [];
+                    groups[groupName].push(t);
+                });
+
+                Object.keys(groups).forEach(groupName => {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = groupName;
+                    groups[groupName].forEach(t => {
+                        const option = document.createElement('option');
+
+                        // ВАЖНО: Записываем имя инструмента в качестве value
+                        option.value = t.name;
+                        option.textContent = t.name;
+
+                        if (currentValue && currentValue.tool_name === t.name) {
+                            option.selected = true;
+                        }
+                        optgroup.appendChild(option);
+                    });
+                    selectElement.appendChild(optgroup);
+                });
+
+                // Функция сборки и сохранения всего стейта виджета
+                const collectToolWidgetData = () => {
+                    const selectedName = selectElement.value; // Теперь тут лежит имя инструмента
+                    const inputsMap = {};
+                    const outputsMap = {};
+
+                    // Собираем Inputs
+                    mappingContainer.querySelectorAll('.input-map-row').forEach(row => {
+                        const varSel = row.querySelector('.map-var-select');
+                        const argSel = row.querySelector('.map-arg-select');
+                        if (argSel && argSel.value && varSel && varSel.value) {
+                            inputsMap[argSel.value] = varSel.value;
+                        }
+                    });
+
+                    // Собираем Outputs
+                    mappingContainer.querySelectorAll('.output-map-row').forEach(row => {
+                        const argSel = row.querySelector('.map-arg-select');
+                        const varSel = row.querySelector('.map-var-select');
+                        if (argSel && argSel.value && varSel && varSel.value) {
+                            outputsMap[argSel.value] = varSel.value;
+                        }
+                    });
+
+                    // Сохраняем структуру с tool_name
+                    saveChanges({
+                        tool_name: selectedName || null,
+                        inputs_map: inputsMap,
+                        outputs_map: outputsMap
+                    });
+                };
+
+                // Вспомогательный хелпер генерации селекта со списком глобальных переменных {{var}}
+                const createVariablesSelect = (selectedVal = '') => {
+                    const sel = document.createElement('select');
+                    sel.className = 'form-control map-var-select';
+                    sel.style = "flex: 1; padding: 4px; font-size: 12px; height: 32px;";
+                    sel.innerHTML = '<option value="">-- Переменная --</option>';
+
+                    if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
+                        window.allCurrentVariables.forEach(v => {
+                            const opt = document.createElement('option');
+                            opt.value = v.name;
+                            opt.textContent = `%${v.name}%`;
+                            if (v.name === selectedVal) opt.selected = true;
+                            sel.appendChild(opt);
+                        });
+                    }
+                    sel.onchange = collectToolWidgetData;
+                    return sel;
+                };
+
+                // Функция рендеринга интерактивных связей аргументов
+                const renderToolDetails = (toolName) => {
+                    mappingContainer.innerHTML = '';
+                    descContainer.innerHTML = '';
+                    descContainer.style.display = 'none';
+                    if (!toolName) return;
+
+                    // ВАЖНО: Ищем инструмент в массиве по его названию (name)
+                    const selectedTool = allAvailableTools.find(t => String(t.name) === String(toolName));
+                    if (!selectedTool) return;
+
+                    // Отрисовка описания
+                    if (selectedTool.description) {
+                        descContainer.textContent = 'Описание: ' + selectedTool.description;
+                        descContainer.style.display = 'block';
+                    }
+
+                    // Парсинг аргументов из базы
+                    let argsObj = null;
+                    try {
+                        argsObj = typeof selectedTool.args === 'string' ? JSON.parse(selectedTool.args || '{}') : selectedTool.args;
+                    } catch (err) {
+                        console.warn("Ошибка JSON аргументов инструмента:", err);
+                    }
+
+                    if (!argsObj) return;
+
+                    // 1. Извлекаем входящие параметры строго по вашей структуре: args.input
+                    const inputs = argsObj.input || {};
+                    const inputKeys = Object.keys(inputs);
+
+                    // 2. Извлекаем выходящие параметры строго по вашей структуре: args.output.keys
+                    let outputKeys = [];
+                    if (argsObj.output) {
+                        if (argsObj.output.keys) {
+                            // Если передан словарь с ключами (как на скриншоте у github_user_info)
+                            outputKeys = Object.keys(argsObj.output.keys);
+                        } else if (typeof argsObj.output === 'object' && !argsObj.output.type) {
+                            // Фоллбек, если в каких-то строках output описан плоским объектом
+                            outputKeys = Object.keys(argsObj.output);
+                        }
+                    }
+
+                    // --- РЕНДЕРИНГ ВХОДЯЩИХ (Input) ---
+                    if (inputKeys.length > 0) {
+                        const title = document.createElement('div');
+                        title.style = "font-size: 11px; font-weight: bold; color: #4a5568; margin-top: 5px;";
+                        title.textContent = "Входящие параметры (Input Mapping):";
+                        mappingContainer.appendChild(title);
+
+                        inputKeys.forEach(argName => {
+                            const row = document.createElement('div');
+                            row.className = 'input-map-row';
+                            row.style = "display: flex; align-items: center; gap: 8px; background: #fff; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;";
+
+                            // Левый селект: переменные
+                            const savedVar = (currentValue && currentValue.inputs_map) ? currentValue.inputs_map[argName] : '';
+                            const varSelect = createVariablesSelect(savedVar);
+
+                            // Стрелочка разделитель
+                            const arrow = document.createElement('span');
+                            arrow.innerHTML = '➔';
+                            arrow.style = "color: #a0aec0; font-size: 12px;";
+
+                            // Правый селект: фиксированный аргумент (чистая конкатенация строк во избежание конфликта с Jinja2)
+                            const argSelect = document.createElement('select');
+                            argSelect.className = 'form-control map-arg-select';
+                            argSelect.style = "flex: 1; padding: 4px; font-size: 12px; height: 32px; background: #edf2f7; pointer-events: none;";
+                            argSelect.innerHTML = '<option value="' + argName + '" selected>' + argName + '</option>';
+
+                            row.appendChild(varSelect);
+                            row.appendChild(arrow);
+                            row.appendChild(argSelect);
+                            mappingContainer.appendChild(row);
+                        });
+                    }
+
+                    // --- ДЕЛИМИТЕР (Разделительная линия) ---
+                    if (inputKeys.length > 0 && outputKeys.length > 0) {
+                        const hr = document.createElement('div');
+                        hr.style = "border-top: 1px solid #e2e8f0; margin: 8px 0;";
+                        mappingContainer.appendChild(hr);
+                    }
+
+                    // --- РЕНДЕРИНГ ВЫХОДЯЩИХ (Output) ---
+                    if (outputKeys.length > 0) {
+                        const title = document.createElement('div');
+                        title.style = "font-size: 11px; font-weight: bold; color: #4a5568;";
+                        title.textContent = "Выходящие параметры (Output Mapping):";
+                        mappingContainer.appendChild(title);
+
+                        outputKeys.forEach(argName => {
+                            const row = document.createElement('div');
+                            row.className = 'output-map-row';
+                            row.style = "display: flex; align-items: center; gap: 8px; background: #fff; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;";
+
+                            // Левый селект: фиксированный аргумент выхода инструмента
+                            const argSelect = document.createElement('select');
+                            argSelect.className = 'form-control map-arg-select';
+                            argSelect.style = "flex: 1; padding: 4px; font-size: 12px; height: 32px; background: #edf2f7; pointer-events: none;";
+                            argSelect.innerHTML = '<option value="' + argName + '" selected>' + argName + '</option>';
+
+                            // Стрелочка разделитель
+                            const arrow = document.createElement('span');
+                            arrow.innerHTML = '➔';
+                            arrow.style = "color: #a0aec0; font-size: 12px;";
+
+                            // Правый селект: переменные, куда записать результат
+                            const savedVar = (currentValue && currentValue.outputs_map) ? currentValue.outputs_map[argName] : '';
+                            const varSelect = createVariablesSelect(savedVar);
+
+                            row.appendChild(argSelect);
+                            row.appendChild(arrow);
+                            row.appendChild(varSelect);
+                            mappingContainer.appendChild(row);
+                        });
+                    }
+                };
+
+                // Навешивание события смены инструмента
+                selectElement.onchange = () => {
+                    renderToolDetails(selectElement.value);
+                    collectToolWidgetData();
+                };
+
+                // Первичный запуск при открытии ноды
+                if (currentValue && currentValue.tool_name) {
+                    renderToolDetails(currentValue.tool_name);
+                }
+
+                toolContainer.appendChild(selectElement);
+                toolContainer.appendChild(descContainer);
+                toolContainer.appendChild(mappingContainer);
+                fieldWrapper.appendChild(toolContainer);
 
             } else {
                 // --- СТАНДАРТНАЯ ОТРИСОВКА ОСТАЛЬНЫХ ТИПОВ ПОЛЕЙ ---
@@ -1454,7 +1721,7 @@
             div.setAttribute('data-id', variable.id); // Сохраняем ID переменной в дата-атрибут
 
             div.innerHTML = `
-                <span class="variable-name">\{\{${variable.name}\}\}</span>
+                <span class="variable-name">%${variable.name}%</span>
             `;
 
             if (variable.id > 0) {
@@ -1557,14 +1824,7 @@
         if (!container) return;
         container.innerHTML = '';
 
-        // Безопасный парсинг метаданных
-        let metadata = {};
-        try {
-            metadata = (typeof step.metadata === 'string') ? JSON.parse(step.metadata || '{}') : (step.metadata || {});
-        } catch (e) {
-            console.warn("Ошибка парсинга метаданных:", e);
-            metadata = {};
-        }
+        let metadata = parseMetadata(step.metadata);
 
         const transitions = metadata.transitions || [];
         const stepsArray = Array.isArray(allSteps) ? allSteps : [];
