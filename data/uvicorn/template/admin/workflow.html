@@ -882,18 +882,28 @@
 
             if (metadata.transitions && metadata.transitions.length > 0) {
                 transitionInfo = metadata.transitions.map(tr => {
-                    const target = allSteps.find(s => s.id == tr.target_id);
-                    const targetName = target
-                        ? '' + target.title
-                        : (tr.target_id === 'next' ? 'Next Step' : '???');
+                    // Ищем целевой шаг по новому ключу step_id
+                    const target = allSteps.find(s => String(s.id) === String(tr.step_id));
+
+                    // Формируем красивое название цели
+                    const targetName = target ? target.title : '???';
+
+                    // Собираем читаемое условие: если есть переменная, пишем "%var% == value"
+                    let conditionText = '';
+                    if (tr.variable) {
+                        conditionText = '%' + tr.variable + '% ' + (tr.operator || '==') + ' ' + (tr.value || '');
+                    } else {
+                        // Фолбек на случай, если поле переменной не выбрано
+                        conditionText = tr.value || 'Условие';
+                    }
 
                     return '<div style="font-size: 10px; color: #3498db; margin-top: 2px;">' +
-                        'if <b>"' + tr.condition + '"</b> → ' + targetName +
+                            'if <b>"' + conditionText + '"</b> → ' + targetName +
                         '</div>';
                 }).join('');
             }
         } catch (e) {
-            console.error("Ошибка парсинга метаданных для условий:", e);
+            console.error("Ошибка парсинга метаданных для превью условий:", e);
         }
         return transitionInfo;
     }
@@ -1563,11 +1573,20 @@
                     let outputKeys = [];
                     if (argsObj.output) {
                         if (argsObj.output.keys) {
-                            // Если передан словарь с ключами (как на скриншоте у github_user_info)
+                            // Если это словарь со схемой ключей (как у github_user_info)
                             outputKeys = Object.keys(argsObj.output.keys);
-                        } else if (typeof argsObj.output === 'object' && !argsObj.output.type) {
-                            // Фоллбек, если в каких-то строках output описан плоским объектом
+                        } else if (typeof argsObj.output === 'object' && argsObj.output.type) {
+                            // НОВЫЙ БЛОК: Если это плоский тип (как {"type": "str"} у qdrant)
+                            // Мы создаем один виртуальный ключ "result" для маппинга всего ответа
+                            outputKeys = [argsObj.output.type];
+                        } else if (typeof argsObj.output === 'object') {
                             outputKeys = Object.keys(argsObj.output);
+                        } else if (typeof argsObj.output === 'string') {
+                            // Если на бэкенде в каких-то инструментах написано просто "output": "str"
+                            outputKeys = ['str'];
+                        } else if (typeof argsObj.output === 'int') {
+                            // Если на бэкенде в каких-то инструментах написано просто "output": "str"
+                            outputKeys = ['int'];
                         }
                     }
 
@@ -1829,19 +1848,98 @@
         const transitions = metadata.transitions || [];
         const stepsArray = Array.isArray(allSteps) ? allSteps : [];
 
+        // Вспомогательный хелпер для генерации селекта операторов
+        const createOperatorSelect = (selectedOp = '==') => {
+            const sel = document.createElement('select');
+            sel.className = 'form-control tr-operator';
+            sel.style = "width: 65px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
+
+            const ops = ['==', '!=', '>', '<', 'contains'];
+            ops.forEach(op => {
+                const opt = document.createElement('option');
+                opt.value = op;
+                opt.textContent = op;
+                if (op === selectedOp) opt.selected = true;
+                sel.appendChild(opt);
+            });
+            return sel;
+        };
+
+        // Вспомогательный хелпер для генерации селекта переменных воркфлоу с процентами %
+        const createTrVariablesSelect = (selectedVar = '') => {
+            const sel = document.createElement('select');
+            sel.className = 'form-control tr-variable';
+            sel.style = "flex: 1.5; padding: 4px; font-size: 12px; height: 32px;";
+            sel.innerHTML = '<option value="">-- Переменная --</option>';
+
+            if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
+                window.allCurrentVariables.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = v.name;
+                    opt.textContent = '%' + v.name + '%';
+                    if (v.name === selectedVar) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+            }
+            return sel;
+        };
+
         transitions.forEach((tr) => {
             const row = document.createElement('div');
             row.className = 'transition-row';
-            row.style = "display: flex; gap: 10px; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #edf2f7; margin-bottom: 5px;";
+            row.style = "display: flex; gap: 6px; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #edf2f7; margin-bottom: 5px;";
 
-            row.innerHTML = `
-            <input type="text" class="form-control tr-condition" placeholder="Условие" value="${tr.condition || ''}" style="flex: 2; padding: 5px; font-size: 12px;">
-            <span style="color: #999;">→</span>
-            <select class="form-control tr-target" style="flex: 2; padding: 5px; font-size: 12px;">
-                ${stepsArray.map(s => `<option value="${s.id}" ${s.id == tr.target_id ? 'selected' : ''}>${s.title}</option>`).join('')}
-            </select>
-            <button type="button" class="btn-delete-step" onclick="this.parentElement.remove()" style="position:static; padding:0 5px;">&times;</button>
-        `;
+            // 1. Селект переменной
+            const varSelect = createTrVariablesSelect(tr.variable || '');
+
+            // 2. Селект оператора сравнения
+            const opSelect = createOperatorSelect(tr.operator || '==');
+
+            // 3. Инпут текстового значения для сравнения (ВОЗВРАЩАЕМ ПОЛЕ)
+            const valInput = document.createElement('input');
+            valInput.type = 'text';
+            valInput.className = 'form-control tr-value';
+            valInput.placeholder = 'Значение';
+            valInput.value = tr.value || '';
+            valInput.style = "flex: 1.5; padding: 4px; font-size: 12px; height: 32px;";
+
+            // Стрелочка к цели
+            const arrow = document.createElement('span');
+            arrow.innerHTML = '➔';
+            arrow.style = "color: #a0aec0; font-size: 12px; margin: 0 2px;";
+
+            // 4. Селект целевого шага
+            const targetSelect = document.createElement('select');
+            targetSelect.className = 'form-control tr-target';
+            targetSelect.style = "flex: 2; padding: 4px; font-size: 12px; height: 32px;";
+            targetSelect.innerHTML = stepsArray.map(s =>
+                '<option value="' + s.id + '" ' + (s.id == tr.step_id ? 'selected' : '') + '>' + s.title + '</option>'
+            ).join('');
+
+            // 5. Кнопка удаления строки перехода
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn-delete-transition';
+            delBtn.style = "background:none; border:none; color:#dc3545; font-size:16px; cursor:pointer; padding:0 4px;";
+            delBtn.innerHTML = '&times bridge;';
+            delBtn.innerHTML = '&times;';
+
+            // Навешиваем живую синхронизацию изменений на все четыре элемента
+            varSelect.onchange = () => syncTransitionsToStepState(step);
+            opSelect.onchange = () => syncTransitionsToStepState(step);
+            valInput.oninput = () => syncTransitionsToStepState(step);
+            targetSelect.onchange = () => syncTransitionsToStepState(step);
+            delBtn.onclick = () => {
+                row.remove();
+                syncTransitionsToStepState(step);
+            };
+
+            row.appendChild(varSelect);
+            row.appendChild(opSelect);
+            row.appendChild(valInput); // Вставляем инпут на UI
+            row.appendChild(arrow);
+            row.appendChild(targetSelect);
+            row.appendChild(delBtn);
             container.appendChild(row);
         });
     }
@@ -1882,13 +1980,21 @@
         const transitions = [];
 
         rows.forEach(row => {
-            const condition = row.querySelector('.tr-condition').value.trim();
-            const targetId = row.querySelector('.tr-target').value;
+            const varEl = row.querySelector('.tr-variable');
+            const opEl = row.querySelector('.tr-operator');
+            const valEl = row.querySelector('.tr-value'); // Селектор инпута
+            const targetEl = row.querySelector('.tr-target');
 
-            if (condition) {
+            if (targetEl && targetEl.value) {
+                const varName = varEl ? varEl.value : '';
+                const opName = opEl ? opEl.value : '==';
+                const valueText = valEl ? valEl.value.trim() : ''; // Забираем текст
+
                 transitions.push({
-                    condition: condition,
-                    target_id: targetId
+                    variable: varName,
+                    operator: opName,
+                    value: valueText, // Сохраняем значение
+                    step_id: targetEl.value
                 });
             }
         });
@@ -1935,29 +2041,79 @@
         };
     }
 
+    function syncTransitionsToStepState(step) {
+        let latestMeta = parseMetadata(step.metadata);
+
+        // Вызываем обновленный collectTransitions(), который собирает только переменные, операторы и step_id
+        latestMeta.transitions = collectTransitions();
+
+        // Записываем обновленный объект обратно в state текущего шага в виде строки JSON
+        step.metadata = JSON.stringify(latestMeta);
+
+        // Синхронизируем со скрытой текстовой областью для сабмита формы
+        const stepTextarea = document.getElementById('stepTextarea');
+        if (stepTextarea) {
+            stepTextarea.value = step.metadata;
+        }
+    }
+
     document.getElementById('addConditionBtn').onclick = () => {
         const container = document.getElementById('stepTransitionsList');
         if (!container) return;
 
-        // Генерируем опции для селекта на основе сохраненных данных
+        const activeStepBlock = document.querySelector('.step-item-block.active');
+        if (!activeStepBlock) return;
+        const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
+
         const optionsHtml = allCurrentStepsData.map(s =>
-            `<option value="${s.id}">${s.title}</option>`
+            '<option value="' + s.id + '">' + s.title + '</option>'
         ).join('');
 
         const row = document.createElement('div');
         row.className = 'transition-row';
-        row.style = "display: flex; gap: 10px; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #edf2f7; margin-bottom: 5px;";
+        row.style = "display: flex; gap: 6px; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #edf2f7; margin-bottom: 5px;";
 
-        row.innerHTML = `
-        <input type="text" class="form-control tr-condition" placeholder="Если (напр: ok)" style="flex: 2; padding: 5px; font-size: 12px;">
-        <span style="color: #999;">→</span>
-        <select class="form-control tr-target" style="flex: 2; padding: 5px; font-size: 12px;">
-            ${optionsHtml}
-        </select>
-        <button type="button" class="btn-delete-step" onclick="this.parentElement.remove()" style="position:static; font-size: 16px;">&times;</button>
-    `;
+        let varOptions = '<option value="">-- Переменная --</option>';
+        if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
+            window.allCurrentVariables.forEach(v => {
+                varOptions += '<option value="' + v.name + '">%' + v.name + '%</option>';
+            });
+        }
+
+        // Рендерим 4 элемента в ряд без бэктиков во избежание конфликтов со знаком доллара
+        row.innerHTML =
+            '<select class="form-control tr-variable" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' + varOptions + '</select>' +
+            '<select class="form-control tr-operator" style="width: 65px; padding: 4px; font-size: 12px; height: 32px; text-align: center;">' +
+                '<option value="==">==</option>' +
+                '<option value="!=">!=</option>' +
+                '<option value=">">&gt;</option>' +
+                '<option value="<">&lt;</option>' +
+                '<option value="contains">contains</option>' +
+            '</select>' +
+            '<input type="text" class="form-control tr-value" placeholder="Значение" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' +
+            '<span style="color: #a0aec0; font-size: 12px; margin: 0 2px;">➔</span>' +
+            '<select class="form-control tr-target" style="flex: 2; padding: 4px; font-size: 12px; height: 32px;">' + optionsHtml + '</select>' +
+            '<button type="button" class="btn-delete-transition" style="background:none; border:none; color:#dc3545; font-size:16px; cursor:pointer; padding:0 4px;">&times;</button>';
+
+        const varSelect = row.querySelector('.tr-variable');
+        const opSelect = row.querySelector('.tr-operator');
+        const valInput = row.querySelector('.tr-value'); // Находим новый инпут
+        const targetSelect = row.querySelector('.tr-target');
+        const delBtn = row.querySelector('.btn-delete-transition');
+
+        if (currentStepData) {
+            varSelect.onchange = () => syncTransitionsToStepState(currentStepData);
+            opSelect.onchange = () => syncTransitionsToStepState(currentStepData);
+            valInput.oninput = () => syncTransitionsToStepState(currentStepData); // Живой ввод
+            targetSelect.onchange = () => syncTransitionsToStepState(currentStepData);
+            delBtn.onclick = () => {
+                row.remove();
+                syncTransitionsToStepState(currentStepData);
+            };
+        }
 
         container.appendChild(row);
+        if (currentStepData) syncTransitionsToStepState(currentStepData);
     };
 
     /**
