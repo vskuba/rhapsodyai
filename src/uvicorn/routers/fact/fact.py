@@ -138,5 +138,5 @@ async def fact_collection_save(request: Request, collection_id: int, data: list[
 async def delete_fact(fact_id: int, db=Depends(mysql_get_db_async)):
     async with db:
         # Проверяем существование
-        await db.execute("DELETE FROM fact WHERE id = %s", (fact_id,))
+        await db.execute("DELETE FROM fact WHERE id = %s", fact_id)
         return {"status": "success", "message": f"Fact {fact_id} deleted"}

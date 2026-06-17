@@ -55,6 +55,14 @@ async def fact(request: Request):
     )
 
 
+@router.get("/admin/fact_collection", response_class=HTMLResponse)
+async def fact(request: Request):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/fact_collection.html"
+    )
+
+
 @router.get("/admin/tool", response_class=HTMLResponse)
 async def fact(request: Request):
     return request.app.state.jinja2_template.TemplateResponse(

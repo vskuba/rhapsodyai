@@ -81,11 +81,11 @@ INSERT INTO `workflow_step_type` (`id`, `name`, `icon`, `description`, `descript
 
 INSERT INTO `workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) VALUES
 (1, 1, 1, 'мой ответ', 2, '{"response_return":"%user-prompt%","transitions":[]}'),
-(2, 1, 4, 'мой инструмент', 1,'{"textarea":"ok","transitions":[{"condition":"ok","target_id":"1"}],"tool_invoke":{"tool_name":"github_user_info","inputs_map":{"random":"facts"},"outputs_map":{"login":"tags","name":"user-prompt","email":"facts"}}}'),
+(2, 1, 4, 'мой инструмент', 1,'{"textarea":"ok","transitions":[],"tool_invoke":{"tool_name":"github_user_info","inputs_map":{"random":"facts"},"outputs_map":{"login":"tags","name":"user-prompt","email":"facts"}}}'),
 (3, 2, 1, 'мой ответ', 0, ''),
 (4, 3, 1, 'мой ответ', 0, ''),
 (5, 3, 4, 'мой поиск', 0, ''),
-(7, 1, 2, 'запрос LLM', 0, '{"llm_to_json_variable":[{"variable":"tags","text":"распарсить текст на таги"}],"llm_to_json_prompt":"%user-prompt%\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"tags\\": распарсить текст на таги\n\nExample of JSON response:\n{\n  \\"tags\\": \\"распарсить текст на таги\\"\n}","transitions":[]}');
+(7, 1, 2, 'запрос LLM', 0, '{"llm_to_json_variable":[{"variable":"tags","text":"распарсить текст на таги"}],"llm_to_json_prompt":"%user-prompt%\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"tags\\": распарсить текст на таги\n\nExample of JSON response:\n{\n  \\"tags\\": \\"распарсить текст на таги\\"\n}","transitions":[{"variable":"facts","operator":"==","value":"ok","step_id":"1"}]}');
 
 INSERT INTO `workflow_variable` (`id`, `workflow_id`, `name`) VALUES
 (1, 1, 'tags'),
@@ -93,10 +93,10 @@ INSERT INTO `workflow_variable` (`id`, `workflow_id`, `name`) VALUES
 
 --
 
-INSERT INTO `fact_collection` (`id`, `name`, `language`, `user_prompt_header`) VALUES
-(1, 'cashier_service', 'ru', 'Микросервисы'),
-(2, 'dating_girl_bio', 'ru,en', 'Биография и личная информация '),
-(3, 'soko_menu', 'ru,en,ua', 'Меню');
+INSERT INTO `fact_collection` (`id`, `name`, `position`, `language`, `user_prompt_header`) VALUES
+(1, 'cashier_service', 0, 'ru', 'Микросервисы'),
+(2, 'dating_girl_bio', 0, 'ru,en', 'Биография и личная информация '),
+(3, 'soko_menu', 0, 'ru,en,ua', 'Меню');
 
 INSERT INTO `fact` (`id`, `collection_id`, `category`, `language`, `content`, `tags`, `qdrant_synced`, `created_at`) VALUES
 (8, 3, 'data format', 'ru', 'База данных возвращает данные в формате списка словарей (Dict), а не кортежей.', 'database, list, dict, tuples, mysql', 1, '2026-05-02 16:53:43'),

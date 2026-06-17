@@ -27,7 +27,7 @@ from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import admin
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.cronjob import cronjob
-from src.uvicorn.routers.fact import fact
+from src.uvicorn.routers.fact import fact, fact_collection
 from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
@@ -139,3 +139,4 @@ app.include_router(node.router)
 app.include_router(workflow.router)
 app.include_router(workflow_step.router)
 app.include_router(tool.router)
+app.include_router(fact_collection.router)

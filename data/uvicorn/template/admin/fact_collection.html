@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+
+{% block title %}Коллекции{% endblock %}
+
+{% block head %}
+<style>
+    /* 1. Базовая компоновка (Идентично Агентам) */
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
+
+    /* 2. Сайдбар Нод */
+    .collections-sidebar {
+        width: 260px;
+        background: #fafafa;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    .collection-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    /* Элементы списка нод */
+    .collection-item {
+        padding: 10px 15px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .collection-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .collection-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+        font-weight: 600;
+    }
+
+    /* Метка позиции в списке (опционально) */
+    .collection-pos-badge {
+        font-size: 11px;
+        color: #bdc3c7;
+        background: #fff;
+        padding: 2px 6px;
+        border-radius: 10px;
+        border: 1px solid #eee;
+    }
+
+    /* 3. Основная секция формы */
+    .editor-section {
+        flex: 1;
+        padding: 20px 40px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 10px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-header h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 20px;
+    }
+
+    /* 4. Двухколоночный макет (Сохраняем структуру для единообразия) */
+    .form-layout-grid {
+        display: flex;
+        gap: 30px;
+        align-items: stretch;
+        min-height: 450px;
+    }
+
+    .settings-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    /* Правую колонку оставляем для симметрии или доп. инфо */
+    .info-column {
+        flex: 1.5;
+        display: flex;
+        flex-direction: column;
+        background: #fcfcfc;
+        border-radius: 8px;
+        padding: 20px;
+        border: 1px dashed #e0e0e0;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .form-group-name {
+        min-width: 250px;
+    }
+
+    .form-group-info {
+        font-size: 13px;
+        color: #353831;
+    }
+
+    /* 5. Элементы управления */
+    .form-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        border-color: #3498db;
+        outline: none;
+        box-shadow: 0 0 5px rgba(52, 152, 219, 0.2);
+    }
+
+    /* 6. Кнопки и Футер */
+    .editor-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 12px 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-save:hover {
+        background: #2980b9;
+    }
+
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .btn-delete {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 11px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+        margin-right: auto; /* Прижмет кнопку к левому краю футера */
+    }
+
+    .btn-delete:hover {
+        background: #e74c3c;
+        color: white;
+    }
+
+    #statusLabel {
+        font-size: 13px;
+        color: #27ae60;
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+<div class="page-content">
+    <div class="main-wrapper">
+        <div class="editor-container">
+
+            <!-- Список Нод (Левая колонка) -->
+            <div class="agents-sidebar">
+                <div class="sidebar-header">
+                    <button class="btn-create" id="createNewcollection">+ Создать коллекцию</button>
+                </div>
+                <div class="agent-list" id="collectionList">
+                    <!-- Сюда JS будет рендерить список нод -->
+                </div>
+            </div>
+
+            <!-- Форма Ноды (Правая колонка) -->
+            <div class="editor-section">
+                <div class="form-header">
+                    <h2 id="formTitle">Выберите коллекцию</h2>
+                </div>
+
+                <form id="collectionForm">
+                    <input type="hidden" id="collectionId">
+
+                    <div class="form-layout-grid">
+                        <!-- Основные настройки -->
+                        <div class="settings-column">
+                            <div class="form-grid">
+                                <div class="form-group form-group-name">
+                                    <label>Название коллекции</label>
+                                    <input type="text" id="name" class="form-control" required
+                                           placeholder="Напр: Workflow Engine">
+                                </div>
+                                <div class="form-group">
+                                    <label>Позиция</label>
+                                    <input type="number" id="position" class="form-control" value="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Пустая колонка для сохранения симметрии с агентами или под описание -->
+                        <div class="prompt-column">
+                            <div class="form-group form-group-info">
+                                <label>Инфо</label>
+                                Коллекцию используются для хранения данных
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="editor-footer">
+                        <span id="statusLabel"></span>
+                        <!-- Кнопка удаления -->
+                        <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
+                            Удалить коллекцию
+                        </button>
+                        <button type="submit" class="btn-save" id="saveBtn">Сохранить коллекцию</button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const collectionListContainer = document.getElementById('collectionList');
+    const saveBtn = document.getElementById('saveBtn');
+    const collectionForm = document.getElementById('collectionForm');
+    const createNewcollectionBtn = document.getElementById('createNewcollection');
+    const deleteBtn = document.getElementById('deleteBtn');
+
+    /**
+     * Инициализация менеджера: загрузка списка нод
+     */
+    async function initCollectionsManager() {
+        if (!collectionListContainer) return;
+
+        try {
+            const response = await getData('/collection/list');
+            const collections = response.result;
+
+            // Сортируем ноды по полю position
+            collections.sort((a, b) => (a.position || 0) - (b.position || 0));
+
+            renderCollectionList(collections);
+        } catch (e) {
+            console.error("Ошибка инициализации нод:", e);
+        }
+    }
+
+    /**
+     * Отрисовка списка в левой колонке
+     */
+    function renderCollectionList(collections) {
+        collectionListContainer.innerHTML = '';
+
+        if (collections.length === 0) {
+            collectionListContainer.innerHTML = '<div style="padding:20px; color:#999; font-size:13px;">Нет созданных коллекций</div>';
+            return;
+        }
+
+        collections.forEach(collection => {
+            const div = document.createElement('div');
+            div.className = 'collection-item';
+
+            // Добавляем имя и бейдж позиции для наглядности
+            div.innerHTML = `
+                <span>${collection.name}</span>
+                <span class="collection-pos-badge">${collection.position}</span>
+            `;
+
+            div.onclick = () => selectCollectionForEdit(collection.id, div);
+            collectionListContainer.appendChild(div);
+        });
+    }
+
+    async function selectCollectionForEdit(collectionId, element) {
+        // Подсветка активного элемента
+        document.querySelectorAll('.collection-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        try {
+            const data = await getData(`/collection/${collectionId}`);
+            const collection = data.result;
+
+            if (!collection) return;
+
+            // Заполнение полей формы
+            document.getElementById('collectionId').value = collection.id;
+            document.getElementById('name').value = collection.name;
+            document.getElementById('position').value = collection.position || 0;
+
+            document.getElementById('formTitle').textContent = `Редактирование коллекции: ${collection.name}`;
+            if (saveBtn) saveBtn.disabled = false;
+
+            if (deleteBtn) deleteBtn.style.display = 'block';
+        } catch (e) {
+            console.error("Ошибка при получении данных ноды:", e);
+            showNotification('Не удалось загрузить данные ноды', 'error');
+        }
+    }
+
+    function resetFormForCreate() {
+        document.querySelectorAll('.collection-item').forEach(el => el.classList.remove('active'));
+        collectionForm.reset();
+        document.getElementById('collectionId').value = '';
+        document.getElementById('formTitle').textContent = 'Создание новой коллекции';
+        document.getElementById('position').value = 0;
+        if (saveBtn) saveBtn.disabled = false;
+        if (deleteBtn) deleteBtn.style.display = 'none';
+    }
+
+    /**
+     * Сохранение (Создание или Обновление)
+     */
+    async function saveCollectionConfig(e) {
+        if (e) e.preventDefault();
+
+        const id = document.getElementById('collectionId').value;
+        const payload = {
+            name: document.getElementById('name').value,
+            position: parseInt(document.getElementById('position').value) || 0
+        };
+
+        if (saveBtn) saveBtn.disabled = true;
+
+        try {
+            if (id) {
+                await putData(`/collection/${id}`, payload);
+                showNotification(`Коллекция "${payload.name}" обновлена`, 'success');
+            } else {
+                await postData('/collection', payload);
+                showNotification(`Коллекция "${payload.name}" создана`, 'success');
+            }
+
+            // Перезагружаем список
+            await initCollectionsManager();
+
+            // Если создавали новую — форма очистится, если редактировали — данные останутся
+            if (!id) resetFormForCreate();
+
+        } catch (e) {
+            console.error("Ошибка сохранения коллекции:", e);
+            showNotification(`Ошибка: ${e.message}`, 'error');
+        } finally {
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    async function deleteCollection() {
+        const id = document.getElementById('collectionId').value;
+        const name = document.getElementById('name').value;
+
+        if (!id) return;
+
+        if (confirm(`Вы уверены, что хотите удалить коллекцию "${name}"?`)) {
+            try {
+                await deleteData(`/collection/${id}`);
+                showNotification(`Коллекция "${name}" удалена`, 'success');
+
+                resetFormForCreate();
+                await initCollectionsManager();
+            } catch (e) {
+                console.error("Ошибка удаления:", e);
+                showNotification(`Ошибка при удалении: ${e.message}`, 'error');
+            }
+        }
+    }
+
+    // Слушатели событий
+    document.addEventListener('DOMContentLoaded', () => {
+        // Инициализация списка
+        initCollectionsManager();
+
+        // Обработка отправки формы
+        if (collectionForm) {
+            collectionForm.addEventListener('submit', saveCollectionConfig);
+        }
+
+        if (createNewcollectionBtn) {
+            createNewcollectionBtn.addEventListener('click', resetFormForCreate);
+        }
+
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', deleteCollection);
+        }
+    });
+</script>
+{% endblock %}
