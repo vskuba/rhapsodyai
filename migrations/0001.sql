@@ -4,6 +4,12 @@ USE `project`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
+DROP TABLE IF EXISTS `tool`;
+DROP TABLE IF EXISTS `tool_group`;
+DROP TABLE IF EXISTS `workflow_step`;
+DROP TABLE IF EXISTS `workflow_step_type`;
+DROP TABLE IF EXISTS `workflow_variable`;
+DROP TABLE IF EXISTS `workflow`;
 DROP TABLE IF EXISTS `fact_collection_cashier_service`;
 DROP TABLE IF EXISTS `fact_collection_dating_girl_bio`;
 DROP TABLE IF EXISTS `fact_collection_soko_menu`;
@@ -12,16 +18,9 @@ DROP TABLE IF EXISTS `fact_collection`;
 DROP TABLE IF EXISTS `agent_session`;
 DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `node`;
-DROP TABLE IF EXISTS `agent_specialization`;
 DROP TABLE IF EXISTS `llm`;
 DROP TABLE IF EXISTS `setting`;
 DROP TABLE IF EXISTS `user`;
-DROP TABLE IF EXISTS `tool`;
-DROP TABLE IF EXISTS `tool_group`;
-DROP TABLE IF EXISTS `workflow_step`;
-DROP TABLE IF EXISTS `workflow_step_type`;
-DROP TABLE IF EXISTS `workflow_variable`;
-DROP TABLE IF EXISTS `workflow`;
 
 -- Включаем проверки обратно
 SET FOREIGN_KEY_CHECKS = 1;
@@ -44,60 +43,16 @@ CREATE TABLE `setting` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ALTER TABLE setting ADD UNIQUE INDEX idx_key_user (`key`, user_id);
 
--- Таблица агентов
+-- Таблица LLM
 CREATE TABLE `llm` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE `agent_specialization` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(25) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `node` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
     `position` INT NOT NULL DEFAULT 0
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Таблица агентов
-CREATE TABLE `agent` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `node_id` INT NULL,
-    `name` CHAR(50) NOT NULL,
-    `title` CHAR(150) NOT NULL,
-    `description` CHAR(250) NOT NULL,
-    `specialization_id` INT NULL,
-    `fact_collection` CHAR(250) DEFAULT NULL,
-    `system_prompt` LONGTEXT NOT NULL,
-    `tool` CHAR(250) DEFAULT NULL,
-    `mcp_server` CHAR(250) DEFAULT NULL,
-    `memory_short_disabled` INT NOT NULL DEFAULT 0,
-    `llm_id` INT NULL,
-    `position` INT NOT NULL DEFAULT 0,
-    CONSTRAINT `ag_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `ag_specialization` FOREIGN KEY (`specialization_id`) REFERENCES `agent_specialization` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `ag_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Таблица памяти (история диалогов/действий)
-CREATE TABLE `agent_session` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `session_uuid` CHAR(36) NOT NULL,
-    `llm_id` INT NULL,
-    `agent_id` INT NULL,
-    `user_id` INT NULL,
-    `role` CHAR(30) NOT NULL,
-    `kind_type` CHAR(20) NOT NULL,
-    `content` LONGTEXT NOT NULL,
-    `token` INT DEFAULT NULL,
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_session` (`session_uuid`),
-    INDEX `idx_agent_user` (`agent_id`, `user_id`, `created_at`),
-    CONSTRAINT `fk_memory_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `fk_memory_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица инструментов
@@ -198,4 +153,42 @@ CREATE TABLE `fact_collection_cashier_service` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `fact_id` INT NOT NULL,
     CONSTRAINT `fk_cashier_service` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Таблица агентов
+CREATE TABLE `agent` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `node_id` INT NULL,
+    `name` CHAR(50) NOT NULL,
+    `title` CHAR(150) NOT NULL,
+    `description` CHAR(250) NOT NULL,
+    `workflow_id` INT NULL,
+    `fact_collection` CHAR(250) DEFAULT NULL,
+    `system_prompt` LONGTEXT NOT NULL,
+    `tool` CHAR(250) DEFAULT NULL,
+    `mcp_server` CHAR(250) DEFAULT NULL,
+    `llm_id` INT NULL,
+    `position` INT NOT NULL DEFAULT 0,
+    CONSTRAINT `ag_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `ag_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflow` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `ag_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Таблица памяти (история диалогов/действий)
+CREATE TABLE `agent_session` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_uuid` CHAR(36) NOT NULL,
+    `llm_id` INT NULL,
+    `agent_id` INT NULL,
+    `user_id` INT NULL,
+    `role` CHAR(30) NOT NULL,
+    `kind_type` CHAR(20) NOT NULL,
+    `content` LONGTEXT NOT NULL,
+    `token` INT DEFAULT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_session` (`session_uuid`),
+    INDEX `idx_agent_user` (`agent_id`, `user_id`, `created_at`),
+    CONSTRAINT `fk_memory_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_memory_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

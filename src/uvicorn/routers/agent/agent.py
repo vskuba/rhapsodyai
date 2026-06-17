@@ -41,16 +41,6 @@ async def agent_get_system_prompt(request: Request, agent_id: int, collection_na
     return {"result": system_prompt}
 
 
-@router.get("/agent/specialization/list")
-async def agent_specialization_list(request: Request, db=Depends(mysql_get_db_async)):
-    async with db:
-        sql = """
-            SELECT * FROM agent_specialization ORDER BY name ASC
-        """
-        await db.execute(sql)
-        return {"result": await db.fetchall()}
-
-
 @router.put("/agent/{agent_id}")
 async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(mysql_get_db_async)):
     async with db:
@@ -61,9 +51,8 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
                 node_id = %s,
                 title = %s,
                 llm_id = %s,
-                specialization_id = %s,
-                system_prompt = %s,
-                memory_short_disabled = %s
+                workflow_id = %s,
+                system_prompt = %s
             WHERE id = %s
         """
 
@@ -72,14 +61,13 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
             data.get('node_id'),
             data.get('title'),
             data.get('llm_id'),
-            data.get('specialization_id'),
+            data.get('workflow_id'),
             data.get('system_prompt'),
-            data.get('memory_short_disabled', 0),
             agent_id
         )
 
         await db.execute(sql, values)
-        await db.commit()
+        await db.connection.commit()
 
         if db.rowcount == 0:
             return {"status": "error", "message": "Агент не найден"}

@@ -258,21 +258,13 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label>Специализация</label>
-                                    <select id="specialization_id" class="form-control">
+                                    <label>Workflow</label>
+                                    <select id="workflow_id" class="form-control">
                                         <option value="">Нет</option>
                                     </select>
                                 </div>
                             </div>
 
-                            <div class="form-group" style="flex-direction: row; align-items: center; margin-top: 10px;">
-                                <input type="checkbox" id="memory_short_disabled"
-                                       style="width:auto; margin-right:10px;">
-                                <label style="text-transform: none; font-weight: normal; margin-bottom: 0;"
-                                       for="memory_short_disabled">
-                                    Отключить краткосрочную память
-                                </label>
-                            </div>
                         </div>
 
                         <!-- Правая колонка: Только System Prompt -->
@@ -308,22 +300,22 @@
     /**
      * Инициализация менеджера: загрузка групп и списка агентов
      */
-    async function initAgentsManager(currentNodeId = null, selectedLlm = null, selectedSpecialization = null) {
+    async function initAgentsManager(currentNodeId = null, selectedLlm = null, selectedWorkflow = null) {
         if (!agentListContainer) return;
 
         try {
-            const [agentsRes, nodesRes, llmRes, specializationRes] = await Promise.all([
+            const [agentsRes, nodesRes, llmRes, workflowRes] = await Promise.all([
                 getData('/agent/list'),
                 getData('/node/list'),
                 getData('/llm/list'),
-                getData('/agent/specialization/list')
+                getData('/workflow/list')
             ]);
 
             // 1. Сортируем группы по полю position (от меньшего к большему)
             const nodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
             const agents = agentsRes.result;
             const llms = llmRes.result;
-            const specializations = specializationRes.result;
+            const workflows = workflowRes.result;
 
             // 2. Заполняем Select групп (в отсортированном порядке)
             const nodeSelect = document.getElementById('node_id');
@@ -344,13 +336,13 @@
                 llmSelect.appendChild(opt);
             });
 
-            const specializationSelect = document.getElementById('specialization_id');
-            specializationSelect.innerHTML = '<option value="">Нет</option>';
-            specializations.forEach(g => {
+            const workflowSelect = document.getElementById('workflow_id');
+            workflowSelect.innerHTML = '<option value="">Нет</option>';
+            workflows.forEach(g => {
                 const opt = document.createElement('option');
                 opt.value = g.id;
-                opt.textContent = g.name;
-                specializationSelect.appendChild(opt);
+                opt.textContent = g.title;
+                workflowSelect.appendChild(opt);
             });
 
             if (currentNodeId) {
@@ -361,8 +353,8 @@
                 llmSelect.value = selectedLlm;
             }
 
-            if (selectedSpecialization) {
-                specializationSelect.value = selectedSpecialization;
+            if (selectedWorkflow) {
+                workflowSelect.value = selectedWorkflow;
             }
 
             renderNodeList(agents, nodes);
@@ -433,7 +425,7 @@
                 'title': agent.title || '',
                 'description': agent.description || '',
                 'llm_id': agent.llm_id || '',
-                'specialization_id': agent.specialization_id || '',
+                'workflow_id': agent.workflow_id || '',
                 'system_prompt': agent.system_prompt || ''
             };
 
@@ -445,10 +437,6 @@
                     console.error(`Элемент с id="${id}" не найден в HTML!`);
                 }
             }
-
-            // Отдельно для чекбокса
-            const cb = document.getElementById('memory_short_disabled');
-            if (cb) cb.checked = Boolean(agent.memory_short_disabled);
 
             document.getElementById('formTitle').textContent = `Редактирование: ${agent.name}`;
 
@@ -466,7 +454,7 @@
         const id = document.getElementById('agentId').value;
         const currentNodeId = document.getElementById('node_id').value;
         const currentLlmId = document.getElementById('llm_id').value;
-        const currentSpecializationId = document.getElementById('specialization_id').value;
+        const currentWorkflowId = document.getElementById('workflow_id').value;
         const saveBtn = document.getElementById('saveBtn');
 
         // Собираем данные из полей
@@ -475,9 +463,8 @@
             node_id: document.getElementById('node_id').value || null,
             title: document.getElementById('title').value,
             llm_id: document.getElementById('llm_id').value || null,
-            specialization_id: document.getElementById('specialization_id').value || null,
+            workflow_id: document.getElementById('workflow_id').value || null,
             system_prompt: document.getElementById('system_prompt').value,
-            memory_short_disabled: document.getElementById('memory_short_disabled').checked ? 1 : 0,
             description: document.getElementById('description').value
         };
 
@@ -493,7 +480,7 @@
                 showNotification(`Агент "${payload.title}" создан`, 'success');
             }
 
-            await initAgentsManager(currentNodeId, currentLlmId, currentSpecializationId);
+            await initAgentsManager(currentNodeId, currentLlmId, currentWorkflowId);
 
         } catch (e) {
             console.error("Ошибка сохранения:", e);

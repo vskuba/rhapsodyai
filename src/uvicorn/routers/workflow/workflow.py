@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.workflow_repository import WorkflowRepository
@@ -13,6 +13,35 @@ router = APIRouter()
 async def workflow_list(request: Request):
     repo = WorkflowRepository()
     return {"result": await repo.find_by({}, 'title ASC')}
+
+
+@router.post("/workflow")
+async def workflow_create(request: Request, data: dict, db=Depends(mysql_get_db_async)):
+    async with db:
+        sql = """
+            INSERT INTO workflow (tid, title, node_id, description, position)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        values = (
+            data.get('tid'),
+            data.get('title'),
+            data.get('node_id') or None,
+            data.get('description', ''),
+            int(data.get('position', 0))
+        )
+        await db.execute(sql, values)
+        await db.connection.commit()
+
+        # Получаем ID только что созданной строки в MySQL
+        new_id = db.lastrowid
+
+        return {"status": "success", "result": {"id": new_id}}
+
+
+@router.get("/workflow/{node_id}/list")
+async def workflow_list(request: Request, node_id: int):
+    repo = WorkflowRepository()
+    return {"result": await repo.find_by({"node_id": node_id}, 'title ASC')}
 
 
 @router.get("/workflow/{workflow_id}")

@@ -527,7 +527,7 @@
                 <h2 id="formTitle">Выберите workflow</h2>
             </div>
 
-            <form id="workflowForm">
+            <form id="workflowForm" novalidate>
                 <input type="hidden" id="workflowId">
 
                 <!-- 1. Контейнер ПАРАМЕТРОВ (скрывается при клике на название) -->
@@ -898,7 +898,7 @@
                     }
 
                     return '<div style="font-size: 10px; color: #3498db; margin-top: 2px;">' +
-                            'if <b>"' + conditionText + '"</b> → ' + targetName +
+                        'if <b>"' + conditionText + '"</b> → ' + targetName +
                         '</div>';
                 }).join('');
             }
@@ -922,7 +922,7 @@
                     .replace(/[\n\u000a]/g, '\\n')
                     .replace(/[\r\u000d]/g, '\\r')
                     .replace(/[\t\u0009]/g, '\\t');
-                console.log('Исправленная строка метаданных для парсинга:', fixedStr);
+
                 return JSON.parse(fixedStr);
             } catch (innerErr) {
                 console.warn("Критический сбой JSON. parse не справился, применен фоллбек {}:", innerErr);
@@ -937,6 +937,7 @@
         // 1. ПЕРЕКЛЮЧАЕМ ВИДИМОСТЬ (Явно скрываем настройки и показываем шаги)
         document.getElementById('workflowSettingsView').style.display = 'none';
         document.getElementById('stepsEditorView').style.display = 'flex';
+        document.getElementById('addStepToWorkflowBtn').style.display = 'block';
 
         // 2. ЗАПОЛНЯЕМ ДАННЫЕ
         fillWorkflowForm(workflow);
@@ -2084,11 +2085,11 @@
         row.innerHTML =
             '<select class="form-control tr-variable" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' + varOptions + '</select>' +
             '<select class="form-control tr-operator" style="width: 65px; padding: 4px; font-size: 12px; height: 32px; text-align: center;">' +
-                '<option value="==">==</option>' +
-                '<option value="!=">!=</option>' +
-                '<option value=">">&gt;</option>' +
-                '<option value="<">&lt;</option>' +
-                '<option value="contains">contains</option>' +
+            '<option value="==">==</option>' +
+            '<option value="!=">!=</option>' +
+            '<option value=">">&gt;</option>' +
+            '<option value="<">&lt;</option>' +
+            '<option value="contains">contains</option>' +
             '</select>' +
             '<input type="text" class="form-control tr-value" placeholder="Значение" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' +
             '<span style="color: #a0aec0; font-size: 12px; margin: 0 2px;">➔</span>' +
@@ -2134,51 +2135,64 @@
             position: parseInt(document.getElementById('position')?.value) || 0,
         };
 
-        // 2. Проверяем, открыто ли редактирование конкретного шага
-        const activeStepBlock = document.querySelector('.step-item-block.active');
-
-        if (activeStepBlock && allCurrentStepsData.length > 0) {
-            const stepId = activeStepBlock.dataset.id;
-            const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(stepId));
-
-            if (currentStepData) {
-                // Извлекаем текущие живые метаданные (они уже обновлены функциями ввода/oninput)
-                let metadata = {};
-                try {
-                    metadata = (typeof currentStepData.metadata === 'string')
-                        ? JSON.parse(currentStepData.metadata || '{}')
-                        : {...currentStepData.metadata};
-                } catch (err) {
-                    metadata = {};
-                }
-
-                // Интегрируем свежие переходы из UI в метаданные шага
-                metadata.transitions = collectTransitions();
-
-                try {
-                    // Сохраняем данные конкретного шага
-                    const stepTitleEl = document.getElementById('stepTitle');
-                    await putData(`/workflow/${id}/step/${stepId}`, {
-                        metadata: JSON.stringify(metadata),
-                        title: stepTitleEl ? stepTitleEl.value : currentStepData.title
-                    });
-                } catch (stepErr) {
-                    console.error("Ошибка сохранения шага:", stepErr);
-                    showNotification(`Ошибка сохранения шага: ${stepErr.message}`, 'error');
-                    return; // Прерываем операцию, если шаг не сохранился
-                }
-            }
-        }
-
-        // 3. Сохраняем общие параметры задачи (работает в обоих режимах)
         try {
             if (id) {
+                const activeStepBlock = document.querySelector('.step-item-block.active');
+
+                if (activeStepBlock && allCurrentStepsData.length > 0) {
+                    const stepId = activeStepBlock.dataset.id;
+                    const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(stepId));
+
+                    if (currentStepData) {
+                        // Извлекаем текущие живые метаданные (они уже обновлены функциями ввода/oninput)
+                        let metadata = {};
+                        try {
+                            metadata = (typeof currentStepData.metadata === 'string')
+                                ? JSON.parse(currentStepData.metadata || '{}')
+                                : {...currentStepData.metadata};
+                        } catch (err) {
+                            metadata = {};
+                        }
+
+                        // Интегрируем свежие переходы из UI в метаданные шага
+                        metadata.transitions = collectTransitions();
+
+                        try {
+                            // Сохраняем данные конкретного шага
+                            const stepTitleEl = document.getElementById('stepTitle');
+                            await putData(`/workflow/${id}/step/${stepId}`, {
+                                metadata: JSON.stringify(metadata),
+                                title: stepTitleEl ? stepTitleEl.value : currentStepData.title
+                            });
+                        } catch (stepErr) {
+                            console.error("Ошибка сохранения шага:", stepErr);
+                            showNotification(`Ошибка сохранения шага: ${stepErr.message}`, 'error');
+                            return; // Прерываем операцию, если шаг не сохранился
+                        }
+                    }
+                }
+
                 await putData(`/workflow/${id}`, payload);
                 showNotification('Изменения успешно сохранены', 'success');
                 await initWorkflowManager(); // Полностью обновляем списки в UI
             } else {
-                // Фоллбек, если форма была отправлена в режиме создания новой задачи без ID
-                showNotification('Для сохранения новой задачи воспользуйтесь кнопкой создания', 'warning');
+                const createRes = await postData('/workflow', payload);
+                showNotification('Новый workflow успешно создан!', 'success');
+
+                await initWorkflowManager();
+
+                if (createRes && createRes.result && createRes.result.id) {
+                    const newId = createRes.result.id;
+                    setTimeout(() => {
+                        const allLinks = document.querySelectorAll('.workflow-name-link');
+                        // Ищем ссылку, текст которой совпадает с названием нашего нового воркфлоу, и кликаем
+                        allLinks.forEach(link => {
+                            if (link.textContent.trim() === payload.title.trim()) {
+                                link.click();
+                            }
+                        });
+                    }, 300);
+                }
             }
         } catch (e) {
             console.error("Ошибка сохранения воркфлоу:", e);
