@@ -1,10 +1,10 @@
 import time
 import src.window
-from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 
 from ai.framework.ai_framework import AiFrameworkModel
 from ai.framework.task.ai_framework_model import AiFrameworkTaskModel
 from queue_.queue_ import queue_get
+from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.filesystem import open_file_in_editor
 from state.state import state_get
 

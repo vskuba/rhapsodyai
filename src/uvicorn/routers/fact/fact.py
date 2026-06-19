@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 
-from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
-from src.parser.md_to_fact.data_parser import ParserMdToFact
 
 router = APIRouter()
 

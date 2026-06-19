@@ -4,9 +4,9 @@ import queue
 from functools import partial
 from aiogram import Bot, Dispatcher, types
 
-from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
-from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from config.config import config_get
+from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
@@ -53,9 +53,9 @@ async def init_telegram_bot(agent_name: str):
         repo = AgentRepository()
         entity = await repo.find_one_by({"name": agent_name})
 
-        framework_model = await agent_manager.create_framework_model(entity)
+        framework_model = await agent_manager.framework_model_create({"entity_agent": entity})
         framework_model.chat_id = message.chat.id
-        framework_model.prompt = user_text
+        framework_model.prompt_user = user_text
         framework_model.is_gui_mode = False
 
         async def on_complete(response_text: str, framework_model: AiFrameworkAgentModel):

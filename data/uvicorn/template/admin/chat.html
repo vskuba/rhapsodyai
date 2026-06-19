@@ -447,6 +447,7 @@
 
             // API возвращает {"result": "uuid-строка"} или {"result": null}
             updateSessionUI(data.result);
+            await getChatMessagesCurrentSession();
         } catch (e) {
             console.error("Ошибка получения сессии:", e);
             updateSessionUI(null);
@@ -545,7 +546,6 @@
             }
 
             await getAgentSessionLastEntry();
-            await getChatMessagesCurrentSession();
         };
 
         // Первичный вызов

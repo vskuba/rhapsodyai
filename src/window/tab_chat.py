@@ -5,10 +5,11 @@ import webbrowser
 import CTkToolTip
 import customtkinter as ctk
 import src.window
-from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+
 from ai.framework.task.ai_framework_manager import AiFrameworkTaskManager
 
 from config.config import config_get, config_update_and_save
+from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.parser.data_parser import data_parser_path_list, data_parser_load
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.translator.translator_md import translator_md_list
@@ -318,7 +319,7 @@ class TabChat:
 
             loaded_agents = []
             for agent_entity in entities:
-                model = await ai_agent_manager.create_framework_model(agent_entity)
+                model = await ai_agent_manager.framework_model_create({"entity_agent": agent_entity})
                 loaded_agents.append((model, agent_entity.get('name') == "my_assistant"))
 
             # --- 2. ЗАДАЧИ (просто список имен) ---

@@ -7,10 +7,8 @@ from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 
 from ai.ai_thread import ai_thread_framework_run
-from ai.framework.agent.ai_framework import AiFrameworkAgent
-from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from ai.framework.task.ai_framework import AiFrameworkTask
-from ai.framework.task.ai_framework_manager import AiFrameworkTaskManager
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
 from state.state import state_set
@@ -24,8 +22,8 @@ def ai_framework_run(window):
 
     loop.run_until_complete(ai_thread_framework_run(
         [
-            AiFrameworkAgent(AiFrameworkAgentManager()),
-            AiFrameworkTask(AiFrameworkTaskManager()),
+            AiFrameworkAgent(),
+            AiFrameworkTask(),
         ],
         window
     ))

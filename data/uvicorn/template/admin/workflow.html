@@ -413,7 +413,6 @@
         font-size: 12px;
     }
 
-    /* Контейнер иконок справа от названия задачи */
     .workflow-actions {
         display: flex;
         gap: 5px;
@@ -427,6 +426,7 @@
         background-color: #f9f9f9;
     }
 
+    /* Заголовок секции */
     .variables-section h3 {
         margin-top: 0;
         margin-bottom: 12px;
@@ -434,17 +434,27 @@
         color: #333;
     }
 
-    /* Строка добавления: инпут + кнопка */
+    /* ИЗМЕНЕНО: Форма добавления теперь вмещает 2 инпута и кнопку */
     .variable-add-form {
         display: flex;
+        flex-direction: column; /* Элементы формы встают друг под друга */
         gap: 8px;
         margin-bottom: 16px;
     }
 
-    .variable-add-form .form-control {
-        flex-grow: 1;
+    /* Контейнер для группировки двух инпута в одну строку */
+    .variable-add-form .form-group-row {
+        display: flex;
+        gap: 8px;
+        width: 100%;
     }
 
+    .variable-add-form .form-control {
+        flex-grow: 1;
+        width: 50%; /* Инпуты делят пространство поровну */
+    }
+
+    /* Кнопка добавления (на всю ширину под инпутами для удобства) */
     .btn-add-var {
         background-color: #28a745;
         color: white;
@@ -454,6 +464,8 @@
         cursor: pointer;
         font-weight: 500;
         white-space: nowrap;
+        width: 100%;
+        transition: background-color 0.15s ease;
     }
 
     .btn-add-var:hover {
@@ -465,8 +477,9 @@
         display: flex;
         flex-direction: column;
         gap: 8px;
-        max-height: 250px;
+        max-height: 350px;
         overflow-y: auto;
+        padding-right: 4px; /* Оставляем место под полосу прокрутки, чтобы она не сжимала элементы */
     }
 
     /* Элемент списка */
@@ -479,7 +492,47 @@
         border: 1px solid #e0e0e0;
         border-radius: 4px;
         font-family: monospace;
-        font-size: 14px;
+        font-size: 13px;
+        box-sizing: border-box;
+        width: 100%; /* Гарантируем, что строка занимает всю ширину */
+    }
+
+    /* НОВОЕ: Подсветка для переменных, у которых задано значение по умолчанию */
+    .variable-item.has-default {
+        background-color: #f4f8fb; /* Очень мягкий синеватый фон */
+        border-left: 4px solid #007bff; /* Четкий синий маркер слева */
+        padding-left: 9px; /* Компенсируем ширину бордера, чтобы текст не уехал */
+    }
+
+    /* НОВОЕ: Стиль для имени переменной, чтобы сдвинуть бейдж вправо */
+    .variable-name {
+        margin-right: auto;
+        color: #333;
+    }
+
+    /* НОВОЕ: Компактный бейдж для отображения значения по умолчанию */
+    .variable-badge {
+        background-color: #eaeaea;
+        color: #555;
+        font-size: 12px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin-right: 10px;
+        max-width: 150px; /* Защита от слишком длинных строк */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis; /* Троеточие, если текст не влезает */
+        border: 1px solid #dcdcdc;
+    }
+
+    /* Смена цвета бейджа при наведении на строку */
+    .variable-item.has-default:hover {
+        background-color: #edf4f9;
+    }
+
+    .variable-item.has-default:hover .variable-badge {
+        background-color: #dfe3e6;
+        color: #333;
     }
 
     /* Кнопка удаления переменной */
@@ -491,6 +544,7 @@
         cursor: pointer;
         line-height: 1;
         padding: 0 4px;
+        transition: color 0.15s ease;
     }
 
     .btn-delete-var:hover {
@@ -502,7 +556,6 @@
         border-top: 1px solid #eee;
         font-size: 15pt;
     }
-
 </style>
 
 {% endblock %}
@@ -566,8 +619,12 @@
                             <div class="variables-header">
                                 <h3>Переменные</h3>
                                 <div class="variable-add-form">
-                                    <input type="text" id="newVariableName" class="form-control"
-                                           placeholder="Имя переменной...">
+                                    <div class="form-group-row">
+                                        <input type="text" id="newVariableName" class="form-control"
+                                               placeholder="Имя переменной...">
+                                        <input type="text" id="newVariableValue" class="form-control"
+                                               placeholder="Значение по умолчанию...">
+                                    </div>
                                     <button type="button" class="btn-add-var" id="addVariableBtn">+ Add</button>
                                 </div>
                             </div>
@@ -683,25 +740,17 @@
     const addStepBtn = document.getElementById('addStepToWorkflowBtn');
 
     const WORKFLOW_STEP_CONFIG = {
-        'llm_to_string': [ // ID типа "Запрос LLM"
-            {
-                key: 'llm_to_string',
-                label: 'Prompt',
-                type: 'textarea',
-                placeholder: ''
-            }
-        ],
         'llm_to_json': [ // ID типа "Инструменты"
             {
                 key: 'llm_to_json_variable',
                 type: 'widget_json_variable',
             },
             {
-                key: 'llm_to_json_prompt',
+                key: 'prompt_user',
                 label: 'Prompt',
                 type: 'textarea',
                 placeholder: '',
-                value: '%user-prompt%'
+                value: '%prompt_user%'
             }
         ],
         'tool_invoke': [ // ID типа "Инструменты"
@@ -712,18 +761,10 @@
         ],
         'response_return': [ // ID типа "Вернуть ответ"
             {
-                key: 'response_return',
+                key: 'prompt_user',
                 label: 'Шаблон ответа',
                 type: 'textarea',
                 placeholder: ''
-            }
-        ],
-        'default': [ // Дефолтные поля, если тип не опознан
-            {
-                key: 'textarea',
-                label: 'LLM запрос',
-                type: 'textarea',
-                placeholder: 'Введите параметры...'
             }
         ]
     };
@@ -1372,7 +1413,7 @@
                 refreshPromptBtn.style = "align-self: flex-start; margin-top: 4px; margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 500; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;";
 
                 refreshPromptBtn.onclick = () => {
-                    const targetTextarea = document.getElementById('field_llm_to_json_prompt') || document.querySelector('[id$="prompt"]');
+                    const targetTextarea = document.getElementById('field_prompt_user') || document.querySelector('[id$="prompt"]');
                     if (!targetTextarea) {
                         showNotification('Целевое поле промпта не найдено на форме', 'error');
                         return;
@@ -1734,53 +1775,74 @@
 
         const variablesArray = Array.isArray(variables) ? variables : [];
 
+        if (variablesArray.length === 0) {
+            container.innerHTML = '<div class="empty-text">Нет переменных</div>';
+            return;
+        }
+
         variablesArray.forEach(variable => {
             const div = document.createElement('div');
             div.className = 'variable-item';
             div.setAttribute('data-name', variable.name);
-            div.setAttribute('data-id', variable.id); // Сохраняем ID переменной в дата-атрибут
+            div.setAttribute('data-id', variable.id);
 
-            div.innerHTML = `
-                <span class="variable-name">%${variable.name}%</span>
-            `;
+            // Контейнер для имени переменной
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'variable-name';
+            nameSpan.textContent = `%${variable.name}%`;
+            div.appendChild(nameSpan);
 
+            // Проверяем наличие значения по умолчанию
+            if (variable.default !== undefined && variable.default !== null && variable.default !== '') {
+                // Подсвечиваем саму строку переменной
+                div.classList.add('has-default');
+
+                // Создаем красивый бейдж для значения
+                const badgeSpan = document.createElement('span');
+                badgeSpan.className = 'variable-badge';
+                badgeSpan.title = `Значение по умолчанию: ${variable.default}`;
+                badgeSpan.textContent = variable.default;
+
+                div.appendChild(badgeSpan);
+            }
+
+            // Кнопка удаления переменной
             if (variable.id > 0) {
-                div.innerHTML += `
-                    <button type="button" class="btn-delete-var" title="Удалить переменную">&times;</button>
-                `;
+                const deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.className = 'btn-delete-var';
+                deleteBtn.title = 'Удалить переменную';
+                deleteBtn.innerHTML = '&times;';
 
-                // Навешиваем обработчик клика на удаление
-                const deleteBtn = div.querySelector('.btn-delete-var');
                 deleteBtn.onclick = async () => {
-                    const workflowId = document.getElementById('workflowId').value;
+                    const workflowId = document.getElementById('workflowId')?.value;
 
-                    // Если workflow еще не создан (нет ID), удаляем только локально из UI и стейта
-                    if (!workflowId) {
-                        allCurrentVariables = allCurrentVariables.filter(v => v !== variable);
-                        window.allCurrentVariables = allCurrentVariables;
+                    const cleanLocalState = () => {
+                        if (typeof allCurrentVariables !== 'undefined') {
+                            allCurrentVariables = allCurrentVariables.filter(v => v !== variable);
+                        }
+                        window.allCurrentVariables = (window.allCurrentVariables || []).filter(v => v !== variable);
                         div.remove();
+                    };
+
+                    if (!workflowId) {
+                        cleanLocalState();
                         return;
                     }
 
                     if (!confirm(`Удалить переменную "${variable.name}"?`)) return;
 
                     try {
-                        // Отправляем запрос на удаление по API
                         await deleteData(`/workflow/${workflowId}/variable/${variable.id}`);
-
-                        // Удаляем элемент из глобального массива после успешного ответа сервера
-                        allCurrentVariables = allCurrentVariables.filter(v => v !== variable);
-                        window.allCurrentVariables = allCurrentVariables;
-
-                        // Удаляем блок из интерфейса
-                        div.remove();
-
+                        cleanLocalState();
                         showNotification('Переменная успешно удалена', 'success');
                     } catch (e) {
                         console.error("Ошибка при удалении переменной:", e);
                         showNotification(`Ошибка удаления: ${e.message}`, 'error');
                     }
                 };
+
+                div.appendChild(deleteBtn);
             }
 
             container.appendChild(div);
@@ -1790,10 +1852,12 @@
     async function addWorkflowVariable() {
         const workflowId = document.getElementById('workflowId').value;
         const newVariableNameInput = document.getElementById('newVariableName');
+        const newVariableValueInput = document.getElementById('newVariableValue');
 
         if (!newVariableNameInput) return;
 
         const varName = newVariableNameInput.value.trim();
+        const varValue = newVariableValueInput.value.trim();
 
         // 1. Клиентская валидация перед отправкой
         if (!varName) {
@@ -1822,12 +1886,16 @@
         try {
             // 2. Отправка POST-запроса на бэкенд
             // Передаем payload (название поля 'name' подстройте под требования вашего API, если оно отличается)
-            await postData(`/workflow/${workflowId}/variable`, {name: varName});
+            await postData(`/workflow/${workflowId}/variable`, {
+                name: varName,
+                "default": varValue === '' ? null : varValue
+            });
 
             showNotification('Переменная успешно добавлена', 'success');
 
             // 3. Очищаем инпут ввода
             newVariableNameInput.value = '';
+            newVariableValueInput.value = '';
             newVariableNameInput.focus();
 
             // 4. Перезагружаем список переменных с бэкенда для синхронизации UI

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel
 
-from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 
 router = APIRouter()
@@ -36,7 +36,10 @@ async def agent_get_system_prompt(request: Request, agent_id: int, collection_na
     entity = await repo.find(agent_id)
 
     manager = AiFrameworkAgentManager()
-    system_prompt = await manager.create_system_prompt(entity, {'collection_name': collection_name})
+    system_prompt = await manager.prompt_system_create({
+        "entity_agent": entity,
+        "collection_name": collection_name
+    })
 
     return {"result": system_prompt}
 

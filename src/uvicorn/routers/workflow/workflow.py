@@ -87,7 +87,12 @@ async def workflow_variables(request: Request, workflow_id: int):
         await db.execute(sql, (workflow_id,))
         db_variables = await db.fetchall()
 
-        combined_result = [{"id": 0, "name": "user-prompt"}] + list(db_variables)
+        combined_result = [
+                              {"id": 0, "name": "prompt_user"},
+                              {"id": 0, "name": "user_id"},
+                              {"id": 0, "name": "agent_id"},
+                              {"id": 0, "name": "session_uuid"},
+                          ] + list(db_variables)
 
         return {"result": combined_result}
 
@@ -130,6 +135,7 @@ async def workflow_variable_add(request: Request, workflow_id: int, data: dict):
     new_variable_data = {
         "workflow_id": workflow_id,
         "name": data.get("name"),
+        "default": data.get("default"),
     }
 
     new_id = await repo_workflow_variable.add(new_variable_data)

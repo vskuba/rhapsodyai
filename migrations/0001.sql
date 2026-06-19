@@ -66,6 +66,7 @@ CREATE TABLE `tool` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
     `group_id` INT NULL,
+    `path` CHAR(200) DEFAULT NULL,
     `description` LONGTEXT DEFAULT NULL,
     `args` LONGTEXT DEFAULT NULL,
     CONSTRAINT `fk_tool_group` FOREIGN KEY (`group_id`) REFERENCES `tool_group` (`id`) ON DELETE SET NULL,
@@ -109,6 +110,7 @@ CREATE TABLE `workflow_variable` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `workflow_id` INT NULL,
     `name` CHAR(50) NOT NULL,
+    `default` CHAR(200) DEFAULT NULL,
     CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflow` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

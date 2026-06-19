@@ -7,11 +7,11 @@ import customtkinter as ctk
 
 from typing import Dict, Any
 
-from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from ai.framework.ai_framework import AiFrameworkModel
 from ai.framework.task.ai_framework_model import AiFrameworkTaskModel
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
+from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.window.component import AiPopupWindow
 from src.window.tab_chat import TabChat
 from src.window.tab_log import TabLog

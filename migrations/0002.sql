@@ -56,21 +56,27 @@ INSERT INTO `workflow` (`id`, `node_id`, `tid`, `title`, `description`, `positio
 INSERT INTO `workflow_step_type` (`id`, `name`, `icon`, `description`, `description_full`, `metadata`) VALUES
 (1, 'response_return', '↩', 'Вернуть ответ', 'Собираем полный запрос на LLM с учетом короткой и длинной памяти, всей связанной информации в БД и отдаем LLM для формирования наиболее качественного ответа.', ''),
 (2, 'llm_to_json', '🧠', 'LLM ответ JSON', 'Ожидает ответ от LLM в виде JSON. Далее каждый ключ JSON доступен в последующих шагах', ''),
-(3, 'llm_to_string', '🧠', 'LLM ответ string', 'Ожидает ответ от LLM в виде текстовой строки', ''),
-(4, 'tool_invoke', '🛠', 'Вызов инструмента', 'Вызываем инструмент. Передаем в аргументы текущие переменные и сохраняем ответ в переменные.', '');
+(3, 'tool_invoke', '🛠', 'Вызов инструмента', 'Вызываем инструмент. Передаем в аргументы текущие переменные и сохраняем ответ в переменные.', '');
 
 INSERT INTO `workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) VALUES
-(1, 1, 1, 'мой ответ', 2, '{"response_return":"%user-prompt%","transitions":[]}'),
-(2, 1, 4, 'мой инструмент', 1,'{"textarea":"ok","transitions":[],"tool_invoke":{"tool_name":"github_user_info","inputs_map":{"random":"facts"},"outputs_map":{"login":"tags","name":"user-prompt","email":"facts"}}}'),
+(1, 1, 1, 'мой ответ', 2, '{"prompt_user":"%prompt_user%","transitions":[]}'),
+(2, 1, 3, 'мой инструмент', 1,'{"prompt_user":"ok","transitions":[],"tool_invoke":{"tool_name":"github_user_info","inputs_map":{"random":"facts"},"outputs_map":{"login":"tags","name":"prompt_user","email":"facts"}}}'),
 (3, 2, 1, 'мой ответ', 0, ''),
 (4, 3, 1, 'мой ответ', 0, ''),
-(5, 3, 4, 'мой поиск', 0, ''),
-(7, 1, 2, 'запрос LLM', 0, '{"llm_to_json_variable":[{"variable":"tags","text":"распарсить текст на таги"}],"llm_to_json_prompt":"%user-prompt%\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"tags\\": распарсить текст на таги\n\nExample of JSON response:\n{\n  \\"tags\\": \\"распарсить текст на таги\\"\n}","transitions":[{"variable":"facts","operator":"==","value":"ok","step_id":"1"}]}'),
-(8, 4, 1, 'Вернуть ответ', 0, '{"response_return":"%user-prompt%","transitions":[]}');
+(5, 3, 3, 'мой поиск', 0, ''),
+(7, 1, 2, 'запрос LLM', 0, '{"llm_to_json_variable":[{"variable":"tags","text":"распарсить текст на таги"}],"prompt_user":"%prompt_user%\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"tags\\": распарсить текст на таги\n\nExample of JSON response:\n{\n  \\"tags\\": \\"распарсить текст на таги\\"\n}","transitions":[{"variable":"facts","operator":"==","value":"ok","step_id":"1"}]}'),
+(8, 4, 1, 'Вернуть ответ', 3, '{"prompt_user":"[Пользователь пишет]:\n\n%prompt_user%\n\n%session_messages_rendered%","transitions":[]}'),
+(9, 4, 2, 'LLM ответ JSON', 0, '{"llm_to_json_variable":[{"variable":"tags","text":"распарсить текст на таги"}],"transitions":[],"prompt_user":"%prompt_user%\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"tags\\": распарсить текст на таги\n\nExample of JSON response:\n{\n  \\"tags\\": \\"распарсить текст на таги\\"\n}"}'),
+(10, 4, 3, 'session_messages', 1, '{"tool_invoke":{"tool_name":"session_messages","inputs_map":{"session_uuid":"session_uuid","limit":"session_messages_limit"},"outputs_map":{"list":"session_messages"}},"transitions":[]}'),
+(11, 4, 3, 'session_messages_render', 2, '{"tool_invoke":{"tool_name":"session_messages_render","inputs_map":{"messages":"session_messages"},"outputs_map":{"str":"session_messages_rendered"}},"transitions":[]}');
 
-INSERT INTO `workflow_variable` (`id`, `workflow_id`, `name`) VALUES
-(1, 1, 'tags'),
-(2, 1, 'facts');
+INSERT INTO `workflow_variable` (`id`, `workflow_id`, `name`, `default`) VALUES
+(1, 1, 'tags', NULL),
+(2, 1, 'facts', NULL),
+(3, 4, 'tags', NULL),
+(4, 4, 'session_messages_limit', 10),
+(5, 4, 'session_messages', NULL),
+(6, 4, 'session_messages_rendered', NULL);
 
 --
 

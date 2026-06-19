@@ -4,9 +4,9 @@ import uuid
 
 from qdrant_client import AsyncQdrantClient
 
-from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from mysql_.mysql_ import mysql_get_db_async
 from qdrant_.qdrant_ import _qdrant_db_get_client
+from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 
 qdrant_client: AsyncQdrantClient = _qdrant_db_get_client()
 

@@ -3,10 +3,10 @@ import traceback
 import src.window
 import customtkinter as ctk
 
-from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
-from ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from ai.framework.ai_framework_model import AiFrameworkModel
 from async_.async_ import async_loop_task_cancel
+from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.filesystem import open_file_in_editor
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
@@ -172,9 +172,9 @@ def agent_check_queue(root):
             agent_active: AiFrameworkModel = state_get('agent_active')
             if agent_active:
                 state_set('agent_active_type', 'agent')
-                agent_active.prompt = text
+                agent_active.prompt_user = text
                 window_chat_progress_title_display(agent_active)
-                queue_get('agent').put(agent_active)
+                queue_get('ai_framework_model').put(agent_active)
                 window_chat_loading_start()
 
                 widgets = agents_widgets_storage.get(agent_active.name)

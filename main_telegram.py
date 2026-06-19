@@ -8,8 +8,7 @@ from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 
 from ai.ai_thread import ai_thread_framework_run
-from ai.framework.agent.ai_framework import AiFrameworkAgent
-from ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
 from src.telegram_bot import init_telegram_bot
@@ -33,9 +32,8 @@ if __name__ == "__main__":
 
     asyncio.create_task(ai_thread_framework_run(
         [
-            AiFrameworkAgent(AiFrameworkAgentManager()),
-        ],
-        None
+            AiFrameworkAgent(),
+        ]
     ))
 
     state_set('mode_telegram', True)
