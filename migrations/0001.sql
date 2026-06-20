@@ -88,7 +88,7 @@ CREATE TABLE `workflow` (
 CREATE TABLE `workflow_step_type` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
-    `icon` CHAR(1) NOT NULL,
+    `icon` CHAR(2) NOT NULL,
     `description` CHAR(200) NOT NULL,
     `description_full` LONGTEXT DEFAULT NULL,
     `metadata` LONGTEXT NOT NULL,
