@@ -333,6 +333,8 @@
     let audioChunks = [];
     let currentSessionId = null;
 
+    let allAgents = {};
+
     async function loadUsers() {
         try {
             const data = await getData('/user/list');
@@ -412,6 +414,8 @@
                     let role = msg.role === 'user' ? 'user' : 'ai';
                     addMessage(msg.content, role);
                 });
+            } else if (allAgents[agentSelect.value])
+                addMessage(allAgents[agentSelect.value].greetings || '', 'ai'); {
             }
         } catch (e) {
             console.error("Ошибка загрузки сообщений:", e);
@@ -428,6 +432,7 @@
                 option.value = agent.id;
                 option.textContent = agent.name;
                 agentSelect.appendChild(option);
+                allAgents[agent.id] = agent;
             });
             if (data.result.length > 0) agentSelect.selectedIndex = 0;
         } catch (e) {

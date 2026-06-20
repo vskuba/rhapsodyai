@@ -167,6 +167,7 @@ CREATE TABLE `agent` (
     `workflow_id` INT NULL,
     `fact_collection` CHAR(250) DEFAULT NULL,
     `system_prompt` LONGTEXT NOT NULL,
+    `greetings` LONGTEXT NOT NULL,
     `tool` CHAR(250) DEFAULT NULL,
     `mcp_server` CHAR(250) DEFAULT NULL,
     `llm_id` INT NULL,
