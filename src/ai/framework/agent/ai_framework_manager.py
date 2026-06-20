@@ -308,13 +308,28 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         raise e
 
                 # ОБРАБОТКА ШАГА: Финал воркфлоу, возврат ответа
-                elif step_type == 'response_return':
+                elif step_type == 'return_response_llm':
                     model.session_disabled = False
 
                     response_from_llm = await execute_llm_step()
 
                     if not future.done():
                         loop.call_soon_threadsafe(future.set_result, response_from_llm)
+                    return
+
+                elif step_type == 'return_response_text':
+                    await session_message_add(
+                        session_uuid=model.session_uuid,
+                        llm_id=model.entity_llm.get('id'),
+                        user_id=model.user_id,
+                        role='workflow',
+                        agent_id=model.entity_agent.get('id'),
+                        kind_type='response-final',
+                        content=model.prompt_user
+                    )
+
+                    if not future.done():
+                        loop.call_soon_threadsafe(future.set_result, model.prompt_user)
                     return
 
                 # Переходим к следующему шагу (строго инкрементируем индекс)

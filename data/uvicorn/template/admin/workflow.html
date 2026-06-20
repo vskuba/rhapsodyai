@@ -759,7 +759,15 @@
                 type: 'widget_tool_invoke',
             },
         ],
-        'response_return': [ // ID типа "Вернуть ответ"
+        'return_response_llm': [ // ID типа "Вернуть ответ"
+            {
+                key: 'prompt_user',
+                label: 'Шаблон ответа',
+                type: 'textarea',
+                placeholder: ''
+            }
+        ],
+        'return_response_text': [ // ID типа "Вернуть ответ"
             {
                 key: 'prompt_user',
                 label: 'Шаблон ответа',
