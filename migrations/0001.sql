@@ -55,6 +55,13 @@ CREATE TABLE `node` (
     `position` INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `session` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `uuid` CHAR(36) NOT NULL,
+    `metadata` LONGTEXT DEFAULT NULL,
+    UNIQUE INDEX `ui_session_uuid` (`uuid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Таблица инструментов
 CREATE TABLE `tool_group` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,

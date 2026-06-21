@@ -172,7 +172,6 @@
         display: block;
     }
 
-
     #userSelect, #agentSelect {
         width: 100%;
         height: 100%; /* Заполнит sidebar */
@@ -181,17 +180,59 @@
         background: white;
         outline: none;
         overflow-y: auto;
+        padding: 0;
     }
 
-    #userSelect option, #agentSelect option {
+    /* --- СТИЛИ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ (Плоский список) --- */
+    #userSelect option {
         padding: 10px;
         border-bottom: 1px solid #f0f0f0;
         cursor: pointer;
+        border-radius: 4px; /* Округляем выделение */
+        margin: 2px 4px; /* Делаем небольшие зазоры по бокам и вертикали */
+    }
+
+    /* --- СТИЛИ ДЛЯ АГЕНТОВ (Группированный список) --- */
+    #agentSelect optgroup {
+        font-size: 11px;
+        font-weight: 700;
+        color: #64748b; /* Более мягкий современный цвет */
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        background-color: transparent; /* Убираем ломающийся серый фон */
+        padding: 12px 10px 6px 10px; /* Отступы вокруг заголовка группы */
+        border-top: 1px solid #edf2f7; /* Аккуратная разделительная линия */
+    }
+
+    /* Первой группе убираем верхний отступ и линию */
+    #agentSelect optgroup:first-of-type {
+        margin-top: 0;
+        border-top: none;
+        padding-top: 8px;
+    }
+
+    /* Сами агенты внутри групп */
+    #agentSelect optgroup option {
+        font-size: 13px;
+        font-weight: normal;
+        text-transform: none;
+        letter-spacing: normal;
+        color: #212529;
+        padding: 6px 14px;
+        background-color: #fff;
+        border-bottom: none;
+        border-radius: 4px; /* Округляем выделение агента */
+        margin: 2px 4px; /* Небольшой отступ, чтобы скругление было заметно */
+    }
+
+    /* --- СТИЛИ ДЛЯ ХОВЕРА И АКТИВНОГО ВЫБОРА (Общие) --- */
+    #userSelect option:hover, #agentSelect option:hover {
+        background-color: #e8f0fe !important;
     }
 
     #userSelect option:checked, #agentSelect option:checked {
         background-color: #007bff !important;
-        color: white;
+        color: white !important;
         box-shadow: 0 0 10px 100px #007bff inset !important;
     }
 
@@ -334,6 +375,7 @@
     let currentSessionId = null;
 
     let allAgents = {};
+    let allNodes = {};
 
     async function loadUsers() {
         try {
@@ -415,26 +457,92 @@
                     addMessage(msg.content, role);
                 });
             } else if (allAgents[agentSelect.value])
-                addMessage(allAgents[agentSelect.value].greetings || '', 'ai'); {
+                addMessage(allAgents[agentSelect.value].greetings || '', 'ai');
+            {
             }
         } catch (e) {
             console.error("Ошибка загрузки сообщений:", e);
         }
     }
 
+    async function loadNodes() {
+        try {
+            const data = await getData('/node/list'); // Предполагаем этот эндпоинт
+            allNodes = {}; // Сбрасываем старые данные
+            if (data && data.result) {
+                data.result.forEach(node => {
+                    allNodes[node.id] = node;
+                });
+            }
+        } catch (e) {
+            console.error("Ошибка загрузки нод:", e);
+        }
+    }
+
     async function loadAgents() {
         if (!agentSelect) return;
         try {
-            const data = await getData('/agent/list');
+            const [agentsResponse] = await Promise.all([
+                getData('/agent/list')
+            ]);
+
             agentSelect.innerHTML = '';
-            data.result.forEach(agent => {
-                const option = document.createElement('option');
-                option.value = agent.id;
-                option.textContent = agent.name;
-                agentSelect.appendChild(option);
-                allAgents[agent.id] = agent;
+
+            // Группируем агентов по nodeId, а не по строковому имени (так проще сортировать)
+            const groups = {};
+            agentsResponse.result.forEach(agent => {
+                allAgents[agent.id] = agent; // Кэшируем агента
+
+                // Если nodeId равен null/undefined/0, запишем в специальную группу 'null'
+                const nodeId = agent.node_id || 'null';
+
+                if (!groups[nodeId]) {
+                    groups[nodeId] = [];
+                }
+                groups[nodeId].push(agent);
             });
-            if (data.result.length > 0) agentSelect.selectedIndex = 0;
+
+            // Превращаем объект групп в массив для сортировки
+            const sortedGroups = Object.keys(groups).map(nodeId => {
+                const node = allNodes[nodeId];
+                let groupName = 'Без названия';
+
+                if (node) {
+                    // Делаем имя капсом и добавляем стильный значок узла 🌐 или 📦
+                    groupName = `📦 ${node.name.toUpperCase()}`;
+                } else {
+                    groupName = nodeId === 'null' ? 'Без названия' : `⚙️ УЗЕЛ #${nodeId}`;
+                }
+
+                return {
+                    nodeId: nodeId,
+                    name: groupName,
+                    position: node ? parseInt(node.position, 10) : 9999,
+                    agents: groups[nodeId]
+                };
+            });
+
+            // Сортируем группы по полю position
+            sortedGroups.sort((a, b) => a.position - b.position);
+
+            // Выводим отсортированный сгруппированный список в интерфейс
+            sortedGroups.forEach(group => {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = group.name; // Название группы (капс + иконка коробки)
+
+                group.agents.forEach(agent => {
+                    const option = document.createElement('option');
+                    option.value = agent.id;
+                    // Добавляем иконку робота перед именем агента
+                    option.textContent = `🤖 ${agent.name}`;
+                    optgroup.appendChild(option);
+                });
+
+                agentSelect.appendChild(optgroup);
+            });
+
+            if (agentsResponse.result.length > 0) agentSelect.selectedIndex = 0;
+
         } catch (e) {
             console.error("Ошибка загрузки агентов для чата:", e);
         }
@@ -537,6 +645,7 @@
     document.addEventListener('DOMContentLoaded', async () => {
         // 1. Инициализация агентов
         await Promise.all([
+            loadNodes(),
             loadAgents(),
             loadUsers(),
             loadLLMs(),
