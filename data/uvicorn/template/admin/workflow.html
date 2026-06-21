@@ -689,7 +689,7 @@
                             <textarea id="stepTextarea" class="form-control system-prompt-full"
                                       style="display: none;"></textarea>
 
-                            <div class="transitions-editor">
+                            <div class="transitions-editor" id="stepTransitionsView">
                                 <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">Логика
                                     переходов (Flow Control)</label>
 
@@ -1234,6 +1234,13 @@
 
         // 5. Отрисовка переходов
         renderTransitions(step, allCurrentStepsData);
+
+        const stepTransitionsView = document.getElementById('stepTransitionsView');
+        if (allWorkflowStepsType[step.type_id].name === 'return_response_llm') {
+            stepTransitionsView.style.display = 'none';
+        } else {
+            stepTransitionsView.style.display = '';
+        }
     }
 
     function renderCustomStepFields(step, metadata) {

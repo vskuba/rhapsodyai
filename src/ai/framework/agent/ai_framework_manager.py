@@ -5,7 +5,7 @@ import types
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
-from ai.ai_session import session_message_add
+from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
@@ -56,7 +56,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
     async def _framework_workflow_run(self, model: AiFrameworkAgentModel, future: asyncio.Future, loop):
         try:
             steps_count = len(model.workflow_steps)
+            workflow_steps_mapping = {step['id']: index for index, step in enumerate(model.workflow_steps)}
             logger_info(f"Запуск воркфлоу для агента '{model.title}'. Всего шагов: {steps_count}")
+
+            ai_session_metadata = await ai_session_metadata_get(model.session_uuid)
+            model.workflow_step_current_index = ai_session_metadata.get('workflow_step_current_index', 0)
 
             while model.workflow_step_current_index < steps_count:
                 current_step = model.workflow_steps[model.workflow_step_current_index]
@@ -64,7 +68,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 step_meta = current_step['metadata']
 
                 logger_info(
-                    f"▶️ Выполнение шага [{model.workflow_step_current_index + 1}/{steps_count}]: {current_step['title']} ({step_type})")
+                    f"▶️ Выполнение шага [{model.workflow_step_current_index + 1}/{steps_count}]: "
+                    f"{current_step['title']} ({step_type})"
+                )
 
                 # Подставляем накопленные переменные в метаданные текущего шага
                 step_meta = self.variables_render(step_meta, model.workflow_variables)
@@ -89,7 +95,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 model.prompt_user = step_meta.get('prompt_user', '')
 
                 if model.workflow_step_current_index == 0:
-                    await session_message_add(
+                    await ai_session_message_add(
                         session_uuid=model.session_uuid,
                         llm_id=model.entity_llm.get('id'),
                         user_id=model.user_id,
@@ -99,7 +105,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         content=model.prompt_system
                     )
 
-                    await session_message_add(
+                    await ai_session_message_add(
                         session_uuid=model.session_uuid,
                         llm_id=model.entity_llm.get('id'),
                         user_id=model.user_id,
@@ -254,7 +260,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                         logger_info(f"🛠 Инструмент '{tool_name}'({tool_args}) вернул ответ: {raw_result.__str__()}")
 
-                        await session_message_add(
+                        await ai_session_message_add(
                             session_uuid=model.session_uuid,
                             llm_id=model.entity_llm.get('id'),
                             user_id=model.user_id,
@@ -315,10 +321,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     if not future.done():
                         loop.call_soon_threadsafe(future.set_result, response_from_llm)
+
                     return
 
                 elif step_type == 'return_response_text':
-                    await session_message_add(
+                    await ai_session_message_add(
                         session_uuid=model.session_uuid,
                         llm_id=model.entity_llm.get('id'),
                         user_id=model.user_id,
@@ -330,10 +337,35 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     if not future.done():
                         loop.call_soon_threadsafe(future.set_result, model.prompt_user)
+
+                    # Если после этого шага есть еще шаги, сохраняем обновленный индекс текущего шага в метаданных сессии
+                    if model.workflow_steps[model.workflow_step_current_index + 1]:
+                        ai_session_metadata['workflow_step_current_index'] = model.workflow_step_current_index + 1
+                        await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
+
                     return
 
                 # Переходим к следующему шагу (строго инкрементируем индекс)
                 model.workflow_step_current_index += 1
+
+                # Проверяем наличие условий переходов в метаданных шага и при выполнении условия изменяем индекс текущего шага на указанный
+                transitions = step_meta.get('transitions', [])
+                if transitions:
+                    for transition in transitions:
+                        variable_name = transition.get('variable')
+                        operator = transition.get('operator')
+                        value = transition.get('value')
+                        target_step_id = int(transition.get('step_id'))
+                        step_index = workflow_steps_mapping[target_step_id]
+
+                        current_value = model.workflow_variables[variable_name]
+
+                        if operator == "==" and current_value == value:
+                            logger_info(
+                                f"🔀️ Переход на шаг [{step_index}/{steps_count}]: (%{variable_name}% == {value})"
+                            )
+                            model.workflow_step_current_index = step_index
+                            break
 
             if not future.done():
                 loop.call_soon_threadsafe(future.set_result, "Воркфлоу успешно завершен.")
