@@ -92,7 +92,6 @@
     .form-layout-grid {
         gap: 30px;
         align-items: stretch;
-        min-height: 450px;
     }
 
     .settings-column {
@@ -223,6 +222,58 @@
         color: white;
     }
 
+    .schema-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 13px;
+        background-color: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .schema-table th,
+    .schema-table td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .schema-table th {
+        background-color: #f5f7fa;
+        color: #555;
+        font-weight: bold;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+    }
+
+    .schema-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .schema-table tr:hover {
+        background-color: #f9fbfd;
+    }
+
+    .schema-table .field-name {
+        color: #2c3e50;
+    }
+
+    .schema-table .field-type {
+        background-color: #eef2f7;
+        color: #4a5568;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+    }
+
+    .schema-table .field-desc {
+        color: #666;
+    }
+
 </style>
 
 {% endblock %}
@@ -275,6 +326,15 @@
                                 </div>
                             </div>
                         </div>
+                        <br>
+                        <div class="form-layout-grid">
+                            <div class="settings-column">
+                                <div class="form-group">
+                                    <label>Schema коллекции</label>
+                                    <div class="collection-field-list" id="collectionFieldList"></div>
+                                </div>
+                            </div>
+                        </div>
 
                         <div class="editor-footer">
                             <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
@@ -282,6 +342,7 @@
                             </button>
                             <button type="submit" class="btn-save" id="saveBtn">Сохранить коллекцию</button>
                         </div>
+                    </div>
                 </form>
             </div>
 
@@ -304,7 +365,7 @@
     /**
      * Инициализация менеджера: загрузка списка нод
      */
-    async function initCollectionsManager() {
+    async function initCollectionsManager(activeId = null) {
         if (!collectionListContainer) return;
 
         try {
@@ -314,7 +375,8 @@
             // Сортируем ноды по полю position
             collections.sort((a, b) => (a.position || 0) - (b.position || 0));
 
-            renderCollectionList(collections);
+            // Передаем activeId дальше в рендеринг списка
+            renderCollectionList(collections, activeId);
         } catch (e) {
             console.error("Ошибка инициализации нод:", e);
         }
@@ -323,7 +385,7 @@
     /**
      * Отрисовка списка в левой колонке
      */
-    function renderCollectionList(collections) {
+    function renderCollectionList(collections, activeId = null) {
         collectionListContainer.innerHTML = '';
 
         if (collections.length === 0) {
@@ -334,21 +396,37 @@
         collections.forEach(collection => {
             const div = document.createElement('div');
             div.className = 'collection-item';
+            // Добавляем data-атрибут с id, чтобы легко найти нужный элемент в DOM
+            div.setAttribute('data-id', collection.id);
 
-            // Добавляем имя и бейдж позиции для наглядности
             div.innerHTML = `
-                <span>${collection.name}</span>
-                <span class="collection-pos-badge">${collection.position}</span>
-            `;
+            <span>${collection.name}</span>
+            <span class="collection-pos-badge">${collection.position}</span>
+        `;
 
             div.onclick = () => selectCollectionForEdit(collection.id, div);
             collectionListContainer.appendChild(div);
         });
 
-        const firstItem = collections[0];
-        const firstElement = collectionListContainer.querySelector('.collection-item');
-        if (firstItem && firstElement) {
-            selectCollectionForEdit(firstItem.id, firstElement);
+        // Определяем, какой элемент активировать
+        let targetItem = null;
+        let targetElement = null;
+
+        if (activeId) {
+            // Ищем сохраненную ранее коллекцию
+            targetItem = collections.find(c => String(c.id) === String(activeId));
+            targetElement = collectionListContainer.querySelector(`.collection-item[data-id="${activeId}"]`);
+        }
+
+        // Если сохраненный ID не найден или это первая загрузка, берем первый элемент списка
+        if (!targetItem || !targetElement) {
+            targetItem = collections[0];
+            targetElement = collectionListContainer.querySelector('.collection-item');
+        }
+
+        // Триггерим выбор элемента
+        if (targetItem && targetElement) {
+            selectCollectionForEdit(targetItem.id, targetElement);
         }
     }
 
@@ -370,6 +448,8 @@
             document.getElementById('language').value = collection.language;
             document.getElementById('description').value = collection.description || '';
 
+            renderSchemaTable(collection.schema);
+
             document.getElementById('formTitle').textContent = `Редактирование коллекции: ${collection.name}`;
             if (saveBtn) saveBtn.disabled = false;
 
@@ -378,6 +458,51 @@
             console.error("Ошибка при получении данных ноды:", e);
             showNotification('Не удалось загрузить данные ноды', 'error');
         }
+    }
+
+    function renderSchemaTable(schema) {
+        const container = document.getElementById('collectionFieldList');
+        if (!container) return;
+
+        if (!schema || Object.keys(schema).length === 0) {
+            container.innerHTML = '<div style="color:#999; font-size:13px; padding:10px 0;">Схема пуста или отсутствует</div>';
+            return;
+        }
+
+        // Формируем каркас таблицы
+        let tableHtml = `
+        <table class="schema-table">
+            <thead>
+                <tr>
+                    <th>Поле</th>
+                    <th>Table Name</th>
+                    <th>Описание</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+        // Заполняем строки данными из объекта schema
+        for (const fieldName in schema) {
+            if (schema.hasOwnProperty(fieldName)) {
+                const fieldData = schema[fieldName];
+
+                tableHtml += `
+                <tr>
+                    <td class="field-name"><strong>${fieldName}</strong></td>
+                    <td><span class="field-type">${fieldData.table_name || fieldData.type || '-'}</span></td>
+                    <td class="field-desc">${fieldData.description || '-'}</td>
+                </tr>
+            `;
+            }
+        }
+
+        tableHtml += `
+            </tbody>
+        </table>
+    `;
+
+        container.innerHTML = tableHtml;
     }
 
     function resetFormForCreate() {
@@ -392,9 +517,6 @@
         if (deleteBtn) deleteBtn.style.display = 'none';
     }
 
-    /**
-     * Сохранение (Создание или Обновление)
-     */
     async function saveCollectionConfig(e) {
         if (e) e.preventDefault();
 
@@ -402,8 +524,8 @@
         const payload = {
             name: document.getElementById('name').value,
             position: parseInt(document.getElementById('position').value) || 0,
-            language: parseInt(document.getElementById('language').value) || 'en',
-            description: parseInt(document.getElementById('description').value) || ''
+            language: document.getElementById('language').value || 'en',
+            description: document.getElementById('description').value || ''
         };
 
         if (saveBtn) saveBtn.disabled = true;
@@ -418,7 +540,7 @@
             }
 
             // Перезагружаем список
-            await initCollectionsManager();
+            await initCollectionsManager(id || null);
 
             // Если создавали новую — форма очистится, если редактировали — данные останутся
             if (!id) resetFormForCreate();

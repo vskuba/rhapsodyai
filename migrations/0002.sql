@@ -84,7 +84,7 @@ INSERT INTO `workflow_variable` (`id`, `workflow_id`, `name`, `default`) VALUES
 
 INSERT INTO `fact_collection` (`id`, `name`, `position`, `language`, `description`) VALUES
 (1, 'cashier_service', 0, 'ru', 'Микросервисы'),
-(2, 'dating_girl_bio', 0, 'ru,en', 'Биография и личная информация '),
+(2, 'dating_girl_bio', 0, 'ru,en', 'Биография девушки и личная информация '),
 (3, 'soko_menu', 0, 'ru,en,ua', 'Меню');
 
 INSERT INTO `fact` (`id`, `collection_id`, `category`, `language`, `content`, `tags`, `qdrant_synced`, `created_at`) VALUES

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.ai.ai_fact_collection import ai_collection_metadata_get
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
 
 router = APIRouter()
@@ -81,8 +81,7 @@ async def fact_collection_save(request: Request, collection_id: int, data: list[
     collection_name = collection_entity.get('name')
     dynamic_table = f"fact_collection_{collection_name}"
 
-    manager = AiFrameworkAgentManager()
-    collection_metadata = await manager.collection_metadata_get(collection_name)
+    collection_metadata = await ai_collection_metadata_get(collection_name)
 
     # 1. Группируем метаданные по таблицам
     fields_map = {"fact": [], dynamic_table: []}

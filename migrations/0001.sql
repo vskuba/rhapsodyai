@@ -137,7 +137,7 @@ CREATE TABLE `fact` (
     `category` CHAR(20) DEFAULT NULL COMMENT 'tag:extract|type:string|desc:High-level classification (e.g., contacts, pricing, delivery)',
     `language` CHAR(2) NOT NULL COMMENT 'tag:extract|type:string|desc:The language two char format, ISO 639-1 code (ru/en/ua)',
     `content` LONGTEXT NOT NULL COMMENT 'tag:extract|type:string|desc:The clean, factual text extracted from the source',
-    `tags` CHAR(250) NOT NULL COMMENT 'tag:extract|type:array_string|desc:A comma-separated list of tags extracted from the source',
+    `tags` CHAR(250) NOT NULL COMMENT 'tag:extract|type:array_string|desc:A comma-separated list of tags extracted from the source (tag1,tag2,tag3)',
     `qdrant_synced` INT NOT NULL DEFAULT 0,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_qdrant_synced` (`qdrant_synced`),

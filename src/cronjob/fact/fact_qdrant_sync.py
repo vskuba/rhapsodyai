@@ -6,7 +6,7 @@ from qdrant_client import AsyncQdrantClient
 
 from mysql_.mysql_ import mysql_get_db_async
 from qdrant_.qdrant_ import _qdrant_db_get_client
-from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.ai.ai_fact_collection import ai_collection_metadata_get
 
 qdrant_client: AsyncQdrantClient = _qdrant_db_get_client()
 
@@ -37,7 +37,6 @@ async def fact_qdrant_sync(metadata: dict) -> str:
                 rows_by_collection[c_name] = []
             rows_by_collection[c_name].append(row)
 
-        manager = AiFrameworkAgentManager()
         qdrant_client.set_model(EMBEDDING_MODEL)
         qdrant_client.set_sparse_model(SPARSE_MODEL)
 
@@ -49,7 +48,7 @@ async def fact_qdrant_sync(metadata: dict) -> str:
             dynamic_table = f"fact_collection_{c_name}"
 
             # Получаем метаданные именно для этой коллекции
-            collection_metadata = await manager.collection_metadata_get(c_name)
+            collection_metadata = await ai_collection_metadata_get(c_name)
 
             # Определяем поля, которые нужно добрать из динамической таблицы
             dyn_fields = [f for f, info in collection_metadata.items() if info['table_name'] == dynamic_table]

@@ -8,10 +8,10 @@ from typing import Any, Callable, Awaitable, cast
 from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
+from src.ai.ai_fact_collection import ai_collection_metadata_get
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from ai.framework.ai_framework_manager import AbstractAiFrameworkManager
-from mysql_.mysql_table import mysql_table_metadata_get
 from src.mysql_.repository.agent_specialization_repository import AgentSpecializationRepository
 
 
@@ -404,7 +404,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 and metadata \
                 and (collection_name := metadata.get('collection_name')):
 
-            collection_metadata = await self.collection_metadata_get(collection_name)
+            collection_metadata = await ai_collection_metadata_get(collection_name)
 
             example_fact_extract = ''
             if collection_metadata:
@@ -420,19 +420,3 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             return system_prompt + example_fact_extract
 
         return system_prompt
-
-    async def collection_metadata_get(self, collection_name) -> dict:
-        collection_metadata = {}
-
-        for table_name in ['fact', f'fact_collection_{collection_name}']:
-            table_metadata = await mysql_table_metadata_get(table_name)
-
-            for field, m in table_metadata.items():
-                comment_metadata = m.get('comment_metadata')
-                if comment_metadata and comment_metadata.get('tag') == 'extract':
-                    collection_metadata[field] = {
-                        'table_name': table_name,
-                        'description': m['comment_metadata']['desc'],
-                    }
-
-        return collection_metadata
