@@ -127,7 +127,7 @@ CREATE TABLE `fact_collection` (
     `name` CHAR(40) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
     `language` CHAR(40) NOT NULL,
-    `user_prompt_header` CHAR(60) NOT NULL
+    `description` CHAR(200) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица фактов

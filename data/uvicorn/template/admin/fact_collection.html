@@ -90,7 +90,6 @@
 
     /* 4. Двухколоночный макет (Сохраняем структуру для единообразия) */
     .form-layout-grid {
-        display: flex;
         gap: 30px;
         align-items: stretch;
         min-height: 450px;
@@ -116,8 +115,14 @@
 
     .form-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        /* Делим на две равные колонки (или можно 1fr 1fr) */
+        grid-template-columns: repeat(2, 1fr);
         gap: 15px;
+        align-items: start;
+    }
+
+    .form-grid .form-group:not(.form-group-textarea) {
+        grid-column: 1;
     }
 
     .form-group {
@@ -133,16 +138,23 @@
         text-transform: uppercase;
     }
 
-    .form-group-name {
-        min-width: 250px;
+    /* Стилизация новой группы для textarea */
+    .form-group-textarea {
+        /* Принудительно отправляем во вторую колонку */
+        grid-column: 2;
+        /* Заставляем занять высоту всех трех левых инпутов (с 1 по 4 линию сетки) */
+        grid-row: 1 / 4;
+        height: 100%;
     }
 
-    .form-group-info {
-        font-size: 13px;
-        color: #353831;
+    /* Настройка самого поля ввода */
+    .form-group-textarea textarea {
+        flex-grow: 1;
+        resize: vertical;
+        min-height: 140px; /* Чтобы поле не схлопывалось, если контента мало */
     }
 
-    /* 5. Элементы управления */
+    /* Элементы управления */
     .form-control {
         border: 1px solid #ddd;
         padding: 10px;
@@ -211,10 +223,6 @@
         color: white;
     }
 
-    #statusLabel {
-        font-size: 13px;
-        color: #27ae60;
-    }
 </style>
 
 {% endblock %}
@@ -227,7 +235,7 @@
             <!-- Список Нод (Левая колонка) -->
             <div class="agents-sidebar">
                 <div class="sidebar-header">
-                    <button class="btn-create" id="createNewcollection">+ Создать коллекцию</button>
+                    <button class="btn-create" id="createNewCollection">+ Создать коллекцию</button>
                 </div>
                 <div class="agent-list" id="collectionList">
                     <!-- Сюда JS будет рендерить список нод -->
@@ -249,33 +257,31 @@
                             <div class="form-grid">
                                 <div class="form-group form-group-name">
                                     <label>Название коллекции</label>
-                                    <input type="text" id="name" class="form-control" required
-                                           placeholder="Напр: Workflow Engine">
+                                    <input type="text" id="name" class="form-control" required>
                                 </div>
+
                                 <div class="form-group">
                                     <label>Позиция</label>
                                     <input type="number" id="position" class="form-control" value="0">
                                 </div>
+
+                                <div class="form-group">
+                                    <label>Языки</label>
+                                    <input type="text" id="language" class="form-control" required value="en,ua,ru">
+                                </div>
+                                <div class="form-group form-group-textarea">
+                                    <label>Описание</label>
+                                    <textarea id="description" class="form-control"></textarea>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Пустая колонка для сохранения симметрии с агентами или под описание -->
-                        <div class="prompt-column">
-                            <div class="form-group form-group-info">
-                                <label>Инфо</label>
-                                Коллекцию используются для хранения данных
-                            </div>
+                        <div class="editor-footer">
+                            <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
+                                Удалить коллекцию
+                            </button>
+                            <button type="submit" class="btn-save" id="saveBtn">Сохранить коллекцию</button>
                         </div>
-                    </div>
-
-                    <div class="editor-footer">
-                        <span id="statusLabel"></span>
-                        <!-- Кнопка удаления -->
-                        <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
-                            Удалить коллекцию
-                        </button>
-                        <button type="submit" class="btn-save" id="saveBtn">Сохранить коллекцию</button>
-                    </div>
                 </form>
             </div>
 
@@ -292,7 +298,7 @@
     const collectionListContainer = document.getElementById('collectionList');
     const saveBtn = document.getElementById('saveBtn');
     const collectionForm = document.getElementById('collectionForm');
-    const createNewcollectionBtn = document.getElementById('createNewcollection');
+    const createNewCollectionBtn = document.getElementById('createNewCollection');
     const deleteBtn = document.getElementById('deleteBtn');
 
     /**
@@ -338,6 +344,12 @@
             div.onclick = () => selectCollectionForEdit(collection.id, div);
             collectionListContainer.appendChild(div);
         });
+
+        const firstItem = collections[0];
+        const firstElement = collectionListContainer.querySelector('.collection-item');
+        if (firstItem && firstElement) {
+            selectCollectionForEdit(firstItem.id, firstElement);
+        }
     }
 
     async function selectCollectionForEdit(collectionId, element) {
@@ -355,6 +367,8 @@
             document.getElementById('collectionId').value = collection.id;
             document.getElementById('name').value = collection.name;
             document.getElementById('position').value = collection.position || 0;
+            document.getElementById('language').value = collection.language;
+            document.getElementById('description').value = collection.description || '';
 
             document.getElementById('formTitle').textContent = `Редактирование коллекции: ${collection.name}`;
             if (saveBtn) saveBtn.disabled = false;
@@ -372,6 +386,8 @@
         document.getElementById('collectionId').value = '';
         document.getElementById('formTitle').textContent = 'Создание новой коллекции';
         document.getElementById('position').value = 0;
+        document.getElementById('language').value = 'en,ua,ru';
+        document.getElementById('description').value = '';
         if (saveBtn) saveBtn.disabled = false;
         if (deleteBtn) deleteBtn.style.display = 'none';
     }
@@ -385,7 +401,9 @@
         const id = document.getElementById('collectionId').value;
         const payload = {
             name: document.getElementById('name').value,
-            position: parseInt(document.getElementById('position').value) || 0
+            position: parseInt(document.getElementById('position').value) || 0,
+            language: parseInt(document.getElementById('language').value) || 'en',
+            description: parseInt(document.getElementById('description').value) || ''
         };
 
         if (saveBtn) saveBtn.disabled = true;
@@ -443,8 +461,8 @@
             collectionForm.addEventListener('submit', saveCollectionConfig);
         }
 
-        if (createNewcollectionBtn) {
-            createNewcollectionBtn.addEventListener('click', resetFormForCreate);
+        if (createNewCollectionBtn) {
+            createNewCollectionBtn.addEventListener('click', resetFormForCreate);
         }
 
         if (deleteBtn) {
