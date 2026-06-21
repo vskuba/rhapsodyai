@@ -34,4 +34,4 @@ async def tool_group_list(request: Request):
 
 @router.post("/tool/sync")
 async def tool_sync(request: Request):
-    return {"result": "ok", "synced_count": ai_tools_sync(force=True)}
+    return {"result": "ok", "synced_count": await ai_tools_sync(force=True)}
