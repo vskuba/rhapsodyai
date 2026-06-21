@@ -39,6 +39,14 @@ async def session(request: Request):
     )
 
 
+@router.get("/admin/user", response_class=HTMLResponse)
+async def session(request: Request):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/user.html"
+    )
+
+
 @router.get("/admin/workflow", response_class=HTMLResponse)
 async def task(request: Request):
     return request.app.state.jinja2_template.TemplateResponse(

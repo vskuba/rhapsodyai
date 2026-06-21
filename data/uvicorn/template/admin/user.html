@@ -1,0 +1,465 @@
+{% extends "base.html" %}
+
+{% block title %}Пользователи{% endblock %}
+
+{% block head %}
+<style>
+    /* 1. Базовая компоновка (Идентично Агентам) */
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
+
+    /* 2. Сайдбар Нод */
+    .users-sidebar {
+        width: 260px;
+        background: #fafafa;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    .user-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    /* Элементы списка нод */
+    .user-item {
+        padding: 10px 15px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .user-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .user-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+        font-weight: 600;
+    }
+
+    /* Метка позиции в списке (опционально) */
+    .user-pos-badge {
+        font-size: 11px;
+        color: #bdc3c7;
+        background: #fff;
+        padding: 2px 6px;
+        border-radius: 10px;
+        border: 1px solid #eee;
+    }
+
+    /* 3. Основная секция формы */
+    .editor-section {
+        flex: 1;
+        padding: 20px 40px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 10px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-header h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 20px;
+    }
+
+    /* 4. Двухколоночный макет (Сохраняем структуру для единообразия) */
+    .form-layout-grid {
+        display: flex;
+        gap: 30px;
+        align-items: stretch;
+        min-height: 450px;
+    }
+
+    .settings-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .prompt-column {
+        flex: 0.5;
+    }
+
+    /* Правую колонку оставляем для симметрии или доп. инфо */
+    .info-column {
+        flex: 1.5;
+        display: flex;
+        flex-direction: column;
+        background: #fcfcfc;
+        border-radius: 8px;
+        padding: 20px;
+        border: 1px dashed #e0e0e0;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .form-group-name {
+        min-width: 250px;
+    }
+
+    .form-group-info {
+        font-size: 13px;
+        color: #353831;
+    }
+
+    /* 5. Элементы управления */
+    .form-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        border-color: #3498db;
+        outline: none;
+        box-shadow: 0 0 5px rgba(52, 152, 219, 0.2);
+    }
+
+    /* 6. Кнопки и Футер */
+    .editor-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 12px 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-save:hover {
+        background: #2980b9;
+    }
+
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .btn-delete {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 11px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+        margin-right: auto; /* Прижмет кнопку к левому краю футера */
+    }
+
+    .btn-delete:hover {
+        background: #e74c3c;
+        color: white;
+    }
+
+    #statusLabel {
+        font-size: 13px;
+        color: #27ae60;
+    }
+</style>
+
+{% endblock %}
+
+{% block content %}
+<div class="page-content">
+    <div class="main-wrapper">
+        <div class="editor-container">
+
+            <!-- Список Нод (Левая колонка) -->
+            <div class="agents-sidebar">
+                <div class="sidebar-header">
+                    <button class="btn-create" id="createNewUser">+ Создать пользователя</button>
+                </div>
+                <div class="agent-list" id="userList">
+                    <!-- Сюда JS будет рендерить список нод -->
+                </div>
+            </div>
+
+            <!-- Форма Ноды (Правая колонка) -->
+            <div class="editor-section">
+                <div class="form-header">
+                    <h2 id="formTitle">Выберите пользователя</h2>
+                </div>
+
+                <form id="userForm">
+                    <input type="hidden" id="userId">
+
+                    <div class="form-layout-grid">
+                        <!-- Основные настройки -->
+                        <div class="settings-column">
+                            <div class="form-grid">
+                                <div class="form-group form-group-name">
+                                    <label>Username</label>
+                                    <input type="text" id="username" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Email</label>
+                                    <input type="text" id="email" class="form-control" value="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Пустая колонка для сохранения симметрии с агентами или под описание -->
+                        <div class="prompt-column">
+                            <div class="form-group form-group-info">
+                                <label>Инфо</label>
+                                Пользователи используются для чатов
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="editor-footer">
+                        <span id="statusLabel"></span>
+                        <!-- Кнопка удаления -->
+                        <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
+                            Удалить пользователя
+                        </button>
+                        <button type="submit" class="btn-save" id="saveBtn">Сохранить пользователя</button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const userListContainer = document.getElementById('userList');
+    const saveBtn = document.getElementById('saveBtn');
+    const userForm = document.getElementById('userForm');
+    const createNewUserBtn = document.getElementById('createNewUser');
+    const deleteBtn = document.getElementById('deleteBtn');
+
+    /**
+     * Инициализация менеджера: загрузка списка нод
+     */
+    async function initUsersManager() {
+        if (!userListContainer) return;
+
+        try {
+            const response = await getData('/user/list');
+            const users = response.result;
+
+            renderUserList(users);
+        } catch (e) {
+            console.error("Ошибка инициализации пользователей:", e);
+        }
+    }
+
+    /**
+     * Отрисовка списка в левой колонке
+     */
+    function renderUserList(users) {
+        userListContainer.innerHTML = '';
+
+        if (users.length === 0) {
+            userListContainer.innerHTML = '<div style="padding:20px; color:#999; font-size:13px;">Нет созданных пользователей</div>';
+            return;
+        }
+
+        users.forEach(user => {
+            const div = document.createElement('div');
+            div.className = 'user-item';
+
+            // Добавляем имя и бейдж позиции для наглядности
+            div.innerHTML = `
+                <span>${user.username}</span>
+            `;
+
+            div.onclick = () => selectUserForEdit(user.id, div);
+            userListContainer.appendChild(div);
+        });
+
+        const firstUser = users[0];
+        const firstElement = userListContainer.querySelector('.user-item');
+        if (firstUser && firstElement) {
+            selectUserForEdit(firstUser.id, firstElement);
+        }
+    }
+
+    /**
+     * Загрузка данных конкретной ноды в форму
+     */
+    async function selectUserForEdit(userId, element) {
+        // Подсветка активного элемента
+        document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        try {
+            const data = await getData(`/user/${userId}`);
+            const user = data.result;
+
+            if (!user) return;
+
+            // Заполнение полей формы
+            document.getElementById('userId').value = user.id;
+            document.getElementById('username').value = user.username;
+            document.getElementById('email').value = user.email;
+
+            document.getElementById('formTitle').textContent = `Редактирование пользователя: ${user.username}`;
+            if (saveBtn) saveBtn.disabled = false;
+
+            if (deleteBtn) deleteBtn.style.display = 'block';
+        } catch (e) {
+            console.error("Ошибка при получении данных пользователя:", e);
+            showNotification('Не удалось загрузить данные пользователя', 'error');
+        }
+    }
+
+    function resetFormForCreate() {
+        document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
+        userForm.reset();
+        document.getElementById('userId').value = '';
+        document.getElementById('formTitle').textContent = 'Создание нового пользователя';
+        document.getElementById('username').value = '';
+        document.getElementById('email').value = '';
+        if (saveBtn) saveBtn.disabled = false;
+        if (deleteBtn) deleteBtn.style.display = 'none';
+    }
+
+    /**
+     * Сохранение (Создание или Обновление)
+     */
+    async function saveUserConfig(e) {
+        if (e) e.preventDefault();
+
+        const id = document.getElementById('userId').value;
+        const payload = {
+            username: document.getElementById('username').value,
+            email: document.getElementById('email').value
+        };
+
+        if (saveBtn) saveBtn.disabled = true;
+
+        try {
+            if (id) {
+                await putData(`/user/${id}`, payload);
+                showNotification(`Пользователь "${payload.username}" обновлен`, 'success');
+            } else {
+                await postData('/user', payload);
+                showNotification(`Пользователь "${payload.username}" создан`, 'success');
+            }
+
+            // Перезагружаем список
+            await initUsersManager();
+
+            // Если создавали новую — форма очистится, если редактировали — данные останутся
+            if (!id) resetFormForCreate();
+
+        } catch (e) {
+            console.error("Ошибка сохранения пользователя:", e);
+            showNotification(`Ошибка: ${e.message}`, 'error');
+        } finally {
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    async function deleteUser() {
+        const id = document.getElementById('userId').value;
+        const username = document.getElementById('username').value;
+
+        if (!id) return;
+
+        if (confirm(`Вы уверены, что хотите удалить пользователя "${username}"?`)) {
+            try {
+                await deleteData(`/user/${id}`);
+                showNotification(`Пользователь "${username}" удален`, 'success');
+
+                resetFormForCreate();
+                await initUsersManager();
+            } catch (e) {
+                console.error("Ошибка удаления:", e);
+                showNotification(`Ошибка при удалении: ${e.message}`, 'error');
+            }
+        }
+    }
+
+    // Слушатели событий
+    document.addEventListener('DOMContentLoaded', () => {
+        // Инициализация списка
+        initUsersManager();
+
+        // Обработка отправки формы
+        if (userForm) {
+            userForm.addEventListener('submit', saveUserConfig);
+        }
+
+        // Кнопка "Создать ноду"
+        if (createNewUserBtn) {
+            createNewUserBtn.addEventListener('click', resetFormForCreate);
+        }
+
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', deleteUser);
+        }
+    });
+</script>
+{% endblock %}

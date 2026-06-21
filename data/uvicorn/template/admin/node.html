@@ -339,6 +339,12 @@
             div.onclick = () => selectNodeForEdit(node.id, div);
             nodeListContainer.appendChild(div);
         });
+
+        const firstNode = nodes[0];
+        const firstElement = nodeListContainer.querySelector('.node-item');
+        if (firstNode && firstElement) {
+            selectNodeForEdit(firstNode.id, firstElement);
+        }
     }
 
     /**
