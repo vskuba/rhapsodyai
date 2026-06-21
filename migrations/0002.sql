@@ -40,7 +40,7 @@ INSERT INTO `setting` (`id`, `key`, `user_id`, `value`) VALUES
 
 INSERT INTO `node` (`id`, `name`, `position`) VALUES
 (1, 'Cashier', 0),
-(2, 'Dating', 0),
+(2, 'Dating', -3),
 (3, 'Soko', 0),
 (4, 'Chat', -1),
 (5, 'Test', -2);
