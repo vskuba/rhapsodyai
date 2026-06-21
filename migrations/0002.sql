@@ -49,7 +49,7 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 
 INSERT INTO `workflow` (`id`, `node_id`, `tid`, `title`, `description`, `position`) VALUES
 (1, 1, 'response_cashier', 'Чат кашира', 'Ответить пользователю', 0),
-(2, 2, 'response_dating', 'Чат сайта знакомств', 'Ответить пользователю', 0),
+(2, 2, 'dating_girl_generator', 'Генератор девушки', 'Генерируем коллекции девушки', 0),
 (3, 3, 'response_soko', 'Чат суши-бара', 'Ответить пользователю', 0),
 (4, 5, 'test', 'Test', 'Simple test workflow', -1);
 
