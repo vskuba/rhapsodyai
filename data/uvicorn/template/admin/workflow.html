@@ -556,6 +556,11 @@
         border-top: 1px solid #eee;
         font-size: 15pt;
     }
+
+    .step-return-response {
+        border-left: 4px solid #ff001e !important;
+    }
+
 </style>
 
 {% endblock %}
@@ -884,6 +889,12 @@
         stepsArray.sort((a, b) => (a.position || 0) - (b.position || 0)).forEach((step, index) => {
             const div = document.createElement('div');
             div.className = 'step-item-block';
+            if (
+                allWorkflowStepsType[step.type_id].name === 'return_response_text'
+                || allWorkflowStepsType[step.type_id].name === 'return_response_llm'
+            ) {
+                div.className += ' step-return-response';
+            }
             div.draggable = true;
             div.dataset.id = step.id;
 
