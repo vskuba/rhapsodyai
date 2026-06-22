@@ -13,7 +13,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from ai.ai_thread import ai_thread_framework_run
-from src.ai.ai_tool import ai_tools_sync
+from src.ai.ai_tool import ai_tool_sync
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from config.config import config_get
 from logging_.logging_ import logging_init, logger_info
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
         ]
     ))
 
-    await ai_tools_sync()
+    await ai_tool_sync()
 
     print("Background thread started.")
 

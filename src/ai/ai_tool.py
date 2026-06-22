@@ -6,14 +6,21 @@ import re
 import sys
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_origin, Union
 
 from logging_.logging_ import logger_info
 from src.mysql_.repository.tool_group_repository import ToolGroupRepository
 from src.mysql_.repository.tool_repository import ToolRepository
 
+try:
+    import types
 
-async def ai_tools_sync(force: bool = False) -> int:
+    UNION_TYPES = (Union, types.UnionType)
+except AttributeError:
+    UNION_TYPES = (Union,)
+
+
+async def ai_tool_sync(force: bool = False) -> int:
     tool_repo = ToolRepository()
 
     qty = await tool_repo.count_by({})
@@ -187,6 +194,98 @@ async def ai_tools_sync(force: bool = False) -> int:
             return 0
 
     return len(all_tools_data)
+
+
+def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict) -> tuple:
+    """
+    Загружает функцию инструмента и приводит сырые аргументы
+    к ожидаемым типам на основе аннотаций.
+    Возвращает кортеж: (func, tool_args) или (None, raw_args) в случае ошибки.
+    """
+    try:
+        import importlib.util
+
+        # Загружаем модуль или берем из кэша, если уже загружен
+        module_name = f"dynamic_invoke_{tool_name}"
+        if module_name in sys.modules:
+            module = sys.modules[module_name]
+        else:
+            spec = importlib.util.spec_from_file_location(module_name, str(tool_path))
+            if not spec or not spec.loader:
+                raise FileNotFoundError(f"Не удалось найти файл инструмента по пути: {tool_path}")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+
+        # Извлекаем целевую функцию
+        func = getattr(module, tool_name, None)
+        if not func or not callable(func):
+            raise AttributeError(f"В модуле {tool_path} не найдена вызываемая функция с именем '{tool_name}'")
+
+        func_signature = inspect.signature(func)
+    except Exception as e:
+        # Корректный возврат кортежа при ошибке, чтобы не ломать распаковку данных
+        backtrace = traceback.format_exc()
+        logger_info(
+            f"❌ Ошибка инициализации сигнатуры для {tool_name}: {e}\n"
+            f"Полный стек вызовов:\n{backtrace}"
+        )
+        return None, raw_args
+
+    tool_args = {}
+
+    for argument_name, variable_value in raw_args.items():
+        if argument_name not in func_signature.parameters:
+            tool_args[argument_name] = variable_value
+            continue
+
+        param = func_signature.parameters[argument_name]
+        expected_type = param.annotation
+
+        if expected_type is inspect.Parameter.empty or variable_value is None:
+            tool_args[argument_name] = variable_value
+            continue
+
+        try:
+            # 1. Обработка логического типа bool
+            if expected_type is bool:
+                if isinstance(variable_value, str):
+                    tool_args[argument_name] = variable_value.lower() in ('true', '1', 'yes', 'on')
+                else:
+                    tool_args[argument_name] = bool(variable_value)
+
+            # 2. Обработка сложных типов Union / Optional (например, int | None)
+            else:
+                origin = get_origin(expected_type)
+
+                if origin in UNION_TYPES:
+                    sub_types = [t for t in get_args(expected_type) if t is not type(None)]
+                    if sub_types:
+                        target_type = sub_types[0]
+                        if target_type is bool:
+                            if isinstance(variable_value, str):
+                                tool_args[argument_name] = variable_value.lower() in ('true', '1', 'yes', 'on')
+                            else:
+                                tool_args[argument_name] = bool(variable_value)
+                        else:
+                            tool_args[argument_name] = target_type(variable_value)
+                    else:
+                        tool_args[argument_name] = variable_value
+                elif callable(expected_type):
+                    # 3. Обычный базовый тип (int, float, str и т.д.)
+                    tool_args[argument_name] = expected_type(variable_value)
+                else:
+                    tool_args[argument_name] = variable_value
+
+        except (ValueError, TypeError) as e:
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"⚠️ Ошибка приведения аргумента '{argument_name}' к типу {expected_type}: {e}. Передано сырое значение.\n"
+                f"Полный стек вызовов:\n{backtrace}"
+            )
+            tool_args[argument_name] = variable_value
+
+    return func, tool_args
 
 
 def _parse_output_keys_from_docstring(doc: str) -> dict | None:

@@ -1,7 +1,7 @@
 import asyncio
+import inspect
 import json
 import traceback
-import types
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
@@ -9,6 +9,7 @@ from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_se
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
 from src.ai.ai_fact_collection import ai_collection_metadata_get
+from src.ai.ai_tool import ai_tool_args_prepare
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from ai.framework.ai_framework_manager import AbstractAiFrameworkManager
@@ -168,88 +169,19 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     tool_path = tools[tool_name]
 
+                    # Сбор сырых аргументов
+                    raw_args = {}
+                    for argument_name, workflow_variable_name in inputs_map.items():
+                        arg_key = argument_name.strip()
+                        var_name = workflow_variable_name.strip()
+                        raw_args[arg_key] = model.workflow_variables.get(var_name, None)
+
                     try:
-                        import importlib.util
-                        import sys
+                        # Вызов функции парсинга и кастинга аргументов
+                        func, tool_args = ai_tool_args_prepare(tool_path, tool_name, raw_args)
 
-                        # Инициализируем уникальное имя модуля в рантайме
-                        module_name = f"dynamic_invoke_{tool_name}"
-
-                        spec = importlib.util.spec_from_file_location(module_name, str(tool_path))
-                        if not spec or not spec.loader:
-                            raise FileNotFoundError(f"Не удалось найти файл инструмента по пути: {tool_path}")
-
-                        module = importlib.util.module_from_spec(spec)
-                        sys.modules[module_name] = module
-                        spec.loader.exec_module(module)
-
-                        # Название функции совпадает с именем инструмента (tool_name)
-                        func = getattr(module, tool_name, None)
-                        if not func or not callable(func):
-                            raise AttributeError(
-                                f"В модуле {tool_path} не найдена вызываемая функция с именем '{tool_name}'")
-
-                        # Получаем сигнатуру функции для проверки типов её аргументов
-                        import inspect
-                        func_signature = inspect.signature(func)
-
-                        # Аргументы для функции — это полностью готовый словарь inputs_map
-                        tool_args = {}
-                        for argument_name, workflow_variable_name in inputs_map.items():
-                            argument_name = argument_name.strip()
-                            var_name = workflow_variable_name.strip()
-
-                            # Достаем значение из контекста воркфлоу
-                            variable_value = model.workflow_variables.get(var_name, None)
-
-                            # Приведение типов на основе сигнатуры функции
-                            if argument_name in func_signature.parameters:
-                                param = func_signature.parameters[argument_name]
-                                expected_type = param.annotation
-
-                                # Если у аргумента указан конкретный тип (и это не inspect.Parameter.empty)
-                                if expected_type is not inspect.Parameter.empty and variable_value is not None:
-                                    try:
-                                        # Обработка логического типа bool (строки "false", "0" должны стать False)
-                                        if expected_type is bool:
-                                            if isinstance(variable_value, str):
-                                                tool_args[argument_name] \
-                                                    = variable_value.lower() in ('true', '1', 'yes', 'on')
-                                            else:
-                                                tool_args[argument_name] = bool(variable_value)
-
-                                        # Обработка int, float и других базовых типов-конструкторов
-                                        elif callable(expected_type):
-                                            # Если тип является Union (например, int | None или Optional[int]),
-                                            # извлекаем базовые типы. Для Python 3.10+ проверяем через get_args
-                                            from typing import get_args, get_origin, Union
-                                            origin = get_origin(expected_type)
-
-                                            if origin is Union or (
-                                                    hasattr(types, "UnionType") and origin is types.UnionType):
-                                                # Берем первый подходящий тип из Union (исключая NoneType)
-                                                sub_types = [t for t in get_args(expected_type) if t is not type(None)]
-                                                if sub_types:
-                                                    target_type = sub_types[0]
-                                                    if target_type is bool:
-                                                        tool_args[argument_name] \
-                                                            = (variable_value.lower() in ('true', '1', 'yes', 'on'))
-                                                    else:
-                                                        tool_args[argument_name] = target_type(variable_value)
-                                            else:
-                                                # Обычный базовый тип (например, int или float)
-                                                tool_args[argument_name] = expected_type(variable_value)
-
-                                    except (ValueError, TypeError) as type_err:
-                                        logger_info(
-                                            f"⚠️ Ошибка приведения аргумента '{argument_name}' к типу {expected_type}: {type_err}. Передано сырое значение.")
-                                        tool_args[argument_name] = variable_value
-                                else:
-                                    # Если аннотации нет, передаем как есть
-                                    tool_args[argument_name] = variable_value
-                            else:
-                                # Если аргумента почему-то нет в сигнатуре, передаем как есть (для **kwargs функций)
-                                tool_args[argument_name] = variable_value
+                        if func is None:
+                            raise ValueError(f"Не удалось подготовить функцию {tool_name} к запуску.")
 
                         # Вызываем функцию с учетом асинхронности (async def / def)
                         if inspect.iscoroutinefunction(func):
@@ -258,8 +190,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         else:
                             raw_result = func(**tool_args)
 
-                        logger_info(f"🛠 Инструмент '{tool_name}'({tool_args}) вернул ответ: {raw_result.__str__()}")
+                        logger_info(f"🛠 Инструмент '{tool_name}'({tool_args}) вернул ответ: {str(raw_result)}")
 
+                        # Запись выполнения в историю сессии
                         await ai_session_message_add(
                             session_uuid=model.session_uuid,
                             llm_id=model.entity_llm.get('id'),
@@ -267,23 +200,18 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             role='workflow',
                             agent_id=model.entity_agent.get('id'),
                             kind_type='tool-call',
-                            content=f"{tool_name}({tool_args}): \n\n {raw_result.__str__()}",
+                            content=f"{tool_name}({tool_args}): \n\n {str(raw_result)}",
                             token=0
                         )
 
-                        # Приведение результата к словарю для последующего парсинга через outputs_map
                         # --- Сохранение результатов в переменные воркфлоу ---
-                        if isinstance(raw_result, str):
-                            var_name = outputs_map.get('str', None)
-                            if var_name:
-                                model.workflow_variables[var_name] = raw_result
-                                logger_info(
-                                    f"🔹 Значение str от инструмента '{tool_name}' сохранено в переменную воркфлоу '%{var_name}%'")
-                        elif isinstance(raw_result, dict):
+                        if isinstance(raw_result, dict):
+                            # Если инструмент вернул словарь, мапим по ключам словаря
                             for output_key, expect_variable in outputs_map.items():
                                 if output_key in raw_result:
                                     val = raw_result[output_key]
-                                    # Если внутри словаря лежит вложенный массив или объект, сериализуем в строку
+
+                                    # Если внутри словаря лежит сложная структура, сериализуем в JSON-строку
                                     if isinstance(val, (dict, list)):
                                         val = json.dumps(val, ensure_ascii=False)
                                     else:
@@ -291,19 +219,22 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                                     model.workflow_variables[expect_variable.strip()] = val
                                     logger_info(
-                                        f"🔹 Значение ключа '{output_key}' сохранено в переменную воркфлоу '%{expect_variable}%'")
-                        elif isinstance(raw_result, int):
-                            var_name = outputs_map.get('int', None)
+                                        f"🔹 Ключ '{output_key}' инструмента '{tool_name}' сохранен в переменную '%{expect_variable.strip()}%'")
+                        else:
+                            # Если вернулся примитив или список, мапим по строковому названию типа (str, int, list)
+                            type_name = type(raw_result).__name__
+                            var_name = outputs_map.get(type_name, None)
+
                             if var_name:
-                                model.workflow_variables[var_name] = raw_result
+                                # Для консистентности: примитивы сохраняем как строки, списки/кортежи через json.dumps
+                                if isinstance(raw_result, (list, tuple)):
+                                    formatted_result = json.dumps(raw_result, ensure_ascii=False)
+                                else:
+                                    formatted_result = str(raw_result)
+
+                                model.workflow_variables[var_name.strip()] = formatted_result
                                 logger_info(
-                                    f"🔹 Значение int от инструмента '{tool_name}' сохранено в переменную воркфлоу '%{var_name}%'")
-                        elif isinstance(raw_result, list):
-                            var_name = outputs_map.get('list', None)
-                            if var_name:
-                                model.workflow_variables[var_name] = raw_result
-                                logger_info(
-                                    f"🔹 Значение list от инструмента '{tool_name}' сохранено в переменную воркфлоу '%{var_name}%'")
+                                    f"🔹 Результат типа {type_name} инструмента '{tool_name}' сохранен в переменную '%{var_name.strip()}%'")
 
                     except Exception as e:
                         backtrace = traceback.format_exc()
