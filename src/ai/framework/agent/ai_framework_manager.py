@@ -206,35 +206,39 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                         # --- Сохранение результатов в переменные воркфлоу ---
                         if isinstance(raw_result, dict):
-                            # Если инструмент вернул словарь, мапим по ключам словаря
+                            # Если вернулся словарь, мапим строго по его ключам
                             for output_key, expect_variable in outputs_map.items():
                                 if output_key in raw_result:
                                     val = raw_result[output_key]
-
-                                    # Если внутри словаря лежит сложная структура, сериализуем в JSON-строку
                                     if isinstance(val, (dict, list)):
                                         val = json.dumps(val, ensure_ascii=False)
                                     else:
                                         val = str(val)
-
                                     model.workflow_variables[expect_variable.strip()] = val
                                     logger_info(
-                                        f"🔹 Ключ '{output_key}' инструмента '{tool_name}' сохранен в переменную '%{expect_variable.strip()}%'")
+                                        f"🔹 Ключ '{output_key}' сохранен в переменную '%{expect_variable.strip()}%'")
                         else:
-                            # Если вернулся примитив или список, мапим по строковому названию типа (str, int, list)
-                            type_name = type(raw_result).__name__
-                            var_name = outputs_map.get(type_name, None)
+                            # Для не-словарей определяем текстовый ключ на основе строгого isinstance
+                            if isinstance(raw_result, str):
+                                type_key = 'str'
+                            elif isinstance(raw_result, int):
+                                type_key = 'int'
+                            elif isinstance(raw_result, (list, tuple)):
+                                type_key = 'list'
+                            elif isinstance(raw_result, float):
+                                type_key = 'float'
+                            elif isinstance(raw_result, bool):
+                                type_key = 'bool'
+                            else:
+                                # Фолбек на имя типа для редких/кастомных классов
+                                type_key = type(raw_result).__name__
 
-                            if var_name:
-                                # Для консистентности: примитивы сохраняем как строки, списки/кортежи через json.dumps
-                                if isinstance(raw_result, (list, tuple)):
-                                    formatted_result = json.dumps(raw_result, ensure_ascii=False)
-                                else:
-                                    formatted_result = str(raw_result)
+                            # Пытаемся найти переменную по вычисленному ключу типа
+                            var_name = outputs_map.get(type_key, None)
 
-                                model.workflow_variables[var_name.strip()] = formatted_result
-                                logger_info(
-                                    f"🔹 Результат типа {type_name} инструмента '{tool_name}' сохранен в переменную '%{var_name.strip()}%'")
+                            model.workflow_variables[var_name] = raw_result
+                            logger_info(
+                                f"🔹 Результат типа '{type_key}' инструмента '{tool_name}' сохранен в переменную '%{var_name}%'")
 
                     except Exception as e:
                         backtrace = traceback.format_exc()

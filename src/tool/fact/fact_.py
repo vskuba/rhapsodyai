@@ -1,3 +1,6 @@
+import json
+
+from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_fact_collection import ai_collection_metadata_get
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
@@ -13,7 +16,7 @@ async def fact_collection_output_format(collection_name: str) -> str:
     example_fact_extract = ''
     if collection_metadata:
         example_fact_extract = "[{\n"
-        lines = [f'  "{f}": "' + v['description'] for f, v in collection_metadata.items()]
+        lines = [f'  "{f}": "' + v['description'] + '"' for f, v in collection_metadata.items()]
         example_fact_extract += ",\n".join(lines)
         example_fact_extract += "\n},{\n"
         example_fact_extract += ",\n".join(lines)
@@ -36,11 +39,22 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
      4. Коммитим транзакцию и возвращаем результат.
      5. В случае ошибки откатываем транзакцию и возвращаем сообщение об ошибке.
     """
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+            logger_info(f"🔹 Входные данные 'data' для '{collection_name}' успешно десериализованы из JSON-строки.")
+        except (json.JSONDecodeError, TypeError) as json_err:
+            raise ValueError(f"Не удалось распарсить строку 'data' как валидный JSON-массив: {json_err}")
+
+        # Оборачиваем в список, если пришел один объект вместо массива
+    if isinstance(data, dict):
+        data = [data]
+
     if not data or not isinstance(data, list):
         raise ValueError("Fact data collection must be a non-empty list")
 
     repo = FactCollectionRepository()
-    entity_collection = await repo.find_by({"name": collection_name})
+    entity_collection = await repo.find_one_by({"name": collection_name})
     if not entity_collection:
         raise ValueError(f"Collection with name '{collection_name}' not found")
 
@@ -92,9 +106,9 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
                 sql_coll = f"INSERT INTO `{dynamic_table}` ({c_str}) VALUES ({c_placeholders})"
                 await db.execute(sql_coll, coll_values)
 
-            await db.commit()
+            await db.connection.commit()
         except Exception as e:
-            await db.rollback()
+            await db.connection.rollback()
             raise ValueError(f"Database error: {str(e)}")
 
     return len(data)

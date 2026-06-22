@@ -145,7 +145,7 @@
         display: flex;
         gap: 30px;
         align-items: stretch;
-        min-height: 450px;
+        min-height: 150px;
     }
 
     .settings-column {
@@ -207,7 +207,7 @@
         border: 1px solid #ddd;
         padding: 10px;
         border-radius: 5px;
-        font-size: 14px;
+        font-size: 12px;
         width: 100%;
         box-sizing: border-box;
         background-color: #fcfcfc;
@@ -224,6 +224,55 @@
         background: #fdfdfd;
         padding: 10px;
     }
+
+    #testOutputResult {
+        background: #F2F2F2;
+        color: blue;
+        padding: 15px;
+        border-radius: 4px;
+        min-height: 60px;
+        max-height: 300px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 12px;
+        margin: 5px 0 0 0;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    #btnRunToolTest {
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        border-radius: 4px;
+        background: #4196ff;
+    }
+
+    .tool-test-field {
+        width: 100%;
+        height: 40px;
+        box-sizing: border-box;
+        display: block;
+    }
+
+    .tool-test-field-textarea {
+        min-height: 100px;
+        font-family: monospace;
+        font-size: 13px;
+        box-sizing: border-box;
+        resize: vertical;
+        display: block;
+        width: 100%;
+    }
+
+    .tool-test-field-area {
+        width: 70%;
+        min-width: 300px;
+        flex-shrink: 0;
+        box-sizing: border-box;
+    }
+
 </style>
 {% endblock %}
 
@@ -279,6 +328,30 @@
                         </div>
                     </div>
                 </div>
+
+                <div>
+                    <div class="form-group" style="margin-top: 20px;">
+                        <label>Тест инструмента</label>
+                        <div class="tool-test-container"
+                             style="background: #fdfefe; border: 1px solid #e2e8f0; padding: 15px; border-radius: 6px;">
+
+                            <!-- Сюда JS будет вставлять поля ввода для аргументов -->
+                            <div id="testInputsContainer" style="margin-bottom: 15px;"></div>
+
+                            <!-- Кнопка запуска -->
+                            <button type="button" id="btnRunToolTest" class="btn btn-primary">
+                                Запустить тест >
+                            </button>
+
+                            <!-- Блок вывода результата -->
+                            <div style="margin-top: 15px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: #7f8c8d;">Результат
+                                    выполнения:</label>
+                                <pre id="testOutputResult">Нажмите кнопку для запуска теста...</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -297,6 +370,7 @@
 
     // Кэш групп для быстрого сопоставления ID -> Имя без лишних запросов
     let groupMap = {};
+    let allRenderedTools = [];
 
     /**
      * Инициализация менеджера: загрузка групп и списка инструментов
@@ -378,11 +452,31 @@
                 div.textContent = tool.name;
                 div.onclick = () => showToolDetails(tool, div);
                 wrapper.appendChild(div);
+
+                allRenderedTools.push({
+                    toolData: tool,
+                    element: div,
+                    groupHeader: header,
+                    groupWrapper: wrapper
+                });
             });
         };
 
         groups.forEach(g => createGroupSection(g.id, g.name));
         createGroupSection('none', 'Без группы');
+
+        if (allRenderedTools.length > 0) {
+            const first = allRenderedTools[0];
+
+            // 1. Разворачиваем родительскую группу (аккордеон)
+            if (first.groupHeader && first.groupWrapper) {
+                first.groupHeader.classList.remove('collapsed');
+                first.groupWrapper.classList.remove('collapsed');
+            }
+
+            // 2. Вызываем детальную информацию и подсвечиваем элемент
+            showToolDetails(first.toolData, first.element);
+        }
     }
 
     /**
@@ -395,28 +489,33 @@
         document.getElementById('viewTitle').textContent = `Инструмент: ${tool.name}`;
         document.getElementById('viewDescription').textContent = tool.description || 'Описание отсутствует.';
 
-        // Рендеринг аргументов из поля args
         const argsContainer = document.getElementById('viewArgs');
         const outputContainer = document.getElementById('viewOutput');
+
+        // Новые контейнеры для формы тестирования
+        const testInputsContainer = document.getElementById('testInputsContainer');
+        const testOutputResult = document.getElementById('testOutputResult');
+        const btnRunToolTest = document.getElementById('btnRunToolTest');
 
         if (argsContainer && outputContainer) {
             argsContainer.innerHTML = '';
             outputContainer.innerHTML = '';
+            if (testInputsContainer) testInputsContainer.innerHTML = '';
+            if (testOutputResult) testOutputResult.textContent = 'Нажмите кнопку для запуска теста...';
 
             try {
                 const argsObj = typeof tool.args === 'string' ? JSON.parse(tool.args) : tool.args;
-
-                // 1. Обработка входящих аргументов (input)
                 const inputData = argsObj?.input || {};
+
+                // 1. Обработка входящих аргументов (input) и генерация полей формы теста
                 if (Object.keys(inputData).length > 0) {
                     const ul = document.createElement('ul');
-                    ul.style.margin = '0';
+                    ul.style.margin = '0 0 15px 0';
                     ul.style.paddingLeft = '20px';
                     ul.style.lineHeight = '1.6';
 
                     for (const [paramName, paramInfo] of Object.entries(inputData)) {
                         const li = document.createElement('li');
-
                         const isRequired = paramInfo.default === 'Required';
                         const defaultText = isRequired
                             ? '<span style="color: #e74c3c; font-weight: bold;">обязательный</span>'
@@ -424,42 +523,212 @@
 
                         li.innerHTML = `<strong style="color: #2c3e50;">${paramName}</strong>: <span style="color: #3498db;">${paramInfo.type}</span> — ${defaultText}`;
                         ul.appendChild(li);
+
+                        // --- Динамическое добавление инпута формы теста ---
+                        if (testInputsContainer) {
+                            const fieldWrapper = document.createElement('div');
+                            fieldWrapper.style.marginBottom = '12px';
+                            fieldWrapper.style.display = 'flex';
+                            fieldWrapper.style.alignItems = 'center'; // Выравнивание по центру вертикали
+                            fieldWrapper.style.gap = '15px';
+
+                            // Формируем плейсхолдер и тип инпута
+                            const placeholder = isRequired ? `Обязательное поле (${paramInfo.type})` : `По умолчанию: ${paramInfo.default}`;
+                            const isComplexType = paramInfo.type === 'dict' || paramInfo.type === 'list';
+
+                            fieldWrapper.innerHTML = `
+                            <!-- Фиксированная ширина названия аргумента -->
+                            <label style="font-size: 12px; color: #4a5568; font-weight: bold; width: 200px; min-width: 200px; flex-shrink: 0; box-sizing: border-box; text-transform: uppercase;">
+                                ${paramName} <span style="color: #a0aec0; font-size:11px; font-weight: normal;">(${paramInfo.type})</span>
+                            </label>
+
+                            <!-- Фиксированная ширина поля ввода -->
+                            <div class="tool-test-field-area">
+                                ${isComplexType
+                                ? `<textarea class="tool-test-field tool-test-field-textarea form-control" data-name="${paramName}" data-type="${paramInfo.type}" placeholder='${placeholder || "[]"}'></textarea>`
+                                : `<input type="${paramInfo.type === 'int' || paramInfo.type === 'float' ? 'number' : 'text'}" class="tool-test-field form-control" data-name="${paramName}" data-type="${paramInfo.type}" placeholder="${placeholder}">`
+                            }
+                            </div>
+                        `;
+
+                            if (isComplexType) {
+                                // Уникальный ID для связки кнопок с конкретным полем
+                                const textareaId = `test_field_${paramName}`;
+
+                                fieldWrapper.innerHTML = `
+        <!-- Левая колонка: Название аргумента -->
+        <label style="font-size: 12px; color: #4a5568; font-weight: bold; width: 200px; min-width: 200px; flex-shrink: 0; box-sizing: border-box; text-transform: uppercase;">
+            ${paramName} <span style="color: #a0aec0; font-size:11px; font-weight: normal;">(${paramInfo.type})</span>
+        </label>
+
+        <!-- Правая колонка: Поле ввода + панель форматирования JSON -->
+        <div class="tool-test-field-area">
+            <textarea id="${textareaId}" class="tool-test-field tool-test-field-textarea form-control" data-name="${paramName}" data-type="${paramInfo.type}" placeholder='${placeholder || "[]"}'></textarea>
+
+            <!-- Панель инструментов JSON -->
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button type="button" class="btn-json-pretty" data-target="${textareaId}" style="background: none; border: none; color: #3498db; font-size: 11px; cursor: pointer; padding: 2px 5px; font-weight: bold;" title="Форматировать JSON">
+                    ✨ Pretty
+                </button>
+                <button type="button" class="btn-json-minify" data-target="${textareaId}" style="background: none; border: none; color: #e67e22; font-size: 11px; cursor: pointer; padding: 2px 5px; font-weight: bold;" title="Сжать JSON">
+                    🗜 Minify
+                </button>
+            </div>
+        </div>
+    `;
+                            }
+
+                            testInputsContainer.appendChild(fieldWrapper);
+                        }
                     }
                     argsContainer.appendChild(ul);
                 } else {
                     argsContainer.textContent = 'Функция не принимает входящих аргументов.';
+                    if (testInputsContainer) testInputsContainer.innerHTML = '<div style="color: #7f8c8d; font-size: 13px;">Аргументы для ввода отсутствуют</div>';
                 }
 
                 // 2. Обработка типа результата (output)
                 const outputData = argsObj?.output || {};
-            if (outputData && outputData.type) {
-                // Проверяем: если тип dict и в БД сохранился распарсенный массив ключей keys
-                if (outputData.type === 'dict' && outputData.keys && Object.keys(outputData.keys).length > 0) {
-                    let htmlContent = `<div style="margin-bottom: 5px;">→ dict:</div>`;
-                    htmlContent += `<ul style="margin: 0; padding-left: 20px; color: #2c3e50; font-weight: normal; list-style-type: disc;">`;
-
-                    for (const [keyName, keyInfo] of Object.entries(outputData.keys)) {
-                        htmlContent += `<li style="margin-bottom: 2px;">
-                            <strong style="color: #2c3e50;">${keyName}</strong>:
-                            <span style="color: #3498db;">${keyInfo.type}</span>
-                        </li>`;
+                if (outputData && outputData.type) {
+                    if (outputData.type === 'dict' && outputData.keys && Object.keys(outputData.keys).length > 0) {
+                        let htmlContent = `<div style="margin-bottom: 5px;">→ dict:</div>`;
+                        htmlContent += `<ul style="margin: 0; padding-left: 20px; color: #2c3e50; font-weight: normal; list-style-type: disc;">`;
+                        for (const [keyName, keyInfo] of Object.entries(outputData.keys)) {
+                            htmlContent += `<li style="margin-bottom: 2px;"><strong style="color: #2c3e50;">${keyName}</strong>: <span style="color: #3498db;">${keyInfo.type}</span></li>`;
+                        }
+                        htmlContent += `</ul>`;
+                        outputContainer.innerHTML = htmlContent;
+                    } else {
+                        outputContainer.textContent = `→ ${outputData.type}`;
                     }
-
-                    htmlContent += `</ul>`;
-                    outputContainer.innerHTML = htmlContent;
                 } else {
-                    // Обычный текстовый вывод для простых типов (str, list, int и т.д.)
-                    outputContainer.textContent = `→ ${outputData.type}`;
+                    outputContainer.textContent = '→ Any';
                 }
-            } else {
-                outputContainer.textContent = '→ Any';
-            }
+
+                // 3. Логика отправки тест-драйва на роутер бэкенда
+                if (btnRunToolTest) {
+                    // Очищаем предыдущий обработчик, чтобы клики не дублировались
+                    btnRunToolTest.onclick = async () => {
+                        btnRunToolTest.disabled = true;
+                        testOutputResult.style.color = '#e2e8f0';
+                        testOutputResult.textContent = '⌛ Выполнение инструмента на сервере...';
+
+                        // Собираем все заполненные поля
+                        const payloadArgs = {};
+                        const inputElements = testInputsContainer.querySelectorAll('.tool-test-field');
+
+                        inputElements.forEach(el => {
+                            const paramName = el.getAttribute('data-name');
+                            const paramType = el.getAttribute('data-type');
+                            let value = el.value.trim();
+
+                            if (value === '') return; // Пропускаем пустые поля (пусть бэкенд берет дефолты)
+
+                            // Валидация и подготовка сложных типов на клиенте перед отправкой
+                            if (paramType === 'dict' || paramType === 'list') {
+                                try {
+                                    // Превращаем текст из textarea в настоящий JS массив/объект
+                                    payloadArgs[paramName] = JSON.parse(value);
+                                } catch (jsonErr) {
+                                    testOutputResult.style.color = 'crimson';
+                                    testOutputResult.textContent = `[JS Parser] Не удалось распарсить поле ${paramName} как валидный JSON. Проверьте синтаксис.`
+                                }
+                            } else if (paramType === 'int') {
+                                payloadArgs[paramName] = parseInt(value, 10);
+                            } else if (paramType === 'float') {
+                                payloadArgs[paramName] = parseFloat(value);
+                            } else if (paramType === 'bool') {
+                                payloadArgs[paramName] = (value.toLowerCase() === 'true' || value === '1');
+                            } else {
+                                payloadArgs[paramName] = value;
+                            }
+                        });
+
+                        if (Object.keys(payloadArgs).length < inputElements.length) {
+                            btnRunToolTest.disabled = false;
+                            return;
+                        }
+
+                        try {
+                            // Делаем POST запрос на созданный нами ранее роутер FastAPI
+                            // Замените postData на вашу стандартную обертку (fetch / axios), если это необходимо
+                            const response = await postData(`/tool/test/${tool.id}`, payloadArgs);
+
+                            if (response && response.status === 'success') {
+                                testOutputResult.style.color = 'blue'; // Зеленый цвет для успеха
+                                testOutputResult.textContent = typeof response.result === 'object'
+                                    ? JSON.stringify(response.result, null, 4)
+                                    : response.result;
+                            } else {
+                                testOutputResult.style.color = 'crimson'; // Красный цвет для ошибок бизнес-логики
+                                testOutputResult.textContent = response?.result || JSON.stringify(response, null, 4);
+                            }
+                        } catch (testError) {
+                            console.error("Критическая ошибка тест-запуска:", testError);
+                            testOutputResult.style.color = 'crimson';
+                            testOutputResult.textContent = `Критическая ошибка отправки: ${testError.message}`;
+                        } finally {
+                            btnRunToolTest.disabled = false;
+                        }
+                    };
+                }
 
             } catch (e) {
                 console.error("Ошибка отображения структуры аргументов:", e);
                 argsContainer.textContent = 'Ошибка чтения данных.';
                 outputContainer.textContent = '—';
             }
+        }
+
+        if (testInputsContainer) {
+            // Навешиваем событие на кнопку Pretty (Форматирование)
+            testInputsContainer.querySelectorAll('.btn-json-pretty').forEach(btn => {
+                btn.onclick = () => {
+                    const targetId = btn.getAttribute('data-target');
+                    const textarea = document.getElementById(targetId);
+                    if (!textarea) return;
+
+                    try {
+                        let rawVal = textarea.value.trim();
+                        if (!rawVal) return;
+
+                        // Парсим и собираем обратно с отступами в 2 пробела
+                        const obj = JSON.parse(rawVal);
+                        textarea.value = JSON.stringify(obj, null, 2);
+                        textarea.style.borderColor = '#ddd';
+                    } catch (err) {
+                        // Если JSON сломан, выводим уведомление или подсвечиваем поле красным
+                        textarea.style.borderColor = '#e74c3c';
+                        if (typeof showNotification === 'function') {
+                            showNotification('Неверный формат JSON для преобразования', 'error');
+                        }
+                    }
+                };
+            });
+
+            // Навешиваем событие на кнопку Minify (Сжатие в одну строку)
+            testInputsContainer.querySelectorAll('.btn-json-minify').forEach(btn => {
+                btn.onclick = () => {
+                    const targetId = btn.getAttribute('data-target');
+                    const textarea = document.getElementById(targetId);
+                    if (!textarea) return;
+
+                    try {
+                        let rawVal = textarea.value.trim();
+                        if (!rawVal) return;
+
+                        const obj = JSON.parse(rawVal);
+                        // Сжимаем в одну компактную строку
+                        textarea.value = JSON.stringify(obj);
+                        textarea.style.borderColor = '#ddd';
+                    } catch (err) {
+                        textarea.style.borderColor = '#e74c3c';
+                        if (typeof showNotification === 'function') {
+                            showNotification('Неверный формат JSON для сжатия', 'error');
+                        }
+                    }
+                };
+            });
         }
 
         if (detailsContainer) {
