@@ -684,6 +684,22 @@
                                 <span id="stepDescriptionFull"></span>
                             </div>
 
+                            <div class="transitions-editor">
+                                <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">
+                                    Логика переходов (Before)
+                                </label>
+
+                                <div id="stepTransitionsListBefore"
+                                     style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                                    <!-- Сюда JS будет рендерить строки условий -->
+                                </div>
+
+                                <button type="button" class="btn-create" id="addConditionBtnBefore"
+                                        style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
+                                    + Добавить условие перехода
+                                </button>
+                            </div>
+
                             <!-- НОВЫЙ КОНТЕЙНЕР ДЛЯ КАСТОМНЫХ ПОЛЕЙ ТИПА ШАГА -->
                             <div id="dynamicStepFieldsContainer"
                                  style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
@@ -694,16 +710,17 @@
                             <textarea id="stepTextarea" class="form-control system-prompt-full"
                                       style="display: none;"></textarea>
 
-                            <div class="transitions-editor" id="stepTransitionsView">
-                                <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">Логика
-                                    переходов (Flow Control)</label>
+                            <div class="transitions-editor">
+                                <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">
+                                    Логика переходов (After)
+                                </label>
 
-                                <div id="stepTransitionsList"
+                                <div id="stepTransitionsListAfter"
                                      style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
                                     <!-- Сюда JS будет рендерить строки условий -->
                                 </div>
 
-                                <button type="button" class="btn-create" id="addConditionBtn"
+                                <button type="button" class="btn-create" id="addConditionBtnAfter"
                                         style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
                                     + Добавить условие перехода
                                 </button>
@@ -899,7 +916,8 @@
             div.dataset.id = step.id;
 
             // Получаем строку с условиями переходов
-            const transitionHtml = getWorkflowStepConditionsHtml(stepsArray, step);
+            const transitionHtmlBefore = getWorkflowStepConditionsHtml(stepsArray, step, 'Before');
+            const transitionHtmlAfter = getWorkflowStepConditionsHtml(stepsArray, step, 'After');
 
             // Формируем финальный HTML одним блоком
             div.innerHTML = `
@@ -912,7 +930,8 @@
                     <button type="button" class="btn-delete-step" title="Удалить">&times;</button>
                 </div>
                 <div class="step-flow-info" style="margin-left: 62px; width: 100%;">
-                    ${transitionHtml}
+                    ${transitionHtmlBefore}
+                    ${transitionHtmlAfter}
                 </div>
             </div>
         `;
@@ -934,14 +953,15 @@
         });
     }
 
-    function getWorkflowStepConditionsHtml(allSteps, currentStep) {
+    function getWorkflowStepConditionsHtml(allSteps, currentStep, type) {
         let transitionInfo = '';
         try {
 
             let metadata = parseMetadata(currentStep.metadata);
 
-            if (metadata.transitions && metadata.transitions.length > 0) {
-                transitionInfo = metadata.transitions.map(tr => {
+            const transitionKey = 'transitions_' + type.toLowerCase();
+            if (metadata[transitionKey] && metadata[transitionKey].length > 0) {
+                transitionInfo = metadata[transitionKey].map(tr => {
                     // Ищем целевой шаг по новому ключу step_id
                     const target = allSteps.find(s => String(s.id) === String(tr.step_id));
 
@@ -1244,13 +1264,19 @@
         renderCustomStepFields(step, metadata);
 
         // 5. Отрисовка переходов
-        renderTransitions(step, allCurrentStepsData);
+        ['Before', 'After'].forEach(type => {
+            renderTransitions(step, allCurrentStepsData, type);
+        });
 
-        const stepTransitionsView = document.getElementById('stepTransitionsView');
+        const stepTransitionsViews = document.querySelectorAll('.transitions-editor');
         if (allWorkflowStepsType[step.type_id].name === 'return_response_llm') {
-            stepTransitionsView.style.display = 'none';
+            stepTransitionsViews.forEach(view => {
+                view.style.display = 'none';
+            });
         } else {
-            stepTransitionsView.style.display = '';
+            stepTransitionsViews.forEach(view => {
+                view.style.display = '';
+            });
         }
     }
 
@@ -1933,14 +1959,15 @@
         }
     }
 
-    function renderTransitions(step, allSteps) {
-        const container = document.getElementById('stepTransitionsList');
+    function renderTransitions(step, allSteps, type) {
+        const container = document.getElementById('stepTransitionsList' + type);
         if (!container) return;
         container.innerHTML = '';
 
         let metadata = parseMetadata(step.metadata);
 
-        const transitions = metadata.transitions || [];
+        const transitionKey = 'transitions_' + type.toLowerCase();
+        const transitions = metadata[transitionKey] || [];
         const stepsArray = Array.isArray(allSteps) ? allSteps : [];
 
         // Вспомогательный хелпер для генерации селекта операторов
@@ -1981,7 +2008,7 @@
 
         transitions.forEach((tr) => {
             const row = document.createElement('div');
-            row.className = 'transition-row';
+            row.className = 'transition-row transition-row-' + type.toLowerCase();
             row.style = "display: flex; gap: 6px; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #edf2f7; margin-bottom: 5px;";
 
             // 1. Селект переменной
@@ -2020,13 +2047,13 @@
             delBtn.innerHTML = '&times;';
 
             // Навешиваем живую синхронизацию изменений на все четыре элемента
-            varSelect.onchange = () => syncTransitionsToStepState(step);
-            opSelect.onchange = () => syncTransitionsToStepState(step);
-            valInput.oninput = () => syncTransitionsToStepState(step);
-            targetSelect.onchange = () => syncTransitionsToStepState(step);
+            varSelect.onchange = () => syncTransitionsToStepState(step, type);
+            opSelect.onchange = () => syncTransitionsToStepState(step, type);
+            valInput.oninput = () => syncTransitionsToStepState(step, type);
+            targetSelect.onchange = () => syncTransitionsToStepState(step, type);
             delBtn.onclick = () => {
                 row.remove();
-                syncTransitionsToStepState(step);
+                syncTransitionsToStepState(step, type);
             };
 
             row.appendChild(varSelect);
@@ -2070,8 +2097,8 @@
         }
     }
 
-    function collectTransitions() {
-        const rows = document.querySelectorAll('.transition-row');
+    function collectTransitions(type) {
+        const rows = document.querySelectorAll('.transition-row-' + type.toLowerCase());
         const transitions = [];
 
         rows.forEach(row => {
@@ -2136,11 +2163,12 @@
         };
     }
 
-    function syncTransitionsToStepState(step) {
+    function syncTransitionsToStepState(step, type) {
         let latestMeta = parseMetadata(step.metadata);
 
+        const transitionKey = 'transitions_' + type.toLowerCase();
         // Вызываем обновленный collectTransitions(), который собирает только переменные, операторы и step_id
-        latestMeta.transitions = collectTransitions();
+        latestMeta[transitionKey] = collectTransitions(type);
 
         // Записываем обновленный объект обратно в state текущего шага в виде строки JSON
         step.metadata = JSON.stringify(latestMeta);
@@ -2152,64 +2180,67 @@
         }
     }
 
-    document.getElementById('addConditionBtn').onclick = () => {
-        const container = document.getElementById('stepTransitionsList');
-        if (!container) return;
+    ['Before', 'After'].forEach(type => {
+        document.getElementById('addConditionBtn' + type).onclick = () => {
+            const container = document.getElementById('stepTransitionsList' + type);
+            if (!container) return;
 
-        const activeStepBlock = document.querySelector('.step-item-block.active');
-        if (!activeStepBlock) return;
-        const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
+            const activeStepBlock = document.querySelector('.step-item-block.active');
+            if (!activeStepBlock) return;
+            const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
 
-        const optionsHtml = allCurrentStepsData.map(s =>
-            '<option value="' + s.id + '">' + s.title + '</option>'
-        ).join('');
+            const optionsHtml = allCurrentStepsData.map(s =>
+                '<option value="' + s.id + '">' + s.title + '</option>'
+            ).join('');
 
-        const row = document.createElement('div');
-        row.className = 'transition-row';
-        row.style = "display: flex; gap: 6px; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #edf2f7; margin-bottom: 5px;";
+            const row = document.createElement('div');
+            row.className = 'transition-row transition-row-' + type.toLowerCase();
+            row.style = "display: flex; gap: 6px; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #edf2f7; margin-bottom: 5px;";
 
-        let varOptions = '<option value="">-- Переменная --</option>';
-        if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
-            window.allCurrentVariables.forEach(v => {
-                varOptions += '<option value="' + v.name + '">%' + v.name + '%</option>';
-            });
-        }
+            let varOptions = '<option value="">-- Переменная --</option>';
+            if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
+                window.allCurrentVariables.forEach(v => {
+                    varOptions += '<option value="' + v.name + '">%' + v.name + '%</option>';
+                });
+            }
 
-        // Рендерим 4 элемента в ряд без бэктиков во избежание конфликтов со знаком доллара
-        row.innerHTML =
-            '<select class="form-control tr-variable" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' + varOptions + '</select>' +
-            '<select class="form-control tr-operator" style="width: 65px; padding: 4px; font-size: 12px; height: 32px; text-align: center;">' +
-            '<option value="==">==</option>' +
-            '<option value="!=">!=</option>' +
-            '<option value=">">&gt;</option>' +
-            '<option value="<">&lt;</option>' +
-            '<option value="contains">contains</option>' +
-            '</select>' +
-            '<input type="text" class="form-control tr-value" placeholder="Значение" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' +
-            '<span style="color: #a0aec0; font-size: 12px; margin: 0 2px;">➔</span>' +
-            '<select class="form-control tr-target" style="flex: 2; padding: 4px; font-size: 12px; height: 32px;">' + optionsHtml + '</select>' +
-            '<button type="button" class="btn-delete-transition" style="background:none; border:none; color:#dc3545; font-size:16px; cursor:pointer; padding:0 4px;">&times;</button>';
+            // Рендерим 4 элемента в ряд без бэктиков во избежание конфликтов со знаком доллара
+            row.innerHTML =
+                '<select class="form-control tr-variable" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' + varOptions + '</select>' +
+                '<select class="form-control tr-operator" style="width: 65px; padding: 4px; font-size: 12px; height: 32px; text-align: center;">' +
+                '<option value="==">==</option>' +
+                '<option value="!=">!=</option>' +
+                '<option value=">">&gt;</option>' +
+                '<option value="<">&lt;</option>' +
+                '<option value="contains">contains</option>' +
+                '</select>' +
+                '<input type="text" class="form-control tr-value" placeholder="Значение" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' +
+                '<span style="color: #a0aec0; font-size: 12px; margin: 0 2px;">➔</span>' +
+                '<select class="form-control tr-target" style="flex: 2; padding: 4px; font-size: 12px; height: 32px;">' + optionsHtml + '</select>' +
+                '<button type="button" class="btn-delete-transition" style="background:none; border:none; color:#dc3545; font-size:16px; cursor:pointer; padding:0 4px;">&times;</button>';
 
-        const varSelect = row.querySelector('.tr-variable');
-        const opSelect = row.querySelector('.tr-operator');
-        const valInput = row.querySelector('.tr-value'); // Находим новый инпут
-        const targetSelect = row.querySelector('.tr-target');
-        const delBtn = row.querySelector('.btn-delete-transition');
+            const varSelect = row.querySelector('.tr-variable');
+            const opSelect = row.querySelector('.tr-operator');
+            const valInput = row.querySelector('.tr-value'); // Находим новый инпут
+            const targetSelect = row.querySelector('.tr-target');
+            const delBtn = row.querySelector('.btn-delete-transition');
 
-        if (currentStepData) {
-            varSelect.onchange = () => syncTransitionsToStepState(currentStepData);
-            opSelect.onchange = () => syncTransitionsToStepState(currentStepData);
-            valInput.oninput = () => syncTransitionsToStepState(currentStepData); // Живой ввод
-            targetSelect.onchange = () => syncTransitionsToStepState(currentStepData);
-            delBtn.onclick = () => {
-                row.remove();
-                syncTransitionsToStepState(currentStepData);
-            };
-        }
+            if (currentStepData) {
+                varSelect.onchange = () => syncTransitionsToStepState(currentStepData, type);
+                opSelect.onchange = () => syncTransitionsToStepState(currentStepData, type);
+                valInput.oninput = () => syncTransitionsToStepState(currentStepData, type);
+                targetSelect.onchange = () => syncTransitionsToStepState(currentStepData, type);
+                delBtn.onclick = () => {
+                    row.remove();
+                    syncTransitionsToStepState(currentStepData, type);
+                };
+            }
 
-        container.appendChild(row);
-        if (currentStepData) syncTransitionsToStepState(currentStepData);
-    };
+            container.appendChild(row);
+            if (currentStepData) syncTransitionsToStepState(currentStepData, type);
+        };
+    });
+
 
     /**
      * Сохранение изменений задачи
@@ -2249,7 +2280,8 @@
                         }
 
                         // Интегрируем свежие переходы из UI в метаданные шага
-                        metadata.transitions = collectTransitions();
+                        metadata.transitions_before = collectTransitions("Before");
+                        metadata.transitions_after = collectTransitions("After");
 
                         try {
                             // Сохраняем данные конкретного шага

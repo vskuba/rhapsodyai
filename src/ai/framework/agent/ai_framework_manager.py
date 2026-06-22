@@ -76,6 +76,34 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 # Подставляем накопленные переменные в метаданные текущего шага
                 step_meta = self.variables_render(step_meta, model.workflow_variables)
 
+                transitions = step_meta.get('transitions_before', [])
+                if transitions:
+                    for transition in transitions:
+                        variable_name = transition.get('variable')
+                        operator = transition.get('operator')
+                        value = transition.get('value')
+                        target_step_id = int(transition.get('step_id'))
+                        step_index = workflow_steps_mapping[target_step_id]
+
+                        current_value = model.workflow_variables[variable_name]
+
+                        if operator == "==" and current_value == value:
+                            logger_info(
+                                f"🔀️ Переход на шаг (before) [{step_index}/{steps_count}]: (%{variable_name}% == {value})"
+                            )
+                            model.workflow_step_current_index = step_index
+
+                            current_step = model.workflow_steps[model.workflow_step_current_index]
+                            step_type = current_step['step_type_name']
+                            step_meta = current_step['metadata']
+
+                            logger_info(
+                                f"▶️ Выполнение шага [{model.workflow_step_current_index + 1}/{steps_count}]: "
+                                f"{current_step['title']} ({step_type})"
+                            )
+
+                            break
+
                 # --- Функция отправки в LLM (остается внутри цикла как инлайн-логика) ---
                 async def execute_llm_step() -> str:
                     step_future = asyncio.get_running_loop().create_future()
@@ -274,9 +302,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         loop.call_soon_threadsafe(future.set_result, model.prompt_user)
 
                     # Если после этого шага есть еще шаги, сохраняем обновленный индекс текущего шага в метаданных сессии
-                    if model.workflow_steps[model.workflow_step_current_index + 1]:
-                        ai_session_metadata['workflow_step_current_index'] = model.workflow_step_current_index + 1
-                        await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
+                    next_index = model.workflow_step_current_index + 1
+                    if next_index < steps_count:
+                        if model.workflow_steps[next_index]:
+                            ai_session_metadata['workflow_step_current_index'] = next_index
+                            await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
 
                     return
 
@@ -284,7 +314,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 model.workflow_step_current_index += 1
 
                 # Проверяем наличие условий переходов в метаданных шага и при выполнении условия изменяем индекс текущего шага на указанный
-                transitions = step_meta.get('transitions', [])
+                transitions = step_meta.get('transitions_after', [])
                 if transitions:
                     for transition in transitions:
                         variable_name = transition.get('variable')
@@ -297,7 +327,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                         if operator == "==" and current_value == value:
                             logger_info(
-                                f"🔀️ Переход на шаг [{step_index}/{steps_count}]: (%{variable_name}% == {value})"
+                                f"🔀️ Переход на шаг (after) [{step_index}/{steps_count}]: (%{variable_name}% == {value})"
                             )
                             model.workflow_step_current_index = step_index
                             break
