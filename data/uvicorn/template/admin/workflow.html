@@ -557,7 +557,12 @@
     }
 
     .step-return-response {
-        border-left: 4px solid #ff001e !important;
+        border-left: 2px solid #ff001e !important;
+    }
+
+    .step-transition-target {
+        margin-top: 10px;
+        border-top: 2px solid green !important;
     }
 
 </style>
@@ -799,6 +804,7 @@
     };
 
     let allCurrentStepsData = [];
+    let allTargetSteps = [];
     let allWorkflowStepsType = {};
     let allCurrentVariables = {};
     let allAvailableTools = [];
@@ -910,6 +916,9 @@
                 || allWorkflowStepsType[step.type_id].name === 'return_response_llm'
             ) {
                 div.className += ' step-return-response';
+            }
+            if (allTargetSteps.includes(String(step.id))) {
+                div.className += ' step-transition-target';
             }
             div.draggable = true;
             div.dataset.id = step.id;
@@ -1064,29 +1073,29 @@
     /**
      * Выбор задачи и загрузка её шагов
      */
-    async function selectWorkflowForEdit(workflowId, element) {
-        document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
-        element.classList.add('active');
-
-        try {
-            const data = await getData(`/workflow/${workflowId}`);
-            const workflow = data.result;
-
-            document.getElementById('workflowId').value = workflow.id;
-            document.getElementById('title').value = workflow.title;
-            document.getElementById('node_id').value = workflow.node_id || '';
-            document.getElementById('position').value = workflow.position;
-            document.getElementById('description').value = workflow.description || '';
-
-            document.getElementById('formTitle').textContent = `Задача: ${workflow.title}`;
-            deleteBtn.style.display = 'block';
-            addStepBtn.style.display = 'block';
-
-            await loadWorkflowSteps(workflowId);
-        } catch (e) {
-            showNotification('Ошибка загрузки задачи', 'error');
-        }
-    }
+    // async function selectWorkflowForEdit(workflowId, element) {
+    //     document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+    //     element.classList.add('active');
+    //
+    //     try {
+    //         const data = await getData(`/workflow/${workflowId}`);
+    //         const workflow = data.result;
+    //
+    //         document.getElementById('workflowId').value = workflow.id;
+    //         document.getElementById('title').value = workflow.title;
+    //         document.getElementById('node_id').value = workflow.node_id || '';
+    //         document.getElementById('position').value = workflow.position;
+    //         document.getElementById('description').value = workflow.description || '';
+    //
+    //         document.getElementById('formTitle').textContent = `Задача: ${workflow.title}`;
+    //         deleteBtn.style.display = 'block';
+    //         addStepBtn.style.display = 'block';
+    //
+    //         await loadWorkflowSteps(workflowId);
+    //     } catch (e) {
+    //         showNotification('Ошибка загрузки задачи', 'error');
+    //     }
+    // }
 
     /**
      * Загрузка списка шагов (Step) для выбранной задачи
@@ -1111,6 +1120,7 @@
                 activeStepId = activeStepBlock.dataset.id;
             }
 
+            collectWorkflowTargetSteps()
             renderWorkflowSteps(allCurrentStepsData);
 
             if (activeStepId) {
@@ -1147,6 +1157,25 @@
             console.error("Ошибка загрузки шагов:", e);
             allCurrentStepsData = [];
         }
+    }
+
+    function collectWorkflowTargetSteps() {
+        const targetStepsSet = new Set();
+        allCurrentStepsData.forEach(step => {
+            let metadata = parseMetadata(step.metadata);
+            ['transitions_before', 'transitions_after'].forEach(key => {
+                if (metadata[key] && Array.isArray(metadata[key])) {
+                    metadata[key].forEach(transition => {
+
+                        if (transition.step_id) {
+                            targetStepsSet.add(String(transition.step_id));
+                        }
+                    });
+                }
+            });
+        });
+
+        allTargetSteps = Array.from(targetStepsSet);
     }
 
     async function loadWorkflowVariables(workflowId) {
