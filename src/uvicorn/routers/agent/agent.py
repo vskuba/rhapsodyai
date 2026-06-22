@@ -44,6 +44,23 @@ async def agent_get_system_prompt(request: Request, agent_id: int, collection_na
     return {"result": system_prompt}
 
 
+@router.post("/agent")
+async def agent_create(request: Request, data: dict):
+    repo = AgentRepository()
+    entity_agent = await repo.add({
+        "name": data.get('name'),
+        "title": data.get('title'),
+        "greeting": data.get('greeting', ''),
+        "node_id": data.get('node_id', None),
+        "system_prompt": data.get('system_prompt', ''),
+        "llm_id": data.get('llm_id', None),
+        "workflow_id": data.get('workflow_id', None),
+        "description": data.get('description', ''),
+    })
+
+    return {"result": entity_agent}
+
+
 @router.put("/agent/{agent_id}")
 async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(mysql_get_db_async)):
     async with db:

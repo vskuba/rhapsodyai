@@ -61,7 +61,15 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             logger_info(f"Запуск воркфлоу для агента '{model.title}'. Всего шагов: {steps_count}")
 
             ai_session_metadata = await ai_session_metadata_get(model.session_uuid)
-            model.workflow_step_current_index = ai_session_metadata.get('workflow_step_current_index', 0)
+            session_workflow_step_current_index = ai_session_metadata.get('workflow_step_current_index', 0)
+            if session_workflow_step_current_index > 0:
+                model.workflow_step_current_index = session_workflow_step_current_index
+                logger_info(
+                    f"🔀️ Переход на шаг (сессия) [{session_workflow_step_current_index}/{steps_count}]"
+                )
+                # Делаем очистку индекса текущего шага в метаданных сессии
+                ai_session_metadata['workflow_step_current_index'] = 0
+                await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
 
             while model.workflow_step_current_index < steps_count:
                 current_step = model.workflow_steps[model.workflow_step_current_index]
