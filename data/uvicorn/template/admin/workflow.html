@@ -494,22 +494,33 @@
         font-size: 13px;
         box-sizing: border-box;
         width: 100%; /* Гарантируем, что строка занимает всю ширину */
+        border-left: 2px solid #61bcf2;
     }
 
-    /* НОВОЕ: Подсветка для переменных, у которых задано значение по умолчанию */
+    .variable-item-common {
+        border-left: 2px solid limegreen;
+    }
+
     .variable-item.has-default {
         background-color: #f4f8fb; /* Очень мягкий синеватый фон */
-        border-left: 4px solid #007bff; /* Четкий синий маркер слева */
+        border-left: 2px solid #007bff; /* Четкий синий маркер слева */
         padding-left: 9px; /* Компенсируем ширину бордера, чтобы текст не уехал */
     }
 
-    /* НОВОЕ: Стиль для имени переменной, чтобы сдвинуть бейдж вправо */
+    .variable-item.has-default:hover {
+        background-color: #edf4f9;
+    }
+
+    .variable-item.has-default:hover .variable-badge {
+        background-color: #dfe3e6;
+        color: #333;
+    }
+
     .variable-name {
         margin-right: auto;
         color: #333;
     }
 
-    /* НОВОЕ: Компактный бейдж для отображения значения по умолчанию */
     .variable-badge {
         background-color: #eaeaea;
         color: #555;
@@ -524,17 +535,6 @@
         border: 1px solid #dcdcdc;
     }
 
-    /* Смена цвета бейджа при наведении на строку */
-    .variable-item.has-default:hover {
-        background-color: #edf4f9;
-    }
-
-    .variable-item.has-default:hover .variable-badge {
-        background-color: #dfe3e6;
-        color: #333;
-    }
-
-    /* Кнопка удаления переменной */
     .btn-delete-var {
         background: none;
         border: none;
@@ -1863,6 +1863,9 @@
         variablesArray.forEach(variable => {
             const div = document.createElement('div');
             div.className = 'variable-item';
+            if (variable.id < 1) {
+                div.className += ' variable-item-common';
+            }
             div.setAttribute('data-name', variable.name);
             div.setAttribute('data-id', variable.id);
 

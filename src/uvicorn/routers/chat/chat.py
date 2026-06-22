@@ -26,6 +26,7 @@ class ChatAskJsonRequest(BaseModel):
     llm: str
     session_uuid: str | None = None
     metadata: dict | None = None
+    variables: dict = {}
 
 
 class ChatMessagesJsonRequest(BaseModel):
@@ -109,6 +110,7 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         'agent_id': json_request.agent_id,
         'session_uuid': session_uuid,
         'agent_greeting': entity_agent.get('greeting'),
+        **json_request.variables
     }
     for v in raw_workflow_variables:
         v_name = v.get('name', '').strip()
