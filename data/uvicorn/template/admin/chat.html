@@ -457,7 +457,7 @@
                     addMessage(msg.content, role);
                 });
             } else if (allAgents[agentSelect.value])
-                addMessage(allAgents[agentSelect.value].greetings || '', 'ai');
+                addMessage(allAgents[agentSelect.value].greeting || '', 'ai');
             {
             }
         } catch (e) {

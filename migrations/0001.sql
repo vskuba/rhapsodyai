@@ -121,6 +121,12 @@ CREATE TABLE `workflow_variable` (
     CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflow` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `dating_girl` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(15) NOT NULL,
+    UNIQUE INDEX `un_dating_girl_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Таблица фактов (коллекция фактов)
 CREATE TABLE `fact_collection` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -174,7 +180,7 @@ CREATE TABLE `agent` (
     `workflow_id` INT NULL,
     `fact_collection` CHAR(250) DEFAULT NULL,
     `system_prompt` LONGTEXT NOT NULL,
-    `greetings` LONGTEXT NOT NULL,
+    `greeting` LONGTEXT NOT NULL,
     `tool` CHAR(250) DEFAULT NULL,
     `mcp_server` CHAR(250) DEFAULT NULL,
     `llm_id` INT NULL,

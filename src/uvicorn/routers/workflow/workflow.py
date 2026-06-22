@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, Depends
 
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflowl import ai_workflow_variables_default_get
 from src.mysql_.repository.workflow_repository import WorkflowRepository
 from src.mysql_.repository.workflow_step_repository import WorkflowStepRepository
 from src.mysql_.repository.workflow_step_type_repository import WorkflowStepTypeRepository
@@ -87,14 +88,7 @@ async def workflow_variables(request: Request, workflow_id: int):
         await db.execute(sql, (workflow_id,))
         db_variables = await db.fetchall()
 
-        combined_result = [
-                              {"id": 0, "name": "prompt_user"},
-                              {"id": 0, "name": "user_id"},
-                              {"id": 0, "name": "agent_id"},
-                              {"id": 0, "name": "session_uuid"},
-                          ] + list(db_variables)
-
-        return {"result": combined_result}
+        return {"result": [{"id": 0, "name": i} for i in ai_workflow_variables_default_get()] + list(db_variables)}
 
 
 @router.post("/workflow/{workflow_id}/step")

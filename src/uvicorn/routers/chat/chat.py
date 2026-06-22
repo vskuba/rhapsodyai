@@ -10,6 +10,7 @@ from fastapi import UploadFile, File
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflowl import ai_workflow_variables_default_get
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.llm_repository import LlmRepository
@@ -106,12 +107,17 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         'prompt_user': json_request.question.strip(),
         'user_id': json_request.user_id,
         'agent_id': json_request.agent_id,
-        'session_uuid': session_uuid
+        'session_uuid': session_uuid,
+        'agent_greeting': entity_agent.get('greeting'),
     }
     for v in raw_workflow_variables:
         v_name = v.get('name', '').strip()
         if v_name and v_name not in workflow_variables:
             workflow_variables[v_name] = v.get('default', None)
+
+    for i in ai_workflow_variables_default_get():
+        if i not in workflow_variables:
+            raise HTTPException(status_code=401, detail=f"Переменная '{i}' отсутсвует в списке переменных по умолчанию.")
 
     tools = {}
     async with db:

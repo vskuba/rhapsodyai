@@ -149,7 +149,7 @@
         padding: 10px;
     }
 
-    .greetings-full {
+    .greeting-full {
         flex: 0.5;
         resize: none;
         font-family: 'Consolas', 'Monaco', monospace;
@@ -280,7 +280,7 @@
                         <div class="prompt-column">
                             <div class="form-group" style="height: 100%; display: flex; flex-direction: column;">
                                 <label>Приветствие</label>
-                                <textarea id="greetings" class="form-control greetings-full"></textarea>
+                                <textarea id="greeting" class="form-control greeting-full"></textarea>
                                 <label>Системный промпт (System Prompt)</label>
                                 <textarea id="system_prompt" class="form-control system-prompt-full"></textarea>
                             </div>
@@ -438,7 +438,7 @@
                 'llm_id': agent.llm_id || '',
                 'workflow_id': agent.workflow_id || '',
                 'system_prompt': agent.system_prompt || '',
-                'greetings': agent.greetings || ''
+                'greeting': agent.greeting || ''
             };
 
             for (const [id, value] of Object.entries(fields)) {
@@ -477,7 +477,7 @@
             llm_id: document.getElementById('llm_id').value || null,
             workflow_id: document.getElementById('workflow_id').value || null,
             system_prompt: document.getElementById('system_prompt').value,
-            greetings: document.getElementById('greetings').value,
+            greeting: document.getElementById('greeting').value,
             description: document.getElementById('description').value
         };
 
