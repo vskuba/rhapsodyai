@@ -284,6 +284,14 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         )
                         raise e
 
+                elif step_type == 'variable_conversion':
+                    variable_conversion = step_meta.get('variable_conversion', [])
+                    if isinstance(variable_conversion, list):
+                        for item in variable_conversion:
+                            variable_name = item.get('variable')
+                            if variable_name:
+                                model.workflow_variables[variable_name] = item.get('text', '')
+
                 # ОБРАБОТКА ШАГА: Финал воркфлоу, возврат ответа
                 elif step_type == 'return_response_llm':
                     model.session_disabled = False

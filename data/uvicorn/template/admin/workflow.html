@@ -412,6 +412,59 @@
         font-size: 12px;
     }
 
+    .btn-add-widget-row {
+        align-self: flex-start;
+        margin-top: 4px;
+        padding: 4px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        background: #218838;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .widget-rows-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .widget-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        background: white;
+        padding: 8px;
+        border: 1px solid #cbd5e0;
+        border-radius: 4px;
+    }
+
+    .widget-row select {
+        grid-column: 1;
+        grid-row: 1;
+        width: 100%;
+    }
+
+    .widget-row .btn-delete-widget-row {
+        grid-column: 2;
+        grid-row: 1;
+        margin-top: 0; /* Обнуляем старый отступ, так как grid сам выровняет */
+        align-self: center;
+        font-size: 25px;
+        padding: 0;
+        background: transparent;
+        color: #ff7098;
+    }
+
+    .widget-row textarea {
+        grid-column: 1 / span 2;
+        grid-row: 2;
+        width: 100%;
+        height: 60px;
+    }
+
     .workflow-actions {
         display: flex;
         gap: 5px;
@@ -477,7 +530,8 @@
         flex-direction: column;
         gap: 8px;
         overflow-y: auto;
-        padding-right: 4px; /* Оставляем место под полосу прокрутки, чтобы она не сжимала элементы */
+        padding-right: 4px;
+        max-width: 350px;
     }
 
     /* Элемент списка */
@@ -798,6 +852,12 @@
                 label: 'Шаблон ответа',
                 type: 'textarea',
                 placeholder: ''
+            }
+        ],
+        'variable_conversion': [ // ID типа "Вернуть ответ"
+            {
+                key: 'variable_conversion',
+                type: 'widget_variable_conversion',
             }
         ]
     };
@@ -1367,14 +1427,13 @@
             };
 
             // --- НОВЫЙ ТИП: widget_json_variable ---
-            if (field.type === 'widget_json_variable') {
+            if (field.type === 'widget_json_variable' || field.type === 'widget_variable_conversion') {
                 const widgetContainer = document.createElement('div');
                 widgetContainer.id = `field_${field.key}`;
                 widgetContainer.style = "display: flex; flex-direction: column; gap: 8px; background: #f8fafc; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px;";
 
                 const rowsContainer = document.createElement('div');
                 rowsContainer.className = 'widget-rows-list';
-                rowsContainer.style = "display: flex; flex-direction: column; gap: 8px;";
                 widgetContainer.appendChild(rowsContainer);
 
                 // Собираем актуальный массив данных из сохраненного JSON (ожидаем массив объектов)
@@ -1413,12 +1472,11 @@
                 const createWidgetRow = (initialVariable = '', initialText = '') => {
                     const row = document.createElement('div');
                     row.className = 'widget-row';
-                    row.style = "display: flex; gap: 8px; align-items: flex-start; background: white; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px;";
 
                     // 1. Создаем селект с переменными из allCurrentVariables
                     const select = document.createElement('select');
                     select.className = 'form-control widget-select';
-                    select.style = "flex: 1; padding: 5px; font-size: 13px; height: 40px;";
+                    select.style = "flex: 1; padding: 5px; font-size: 12px;";
 
                     // Дефолтный пустой вариант
                     select.innerHTML = '<option value="">Выбрать...</option>';
@@ -1426,7 +1484,7 @@
                         window.allCurrentVariables.forEach(v => {
                             const opt = document.createElement('option');
                             opt.value = v.name;
-                            opt.textContent = v.name;
+                            opt.textContent = '%' + v.name + '%';
                             if (v.name === initialVariable) opt.selected = true;
                             select.appendChild(opt);
                         });
@@ -1436,14 +1494,14 @@
                     const txt = document.createElement('textarea');
                     txt.className = 'form-control widget-textarea';
                     txt.placeholder = 'Введите текст...';
-                    txt.style = "flex: 2; height: 40px; min-height: 40px; resize: vertical; padding: 5px; font-size: 13px;";
+                    txt.style = "flex: 2; resize: vertical; padding: 5px; font-size: 12px;";
                     txt.value = initialText;
 
                     // 3. Кнопка удаления конкретной строки
                     const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'btn-delete-widget-row';
                     deleteBtn.type = 'button';
                     deleteBtn.innerHTML = '&times;';
-                    deleteBtn.style = "background: none; border: none; color: #dc3545; font-size: 18px; cursor: pointer; padding: 0 4px; margin-top: 4px;";
 
                     deleteBtn.onclick = () => {
                         row.remove();
@@ -1455,8 +1513,9 @@
                     txt.oninput = collectWidgetData;
 
                     row.appendChild(select);
-                    row.appendChild(txt);
                     row.appendChild(deleteBtn);
+                    row.appendChild(txt);
+
                     rowsContainer.appendChild(row);
                 };
 
@@ -1478,83 +1537,85 @@
                 addBtn.type = 'button';
                 addBtn.className = 'btn-add-widget-row';
                 addBtn.textContent = '+ Add';
-                addBtn.style = "align-self: flex-start; margin-top: 4px; padding: 4px 12px; font-size: 12px; font-weight: 500; background: #3182ce; color: white; border: none; border-radius: 4px; cursor: pointer;";
 
                 addBtn.onclick = () => {
                     createWidgetRow(); // Создает пустую строку
                     collectWidgetData(); // Обновляет JSON-структуру в метаданных
                 };
 
-                const refreshPromptBtn = document.createElement('button');
-                refreshPromptBtn.type = 'button';
-                refreshPromptBtn.className = 'btn-refresh-prompt';
-                refreshPromptBtn.textContent = '+ Обновить Prompt';
-                refreshPromptBtn.style = "align-self: flex-start; margin-top: 4px; margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 500; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;";
-
-                refreshPromptBtn.onclick = () => {
-                    const targetTextarea = document.getElementById('field_prompt_user') || document.querySelector('[id$="prompt"]');
-                    if (!targetTextarea) {
-                        showNotification('Целевое поле промпта не найдено на форме', 'error');
-                        return;
-                    }
-
-                    const rows = rowsContainer.querySelectorAll('.widget-row');
-                    let descriptionJsonSchema = "";
-                    let exampleJsonSchema = {};
-
-                    rows.forEach(row => {
-                        const selectEl = row.querySelector('.widget-select');
-                        const txtEl = row.querySelector('.widget-textarea');
-
-                        if (selectEl && selectEl.value) {
-                            // Читаем значение напрямую, убирая возможные случайные пробелы
-                            let variableName = selectEl.value.trim();
-                            let textValue = txtEl ? txtEl.value.trim() : '';
-
-                            if (variableName) {
-                                descriptionJsonSchema += `- "${variableName}": ${textValue || 'Without description'}\n`;
-                                exampleJsonSchema[variableName] = textValue || "value";
-                            }
-                        }
-                    });
-
-                    if (!descriptionJsonSchema) {
-                        showNotification('Нет заполненных переменных для генерации промпта', 'warning');
-                        return;
-                    }
-
-                    // 3. Формируем новый текст инструкции
-                    const systemInstructions = "Please return your response in JSON format. " +
-                        "The JSON response must contain follow keys: \n" + descriptionJsonSchema + "\n" +
-                        "Example of JSON response:\n" + JSON.stringify(exampleJsonSchema, null, 2);
-
-                    // Маркер-разделитель для безопасного удаления старой схемы
-                    const delimiter = "\n\n=== Important information about final response ===";
-                    let currentPrompt = targetTextarea.value;
-
-                    // 4. ПРОВЕРКА И ОЧИСТКА:
-                    // Если в поле уже есть маркер ИЛИ старый текст инструкции — отсекаем его
-                    if (currentPrompt.includes(delimiter)) {
-                        // Разделяем строку по маркеру и берем только первую часть (текст пользователя)
-                        currentPrompt = currentPrompt.split(delimiter)[0].trim();
-                    } else if (currentPrompt.includes("Please return your response in JSON format.")) {
-                        // Альтернативный фоллбек: если маркера еще нет, но есть старый текст, отрезаем всё, что идет до него
-                        currentPrompt = currentPrompt.split("Please return your response in JSON format.")[0].trim();
-                    }
-
-                    // 5. ВСТАВКА ОБНОВЛЕННОГО ТЕКСТА
-                    // Если у пользователя был свой текст, добавляем отступ, если поле было пустым — вставляем сразу
-                    const separator = currentPrompt ? "\n\n" : "";
-                    targetTextarea.value = currentPrompt + separator + "=== Important information about final response ===\n" + systemInstructions;
-
-                    // 6. Триггерим событие сохранения для обновления metadata в стейте шага
-                    targetTextarea.dispatchEvent(new Event('input'));
-
-                    showNotification('Промпт успешно обновлен', 'success');
-                };
-
                 actionsContainer.appendChild(addBtn);
-                actionsContainer.appendChild(refreshPromptBtn);
+
+                if (field.type === 'widget_json_variable') {
+                    const refreshPromptBtn = document.createElement('button');
+                    refreshPromptBtn.type = 'button';
+                    refreshPromptBtn.className = 'btn-refresh-prompt';
+                    refreshPromptBtn.textContent = '+ Обновить Prompt';
+                    refreshPromptBtn.style = "align-self: flex-start; margin-top: 4px; margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 500; background: #3182ce; color: white; border: none; border-radius: 4px; cursor: pointer;";
+
+                    refreshPromptBtn.onclick = () => {
+                        const targetTextarea = document.getElementById('field_prompt_user') || document.querySelector('[id$="prompt"]');
+                        if (!targetTextarea) {
+                            showNotification('Целевое поле промпта не найдено на форме', 'error');
+                            return;
+                        }
+
+                        const rows = rowsContainer.querySelectorAll('.widget-row');
+                        let descriptionJsonSchema = "";
+                        let exampleJsonSchema = {};
+
+                        rows.forEach(row => {
+                            const selectEl = row.querySelector('.widget-select');
+                            const txtEl = row.querySelector('.widget-textarea');
+
+                            if (selectEl && selectEl.value) {
+                                // Читаем значение напрямую, убирая возможные случайные пробелы
+                                let variableName = selectEl.value.trim();
+                                let textValue = txtEl ? txtEl.value.trim() : '';
+
+                                if (variableName) {
+                                    descriptionJsonSchema += `- "${variableName}": ${textValue || 'Without description'}\n`;
+                                    exampleJsonSchema[variableName] = textValue || "value";
+                                }
+                            }
+                        });
+
+                        if (!descriptionJsonSchema) {
+                            showNotification('Нет заполненных переменных для генерации промпта', 'warning');
+                            return;
+                        }
+
+                        // 3. Формируем новый текст инструкции
+                        const systemInstructions = "Please return your response in JSON format. " +
+                            "The JSON response must contain follow keys: \n" + descriptionJsonSchema + "\n" +
+                            "Example of JSON response:\n" + JSON.stringify(exampleJsonSchema, null, 2);
+
+                        // Маркер-разделитель для безопасного удаления старой схемы
+                        const delimiter = "\n\n=== Important information about final response ===";
+                        let currentPrompt = targetTextarea.value;
+
+                        // 4. ПРОВЕРКА И ОЧИСТКА:
+                        // Если в поле уже есть маркер ИЛИ старый текст инструкции — отсекаем его
+                        if (currentPrompt.includes(delimiter)) {
+                            // Разделяем строку по маркеру и берем только первую часть (текст пользователя)
+                            currentPrompt = currentPrompt.split(delimiter)[0].trim();
+                        } else if (currentPrompt.includes("Please return your response in JSON format.")) {
+                            // Альтернативный фоллбек: если маркера еще нет, но есть старый текст, отрезаем всё, что идет до него
+                            currentPrompt = currentPrompt.split("Please return your response in JSON format.")[0].trim();
+                        }
+
+                        // 5. ВСТАВКА ОБНОВЛЕННОГО ТЕКСТА
+                        // Если у пользователя был свой текст, добавляем отступ, если поле было пустым — вставляем сразу
+                        const separator = currentPrompt ? "\n\n" : "";
+                        targetTextarea.value = currentPrompt + separator + "=== Important information about final response ===\n" + systemInstructions;
+
+                        // 6. Триггерим событие сохранения для обновления metadata в стейте шага
+                        targetTextarea.dispatchEvent(new Event('input'));
+
+                        showNotification('Промпт успешно обновлен', 'success');
+                    };
+
+                    actionsContainer.appendChild(refreshPromptBtn);
+                }
 
                 widgetContainer.appendChild(actionsContainer);
 
@@ -1816,20 +1877,22 @@
                     inputElement.className = 'form-control';
                     inputElement.style = "height: 170px; resize: vertical; font-size: 13px; padding: 8px;";
                     inputElement.placeholder = field.placeholder || '';
-                    inputElement.value = currentValue || field.value || '';
+                    inputElement.value = currentValue;
                 } else if (field.type === 'select') {
                     inputElement = document.createElement('select');
                     inputElement.id = `field_${field.key}`;
                     inputElement.className = 'form-control';
                     inputElement.style = "padding: 6px; font-size: 13px;";
 
-                    field.options.forEach(opt => {
-                        const option = document.createElement('option');
-                        option.value = opt;
-                        option.textContent = opt;
-                        if (opt === currentValue) option.selected = true;
-                        inputElement.appendChild(option);
-                    });
+                    if (field.options && Array.isArray(field.options)) {
+                        field.options.forEach(opt => {
+                            const option = document.createElement('option');
+                            option.value = opt;
+                            option.textContent = opt;
+                            if (String(opt) === String(currentValue)) option.selected = true;
+                            inputElement.appendChild(option);
+                        });
+                    }
                 } else {
                     inputElement = document.createElement('input');
                     inputElement.id = `field_${field.key}`;
@@ -1846,6 +1909,11 @@
                 inputElement.onchange = () => saveChanges();
 
                 fieldWrapper.appendChild(inputElement);
+
+                const latestMeta = parseMetadata(step.metadata);
+                if (latestMeta[field.key] === undefined && currentValue !== '') {
+                    saveChanges();
+                }
             }
 
             container.appendChild(fieldWrapper);
