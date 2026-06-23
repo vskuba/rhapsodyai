@@ -139,7 +139,7 @@
         box-shadow: 0 0 5px rgba(52, 152, 219, 0.2);
     }
 
-    .system-prompt-full {
+    .prompt-system-full {
         flex: 1;
         resize: none;
         font-family: 'Consolas', 'Monaco', monospace;
@@ -281,7 +281,7 @@
                                 <label>Приветствие</label>
                                 <textarea id="greeting" class="form-control greeting-full"></textarea>
                                 <label>Системный промпт (System Prompt)</label>
-                                <textarea id="system_prompt" class="form-control system-prompt-full"></textarea>
+                                <textarea id="prompt_system" class="form-control prompt-system-full"></textarea>
                             </div>
                         </div>
                     </div>
@@ -436,7 +436,7 @@
                 'description': agent.description || '',
                 'llm_id': agent.llm_id || '',
                 'workflow_id': agent.workflow_id || '',
-                'system_prompt': agent.system_prompt || '',
+                'prompt_system': agent.prompt_system || '',
                 'greeting': agent.greeting || ''
             };
 
@@ -475,7 +475,7 @@
             title: document.getElementById('title').value,
             llm_id: document.getElementById('llm_id').value || null,
             workflow_id: document.getElementById('workflow_id').value || null,
-            system_prompt: document.getElementById('system_prompt').value,
+            prompt_system: document.getElementById('prompt_system').value,
             greeting: document.getElementById('greeting').value,
             description: document.getElementById('description').value
         };

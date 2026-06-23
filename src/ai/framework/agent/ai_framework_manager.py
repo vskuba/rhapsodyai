@@ -365,10 +365,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
     async def prompt_system_create(self, metadata: dict) -> str:
         entity_agent = metadata.get('entity_agent', {})
-        system_prompt = entity_agent.get('system_prompt', '')
+        prompt_system = entity_agent.get('prompt_system', '')
 
         if not (specialization_id := entity_agent.get('specialization_id', 0)):
-            return system_prompt
+            return prompt_system
 
         repo = AgentSpecializationRepository()
         specialization_entity = await repo.find(specialization_id)
@@ -390,6 +390,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 example_fact_extract += ",\n".join(lines)
                 example_fact_extract += "\n}]"
 
-            return system_prompt + example_fact_extract
+            return prompt_system + example_fact_extract
 
-        return system_prompt
+        return prompt_system

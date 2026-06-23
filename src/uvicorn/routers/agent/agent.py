@@ -30,18 +30,18 @@ async def agent_get(request: Request, agent_id: int):
     return {"result": await repo.find(agent_id)}
 
 
-@router.get("/agent/{agent_id}/system_prompt/{collection_name}")
-async def agent_get_system_prompt(request: Request, agent_id: int, collection_name: str):
+@router.get("/agent/{agent_id}/prompt_system/{collection_name}")
+async def agent_get_prompt_system(request: Request, agent_id: int, collection_name: str):
     repo = AgentRepository()
     entity = await repo.find(agent_id)
 
     manager = AiFrameworkAgentManager()
-    system_prompt = await manager.prompt_system_create({
+    prompt_system = await manager.prompt_system_create({
         "entity_agent": entity,
         "collection_name": collection_name
     })
 
-    return {"result": system_prompt}
+    return {"result": prompt_system}
 
 
 @router.post("/agent")
@@ -52,7 +52,7 @@ async def agent_create(request: Request, data: dict):
         "title": data.get('title'),
         "greeting": data.get('greeting', ''),
         "node_id": data.get('node_id', None),
-        "system_prompt": data.get('system_prompt', ''),
+        "prompt_system": data.get('prompt_system', ''),
         "llm_id": data.get('llm_id', None),
         "workflow_id": data.get('workflow_id', None),
         "description": data.get('description', ''),
@@ -72,7 +72,7 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
                 title = %s,
                 llm_id = %s,
                 workflow_id = %s,
-                system_prompt = %s
+                prompt_system = %s
             WHERE id = %s
         """
 
@@ -82,7 +82,7 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
             data.get('title'),
             data.get('llm_id'),
             data.get('workflow_id'),
-            data.get('system_prompt'),
+            data.get('prompt_system'),
             agent_id
         )
 

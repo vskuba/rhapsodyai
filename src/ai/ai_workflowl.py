@@ -5,5 +5,6 @@ def ai_workflow_variables_default_get() -> list[str]:
         "agent_id",
         "session_uuid",
         "agent_greeting",
+        "workflow_id",
     ]
     return sorted(variables)

@@ -371,7 +371,7 @@
                     console.log(`Выбран экстрактор ID: ${selectedExtractorId}`);
 
                     if (selectedCollection) {
-                        const data = await getData(`/agent/${agent.id}/system_prompt/${selectedCollection.name}`);
+                        const data = await getData(`/agent/${agent.id}/prompt_system/${selectedCollection.name}`);
                         systemPromptTextarea.value = data.result || "";
                     }
                 };
