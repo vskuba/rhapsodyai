@@ -1792,6 +1792,11 @@
                 selectElement.onchange = () => {
                     renderToolDetails(selectElement.value);
                     collectToolWidgetData();
+
+                    const inputStepTitle = document.getElementById('stepTitle');
+                    inputStepTitle.value = selectElement.value;
+                    const stepTitleEl = document.querySelectorAll('.step-item-block.active .step-title-text')
+                    stepTitleEl.forEach(el => el.textContent = selectElement.value);
                 };
 
                 // Первичный запуск при открытии ноды
