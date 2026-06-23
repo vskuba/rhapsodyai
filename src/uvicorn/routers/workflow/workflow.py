@@ -82,7 +82,8 @@ async def workflow_variables(request: Request, workflow_id: int):
     sql = f"""
             SELECT *
             FROM `workflow_variable` 
-            WHERE workflow_id = %s
+            WHERE workflow_id = %s 
+            ORDER BY name ASC
         """
     async with mysql_get_db_async() as db:
         await db.execute(sql, (workflow_id,))
