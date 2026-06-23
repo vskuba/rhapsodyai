@@ -19,34 +19,22 @@ class AiFrameworkAgent(AbstractAiFramework):
         """
         model = self.llm_model_get(framework_model)
 
-        message_history = await self.message_history_get(framework_model)
-
-        logger_info(
-            f'🧠 Передаем историю агенту:'
-            f'{message_history}' if message_history else "\nВ истории пусто или отключена"
-        )
-
         engine = Agent(
             model,
-            system_prompt=framework_model.prompt_system.strip() + message_history,
+            system_prompt=framework_model.prompt_system.strip(),
             output_type=framework_model.response_model,
             retries=10,
             output_retries=10
         )
 
         self.engine_storage[framework_model.name] = engine
-        # self.engine_tools_local_add(engine, framework_model)
 
         return engine
 
     async def engine_run(self, framework_model: AiFrameworkAgentModel):
         engine = self.engine_storage[framework_model.name]
-        # ai_mcp_manager = AiMcpManager()
 
         try:
-            # if framework_model.mcp_servers:
-            #     await ai_mcp_manager.mcp_server_add_tools(engine, framework_model)
-
             logger_info(f'🚀 Запускаем модель агента... {framework_model.__dict__}')
 
             return await engine.run(
@@ -63,11 +51,6 @@ class AiFrameworkAgent(AbstractAiFramework):
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise e
-
-        # finally:
-        # if framework_model.mcp_servers:
-        #     logger_info(f'Закрываем MCP сессии для задачи {framework_model.name}...')
-        #     await ai_mcp_manager.mcp_server_close_all()
 
     async def engine_result_handle(
             self, result: AgentRunResult,
