@@ -10,3 +10,10 @@ async def dating_girl_create(name: str) -> str:
 
     await repo.add({"name": name})
     return f"Девушка '{name}' добавлена в базу данных."
+
+
+async def dating_girl_id(name: str) -> int:
+    repo = DatingGirlRepository()
+    entity_girl = await repo.find_one_by({"name": name})
+
+    return entity_girl.get("id")

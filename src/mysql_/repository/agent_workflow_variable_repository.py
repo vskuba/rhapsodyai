@@ -1,6 +1,6 @@
 from mysql_.repository.abstract_repository import AbstractRepository
 
 
-class WorkflowStepRepository(AbstractRepository):
+class AgentWorkflowVariableRepository(AbstractRepository):
     def table_name_get(self) -> str:
-        return 'workflow_step'
+        return 'workflow_variable'

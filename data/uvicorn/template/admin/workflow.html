@@ -476,7 +476,6 @@
         display: flex;
         flex-direction: column;
         gap: 8px;
-        max-height: 350px;
         overflow-y: auto;
         padding-right: 4px; /* Оставляем место под полосу прокрутки, чтобы она не сжимала элементы */
     }
@@ -491,7 +490,7 @@
         border: 1px solid #e0e0e0;
         border-radius: 4px;
         font-family: monospace;
-        font-size: 13px;
+        font-size: 12px;
         box-sizing: border-box;
         width: 100%; /* Гарантируем, что строка занимает всю ширину */
         border-left: 3px solid #2974df;
@@ -527,7 +526,7 @@
         font-size: 12px;
         padding: 2px 6px;
         border-radius: 4px;
-        margin-right: 10px;
+        margin: 0 10px;
         max-width: 150px; /* Защита от слишком длинных строк */
         white-space: nowrap;
         overflow: hidden;
@@ -600,8 +599,8 @@
                             <input type="text" id="title" class="form-control" required>
                         </div>
                         <div class="form-group">
-                            <label>Технический ID (tid)</label>
-                            <input type="text" id="tid" class="form-control" required>
+                            <label>Технический ID (name)</label>
+                            <input type="text" id="name" class="form-control" required>
                         </div>
                         <div class="form-grid">
                             <div class="form-group"><label>Нода</label><select id="node_id"
@@ -1057,7 +1056,7 @@
 
     async function fillWorkflowForm(workflow) {
         document.getElementById('workflowId').value = workflow.id;
-        document.getElementById('tid').value = workflow.tid || '';
+        document.getElementById('name').value = workflow.name || '';
         document.getElementById('title').value = workflow.title || '';
         document.getElementById('node_id').value = workflow.node_id || '';
         document.getElementById('position').value = workflow.position || 0;
@@ -2289,7 +2288,7 @@
 
         // 1. Безопасный сбор основного payload задачи
         const payload = {
-            tid: document.getElementById('tid')?.value.trim() || '',
+            name: document.getElementById('name')?.value.trim() || '',
             title: document.getElementById('title')?.value || '',
             node_id: document.getElementById('node_id')?.value || null,
             description: document.getElementById('description')?.value || '',
@@ -2373,11 +2372,11 @@
             if (workflowForm) workflowForm.reset();
 
             const workflowIdEl = document.getElementById('workflowId');
-            const tidEl = document.getElementById('tid');
+            const nameEl = document.getElementById('name');
             const formTitleEl = document.getElementById('formTitle');
 
             if (workflowIdEl) workflowIdEl.value = '';
-            if (tidEl) tidEl.value = '';
+            if (nameEl) nameEl.value = '';
             if (formTitleEl) formTitleEl.textContent = 'Новый workflow';
 
             // Безопасно скрываем кнопки управления шагами для нового воркфлоу

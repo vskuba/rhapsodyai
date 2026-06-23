@@ -84,12 +84,12 @@ CREATE TABLE `tool` (
 CREATE TABLE `workflow` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `node_id` INT NULL,
-    `tid` CHAR(50) NOT NULL,
+    `name` CHAR(50) NOT NULL,
     `title` CHAR(50) NOT NULL,
     `description` CHAR(200) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
     CONSTRAINT `workflow_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
-    UNIQUE INDEX `ux_workflow_tid` (`tid`)
+    UNIQUE INDEX `ux_workflow_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `workflow_step_type` (
@@ -161,7 +161,9 @@ CREATE TABLE `fact_collection_soko_menu` (
 CREATE TABLE `fact_collection_dating_girl_bio` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `fact_id` INT NOT NULL,
-    CONSTRAINT `fk_dating_girl_bio` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
+    `girl_id` INT NULL COMMENT 'tag:extract|type:int|desc:Girl ID as integer value, defined in input data above (example: 12)',
+    CONSTRAINT `fk_fact` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dating_girl` FOREIGN KEY (`girl_id`) REFERENCES `dating_girl` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `fact_collection_cashier_service` (
