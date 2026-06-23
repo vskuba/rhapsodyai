@@ -81,7 +81,7 @@ CREATE TABLE `tool` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица задач
-CREATE TABLE `workflow` (
+CREATE TABLE `agent_workflow` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `node_id` INT NULL,
     `name` CHAR(50) NOT NULL,
@@ -92,7 +92,7 @@ CREATE TABLE `workflow` (
     UNIQUE INDEX `ux_workflow_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `workflow_step_type` (
+CREATE TABLE `agent_workflow_step_type` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
     `icon` CHAR(2) NOT NULL,
@@ -102,23 +102,23 @@ CREATE TABLE `workflow_step_type` (
     UNIQUE INDEX `ux_workflow_step_type_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `workflow_step` (
+CREATE TABLE `agent_workflow_step` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `workflow_id` INT NULL,
     `type_id` INT NULL,
     `title` CHAR(50) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
     `metadata` LONGTEXT NOT NULL,
-    CONSTRAINT `workflow_step_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflow` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `workflow_step_workflow_step_type` FOREIGN KEY (`type_id`) REFERENCES `workflow_step_type` (`id`) ON DELETE SET NULL
+    CONSTRAINT `workflow_step_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `workflow_step_workflow_step_type` FOREIGN KEY (`type_id`) REFERENCES `agent_workflow_step_type` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `workflow_variable` (
+CREATE TABLE `agent_workflow_variable` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `workflow_id` INT NULL,
     `name` CHAR(50) NOT NULL,
     `default` CHAR(200) DEFAULT NULL,
-    CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflow` (`id`) ON DELETE SET NULL
+    CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `dating_girl` (
@@ -188,7 +188,7 @@ CREATE TABLE `agent` (
     `llm_id` INT NULL,
     `position` INT NOT NULL DEFAULT 0,
     CONSTRAINT `ag_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `ag_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflow` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `ag_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL,
     CONSTRAINT `ag_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -47,19 +47,19 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 
 --
 
-INSERT INTO `workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`) VALUES
+INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`) VALUES
 (1, 1, 'response_cashier', 'Чат кашира', 'Ответить пользователю', 0),
 (2, 2, 'dating_girl_generator', 'Генератор девушки', 'Генерируем коллекции девушки', 0),
 (3, 3, 'response_soko', 'Чат суши-бара', 'Ответить пользователю', 0),
 (4, 5, 'test', 'Test', 'Simple test workflow', -1);
 
-INSERT INTO `workflow_step_type` (`id`, `name`, `icon`, `description`, `description_full`, `metadata`) VALUES
+INSERT INTO `agent_workflow_step_type` (`id`, `name`, `icon`, `description`, `description_full`, `metadata`) VALUES
 (1, 'return_response_llm', '↩', 'Вернуть LLM ответ', 'Собираем полный запрос на LLM с учетом короткой и длинной памяти, всей связанной информации в БД и отдаем LLM для формирования наиболее качественного ответа.', ''),
 (2, 'llm_to_json', '🧠', 'LLM -> JSON', 'Ожидает ответ от LLM в виде JSON. Далее каждый ключ JSON доступен в последующих шагах', ''),
 (3, 'tool_invoke', '⚙️', 'Вызов инструмента', 'Вызываем инструмент. Передаем в аргументы текущие переменные и сохраняем ответ в переменные.', ''),
 (4, 'return_response_text', '↩T', 'Вернуть текстовый ответ', 'Возращаем текстовый ответ на основе шаблона из переменных', '');
 
-INSERT INTO `workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) VALUES
+INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) VALUES
 (1, 1, 1, 'мой ответ', 2, '{"prompt_user":"%prompt_user%","transitions_after":[]}'),
 (2, 1, 3, 'мой инструмент', 1,'{"prompt_user":"ok","transitions_after":[],"tool_invoke":{"tool_name":"github_user_info","inputs_map":{"random":"facts"},"outputs_map":{"login":"tags","name":"prompt_user","email":"facts"}}}'),
 (4, 3, 1, 'мой ответ', 0, ''),
@@ -79,7 +79,7 @@ INSERT INTO `workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`
 (19, 2, 2, 'LLM -> JSON', 5, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"facts","text":"список фактов"}],"prompt_user":"Нужно придумать биографию девушки. Известны такие факты о ней:\n1. ID: %girl_id%\n2. имя: %prompt_user%\n\nНужно придумать биографию. Основные исходные данные: \n1. она родом из города в Украине\n2. возраст от 20 до 35\n3. имеет образование\n4. не имеет детей\n\nОстальные детали придумай. Все факты и детали не должны противоречить друг другу. Нужно придумать, как минимум, 5 фактов в биографии по каждому пункту:\n- детство\n- подростковый возраст\n- учеба\n- отношения с родителями\n- любимые занятия и увлечения\n- любовные отношения\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"facts\\": список фактов\n\nВсе факты должны быть в таком формате:\n%fact_collection_output_format_response%\n\nExample of JSON response:\n{\n  \\"facts\\": \\"список фактов\\"\n}"}'),
 (20, 2, 3, 'fact_collection_add', 6, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_bio_name","data":"facts"},"outputs_map":{"int":"facts_qty"}},"transitions_before":[],"transitions_after":[]}');
 
-INSERT INTO `workflow_variable` (`id`, `workflow_id`, `name`, `default`) VALUES
+INSERT INTO `agent_workflow_variable` (`id`, `workflow_id`, `name`, `default`) VALUES
 (1, 1, 'tags', NULL),
 (2, 1, 'facts', NULL),
 (3, 4, 'tags', NULL),

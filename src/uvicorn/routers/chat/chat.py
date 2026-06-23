@@ -63,8 +63,8 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         # 1. Запрашиваем шаги воркфлоу, строго сортируя их по позиции
         sql_steps = """
             SELECT ws.*, wst.name as step_type_name 
-            FROM workflow_step ws 
-            LEFT JOIN workflow_step_type wst ON ws.type_id = wst.id 
+            FROM agent_workflow_step ws 
+            LEFT JOIN agent_workflow_step_type wst ON ws.type_id = wst.id 
             WHERE ws.workflow_id = %s 
             ORDER BY ws.position ASC
         """
@@ -72,7 +72,7 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         raw_workflow_steps = await db.fetchall()
 
         # 2. Запрашиваем динамические переменные воркфлоу
-        sql_vars = "SELECT name, `default` FROM workflow_variable WHERE workflow_id = %s"
+        sql_vars = "SELECT name, `default` FROM agent_workflow_variable WHERE workflow_id = %s"
         await db.execute(sql_vars, workflow_id)
         raw_workflow_variables = await db.fetchall()
 

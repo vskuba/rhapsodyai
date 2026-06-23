@@ -3,4 +3,4 @@ from mysql_.repository.abstract_repository import AbstractRepository
 
 class AgentWorkflowStepRepository(AbstractRepository):
     def table_name_get(self) -> str:
-        return 'workflow_step'
+        return 'agent_workflow_step'

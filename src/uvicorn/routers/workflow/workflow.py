@@ -20,7 +20,7 @@ async def workflow_list(request: Request):
 async def workflow_create(request: Request, data: dict, db=Depends(mysql_get_db_async)):
     async with db:
         sql = """
-            INSERT INTO workflow (name, title, node_id, description, position)
+            INSERT INTO agent_workflow (name, title, node_id, description, position)
             VALUES (%s, %s, %s, %s, %s)
         """
         values = (
@@ -67,8 +67,8 @@ async def workflow_steps(request: Request, workflow_id: int):
                 ts.*, 
                 tst.icon, 
                 tst.description as description
-            FROM `workflow_step` ts
-            LEFT JOIN `workflow_step_type` tst ON ts.type_id = tst.id
+            FROM `agent_workflow_step` ts
+            LEFT JOIN `agent_workflow_step_type` tst ON ts.type_id = tst.id
             WHERE ts.workflow_id = %s
             ORDER BY ts.position ASC
         """
@@ -81,7 +81,7 @@ async def workflow_steps(request: Request, workflow_id: int):
 async def workflow_variables(request: Request, workflow_id: int):
     sql = f"""
             SELECT *
-            FROM `workflow_variable` 
+            FROM `agent_workflow_variable` 
             WHERE workflow_id = %s 
             ORDER BY name ASC
         """
