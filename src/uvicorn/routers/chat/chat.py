@@ -111,6 +111,7 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         'session_uuid': session_uuid,
         'agent_greeting': entity_agent.get('greeting'),
         'workflow_id': workflow_id,
+        'node_id': entity_agent.get('node_id'),
         **json_request.variables
     }
     for v in raw_workflow_variables:
