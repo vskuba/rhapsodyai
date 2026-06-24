@@ -23,8 +23,7 @@ class AiFrameworkAgent(AbstractAiFramework):
             model,
             system_prompt=framework_model.prompt_system.strip(),
             output_type=framework_model.response_model,
-            retries=10,
-            output_retries=10
+            retries=10
         )
 
         self.engine_storage[framework_model.name] = engine
@@ -35,7 +34,8 @@ class AiFrameworkAgent(AbstractAiFramework):
         engine = self.engine_storage[framework_model.name]
 
         try:
-            logger_info(f'🚀 Запускаем модель агента... {framework_model.__dict__}')
+            logger_info(f'🚀 Модель перед запуском агента: {framework_model.__dict__}')
+            logger_info(f'Prompt user:  {framework_model.prompt_user}')
 
             return await engine.run(
                 user_prompt=framework_model.prompt_user,
@@ -93,11 +93,11 @@ class AiFrameworkAgent(AbstractAiFramework):
                 result = await self.engine_run(framework_model)
                 response = await self.engine_result_handle(result, framework_model)
 
+                await self.message_history_save(framework_model)
+
                 if response is not None:
                     if framework_model.on_complete:
                         await framework_model.on_complete(response.text)
-
-                await self.message_history_save(framework_model)
 
                 return
 

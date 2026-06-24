@@ -645,6 +645,7 @@
 
                         if (Object.keys(payloadArgs).length < inputElements.length) {
                             btnRunToolTest.disabled = false;
+                            console.log("Не все обязательные поля заполнены. Отправка на сервер отменена.");
                             return;
                         }
 

@@ -1,20 +1,13 @@
-import json
-import sys
-import uuid
-
 from qdrant_client import AsyncQdrantClient
 
 from mysql_.mysql_ import mysql_get_db_async
-from qdrant_.qdrant_ import _qdrant_db_get_client
+from qdrant_.qdrant_ import _qdrant_db_get_client, qdrant_save
 from src.ai.ai_fact_collection import ai_collection_metadata_get
 
 qdrant_client: AsyncQdrantClient = _qdrant_db_get_client()
 
-EMBEDDING_MODEL = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
-SPARSE_MODEL = 'Qdrant/bm25'
 
-
-async def fact_qdrant_sync(metadata: dict) -> str:
+async def fact_qdrant_sync() -> str:
     async with mysql_get_db_async() as db:
         sql_unsynced = """
             SELECT f.*, fc.name as collection_name
@@ -29,7 +22,7 @@ async def fact_qdrant_sync(metadata: dict) -> str:
         if not rows:
             return "Все данные во всех коллекциях синхронизированы."
 
-        # Группируем ID фактов по именам коллекций для дальнейшей обработки
+        # 1. Группируем ID фактов по именам коллекций для дальнейшей обработки
         rows_by_collection = {}
         for row in rows:
             c_name = row['collection_name']
@@ -37,74 +30,80 @@ async def fact_qdrant_sync(metadata: dict) -> str:
                 rows_by_collection[c_name] = []
             rows_by_collection[c_name].append(row)
 
-        qdrant_client.set_model(EMBEDDING_MODEL)
-        qdrant_client.set_sparse_model(SPARSE_MODEL)
-
         total_synced = 0
+        processed_collections_count = 0
 
         # 2. Обрабатываем каждую коллекцию отдельно
         for c_name, collection_rows in rows_by_collection.items():
             fact_ids = [r['id'] for r in collection_rows]
             dynamic_table = f"fact_collection_{c_name}"
 
-            # Получаем метаданные именно для этой коллекции
-            collection_metadata = await ai_collection_metadata_get(c_name)
+            try:
+                # Получаем актуальную карту метаданных именно для этой коллекции
+                collection_metadata = await ai_collection_metadata_get(c_name)
 
-            # Определяем поля, которые нужно добрать из динамической таблицы
-            dyn_fields = [f for f, info in collection_metadata.items() if info['table_name'] == dynamic_table]
+                # Определяем поля, которые нужно добрать из динамической таблицы
+                dyn_fields = [f for f, info in collection_metadata.items() if info['table_name'] == dynamic_table]
 
-            # Подтягиваем доп. поля из динамической таблицы для текущей пачки ID
-            extra_data = {}
-            if dyn_fields:
-                f_str = ", ".join([f"`{f}`" for f in dyn_fields])
-                ids_str = ", ".join(["%s"] * len(fact_ids))
-                sql_extra = f"SELECT fact_id, {f_str} FROM `{dynamic_table}` WHERE fact_id IN ({ids_str})"
-                await db.execute(sql_extra, fact_ids)
-                extra_rows = await db.fetchall()
-                extra_data = {r['fact_id']: r for r in extra_rows}
+                # Подтягиваем доп. поля из динамической таблицы для текущей пачки ID
+                extra_data = {}
+                if dyn_fields:
+                    f_str = ", ".join([f"`{f}`" for f in dyn_fields])
+                    ids_str = ", ".join(["%s"] * len(fact_ids))
+                    sql_extra = f"SELECT fact_id, {f_str} FROM `{dynamic_table}` WHERE fact_id IN ({ids_str})"
+                    # ВАЖНО: Аргументы для IN (...) передаем строго как кортеж
+                    await db.execute(sql_extra, tuple(fact_ids))
+                    extra_rows = await db.fetchall()
+                    extra_data = {r['fact_id']: r for r in extra_rows}
 
-            docs, payloads = [], []
+                # 3. ПОДГОТОВКА ДАННЫХ: Объединяем базовые и динамические поля в единые объекты
+                prepared_data = []
+                for r in collection_rows:
+                    f_id = r['id']
 
-            for r in collection_rows:
-                f_id = r['id']
-                # Формируем базовый payload
-                payload = {
-                    "category": r.get('category'),
-                    "language": r.get('language'),
-                    "tags": r.get('tags').split(',') if r.get('tags') else []
-                }
+                    # Создаем копию базовой строки из таблицы fact (содержит content, girl_id, tags и т.д.)
+                    merged_row = dict(r)
 
-                # Добавляем динамические поля, если они есть для этого ID
-                if f_id in extra_data:
-                    for field in dyn_fields:
-                        payload[field] = extra_data[f_id].get(field)
+                    # Если для этого факта есть динамические поля, подмешиваем их в этот же словарь
+                    if f_id in extra_data:
+                        for field in dyn_fields:
+                            merged_row[field] = extra_data[f_id].get(field)
+                    else:
+                        # Если записи в динамической таблице нет, проставляем None для полей,
+                        # чтобы qdrant_save не упал по KeyError, если эти поля ожидаются
+                        for field in dyn_fields:
+                            merged_row[field] = None
 
-                docs.append(r['content'])
-                payloads.append(payload)
+                    prepared_data.append(merged_row)
 
-            # 3. Загружаем в Qdrant
-            await qdrant_client.add(
-                collection_name=c_name,
-                documents=docs,
-                metadata=payloads,
-                ids=[str(uuid.uuid4()) for _ in docs]
-            )
+                # 4. СОХРАНЕНИЕ: Передаем полностью собранный массив данных
+                synced_count = await qdrant_save(c_name, collection_metadata, prepared_data)
+                total_synced += synced_count
+                processed_collections_count += 1
 
-            # 4. Обновляем статус пачкой для этой коллекции
-            placeholders = ", ".join(["%s"] * len(fact_ids))
-            await db.execute(f"UPDATE fact SET qdrant_synced = 1 WHERE id IN ({placeholders})", fact_ids)
-            total_synced += len(collection_rows)
+                # 5. Обновляем статус пачкой для ЭТОЙ конкретной коллекции
+                placeholders = ", ".join(["%s"] * len(fact_ids))
+                # ВАЖНО: Приводим fact_ids к tuple, чтобы aiomysql корректно подставил параметры в IN()
+                await db.execute(f"UPDATE fact SET qdrant_synced = 1 WHERE id IN ({placeholders})", tuple(fact_ids))
 
-        await db.commit()
-        return f"Успешно синхронизировано {total_synced} фактов в {len(rows_by_collection)} коллекциях."
+                # Фиксируем изменения для текущей успешной коллекции
+                await db.commit()
+
+            except Exception as collection_error:
+                # Если одна коллекция упала (например, по KeyError из-за несовпадения схем),
+                # мы логируем это, но не прерываем цикл, чтобы остальные коллекции могли синхронизироваться
+                print(f"❌ Ошибка при синхронизации коллекции '{c_name}': {collection_error}")
+                continue
+
+        return f"Успешно синхронизировано {total_synced} фактов в {processed_collections_count} коллекциях."
 
 
-async def main(metadata: dict):
+async def main():
     try:
-        result = await fact_qdrant_sync(metadata)
+        result = await fact_qdrant_sync()
         print(result)
     except Exception as e:
-        print(f"Ошибка в процессе синхронизации: {e}")
+        print(f"Критическая ошибка в процессе синхронизации: {e}")
     finally:
         if qdrant_client:
             await qdrant_client.close()
@@ -114,6 +113,4 @@ async def main(metadata: dict):
 if __name__ == '__main__':
     import asyncio
 
-    metadata = json.loads(sys.argv[1])
-
-    asyncio.run(main(metadata))
+    asyncio.run(main())

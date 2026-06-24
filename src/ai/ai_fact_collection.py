@@ -1,7 +1,12 @@
 from mysql_.mysql_table import mysql_table_metadata_get
 
+collection_metadata_cache = {}
+
 
 async def ai_collection_metadata_get(collection_name) -> dict:
+    if collection_name in collection_metadata_cache:
+        return collection_metadata_cache[collection_name]
+
     collection_metadata = {}
 
     for table_name in ['fact', f'fact_collection_{collection_name}']:
@@ -14,5 +19,7 @@ async def ai_collection_metadata_get(collection_name) -> dict:
                     'table_name': table_name,
                     'description': m['comment_metadata']['desc'],
                 }
+
+    collection_metadata_cache[collection_name] = collection_metadata
 
     return collection_metadata

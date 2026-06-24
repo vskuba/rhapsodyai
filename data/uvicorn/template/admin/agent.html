@@ -99,7 +99,13 @@
     }
 
     .prompt-column {
-        flex: 1.5;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .variable-column {
+        flex: 1;
         display: flex;
         flex-direction: column;
     }
@@ -202,98 +208,168 @@
         font-size: 13px;
         color: #27ae60;
     }
+
+    .variables-editor-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 8px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    /* Строка с парой Ключ-Значение */
+    .variable-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .variable-row .form-control {
+        padding: 6px 10px;
+        font-size: 13px;
+        font-family: 'Consolas', 'Monaco', monospace;
+    }
+
+    /* Кнопка удаления строки */
+    .btn-del-var {
+        background: #e74c3c;
+        color: white;
+        border: none;
+        padding: 6px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 14px;
+        transition: background 0.2s;
+    }
+
+    .btn-del-var:hover {
+        background: #c0392b;
+    }
+
+    /* Кнопка добавления новой переменной */
+    .btn-add-var {
+        background: #f1f4f6;
+        color: #2c3e50;
+        border: 1px dashed #cbd5e1;
+        padding: 8px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        text-align: center;
+        transition: all 0.2s;
+    }
+
+    .btn-add-var:hover {
+        background: #e2e8f0;
+        color: #3498db;
+        border-color: #3498db;
+    }
+
 </style>
 
 {% endblock %}
 
 {% block content %}
 <div class="page-content">
-    <div class="main-wrapper">
-        <div class="editor-container">
+    <div class="editor-container">
 
-            <!-- Список -->
-            <div class="agents-sidebar">
-                <div class="sidebar-header">
-                    <button class="btn-create" id="createNewAgent">+ Создать агента</button>
-                </div>
-                <div class="agent-list" id="agentList">
-                    <!-- JS контент -->
-                </div>
+        <!-- Список -->
+        <div class="agents-sidebar">
+            <div class="sidebar-header">
+                <button class="btn-create" id="createNewAgent">+ Создать агента</button>
             </div>
-
-            <!-- Форма -->
-            <div class="editor-section">
-                <div class="form-header">
-                    <h2 id="formTitle">Выберите агента</h2>
-                </div>
-
-                <form id="agentForm">
-                    <input type="hidden" id="agentId">
-
-                    <div class="form-layout-grid">
-                        <!-- Левая колонка: Все настройки -->
-                        <div class="settings-column">
-                            <div class="form-grid">
-                                <div class="form-group">
-                                    <label>Название</label>
-                                    <input type="text" id="name" class="form-control" required>
-                                </div>
-                                <div class="form-group">
-                                    <label>Нода</label>
-                                    <select id="node_id" class="form-control">
-                                        <option value="">Вне ноды</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Заголовок (В меню)</label>
-                                <input type="text" id="title" class="form-control" required>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Краткое описание</label>
-                                <textarea id="description" class="form-control"
-                                          placeholder="Краткое описание функций агента"
-                                          style="height: 80px; resize: none;"></textarea>
-                            </div>
-
-                            <div class="form-grid">
-                                <div class="form-group">
-                                    <label>Модель LLM</label>
-                                    <select id="llm_id" class="form-control">
-                                        <option value="">По умолчанию</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Workflow</label>
-                                    <select id="workflow_id" class="form-control">
-                                        <option value="">Нет</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                        </div>
-
-                        <!-- Правая колонка: Только System Prompt -->
-                        <div class="prompt-column">
-                            <div class="form-group" style="height: 100%; display: flex; flex-direction: column;">
-                                <label>Приветствие</label>
-                                <textarea id="greeting" class="form-control greeting-full"></textarea>
-                                <label>Системный промпт (System Prompt)</label>
-                                <textarea id="prompt_system" class="form-control prompt-system-full"></textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="editor-footer">
-                        <span id="statusLabel"></span>
-                        <button type="submit" class="btn-save" id="saveBtn">Сохранить агента</button>
-                    </div>
-                </form>
+            <div class="agent-list" id="agentList">
+                <!-- JS контент -->
             </div>
-
         </div>
+
+        <!-- Форма -->
+        <div class="editor-section">
+            <div class="form-header">
+                <h2 id="formTitle">Выберите агента</h2>
+            </div>
+
+            <form id="agentForm">
+                <input type="hidden" id="agentId">
+
+                <div class="form-layout-grid">
+                    <!-- Левая колонка: Все настройки -->
+                    <div class="settings-column">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Название</label>
+                                <input type="text" id="name" class="form-control" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Нода</label>
+                                <select id="node_id" class="form-control">
+                                    <option value="">Вне ноды</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Заголовок (В меню)</label>
+                            <input type="text" id="title" class="form-control" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Краткое описание</label>
+                            <textarea id="description" class="form-control"
+                                      placeholder="Краткое описание функций агента"
+                                      style="height: 80px; resize: none;"></textarea>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Модель LLM</label>
+                                <select id="llm_id" class="form-control">
+                                    <option value="">По умолчанию</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Workflow</label>
+                                <select id="workflow_id" class="form-control">
+                                    <option value="">Нет</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Правая колонка: Только System Prompt -->
+                    <div class="prompt-column">
+                        <div class="form-group" style="height: 100%; display: flex; flex-direction: column;">
+                            <label>Приветствие</label>
+                            <textarea id="greeting" class="form-control greeting-full"></textarea>
+                            <label>Системный промпт (System Prompt)</label>
+                            <textarea id="prompt_system" class="form-control prompt-system-full"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="variable-column">
+                        <div class="form-group" id="variablesGroup" style="margin-top: 10px;">
+                            <label>Переменные Workflow</label>
+                            <div id="variablesContainer" class="variables-editor-container">
+                                <!-- Сюда динамически будут добавляться строки с переменными -->
+                            </div>
+                            <button type="button" class="btn-add-var" id="addVariableBtn">+ Добавить
+                                переменную
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="editor-footer">
+                    <span id="statusLabel"></span>
+                    <button type="submit" class="btn-save" id="saveBtn">Сохранить агента</button>
+                </div>
+            </form>
+        </div>
+
     </div>
 </div>
 {% endblock %}
@@ -449,6 +525,29 @@
                 }
             }
 
+            const varContainer = document.getElementById('variablesContainer');
+            if (varContainer) {
+                varContainer.innerHTML = ''; // Очищаем контейнер от старых переменных
+
+                if (agent.workflow_variable) {
+                    try {
+                        // Парсим, если пришла строка, иначе используем как объект
+                        const parsedVars = typeof agent.workflow_variable === 'string'
+                            ? JSON.parse(agent.workflow_variable)
+                            : agent.workflow_variable;
+
+                        // Отрисовываем каждую пару ключ-значение
+                        Object.entries(parsedVars).forEach(([key, val]) => {
+                            createVariableRow(key, val);
+                        });
+                    } catch (e) {
+                        console.error("Ошибка парсинга workflow_variable:", e);
+                        // Если там не валидный JSON, создаем одну строчку с ошибкой в значении
+                        createVariableRow('error_raw_data', agent.workflow_variable);
+                    }
+                }
+            }
+
             document.getElementById('formTitle').textContent = `Редактирование: ${agent.name}`;
 
             if (saveBtn) saveBtn.disabled = false;
@@ -467,6 +566,16 @@
         const currentLlmId = document.getElementById('llm_id').value;
         const currentWorkflowId = document.getElementById('workflow_id').value;
         const saveBtn = document.getElementById('saveBtn');
+        const varRows = document.querySelectorAll('.variable-row');
+        const workflowVariableObj = {};
+
+        varRows.forEach(row => {
+            const key = row.querySelector('.var-key').value.trim();
+            const val = row.querySelector('.var-value').value.trim();
+            if (key) {
+                workflowVariableObj[key] = val;
+            }
+        });
 
         // Собираем данные из полей
         const payload = {
@@ -477,7 +586,8 @@
             workflow_id: document.getElementById('workflow_id').value || null,
             prompt_system: document.getElementById('prompt_system').value,
             greeting: document.getElementById('greeting').value,
-            description: document.getElementById('description').value
+            description: document.getElementById('description').value,
+            workflow_variable: JSON.stringify(workflowVariableObj)
         };
 
         // Блокируем кнопку на время запроса
@@ -504,33 +614,86 @@
         }
     }
 
+    function createVariableRow(key = '', value = '') {
+        const container = document.getElementById('variablesContainer');
+        if (!container) return;
 
-    document.addEventListener('DOMContentLoaded', () => {
-        const form = document.getElementById('agentForm');
-        const createBtn = document.getElementById('createNewAgent');
+        const row = document.createElement('div');
+        row.className = 'variable-row';
 
-        // 1. Инициализируем менеджер: загружаем группы в select и список агентов в сайдбар
-        initAgentsManager();
+        // Поле для Ключа
+        const keyInput = document.createElement('input');
+        keyInput.type = 'text';
+        keyInput.className = 'form-control var-key';
+        keyInput.placeholder = 'Ключ (например, test_id)';
+        keyInput.value = key;
+        keyInput.required = true; // Ключ обязателен, если строка создана
 
-        // 2. Обработка кнопки "Создать агента" (очистка формы для новой записи)
-        if (createBtn) {
-            createBtn.addEventListener('click', () => {
-                form.reset();
-                document.getElementById('agentId').value = '';
-                document.getElementById('formTitle').textContent = 'Новый агент';
+        // Поле для Значения
+        const valInput = document.createElement('input');
+        valInput.type = 'text';
+        valInput.className = 'form-control var-value';
+        valInput.placeholder = 'Значение';
+        valInput.value = value;
 
-                // Снимаем выделение с активного агента в списке
-                document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
-            });
-        }
+        // Кнопка удаления
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn-del-var';
+        delBtn.innerHTML = '&times;'; // Символ крестика
+        delBtn.onclick = () => row.remove();
 
-        // 3. Обработка сохранения формы (и создание, и редактирование)
-        if (form) {
-            form.addEventListener('submit', (e) => {
-                e.preventDefault(); // Предотвращаем перезагрузку страницы
-                saveAgentConfig();
-            });
-        }
-    });
+        row.appendChild(keyInput);
+        row.appendChild(valInput);
+        row.appendChild(delBtn);
+        container.appendChild(row);
+    }
+
+    // ========================================================
+    // ИНИЦИАЛИЗАЦИЯ И ОБРАБОТЧИКИ СОБЫТИЙ (БЕЗ DOMContentLoaded)
+    // ========================================================
+
+    // 1. Первичный запуск менеджера при загрузке скрипта
+    initAgentsManager();
+
+    // 2. Обработка кнопки "Создать агента"
+    const createBtn = document.getElementById('createNewAgent');
+    if (createBtn && agentForm) {
+        createBtn.addEventListener('click', () => {
+            // Очищаем текстовые поля формы вручную (безопасно для динамических селектов)
+            agentForm.reset();
+
+            // Явно сбрасываем скрытый ID и селекты на дефолт
+            document.getElementById('agentId').value = '';
+            document.getElementById('node_id').value = '';
+            document.getElementById('llm_id').value = '';
+            document.getElementById('workflow_id').value = '';
+
+            // Обновляем UI
+            document.getElementById('formTitle').textContent = 'Новый агент';
+            if (saveBtn) saveBtn.disabled = false;
+
+            // Снимаем выделение с активного агента в списке
+            document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+
+            const varContainer = document.getElementById('variablesContainer');
+            if (varContainer) varContainer.innerHTML = ''; // Очищаем переменные
+        });
+    }
+
+    const addVarBtn = document.getElementById('addVariableBtn');
+    if (addVarBtn) {
+        addVarBtn.addEventListener('click', () => {
+            createVariableRow('', ''); // Создает пустую строку для ввода
+        });
+    }
+
+    // 3. Обработка сохранения формы
+    if (agentForm) {
+        agentForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Предотвращаем перезагрузку страницы
+            await saveAgentConfig();
+        });
+    }
 </script>
 {% endblock %}

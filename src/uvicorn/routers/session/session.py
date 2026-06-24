@@ -47,7 +47,7 @@ async def session_messages(request: Request, json_request: SessionMessagesJsonRe
     async with db:
         # Выбираем ВСЕ поля и ВСЕ типы сообщений для инспекции
         sql = """
-            SELECT s.role, s.kind_type, s.content, s.token, s.created_at, l.name as llm_name
+            SELECT s.*, l.name as llm_name
             FROM agent_session s
             LEFT JOIN llm l ON s.llm_id = l.id
             WHERE s.session_uuid = %s 

@@ -33,6 +33,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.name = entity_agent.get('name', '')
             framework_model.prompt_user = metadata.get('prompt_user', '')
             framework_model.prompt_system = await self.prompt_system_create(metadata)
+            framework_model.request_uuid = str(uuid.uuid4())
             framework_model.session_uuid = metadata.get('session_uuid', str(uuid.uuid4()))
             framework_model.entity_agent = entity_agent
             framework_model.entity_llm = metadata.get('entity_llm', {})
@@ -71,6 +72,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 ai_session_metadata['workflow_step_current_index'] = 0
                 await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
 
+            iteration = 0
             while model.workflow_step_current_index < steps_count:
                 current_step = model.workflow_steps[model.workflow_step_current_index]
                 step_type = current_step['step_type_name']
@@ -134,6 +136,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 if model.workflow_step_current_index == 0:
                     await ai_session_message_add(
                         session_uuid=model.session_uuid,
+                        request_uuid=model.request_uuid,
                         llm_id=model.entity_llm.get('id'),
                         user_id=model.user_id,
                         role='system',
@@ -142,8 +145,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         content=model.prompt_system
                     )
 
+                if iteration == 0:
                     await ai_session_message_add(
                         session_uuid=model.session_uuid,
+                        request_uuid=model.request_uuid,
                         llm_id=model.entity_llm.get('id'),
                         user_id=model.user_id,
                         role='user',
@@ -231,6 +236,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         # Запись выполнения в историю сессии
                         await ai_session_message_add(
                             session_uuid=model.session_uuid,
+                            request_uuid=model.request_uuid,
                             llm_id=model.entity_llm.get('id'),
                             user_id=model.user_id,
                             role='workflow',
@@ -290,12 +296,13 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         for item in variable_conversion:
                             variable_name = item.get('variable')
                             if variable_name:
-                                model.workflow_variables[variable_name] = item.get('text', '')
+                                value = item.get('text', '')
+                                model.workflow_variables[variable_name] = value
+                                logger_info(
+                                    f"🔹 Переменная '%{variable_name}%' получила новое значение '{value}'")
 
                 # ОБРАБОТКА ШАГА: Финал воркфлоу, возврат ответа
                 elif step_type == 'return_response_llm':
-                    model.session_disabled = False
-
                     response_from_llm = await execute_llm_step()
 
                     if not future.done():
@@ -306,6 +313,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 elif step_type == 'return_response_text':
                     await ai_session_message_add(
                         session_uuid=model.session_uuid,
+                        request_uuid=model.request_uuid,
                         llm_id=model.entity_llm.get('id'),
                         user_id=model.user_id,
                         role='workflow',
@@ -328,6 +336,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                 # Переходим к следующему шагу (строго инкрементируем индекс)
                 model.workflow_step_current_index += 1
+                iteration += 1
 
                 # Проверяем наличие условий переходов в метаданных шага и при выполнении условия изменяем индекс текущего шага на указанный
                 transitions = step_meta.get('transitions_after', [])

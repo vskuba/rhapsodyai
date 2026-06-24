@@ -72,6 +72,7 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
                 title = %s,
                 llm_id = %s,
                 workflow_id = %s,
+                workflow_variable = %s,
                 prompt_system = %s
             WHERE id = %s
         """
@@ -82,6 +83,7 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
             data.get('title'),
             data.get('llm_id'),
             data.get('workflow_id'),
+            data.get('workflow_variable'),
             data.get('prompt_system'),
             agent_id
         )

@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import traceback
 import uuid
@@ -8,6 +7,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
+from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflowl import ai_workflow_variables_default_get
@@ -82,25 +82,11 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         step_type = step.get('step_type_name', '').strip()
         step_title = step.get('title', '').strip()
 
-        # Парсим JSON-строку из longtext metadata
-        step_metadata = {}
-        if step.get('metadata'):
-            try:
-                step_metadata = (json.loads(step['metadata'], strict=False)) \
-                    if isinstance(step['metadata'], str) else step['metadata']
-            except Exception as e:
-                backtrace = traceback.format_exc()
-                logger_info(
-                    f"❌ Не удалось распарсить workflow step metadata: {e}. Metadata: {step.get('metadata')}"
-                    f"Полный стек вызовов:\n{backtrace}"
-                )
-                step_metadata = {}
-
         workflow_steps.append({
             "id": step.get('id'),
             "step_type_name": step_type,
             "title": step_title,
-            "metadata": step_metadata
+            "metadata": json_from_string(step.get('metadata', {}))
         })
 
     # Собираем переменные: базовые + динамические из БД
@@ -112,6 +98,7 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         'agent_greeting': entity_agent.get('greeting'),
         'workflow_id': workflow_id,
         'node_id': entity_agent.get('node_id'),
+        **json_from_string(entity_agent.get('workflow_variable', {})),
         **json_request.variables
     }
     for v in raw_workflow_variables:
@@ -121,7 +108,8 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
 
     for i in ai_workflow_variables_default_get():
         if i not in workflow_variables:
-            raise HTTPException(status_code=401, detail=f"Переменная '{i}' отсутсвует в списке переменных по умолчанию.")
+            raise HTTPException(status_code=401,
+                                detail=f"Переменная '{i}' отсутсвует в списке переменных по умолчанию.")
 
     tools = {}
     async with db:
@@ -173,12 +161,24 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
 @router.post("/chat/messages")
 async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest, db=Depends(mysql_get_db_async)):
     async with db:
-        await db.execute(
-            "SELECT content, role "
-            "FROM agent_session "
-            "WHERE kind_type in ('user-prompt', 'response-final') AND session_uuid = %s "
-            "ORDER BY created_at DESC, id DESC LIMIT %s", (json_request.session_uuid, json_request.limit)
-        )
+        sql = '''
+            SELECT s.role, s.content, s.created_at, s.id
+            FROM agent_session s
+            JOIN (
+                -- Находим максимальный ID для каждой комбинации request_uuid и kind_type.
+                -- Для user-prompt это будет его единственный ID, 
+                -- а для response-final — ID самого последнего ответа.
+                SELECT MAX(id) as max_id
+                FROM agent_session
+                WHERE session_uuid = %s 
+                  AND kind_type IN ('user-prompt', 'response-final')
+                GROUP BY request_uuid, kind_type
+            ) t ON s.id = t.max_id
+            -- Сортируем полученные уникальные сообщения по убыванию времени и ID
+            ORDER BY s.created_at DESC, s.id DESC
+            LIMIT %s
+        '''
+        await db.execute(sql, (json_request.session_uuid, json_request.limit))
         rows = await db.fetchall()
 
         return {"result": list(reversed(rows))}

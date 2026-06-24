@@ -180,6 +180,7 @@ CREATE TABLE `agent` (
     `title` CHAR(150) NOT NULL,
     `description` CHAR(250) NOT NULL,
     `workflow_id` INT NULL,
+    `workflow_variable` LONGTEXT DEFAULT NULL,
     `prompt_system` LONGTEXT NOT NULL,
     `greeting` LONGTEXT NOT NULL,
     `llm_id` INT NULL,
@@ -193,6 +194,7 @@ CREATE TABLE `agent` (
 CREATE TABLE `agent_session` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `session_uuid` CHAR(36) NOT NULL,
+    `request_uuid` CHAR(36) NOT NULL,
     `llm_id` INT NULL,
     `agent_id` INT NULL,
     `user_id` INT NULL,

@@ -195,12 +195,12 @@
         background-color: #f0913d;
     }
 
-    .role-assistant {
+    .role-llm {
         background-color: #4a90e2;
     }
 
     .role-tool,
-    .role-workflow{
+    .role-workflow {
         background-color: #67c23a;
     }
 
@@ -215,6 +215,12 @@
     .chip-llm {
         background-color: #d7d8f0;
         color: #7f59e9;
+        border: 1px solid #e2e8f0;
+    }
+
+    .chip-request-id {
+        background-color: #f4f4f4;
+        color: #2c61c7;
         border: 1px solid #e2e8f0;
     }
 
@@ -396,6 +402,7 @@
                     <span class="chip chip-kind">${m.kind_type}</span>
                     <span class="chip chip-llm">${m.llm_name}</span>
                     ${m.token ? `<span class="chip chip-token">Токены: ${m.token}</span>` : ''}
+                    <span class="chip chip-request-id">${m.request_uuid}</span>
                     <span class="chip-date">${time}</span>
                 </div>
                 <div class="admin-msg-content">${m.content || ''}</div>

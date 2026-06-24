@@ -81,6 +81,11 @@ services:
       - ./:/app
     env_file:
       - .env
+    environment:
+      - HF_HUB_OFFLINE=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+      - HF_HOME=/root/.cache/huggingface
+      - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
     depends_on:
       - qdrant
     networks:
@@ -126,6 +131,11 @@ services:
       sh -c "pip install rq-dashboard && rq-dashboard --redis-url redis://redis:6379"
     ports:
       - "9181:9181"
+    environment:
+      - HF_HUB_OFFLINE=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+      - HF_HOME=/root/.cache/huggingface
+      - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
     depends_on:
       - redis
     networks:
@@ -142,6 +152,11 @@ services:
       - ./:/app
     env_file:
       - .env
+    environment:
+      - HF_HUB_OFFLINE=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+      - HF_HOME=/root/.cache/huggingface
+      - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
     depends_on:
       - redis
       - uvicorn
@@ -187,7 +202,7 @@ services:
     depends_on:
       - qdrant
       - opensearch-dashboards
-      - sqlite-web
+      - mysql
 
   phpmyadmin:
     platform: linux/x86_64

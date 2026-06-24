@@ -49,9 +49,10 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 
 INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`) VALUES
 (1, 1, 'response_cashier', 'Чат кашира', 'Ответить пользователю', 0),
-(2, 2, 'dating_girl_generator', 'Генератор девушки', 'Генерируем коллекции девушки', 0),
+(2, 2, 'dating_bot', 'Dating bot', 'Генерируем коллекции девушки', 0),
 (3, 3, 'response_soko', 'Чат суши-бара', 'Ответить пользователю', 0),
-(4, 5, 'test', 'Test', 'Simple test workflow', -1);
+(4, 5, 'test', 'Test', 'Simple test workflow', -1),
+(5, 2, 'dating_chat', 'Чат с девушкой', 'Чат с девушкой', 0);
 
 INSERT INTO `agent_workflow_step_type` (`id`, `name`, `icon`, `description`, `description_full`, `metadata`) VALUES
 (1, 'return_response_llm', '↩', 'Вернуть LLM ответ', 'Собираем полный запрос на LLM с учетом короткой и длинной памяти, всей связанной информации в БД и отдаем LLM для формирования наиболее качественного ответа.', ''),
@@ -73,12 +74,23 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (12, 4, 4, 'return_response_text', 4, '{"prompt_user":"Команда /go найдена","transitions_after":[]}'),
 (13, 2, 3, 'dating_girl_create', 2, '{"tool_invoke":{"tool_name":"dating_girl_create","inputs_map":{"name":"prompt_user"},"outputs_map":{"str":"dating_girl_create_response"}},"transitions_before":[],"transitions_after":[]}'),
 (14, 2, 4, 'Вернуть список команд', 0, '{"transitions_before":[{"variable":"prompt_user","operator":"==","value":"/girl_create","step_id":"16"}],"transitions_after":[],"prompt_user":"%agent_greeting%"}'),
-(15, 2, 4, 'dating_girl_create_response', 7, '{"prompt_user":"%dating_girl_create_response%\n\nБыло создано %facts_qty% фактов.","transitions_before":[],"transitions_after":[]}'),
+(15, 2, 4, 'dating_girl_create_response', 13, '{"prompt_user":"%dating_girl_create_response%\n\nБыло создано %facts_qty% фактов.","transitions_before":[],"transitions_after":[]}'),
 (16, 2, 4, 'Спросить имя девушки', 1, '{"prompt_user":"Напишите желаемое имя девушки:","transitions_before":[],"transitions_after":[]}'),
 (17, 2, 3, 'dating_girl_id', 3, '{"tool_invoke":{"tool_name":"dating_girl_id","inputs_map":{"name":"prompt_user"},"outputs_map":{"int":"girl_id"}},"transitions_before":[],"transitions_after":[]}'),
 (18, 2, 3, 'fact_collection_output_format', 4, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_girl_bio_name"},"outputs_map":{"str":"fact_collection_output_format_response"}},"transitions_before":[],"transitions_after":[]}'),
 (19, 2, 2, 'LLM -> JSON', 5, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"facts","text":"список фактов"}],"prompt_user":"Нужно придумать биографию девушки. Известны такие факты о ней:\n1. ID: %girl_id%\n2. имя: %prompt_user%\n\nНужно придумать биографию. Основные исходные данные: \n1. она родом из города в Украине\n2. возраст от 20 до 35\n3. имеет образование\n4. не имеет детей\n\nОстальные детали придумай. Все факты и детали не должны противоречить друг другу. Нужно придумать, как минимум, 5 фактов в биографии по каждому пункту:\n- детство\n- подростковый возраст\n- учеба\n- отношения с родителями\n- любимые занятия и увлечения\n- любовные отношения\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"facts\\": список фактов\n\nВсе факты должны быть в таком формате:\n%fact_collection_output_format_response%\n\nExample of JSON response:\n{\n  \\"facts\\": \\"список фактов\\"\n}"}'),
-(20, 2, 3, 'fact_collection_add', 6, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_bio_name","data":"facts"},"outputs_map":{"int":"facts_qty"}},"transitions_before":[],"transitions_after":[]}');
+(20, 2, 3, 'fact_collection_add', 8, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_bio_name","data":"facts"},"outputs_map":{"int":"facts_qty"}},"transitions_before":[],"transitions_after":[]}'),
+(21, 2, 5, 'Переменные', 9, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"agent_title","text":"%prompt_user%"},{"variable":"girl_prompt_system","text":"Ты девушка %prompt_user%. Всегда отвечай от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах или пиши с маленькой буквы или пропускай знаки пунктуации"},{"variable":"workflow_variable","text":"{\\"girl_id\\":%girl_id%}"},{"variable":"girl_description","text":"Описание девушки %prompt_user%"},{"variable":"girl_greeting","text":"Привет, я %prompt_user%, буду рада пообщаться с тобой"}]}'),
+(22, 2, 3, 'text_translit_cyr_to_lat', 10, '{"tool_invoke":{"tool_name":"text_translit_cyr_to_lat","inputs_map":{"text":"prompt_user"},"outputs_map":{"str":"agent_name"}},"transitions_before":[],"transitions_after":[]}'),
+(23, 2, 3, 'agent_create_or_update', 12, '{"tool_invoke":{"tool_name":"agent_create_or_update","inputs_map":{"name":"agent_name","title":"agent_title","node_id":"node_id","workflow_id":"girl_agent_workflow_id","workflow_variable":"workflow_variable","prompt_system":"girl_prompt_system","description":"girl_description","greeting":"girl_greeting"},"outputs_map":{"int":"girl_agent_id"}},"transitions_before":[],"transitions_after":[]}'),
+(24, 5, 1, 'Вернуть LLM ответ', 4, '{"prompt_user":"=== Краткое содержание истории переписки ===\n%session_messages_result_processed%\n\n=== Информация о девушке в базе данных ===\n%qdrant_search_facts_result%\n\n=== Мужчина спрашивает ===\n%prompt_user%\n\n=== Что нужно ===\nВерни лаконичный ответ на основе всей информации","transitions_before":[],"transitions_after":[]}'),
+(25, 5, 3, 'qdrant_search_facts', 3, '{"tool_invoke":{"tool_name":"qdrant_search_facts","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_girl_bio_name","metadata_filter":"fact_collection_girl_bio_filter","limit":"fact_collection_girl_bio_limit"},"outputs_map":{"str":"qdrant_search_facts_result"}},"transitions_before":[],"transitions_after":[]}'),
+(26, 5, 5, 'Переменные', 2, '{"variable_conversion":[{"variable":"fact_collection_girl_bio_filter","text":"{\\"girl_id\\":%girl_id%}"}],"transitions_before":[],"transitions_after":[]}'),
+(27, 5, 2, 'LLM -> JSON', 1, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"session_messages_result_processed","text":"Это история переписки. Нужно выбрать из нее самое важное и превратить в текст, который описывает диалог. \nНапример: \'она спросила что-то, он согласился, потом обое решили и она/он сошлись на том, что..\'"}],"prompt_user":"=== История переписки ===\n%session_messages_result%\n\n=== Important information about final response ===\nPlease return your response in JSON format. The JSON response must contain follow keys: \n- \\"session_messages_result_processed\\": \\"краткая история переписки\\"\n\nExample of JSON response:\n{\n  \\"session_messages_result_processed\\": \\"Это история переписки. Нужно выбрать из нее самое важное и превратить в текст, который описывает диалог. \\nНапример: \'она спросила что-то, он согласился, потом обое решили и она/он сошлись на том, что..\'\\"\n}"}'),
+(28, 2, 3, 'agent_workflow_id', 11, '{"tool_invoke":{"tool_name":"agent_workflow_id","inputs_map":{"name":"girl_agent_workflow_name"},"outputs_map":{"int":"girl_agent_workflow_id"}},"transitions_before":[],"transitions_after":[]}'),
+(29, 5, 3, 'session_messages', 0, '{"tool_invoke":{"tool_name":"session_messages","inputs_map":{"session_uuid":"session_uuid","limit":"session_messages_limit"},"outputs_map":{"str":"session_messages_result"}},"transitions_before":[],"transitions_after":[]}'),
+(30, 2, 3, 'qdrant_fact_remove', 7, '{"tool_invoke":{"tool_name":"qdrant_fact_remove","inputs_map":{"collection_name":"fact_collection_girl_bio_name","metadata_filter":"qdrant_metada_filter"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(31, 2, 5, 'Переменные', 6, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"qdrant_metada_filter","text":"{\\"girl_id\\":%girl_id%}"}]}');
 
 INSERT INTO `agent_workflow_variable` (`id`, `workflow_id`, `name`, `default`) VALUES
 (1, 1, 'tags', NULL),
@@ -92,7 +104,25 @@ INSERT INTO `agent_workflow_variable` (`id`, `workflow_id`, `name`, `default`) V
 (9, 2, 'fact_collection_girl_bio_name', 'dating_girl_bio'),
 (10, 2, 'fact_collection_output_format_response', NULL),
 (11, 2, 'facts', NULL),
-(12, 2, 'facts_qty', NULL);
+(12, 2, 'facts_qty', NULL),
+(13, 2, 'agent_title', NULL),
+(14, 2, 'agent_name', NULL),
+(15, 2, 'girl_prompt_system', NULL),
+(16, 2, 'girl_agent_id', NULL),
+(17, 2, 'workflow_variable', NULL),
+(18, 5, 'girl_id', NULL),
+(19, 5, 'fact_collection_girl_bio_name', 'dating_girl_bio'),
+(20, 5, 'fact_collection_girl_bio_filter', NULL),
+(21, 5, 'qdrant_search_facts_result', NULL),
+(22, 5, 'fact_collection_girl_bio_limit', 2),
+(23, 5, 'session_messages_limit', 20),
+(24, 5, 'session_messages_result', NULL),
+(25, 5, 'session_messages_result_processed', NULL),
+(26, 2, 'girl_agent_workflow_id', NULL),
+(27, 2, 'girl_agent_workflow_name', 'dating_chat'),
+(28, 2, 'girl_description', NULL),
+(29, 2, 'girl_greeting', NULL),
+(30, 2, 'qdrant_metada_filter', NULL);
 
 --
 
@@ -112,10 +142,10 @@ INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_
 (6, NULL, 'github', 'Github', 'Agent which can work with Github.', NULL, 'Your are agent which work with Github. You have list of Github tools for creating, reading and processing merge request.', '', NULL, 0),
 (7, NULL, 'weather', 'Weather', 'Agent retrieve weather information for specific city and day offset from current day.', NULL, 'Your are agent which returns weather information for customer request. \r\n  \r\n  CORE RULES:\r\n  1. NEVER invent or hallucinate data when customer ask you something\r\n  2. Do not use your general training data to answer questions that should be in the database.\r\n  3. Use only Russian in response.\r\n  \r\n  For retrieve weather information use tool \'weather_get\' with parameters \'city\' and \'days_offset\' (number of \r\n  days from current day, 0 for current day weather, 1 for tomorrow weather and so on).', '', NULL, 0),
 (8, 5, 'Test agent', 'Test agent', 'Agent which thinking and find out answers', 4, 'You are agent which analyze input text and prepare response', 'Привет, я тестовый бот.', NULL, 0),
-(9, 2, 'Bot', 'Dating bot', '', 2, 'You are agent which analyze input text and prepare response', 'Привет, я dating bot, доступны команды :\n\n/girl_create - создает девушку', NULL, 0);
+(9, 2, 'dating_bot', 'Dating bot', '', 2, 'You are agent which analyze input text and prepare response', 'Привет, я dating bot, доступны команды :\n\n/girl_create - создает девушку', NULL, 0);
 
-INSERT INTO `agent_session` (`id`, `session_uuid`, `llm_id`, `agent_id`, `user_id`, `role`, `kind_type`, `content`, `token`, `created_at`) VALUES
-(1, '097824c7-c3d3-4925-a63f-bd685292a408', 14, 1, 1, 'system', 'system-prompt', 'You are agent which research needed response for customer request. \n  In your research you must search in your memory and use available subagents for retrieve information.\n\n  CORE RULES:\n  1. Before do some actions notify customer detailed plan of your actions.\n  2. You have list of available subagents with brief description which information they can provide. \n  Use tools \'agent_desc_list\' for that.\n  3. Use tool \'agent_invoke\' for getting required information via subagent.\n  4. Do not use your general training data to answer questions that should be in the database.\n  5. Use only Russian in response.\n  6. NEVER invent or hallucinate data when customer ask you something', NULL, '2026-05-01 19:08:33'),
-(2, '097824c7-c3d3-4925-a63f-bd685292a408', 14, 1, 1, 'user', 'user-prompt', 'Ну давай попробуем.', NULL, '2026-05-01 19:08:33'),
-(3, '097824c7-c3d3-4925-a63f-bd685292a408', 14, 1, 1, 'assistant', 'thinking', 'The user says \"Ну давай попробуем.\" Likely they want to start some request. We need to ask for clarification? According to core rule 1: before doing actions, notify customer detailed plan of actions. So we need to ask what they want? Probably need to respond asking for request details. Use Russian.', 806, '2026-05-01 19:08:33'),
-(4, '097824c7-c3d3-4925-a63f-bd685292a408', 14, 1, 1, 'assistant', 'response-final', 'Добрый день! Чтобы я мог помочь вам максимально эффективно, расскажите, пожалуйста, что именно вы хотите попробовать:  \n\n1. **Поиск информации** — нужны данные из нашей внутренней базы, документы, статистика и т.п.  \n2. **Исследование в интернете** — требуется собрать сведения с внешних сайтов.  \n3. **Выполнение расчётов или генерация кода** — нужны технические решения, скрипты, формулы.  \n4. **Что‑то другое** — уточните задачу, и я подскажу, какие шаги будем предпринимать.\n\nКак только получу от вас уточнение, я подготовлю подробный план действий и приступлю к их выполнению.', 806, '2026-05-01 19:08:33');
+INSERT INTO `agent_session` (`id`, `session_uuid`, `request_uuid`, `llm_id`, `agent_id`, `user_id`, `role`, `kind_type`, `content`, `token`, `created_at`) VALUES
+(1, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 'system', 'system-prompt', 'You are agent which research needed response for customer request. \n  In your research you must search in your memory and use available subagents for retrieve information.\n\n  CORE RULES:\n  1. Before do some actions notify customer detailed plan of your actions.\n  2. You have list of available subagents with brief description which information they can provide. \n  Use tools \'agent_desc_list\' for that.\n  3. Use tool \'agent_invoke\' for getting required information via subagent.\n  4. Do not use your general training data to answer questions that should be in the database.\n  5. Use only Russian in response.\n  6. NEVER invent or hallucinate data when customer ask you something', NULL, '2026-05-01 19:08:33'),
+(2, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 'user', 'user-prompt', 'Ну давай попробуем.', NULL, '2026-05-01 19:08:33'),
+(3, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 'llm', 'thinking', 'The user says \"Ну давай попробуем.\" Likely they want to start some request. We need to ask for clarification? According to core rule 1: before doing actions, notify customer detailed plan of actions. So we need to ask what they want? Probably need to respond asking for request details. Use Russian.', 806, '2026-05-01 19:08:33'),
+(4, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 'llm', 'response-final', 'Добрый день! Чтобы я мог помочь вам максимально эффективно, расскажите, пожалуйста, что именно вы хотите попробовать:  \n\n1. **Поиск информации** — нужны данные из нашей внутренней базы, документы, статистика и т.п.  \n2. **Исследование в интернете** — требуется собрать сведения с внешних сайтов.  \n3. **Выполнение расчётов или генерация кода** — нужны технические решения, скрипты, формулы.  \n4. **Что‑то другое** — уточните задачу, и я подскажу, какие шаги будем предпринимать.\n\nКак только получу от вас уточнение, я подготовлю подробный план действий и приступлю к их выполнению.', 806, '2026-05-01 19:08:33');
