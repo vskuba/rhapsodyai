@@ -1371,15 +1371,13 @@
             let inputElement;
 
             const saveChanges = (customValue) => {
-                let latestMeta = {};
-                try {
-                    latestMeta = (typeof step.metadata === 'string') ? JSON.parse(step.metadata || '{}') : (step.metadata || {});
-                } catch (e) {
-                    latestMeta = {};
-                }
+                let latestMeta = parseMetadata(step.metadata)
 
                 // Записываем значение (для обычных полей берем из инпута, для виджета передаем кастомный JSON)
-                const metaKey = field.key || 'widget_data';
+                const metaKey = field.key;
+                if (!metaKey) {
+                    return;
+                }
 
                 if (customValue !== undefined) {
                     latestMeta[metaKey] = customValue;
@@ -1716,12 +1714,7 @@
                     }
 
                     // Парсинг аргументов из базы
-                    let argsObj = null;
-                    try {
-                        argsObj = typeof selectedTool.args === 'string' ? JSON.parse(selectedTool.args || '{}') : selectedTool.args;
-                    } catch (err) {
-                        console.warn("Ошибка JSON аргументов инструмента:", err);
-                    }
+                    let argsObj = parseMetadata(selectedTool.args);
 
                     if (!argsObj) return;
 
@@ -2351,14 +2344,7 @@
 
                     if (currentStepData) {
                         // Извлекаем текущие живые метаданные (они уже обновлены функциями ввода/oninput)
-                        let metadata = {};
-                        try {
-                            metadata = (typeof currentStepData.metadata === 'string')
-                                ? JSON.parse(currentStepData.metadata || '{}')
-                                : {...currentStepData.metadata};
-                        } catch (err) {
-                            metadata = {};
-                        }
+                        let metadata = parseMetadata(currentStepData.metadata);
 
                         // Интегрируем свежие переходы из UI в метаданные шага
                         metadata.transitions_before = collectTransitions("Before");
@@ -2456,11 +2442,34 @@
             }
 
             try {
-                await postData(`/workflow/${workflowId}/step`, {type_id: typeId});
+                // Отправляем запрос на создание шага
+                const response = await postData(`/workflow/${workflowId}/step`, {type_id: typeId});
                 showNotification('Шаг успешно добавлен', 'success');
 
-                // Перезагружаем список шагов для текущей задачи
+                // Перезагружаем список шагов
                 await loadWorkflowSteps(workflowId);
+
+                // UX-ФИКС: Автоматически прокручиваем контейнер вниз и активируем добавленный шаг
+                setTimeout(() => {
+                    const container = document.getElementById('workflowStepsSortable');
+                    if (container) {
+                        const steps = container.querySelectorAll('.step-item-block');
+                        if (steps.length > 0) {
+                            const lastStep = steps[steps.length - 1];
+                            lastStep.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+
+                            // Если бэкенд возвращает созданный объект с ID, можно сразу сэмулировать клик
+                            if (response && (response.id || response.result?.id)) {
+                                const targetId = response.id || response.result.id;
+                                const addedStepBlock = container.querySelector(`.step-item-block[data-id="${targetId}"]`);
+                                if (addedStepBlock) addedStepBlock.click();
+                            } else {
+                                lastStep.click(); // Фолбек на последний элемент списка
+                            }
+                        }
+                    }
+                }, 100);
+
             } catch (e) {
                 console.error("Ошибка добавления шага:", e);
                 showNotification('Ошибка добавления шага', 'error');
@@ -2468,6 +2477,6 @@
         };
     }
 
-    document.addEventListener('DOMContentLoaded', initWorkflowManager);
+    initWorkflowManager().catch(err => console.error("Критический сбой инициализации модуля:", err));
 </script>
 {% endblock %}

@@ -16,4 +16,7 @@ async def dating_girl_id(name: str) -> int:
     repo = DatingGirlRepository()
     entity_girl = await repo.find_one_by({"name": name})
 
+    if not entity_girl:
+        return 0
+
     return entity_girl.get("id")

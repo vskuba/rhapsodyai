@@ -112,3 +112,92 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
             raise ValueError(f"Database error: {str(e)}")
 
     return len(data)
+
+
+async def fact_collection_remove_by(collection_name: str, criteria: dict) -> int:
+    """
+    Удаляет факты из базовой и динамической таблиц по переданным критериям.
+    Все переданные критерии объединяются через логическое 'И' (AND).
+
+    :param collection_name: Имя коллекции фактов (без префикса)
+    :param criteria: Словарь с фильтрами для удаления (например, {"girl_id": 1})
+    :return: Количество удаленных записей
+    :raises ValueError: Если коллекция не найдена или критерии пусты
+    """
+    repo = FactCollectionRepository()
+    entity_collection = await repo.find_one_by({"name": collection_name})
+    if not entity_collection:
+        raise ValueError(f"Collection with name '{collection_name}' not found")
+
+    collection_id = entity_collection.get('id')
+    dynamic_table = f"fact_collection_{collection_name}"
+    collection_metadata = await ai_collection_metadata_get(collection_name)
+
+    # Защита от случайной полной очистки базы данных
+    if not criteria:
+        raise ValueError("Критерии для очистки коллекции не могут быть пустыми во избежание полной потери данных.")
+
+    # Разделяем критерии по таблицам происхождения
+    fact_conditions = ["f.collection_id = %s"]
+    fact_params = [collection_id]
+
+    dyn_conditions = []
+    dyn_params = []
+
+    for field, value in criteria.items():
+        if value is None or field not in collection_metadata:
+            continue
+
+        table_origin = collection_metadata[field]['table_name']
+        if table_origin == "fact":
+            fact_conditions.append(f"f.`{field}` = %s")
+            fact_params.append(value)
+        elif table_origin == dynamic_table:
+            dyn_conditions.append(f"d.`{field}` = %s")
+            dyn_params.append(value)
+
+    async with mysql_get_db_async() as db:
+        try:
+            # Шаг 1: Находим все ID фактов, подлежащих удалению
+            if dyn_conditions:
+                # Если есть фильтры по динамической таблице, делаем JOIN
+                all_conditions = fact_conditions + dyn_conditions
+                all_params = fact_params + dyn_params
+                sql_select = f"""
+                    SELECT f.id FROM `fact` f
+                    JOIN `{dynamic_table}` d ON f.id = d.fact_id
+                    WHERE {" AND ".join(all_conditions)}
+                """
+            else:
+                # Если фильтры только по базовой таблице, ищем напрямую
+                all_params = fact_params
+                sql_select = f"""
+                    SELECT f.id FROM `fact` f
+                    WHERE {" AND ".join(fact_conditions)}
+                """
+
+            await db.execute(sql_select, all_params)
+            rows = await db.fetchall()
+
+            if not rows:
+                return 0
+
+            target_fact_ids = [r['id'] for r in rows]
+            placeholders = ", ".join(["%s"] * len(target_fact_ids))
+            params_tuple = tuple(target_fact_ids)
+
+            # Шаг 2: Удаляем связанные записи из динамической таблицы
+            sql_delete_dyn = f"DELETE FROM `{dynamic_table}` WHERE fact_id IN ({placeholders})"
+            await db.execute(sql_delete_dyn, params_tuple)
+
+            # Шаг 3: Удаляем записи из базовой таблицы 'fact'
+            sql_delete_fact = f"DELETE FROM `fact` WHERE id IN ({placeholders})"
+            await db.execute(sql_delete_fact, params_tuple)
+
+            # Фиксируем транзакцию
+            await db.connection.commit()
+            return len(target_fact_ids)
+
+        except Exception as e:
+            await db.connection.rollback()
+            raise ValueError(f"Ошибка при очистке MySQL коллекции '{collection_name}': {str(e)}")
