@@ -134,7 +134,18 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         return False
 
                     model.on_complete = on_step_complete
+
+                    # Меняем системный prompt на временный, чтобы LLM возвращала строго JSON
+                    prompt_system = model.prompt_system
+                    model.prompt_system = (
+                        'You are responsible for executing request. '
+                        'Return final response in JSON format.'
+                    )
+
                     queue_get('ai_framework_model').put(model)
+
+                    model.prompt_system = prompt_system
+
                     return await step_future
 
                 # -----------------------------------------------------------------------
@@ -203,7 +214,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                         if iteration_exception < max_llm_iteration_exception:
                             iteration_exception += 1
-                            logger_info(f"⚠️ Повторная попытка шага '{current_step['title']}' ({iteration_exception}/{max_llm_iteration_exception})")
+                            logger_info(
+                                f"⚠️ Повторная попытка шага '{current_step['title']}' ({iteration_exception}/{max_llm_iteration_exception})")
                             continue
 
                         raise e
@@ -374,7 +386,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                 or operator == "<" and str(current_value) < str(value)
                                 or operator == "contains" and str(value) in str(current_value)
                         ):
-
                             logger_info(
                                 f"🔀️ Переход на шаг {next_step['title']} (after) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
