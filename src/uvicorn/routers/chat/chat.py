@@ -93,6 +93,7 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
     workflow_variables = {
         'prompt_user': json_request.question.strip(),
         'user_id': json_request.user_id,
+        'username': entity_user.get('username'),
         'agent_id': json_request.agent_id,
         'session_uuid': session_uuid,
         'agent_greeting': entity_agent.get('greeting'),
@@ -108,8 +109,10 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
 
     for i in ai_workflow_variables_default_get():
         if i not in workflow_variables:
-            raise HTTPException(status_code=401,
-                                detail=f"Переменная '{i}' отсутсвует в списке переменных по умолчанию.")
+            raise HTTPException(
+                status_code=401,
+                detail=f"Переменная '{i}' отсутсвует в списке переменных по умолчанию."
+            )
 
     tools = {}
     async with db:

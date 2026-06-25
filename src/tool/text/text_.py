@@ -18,3 +18,11 @@ async def text_translit_cyr_to_lat(text: str) -> str:
 
     translation_map = str.maketrans(translit_table)
     return text.translate(translation_map)
+
+
+async def text_to_lower(text: str) -> str:
+    return text.lower()
+
+
+async def text_to_upper(text: str) -> str:
+    return text.upper()

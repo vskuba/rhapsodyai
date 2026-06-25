@@ -94,6 +94,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         value = transition.get('value')
                         target_step_id = int(transition.get('step_id'))
                         step_index = workflow_steps_mapping[target_step_id]
+                        next_step = model.workflow_steps[step_index]
 
                         current_value = model.workflow_variables[variable_name]
 
@@ -105,7 +106,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                 or operator == "contains" and str(value) in str(current_value)
                         ):
                             logger_info(
-                                f"🔀️ Переход на шаг (before) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
+                                f"🔀️ Переход на шаг {next_step['title']} (before) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
                             model.workflow_step_current_index = step_index
 
@@ -356,6 +357,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         value = transition.get('value')
                         target_step_id = int(transition.get('step_id'))
                         step_index = workflow_steps_mapping[target_step_id]
+                        next_step = model.workflow_steps[step_index]
 
                         current_value = model.workflow_variables[variable_name]
 
@@ -366,8 +368,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                 or operator == "<" and str(current_value) < str(value)
                                 or operator == "contains" and str(value) in str(current_value)
                         ):
+
                             logger_info(
-                                f"🔀️ Переход на шаг (after) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
+                                f"🔀️ Переход на шаг {next_step['title']} (after) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
                             model.workflow_step_current_index = step_index
                             break

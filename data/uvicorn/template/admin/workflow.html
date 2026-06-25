@@ -72,6 +72,11 @@
         margin-bottom: 10px;
         border-bottom: 2px solid #f4f4f9;
         padding-bottom: 15px;
+        display: flex;
+        justify-content: space-between; /* Раздвигает заголовок влево, а кнопку вправо */
+        align-items: center; /* Выравнивает оба элемента строго по центру вертикали */
+        width: 100%; /* Гарантирует, что контейнер занимает всю ширину */
+
     }
 
     .form-header h2 {
@@ -637,11 +642,12 @@
 
         <!-- Секция формы -->
         <div class="editor-section">
-            <div class="form-header">
-                <h2 id="formTitle">Выберите workflow</h2>
-            </div>
-
             <form id="workflowForm" novalidate>
+                <div class="form-header">
+                    <h2 id="formTitle">Выберите workflow</h2>
+                    <button type="submit" class="btn-save">Сохранить workflow</button>
+                </div>
+
                 <input type="hidden" id="workflowId">
 
                 <!-- 1. Контейнер ПАРАМЕТРОВ (скрывается при клике на название) -->

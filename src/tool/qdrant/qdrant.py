@@ -40,4 +40,4 @@ async def qdrant_fact_remove(collection_name: str, metadata_filter: str) -> int:
     """
     metadata_filter_json = json_from_string(metadata_filter)
 
-    return await qdrant_remove_by(collection_name, metadata_filter_json)
+    return await qdrant_remove_by(collection_name, await ai_collection_metadata_get(collection_name), metadata_filter_json)
