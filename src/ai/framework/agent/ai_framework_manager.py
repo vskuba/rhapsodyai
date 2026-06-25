@@ -97,9 +97,15 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                         current_value = model.workflow_variables[variable_name]
 
-                        if operator == "==" and current_value == value:
+                        if (
+                                operator == "==" and str(current_value) == str(value)
+                                or operator == "!=" and str(current_value) != str(value)
+                                or operator == ">" and str(current_value) > str(value)
+                                or operator == "<" and str(current_value) < str(value)
+                                or operator == "contains" and str(value) in str(current_value)
+                        ):
                             logger_info(
-                                f"🔀️ Переход на шаг (before) [{step_index}/{steps_count}]: (%{variable_name}% == {value})"
+                                f"🔀️ Переход на шаг (before) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
                             model.workflow_step_current_index = step_index
 
@@ -162,6 +168,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     expect_variables = [x.get('variable') for x in step_meta.get('llm_to_json_variable', []) if
                                         x.get('variable')]
 
+                    model.is_transition = True
                     response_from_llm = await execute_llm_step()
 
                     try:
@@ -183,7 +190,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         for var_name in expect_variables:
                             clean_key = var_name.strip()
                             model.workflow_variables[clean_key] = response_json[clean_key]
-                            logger_info(f"🔹 Динамическая переменная воркфлоу '%{clean_key}%' успешно заполнена.")
+                            logger_info(f"🏷️ Переменная '%{clean_key}%' получила значение '{response_json[clean_key]}'")
 
                     except Exception as e:
                         backtrace = traceback.format_exc()
@@ -258,7 +265,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                         val = str(val)
                                     model.workflow_variables[expect_variable.strip()] = val
                                     logger_info(
-                                        f"🔹 Ключ '{output_key}' сохранен в переменную '%{expect_variable.strip()}%'")
+                                        f"🏷️ Переменная '%{expect_variable}%' получила значение '{val}'")
+
                         else:
                             # Для не-словарей определяем текстовый ключ на основе строгого isinstance
                             if isinstance(raw_result, str):
@@ -280,7 +288,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                             model.workflow_variables[var_name] = raw_result
                             logger_info(
-                                f"🔹 Результат типа '{type_key}' инструмента '{tool_name}' сохранен в переменную '%{var_name}%'")
+                                f"🏷️ Переменная '%{var_name}%' получила значение '{raw_result}'")
 
                     except Exception as e:
                         backtrace = traceback.format_exc()
@@ -299,10 +307,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                 value = item.get('text', '')
                                 model.workflow_variables[variable_name] = value
                                 logger_info(
-                                    f"🔹 Переменная '%{variable_name}%' получила новое значение '{value}'")
+                                    f"🏷️ Переменная '%{variable_name}%' получила значение '{value}'")
 
                 # ОБРАБОТКА ШАГА: Финал воркфлоу, возврат ответа
                 elif step_type == 'return_response_llm':
+                    model.is_transition = False
                     response_from_llm = await execute_llm_step()
 
                     if not future.done():
@@ -350,9 +359,15 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                         current_value = model.workflow_variables[variable_name]
 
-                        if operator == "==" and current_value == value:
+                        if (
+                                operator == "==" and str(current_value) == str(value)
+                                or operator == "!=" and str(current_value) != str(value)
+                                or operator == ">" and str(current_value) > str(value)
+                                or operator == "<" and str(current_value) < str(value)
+                                or operator == "contains" and str(value) in str(current_value)
+                        ):
                             logger_info(
-                                f"🔀️ Переход на шаг (after) [{step_index}/{steps_count}]: (%{variable_name}% == {value})"
+                                f"🔀️ Переход на шаг (after) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
                             model.workflow_step_current_index = step_index
                             break
