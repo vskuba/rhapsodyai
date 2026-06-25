@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 
-from src.ai.ai_fact_collection import ai_collection_metadata_get
+from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
 
 router = APIRouter()
@@ -16,7 +16,7 @@ async def fact_collection_list(request: Request):
 async def fact_collection_list(request: Request, collection_id: int):
     repo = FactCollectionRepository()
     collection = await repo.find(collection_id)
-    collection['schema'] = await ai_collection_metadata_get(collection['name'])
+    collection['schema'] = await ai_fact_collection_metadata_get(collection['name'])
 
     return {"result": collection}
 

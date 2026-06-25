@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_fact_collection import ai_collection_metadata_get
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
 
 router = APIRouter()
@@ -20,44 +19,52 @@ async def fact_list(
         collection_name: str,
         page: int = 1,
         limit: int = 20,
-        query: str = None,  # Добавляем фильтр
+        query: str = '',
         db=Depends(mysql_get_db_async)
 ):
+    page = max(1, page)
+    limit = max(1, min(100, limit))
     offset = (page - 1) * limit
+
     params = [collection_name]
     search_condition = ""
 
-    # Если есть поисковый запрос, добавляем условие LIKE
     if query:
-        search_condition = " AND f.content LIKE %s"
-        params.append(f"%{query}%")
+        search_condition = " AND f.`content` LIKE %s"
+        params.append(f"%{query.strip()}%")
 
     async with db:
-        # 1. Считаем общее количество с учетом фильтра
+
         count_sql = f"""
-            SELECT COUNT(*) as total FROM fact f
-            JOIN fact_collection fc ON f.collection_id = fc.id
-            WHERE fc.name = %s {search_condition}
+            SELECT COUNT(f.`id`) as total 
+            FROM `fact` f
+            JOIN `fact_collection` fc ON f.`collection_id` = fc.`id`
+            WHERE fc.`name` = %s {' ' + search_condition if search_condition else ''}
         """
-        # Важно: передаем params как кортеж или список
         await db.execute(count_sql, params)
         total_res = await db.fetchone()
         total_count = total_res['total'] if total_res else 0
 
-        # 2. Получаем данные страницы
-        # Добавляем limit и offset в список параметров
-        data_params = params + [limit, offset]
+        if total_count == 0:
+            return {
+                "result": [],
+                "pagination": {
+                    "current_page": page,
+                    "limit": limit,
+                    "total_records": 0,
+                    "total_pages": 1
+                }
+            }
+
         sql = f"""
-                    SELECT f.*, fc.name as collection_name
-                    FROM fact_collection_{collection_name} c
-                    JOIN fact f ON c.fact_id = f.id
-                    JOIN fact_collection fc ON f.collection_id = fc.id
-                    WHERE fc.name = %s {search_condition}
-                    GROUP BY f.id
-                    ORDER BY f.id DESC
-                    LIMIT %s OFFSET %s
-                """
-        await db.execute(sql, data_params)
+            SELECT f.*, fc.`name` as collection_name
+            FROM `fact` f
+            JOIN `fact_collection` fc ON f.`collection_id` = fc.`id`
+            WHERE fc.`name` = %s {' ' + search_condition if search_condition else ''}
+            ORDER BY f.`id` DESC
+            LIMIT {int(limit)} OFFSET {int(offset)}
+        """
+        await db.execute(sql, params)
         facts = await db.fetchall()
 
         return {
@@ -66,70 +73,54 @@ async def fact_list(
                 "current_page": page,
                 "limit": limit,
                 "total_records": total_count,
-                "total_pages": (total_count + limit - 1) // limit if total_count > 0 else 1
+                "total_pages": (total_count + limit - 1) // limit
             }
         }
 
 
 @router.put("/fact/collection/{collection_id}")
-async def fact_collection_save(request: Request, collection_id: int, data: list[dict], db=Depends(mysql_get_db_async)):
+async def fact_collection_save(
+        request: Request,
+        collection_id: int,
+        data: list[dict],
+        db=Depends(mysql_get_db_async)
+):
     if not data or not isinstance(data, list):
         raise HTTPException(status_code=400, detail="Fact data collection must be a non-empty list")
 
     repo = FactCollectionRepository()
     collection_entity = await repo.find(collection_id)
-    collection_name = collection_entity.get('name')
-    dynamic_table = f"fact_collection_{collection_name}"
+    if not collection_entity:
+        raise HTTPException(status_code=404, detail=f"Collection with ID {collection_id} not found")
 
-    collection_metadata = await ai_collection_metadata_get(collection_name)
+    raw_fields_string = collection_entity.get('field') or ""
+    allowed_fact_fields = {f.strip() for f in raw_fields_string.split(',') if f.strip()}
 
-    # 1. Группируем метаданные по таблицам
-    fields_map = {"fact": [], dynamic_table: []}
-    for field, info in collection_metadata.items():
-        t_name = info['table_name']
-        if t_name in fields_map:
-            fields_map[t_name].append(field)
-
-    # Валидация входных данных
-    required_fields = set(collection_metadata.keys())
-    for index, entry in enumerate(data):
-        if not required_fields.issubset(entry.keys()):
-            missing = required_fields - set(entry.keys())
-            raise HTTPException(status_code=400, detail=f"Entry {index} missing: {', '.join(missing)}")
+    if not allowed_fact_fields:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Конфигурация полей для коллекции ID {collection_id} пуста или не настроена в БД."
+        )
 
     async with db:
-        try:
-            for entry in data:
-                # --- ШАГ 1: Вставка в таблицу 'fact' ---
-                fact_fields = ['collection_id'] + fields_map['fact']
-                fact_values = [collection_id] + [entry.get(f) for f in fields_map['fact']]
+        for index, entry in enumerate(data):
+            if not isinstance(entry, dict):
+                raise HTTPException(status_code=400, detail=f"Entry {index} must be a dictionary")
 
-                f_str = ", ".join([f"`{f}`" for f in fact_fields])
-                f_placeholders = ", ".join(["%s"] * len(fact_fields))
+            present_fields = [f for f in allowed_fact_fields if f in entry]
 
-                sql_fact = f"INSERT INTO `fact` ({f_str}) VALUES ({f_placeholders})"
-                await db.execute(sql_fact, fact_values)
+            fact_fields = ['collection_id'] + present_fields
+            fact_values = [collection_id] + [entry.get(f) for f in present_fields]
 
-                # Получаем ID только что созданной записи в 'fact'
-                new_fact_id = db.lastrowid
+            f_str = ", ".join([f"`{f}`" for f in fact_fields])
+            f_placeholders = ", ".join(["%s"] * len(fact_fields))
 
-                # --- ШАГ 2: Вставка в динамическую таблицу ---
-                # Даже если доп. полей нет, мы должны создать запись для связи 1-to-1
-                coll_fields = ['fact_id'] + fields_map[dynamic_table]
-                coll_values = [new_fact_id] + [entry.get(f) for f in fields_map[dynamic_table]]
+            sql_fact = f"INSERT INTO `fact` ({f_str}) VALUES ({f_placeholders})"
+            await db.execute(sql_fact, fact_values)
 
-                c_str = ", ".join([f"`{f}`" for f in coll_fields])
-                c_placeholders = ", ".join(["%s"] * len(coll_fields))
+        await db.connection.commit()
 
-                sql_coll = f"INSERT INTO `{dynamic_table}` ({c_str}) VALUES ({c_placeholders})"
-                await db.execute(sql_coll, coll_values)
-
-            await db.commit()
-        except Exception as e:
-            await db.rollback()
-            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
-    return {"status": "success", "added": len(data)}
+        return {"status": "success", "added": len(data)}
 
 
 @router.delete("/fact/{fact_id}")

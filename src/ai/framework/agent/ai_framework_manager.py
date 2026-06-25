@@ -8,7 +8,7 @@ from typing import Any, Callable, Awaitable, cast
 from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
-from src.ai.ai_fact_collection import ai_collection_metadata_get
+from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.ai.ai_tool import ai_tool_args_prepare
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
@@ -73,6 +73,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
 
             iteration = 0
+            iteration_exception = 0
+            max_llm_iteration_exception = 3
             while model.workflow_step_current_index < steps_count:
                 current_step = model.workflow_steps[model.workflow_step_current_index]
                 step_type = current_step['step_type_name']
@@ -164,7 +166,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         content=model.workflow_variables['prompt_user']
                     )
 
-                # ОБРАБОТКА ШАГА: Структурированный ответ JSON
                 if step_type == 'llm_to_json':
                     expect_variables = [x.get('variable') for x in step_meta.get('llm_to_json_variable', []) if
                                         x.get('variable')]
@@ -184,7 +185,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         missing_keys = [key for key in expect_variables if key.strip() not in response_json]
 
                         if missing_keys:
-                            # Если каких-то ключей не хватает, выбрасываем ошибку для логирования в блоке except
                             raise KeyError(f"В ответе LLM отсутствуют обязательные ключи воркфлоу: {missing_keys}")
 
                         # Если проверка пройдена — записываем пары ключ-значение в контекст переменных
@@ -200,6 +200,12 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             f"Сырой ответ LLM: {response_from_llm}\n"
                             f"Полный стек вызовов:\n{backtrace}"
                         )
+
+                        if iteration_exception < max_llm_iteration_exception:
+                            iteration_exception += 1
+                            logger_info(f"⚠️ Повторная попытка шага '{current_step['title']}' ({iteration_exception}/{max_llm_iteration_exception})")
+                            continue
+
                         raise e
 
                 # ОБРАБОТКА ШАГА: Вызов инструмента/MCP-сервера
@@ -286,10 +292,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                             # Пытаемся найти переменную по вычисленному ключу типа
                             var_name = outputs_map.get(type_key, None)
-
-                            model.workflow_variables[var_name] = raw_result
-                            logger_info(
-                                f"🏷️ Переменная '%{var_name}%' получила значение '{raw_result}'")
+                            if var_name:
+                                model.workflow_variables[var_name] = raw_result
+                                logger_info(
+                                    f"🏷️ Переменная '%{var_name}%' получила значение '{raw_result}'")
 
                     except Exception as e:
                         backtrace = traceback.format_exc()
@@ -412,7 +418,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 and metadata \
                 and (collection_name := metadata.get('collection_name')):
 
-            collection_metadata = await ai_collection_metadata_get(collection_name)
+            collection_metadata = await ai_fact_collection_metadata_get(collection_name)
 
             example_fact_extract = ''
             if collection_metadata:

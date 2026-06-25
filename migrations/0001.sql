@@ -10,11 +10,6 @@ DROP TABLE IF EXISTS `workflow_step`;
 DROP TABLE IF EXISTS `workflow_step_type`;
 DROP TABLE IF EXISTS `workflow_variable`;
 DROP TABLE IF EXISTS `workflow`;
-DROP TABLE IF EXISTS `fact_collection_cashier_service`;
-DROP TABLE IF EXISTS `fact_collection_dating_chat`;
-DROP TABLE IF EXISTS `fact_collection_dating_man_bio`;
-DROP TABLE IF EXISTS `fact_collection_dating_girl_bio`;
-DROP TABLE IF EXISTS `fact_collection_soko_menu`;
 DROP TABLE IF EXISTS `fact`;
 DROP TABLE IF EXISTS `fact_collection`;
 DROP TABLE IF EXISTS `agent_session`;
@@ -134,6 +129,7 @@ CREATE TABLE `dating_girl` (
 CREATE TABLE `fact_collection` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(40) NOT NULL,
+    `field` CHAR(250) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
     `language` CHAR(40) NOT NULL,
     `description` CHAR(200) NOT NULL
@@ -143,47 +139,17 @@ CREATE TABLE `fact_collection` (
 CREATE TABLE `fact` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `collection_id` INT NOT NULL,
-    `document_id` CHAR(100) NULL COMMENT 'tag:extract|type:int|desc:Document ID string (example: dasha)',
+    `document_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:Document ID string (example: dasha)',
+    `file_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:File ID as key for single storage (example: filename.pdf)',
     `category` CHAR(20) DEFAULT NULL COMMENT 'tag:extract|type:string|desc:High-level classification (example: delivery)',
     `language` CHAR(2) NOT NULL COMMENT 'tag:extract|type:string|desc:The language two char format, ISO 639-1 code (example: en)',
-    `content` LONGTEXT NOT NULL COMMENT 'tag:extract|type:string|desc:The clean, factual text extracted from the source',
+    `document` LONGTEXT NOT NULL COMMENT 'tag:extract|type:string|desc:The clean, factual text extracted from the source',
     `tags` CHAR(250) NOT NULL COMMENT 'tag:extract|type:array_string|desc:A comma-separated list of tags extracted from the source (example: tag1,tag2,tag3)',
     `qdrant_synced` INT NOT NULL DEFAULT 0,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_qdrant_synced` (`qdrant_synced`),
     INDEX `idx_collection_lang` (`collection_id`, `language`),
     CONSTRAINT `fk_fact_fact_collection` FOREIGN KEY (`collection_id`) REFERENCES `fact_collection` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Таблицы коллекции фактов
-CREATE TABLE `fact_collection_soko_menu` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `fact_id` INT NOT NULL,
-    CONSTRAINT `fk_soko_menu` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE `fact_collection_dating_girl_bio` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `fact_id` INT NOT NULL,
-    CONSTRAINT `fk_fact_dating_girl_bio` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE `fact_collection_dating_man_bio` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `fact_id` INT NOT NULL,
-    CONSTRAINT `fk_fact_dating_man_bio` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE `fact_collection_dating_chat` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `fact_id` INT NOT NULL,
-    CONSTRAINT `fk_fact_dating_chat` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE `fact_collection_cashier_service` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `fact_id` INT NOT NULL,
-    CONSTRAINT `fk_cashier_service` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица агентов

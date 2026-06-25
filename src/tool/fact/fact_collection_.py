@@ -1,17 +1,18 @@
 import json
+import traceback
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_fact_collection import ai_collection_metadata_get
+from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
 
 
 async def fact_collection_output_format(collection_name: str) -> str:
     """
     Возвращает JSON в виде текстовой строки.
-    Внутри JSON описаны поля таблицы fact_collection_{collection_name}, которые имеют комментарий с тегом "extract".
+    Внутри JSON описаны поля таблицы fact, которые имеют комментарий с тегом "extract".
     """
-    collection_metadata = await ai_collection_metadata_get(collection_name)
+    collection_metadata = await ai_fact_collection_metadata_get(collection_name)
 
     example_fact_extract = ''
     if collection_metadata:
@@ -27,26 +28,18 @@ async def fact_collection_output_format(collection_name: str) -> str:
 
 async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
     """
-    Добавляет данные в коллекцию фактов. Данные должны быть в виде списка словарей, где ключи - это имена полей, а значения - это значения для этих полей.
-     - collection_name: имя коллекции фактов (без префикса "fact_collection_")
-     - data: список словарей с данными для сохранения
-     Возвращает строку статуса операции.
-     1. Валидация входных данных: проверяем, что data - это непустой список словарей.
-     2. Получаем метаданные коллекции по имени, чтобы понять структуру таблиц и необходимые поля.
-     3. Для каждой записи в data:
-        a. Вставляем базовые поля в таблицу 'fact' и получаем новый ID факта.
-        b. Вставляем дополнительные поля в динамическую таблицу 'fact_collection_{collection_name}', используя полученный ID факта для связи 1-to-1.
-     4. Коммитим транзакцию и возвращаем результат.
-     5. В случае ошибки откатываем транзакцию и возвращаем сообщение об ошибке.
+    Добавляет данные напрямую в базовую таблицу фактов 'fact'.
+     - collection_name: имя коллекции для поиска ее ID и разрешенных полей в базе
+     - data: список словарей с данными или валидная JSON-строка-массив
+    Возвращает количество успешно добавленных записей.
     """
     if isinstance(data, str):
         try:
             data = json.loads(data)
-            logger_info(f"🔹 Входные данные 'data' для '{collection_name}' успешно десериализованы из JSON-строки.")
+            logger_info(f"🔹 Входные данные 'data' для '{collection_name}' успешно десериализованы из JSON.")
         except (json.JSONDecodeError, TypeError) as json_err:
             raise ValueError(f"Не удалось распарсить строку 'data' как валидный JSON-массив: {json_err}")
 
-        # Оборачиваем в список, если пришел один объект вместо массива
     if isinstance(data, dict):
         data = [data]
 
@@ -59,32 +52,24 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
         raise ValueError(f"Collection with name '{collection_name}' not found")
 
     collection_id = entity_collection.get('id')
-    collection_name = entity_collection.get('name')
 
-    dynamic_table = f"fact_collection_{collection_name}"
+    raw_fields_string = entity_collection.get('field') or ""
+    allowed_fact_fields = {f.strip() for f in raw_fields_string.split(',') if f.strip()}
 
-    collection_metadata = await ai_collection_metadata_get(collection_name)
-
-    # 1. Группируем метаданные по таблицам
-    fields_map = {"fact": [], dynamic_table: []}
-    for field, info in collection_metadata.items():
-        t_name = info['table_name']
-        if t_name in fields_map:
-            fields_map[t_name].append(field)
-
-    # Валидация входных данных
-    required_fields = set(collection_metadata.keys())
-    for index, entry in enumerate(data):
-        if not required_fields.issubset(entry.keys()):
-            missing = required_fields - set(entry.keys())
-            raise ValueError(f"Entry {index} missing: {', '.join(missing)}")
+    if not allowed_fact_fields:
+        raise ValueError(f"Конфигурация полей для коллекции '{collection_name}' пуста или отсутствует в БД.")
 
     async with mysql_get_db_async() as db:
         try:
-            for entry in data:
-                # --- ШАГ 1: Вставка в таблицу 'fact' ---
-                fact_fields = ['collection_id'] + fields_map['fact']
-                fact_values = [collection_id] + [entry.get(f) for f in fields_map['fact']]
+            for index, entry in enumerate(data):
+                if not isinstance(entry, dict):
+                    raise ValueError(f"Запись под индексом {index} должна быть словарем (dict)")
+
+                # Отбираем только те поля, которые реально переданы и разрешены для этой коллекции в базе
+                present_fields = [f for f in allowed_fact_fields if f in entry]
+
+                fact_fields = ['collection_id'] + present_fields
+                fact_values = [collection_id] + [entry.get(f) for f in present_fields]
 
                 f_str = ", ".join([f"`{f}`" for f in fact_fields])
                 f_placeholders = ", ".join(["%s"] * len(fact_fields))
@@ -92,23 +77,18 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
                 sql_fact = f"INSERT INTO `fact` ({f_str}) VALUES ({f_placeholders})"
                 await db.execute(sql_fact, fact_values)
 
-                # Получаем ID только что созданной записи в 'fact'
-                new_fact_id = db.lastrowid
+            if hasattr(db, 'connection') and db.connection:
+                await db.connection.commit()
 
-                # --- ШАГ 2: Вставка в динамическую таблицу ---
-                # Даже если доп. полей нет, мы должны создать запись для связи 1-to-1
-                coll_fields = ['fact_id'] + fields_map[dynamic_table]
-                coll_values = [new_fact_id] + [entry.get(f) for f in fields_map[dynamic_table]]
-
-                c_str = ", ".join([f"`{f}`" for f in coll_fields])
-                c_placeholders = ", ".join(["%s"] * len(coll_fields))
-
-                sql_coll = f"INSERT INTO `{dynamic_table}` ({c_str}) VALUES ({c_placeholders})"
-                await db.execute(sql_coll, coll_values)
-
-            await db.connection.commit()
         except Exception as e:
-            await db.connection.rollback()
+            if hasattr(db, 'connection') and db.connection:
+                await db.connection.rollback()
+
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Сбой при добавленнии фактов в БД: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
             raise ValueError(f"Database error: {str(e)}")
 
     return len(data)
@@ -116,11 +96,11 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
 
 async def fact_collection_remove_by(collection_name: str, criteria: dict) -> int:
     """
-    Удаляет факты из базовой и динамической таблиц по переданным критериям.
+    Удаляет факты из таблицы 'fact' по переданным критериям.
     Все переданные критерии объединяются через логическое 'И' (AND).
 
-    :param collection_name: Имя коллекции фактов (без префикса)
-    :param criteria: Словарь с фильтрами для удаления (например, {"girl_id": 1})
+    :param collection_name: Имя коллекции фактов
+    :param criteria: Словарь с фильтрами для удаления (например, {"document_id": "dasha"})
     :return: Количество удаленных записей
     :raises ValueError: Если коллекция не найдена или критерии пусты
     """
@@ -130,74 +110,49 @@ async def fact_collection_remove_by(collection_name: str, criteria: dict) -> int
         raise ValueError(f"Collection with name '{collection_name}' not found")
 
     collection_id = entity_collection.get('id')
-    dynamic_table = f"fact_collection_{collection_name}"
-    collection_metadata = await ai_collection_metadata_get(collection_name)
 
-    # Защита от случайной полной очистки базы данных
     if not criteria:
-        raise ValueError("Критерии для очистки коллекции не могут быть пустыми во избежание полной потери данных.")
+        raise ValueError("Критерии для очистки коллекции не могут быть пустыми во избежание потери данных.")
 
-    # Разделяем критерии по таблицам происхождения
-    fact_conditions = ["f.collection_id = %s"]
-    fact_params = [collection_id]
+    raw_fields_string = entity_collection.get('field') or ""
+    allowed_fact_fields = {f.strip() for f in raw_fields_string.split(',') if f.strip()}
 
-    dyn_conditions = []
-    dyn_params = []
+    allowed_fact_fields.update({"id", "qdrant_synced"})
+
+    conditions = ["`collection_id` = %s"]
+    params = [collection_id]
 
     for field, value in criteria.items():
-        if value is None or field not in collection_metadata:
+        if value is None or field not in allowed_fact_fields:
             continue
-
-        table_origin = collection_metadata[field]['table_name']
-        if table_origin == "fact":
-            fact_conditions.append(f"f.`{field}` = %s")
-            fact_params.append(value)
-        elif table_origin == dynamic_table:
-            dyn_conditions.append(f"d.`{field}` = %s")
-            dyn_params.append(value)
+        conditions.append(f"`{field}` = %s")
+        params.append(value)
 
     async with mysql_get_db_async() as db:
         try:
-            # Шаг 1: Находим все ID фактов, подлежащих удалению
-            if dyn_conditions:
-                # Если есть фильтры по динамической таблице, делаем JOIN
-                all_conditions = fact_conditions + dyn_conditions
-                all_params = fact_params + dyn_params
-                sql_select = f"""
-                    SELECT f.id FROM `fact` f
-                    JOIN `{dynamic_table}` d ON f.id = d.fact_id
-                    WHERE {" AND ".join(all_conditions)}
-                """
-            else:
-                # Если фильтры только по базовой таблице, ищем напрямую
-                all_params = fact_params
-                sql_select = f"""
-                    SELECT f.id FROM `fact` f
-                    WHERE {" AND ".join(fact_conditions)}
-                """
+            sql_count = f"SELECT COUNT(`id`) as total FROM `fact` WHERE {' AND '.join(conditions)}"
+            await db.execute(sql_count, params)
+            count_res = await db.fetchone()
+            affected_rows = count_res.get('total', 0) if count_res else 0
 
-            await db.execute(sql_select, all_params)
-            rows = await db.fetchall()
-
-            if not rows:
+            if affected_rows == 0:
                 return 0
 
-            target_fact_ids = [r['id'] for r in rows]
-            placeholders = ", ".join(["%s"] * len(target_fact_ids))
-            params_tuple = tuple(target_fact_ids)
+            sql_delete = f"DELETE FROM `fact` WHERE {' AND '.join(conditions)}"
+            await db.execute(sql_delete, params)
 
-            # Шаг 2: Удаляем связанные записи из динамической таблицы
-            sql_delete_dyn = f"DELETE FROM `{dynamic_table}` WHERE fact_id IN ({placeholders})"
-            await db.execute(sql_delete_dyn, params_tuple)
+            if hasattr(db, 'connection') and db.connection:
+                await db.connection.commit()
 
-            # Шаг 3: Удаляем записи из базовой таблицы 'fact'
-            sql_delete_fact = f"DELETE FROM `fact` WHERE id IN ({placeholders})"
-            await db.execute(sql_delete_fact, params_tuple)
-
-            # Фиксируем транзакцию
-            await db.connection.commit()
-            return len(target_fact_ids)
+            return affected_rows
 
         except Exception as e:
-            await db.connection.rollback()
-            raise ValueError(f"Ошибка при очистке MySQL коллекции '{collection_name}': {str(e)}")
+            if hasattr(db, 'connection') and db.connection:
+                await db.connection.rollback()
+
+            backtrace = traceback.format_exc()
+            logger_info(
+                f"❌ Сбой при удалении фактов из БД: {e}."
+                f"Полный стек вызовов:\n{backtrace}"
+            )
+            raise ValueError(f"Ошибка при удалении фактов из коллекции '{collection_name}': {str(e)}")

@@ -1,6 +1,6 @@
 from json_.json_ import json_from_string
 from qdrant_.qdrant_ import qdrant_search, qdrant_remove_by
-from src.ai.ai_fact_collection import ai_collection_metadata_get
+from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 
 
 async def qdrant_fact_search(
@@ -19,7 +19,7 @@ async def qdrant_fact_search(
     search_results = await qdrant_search(
         query_text=query_text,
         collection_name=collection_name,
-        metadata=await ai_collection_metadata_get(collection_name),
+        metadata=await ai_fact_collection_metadata_get(collection_name),
         metadata_filter=metadata_filter_json,
         limit=limit
     )
@@ -40,4 +40,4 @@ async def qdrant_fact_remove(collection_name: str, metadata_filter: str) -> int:
     """
     metadata_filter_json = json_from_string(metadata_filter)
 
-    return await qdrant_remove_by(collection_name, await ai_collection_metadata_get(collection_name), metadata_filter_json)
+    return await qdrant_remove_by(collection_name, await ai_fact_collection_metadata_get(collection_name), metadata_filter_json)
