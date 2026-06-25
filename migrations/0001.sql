@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS `workflow_step_type`;
 DROP TABLE IF EXISTS `workflow_variable`;
 DROP TABLE IF EXISTS `workflow`;
 DROP TABLE IF EXISTS `fact_collection_cashier_service`;
+DROP TABLE IF EXISTS `fact_collection_dating_chat`;
+DROP TABLE IF EXISTS `fact_collection_dating_man_bio`;
 DROP TABLE IF EXISTS `fact_collection_dating_girl_bio`;
 DROP TABLE IF EXISTS `fact_collection_soko_menu`;
 DROP TABLE IF EXISTS `fact`;
@@ -140,6 +142,7 @@ CREATE TABLE `fact_collection` (
 CREATE TABLE `fact` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `collection_id` INT NOT NULL,
+    `document_id` INT NULL COMMENT 'tag:extract|type:int|desc:Document ID as integer value (example: 12)',
     `category` CHAR(20) DEFAULT NULL COMMENT 'tag:extract|type:string|desc:High-level classification (example: delivery)',
     `language` CHAR(2) NOT NULL COMMENT 'tag:extract|type:string|desc:The language two char format, ISO 639-1 code (example: en)',
     `content` LONGTEXT NOT NULL COMMENT 'tag:extract|type:string|desc:The clean, factual text extracted from the source',
@@ -161,9 +164,19 @@ CREATE TABLE `fact_collection_soko_menu` (
 CREATE TABLE `fact_collection_dating_girl_bio` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `fact_id` INT NOT NULL,
-    `girl_id` INT NULL COMMENT 'tag:extract|type:int|desc:Girl ID as integer value, defined in input data above (example: 12)',
-    CONSTRAINT `fk_fact` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_dating_girl` FOREIGN KEY (`girl_id`) REFERENCES `dating_girl` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_fact_dating_girl_bio` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `fact_collection_dating_man_bio` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `fact_id` INT NOT NULL,
+    CONSTRAINT `fk_fact_dating_man_bio` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `fact_collection_dating_chat` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `fact_id` INT NOT NULL,
+    CONSTRAINT `fk_fact_dating_chat` FOREIGN KEY (`fact_id`) REFERENCES `fact` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `fact_collection_cashier_service` (
