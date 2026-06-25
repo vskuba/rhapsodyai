@@ -125,7 +125,8 @@ CREATE TABLE `agent_workflow_variable` (
 
 CREATE TABLE `dating_girl` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(15) NOT NULL,
+    `name` CHAR(25) NOT NULL,
+    `title` CHAR(25) NOT NULL,
     UNIQUE INDEX `un_dating_girl_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -142,7 +143,7 @@ CREATE TABLE `fact_collection` (
 CREATE TABLE `fact` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `collection_id` INT NOT NULL,
-    `document_id` INT NULL COMMENT 'tag:extract|type:int|desc:Document ID as integer value (example: 12)',
+    `document_id` CHAR(100) NULL COMMENT 'tag:extract|type:int|desc:Document ID string (example: dasha)',
     `category` CHAR(20) DEFAULT NULL COMMENT 'tag:extract|type:string|desc:High-level classification (example: delivery)',
     `language` CHAR(2) NOT NULL COMMENT 'tag:extract|type:string|desc:The language two char format, ISO 639-1 code (example: en)',
     `content` LONGTEXT NOT NULL COMMENT 'tag:extract|type:string|desc:The clean, factual text extracted from the source',
