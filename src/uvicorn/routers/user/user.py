@@ -29,9 +29,6 @@ async def user_create(request: Request, data: dict):
 
 
 @router.put("/user/{user_id}")
-async def node_create(request: Request, user_id: int, data: dict):
+async def user_update(request: Request, user_id: int, data: dict):
     repo = UserRepository()
-    return {"result": await repo.update(user_id, {
-        "username": data.get("username"),
-        "email": data.get("email")
-    })}
+    return {"result": await repo.update(user_id, data)}

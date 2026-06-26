@@ -20,12 +20,10 @@ router = APIRouter()
 
 
 class ChatAskJsonRequest(BaseModel):
-    agent_id: int
     question: str
+    agent_id: int
     user_id: int
-    llm: str
     session_uuid: str | None = None
-    metadata: dict | None = None
     variables: dict = {}
 
 
@@ -55,9 +53,10 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         raise HTTPException(status_code=401, detail="Agent '%s' not have workflow" % entity_agent.get('name'))
 
     repo_llm = LlmRepository()
-    entity_llm = await repo_llm.find_one_by({'name': json_request.llm})
+    user_llm_id = entity_user.get('llm_id', 0)
+    entity_llm = await repo_llm.find(user_llm_id)
     if not entity_llm:
-        raise HTTPException(status_code=404, detail="LLM not found by name: %s" % json_request.llm)
+        raise HTTPException(status_code=404, detail="LLM not found by ID: %s" % user_llm_id)
 
     async with db:
         # 1. Запрашиваем шаги воркфлоу, строго сортируя их по позиции

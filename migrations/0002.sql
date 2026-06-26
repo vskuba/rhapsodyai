@@ -1,9 +1,3 @@
-INSERT INTO `user` (`id`, `username`, `email`, `created_at`) VALUES
-(1, 'user1', 'user1@example.com', '2026-04-26 09:17:35'),
-(2, 'user2', 'user2@example.com', '2026-04-26 09:17:35');
-
---
-
 INSERT INTO `llm` (`id`, `name`) VALUES
 (1, 'claude-sonnet-4-5-20250929'),
 (2, 'gpt-5-nano'),
@@ -30,6 +24,12 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (23, 'ollama/qwen3:30b'),
 (24, 'ollama/qwen3-coder:30b'),
 (25, 'ollama/mistral');
+
+--
+
+INSERT INTO `user` (`id`, `username`, `email`, `llm_id`, `created_at`) VALUES
+(1, 'user1', 'user1@example.com', 12, '2026-04-26 09:17:35'),
+(2, 'user2', 'user2@example.com', 20, '2026-04-26 09:17:35');
 
 --
 

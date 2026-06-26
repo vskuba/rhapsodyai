@@ -22,12 +22,20 @@ DROP TABLE IF EXISTS `user`;
 -- Включаем проверки обратно
 SET FOREIGN_KEY_CHECKS = 1;
 
+-- Таблица LLM
+CREATE TABLE `llm` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(50) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Таблица пользователей
 CREATE TABLE `user` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `username` CHAR(50) NOT NULL,
     `email` CHAR(50) NOT NULL,
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+    `llm_id` INT DEFAULT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_user_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица настроек (связь с user)
@@ -39,12 +47,6 @@ CREATE TABLE `setting` (
     CONSTRAINT `fk_settings_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ALTER TABLE setting ADD UNIQUE INDEX idx_key_user (`key`, user_id);
-
--- Таблица LLM
-CREATE TABLE `llm` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(50) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `node` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,

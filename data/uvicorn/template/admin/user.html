@@ -259,14 +259,12 @@
                                     <label>Email</label>
                                     <input type="text" id="email" class="form-control" value="0">
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- Пустая колонка для сохранения симметрии с агентами или под описание -->
-                        <div class="prompt-column">
-                            <div class="form-group form-group-info">
-                                <label>Инфо</label>
-                                Пользователи используются для чатов
+                                <div class="form-group">
+                                    <label>Модель LLM</label>
+                                    <select id="llm_id" class="form-control">
+                                        <option value="">По умолчанию</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -305,10 +303,25 @@
         if (!userListContainer) return;
 
         try {
-            const response = await getData('/user/list');
-            const users = response.result;
+            const [usersRes, llmRes] = await Promise.all([
+                getData('/user/list'),
+                getData('/llm/list')
+            ]);
+
+            const users = usersRes.result;
+            const llms = llmRes.result;
 
             renderUserList(users);
+
+            const llmSelect = document.getElementById('llm_id');
+            llmSelect.innerHTML = '<option value="">По умолчанию</option>';
+            llms.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.id;
+                opt.textContent = g.name;
+                llmSelect.appendChild(opt);
+            });
+
         } catch (e) {
             console.error("Ошибка инициализации пользователей:", e);
         }
@@ -363,6 +376,7 @@
             document.getElementById('userId').value = user.id;
             document.getElementById('username').value = user.username;
             document.getElementById('email').value = user.email;
+            document.getElementById('llm_id').value = user.llm_id;
 
             document.getElementById('formTitle').textContent = `Редактирование пользователя: ${user.username}`;
             if (saveBtn) saveBtn.disabled = false;
@@ -394,7 +408,8 @@
         const id = document.getElementById('userId').value;
         const payload = {
             username: document.getElementById('username').value,
-            email: document.getElementById('email').value
+            email: document.getElementById('email').value,
+            llm_id: document.getElementById('llm_id').value
         };
 
         if (saveBtn) saveBtn.disabled = true;
