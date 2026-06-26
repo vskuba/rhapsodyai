@@ -11,6 +11,8 @@ from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflowl import ai_workflow_variables_default_get
+from src.auth.auth import AuthChecker
+from src.auth.auth_session import AuthSession
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.llm_repository import LlmRepository
@@ -33,7 +35,12 @@ class ChatMessagesJsonRequest(BaseModel):
 
 
 @router.post("/chat/ask")
-async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(mysql_get_db_async)):
+async def ask_ai(
+        request: Request,
+        json_request: ChatAskJsonRequest,
+        db=Depends(mysql_get_db_async),
+        user: AuthSession =Depends(AuthChecker([]))
+):
     logger_info('Чат запрос: ' + str(json_request))
 
     session_uuid = json_request.session_uuid or str(uuid.uuid4())

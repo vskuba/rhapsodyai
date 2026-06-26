@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_tool import ai_tool_sync
@@ -86,7 +88,18 @@ async def lifespan(app: FastAPI):
     print("Shutting down background processes...")
 
 
-app = FastAPI(lifespan=lifespan)
+middleware = [
+    Middleware(
+        SessionMiddleware, # type: ignore
+        secret_key=config_get('SESSION_SECRET_KEY'),
+        session_cookie="uvicorn_session",
+        max_age=3600,
+        same_site="lax",
+        https_only=False
+    )
+]
+
+app = FastAPI(lifespan=lifespan, middleware=middleware)
 
 
 @app.middleware("http")
