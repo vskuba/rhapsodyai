@@ -16,6 +16,9 @@ async def qdrant_fact_search(
     metadata_filter_json = json_from_string(metadata_filter)
     field_document = 'document'
 
+    if 'tags' in metadata_filter_json:
+        metadata_filter_json['tags'] = metadata_filter_json['tags'].split(',')
+
     search_results = await qdrant_search(
         query_text=query_text,
         collection_name=collection_name,
