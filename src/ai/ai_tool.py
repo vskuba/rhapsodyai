@@ -117,14 +117,10 @@ async def ai_tool_sync(force: bool = False) -> int:
                                     output_payload["keys"] = parsed_keys
 
                             elif return_type in ("tuple", "Tuple"):
-                                # Извлекаем описание элементов кортежа по индексам из docstring (если применимо)
-                                # Например, функция может возвращать: (status_code: int, message: str)
                                 parsed_elements = _parse_output_tuple_from_docstring(description)
                                 if parsed_elements:
                                     output_payload["keys"] = parsed_elements
                                 else:
-                                    # Если в docstring ничего нет, можно попробовать вытащить сложные типы
-                                    # из самого аннотирования, если используется typing.Tuple[int, str]
                                     if hasattr(sig.return_annotation, '__args__'):
                                         output_payload["keys"] = [
                                             clean_type_name(arg) for arg in sig.return_annotation.__args__
@@ -349,27 +345,22 @@ def _parse_output_tuple_from_docstring(doc: str) -> dict[str, Any]:
         -----------
         Returns:
             tuple:
-                facts_str (str): текстовая строка со всеми добавленными фактами
-                facts_qty: (int): количество добавленных фактов
+                0 (int): описание первого элемента кортежа
+                1 (str): описание второго элемента кортежа
         """
     if not doc:
         return {}
 
-    # 1. Ищем секцию "Returns:"
     returns_match = re.search(r'Returns:\s*(.*)', doc, re.DOTALL | re.IGNORECASE)
     if not returns_match:
         return {}
 
     returns_section = returns_match.group(1)
 
-    # Отсекаем другие секции, если они есть
     end_section_match = re.search(r'(Raises:|Args:|Examples:)', returns_section, re.IGNORECASE)
     if end_section_match:
         returns_section = returns_section[:end_section_match.start()]
 
-    # 2. Измененный паттерн:
-    # Учитывает возможную опечатку с лишним двоеточием перед типом "имя: (тип):"
-    # или стандартный вариант "имя (тип):"
     pattern = r'^\s*([\w_]+)\s*:?\s*\(([\w_\[\], ]+)\):'
     elements_dict = {}
 

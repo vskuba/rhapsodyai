@@ -26,7 +26,7 @@ async def fact_collection_output_format(collection_name: str) -> str:
     return example_fact_extract
 
 
-async def fact_collection_add(collection_name: str, data: list[dict]) -> tuple[str, int]:
+async def fact_collection_add(collection_name: str, data: list[dict]) -> tuple[int, str]:
     """
     Добавляет данные напрямую в базовую таблицу фактов 'fact'.
      - collection_name: имя коллекции для поиска ее ID и разрешенных полей в базе
@@ -39,8 +39,8 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> tuple[s
 
     Returns:
         tuple:
-            facts_str (str): текстовая строка со всеми добавленными фактами
-            facts_qty: (int): количество добавленных фактов
+            0 (int): количество добавленных фактов
+            1 (str): текстовая строка со всеми добавленными фактами
     """
     if isinstance(data, str):
         try:
@@ -105,7 +105,7 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> tuple[s
             )
             raise ValueError(f"Database error: {str(e)}")
 
-    return ' '.join(documents), len(data)
+    return len(data), ' '.join(documents)
 
 
 async def fact_collection_remove_by(collection_name: str, criteria: dict) -> int:

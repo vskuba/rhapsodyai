@@ -276,9 +276,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             token=0
                         )
 
-                        # --- Сохранение результатов в переменные воркфлоу ---
                         if isinstance(raw_result, dict):
-                            # Если вернулся словарь, мапим строго по его ключам
                             for output_key, expect_variable in outputs_map.items():
                                 if output_key in raw_result:
                                     val = raw_result[output_key]
@@ -289,6 +287,19 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                     model.workflow_variables[expect_variable.strip()] = val
                                     logger_info(
                                         f"🏷️ Переменная '%{expect_variable}%' получила значение '{val}'")
+
+                        elif isinstance(raw_result, tuple):
+                            for tuple_key, expect_variable in outputs_map.items():
+                                index = int(tuple_key)
+                                if 0 <= int(tuple_key) < len(raw_result):
+                                    val = raw_result[index]
+                                    if isinstance(val, (dict, list)):
+                                        val = json.dumps(val, ensure_ascii=False)
+                                    else:
+                                        val = str(val)
+                                    model.workflow_variables[expect_variable.strip()] = val
+                                    logger_info(
+                                        f"🏷️ переменная '%{expect_variable}%' получила значение '{val}'")
 
                         else:
                             # Для не-словарей определяем текстовый ключ на основе строгого isinstance
@@ -305,6 +316,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             else:
                                 # Фолбек на имя типа для редких/кастомных классов
                                 type_key = type(raw_result).__name__
+                                logger_info(
+                                    f"🛠 Тип результата инструмента '{type_key}'")
 
                             # Пытаемся найти переменную по вычисленному ключу типа
                             var_name = outputs_map.get(type_key, None)
