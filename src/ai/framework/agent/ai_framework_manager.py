@@ -65,8 +65,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             session_workflow_step_current_index = ai_session_metadata.get('workflow_step_current_index', 0)
             if session_workflow_step_current_index > 0:
                 model.workflow_step_current_index = session_workflow_step_current_index
+                next_step = model.workflow_steps[model.workflow_step_current_index]
                 logger_info(
-                    f"🔀️ Переход на шаг (сессия) [{session_workflow_step_current_index}/{steps_count}]"
+                    f"🔀️ Переход на шаг {next_step['title']} (сессия) [{session_workflow_step_current_index}/{steps_count}]"
                 )
                 # Делаем очистку индекса текущего шага в метаданных сессии
                 ai_session_metadata['workflow_step_current_index'] = 0
@@ -185,6 +186,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     response_from_llm = await execute_llm_step()
 
                     try:
+                        response_from_llm = self._json_str_clean(response_from_llm)
+                        logger_info(f"✂️ Парсим JSON:\n\n{response_from_llm}")
+
                         response_json = json.loads(response_from_llm, strict=False)
 
                         # Если LLM вернула список словарей (например, [{...}]), берем первый элемент
@@ -445,3 +449,15 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             return prompt_system + example_fact_extract
 
         return prompt_system
+
+    def _json_str_clean(self, json_str: str) -> str:
+        """ Очищает JSON-строку от лишних символов, таких как обратные кавычки и пробелы. """
+        clean_json_str = json_str.strip()
+
+        if clean_json_str.startswith("```"):
+            clean_json_str = clean_json_str.split("\n", maxsplit=1)[1]
+
+        if clean_json_str.endswith("```"):
+            clean_json_str = clean_json_str.rsplit("```", maxsplit=1)[0]
+
+        return clean_json_str.strip()

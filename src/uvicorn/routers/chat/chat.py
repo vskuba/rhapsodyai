@@ -95,6 +95,7 @@ async def ask_ai(request: Request, json_request: ChatAskJsonRequest, db=Depends(
         'user_id': json_request.user_id,
         'username': entity_user.get('username'),
         'agent_id': json_request.agent_id,
+        'agent_title': entity_agent.get('title'),
         'session_uuid': session_uuid,
         'agent_greeting': entity_agent.get('greeting'),
         'workflow_id': workflow_id,

@@ -26,12 +26,12 @@ async def fact_collection_output_format(collection_name: str) -> str:
     return example_fact_extract
 
 
-async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
+async def fact_collection_add(collection_name: str, data: list[dict]) -> str:
     """
     Добавляет данные напрямую в базовую таблицу фактов 'fact'.
      - collection_name: имя коллекции для поиска ее ID и разрешенных полей в базе
      - data: список словарей с данными или валидная JSON-строка-массив
-    Возвращает количество успешно добавленных записей.
+    Возвращает текстовую строку со всеми добавленными фактами.
     """
     if isinstance(data, str):
         try:
@@ -59,6 +59,9 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
     if not allowed_fact_fields:
         raise ValueError(f"Конфигурация полей для коллекции '{collection_name}' пуста или отсутствует в БД.")
 
+    field_document = 'document'
+    documents: list[str] = []
+
     async with mysql_get_db_async() as db:
         try:
             for index, entry in enumerate(data):
@@ -70,6 +73,8 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
 
                 fact_fields = ['collection_id'] + present_fields
                 fact_values = [collection_id] + [entry.get(f) for f in present_fields]
+
+                documents.append(entry.get(field_document, ''))
 
                 f_str = ", ".join([f"`{f}`" for f in fact_fields])
                 f_placeholders = ", ".join(["%s"] * len(fact_fields))
@@ -91,7 +96,7 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> int:
             )
             raise ValueError(f"Database error: {str(e)}")
 
-    return len(data)
+    return ' '.join(documents)
 
 
 async def fact_collection_remove_by(collection_name: str, criteria: dict) -> int:

@@ -10,12 +10,12 @@ async def qdrant_fact_search(
         limit: int = 5
 ) -> str:
     """
-        Высокоуровневая обёртка для поиска.
-        Автоматически подтягивает метаданные и возвращает только список текстовых фактов.
-        """
+    Высокоуровневая обёртка для поиска.
+    Автоматически подтягивает метаданные и возвращает только список текстовых фактов.
+    """
     metadata_filter_json = json_from_string(metadata_filter)
+    field_document = 'document'
 
-    # 1. Добавлен оператор await перед вызовом асинхронного поиска
     search_results = await qdrant_search(
         query_text=query_text,
         collection_name=collection_name,
@@ -24,12 +24,10 @@ async def qdrant_fact_search(
         limit=limit
     )
 
-    # 2. Извлекаем текстовое содержимое (поле 'content') из payload каждой найденной точки
-    # По вашему коду синхронизации текст факта пишется в payload['content'] через docs.append(r['content'])
     facts_text_list = []
     for point in search_results:
-        if point.payload and 'content' in point.payload:
-            facts_text_list.append(str(point.payload['content']))
+        if point.payload and field_document in point.payload:
+            facts_text_list.append(str(point.payload[field_document]))
 
     return " ".join(facts_text_list)
 

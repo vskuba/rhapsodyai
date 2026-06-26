@@ -4,6 +4,7 @@ def ai_workflow_variables_default_get() -> list[str]:
         "user_id",
         "username",
         "agent_id",
+        "agent_title",
         "session_uuid",
         "agent_greeting",
         "workflow_id",
