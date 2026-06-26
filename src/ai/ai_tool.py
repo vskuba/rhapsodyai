@@ -116,6 +116,20 @@ async def ai_tool_sync(force: bool = False) -> int:
                                 if parsed_keys:
                                     output_payload["keys"] = parsed_keys
 
+                            elif return_type in ("tuple", "Tuple"):
+                                # Извлекаем описание элементов кортежа по индексам из docstring (если применимо)
+                                # Например, функция может возвращать: (status_code: int, message: str)
+                                parsed_elements = _parse_output_tuple_from_docstring(description)
+                                if parsed_elements:
+                                    output_payload["keys"] = parsed_elements
+                                else:
+                                    # Если в docstring ничего нет, можно попробовать вытащить сложные типы
+                                    # из самого аннотирования, если используется typing.Tuple[int, str]
+                                    if hasattr(sig.return_annotation, '__args__'):
+                                        output_payload["keys"] = [
+                                            clean_type_name(arg) for arg in sig.return_annotation.__args__
+                                        ]
+
                             args_payload = {
                                 "input": input_dict,
                                 "output": output_payload
@@ -289,6 +303,16 @@ def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict) -> tupl
 
 
 def _parse_output_keys_from_docstring(doc: str) -> dict | None:
+    """
+    Пример использования:
+    -----------
+    Returns:
+        dict: Словарь с данными пользователя, содержащий:
+            user_id (int): Идентификатор в базе.
+            username (str): Логин пользователя.
+            is_active (bool): Статус блокировки.
+            roles (list[str]): Список назначенных ролей.
+    """
     if not doc:
         return None
 
@@ -317,3 +341,43 @@ def _parse_output_keys_from_docstring(doc: str) -> dict | None:
             keys_dict[k_name] = {"type": k_type}
 
     return keys_dict if keys_dict else None
+
+
+def _parse_output_tuple_from_docstring(doc: str) -> dict[str, Any]:
+    """
+        Пример использования:
+        -----------
+        Returns:
+            tuple:
+                facts_str (str): текстовая строка со всеми добавленными фактами
+                facts_qty: (int): количество добавленных фактов
+        """
+    if not doc:
+        return {}
+
+    # 1. Ищем секцию "Returns:"
+    returns_match = re.search(r'Returns:\s*(.*)', doc, re.DOTALL | re.IGNORECASE)
+    if not returns_match:
+        return {}
+
+    returns_section = returns_match.group(1)
+
+    # Отсекаем другие секции, если они есть
+    end_section_match = re.search(r'(Raises:|Args:|Examples:)', returns_section, re.IGNORECASE)
+    if end_section_match:
+        returns_section = returns_section[:end_section_match.start()]
+
+    # 2. Измененный паттерн:
+    # Учитывает возможную опечатку с лишним двоеточием перед типом "имя: (тип):"
+    # или стандартный вариант "имя (тип):"
+    pattern = r'^\s*([\w_]+)\s*:?\s*\(([\w_\[\], ]+)\):'
+    elements_dict = {}
+
+    for line in returns_section.split('\n'):
+        match = re.search(pattern, line)
+        if match:
+            e_name = match.group(1)
+            e_type = match.group(2)
+            elements_dict[e_name] = {"type": e_type}
+
+    return elements_dict

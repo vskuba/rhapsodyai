@@ -1732,19 +1732,14 @@
                     let outputKeys = [];
                     if (argsObj.output) {
                         if (argsObj.output.keys) {
-                            // Если это словарь со схемой ключей (как у github_user_info)
                             outputKeys = Object.keys(argsObj.output.keys);
                         } else if (typeof argsObj.output === 'object' && argsObj.output.type) {
-                            // НОВЫЙ БЛОК: Если это плоский тип (как {"type": "str"} у qdrant)
-                            // Мы создаем один виртуальный ключ "result" для маппинга всего ответа
                             outputKeys = [argsObj.output.type];
                         } else if (typeof argsObj.output === 'object') {
                             outputKeys = Object.keys(argsObj.output);
                         } else if (typeof argsObj.output === 'string') {
-                            // Если на бэкенде в каких-то инструментах написано просто "output": "str"
                             outputKeys = ['str'];
                         } else if (typeof argsObj.output === 'int') {
-                            // Если на бэкенде в каких-то инструментах написано просто "output": "str"
                             outputKeys = ['int'];
                         }
                     }

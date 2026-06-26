@@ -589,8 +589,11 @@
                 // 2. Обработка типа результата (output)
                 const outputData = argsObj?.output || {};
                 if (outputData && outputData.type) {
-                    if (outputData.type === 'dict' && outputData.keys && Object.keys(outputData.keys).length > 0) {
-                        let htmlContent = `<div style="margin-bottom: 5px;">→ dict:</div>`;
+                    if (
+                        (outputData.type === 'dict' || outputData.type === 'tuple')
+                        && outputData.keys && Object.keys(outputData.keys).length > 0
+                    ) {
+                        let htmlContent = `<div style="margin-bottom: 5px;">→ ${outputData.type}:</div>`;
                         htmlContent += `<ul style="margin: 0; padding-left: 20px; color: #2c3e50; font-weight: normal; list-style-type: disc;">`;
                         for (const [keyName, keyInfo] of Object.entries(outputData.keys)) {
                             htmlContent += `<li style="margin-bottom: 2px;"><strong style="color: #2c3e50;">${keyName}</strong>: <span style="color: #3498db;">${keyInfo.type}</span></li>`;

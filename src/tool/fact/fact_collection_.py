@@ -26,12 +26,21 @@ async def fact_collection_output_format(collection_name: str) -> str:
     return example_fact_extract
 
 
-async def fact_collection_add(collection_name: str, data: list[dict]) -> str:
+async def fact_collection_add(collection_name: str, data: list[dict]) -> tuple[str, int]:
     """
     Добавляет данные напрямую в базовую таблицу фактов 'fact'.
      - collection_name: имя коллекции для поиска ее ID и разрешенных полей в базе
      - data: список словарей с данными или валидная JSON-строка-массив
     Возвращает текстовую строку со всеми добавленными фактами.
+
+    Example:
+        collection_name: dating_talk
+        data: [{"document_id": "alla_user1", "language": "ru", "document": "Мы обсуждали его привычки в тренировках.", "tags": "тренажерный зал, физическая активность"}]
+
+    Returns:
+        tuple:
+            facts_str (str): текстовая строка со всеми добавленными фактами
+            facts_qty: (int): количество добавленных фактов
     """
     if isinstance(data, str):
         try:
@@ -96,7 +105,7 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> str:
             )
             raise ValueError(f"Database error: {str(e)}")
 
-    return ' '.join(documents)
+    return ' '.join(documents), len(data)
 
 
 async def fact_collection_remove_by(collection_name: str, criteria: dict) -> int:
