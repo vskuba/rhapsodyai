@@ -358,8 +358,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         loop.call_soon_threadsafe(future.set_result, model.prompt_user)
 
                     # Если после этого шага есть еще шаги, сохраняем обновленный индекс текущего шага в метаданных сессии
+                    continue_workflow = step_meta.get('continue_workflow', False)
                     next_index = model.workflow_step_current_index + 1
-                    if next_index < steps_count:
+                    if continue_workflow and next_index < steps_count:
                         if model.workflow_steps[next_index]:
                             ai_session_metadata['workflow_step_current_index'] = next_index
                             await ai_session_metadata_set(model.session_uuid, ai_session_metadata)

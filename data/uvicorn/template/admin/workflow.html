@@ -857,6 +857,12 @@
                 label: 'User prompt',
                 type: 'textarea',
                 placeholder: ''
+            },
+            {
+                key: 'continue_workflow',
+                label: 'Продолжить workflow',
+                type: 'checkbox',
+                placeholder: ''
             }
         ],
         'variable_conversion': [ // ID типа "Вернуть ответ"
@@ -1389,8 +1395,12 @@
                     latestMeta[metaKey] = customValue;
                 } else if (inputElement) {
                     let value = inputElement.value;
-                    if (field.type === 'number') value = parseFloat(value) || 0;
-
+                    if (field.type === 'number') {
+                        value = parseFloat(value) || 0;
+                    }
+                    if (field.type === 'checkbox') {
+                        value = inputElement.checked;
+                    }
                     if (typeof value === 'string') {
                         value = value.replace(/"/g, '\"');
                     }
@@ -1865,6 +1875,13 @@
                             inputElement.appendChild(option);
                         });
                     }
+                } else if (field.type === 'checkbox') {
+                    inputElement = document.createElement('input');
+                    inputElement.type = 'checkbox';
+                    inputElement.id = `field_${field.key}`;
+                    inputElement.className = 'form-check-input';
+                    inputElement.style = "cursor: pointer; width: 16px; height: 16px; margin: 0;";
+                    inputElement.checked = currentValue === true || String(currentValue).toLowerCase() === 'true';
                 } else {
                     inputElement = document.createElement('input');
                     inputElement.id = `field_${field.key}`;
