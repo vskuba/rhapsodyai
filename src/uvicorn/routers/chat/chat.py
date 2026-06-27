@@ -168,7 +168,7 @@ async def ask_ai(
         raise
 
 
-@router.post("/chat/messages")
+@router.post("/chat/messages", include_in_schema=False)
 async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest, db=Depends(mysql_get_db_async)):
     async with db:
         sql = '''
@@ -194,7 +194,7 @@ async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest,
         return {"result": list(reversed(rows))}
 
 
-@router.post("/chat/voice")
+@router.post("/chat/voice", include_in_schema=False)
 async def voice_to_text(file: UploadFile = File(...)):
     temp_file = f"temp_{file.filename}.wav"
 

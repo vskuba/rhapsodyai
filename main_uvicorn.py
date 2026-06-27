@@ -25,7 +25,7 @@ from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.uvicorn.routers.chat import chat
-from src.uvicorn.routers import admin
+from src.uvicorn.routers import html
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.cronjob import cronjob
 from src.uvicorn.routers.fact import fact, fact_collection
@@ -138,17 +138,17 @@ app.state.jinja2_template = Jinja2Templates(directory=jinja2_template_path)
 
 app.mount("/static", StaticFiles(directory=public_static_path), name="static")
 
-app.include_router(admin.router)
+app.include_router(html.router, include_in_schema=False)
 app.include_router(chat.router)
-app.include_router(agent.router)
-app.include_router(user.router)
-app.include_router(cronjob.router)
-app.include_router(fact.router)
-app.include_router(setting.router)
-app.include_router(llm.router)
-app.include_router(session.router)
-app.include_router(node.router)
-app.include_router(workflow.router)
-app.include_router(workflow_step.router)
-app.include_router(tool.router)
-app.include_router(fact_collection.router)
+app.include_router(agent.router, include_in_schema=False)
+app.include_router(user.router, include_in_schema=False)
+app.include_router(cronjob.router, include_in_schema=False)
+app.include_router(fact.router, include_in_schema=False)
+app.include_router(setting.router, include_in_schema=False)
+app.include_router(llm.router, include_in_schema=False)
+app.include_router(session.router, include_in_schema=False)
+app.include_router(node.router, include_in_schema=False)
+app.include_router(workflow.router, include_in_schema=False)
+app.include_router(workflow_step.router, include_in_schema=False)
+app.include_router(tool.router, include_in_schema=False)
+app.include_router(fact_collection.router, include_in_schema=False)
