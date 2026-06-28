@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Telegram chat",
+  "version": "1.0",
+  "description": "Плагин находит форму, вставляет текст и нажимает кнопку.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "action": {
+    "default_title": "Запустить заполнение",
+    "default_icon": {
+      "16": "icon.png",
+      "32": "icon.png",
+      "48": "icon.png"
+    },
+    "default_popup": "popup.html"
+  }
+}

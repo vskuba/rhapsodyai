@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            width: 580px;
+            height: 420px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            padding: 12px;
+            margin: 0;
+            background-color: #f7fafc;
+            box-sizing: border-box;
+        }
+
+        /* Стили навигации табов */
+        .tabs-nav {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 12px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 8px;
+            background-color: #edf2f7;
+            color: #4a5568;
+            border: 1px solid #e2e8f0;
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .tab-btn:hover {
+            background-color: #e2e8f0;
+            color: #2d3748;
+        }
+
+        .tab-btn.active {
+            background-color: #3182ce;
+            color: white;
+            border-color: #3182ce;
+        }
+
+        /* Контейнеры контента табов */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Стили для секций */
+        .section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #4a5568;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #edf2f7;
+            padding-bottom: 4px;
+        }
+
+        .form-group {
+            margin-bottom: 8px;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            font-size: 11px;
+            color: #718096;
+            margin-bottom: 3px;
+        }
+
+        /* Универсальные стили для инпутов */
+        input[type="text"], select, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 6px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 12px;
+            background-color: #fff;
+            color: #2d3748;
+        }
+
+        input[type="text"]:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #3182ce;
+            box-shadow: 0 0 0 1px #3182ce;
+        }
+
+        /* Горизонтальный контейнер для поля ввода и кнопки */
+        .input-row {
+            display: flex;
+            flex-direction: row;
+            gap: 6px;
+            align-items: stretch;
+        }
+
+        textarea {
+            flex: 1;
+            height: 54px;
+            resize: none;
+            font-family: inherit;
+        }
+
+        /* Стилизованная кнопка «Отправить» справа */
+        #sendBtn {
+            width: 75px;
+            padding: 6px;
+            background-color: #3182ce;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #sendBtn:hover {
+            background-color: #2b6cb0;
+        }
+
+        #testConnectionBtn {
+            width: 120px;
+            padding: 6px;
+            background-color: #3182ce;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #testConnectionBtn:hover {
+            background-color: #2b6cb0;
+        }
+
+        /* Контейнер для чекбокса */
+        .checkbox-container {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 8px;
+            padding: 2px 0;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: 15px;
+            height: 15px;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .checkbox-container label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #2d3748;
+            cursor: pointer;
+            margin: 0;
+            user-select: none;
+        }
+
+        /* Специфические элементы статуса */
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            background-color: #e2e8f0;
+            color: #4a5568;
+        }
+
+        .status-badge.online {
+            background-color: #c6f6d5;
+            color: #22543d;
+        }
+
+        /* Стили для логов */
+        .log-container {
+            background-color: #1a202c;
+            color: #f7fafc;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            line-height: 1.2; /* Принудительно уменьшаем межстрочный интервал */
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 100px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .log-item {
+            margin: 0 0 2px 0; /* Обнуляем верхний/боковые отступы, оставляя 2px снизу */
+            padding: 0;
+            line-height: 1.2;
+        }
+
+        .log-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .log-time {
+            color: #a0aec0;
+            margin-right: 6px;
+        }
+
+        .status {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 580px; /* Точно под ширину body */
+            height: 32px;
+            background-color: #edf2f7; /* Светло-серый фон */
+            border-top: 1px solid #e2e8f0;
+            padding: 0 16px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+        }
+
+        /* Базовый стиль для кружка-индикатора */
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #e2e8f0; /* Серый по умолчанию */
+            transition: background-color 0.3s ease;
+            position: relative;
+        }
+
+        /* Текст внутри статус-бара */
+        .status-info {
+            font-size: 11px;
+            font-weight: 600;
+            color: #4a5568;
+            user-select: none;
+        }
+
+        /* Состояние: Работает (Зеленый) */
+        .status.active .status-indicator {
+            background-color: #48bb78; /* Энергичный зеленый */
+        }
+
+        /* Анимация пульсации для зеленого индикатора */
+        .status.active .status-indicator::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #48bb78;
+            animation: pulse 2s infinite ease-in-out;
+            opacity: 0.6;
+        }
+
+        /* Состояние: Ошибка / Отключен (Красный) */
+        .status.error .status-indicator {
+            background-color: #f56565; /* Энергичный красный */
+        }
+
+        /* Анимация пульсации */
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 0.6;
+            }
+            100% {
+                transform: scale(2.5);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Навигация между табами -->
+<div class="tabs-nav">
+    <div class="tab-btn active" data-tab="tab-1">Плагин</div>
+    <div class="tab-btn" data-tab="tab-2">AI connection</div>
+    <div class="tab-btn" data-tab="tab-3">Настройка</div>
+    <div class="tab-btn" data-tab="tab-4">Сообщения</div>
+</div>
+
+<!-- ТАБ 1: Режим работы -->
+<div id="tab-1" class="tab-content active">
+    <!-- Секция 1: Режим работы -->
+    <div class="section">
+        <div class="checkbox-container">
+            <input type="checkbox" id="pluginEnabled" checked>
+            <label for="pluginEnabled">Вкл/Выкл плагин</label>
+        </div>
+        <div class="form-group">
+            <label for="accessToken">Логи:</label>
+            <div class="log-container log-container-connection" id="logContainer">
+                <div class="log-item"><span class="log-time">[21:48:12]</span>Робот успешно запущен.</div>
+                <div class="log-item"><span class="log-time">[21:50:05]</span>Проверка соединения с API: ОК.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ТАБ 2: AI connection -->
+<div id="tab-2" class="tab-content">
+    <div class="section">
+        <div class="form-group">
+            <label for="aiUrl">URL API:</label>
+            <input type="text" id="aiUrl" placeholder="https://openai.com">
+        </div>
+        <div class="form-group">
+            <label for="accessToken">Access Token:</label>
+            <input type="text" id="accessToken" placeholder="sk-...">
+        </div>
+        <div class="form-group">
+            <div class="input-row">
+                <button id="testConnectionBtn">Запрос агентов</button>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="form-group">
+                <div>
+                    <label for="agentResponse">Агент ответа:</label>
+                    <select id="agentResponse">
+                        <option value="0" selected>Не выбран</option>
+                        <option value="1">Агент Алина</option>
+                        <option value="5">Агент Иван</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="agentRequest">Агент вопроса:</label>
+                    <select id="agentRequest">
+                        <option value="0" selected>Не выбран</option>
+                        <option value="1">Агент Федор</option>
+                        <option value="5">Агент Алла</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ТАБ 3: Настройки и Ответы -->
+<div id="tab-3" class="tab-content">
+    <div class="section">
+        <div class="form-group">
+            <label for="querySelectorMessage">Message querySelector (входящие):</label>
+            <input type="text" id="querySelectorMessageIn" placeholder=".message-input-class">
+        </div>
+        <div class="form-group">
+            <label for="querySelectorMessage">Message querySelector (исходящие):</label>
+            <input type="text" id="querySelectorMessageOut" placeholder=".message-output-class">
+        </div>
+
+        <div class="form-group">
+            <label for="textToInsert">Текст для ввода:</label>
+            <div class="input-row">
+                <input id="testMessageOut" placeholder="Введите текст сообщения..." value="тест.."/>
+                <button id="sendMessageOut">Отправить</button>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="delaySelect">Задержка ответа, сек:</label>
+            <select id="delaySelect">
+                <option value="1">1 сек</option>
+                <option value="5" selected>5 сек</option>
+                <option value="15">15 сек</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div id="tab-4" class="tab-content">
+    <div class="section">
+        <div class="section-title">Последние ответы</div>
+        <div class="checkbox-container">
+            <!-- Сюда можно дублировать контент ответов при необходимости -->
+        </div>
+    </div>
+</div>
+
+
+<!-- Нижний статус-бар -->
+<div class="status">
+    <span class="status-indicator"></span>
+    <div class="status-info">Plugin работает</div>
+</div>
+
+<script src="popup.js"></script>
+
+</body>
+</html>
