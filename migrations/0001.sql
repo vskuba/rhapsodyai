@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `node`;
 DROP TABLE IF EXISTS `llm`;
 DROP TABLE IF EXISTS `setting`;
+DROP TABLE IF EXISTS `role`;
 DROP TABLE IF EXISTS `user`;
 
 -- Включаем проверки обратно
@@ -36,6 +37,13 @@ CREATE TABLE `user` (
     `llm_id` INT DEFAULT NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_user_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Таблица ролей
+CREATE TABLE `role` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(20) NOT NULL,
+    UNIQUE INDEX `ux_role_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица настроек (связь с user)
@@ -166,10 +174,12 @@ CREATE TABLE `agent` (
     `prompt_system` LONGTEXT NOT NULL,
     `greeting` LONGTEXT NOT NULL,
     `llm_id` INT NULL,
+    `role_id` INT NULL,
     `position` INT NOT NULL DEFAULT 0,
     CONSTRAINT `ag_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
     CONSTRAINT `ag_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `ag_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL
+    CONSTRAINT `ag_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `ag_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица памяти (история диалогов/действий)

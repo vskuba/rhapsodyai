@@ -165,6 +165,40 @@ Repositories in `src/mysql_/repository/` cover:
 - `NodeRepository` - Workflow nodes
 - `DatingGirlRepository` - Dating app entities
 
+### Migrations (`/migrations/`)
+
+Проект использует **yoyo-migrations** для управления схемой БД. Миграции применяются автоматически при старте Uvicorn через `mysql_migration_up()`.
+
+**Структура:**
+| Файл | Назначение |
+|------|------------|
+| `0001.sql` | DDL схема (CREATE TABLE, FK, индексы) |
+| `0002.sql` | DML сиды (INSERT: LLM, users, nodes, workflows, agents, fact_collections) |
+
+**Порядок таблиц в 0001.sql** важен из-за FK:
+1. `llm` → 2. `user` → 3. `setting` → 4. `node` → 5. `session` → 6. `tool_group`/`tool` → 7. `agent_workflow`/`step_type`/`step`/`variable` → 8. `dating_girl` → 9. `fact_collection`/`fact` → 10. `agent` → 11. `agent_session`
+
+**Особенности 0001.sql:**
+- `DROP TABLE IF EXISTS` в начале (чистое пересоздание)
+- `SET FOREIGN_KEY_CHECKS = 0/1` для дропа без ошибок FK
+- Комментарии к колонкам (особенно `fact`: `document_id`, `file_id`, `category`, `language`, `tags`, `qdrant_synced`)
+- Индексы: `UNIQUE INDEX` (уникальность), `INDEX` (поиск)
+
+**Процесс изменения схемы:**
+```bash
+# 1. Редактируете 0001.sql (схему) и/или 0002.sql (сиды)
+# 2. Очищаете БД полностью:
+mysql -u developer -p -h localhost -P 3302 -e "DROP DATABASE IF EXISTS project; CREATE DATABASE project CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+# 3. Запускаете сервер — миграции применятся автоматически:
+python main_uvicorn.py
+```
+
+Или внутри Docker:
+```bash
+docker-compose exec mysql mysql -u developer -ppassword -e "DROP DATABASE IF EXISTS project; CREATE DATABASE project CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+docker-compose restart uvicorn
+```
+
 ## Docker Services (docker-compose.yml)
 
 | Service | Port | Purpose |
