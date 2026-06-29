@@ -27,6 +27,7 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import html
 from src.uvicorn.routers.agent import agent
+from src.uvicorn.routers.auth import auth as auth_router
 from src.uvicorn.routers.cronjob import cronjob
 from src.uvicorn.routers.fact import fact, fact_collection
 from src.uvicorn.routers.llm import llm
@@ -141,6 +142,7 @@ app.mount("/static", StaticFiles(directory=public_static_path), name="static")
 app.include_router(html.router, include_in_schema=False)
 app.include_router(chat.router)
 app.include_router(agent.router, include_in_schema=False)
+app.include_router(auth_router.router, include_in_schema=False)
 app.include_router(user.router, include_in_schema=False)
 app.include_router(cronjob.router, include_in_schema=False)
 app.include_router(fact.router, include_in_schema=False)
