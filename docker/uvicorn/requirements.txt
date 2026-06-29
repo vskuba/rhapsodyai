@@ -2,6 +2,7 @@ aiosqlite
 aiofiles
 aiomysql
 anthropic
+bcrypt
 click
 crawl4ai
 fastapi
