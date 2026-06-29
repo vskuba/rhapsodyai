@@ -481,11 +481,12 @@
         }
     }
 
-    async function loadAgents() {
+    async function loadAgents(userId = null) {
         if (!agentSelect) return;
         try {
+            const url = userId ? `/agent/list?user_id=${userId}` : '/agent/list';
             const [agentsResponse] = await Promise.all([
-                getData('/agent/list')
+                getData(url)
             ]);
 
             agentSelect.innerHTML = '';
@@ -649,10 +650,14 @@
         // 1. Инициализация агентов
         await Promise.all([
             loadNodes(),
-            loadAgents(),
             loadUsers(),
             loadLLMs(),
         ]);
+
+        // Загружаем агентов для первого пользователя в списке
+        if (userSelect.value) {
+            await loadAgents(userSelect.value);
+        }
 
         const loadSettings = async () => {
             const userId = userSelect.value;
@@ -687,6 +692,9 @@
 
             const userId = userSelect.value;
             llmModelSelect.value = allUsers[userId].llm_id;
+
+            // Перезагружаем агентов для выбранного пользователя (с учетом роли)
+            await loadAgents(userId);
         });
 
         llmModelSelect.addEventListener('change', async () => {

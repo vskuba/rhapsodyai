@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from ai.ai_thread import ai_thread_framework_run
@@ -89,21 +90,6 @@ async def lifespan(app: FastAPI):
     print("Shutting down background processes...")
 
 
-middleware = [
-    Middleware(
-        SessionMiddleware, # type: ignore
-        secret_key=config_get('SESSION_SECRET_KEY'),
-        session_cookie="uvicorn_session",
-        max_age=3600,
-        same_site="lax",
-        https_only=False
-    )
-]
-
-app = FastAPI(lifespan=lifespan, middleware=middleware)
-
-
-@app.middleware("http")
 async def catch_exceptions_middleware(request: Request, call_next):
     try:
         return await call_next(request)
@@ -127,6 +113,48 @@ async def catch_exceptions_middleware(request: Request, call_next):
                 "details": str(e)  # В продакшене лучше скрыть детали
             }
         )
+
+
+async def auth_middleware(request: Request, call_next):
+    """Redirect unauthenticated users to login page for admin routes."""
+    path = request.url.path
+
+    # Allow public paths
+    public_paths = ['/login', '/auth/login', '/auth/logout', '/favicon.ico', '/static']
+    if any(path.startswith(p) for p in public_paths):
+        return await call_next(request)
+
+    # Check if user is authenticated via session
+    user_id = request.session.get("user_id")
+    if not user_id:
+        # For HTML routes, redirect to login
+        if path.startswith('/admin') or path == '/':
+            from starlette.responses import RedirectResponse
+            return RedirectResponse(url='/login')
+        # For API routes, return 401
+        from starlette.responses import JSONResponse
+        return JSONResponse(
+            status_code=401,
+            content={"status": "error", "message": "Not authenticated"}
+        )
+
+    return await call_next(request)
+
+
+middleware = [
+    Middleware(
+        SessionMiddleware,  # type: ignore
+        secret_key=config_get('SESSION_SECRET_KEY'),
+        session_cookie="uvicorn_session",
+        max_age=3600,
+        same_site="lax",
+        https_only=False
+    ),
+    Middleware(BaseHTTPMiddleware, dispatch=catch_exceptions_middleware),
+    Middleware(BaseHTTPMiddleware, dispatch=auth_middleware),
+]
+
+app = FastAPI(lifespan=lifespan, middleware=middleware)
 
 
 current_dir = os.path.dirname(os.path.abspath(__file__))

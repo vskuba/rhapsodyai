@@ -336,6 +336,12 @@
                                     <option value="">Нет</option>
                                 </select>
                             </div>
+                            <div class="form-group">
+                                <label>Роль (Role ID)</label>
+                                <select id="role_id" class="form-control">
+                                    <option value="">Не назначена</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -386,15 +392,16 @@
     /**
      * Инициализация менеджера: загрузка групп и списка агентов
      */
-    async function initAgentsManager(currentNodeId = null, selectedLlm = null, selectedWorkflow = null) {
+    async function initAgentsManager(currentNodeId = null, selectedLlm = null, selectedWorkflow = null, selectedRole = null) {
         if (!agentListContainer) return;
 
         try {
-            const [agentsRes, nodesRes, llmRes, workflowRes] = await Promise.all([
+            const [agentsRes, nodesRes, llmRes, workflowRes, roleRes] = await Promise.all([
                 getData('/agent/list'),
                 getData('/node/list'),
                 getData('/llm/list'),
-                getData('/workflow/list')
+                getData('/workflow/list'),
+                getData('/role/list')
             ]);
 
             // 1. Сортируем группы по полю position (от меньшего к большему)
@@ -402,6 +409,7 @@
             const agents = agentsRes.result;
             const llms = llmRes.result;
             const workflows = workflowRes.result;
+            const roles = roleRes.result;
 
             // 2. Заполняем Select групп (в отсортированном порядке)
             const nodeSelect = document.getElementById('node_id');
@@ -431,6 +439,15 @@
                 workflowSelect.appendChild(opt);
             });
 
+            const roleSelect = document.getElementById('role_id');
+            roleSelect.innerHTML = '<option value="">Не назначена</option>';
+            roles.forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r.id;
+                opt.textContent = r.name;
+                roleSelect.appendChild(opt);
+            });
+
             if (currentNodeId) {
                 nodeSelect.value = currentNodeId;
             }
@@ -441,6 +458,10 @@
 
             if (selectedWorkflow) {
                 workflowSelect.value = selectedWorkflow;
+            }
+
+            if (selectedRole) {
+                roleSelect.value = selectedRole;
             }
 
             renderNodeList(agents, nodes);
@@ -512,6 +533,7 @@
                 'description': agent.description || '',
                 'llm_id': agent.llm_id || '',
                 'workflow_id': agent.workflow_id || '',
+                'role_id': agent.role_id || '',
                 'prompt_system': agent.prompt_system || '',
                 'greeting': agent.greeting || ''
             };
@@ -565,6 +587,7 @@
         const currentNodeId = document.getElementById('node_id').value;
         const currentLlmId = document.getElementById('llm_id').value;
         const currentWorkflowId = document.getElementById('workflow_id').value;
+        const currentRoleId = document.getElementById('role_id').value;
         const saveBtn = document.getElementById('saveBtn');
         const varRows = document.querySelectorAll('.variable-row');
         const workflowVariableObj = {};
@@ -584,6 +607,7 @@
             title: document.getElementById('title').value,
             llm_id: document.getElementById('llm_id').value || null,
             workflow_id: document.getElementById('workflow_id').value || null,
+            role_id: document.getElementById('role_id').value || null,
             prompt_system: document.getElementById('prompt_system').value,
             greeting: document.getElementById('greeting').value,
             description: document.getElementById('description').value,
@@ -668,6 +692,7 @@
             document.getElementById('node_id').value = '';
             document.getElementById('llm_id').value = '';
             document.getElementById('workflow_id').value = '';
+            document.getElementById('role_id').value = '';
 
             // Обновляем UI
             document.getElementById('formTitle').textContent = 'Новый агент';

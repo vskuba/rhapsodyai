@@ -6,18 +6,20 @@ from src.mysql_.repository.agent_workflow_repository import AgentWorkflowReposit
 from src.mysql_.repository.agent_workflow_step_repository import AgentWorkflowStepRepository
 from src.mysql_.repository.agent_workflow_step_type_repository import AgentWorkflowStepTypeRepository
 from src.mysql_.repository.agent_workflow_variable_repository import AgentWorkflowVariableRepository
+from src.auth.auth import AuthChecker
+from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
 
 @router.get("/workflow/list")
-async def workflow_list(request: Request):
+async def workflow_list(request: Request, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
     repo = AgentWorkflowRepository()
     return {"result": await repo.find_by({}, 'title ASC')}
 
 
 @router.post("/workflow")
-async def workflow_create(request: Request, data: dict, db=Depends(mysql_get_db_async)):
+async def workflow_create(request: Request, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.WORKFLOW_CREATE]))):
     async with db:
         sql = """
             INSERT INTO agent_workflow (name, title, node_id, description, position)
@@ -40,32 +42,32 @@ async def workflow_create(request: Request, data: dict, db=Depends(mysql_get_db_
 
 
 @router.get("/workflow/{node_id}/list")
-async def workflow_list(request: Request, node_id: int):
+async def workflow_list(request: Request, node_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
     repo = AgentWorkflowRepository()
     return {"result": await repo.find_by({"node_id": node_id}, 'title ASC')}
 
 
 @router.get("/workflow/{workflow_id}")
-async def workflow(request: Request, workflow_id: int):
+async def workflow(request: Request, workflow_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
     repo = AgentWorkflowRepository()
     return {"result": await repo.find(workflow_id)}
 
 
 @router.put("/workflow/{workflow_id}")
-async def workflow(request: Request, workflow_id: int, data: dict):
+async def workflow(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
     repo = AgentWorkflowRepository()
     return {"result": await repo.update(workflow_id, data)}
 
 
 @router.get("/workflow/{workflow_id}/steps")
-async def workflow_steps(request: Request, workflow_id: int):
+async def workflow_steps(request: Request, workflow_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
     """
     Получает все шаги задачи вместе с их иконками и описаниями типов.
     """
     sql = f"""
-            SELECT 
-                ts.*, 
-                tst.icon, 
+            SELECT
+                ts.*,
+                tst.icon,
                 tst.description as description
             FROM `agent_workflow_step` ts
             LEFT JOIN `agent_workflow_step_type` tst ON ts.type_id = tst.id
@@ -78,11 +80,11 @@ async def workflow_steps(request: Request, workflow_id: int):
 
 
 @router.get("/workflow/{workflow_id}/variables")
-async def workflow_variables(request: Request, workflow_id: int):
+async def workflow_variables(request: Request, workflow_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
     sql = f"""
             SELECT *
-            FROM `agent_workflow_variable` 
-            WHERE workflow_id = %s 
+            FROM `agent_workflow_variable`
+            WHERE workflow_id = %s
             ORDER BY name ASC
         """
     async with mysql_get_db_async() as db:
@@ -93,7 +95,7 @@ async def workflow_variables(request: Request, workflow_id: int):
 
 
 @router.post("/workflow/{workflow_id}/step")
-async def workflow_step_add(request: Request, workflow_id: int, data: dict):
+async def workflow_step_add(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
     repo_workflow_step = AgentWorkflowStepRepository()
     repo_workflow_step_type = AgentWorkflowStepTypeRepository()
 
@@ -120,7 +122,7 @@ async def workflow_step_add(request: Request, workflow_id: int, data: dict):
 
 
 @router.post("/workflow/{workflow_id}/variable")
-async def workflow_variable_add(request: Request, workflow_id: int, data: dict):
+async def workflow_variable_add(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
     repo_workflow_variable = AgentWorkflowVariableRepository()
 
     variable = await repo_workflow_variable.find_one_by({"workflow_id": workflow_id, "name": data.get("name")})
@@ -139,7 +141,7 @@ async def workflow_variable_add(request: Request, workflow_id: int, data: dict):
 
 
 @router.put("/workflow/{workflow_id}/steps/reorder")
-async def workflow_steps_reorder(request: Request, workflow_id: int, data: dict):
+async def workflow_steps_reorder(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
     repo = AgentWorkflowStepRepository()
     positions = data.get("positions", [])
 
@@ -154,18 +156,18 @@ async def workflow_steps_reorder(request: Request, workflow_id: int, data: dict)
 
 
 @router.put("/workflow/{workflow_id}/step/{workflow_step_id}")
-async def workflow_step_update(request: Request, workflow_step_id: int, data: dict):
+async def workflow_step_update(request: Request, workflow_step_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
     repo = AgentWorkflowStepRepository()
     return {"result": await repo.update(workflow_step_id, data)}
 
 
 @router.delete("/workflow/{workflow_id}/step/{workflow_step_id}")
-async def workflow_step_delete(request: Request, workflow_step_id: int):
+async def workflow_step_delete(request: Request, workflow_step_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))):
     repo = AgentWorkflowStepRepository()
     return {"result": await repo.delete(workflow_step_id)}
 
 
 @router.delete("/workflow/{workflow_id}/variable/{workflow_variable_id}")
-async def workflow_variable_delete(request: Request, workflow_variable_id: int):
+async def workflow_variable_delete(request: Request, workflow_variable_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))):
     repo = AgentWorkflowVariableRepository()
     return {"result": await repo.delete(workflow_variable_id)}

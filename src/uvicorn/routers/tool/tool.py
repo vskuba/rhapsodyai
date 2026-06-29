@@ -8,12 +8,14 @@ from src.ai.ai_tool import ai_tool_sync, ai_tool_args_prepare
 from src.mysql_.repository.tool_group_repository import ToolGroupRepository
 from src.mysql_.repository.tool_repository import ToolRepository
 from mysql_.mysql_ import mysql_get_db_async
+from src.auth.auth import AuthChecker
+from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
 
 @router.get("/tool/list")
-async def tool_list(request: Request, db=Depends(mysql_get_db_async)):
+async def tool_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.TOOL_VIEW]))):
     async with db:
         sql = """
             SELECT t.*, tg.name as group_name
@@ -24,25 +26,25 @@ async def tool_list(request: Request, db=Depends(mysql_get_db_async)):
         return {"result": await db.fetchall()}
 
 
-@router.get("/tool/{tool_name}")
-async def tool_get(request: Request, tool_id: int):
+@router.get("/tool/{tool_id}")
+async def tool_get(request: Request, tool_id: int, user=Depends(AuthChecker([AuthPermission.TOOL_VIEW]))):
     repo = ToolRepository()
     return {"result": await repo.find(tool_id)}
 
 
 @router.get("/tool/group/list")
-async def tool_group_list(request: Request):
+async def tool_group_list(request: Request, user=Depends(AuthChecker([AuthPermission.TOOL_VIEW]))):
     repo = ToolGroupRepository()
     return {"result": await repo.find_by({}, 'name ASC')}
 
 
 @router.post("/tool/sync")
-async def tool_sync(request: Request):
+async def tool_sync(request: Request, user=Depends(AuthChecker([AuthPermission.TOOL_UPDATE]))):
     return {"result": "ok", "synced_count": await ai_tool_sync(force=True)}
 
 
 @router.post("/tool/test/{tool_id}")
-async def tool_test(request: Request, tool_id: int, args: dict):
+async def tool_test(request: Request, tool_id: int, args: dict, user=Depends(AuthChecker([AuthPermission.TOOL_TEST]))):
     """
     Роутер для изолированного тестирования динамических инструментов.
     Приводит типы аргументов на основе аннотаций функции и выполняет её.

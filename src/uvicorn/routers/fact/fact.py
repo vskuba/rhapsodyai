@@ -2,12 +2,14 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
+from src.auth.auth import AuthChecker
+from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
 
 @router.get("/fact/collection/list")
-async def fact_collection_list(request: Request, db=Depends(mysql_get_db_async)):
+async def fact_collection_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.FACT_COLLECTION_VIEW]))):
     async with db:
         await db.execute("SELECT * FROM fact_collection")
         return {"result": await db.fetchall()}
@@ -20,7 +22,8 @@ async def fact_list(
         page: int = 1,
         limit: int = 20,
         query: str = '',
-        db=Depends(mysql_get_db_async)
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.FACT_VIEW]))
 ):
     page = max(1, page)
     limit = max(1, min(100, limit))
@@ -83,7 +86,8 @@ async def fact_collection_save(
         request: Request,
         collection_id: int,
         data: list[dict],
-        db=Depends(mysql_get_db_async)
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.FACT_CREATE]))
 ):
     if not data or not isinstance(data, list):
         raise HTTPException(status_code=400, detail="Fact data collection must be a non-empty list")
@@ -124,7 +128,7 @@ async def fact_collection_save(
 
 
 @router.delete("/fact/{fact_id}")
-async def delete_fact(fact_id: int, db=Depends(mysql_get_db_async)):
+async def delete_fact(fact_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.FACT_DELETE]))):
     async with db:
         # Проверяем существование
         await db.execute("DELETE FROM fact WHERE id = %s", fact_id)

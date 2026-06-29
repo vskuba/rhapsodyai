@@ -1,14 +1,31 @@
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi import Response
 
 from queue_.queue_ import queue_get_all
+from src.auth.auth import AuthChecker, get_current_user
+from src.auth.auth_session import AuthSession
+from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
 
+async def require_auth(request: Request) -> AuthSession:
+    """Dependency that requires authentication for HTML routes.
+    Redirects to login if not authenticated (401), re-raises 403."""
+    try:
+        user = await get_current_user(request)
+        return user
+    except HTTPException as e:
+        # Only redirect on 401 (not authenticated)
+        # Let 403 (forbidden) and other errors propagate
+        if e.status_code == 401:
+            raise HTTPException(status_code=302, detail="Not authenticated", headers={"Location": "/login"})
+        raise
+
+
 @router.get("/login", response_class=HTMLResponse)
-async def fact(request: Request):
+async def login_page(request: Request):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "login.html"
@@ -16,7 +33,7 @@ async def fact(request: Request):
 
 
 @router.get("/", response_class=HTMLResponse)
-async def default(request: Request):
+async def default(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/chat.html"
@@ -24,7 +41,7 @@ async def default(request: Request):
 
 
 @router.get("/admin/node", response_class=HTMLResponse)
-async def node(request: Request):
+async def node(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/node.html"
@@ -32,7 +49,7 @@ async def node(request: Request):
 
 
 @router.get("/admin/agent", response_class=HTMLResponse)
-async def agent(request: Request):
+async def agent(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/agent.html"
@@ -40,7 +57,7 @@ async def agent(request: Request):
 
 
 @router.get("/admin/session", response_class=HTMLResponse)
-async def session(request: Request):
+async def session(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/session.html"
@@ -48,7 +65,7 @@ async def session(request: Request):
 
 
 @router.get("/admin/user", response_class=HTMLResponse)
-async def session(request: Request):
+async def user_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/user.html"
@@ -56,7 +73,7 @@ async def session(request: Request):
 
 
 @router.get("/admin/workflow", response_class=HTMLResponse)
-async def task(request: Request):
+async def workflow_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/workflow.html"
@@ -64,7 +81,7 @@ async def task(request: Request):
 
 
 @router.get("/admin/fact", response_class=HTMLResponse)
-async def fact(request: Request):
+async def fact_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/fact.html"
@@ -72,7 +89,7 @@ async def fact(request: Request):
 
 
 @router.get("/admin/fact_collection", response_class=HTMLResponse)
-async def fact(request: Request):
+async def fact_collection_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/fact_collection.html"
@@ -80,7 +97,7 @@ async def fact(request: Request):
 
 
 @router.get("/admin/tool", response_class=HTMLResponse)
-async def fact(request: Request):
+async def tool_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/tool.html"
@@ -88,10 +105,9 @@ async def fact(request: Request):
 
 
 @router.get("/admin/queue", response_class=HTMLResponse)
-async def queue(request: Request):
+async def queue_page(request: Request, user: AuthSession = Depends(require_auth)):
     queues = queue_get_all()
 
-    # Генерируем простые строки таблицы
     rows = ""
     for name, q in queues.items():
         size = q.qsize() if hasattr(q, 'qsize') else "N/A"
@@ -107,7 +123,7 @@ async def queue(request: Request):
 
 
 @router.get("/admin/converter/text-to-fact", response_class=HTMLResponse)
-async def default(request: Request):
+async def converter_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/converter_text_to_fact.html"
@@ -116,4 +132,4 @@ async def default(request: Request):
 
 @router.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    return Response(status_code=204)  # 204 No Content
+    return Response(status_code=204)

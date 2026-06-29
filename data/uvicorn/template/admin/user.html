@@ -260,6 +260,13 @@
                                     <input type="text" id="email" class="form-control" value="0">
                                 </div>
                                 <div class="form-group">
+                                    <label>Role</label>
+                                    <select id="role" class="form-control">
+                                        <option value="user">user</option>
+                                        <option value="admin">admin</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
                                     <label>Модель LLM</label>
                                     <select id="llm_id" class="form-control">
                                         <option value="">По умолчанию</option>
@@ -376,6 +383,7 @@
             document.getElementById('userId').value = user.id;
             document.getElementById('username').value = user.username;
             document.getElementById('email').value = user.email;
+            document.getElementById('role').value = user.role || 'user';
             document.getElementById('llm_id').value = user.llm_id;
 
             document.getElementById('formTitle').textContent = `Редактирование пользователя: ${user.username}`;
@@ -395,6 +403,7 @@
         document.getElementById('formTitle').textContent = 'Создание нового пользователя';
         document.getElementById('username').value = '';
         document.getElementById('email').value = '';
+        document.getElementById('role').value = 'user';
         if (saveBtn) saveBtn.disabled = false;
         if (deleteBtn) deleteBtn.style.display = 'none';
     }
@@ -409,6 +418,7 @@
         const payload = {
             username: document.getElementById('username').value,
             email: document.getElementById('email').value,
+            role: document.getElementById('role').value,
             llm_id: document.getElementById('llm_id').value
         };
 

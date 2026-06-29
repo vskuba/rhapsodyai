@@ -2,6 +2,8 @@ from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel
 
 from mysql_.mysql_ import mysql_get_db_async
+from src.auth.auth import AuthChecker
+from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
@@ -16,16 +18,16 @@ class SessionMessagesJsonRequest(BaseModel):
 
 
 @router.post("/session/list")
-async def session_list(request: Request, json_request: SessionJsonRequest, db=Depends(mysql_get_db_async)):
+async def session_list(request: Request, json_request: SessionJsonRequest, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
     async with db:
         sql = """
-            SELECT 
-                session_uuid, 
-                role,               
-                kind_type,          
+            SELECT
+                session_uuid,
+                role,
+                kind_type,
                 MAX(created_at) as last_message_at,
                 COUNT(*) as msg_count
-            FROM agent_session 
+            FROM agent_session
             WHERE 1=1
         """
         params = []
@@ -43,15 +45,15 @@ async def session_list(request: Request, json_request: SessionJsonRequest, db=De
 
 
 @router.post("/session/messages")
-async def session_messages(request: Request, json_request: SessionMessagesJsonRequest, db=Depends(mysql_get_db_async)):
+async def session_messages(request: Request, json_request: SessionMessagesJsonRequest, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
     async with db:
         # Выбираем ВСЕ поля и ВСЕ типы сообщений для инспекции
         sql = """
             SELECT s.*, l.name as llm_name
             FROM agent_session s
             LEFT JOIN llm l ON s.llm_id = l.id
-            WHERE s.session_uuid = %s 
-            ORDER BY s.id ASC 
+            WHERE s.session_uuid = %s
+            ORDER BY s.id ASC
             LIMIT %s
         """
         await db.execute(sql, (json_request.session_uuid, 500))

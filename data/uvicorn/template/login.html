@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Авторизация | AI System</title>
+    <link rel="stylesheet" href="/static/css/common.css">
+    <link rel="stylesheet" href="/static/css/menu_top.css">
+    <link rel="stylesheet" href="/static/css/notification.css">
+
+
+    <style>
+        /* Центрирование контейнера формы на странице */
+        .login-wrapper {
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        /* Карточка формы авторизации в стиле сайдбаров и чата */
+        .login-card {
+            background: #ffffff;
+            border: 1px solid #edf2f7;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            padding: 30px;
+            width: 100%;
+            max-width: 400px;
+            box-sizing: border-box;
+        }
+
+        /* Заголовок формы в цвет оранжевых/темных элементов вашей системы */
+        .login-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 24px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .login-title span{
+            font-size: 13px;
+            color: #8e9091;
+            margin-bottom: 24px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Группа полей */
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        /* Лейблы в стиле .sidebar-label с скриншота */
+        .form-label {
+            display: block;
+            font-size: 11px;
+            font-weight: bold;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            padding-left: 2px;
+        }
+
+        /* Инпуты в стиле полей ввода системы */
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #2c3e50;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        /* Синий фокус в стиле ваших кнопок/выделений */
+        .form-input:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
+        }
+
+        /* Кнопка входа (в стиле кнопки Отправить/New Session) */
+        .login-btn {
+            width: 100%;
+            background: #007bff; /* Базовый синий цвет вашей системы */
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            margin-top: 10px;
+        }
+
+        .login-btn:hover {
+            background: #0056b3;
+        }
+
+        .login-btn:active {
+            transform: scale(0.98);
+        }
+
+        .login-btn:disabled {
+            background: #94bfff;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            color: #dc3545;
+            font-size: 13px;
+            margin-top: 10px;
+            text-align: center;
+            min-height: 18px;
+        }
+    </style>
+</head>
+<body>
+<div class="page-content">
+
+    <div class="login-wrapper">
+        <div class="login-card">
+            <div class="login-title">
+                <span>Вход в систему</span>
+                <br> Rhapsody AI
+            </div>
+
+            <form id="loginForm">
+                <!-- Поле Username -->
+                <div class="form-group">
+                    <label class="form-label" for="username">Имя пользователя / Email</label>
+                    <input class="form-input" type="text" id="username" name="username" placeholder="user1" required
+                           autocomplete="username">
+                </div>
+
+                <!-- Поле Password -->
+                <div class="form-group">
+                    <label class="form-label" for="password">Пароль</label>
+                    <input class="form-input" type="password" id="password" name="password" placeholder="••••••••"
+                           required
+                           autocomplete="current-password">
+                </div>
+
+                <!-- Кнопка войти -->
+                <button type="submit" class="login-btn" id="loginBtn">Войти</button>
+
+                <div class="error-message" id="errorMessage"></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import {postData, getData, putData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    document.getElementById('loginForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const btn = document.getElementById('loginBtn');
+        const errorDiv = document.getElementById('errorMessage');
+        errorDiv.textContent = '';
+
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!username || !password) {
+            errorDiv.textContent = 'Введите логин и пароль';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Вход...';
+
+        try {
+            const response = await postData('/auth/login', {username, password});
+
+            if (response && response.message) {
+                showNotification(response.message, 'success');
+                // Перенаправляем на главную админку
+                window.location.href = '/admin/agent';
+            } else {
+                errorDiv.textContent = 'Ошибка входа';
+            }
+        } catch (err) {
+            errorDiv.textContent = err.message || 'Ошибка входа';
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Войти';
+        }
+    });
+</script>
+
+</body>
+</html>

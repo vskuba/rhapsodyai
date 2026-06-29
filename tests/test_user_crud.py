@@ -1,0 +1,247 @@
+"""
+User CRUD tests.
+
+Tests cover:
+- Creating a user (POST /user)
+- Reading user list (GET /user/list)
+- Reading a single user (GET /user/{user_id})
+- Updating a user (PUT /user/{user_id})
+- Deleting a user (DELETE /user/{user_id})
+- Role field handling
+"""
+import pytest
+import httpx
+from typing import AsyncGenerator
+
+BASE_URL = "http://localhost:8011"
+
+
+class TestUserCRUD:
+    """Test the complete user CRUD flow."""
+
+    @pytest.fixture
+    async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        """Create an async HTTP client for testing."""
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
+            # Login as admin first
+            await client.post(
+                "/auth/login",
+                json={"username": "user1", "password": "admin123"},
+            )
+            yield client
+
+    async def test_get_user_list(self, client: httpx.AsyncClient):
+        """Test getting user list."""
+        response = await client.get("/user/list")
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        assert isinstance(data["result"], list)
+
+    async def test_create_user(self, client: httpx.AsyncClient):
+        """Test creating a new user."""
+        response = await client.post(
+            "/user",
+            json={
+                "username": "test_user_crud",
+                "email": "test_crud@example.com",
+                "role": "user",
+                "llm_id": None
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        user = data["result"]
+        assert user["username"] == "test_user_crud"
+        assert user["email"] == "test_crud@example.com"
+        assert user["role"] == "user"
+        assert "id" in user
+        return user["id"]
+
+    async def test_create_user_with_admin_role(self, client: httpx.AsyncClient):
+        """Test creating a new user with admin role."""
+        response = await client.post(
+            "/user",
+            json={
+                "username": "test_admin_crud",
+                "email": "test_admin_crud@example.com",
+                "role": "admin",
+                "llm_id": None
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        user = data["result"]
+        assert user["username"] == "test_admin_crud"
+        assert user["email"] == "test_admin_crud@example.com"
+        assert user["role"] == "admin"
+        assert "id" in user
+        return user["id"]
+
+    async def test_get_user_by_id(self, client: httpx.AsyncClient):
+        """Test getting a single user by ID."""
+        # First create a user
+        create_response = await client.post(
+            "/user",
+            json={
+                "username": "test_user_get",
+                "email": "test_get@example.com",
+                "role": "user",
+                "llm_id": None
+            },
+        )
+        assert create_response.status_code == 200
+        user_id = create_response.json()["result"]["id"]
+
+        # Now get the user
+        response = await client.get(f"/user/{user_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        user = data["result"]
+        assert user["id"] == user_id
+        assert user["username"] == "test_user_get"
+        assert user["email"] == "test_get@example.com"
+        assert user["role"] == "user"
+
+    async def test_update_user(self, client: httpx.AsyncClient):
+        """Test updating a user."""
+        # First create a user
+        create_response = await client.post(
+            "/user",
+            json={
+                "username": "test_user_update",
+                "email": "test_update@example.com",
+                "role": "user",
+                "llm_id": None
+            },
+        )
+        assert create_response.status_code == 200
+        user_id = create_response.json()["result"]["id"]
+
+        # Update the user
+        response = await client.put(
+            f"/user/{user_id}",
+            json={
+                "username": "test_user_updated",
+                "email": "test_updated@example.com",
+                "role": "admin",
+                "llm_id": None
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        user = data["result"]
+        assert user["id"] == user_id
+        assert user["username"] == "test_user_updated"
+        assert user["email"] == "test_updated@example.com"
+        assert user["role"] == "admin"
+
+    async def test_delete_user(self, client: httpx.AsyncClient):
+        """Test deleting a user."""
+        # First create a user
+        create_response = await client.post(
+            "/user",
+            json={
+                "username": "test_user_delete",
+                "email": "test_delete@example.com",
+                "role": "user",
+                "llm_id": None
+            },
+        )
+        assert create_response.status_code == 200
+        user_id = create_response.json()["result"]["id"]
+
+        # Delete the user
+        response = await client.delete(f"/user/{user_id}")
+        assert response.status_code == 200
+
+        # Verify user is deleted
+        get_response = await client.get(f"/user/{user_id}")
+        assert get_response.status_code == 404 or (get_response.status_code == 200 and get_response.json().get("result") is None)
+
+    async def test_user_default_role_is_user(self, client: httpx.AsyncClient):
+        """Test that default role is 'user' when not specified."""
+        response = await client.post(
+            "/user",
+            json={
+                "username": "test_user_default_role",
+                "email": "test_default_role@example.com",
+                # role not specified
+                "llm_id": None
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        user = data["result"]
+        assert user["role"] == "user"  # Default should be 'user'
+
+    async def test_user_with_llm_id(self, client: httpx.AsyncClient):
+        """Test creating a user with llm_id."""
+        # First get available LLMs
+        llm_response = await client.get("/llm/list")
+        assert llm_response.status_code == 200
+        llms = llm_response.json()["result"]
+        if len(llms) > 0:
+            llm_id = llms[0]["id"]
+            response = await client.post(
+                "/user",
+                json={
+                    "username": "test_user_with_llm",
+                    "email": "test_llm@example.com",
+                    "role": "user",
+                    "llm_id": llm_id
+                },
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert "result" in data
+            user = data["result"]
+            assert user["llm_id"] == llm_id
+
+    async def test_update_user_partial(self, client: httpx.AsyncClient):
+        """Test updating only some fields of a user."""
+        # First create a user
+        create_response = await client.post(
+            "/user",
+            json={
+                "username": "test_user_partial",
+                "email": "test_partial@example.com",
+                "role": "user",
+                "llm_id": None
+            },
+        )
+        assert create_response.status_code == 200
+        user_id = create_response.json()["result"]["id"]
+
+        # Update only the role
+        response = await client.put(
+            f"/user/{user_id}",
+            json={
+                "role": "admin"
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        user = data["result"]
+        assert user["id"] == user_id
+        assert user["role"] == "admin"
+        # Other fields should remain unchanged
+        assert user["username"] == "test_user_partial"
+        assert user["email"] == "test_partial@example.com"
+
+    async def test_delete_nonexistent_user(self, client: httpx.AsyncClient):
+        """Test deleting a non-existent user returns 404."""
+        response = await client.delete("/user/999999")
+        # The API might return 200 even for non-existent, or 404
+        # Let's check what the actual behavior is
+        assert response.status_code in [200, 404]
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

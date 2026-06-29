@@ -69,6 +69,15 @@
                 <li><a href="http://localhost:3012" target="_blank">Cronicle</a></li>
             </ul>
         </li>
+
+        <!-- User menu with logout -->
+        <li class="nav-item user-menu">
+            <a href="#" class="user-menu-btn">👤 Пользователь</a>
+            <ul class="submenu">
+                <li><a href="/auth/me" id="currentUserInfo">Моя сессия</a></li>
+                <li><a href="#" id="logoutBtn">Выйти</a></li>
+            </ul>
+        </li>
     </ul>
 </nav>
 
@@ -77,6 +86,41 @@
 <div class="page-content">
     {% block content %}{% endblock %}
 </div>
+
+<script type="module">
+    import {postData, getData, putData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    // Load current user info
+    async function loadCurrentUser() {
+        try {
+            const response = await getData('/auth/me');
+            if (response && response.user) {
+                const btn = document.querySelector('.user-menu-btn');
+                if (btn) {
+                    btn.textContent = `👤 ${response.user.username} (${response.user.role})`;
+                }
+            }
+        } catch (e) {
+            // Not authenticated
+        }
+    }
+
+    // Logout handler
+    document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+            await postData('/auth/logout', {});
+            showNotification('Вы успешно вышли из системы', 'success');
+            window.location.href = '/login';
+        } catch (err) {
+            showNotification('Ошибка при выходе: ' + err.message, 'error');
+        }
+    });
+
+    // Load user info on page load
+    loadCurrentUser();
+</script>
 
 {% block scripts %}{% endblock %}
 </body>
