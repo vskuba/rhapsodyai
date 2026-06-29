@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status, Depends
 
 from logging_.logging_ import logger_info
 from src.auth.auth_permission import AuthPermission
@@ -10,8 +10,8 @@ class AuthChecker:
     def __init__(self, required_permissions: list[AuthPermission]):
         self.required_permissions = required_permissions
 
-    def __call__(self):
-        current_user = get_current_user()
+    async def __call__(self, request: Request) -> AuthSession:
+        current_user = await get_current_user(request)
 
         logger_info('🔒 Текущий пользователь: ' + str(current_user))
 
@@ -31,7 +31,16 @@ class AuthChecker:
         return current_user
 
 
-def get_current_user() -> AuthSession:
-    # Здесь должен быть ваш код извлечения сессии из Header/Cookie
-    # Например: payload = jwt.decode(token, SECRET_KEY)
-    return AuthSession(user_id=1, username="ivan_admin", role="admin")
+async def get_current_user(request: Request) -> AuthSession:
+    """Extract user from session cookie."""
+    user_id = request.session.get("user_id")
+    username = request.session.get("username")
+    role = request.session.get("role")
+
+    if not user_id or not username or not role:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+
+    return AuthSession(user_id=user_id, username=username, role=role)
