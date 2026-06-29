@@ -7,6 +7,14 @@ from queue_.queue_ import queue_get_all
 router = APIRouter()
 
 
+@router.get("/login", response_class=HTMLResponse)
+async def fact(request: Request):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "login.html"
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 async def default(request: Request):
     return request.app.state.jinja2_template.TemplateResponse(
