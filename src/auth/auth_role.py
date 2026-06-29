@@ -10,6 +10,17 @@ class AuthRole(str, Enum):
 
 AUTH_ROLE_PERMISSIONS = {
     AuthRole.ROLE_USER: {
-        AuthPermission.USERS_VIEW
+        AuthPermission.USERS_VIEW,
+        AuthPermission.AGENT_VIEW,
+        AuthPermission.WORKFLOW_VIEW,
+        AuthPermission.NODE_VIEW,
+        AuthPermission.TOOL_VIEW,
+        AuthPermission.LLM_VIEW,
+        AuthPermission.FACT_VIEW,
+        AuthPermission.FACT_COLLECTION_VIEW,
+        AuthPermission.SESSION_VIEW,
+        AuthPermission.SETTING_VIEW,
+        AuthPermission.QUEUE_VIEW,
     },
+    # Admin gets all permissions implicitly in AuthChecker
 }
