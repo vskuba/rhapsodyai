@@ -27,9 +27,9 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 
 --
 
-INSERT INTO `user` (`id`, `username`, `email`, `llm_id`, `created_at`) VALUES
-(1, 'user1', 'user1@example.com', 12, '2026-04-26 09:17:35'),
-(2, 'user2', 'user2@example.com', 20, '2026-04-26 09:17:35');
+INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role`, `llm_id`, `created_at`) VALUES
+(1, 'user1', 'user1@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 'admin', 12, '2026-04-26 09:17:35'),
+(2, 'user2', 'user2@example.com', '$2b$12$xfglXXXp3W2QCb1XnZhNBuDYAJc.Fy51fI43NlVhBfVQTLaYpD1Ca', 'user', 20, '2026-04-26 09:17:35');
 
 --
 
