@@ -34,6 +34,8 @@ CREATE TABLE `user` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `username` CHAR(50) NOT NULL,
     `email` CHAR(50) NOT NULL,
+    `password_hash` CHAR(100) NOT NULL,
+    `role` CHAR(20) NOT NULL DEFAULT 'user',
     `llm_id` INT DEFAULT NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_user_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
