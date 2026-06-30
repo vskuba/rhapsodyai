@@ -107,8 +107,8 @@ services:
       - CRONICLE_echo=1
     volumes:
       - ./:/app
-      - cronicle-data:/opt/cronicle/data
-      - cronicle-logs:/opt/cronicle/logs
+      - ./data/cronicle/data:/opt/cronicle/data
+      - ./data/cronicle/logs:/opt/cronicle/logs
     networks:
       - os-net
     depends_on:

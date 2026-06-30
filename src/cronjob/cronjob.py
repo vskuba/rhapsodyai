@@ -25,6 +25,11 @@ class Cronjob:
 
     async def execute(self) -> CronjobJsonResponse:
         current_process = None
+
+        cronjob_path = self.json_request.cronjob_path
+        if not cronjob_path.startswith('src/cronjob/'):
+            return CronjobJsonResponse(status="error", error_message=f"Недопустимый путь к cronjob: {cronjob_path}")
+
         file_path = Path(self.json_request.cronjob_path)
 
         if not file_path.exists():

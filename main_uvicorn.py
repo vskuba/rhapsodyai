@@ -120,7 +120,7 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
     # Allow public paths
-    public_paths = ['/login', '/auth/login', '/auth/logout', '/favicon.ico', '/static']
+    public_paths = ['/login', '/auth/login', '/auth/logout', '/cronjob', '/favicon.ico', '/static']
     if any(path.startswith(p) for p in public_paths):
         return await call_next(request)
 

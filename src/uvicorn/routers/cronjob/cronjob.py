@@ -9,8 +9,6 @@ router = APIRouter()
 async def default(json_request: CronjobJsonRequest):
     result = await Cronjob(json_request).execute()
 
-    # print(f"DEBUG: Status={result.status}, Error={result.error_message}")
-
     if result.status == "error":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
