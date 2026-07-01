@@ -237,10 +237,7 @@
     <!-- БЛОК 1: Фильтры, Коллекции и Поиск (Сверху) -->
     <div class="fact-header-filters" id="block-1">
 
-        <div class="filter-item search-box">
-            <span class="sidebar-label">Поиск по контенту</span>
-            <input type="text" id="factSearch" placeholder="Введите текст...">
-        </div>
+
 
         <!-- Перенесенный список коллекций -->
         <div class="filter-item">
@@ -257,6 +254,11 @@
                 <option value="1">Синхронизировано</option>
                 <option value="0">Ожидает</option>
             </select>
+        </div>
+
+        <div class="filter-item search-box">
+            <span class="sidebar-label">Поиск по контенту</span>
+            <input type="text" id="factSearch" placeholder="Введите текст...">
         </div>
 
         <!-- Кнопка "Добавить факт" удалена -->
@@ -429,7 +431,7 @@
 
         factTableBody.innerHTML = facts.map(f => `
         <tr>
-            <td><div class="doc-name-cell">${escapeHtml(f.content)}</div></td>
+            <td><div class="doc-name-cell">${escapeHtml(f.document)}</div></td>
             <td><div class="content-preview">${escapeHtml(f.language)}</div></td>
             <td><div class="content-preview">${escapeHtml(f.category)}</div></td>
             <td><div class="content-preview">${escapeHtml(f.tags)}</div></td>
