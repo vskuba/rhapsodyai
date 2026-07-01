@@ -1,9 +1,6 @@
 from fastapi import APIRouter, Request, Depends
 
 from mysql_.mysql_ import mysql_get_db_async
-from fastapi import APIRouter, Request, Depends
-
-from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.user_repository import UserRepository
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -15,17 +12,41 @@ router = APIRouter()
 async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
     async with db:
         await db.execute("SELECT * FROM user")
-        return {"result": await db.fetchall()}
+        users = await db.fetchall()
+
+        # Fetch all user_node associations
+        await db.execute("SELECT user_id, node_id FROM user_node")
+        user_nodes = await db.fetchall()
+
+        # Build mapping of user_id -> list of node_ids
+        mapping = {}
+        for row in user_nodes:
+            uid = row["user_id"]
+            nid = row["node_id"]
+            if uid not in mapping:
+                mapping[uid] = []
+            mapping[uid].append(nid)
+
+        for u in users:
+            u["node_ids"] = mapping.get(u["id"], [])
+
+        return {"result": users}
 
 
 @router.get("/user/{user_id}")
-async def user_list(request: Request, user_id: int, user=Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
+async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
     repo = UserRepository()
-    return {"result": await repo.find(user_id)}
+    user_data = await repo.find(user_id)
+    if user_data:
+        async with db:
+            await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
+            rows = await db.fetchall()
+            user_data["node_ids"] = [row["node_id"] for row in rows]
+    return {"result": user_data}
 
 
 @router.post("/user")
-async def user_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.USERS_CREATE]))):
+async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_CREATE]))):
     repo = UserRepository()
     user_id = await repo.add({
         "username": data.get("username"),
@@ -33,12 +54,25 @@ async def user_create(request: Request, data: dict, user=Depends(AuthChecker([Au
         "role": data.get("role", "user"),
         "llm_id": data.get("llm_id")
     })
+
+    # Insert user_node relations if node_ids are passed
+    if "node_ids" in data and data["node_ids"]:
+        async with db:
+            for nid in data["node_ids"]:
+                await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
+
     created_user = await repo.find(user_id)
+    if created_user:
+        async with db:
+            await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
+            rows = await db.fetchall()
+            created_user["node_ids"] = [row["node_id"] for row in rows]
+
     return {"result": created_user}
 
 
 @router.put("/user/{user_id}")
-async def user_update(request: Request, user_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.USERS_UPDATE]))):
+async def user_update(request: Request, user_id: int, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_UPDATE]))):
     repo = UserRepository()
     # Only update fields that are provided (not None)
     update_data = {}
@@ -51,8 +85,26 @@ async def user_update(request: Request, user_id: int, data: dict, user=Depends(A
     if data.get("llm_id") is not None:
         update_data["llm_id"] = data.get("llm_id")
 
-    await repo.update(user_id, update_data)
+    if update_data:
+        await repo.update(user_id, update_data)
+
+    # Sync user_node relations if node_ids are passed in data
+    if "node_ids" in data:
+        node_ids = data["node_ids"] or []
+        async with db:
+            # Delete old relations
+            await db.execute("DELETE FROM user_node WHERE user_id = %s", user_id)
+            # Insert new relations
+            for nid in node_ids:
+                await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
+
     updated_user = await repo.find(user_id)
+    if updated_user:
+        async with db:
+            await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
+            rows = await db.fetchall()
+            updated_user["node_ids"] = [row["node_id"] for row in rows]
+
     return {"result": updated_user}
 
 

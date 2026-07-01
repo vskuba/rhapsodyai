@@ -252,6 +252,105 @@ class TestAgentCRUD:
         if get_res.status_code == 200:
             assert get_res.json().get("result") is None
 
+    async def test_agent_list_filtering_by_user_nodes_and_role(self, client: httpx.AsyncClient):
+        """Test filtering the agent list by user role and nodes (dual criteria)."""
+        # 1. Create a test user with 'user' role and associated nodes [1, 2]
+        user_res = await client.post(
+            "/user",
+            json={
+                "username": "test_filter_user",
+                "email": "test_filter_user@example.com",
+                "role": "user",
+                "llm_id": None,
+                "node_ids": [1, 2]
+            },
+        )
+        assert user_res.status_code == 200
+        user_id = user_res.json()["result"]["id"]
+
+        # 2. Create 3 agents:
+        # Agent A: matching node and matching role (node_id = 1, role_id = 2)
+        agent_a_res = await client.post(
+            "/agent",
+            json={
+                "name": f"{TEST_AGENT_PREFIX}filter_a",
+                "title": "Agent A (Matching)",
+                "greeting": "Hi",
+                "prompt_system": "",
+                "node_id": 1,
+                "role_id": 2, # 'user' role
+                "llm_id": None,
+                "workflow_id": None,
+                "description": "",
+            },
+        )
+        assert agent_a_res.status_code == 200
+        agent_a_id = agent_a_res.json()["result"]["id"]
+
+        # Agent B: different node but matching role (node_id = 3, role_id = 2)
+        agent_b_res = await client.post(
+            "/agent",
+            json={
+                "name": f"{TEST_AGENT_PREFIX}filter_b",
+                "title": "Agent B (Wrong Node)",
+                "greeting": "Hi",
+                "prompt_system": "",
+                "node_id": 3,
+                "role_id": 2, # 'user' role
+                "llm_id": None,
+                "workflow_id": None,
+                "description": "",
+            },
+        )
+        assert agent_b_res.status_code == 200
+        agent_b_id = agent_b_res.json()["result"]["id"]
+
+        # Agent C: matching node but different role (node_id = 1, role_id = 1)
+        agent_c_res = await client.post(
+            "/agent",
+            json={
+                "name": f"{TEST_AGENT_PREFIX}filter_c",
+                "title": "Agent C (Wrong Role)",
+                "greeting": "Hi",
+                "prompt_system": "",
+                "node_id": 1,
+                "role_id": 1, # 'admin' role
+                "llm_id": None,
+                "workflow_id": None,
+                "description": "",
+            },
+        )
+        assert agent_c_res.status_code == 200
+        agent_c_id = agent_c_res.json()["result"]["id"]
+
+        # 3. Request agent list for our test user
+        list_res = await client.get(f"/agent/list?user_id={user_id}")
+        assert list_res.status_code == 200
+        agents = list_res.json()["result"]
+        agent_ids = [a["id"] for a in agents]
+
+        # Verify that Agent A (matching both) is in the list, but Agents B and C are NOT!
+        assert agent_a_id in agent_ids
+        assert agent_b_id not in agent_ids
+        assert agent_c_id not in agent_ids
+
+        # 4. Request agent list for admin user (user1 has role 'admin')
+        admin_list_res = await client.get("/agent/list?user_id=1")
+        assert admin_list_res.status_code == 200
+        admin_agents = admin_list_res.json()["result"]
+        admin_agent_ids = [a["id"] for a in admin_agents]
+
+        # Verify that for admin role, ALL agents are returned
+        assert agent_a_id in admin_agent_ids
+        assert agent_b_id in admin_agent_ids
+        assert agent_c_id in admin_agent_ids
+
+        # Clean up
+        await client.delete(f"/user/{user_id}")
+        await client.delete(f"/agent/{agent_a_id}")
+        await client.delete(f"/agent/{agent_b_id}")
+        await client.delete(f"/agent/{agent_c_id}")
+
     async def test_delete_nonexistent_agent(self, client: httpx.AsyncClient):
         """Test deleting a non-existent agent returns error."""
         response = await client.delete("/agent/999999")

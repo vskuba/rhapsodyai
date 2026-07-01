@@ -743,13 +743,14 @@
         agentSelect.addEventListener('change', getAgentSessionLastEntry);
 
         userSelect.addEventListener('change', async () => {
-            await getAgentSessionLastEntry()
-
             const userId = userSelect.value;
             llmModelSelect.value = allUsers[userId].llm_id;
 
             // Перезагружаем агентов для выбранного пользователя (с учетом роли)
             await loadAgents(userId);
+
+            // Получаем последнюю сессию и историю сообщений (включая greeting) для выбранного агента и пользователя
+            await getAgentSessionLastEntry();
         });
 
         llmModelSelect.addEventListener('change', async () => {

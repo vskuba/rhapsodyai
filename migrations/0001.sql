@@ -4,6 +4,7 @@ USE `project`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
+DROP TABLE IF EXISTS `user_node`;
 DROP TABLE IF EXISTS `tool`;
 DROP TABLE IF EXISTS `tool_group`;
 DROP TABLE IF EXISTS `workflow_step`;
@@ -62,6 +63,14 @@ CREATE TABLE `node` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
     `position` INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `user_node` (
+    `user_id` INT NOT NULL,
+    `node_id` INT NOT NULL,
+    PRIMARY KEY (`user_id`, `node_id`),
+    CONSTRAINT `fk_user_node_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_user_node_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `session` (
@@ -140,6 +149,7 @@ CREATE TABLE `dating_girl` (
 -- Таблица фактов (коллекция фактов)
 CREATE TABLE `fact_collection` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `node_id` INT NULL,
     `name` CHAR(40) NOT NULL,
     `field` CHAR(250) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,

@@ -21,28 +21,50 @@ class AgentJsonRequest(BaseModel):
 
 
 @router.get("/agent/list")
-async def agent_list(request: Request, user_id: int = Query(None, description="ID пользователя для фильтрации агентов по роли"), user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
+async def agent_list(request: Request, user_id: int = Query(None, description="ID пользователя для фильтрации агентов по роли и нодам"), user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
     repo = AgentRepository()
 
-    # Если передан user_id, фильтруем агентов по роли пользователя
+    # Если передан user_id, фильтруем агентов по роли и нодам пользователя
     if user_id is not None:
         user_repo = UserRepository()
         target_user = await user_repo.find(user_id)
 
         if target_user and target_user.get('role'):
-            user_role = target_user['role']  # 'admin', 'user', etc. (already lowercase in DB)
+            user_role = target_user['role']  # 'admin', 'user', etc.
 
-            # Получаем role_id из таблицы role по имени роли
+            # Если роль 'admin', возвращаем всех агентов без фильтрации
+            if user_role.lower() == 'admin':
+                return {"result": await repo.find_by({}, order_by='position ASC')}
+
             async with mysql_get_db_async() as db:
+                # 1. Получаем node_ids пользователя из промежуточной таблицы
+                await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", (user_id,))
+                rows = await db.fetchall()
+                user_node_ids = [row["node_id"] for row in rows]
+
+                # 2. Получаем role_id из таблицы role по имени роли
                 await db.execute("SELECT id FROM `role` WHERE name = %s", (user_role,))
                 role_result = await db.fetchone()
 
                 if role_result:
                     role_id = role_result['id'] if isinstance(role_result, dict) else role_result[0]
-                    # Фильтруем агентов по role_id
-                    return {"result": await repo.find_by({"role_id": role_id}, order_by='position ASC')}
 
-    # Если пользователь не найден или роль не определена, возвращаем всех агентов
+                    # Получаем всех агентов
+                    all_agents = await repo.find_by({}, order_by='position ASC')
+
+                    # Фильтруем агентов:
+                    # - должен относиться к одной из нод пользователя (agent['node_id'] in user_node_ids)
+                    # - роль должна совпадать (agent['role_id'] == role_id)
+                    filtered_agents = [
+                        agent for agent in all_agents
+                        if agent.get("node_id") in user_node_ids and agent.get("role_id") == role_id
+                    ]
+                    return {"result": filtered_agents}
+
+            # Если у пользователя нет подходящей роли, возвращаем пустой список
+            return {"result": []}
+
+    # Если user_id не передан, возвращаем всех агентов
     return {"result": await repo.find_by({}, order_by='position ASC')}
 
 
@@ -50,7 +72,7 @@ async def agent_list(request: Request, user_id: int = Query(None, description="I
 async def agent_list_with_criteria(request: Request, data: AgentJsonRequest, user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
     repo = AgentRepository()
 
-    # Если передан user_id, фильтруем агентов по роли пользователя
+    # Если передан user_id, фильтруем агентов по роли и нодам пользователя
     if data.user_id is not None:
         user_repo = UserRepository()
         target_user = await user_repo.find(data.user_id)
@@ -58,14 +80,35 @@ async def agent_list_with_criteria(request: Request, data: AgentJsonRequest, use
         if target_user and target_user.get('role'):
             user_role = target_user['role']
 
+            # Если роль 'admin', возвращаем всех агентов с учетом дополнительных критериев
+            if user_role.lower() == 'admin':
+                return {"result": await repo.find_by(data.find_by or {}, order_by='position ASC')}
+
             async with mysql_get_db_async() as db:
+                # 1. Получаем node_ids пользователя
+                await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", (data.user_id,))
+                rows = await db.fetchall()
+                user_node_ids = [row["node_id"] for row in rows]
+
+                # 2. Получаем role_id из таблицы role
                 await db.execute("SELECT id FROM `role` WHERE name = %s", (user_role,))
                 role_result = await db.fetchone()
 
                 if role_result:
                     role_id = role_result['id'] if isinstance(role_result, dict) else role_result[0]
-                    criteria = {"role_id": role_id, **(data.find_by or {})}
-                    return {"result": await repo.find_by(criteria, order_by='position ASC')}
+
+                    # Получаем агентов по дополнительным критериям
+                    agents = await repo.find_by(data.find_by or {}, order_by='position ASC')
+
+                    # Фильтруем по совпадению ноды и роли
+                    filtered_agents = [
+                        agent for agent in agents
+                        if agent.get("node_id") in user_node_ids and agent.get("role_id") == role_id
+                    ]
+                    return {"result": filtered_agents}
+
+            # Если у пользователя нет подходящей роли, возвращаем пустой список
+            return {"result": []}
 
     return {"result": await repo.find_by(data.find_by or {}, order_by='position ASC')}
 

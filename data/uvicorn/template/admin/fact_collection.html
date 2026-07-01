@@ -32,6 +32,16 @@
         overflow-y: auto;
     }
 
+    /* Группировка и элементы списка */
+    .group-header {
+        padding: 10px 15px 5px;
+        font-size: 11px;
+        color: #df983d;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
     /* Элементы списка нод */
     .collection-item {
         padding: 10px 15px;
@@ -122,6 +132,17 @@
 
     .form-grid .form-group:not(.form-group-textarea) {
         grid-column: 1;
+    }
+
+    .three-fields-row {
+        display: flex;
+        gap: 15px;
+        grid-column: 1;
+        width: 100%;
+    }
+
+    .three-fields-row .form-group {
+        flex: 1;
     }
 
     .form-group {
@@ -311,15 +332,25 @@
                                     <input type="text" id="name" class="form-control" required>
                                 </div>
 
-                                <div class="form-group">
-                                    <label>Позиция</label>
-                                    <input type="number" id="position" class="form-control" value="0">
+                                <div class="three-fields-row">
+                                    <div class="form-group">
+                                        <label>Позиция</label>
+                                        <input type="number" id="position" class="form-control" value="0">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Языки</label>
+                                        <input type="text" id="language" class="form-control" required value="en,ua,ru">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Нода</label>
+                                        <select id="node_id" class="form-control">
+                                            <option value="0">Вне ноды</option>
+                                        </select>
+                                    </div>
                                 </div>
 
-                                <div class="form-group">
-                                    <label>Языки</label>
-                                    <input type="text" id="language" class="form-control" required value="en,ua,ru">
-                                </div>
                                 <div class="form-group form-group-textarea">
                                     <label>Описание</label>
                                     <textarea id="description" class="form-control"></textarea>
@@ -362,6 +393,30 @@
     const createNewCollectionBtn = document.getElementById('createNewCollection');
     const deleteBtn = document.getElementById('deleteBtn');
 
+    let nodesLoaded = false;
+    let cachedNodes = [];
+    async function loadNodesSelect() {
+        if (nodesLoaded) return;
+        try {
+            const response = await getData('/node/list');
+            const nodes = response.result.sort((a, b) => (a.position || 0) - (b.position || 0));
+            cachedNodes = nodes;
+            const nodeSelect = document.getElementById('node_id');
+            if (nodeSelect) {
+                nodeSelect.innerHTML = '<option value="0">Вне ноды</option>';
+                nodes.forEach(n => {
+                    const opt = document.createElement('option');
+                    opt.value = n.id;
+                    opt.textContent = n.name;
+                    nodeSelect.appendChild(opt);
+                });
+                nodesLoaded = true;
+            }
+        } catch (e) {
+            console.error("Ошибка при загрузке нод:", e);
+        }
+    }
+
     /**
      * Инициализация менеджера: загрузка списка нод
      */
@@ -369,6 +424,8 @@
         if (!collectionListContainer) return;
 
         try {
+            await loadNodesSelect();
+
             const response = await getData('/collection/list');
             const collections = response.result;
 
@@ -383,7 +440,7 @@
     }
 
     /**
-     * Отрисовка списка в левой колонке
+     * Отрисовка списка в левой колонке (разбит по нодам)
      */
     function renderCollectionList(collections, activeId = null) {
         collectionListContainer.innerHTML = '';
@@ -393,20 +450,47 @@
             return;
         }
 
-        collections.forEach(collection => {
-            const div = document.createElement('div');
-            div.className = 'collection-item';
-            // Добавляем data-атрибут с id, чтобы легко найти нужный элемент в DOM
-            div.setAttribute('data-id', collection.id);
+        // Группируем коллекции по ID ноды
+        const collectionsByNode = collections.reduce((acc, c) => {
+            const nid = c.node_id || 0;
+            if (!acc[nid]) acc[nid] = [];
+            acc[nid].push(c);
+            return acc;
+        }, {});
 
-            div.innerHTML = `
-            <span>${collection.name}</span>
-            <span class="collection-pos-badge">${collection.position}</span>
-        `;
+        // Функция для отрисовки блока группы
+        const createNodeSection = (nid, gName) => {
+            const nodeCollections = collectionsByNode[nid];
+            if (!nodeCollections || nodeCollections.length === 0) return; // Не рисуем пустые ноды
 
-            div.onclick = () => selectCollectionForEdit(collection.id, div);
-            collectionListContainer.appendChild(div);
-        });
+            const header = document.createElement('div');
+            header.className = 'group-header';
+            header.textContent = gName;
+            collectionListContainer.appendChild(header);
+
+            // Сортируем коллекции внутри группы по position
+            nodeCollections.sort((a, b) => (a.position || 0) - (b.position || 0));
+
+            nodeCollections.forEach(collection => {
+                const div = document.createElement('div');
+                div.className = 'collection-item';
+                div.setAttribute('data-id', collection.id);
+
+                div.innerHTML = `
+                    <span>${collection.name}</span>
+                    <span class="collection-pos-badge">${collection.position}</span>
+                `;
+
+                div.onclick = () => selectCollectionForEdit(collection.id, div);
+                collectionListContainer.appendChild(div);
+            });
+        };
+
+        // Сначала рендерим коллекции С ГРУППАМИ (в порядке position)
+        cachedNodes.forEach(g => createNodeSection(g.id, g.name));
+
+        // Затем рендерим те, что без ноды (node_id = 0 или null)
+        createNodeSection(0, 'Вне ноды');
 
         // Определяем, какой элемент активировать
         let targetItem = null;
@@ -446,6 +530,7 @@
             document.getElementById('name').value = collection.name;
             document.getElementById('position').value = collection.position || 0;
             document.getElementById('language').value = collection.language;
+            document.getElementById('node_id').value = collection.node_id || 0;
             document.getElementById('description').value = collection.description || '';
 
             renderSchemaTable(collection.schema);
@@ -512,6 +597,7 @@
         document.getElementById('formTitle').textContent = 'Создание новой коллекции';
         document.getElementById('position').value = 0;
         document.getElementById('language').value = 'en,ua,ru';
+        document.getElementById('node_id').value = 0;
         document.getElementById('description').value = '';
         if (saveBtn) saveBtn.disabled = false;
         if (deleteBtn) deleteBtn.style.display = 'none';
@@ -525,6 +611,7 @@
             name: document.getElementById('name').value,
             position: parseInt(document.getElementById('position').value) || 0,
             language: document.getElementById('language').value || 'en',
+            node_id: parseInt(document.getElementById('node_id').value) || 0,
             description: document.getElementById('description').value || ''
         };
 

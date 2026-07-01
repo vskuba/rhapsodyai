@@ -137,6 +137,42 @@
         text-transform: uppercase;
     }
 
+    .nodes-checkbox-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        background: #fafafa;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        padding: 12px;
+    }
+
+    .node-checkbox-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        color: #2c3e50;
+        cursor: pointer;
+        padding: 6px 12px;
+        background: #fff;
+        border: 1px solid #eee;
+        border-radius: 4px;
+        transition: all 0.2s;
+    }
+
+    .node-checkbox-label:hover {
+        border-color: #3498db;
+        background: #fcfdfe;
+    }
+
+    .node-checkbox-label input[type="checkbox"] {
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+    }
+
     .form-group-name {
         min-width: 250px;
     }
@@ -160,6 +196,10 @@
         border-color: #3498db;
         outline: none;
         box-shadow: 0 0 5px rgba(52, 152, 219, 0.2);
+    }
+
+    #user_nodes_select {
+        width: 150px;
     }
 
     /* 6. Кнопки и Футер */
@@ -272,6 +312,13 @@
                                         <option value="">По умолчанию</option>
                                     </select>
                                 </div>
+
+                                <div class="form-group" style="grid-column: span 2;">
+                                    <label>Доступные ноды</label>
+                                    <select id="user_nodes_select" class="form-control" multiple size="10">
+                                        <!-- Options will be rendered here by JS -->
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -303,6 +350,21 @@
     const createNewUserBtn = document.getElementById('createNewUser');
     const deleteBtn = document.getElementById('deleteBtn');
 
+    let allNodes = [];
+
+    function renderNodeSelect(nodes) {
+        const select = document.getElementById('user_nodes_select');
+        if (!select) return;
+
+        select.innerHTML = '';
+        nodes.forEach(node => {
+            const opt = document.createElement('option');
+            opt.value = node.id;
+            opt.textContent = node.name;
+            select.appendChild(opt);
+        });
+    }
+
     /**
      * Инициализация менеджера: загрузка списка нод
      */
@@ -310,15 +372,18 @@
         if (!userListContainer) return;
 
         try {
-            const [usersRes, llmRes] = await Promise.all([
+            const [usersRes, llmRes, nodesRes] = await Promise.all([
                 getData('/user/list'),
-                getData('/llm/list')
+                getData('/llm/list'),
+                getData('/node/list')
             ]);
 
             const users = usersRes.result;
             const llms = llmRes.result;
+            allNodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
 
             renderUserList(users);
+            renderNodeSelect(allNodes);
 
             const llmSelect = document.getElementById('llm_id');
             llmSelect.innerHTML = '<option value="">По умолчанию</option>';
@@ -348,8 +413,8 @@
         users.forEach(user => {
             const div = document.createElement('div');
             div.className = 'user-item';
+            div.setAttribute('data-id', user.id);
 
-            // Добавляем имя и бейдж позиции для наглядности
             div.innerHTML = `
                 <span>${user.username}</span>
             `;
@@ -384,7 +449,16 @@
             document.getElementById('username').value = user.username;
             document.getElementById('email').value = user.email;
             document.getElementById('role').value = user.role || 'user';
-            document.getElementById('llm_id').value = user.llm_id;
+            document.getElementById('llm_id').value = user.llm_id || '';
+
+            // Update selected options in the select element
+            const userNodeIds = user.node_ids || [];
+            const select = document.getElementById('user_nodes_select');
+            if (select) {
+                Array.from(select.options).forEach(opt => {
+                    opt.selected = userNodeIds.includes(parseInt(opt.value));
+                });
+            }
 
             document.getElementById('formTitle').textContent = `Редактирование пользователя: ${user.username}`;
             if (saveBtn) saveBtn.disabled = false;
@@ -404,6 +478,16 @@
         document.getElementById('username').value = '';
         document.getElementById('email').value = '';
         document.getElementById('role').value = 'user';
+        document.getElementById('llm_id').value = '';
+
+        // Clear all selections in select element
+        const select = document.getElementById('user_nodes_select');
+        if (select) {
+            Array.from(select.options).forEach(opt => {
+                opt.selected = false;
+            });
+        }
+
         if (saveBtn) saveBtn.disabled = false;
         if (deleteBtn) deleteBtn.style.display = 'none';
     }
@@ -414,12 +498,22 @@
     async function saveUserConfig(e) {
         if (e) e.preventDefault();
 
+        // Collect selected node IDs
+        const selectedNodeIds = [];
+        const select = document.getElementById('user_nodes_select');
+        if (select) {
+            Array.from(select.selectedOptions).forEach(opt => {
+                selectedNodeIds.push(parseInt(opt.value));
+            });
+        }
+
         const id = document.getElementById('userId').value;
         const payload = {
             username: document.getElementById('username').value,
             email: document.getElementById('email').value,
             role: document.getElementById('role').value,
-            llm_id: document.getElementById('llm_id').value
+            llm_id: document.getElementById('llm_id').value || null,
+            node_ids: selectedNodeIds
         };
 
         if (saveBtn) saveBtn.disabled = true;
@@ -477,7 +571,7 @@
             userForm.addEventListener('submit', saveUserConfig);
         }
 
-        // Кнопка "Создать ноду"
+        // Кнопка "Создать пользователя"
         if (createNewUserBtn) {
             createNewUserBtn.addEventListener('click', resetFormForCreate);
         }

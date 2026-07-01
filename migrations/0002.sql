@@ -157,12 +157,12 @@ INSERT INTO `agent_workflow_variable` (`id`, `workflow_id`, `name`, `default`) V
 
 --
 
-INSERT INTO `fact_collection` (`id`, `name`, `field`, `position`, `language`, `description`) VALUES
-(1, 'cashier_service', 'document_id,category,language,document,tags', 0, 'ru', 'Микросервисы'),
-(2, 'dating_girl', 'document_id,category,language,document,tags', 0, 'ru,en', 'Биография девушки и личная информация '),
-(3, 'soko_menu', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Меню'),
-(4, 'dating_man', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Факты о мужчине'),
-(5, 'dating_talk', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Факты в процессе переписки');
+INSERT INTO `fact_collection` (`id`, `node_id`, `name`, `field`, `position`, `language`, `description`) VALUES
+(1, null, 'cashier_service', 'document_id,category,language,document,tags', 0, 'ru', 'Микросервисы'),
+(2, 2, 'dating_girl', 'document_id,category,language,document,tags', 0, 'ru,en', 'Биография девушки и личная информация '),
+(3, null, 'soko_menu', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Меню'),
+(4, 2, 'dating_man', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Факты о мужчине'),
+(5, 2, 'dating_talk', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Факты в процессе переписки');
 
 --
 
@@ -182,3 +182,9 @@ INSERT INTO `agent_session` (`id`, `session_uuid`, `request_uuid`, `llm_id`, `ag
 (2, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 'user', 'user-prompt', 'Ну давай попробуем.', NULL, '2026-05-01 19:08:33'),
 (3, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 'llm', 'thinking', 'The user says \"Ну давай попробуем.\" Likely they want to start some request. We need to ask for clarification? According to core rule 1: before doing actions, notify customer detailed plan of actions. So we need to ask what they want? Probably need to respond asking for request details. Use Russian.', 806, '2026-05-01 19:08:33'),
 (4, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 'llm', 'response-final', 'Добрый день! Чтобы я мог помочь вам максимально эффективно, расскажите, пожалуйста, что именно вы хотите попробовать:  \n\n1. **Поиск информации** — нужны данные из нашей внутренней базы, документы, статистика и т.п.  \n2. **Исследование в интернете** — требуется собрать сведения с внешних сайтов.  \n3. **Выполнение расчётов или генерация кода** — нужны технические решения, скрипты, формулы.  \n4. **Что‑то другое** — уточните задачу, и я подскажу, какие шаги будем предпринимать.\n\nКак только получу от вас уточнение, я подготовлю подробный план действий и приступлю к их выполнению.', 806, '2026-05-01 19:08:33');
+
+--
+
+INSERT INTO `user_node` (`user_id`, `node_id`) VALUES
+(1, 2),
+(2, 2);

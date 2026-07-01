@@ -23,12 +23,34 @@ async def fact_collection_get(request: Request, collection_id: int, user=Depends
     return {"result": collection}
 
 
+@router.post("/collection")
+async def fact_collection_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.FACT_COLLECTION_CREATE]))):
+    repo = FactCollectionRepository()
+    new_id = await repo.add({
+        "node_id": data.get("node_id", None),
+        "name": data.get("name"),
+        "field": data.get("field", "document_id,category,language,document,tags"),
+        "position": data.get("position", 0),
+        "language": data.get("language", "en,ua,ru"),
+        "description": data.get("description", "")
+    })
+    return {"result": new_id}
+
+
 @router.put("/collection/{collection_id}")
 async def fact_collection_update(request: Request, collection_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.FACT_COLLECTION_UPDATE]))):
     repo = FactCollectionRepository()
     return {"result": await repo.update(collection_id, {
+        "node_id": data.get("node_id", None),
         "name": data.get("name"),
         "position": data.get("position"),
         "language": data.get("language"),
         "description": data.get("description")
     })}
+
+
+@router.delete("/collection/{collection_id}")
+async def fact_collection_delete(request: Request, collection_id: int, user=Depends(AuthChecker([AuthPermission.FACT_COLLECTION_DELETE]))):
+    repo = FactCollectionRepository()
+    success = await repo.delete(collection_id)
+    return {"result": success}

@@ -235,6 +235,55 @@ class TestUserCRUD:
         assert user["username"] == "test_user_partial"
         assert user["email"] == "test_partial@example.com"
 
+    async def test_user_node_associations(self, client: httpx.AsyncClient):
+        """Test creating and updating user-node associations."""
+        # Create a user with node associations (nodes 1 and 2 exist in seeds)
+        response = await client.post(
+            "/user",
+            json={
+                "username": "test_user_nodes",
+                "email": "test_nodes@example.com",
+                "role": "user",
+                "llm_id": None,
+                "node_ids": [1, 2]
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "result" in data
+        user = data["result"]
+        assert user["node_ids"] == [1, 2]
+        user_id = user["id"]
+
+        # Update the user node associations to [2, 3]
+        update_response = await client.put(
+            f"/user/{user_id}",
+            json={
+                "node_ids": [2, 3]
+            },
+        )
+        assert update_response.status_code == 200
+        updated_user = update_response.json()["result"]
+        assert updated_user["node_ids"] == [2, 3]
+
+        # Verify via GET by ID
+        get_response = await client.get(f"/user/{user_id}")
+        assert get_response.status_code == 200
+        fetched_user = get_response.json()["result"]
+        assert fetched_user["node_ids"] == [2, 3]
+
+        # Verify via GET list
+        list_response = await client.get("/user/list")
+        assert list_response.status_code == 200
+        users_list = list_response.json()["result"]
+        user_in_list = next((u for u in users_list if u["id"] == user_id), None)
+        assert user_in_list is not None
+        assert user_in_list["node_ids"] == [2, 3]
+
+        # Clean up
+        delete_response = await client.delete(f"/user/{user_id}")
+        assert delete_response.status_code == 200
+
     async def test_delete_nonexistent_user(self, client: httpx.AsyncClient):
         """Test deleting a non-existent user returns 404."""
         response = await client.delete("/user/999999")
