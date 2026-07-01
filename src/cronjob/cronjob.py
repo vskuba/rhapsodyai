@@ -2,6 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 import sys
+import os
 
 from typing import Optional
 from pydantic import BaseModel
