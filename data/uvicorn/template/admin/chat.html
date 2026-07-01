@@ -113,6 +113,45 @@
         border-bottom-left-radius: 4px; /* "Хвостик" сообщения */
     }
 
+    /* --- Yes/No Button Styles --- */
+    .btn-yes {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+        padding: 5px 15px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: 0.2s;
+        margin-right: 5px;
+    }
+    .btn-yes:hover { background-color: #c3e6cb; }
+
+    .btn-no {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+        padding: 5px 15px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: 0.2s;
+    }
+    .btn-no:hover { background-color: #f5c6cb; }
+
+    .input-wrapper {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        margin-right: 10px;
+    }
+
+    .yes-no-container {
+        display: flex;
+        justify-content: space-between;
+        padding: 5px 0 0 0;
+    }
+
     /* Стилизация скроллбара для красоты */
     .chat-messages::-webkit-scrollbar {
         width: 6px;
@@ -331,7 +370,13 @@
 
         <div class="chat-input-area">
             <button id="micBtn" class="mic-button">🎤</button>
-            <textarea id="userInput" placeholder="Напишите сообщение..."></textarea>
+            <div class="input-wrapper">
+                <textarea id="userInput" placeholder="Напишите сообщение..."></textarea>
+                <div class="yes-no-container">
+                    <button id="noBtn" class="btn-no">No</button>
+                    <button id="yesBtn" class="btn-yes">Yes</button>
+                </div>
+            </div>
             <button id="sendBtn">Отправить</button>
         </div>
     </div>
@@ -677,6 +722,16 @@
 
         // 3. Обработчики текста
         sendBtn.addEventListener('click', () => sendMessage(toggleLoading));
+
+        document.getElementById('yesBtn').addEventListener('click', () => {
+            userInput.value = 'Yes';
+            sendMessage(toggleLoading);
+        });
+
+        document.getElementById('noBtn').addEventListener('click', () => {
+            userInput.value = 'No';
+            sendMessage(toggleLoading);
+        });
 
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
