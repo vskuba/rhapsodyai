@@ -1,0 +1,28 @@
+{
+  "shell": {
+    "execution_policy": "allow_listed",
+    "allowed_commands": [
+      "curl",
+      "python3",
+      "pip",
+      "pip3",
+      "docker-compose",
+      "docker compose",
+      "docker",
+      "pytest",
+      "pkill",
+      "/home/vasyl/PycharmProjects/RhapsodyAi/.venv/bin/pip",
+      "/home/vasyl/PycharmProjects/RhapsodyAi/.venv/bin/python3"
+    ]
+  },
+  "mcp": {
+    "allowed_servers": [
+      "mcp__plugin_telegram_telegram__reply"
+    ]
+  },
+  "filesystem": {
+    "allowed_paths": [
+      "/tmp/*"
+    ]
+  }
+}
