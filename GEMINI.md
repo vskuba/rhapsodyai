@@ -99,6 +99,9 @@ mysql -u developer -ppassword -h localhost -P 3302 -e "DROP DATABASE IF EXISTS p
 python main_uvicorn.py
 ```
 
+**Direct MySQL Container Access**:
+You can query and interact with the local MySQL container directly on port 3302 or through the container's MySQL command line. You are fully authorized to perform any operations directly on the database (such as SELECT, INSERT, UPDATE, DELETE, etc.) to examine the state, generate mock data, or debug database-related issues.
+
 ---
 
 ## 4. Key Architectural Patterns & Conventions
@@ -196,3 +199,4 @@ When implementing changes, modifying code, or resolving bugs, you must strictly 
 -   **Unified Configuration Access**: Always retrieve secrets, tokens, and environment parameters using the config manager wrapper (`from config.config import config_get`) instead of directly querying `os.getenv()`.
 -   **Safe HTTP Parameter Handling in Tools**: When building backend tools that perform HTTP requests, always pass query parameters as a dictionary via the client (e.g., `params` in `httpx.get(...)`) rather than using direct string interpolation in the URL. This prevents encoding failures on spaces, accents, and special characters.
 -   **Strict Headless Compatibility**: Never import or invoke desktop-bound interfaces (e.g., the `webbrowser` module or GUI libraries) in backend tools. All output must be returned strictly as data or text so that it runs safely inside headless containerized and production environments.
+-   **File Deletion Rules**: You can ONLY delete files in the current directory (current folder) using explicit local commands. Any command to delete files must start with `rm ./` (e.g., `rm -rf ./`, `rm -f ./`, `rm ./`). Never use commands targeting paths outside the current directory for deletion.

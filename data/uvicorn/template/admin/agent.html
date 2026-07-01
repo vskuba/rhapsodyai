@@ -474,6 +474,10 @@
     function renderNodeList(agents, nodes) {
         agentListContainer.innerHTML = '';
 
+        // Получаем ID текущего редактируемого агента из скрытого поля формы
+        const currentAgentIdEl = document.getElementById('agentId');
+        const currentAgentId = currentAgentIdEl ? currentAgentIdEl.value : '';
+
         // Группируем агентов по ID ноды
         const agentsByNode = agents.reduce((acc, a) => {
             const nid = a.node_id || 'none';
@@ -498,6 +502,9 @@
             nodeAgents.forEach(agent => {
                 const div = document.createElement('div');
                 div.className = 'agent-item';
+                if (currentAgentId && agent.id.toString() === currentAgentId.toString()) {
+                    div.classList.add('active');
+                }
                 div.textContent = agent.title || agent.name;
                 div.onclick = () => selectAgentForEdit(agent.id, div);
                 agentListContainer.appendChild(div);
@@ -618,15 +625,19 @@
         if (saveBtn) saveBtn.disabled = true;
 
         try {
+            let targetRoleId = currentRoleId;
             if (id) {
                 await putData(`/agent/${id}`, payload);
                 showNotification(`Агент "${payload.title}" обновлен`, 'success');
             } else {
-                await postData('/agent', payload);
+                const res = await postData('/agent', payload);
                 showNotification(`Агент "${payload.title}" создан`, 'success');
+                if (res && res.result && res.result.role_id) {
+                    targetRoleId = res.result.role_id;
+                }
             }
 
-            await initAgentsManager(currentNodeId, currentLlmId, currentWorkflowId);
+            await initAgentsManager(currentNodeId, currentLlmId, currentWorkflowId, targetRoleId);
 
         } catch (e) {
             console.error("Ошибка сохранения:", e);

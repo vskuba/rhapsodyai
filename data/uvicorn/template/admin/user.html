@@ -368,7 +368,7 @@
     /**
      * Инициализация менеджера: загрузка списка нод
      */
-    async function initUsersManager() {
+    async function initUsersManager(selectedUserId = null) {
         if (!userListContainer) return;
 
         try {
@@ -382,7 +382,7 @@
             const llms = llmRes.result;
             allNodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
 
-            renderUserList(users);
+            renderUserList(users, selectedUserId);
             renderNodeSelect(allNodes);
 
             const llmSelect = document.getElementById('llm_id');
@@ -402,7 +402,7 @@
     /**
      * Отрисовка списка в левой колонке
      */
-    function renderUserList(users) {
+    function renderUserList(users, selectedUserId = null) {
         userListContainer.innerHTML = '';
 
         if (users.length === 0) {
@@ -423,10 +423,23 @@
             userListContainer.appendChild(div);
         });
 
-        const firstUser = users[0];
-        const firstElement = userListContainer.querySelector('.user-item');
-        if (firstUser && firstElement) {
-            selectUserForEdit(firstUser.id, firstElement);
+        let targetUser = null;
+        let targetElement = null;
+
+        if (selectedUserId) {
+            targetUser = users.find(u => u.id === parseInt(selectedUserId));
+            if (targetUser) {
+                targetElement = userListContainer.querySelector(`.user-item[data-id="${targetUser.id}"]`);
+            }
+        }
+
+        if (!targetUser) {
+            targetUser = users[0];
+            targetElement = userListContainer.querySelector('.user-item');
+        }
+
+        if (targetUser && targetElement) {
+            selectUserForEdit(targetUser.id, targetElement);
         }
     }
 
@@ -519,16 +532,20 @@
         if (saveBtn) saveBtn.disabled = true;
 
         try {
+            let targetId = id;
             if (id) {
                 await putData(`/user/${id}`, payload);
                 showNotification(`Пользователь "${payload.username}" обновлен`, 'success');
             } else {
-                await postData('/user', payload);
+                const res = await postData('/user', payload);
                 showNotification(`Пользователь "${payload.username}" создан`, 'success');
+                if (res && res.result && res.result.id) {
+                    targetId = res.result.id;
+                }
             }
 
-            // Перезагружаем список
-            await initUsersManager();
+            // Перезагружаем список, передавая ID редактируемого или только что созданного пользователя
+            await initUsersManager(targetId);
 
             // Если создавали новую — форма очистится, если редактировали — данные останутся
             if (!id) resetFormForCreate();
