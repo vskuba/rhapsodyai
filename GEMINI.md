@@ -161,8 +161,8 @@ Auth is fully implemented inside `src/auth/` and verified with `SessionMiddlewar
 
 ### E. Extending Backend Tools
 To add a new custom backend tool to the AI framework:
-1.  **Create Tool Module**: Implement the tool logic under a dedicated folder in `src/tool/<name>/<name>.py`. Define its parameters using Pydantic schemas.
-2.  **Register Tool**: Open `src/ai/ai_tool.py` and register your tool within `ai_tools_get()` so the framework can dynamically import and present it to the agents.
+1.  **Create Tool Module**: Implement the tool logic under a dedicated folder in `src/tool/<name>/<name>.py`. Define its parameters with clear Python type hints and descriptive docstrings.
+2.  **Automated Registration**: The framework automatically discovers tools dynamically by parsing the AST of any Python files under the `src/tool/` directory. On server startup, `ai_tool_sync()` (called in `main_uvicorn.py`) scans these directories, extracts tool signatures and descriptions, and registers/synchronizes them into the database (`tool` and `tool_group` tables). To force sync, trigger the `/tool/sync` API endpoint or restart the web server. There is no need to manually register tools in any configuration file or function.
 
 ---
 
@@ -194,3 +194,5 @@ When implementing changes, modifying code, or resolving bugs, you must strictly 
 -   **Headless Tool Compatibility**: Backend tools must remain headless-compatible. Never invoke desktop-oriented or interactive UI actions (like `webbrowser.open()`) inside tool implementations, since they execute in headless Docker containers and VPS environments. Return URLs/links as response strings instead.
 -   **Standardized Logging**: Avoid standard `print()` statements for operational logging. Always use the structured logging framework (`from logging_.logging_ import logger_info`).
 -   **Unified Configuration Access**: Always retrieve secrets, tokens, and environment parameters using the config manager wrapper (`from config.config import config_get`) instead of directly querying `os.getenv()`.
+-   **Safe HTTP Parameter Handling in Tools**: When building backend tools that perform HTTP requests, always pass query parameters as a dictionary via the client (e.g., `params` in `httpx.get(...)`) rather than using direct string interpolation in the URL. This prevents encoding failures on spaces, accents, and special characters.
+-   **Strict Headless Compatibility**: Never import or invoke desktop-bound interfaces (e.g., the `webbrowser` module or GUI libraries) in backend tools. All output must be returned strictly as data or text so that it runs safely inside headless containerized and production environments.
