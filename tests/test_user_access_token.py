@@ -94,13 +94,21 @@ class TestUserAccessToken:
             assert isinstance(data["result"], list)
             assert len(data["result"]) > 0  # Should return admin's agents
 
+            # Verify that only "id", "name", and "title" are returned for agents
+            for agent in data["result"]:
+                assert set(agent.keys()) == {"id", "name", "title"}
+
             # 2. Query with invalid API key
             headers_invalid = {"X-API_KEY": "invalid-token-value"}
             response_invalid = await anon_client.post("/agent/list", json=payload, headers=headers_invalid)
             assert response_invalid.status_code == 401
             assert "Invalid API Key" in response_invalid.text
 
-            # 3. Query without API key and without session (should fall back and return 401)
-            response_no_auth = await anon_client.post("/agent/list", json=payload)
+            # 3. Query new token-route without header (should fail validation with 422)
+            response_no_header = await anon_client.post("/agent/list", json=payload)
+            assert response_no_header.status_code == 422
+
+            # 4. Query session-route without session (should return 401)
+            response_no_auth = await anon_client.get("/agent/list")
             assert response_no_auth.status_code == 401
             assert "Not authenticated" in response_no_auth.text

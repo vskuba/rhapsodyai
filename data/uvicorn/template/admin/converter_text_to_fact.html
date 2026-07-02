@@ -339,11 +339,11 @@
             }
 
             // 2. Получаем список агентов этой специализации
-            const data = await postData('/agent/list', {
-                find_by: {
-                    specialization_id: specializationFactExtractorId
-                }
-            });
+            // const data = await postData('/agent/list', {
+            //     find_by: {
+            //         specialization_id: specializationFactExtractorId
+            //     }
+            // });
 
             // Очищаем контейнер перед наполнением
             extractorListContainer.innerHTML = '';

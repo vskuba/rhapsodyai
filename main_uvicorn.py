@@ -15,7 +15,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from ai.ai_thread import ai_thread_framework_run
+from py_modules.ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_tool import ai_tool_sync
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from config.config import config_get
@@ -120,7 +120,7 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
     # Allow public paths
-    public_paths = ['/login', '/auth/login', '/auth/logout', '/cronjob', '/favicon.ico', '/static']
+    public_paths = ['/docs', '/login', '/auth/login', '/auth/logout', '/cronjob', '/favicon.ico', '/static']
     if any(path.startswith(p) for p in public_paths) or (path == '/agent/list' and request.method == 'POST'):
         return await call_next(request)
 

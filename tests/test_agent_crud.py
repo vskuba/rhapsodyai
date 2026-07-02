@@ -278,7 +278,7 @@ class TestAgentCRUD:
                 "greeting": "Hi",
                 "prompt_system": "",
                 "node_id": 1,
-                "role_id": 2, # 'user' role
+                "role_id": 2,  # 'user' role
                 "llm_id": None,
                 "workflow_id": None,
                 "description": "",
@@ -296,7 +296,7 @@ class TestAgentCRUD:
                 "greeting": "Hi",
                 "prompt_system": "",
                 "node_id": 3,
-                "role_id": 2, # 'user' role
+                "role_id": 2,  # 'user' role
                 "llm_id": None,
                 "workflow_id": None,
                 "description": "",
@@ -314,7 +314,7 @@ class TestAgentCRUD:
                 "greeting": "Hi",
                 "prompt_system": "",
                 "node_id": 1,
-                "role_id": 1, # 'admin' role
+                "role_id": 1,  # 'admin' role
                 "llm_id": None,
                 "workflow_id": None,
                 "description": "",
@@ -395,6 +395,53 @@ class TestAgentCRUD:
             import json
             stored = json.loads(stored)
         assert stored == complex_vars
+
+    async def test_agent_list_post_schema_validation(self, client: httpx.AsyncClient):
+        """Test POST /agent/list schema validation and response structure."""
+        # Create a test agent
+        response = await client.post(
+            "/agent",
+            json={
+                "name": f"{TEST_AGENT_PREFIX}schema_test",
+                "title": "Schema Test Agent",
+                "greeting": "Hello",
+                "prompt_system": "Act as a helpful assistant",
+                "node_id": None,
+                "llm_id": None,
+                "workflow_id": None,
+                "description": "Verification of POST /agent/list",
+                "role_id": None,
+            },
+        )
+        assert response.status_code == 200
+        agent_id = response.json()["result"]["id"]
+
+        try:
+            # Query the newly created agent using POST /agent/list with API Key
+            list_res = await client.post(
+                "/agent/list",
+                headers={"X-API_KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"},
+                json={
+                    "find_by": {"id": agent_id}
+                }
+            )
+            assert list_res.status_code == 200
+            data = list_res.json()
+            assert "result" in data
+            assert isinstance(data["result"], list)
+            assert len(data["result"]) >= 1
+
+            # Check that each returned agent has only the expected schema fields: id, name, title
+            agent = data["result"][0]
+            assert set(agent.keys()) == {"id", "name", "title"}
+
+            assert agent["id"] == agent_id
+            assert agent["name"] == f"{TEST_AGENT_PREFIX}schema_test"
+            assert agent["title"] == "Schema Test Agent"
+
+        finally:
+            # Clean up the test agent
+            await client.delete(f"/agent/{agent_id}")
 
 
 if __name__ == "__main__":
