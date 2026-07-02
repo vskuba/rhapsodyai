@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, Depends
+import uuid
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.user_repository import UserRepository
@@ -120,3 +121,39 @@ async def role_list(request: Request, db=Depends(mysql_get_db_async), user=Depen
     async with db:
         await db.execute("SELECT id, name FROM `role` ORDER BY id")
         return {"result": await db.fetchall()}
+
+
+@router.get("/user/{user_id}/token")
+async def user_tokens_get(user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
+    async with db:
+        await db.execute("SELECT id, user_id, token FROM `user_access_token` WHERE user_id = %s", user_id)
+        tokens = await db.fetchall()
+        return {"result": tokens}
+
+
+@router.post("/user/{user_id}/token")
+async def user_token_create(user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_UPDATE]))):
+    new_token = str(uuid.uuid4())
+    async with db:
+        await db.execute(
+            "INSERT INTO `user_access_token` (user_id, token) VALUES (%s, %s)",
+            (user_id, new_token)
+        )
+        await db.execute("SELECT LAST_INSERT_ID() as id")
+        row = await db.fetchone()
+        token_id = row["id"] if row else None
+
+        return {
+            "result": {
+                "id": token_id,
+                "user_id": user_id,
+                "token": new_token
+            }
+        }
+
+
+@router.delete("/user/token/{token_id}")
+async def user_token_delete(token_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_DELETE]))):
+    async with db:
+        await db.execute("DELETE FROM `user_access_token` WHERE id = %s", token_id)
+        return {"result": {"deleted": True, "id": token_id}}

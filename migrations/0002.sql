@@ -319,3 +319,8 @@ INSERT INTO `agent_session` (`id`, `session_uuid`, `request_uuid`, `llm_id`, `ag
 INSERT INTO `user_node` (`user_id`, `node_id`) VALUES
 (1, 2),
 (2, 2);
+
+--
+
+INSERT INTO `user_access_token` (`id`, `user_id`, `token`) VALUES
+(1, 1, '8fd15581-36ae-48ed-812f-3b3d11d427f0');

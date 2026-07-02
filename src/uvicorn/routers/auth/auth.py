@@ -67,3 +67,36 @@ async def me(request: Request):
         raise HTTPException(status_code=401, detail="User not found")
 
     return {"user": user}
+
+
+@router.put("/auth/me")
+async def update_me(request: Request, data: dict):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    email = data.get("email")
+    llm_id = data.get("llm_id")
+
+    if email is None:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    async with mysql_get_db_async() as db:
+        if llm_id is not None:
+            await db.execute("SELECT id FROM `llm` WHERE id = %s", (llm_id,))
+            llm_exists = await db.fetchone()
+            if not llm_exists:
+                raise HTTPException(status_code=400, detail="Invalid LLM model")
+
+        await db.execute(
+            "UPDATE `user` SET email = %s, llm_id = %s WHERE id = %s",
+            (email, llm_id, user_id)
+        )
+
+        await db.execute(
+            "SELECT id, username, email, role, llm_id FROM `user` WHERE id = %s",
+            (user_id,)
+        )
+        updated_user = await db.fetchone()
+
+    return {"message": "Профиль успешно обновлен.", "user": updated_user}

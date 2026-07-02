@@ -4,6 +4,7 @@ USE `project`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
+DROP TABLE IF EXISTS `user_access_token`;
 DROP TABLE IF EXISTS `user_node`;
 DROP TABLE IF EXISTS `tool`;
 DROP TABLE IF EXISTS `tool_group`;
@@ -40,6 +41,14 @@ CREATE TABLE `user` (
     `llm_id` INT DEFAULT NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT `fk_user_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Таблица токенов доступа пользователей
+CREATE TABLE `user_access_token` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `user_id` INT NOT NULL,
+    `token` CHAR(36) NOT NULL,
+    CONSTRAINT `fk_user_access_token_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица ролей

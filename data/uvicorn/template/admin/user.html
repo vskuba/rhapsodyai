@@ -3,6 +3,7 @@
 {% block title %}Пользователи{% endblock %}
 
 {% block head %}
+<link rel="stylesheet" href="/static/css/user_access_token.css">
 <style>
     /* 1. Базовая компоновка (Идентично Агентам) */
     .editor-container {
@@ -319,6 +320,25 @@
                                         <!-- Options will be rendered here by JS -->
                                     </select>
                                 </div>
+
+                                <!-- Секция токенов доступа (доступна только при редактировании существующего пользователя) -->
+                                <div id="tokensSection" style="grid-column: span 2; margin-top: 30px; display: none;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f4f4f9; padding-bottom: 10px; margin-bottom: 15px;">
+                                        <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">🔑 Токены доступа</h3>
+                                        <button type="button" class="btn-save" id="generateTokenBtn" style="padding: 6px 15px; font-size: 12px; height: auto;">Сгенерировать новый ключ</button>
+                                    </div>
+                                    <table class="tokens-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                                        <thead>
+                                            <tr style="background-color: #fcfcfc; border-bottom: 1px solid #eee;">
+                                                <th style="text-align: left; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold;">Токен</th>
+                                                <th style="text-align: right; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; width: 100px;">Действие</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tokensList">
+                                            <!-- JS will render tokens here -->
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -343,6 +363,7 @@
 <script type="module">
     import {getData, putData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
+    import {loadUserTokens, initTokenGeneration} from '/static/js/user_access_token.js';
 
     const userListContainer = document.getElementById('userList');
     const saveBtn = document.getElementById('saveBtn');
@@ -477,6 +498,12 @@
             if (saveBtn) saveBtn.disabled = false;
 
             if (deleteBtn) deleteBtn.style.display = 'block';
+
+            // Show and load tokens section
+            const tokensSection = document.getElementById('tokensSection');
+            if (tokensSection) tokensSection.style.display = 'block';
+            await loadUserTokens(user.id);
+
         } catch (e) {
             console.error("Ошибка при получении данных пользователя:", e);
             showNotification('Не удалось загрузить данные пользователя', 'error');
@@ -503,6 +530,12 @@
 
         if (saveBtn) saveBtn.disabled = false;
         if (deleteBtn) deleteBtn.style.display = 'none';
+
+        // Hide tokens section
+        const tokensSection = document.getElementById('tokensSection');
+        if (tokensSection) tokensSection.style.display = 'none';
+        const tokensList = document.getElementById('tokensList');
+        if (tokensList) tokensList.innerHTML = '';
     }
 
     /**
@@ -596,6 +629,10 @@
         if (deleteBtn) {
             deleteBtn.addEventListener('click', deleteUser);
         }
+
+        // Кнопка "Сгенерировать токен"
+        const generateTokenBtn = document.getElementById('generateTokenBtn');
+        initTokenGeneration(generateTokenBtn, () => document.getElementById('userId').value);
     });
 </script>
 {% endblock %}

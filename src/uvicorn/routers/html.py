@@ -72,6 +72,14 @@ async def user_page(request: Request, user: AuthSession = Depends(require_auth))
     )
 
 
+@router.get("/admin/cabinet", response_class=HTMLResponse)
+async def cabinet_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/cabinet.html"
+    )
+
+
 @router.get("/admin/workflow", response_class=HTMLResponse)
 async def workflow_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
