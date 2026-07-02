@@ -121,7 +121,7 @@ async def auth_middleware(request: Request, call_next):
 
     # Allow public paths
     public_paths = ['/login', '/auth/login', '/auth/logout', '/cronjob', '/favicon.ico', '/static']
-    if any(path.startswith(p) for p in public_paths):
+    if any(path.startswith(p) for p in public_paths) or (path == '/agent/list' and request.method == 'POST'):
         return await call_next(request)
 
     # Check if user is authenticated via session

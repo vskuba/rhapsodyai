@@ -1,11 +1,12 @@
 """
-User Access Token CRUD tests.
+User Access Token CRUD and API validation tests.
 
 Tests cover:
 - Getting user access tokens (GET /user/{user_id}/token)
 - Generating a random UUIDv4 access token for a user (POST /user/{user_id}/token)
 - Deleting an access token (DELETE /user/token/{token_id})
 - Foreign key cascading deletion (when user is deleted, their tokens should also be deleted)
+- Querying agent list with API key (POST /agent/list)
 """
 import pytest
 import httpx
@@ -15,7 +16,7 @@ BASE_URL = "http://localhost:8011"
 
 
 class TestUserAccessToken:
-    """Test user access token management."""
+    """Test user access token management and API key usage."""
 
     @pytest.fixture
     async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
@@ -79,3 +80,27 @@ class TestUserAccessToken:
         finally:
             # Cleanup: delete the test user
             await client.delete(f"/user/{user_id}")
+
+    async def test_agent_list_with_api_key(self):
+        """Test querying agent list via POST /agent/list using an API Key."""
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False) as anon_client:
+            # 1. Query with valid API key
+            headers = {"X-API_KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"}
+            payload = {"find_by": {}}
+            response = await anon_client.post("/agent/list", json=payload, headers=headers)
+            assert response.status_code == 200
+            data = response.json()
+            assert "result" in data
+            assert isinstance(data["result"], list)
+            assert len(data["result"]) > 0  # Should return admin's agents
+
+            # 2. Query with invalid API key
+            headers_invalid = {"X-API_KEY": "invalid-token-value"}
+            response_invalid = await anon_client.post("/agent/list", json=payload, headers=headers_invalid)
+            assert response_invalid.status_code == 401
+            assert "Invalid API Key" in response_invalid.text
+
+            # 3. Query without API key and without session (should fall back and return 401)
+            response_no_auth = await anon_client.post("/agent/list", json=payload)
+            assert response_no_auth.status_code == 401
+            assert "Not authenticated" in response_no_auth.text

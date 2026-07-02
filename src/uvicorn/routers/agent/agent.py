@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, Query
+from fastapi import APIRouter, Request, Depends, Query, Header, HTTPException
 from pydantic import BaseModel
 import json
 
@@ -21,7 +21,10 @@ class AgentJsonRequest(BaseModel):
 
 
 @router.get("/agent/list")
-async def agent_list(request: Request, user_id: int = Query(None, description="ID пользователя для фильтрации агентов по роли и нодам"), user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
+async def agent_list(
+        request: Request,
+        user_id: int = Query(None, description="ID пользователя для фильтрации агентов по роли и нодам"),
+        user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
     repo = AgentRepository()
 
     # Если передан user_id, фильтруем агентов по роли и нодам пользователя
@@ -68,8 +71,37 @@ async def agent_list(request: Request, user_id: int = Query(None, description="I
     return {"result": await repo.find_by({}, order_by='position ASC')}
 
 
-@router.post("/agent/list")
-async def agent_list_with_criteria(request: Request, data: AgentJsonRequest, user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
+@router.post("/agent/list", include_in_schema=True)
+async def agent_list_with_criteria(
+        request: Request,
+        data: AgentJsonRequest,
+        x_api_key: str = Header(None, alias="X-API_KEY")
+):
+    if x_api_key:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                """
+                SELECT u.id as user_id, u.username, u.role
+                FROM `user_access_token` t
+                JOIN `user` u ON t.user_id = u.id
+                WHERE t.token = %s
+                """,
+                (x_api_key,)
+            )
+            row = await db.fetchone()
+            if not row:
+                raise HTTPException(status_code=401, detail="Invalid API Key")
+
+            user_id = row["user_id"]
+    else:
+        checker = AuthChecker([AuthPermission.AGENT_VIEW])
+        auth_session = await checker(request)
+        user_id = auth_session.user_id
+
+    # If using x_api_key, enforce querying only the owner's agents to prevent ID spoofing
+    if x_api_key:
+        data.user_id = user_id
+
     repo = AgentRepository()
 
     # Если передан user_id, фильтруем агентов по роли и нодам пользователя
@@ -120,7 +152,11 @@ async def agent_get(request: Request, agent_id: int, user=Depends(AuthChecker([A
 
 
 @router.get("/agent/{agent_id}/prompt_system/{collection_name}")
-async def agent_get_prompt_system(request: Request, agent_id: int, collection_name: str, user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
+async def agent_get_prompt_system(
+        request: Request,
+        agent_id: int,
+        collection_name: str,
+        user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
     repo = AgentRepository()
     entity = await repo.find(agent_id)
 
@@ -161,7 +197,11 @@ async def agent_create(request: Request, data: dict, user=Depends(AuthChecker([A
 
 
 @router.put("/agent/{agent_id}")
-async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.AGENT_UPDATE]))):
+async def agent_update(
+        request: Request,
+        agent_id: int,
+        data: dict, db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.AGENT_UPDATE]))):
     # First get the current agent to preserve fields not in the request
     repo = AgentRepository()
     current_agent = await repo.find(agent_id)
@@ -229,7 +269,12 @@ async def agent_update(request: Request, agent_id: int, data: dict, db=Depends(m
 
 
 @router.get("/agent/{agent_id}/user/{user_id}/session_last_entry")
-async def agent_session_active_get(request: Request, agent_id: int, user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.AGENT_VIEW, AuthPermission.SESSION_VIEW]))):
+async def agent_session_active_get(
+        request: Request,
+        agent_id: int,
+        user_id: int,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.AGENT_VIEW, AuthPermission.SESSION_VIEW]))):
     async with db:
         await db.execute(
             "SELECT session_uuid "
