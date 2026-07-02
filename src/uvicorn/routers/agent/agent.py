@@ -20,7 +20,7 @@ class AgentJsonRequest(BaseModel):
     user_id: int | None = None
 
 
-@router.get("/agent/list")
+@router.get("/agent/list", include_in_schema=False)
 async def agent_list(
         request: Request,
         user_id: int = Query(None, description="ID пользователя для фильтрации агентов по роли и нодам"),
@@ -71,7 +71,7 @@ async def agent_list(
     return {"result": await repo.find_by({}, order_by='position ASC')}
 
 
-@router.post("/agent/list", include_in_schema=True)
+@router.post("/agent/list")
 async def agent_list_with_criteria(
         request: Request,
         data: AgentJsonRequest,
@@ -145,13 +145,13 @@ async def agent_list_with_criteria(
     return {"result": await repo.find_by(data.find_by or {}, order_by='position ASC')}
 
 
-@router.get("/agent/{agent_id}")
+@router.get("/agent/{agent_id}", include_in_schema=False)
 async def agent_get(request: Request, agent_id: int, user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
     repo = AgentRepository()
     return {"result": await repo.find(agent_id)}
 
 
-@router.get("/agent/{agent_id}/prompt_system/{collection_name}")
+@router.get("/agent/{agent_id}/prompt_system/{collection_name}", include_in_schema=False)
 async def agent_get_prompt_system(
         request: Request,
         agent_id: int,
@@ -169,7 +169,7 @@ async def agent_get_prompt_system(
     return {"result": prompt_system}
 
 
-@router.post("/agent")
+@router.post("/agent", include_in_schema=False)
 async def agent_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.AGENT_CREATE]))):
     repo = AgentRepository()
 
@@ -196,7 +196,7 @@ async def agent_create(request: Request, data: dict, user=Depends(AuthChecker([A
     return {"result": entity_agent}
 
 
-@router.put("/agent/{agent_id}")
+@router.put("/agent/{agent_id}", include_in_schema=False)
 async def agent_update(
         request: Request,
         agent_id: int,
@@ -268,7 +268,7 @@ async def agent_update(
         return {"status": "success", "result": "Данные обновлены"}
 
 
-@router.get("/agent/{agent_id}/user/{user_id}/session_last_entry")
+@router.get("/agent/{agent_id}/user/{user_id}/session_last_entry", include_in_schema=False)
 async def agent_session_active_get(
         request: Request,
         agent_id: int,
@@ -285,7 +285,7 @@ async def agent_session_active_get(
         return {"result": await db.fetchone()}
 
 
-@router.delete("/agent/{agent_id}")
+@router.delete("/agent/{agent_id}", include_in_schema=False)
 async def agent_delete(request: Request, agent_id: int, user=Depends(AuthChecker([AuthPermission.AGENT_DELETE]))):
     repo = AgentRepository()
     deleted = await repo.delete(agent_id)

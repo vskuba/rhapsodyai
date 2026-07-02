@@ -169,7 +169,7 @@ app.mount("/static", StaticFiles(directory=public_static_path), name="static")
 
 app.include_router(html.router, include_in_schema=False)
 app.include_router(chat.router)
-app.include_router(agent.router, include_in_schema=False)
+app.include_router(agent.router)
 app.include_router(auth_router.router, include_in_schema=False)
 app.include_router(user.router, include_in_schema=False)
 app.include_router(cronjob.router, include_in_schema=False)
