@@ -11,8 +11,32 @@ router = APIRouter()
 @router.get("/fact/collection/list")
 async def fact_collection_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.FACT_COLLECTION_VIEW]))):
     async with db:
-        await db.execute("SELECT * FROM fact_collection")
+        await db.execute("""
+            SELECT fc.*, COUNT(f.id) as fact_count
+            FROM fact_collection fc
+            LEFT JOIN fact f ON fc.id = f.collection_id
+            GROUP BY fc.id
+        """)
         return {"result": await db.fetchall()}
+
+
+@router.get("/fact/collection/{collection_name}/documents")
+async def fact_collection_documents(
+        request: Request,
+        collection_name: str,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.FACT_VIEW]))
+):
+    async with db:
+        sql = """
+            SELECT DISTINCT f.document_id 
+            FROM fact f
+            JOIN fact_collection fc ON f.collection_id = fc.id
+            WHERE fc.name = %s AND f.document_id IS NOT NULL AND f.document_id != ''
+        """
+        await db.execute(sql, (collection_name,))
+        rows = await db.fetchall()
+        return {"result": [r["document_id"] for r in rows]}
 
 
 @router.get("/fact/collection/{collection_name}")
@@ -22,6 +46,8 @@ async def fact_list(
         page: int = 1,
         limit: int = 20,
         query: str = '',
+        document_id: str = '',
+        status: str = 'all',
         db=Depends(mysql_get_db_async),
         user=Depends(AuthChecker([AuthPermission.FACT_VIEW]))
 ):
@@ -33,8 +59,17 @@ async def fact_list(
     search_condition = ""
 
     if query:
-        search_condition = " AND f.`content` LIKE %s"
+        search_condition += " AND f.`document` LIKE %s"
         params.append(f"%{query.strip()}%")
+
+    if document_id and document_id != "all":
+        search_condition += " AND f.`document_id` = %s"
+        params.append(document_id)
+
+    if status == '1':
+        search_condition += " AND f.`qdrant_synced` = 1"
+    elif status == '0':
+        search_condition += " AND f.`qdrant_synced` = 0"
 
     async with db:
 
@@ -129,7 +164,39 @@ async def fact_collection_save(
 
 @router.delete("/fact/{fact_id}")
 async def delete_fact(fact_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.FACT_DELETE]))):
+    from logging_.logging_ import logger_info
+    from qdrant_.qdrant_ import qdrant_remove_by
+
     async with db:
-        # Проверяем существование
+        # Сначала получаем информацию о факте для удаления из Qdrant
+        sql_fact = """
+            SELECT f.*, fc.name as collection_name, fc.field as collection_fields
+            FROM `fact` f
+            JOIN `fact_collection` fc ON f.`collection_id` = fc.`id`
+            WHERE f.`id` = %s
+        """
+        await db.execute(sql_fact, fact_id)
+        fact_entity = await db.fetchone()
+
+        if fact_entity:
+            c_name = fact_entity["collection_name"]
+            raw_fields_string = fact_entity.get("collection_fields") or ""
+            allowed_fields = {f.strip() for f in raw_fields_string.split(',') if f.strip()}
+            allowed_fields.add('id')
+            allowed_fields.add('document')
+            mock_metadata = {field: {"table_name": "fact"} for field in allowed_fields}
+
+            # Пытаемся удалить из Qdrant
+            try:
+                await qdrant_remove_by(
+                    collection_name=c_name,
+                    metadata=mock_metadata,
+                    metadata_filter={"id": fact_id}
+                )
+                logger_info(f"Fact {fact_id} successfully removed from Qdrant collection '{c_name}'")
+            except Exception as qdrant_err:
+                logger_info(f"⚠️ Ошибка при удалении факта {fact_id} из Qdrant: {qdrant_err}")
+
+        # Удаляем из MySQL
         await db.execute("DELETE FROM fact WHERE id = %s", fact_id)
         return {"status": "success", "message": f"Fact {fact_id} deleted"}

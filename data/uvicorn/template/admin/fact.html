@@ -52,7 +52,7 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        padding: 20px 25px;
+        padding: 20px 5px;
         min-height: 0;
     }
 
@@ -85,29 +85,33 @@
         table-layout: fixed; /* Фиксирует ширину колонок */
     }
 
-    /* РАСПРЕДЕЛЕНИЕ ШИРИНЫ КОЛОНОК */
     .fact-table th:nth-child(1), .fact-table td:nth-child(1) {
-        width: 45%;
+        width: 3%;
     }
 
+    /* РАСПРЕДЕЛЕНИЕ ШИРИНЫ КОЛОНОК */
     .fact-table th:nth-child(2), .fact-table td:nth-child(2) {
-        width: 10%;
+        width: 55%;
     }
 
     .fact-table th:nth-child(3), .fact-table td:nth-child(3) {
-        width: 15%;
+        width: 3%;
     }
 
     .fact-table th:nth-child(4), .fact-table td:nth-child(4) {
-        width: 15%;
-    }
-
-    .fact-table th:nth-child(5), .fact-table td:nth-child(5) {
         width: 10%;
     }
 
+    .fact-table th:nth-child(5), .fact-table td:nth-child(5) {
+        width: 15%;
+    }
+
     .fact-table th:nth-child(6), .fact-table td:nth-child(6) {
-        width: 5%;
+        width: 6%;
+    }
+
+    .fact-table th:nth-child(7), .fact-table td:nth-child(7) {
+        width: 3%;
     }
 
     .fact-table thead th {
@@ -248,8 +252,15 @@
         </div>
 
         <div class="filter-item">
+            <span class="sidebar-label">Document ID</span>
+            <select id="documentSelect" class="admin-select">
+                <option value="all">Все</option>
+            </select>
+        </div>
+
+        <div class="filter-item">
             <span class="sidebar-label">Статус Qdrant</span>
-            <select id="statusFilter">
+            <select id="syncSelect">
                 <option value="all">Все</option>
                 <option value="1">Синхронизировано</option>
                 <option value="0">Ожидает</option>
@@ -286,8 +297,9 @@
                 <table class="fact-table">
                     <thead>
                     <tr>
+                        <th>ID</th>
                         <th>Контент</th>
-                        <th>Language</th>
+                        <th>Lang</th>
                         <th>Категория</th>
                         <th>Таги</th>
                         <th>Статус</th>
@@ -296,7 +308,7 @@
                     </thead>
                     <tbody id="factTableBody">
                     <tr>
-                        <td colspan="5" class="placeholder">Загрузка данных...</td>
+                        <td colspan="6" class="placeholder">Загрузка данных...</td>
                     </tr>
                     </tbody>
                 </table>
@@ -317,6 +329,8 @@
 
     // Новые элементы для таблицы и пагинации
     const collectionSelect = document.getElementById('collectionSelect');
+    const documentSelect = document.getElementById('documentSelect');
+    const syncSelect = document.getElementById('syncSelect');
     const factTableBody = document.getElementById('factTableBody');
     const factSearchInput = document.getElementById('factSearch');
     const prevPageBtn = document.getElementById('prevPage');
@@ -333,7 +347,8 @@
         query: "",
         collectionId: null,
         searchTimeout: null,
-        status: 'all'
+        status: 'all',
+        documentId: 'all'
     };
 
     /**
@@ -344,16 +359,35 @@
         await loadCollections();
 
         if (collectionSelect) {
-            collectionSelect.onchange = (e) => {
+            collectionSelect.onchange = async (e) => {
                 const colName = e.target.value;
                 // Находим объект коллекции по имени для сохранения в state
                 selectedCollection = state.allCollections.find(c => c.name === colName);
                 state.currentPage = 1;
-                loadFacts();
+                state.documentId = 'all'; // Сброс фильтра по документу
 
-                if (activeCollectionTitle) {
-                    activeCollectionTitle.innerText = `Коллекция: ${collectionSelect.value}`;
+                await loadDocuments();
+                await loadFacts();
+
+                if (activeCollectionTitle && selectedCollection) {
+                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.name} (${selectedCollection.fact_count})`;
                 }
+            };
+        }
+
+        if (documentSelect) {
+            documentSelect.onchange = async (e) => {
+                state.documentId = e.target.value;
+                state.currentPage = 1;
+                await loadFacts();
+            };
+        }
+
+        if (syncSelect) {
+            syncSelect.onchange = async (e) => {
+                state.status = e.target.value;
+                state.currentPage = 1;
+                await loadFacts();
             };
         }
 
@@ -375,31 +409,68 @@
 
         try {
             const data = await getData('/fact/collection/list');
-            state.allCollections = data.result; // Сохраняем для поиска объектов
+            
+            // Фильтруем коллекции: показываем только те, у которых есть факты (fact_count > 0)
+            const activeCollections = (data.result || []).filter(col => (col.fact_count || 0) > 0);
+            state.allCollections = activeCollections; // Сохраняем отфильтрованные
 
             collectionSelect.innerHTML = ''; // Очистка
 
-            data.result.forEach((col, index) => {
+            activeCollections.forEach((col) => {
                 const colName = col.name || col;
-                const option = new Option(colName, colName);
+                const option = new Option(`${colName} (${col.fact_count})`, colName);
                 collectionSelect.add(option);
             });
 
             // ПО УМОЛЧАНИЮ: Выбираем первую коллекцию
-            if (data.result.length > 0) {
-                selectedCollection = data.result[0];
+            if (activeCollections.length > 0) {
+                selectedCollection = activeCollections[0];
                 collectionSelect.value = selectedCollection.name || selectedCollection;
 
                 if (activeCollectionTitle) {
-                    activeCollectionTitle.innerText = `Коллекция: ${collectionSelect.value}`;
+                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.name} (${selectedCollection.fact_count})`;
                 }
+
+                // Загружаем список документов для выбранной коллекции
+                await loadDocuments();
 
                 // Сразу подгружаем факты
                 loadFacts();
+            } else {
+                collectionSelect.innerHTML = '<option>Нет коллекций с фактами</option>';
+                if (activeCollectionTitle) {
+                    activeCollectionTitle.innerText = 'Коллекции отсутствуют';
+                }
+                factTableBody.innerHTML = '<tr><td colspan="6" class="text-center">Нет фактов для отображения</td></tr>';
             }
         } catch (e) {
             console.error("Ошибка загрузки коллекций:", e);
             collectionSelect.innerHTML = '<option>Ошибка загрузки</option>';
+        }
+    }
+
+    /**
+     * Загрузка списка уникальных document_id для выбранной коллекции
+     */
+    async function loadDocuments() {
+        if (!documentSelect || !selectedCollection) return;
+
+        try {
+            const colName = selectedCollection.name || selectedCollection;
+            const data = await getData(`/fact/collection/${colName}/documents`);
+            
+            documentSelect.innerHTML = '<option value="all">Все</option>'; // Все по умолчанию
+            
+            if (data && data.result) {
+                data.result.forEach(docId => {
+                    const option = new Option(docId, docId);
+                    documentSelect.add(option);
+                });
+            }
+            documentSelect.value = state.documentId;
+        } catch (e) {
+            console.error("Ошибка загрузки документов:", e);
+            documentSelect.innerHTML = '<option value="all">Все</option>';
         }
     }
 
@@ -410,14 +481,14 @@
         if (!selectedCollection || !factTableBody) return;
 
         const colName = selectedCollection.name || selectedCollection;
-        const url = `/fact/collection/${colName}?page=${state.currentPage}&limit=${state.limit}&query=${state.query}`;
+        const url = `/fact/collection/${colName}?page=${state.currentPage}&limit=${state.limit}&query=${state.query}&document_id=${state.documentId}&status=${state.status}`;
 
         try {
             const data = await getData(url);
             renderTable(data.result);
             renderPagination(data.pagination);
         } catch (err) {
-            factTableBody.innerHTML = '<tr><td colspan="5" class="error">Ошибка загрузки данных</td></tr>';
+            factTableBody.innerHTML = '<tr><td colspan="6" class="error">Ошибка загрузки данных</td></tr>';
         }
     }
 
@@ -425,12 +496,13 @@
         if (!factTableBody) return;
 
         if (!facts || facts.length === 0) {
-            factTableBody.innerHTML = '<tr><td colspan="5" class="placeholder">Ничего не найдено</td></tr>';
+            factTableBody.innerHTML = '<tr><td colspan="6" class="placeholder">Ничего не найдено</td></tr>';
             return;
         }
 
         factTableBody.innerHTML = facts.map(f => `
         <tr>
+            <td><div class="doc-name-cell">${f.id}</div></td>
             <td><div class="doc-name-cell">${escapeHtml(f.document)}</div></td>
             <td><div class="content-preview">${escapeHtml(f.language)}</div></td>
             <td><div class="content-preview">${escapeHtml(f.category)}</div></td>

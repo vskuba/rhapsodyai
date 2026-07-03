@@ -16,6 +16,7 @@ class SessionJsonRequest(BaseModel):
 
 class SessionMessagesJsonRequest(BaseModel):
     session_uuid: str
+    limit: int = 5
 
 
 @router.post("/session/list")
@@ -113,16 +114,28 @@ async def session_last_uuid(request: Request, json_request: SessionJsonRequest, 
 @router.post("/session/messages")
 async def session_messages(request: Request, json_request: SessionMessagesJsonRequest, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
     async with db:
-        # Выбираем ВСЕ поля и ВСЕ типы сообщений для инспекции
+        # Выбираем сообщения в обратном порядке (DESC), чтобы отсчитать 5 последних запросов
         sql = """
             SELECT s.*, l.name as llm_name
             FROM agent_session s
             LEFT JOIN llm l ON s.llm_id = l.id
             WHERE s.session_uuid = %s
-            ORDER BY s.id ASC
-            LIMIT %s
+            ORDER BY s.id DESC
         """
-        await db.execute(sql, (json_request.session_uuid, 500))
+        await db.execute(sql, (json_request.session_uuid,))
         rows = await db.fetchall()
 
-        return {"result": rows}
+    selected_messages = []
+    request_count = 0
+    for m in rows:
+        if request_count >= 5:
+            break
+        
+        selected_messages.append(m)
+        
+        kind = m.get("kind_type", "").strip().lower()
+        if kind == "user-prompt":
+            request_count += 1
+
+    # Возвращаем сообщения в правильном хронологическом порядке (ASC)
+    return {"result": list(reversed(selected_messages))}
