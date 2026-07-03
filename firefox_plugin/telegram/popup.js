@@ -13,7 +13,7 @@ const HTML_DEFAULTS = {
     'querySelectorCompanionTitle': ".chat-info .person .user-title .peer-title",
     'companionId': "",
     'companionTitle': "",
-    'companionIdPrefix': "companion_",
+    'companionIdPrefix': "telegram_",
     'pluginEnabled': false
 };
 
