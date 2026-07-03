@@ -3,7 +3,7 @@ let tabId = null;
 const HTML_DEFAULTS = {
     'aiUrl': "http://localhost:8011",
     'accessToken': "8fd15581-36ae-48ed-812f-3b3d11d427f0",
-    'delaySelect': "5",
+    'delaySelect': "3-10",
     'agentResponse': "0",
     'agentRequest': "",
     'querySelectorMessageIn': ".bubble.is-in .message .translatable-message",
