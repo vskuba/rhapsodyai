@@ -264,6 +264,18 @@ def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict) -> tupl
                 else:
                     tool_args[argument_name] = bool(variable_value)
 
+            # Безопасный парсинг сложных структур данных (dict и list) из JSON-строк
+            elif expected_type is dict or expected_type is list:
+                if isinstance(variable_value, str):
+                    try:
+                        # Пытаемся распарсить строку в реальный объект
+                        tool_args[argument_name] = json.loads(variable_value)
+                    except json.JSONDecodeError:
+                        # Если строка не является JSON-ом, оставляем как есть, чтобы не упасть
+                        tool_args[argument_name] = variable_value
+                else:
+                    tool_args[argument_name] = variable_value
+
             # 2. Обработка сложных типов Union / Optional (например, int | None)
             else:
                 origin = get_origin(expected_type)

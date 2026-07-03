@@ -50,3 +50,10 @@ async def agent_create_or_update(
         })
 
     return entity_agent.get("id")
+
+
+async def agent_exists(find_by: dict) -> bool:
+    repo = AgentRepository()
+    entity_agent = await repo.find_one_by(find_by)
+
+    return bool(entity_agent)

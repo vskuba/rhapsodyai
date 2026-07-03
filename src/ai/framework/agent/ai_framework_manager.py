@@ -292,14 +292,15 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             # Для не-словарей определяем текстовый ключ на основе строгого isinstance
                             if isinstance(raw_result, str):
                                 type_key = 'str'
+                            elif isinstance(raw_result, bool):
+                                type_key = 'bool'
                             elif isinstance(raw_result, int):
                                 type_key = 'int'
                             elif isinstance(raw_result, (list, tuple)):
                                 type_key = 'list'
                             elif isinstance(raw_result, float):
                                 type_key = 'float'
-                            elif isinstance(raw_result, bool):
-                                type_key = 'bool'
+
                             else:
                                 # Фолбек на имя типа для редких/кастомных классов
                                 type_key = type(raw_result).__name__
@@ -312,6 +313,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                 model.workflow_variables[var_name] = raw_result
                                 logger_info(
                                     f"🏷️ Переменная '%{var_name}%' получила значение '{raw_result}'")
+                            else:
+                                logger_info(
+                                    f"⚠️ не найден маппинг результатов инструмента '{tool_name}'. "
+                                    f"Тип результата: '{type_key}'"
+                                )
 
                     except Exception as e:
                         backtrace = traceback.format_exc()
