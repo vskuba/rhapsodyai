@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <style>
         body {
-            width: 580px;
-            height: 420px;
+            width: 100%;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             padding: 12px;
             margin: 0;
@@ -217,7 +216,7 @@
             line-height: 1.2; /* Принудительно уменьшаем межстрочный интервал */
             padding: 10px;
             border-radius: 4px;
-            max-height: 100px;
+            max-height: 450px;
             overflow-y: auto;
             white-space: pre-wrap;
             box-sizing: border-box;
@@ -239,6 +238,75 @@
         .log-time {
             color: #a0aec0;
             margin-right: 6px;
+        }
+
+        /* Стили для диалога на Вкладке 4 */
+        .chat-dialogue-container {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            height: 280px;
+            overflow-y: auto;
+            background-color: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 6px;
+            box-sizing: border-box;
+            margin-top: 6px;
+        }
+
+        .chat-message {
+            display: flex;
+            width: 100%;
+        }
+
+        .chat-message.in {
+            justify-content: flex-start;
+        }
+
+        .chat-message.out {
+            justify-content: flex-end;
+        }
+
+        .chat-bubble {
+            max-width: 80%;
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            line-height: 1.25;
+            position: relative;
+            word-wrap: break-word;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .chat-message.in .chat-bubble {
+            background-color: #edf2f7;
+            color: #2d3748;
+            border-bottom-left-radius: 2px;
+        }
+
+        .chat-message.out .chat-bubble {
+            background-color: #3182ce;
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .chat-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-top: 2px;
+            font-size: 8px;
+            user-select: none;
+        }
+
+        .chat-message.in .chat-meta {
+            color: #718096;
+        }
+
+        .chat-message.out .chat-meta {
+            color: #ebf8ff;
         }
 
         .status {
@@ -327,16 +395,31 @@
 <div id="tab-1" class="tab-content active">
     <!-- Секция 1: Режим работы -->
     <div class="section">
-        <div class="checkbox-container">
-            <input type="checkbox" id="pluginEnabled" checked>
-            <label for="pluginEnabled">Вкл/Выкл плагин</label>
+        <div class="form-group">
+            <div>
+                <label for="agentResponse">AI агент:</label>
+                <select id="agentResponse">
+                    <option value="0" selected>Не выбран</option>
+                </select>
+            </div>
         </div>
+
+        <div class="form-group">
+            <div style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label for="companionTitle">Собеседник:</label>
+                    <input type="text" id="companionTitle" disabled/>
+                </div>
+                <div style="flex: 1;">
+                    <label for="companionId">ID:</label>
+                    <input type="text" id="companionId" disabled/>
+                </div>
+            </div>
+        </div>
+
         <div class="form-group">
             <label for="accessToken">Логи:</label>
-            <div class="log-container log-container-connection" id="logContainer">
-                <div class="log-item"><span class="log-time">[21:48:12]</span>Робот успешно запущен.</div>
-                <div class="log-item"><span class="log-time">[21:50:05]</span>Проверка соединения с API: ОК.</div>
-            </div>
+            <div class="log-container log-container-connection" id="logContainer"></div>
         </div>
     </div>
 </div>
@@ -346,35 +429,15 @@
     <div class="section">
         <div class="form-group">
             <label for="aiUrl">URL API:</label>
-            <input type="text" id="aiUrl" placeholder="https://openai.com">
+            <input type="text" id="aiUrl" placeholder="http://localhost:8011" value="http://localhost:8011">
         </div>
         <div class="form-group">
             <label for="accessToken">Access Token:</label>
-            <input type="text" id="accessToken" placeholder="sk-...">
+            <input type="text" id="accessToken" placeholder="" value="8fd15581-36ae-48ed-812f-3b3d11d427f0">
         </div>
         <div class="form-group">
             <div class="input-row">
                 <button id="testConnectionBtn">Запрос агентов</button>
-            </div>
-        </div>
-        <div class="form-group">
-            <div class="form-group">
-                <div>
-                    <label for="agentResponse">Агент ответа:</label>
-                    <select id="agentResponse">
-                        <option value="0" selected>Не выбран</option>
-                        <option value="1">Агент Алина</option>
-                        <option value="5">Агент Иван</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="agentRequest">Агент вопроса:</label>
-                    <select id="agentRequest">
-                        <option value="0" selected>Не выбран</option>
-                        <option value="1">Агент Федор</option>
-                        <option value="5">Агент Алла</option>
-                    </select>
-                </div>
             </div>
         </div>
     </div>
@@ -385,18 +448,35 @@
     <div class="section">
         <div class="form-group">
             <label for="querySelectorMessage">Message querySelector (входящие):</label>
-            <input type="text" id="querySelectorMessageIn" placeholder=".message-input-class">
+            <input type="text" id="querySelectorMessageIn" placeholder=".message-input-class"
+                   value=".bubble.is-in .message .translatable-message">
         </div>
         <div class="form-group">
             <label for="querySelectorMessage">Message querySelector (исходящие):</label>
-            <input type="text" id="querySelectorMessageOut" placeholder=".message-output-class">
+            <input type="text" id="querySelectorMessageOut" placeholder=".message-output-class"
+                   value=".bubble.is-out .bubble-content .message">
+        </div>
+        <div class="form-group">
+            <label for="querySelectorMessage">Message Input Box querySelector (исходящие):</label>
+            <input type="text" id="querySelectorMessageOutInputBox" placeholder=".message-output-class"
+                   value=".input-message-input">
+        </div>
+        <div class="form-group">
+            <label for="querySelectorMessage">Companion ID querySelector:</label>
+            <input type="text" id="querySelectorCompanionId" placeholder=".person .id"
+                   value=".chat-info .person .user-title .peer-title::attr(data-peer-id)">
+        </div>
+        <div class="form-group">
+            <label for="querySelectorMessage">Companion Title querySelector:</label>
+            <input type="text" id="querySelectorCompanionTitle" placeholder=".person .title"
+                   value=".chat-info .person .user-title .peer-title">
         </div>
 
         <div class="form-group">
             <label for="textToInsert">Текст для ввода:</label>
             <div class="input-row">
                 <input id="testMessageOut" placeholder="Введите текст сообщения..." value="тест.."/>
-                <button id="sendMessageOut">Отправить</button>
+                <button id="sendMessageOutBtn">Отправить</button>
             </div>
         </div>
         <div class="form-group">
@@ -412,9 +492,15 @@
 
 <div id="tab-4" class="tab-content">
     <div class="section">
-        <div class="section-title">Последние ответы</div>
-        <div class="checkbox-container">
-            <!-- Сюда можно дублировать контент ответов при необходимости -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div class="section-title" style="margin-bottom: 0;">История диалога (20 последних)</div>
+            <button id="clearChatHistoryBtn"
+                    style="font-size: 11px; padding: 3px 8px; background-color: #e53e3e; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; line-height: 1; transition: background-color 0.2s;">
+                Очистить
+            </button>
+        </div>
+        <div id="chatDialogueContainer" class="chat-dialogue-container" style="margin-top: 0;">
+            <!-- Сообщения будут добавлены динамически -->
         </div>
     </div>
 </div>
@@ -422,8 +508,14 @@
 
 <!-- Нижний статус-бар -->
 <div class="status">
-    <span class="status-indicator"></span>
-    <div class="status-info">Plugin работает</div>
+    <div style="display: flex; align-items: center; gap: 6px; line-height: 1; height: 100%;">
+        <input type="checkbox" id="pluginEnabled"
+               style="margin: 0; cursor: pointer; width: 13px; height: 13px; vertical-align: middle;">
+        <label for="pluginEnabled"
+               style="font-size: 11px; font-weight: 600; color: #4a5568; cursor: pointer; user-select: none; margin-right: 4px; line-height: 1; vertical-align: middle;">Плагин
+            вкл/выкл:</label>
+    </div>
+    <span class="status-indicator" style="vertical-align: middle;"></span>
 </div>
 
 <script src="popup.js"></script>

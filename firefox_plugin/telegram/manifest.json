@@ -6,7 +6,11 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "background": {
     "scripts": ["background.js"]
@@ -17,13 +21,13 @@
     "48": "icon.png",
     "128": "icon.png"
   },
-  "action": {
+  "sidebar_action": {
     "default_title": "Запустить заполнение",
     "default_icon": {
       "16": "icon.png",
       "32": "icon.png",
       "48": "icon.png"
     },
-    "default_popup": "popup.html"
+    "default_panel": "popup.html"
   }
 }

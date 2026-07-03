@@ -32,15 +32,33 @@ class AuthChecker:
 
 
 async def get_current_user(request: Request) -> AuthSession:
-    """Extract user from session cookie."""
+    """Extract user from session cookie or X-API-KEY header."""
     user_id = request.session.get("user_id")
     username = request.session.get("username")
     role = request.session.get("role")
 
-    if not user_id or not username or not role:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
+    if user_id and username and role:
+        return AuthSession(user_id=user_id, username=username, role=role)
 
-    return AuthSession(user_id=user_id, username=username, role=role)
+    # Попробуем авторизовать по X-API-KEY хедеру
+    x_api_key = request.headers.get("X-API-KEY") or request.headers.get("x-api-key")
+    if x_api_key:
+        from mysql_.mysql_ import mysql_get_db_async
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                """
+                SELECT u.id as user_id, u.username, u.role
+                FROM `user_access_token` t
+                JOIN `user` u ON t.user_id = u.id
+                WHERE t.token = %s
+                """,
+                (x_api_key,)
+            )
+            row = await db.fetchone()
+            if row:
+                return AuthSession(user_id=row["user_id"], username=row["username"], role=row["role"])
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated"
+    )

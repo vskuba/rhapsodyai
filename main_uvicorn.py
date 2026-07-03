@@ -7,6 +7,7 @@ import traceback
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from starlette.staticfiles import StaticFiles
@@ -119,14 +120,22 @@ async def auth_middleware(request: Request, call_next):
     """Redirect unauthenticated users to login page for admin routes."""
     path = request.url.path
 
+    # Разрешаем все OPTIONS запросы (CORS preflight) без авторизации
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     # Allow public paths
     public_paths = ['/docs', '/login', '/auth/login', '/auth/logout', '/cronjob', '/favicon.ico', '/static']
-    if any(path.startswith(p) for p in public_paths) or (path == '/agent/list' and request.method == 'POST'):
+    if any(path.startswith(p) for p in public_paths) or (path == '/agent/list' and request.method == 'POST') or (path == '/user' and request.method == 'GET'):
         return await call_next(request)
 
     # Check if user is authenticated via session
     user_id = request.session.get("user_id")
     if not user_id:
+        # Если передан X-API-KEY, разрешаем пропустить редирект/блокировку и доверяем авторизацию FastAPI
+        if request.headers.get("X-API-KEY") or request.headers.get("x-api-key"):
+            return await call_next(request)
+
         # For HTML routes, redirect to login
         if path.startswith('/admin') or path == '/':
             from starlette.responses import RedirectResponse
@@ -155,6 +164,14 @@ middleware = [
 ]
 
 app = FastAPI(lifespan=lifespan, middleware=middleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 current_dir = os.path.dirname(os.path.abspath(__file__))

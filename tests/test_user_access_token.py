@@ -85,7 +85,7 @@ class TestUserAccessToken:
         """Test querying agent list via POST /agent/list using an API Key."""
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False) as anon_client:
             # 1. Query with valid API key
-            headers = {"X-API_KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"}
+            headers = {"X-API-KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"}
             payload = {"find_by": {}}
             response = await anon_client.post("/agent/list", json=payload, headers=headers)
             assert response.status_code == 200
@@ -99,7 +99,7 @@ class TestUserAccessToken:
                 assert set(agent.keys()) == {"id", "name", "title"}
 
             # 2. Query with invalid API key
-            headers_invalid = {"X-API_KEY": "invalid-token-value"}
+            headers_invalid = {"X-API-KEY": "invalid-token-value"}
             response_invalid = await anon_client.post("/agent/list", json=payload, headers=headers_invalid)
             assert response_invalid.status_code == 401
             assert "Invalid API Key" in response_invalid.text
@@ -112,3 +112,27 @@ class TestUserAccessToken:
             response_no_auth = await anon_client.get("/agent/list")
             assert response_no_auth.status_code == 401
             assert "Not authenticated" in response_no_auth.text
+
+    async def test_get_user_by_api_key(self):
+        """Test getting user details via GET /user using an API Key."""
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False) as anon_client:
+            # 1. Query with valid API key
+            headers = {"X-API-KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"}
+            response = await anon_client.get("/user", headers=headers)
+            assert response.status_code == 200
+            data = response.json()
+            assert "result" in data
+            assert isinstance(data["result"]["id"], int)
+            assert data["result"]["id"] > 0
+            assert isinstance(data["result"]["username"], str)
+            assert len(data["result"]["username"]) > 0
+
+            # 2. Query with invalid API key
+            headers_invalid = {"X-API-KEY": "invalid-token-value"}
+            response_invalid = await anon_client.get("/user", headers=headers_invalid)
+            assert response_invalid.status_code == 401
+            assert "Invalid API Key" in response_invalid.text
+
+            # 3. Query without API key (should fail validation with 422)
+            response_no_header = await anon_client.get("/user")
+            assert response_no_header.status_code == 422

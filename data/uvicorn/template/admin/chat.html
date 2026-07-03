@@ -529,7 +529,7 @@
     async function loadAgents(userId = null) {
         if (!agentSelect) return;
         try {
-            const url = userId ? `/agent/list?user_id=${userId}` : '/agent/list';
+            const url = userId ? `/agent/list?find_by=${encodeURIComponent(JSON.stringify({user_id: userId}))}` : '/agent/list';
             const [agentsResponse] = await Promise.all([
                 getData(url)
             ]);

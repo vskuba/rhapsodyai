@@ -34,7 +34,7 @@ class TestAgentCRUD:
 
     async def test_get_agent_list(self, client: httpx.AsyncClient):
         """Test getting agent list."""
-        response = await client.get("/agent/list")
+        response = await client.request("GET", "/agent/list", json={"find_by": {}})
         assert response.status_code == 200
         data = response.json()
         assert "result" in data
@@ -324,7 +324,7 @@ class TestAgentCRUD:
         agent_c_id = agent_c_res.json()["result"]["id"]
 
         # 3. Request agent list for our test user
-        list_res = await client.get(f"/agent/list?user_id={user_id}")
+        list_res = await client.request("GET", "/agent/list", json={"find_by": {"user_id": user_id}})
         assert list_res.status_code == 200
         agents = list_res.json()["result"]
         agent_ids = [a["id"] for a in agents]
@@ -335,7 +335,7 @@ class TestAgentCRUD:
         assert agent_c_id not in agent_ids
 
         # 4. Request agent list for admin user (user1 has role 'admin')
-        admin_list_res = await client.get("/agent/list?user_id=1")
+        admin_list_res = await client.request("GET", "/agent/list", json={"find_by": {"user_id": 1}})
         assert admin_list_res.status_code == 200
         admin_agents = admin_list_res.json()["result"]
         admin_agent_ids = [a["id"] for a in admin_agents]
@@ -406,11 +406,11 @@ class TestAgentCRUD:
                 "title": "Schema Test Agent",
                 "greeting": "Hello",
                 "prompt_system": "Act as a helpful assistant",
-                "node_id": None,
+                "node_id": 2,
                 "llm_id": None,
                 "workflow_id": None,
                 "description": "Verification of POST /agent/list",
-                "role_id": None,
+                "role_id": 2,
             },
         )
         assert response.status_code == 200
@@ -420,7 +420,7 @@ class TestAgentCRUD:
             # Query the newly created agent using POST /agent/list with API Key
             list_res = await client.post(
                 "/agent/list",
-                headers={"X-API_KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"},
+                headers={"X-API-KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"},
                 json={
                     "find_by": {"id": agent_id}
                 }

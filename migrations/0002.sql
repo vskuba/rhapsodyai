@@ -323,4 +323,4 @@ INSERT INTO `user_node` (`user_id`, `node_id`) VALUES
 --
 
 INSERT INTO `user_access_token` (`id`, `user_id`, `token`) VALUES
-(1, 1, '8fd15581-36ae-48ed-812f-3b3d11d427f0');
+(1, 2, '8fd15581-36ae-48ed-812f-3b3d11d427f0');

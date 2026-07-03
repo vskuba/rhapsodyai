@@ -40,7 +40,7 @@ async def ask_ai(
         json_request: ChatAskJsonRequest,
         db=Depends(mysql_get_db_async),
         user: AuthSession =Depends(AuthChecker([]))
-):
+) -> dict:
     logger_info('Чат запрос: ' + str(json_request))
 
     session_uuid = json_request.session_uuid or str(uuid.uuid4())

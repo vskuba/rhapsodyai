@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, Query, Header, HTTPException
+from fastapi import APIRouter, Request, Depends, Header, HTTPException, Body
 from pydantic import BaseModel, Field, ConfigDict
 import json
 
@@ -44,11 +44,36 @@ class AgentListResponse(BaseModel):
 
 
 @router.get("/agent/list", include_in_schema=False)
-async def agent_list(
+async def agent_list_get(
         request: Request,
-        user_id: int = Query(None, description="ID пользователя для фильтрации агентов по роли и нодам"),
+        data: AgentJsonRequest = Body(None),
         user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
     repo = AgentRepository()
+
+    # Извлекаем find_by из data (если передан в body), иначе пытаемся распарсить из query параметров
+    find_by = {}
+    if data and data.find_by is not None:
+        find_by = data.find_by.copy()
+    else:
+        find_by_query = request.query_params.get("find_by")
+        if find_by_query:
+            try:
+                find_by = json.loads(find_by_query)
+            except Exception:
+                pass
+        else:
+            # Fallback to direct user_id query parameter
+            user_id_query = request.query_params.get("user_id")
+            if user_id_query:
+                find_by = {"user_id": int(user_id_query)}
+
+    # Извлекаем user_id из find_by
+    user_id = find_by.pop("user_id", None)
+    if user_id is not None:
+        try:
+            user_id = int(user_id)
+        except ValueError:
+            user_id = None
 
     # Если передан user_id, фильтруем агентов по роли и нодам пользователя
     if user_id is not None:
@@ -58,9 +83,9 @@ async def agent_list(
         if target_user and target_user.get('role'):
             user_role = target_user['role']  # 'admin', 'user', etc.
 
-            # Если роль 'admin', возвращаем всех агентов без фильтрации
+            # Если роль 'admin', возвращаем всех агентов без фильтрации по нодам, но с учетом других фильтров find_by
             if user_role.lower() == 'admin':
-                return {"result": await repo.find_by({}, order_by='position ASC')}
+                return {"result": await repo.find_by(find_by, order_by='position ASC')}
 
             async with mysql_get_db_async() as db:
                 # 1. Получаем node_ids пользователя из промежуточной таблицы
@@ -75,8 +100,8 @@ async def agent_list(
                 if role_result:
                     role_id = role_result['id'] if isinstance(role_result, dict) else role_result[0]
 
-                    # Получаем всех агентов
-                    all_agents = await repo.find_by({}, order_by='position ASC')
+                    # Получаем всех агентов, подходящих под критерии find_by
+                    all_agents = await repo.find_by(find_by, order_by='position ASC')
 
                     # Фильтруем агентов:
                     # - должен относиться к одной из нод пользователя (agent['node_id'] in user_node_ids)
@@ -90,8 +115,8 @@ async def agent_list(
             # Если у пользователя нет подходящей роли, возвращаем пустой список
             return {"result": []}
 
-    # Если user_id не передан, возвращаем всех агентов
-    return {"result": await repo.find_by({}, order_by='position ASC')}
+    # Если user_id не передан, возвращаем агентов по критериям find_by
+    return {"result": await repo.find_by(find_by, order_by='position ASC')}
 
 
 @router.post(
@@ -104,7 +129,7 @@ async def agent_list(
 async def agent_list(
         request: Request,
         data: AgentJsonRequest,
-        x_api_key: str = Header(..., alias="X-API_KEY")
+        x_api_key: str = Header(..., alias="X-API-KEY")
 ):
     user_id = 0
     async with mysql_get_db_async() as db:
@@ -159,11 +184,7 @@ async def agent_list(
                 ]
                 return {"result": filtered_agents}
 
-        # Если у пользователя нет подходящей роли, возвращаем пустой список
-        return {"result": []}
-
-    return {"result": await repo.find_by(data.find_by or {}, order_by='position ASC')}
-
+    return {"result": []}
 
 @router.get("/agent/{agent_id}", include_in_schema=False)
 async def agent_get(request: Request, agent_id: int, user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
