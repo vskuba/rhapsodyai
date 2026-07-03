@@ -633,7 +633,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const enabledKey = getScopedKey('pluginEnabled');
                     await currentStorage.local.set({ [enabledKey]: false });
                     updateStatusBar(false, true);
-                    alert("Пожалуйста, заполните Companion ID и Companion Title селекторы в настройках.");
+                    //alert("Пожалуйста, заполните Companion ID и Companion Title селекторы в настройках.");
                     return;
                 }
 
