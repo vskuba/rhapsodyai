@@ -47,7 +47,8 @@ class AgentListResponse(BaseModel):
 async def agent_list_get(
         request: Request,
         data: AgentJsonRequest = Body(None),
-        user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
+        user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))
+):
     repo = AgentRepository()
 
     # Извлекаем find_by из data (если передан в body), иначе пытаемся распарсить из query параметров
