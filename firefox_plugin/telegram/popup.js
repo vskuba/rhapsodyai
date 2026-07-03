@@ -13,6 +13,7 @@ const HTML_DEFAULTS = {
     'querySelectorCompanionTitle': ".chat-info .person .user-title .peer-title",
     'companionId': "",
     'companionTitle': "",
+    'companionIdPrefix': "companion_",
     'pluginEnabled': false
 };
 
@@ -326,6 +327,7 @@ async function reloadPopupContext(newTabId) {
         'querySelectorCompanionTitle': document.getElementById('querySelectorCompanionTitle'),
         'companionId': document.getElementById('companionId'),
         'companionTitle': document.getElementById('companionTitle'),
+        'companionIdPrefix': document.getElementById('companionIdPrefix'),
         'pluginEnabled': document.getElementById('pluginEnabled')
     }
 
@@ -340,7 +342,8 @@ async function reloadPopupContext(newTabId) {
         'global_default_querySelectorMessageOut',
         'global_default_querySelectorMessageOutInputBox',
         'global_default_querySelectorCompanionId',
-        'global_default_querySelectorCompanionTitle'
+        'global_default_querySelectorCompanionTitle',
+        'global_default_companionIdPrefix'
     ];
     const scopedKeysToGet = keys.map(key => getScopedKey(key)).concat(globalDefaultKeys);
 
@@ -392,7 +395,8 @@ async function reloadPopupContext(newTabId) {
                         'querySelectorMessageOut',
                         'querySelectorMessageOutInputBox',
                         'querySelectorCompanionId',
-                        'querySelectorCompanionTitle'
+                        'querySelectorCompanionTitle',
+                        'companionIdPrefix'
                     ];
                     if (globalDefaultKeysList.includes(key)) {
                         defaultsToSave[`global_default_${key}`] = value;
@@ -496,7 +500,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         'querySelectorCompanionId': document.getElementById('querySelectorCompanionId'),
         'querySelectorCompanionTitle': document.getElementById('querySelectorCompanionTitle'),
         'companionId': document.getElementById('companionId'),
-        'companionTitle': document.getElementById('companionTitle')
+        'companionTitle': document.getElementById('companionTitle'),
+        'companionIdPrefix': document.getElementById('companionIdPrefix')
     }
 
     // Фильтруем объект: удаляем ключи, для которых элементы не были найдены на текущей вкладке HTML
@@ -529,7 +534,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     'querySelectorMessageOut',
                     'querySelectorMessageOutInputBox',
                     'querySelectorCompanionId',
-                    'querySelectorCompanionTitle'
+                    'querySelectorCompanionTitle',
+                    'companionIdPrefix'
                 ];
                 if (globalDefaultKeysList.includes(element.id)) {
                     dataToSave[`global_default_${element.id}`] = value;

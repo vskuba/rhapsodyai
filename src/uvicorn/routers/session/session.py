@@ -11,6 +11,7 @@ router = APIRouter()
 class SessionJsonRequest(BaseModel):
     agent_id: int | None = None
     user_id: int | None = None
+    companion_id: int | None = None
 
 
 class SessionMessagesJsonRequest(BaseModel):
@@ -23,8 +24,10 @@ async def session_list(request: Request, json_request: SessionJsonRequest, db=De
         sql = """
             SELECT
                 session_uuid,
-                role,
-                kind_type,
+                MAX(role) as role,
+                MAX(kind_type) as kind_type,
+                MAX(agent_id) as agent_id,
+                MAX(companion_id) as companion_id,
                 MAX(created_at) as last_message_at,
                 COUNT(*) as msg_count
             FROM agent_session
@@ -37,6 +40,9 @@ async def session_list(request: Request, json_request: SessionJsonRequest, db=De
         if json_request.user_id:
             sql += " AND user_id = %s"
             params.append(json_request.user_id)
+        if json_request.companion_id:
+            sql += " AND companion_id = %s"
+            params.append(json_request.companion_id)
 
         sql += " GROUP BY session_uuid ORDER BY last_message_at DESC"
 
@@ -50,8 +56,10 @@ async def session_last(request: Request, json_request: SessionJsonRequest, db=De
         sql = """
             SELECT
                 session_uuid,
-                role,
-                kind_type,
+                MAX(role) as role,
+                MAX(kind_type) as kind_type,
+                MAX(agent_id) as agent_id,
+                MAX(companion_id) as companion_id,
                 MAX(created_at) as last_message_at,
                 COUNT(*) as msg_count
             FROM agent_session
@@ -64,6 +72,9 @@ async def session_last(request: Request, json_request: SessionJsonRequest, db=De
         if json_request.user_id:
             sql += " AND user_id = %s"
             params.append(json_request.user_id)
+        if json_request.companion_id:
+            sql += " AND companion_id = %s"
+            params.append(json_request.companion_id)
 
         sql += " GROUP BY session_uuid ORDER BY last_message_at DESC LIMIT 1"
 
@@ -86,6 +97,9 @@ async def session_last_uuid(request: Request, json_request: SessionJsonRequest, 
         if json_request.user_id:
             sql += " AND user_id = %s"
             params.append(json_request.user_id)
+        if json_request.companion_id:
+            sql += " AND companion_id = %s"
+            params.append(json_request.companion_id)
 
         sql += " ORDER BY created_at DESC LIMIT 1"
 

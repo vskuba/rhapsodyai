@@ -39,6 +39,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.entity_llm = metadata.get('entity_llm', {})
             framework_model.metadata = metadata or {}
             framework_model.user_id = metadata.get('user_id', 0)
+            framework_model.companion_id = metadata.get('companion_id', 0)
             framework_model.workflow_steps = metadata.get('workflow_steps', [])
             framework_model.workflow_variables = metadata.get('workflow_variables', {})
 
@@ -163,7 +164,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         role='system',
                         agent_id=model.entity_agent.get('id'),
                         kind_type='system-prompt',
-                        content=model.prompt_system
+                        content=model.prompt_system,
+                        companion_id=model.companion_id
                     )
 
                 if iteration == 0:
@@ -175,7 +177,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         role='user',
                         agent_id=model.entity_agent.get('id'),
                         kind_type='user-prompt',
-                        content=model.workflow_variables['prompt_user']
+                        content=model.workflow_variables['prompt_user'],
+                        companion_id=model.companion_id
                     )
 
                 if step_type == 'llm_to_json':
@@ -273,7 +276,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             agent_id=model.entity_agent.get('id'),
                             kind_type='tool-call',
                             content=f"{tool_name}({tool_args}): \n\n {str(raw_result)}",
-                            token=0
+                            token=0,
+                            companion_id=model.companion_id
                         )
 
                         if isinstance(raw_result, dict):
@@ -357,7 +361,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         role='workflow',
                         agent_id=model.entity_agent.get('id'),
                         kind_type='response-final',
-                        content=model.prompt_user
+                        content=model.prompt_user,
+                        companion_id=model.companion_id
                     )
 
                     if not future.done():

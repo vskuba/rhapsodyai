@@ -411,10 +411,14 @@
                 }
             }
 
+            // Получаем Companion ID
+            const compData = await getData('/companion/converter');
+            const companionId = compData.result.id;
+
             // Эндпоинт должен возвращать { "md_result": "текст фактов..." }
             const res = await postData('/chat/ask', {
                 question: text,
-                user_id: 1,
+                companion_id: companionId,
                 agent_id: agent_id,
                 llm: await SettingGet('llm_active', 1),
                 session_uuid: crypto.randomUUID(),

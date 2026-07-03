@@ -211,6 +211,7 @@ CREATE TABLE `agent_session` (
     `llm_id` INT NULL,
     `agent_id` INT NULL,
     `user_id` INT NULL,
+    `companion_id` INT NULL,
     `role` CHAR(30) NOT NULL,
     `kind_type` CHAR(20) NOT NULL,
     `content` LONGTEXT NOT NULL,
@@ -220,5 +221,6 @@ CREATE TABLE `agent_session` (
     INDEX `idx_agent_user` (`agent_id`, `user_id`, `created_at`),
     CONSTRAINT `fk_memory_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_memory_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_memory_companion` FOREIGN KEY (`companion_id`) REFERENCES `companion` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

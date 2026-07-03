@@ -196,7 +196,7 @@ async function processAiResponse(cleanText) {
             return;
         }
 
-        await addPluginLog("Запуск цепочки ИИ-ответа: получение user_id...");
+        await addPluginLog("Запуск цепочки ИИ-ответа: получение user_id и companion_id...");
         // 1. Получаем user_id
         const userRes = await fetch(`${aiUrl}/user`, {
             headers: {'X-API-KEY': accessToken}
@@ -207,7 +207,32 @@ async function processAiResponse(cleanText) {
         const userData = await userRes.json();
         const user_id = userData.result.id;
 
-        await addPluginLog(`user_id получен: ${user_id}. Получение session_uuid...`);
+        // Получаем имя собеседника со страницы или из локального хранилища
+        const compIdKey = getScopedKey('companionId');
+        const compIdRes = await storage.local.get(compIdKey);
+        const rawCompanionId = compIdRes[compIdKey] || "tg_companion";
+
+        // Получаем префикс companionIdPrefix из локального хранилища
+        const compPrefixKey = getScopedKey('companionIdPrefix');
+        const compPrefixRes = await storage.local.get(compPrefixKey);
+        const companionPrefix = compPrefixRes[compPrefixKey] !== undefined ? compPrefixRes[compPrefixKey] : "telegram_";
+
+        const companionName = companionPrefix + rawCompanionId;
+
+        // Запрашиваем Companion ID из API
+        const compRes = await fetch(`${aiUrl}/companion/${encodeURIComponent(companionName)}`, {
+            method: 'GET',
+            headers: {
+                'X-API-KEY': accessToken
+            }
+        });
+        if (!compRes.ok) {
+            throw new Error(`Ошибка GET /companion/${companionName}: ${compRes.status}`);
+        }
+        const compData = await compRes.json();
+        const companionId = compData.result.id;
+
+        await addPluginLog(`user_id: ${user_id}, companion_id: ${companionId}. Получение session_uuid...`);
 
         // 2. Получаем session_uuid
         const sessRes = await fetch(`${aiUrl}/session/last/uuid`, {
@@ -246,7 +271,7 @@ async function processAiResponse(cleanText) {
             body: JSON.stringify({
                 question: cleanText,
                 agent_id: parseInt(agent_id),
-                user_id: user_id,
+                companion_id: companionId,
                 session_uuid: session_uuid
             })
         });

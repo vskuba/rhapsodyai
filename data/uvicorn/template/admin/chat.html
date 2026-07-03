@@ -458,9 +458,21 @@
         showLoading(true);
 
         try {
+            const selectedUserId = userSelect.value;
+            const selectedUser = allUsers[selectedUserId];
+            if (!selectedUser) {
+                alert("Пожалуйста, выберите пользователя.");
+                return;
+            }
+
+            // Получаем Companion ID
+            const compName = `user_${selectedUser.username}`;
+            const compData = await getData(`/companion/${compName}`);
+            const companionId = compData.result.id;
+
             const data = await postData('/chat/ask', {
                 question: text,
-                user_id: userSelect.value,
+                companion_id: companionId,
                 agent_id: agentSelect.value,
                 session_uuid: currentSessionId
             });

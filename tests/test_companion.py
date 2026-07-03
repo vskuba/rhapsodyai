@@ -1,9 +1,22 @@
 import pytest
 import httpx
 import uuid
+import subprocess
 from typing import AsyncGenerator
 
 BASE_URL = "http://localhost:8011"
+
+
+@pytest.fixture(autouse=True, scope="module")
+def cleanup_test_companions():
+    """Cleanup all companions starting with 'comp_' after tests are completed."""
+    yield
+    # Delete test companions using docker exec to avoid local MySQL dependencies
+    subprocess.run([
+        "docker", "exec", "-i", "1ad71ee7eb97_rhapsodyai-mysql-1",
+        "mysql", "-u", "developer", "-ppassword", "project",
+        "-e", "DELETE FROM companion WHERE name LIKE 'comp_%';"
+    ], capture_output=True)
 
 
 class TestCompanionFlow:

@@ -24,7 +24,7 @@ router = APIRouter()
 class ChatAskJsonRequest(BaseModel):
     question: str
     agent_id: int
-    user_id: int
+    companion_id: int
     session_uuid: str | None = None
     variables: dict = {}
 
@@ -39,16 +39,16 @@ async def ask_ai(
         request: Request,
         json_request: ChatAskJsonRequest,
         db=Depends(mysql_get_db_async),
-        user: AuthSession =Depends(AuthChecker([]))
+        user: AuthSession = Depends(AuthChecker([]))
 ) -> dict:
     logger_info('Чат запрос: ' + str(json_request))
 
     session_uuid = json_request.session_uuid or str(uuid.uuid4())
 
     repo_user = UserRepository()
-    entity_user = await repo_user.find_one_by({'id': json_request.user_id})
+    entity_user = await repo_user.find_one_by({'id': user.user_id})
     if not entity_user:
-        raise HTTPException(status_code=404, detail="User not found by ID: %s" % json_request.user_id)
+        raise HTTPException(status_code=404, detail="User not found by ID: %s" % user.user_id)
 
     repo_agent = AgentRepository()
     entity_agent = await repo_agent.find_one_by({'id': json_request.agent_id})
@@ -98,7 +98,8 @@ async def ask_ai(
     # Собираем переменные: базовые + динамические из БД
     workflow_variables = {
         'prompt_user': json_request.question.strip(),
-        'user_id': json_request.user_id,
+        'user_id': user.user_id,
+        'companion_id': json_request.companion_id,
         'username': entity_user.get('username'),
         'agent_id': json_request.agent_id,
         'agent_title': entity_agent.get('title'),
@@ -145,7 +146,8 @@ async def ask_ai(
         "workflow_steps": workflow_steps,
         "workflow_variables": workflow_variables,
         "prompt_user": json_request.question,
-        "user_id": entity_user.get('id'),
+        "user_id": user.user_id,
+        "companion_id": json_request.companion_id,
         "session_uuid": session_uuid,
         "tools": tools,
     })

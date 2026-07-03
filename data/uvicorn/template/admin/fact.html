@@ -496,9 +496,14 @@
         extractBtn.textContent = "⌛ Обработка...";
 
         try {
+            // Получаем Companion ID
+            const compData = await getData('/companion/fact_extractor_ui');
+            const companionId = compData.result.id;
+
             const res = await postData('/chat/ask', {
                 question: text,
-                user_id: 1,
+                companion_id: companionId,
+                agent_id: 4,
                 agent: 'fact_extractor'
             });
             if (mdEditor) mdEditor.setValue(res.result || "");

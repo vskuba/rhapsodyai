@@ -274,8 +274,8 @@
             </select>
         </div>
         <div class="filter-item">
-            <span class="sidebar-label">Пользователь</span>
-            <select id="userFilter">
+            <span class="sidebar-label">Собеседник</span>
+            <select id="companionFilter">
                 <option>Загрузка...</option>
             </select>
         </div>
@@ -308,13 +308,67 @@
     const sessionList = document.getElementById('sessionList');
     const messagesContainer = document.getElementById('messagesContainer');
     const agentFilter = document.getElementById('agentFilter');
-    const userFilter = document.getElementById('userFilter');
+    const companionFilter = document.getElementById('companionFilter');
+
+    let allSessions = [];
+    let allAgents = {};
+    let allCompanions = {};
+
+    function populateFilters(changedBy = null) {
+        if (changedBy === 'agent') {
+            const selectedAgentId = parseInt(agentFilter.value);
+            const associatedCompanions = {};
+            
+            allSessions.forEach(s => {
+                if (s.agent_id === selectedAgentId && s.companion_id) {
+                    associatedCompanions[s.companion_id] = (associatedCompanions[s.companion_id] || 0) + 1;
+                }
+            });
+
+            companionFilter.innerHTML = '';
+            Object.keys(associatedCompanions).forEach(compId => {
+                const companion = allCompanions[compId];
+                if (companion) {
+                    const count = associatedCompanions[compId];
+                    companionFilter.add(new Option(`${companion.title || companion.name} (${count})`, compId));
+                }
+            });
+
+            if (companionFilter.options.length > 0) {
+                companionFilter.selectedIndex = 0;
+            }
+        }
+
+        if (changedBy === 'companion') {
+            const selectedCompanionId = parseInt(companionFilter.value);
+            const associatedAgents = {};
+
+            allSessions.forEach(s => {
+                if (s.companion_id === selectedCompanionId && s.agent_id) {
+                    associatedAgents[s.agent_id] = (associatedAgents[s.agent_id] || 0) + 1;
+                }
+            });
+
+            agentFilter.innerHTML = '';
+            Object.keys(associatedAgents).forEach(agentId => {
+                const agent = allAgents[agentId];
+                if (agent) {
+                    const count = associatedAgents[agentId];
+                    agentFilter.add(new Option(`${agent.title || agent.name} (${count})`, agentId));
+                }
+            });
+
+            if (agentFilter.options.length > 0) {
+                agentFilter.selectedIndex = 0;
+            }
+        }
+    }
 
     async function loadSessions() {
         sessionList.innerHTML = 'Загрузка...';
         const data = await postData('/session/list', {
-            agent_id: agentFilter.value,
-            user_id: userFilter.value ? parseInt(userFilter.value) : null
+            agent_id: agentFilter.value ? parseInt(agentFilter.value) : null,
+            companion_id: companionFilter.value ? parseInt(companionFilter.value) : null
         });
 
         sessionList.innerHTML = '';
@@ -345,27 +399,72 @@
         try {
             // 1. Загрузка агентов
             const agentData = await (await fetch('/agent/list')).json();
-            if (agentData.result && agentData.result.length > 0) {
-                agentFilter.innerHTML = ''; // Очищаем заглушку
+            if (agentData.result) {
                 agentData.result.forEach(agent => {
-                    agentFilter.add(new Option(agent.name, agent.id));
+                    allAgents[agent.id] = agent;
                 });
+            }
+
+            // 2. Загрузка собеседников
+            const compData = await (await fetch('/companion/list')).json();
+            if (compData.result) {
+                compData.result.forEach(comp => {
+                    allCompanions[comp.id] = comp;
+                });
+            }
+
+            // 3. Загрузка всех сессий
+            const sessionData = await postData('/session/list', {});
+            allSessions = sessionData.result || [];
+
+            // Инициализация agentFilter (только агенты с сессиями)
+            agentFilter.innerHTML = '';
+            const agentsWithSessions = {};
+            allSessions.forEach(s => {
+                if (s.agent_id) {
+                    agentsWithSessions[s.agent_id] = (agentsWithSessions[s.agent_id] || 0) + 1;
+                }
+            });
+            Object.keys(agentsWithSessions).forEach(agentId => {
+                const agent = allAgents[agentId];
+                if (agent) {
+                    const count = agentsWithSessions[agentId];
+                    agentFilter.add(new Option(`${agent.title || agent.name} (${count})`, agentId));
+                }
+            });
+
+            // Инициализация companionFilter (только собеседники с сессиями)
+            companionFilter.innerHTML = '';
+            const companionsWithSessions = {};
+            allSessions.forEach(s => {
+                if (s.companion_id) {
+                    companionsWithSessions[s.companion_id] = (companionsWithSessions[s.companion_id] || 0) + 1;
+                }
+            });
+            Object.keys(companionsWithSessions).forEach(compId => {
+                const companion = allCompanions[compId];
+                if (companion) {
+                    const count = companionsWithSessions[compId];
+                    companionFilter.add(new Option(`${companion.title || companion.name} (${count})`, compId));
+                }
+            });
+
+            // СЛУШАТЕЛИ: синхронизация фильтров при смене опций
+            agentFilter.onchange = async () => {
+                populateFilters('agent');
+                await loadSessions();
+            };
+
+            companionFilter.onchange = async () => {
+                populateFilters('companion');
+                await loadSessions();
+            };
+
+            // При запуске применяем фильтрацию по первому агенту
+            if (agentFilter.options.length > 0) {
                 agentFilter.selectedIndex = 0;
+                populateFilters('agent');
             }
-
-            // 2. Загрузка пользователей
-            const userData = await (await fetch('/user/list')).json();
-            if (userData.result && userData.result.length > 0) {
-                userFilter.innerHTML = ''; // Очищаем заглушку
-                userData.result.forEach(user => {
-                    userFilter.add(new Option(user.username, user.id));
-                });
-                userFilter.selectedIndex = 0;
-            }
-
-            // СЛУШАТЕЛИ: чтобы при смене в Блоке 1 обновлялся Блок 2
-            agentFilter.onchange = loadSessions;
-            userFilter.onchange = loadSessions;
 
             // Сразу загружаем список после инициализации фильтров
             await loadSessions();
