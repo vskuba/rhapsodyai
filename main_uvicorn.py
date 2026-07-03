@@ -125,8 +125,35 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     # Allow public paths
-    public_paths = ['/docs', '/login', '/auth/login', '/auth/logout', '/cronjob', '/favicon.ico', '/static']
-    if any(path.startswith(p) for p in public_paths) or (path == '/agent/list' and request.method == 'POST') or (path == '/user' and request.method == 'GET'):
+    public_paths = {
+        "startswith": {
+            'ANY': [
+                '/docs',
+                '/login',
+                '/auth/login',
+                '/auth/logout',
+                '/cronjob',
+                '/favicon.ico',
+                '/static',
+                '/user'
+            ],
+        },
+        "exact": {
+            'GET': ['/openapi.json'],
+            'POST': ['/agent/list']
+        }
+    }
+
+    method = request.method
+
+    # 1. Проверка startswith: ищем метод, если его нет — берем 'ANY', если и его нет — пустой список
+    startswith_patterns = public_paths['startswith'].get(method, public_paths['startswith'].get('ANY', []))
+    is_public_startswith = any(path.startswith(p) for p in startswith_patterns)
+
+    # 2. Проверка точного совпадения
+    is_public_exact = path in public_paths['exact'].get(method, [])
+
+    if is_public_startswith or is_public_exact:
         return await call_next(request)
 
     # Check if user is authenticated via session
@@ -172,7 +199,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 

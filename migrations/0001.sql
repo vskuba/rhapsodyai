@@ -148,11 +148,11 @@ CREATE TABLE `agent_workflow_variable` (
     CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `dating_girl` (
+CREATE TABLE `companion` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(25) NOT NULL,
     `title` CHAR(25) NOT NULL,
-    UNIQUE INDEX `un_dating_girl_name` (`name`)
+    UNIQUE INDEX `un_companion_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица фактов (коллекция фактов)

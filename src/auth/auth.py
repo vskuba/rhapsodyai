@@ -57,6 +57,11 @@ async def get_current_user(request: Request) -> AuthSession:
             row = await db.fetchone()
             if row:
                 return AuthSession(user_id=row["user_id"], username=row["username"], role=row["role"])
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid API Key"
+                )
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

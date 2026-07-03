@@ -104,9 +104,10 @@ class TestUserAccessToken:
             assert response_invalid.status_code == 401
             assert "Invalid API Key" in response_invalid.text
 
-            # 3. Query new token-route without header (should fail validation with 422)
+            # 3. Query new token-route without header (should fail validation with 401)
             response_no_header = await anon_client.post("/agent/list", json=payload)
-            assert response_no_header.status_code == 422
+            assert response_no_header.status_code == 401
+            assert "Not authenticated" in response_no_header.text
 
             # 4. Query session-route without session (should return 401)
             response_no_auth = await anon_client.get("/agent/list")
@@ -133,6 +134,7 @@ class TestUserAccessToken:
             assert response_invalid.status_code == 401
             assert "Invalid API Key" in response_invalid.text
 
-            # 3. Query without API key (should fail validation with 422)
+            # 3. Query without API key (should fail validation with 401)
             response_no_header = await anon_client.get("/user")
-            assert response_no_header.status_code == 422
+            assert response_no_header.status_code == 401
+            assert "Not authenticated" in response_no_header.text

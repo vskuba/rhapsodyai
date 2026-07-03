@@ -1,6 +1,6 @@
 from mysql_.repository.abstract_repository import AbstractRepository
 
 
-class DatingGirlRepository(AbstractRepository):
+class CompanionRepository(AbstractRepository):
     def table_name_get(self) -> str:
-        return 'dating_girl'
+        return 'companion'

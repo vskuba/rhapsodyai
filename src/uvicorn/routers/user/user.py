@@ -162,25 +162,11 @@ async def user_token_delete(token_id: int, db=Depends(mysql_get_db_async), user=
 @router.get("/user")
 async def user_get_by_api_key(
     request: Request,
-    x_api_key: str = Header(..., alias="X-API-KEY")
+    user=Depends(AuthChecker([]))
 ):
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            """
-            SELECT u.id as user_id, u.username
-            FROM `user_access_token` t
-            JOIN `user` u ON t.user_id = u.id
-            WHERE t.token = %s
-            """,
-            (x_api_key,)
-        )
-        row = await db.fetchone()
-        if not row:
-            raise HTTPException(status_code=401, detail="Invalid API Key")
-        
-        return {
-            "result": {
-                "id": row["user_id"],
-                "username": row["username"]
-            }
+    return {
+        "result": {
+            "id": user.user_id,
+            "username": user.username
         }
+    }

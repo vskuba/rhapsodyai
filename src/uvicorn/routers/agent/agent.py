@@ -129,25 +129,9 @@ async def agent_list_get(
 async def agent_list(
         request: Request,
         data: AgentJsonRequest,
-        x_api_key: str = Header(..., alias="X-API-KEY")
+        user=Depends(AuthChecker([]))
 ):
-    user_id = 0
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            """
-            SELECT u.id as user_id, u.username, u.role
-            FROM `user_access_token` t
-            JOIN `user` u ON t.user_id = u.id
-            WHERE t.token = %s
-            """,
-            (x_api_key,)
-        )
-        row = await db.fetchone()
-        if not row:
-            raise HTTPException(status_code=401, detail="Invalid API Key")
-
-        user_id = row["user_id"]
-
+    user_id = user.user_id
     repo = AgentRepository()
 
     # Фильтруем агентов по роли и нодам пользователя
