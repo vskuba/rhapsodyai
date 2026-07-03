@@ -412,7 +412,10 @@
             }
 
             // Получаем Companion ID
-            const compData = await getData('/companion/converter');
+            const compData = await postData('/companion', {
+                name: 'converter',
+                title: 'Конвертер фактов'
+            });
             const companionId = compData.result.id;
 
             // Эндпоинт должен возвращать { "md_result": "текст фактов..." }

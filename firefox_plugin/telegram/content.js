@@ -219,15 +219,25 @@ async function processAiResponse(cleanText) {
 
         const companionName = companionPrefix + rawCompanionId;
 
-        // Запрашиваем Companion ID из API
-        const compRes = await fetch(`${aiUrl}/companion/${encodeURIComponent(companionName)}`, {
-            method: 'GET',
+        // Считываем также имя собеседника из хранилища для передачи в качестве title
+        const compTitleKey = getScopedKey('companionTitle');
+        const compTitleRes = await storage.local.get(compTitleKey);
+        const companionTitle = compTitleRes[compTitleKey] || companionName;
+
+        // Запрашиваем Companion ID из API (POST)
+        const compRes = await fetch(`${aiUrl}/companion`, {
+            method: 'POST',
             headers: {
+                'Content-Type': 'application/json',
                 'X-API-KEY': accessToken
-            }
+            },
+            body: JSON.stringify({
+                name: companionName,
+                title: companionTitle
+            })
         });
         if (!compRes.ok) {
-            throw new Error(`Ошибка GET /companion/${companionName}: ${compRes.status}`);
+            throw new Error(`Ошибка POST /companion: ${compRes.status}`);
         }
         const compData = await compRes.json();
         const companionId = compData.result.id;

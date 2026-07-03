@@ -497,7 +497,10 @@
 
         try {
             // Получаем Companion ID
-            const compData = await getData('/companion/fact_extractor_ui');
+            const compData = await postData('/companion', {
+                name: 'fact_extractor_ui',
+                title: 'Экстрактор фактов UI'
+            });
             const companionId = compData.result.id;
 
             const res = await postData('/chat/ask', {

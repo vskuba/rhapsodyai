@@ -467,7 +467,10 @@
 
             // Получаем Companion ID
             const compName = `user_${selectedUser.username}`;
-            const compData = await getData(`/companion/${compName}`);
+            const compData = await postData('/companion', {
+                name: compName,
+                title: selectedUser.username
+            });
             const companionId = compData.result.id;
 
             const data = await postData('/chat/ask', {
