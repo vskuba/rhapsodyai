@@ -1,19 +1,14 @@
 INSERT INTO `llm` (`id`, `name`) VALUES
-(1, 'openrouter/nvidia/nemotron-3.5-content-safety:free'),
-(2, 'groq:openai/gpt-oss-120b'),
-(3, 'groq:llama-3.3-70b-versatile'),
-(4, 'groq:qwen/qwen3-32b'),
-(5, 'groq:llama-3.1-8b-instant'),
-(6, 'openai/gpt-oss-120b'),
-(7, 'ollama/llama3.1:latest'),
-(8, 'ollama/deepseek-r1:8b'),
-(9, 'ollama/qwen2.5:7b'),
-(10, 'ollama/qwen2.5:14b'),
-(11, 'ollama/qwen2.5-coder:7b'),
-(12, 'ollama/gpt-oss:20b'),
-(13, 'ollama/qwen3:30b'),
-(14, 'ollama/qwen3-coder:30b'),
-(15, 'ollama/mistral');
+(1, 'openrouter/meta-llama/llama-3.3-70b-instruct:free'),
+(2, 'openrouter/openai/gpt-oss-120b:free'),
+(3, 'openrouter/google/gemma-4-31b-it:free'),
+(4, 'openrouter/qwen/qwen3-next-80b-a3b-instruct:free'),
+(5, 'ollama/qwen2.5:7b'),
+(6, 'ollama/qwen2.5:14b'),
+(7, 'ollama/qwen2.5-coder:7b'),
+(8, 'ollama/gpt-oss:20b'),
+(9, 'ollama/qwen3:30b'),
+(10, 'ollama/qwen3-coder:30b');
 
 --
 
