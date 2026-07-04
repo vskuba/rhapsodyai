@@ -1,35 +1,25 @@
 INSERT INTO `llm` (`id`, `name`) VALUES
-(1, 'claude-sonnet-4-5-20250929'),
-(2, 'gpt-5-nano'),
-(3, 'gpt-4.1'),
-(4, 'o4-mini'),
-(5, 'gemini-3.1-pro-preview'),
-(6, 'gemini-2.5-flash'),
-(7, 'grok-4-1-fast-reasoning'),
-(8, 'grok-4-1-fast-non-reasoning'),
-(9, 'grok-4-fast-reasoning'),
-(10, 'grok-4'),
-(11, 'grok-3'),
-(12, 'groq:openai/gpt-oss-120b'),
-(13, 'groq:llama-3.3-70b-versatile'),
-(14, 'groq:qwen/qwen3-32b'),
-(15, 'groq:llama-3.1-8b-instant'),
-(16, 'openai/gpt-oss-120b'),
-(17, 'ollama/llama3.1:latest'),
-(18, 'ollama/deepseek-r1:8b'),
-(19, 'ollama/qwen2.5:7b'),
-(20, 'ollama/qwen2.5:14b'),
-(21, 'ollama/qwen2.5-coder:7b'),
-(22, 'ollama/gpt-oss:20b'),
-(23, 'ollama/qwen3:30b'),
-(24, 'ollama/qwen3-coder:30b'),
-(25, 'ollama/mistral');
+(1, 'open_router/nvidia/nemotron-3-ultra-550b-a55b:free'),
+(2, 'groq:openai/gpt-oss-120b'),
+(3, 'groq:llama-3.3-70b-versatile'),
+(4, 'groq:qwen/qwen3-32b'),
+(5, 'groq:llama-3.1-8b-instant'),
+(6, 'openai/gpt-oss-120b'),
+(7, 'ollama/llama3.1:latest'),
+(8, 'ollama/deepseek-r1:8b'),
+(9, 'ollama/qwen2.5:7b'),
+(10, 'ollama/qwen2.5:14b'),
+(11, 'ollama/qwen2.5-coder:7b'),
+(12, 'ollama/gpt-oss:20b'),
+(13, 'ollama/qwen3:30b'),
+(14, 'ollama/qwen3-coder:30b'),
+(15, 'ollama/mistral');
 
 --
 
 INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role`, `llm_id`, `created_at`) VALUES
-(1, 'user1', 'user1@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 'admin', 12, '2026-04-26 09:17:35'),
-(2, 'user2', 'user2@example.com', '$2b$12$xfglXXXp3W2QCb1XnZhNBuDYAJc.Fy51fI43NlVhBfVQTLaYpD1Ca', 'user', 12, '2026-04-26 09:17:35');
+(1, 'user1', 'user1@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 'admin', 1, '2026-04-26 09:17:35'),
+(2, 'user2', 'user2@example.com', '$2b$12$xfglXXXp3W2QCb1XnZhNBuDYAJc.Fy51fI43NlVhBfVQTLaYpD1Ca', 'user', 1, '2026-04-26 09:17:35');
 
 --
 
@@ -322,10 +312,10 @@ INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_
 (23, 2, 'elena', 'Елена', 'Описание девушки Елена', 5, 'Ты девушка Елена. Всегда отвечать от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах или пиши с маленькой буквы или пропускай знаки пунктуации. Ты никогда не соглашаешся на личные встречи или звонки. Ты любишь флиртовать. Если возникают вопросы с встречей, звонками или другой личной информации ты пытаешся мягко отшутиться или перевести тему. Тоже касается и фото. Ты не кидаешь и не обещаешь ничего конкертного. Но в то же время ты точно знаешь, что ищешь любовь, отношения и пытаешся лучше узнать друг друга в переписке. Возращай всегда лаконичный ответ, не более пары десятков слов. Больше слов, только если необходимо.', 'Привет, я Елена, буду рада пообщаться с тобой', NULL, 2, 0, '{"document_id":"elena"}');
 
 INSERT INTO `agent_session` (`id`, `session_uuid`, `request_uuid`, `llm_id`, `agent_id`, `user_id`, `companion_id`, `role`, `kind_type`, `content`, `token`, `created_at`) VALUES
-(1, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 1, 'system', 'system-prompt', 'You are agent which research needed response for customer request. \n  In your research you must search in your memory and use available subagents for retrieve information.\n\n  CORE RULES:\n  1. Before do some actions notify customer detailed plan of your actions.\n  2. You have list of available subagents with brief description which information they can provide. \n  Use tools \'agent_desc_list\' for that.\n  3. Use tool \'agent_invoke\' for getting required information via subagent.\n  4. Do not use your general training data to answer questions that should be in the database.\n  5. Use only Russian in response.\n  6. NEVER invent or hallucinate data when customer ask you something', NULL, '2026-05-01 19:08:33'),
-(2, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 1, 'user', 'user-prompt', 'Ну давай попробуем.', NULL, '2026-05-01 19:08:33'),
-(3, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 1, 'llm', 'thinking', 'The user says \"Ну давай попробуем.\" Likely they want to start some request. We need to ask for clarification? According to core rule 1: before doing actions, notify customer detailed plan of actions. So we need to ask what they want? Probably need to respond asking for request details. Use Russian.', 806, '2026-05-01 19:08:33'),
-(4, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 14, 1, 1, 1, 'llm', 'response-final', 'Добрый день! Чтобы я мог помочь вам максимально эффективно, расскажите, пожалуйста, что именно вы хотите попробовать:  \n\n1. **Поиск информации** — нужны данные из нашей внутренней базы, документы, статистика и т.п.  \n2. **Исследование в интернете** — требуется собрать сведения с внешних сайтов.  \n3. **Выполнение расчётов или генерация кода** — нужны технические решения, скрипты, формулы.  \n4. **Что‑то другое** — уточните задачу, и я подскажу, какие шаги будем предпринимать.\n\nКак только получу от вас уточнение, я подготовлю подробный план действий и приступлю к их выполнению.', 806, '2026-05-01 19:08:33');
+(1, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 1, 1, 1, 1, 'system', 'system-prompt', 'You are agent which research needed response for customer request. \n  In your research you must search in your memory and use available subagents for retrieve information.\n\n  CORE RULES:\n  1. Before do some actions notify customer detailed plan of your actions.\n  2. You have list of available subagents with brief description which information they can provide. \n  Use tools \'agent_desc_list\' for that.\n  3. Use tool \'agent_invoke\' for getting required information via subagent.\n  4. Do not use your general training data to answer questions that should be in the database.\n  5. Use only Russian in response.\n  6. NEVER invent or hallucinate data when customer ask you something', NULL, '2026-05-01 19:08:33'),
+(2, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 1, 1, 1, 1, 'user', 'user-prompt', 'Ну давай попробуем.', NULL, '2026-05-01 19:08:33'),
+(3, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 1, 1, 1, 1, 'llm', 'thinking', 'The user says \"Ну давай попробуем.\" Likely they want to start some request. We need to ask for clarification? According to core rule 1: before doing actions, notify customer detailed plan of actions. So we need to ask what they want? Probably need to respond asking for request details. Use Russian.', 806, '2026-05-01 19:08:33'),
+(4, '097824c7-c3d3-4925-a63f-bd685292a408', '769dbdd4-208c-4e37-95e8-3ae0e27dc00f', 1, 1, 1, 1, 'llm', 'response-final', 'Добрый день! Чтобы я мог помочь вам максимально эффективно, расскажите, пожалуйста, что именно вы хотите попробовать:  \n\n1. **Поиск информации** — нужны данные из нашей внутренней базы, документы, статистика и т.п.  \n2. **Исследование в интернете** — требуется собрать сведения с внешних сайтов.  \n3. **Выполнение расчётов или генерация кода** — нужны технические решения, скрипты, формулы.  \n4. **Что‑то другое** — уточните задачу, и я подскажу, какие шаги будем предпринимать.\n\nКак только получу от вас уточнение, я подготовлю подробный план действий и приступлю к их выполнению.', 806, '2026-05-01 19:08:33');
 
 --
 
