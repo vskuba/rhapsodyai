@@ -8,13 +8,19 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (7, 'ollama/qwen2.5-coder:7b'),
 (8, 'ollama/gpt-oss:20b'),
 (9, 'ollama/qwen3:30b'),
-(10, 'ollama/qwen3-coder:30b');
+(10, 'ollama/qwen3-coder:30b'),
+(11, 'ollama/mock-11'),
+(12, 'ollama/mock-12');
 
 --
 
-INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role`, `llm_id`, `created_at`) VALUES
-(1, 'user1', 'user1@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 'admin', 1, '2026-04-26 09:17:35'),
-(2, 'user2', 'user2@example.com', '$2b$12$xfglXXXp3W2QCb1XnZhNBuDYAJc.Fy51fI43NlVhBfVQTLaYpD1Ca', 'user', 1, '2026-04-26 09:17:35');
+INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role`, `created_at`) VALUES
+(1, 'user1', 'user1@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 'admin', '2026-04-26 09:17:35'),
+(2, 'user2', 'user2@example.com', '$2b$12$xfglXXXp3W2QCb1XnZhNBuDYAJc.Fy51fI43NlVhBfVQTLaYpD1Ca', 'user', '2026-04-26 09:17:35');
+
+INSERT INTO `user_llm` (`user_id`, `llm_id`) VALUES
+(1, 12),
+(2, 1);
 
 --
 

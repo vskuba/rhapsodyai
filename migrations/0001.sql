@@ -6,6 +6,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- Удаляем таблицы, если они существуют
 DROP TABLE IF EXISTS `user_access_token`;
 DROP TABLE IF EXISTS `user_node`;
+DROP TABLE IF EXISTS `user_llm`;
 DROP TABLE IF EXISTS `tool`;
 DROP TABLE IF EXISTS `tool_group`;
 DROP TABLE IF EXISTS `workflow_step`;
@@ -38,9 +39,7 @@ CREATE TABLE `user` (
     `email` CHAR(50) NOT NULL,
     `password_hash` CHAR(100) NOT NULL,
     `role` CHAR(20) NOT NULL DEFAULT 'user',
-    `llm_id` INT DEFAULT NULL,
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT `fk_user_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица токенов доступа пользователей
@@ -80,6 +79,14 @@ CREATE TABLE `user_node` (
     PRIMARY KEY (`user_id`, `node_id`),
     CONSTRAINT `fk_user_node_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_user_node_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `user_llm` (
+    `user_id` INT NOT NULL,
+    `llm_id` INT NOT NULL,
+    PRIMARY KEY (`user_id`, `llm_id`),
+    CONSTRAINT `fk_user_llm_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_user_llm_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `session` (
