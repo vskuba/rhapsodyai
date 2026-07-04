@@ -28,8 +28,21 @@ async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depen
                 mapping[uid] = []
             mapping[uid].append(nid)
 
+        # Build mapping of user_id -> list of llm_ids
+        await db.execute("SELECT user_id, llm_id FROM user_llm ORDER BY rate_limit_at ASC")
+        user_llms = await db.fetchall()
+
+        llm_mapping = {}
+        for row in user_llms:
+            uid = row["user_id"]
+            lid = row["llm_id"]
+            if uid not in llm_mapping:
+                llm_mapping[uid] = []
+            llm_mapping[uid].append(lid)
+
         for u in users:
             u["node_ids"] = mapping.get(u["id"], [])
+            u["llm_ids"] = llm_mapping.get(u["id"], [])
 
         return {"result": users}
 
@@ -43,6 +56,10 @@ async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async
             await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
             rows = await db.fetchall()
             user_data["node_ids"] = [row["node_id"] for row in rows]
+
+            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC", user_id)
+            llm_rows = await db.fetchall()
+            user_data["llm_ids"] = [row["llm_id"] for row in llm_rows]
     return {"result": user_data}
 
 
@@ -52,22 +69,33 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
     user_id = await repo.add({
         "username": data.get("username"),
         "email": data.get("email"),
-        "role": data.get("role", "user"),
-        "llm_id": data.get("llm_id")
+        "role": data.get("role", "user")
     })
 
-    # Insert user_node relations if node_ids are passed
-    if "node_ids" in data and data["node_ids"]:
-        async with db:
+    # Insert user_llm relations if llm_ids or llm_id are passed
+    llm_ids = data.get("llm_ids")
+    if llm_ids is None and data.get("llm_id") is not None:
+        llm_ids = [data.get("llm_id")]
+    llm_ids = llm_ids or []
+
+    async with db:
+        for lid in llm_ids:
+            await db.execute("INSERT INTO user_llm (user_id, llm_id) VALUES (%s, %s)", (user_id, lid))
+
+        # Insert user_node relations if node_ids are passed
+        if "node_ids" in data and data["node_ids"]:
             for nid in data["node_ids"]:
                 await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
 
-    created_user = await repo.find(user_id)
-    if created_user:
-        async with db:
+        created_user = await repo.find(user_id)
+        if created_user:
             await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
             rows = await db.fetchall()
             created_user["node_ids"] = [row["node_id"] for row in rows]
+
+            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC", user_id)
+            llm_rows = await db.fetchall()
+            created_user["llm_ids"] = [row["llm_id"] for row in llm_rows]
 
     return {"result": created_user}
 
@@ -83,28 +111,42 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
         update_data["email"] = data.get("email")
     if data.get("role") is not None:
         update_data["role"] = data.get("role")
-    if data.get("llm_id") is not None:
-        update_data["llm_id"] = data.get("llm_id")
 
     if update_data:
         await repo.update(user_id, update_data)
 
-    # Sync user_node relations if node_ids are passed in data
-    if "node_ids" in data:
-        node_ids = data["node_ids"] or []
-        async with db:
+    async with db:
+        # Sync user_llm relations if llm_ids or llm_id are passed
+        if "llm_ids" in data or "llm_id" in data:
+            llm_ids = data.get("llm_ids")
+            if llm_ids is None and data.get("llm_id") is not None:
+                llm_ids = [data.get("llm_id")]
+            llm_ids = llm_ids or []
+
+            # Delete old relations
+            await db.execute("DELETE FROM user_llm WHERE user_id = %s", user_id)
+            # Insert new relations
+            for lid in llm_ids:
+                await db.execute("INSERT INTO user_llm (user_id, llm_id) VALUES (%s, %s)", (user_id, lid))
+
+        # Sync user_node relations if node_ids are passed in data
+        if "node_ids" in data:
+            node_ids = data["node_ids"] or []
             # Delete old relations
             await db.execute("DELETE FROM user_node WHERE user_id = %s", user_id)
             # Insert new relations
             for nid in node_ids:
                 await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
 
-    updated_user = await repo.find(user_id)
-    if updated_user:
-        async with db:
+        updated_user = await repo.find(user_id)
+        if updated_user:
             await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
             rows = await db.fetchall()
             updated_user["node_ids"] = [row["node_id"] for row in rows]
+
+            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC", user_id)
+            llm_rows = await db.fetchall()
+            updated_user["llm_ids"] = [row["llm_id"] for row in llm_rows]
 
     return {"result": updated_user}
 

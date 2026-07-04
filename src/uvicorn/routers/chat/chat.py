@@ -60,11 +60,23 @@ async def ask_ai(
     if not workflow_id:
         raise HTTPException(status_code=401, detail="Agent '%s' not have workflow" % entity_agent.get('name'))
 
-    repo_llm = LlmRepository()
-    user_llm_id = entity_user.get('llm_id', 0)
-    entity_llm = await repo_llm.find(user_llm_id)
-    if not entity_llm:
-        raise HTTPException(status_code=404, detail="LLM not found by ID: %s" % user_llm_id)
+    # Получаем все связанные с пользователем LLM
+    entities_llm = []
+    async with db:
+        await db.execute(
+            """
+            SELECT l.* 
+            FROM `llm` l
+            JOIN `user_llm` ul ON l.id = ul.llm_id
+            WHERE ul.user_id = %s
+            ORDER BY ul.rate_limit_at ASC
+            """,
+            (user.user_id,)
+        )
+        entities_llm = await db.fetchall()
+
+    if not entities_llm:
+        raise HTTPException(status_code=404, detail="LLM models not found for user ID: %s" % user.user_id)
 
     async with db:
         # 1. Запрашиваем шаги воркфлоу, строго сортируя их по позиции
@@ -143,7 +155,7 @@ async def ask_ai(
     agent_manager = request.app.state.agent_manager
     framework_model = await agent_manager.framework_model_create({
         "entity_agent": entity_agent,
-        "entity_llm": entity_llm,
+        "entities_llm": entities_llm,
         "workflow_steps": workflow_steps,
         "workflow_variables": workflow_variables,
         "prompt_user": json_request.question,

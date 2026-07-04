@@ -84,6 +84,7 @@ CREATE TABLE `user_node` (
 CREATE TABLE `user_llm` (
     `user_id` INT NOT NULL,
     `llm_id` INT NOT NULL,
+    `rate_limit_at` DATETIME DEFAULT NULL,
     PRIMARY KEY (`user_id`, `llm_id`),
     CONSTRAINT `fk_user_llm_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_user_llm_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE

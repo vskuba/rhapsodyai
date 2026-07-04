@@ -94,7 +94,6 @@
         display: flex;
         gap: 30px;
         align-items: stretch;
-        min-height: 450px;
     }
 
     .settings-column {
@@ -255,10 +254,6 @@
         color: white;
     }
 
-    #statusLabel {
-        font-size: 13px;
-        color: #27ae60;
-    }
 </style>
 
 {% endblock %}
@@ -291,33 +286,36 @@
                         <!-- Основные настройки -->
                         <div class="settings-column">
                             <div class="form-grid">
-                                <div class="form-group form-group-name">
-                                    <label>Username</label>
-                                    <input type="text" id="username" class="form-control" required>
+                                <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
+                                    <div class="form-group" style="flex: 1;">
+                                        <label>Username</label>
+                                        <input type="text" id="username" class="form-control" required>
+                                    </div>
+                                    <div class="form-group" style="flex: 1;">
+                                        <label>Email</label>
+                                        <input type="text" id="email" class="form-control" value="0">
+                                    </div>
+                                    <div class="form-group" style="flex: 1;">
+                                        <label>Role</label>
+                                        <select id="role" class="form-control">
+                                            <option value="user">user</option>
+                                            <option value="admin">admin</option>
+                                        </select>
+                                    </div>
                                 </div>
-                                <div class="form-group">
-                                    <label>Email</label>
-                                    <input type="text" id="email" class="form-control" value="0">
-                                </div>
-                                <div class="form-group">
-                                    <label>Role</label>
-                                    <select id="role" class="form-control">
-                                        <option value="user">user</option>
-                                        <option value="admin">admin</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Модель LLM</label>
-                                    <select id="llm_id" class="form-control">
-                                        <option value="">По умолчанию</option>
-                                    </select>
-                                </div>
+                                <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
+                                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                        <label>Модели LLM</label>
+                                        <select id="llm_id" class="form-control" multiple size="10" style="height: 180px;">
+                                        </select>
+                                    </div>
 
-                                <div class="form-group" style="grid-column: span 2;">
-                                    <label>Доступные ноды</label>
-                                    <select id="user_nodes_select" class="form-control" multiple size="10">
-                                        <!-- Options will be rendered here by JS -->
-                                    </select>
+                                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                        <label>Доступные ноды</label>
+                                        <select id="user_nodes_select" class="form-control" multiple size="10" style="height: 180px;">
+                                            <!-- Options will be rendered here by JS -->
+                                        </select>
+                                    </div>
                                 </div>
 
 
@@ -326,7 +324,6 @@
                     </div>
 
                     <div class="editor-footer">
-                        <span id="statusLabel"></span>
                         <!-- Кнопка удаления -->
                         <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
                             Удалить пользователя
@@ -415,7 +412,7 @@
             renderNodeSelect(allNodes);
 
             const llmSelect = document.getElementById('llm_id');
-            llmSelect.innerHTML = '<option value="">По умолчанию</option>';
+            llmSelect.innerHTML = '';
             llms.forEach(g => {
                 const opt = document.createElement('option');
                 opt.value = g.id;
@@ -491,7 +488,15 @@
             document.getElementById('username').value = user.username;
             document.getElementById('email').value = user.email;
             document.getElementById('role').value = user.role || 'user';
-            document.getElementById('llm_id').value = user.llm_id || '';
+
+            // Update selected options in the llm_id multiple select element
+            const userLlmIds = user.llm_ids || [];
+            const llmSelect = document.getElementById('llm_id');
+            if (llmSelect) {
+                Array.from(llmSelect.options).forEach(opt => {
+                    opt.selected = userLlmIds.includes(parseInt(opt.value));
+                });
+            }
 
             // Update selected options in the select element
             const userNodeIds = user.node_ids || [];
@@ -526,9 +531,15 @@
         document.getElementById('username').value = '';
         document.getElementById('email').value = '';
         document.getElementById('role').value = 'user';
-        document.getElementById('llm_id').value = '';
 
-        // Clear all selections in select element
+        // Clear all selections in select elements
+        const llmSelect = document.getElementById('llm_id');
+        if (llmSelect) {
+            Array.from(llmSelect.options).forEach(opt => {
+                opt.selected = false;
+            });
+        }
+
         const select = document.getElementById('user_nodes_select');
         if (select) {
             Array.from(select.options).forEach(opt => {
@@ -561,12 +572,21 @@
             });
         }
 
+        // Collect selected LLM IDs
+        const selectedLlmIds = [];
+        const llmSelect = document.getElementById('llm_id');
+        if (llmSelect) {
+            Array.from(llmSelect.selectedOptions).forEach(opt => {
+                selectedLlmIds.push(parseInt(opt.value));
+            });
+        }
+
         const id = document.getElementById('userId').value;
         const payload = {
             username: document.getElementById('username').value,
             email: document.getElementById('email').value,
             role: document.getElementById('role').value,
-            llm_id: document.getElementById('llm_id').value || null,
+            llm_ids: selectedLlmIds,
             node_ids: selectedNodeIds
         };
 

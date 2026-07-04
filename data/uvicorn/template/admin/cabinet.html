@@ -148,11 +148,13 @@
                     <input type="email" id="email" class="form-control" required placeholder="example@domain.com">
                 </div>
 
-                <div class="form-group">
-                    <label for="llm_id">Модель LLM по умолчанию</label>
-                    <select id="llm_id" class="form-control">
-                        <option value="">-- Не выбрано --</option>
-                    </select>
+                <div class="form-group" style="grid-column: span 2;">
+                    <label>Модели LLM</label>
+                    <div style="background: #f9f9f9; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 6px; min-height: 44px; box-sizing: border-box;">
+                        <ul id="llm_list" style="margin: 0; padding-left: 15px; display: flex; flex-direction: column; gap: 6px; color: #4a5568; font-size: 14px;">
+                            <li style="color: #a0aec0; list-style-type: none; margin-left: -15px;">Загрузка моделей...</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 
@@ -193,23 +195,20 @@
     const usernameInput = document.getElementById('username');
     const roleInput = document.getElementById('role');
     const emailInput = document.getElementById('email');
-    const llmSelect = document.getElementById('llm_id');
+    const llmList = document.getElementById('llm_list');
     const btnSubmit = document.getElementById('btn-submit');
 
     let currentUserId = null;
+    let allLlmModels = {};
 
     // Initialize page
     async function initCabinet() {
         try {
-            // 1. Fetch LLM models
+            // 1. Fetch LLM models and map them
             const llmResponse = await getData('/llm/list');
             if (llmResponse && llmResponse.result) {
-                llmSelect.innerHTML = '<option value="">-- Не выбрано --</option>';
                 llmResponse.result.forEach(model => {
-                    const option = document.createElement('option');
-                    option.value = model.id;
-                    option.textContent = model.name;
-                    llmSelect.appendChild(option);
+                    allLlmModels[model.id] = model.name;
                 });
             }
 
@@ -222,8 +221,29 @@
                 roleInput.value = user.role || '';
                 emailInput.value = user.email || '';
                 
-                if (user.llm_id) {
-                    llmSelect.value = user.llm_id;
+                // Render associated LLMs as a plain text list column
+                if (llmList) {
+                    llmList.innerHTML = '';
+                    const userLlmIds = user.llm_ids || [];
+                    if (userLlmIds.length === 0 && user.llm_id) {
+                        userLlmIds.push(user.llm_id);
+                    }
+
+                    if (userLlmIds.length > 0) {
+                        userLlmIds.forEach(id => {
+                            const modelName = allLlmModels[id] || `Модель ID ${id}`;
+                            const li = document.createElement('li');
+                            li.textContent = modelName;
+                            llmList.appendChild(li);
+                        });
+                    } else {
+                        const li = document.createElement('li');
+                        li.textContent = 'Нет привязанных моделей LLM';
+                        li.style.color = '#7f8c8d';
+                        li.style.listStyleType = 'none';
+                        li.style.marginLeft = '-15px';
+                        llmList.appendChild(li);
+                    }
                 }
 
                 // Show tokens section and load tokens for the current user
@@ -246,8 +266,7 @@
         btnSubmit.disabled = true;
         
         const payload = {
-            email: emailInput.value.trim(),
-            llm_id: llmSelect.value ? parseInt(llmSelect.value, 10) : null
+            email: emailInput.value.trim()
         };
 
         try {

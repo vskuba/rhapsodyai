@@ -24,7 +24,7 @@ class AiFrameworkAgent(AbstractAiFramework):
             model,
             system_prompt=framework_model.prompt_system.strip(),
             output_type=framework_model.response_model,
-            retries=10
+            retries=3
         )
 
         self.engine_storage[framework_model.name] = engine
@@ -120,6 +120,45 @@ class AiFrameworkAgent(AbstractAiFramework):
                     logger_info(
                         f"❌ Код ошибки: {error_code}."
                     )
+                    
+                    # Пробуем переключиться на следующую LLM из списка
+                    switched = False
+                    if hasattr(framework_model, 'entities_llm') and framework_model.entities_llm:
+                        current_idx = -1
+                        for idx, model_obj in enumerate(framework_model.entities_llm):
+                            if model_obj.get('id') == framework_model.entity_llm_current.get('id'):
+                                current_idx = idx
+                                break
+                        
+                        if current_idx != -1 and current_idx + 1 < len(framework_model.entities_llm):
+                            # Предыдущей (проблемной) модели проставляем время ошибки, чтобы опустить в конец сортировки!
+                            problem_llm_id = framework_model.entity_llm_current.get('id')
+                            user_id = framework_model.user_id
+                            
+                            from mysql_.mysql_ import mysql_get_db_async
+                            try:
+                                async with mysql_get_db_async() as db:
+                                    await db.execute(
+                                        "UPDATE user_llm SET rate_limit_at = NOW() WHERE user_id = %s AND llm_id = %s",
+                                        (user_id, problem_llm_id)
+                                    )
+                                logger_info(f"🔄 Модель ID {problem_llm_id} помечена как ошибочная (rate_limit_at обновлен). Она опустится в конец списка.")
+                            except Exception as db_err:
+                                logger_info(f"⚠️ Ошибка при обновлении rate_limit_at в БД: {db_err}")
+
+                            framework_model.entity_llm_current = framework_model.entities_llm[current_idx + 1]
+                            logger_info(f"🔄 Смена LLM из-за ошибки {error_code}. Переключаемся на следующую: {framework_model.entity_llm_current.get('name')}")
+                            
+                            # Очищаем кэш двигателя, чтобы при подготовке создался новый инстранс с новой моделью
+                            if framework_model.name in self.engine_storage:
+                                del self.engine_storage[framework_model.name]
+                                
+                            switched = True
+                            
+                    if switched:
+                        # Повторяем цикл с новой моделью
+                        continue
+
                     await self.message_history_save(framework_model)
                     await self._error_complete(
                         framework_model,

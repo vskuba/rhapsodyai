@@ -194,14 +194,14 @@ class TestUserCRUD:
                     "username": "test_user_with_llm",
                     "email": "test_llm@example.com",
                     "role": "user",
-                    "llm_id": llm_id
+                    "llm_ids": [llm_id]
                 },
             )
             assert response.status_code == 200
             data = response.json()
             assert "result" in data
             user = data["result"]
-            assert user["llm_id"] == llm_id
+            assert llm_id in user["llm_ids"]
 
     async def test_update_user_partial(self, client: httpx.AsyncClient):
         """Test updating only some fields of a user."""

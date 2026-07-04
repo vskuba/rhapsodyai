@@ -9,8 +9,11 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (8, 'ollama/gpt-oss:20b'),
 (9, 'ollama/qwen3:30b'),
 (10, 'ollama/qwen3-coder:30b'),
-(11, 'ollama/mock-11'),
-(12, 'ollama/mock-12');
+(11, 'groq/llama-3.1-8b-instant'),
+(12, 'groq/llama-3.3-70b-versatile'),
+(13, 'groq/groq/compound'),
+(14, 'gemini/gemini-2.5-flash-lite'),
+(15, 'gemini/gemini-3.1-flash-lite');
 
 --
 

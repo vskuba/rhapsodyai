@@ -53,21 +53,13 @@ class TestCabinetFlow:
         assert user["username"] == "user1"
         assert "email" in user
         assert "role" in user
-        assert "llm_id" in user
+        assert "llm_ids" in user
 
     async def test_update_current_user_profile(self, client: httpx.AsyncClient):
-        """Test successfully updating the user's email and default LLM model."""
-        # 1. Fetch available LLM models first
-        llm_response = await client.get("/llm/list")
-        assert llm_response.status_code == 200
-        llms = llm_response.json()["result"]
-        assert len(llms) > 0
-        target_llm_id = llms[0]["id"]
-
-        # 2. Update user profile details
+        """Test successfully updating the user's email."""
+        # 1. Update user profile details
         update_payload = {
-            "email": "updated_user1@example.com",
-            "llm_id": target_llm_id
+            "email": "updated_user1@example.com"
         }
         update_response = await client.put("/auth/me", json=update_payload)
         assert update_response.status_code == 200
@@ -76,19 +68,16 @@ class TestCabinetFlow:
         assert "user" in data
         updated_user = data["user"]
         assert updated_user["email"] == "updated_user1@example.com"
-        assert updated_user["llm_id"] == target_llm_id
 
-        # 3. Verify changes persist via GET /auth/me
+        # 2. Verify changes persist via GET /auth/me
         get_response = await client.get("/auth/me")
         assert get_response.status_code == 200
         user = get_response.json()["user"]
         assert user["email"] == "updated_user1@example.com"
-        assert user["llm_id"] == target_llm_id
 
-        # 4. Restore original user1 profile state to prevent test pollution
+        # 3. Restore original user1 profile state to prevent test pollution
         restore_payload = {
-            "email": "developer@rhapsody.com",
-            "llm_id": 12
+            "email": "developer@rhapsody.com"
         }
         restore_response = await client.put("/auth/me", json=restore_payload)
         assert restore_response.status_code == 200
@@ -96,19 +85,8 @@ class TestCabinetFlow:
     async def test_update_profile_missing_email(self, client: httpx.AsyncClient):
         """Test that updating profile without an email returns a 400 Bad Request error."""
         update_payload = {
-            "email": None,
-            "llm_id": 1
+            "email": None
         }
         response = await client.put("/auth/me", json=update_payload)
         assert response.status_code == 400
         assert "Email is required" in response.text
-
-    async def test_update_profile_invalid_llm(self, client: httpx.AsyncClient):
-        """Test that updating profile with an invalid LLM ID returns a 400 Bad Request error."""
-        update_payload = {
-            "email": "user1@example.com",
-            "llm_id": 999999  # Highly unlikely to exist
-        }
-        response = await client.put("/auth/me", json=update_payload)
-        assert response.status_code == 400
-        assert "Invalid LLM model" in response.text

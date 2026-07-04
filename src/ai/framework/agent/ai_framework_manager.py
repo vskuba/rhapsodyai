@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import re
 import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
@@ -36,7 +37,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.request_uuid = str(uuid.uuid4())
             framework_model.session_uuid = metadata.get('session_uuid', str(uuid.uuid4()))
             framework_model.entity_agent = entity_agent
-            framework_model.entity_llm = metadata.get('entity_llm', {})
+            framework_model.entities_llm = metadata.get('entities_llm', [])
+            framework_model.entity_llm_current = framework_model.entities_llm[0] if framework_model.entities_llm else {}
             framework_model.metadata = metadata or {}
             framework_model.user_id = metadata.get('user_id', 0)
             framework_model.companion_id = metadata.get('companion_id', 0)
@@ -137,7 +139,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                         logger_info(f'🧠 LLM ответ: {response_text}')
                         if not step_future.done():
-                            step_future.set_result(response_text)
+                            step_future.set_result(response_text.strip())
                         return False
 
                     model.on_complete = on_step_complete
@@ -164,7 +166,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     await ai_session_message_add(
                         session_uuid=model.session_uuid,
                         request_uuid=model.request_uuid,
-                        llm_id=model.entity_llm.get('id'),
+                        llm_id=model.entity_llm_current.get('id'),
                         user_id=model.user_id,
                         role='system',
                         agent_id=model.entity_agent.get('id'),
@@ -177,7 +179,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     await ai_session_message_add(
                         session_uuid=model.session_uuid,
                         request_uuid=model.request_uuid,
-                        llm_id=model.entity_llm.get('id'),
+                        llm_id=model.entity_llm_current.get('id'),
                         user_id=model.user_id,
                         role='user',
                         agent_id=model.entity_agent.get('id'),
@@ -275,7 +277,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         await ai_session_message_add(
                             session_uuid=model.session_uuid,
                             request_uuid=model.request_uuid,
-                            llm_id=model.entity_llm.get('id'),
+                            llm_id=model.entity_llm_current.get('id'),
                             user_id=model.user_id,
                             role='workflow',
                             agent_id=model.entity_agent.get('id'),
@@ -361,7 +363,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     await ai_session_message_add(
                         session_uuid=model.session_uuid,
                         request_uuid=model.request_uuid,
-                        llm_id=model.entity_llm.get('id'),
+                        llm_id=model.entity_llm_current.get('id'),
                         user_id=model.user_id,
                         role='workflow',
                         agent_id=model.entity_agent.get('id'),
@@ -468,13 +470,19 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         return prompt_system
 
     def _json_str_clean(self, json_str: str) -> str:
-        """ Очищает JSON-строку от лишних символов, таких как обратные кавычки и пробелы. """
-        clean_json_str = json_str.strip()
+        """
+        Очищает строку JSON, извлекая только содержимое между первой открывающей
+        фигурной скобкой { и последней закрывающей фигурной скобкой }.
+        """
+        if not json_str:
+            return ""
 
-        if clean_json_str.startswith("```"):
-            clean_json_str = clean_json_str.split("\n", maxsplit=1)[1]
+        # Ищем текст, начиная с первой открывающей фигурной скобки {
+        # и заканчивая последней закрывающей фигурной скобкой }
+        match = re.search(r"(\{.*})", json_str, re.DOTALL)
 
-        if clean_json_str.endswith("```"):
-            clean_json_str = clean_json_str.rsplit("```", maxsplit=1)[0]
+        if match:
+            return match.group(1).strip()
 
-        return clean_json_str.strip()
+        # Если фигурные скобки не найдены, возвращаем очищенный оригинал
+        return json_str.strip()

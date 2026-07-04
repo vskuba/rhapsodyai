@@ -480,7 +480,10 @@
                 agent_id: agentSelect.value,
                 session_uuid: currentSessionId
             });
-            addMessage(data.result, 'ai');
+
+            if (data.result && data.result.trim() !== '') {
+                addMessage(data.result, 'ai');
+            }
         } catch (e) {
             console.error("Ошибка чата:", e);
             addMessage("Ошибка сервера", 'ai');

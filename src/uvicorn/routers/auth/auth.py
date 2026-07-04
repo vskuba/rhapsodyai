@@ -15,7 +15,7 @@ async def login(request: Request, data: dict):
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, username, email, password_hash, role, llm_id FROM `user` WHERE username = %s",
+            "SELECT id, username, email, password_hash, role FROM `user` WHERE username = %s",
             (username,)
         )
         user = await db.fetchone()
@@ -57,10 +57,16 @@ async def me(request: Request):
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, username, email, role, llm_id FROM `user` WHERE id = %s",
+            "SELECT id, username, email, role FROM `user` WHERE id = %s",
             (user_id,)
         )
         user = await db.fetchone()
+
+        if user:
+            # Получаем все связанные LLM
+            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC", (user_id,))
+            llm_rows = await db.fetchall()
+            user['llm_ids'] = [row['llm_id'] for row in llm_rows]
 
     if not user:
         request.session.clear()
@@ -76,27 +82,26 @@ async def update_me(request: Request, data: dict):
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     email = data.get("email")
-    llm_id = data.get("llm_id")
 
     if email is None:
         raise HTTPException(status_code=400, detail="Email is required")
 
     async with mysql_get_db_async() as db:
-        if llm_id is not None:
-            await db.execute("SELECT id FROM `llm` WHERE id = %s", (llm_id,))
-            llm_exists = await db.fetchone()
-            if not llm_exists:
-                raise HTTPException(status_code=400, detail="Invalid LLM model")
-
+        # Обновляем email в user
         await db.execute(
-            "UPDATE `user` SET email = %s, llm_id = %s WHERE id = %s",
-            (email, llm_id, user_id)
+            "UPDATE `user` SET email = %s WHERE id = %s",
+            (email, user_id)
         )
 
         await db.execute(
-            "SELECT id, username, email, role, llm_id FROM `user` WHERE id = %s",
+            "SELECT id, username, email, role FROM `user` WHERE id = %s",
             (user_id,)
         )
         updated_user = await db.fetchone()
+
+        if updated_user:
+            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC", (user_id,))
+            llm_rows = await db.fetchall()
+            updated_user['llm_ids'] = [row['llm_id'] for row in llm_rows]
 
     return {"message": "Профиль успешно обновлен.", "user": updated_user}
