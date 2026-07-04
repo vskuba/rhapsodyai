@@ -438,6 +438,21 @@ async function reloadPopupContext(newTabId) {
     storage.local.get(chatKey, (result) => {
         renderChatHistory(result[chatKey] || []);
     });
+
+    // Восстанавливаем последнее входящее сообщение
+    const lastIncomingMessageArea = document.getElementById('lastIncomingMessage');
+    const inKey = getScopedKey('historyMessagesIn');
+    storage.local.get(inKey, (result) => {
+        if (lastIncomingMessageArea) {
+            const historyMessagesIn = result[inKey] || [];
+            if (historyMessagesIn.length > 0) {
+                const lastItem = historyMessagesIn[historyMessagesIn.length - 1];
+                lastIncomingMessageArea.value = typeof lastItem === 'object' && lastItem !== null ? lastItem.text : lastItem;
+            } else {
+                lastIncomingMessageArea.value = "";
+            }
+        }
+    });
 }
 
 // Функция переключения вкладок
@@ -795,6 +810,50 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Очищаем историю в интерфейсе
                 renderChatHistory([]);
                 await saveAndAddLog("История диалога очищена.");
+            }
+        });
+    }
+
+    const replyBtn = document.getElementById('replyBtn');
+    if (replyBtn) {
+        replyBtn.addEventListener('click', async () => {
+            const lastIncomingMessageArea = document.getElementById('lastIncomingMessage');
+            if (!lastIncomingMessageArea) return;
+
+            const text = lastIncomingMessageArea.value.trim();
+            if (!text) {
+                alert("Нет входящих сообщений для ответа.");
+                return;
+            }
+
+            const tabsApi = typeof chrome !== 'undefined' && chrome.tabs ? chrome.tabs : browser.tabs;
+            if (tabsApi && tabId) {
+                await saveAndAddLog("Запущен ручной ответ ИИ через кнопку 'Ответить'...");
+                tabsApi.sendMessage(tabId, { action: "triggerReply", text: text }, (response) => {
+                    const err = typeof chrome !== 'undefined' && chrome.runtime ? chrome.runtime.lastError : browser.runtime.lastError;
+                });
+            }
+        });
+    }
+
+    // Слушаем изменения в локальном хранилище, чтобы обновлять элементы в реальном времени
+    const storageApi = typeof chrome !== 'undefined' && chrome.storage ? chrome.storage : browser.storage;
+    if (storageApi && storageApi.onChanged) {
+        storageApi.onChanged.addListener((changes, areaName) => {
+            if (areaName === 'local') {
+                const inKey = getScopedKey('historyMessagesIn');
+                if (changes[inKey]) {
+                    const lastIncomingMessageArea = document.getElementById('lastIncomingMessage');
+                    if (lastIncomingMessageArea) {
+                        const historyMessagesIn = changes[inKey].newValue || [];
+                        if (historyMessagesIn.length > 0) {
+                            const lastItem = historyMessagesIn[historyMessagesIn.length - 1];
+                            lastIncomingMessageArea.value = typeof lastItem === 'object' && lastItem !== null ? lastItem.text : lastItem;
+                        } else {
+                            lastIncomingMessageArea.value = "";
+                        }
+                    }
+                }
             }
         });
     }

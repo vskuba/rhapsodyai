@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
+from py_modules.ai.framework.ai_framework import AgentRateLimitError
 from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
@@ -167,7 +168,7 @@ async def ask_ai(
             f"❌ Ошибка при ответе web чата: {e}."
             f"Полный стек вызовов:\n{backtrace}"
         )
-        raise
+        raise e
 
 
 @router.post("/chat/messages", include_in_schema=False)

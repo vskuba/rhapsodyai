@@ -1,10 +1,11 @@
 import asyncio
+import inspect
 import queue
 import traceback
 
 from pydantic_ai import Agent, AgentRunResult, ModelSettings
 
-from ai.framework.ai_framework import AbstractAiFramework, AiFrameworkResult
+from ai.framework.ai_framework import AbstractAiFramework, AiFrameworkResult, AgentRateLimitError
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
@@ -120,7 +121,13 @@ class AiFrameworkAgent(AbstractAiFramework):
                         f"❌ Код ошибки: {error_code}."
                     )
                     await self.message_history_save(framework_model)
-                    await self._error_complete(framework_model, e)
+                    await self._error_complete(
+                        framework_model,
+                        AgentRateLimitError(
+                            f"Превышены лимиты AI-провайдера (Код: {error_code}). Оригинальная ошибка: {e}",
+                            status_code=error_code
+                        )
+                    )
 
                     return
 
@@ -133,4 +140,8 @@ class AiFrameworkAgent(AbstractAiFramework):
     async def _error_complete(self, framework_model: AiFrameworkAgentModel, e: Exception):
         error_text = 'Произошла ошибка: %s' % e
         if framework_model.on_complete:
-            await framework_model.on_complete(error_text)
+            sig = inspect.signature(framework_model.on_complete)
+            if 'exception' in sig.parameters:
+                await framework_model.on_complete(error_text, exception=e)
+            else:
+                await framework_model.on_complete(error_text)

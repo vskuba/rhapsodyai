@@ -286,12 +286,45 @@ async function processAiResponse(cleanText) {
             })
         });
         if (!chatRes.ok) {
-            throw new Error(`Ошибка POST /chat/ask: ${chatRes.status}`);
+            let errorMsg = `Ошибка POST /chat/ask: ${chatRes.status}`;
+            if (chatRes.status === 429 || chatRes.status === 500) {
+                try {
+                    const errData = await chatRes.json();
+                    if (errData) {
+                        errorMsg = errData.message || errData.detail || errorMsg;
+                    }
+                } catch (e) {}
+            }
+            throw new Error(errorMsg);
         }
         const chatData = await chatRes.json();
         const aiAnswer = chatData.result;
 
-        await addPluginLog(`Ответ AI получен: "${aiAnswer.slice(0, 30)}..."`);
+        await addPluginLog(`Ответ AI получен: "${aiAnswer.slice(0, 30)}...". Рассчитываем задержку...`);
+
+        // Получаем значение задержки (delaySelect) из хранилища (диапазон или число)
+        const delayKey = getScopedKey('delaySelect');
+        const delayResult = await storage.local.get(delayKey);
+        const delayRaw = delayResult[delayKey] !== undefined ? String(delayResult[delayKey]).trim() : "15-45";
+
+        let delaySeconds = 5;
+        if (delayRaw.includes('-')) {
+            const parts = delayRaw.split('-');
+            const min = parseInt(parts[0]) || 0;
+            const max = parseInt(parts[1]) || 0;
+            if (max >= min) {
+                // Рандомная задержка в промежутке [min, max]
+                delaySeconds = Math.floor(Math.random() * (max - min + 1)) + min;
+            }
+        } else {
+            delaySeconds = parseInt(delayRaw) || 5;
+        }
+
+        if (delaySeconds > 0) {
+            await addPluginLog(`Ожидание согласно Delay Select (${delayRaw}): выбран случайный интервал ${delaySeconds} сек...`);
+            await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+            await addPluginLog("Ожидание завершено. Отправка сообщения...");
+        }
 
         // 4. Отправляем ответ как исходящее сообщение (кладем его в очередь отправки)
         const outKey = getScopedKey('historyMessagesOut');
@@ -411,6 +444,15 @@ function listeningForMessagesOut() {
 
             const textToSend = historyMessagesOut[0];
 
+            if (!textToSend || textToSend.trim() === "") {
+                await addPluginLog("Пустое сообщение в очереди отправки. Пропускаем.", true);
+                // Удаляем пустое сообщение из очереди
+                historyMessagesOut.shift();
+                await storage.local.set({[outKey]: historyMessagesOut});
+                window.isProcessingOutMessage = false;
+                return;
+            }
+
             const textarea = document.querySelector(selectorOut);
             if (!textarea) {
                 await addPluginLog(`Элемент ввода по селектору "${selectorOut}" не найден.`, true);
@@ -424,6 +466,23 @@ function listeningForMessagesOut() {
 
             textarea.focus();
             textarea.textContent = "";
+
+            // Эмулируем написание и стирание текста (10 итераций)
+            await addPluginLog("Эмулируем активность набора текста перед отправкой (10 итераций)...");
+            const delayInterval = textToSend.length * 350;
+            const delayQtyIteration = 10;
+
+            for (let i = 0; i < delayQtyIteration; i++) {
+                document.execCommand('insertText', false, "..");
+                textarea.dispatchEvent(new Event('input', {bubbles: true}));
+                await new Promise(resolve => setTimeout(resolve, delayInterval/delayQtyIteration));
+
+
+                // textarea.dispatchEvent(new Event('input', {bubbles: true}));
+                // await new Promise(resolve => setTimeout(resolve, delayInterval/delayQtyIteration));
+            }
+
+            document.execCommand('selectAll', false, null);
 
             // Эмулируем нативный ввод текста для обновления стейта (React/Vue/Telegraf)
             document.execCommand('insertText', false, textToSend);

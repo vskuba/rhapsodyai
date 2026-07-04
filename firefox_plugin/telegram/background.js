@@ -5,6 +5,27 @@ const tabsApi = typeof chrome !== 'undefined' && chrome.tabs ? chrome.tabs : bro
 const storageApi = typeof chrome !== 'undefined' && chrome.storage ? chrome.storage.local : (browser.storage ? browser.storage.local : null);
 const windowsApi = typeof chrome !== 'undefined' && chrome.windows ? chrome.windows : browser.windows;
 
+if (runtimeApi && runtimeApi.onInstalled) {
+    runtimeApi.onInstalled.addListener(() => {
+        console.log("[Background] Extension installed or reloaded. Resetting pluginEnabled state for all tabs.");
+        if (storageApi) {
+            storageApi.get(null, (items) => {
+                const keysToReset = {};
+                for (const key in items) {
+                    if (key.endsWith('_pluginEnabled')) {
+                        keysToReset[key] = false;
+                    }
+                }
+                if (Object.keys(keysToReset).length > 0) {
+                    storageApi.set(keysToReset, () => {
+                        console.log("[Background] Reset pluginEnabled state to false for keys:", Object.keys(keysToReset));
+                    });
+                }
+            });
+        }
+    });
+}
+
 if (actionApi && scriptingApi) {
     actionApi.onClicked.addListener((tab) => {
         scriptingApi.executeScript({

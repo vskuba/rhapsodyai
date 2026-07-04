@@ -421,6 +421,14 @@
             <label for="accessToken">Логи:</label>
             <div class="log-container log-container-connection" id="logContainer"></div>
         </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+            <label for="lastIncomingMessage">Последнее входящее сообщение:</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <textarea id="lastIncomingMessage" style="flex: 1; height: 42px; padding: 6px; font-size: 11px; resize: none; border: 1px solid #cbd5e0; border-radius: 4px; background-color: #f7fafc; color: #4a5568; margin-top: 0;" placeholder="Нет входящих сообщений..."></textarea>
+                <button id="replyBtn" style="width: 80px; height: 42px; font-size: 12px; font-weight: bold; background-color: #48bb78; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 0;">Ответить</button>
+            </div>
+        </div>
     </div>
 </div>
 

@@ -15,6 +15,8 @@ from starlette.templating import Jinja2Templates
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from py_modules.ai.framework.ai_framework import AgentRateLimitError
+from fastapi import HTTPException
 
 from py_modules.ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_tool import ai_tool_sync
@@ -96,15 +98,26 @@ async def catch_exceptions_middleware(request: Request, call_next):
     try:
         return await call_next(request)
     except Exception as e:
-        # Формируем полный стек ошибки
+        instance = type(e).__name__
         err_stack = traceback.format_exc()
 
         # Логируем ошибку с деталями запроса
         logger_info(
             f"❌ Сбой в роутере: {request.url.path}\n"
             f"Ошибка: {str(e)}\n"
+            f"Instance: {instance}\n"
             f"Стек вызовов:\n{err_stack}"
         )
+
+        # Если это ошибка лимитов AI или HTTPException c кодом 429
+        if instance == 'AgentRateLimitError':
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "status": "error",
+                    "message": str(e),
+                }
+            )
 
         # Возвращаем клиенту понятный JSON, чтобы фронтенд не гас
         return JSONResponse(

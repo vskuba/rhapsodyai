@@ -129,7 +129,12 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 async def execute_llm_step() -> str:
                     step_future = asyncio.get_running_loop().create_future()
 
-                    async def on_step_complete(response_text: str) -> bool:
+                    async def on_step_complete(response_text: str, exception: Exception | None = None) -> bool:
+                        if exception:
+                            if not step_future.done():
+                                step_future.set_exception(exception)
+                            return False
+
                         logger_info(f'🧠 LLM ответ: {response_text}')
                         if not step_future.done():
                             step_future.set_result(response_text)
