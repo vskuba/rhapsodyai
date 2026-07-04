@@ -12,11 +12,13 @@ async def datetime_current_get(timezone: str = "0") -> str:
     try:
         # Парсим смещение часового пояса
         hours_offset = 0
-        clean_tz = timezone.strip().upper()
-        # Ищем числовое смещение (с плюсом или минусом)
-        match = re.search(r'([+-]?\d+)', clean_tz)
-        if match:
-            hours_offset = int(match.group(1))
+
+        if timezone:
+            clean_tz = timezone.strip().upper()
+            # Ищем числовое смещение (с плюсом или минусом)
+            match = re.search(r'([+-]?\d+)', clean_tz)
+            if match:
+                hours_offset = int(match.group(1))
         
         # Получаем текущее время UTC
         utc_now = datetime.now(py_timezone.utc)
