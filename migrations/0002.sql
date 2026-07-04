@@ -1,5 +1,5 @@
 INSERT INTO `llm` (`id`, `name`) VALUES
-(1, 'open_router/nvidia/nemotron-3-ultra-550b-a55b:free'),
+(1, 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free'),
 (2, 'groq:openai/gpt-oss-120b'),
 (3, 'groq:llama-3.3-70b-versatile'),
 (4, 'groq:qwen/qwen3-32b'),
