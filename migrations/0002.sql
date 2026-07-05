@@ -9,17 +9,13 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (8, 'ollama/qwen3:30b'),
 (9, 'ollama/qwen3-coder:30b'),
 (10, 'groq/llama-3.3-70b-versatile'),
-(11, 'groq/groq/compound'),
-(12, 'gemini/gemini-2.5-flash-lite'),
-(13, 'gemini/gemini-2.5-flash'),
-(14, 'gemini/gemini-2.5-pro'),
-(15, 'mistral/mistral-medium-2505'),
-(16, 'mistral/mistral-medium-2508'),
-(17, 'mistral/mistral-small-2603'),
-(18, 'huggingface/meta-llama/Llama-3.3-70B-Instruct'),
-(19, 'huggingface/openai/gpt-oss-120b'),
-(20, 'huggingface/deepseek-ai/DeepSeek-R1-Distill-Llama-70B'),
-(21, 'huggingface/NousResearch/Hermes-4-70B');
+(11, 'gemini/gemini-2.5-flash-lite'),
+(12, 'gemini/gemini-2.5-flash'),
+(13, 'gemini/gemini-2.5-pro'),
+(14, 'mistral/mistral-medium-2505'),
+(15, 'mistral/mistral-medium-2508'),
+(16, 'huggingface/meta-llama/Llama-3.3-70B-Instruct'),
+(17, 'cerebras/gpt-oss-120b');
 
 --
 
@@ -27,28 +23,31 @@ INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role`, `created
 (1, 'user1', 'user1@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 'admin', '2026-04-26 09:17:35'),
 (2, 'user2', 'user2@example.com', '$2b$12$xfglXXXp3W2QCb1XnZhNBuDYAJc.Fy51fI43NlVhBfVQTLaYpD1Ca', 'user', '2026-04-26 09:17:35');
 
+--
+
 INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `position`) VALUES
-(1, 1, NULL, 9),
-(1, 2, NULL, 10),
-(1, 3, NULL, 11),
-(1, 10, NULL, 3),
-(1, 12, NULL, 4),
-(1, 13, NULL, 5),
-(1, 14, NULL, 6),
-(1, 15, NULL, 7),
-(1, 16, NULL, 8),
-(1, 18, NULL, 0),
-(1, 19, NULL, 2),
-(1, 20, NULL, 1),
+(1, 1, NULL, 8),
+(1, 2, NULL, 9),
+(1, 3, NULL, 10),
+(1, 10, NULL, 0),
+(1, 11, NULL, 4),
+(1, 12, NULL, 2),
+(1, 13, NULL, 3),
+(1, 14, NULL, 5),
+(1, 15, NULL, 6),
+(1, 16, NULL, 7),
+(1, 17, NULL, 1),
 (2, 1, NULL, 8),
-(2, 10, NULL, 1),
-(2, 14, NULL, 6),
-(2, 15, NULL, 4),
-(2, 16, NULL, 5),
-(2, 18, NULL, 0),
-(2, 19, NULL, 3),
-(2, 20, NULL, 2),
-(2, 21, NULL, 7);
+(2, 2, NULL, 9),
+(2, 3, NULL, 10),
+(2, 10, NULL, 0),
+(2, 11, NULL, 4),
+(2, 12, NULL, 2),
+(2, 13, NULL, 3),
+(2, 14, NULL, 5),
+(2, 15, NULL, 6),
+(2, 16, NULL, 7),
+(2, 17, NULL, 1);
 
 --
 
