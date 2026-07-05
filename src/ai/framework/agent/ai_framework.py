@@ -116,7 +116,8 @@ class AiFrameworkAgent(AbstractAiFramework):
 
                 # rate limit handling
                 error_code = getattr(e, 'status_code', None)
-                if error_code in [429, 413]:
+                # 429 - Too Many Requests, 413 - Payload Too Large, 402 - Payment Required, 503 - Service Unavailable
+                if error_code in [429, 413, 402, 503]:
                     logger_info(
                         f"❌ Код ошибки: {error_code}."
                     )
