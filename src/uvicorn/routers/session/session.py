@@ -51,6 +51,14 @@ async def session_list(request: Request, json_request: SessionJsonRequest, db=De
         return {"result": await db.fetchall()}
 
 
+@router.get("/session/kind_type/list")
+async def session_kind_types_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
+    async with db:
+        await db.execute("SELECT DISTINCT kind_type FROM agent_session ORDER BY kind_type ASC")
+        rows = await db.fetchall()
+        return {"result": [row["kind_type"] for row in rows]}
+
+
 @router.post("/session/last")
 async def session_last(request: Request, json_request: SessionJsonRequest, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
     async with db:

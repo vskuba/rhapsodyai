@@ -18,15 +18,16 @@
         background: #f8f9fa;
     }
 
-    /* БЛОК 1: Шапка с фильтрами (Горизонтальная) */
-    .session-header-filters {
+    /* БЛОК 4: ФИЛЬТРЫ (СПРАВА) */
+    .session-right-filters {
+        width: 280px;
+        min-width: 280px;
+        border-left: 1px solid #e0e4e8;
+        background: #fcfcfc;
+        padding: 20px;
         display: flex;
-        align-items: center;
-        gap: 30px;
-        padding: 15px 25px;
-        background: #ffffff;
-        border-bottom: 1px solid #e0e4e8;
-        flex-shrink: 0;
+        flex-direction: column;
+        box-sizing: border-box;
     }
 
     /* Скрываем кнопку обновить согласно запросу */
@@ -34,30 +35,7 @@
         display: none !important;
     }
 
-    .filter-item {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .filter-item .sidebar-label {
-        margin: 0;
-        white-space: nowrap;
-        font-size: 11px;
-        color: #718096;
-    }
-
-    .filter-item select {
-        min-width: 220px;
-        padding: 6px 12px;
-        border-radius: 6px;
-        border: 1px solid #cbd5e0;
-        background: #fff;
-        font-size: 14px;
-        outline: none;
-    }
-
-    /* Контейнер для нижней части (Блок 2 + Блок 3) */
+    /* Контейнер для нижней части (Блок 2 + Блок 3 + Блок 4) */
     .session-body-container {
         display: flex;
         flex: 1;
@@ -69,8 +47,8 @@
        БЛОК 2: СПИСОК СЕССИЙ (СЛЕВА)
        ============================================================ */
     .session-sidebar-list {
-        width: 300px !important;
-        min-width: 300px;
+        width: 240px !important;
+        min-width: 240px;
         border-right: 1px solid #e0e4e8;
         background: #fcfcfc;
         display: flex;
@@ -80,21 +58,21 @@
     .session-list {
         flex: 1;
         overflow-y: auto;
-        padding: 15px;
+        padding: 10px;
     }
 
     /* Карточка сессии */
     .session-item {
-        padding: 12px;
+        padding: 8px 10px;
         border: 1px solid #edf2f7;
-        border-radius: 8px;
-        margin-bottom: 10px;
+        border-radius: 6px;
+        margin-bottom: 8px;
         cursor: pointer;
         background: #fff;
         transition: all 0.2s ease;
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 4px;
     }
 
     .session-item:hover {
@@ -105,7 +83,7 @@
     .session-item.active {
         background-color: #eef7ff;
         border-color: #007bff;
-        box-shadow: inset 4px 0 0 #007bff;
+        box-shadow: inset 3px 0 0 #007bff;
     }
 
     .session-item-header {
@@ -117,15 +95,15 @@
     .session-short-uuid {
         font-family: 'Monaco', 'Consolas', monospace;
         font-weight: bold;
-        font-size: 13px;
+        font-size: 11px;
         color: #2d3748;
     }
 
     .session-msg-count {
-        font-size: 10px;
+        font-size: 9px;
         background: #edf2f7;
-        padding: 2px 6px;
-        border-radius: 10px;
+        padding: 1px 4px;
+        border-radius: 8px;
         color: #4a5568;
     }
 
@@ -175,7 +153,7 @@
     }
 
     .chip {
-        font-size: 11px;
+        font-size: 9px;
         font-weight: 700;
         text-transform: uppercase;
         padding: 2px 10px;
@@ -238,7 +216,7 @@
     }
 
     .admin-msg-content {
-        font-size: 12px;
+        font-size: 13px;
         line-height: 1.4;
         color: #1e293b;
         white-space: pre-wrap;
@@ -265,23 +243,6 @@
 {% block content %}
 <div class="main-wrapper session-layout">
 
-    <!-- БЛОК 1: Фильтры (Сверху) -->
-    <div class="session-header-filters" id="block-1">
-        <div class="filter-item">
-            <span class="sidebar-label">Агент</span>
-            <select id="agentFilter">
-                <option>Загрузка...</option>
-            </select>
-        </div>
-        <div class="filter-item">
-            <span class="sidebar-label">Собеседник</span>
-            <select id="companionFilter">
-                <option>Загрузка...</option>
-            </select>
-        </div>
-        <button id="refreshSessions" class="action-btn">Обновить</button>
-    </div>
-
     <div class="session-body-container">
         <!-- БЛОК 2: Список сессий (Слева) -->
         <div class="sidebar session-sidebar-list" id="block-2">
@@ -289,12 +250,40 @@
             <div class="session-list" id="sessionList"></div>
         </div>
 
-        <!-- БЛОК 3: Сообщения (Справа) -->
+        <!-- БЛОК 3: Сообщения (Центр) -->
         <div class="session-detail-view" id="block-3">
             <div class="detail-header" id="activeSessionTitle">Выберите сессию из списка</div>
             <div id="messagesContainer">
                 <div class="placeholder">Поток сообщений будет отображен здесь</div>
             </div>
+        </div>
+
+        <!-- БЛОК 4: Фильтры (Справа) -->
+        <div class="session-right-filters" id="block-4">
+            <div class="sidebar-label" style="padding-bottom: 10px; border-bottom: 1px solid #edf2f7; margin-bottom: 15px; font-weight: bold; color: #4a5568;">Фильтры</div>
+            
+            <div class="filter-vertical-item" style="margin-bottom: 20px;">
+                <label for="agentFilter" style="display: block; font-size: 11px; font-weight: bold; color: #718096; text-transform: uppercase; margin-bottom: 8px;">Агент</label>
+                <select id="agentFilter" class="form-control" style="width: 100%; box-sizing: border-box; padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e0; background: #fff; font-size: 14px; outline: none;">
+                    <option>Загрузка...</option>
+                </select>
+            </div>
+
+            <div class="filter-vertical-item" style="margin-bottom: 20px;">
+                <label for="companionFilter" style="display: block; font-size: 11px; font-weight: bold; color: #718096; text-transform: uppercase; margin-bottom: 8px;">Собеседник</label>
+                <select id="companionFilter" class="form-control" style="width: 100%; box-sizing: border-box; padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e0; background: #fff; font-size: 14px; outline: none;">
+                    <option>Загрузка...</option>
+                </select>
+            </div>
+
+            <div class="filter-vertical-item" style="margin-bottom: 20px;">
+                <label for="kindTypeFilter" style="display: block; font-size: 11px; font-weight: bold; color: #718096; text-transform: uppercase; margin-bottom: 8px;">Тип сообщения (Kind Type)</label>
+                <select id="kindTypeFilter" class="form-control" multiple size="5" style="width: 100%; box-sizing: border-box; padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e0; background: #fff; font-size: 14px; outline: none; height: 120px;">
+                    <option>Загрузка...</option>
+                </select>
+            </div>
+
+            <button id="refreshSessions" class="action-btn" style="display: none !important;">Обновить</button>
         </div>
     </div>
 </div>
@@ -309,10 +298,12 @@
     const messagesContainer = document.getElementById('messagesContainer');
     const agentFilter = document.getElementById('agentFilter');
     const companionFilter = document.getElementById('companionFilter');
+    const kindTypeFilter = document.getElementById('kindTypeFilter');
 
     let allSessions = [];
     let allAgents = {};
     let allCompanions = {};
+    let currentSessionMessages = [];
 
     function populateFilters(changedBy = null) {
         if (changedBy === 'agent') {
@@ -451,19 +442,62 @@
 
             // СЛУШАТЕЛИ: синхронизация фильтров при смене опций
             agentFilter.onchange = async () => {
+                sessionStorage.setItem('sessions_filter_agent_id', agentFilter.value);
                 populateFilters('agent');
+                sessionStorage.setItem('sessions_filter_companion_id', companionFilter.value);
                 await loadSessions();
             };
 
             companionFilter.onchange = async () => {
-                populateFilters('companion');
+                sessionStorage.setItem('sessions_filter_companion_id', companionFilter.value);
                 await loadSessions();
             };
 
-            // При запуске применяем фильтрацию по первому агенту
-            if (agentFilter.options.length > 0) {
+            // 4. Загрузка уникальных kind_type из базы
+            const kindRes = await (await fetch('/session/kind_type/list')).json();
+            if (kindRes.result) {
+                kindTypeFilter.innerHTML = '';
+                
+                const savedKindTypesRaw = sessionStorage.getItem('sessions_filter_kind_types');
+                let savedKindTypes = null;
+                if (savedKindTypesRaw) {
+                    try {
+                        savedKindTypes = JSON.parse(savedKindTypesRaw);
+                    } catch (e) {}
+                }
+
+                kindRes.result.forEach(kind => {
+                    const option = new Option(kind, kind);
+                    if (savedKindTypes) {
+                        option.selected = savedKindTypes.includes(kind);
+                    } else if (kind === 'user-prompt' || kind === 'response-final') {
+                        option.selected = true;
+                    }
+                    kindTypeFilter.add(option);
+                });
+            }
+
+            kindTypeFilter.onchange = () => {
+                const selectedKinds = Array.from(kindTypeFilter.selectedOptions).map(opt => opt.value);
+                sessionStorage.setItem('sessions_filter_kind_types', JSON.stringify(selectedKinds));
+                renderMessages(currentSessionMessages);
+            };
+
+            // Применяем сохраненные фильтры или дефолтные
+            const savedAgentId = sessionStorage.getItem('sessions_filter_agent_id');
+            const savedCompanionId = sessionStorage.getItem('sessions_filter_companion_id');
+
+            if (savedAgentId && Array.from(agentFilter.options).some(o => o.value === savedAgentId)) {
+                agentFilter.value = savedAgentId;
+                populateFilters('agent');
+                if (savedCompanionId && Array.from(companionFilter.options).some(o => o.value === savedCompanionId)) {
+                    companionFilter.value = savedCompanionId;
+                }
+            } else if (agentFilter.options.length > 0) {
                 agentFilter.selectedIndex = 0;
                 populateFilters('agent');
+                sessionStorage.setItem('sessions_filter_agent_id', agentFilter.value);
+                sessionStorage.setItem('sessions_filter_companion_id', companionFilter.value);
             }
 
             // Сразу загружаем список после инициализации фильтров
@@ -472,6 +506,40 @@
         } catch (e) {
             console.error("Ошибка инициализации:", e);
         }
+    }
+
+    function renderMessages(messages) {
+        messagesContainer.innerHTML = '';
+        const selectedKinds = Array.from(kindTypeFilter.selectedOptions).map(opt => opt.value);
+        const filtered = messages.filter(m => selectedKinds.includes(m.kind_type));
+
+        if (filtered.length === 0) {
+            messagesContainer.innerHTML = '<div class="placeholder">Нет сообщений с выбранными типами</div>';
+            return;
+        }
+
+        filtered.forEach(m => {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'admin-msg-box';
+
+            const roleClass = `role-${m.role}`;
+            const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
+
+            msgDiv.innerHTML = `
+                <div class="chips-container">
+                    <span class="chip ${roleClass}">${m.role}</span>
+                    <span class="chip chip-kind">${m.kind_type}</span>
+                    <span class="chip chip-llm">${m.llm_name}</span>
+                    ${m.token ? `<span class="chip chip-token">Токены: ${m.token}</span>` : ''}
+                    <span class="chip chip-request-id">${m.request_uuid}</span>
+                    <span class="chip-date">${time}</span>
+                </div>
+                <div class="admin-msg-content">${m.content || ''}</div>
+            `;
+            messagesContainer.appendChild(msgDiv);
+        });
+
+        messagesContainer.scrollTop = 0;
     }
 
     async function loadSessionDetails(uuid, element) {
@@ -486,30 +554,8 @@
                 session_uuid: uuid
             });
 
-            messagesContainer.innerHTML = '';
-            data.result.forEach(m => {
-                const msgDiv = document.createElement('div');
-                msgDiv.className = 'admin-msg-box';
-
-                const roleClass = `role-${m.role}`;
-                // Форматируем время создания сообщения (согласно структуре БД)
-                const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
-
-                msgDiv.innerHTML = `
-                <div class="chips-container">
-                    <span class="chip ${roleClass}">${m.role}</span>
-                    <span class="chip chip-kind">${m.kind_type}</span>
-                    <span class="chip chip-llm">${m.llm_name}</span>
-                    ${m.token ? `<span class="chip chip-token">Токены: ${m.token}</span>` : ''}
-                    <span class="chip chip-request-id">${m.request_uuid}</span>
-                    <span class="chip-date">${time}</span>
-                </div>
-                <div class="admin-msg-content">${m.content || ''}</div>
-            `;
-                messagesContainer.appendChild(msgDiv);
-            });
-
-            messagesContainer.scrollTop = 0;
+            currentSessionMessages = data.result || [];
+            renderMessages(currentSessionMessages);
         } catch (e) {
             console.error("Ошибка загрузки полной истории:", e);
             messagesContainer.innerHTML = '<div style="color:red">Ошибка загрузки данных</div>';
