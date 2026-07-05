@@ -116,6 +116,43 @@ async def fact_list(
         }
 
 
+@router.put("/fact/{fact_id}")
+async def fact_update_endpoint(
+    request: Request,
+    fact_id: int,
+    json_request: dict,
+    db=Depends(mysql_get_db_async),
+    user=Depends(AuthChecker([AuthPermission.FACT_UPDATE]))
+):
+    async with db:
+        # Check if fact exists
+        await db.execute("SELECT id FROM fact WHERE id = %s", (fact_id,))
+        fact_exists = await db.fetchone()
+        if not fact_exists:
+            raise HTTPException(status_code=404, detail="Fact not found")
+
+        # Update the columns that are passed
+        update_clauses = []
+        params = []
+        if "document" in json_request:
+            update_clauses.append("`document` = %s")
+            params.append(json_request["document"])
+        if "category" in json_request:
+            update_clauses.append("`category` = %s")
+            params.append(json_request["category"])
+        if "tags" in json_request:
+            update_clauses.append("`tags` = %s")
+            params.append(json_request["tags"])
+
+        if update_clauses:
+            update_clauses.append("`qdrant_synced` = 0")
+            sql = f"UPDATE fact SET {', '.join(update_clauses)} WHERE id = %s"
+            params.append(fact_id)
+            await db.execute(sql, tuple(params))
+
+        return {"result": {"updated": True, "id": fact_id}}
+
+
 @router.put("/fact/collection/{collection_id}")
 async def fact_collection_save(
         request: Request,

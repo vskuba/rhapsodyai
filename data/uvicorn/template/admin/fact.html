@@ -86,7 +86,7 @@
     }
 
     .fact-table th:nth-child(1), .fact-table td:nth-child(1) {
-        width: 3%;
+        width: 2%;
     }
 
     /* РАСПРЕДЕЛЕНИЕ ШИРИНЫ КОЛОНОК */
@@ -240,7 +240,6 @@
 
     <!-- БЛОК 1: Фильтры, Коллекции и Поиск (Сверху) -->
     <div class="fact-header-filters" id="block-1">
-
 
 
         <!-- Перенесенный список коллекций -->
@@ -409,7 +408,7 @@
 
         try {
             const data = await getData('/fact/collection/list');
-            
+
             // Фильтруем коллекции: показываем только те, у которых есть факты (fact_count > 0)
             const activeCollections = (data.result || []).filter(col => (col.fact_count || 0) > 0);
             state.allCollections = activeCollections; // Сохраняем отфильтрованные
@@ -458,9 +457,9 @@
         try {
             const colName = selectedCollection.name || selectedCollection;
             const data = await getData(`/fact/collection/${colName}/documents`);
-            
+
             documentSelect.innerHTML = '<option value="all">Все</option>'; // Все по умолчанию
-            
+
             if (data && data.result) {
                 data.result.forEach(docId => {
                     const option = new Option(docId, docId);
@@ -501,12 +500,12 @@
         }
 
         factTableBody.innerHTML = facts.map(f => `
-        <tr>
+        <tr data-id="${f.id}">
             <td><div class="doc-name-cell">${f.id}</div></td>
-            <td><div class="doc-name-cell">${escapeHtml(f.document)}</div></td>
+            <td><div class="doc-name-cell inline-editable" data-field="document" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.document)}</div></td>
             <td><div class="content-preview">${escapeHtml(f.language)}</div></td>
-            <td><div class="content-preview">${escapeHtml(f.category)}</div></td>
-            <td><div class="content-preview">${escapeHtml(f.tags)}</div></td>
+            <td><div class="content-preview inline-editable" data-field="category" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.category || '')}</div></td>
+            <td><div class="content-preview inline-editable" data-field="tags" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.tags || '')}</div></td>
             <td>
                 <span class="status-badge ${f.qdrant_synced ? 'synced' : 'pending'}">
                     ${f.qdrant_synced ? 'Синхрон.' : 'Ожидает'}
@@ -666,6 +665,134 @@
 
         if (prevBtn) prevBtn.onclick = () => changePage(-1);
         if (nextBtn) nextBtn.onclick = () => changePage(1);
+
+        // Клик по инлайн-редактируемому полю
+        let activeEditCell = null;
+
+        if (factTableBody) {
+            factTableBody.addEventListener('click', (e) => {
+                const cell = e.target.closest('.inline-editable');
+                if (!cell || cell.querySelector('textarea') || cell.querySelector('input')) return;
+
+                // Если есть открытое для редактирования другое поле — закрываем его без изменений
+                if (activeEditCell && activeEditCell !== cell) {
+                    if (typeof activeEditCell.cancelEdit === 'function') {
+                        activeEditCell.cancelEdit();
+                    }
+                }
+
+                const field = cell.getAttribute('data-field');
+                const originalVal = cell.textContent;
+                const factId = cell.closest('tr').getAttribute('data-id');
+
+                cell.style.cursor = 'default';
+                cell.innerHTML = '';
+
+                const container = document.createElement('div');
+                container.style.cssText = "display: flex; gap: 6px; align-items: center; width: 100%;";
+
+                let inputEl;
+                if (field === 'document') {
+                    inputEl = document.createElement('textarea');
+                    inputEl.style.cssText = "flex: 1; height: 54px; font-size: 0.85rem; font-family: inherit; padding: 4px; border: 1px solid #cbd5e0; border-radius: 4px; resize: vertical;";
+                } else {
+                    inputEl = document.createElement('textarea');
+                    inputEl.style.cssText = "height: 38px; width: 5%; flex: 1; font-size: 0.85rem; padding: 4px; border: 1px solid #cbd5e0; border-radius: 4px;";
+                }
+                inputEl.value = originalVal;
+                container.appendChild(inputEl);
+
+                const saveBtn = document.createElement('button');
+                saveBtn.textContent = '✅';
+                saveBtn.style.cssText = "background: none; border: none; font-size: 16px; cursor: pointer; padding: 0;";
+                saveBtn.title = 'Сохранить';
+                container.appendChild(saveBtn);
+
+                const cancelBtn = document.createElement('button');
+                cancelBtn.textContent = '❌';
+                cancelBtn.style.cssText = "background: none; border: none; font-size: 16px; cursor: pointer; padding: 0;";
+                cancelBtn.title = 'Отмена';
+                container.appendChild(cancelBtn);
+
+                cell.appendChild(container);
+                inputEl.focus();
+
+                // Устанавливаем текущую активную ячейку и ее обработчик сброса
+                activeEditCell = cell;
+                cell.cancelEdit = () => {
+                    restoreCell(originalVal);
+                };
+
+                // Предотвращаем всплытие клика наружу
+                container.addEventListener('click', (ev) => ev.stopPropagation());
+
+                const performSave = async () => {
+                    const newVal = inputEl.value;
+                    if (newVal === originalVal) {
+                        restoreCell(originalVal);
+                        return;
+                    }
+
+                    saveBtn.disabled = true;
+                    saveBtn.textContent = '⏳';
+
+                    try {
+                        const payload = {};
+                        payload[field] = newVal;
+
+                        const res = await putData(`/fact/${factId}`, payload);
+                        if (res && res.result && res.result.updated) {
+                            showNotification('Запись успешно обновлена!', 'success');
+                            restoreCell(newVal);
+
+                            // Сбрасываем статус в "Ожидает"
+                            const statusBadge = cell.closest('tr').querySelector('.status-badge');
+                            if (statusBadge) {
+                                statusBadge.className = 'status-badge pending';
+                                statusBadge.textContent = 'Ожидает';
+                            }
+                        } else {
+                            showNotification('Не удалось обновить запись.', 'error');
+                            restoreCell(originalVal);
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        showNotification('Ошибка обновления: ' + err.message, 'error');
+                        restoreCell(originalVal);
+                    }
+                };
+
+                const restoreCell = (val) => {
+                    cell.innerHTML = '';
+                    cell.style.cursor = 'pointer';
+                    cell.textContent = val;
+                    if (activeEditCell === cell) {
+                        activeEditCell = null;
+                    }
+                };
+
+                saveBtn.onclick = (ev) => {
+                    ev.stopPropagation();
+                    performSave();
+                };
+
+                cancelBtn.onclick = (ev) => {
+                    ev.stopPropagation();
+                    restoreCell(originalVal);
+                };
+
+                inputEl.onkeydown = (ev) => {
+                    if (ev.key === 'Enter' && field !== 'document') {
+                        ev.preventDefault();
+                        performSave();
+                    }
+                    if (ev.key === 'Escape') {
+                        ev.preventDefault();
+                        restoreCell(originalVal);
+                    }
+                };
+            });
+        }
     });
 </script>
 {% endblock %}
