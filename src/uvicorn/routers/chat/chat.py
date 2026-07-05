@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
-from py_modules.ai.framework.ai_framework import AgentRateLimitError
+from src.mysql_.repository.companion_repository import CompanionRepository
 from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
@@ -16,7 +16,6 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_session import AuthSession
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 from src.mysql_.repository.agent_repository import AgentRepository
-from src.mysql_.repository.llm_repository import LlmRepository
 from src.mysql_.repository.user_repository import UserRepository
 
 router = APIRouter()
@@ -59,6 +58,11 @@ async def ask_ai(
     workflow_id = entity_agent.get('workflow_id')
     if not workflow_id:
         raise HTTPException(status_code=401, detail="Agent '%s' not have workflow" % entity_agent.get('name'))
+
+    repo_companion = CompanionRepository()
+    entity_companion = await repo_companion.find_one_by({'id': json_request.companion_id})
+    if not entity_companion:
+        raise HTTPException(status_code=401, detail="Companion not found by ID: %s" % json_request.companion_id)
 
     # Получаем все связанные с пользователем LLM
     entities_llm = []
@@ -113,6 +117,7 @@ async def ask_ai(
         'prompt_user': json_request.question.strip(),
         'user_id': user.user_id,
         'companion_id': json_request.companion_id,
+        'companion_title': entity_companion.get('title'),
         'username': entity_user.get('username'),
         'agent_id': json_request.agent_id,
         'agent_title': entity_agent.get('title'),
