@@ -6,7 +6,7 @@ import traceback
 
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -15,8 +15,6 @@ from starlette.templating import Jinja2Templates
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from py_modules.ai.framework.ai_framework import AgentRateLimitError
-from fastapi import HTTPException
 
 from py_modules.ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_tool import ai_tool_sync
@@ -191,6 +189,68 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+async def logging_middleware(request: Request, call_next):
+    """Log incoming requests and outgoing responses, redacting sensitive headers."""
+    import time
+    start_time = time.time()
+
+    method = request.method
+    path = request.url.path
+    query_params = request.url.query
+
+    request_body = await request.body()
+
+    # Подменяем поток, чтобы эндпоинты FastAPI могли прочитать тело заново
+    async def receive():
+        return {"type": "http.request", "body": request_body, "more_body": False}
+
+    request._receive = receive
+
+    # Copy headers to redact sensitive information
+    headers = dict(request.headers)
+    for sensitive_header in ['authorization', 'cookie', 'x-api-key']:
+        if sensitive_header in headers:
+            headers[sensitive_header] = '***'
+        # Also check uppercase
+        if (upper_header := sensitive_header.upper()) in headers:
+            headers[upper_header] = '***'
+
+    # Process request
+    response = await call_next(request)
+
+    # 4. Безопасно вычитываем тело ответа (StreamingResponse)
+    response_body = b""
+    async for chunk in response.body_iterator:
+        response_body += chunk
+
+    duration = time.time() - start_time
+    status_code = response.status_code
+    response_headers = {str(k): str(v) for k, v in response.headers.items()}
+
+    request_data = f", data: {request_body.decode('utf-8', errors='ignore')}" if len(request_body) > 3 else ''
+    response_data = f", data: {response_body.decode('utf-8', errors='ignore')}" if len(response_body) > 0 else ''
+
+    logger_info(
+        f"🌐 [HTTP] Request {method} {path}"
+        f"{'?' + query_params if query_params else ''}"
+        f"{request_data}\n\n"
+        f"Response: [{status_code}] {duration:.3f}s"
+        f"{response_data}\n\n"
+        f"Request headers: {headers}\n"
+        f"Response headers: {response_headers}"
+    )
+
+    # Удаляем content-length, чтобы избежать конфликтов при сборке нового Response
+    response_headers.pop("content-length", None)
+
+    return Response(
+        content=response_body,
+        status_code=response.status_code,
+        headers=response_headers,
+        media_type=response.media_type
+    )
+
+
 middleware = [
     Middleware(
         SessionMiddleware,  # type: ignore
@@ -200,8 +260,12 @@ middleware = [
         same_site="lax",
         https_only=False
     ),
+    Middleware(BaseHTTPMiddleware, dispatch=logging_middleware),
     Middleware(BaseHTTPMiddleware, dispatch=catch_exceptions_middleware),
-    Middleware(BaseHTTPMiddleware, dispatch=auth_middleware),
+    Middleware(
+        BaseMessageMiddleware := None or BaseHTTPMiddleware if False else BaseHTTPMiddleware,
+        dispatch=auth_middleware
+    ),
 ]
 
 app = FastAPI(lifespan=lifespan, middleware=middleware)
