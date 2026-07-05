@@ -15,42 +15,35 @@
         <li class="nav-item">
             <a href="/">💬 Чат</a>
             <ul class="submenu">
-                <li><a href="/admin/session">Сессии</a></li>
-            </ul>
-            <ul class="submenu">
-                <li><a href="/admin/user">Пользователи</a></li>
-            </ul>
-        </li>
-
-        <li class="nav-item">
-            <a href="/admin/node">⛓ Ноды</a>
-            <ul class="submenu">
-                <li><a href="/admin/tool">Инструменты</a></li>
-                <li><a href="/admin/workflow">Workflow</a></li>
                 <li><a href="/admin/agent">Агенты</a></li>
-            </ul>
-        </li>
-
-        <li class="nav-item">
-            <a href="/admin/fact_collection">🔄 Коллекции</a>
-            <ul class="submenu">
                 <li><a href="/admin/fact">Факты</a></li>
-                <li><a href="/admin/converter/text-to-fact">Текст в факты</a></li>
+                <li><a href="/admin/session">Сессии</a></li>
             </ul>
         </li>
         
+        {% if request.session.get('role') == 'admin' %}
         <li class="nav-item">
-            <a href="#">📜 Логи</a>
+            <a href="/admin/node">⛓ Ноды</a>
+            <ul class="submenu">
+                <li><a href="/admin/fact_collection">Коллекции</a></li>
+                <li><a href="/admin/tool">Инструменты</a></li>
+                <li><a href="/admin/workflow">Workflow</a></li>
+            </ul>
+        </li>
+
+        <li class="nav-item">
+            <a href="/admin/user">👥 Пользователи</a>
+            <ul class="submenu">
+
+            </ul>
+        </li>
+
+        <li class="nav-item">
+            <a href="#">📊 Логи/Очереди</a>
             <ul class="submenu">
                 <li><a target="_blank"
                        href="http://localhost:5601/app/data-explorer/discover#?_a=(discover:(columns:!(message),isDirty:!f,sort:!()),metadata:(indexPattern:'9d4339a0-3761-11f1-82cd-c50d8f73f9fd',view:discover))&_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-15m,to:now))&_q=(filters:!(),query:(language:kuery,query:''))">Opensearch</a>
                 </li>
-            </ul>
-        </li>
-
-        <li class="nav-item">
-            <a href="#">📊 Очереди</a>
-            <ul class="submenu">
                 <li><a target="_blank" href="/admin/queue">Local in-memory</a></li>
                 <li><a target="_blank" href="http://localhost:9181/">Redis️ queues</a></li>
             </ul>
@@ -69,6 +62,7 @@
                 <li><a href="http://localhost:3012" target="_blank">Cronicle</a></li>
             </ul>
         </li>
+        {% endif %}
 
         <!-- User menu with logout -->
         <li class="nav-item user-menu">

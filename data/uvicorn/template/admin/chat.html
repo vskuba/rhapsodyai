@@ -23,16 +23,6 @@
         color: #666;
     }
 
-    /* Блок 1: Select */
-    #llmModelSelect {
-        padding: 3px 8px;
-        border: 1px solid #ddd;
-        border-radius: 5px;
-        outline: none;
-        font-size: 13px;
-        max-width: 250px;
-    }
-
     /* Блок 2: ID сессии (центр) */
     .session-current {
         flex: 1;
@@ -342,13 +332,10 @@
     <!-- Основная зона чата -->
     <div class="chat-container">
 
-        <!-- НОВАЯ ПАНЕЛЬ УПРАВЛЕНИЯ (Блоки 1, 2, 3) -->
+        <!-- НОВАЯ ПАНЕЛЬ УПРАВЛЕНИЯ (Блоки 2, 3) -->
         <div class="chat-header">
             <div class="header-block">
-                <label>LLM:</label>
-                <select id="llmModelSelect">
-                    <option value="gpt-4o">GPT-4o</option>
-                </select>
+                <label>Пользователь: {{ request.session.get('username') }}</label>
             </div>
 
             <div class="header-block session-current">
@@ -411,7 +398,6 @@
     const userInput = document.getElementById('userInput');
     const agentSelect = document.getElementById('agentSelect');
     const progressBar = document.getElementById('topProgressBar');
-    const llmModelSelect = document.getElementById('llmModelSelect');
     const sessionDisplay = document.getElementById('sessionDisplay');
     const micBtn = document.getElementById('micBtn');
     const sendBtn = document.getElementById('sendBtn');
@@ -422,7 +408,6 @@
 
     let allAgents = {};
     let allNodes = {};
-    let allLLMs = {};
     let allUsers = {};
 
     async function loadUsers() {
@@ -692,30 +677,11 @@
         }
     }
 
-    async function loadLLMs() {
-        if (!llmModelSelect) return;
-        try {
-            const data = await getData('/llm/list');
-            llmModelSelect.innerHTML = '';
-            data.result.forEach(llm => {
-                const option = document.createElement('option');
-                option.value = llm.id;
-                option.textContent = llm.name;
-                llmModelSelect.appendChild(option);
-                allLLMs[llm.id] = llm;
-            });
-            if (data.result.length > 0) llmModelSelect.selectedIndex = 0;
-        } catch (e) {
-            console.error("Ошибка загрузки llm для чата:", e);
-        }
-    }
-
     document.addEventListener('DOMContentLoaded', async () => {
         // 1. Инициализация агентов
         await Promise.all([
             loadNodes(),
             loadUsers(),
-            loadLLMs(),
         ]);
 
         // Загружаем агентов для первого пользователя в списке
@@ -724,9 +690,6 @@
         }
 
         const loadSettings = async () => {
-            const userId = userSelect.value;
-            llmModelSelect.value = allUsers[userId].llm_id;
-
             await getAgentSessionLastEntry();
         };
 
@@ -763,36 +726,12 @@
 
         userSelect.addEventListener('change', async () => {
             const userId = userSelect.value;
-            llmModelSelect.value = allUsers[userId].llm_id;
 
             // Перезагружаем агентов для выбранного пользователя (с учетом роли)
             await loadAgents(userId);
 
             // Получаем последнюю сессию и историю сообщений (включая greeting) для выбранного агента и пользователя
             await getAgentSessionLastEntry();
-        });
-
-        llmModelSelect.addEventListener('change', async () => {
-            const userId = userSelect.value;
-            const llmId = llmModelSelect.value;
-
-            const payload = {
-                llm_id: llmId,
-            };
-
-            toggleLoading(true);
-
-            try {
-                if (userId) {
-                    await putData(`/user/${userId}`, payload);
-                    showNotification(`Пользователь "${allUsers[userId].username}" обновлен`, 'success');
-                }
-            } catch (e) {
-                console.error("Ошибка сохранения пользователя:", e);
-                showNotification(`Ошибка: ${e.message}`, 'error');
-            }
-
-            toggleLoading(false);
         });
 
         newSessionBtn.addEventListener('click', startNewSession);
