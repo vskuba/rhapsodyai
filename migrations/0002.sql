@@ -9,13 +9,14 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (8, 'ollama/qwen3:30b'),
 (9, 'ollama/qwen3-coder:30b'),
 (10, 'groq/llama-3.3-70b-versatile'),
-(11, 'gemini/gemini-2.5-flash-lite'),
-(12, 'gemini/gemini-2.5-flash'),
-(13, 'gemini/gemini-2.5-pro'),
-(14, 'mistral/mistral-medium-2505'),
-(15, 'mistral/mistral-medium-2508'),
-(16, 'huggingface/meta-llama/Llama-3.3-70B-Instruct'),
-(17, 'cerebras/gpt-oss-120b');
+(11, 'groq/openai/gpt-oss-120b'),
+(12, 'gemini/gemini-2.5-flash-lite'),
+(13, 'gemini/gemini-2.5-flash'),
+(14, 'gemini/gemini-2.5-pro'),
+(15, 'mistral/mistral-medium-2505'),
+(16, 'mistral/mistral-medium-2508'),
+(17, 'huggingface/meta-llama/Llama-3.3-70B-Instruct'),
+(18, 'cerebras/gpt-oss-120b');
 
 --
 
@@ -26,28 +27,30 @@ INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role`, `created
 --
 
 INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `position`) VALUES
-(1, 1, NULL, 8),
-(1, 2, NULL, 9),
-(1, 3, NULL, 10),
+(1, 1, NULL, 9),
+(1, 2, NULL, 10),
+(1, 3, NULL, 11),
 (1, 10, NULL, 0),
-(1, 11, NULL, 4),
-(1, 12, NULL, 2),
-(1, 13, NULL, 3),
+(1, 11, NULL, 1),
+(1, 12, NULL, 3),
+(1, 13, NULL, 4),
 (1, 14, NULL, 5),
 (1, 15, NULL, 6),
 (1, 16, NULL, 7),
-(1, 17, NULL, 1),
-(2, 1, NULL, 8),
-(2, 2, NULL, 9),
-(2, 3, NULL, 10),
+(1, 17, NULL, 2),
+(1, 18, NULL, 8),
+(2, 1, NULL, 9),
+(2, 2, NULL, 10),
+(2, 3, NULL, 11),
 (2, 10, NULL, 0),
-(2, 11, NULL, 4),
-(2, 12, NULL, 2),
-(2, 13, NULL, 3),
+(2, 11, NULL, 1),
+(2, 12, NULL, 3),
+(2, 13, NULL, 4),
 (2, 14, NULL, 5),
 (2, 15, NULL, 6),
 (2, 16, NULL, 7),
-(2, 17, NULL, 1);
+(2, 17, NULL, 2),
+(2, 18, NULL, 8);
 
 --
 
