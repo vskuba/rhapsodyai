@@ -73,7 +73,7 @@ async def ask_ai(
             FROM `llm` l
             JOIN `user_llm` ul ON l.id = ul.llm_id
             WHERE ul.user_id = %s
-            ORDER BY ul.rate_limit_at ASC
+            ORDER BY ul.rate_limit_at ASC, ul.position ASC
             """,
             (user.user_id,)
         )

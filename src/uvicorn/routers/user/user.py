@@ -29,7 +29,7 @@ async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depen
             mapping[uid].append(nid)
 
         # Build mapping of user_id -> list of llm_ids
-        await db.execute("SELECT user_id, llm_id FROM user_llm ORDER BY rate_limit_at ASC")
+        await db.execute("SELECT user_id, llm_id FROM user_llm ORDER BY rate_limit_at ASC, `position` ASC")
         user_llms = await db.fetchall()
 
         llm_mapping = {}
@@ -57,7 +57,7 @@ async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async
             rows = await db.fetchall()
             user_data["node_ids"] = [row["node_id"] for row in rows]
 
-            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC", user_id)
+            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC, `position` ASC", user_id)
             llm_rows = await db.fetchall()
             user_data["llm_ids"] = [row["llm_id"] for row in llm_rows]
     return {"result": user_data}
@@ -79,8 +79,8 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
     llm_ids = llm_ids or []
 
     async with db:
-        for lid in llm_ids:
-            await db.execute("INSERT INTO user_llm (user_id, llm_id) VALUES (%s, %s)", (user_id, lid))
+        for idx, lid in enumerate(llm_ids):
+            await db.execute("INSERT INTO user_llm (user_id, llm_id, `position`) VALUES (%s, %s, %s)", (user_id, lid, idx))
 
         # Insert user_node relations if node_ids are passed
         if "node_ids" in data and data["node_ids"]:
@@ -93,7 +93,7 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
             rows = await db.fetchall()
             created_user["node_ids"] = [row["node_id"] for row in rows]
 
-            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC", user_id)
+            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC, `position` ASC", user_id)
             llm_rows = await db.fetchall()
             created_user["llm_ids"] = [row["llm_id"] for row in llm_rows]
 
@@ -126,8 +126,8 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
             # Delete old relations
             await db.execute("DELETE FROM user_llm WHERE user_id = %s", user_id)
             # Insert new relations
-            for lid in llm_ids:
-                await db.execute("INSERT INTO user_llm (user_id, llm_id) VALUES (%s, %s)", (user_id, lid))
+            for idx, lid in enumerate(llm_ids):
+                await db.execute("INSERT INTO user_llm (user_id, llm_id, `position`) VALUES (%s, %s, %s)", (user_id, lid, idx))
 
         # Sync user_node relations if node_ids are passed in data
         if "node_ids" in data:
@@ -144,7 +144,7 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
             rows = await db.fetchall()
             updated_user["node_ids"] = [row["node_id"] for row in rows]
 
-            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC", user_id)
+            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC, `position` ASC", user_id)
             llm_rows = await db.fetchall()
             updated_user["llm_ids"] = [row["llm_id"] for row in llm_rows]
 

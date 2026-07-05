@@ -27,9 +27,28 @@ INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role`, `created
 (1, 'user1', 'user1@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 'admin', '2026-04-26 09:17:35'),
 (2, 'user2', 'user2@example.com', '$2b$12$xfglXXXp3W2QCb1XnZhNBuDYAJc.Fy51fI43NlVhBfVQTLaYpD1Ca', 'user', '2026-04-26 09:17:35');
 
-INSERT INTO `user_llm` (`user_id`, `llm_id`) VALUES
-(1, 12),
-(2, 1);
+INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `position`) VALUES
+(1, 1, NULL, 9),
+(1, 2, NULL, 10),
+(1, 3, NULL, 11),
+(1, 10, NULL, 3),
+(1, 12, NULL, 4),
+(1, 13, NULL, 5),
+(1, 14, NULL, 6),
+(1, 15, NULL, 7),
+(1, 16, NULL, 8),
+(1, 18, NULL, 0),
+(1, 19, NULL, 2),
+(1, 20, NULL, 1),
+(2, 1, NULL, 8),
+(2, 10, NULL, 1),
+(2, 14, NULL, 6),
+(2, 15, NULL, 4),
+(2, 16, NULL, 5),
+(2, 18, NULL, 0),
+(2, 19, NULL, 3),
+(2, 20, NULL, 2),
+(2, 21, NULL, 7);
 
 --
 

@@ -200,6 +200,7 @@
 
     #user_nodes_select {
         width: 150px;
+        min-height: 198px;
     }
 
     /* 6. Кнопки и Футер */
@@ -210,6 +211,7 @@
         justify-content: flex-end;
         align-items: center;
         gap: 20px;
+        margin-top: 15px;
     }
 
     .btn-save {
@@ -252,6 +254,10 @@
     .btn-delete:hover {
         background: #e74c3c;
         color: white;
+    }
+
+    #llm_list_sortable {
+        min-height: 198px;
     }
 
 </style>
@@ -305,9 +311,10 @@
                                 </div>
                                 <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
                                     <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                                        <label>Модели LLM</label>
-                                        <select id="llm_id" class="form-control" multiple size="10" style="height: 180px;">
-                                        </select>
+                                        <label>Модели LLM (отметьте и перетащите для сортировки)</label>
+                                        <div id="llm_list_sortable" style="height: 180px; overflow-y: auto; padding: 5px; border: 1px solid #cbd5e0; border-radius: 4px; background: #fff; box-sizing: border-box;">
+                                            <!-- Items will be dynamically generated here -->
+                                        </div>
                                     </div>
 
                                     <div class="form-group" style="flex: 1; margin-bottom: 0;">
@@ -391,6 +398,60 @@
         });
     }
 
+    function makeLlmListDraggable(container) {
+        let dragSrcEl = null;
+
+        container.addEventListener('dragstart', function(e) {
+            const item = e.target.closest('.llm-sortable-item');
+            if (!item) return;
+            dragSrcEl = item;
+            e.dataTransfer.effectAllowed = 'move';
+            item.style.opacity = '0.4';
+        });
+
+        container.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        });
+
+        container.addEventListener('dragenter', function(e) {
+            const item = e.target.closest('.llm-sortable-item');
+            if (item && item !== dragSrcEl) {
+                item.style.border = '1px dashed #4299e1';
+            }
+        });
+
+        container.addEventListener('dragleave', function(e) {
+            const item = e.target.closest('.llm-sortable-item');
+            if (item) {
+                item.style.border = '1px solid #e2e8f0';
+            }
+        });
+
+        container.addEventListener('drop', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            const targetItem = e.target.closest('.llm-sortable-item');
+            if (targetItem && dragSrcEl && dragSrcEl !== targetItem) {
+                const rect = targetItem.getBoundingClientRect();
+                const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+                container.insertBefore(dragSrcEl, next ? targetItem.nextSibling : targetItem);
+            }
+            return false;
+        });
+
+        container.addEventListener('dragend', function(e) {
+            const item = e.target.closest('.llm-sortable-item');
+            if (item) {
+                item.style.opacity = '1';
+            }
+            container.querySelectorAll('.llm-sortable-item').forEach(el => {
+                el.style.border = '1px solid #e2e8f0';
+            });
+        });
+    }
+
     /**
      * Инициализация менеджера: загрузка списка нод
      */
@@ -411,14 +472,25 @@
             renderUserList(users, selectedUserId);
             renderNodeSelect(allNodes);
 
-            const llmSelect = document.getElementById('llm_id');
-            llmSelect.innerHTML = '';
+            const sortableContainer = document.getElementById('llm_list_sortable');
+            sortableContainer.innerHTML = '';
             llms.forEach(g => {
-                const opt = document.createElement('option');
-                opt.value = g.id;
-                opt.textContent = g.name;
-                llmSelect.appendChild(opt);
+                const div = document.createElement('div');
+                div.className = 'llm-sortable-item';
+                div.setAttribute('draggable', 'true');
+                div.setAttribute('data-id', g.id);
+                div.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; margin-bottom: 4px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 4px; cursor: move; user-select: none;";
+                
+                div.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" class="llm-checkbox" style="cursor: pointer;">
+                        <span style="font-size: 13px; color: #2d3748;">${g.name}</span>
+                    </div>
+                    <span style="font-size: 14px; color: #a0aec0; cursor: grab;">☰</span>
+                `;
+                sortableContainer.appendChild(div);
             });
+            makeLlmListDraggable(sortableContainer);
 
         } catch (e) {
             console.error("Ошибка инициализации пользователей:", e);
@@ -489,12 +561,44 @@
             document.getElementById('email').value = user.email;
             document.getElementById('role').value = user.role || 'user';
 
-            // Update selected options in the llm_id multiple select element
+            // Update selected options in the llm_list_sortable element
             const userLlmIds = user.llm_ids || [];
-            const llmSelect = document.getElementById('llm_id');
-            if (llmSelect) {
-                Array.from(llmSelect.options).forEach(opt => {
-                    opt.selected = userLlmIds.includes(parseInt(opt.value));
+            const sortableContainer = document.getElementById('llm_list_sortable');
+            if (sortableContainer) {
+                const items = Array.from(sortableContainer.querySelectorAll('.llm-sortable-item'));
+                
+                // First, check/uncheck checkboxes
+                items.forEach(item => {
+                    const chk = item.querySelector('.llm-checkbox');
+                    const lid = parseInt(item.getAttribute('data-id'), 10);
+                    if (chk) {
+                        chk.checked = userLlmIds.includes(lid);
+                    }
+                });
+
+                // Next, sort the DOM elements in the container:
+                const selectedItemsMap = {};
+                const unselectedItems = [];
+
+                items.forEach(item => {
+                    const lid = parseInt(item.getAttribute('data-id'), 10);
+                    if (userLlmIds.includes(lid)) {
+                        selectedItemsMap[lid] = item;
+                    } else {
+                        unselectedItems.push(item);
+                    }
+                });
+
+                sortableContainer.innerHTML = '';
+                // Append selected items in their exact saved order
+                userLlmIds.forEach(lid => {
+                    if (selectedItemsMap[lid]) {
+                        sortableContainer.appendChild(selectedItemsMap[lid]);
+                    }
+                });
+                // Append remaining unselected items
+                unselectedItems.forEach(item => {
+                    sortableContainer.appendChild(item);
                 });
             }
 
@@ -533,10 +637,10 @@
         document.getElementById('role').value = 'user';
 
         // Clear all selections in select elements
-        const llmSelect = document.getElementById('llm_id');
-        if (llmSelect) {
-            Array.from(llmSelect.options).forEach(opt => {
-                opt.selected = false;
+        const sortableContainer = document.getElementById('llm_list_sortable');
+        if (sortableContainer) {
+            sortableContainer.querySelectorAll('.llm-checkbox').forEach(chk => {
+                chk.checked = false;
             });
         }
 
@@ -572,12 +676,15 @@
             });
         }
 
-        // Collect selected LLM IDs
+        // Collect selected LLM IDs based on their sort order in the draggable container
         const selectedLlmIds = [];
-        const llmSelect = document.getElementById('llm_id');
-        if (llmSelect) {
-            Array.from(llmSelect.selectedOptions).forEach(opt => {
-                selectedLlmIds.push(parseInt(opt.value));
+        const sortableContainer = document.getElementById('llm_list_sortable');
+        if (sortableContainer) {
+            sortableContainer.querySelectorAll('.llm-sortable-item').forEach(item => {
+                const chk = item.querySelector('.llm-checkbox');
+                if (chk && chk.checked) {
+                    selectedLlmIds.push(parseInt(item.getAttribute('data-id'), 10));
+                }
             });
         }
 
