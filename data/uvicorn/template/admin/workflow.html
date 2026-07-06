@@ -1943,7 +1943,7 @@
                 const badgeSpan = document.createElement('span');
                 badgeSpan.className = 'variable-badge';
                 badgeSpan.title = `Значение по умолчанию: ${variable.default}`;
-                badgeSpan.textContent = variable.default;
+                badgeSpan.textContent = String(variable.default).slice(0, 10);
 
                 div.appendChild(badgeSpan);
             }
