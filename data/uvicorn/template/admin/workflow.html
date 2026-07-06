@@ -627,188 +627,186 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-content">
-    <div class="editor-container">
+<div class="editor-container">
 
-        <!-- Список (Sidebar) -->
-        <div class="agents-sidebar">
-            <div class="sidebar-header">
-                <button class="btn-create" id="createNewWorkflow">+ Создать workflow</button>
-            </div>
-            <div class="agent-list" id="workflowList">
-                <!-- Заполняется JS -->
-            </div>
+    <!-- Список (Sidebar) -->
+    <div class="agents-sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="createNewWorkflow">+ Создать workflow</button>
         </div>
-
-        <!-- Секция формы -->
-        <div class="editor-section">
-            <form id="workflowForm" novalidate>
-                <div class="form-header">
-                    <h2 id="formTitle">Выберите workflow</h2>
-                    <button type="submit" class="btn-save">Сохранить workflow</button>
-                </div>
-
-                <input type="hidden" id="workflowId">
-
-                <!-- 1. Контейнер ПАРАМЕТРОВ (скрывается при клике на название) -->
-                <div id="workflowSettingsView" class="form-layout-grid">
-                    <div class="settings-column">
-                        <div class="form-group">
-                            <label>Название workflow</label>
-                            <input type="text" id="title" class="form-control" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Технический ID (name)</label>
-                            <input type="text" id="name" class="form-control" required>
-                        </div>
-                        <div class="form-grid">
-                            <div class="form-group"><label>Нода</label><select id="node_id"
-                                                                               class="form-control"></select></div>
-                            <div class="form-group"><label>Позиция</label><input type="number" id="position"
-                                                                                 class="form-control"></div>
-                        </div>
-                        <div class="form-group">
-                            <label>Описание</label>
-                            <textarea id="description" class="form-control"
-                                      style="height: 80px; resize: none;"></textarea>
-                        </div>
-                    </div>
-                    <div class="prompt-column">
-                        <!-- Здесь пусто или доп. инфо, так как шаги теперь в другом виде -->
-                    </div>
-                </div>
-
-                <!-- 2. Контейнер ШАГОВ (Две колонки) -->
-                <div id="stepsEditorView" class="form-layout-grid" style="display: none;">
-
-                    <div class="settings-column">
-                        <div class="variables-section">
-                            <div class="variables-header">
-                                <h3>Переменные</h3>
-                                <div class="variable-add-form">
-                                    <div class="form-group-row">
-                                        <input type="text" id="newVariableName" class="form-control"
-                                               placeholder="Имя переменной...">
-                                        <input type="text" id="newVariableValue" class="form-control"
-                                               placeholder="Значение по умолчанию...">
-                                    </div>
-                                    <button type="button" class="btn-add-var" id="addVariableBtn">+ Add</button>
-                                </div>
-                            </div>
-
-                            <!-- Список добавленных переменных -->
-                            <div class="variables-list" id="variablesContainer">
-                                <!-- Пример элемента списка (будет генерироваться через JS) -->
-                                <!--
-                                <div class="variable-item">
-                                    <span class="variable-name">my_var_name</span>
-                                    <button type="button" class="btn-delete-var" data-name="my_var_name">&times;</button>
-                                </div>
-                                -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Колонки управления шагами -->
-                    <div class="settings-column" style="border-right: 1px solid #eee; padding-right: 15px;">
-
-                        <!-- Блоки 1 и 2: Выбор и Кнопка Добавить -->
-                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <div style="flex: 1;">
-                                <label style="font-size: 10px; color: #999;">Доступные шаги</label>
-                                <select id="availableStepsSelect" class="form-control">
-                                    <option value="">Загрузка шагов...</option>
-                                </select>
-                            </div>
-                            <div style="align-self: flex-end;">
-                                <button type="button" class="btn-create" id="addStepToWorkflowBtn"
-                                        style="padding: 10px 20px;">+ Add
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Блок 3: Список шагов текущей задачи (Drag & Drop) -->
-                        <label style="font-size: 10px; color: #999;">Шаги текущего workflow (перетащите для
-                            сортировки)</label>
-                        <div id="workflowStepsSortable" class="steps-sortable-list">
-                            <!-- Сюда JS отрисует шаги -->
-                        </div>
-                    </div>
-
-
-                    <!-- Вторая колонка: Детали (как и было) -->
-                    <div class="prompt-column" id="stepDetailsView">
-                        <!-- Контейнер с контентом (скрыт по умолчанию) -->
-                        <div id="stepDetailsContent" style="display: none;">
-
-                            <div class="stepTitle">
-                                <label>Описание шага</label>
-                                <span id="stepDescriptionFull"></span>
-                            </div>
-
-                            <div class="transitions-editor">
-                                <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">
-                                    Логика переходов (Before)
-                                </label>
-
-                                <div id="stepTransitionsListBefore"
-                                     style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-                                    <!-- Сюда JS будет рендерить строки условий -->
-                                </div>
-
-                                <button type="button" class="btn-create" id="addConditionBtnBefore"
-                                        style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
-                                    + Добавить условие перехода
-                                </button>
-                            </div>
-
-                            <!-- НОВЫЙ КОНТЕЙНЕР ДЛЯ КАСТОМНЫХ ПОЛЕЙ ТИПА ШАГА -->
-                            <div id="dynamicStepFieldsContainer"
-                                 style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
-                                <!-- Сюда JS будет рендерить инпуты/текстареа в зависимости от типа шага -->
-                            </div>
-
-                            <!-- Старую textarea скрываем с помощью display: none, чтобы не ломать остальной код сбора данных -->
-                            <textarea id="stepTextarea" class="form-control system-prompt-full"
-                                      style="display: none;"></textarea>
-
-                            <div class="transitions-editor">
-                                <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">
-                                    Логика переходов (After)
-                                </label>
-
-                                <div id="stepTransitionsListAfter"
-                                     style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-                                    <!-- Сюда JS будет рендерить строки условий -->
-                                </div>
-
-                                <button type="button" class="btn-create" id="addConditionBtnAfter"
-                                        style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
-                                    + Добавить условие перехода
-                                </button>
-                            </div>
-
-                            <div class="stepTitle">
-                                <label>Название шага</label>
-                                <input type="text" id="stepTitle" required/>
-                            </div>
-                        </div>
-
-                        <!-- Заглушка (видна, когда шаг не выбран) -->
-                        <div id="noStepSelected" style="color: #999; text-align: center; margin-top: 50px;">
-                            Выберите шаг из списка слева
-                        </div>
-                    </div>
-
-
-                </div>
-
-                <div class="editor-footer">
-                    <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
-                    <button type="submit" class="btn-save">Сохранить workflow</button>
-                </div>
-            </form>
+        <div class="agent-list" id="workflowList">
+            <!-- Заполняется JS -->
         </div>
+    </div>
+
+    <!-- Секция формы -->
+    <div class="editor-section">
+        <form id="workflowForm" novalidate>
+            <div class="form-header">
+                <h2 id="formTitle">Выберите workflow</h2>
+                <button type="submit" class="btn-save">Сохранить workflow</button>
+            </div>
+
+            <input type="hidden" id="workflowId">
+
+            <!-- 1. Контейнер ПАРАМЕТРОВ (скрывается при клике на название) -->
+            <div id="workflowSettingsView" class="form-layout-grid">
+                <div class="settings-column">
+                    <div class="form-group">
+                        <label>Название workflow</label>
+                        <input type="text" id="title" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Технический ID (name)</label>
+                        <input type="text" id="name" class="form-control" required>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group"><label>Нода</label><select id="node_id"
+                                                                           class="form-control"></select></div>
+                        <div class="form-group"><label>Позиция</label><input type="number" id="position"
+                                                                             class="form-control"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Описание</label>
+                        <textarea id="description" class="form-control"
+                                  style="height: 80px; resize: none;"></textarea>
+                    </div>
+                </div>
+                <div class="prompt-column">
+                    <!-- Здесь пусто или доп. инфо, так как шаги теперь в другом виде -->
+                </div>
+            </div>
+
+            <!-- 2. Контейнер ШАГОВ (Две колонки) -->
+            <div id="stepsEditorView" class="form-layout-grid" style="display: none;">
+
+                <div class="settings-column">
+                    <div class="variables-section">
+                        <div class="variables-header">
+                            <h3>Переменные</h3>
+                            <div class="variable-add-form">
+                                <div class="form-group-row">
+                                    <input type="text" id="newVariableName" class="form-control"
+                                           placeholder="Имя переменной...">
+                                    <input type="text" id="newVariableValue" class="form-control"
+                                           placeholder="Значение по умолчанию...">
+                                </div>
+                                <button type="button" class="btn-add-var" id="addVariableBtn">+ Add</button>
+                            </div>
+                        </div>
+
+                        <!-- Список добавленных переменных -->
+                        <div class="variables-list" id="variablesContainer">
+                            <!-- Пример элемента списка (будет генерироваться через JS) -->
+                            <!--
+                            <div class="variable-item">
+                                <span class="variable-name">my_var_name</span>
+                                <button type="button" class="btn-delete-var" data-name="my_var_name">&times;</button>
+                            </div>
+                            -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Колонки управления шагами -->
+                <div class="settings-column" style="border-right: 1px solid #eee; padding-right: 15px;">
+
+                    <!-- Блоки 1 и 2: Выбор и Кнопка Добавить -->
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 10px; color: #999;">Доступные шаги</label>
+                            <select id="availableStepsSelect" class="form-control">
+                                <option value="">Загрузка шагов...</option>
+                            </select>
+                        </div>
+                        <div style="align-self: flex-end;">
+                            <button type="button" class="btn-create" id="addStepToWorkflowBtn"
+                                    style="padding: 10px 20px;">+ Add
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Блок 3: Список шагов текущей задачи (Drag & Drop) -->
+                    <label style="font-size: 10px; color: #999;">Шаги текущего workflow (перетащите для
+                        сортировки)</label>
+                    <div id="workflowStepsSortable" class="steps-sortable-list">
+                        <!-- Сюда JS отрисует шаги -->
+                    </div>
+                </div>
+
+
+                <!-- Вторая колонка: Детали (как и было) -->
+                <div class="prompt-column" id="stepDetailsView">
+                    <!-- Контейнер с контентом (скрыт по умолчанию) -->
+                    <div id="stepDetailsContent" style="display: none;">
+
+                        <div class="stepTitle">
+                            <label>Описание шага</label>
+                            <span id="stepDescriptionFull"></span>
+                        </div>
+
+                        <div class="transitions-editor">
+                            <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">
+                                Логика переходов (Before)
+                            </label>
+
+                            <div id="stepTransitionsListBefore"
+                                 style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                                <!-- Сюда JS будет рендерить строки условий -->
+                            </div>
+
+                            <button type="button" class="btn-create" id="addConditionBtnBefore"
+                                    style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
+                                + Добавить условие перехода
+                            </button>
+                        </div>
+
+                        <!-- НОВЫЙ КОНТЕЙНЕР ДЛЯ КАСТОМНЫХ ПОЛЕЙ ТИПА ШАГА -->
+                        <div id="dynamicStepFieldsContainer"
+                             style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                            <!-- Сюда JS будет рендерить инпуты/текстареа в зависимости от типа шага -->
+                        </div>
+
+                        <!-- Старую textarea скрываем с помощью display: none, чтобы не ломать остальной код сбора данных -->
+                        <textarea id="stepTextarea" class="form-control system-prompt-full"
+                                  style="display: none;"></textarea>
+
+                        <div class="transitions-editor">
+                            <label style="font-size: 11px; color: #999; font-weight: bold; text-transform: uppercase;">
+                                Логика переходов (After)
+                            </label>
+
+                            <div id="stepTransitionsListAfter"
+                                 style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                                <!-- Сюда JS будет рендерить строки условий -->
+                            </div>
+
+                            <button type="button" class="btn-create" id="addConditionBtnAfter"
+                                    style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
+                                + Добавить условие перехода
+                            </button>
+                        </div>
+
+                        <div class="stepTitle">
+                            <label>Название шага</label>
+                            <input type="text" id="stepTitle" required/>
+                        </div>
+                    </div>
+
+                    <!-- Заглушка (видна, когда шаг не выбран) -->
+                    <div id="noStepSelected" style="color: #999; text-align: center; margin-top: 50px;">
+                        Выберите шаг из списка слева
+                    </div>
+                </div>
+
+
+            </div>
+
+            <div class="editor-footer">
+                <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
+                <button type="submit" class="btn-save">Сохранить workflow</button>
+            </div>
+        </form>
     </div>
 </div>
 {% endblock %}
