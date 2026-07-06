@@ -324,12 +324,6 @@
 
                     <div class="form-grid">
                         <div class="form-group">
-                            <label>Модель LLM</label>
-                            <select id="llm_id" class="form-control">
-                                <option value="">По умолчанию</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
                             <label>Workflow</label>
                             <select id="workflow_id" class="form-control">
                                 <option value="">Нет</option>
@@ -390,14 +384,13 @@
     /**
      * Инициализация менеджера: загрузка групп и списка агентов
      */
-    async function initAgentsManager(currentNodeId = null, selectedLlm = null, selectedWorkflow = null, selectedRole = null) {
+    async function initAgentsManager(currentNodeId = null, selectedWorkflow = null, selectedRole = null) {
         if (!agentListContainer) return;
 
         try {
-            const [agentsRes, nodesRes, llmRes, workflowRes, roleRes] = await Promise.all([
+            const [agentsRes, nodesRes, workflowRes, roleRes] = await Promise.all([
                 getData('/agent/list'),
                 getData('/node/list'),
-                getData('/llm/list'),
                 getData('/workflow/list'),
                 getData('/role/list')
             ]);
@@ -405,7 +398,6 @@
             // 1. Сортируем группы по полю position (от меньшего к большему)
             const nodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
             const agents = agentsRes.result;
-            const llms = llmRes.result;
             const workflows = workflowRes.result;
             const roles = roleRes.result;
 
@@ -417,15 +409,6 @@
                 opt.value = g.id;
                 opt.textContent = g.name;
                 nodeSelect.appendChild(opt);
-            });
-
-            const llmSelect = document.getElementById('llm_id');
-            llmSelect.innerHTML = '<option value="">По умолчанию</option>';
-            llms.forEach(g => {
-                const opt = document.createElement('option');
-                opt.value = g.id;
-                opt.textContent = g.name;
-                llmSelect.appendChild(opt);
             });
 
             const workflowSelect = document.getElementById('workflow_id');
@@ -448,10 +431,6 @@
 
             if (currentNodeId) {
                 nodeSelect.value = currentNodeId;
-            }
-
-            if (selectedLlm) {
-                llmSelect.value = selectedLlm;
             }
 
             if (selectedWorkflow) {
@@ -536,7 +515,6 @@
                 'node_id': agent.node_id || '',
                 'title': agent.title || '',
                 'description': agent.description || '',
-                'llm_id': agent.llm_id || '',
                 'workflow_id': agent.workflow_id || '',
                 'role_id': agent.role_id || '',
                 'prompt_system': agent.prompt_system || '',
@@ -590,7 +568,6 @@
     async function saveAgentConfig() {
         const id = document.getElementById('agentId').value;
         const currentNodeId = document.getElementById('node_id').value;
-        const currentLlmId = document.getElementById('llm_id').value;
         const currentWorkflowId = document.getElementById('workflow_id').value;
         const currentRoleId = document.getElementById('role_id').value;
         const saveBtn = document.getElementById('saveBtn');
@@ -610,7 +587,6 @@
             name: document.getElementById('name').value,
             node_id: document.getElementById('node_id').value || null,
             title: document.getElementById('title').value,
-            llm_id: document.getElementById('llm_id').value || null,
             workflow_id: document.getElementById('workflow_id').value || null,
             role_id: document.getElementById('role_id').value || null,
             prompt_system: document.getElementById('prompt_system').value,
@@ -635,7 +611,7 @@
                 }
             }
 
-            await initAgentsManager(currentNodeId, currentLlmId, currentWorkflowId, targetRoleId);
+            await initAgentsManager(currentNodeId, currentWorkflowId, targetRoleId);
 
         } catch (e) {
             console.error("Ошибка сохранения:", e);
@@ -699,7 +675,6 @@
             // Явно сбрасываем скрытый ID и селекты на дефолт
             document.getElementById('agentId').value = '';
             document.getElementById('node_id').value = '';
-            document.getElementById('llm_id').value = '';
             document.getElementById('workflow_id').value = '';
             document.getElementById('role_id').value = '';
 
