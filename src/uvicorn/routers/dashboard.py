@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi import Response
 
 from queue_.queue_ import queue_get_all
-from src.auth.auth import AuthChecker, get_current_user
+from src.auth.auth import get_current_user
 from src.auth.auth_session import AuthSession
-from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
@@ -109,6 +108,14 @@ async def tool_page(request: Request, user: AuthSession = Depends(require_auth))
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/tool.html"
+    )
+
+
+@router.get("/admin/variable", response_class=HTMLResponse)
+async def workflow_variable_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/agent_workflow_variable.html"
     )
 
 

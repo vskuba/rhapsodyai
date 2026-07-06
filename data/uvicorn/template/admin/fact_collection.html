@@ -300,85 +300,81 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-content">
-    <div class="main-wrapper">
-        <div class="editor-container">
+<div class="editor-container">
 
-            <!-- Список Нод (Левая колонка) -->
-            <div class="agents-sidebar">
-                <div class="sidebar-header">
-                    <button class="btn-create" id="createNewCollection">+ Создать коллекцию</button>
-                </div>
-                <div class="agent-list" id="collectionList">
-                    <!-- Сюда JS будет рендерить список нод -->
-                </div>
-            </div>
-
-            <!-- Форма Ноды (Правая колонка) -->
-            <div class="editor-section">
-                <div class="form-header">
-                    <h2 id="formTitle">Выберите коллекцию</h2>
-                </div>
-
-                <form id="collectionForm">
-                    <input type="hidden" id="collectionId">
-
-                    <div class="form-layout-grid">
-                        <!-- Основные настройки -->
-                        <div class="settings-column">
-                            <div class="form-grid">
-                                <div class="form-group form-group-name">
-                                    <label>Название коллекции</label>
-                                    <input type="text" id="name" class="form-control" required>
-                                </div>
-
-                                <div class="three-fields-row">
-                                    <div class="form-group">
-                                        <label>Позиция</label>
-                                        <input type="number" id="position" class="form-control" value="0">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label>Языки</label>
-                                        <input type="text" id="language" class="form-control" required value="en,ua,ru">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label>Нода</label>
-                                        <select id="node_id" class="form-control">
-                                            <option value="0">Вне ноды</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="form-group form-group-textarea">
-                                    <label>Описание</label>
-                                    <textarea id="description" class="form-control"></textarea>
-                                </div>
-                            </div>
-                        </div>
-                        <br>
-                        <div class="form-layout-grid">
-                            <div class="settings-column">
-                                <div class="form-group">
-                                    <label>Schema коллекции</label>
-                                    <div class="collection-field-list" id="collectionFieldList"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="editor-footer">
-                            <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
-                                Удалить коллекцию
-                            </button>
-                            <button type="submit" class="btn-save" id="saveBtn">Сохранить коллекцию</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-
+    <!-- Список Нод (Левая колонка) -->
+    <div class="agents-sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="createNewCollection">+ Создать коллекцию</button>
+        </div>
+        <div class="agent-list" id="collectionList">
+            <!-- Сюда JS будет рендерить список нод -->
         </div>
     </div>
+
+    <!-- Форма Ноды (Правая колонка) -->
+    <div class="editor-section">
+        <div class="form-header">
+            <h2 id="formTitle">Выберите коллекцию</h2>
+        </div>
+
+        <form id="collectionForm">
+            <input type="hidden" id="collectionId">
+
+            <div class="form-layout-grid">
+                <!-- Основные настройки -->
+                <div class="settings-column">
+                    <div class="form-grid">
+                        <div class="form-group form-group-name">
+                            <label>Название коллекции</label>
+                            <input type="text" id="name" class="form-control" required>
+                        </div>
+
+                        <div class="three-fields-row">
+                            <div class="form-group">
+                                <label>Позиция</label>
+                                <input type="number" id="position" class="form-control" value="0">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Языки</label>
+                                <input type="text" id="language" class="form-control" required value="en,ua,ru">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Нода</label>
+                                <select id="node_id" class="form-control">
+                                    <option value="0">Вне ноды</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group form-group-textarea">
+                            <label>Описание</label>
+                            <textarea id="description" class="form-control"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <br>
+                <div class="form-layout-grid">
+                    <div class="settings-column">
+                        <div class="form-group">
+                            <label>Schema коллекции</label>
+                            <div class="collection-field-list" id="collectionFieldList"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="editor-footer">
+                    <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
+                        Удалить коллекцию
+                    </button>
+                    <button type="submit" class="btn-save" id="saveBtn">Сохранить коллекцию</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
 </div>
 {% endblock %}
 
@@ -395,6 +391,7 @@
 
     let nodesLoaded = false;
     let cachedNodes = [];
+
     async function loadNodesSelect() {
         if (nodesLoaded) return;
         try {
