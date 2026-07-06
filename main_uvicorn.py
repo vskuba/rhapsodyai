@@ -27,7 +27,7 @@ from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.uvicorn.routers.chat import chat
-from src.uvicorn.routers import html
+from src.uvicorn.routers import dashboard
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.auth import auth as auth_router
 from src.uvicorn.routers.cronjob import cronjob
@@ -37,7 +37,7 @@ from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
 from src.uvicorn.routers.tool import tool
-from src.uvicorn.routers.workflow import workflow, workflow_step
+from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_variable
 from src.uvicorn.routers.user import user
 from src.uvicorn.routers.companion import companion
 
@@ -288,7 +288,7 @@ app.state.jinja2_template = Jinja2Templates(directory=jinja2_template_path)
 
 app.mount("/static", StaticFiles(directory=public_static_path), name="static")
 
-app.include_router(html.router, include_in_schema=False)
+app.include_router(dashboard.router, include_in_schema=False)
 app.include_router(chat.router)
 app.include_router(agent.router)
 app.include_router(auth_router.router, include_in_schema=False)
@@ -301,6 +301,7 @@ app.include_router(session.router, include_in_schema=False)
 app.include_router(node.router, include_in_schema=False)
 app.include_router(workflow.router, include_in_schema=False)
 app.include_router(workflow_step.router, include_in_schema=False)
+app.include_router(workflow_variable.router, include_in_schema=False)
 app.include_router(tool.router, include_in_schema=False)
 app.include_router(fact_collection.router, include_in_schema=False)
 app.include_router(companion.router, include_in_schema=False)
