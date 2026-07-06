@@ -202,7 +202,7 @@
         display: block;
     }
 
-    #userSelect, #agentSelect {
+    #agentSelect {
         width: 100%;
         height: 100%; /* Заполнит sidebar */
         border: 1px solid #ddd;
@@ -211,6 +211,14 @@
         outline: none;
         overflow-y: auto;
         padding: 0;
+    }
+
+    .header-block.user-select #userSelect {
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        background: white;
+        outline: none;
+        padding: 3px 6px;
     }
 
     /* --- СТИЛИ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ (Плоский список) --- */
@@ -334,8 +342,15 @@
 
         <!-- НОВАЯ ПАНЕЛЬ УПРАВЛЕНИЯ (Блоки 2, 3) -->
         <div class="chat-header">
-            <div class="header-block">
+            <div class="header-block user-select">
+                {% if request.session.get('role') == 'admin' %}
+                <label for="userSelect">Пользователь:</label>
+                <select id="userSelect">
+                    <option value="loading">Загрузка...</option>
+                </select>
+                {% else %}
                 <label>Пользователь: {{ request.session.get('username') }}</label>
+                {% endif %}
             </div>
 
             <div class="header-block session-current">
@@ -377,12 +392,6 @@
         </select>
     </div>
 
-    <div class="sidebar">
-        <div class="sidebar-label">Пользователь</div>
-        <select id="userSelect" size="10">
-            <option value="loading">Загрузка...</option>
-        </select>
-    </div>
 </div>
 {% endblock %}
 
@@ -391,6 +400,11 @@
 <script type="module">
     import {postData, getData, putData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
+
+    const CURRENT_USER_ROLE = "{{ request.session.get('role') }}";
+    const CURRENT_USER_ID = "{{ request.session.get('user_id') }}";
+    const CURRENT_USERNAME = "{{ request.session.get('username') }}";
+    const isAdmin = CURRENT_USER_ROLE === 'admin';
 
     const userSelect = document.getElementById('userSelect');
     const newSessionBtn = document.getElementById('newSessionBtn');
@@ -427,6 +441,16 @@
         }
     }
 
+    function getSelectedUserId() {
+        return isAdmin ? userSelect.value : CURRENT_USER_ID;
+    }
+
+    function getSelectedUsername() {
+        if (!isAdmin) return CURRENT_USERNAME;
+        const user = allUsers[userSelect.value];
+        return user ? user.username : null;
+    }
+
     function addMessage(text, role) {
         const div = document.createElement('div');
         div.className = `message ${role === 'user' ? 'user-msg' : 'ai-msg'}`;
@@ -444,18 +468,18 @@
         showLoading(true);
 
         try {
-            const selectedUserId = userSelect.value;
-            const selectedUser = allUsers[selectedUserId];
-            if (!selectedUser) {
+            const selectedUserId = getSelectedUserId();
+            const selectedUsername = getSelectedUsername();
+            if (!selectedUserId || !selectedUsername) {
                 alert("Пожалуйста, выберите пользователя.");
                 return;
             }
 
             // Получаем Companion ID
-            const compName = `user_${selectedUser.username}`;
+            const compName = `user_${selectedUsername}`;
             const compData = await postData('/companion', {
                 name: compName,
-                title: selectedUser.username
+                title: selectedUsername
             });
             const companionId = compData.result.id;
 
@@ -602,7 +626,7 @@
 
     async function getAgentSessionLastEntry() {
         const agentId = agentSelect.value;
-        const userId = userSelect.value;
+        const userId = getSelectedUserId();
 
         if (!agentId || !userId) return;
 
@@ -679,14 +703,13 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
         // 1. Инициализация агентов
-        await Promise.all([
-            loadNodes(),
-            loadUsers(),
-        ]);
+        const initTasks = [loadNodes()];
+        if (isAdmin) initTasks.push(loadUsers());
+        await Promise.all(initTasks);
 
-        // Загружаем агентов для первого пользователя в списке
-        if (userSelect.value) {
-            await loadAgents(userSelect.value);
+        // Загружаем агентов для выбранного (или текущего) пользователя
+        if (getSelectedUserId()) {
+            await loadAgents(getSelectedUserId());
         }
 
         const loadSettings = async () => {
@@ -724,15 +747,17 @@
 
         agentSelect.addEventListener('change', getAgentSessionLastEntry);
 
-        userSelect.addEventListener('change', async () => {
-            const userId = userSelect.value;
+        if (isAdmin) {
+            userSelect.addEventListener('change', async () => {
+                const userId = userSelect.value;
 
-            // Перезагружаем агентов для выбранного пользователя (с учетом роли)
-            await loadAgents(userId);
+                // Перезагружаем агентов для выбранного пользователя (с учетом роли)
+                await loadAgents(userId);
 
-            // Получаем последнюю сессию и историю сообщений (включая greeting) для выбранного агента и пользователя
-            await getAgentSessionLastEntry();
-        });
+                // Получаем последнюю сессию и историю сообщений (включая greeting) для выбранного агента и пользователя
+                await getAgentSessionLastEntry();
+            });
+        }
 
         newSessionBtn.addEventListener('click', startNewSession);
     });

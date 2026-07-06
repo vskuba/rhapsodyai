@@ -351,6 +351,83 @@ class TestAgentCRUD:
         await client.delete(f"/agent/{agent_b_id}")
         await client.delete(f"/agent/{agent_c_id}")
 
+    async def test_agent_list_get_hides_other_role_agents_for_nonadmin_session(self, client: httpx.AsyncClient):
+        """Regression test: GET /agent/list called without an explicit user_id (as the
+        admin/agent.html page does) must filter by the *caller's own session role*, not
+        return everything unfiltered. Previously a plain 'user' session would see agents
+        restricted to role_id == 'admin'."""
+        # 1. Create a non-admin user with a real password (so it can log in) and node access
+        user_res = await client.post(
+            "/user",
+            json={
+                "username": "test_role_filter_user",
+                "email": "test_role_filter_user@example.com",
+                "role": "user",
+                "password": "testpass123",
+                "llm_id": None,
+                "node_ids": [1, 2],
+            },
+        )
+        assert user_res.status_code == 200
+        user_id = user_res.json()["result"]["id"]
+
+        # 2. Create an admin-only agent and a user-role agent, both on a node the user has access to
+        admin_agent_res = await client.post(
+            "/agent",
+            json={
+                "name": f"{TEST_AGENT_PREFIX}role_admin",
+                "title": "Admin Only Agent",
+                "greeting": "",
+                "prompt_system": "",
+                "node_id": 1,
+                "role_id": 1,  # 'admin' role
+                "llm_id": None,
+                "workflow_id": None,
+                "description": "",
+            },
+        )
+        assert admin_agent_res.status_code == 200
+        admin_agent_id = admin_agent_res.json()["result"]["id"]
+
+        user_agent_res = await client.post(
+            "/agent",
+            json={
+                "name": f"{TEST_AGENT_PREFIX}role_user",
+                "title": "User Role Agent",
+                "greeting": "",
+                "prompt_system": "",
+                "node_id": 1,
+                "role_id": 2,  # 'user' role
+                "llm_id": None,
+                "workflow_id": None,
+                "description": "",
+            },
+        )
+        assert user_agent_res.status_code == 200
+        user_agent_id = user_agent_res.json()["result"]["id"]
+
+        try:
+            # 3. Log in as the non-admin user in a separate session and call GET /agent/list
+            #    exactly like admin/agent.html does: no find_by, no user_id.
+            async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as user_client:
+                login_res = await user_client.post(
+                    "/auth/login",
+                    json={"username": "test_role_filter_user", "password": "testpass123"},
+                )
+                assert login_res.status_code == 200
+
+                list_res = await user_client.get("/agent/list")
+                assert list_res.status_code == 200
+                agent_ids = [a["id"] for a in list_res.json()["result"]]
+
+                assert admin_agent_id not in agent_ids
+                assert user_agent_id in agent_ids
+        finally:
+            # Clean up (back on the admin session)
+            await client.delete(f"/user/{user_id}")
+            await client.delete(f"/agent/{admin_agent_id}")
+            await client.delete(f"/agent/{user_agent_id}")
+
     async def test_delete_nonexistent_agent(self, client: httpx.AsyncClient):
         """Test deleting a non-existent agent returns error."""
         response = await client.delete("/agent/999999")

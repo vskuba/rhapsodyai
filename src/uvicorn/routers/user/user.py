@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request, Depends, Header, HTTPException
 import uuid
+import bcrypt
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.user_repository import UserRepository
@@ -66,11 +67,17 @@ async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async
 @router.post("/user")
 async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_CREATE]))):
     repo = UserRepository()
-    user_id = await repo.add({
+    insert_data = {
         "username": data.get("username"),
         "email": data.get("email"),
         "role": data.get("role", "user")
-    })
+    }
+
+    password = data.get("password")
+    if password:
+        insert_data["password_hash"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    user_id = await repo.add(insert_data)
 
     # Insert user_llm relations if llm_ids or llm_id are passed
     llm_ids = data.get("llm_ids")
