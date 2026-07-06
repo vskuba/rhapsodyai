@@ -20,6 +20,12 @@ class AuthPermission(str, Enum):
     WORKFLOW_UPDATE = "workflow:update"
     WORKFLOW_DELETE = "workflow:delete"
 
+    # Workflow variable permissions
+    WORKFLOW_VARIABLE_VIEW = "workflow_variable:view"
+    WORKFLOW_VARIABLE_CREATE = "workflow_variable:create"
+    WORKFLOW_VARIABLE_UPDATE = "workflow_variable:update"
+    WORKFLOW_VARIABLE_DELETE = "workflow_variable:delete"
+
     # Node permissions
     NODE_VIEW = "node:view"
     NODE_CREATE = "node:create"
