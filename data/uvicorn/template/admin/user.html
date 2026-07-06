@@ -261,113 +261,110 @@
     }
 
 </style>
-
 {% endblock %}
 
 {% block content %}
-<div class="page-content">
-    <div class="main-wrapper">
-        <div class="editor-container">
+<div class="editor-container">
 
-            <!-- Список Нод (Левая колонка) -->
-            <div class="agents-sidebar">
-                <div class="sidebar-header">
-                    <button class="btn-create" id="createNewUser">+ Создать пользователя</button>
-                </div>
-                <div class="agent-list" id="userList">
-                    <!-- Сюда JS будет рендерить список нод -->
-                </div>
-            </div>
-
-            <!-- Форма Ноды (Правая колонка) -->
-            <div class="editor-section">
-                <div class="form-header">
-                    <h2 id="formTitle">Выберите пользователя</h2>
-                </div>
-
-                <form id="userForm">
-                    <input type="hidden" id="userId">
-
-                    <div class="form-layout-grid">
-                        <!-- Основные настройки -->
-                        <div class="settings-column">
-                            <div class="form-grid">
-                                <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
-                                    <div class="form-group" style="flex: 1;">
-                                        <label>Username</label>
-                                        <input type="text" id="username" class="form-control" required>
-                                    </div>
-                                    <div class="form-group" style="flex: 1;">
-                                        <label>Email</label>
-                                        <input type="text" id="email" class="form-control" value="0">
-                                    </div>
-                                    <div class="form-group" style="flex: 1;">
-                                        <label>Role</label>
-                                        <select id="role" class="form-control">
-                                            <option value="user">user</option>
-                                            <option value="admin">admin</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
-                                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                                        <label>Модели LLM (отметьте и перетащите для сортировки)</label>
-                                        <div id="llm_list_sortable" style="height: 180px; overflow-y: auto; padding: 5px; border: 1px solid #cbd5e0; border-radius: 4px; background: #fff; box-sizing: border-box;">
-                                            <!-- Items will be dynamically generated here -->
-                                        </div>
-                                    </div>
-
-                                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                                        <label>Доступные ноды</label>
-                                        <select id="user_nodes_select" class="form-control" multiple size="10" style="height: 180px;">
-                                            <!-- Options will be rendered here by JS -->
-                                        </select>
-                                    </div>
-                                </div>
-
-
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="editor-footer">
-                        <!-- Кнопка удаления -->
-                        <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
-                            Удалить пользователя
-                        </button>
-                        <button type="submit" class="btn-save" id="saveBtn">Сохранить пользователя</button>
-                    </div>
-
-                    <!-- Секция токенов доступа (доступна только при редактировании существующего пользователя) -->
-                    <div id="tokensSection" style="grid-column: span 2; margin-top: 30px; display: none;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f4f4f9; padding-bottom: 10px; margin-bottom: 15px;">
-                            <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">
-                                🔑 Токены доступа</h3>
-                            <button type="button" class="btn-save" id="generateTokenBtn"
-                                    style="padding: 6px 15px; font-size: 12px; height: auto;">Сгенерировать новый ключ
-                            </button>
-                        </div>
-                        <table class="tokens-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-                            <thead>
-                            <tr style="background-color: #fcfcfc; border-bottom: 1px solid #eee;">
-                                <th style="text-align: left; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold;">
-                                    Токен
-                                </th>
-                                <th style="text-align: right; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; width: 100px;">
-                                    Действие
-                                </th>
-                            </tr>
-                            </thead>
-                            <tbody id="tokensList">
-                            <!-- JS will render tokens here -->
-                            </tbody>
-                        </table>
-                    </div>
-                </form>
-            </div>
-
+    <!-- Список Нод (Левая колонка) -->
+    <div class="agents-sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="createNewUser">+ Создать пользователя</button>
+        </div>
+        <div class="agent-list" id="userList">
+            <!-- Сюда JS будет рендерить список нод -->
         </div>
     </div>
+
+    <!-- Форма Ноды (Правая колонка) -->
+    <div class="editor-section">
+        <div class="form-header">
+            <h2 id="formTitle">Выберите пользователя</h2>
+        </div>
+
+        <form id="userForm">
+            <input type="hidden" id="userId">
+
+            <div class="form-layout-grid">
+                <!-- Основные настройки -->
+                <div class="settings-column">
+                    <div class="form-grid">
+                        <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Username</label>
+                                <input type="text" id="username" class="form-control" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Email</label>
+                                <input type="text" id="email" class="form-control" value="0">
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Role</label>
+                                <select id="role" class="form-control">
+                                    <option value="user">user</option>
+                                    <option value="admin">admin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
+                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                <label>Модели LLM (отметьте и перетащите для сортировки)</label>
+                                <div id="llm_list_sortable"
+                                     style="height: 180px; overflow-y: auto; padding: 5px; border: 1px solid #cbd5e0; border-radius: 4px; background: #fff; box-sizing: border-box;">
+                                    <!-- Items will be dynamically generated here -->
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                <label>Доступные ноды</label>
+                                <select id="user_nodes_select" class="form-control" multiple size="10"
+                                        style="height: 180px;">
+                                    <!-- Options will be rendered here by JS -->
+                                </select>
+                            </div>
+                        </div>
+
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="editor-footer">
+                <!-- Кнопка удаления -->
+                <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
+                    Удалить пользователя
+                </button>
+                <button type="submit" class="btn-save" id="saveBtn">Сохранить пользователя</button>
+            </div>
+
+            <!-- Секция токенов доступа (доступна только при редактировании существующего пользователя) -->
+            <div id="tokensSection" style="grid-column: span 2; margin-top: 30px; display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f4f4f9; padding-bottom: 10px; margin-bottom: 15px;">
+                    <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">
+                        🔑 Токены доступа</h3>
+                    <button type="button" class="btn-save" id="generateTokenBtn"
+                            style="padding: 6px 15px; font-size: 12px; height: auto;">Сгенерировать новый ключ
+                    </button>
+                </div>
+                <table class="tokens-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <thead>
+                    <tr style="background-color: #fcfcfc; border-bottom: 1px solid #eee;">
+                        <th style="text-align: left; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold;">
+                            Токен
+                        </th>
+                        <th style="text-align: right; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; width: 100px;">
+                            Действие
+                        </th>
+                    </tr>
+                    </thead>
+                    <tbody id="tokensList">
+                    <!-- JS will render tokens here -->
+                    </tbody>
+                </table>
+            </div>
+        </form>
+    </div>
+
 </div>
 {% endblock %}
 
@@ -401,7 +398,7 @@
     function makeLlmListDraggable(container) {
         let dragSrcEl = null;
 
-        container.addEventListener('dragstart', function(e) {
+        container.addEventListener('dragstart', function (e) {
             const item = e.target.closest('.llm-sortable-item');
             if (!item) return;
             dragSrcEl = item;
@@ -409,27 +406,27 @@
             item.style.opacity = '0.4';
         });
 
-        container.addEventListener('dragover', function(e) {
+        container.addEventListener('dragover', function (e) {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
             return false;
         });
 
-        container.addEventListener('dragenter', function(e) {
+        container.addEventListener('dragenter', function (e) {
             const item = e.target.closest('.llm-sortable-item');
             if (item && item !== dragSrcEl) {
                 item.style.border = '1px dashed #4299e1';
             }
         });
 
-        container.addEventListener('dragleave', function(e) {
+        container.addEventListener('dragleave', function (e) {
             const item = e.target.closest('.llm-sortable-item');
             if (item) {
                 item.style.border = '1px solid #e2e8f0';
             }
         });
 
-        container.addEventListener('drop', function(e) {
+        container.addEventListener('drop', function (e) {
             e.stopPropagation();
             e.preventDefault();
             const targetItem = e.target.closest('.llm-sortable-item');
@@ -441,7 +438,7 @@
             return false;
         });
 
-        container.addEventListener('dragend', function(e) {
+        container.addEventListener('dragend', function (e) {
             const item = e.target.closest('.llm-sortable-item');
             if (item) {
                 item.style.opacity = '1';
@@ -480,7 +477,7 @@
                 div.setAttribute('draggable', 'true');
                 div.setAttribute('data-id', g.id);
                 div.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; margin-bottom: 4px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 4px; cursor: move; user-select: none;";
-                
+
                 div.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <input type="checkbox" class="llm-checkbox" style="cursor: pointer;">
@@ -566,7 +563,7 @@
             const sortableContainer = document.getElementById('llm_list_sortable');
             if (sortableContainer) {
                 const items = Array.from(sortableContainer.querySelectorAll('.llm-sortable-item'));
-                
+
                 // First, check/uncheck checkboxes
                 items.forEach(item => {
                     const chk = item.querySelector('.llm-checkbox');

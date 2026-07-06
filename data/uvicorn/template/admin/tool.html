@@ -276,85 +276,81 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-content">
-    <div class="main-wrapper">
-        <div class="editor-container">
+<div class="editor-container">
 
-            <!-- Сайдбар со списком инструментов -->
-            <div class="agents-sidebar">
-                <div class="sidebar-header">
-                    <button class="btn-create" id="syncToolsBtn">🔄 Синхронизировать</button>
-                </div>
-                <div class="agent-list" id="toolList">
-                    <!-- Заполняется динамически через JS -->
-                </div>
-            </div>
-
-            <!-- Зона детального просмотра инструмента -->
-            <div class="editor-section">
-                <div class="form-header">
-                    <h2 id="viewTitle">Выберите инструмент из списка</h2>
-                </div>
-
-                <div class="form-layout-grid" id="detailsContainer" style="display: none;">
-                    <!-- Левая колонка: Информация и аргументы выстроены вертикально -->
-                    <div class="settings-column">
-
-                        <div class="form-group">
-                            <label>Входящие аргументы (`input`)</label>
-                            <div id="viewArgs" class="readonly-control"
-                                 style="min-height: 120px; background: #fafafa; font-family: monospace; font-size: 12px;">
-                                <!-- Заполняется динамически из JS -->
-                            </div>
-                        </div>
-
-                        <!-- Новый блок для отображения типа результата -->
-                        <div class="form-group">
-                            <label>Результат (`output`)</label>
-                            <div id="viewOutput" class="readonly-control"
-                                 style="background: #fafafa; font-family: monospace; font-size: 13px; font-weight: 600; color: #27ae60;">
-                                <!-- Заполняется динамически из JS -->
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <!-- Правая колонка: Описание / Документация -->
-                    <div class="prompt-column">
-                        <div class="form-group" style="height: 100%; display: flex; flex-direction: column;">
-                            <label>Описание инструмента (`description`)</label>
-                            <div id="viewDescription" class="readonly-control readonly-textarea"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div>
-                    <div class="form-group" style="margin-top: 20px;">
-                        <label>Тест инструмента</label>
-                        <div class="tool-test-container"
-                             style="background: #fdfefe; border: 1px solid #e2e8f0; padding: 15px; border-radius: 6px;">
-
-                            <!-- Сюда JS будет вставлять поля ввода для аргументов -->
-                            <div id="testInputsContainer" style="margin-bottom: 15px;"></div>
-
-                            <!-- Кнопка запуска -->
-                            <button type="button" id="btnRunToolTest" class="btn btn-primary">
-                                Запустить тест >
-                            </button>
-
-                            <!-- Блок вывода результата -->
-                            <div style="margin-top: 15px;">
-                                <label style="font-size: 11px; text-transform: uppercase; color: #7f8c8d;">Результат
-                                    выполнения:</label>
-                                <pre id="testOutputResult">Нажмите кнопку для запуска теста...</pre>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
+    <!-- Сайдбар со списком инструментов -->
+    <div class="agents-sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="syncToolsBtn">🔄 Синхронизировать</button>
+        </div>
+        <div class="agent-list" id="toolList">
+            <!-- Заполняется динамически через JS -->
         </div>
     </div>
+
+    <!-- Зона детального просмотра инструмента -->
+    <div class="editor-section">
+        <div class="form-header">
+            <h2 id="viewTitle">Выберите инструмент из списка</h2>
+        </div>
+
+        <div class="form-layout-grid" id="detailsContainer" style="display: none;">
+            <!-- Левая колонка: Информация и аргументы выстроены вертикально -->
+            <div class="settings-column">
+
+                <div class="form-group">
+                    <label>Входящие аргументы (`input`)</label>
+                    <div id="viewArgs" class="readonly-control"
+                         style="min-height: 120px; background: #fafafa; font-family: monospace; font-size: 12px;">
+                        <!-- Заполняется динамически из JS -->
+                    </div>
+                </div>
+
+                <!-- Новый блок для отображения типа результата -->
+                <div class="form-group">
+                    <label>Результат (`output`)</label>
+                    <div id="viewOutput" class="readonly-control"
+                         style="background: #fafafa; font-family: monospace; font-size: 13px; font-weight: 600; color: #27ae60;">
+                        <!-- Заполняется динамически из JS -->
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Правая колонка: Описание / Документация -->
+            <div class="prompt-column">
+                <div class="form-group" style="height: 100%; display: flex; flex-direction: column;">
+                    <label>Описание инструмента (`description`)</label>
+                    <div id="viewDescription" class="readonly-control readonly-textarea"></div>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <div class="form-group" style="margin-top: 20px;">
+                <label>Тест инструмента</label>
+                <div class="tool-test-container"
+                     style="background: #fdfefe; border: 1px solid #e2e8f0; padding: 15px; border-radius: 6px;">
+
+                    <!-- Сюда JS будет вставлять поля ввода для аргументов -->
+                    <div id="testInputsContainer" style="margin-bottom: 15px;"></div>
+
+                    <!-- Кнопка запуска -->
+                    <button type="button" id="btnRunToolTest" class="btn btn-primary">
+                        Запустить тест >
+                    </button>
+
+                    <!-- Блок вывода результата -->
+                    <div style="margin-top: 15px;">
+                        <label style="font-size: 11px; text-transform: uppercase; color: #7f8c8d;">Результат
+                            выполнения:</label>
+                        <pre id="testOutputResult">Нажмите кнопку для запуска теста...</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}
 
