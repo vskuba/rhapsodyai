@@ -4,24 +4,28 @@ USE `project`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
-DROP TABLE IF EXISTS `user_access_token`;
-DROP TABLE IF EXISTS `user_node`;
-DROP TABLE IF EXISTS `user_llm`;
-DROP TABLE IF EXISTS `tool`;
-DROP TABLE IF EXISTS `tool_group`;
-DROP TABLE IF EXISTS `workflow_step`;
-DROP TABLE IF EXISTS `workflow_step_type`;
-DROP TABLE IF EXISTS `workflow_variable`;
-DROP TABLE IF EXISTS `workflow`;
-DROP TABLE IF EXISTS `fact`;
-DROP TABLE IF EXISTS `fact_collection`;
 DROP TABLE IF EXISTS `agent_session`;
 DROP TABLE IF EXISTS `agent`;
-DROP TABLE IF EXISTS `node`;
-DROP TABLE IF EXISTS `llm`;
+DROP TABLE IF EXISTS `fact`;
+DROP TABLE IF EXISTS `fact_collection`;
+DROP TABLE IF EXISTS `companion`;
+DROP TABLE IF EXISTS `agent_workflow_variable_role`;
+DROP TABLE IF EXISTS `agent_workflow_variable`;
+DROP TABLE IF EXISTS `agent_workflow_step`;
+DROP TABLE IF EXISTS `agent_workflow_step_type`;
+DROP TABLE IF EXISTS `agent_workflow`;
+DROP TABLE IF EXISTS `tool`;
+DROP TABLE IF EXISTS `tool_group`;
+DROP TABLE IF EXISTS `session`;
+DROP TABLE IF EXISTS `role_node`;
+DROP TABLE IF EXISTS `user_llm`;
+DROP TABLE IF EXISTS `user_node`;
 DROP TABLE IF EXISTS `setting`;
 DROP TABLE IF EXISTS `role`;
+DROP TABLE IF EXISTS `node`;
+DROP TABLE IF EXISTS `user_access_token`;
 DROP TABLE IF EXISTS `user`;
+DROP TABLE IF EXISTS `llm`;
 
 -- Включаем проверки обратно
 SET FOREIGN_KEY_CHECKS = 1;
@@ -50,6 +54,12 @@ CREATE TABLE `user_access_token` (
     CONSTRAINT `fk_user_access_token_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `node` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(50) NOT NULL,
+    `position` INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Таблица ролей
 CREATE TABLE `role` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -67,12 +77,6 @@ CREATE TABLE `setting` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ALTER TABLE setting ADD UNIQUE INDEX idx_key_user (`key`, user_id);
 
-CREATE TABLE `node` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(50) NOT NULL,
-    `position` INT NOT NULL DEFAULT 0
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 CREATE TABLE `user_node` (
     `user_id` INT NOT NULL,
     `node_id` INT NOT NULL,
@@ -89,6 +93,14 @@ CREATE TABLE `user_llm` (
     PRIMARY KEY (`user_id`, `llm_id`),
     CONSTRAINT `fk_user_llm_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_user_llm_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `role_node` (
+    `role_id` INT NOT NULL,
+    `node_id` INT NOT NULL,
+    PRIMARY KEY (`role_id`, `node_id`),
+    CONSTRAINT `fk_role_node_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_role_node_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `session` (
@@ -149,7 +161,6 @@ CREATE TABLE `agent_workflow_step` (
     CONSTRAINT `workflow_step_workflow_step_type` FOREIGN KEY (`type_id`) REFERENCES `agent_workflow_step_type` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-
 CREATE TABLE `agent_workflow_variable` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `node_id` INT NULL,
@@ -162,7 +173,6 @@ CREATE TABLE `agent_workflow_variable` (
     CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-
 CREATE TABLE `agent_workflow_variable_role` (
     `variable_id` INT NOT NULL,
     `role_id` INT NOT NULL,
@@ -170,7 +180,6 @@ CREATE TABLE `agent_workflow_variable_role` (
     CONSTRAINT `fk_workflow_variable` FOREIGN KEY (`variable_id`) REFERENCES `agent_workflow_variable` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_workflow_variable_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 
 CREATE TABLE `companion` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
