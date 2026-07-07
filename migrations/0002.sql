@@ -405,7 +405,8 @@ INSERT INTO `agent_session` (`id`, `session_uuid`, `request_uuid`, `llm_id`, `ag
 
 INSERT INTO `user_node` (`user_id`, `node_id`) VALUES
 (1, 2),
-(2, 2);
+(2, 2),
+(4, 2);
 
 --
 
