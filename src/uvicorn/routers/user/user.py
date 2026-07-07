@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, Header, HTTPException
+from fastapi import APIRouter, Request, Depends
 import uuid
 import bcrypt
 

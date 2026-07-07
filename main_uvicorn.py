@@ -40,6 +40,7 @@ from src.uvicorn.routers.tool import tool
 from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_variable
 from src.uvicorn.routers.user import user
 from src.uvicorn.routers.companion import companion
+from src.uvicorn.routers.role import role
 
 
 @asynccontextmanager
@@ -299,6 +300,7 @@ app.include_router(setting.router, include_in_schema=False)
 app.include_router(llm.router, include_in_schema=False)
 app.include_router(session.router, include_in_schema=False)
 app.include_router(node.router, include_in_schema=False)
+app.include_router(role.router, include_in_schema=False)
 app.include_router(workflow.router, include_in_schema=False)
 app.include_router(workflow_step.router, include_in_schema=False)
 app.include_router(workflow_variable.router, include_in_schema=False)
