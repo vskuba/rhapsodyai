@@ -11,7 +11,11 @@ router = APIRouter()
 async def llm_list(db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
     async with db:
         sql = """
-            SELECT * FROM llm ORDER BY name ASC
+            SELECT l.* 
+            FROM `llm` l
+            JOIN `user_llm` ul ON l.id = ul.llm_id
+            WHERE ul.user_id = %s
+            ORDER BY ul.rate_limit_at ASC, ul.position ASC
         """
-        await db.execute(sql)
+        await db.execute(sql, (user.user_id,))
         return {"result": await db.fetchall()}

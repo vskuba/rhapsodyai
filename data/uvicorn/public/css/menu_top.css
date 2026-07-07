@@ -8,7 +8,7 @@ nav {
 .top-nav {
     max-width: 1325px;
     width: 100%;
-    margin: 0 auto;
+    margin: 0 auto 0 0;
     display: flex;
     justify-content: flex-start;
     align-items: flex-start;
@@ -22,7 +22,7 @@ nav {
     display: flex;
     flex-direction: column;
     align-items: flex-start; /* Выравнивание всего блока по правому краю */
-    min-width: 170px;      /* Немного увеличил ширину для отступа */
+    min-width: 170px; /* Немного увеличил ширину для отступа */
 }
 
 /* 4. Заголовок (Чат, Инструменты) */
@@ -72,4 +72,9 @@ nav {
 
 .submenu li a:hover {
     color: #3498db;
+}
+
+.logo {
+    margin: 20px 40px 0;
+    float: left;
 }
