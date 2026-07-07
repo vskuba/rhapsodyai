@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Роли{% endblock %}
+
+{% block head %}
+<style>
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
+
+    .sidebar {
+        width: 260px;
+        background: #fafafa;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    .item-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .item {
+        padding: 10px 15px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+    }
+
+    .item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+        font-weight: 600;
+    }
+
+    .editor-section {
+        flex: 1;
+        padding: 20px 40px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 20px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .form-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .editor-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 12px 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .btn-delete {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 11px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+        margin-right: auto;
+    }
+
+    .btn-delete:hover {
+        background: #e74c3c;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-container">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="createNewRole">+ Создать роль</button>
+        </div>
+        <div class="item-list" id="roleList"></div>
+    </div>
+
+    <div class="editor-section">
+        <div class="form-header">
+            <h2 id="formTitle">Выберите роль</h2>
+        </div>
+        <form id="roleForm">
+            <input type="hidden" id="roleId">
+            <div class="form-group">
+                <label>Имя роли</label>
+                <input type="text" id="name" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Ноды</label>
+                <select id="nodes_select" class="form-control" multiple size="5"></select>
+            </div>
+            <div class="editor-footer">
+                <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
+                <button type="submit" class="btn-save" id="saveBtn">Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const roleListContainer = document.getElementById('roleList');
+    const roleForm = document.getElementById('roleForm');
+    const saveBtn = document.getElementById('saveBtn');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const createNewRoleBtn = document.getElementById('createNewRole');
+
+    async function initRolesManager(selectedId = null) {
+        try {
+            const [rolesRes, nodesRes] = await Promise.all([
+                getData('/role/list'),
+                getData('/node/list')
+            ]);
+
+            const roles = rolesRes.result;
+            const nodes = nodesRes.result;
+
+            renderRoleList(roles, selectedId);
+            renderNodeSelect(nodes);
+            
+            // If we have a selectedId, trigger its load
+            if (selectedId) {
+                const item = roleListContainer.querySelector(`.item[data-id="${selectedId}"]`);
+                if (item) item.click();
+            }
+        } catch (e) {
+            console.error(e);
+            showNotification('Ошибка загрузки данных', 'error');
+        }
+    }
+
+    function renderRoleList(roles, selectedId) {
+        roleListContainer.innerHTML = '';
+        roles.forEach(role => {
+            const div = document.createElement('div');
+            div.className = 'item' + (role.id === selectedId ? ' active' : '');
+            div.setAttribute('data-id', role.id);
+            div.textContent = role.name;
+            div.onclick = () => selectRole(role.id, div);
+            roleListContainer.appendChild(div);
+        });
+    }
+
+    function renderNodeSelect(nodes) {
+        const select = document.getElementById('nodes_select');
+        select.innerHTML = '';
+        nodes.forEach(node => {
+            const opt = document.createElement('option');
+            opt.value = node.id;
+            opt.textContent = node.name;
+            select.appendChild(opt);
+        });
+    }
+
+    async function selectRole(id, element) {
+        document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        const data = await getData(`/role/${id}`);
+        const role = data.result;
+
+        document.getElementById('roleId').value = role.id;
+        document.getElementById('name').value = role.name;
+
+        const nodeIds = role.node_ids || [];
+        const select = document.getElementById('nodes_select');
+        Array.from(select.options).forEach(opt => {
+            opt.selected = nodeIds.includes(parseInt(opt.value));
+        });
+
+        document.getElementById('formTitle').textContent = `Редактирование: ${role.name}`;
+        deleteBtn.style.display = 'block';
+    }
+
+    createNewRoleBtn.onclick = () => {
+        document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+        roleForm.reset();
+        document.getElementById('roleId').value = '';
+        document.getElementById('formTitle').textContent = 'Создание новой роли';
+        deleteBtn.style.display = 'none';
+    };
+
+    roleForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('roleId').value;
+        const payload = {
+            name: document.getElementById('name').value,
+            node_ids: Array.from(document.getElementById('nodes_select').selectedOptions).map(o => parseInt(o.value))
+        };
+
+        let targetId = id;
+        if (id) {
+            await putData(`/role/${id}`, payload);
+            showNotification('Роль обновлена', 'success');
+        } else {
+            const res = await postData('/role', payload);
+            showNotification('Роль создана', 'success');
+            if (res && res.result && res.result.id) {
+                targetId = res.result.id;
+            }
+        }
+        await initRolesManager(targetId);
+    };
+
+    deleteBtn.onclick = async () => {
+        const id = document.getElementById('roleId').value;
+        if (confirm('Удалить роль?')) {
+            await deleteData(`/role/${id}`);
+            showNotification('Роль удалена', 'success');
+            createNewRoleBtn.click();
+            initRolesManager();
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => initRolesManager());
+</script>
+{% endblock %}
