@@ -2,7 +2,7 @@ from fastapi import HTTPException, Request, status, Depends
 
 from logging_.logging_ import logger_info
 from src.auth.auth_permission import AuthPermission
-from src.auth.auth_role import AUTH_ROLE_PERMISSIONS
+from src.auth.auth_role import AUTH_ROLE_PERMISSIONS, AUTH_PERMISSIONS_DEFAULT
 from src.auth.auth_session import AuthSession
 
 
@@ -18,7 +18,7 @@ class AuthChecker:
         if current_user.role == "admin":
             return current_user
 
-        user_permissions = AUTH_ROLE_PERMISSIONS.get(current_user.role, [])
+        user_permissions = AUTH_ROLE_PERMISSIONS.get(current_user.role, AUTH_PERMISSIONS_DEFAULT)
 
         # 2. Проверяем, есть ли у пользователя ВСЕ необходимые для эндпоинта права
         for perm in self.required_permissions:
@@ -33,9 +33,9 @@ class AuthChecker:
 
 async def get_current_user(request: Request) -> AuthSession:
     """Extract user from session cookie or X-API-KEY header."""
-    user_id = request.session.get("user_id")
-    username = request.session.get("username")
-    role = request.session.get("role")
+    user_id = request.session.get("user_id", 0)
+    username = request.session.get("username", '')
+    role = request.session.get("role", '')
 
     if user_id and username and role:
         return AuthSession(user_id=user_id, username=username, role=role)
@@ -56,7 +56,12 @@ async def get_current_user(request: Request) -> AuthSession:
             )
             row = await db.fetchone()
             if row:
-                return AuthSession(user_id=row["user_id"], username=row["username"], role=row["role"])
+                user_id = row["user_id"]
+                role = row["role"]
+                if user_id == 1: # Если пользователь с ID 1, то он admin
+                    role = "admin"
+
+                return AuthSession(user_id=user_id, username=row["username"], role=role)
             else:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

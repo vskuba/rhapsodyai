@@ -28,17 +28,22 @@ async def login(request: Request, data: dict):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Create session
-    request.session["user_id"] = user['id']
+    user_id = user['id']
+    role = user['role']
+    if user_id == 1:  # Если пользователь с ID 1, то он админ
+        role = "admin"
+
+    request.session["user_id"] = user_id
     request.session["username"] = user['username']
-    request.session["role"] = user['role']
+    request.session["role"] = role
 
     return {
         "message": "Успешный вход! Сессия создана.",
         "user": {
-            "id": user['id'],
+            "id": user_id,
             "username": user['username'],
             "email": user['email'],
-            "role": user['role']
+            "role": role
         }
     }
 
@@ -57,7 +62,7 @@ async def me(request: Request):
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, username, email, role FROM `user` WHERE id = %s",
+            "SELECT u.id, u.username, u.email, r.name as role FROM `user` u LEFT JOIN role r ON r.id = u.role_id WHERE u.id = %s",
             (user_id,)
         )
         user = await db.fetchone()
@@ -94,7 +99,7 @@ async def update_me(request: Request, data: dict):
         )
 
         await db.execute(
-            "SELECT id, username, email, role FROM `user` WHERE id = %s",
+            "SELECT u.id, u.username, u.email, r.name as role FROM `user` u LEFT JOIN role r ON r.id = u.role_id WHERE u.id = %s",
             (user_id,)
         )
         updated_user = await db.fetchone()
