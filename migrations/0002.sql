@@ -20,9 +20,17 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 
 --
 
-INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role`, `created_at`) VALUES
-(1, 'user1', 'user1@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 'admin', '2026-04-26 09:17:35'), -- Password: admin123
-(2, 'user2', 'user2@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 'user', '2026-04-26 09:17:35'); -- Password: user123
+INSERT INTO `role` (`id`, `name`) VALUES
+(1, 'admin'),
+(2, 'manager_dating'),
+(3, 'manager_cashier');
+
+--
+
+INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `created_at`) VALUES
+(1, 'admin', 'admin@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 1, '2026-04-26 09:17:35'), -- Password: admin123
+(2, 'lilia', 'lilia@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 2, '2026-04-26 09:17:35'), -- Password: user123
+(3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35'); -- Password: user123
 
 --
 
@@ -60,12 +68,6 @@ INSERT INTO `companion` (`id`, `name`, `title`) VALUES
 
 --
 
-INSERT INTO `role` (`id`, `name`) VALUES
-(1, 'admin'),
-(2, 'user'),
-(3, 'moderator');
-
---
 
 INSERT INTO `setting` (`id`, `key`, `user_id`, `value`) VALUES
 (4, 'llm_active', 1, 'groq:openai/gpt-oss-120b');
@@ -78,6 +80,12 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 (3, 'Soko', 0),
 (4, 'Chat', -1),
 (5, 'Test', -2);
+
+--
+
+INSERT INTO `role_node` (`role_id`, `node_id`) VALUES
+(3, 1),
+(2, 2);
 
 --
 

@@ -21,10 +21,10 @@ DROP TABLE IF EXISTS `role_node`;
 DROP TABLE IF EXISTS `user_llm`;
 DROP TABLE IF EXISTS `user_node`;
 DROP TABLE IF EXISTS `setting`;
-DROP TABLE IF EXISTS `role`;
 DROP TABLE IF EXISTS `node`;
 DROP TABLE IF EXISTS `user_access_token`;
 DROP TABLE IF EXISTS `user`;
+DROP TABLE IF EXISTS `role`;
 DROP TABLE IF EXISTS `llm`;
 
 -- Включаем проверки обратно
@@ -36,14 +36,22 @@ CREATE TABLE `llm` (
     `name` CHAR(50) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Таблица ролей
+CREATE TABLE `role` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` CHAR(20) NOT NULL,
+    UNIQUE INDEX `ux_role_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Таблица пользователей
 CREATE TABLE `user` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `username` CHAR(50) NOT NULL,
     `email` CHAR(50) NOT NULL,
     `password_hash` CHAR(100) NOT NULL,
-    `role` CHAR(20) NOT NULL DEFAULT 'user',
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+    `role_id` INT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT `fk_user_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица токенов доступа пользователей
@@ -58,13 +66,6 @@ CREATE TABLE `node` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
     `position` INT NOT NULL DEFAULT 0
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Таблица ролей
-CREATE TABLE `role` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(20) NOT NULL,
-    UNIQUE INDEX `ux_role_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица настроек (связь с user)
