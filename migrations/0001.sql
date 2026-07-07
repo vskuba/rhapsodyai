@@ -228,11 +228,9 @@ CREATE TABLE `agent` (
     `workflow_variable` LONGTEXT DEFAULT NULL,
     `prompt_system` LONGTEXT NOT NULL,
     `greeting` LONGTEXT NOT NULL,
-    `role_id` INT NULL,
     `position` INT NOT NULL DEFAULT 0,
     CONSTRAINT `ag_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `ag_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `ag_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE SET NULL
+    CONSTRAINT `ag_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `agent_role` (
