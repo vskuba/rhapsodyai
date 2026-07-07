@@ -80,10 +80,10 @@ async def cabinet_page(request: Request, user: AuthSession = Depends(require_aut
 
 
 @router.get("/admin/workflow", response_class=HTMLResponse)
-async def workflow_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def agent_workflow_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/workflow.html"
+        "admin/agent_workflow.html"
     )
 
 
