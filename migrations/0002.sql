@@ -388,10 +388,14 @@ INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_
 --
 
 INSERT INTO `agent_role` (`agent_id`, `role_id`) VALUES
+(9, 2),
 (20, 2),
 (21, 2),
 (22, 2),
-(23, 2);
+(23, 2),
+(9, 4),
+(20, 4),
+(21, 4);
 
 --
 
