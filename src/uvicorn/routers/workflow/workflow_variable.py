@@ -14,11 +14,30 @@ async def variable_list(request: Request, user=Depends(AuthChecker([AuthPermissi
         LEFT JOIN agent_workflow_variable_role vr ON v.id = vr.variable_id
         LEFT JOIN role r ON vr.role_id = r.id
         WHERE v.node_id IS NOT NULL
-        GROUP BY v.id
-        ORDER BY v.name ASC
     """
+    params = []
+
+    if user.role != "admin":
+        # Только переменные в нодах текущего пользователя
+        sql += " AND v.node_id IN (SELECT node_id FROM user_node WHERE user_id = %s)"
+        params.append(user.user_id)
+        # Переменные без ролей — всем; с ролями — только при совпадении роли пользователя
+        sql += """
+            AND (
+                NOT EXISTS (SELECT 1 FROM agent_workflow_variable_role vr2 WHERE vr2.variable_id = v.id)
+                OR EXISTS (
+                    SELECT 1 FROM agent_workflow_variable_role vr3
+                    JOIN role r3 ON r3.id = vr3.role_id
+                    WHERE vr3.variable_id = v.id AND r3.name = %s
+                )
+            )
+        """
+        params.append(user.role)
+
+    sql += " GROUP BY v.id ORDER BY v.name ASC"
+
     async with mysql_get_db_async() as db:
-        await db.execute(sql)
+        await db.execute(sql, params or None)
         results = await db.fetchall()
         # Преобразуем role_ids в список чисел
         for row in results:
