@@ -91,7 +91,7 @@ async def workflow_variables(request: Request, workflow_id: int, user=Depends(Au
         await db.execute(sql, (workflow_id,))
         db_variables = await db.fetchall()
 
-        return {"result": [{"id": 0, "name": i} for i in ai_workflow_variables_default_get()] + list(db_variables)}
+        return {"result": [{"id": 0, "name": i} for i in await ai_workflow_variables_default_get()] + list(db_variables)}
 
 
 @router.post("/workflow/{workflow_id}/step")
