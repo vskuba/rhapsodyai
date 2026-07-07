@@ -118,12 +118,6 @@
         border: 1px dashed #e0e0e0;
     }
 
-    .form-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 15px;
-    }
-
     .form-group {
         display: flex;
         flex-direction: column;
@@ -199,7 +193,6 @@
     }
 
     #user_nodes_select {
-        width: 150px;
         min-height: 198px;
     }
 
@@ -286,45 +279,44 @@
             <input type="hidden" id="userId">
 
             <div class="form-layout-grid">
-                <!-- Основные настройки -->
+                <!-- Колонка 1: Основные настройки -->
                 <div class="settings-column">
-                    <div class="form-grid">
-                        <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Username</label>
-                                <input type="text" id="username" class="form-control" required>
-                            </div>
-                            <div class="form-group" style="flex: 1;">
-                                <label>Email</label>
-                                <input type="text" id="email" class="form-control" value="0">
-                            </div>
-                            <div class="form-group" style="flex: 1;">
-                                <label>Role</label>
-                                <select id="role" class="form-control">
-                                    <option value="user">user</option>
-                                    <option value="admin">admin</option>
-                                </select>
-                            </div>
+                    <div style="display: flex; gap: 15px; width: 100%;">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Username</label>
+                            <input type="text" id="username" class="form-control" required>
                         </div>
-                        <div style="display: flex; gap: 15px; grid-column: span 2; width: 100%;">
-                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                                <label>Модели LLM (отметьте и перетащите для сортировки)</label>
-                                <div id="llm_list_sortable"
-                                     style="height: 180px; overflow-y: auto; padding: 5px; border: 1px solid #cbd5e0; border-radius: 4px; background: #fff; box-sizing: border-box;">
-                                    <!-- Items will be dynamically generated here -->
-                                </div>
-                            </div>
-
-                            <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                                <label>Доступные ноды</label>
-                                <select id="user_nodes_select" class="form-control" multiple size="10"
-                                        style="height: 180px;">
-                                    <!-- Options will be rendered here by JS -->
-                                </select>
-                            </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label>Email</label>
+                            <input type="text" id="email" class="form-control" value="0">
                         </div>
+                    </div>
+                    <div style="display: flex; gap: 15px; width: 100%;">
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label>Доступные ноды</label>
+                            <select id="user_nodes_select" class="form-control" multiple size="10"
+                                    style="height: 180px;">
+                                <!-- Options will be rendered here by JS -->
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label>Роль</label>
+                            <select id="role" class="form-control">
+                                <option value="user">user</option>
+                                <option value="admin">admin</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
-
+                <!-- Колонка 2: Модели LLM -->
+                <div class="prompt-column" style="flex: 1;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Модели LLM (отметьте и перетащите для сортировки)</label>
+                        <div id="llm_list_sortable"
+                             style="height: 180px; overflow-y: auto; padding: 5px; border: 1px solid #cbd5e0; border-radius: 4px; background: #fff; box-sizing: border-box;">
+                            <!-- Items will be dynamically generated here -->
+                        </div>
                     </div>
                 </div>
             </div>
