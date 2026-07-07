@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+
+{% block title %}Переменные Workflow{% endblock %}
+
+{% block head %}
+<style>
+    /* Базовая компоновка */
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
+
+    /* Сайдбар */
+    .agents-sidebar {
+        width: 260px;
+        background: #fafafa;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    .agent-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .group-header {
+        padding: 6px 10px 5px;
+        font-size: 11px;
+        color: #df983d;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .agent-item {
+        padding: 6px 10px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+    }
+
+    .agent-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .agent-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+    }
+
+    /* Форма */
+    .editor-section {
+        flex: 1;
+        padding: 20px 40px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 15px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-layout-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .form-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* Кнопки и Футер */
+    .editor-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 12px 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .btn-delete {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 11px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+        margin-right: auto;
+    }
+
+    .btn-delete:hover {
+        background: #e74c3c;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-container">
+
+    <!-- Список -->
+    <div class="agents-sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="createNew">+ Создать переменную</button>
+        </div>
+        <div class="agent-list" id="itemList"></div>
+    </div>
+
+    <!-- Форма -->
+    <div class="editor-section">
+        <div class="form-header">
+            <h2 id="formTitle">Выберите переменную</h2>
+        </div>
+
+        <form id="dataForm">
+            <input type="hidden" id="id">
+
+            <div class="form-layout-grid">
+                <!-- Левая колонка -->
+                <div class="left-col">
+                    <div class="form-group">
+                        <label>Название</label>
+                        <input type="text" id="name" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Нода</label>
+                        <select id="node_id" class="form-control">
+                            <option value="">Выберите ноду...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Описание</label>
+                        <input type="text" id="description" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Паттерн преобразования из системных переменных</label>
+                        <textarea id="pattern" class="form-control" rows="5"></textarea>
+                    </div>
+                    <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="is_editable" style="width: 20px; height: 20px;">
+                        <label style="margin-bottom: 0;">Разрешить редактировать</label>
+                    </div>
+                </div>
+
+                <!-- Правая колонка -->
+                <div class="right-col">
+                    <div class="form-group" style="height: 100%;">
+                        <label>Значение по умолчанию</label>
+                        <textarea id="default" class="form-control" style="height: calc(100% - 20px);"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="editor-footer">
+                <button type="button" class="btn-delete" id="deleteBtn" style="display:none;">Удалить</button>
+                <button type="submit" class="btn-save" id="saveBtn">Сохранить переменную</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const itemList = document.getElementById('itemList');
+    const dataForm = document.getElementById('dataForm');
+    const deleteBtn = document.getElementById('deleteBtn');
+
+    async function loadList() {
+        const [res, nodesRes] = await Promise.all([
+            getData('/agent_workflow_variable/list'),
+            getData('/node/list')
+        ]);
+
+        const variables = res.result;
+        const nodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
+
+        const nodeSelect = document.getElementById('node_id');
+        nodeSelect.innerHTML = '<option value="">Выберите ноду...</option>';
+        nodes.forEach(node => {
+            const opt = document.createElement('option');
+            opt.value = node.id;
+            opt.textContent = node.name;
+            nodeSelect.appendChild(opt);
+        });
+
+        itemList.innerHTML = '';
+        nodes.forEach(node => {
+            const nodeVars = variables.filter(v => v.node_id === node.id);
+            if (nodeVars.length === 0) return;
+
+            const header = document.createElement('div');
+            header.className = 'group-header';
+            header.textContent = node.name;
+            itemList.appendChild(header);
+
+            nodeVars.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'agent-item';
+                div.textContent = item.name;
+                div.onclick = () => selectItem(item, div);
+                itemList.appendChild(div);
+            });
+        });
+    }
+
+    function selectItem(item, element) {
+        document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        document.getElementById('id').value = item.id;
+        document.getElementById('name').value = item.name;
+        document.getElementById('description').value = item.description || '';
+        document.getElementById('default').value = item.default || '';
+        document.getElementById('node_id').value = item.node_id || '';
+        document.getElementById('is_editable').checked = Boolean(item.is_editable);
+        document.getElementById('pattern').value = item.pattern || '';
+        document.getElementById('formTitle').textContent = `Редактирование: ${item.name}`;
+        deleteBtn.style.display = 'inline-block';
+    }
+
+    dataForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('id').value;
+        const payload = {
+            name: document.getElementById('name').value,
+            description: document.getElementById('description').value,
+            default: document.getElementById('default').value,
+            node_id: document.getElementById('node_id').value ? parseInt(document.getElementById('node_id').value) : null,
+            is_editable: document.getElementById('is_editable').checked ? 1 : 0,
+            pattern: document.getElementById('pattern').value
+        };
+
+        if (id) {
+            await putData(`/agent_workflow_variable/${id}`, payload);
+            showNotification('Обновлено', 'success');
+        } else {
+            await postData('/agent_workflow_variable', payload);
+            showNotification('Создано', 'success');
+        }
+        loadList();
+    };
+
+    deleteBtn.onclick = async () => {
+        const id = document.getElementById('id').value;
+        if (!id || !confirm('Вы уверены?')) return;
+        await deleteData(`/agent_workflow_variable/${id}`);
+        showNotification('Удалено', 'success');
+        dataForm.reset();
+        document.getElementById('id').value = '';
+        deleteBtn.style.display = 'none';
+        document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+        document.getElementById('formTitle').textContent = 'Выберите переменную';
+        loadList();
+    };
+
+    document.getElementById('createNew').onclick = () => {
+        dataForm.reset();
+        document.getElementById('id').value = '';
+        deleteBtn.style.display = 'none';
+        document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+        document.getElementById('formTitle').textContent = 'Новая переменная';
+    };
+
+    loadList();
+</script>
+{% endblock %}
