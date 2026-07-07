@@ -20,7 +20,7 @@
                 <li><a href="/admin/session">Сессии</a></li>
             </ul>
         </li>
-        
+
         {% if request.session.get('role') == 'admin' %}
         <li class="nav-item">
             <a href="/admin/node">⛓ Ноды</a>
@@ -34,7 +34,7 @@
         <li class="nav-item">
             <a href="/admin/user">👥 Пользователи</a>
             <ul class="submenu">
-
+                <li><a href="/admin/role">Роли</a></li>
             </ul>
         </li>
 
