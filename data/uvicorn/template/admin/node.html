@@ -220,68 +220,64 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-content">
-    <div class="main-wrapper">
-        <div class="editor-container">
+<div class="editor-container">
 
-            <!-- Список Нод (Левая колонка) -->
-            <div class="agents-sidebar">
-                <div class="sidebar-header">
-                    <button class="btn-create" id="createNewNode">+ Создать ноду</button>
-                </div>
-                <div class="agent-list" id="nodeList">
-                    <!-- Сюда JS будет рендерить список нод -->
-                </div>
-            </div>
-
-            <!-- Форма Ноды (Правая колонка) -->
-            <div class="editor-section">
-                <div class="form-header">
-                    <h2 id="formTitle">Выберите ноду</h2>
-                </div>
-
-                <form id="nodeForm">
-                    <input type="hidden" id="nodeId">
-
-                    <div class="form-layout-grid">
-                        <!-- Основные настройки -->
-                        <div class="settings-column">
-                            <div class="form-grid">
-                                <div class="form-group form-group-name">
-                                    <label>Название ноды</label>
-                                    <input type="text" id="name" class="form-control" required
-                                           placeholder="Напр: Workflow Engine">
-                                </div>
-                                <div class="form-group">
-                                    <label>Позиция</label>
-                                    <input type="number" id="position" class="form-control" value="0">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Пустая колонка для сохранения симметрии с агентами или под описание -->
-                        <div class="prompt-column">
-                            <div class="form-group form-group-info">
-                                <label>Инфо</label>
-                                Ноды используются для группировки агентов и определения логики их взаимодействия в
-                                рабочих процессах.
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="editor-footer">
-                        <span id="statusLabel"></span>
-                        <!-- Кнопка удаления -->
-                        <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
-                            Удалить ноду
-                        </button>
-                        <button type="submit" class="btn-save" id="saveBtn">Сохранить ноду</button>
-                    </div>
-                </form>
-            </div>
-
+    <!-- Список Нод (Левая колонка) -->
+    <div class="agents-sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="createNewNode">+ Создать ноду</button>
+        </div>
+        <div class="agent-list" id="nodeList">
+            <!-- Сюда JS будет рендерить список нод -->
         </div>
     </div>
+
+    <!-- Форма Ноды (Правая колонка) -->
+    <div class="editor-section">
+        <div class="form-header">
+            <h2 id="formTitle">Выберите ноду</h2>
+        </div>
+
+        <form id="nodeForm">
+            <input type="hidden" id="nodeId">
+
+            <div class="form-layout-grid">
+                <!-- Основные настройки -->
+                <div class="settings-column">
+                    <div class="form-grid">
+                        <div class="form-group form-group-name">
+                            <label>Название ноды</label>
+                            <input type="text" id="name" class="form-control" required
+                                   placeholder="Напр: Workflow Engine">
+                        </div>
+                        <div class="form-group">
+                            <label>Позиция</label>
+                            <input type="number" id="position" class="form-control" value="0">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Пустая колонка для сохранения симметрии с агентами или под описание -->
+                <div class="prompt-column">
+                    <div class="form-group form-group-info">
+                        <label>Инфо</label>
+                        Ноды используются для группировки агентов и определения логики их взаимодействия в
+                        рабочих процессах.
+                    </div>
+                </div>
+            </div>
+
+            <div class="editor-footer">
+                <span id="statusLabel"></span>
+                <!-- Кнопка удаления -->
+                <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
+                    Удалить ноду
+                </button>
+                <button type="submit" class="btn-save" id="saveBtn">Сохранить ноду</button>
+            </div>
+        </form>
+    </div>
+
 </div>
 {% endblock %}
 
