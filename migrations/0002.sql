@@ -23,14 +23,16 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 INSERT INTO `role` (`id`, `name`) VALUES
 (1, 'admin'),
 (2, 'manager_dating'),
-(3, 'manager_cashier');
+(3, 'manager_cashier'),
+(4, 'manager_dating_junior');
 
 --
 
 INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `created_at`) VALUES
 (1, 'admin', 'admin@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 1, '2026-04-26 09:17:35'), -- Password: admin123
 (2, 'lilia', 'lilia@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 2, '2026-04-26 09:17:35'), -- Password: user123
-(3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35'); -- Password: user123
+(3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35'), -- Password: user123
+(4, 'alena', 'alena@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 4, '2026-04-26 09:17:35'); -- Password: user123
 
 --
 
@@ -58,7 +60,18 @@ INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `position`) VALUES
 (2, 15, NULL, 6),
 (2, 16, NULL, 7),
 (2, 17, NULL, 2),
-(2, 18, NULL, 8);
+(2, 18, NULL, 8),
+(4, 1, NULL, 9),
+(4, 2, NULL, 10),
+(4, 10, NULL, 0),
+(4, 11, NULL, 1),
+(4, 12, NULL, 3),
+(4, 13, NULL, 4),
+(4, 14, NULL, 5),
+(4, 15, NULL, 6),
+(4, 16, NULL, 7),
+(4, 17, NULL, 2),
+(4, 18, NULL, 8);
 
 --
 
@@ -67,7 +80,6 @@ INSERT INTO `companion` (`id`, `name`, `title`) VALUES
 (2, 'Olenka', 'Olenka');
 
 --
-
 
 INSERT INTO `setting` (`id`, `key`, `user_id`, `value`) VALUES
 (4, 'llm_active', 1, 'groq:openai/gpt-oss-120b');
@@ -85,7 +97,8 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 
 INSERT INTO `role_node` (`role_id`, `node_id`) VALUES
 (3, 1),
-(2, 2);
+(2, 2),
+(4, 2);
 
 --
 
@@ -148,71 +161,76 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 
 --
 
-INSERT INTO `agent_workflow_variable` (`node_id`, `workflow_id`, `name`, `default`, `pattern`, `description`) VALUES
-(NULL, NULL,'agent_greeting', NULL, NULL, NULL),
-(NULL, NULL,'agent_id', NULL, NULL, NULL),
-(NULL, NULL,'agent_title', NULL, NULL, NULL),
-(NULL, NULL,'agent_name', NULL, NULL, NULL),
-(NULL, NULL,'node_id', NULL, NULL, NULL),
-(NULL, NULL,'prompt_user', NULL, NULL, NULL),
-(NULL, NULL,'session_uuid', NULL, NULL, NULL),
-(NULL, NULL,'user_id', NULL, NULL, NULL),
-(NULL, NULL,'user_username', NULL, NULL, NULL),
-(NULL, NULL,'user_email', NULL, NULL, NULL),
-(NULL, NULL,'workflow_id', NULL, NULL, NULL),
-(2, NULL,'girl_title', NULL, '%agent_title%', 'Имя девушки, которое используется'),
-(2, NULL,'girl_prompt_system', 'Ты девушка %girl_title%. Всегда отвечай от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах, пиши с маленькой буквы или пропускай знаки пунктуации. Ты никогда не соглашаешься на личные встречи или звонки. Ты любишь флиртовать. Если возникают вопросы о встречах, звонках или другой личной информации, ты пытаешься мягко отшутиться или перевести тему. То же касается и фото: ты не скидываешь их и не обещаешь ничего конкретного. Но в то же время ты точно знаешь, что ищешь любовь, отношения, и пытаешься лучше узнать друг друга в переписке. Возвращай всегда лаконичный ответ, не более пары десятков слов. Больше слов — только если необходимо.', NULL, NULL),
-(2, NULL,'girl_greeting', 'Привет, я %girl_title%, буду рада пообщаться с тобой', NULL, NULL),
-(NULL, 1, 'tags', NULL, NULL, NULL),
-(NULL, 1, 'facts', NULL, NULL, NULL),
-(NULL, 4, 'tags', NULL, NULL, NULL),
-(NULL, 4, 'session_messages_limit', '10', NULL, NULL),
-(NULL, 4, 'session_messages', NULL, NULL, NULL),
-(NULL, 4, 'session_messages_rendered', NULL, NULL, NULL),
-(NULL, 2, 'girl_id', NULL, NULL, NULL),
-(NULL, 2, 'dating_girl_create_response', NULL, NULL, NULL),
-(NULL, 2, 'fact_collection_girl_name', 'dating_girl', NULL, NULL),
-(NULL, 2, 'fact_collection_output_format_response', NULL, NULL, NULL),
-(NULL, 2, 'facts', NULL, NULL, NULL),
-(NULL, 2, 'facts_qty', NULL, NULL, NULL),
-(NULL, 2, 'agent_title', NULL, NULL, NULL),
-(NULL, 2, 'agent_name', NULL, NULL, NULL),
-(NULL, 2, 'girl_prompt_system', NULL, NULL, NULL),
-(NULL, 2, 'girl_agent_id', NULL, NULL, NULL),
-(NULL, 2, 'workflow_variable', NULL, NULL, NULL),
-(NULL, 5, 'document_id', NULL, NULL, NULL),
-(NULL, 5, 'fact_collection_girl_name', 'dating_girl', NULL, NULL),
-(NULL, 5, 'fact_collection_girl_filter', NULL, NULL, NULL),
-(NULL, 5, 'session_messages_limit', '20', NULL, NULL),
-(NULL, 5, 'session_messages_result', NULL, NULL, NULL),
-(NULL, 5, 'session_messages_result_processed', NULL, NULL, NULL),
-(NULL, 2, 'girl_agent_workflow_id', NULL, NULL, NULL),
-(NULL, 2, 'girl_agent_workflow_name', 'dating_talk', NULL, NULL),
-(NULL, 2, 'girl_description', NULL, NULL, NULL),
-(NULL, 2, 'girl_greeting', NULL, NULL, NULL),
-(NULL, 2, 'qdrant_metada_filter', NULL, NULL, NULL),
-(NULL, 5, 'prompt_user_facts', NULL, NULL, NULL),
-(NULL, 5, 'prompt_user_facts_man', NULL, NULL, NULL),
-(NULL, 5, 'prompt_user_facts_talk', NULL, NULL, NULL),
-(NULL, 5, 'fact_collection_man_name', 'dating_man', NULL, NULL),
-(NULL, 5, 'fact_collection_output_format_response', NULL, NULL, NULL),
-(NULL, 5, 'prompt_user_tags', NULL, NULL, NULL),
-(NULL, 5, 'prompt_user_category', NULL, NULL, NULL),
-(NULL, 5, 'companion_id', NULL, NULL, NULL),
-(NULL, 5, 'companion_title', NULL, NULL, NULL),
-(NULL, 5, 'fact_collection_man_filter', NULL, NULL, NULL),
-(NULL, 5, 'qdrant_fact_search_result_girl', NULL, NULL, NULL),
-(NULL, 5, 'qdrant_fact_search_result_man', NULL, NULL, NULL),
-(NULL, 5, 'fact_collection_talk_filter', NULL, NULL, NULL),
-(NULL, 5, 'fact_collection_limit', '2', NULL, NULL),
-(NULL, 5, 'qdrant_fact_search_result_talk', NULL, NULL, NULL),
-(NULL, 5, 'fact_collection_talk_name', 'dating_talk', NULL, NULL),
-(NULL, 5, 'prompt_user_question', NULL, NULL, NULL),
-(NULL, 5, 'prompt_user_facts_girl', NULL, NULL, NULL),
-(NULL, 2, 'agent_exists_find_by', NULL, NULL, NULL),
-(NULL, 2, 'agent_exists_find_by_result', NULL, NULL, NULL),
-(NULL, 5, 'datetime_current_get_zone', '+3', NULL, NULL),
-(NULL, 5, 'datetime_current_get_response', NULL, NULL, NULL);
+INSERT INTO `agent_workflow_variable` (`id`, `node_id`, `workflow_id`, `name`, `default`, `pattern`, `description`) VALUES
+(1, NULL, NULL,'agent_greeting', NULL, NULL, NULL),
+(2, NULL, NULL,'agent_id', NULL, NULL, NULL),
+(3, NULL, NULL,'agent_title', NULL, NULL, NULL),
+(4, NULL, NULL,'agent_name', NULL, NULL, NULL),
+(5, NULL, NULL,'node_id', NULL, NULL, NULL),
+(6, NULL, NULL,'prompt_user', NULL, NULL, NULL),
+(7, NULL, NULL,'session_uuid', NULL, NULL, NULL),
+(8, NULL, NULL,'user_id', NULL, NULL, NULL),
+(9, NULL, NULL,'user_username', NULL, NULL, NULL),
+(10, NULL, NULL,'user_email', NULL, NULL, NULL),
+(11, NULL, NULL,'workflow_id', NULL, NULL, NULL),
+(12, 2, NULL,'girl_title', NULL, '%agent_title%', 'Имя девушки, которое используется'),
+(13, 2, NULL,'girl_prompt_system', 'Ты девушка %girl_title%. Всегда отвечай от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах, пиши с маленькой буквы или пропускай знаки пунктуации. Ты никогда не соглашаешься на личные встречи или звонки. Ты любишь флиртовать. Если возникают вопросы о встречах, звонках или другой личной информации, ты пытаешься мягко отшутиться или перевести тему. То же касается и фото: ты не скидываешь их и не обещаешь ничего конкретного. Но в то же время ты точно знаешь, что ищешь любовь, отношения, и пытаешься лучше узнать друг друга в переписке. Возвращай всегда лаконичный ответ, не более пары десятков слов. Больше слов — только если необходимо.', NULL, NULL),
+(14, 2, NULL,'girl_greeting', 'Привет, я %girl_title%, буду рада пообщаться с тобой', NULL, NULL),
+(15, NULL, 1, 'tags', NULL, NULL, NULL),
+(16, NULL, 1, 'facts', NULL, NULL, NULL),
+(17, NULL, 4, 'tags', NULL, NULL, NULL),
+(18, NULL, 4, 'session_messages_limit', '10', NULL, NULL),
+(19, NULL, 4, 'session_messages', NULL, NULL, NULL),
+(21, NULL, 4, 'session_messages_rendered', NULL, NULL, NULL),
+(22, NULL, 2, 'girl_id', NULL, NULL, NULL),
+(23, NULL, 2, 'dating_girl_create_response', NULL, NULL, NULL),
+(24, NULL, 2, 'fact_collection_girl_name', 'dating_girl', NULL, NULL),
+(25, NULL, 2, 'fact_collection_output_format_response', NULL, NULL, NULL),
+(26, NULL, 2, 'facts', NULL, NULL, NULL),
+(27, NULL, 2, 'facts_qty', NULL, NULL, NULL),
+(28, NULL, 2, 'agent_title', NULL, NULL, NULL),
+(29, NULL, 2, 'agent_name', NULL, NULL, NULL),
+(30, NULL, 2, 'girl_prompt_system', NULL, NULL, NULL),
+(31, NULL, 2, 'girl_agent_id', NULL, NULL, NULL),
+(32, NULL, 2, 'workflow_variable', NULL, NULL, NULL),
+(33, NULL, 5, 'document_id', NULL, NULL, NULL),
+(34, NULL, 5, 'fact_collection_girl_name', 'dating_girl', NULL, NULL),
+(35, NULL, 5, 'fact_collection_girl_filter', NULL, NULL, NULL),
+(36, NULL, 5, 'session_messages_limit', '20', NULL, NULL),
+(37, NULL, 5, 'session_messages_result', NULL, NULL, NULL),
+(38, NULL, 5, 'session_messages_result_processed', NULL, NULL, NULL),
+(39, NULL, 2, 'girl_agent_workflow_id', NULL, NULL, NULL),
+(40, NULL, 2, 'girl_agent_workflow_name', 'dating_talk', NULL, NULL),
+(41, NULL, 2, 'girl_description', NULL, NULL, NULL),
+(42, NULL, 2, 'girl_greeting', NULL, NULL, NULL),
+(43, NULL, 2, 'qdrant_metada_filter', NULL, NULL, NULL),
+(44, NULL, 5, 'prompt_user_facts', NULL, NULL, NULL),
+(45, NULL, 5, 'prompt_user_facts_man', NULL, NULL, NULL),
+(46, NULL, 5, 'prompt_user_facts_talk', NULL, NULL, NULL),
+(47, NULL, 5, 'fact_collection_man_name', 'dating_man', NULL, NULL),
+(48, NULL, 5, 'fact_collection_output_format_response', NULL, NULL, NULL),
+(49, NULL, 5, 'prompt_user_tags', NULL, NULL, NULL),
+(50, NULL, 5, 'prompt_user_category', NULL, NULL, NULL),
+(51, NULL, 5, 'companion_id', NULL, NULL, NULL),
+(52, NULL, 5, 'companion_title', NULL, NULL, NULL),
+(53, NULL, 5, 'fact_collection_man_filter', NULL, NULL, NULL),
+(54, NULL, 5, 'qdrant_fact_search_result_girl', NULL, NULL, NULL),
+(55, NULL, 5, 'qdrant_fact_search_result_man', NULL, NULL, NULL),
+(56, NULL, 5, 'fact_collection_talk_filter', NULL, NULL, NULL),
+(57, NULL, 5, 'fact_collection_limit', '2', NULL, NULL),
+(58, NULL, 5, 'qdrant_fact_search_result_talk', NULL, NULL, NULL),
+(59, NULL, 5, 'fact_collection_talk_name', 'dating_talk', NULL, NULL),
+(60, NULL, 5, 'prompt_user_question', NULL, NULL, NULL),
+(61, NULL, 5, 'prompt_user_facts_girl', NULL, NULL, NULL),
+(62, NULL, 2, 'agent_exists_find_by', NULL, NULL, NULL),
+(63, NULL, 2, 'agent_exists_find_by_result', NULL, NULL, NULL),
+(64, NULL, 5, 'datetime_current_get_zone', '+3', NULL, NULL),
+(65, NULL, 5, 'datetime_current_get_response', NULL, NULL, NULL);
+
+--
+
+INSERT INTO `agent_workflow_variable_role` (`variable_id`, `role_id`) VALUES
+(13, 2);
 
 --
 

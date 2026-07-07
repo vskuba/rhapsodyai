@@ -39,7 +39,7 @@ CREATE TABLE `llm` (
 -- Таблица ролей
 CREATE TABLE `role` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(20) NOT NULL,
+    `name` CHAR(30) NOT NULL,
     UNIQUE INDEX `ux_role_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
