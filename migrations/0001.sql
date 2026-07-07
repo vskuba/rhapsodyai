@@ -168,7 +168,8 @@ CREATE TABLE `agent_workflow_variable` (
     `workflow_id` INT NULL,
     `name` CHAR(50) NOT NULL,
     `default` LONGTEXT NULL,
-    `pattern` LONGTEXT NULL,
+    `position` INT NOT NULL DEFAULT 0,
+    `use_as_hint` INT NOT NULL DEFAULT 0,
     `description` CHAR(200) DEFAULT NULL,
     CONSTRAINT `workflow_variable_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
     CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL
