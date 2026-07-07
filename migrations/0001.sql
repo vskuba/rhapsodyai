@@ -235,6 +235,14 @@ CREATE TABLE `agent` (
     CONSTRAINT `ag_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `agent_role` (
+    `agent_id` INT NOT NULL,
+    `role_id` INT NOT NULL,
+    PRIMARY KEY (`agent_id`, `role_id`),
+    CONSTRAINT `fk_agent_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_agent_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Таблица памяти (история диалогов/действий)
 CREATE TABLE `agent_session` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
