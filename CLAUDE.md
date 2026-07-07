@@ -893,7 +893,7 @@ class AuthRole(str, Enum):
 
 AUTH_ROLE_PERMISSIONS = {
     AuthRole.ROLE_USER: {
-        AuthPermission.USERS_VIEW,
+        AuthPermission.USER_VIEW,
         AuthPermission.AGENT_VIEW,
         AuthPermission.WORKFLOW_VIEW,
         AuthPermission.NODE_VIEW,
@@ -942,7 +942,7 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 
 @router.get("/protected")
-async def protected_endpoint(user: AuthSession = Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
+async def protected_endpoint(user: AuthSession = Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     return {"user": user.username}
 ```
 

@@ -50,7 +50,6 @@ class TestAgentCRUD:
                 "greeting": "",
                 "prompt_system": "",
                 "node_id": None,
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "",
                 "role_id": None,
@@ -68,12 +67,10 @@ class TestAgentCRUD:
     async def test_create_agent_full(self, client: httpx.AsyncClient):
         """Test creating an agent with all fields including workflow_variable."""
         # First get dependencies
-        llm_res = await client.get("/llm/list")
         node_res = await client.get("/node/list")
         workflow_res = await client.get("/workflow/list")
         role_res = await client.get("/role/list")
 
-        llm_id = llm_res.json()["result"][0]["id"] if llm_res.json()["result"] else None
         node_id = node_res.json()["result"][0]["id"] if node_res.json()["result"] else None
         workflow_id = workflow_res.json()["result"][0]["id"] if workflow_res.json()["result"] else None
         role_id = role_res.json()["result"][0]["id"] if role_res.json()["result"] else None
@@ -88,7 +85,6 @@ class TestAgentCRUD:
                 "greeting": "Hello! I am a test agent.",
                 "prompt_system": "You are a helpful test assistant.",
                 "node_id": node_id,
-                "llm_id": llm_id,
                 "workflow_id": workflow_id,
                 "description": "A fully configured test agent",
                 "role_id": role_id,
@@ -117,7 +113,6 @@ class TestAgentCRUD:
                 "greeting": "Hi",
                 "prompt_system": "System prompt",
                 "node_id": None,
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "Test get by ID",
                 "role_id": None,
@@ -146,7 +141,6 @@ class TestAgentCRUD:
                 "greeting": "Original greeting",
                 "prompt_system": "Original prompt",
                 "node_id": None,
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "Original description",
                 "role_id": None,
@@ -163,7 +157,6 @@ class TestAgentCRUD:
                 "greeting": "Updated greeting",
                 "prompt_system": "Updated prompt",
                 "node_id": None,
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "Updated description",
                 "role_id": None,
@@ -194,7 +187,6 @@ class TestAgentCRUD:
                 "greeting": "Original",
                 "prompt_system": "Original",
                 "node_id": None,
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "Original",
                 "role_id": None,
@@ -231,7 +223,6 @@ class TestAgentCRUD:
                 "greeting": "Bye",
                 "prompt_system": "System",
                 "node_id": None,
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "Will be deleted",
                 "role_id": None,
@@ -261,7 +252,6 @@ class TestAgentCRUD:
                 "username": "test_filter_user",
                 "email": "test_filter_user@example.com",
                 "role": "user",
-                "llm_id": None,
                 "node_ids": [1, 2]
             },
         )
@@ -279,7 +269,6 @@ class TestAgentCRUD:
                 "prompt_system": "",
                 "node_id": 1,
                 "role_id": 2,  # 'user' role
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "",
             },
@@ -297,7 +286,6 @@ class TestAgentCRUD:
                 "prompt_system": "",
                 "node_id": 3,
                 "role_id": 2,  # 'user' role
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "",
             },
@@ -315,7 +303,6 @@ class TestAgentCRUD:
                 "prompt_system": "",
                 "node_id": 1,
                 "role_id": 1,  # 'admin' role
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "",
             },
@@ -364,7 +351,6 @@ class TestAgentCRUD:
                 "email": "test_role_filter_user@example.com",
                 "role": "user",
                 "password": "testpass123",
-                "llm_id": None,
                 "node_ids": [1, 2],
             },
         )
@@ -381,7 +367,6 @@ class TestAgentCRUD:
                 "prompt_system": "",
                 "node_id": 1,
                 "role_id": 1,  # 'admin' role
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "",
             },
@@ -398,7 +383,6 @@ class TestAgentCRUD:
                 "prompt_system": "",
                 "node_id": 1,
                 "role_id": 2,  # 'user' role
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "",
             },
@@ -453,7 +437,6 @@ class TestAgentCRUD:
                 "greeting": "",
                 "prompt_system": "",
                 "node_id": None,
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "",
                 "role_id": None,
@@ -484,7 +467,6 @@ class TestAgentCRUD:
                 "greeting": "Hello",
                 "prompt_system": "Act as a helpful assistant",
                 "node_id": 2,
-                "llm_id": None,
                 "workflow_id": None,
                 "description": "Verification of POST /agent/list",
                 "role_id": 2,

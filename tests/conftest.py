@@ -63,6 +63,26 @@ async def _cleanup_test_agents(client: httpx.AsyncClient) -> None:
         pass  # Ignore cleanup errors
 
 
+TEST_ROLE_NAMES = ("test_role", "updated_role")
+
+
+async def _cleanup_test_roles(client: httpx.AsyncClient) -> None:
+    """Delete leftover roles created by test_role_crud.py."""
+    try:
+        response = await client.get("/role/list")
+        if response.status_code != 200:
+            return
+        roles = response.json().get("result", [])
+        test_roles = [r for r in roles if r.get("name") in TEST_ROLE_NAMES]
+        for role in test_roles:
+            try:
+                await client.delete(f"/role/{role['id']}")
+            except Exception:
+                pass  # Ignore individual deletion errors
+    except Exception:
+        pass  # Ignore cleanup errors
+
+
 @pytest.fixture(scope="session", autouse=True)
 async def cleanup_test_users() -> AsyncGenerator[None, None]:
     """Session-scoped fixture to clean up test users before and after all tests."""
@@ -74,6 +94,7 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
         )
         await _cleanup_test_users(client)
         await _cleanup_test_agents(client)
+        await _cleanup_test_roles(client)
     yield
     # Clean up after tests
     async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
@@ -83,3 +104,4 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
         )
         await _cleanup_test_users(client)
         await _cleanup_test_agents(client)
+        await _cleanup_test_roles(client)
