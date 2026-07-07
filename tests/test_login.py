@@ -49,12 +49,12 @@ class TestLoginFlow:
         """Test login with valid username and password."""
         response = await client.post(
             "/auth/login",
-            json={"username": "user1", "password": "admin123"},
+            json={"username": "admin", "password": "admin123"},
         )
         assert response.status_code == 200
         data = response.json()
         assert data["message"] == "Успешный вход! Сессия создана."
-        assert data["user"]["username"] == "user1"
+        assert data["user"]["username"] == "admin"
         assert data["user"]["role"] == "admin"
 
         # Verify session cookie is set
@@ -64,7 +64,7 @@ class TestLoginFlow:
         """Test login with wrong password returns 401."""
         response = await client.post(
             "/auth/login",
-            json={"username": "user1", "password": "wrongpassword"},
+            json={"username": "admin", "password": "wrongpassword"},
         )
         assert response.status_code == 401
         assert response.json()["detail"] == "Invalid credentials"
@@ -83,7 +83,7 @@ class TestLoginFlow:
         # Missing password
         response = await client.post(
             "/auth/login",
-            json={"username": "user1"},
+            json={"username": "admin"},
         )
         assert response.status_code == 400
         assert response.json()["detail"] == "Username and password required"
@@ -101,7 +101,7 @@ class TestLoginFlow:
         # First login
         login_response = await client.post(
             "/auth/login",
-            json={"username": "user1", "password": "admin123"},
+            json={"username": "admin", "password": "admin123"},
         )
         assert login_response.status_code == 200
 
@@ -109,7 +109,7 @@ class TestLoginFlow:
         response = await client.get("/auth/me")
         assert response.status_code == 200
         data = response.json()
-        assert data["user"]["username"] == "user1"
+        assert data["user"]["username"] == "admin"
         assert data["user"]["role"] == "admin"
         assert isinstance(data["user"]["llm_ids"], list)
         assert len(data["user"]["llm_ids"]) > 0
@@ -129,7 +129,7 @@ class TestLoginFlow:
         # First login
         login_response = await client.post(
             "/auth/login",
-            json={"username": "user1", "password": "admin123"},
+            json={"username": "admin", "password": "admin123"},
         )
         assert login_response.status_code == 200
 
@@ -147,7 +147,7 @@ class TestLoginFlow:
     async def test_protected_route_after_logout(self, client: httpx.AsyncClient):
         """Test that accessing admin routes after logout redirects to login."""
         # Login first
-        await client.post("/auth/login", json={"username": "user1", "password": "admin123"})
+        await client.post("/auth/login", json={"username": "admin", "password": "admin123"})
 
         # Logout (POST)
         await client.post("/auth/logout")

@@ -90,7 +90,7 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
     async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
         await client.post(
             "/auth/login",
-            json={"username": "user1", "password": "admin123"},
+            json={"username": "admin", "password": "admin123"},
         )
         await _cleanup_test_users(client)
         await _cleanup_test_agents(client)
@@ -100,7 +100,7 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
     async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
         await client.post(
             "/auth/login",
-            json={"username": "user1", "password": "admin123"},
+            json={"username": "admin", "password": "admin123"},
         )
         await _cleanup_test_users(client)
         await _cleanup_test_agents(client)

@@ -28,7 +28,7 @@ class TestAgentCRUD:
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
             await client.post(
                 "/auth/login",
-                json={"username": "user1", "password": "admin123"},
+                json={"username": "admin", "password": "admin123"},
             )
             yield client
 
@@ -52,7 +52,7 @@ class TestAgentCRUD:
                 "node_id": None,
                 "workflow_id": None,
                 "description": "",
-                "role_id": None,
+                "role_ids": [],
             },
         )
         assert response.status_code == 200
@@ -87,7 +87,7 @@ class TestAgentCRUD:
                 "node_id": node_id,
                 "workflow_id": workflow_id,
                 "description": "A fully configured test agent",
-                "role_id": role_id,
+                "role_ids": [role_id] if role_id else [],
                 "workflow_variable": workflow_variable,
             },
         )
@@ -115,7 +115,7 @@ class TestAgentCRUD:
                 "node_id": None,
                 "workflow_id": None,
                 "description": "Test get by ID",
-                "role_id": None,
+                "role_ids": [],
             },
         )
         agent_id = create_res.json()["result"]["id"]
@@ -143,7 +143,7 @@ class TestAgentCRUD:
                 "node_id": None,
                 "workflow_id": None,
                 "description": "Original description",
-                "role_id": None,
+                "role_ids": [],
             },
         )
         agent_id = create_res.json()["result"]["id"]
@@ -159,7 +159,7 @@ class TestAgentCRUD:
                 "node_id": None,
                 "workflow_id": None,
                 "description": "Updated description",
-                "role_id": None,
+                "role_ids": [],
                 "workflow_variable": {"updated": "true"},
             },
         )
@@ -189,7 +189,7 @@ class TestAgentCRUD:
                 "node_id": None,
                 "workflow_id": None,
                 "description": "Original",
-                "role_id": None,
+                "role_ids": [],
             },
         )
         agent_id = create_res.json()["result"]["id"]
@@ -225,7 +225,7 @@ class TestAgentCRUD:
                 "node_id": None,
                 "workflow_id": None,
                 "description": "Will be deleted",
-                "role_id": None,
+                "role_ids": [],
             },
         )
         agent_id = create_res.json()["result"]["id"]
@@ -245,13 +245,13 @@ class TestAgentCRUD:
 
     async def test_agent_list_filtering_by_user_nodes_and_role(self, client: httpx.AsyncClient):
         """Test filtering the agent list by user role and nodes (dual criteria)."""
-        # 1. Create a test user with 'user' role and associated nodes [1, 2]
+        # 1. Create a test user with 'manager_dating' role and associated nodes [1, 2]
         user_res = await client.post(
             "/user",
             json={
                 "username": "test_filter_user",
                 "email": "test_filter_user@example.com",
-                "role": "user",
+                "role_id": 2,
                 "node_ids": [1, 2]
             },
         )
@@ -268,7 +268,7 @@ class TestAgentCRUD:
                 "greeting": "Hi",
                 "prompt_system": "",
                 "node_id": 1,
-                "role_id": 2,  # 'user' role
+                "role_ids": [2],  # 'manager_dating' role
                 "workflow_id": None,
                 "description": "",
             },
@@ -285,7 +285,7 @@ class TestAgentCRUD:
                 "greeting": "Hi",
                 "prompt_system": "",
                 "node_id": 3,
-                "role_id": 2,  # 'user' role
+                "role_ids": [2],  # 'manager_dating' role
                 "workflow_id": None,
                 "description": "",
             },
@@ -302,7 +302,7 @@ class TestAgentCRUD:
                 "greeting": "Hi",
                 "prompt_system": "",
                 "node_id": 1,
-                "role_id": 1,  # 'admin' role
+                "role_ids": [1],  # 'admin' role
                 "workflow_id": None,
                 "description": "",
             },
@@ -321,7 +321,7 @@ class TestAgentCRUD:
         assert agent_b_id not in agent_ids
         assert agent_c_id not in agent_ids
 
-        # 4. Request agent list for admin user (user1 has role 'admin')
+        # 4. Request agent list for admin user (admin has role 'admin')
         admin_list_res = await client.request("GET", "/agent/list", json={"find_by": {"user_id": 1}})
         assert admin_list_res.status_code == 200
         admin_agents = admin_list_res.json()["result"]
@@ -349,7 +349,7 @@ class TestAgentCRUD:
             json={
                 "username": "test_role_filter_user",
                 "email": "test_role_filter_user@example.com",
-                "role": "user",
+                "role_id": 2,
                 "password": "testpass123",
                 "node_ids": [1, 2],
             },
@@ -357,7 +357,7 @@ class TestAgentCRUD:
         assert user_res.status_code == 200
         user_id = user_res.json()["result"]["id"]
 
-        # 2. Create an admin-only agent and a user-role agent, both on a node the user has access to
+        # 2. Create an admin-only agent and a manager_dating-role agent, both on a node the user has access to
         admin_agent_res = await client.post(
             "/agent",
             json={
@@ -366,7 +366,7 @@ class TestAgentCRUD:
                 "greeting": "",
                 "prompt_system": "",
                 "node_id": 1,
-                "role_id": 1,  # 'admin' role
+                "role_ids": [1],  # 'admin' role
                 "workflow_id": None,
                 "description": "",
             },
@@ -382,7 +382,7 @@ class TestAgentCRUD:
                 "greeting": "",
                 "prompt_system": "",
                 "node_id": 1,
-                "role_id": 2,  # 'user' role
+                "role_ids": [2],  # 'manager_dating' role
                 "workflow_id": None,
                 "description": "",
             },
@@ -439,7 +439,7 @@ class TestAgentCRUD:
                 "node_id": None,
                 "workflow_id": None,
                 "description": "",
-                "role_id": None,
+                "role_ids": [],
                 "workflow_variable": complex_vars,
             },
         )
@@ -469,7 +469,7 @@ class TestAgentCRUD:
                 "node_id": 2,
                 "workflow_id": None,
                 "description": "Verification of POST /agent/list",
-                "role_id": 2,
+                "role_ids": [2],
             },
         )
         assert response.status_code == 200

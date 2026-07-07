@@ -26,7 +26,7 @@ class TestUserCRUD:
             # Login as admin first
             await client.post(
                 "/auth/login",
-                json={"username": "user1", "password": "admin123"},
+                json={"username": "admin", "password": "admin123"},
             )
             yield client
 
@@ -45,7 +45,7 @@ class TestUserCRUD:
             json={
                 "username": "test_user_crud",
                 "email": "test_crud@example.com",
-                "role": "user",
+                "role_id": 2,
                 "llm_id": None
             },
         )
@@ -55,7 +55,7 @@ class TestUserCRUD:
         user = data["result"]
         assert user["username"] == "test_user_crud"
         assert user["email"] == "test_crud@example.com"
-        assert user["role"] == "user"
+        assert user["role"] == "manager_dating"
         assert "id" in user
         return user["id"]
 
@@ -66,7 +66,7 @@ class TestUserCRUD:
             json={
                 "username": "test_admin_crud",
                 "email": "test_admin_crud@example.com",
-                "role": "admin",
+                "role_id": 1,
                 "llm_id": None
             },
         )
@@ -88,7 +88,7 @@ class TestUserCRUD:
             json={
                 "username": "test_user_get",
                 "email": "test_get@example.com",
-                "role": "user",
+                "role_id": 2,
                 "llm_id": None
             },
         )
@@ -104,7 +104,7 @@ class TestUserCRUD:
         assert user["id"] == user_id
         assert user["username"] == "test_user_get"
         assert user["email"] == "test_get@example.com"
-        assert user["role"] == "user"
+        assert user["role"] == "manager_dating"
 
     async def test_update_user(self, client: httpx.AsyncClient):
         """Test updating a user."""
@@ -114,7 +114,7 @@ class TestUserCRUD:
             json={
                 "username": "test_user_update",
                 "email": "test_update@example.com",
-                "role": "user",
+                "role_id": 2,
                 "llm_id": None
             },
         )
@@ -127,7 +127,7 @@ class TestUserCRUD:
             json={
                 "username": "test_user_updated",
                 "email": "test_updated@example.com",
-                "role": "admin",
+                "role_id": 1,
                 "llm_id": None
             },
         )
@@ -148,7 +148,7 @@ class TestUserCRUD:
             json={
                 "username": "test_user_delete",
                 "email": "test_delete@example.com",
-                "role": "user",
+                "role_id": 2,
                 "llm_id": None
             },
         )
@@ -163,8 +163,8 @@ class TestUserCRUD:
         get_response = await client.get(f"/user/{user_id}")
         assert get_response.status_code == 404 or (get_response.status_code == 200 and get_response.json().get("result") is None)
 
-    async def test_user_default_role_is_user(self, client: httpx.AsyncClient):
-        """Test that default role is 'user' when not specified."""
+    async def test_user_default_role_is_none(self, client: httpx.AsyncClient):
+        """Test that a user created without a role has no role assigned."""
         response = await client.post(
             "/user",
             json={
@@ -178,7 +178,7 @@ class TestUserCRUD:
         data = response.json()
         assert "result" in data
         user = data["result"]
-        assert user["role"] == "user"  # Default should be 'user'
+        assert user["role"] is None  # Роль не задана — role_id NULL
 
     async def test_user_with_llm_id(self, client: httpx.AsyncClient):
         """Test creating a user with llm_id."""
@@ -193,7 +193,7 @@ class TestUserCRUD:
                 json={
                     "username": "test_user_with_llm",
                     "email": "test_llm@example.com",
-                    "role": "user",
+                    "role_id": 2,
                     "llm_ids": [llm_id]
                 },
             )
@@ -211,7 +211,7 @@ class TestUserCRUD:
             json={
                 "username": "test_user_partial",
                 "email": "test_partial@example.com",
-                "role": "user",
+                "role_id": 2,
                 "llm_id": None
             },
         )
@@ -222,7 +222,7 @@ class TestUserCRUD:
         response = await client.put(
             f"/user/{user_id}",
             json={
-                "role": "admin"
+                "role_id": 1
             },
         )
         assert response.status_code == 200
@@ -243,7 +243,7 @@ class TestUserCRUD:
             json={
                 "username": "test_user_nodes",
                 "email": "test_nodes@example.com",
-                "role": "user",
+                "role_id": 2,
                 "llm_id": None,
                 "node_ids": [1, 2]
             },

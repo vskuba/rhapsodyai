@@ -25,7 +25,7 @@ class TestUserAccessToken:
             # Login as admin first
             await client.post(
                 "/auth/login",
-                json={"username": "user1", "password": "admin123"},
+                json={"username": "admin", "password": "admin123"},
             )
             yield client
 
@@ -36,7 +36,6 @@ class TestUserAccessToken:
             json={
                 "username": "test_token_user",
                 "email": "test_token_user@example.com",
-                "role": "user",
                 "llm_id": None
             },
         )

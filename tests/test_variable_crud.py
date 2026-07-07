@@ -9,7 +9,7 @@ async def test_variable_crud():
     async with AsyncClient(base_url=BASE_URL) as client:
         await client.post(
             "/auth/login",
-            json={"username": "user1", "password": "admin123"},
+            json={"username": "admin", "password": "admin123"},
         )
 
         # 1. Создание

@@ -24,7 +24,7 @@ class TestCabinetFlow:
             # Login as standard user first
             await client.post(
                 "/auth/login",
-                json={"username": "user1", "password": "admin123"},
+                json={"username": "admin", "password": "admin123"},
             )
             yield client
 
@@ -50,7 +50,7 @@ class TestCabinetFlow:
         data = response.json()
         assert "user" in data
         user = data["user"]
-        assert user["username"] == "user1"
+        assert user["username"] == "admin"
         assert "email" in user
         assert "role" in user
         assert "llm_ids" in user
@@ -59,7 +59,7 @@ class TestCabinetFlow:
         """Test successfully updating the user's email."""
         # 1. Update user profile details
         update_payload = {
-            "email": "updated_user1@example.com"
+            "email": "updated_admin@example.com"
         }
         update_response = await client.put("/auth/me", json=update_payload)
         assert update_response.status_code == 200
@@ -67,15 +67,15 @@ class TestCabinetFlow:
         data = update_response.json()
         assert "user" in data
         updated_user = data["user"]
-        assert updated_user["email"] == "updated_user1@example.com"
+        assert updated_user["email"] == "updated_admin@example.com"
 
         # 2. Verify changes persist via GET /auth/me
         get_response = await client.get("/auth/me")
         assert get_response.status_code == 200
         user = get_response.json()["user"]
-        assert user["email"] == "updated_user1@example.com"
+        assert user["email"] == "updated_admin@example.com"
 
-        # 3. Restore original user1 profile state to prevent test pollution
+        # 3. Restore original admin profile state to prevent test pollution
         restore_payload = {
             "email": "developer@rhapsody.com"
         }

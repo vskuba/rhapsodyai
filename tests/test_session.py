@@ -25,7 +25,7 @@ class TestSessionFlow:
             # Login as standard user / admin first
             login_response = await client.post(
                 "/auth/login",
-                json={"username": "user1", "password": "admin123"},
+                json={"username": "admin", "password": "admin123"},
             )
             assert login_response.status_code == 200
             yield client
