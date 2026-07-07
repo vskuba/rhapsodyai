@@ -197,9 +197,10 @@
                         <label>Паттерн преобразования из системных переменных</label>
                         <textarea id="pattern" class="form-control" rows="5"></textarea>
                     </div>
-                    <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                        <input type="checkbox" id="is_editable" style="width: 20px; height: 20px;">
-                        <label style="margin-bottom: 0;">Разрешить редактировать</label>
+                    <div class="form-group">
+                        <label>Роли</label>
+                        <select id="role_ids" class="form-control" multiple size="4">
+                        </select>
                     </div>
                 </div>
 
@@ -231,13 +232,15 @@
     const deleteBtn = document.getElementById('deleteBtn');
 
     async function loadList() {
-        const [res, nodesRes] = await Promise.all([
+        const [res, nodesRes, rolesRes] = await Promise.all([
             getData('/agent_workflow_variable/list'),
-            getData('/node/list')
+            getData('/node/list'),
+            getData('/role/list')
         ]);
 
         const variables = res.result;
         const nodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
+        const roles = rolesRes.result;
 
         const nodeSelect = document.getElementById('node_id');
         nodeSelect.innerHTML = '<option value="">Выберите ноду...</option>';
@@ -246,6 +249,16 @@
             opt.value = node.id;
             opt.textContent = node.name;
             nodeSelect.appendChild(opt);
+        });
+
+        // Заполняем Select ролями
+        const roleSelect = document.getElementById('role_ids');
+        roleSelect.innerHTML = '';
+        roles.forEach(role => {
+            const opt = document.createElement('option');
+            opt.value = role.id;
+            opt.textContent = role.name;
+            roleSelect.appendChild(opt);
         });
 
         itemList.innerHTML = '';
@@ -277,8 +290,14 @@
         document.getElementById('description').value = item.description || '';
         document.getElementById('default').value = item.default || '';
         document.getElementById('node_id').value = item.node_id || '';
-        document.getElementById('is_editable').checked = Boolean(item.is_editable);
         document.getElementById('pattern').value = item.pattern || '';
+
+        // Установка выбранных ролей
+        const roleSelect = document.getElementById('role_ids');
+        Array.from(roleSelect.options).forEach(opt => {
+            opt.selected = item.role_ids.includes(parseInt(opt.value));
+        });
+
         document.getElementById('formTitle').textContent = `Редактирование: ${item.name}`;
         deleteBtn.style.display = 'inline-block';
     }
@@ -286,12 +305,15 @@
     dataForm.onsubmit = async (e) => {
         e.preventDefault();
         const id = document.getElementById('id').value;
+        const roleSelect = document.getElementById('role_ids');
+        const selectedRoles = Array.from(roleSelect.selectedOptions).map(opt => parseInt(opt.value));
+
         const payload = {
             name: document.getElementById('name').value,
             description: document.getElementById('description').value,
             default: document.getElementById('default').value,
             node_id: document.getElementById('node_id').value ? parseInt(document.getElementById('node_id').value) : null,
-            is_editable: document.getElementById('is_editable').checked ? 1 : 0,
+            role_ids: selectedRoles,
             pattern: document.getElementById('pattern').value
         };
 
@@ -324,6 +346,8 @@
         deleteBtn.style.display = 'none';
         document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
         document.getElementById('formTitle').textContent = 'Новая переменная';
+        // Сброс ролей
+        Array.from(document.getElementById('role_ids').options).forEach(o => o.selected = false);
     };
 
     loadList();
