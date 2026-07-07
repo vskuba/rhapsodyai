@@ -302,8 +302,7 @@
                         <div class="form-group" style="flex: 1; margin-bottom: 0;">
                             <label>Роль</label>
                             <select id="role" class="form-control">
-                                <option value="user">user</option>
-                                <option value="admin">admin</option>
+                                <!-- Options will be rendered here by JS from /role/list -->
                             </select>
                         </div>
                     </div>
@@ -387,6 +386,19 @@
         });
     }
 
+    function renderRoleSelect(roles) {
+        const select = document.getElementById('role');
+        if (!select) return;
+
+        select.innerHTML = '';
+        roles.forEach(role => {
+            const opt = document.createElement('option');
+            opt.value = role.id;
+            opt.textContent = role.name;
+            select.appendChild(opt);
+        });
+    }
+
     function makeLlmListDraggable(container) {
         let dragSrcEl = null;
 
@@ -448,16 +460,18 @@
         if (!userListContainer) return;
 
         try {
-            const [usersRes, llmRes, nodesRes] = await Promise.all([
+            const [usersRes, llmRes, nodesRes, rolesRes] = await Promise.all([
                 getData('/user/list'),
                 getData('/llm/list'),
-                getData('/node/list')
+                getData('/node/list'),
+                getData('/role/list')
             ]);
 
             const users = usersRes.result;
             const llms = llmRes.result;
             allNodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
 
+            renderRoleSelect(rolesRes.result);
             renderUserList(users, selectedUserId);
             renderNodeSelect(allNodes);
 
@@ -548,7 +562,7 @@
             document.getElementById('userId').value = user.id;
             document.getElementById('username').value = user.username;
             document.getElementById('email').value = user.email;
-            document.getElementById('role').value = user.role || 'user';
+            document.getElementById('role').value = user.role_id ?? '';
 
             // Update selected options in the llm_list_sortable element
             const userLlmIds = user.llm_ids || [];
@@ -623,7 +637,8 @@
         document.getElementById('formTitle').textContent = 'Создание нового пользователя';
         document.getElementById('username').value = '';
         document.getElementById('email').value = '';
-        document.getElementById('role').value = 'user';
+        const roleSelect = document.getElementById('role');
+        if (roleSelect && roleSelect.options.length > 0) roleSelect.selectedIndex = 0;
 
         // Clear all selections in select elements
         const sortableContainer = document.getElementById('llm_list_sortable');
@@ -678,10 +693,11 @@
         }
 
         const id = document.getElementById('userId').value;
+        const roleValue = document.getElementById('role').value;
         const payload = {
             username: document.getElementById('username').value,
             email: document.getElementById('email').value,
-            role: document.getElementById('role').value,
+            role_id: roleValue ? parseInt(roleValue, 10) : null,
             llm_ids: selectedLlmIds,
             node_ids: selectedNodeIds
         };

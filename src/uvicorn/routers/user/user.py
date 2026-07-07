@@ -13,7 +13,9 @@ router = APIRouter()
 @router.get("/user/list")
 async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     async with db:
-        await db.execute("SELECT * FROM user")
+        await db.execute(
+            "SELECT u.*, r.name AS role FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id"
+        )
         users = await db.fetchall()
 
         # Fetch all user_node associations
@@ -50,10 +52,13 @@ async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depen
 
 @router.get("/user/{user_id}")
 async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
-    repo = UserRepository()
-    user_data = await repo.find(user_id)
-    if user_data:
-        async with db:
+    async with db:
+        await db.execute(
+            "SELECT u.*, r.name AS role FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id WHERE u.id = %s",
+            user_id
+        )
+        user_data = await db.fetchone()
+        if user_data:
             await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
             rows = await db.fetchall()
             user_data["node_ids"] = [row["node_id"] for row in rows]
@@ -70,12 +75,13 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
     insert_data = {
         "username": data.get("username"),
         "email": data.get("email"),
-        "role": data.get("role", "user")
     }
 
     password = data.get("password")
     if password:
         insert_data["password_hash"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    insert_data["role_id"] = data.get("role_id")
 
     user_id = await repo.add(insert_data)
 
@@ -94,7 +100,11 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
             for nid in data["node_ids"]:
                 await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
 
-        created_user = await repo.find(user_id)
+        await db.execute(
+            "SELECT u.*, r.name AS role FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id WHERE u.id = %s",
+            user_id
+        )
+        created_user = await db.fetchone()
         if created_user:
             await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
             rows = await db.fetchall()
@@ -116,8 +126,8 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
         update_data["username"] = data.get("username")
     if data.get("email") is not None:
         update_data["email"] = data.get("email")
-    if data.get("role") is not None:
-        update_data["role"] = data.get("role")
+    if data.get("role_id") is not None:
+        update_data["role_id"] = data.get("role_id")
 
     if update_data:
         await repo.update(user_id, update_data)
@@ -145,7 +155,11 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
             for nid in node_ids:
                 await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
 
-        updated_user = await repo.find(user_id)
+        await db.execute(
+            "SELECT u.*, r.name AS role FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id WHERE u.id = %s",
+            user_id
+        )
+        updated_user = await db.fetchone()
         if updated_user:
             await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
             rows = await db.fetchall()
