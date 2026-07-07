@@ -3,16 +3,22 @@ from enum import Enum
 
 class AuthPermission(str, Enum):
     # User permissions
-    USERS_VIEW = "users:view"
-    USERS_CREATE = "users:create"
-    USERS_UPDATE = "users:update"
-    USERS_DELETE = "users:delete"
+    USER_VIEW = "user:view"
+    USER_CREATE = "user:create"
+    USER_UPDATE = "user:update"
+    USER_DELETE = "user:delete"
 
     # Agent permissions
     AGENT_VIEW = "agent:view"
     AGENT_CREATE = "agent:create"
     AGENT_UPDATE = "agent:update"
     AGENT_DELETE = "agent:delete"
+
+    # Role permissions
+    ROLE_VIEW = "role:view"
+    ROLE_CREATE = "role:create"
+    ROLE_UPDATE = "role:update"
+    ROLE_DELETE = "role:delete"
 
     # Workflow permissions
     WORKFLOW_VIEW = "workflow:view"

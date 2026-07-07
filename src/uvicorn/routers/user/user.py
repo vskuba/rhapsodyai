@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 @router.get("/user/list")
-async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
+async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     async with db:
         await db.execute("SELECT * FROM user")
         users = await db.fetchall()
@@ -49,7 +49,7 @@ async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depen
 
 
 @router.get("/user/{user_id}")
-async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
+async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     repo = UserRepository()
     user_data = await repo.find(user_id)
     if user_data:
@@ -65,7 +65,7 @@ async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async
 
 
 @router.post("/user")
-async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_CREATE]))):
+async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_CREATE]))):
     repo = UserRepository()
     insert_data = {
         "username": data.get("username"),
@@ -108,7 +108,7 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
 
 
 @router.put("/user/{user_id}")
-async def user_update(request: Request, user_id: int, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_UPDATE]))):
+async def user_update(request: Request, user_id: int, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_UPDATE]))):
     repo = UserRepository()
     # Only update fields that are provided (not None)
     update_data = {}
@@ -159,21 +159,21 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
 
 
 @router.delete("/user/{user_id}")
-async def user_delete(request: Request, user_id: int, user=Depends(AuthChecker([AuthPermission.USERS_DELETE]))):
+async def user_delete(request: Request, user_id: int, user=Depends(AuthChecker([AuthPermission.USER_DELETE]))):
     repo = UserRepository()
     await repo.delete(user_id)
     return {"result": {"deleted": True, "id": user_id}}
 
 
 @router.get("/role/list")
-async def role_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
+async def role_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     async with db:
         await db.execute("SELECT id, name FROM `role` ORDER BY id")
         return {"result": await db.fetchall()}
 
 
 @router.get("/user/{user_id}/token")
-async def user_tokens_get(user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_VIEW]))):
+async def user_tokens_get(user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     async with db:
         await db.execute("SELECT id, user_id, token FROM `user_access_token` WHERE user_id = %s", user_id)
         tokens = await db.fetchall()
@@ -181,7 +181,7 @@ async def user_tokens_get(user_id: int, db=Depends(mysql_get_db_async), user=Dep
 
 
 @router.post("/user/{user_id}/token")
-async def user_token_create(user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_UPDATE]))):
+async def user_token_create(user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_UPDATE]))):
     new_token = str(uuid.uuid4())
     async with db:
         await db.execute(
@@ -202,7 +202,7 @@ async def user_token_create(user_id: int, db=Depends(mysql_get_db_async), user=D
 
 
 @router.delete("/user/token/{token_id}")
-async def user_token_delete(token_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USERS_DELETE]))):
+async def user_token_delete(token_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_DELETE]))):
     async with db:
         await db.execute("DELETE FROM `user_access_token` WHERE id = %s", token_id)
         return {"result": {"deleted": True, "id": token_id}}

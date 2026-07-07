@@ -10,7 +10,8 @@ class AuthRole(str, Enum):
 
 AUTH_ROLE_PERMISSIONS = {
     AuthRole.ROLE_USER: {
-        AuthPermission.USERS_VIEW,
+        AuthPermission.USER_VIEW,
+        AuthPermission.ROLE_VIEW,
         AuthPermission.AGENT_VIEW,
         AuthPermission.WORKFLOW_VIEW,
         AuthPermission.NODE_VIEW,
