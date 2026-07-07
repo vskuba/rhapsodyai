@@ -11,7 +11,12 @@
 <body>
 
 <nav>
+    <div class="logo">
+        <a href="/"><img src="/static/assets/logo.png" alt="Logo" width="96" height="96"></a>
+    </div>
+
     <ul class="top-nav">
+
         <li class="nav-item">
             <a href="/">💬 Чат</a>
             <ul class="submenu">
@@ -21,16 +26,25 @@
             </ul>
         </li>
 
-        {% if request.session.get('role') == 'admin' %}
+
         <li class="nav-item">
+            {% if request.session.get('role') == 'admin' %}
             <a href="/admin/node">⛓ Ноды</a>
+            {% else %}
+            <a>⛓ Ноды</a>
+            {% endif %}
             <ul class="submenu">
+                {% if request.session.get('role') == 'admin' %}
                 <li><a href="/admin/tool">Инструменты</a></li>
+                {% endif %}
                 <li><a href="/admin/variable">Переменные</a></li>
+                {% if request.session.get('role') == 'admin' %}
                 <li><a href="/admin/workflow">Workflow</a></li>
+                {% endif %}
             </ul>
         </li>
 
+        {% if request.session.get('role') == 'admin' %}
         <li class="nav-item">
             <a href="/admin/user">👥 Пользователи</a>
             <ul class="submenu">

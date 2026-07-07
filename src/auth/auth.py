@@ -47,9 +47,10 @@ async def get_current_user(request: Request) -> AuthSession:
         async with mysql_get_db_async() as db:
             await db.execute(
                 """
-                SELECT u.id as user_id, u.username, u.role
+                SELECT u.id as user_id, u.username, r.name as role
                 FROM `user_access_token` t
                 JOIN `user` u ON t.user_id = u.id
+                LEFT JOIN `role` r ON r.id = u.role_id
                 WHERE t.token = %s
                 """,
                 (x_api_key,)
@@ -57,7 +58,7 @@ async def get_current_user(request: Request) -> AuthSession:
             row = await db.fetchone()
             if row:
                 user_id = row["user_id"]
-                role = row["role"]
+                role = row["role"] or ''
                 if user_id == 1: # Если пользователь с ID 1, то он admin
                     role = "admin"
 

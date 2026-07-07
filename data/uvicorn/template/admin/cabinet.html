@@ -40,6 +40,14 @@
         width: 100%;
     }
 
+    .cabinet-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 30px;
+        width: 100%;
+        align-items: start;
+    }
+
     .form-fields {
         display: flex;
         flex-direction: row;
@@ -132,49 +140,57 @@
     </div>
     <div class="cabinet-body">
         <form id="cabinet-form">
-            <div class="form-fields">
-                <div class="form-group">
-                    <label for="username">Имя пользователя (Логин)</label>
-                    <input type="text" id="username" class="form-control" disabled>
-                </div>
-                
-                <div class="form-group">
-                    <label for="role">Роль в системе</label>
-                    <input type="text" id="role" class="form-control" disabled>
-                </div>
+            <div class="cabinet-grid">
+                <!-- Первая колонка: поля профиля + токены доступа -->
+                <div class="cabinet-col-left">
+                    <div class="form-fields">
+                        <div class="form-group">
+                            <label for="username">Имя пользователя (Логин)</label>
+                            <input type="text" id="username" class="form-control" disabled>
+                        </div>
 
-                <div class="form-group">
-                    <label for="email">Электронная почта (Email)</label>
-                    <input type="email" id="email" class="form-control" required placeholder="example@domain.com">
-                </div>
+                        <div class="form-group">
+                            <label for="role">Роль в системе</label>
+                            <input type="text" id="role" class="form-control" disabled>
+                        </div>
 
-                <div class="form-group" style="grid-column: span 2;">
-                    <label>Модели LLM</label>
-                    <div style="background: #f9f9f9; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 6px; min-height: 44px; box-sizing: border-box;">
-                        <ul id="llm_list" style="margin: 0; padding-left: 15px; display: flex; flex-direction: column; gap: 6px; color: #4a5568; font-size: 14px;">
-                            <li style="color: #a0aec0; list-style-type: none; margin-left: -15px;">Загрузка моделей...</li>
-                        </ul>
+                        <div class="form-group">
+                            <label for="email">Электронная почта (Email)</label>
+                            <input type="email" id="email" class="form-control" required placeholder="example@domain.com">
+                        </div>
+                    </div>
+
+                    <!-- Секция токенов доступа (доступна только для текущего пользователя) -->
+                    <div id="tokensSection" style="margin-top: 40px; display: none; width: 100%;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f4f4f9; padding-bottom: 10px; margin-bottom: 15px;">
+                            <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">🔑 Токены доступа</h3>
+                            <button type="button" class="btn-save" id="generateTokenBtn" style="padding: 6px 15px; font-size: 12px; height: auto;">Сгенерировать новый ключ</button>
+                        </div>
+                        <table class="tokens-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                            <thead>
+                                <tr style="background-color: #fcfcfc; border-bottom: 1px solid #eee;">
+                                    <th style="text-align: left; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold;">Токен</th>
+                                    <th style="text-align: right; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; width: 100px;">Действие</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tokensList">
+                                <!-- JS will render tokens here -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-            </div>
 
-            <!-- Секция токенов доступа (доступна только для текущего пользователя) -->
-            <div id="tokensSection" style="margin-top: 40px; display: none; width: 100%;">
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f4f4f9; padding-bottom: 10px; margin-bottom: 15px;">
-                    <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">🔑 Токены доступа</h3>
-                    <button type="button" class="btn-save" id="generateTokenBtn" style="padding: 6px 15px; font-size: 12px; height: auto;">Сгенерировать новый ключ</button>
+                <!-- Вторая колонка: список LLM -->
+                <div class="cabinet-col-right">
+                    <div class="form-group">
+                        <label>Модели LLM</label>
+                        <div style="background: #f9f9f9; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 6px; min-height: 44px; box-sizing: border-box;">
+                            <ul id="llm_list" style="margin: 0; padding-left: 15px; display: flex; flex-direction: column; gap: 6px; color: #4a5568; font-size: 14px;">
+                                <li style="color: #a0aec0; list-style-type: none; margin-left: -15px;">Загрузка моделей...</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
-                <table class="tokens-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-                    <thead>
-                        <tr style="background-color: #fcfcfc; border-bottom: 1px solid #eee;">
-                            <th style="text-align: left; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold;">Токен</th>
-                            <th style="text-align: right; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; width: 100px;">Действие</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tokensList">
-                        <!-- JS will render tokens here -->
-                    </tbody>
-                </table>
             </div>
 
             <div class="editor-footer">
