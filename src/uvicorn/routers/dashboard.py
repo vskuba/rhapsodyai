@@ -111,6 +111,14 @@ async def tool_page(request: Request, user: AuthSession = Depends(require_auth))
     )
 
 
+@router.get("/admin/role", response_class=HTMLResponse)
+async def role_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/role.html"
+    )
+
+
 @router.get("/admin/variable", response_class=HTMLResponse)
 async def workflow_variable_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
