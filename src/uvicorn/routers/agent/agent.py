@@ -103,7 +103,10 @@ async def agent_list(
 @router.get("/agent/{agent_id}", include_in_schema=False)
 async def agent_get(request: Request, agent_id: int, user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
     repo = AgentRepository()
-    return {"result": await repo.find(agent_id)}
+    entity_agent = await repo.find(agent_id)
+    if entity_agent:
+        entity_agent["role_ids"] = await _agent_role_ids_get(agent_id)
+    return {"result": entity_agent}
 
 
 @router.get("/agent/{agent_id}/prompt_system/{collection_name}", include_in_schema=False)
@@ -141,12 +144,14 @@ async def agent_create(request: Request, data: dict, user=Depends(AuthChecker([A
         "prompt_system": data.get('prompt_system', ''),
         "workflow_id": data.get('workflow_id', None),
         "description": data.get('description', ''),
-        "role_id": data.get('role_id', None),
         "workflow_variable": workflow_variable,
     })
 
+    await _agent_role_ids_set(agent_id, data.get('role_ids') or [])
+
     # Return the full created agent object
     entity_agent = await repo.find(agent_id)
+    entity_agent["role_ids"] = await _agent_role_ids_get(agent_id)
     return {"result": entity_agent}
 
 
@@ -171,7 +176,6 @@ async def agent_update(
         "workflow_id": data.get('workflow_id', current_agent.get('workflow_id')),
         "workflow_variable": data.get('workflow_variable', current_agent.get('workflow_variable')),
         "prompt_system": data.get('prompt_system', current_agent.get('prompt_system')),
-        "role_id": data.get('role_id', current_agent.get('role_id')),
         "greeting": data.get('greeting', current_agent.get('greeting')),
         "description": data.get('description', current_agent.get('description')),
     }
@@ -191,7 +195,6 @@ async def agent_update(
                 workflow_id = %s,
                 workflow_variable = %s,
                 prompt_system = %s,
-                role_id = %s,
                 greeting = %s,
                 description = %s
             WHERE id = %s
@@ -204,7 +207,6 @@ async def agent_update(
             merged_data['workflow_id'],
             workflow_variable,
             merged_data['prompt_system'],
-            merged_data['role_id'],
             merged_data['greeting'],
             merged_data['description'],
             agent_id
@@ -213,10 +215,11 @@ async def agent_update(
         await db.execute(sql, values)
         await db.connection.commit()
 
-        if db.rowcount == 0:
-            return {"status": "error", "message": "Агент не найден"}
+    # Синхронизируем роли, только если поле передано в запросе
+    if 'role_ids' in data:
+        await _agent_role_ids_set(agent_id, data.get('role_ids') or [], replace=True)
 
-        return {"status": "success", "result": "Данные обновлены"}
+    return {"status": "success", "result": "Данные обновлены"}
 
 
 @router.get("/agent/{agent_id}/user/{user_id}/session_last_entry", include_in_schema=False)
@@ -245,6 +248,23 @@ async def agent_delete(request: Request, agent_id: int, user=Depends(AuthChecker
     return {"status": "success", "result": "Агент удален"}
 
 
+async def _agent_role_ids_get(agent_id: int) -> list[int]:
+    """Возвращает список role_id агента из таблицы agent_role."""
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT role_id FROM agent_role WHERE agent_id = %s ORDER BY role_id", (agent_id,))
+        rows = await db.fetchall()
+        return [row["role_id"] for row in rows]
+
+
+async def _agent_role_ids_set(agent_id: int, role_ids: list, replace: bool = False):
+    """Записывает роли агента в таблицу agent_role."""
+    async with mysql_get_db_async() as db:
+        if replace:
+            await db.execute("DELETE FROM agent_role WHERE agent_id = %s", (agent_id,))
+        for role_id in role_ids:
+            await db.execute("INSERT INTO agent_role (agent_id, role_id) VALUES (%s, %s)", (agent_id, role_id))
+
+
 async def _agent_list_for_user(repo: AgentRepository, user_id: int, find_by: dict) -> list:
     """Возвращает агентов, доступных пользователю user_id, с учетом его роли и нод."""
     user_repo = UserRepository()
@@ -269,13 +289,18 @@ async def _agent_list_for_user(repo: AgentRepository, user_id: int, find_by: dic
         rows = await db.fetchall()
         user_node_ids = [row["node_id"] for row in rows]
 
+        # Агенты, у которых среди ролей есть роль пользователя
+        await db.execute("SELECT agent_id FROM agent_role WHERE role_id = %s", (role_id,))
+        role_rows = await db.fetchall()
+        role_agent_ids = {row["agent_id"] for row in role_rows}
+
         # Получаем всех агентов, подходящих под критерии find_by
         all_agents = await repo.find_by(find_by, order_by='position ASC')
 
         # Фильтруем агентов:
         # - должен относиться к одной из нод пользователя (agent['node_id'] in user_node_ids)
-        # - роль должна совпадать (agent['role_id'] == role_id)
+        # - роль пользователя должна быть среди ролей агента (agent_role)
         return [
             agent for agent in all_agents
-            if agent.get("node_id") in user_node_ids and agent.get("role_id") == role_id
+            if agent.get("node_id") in user_node_ids and agent.get("id") in role_agent_ids
         ]

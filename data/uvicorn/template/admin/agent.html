@@ -330,9 +330,8 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Роль (Role ID)</label>
-                            <select id="role_id" class="form-control">
-                                <option value="">Не назначена</option>
+                            <label>Роли</label>
+                            <select id="role_id" class="form-control" multiple size="4">
                             </select>
                         </div>
                     </div>
@@ -384,7 +383,7 @@
     /**
      * Инициализация менеджера: загрузка групп и списка агентов
      */
-    async function initAgentsManager(currentNodeId = null, selectedWorkflow = null, selectedRole = null) {
+    async function initAgentsManager(currentNodeId = null, selectedWorkflow = null, selectedRoleIds = null) {
         if (!agentListContainer) return;
 
         try {
@@ -421,7 +420,7 @@
             });
 
             const roleSelect = document.getElementById('role_id');
-            roleSelect.innerHTML = '<option value="">Не назначена</option>';
+            roleSelect.innerHTML = '';
             roles.forEach(r => {
                 const opt = document.createElement('option');
                 opt.value = r.id;
@@ -437,8 +436,8 @@
                 workflowSelect.value = selectedWorkflow;
             }
 
-            if (selectedRole) {
-                roleSelect.value = selectedRole;
+            if (selectedRoleIds) {
+                setSelectedRoles(selectedRoleIds);
             }
 
             renderNodeList(agents, nodes);
@@ -446,6 +445,19 @@
         } catch (e) {
             console.error("Ошибка инициализации:", e);
         }
+    }
+
+    function setSelectedRoles(roleIds) {
+        const roleSelect = document.getElementById('role_id');
+        const ids = (roleIds || []).map(Number);
+        Array.from(roleSelect.options).forEach(opt => {
+            opt.selected = ids.includes(Number(opt.value));
+        });
+    }
+
+    function getSelectedRoles() {
+        const roleSelect = document.getElementById('role_id');
+        return Array.from(roleSelect.selectedOptions).map(opt => parseInt(opt.value, 10));
     }
 
     function renderNodeList(agents, nodes) {
@@ -516,7 +528,6 @@
                 'title': agent.title || '',
                 'description': agent.description || '',
                 'workflow_id': agent.workflow_id || '',
-                'role_id': agent.role_id || '',
                 'prompt_system': agent.prompt_system || '',
                 'greeting': agent.greeting || ''
             };
@@ -529,6 +540,8 @@
                     console.error(`Элемент с id="${id}" не найден в HTML!`);
                 }
             }
+
+            setSelectedRoles(agent.role_ids || []);
 
             const varContainer = document.getElementById('variablesContainer');
             if (varContainer) {
@@ -569,7 +582,7 @@
         const id = document.getElementById('agentId').value;
         const currentNodeId = document.getElementById('node_id').value;
         const currentWorkflowId = document.getElementById('workflow_id').value;
-        const currentRoleId = document.getElementById('role_id').value;
+        const currentRoleIds = getSelectedRoles();
         const saveBtn = document.getElementById('saveBtn');
         const varRows = document.querySelectorAll('.variable-row');
         const workflowVariableObj = {};
@@ -588,7 +601,7 @@
             node_id: document.getElementById('node_id').value || null,
             title: document.getElementById('title').value,
             workflow_id: document.getElementById('workflow_id').value || null,
-            role_id: document.getElementById('role_id').value || null,
+            role_ids: currentRoleIds,
             prompt_system: document.getElementById('prompt_system').value,
             greeting: document.getElementById('greeting').value,
             description: document.getElementById('description').value,
@@ -599,19 +612,19 @@
         if (saveBtn) saveBtn.disabled = true;
 
         try {
-            let targetRoleId = currentRoleId;
+            let targetRoleIds = currentRoleIds;
             if (id) {
                 await putData(`/agent/${id}`, payload);
                 showNotification(`Агент "${payload.title}" обновлен`, 'success');
             } else {
                 const res = await postData('/agent', payload);
                 showNotification(`Агент "${payload.title}" создан`, 'success');
-                if (res && res.result && res.result.role_id) {
-                    targetRoleId = res.result.role_id;
+                if (res && res.result && res.result.role_ids) {
+                    targetRoleIds = res.result.role_ids;
                 }
             }
 
-            await initAgentsManager(currentNodeId, currentWorkflowId, targetRoleId);
+            await initAgentsManager(currentNodeId, currentWorkflowId, targetRoleIds);
 
         } catch (e) {
             console.error("Ошибка сохранения:", e);
@@ -676,7 +689,7 @@
             document.getElementById('agentId').value = '';
             document.getElementById('node_id').value = '';
             document.getElementById('workflow_id').value = '';
-            document.getElementById('role_id').value = '';
+            setSelectedRoles([]);
 
             // Обновляем UI
             document.getElementById('formTitle').textContent = 'Новый агент';
