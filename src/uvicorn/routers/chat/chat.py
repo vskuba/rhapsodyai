@@ -116,28 +116,29 @@ async def ask_ai(
     workflow_variables = {
         'prompt_user': json_request.question.strip(),
         'user_id': user.user_id,
+        'user_username': entity_user.get('username'),
         'companion_id': json_request.companion_id,
         'companion_title': entity_companion.get('title'),
-        'username': entity_user.get('username'),
         'agent_id': json_request.agent_id,
         'agent_title': entity_agent.get('title'),
-        'session_uuid': session_uuid,
         'agent_greeting': entity_agent.get('greeting'),
+        'session_uuid': session_uuid,
         'workflow_id': workflow_id,
         'node_id': entity_agent.get('node_id'),
         **json_from_string(entity_agent.get('workflow_variable', {})),
         **json_request.variables
     }
+
     for v in raw_workflow_variables:
         v_name = v.get('name', '').strip()
         if v_name and v_name not in workflow_variables:
             workflow_variables[v_name] = v.get('default', None)
 
-    for i in ai_workflow_variables_default_get():
+    for i in await ai_workflow_variables_default_get():
         if i not in workflow_variables:
             raise HTTPException(
                 status_code=401,
-                detail=f"Переменная '{i}' отсутсвует в списке переменных по умолчанию."
+                detail=f"Переменная '{i}' системная, но отсутствует в маппинге."
             )
 
     tools = {}
