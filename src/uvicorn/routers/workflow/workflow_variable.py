@@ -1,14 +1,19 @@
 from fastapi import APIRouter, Request, Depends
+
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.agent_workflow_variable_repository import AgentWorkflowVariableRepository
 from src.auth.auth import AuthChecker
+from src.auth.auth_field_policy import ALL_FIELDS, auth_fields_filter_for_update, auth_fields_allowed
 from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
 
 @router.get("/agent_workflow_variable/list")
-async def variable_list(request: Request, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
+async def variable_list(
+        request: Request,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_VIEW]))
+):
     sql = """
         SELECT v.*, GROUP_CONCAT(r.name) as role_names, GROUP_CONCAT(r.id) as role_ids
         FROM agent_workflow_variable v
@@ -46,18 +51,66 @@ async def variable_list(request: Request, user=Depends(AuthChecker([AuthPermissi
                 row['role_ids'] = [int(r) for r in row['role_ids'].split(',')]
             else:
                 row['role_ids'] = []
+
+        # Отдаём только поля, разрешённые роли пользователя на чтение
+        allowed = auth_fields_allowed('agent_workflow_variable', 'read', user.role)
+        if allowed != ALL_FIELDS:
+            results = [{k: v for k, v in row.items() if k in allowed} for row in results]
+
         return {"result": results}
 
 
-@router.post("/agent_workflow_variable")
-async def variable_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_CREATE]))):
+@router.get("/agent_workflow_variable/{variable_id}/hints")
+async def variable_hints(
+        request: Request,
+        variable_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_VIEW]))
+):
     async with mysql_get_db_async() as db:
+        await db.execute("SELECT node_id, position FROM agent_workflow_variable WHERE id=%s", (variable_id,))
+        variable = await db.fetchone()
+
+        if not variable:
+            return {"result": []}
+
+        # Переменные той же ноды, помеченные use_as_hint, стоящие выше текущей
+        await db.execute(
+            """
+            SELECT name, description
+            FROM agent_workflow_variable
+            WHERE node_id <=> %s AND use_as_hint = 1 AND position < %s
+            ORDER BY position ASC
+            """,
+            (variable['node_id'], variable['position'])
+        )
+        results = await db.fetchall()
+
+        return {"result": results}
+
+
+
+@router.post("/agent_workflow_variable")
+async def variable_create(
+        request: Request,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_CREATE]))
+):
+    async with mysql_get_db_async() as db:
+        # Позиция по умолчанию — в конец списка своей ноды
+        position = data.get('position')
+        if position is None:
+            await db.execute(
+                "SELECT COALESCE(MAX(position), -1) + 1 AS position FROM agent_workflow_variable WHERE node_id <=> %s",
+                (data.get('node_id'),))
+            position = (await db.fetchone())['position']
+
         sql = """
-            INSERT INTO agent_workflow_variable (name, description, `default`, workflow_id, node_id, pattern)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO agent_workflow_variable (name, description, `default`, workflow_id, node_id, position, use_as_hint)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         await db.execute(sql, (data.get('name'), data.get('description'), data.get('default'),
-                               data.get('workflow_id'), data.get('node_id'), data.get('pattern')))
+                               data.get('workflow_id'), data.get('node_id'), position,
+                               int(bool(data.get('use_as_hint')))))
         variable_id = db.lastrowid
 
         # Сохранение ролей
@@ -70,30 +123,37 @@ async def variable_create(request: Request, data: dict, user=Depends(AuthChecker
 
 
 @router.put("/agent_workflow_variable/{variable_id}")
-async def variable_update(request: Request, variable_id: int, data: dict,
-                          user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
-    async with mysql_get_db_async() as db:
-        sql = """
-            UPDATE agent_workflow_variable 
-            SET name=%s, description=%s, `default`=%s, workflow_id=%s, node_id=%s, pattern=%s
-            WHERE id=%s
-        """
-        await db.execute(sql, (data.get('name'), data.get('description'), data.get('default'),
-                               data.get('workflow_id'), data.get('node_id'), data.get('pattern'), variable_id))
+async def variable_update(
+        request: Request,
+        variable_id: int,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_UPDATE]))
+):
+    # Оставляем только поля, разрешённые роли пользователя (admin — все)
+    fields, data = auth_fields_filter_for_update('agent_workflow_variable', 'write', user.role, data)
 
-        # Обновление ролей
-        await db.execute("DELETE FROM agent_workflow_variable_role WHERE variable_id=%s", (variable_id,))
-        role_ids = data.get('role_ids', [])
-        for role_id in role_ids:
-            await db.execute("INSERT INTO agent_workflow_variable_role (variable_id, role_id) VALUES (%s, %s)",
-                             (variable_id, role_id))
+    async with mysql_get_db_async() as db:
+        if fields:
+            set_clause = ', '.join(f"`{f}`=%s" for f in fields)
+            values = [data[f] for f in fields] + [variable_id]
+            await db.execute(f"UPDATE agent_workflow_variable SET {set_clause} WHERE id=%s", values)
+
+        # Обновление ролей — только если поле role_ids разрешено политикой
+        if 'role_ids' in data:
+            await db.execute("DELETE FROM agent_workflow_variable_role WHERE variable_id=%s", (variable_id,))
+            for role_id in data.get('role_ids') or []:
+                await db.execute("INSERT INTO agent_workflow_variable_role (variable_id, role_id) VALUES (%s, %s)",
+                                 (variable_id, role_id))
 
         return {"result": "success"}
 
 
 @router.delete("/agent_workflow_variable/{variable_id}")
-async def variable_delete(request: Request, variable_id: int,
-                          user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))):
+async def variable_delete(
+        request: Request,
+        variable_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_DELETE]))
+):
     repo = AgentWorkflowVariableRepository()
     await repo.delete(variable_id)
     return {"result": "success"}

@@ -1,12 +1,43 @@
+import traceback
+
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi import Response
+from jinja2 import TemplateNotFound
 
+from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get_all
 from src.auth.auth import get_current_user
 from src.auth.auth_session import AuthSession
 
 router = APIRouter()
+
+template_role_mapping: dict = {
+    '/admin/variable': [
+        {
+            'role': {'manager_dating', 'manager_dating_junior'},
+            'template': 'custom/dating/agent_workflow_variable.html'
+        }
+    ],
+}
+
+
+def get_template_for_role(path: str, role: str, value: str, jinja2_template) -> str:
+    """Return the template path for a given route and role, or None if not found."""
+    for mapping in template_role_mapping.get(path, []):
+        if role in mapping['role']:
+            template_path = mapping['template']
+            try:
+                if jinja2_template:
+                    jinja2_template.env.get_template(template_path)
+                return template_path
+            except TemplateNotFound as e:
+                backtrace = traceback.format_exc()
+                logger_info(
+                    f"❌ Ошибка, кастомный шаблон '{template_path}' не найден: {e}."
+                    f"Полный стек вызовов:\n{backtrace}"
+                )
+    return value
 
 
 async def require_auth(request: Request) -> AuthSession:
@@ -123,7 +154,12 @@ async def role_page(request: Request, user: AuthSession = Depends(require_auth))
 async def workflow_variable_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/agent_workflow_variable.html"
+        get_template_for_role(
+            request.url.path,
+            user.role,
+            "admin/agent_workflow_variable.html",
+            request.app.state.jinja2_template
+        )
     )
 
 

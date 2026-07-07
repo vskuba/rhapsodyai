@@ -1075,6 +1075,73 @@ async def my_endpoint(user: AuthSession = Depends(AuthChecker([AuthPermission.MY
     ...
 ```
 
+### Field-Level Access Policy (сохранение полей для не-админов)
+
+Поверх RBAC-проверок на уровне эндпоинтов есть **политика доступа на уровне полей** — она определяет, какие именно колонки сущности роль может читать и сохранять.
+
+**Файл:** `src/auth/auth_field_policy.py`
+
+```python
+ALL_FIELDS = '*'  # маркер "все поля"
+
+AUTH_FIELD_POLICY = {
+    'agent_workflow_variable': {
+        'fields': {'name', 'description', 'default', 'workflow_id', 'node_id', 'pattern'},  # колонки таблицы
+        'write': {
+            '*': {'default'},  # любая не-админская роль пишет только `default`
+            # 'manager_dating': {'default', 'description'},  # точечная настройка конкретной роли
+        },
+        'read': {
+            '*': ALL_FIELDS,
+        },
+    },
+}
+```
+
+**Структура политики:** `entity → action ('write'|'read') → role → set полей`. Роли динамические (таблица `role`), поэтому ключ `'*'` — fallback для любой не-админской роли; конкретная роль переопределяет `'*'`. Роль `admin` в политике не описывается — она всегда получает `ALL_FIELDS`.
+
+**Функции:**
+
+| Функция | Назначение |
+|---------|------------|
+| `auth_fields_allowed(entity, action, role)` | Возвращает `ALL_FIELDS` (для admin или политики `'*'`) либо `set` разрешённых полей |
+| `auth_fields_filter_for_update(entity, action, role, data)` | Возвращает `(fields, data)`: список полей сущности для SQL SET и отфильтрованный payload — оба урезаны до разрешённых роли полей |
+
+**Применение в роутере** (`src/uvicorn/routers/workflow/workflow_variable.py`):
+
+```python
+# PUT /agent_workflow_variable/{id} — сохранение
+@router.put("/agent_workflow_variable/{variable_id}")
+async def variable_update(request: Request, variable_id: int, data: dict,
+                          user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_UPDATE]))):
+    # Не-админ: из payload остаются только разрешённые поля (по умолчанию — `default`)
+    fields, data = auth_fields_filter_for_update('agent_workflow_variable', 'write', user.role, data)
+
+    if fields:
+        set_clause = ', '.join(f"`{f}`=%s" for f in fields)  # динамический UPDATE только разрешённых колонок
+        await db.execute(f"UPDATE agent_workflow_variable SET {set_clause} WHERE id=%s", [data[f] for f in fields] + [variable_id])
+
+    # Связи (role_ids) обновляются только если поле пережило фильтрацию
+    if 'role_ids' in data:
+        ...
+
+# GET /agent_workflow_variable/list — чтение
+allowed = auth_fields_allowed('agent_workflow_variable', 'read', user.role)
+if allowed != ALL_FIELDS:
+    results = [{k: v for k, v in row.items() if k in allowed} for row in results]
+```
+
+**Ключевые моменты:**
+- Эндпоинт-уровень (`AuthChecker` + permission) и поле-уровень (`AUTH_FIELD_POLICY`) — независимые слои: сначала проверяется permission, затем payload режется по политике
+- Для workflow-переменных заведены отдельные permissions `WORKFLOW_VARIABLE_VIEW` / `WORKFLOW_VARIABLE_UPDATE` (в `AUTH_PERMISSIONS_DEFAULT`), чтобы обычные пользователи могли сохранять `default` переменных, не имея `WORKFLOW_UPDATE`
+- `variable_list` дополнительно фильтрует **строки** для не-админов: только переменные из нод пользователя (`user_node`) и только без ролей либо с совпадающей ролью (`agent_workflow_variable_role`)
+- Поля-связи (например `role_ids`), не являющиеся колонками таблицы, в `fields` не попадают, но фильтруются в `data` — обновление связей выполняется только если поле разрешено роли
+
+**Добавление политики для новой сущности:**
+1. Добавить ключ сущности в `AUTH_FIELD_POLICY` с `fields` (колонки таблицы) и правилами `write`/`read`
+2. В PUT-роутере заменить статический UPDATE на `auth_fields_filter_for_update()` + динамический SET
+3. В list/get-роутере отфильтровать ответ через `auth_fields_allowed(entity, 'read', user.role)`
+
 ### Current State Summary
 
 | Component | Status |
@@ -1089,3 +1156,4 @@ async def my_endpoint(user: AuthSession = Depends(AuthChecker([AuthPermission.MY
 | Password Hashing | ✅ **bcrypt implemented** in `/auth/login` |
 | DB Credential Check | ✅ **Implemented** in `/auth/login` |
 | Protected Endpoints | ✅ **20+ endpoints** across 10+ routers using `AuthChecker` with specific permissions |
+| Field-Level Policy | ✅ `auth_field_policy.py` — per-role field read/write filtering (`agent_workflow_variable`) |

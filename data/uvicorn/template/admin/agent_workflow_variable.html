@@ -76,6 +76,18 @@
         padding-bottom: 15px;
     }
 
+    #dataForm {
+        display: none;
+    }
+
+    /* Дефолтный текст (виден, пока переменная не выбрана) */
+    .default-text {
+        padding: 10px 0;
+        font-size: 15px;
+        line-height: 1.6;
+        color: #2c3e50;
+    }
+
     .form-layout-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -89,11 +101,82 @@
         margin-bottom: 15px;
     }
 
+    /* Несколько полей в одну строку */
+    .form-row {
+        display: flex;
+        gap: 15px;
+    }
+
+    .form-row .form-group {
+        flex: 1;
+    }
+
     .form-group label {
         font-size: 12px;
         color: #7f8c8d;
         font-weight: bold;
         text-transform: uppercase;
+    }
+
+    .form-group-checkbox {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .form-group-checkbox label {
+        cursor: pointer;
+        margin: 0;
+    }
+
+    .form-group-checkbox input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+    }
+
+    .agent-item.dragging {
+        opacity: 0.4;
+    }
+
+    /* Иконка-ручка перетаскивания */
+    .agent-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .agent-item .drag-handle {
+        color: #c0c8ce;
+        cursor: grab;
+        font-size: 12px;
+        flex-shrink: 0;
+        user-select: none;
+    }
+
+    .agent-item:hover .drag-handle {
+        color: #7f8c8d;
+    }
+
+    .agent-item .item-label {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Список переменных-подсказок под textarea */
+    .hint-list {
+        font-size: 13px;
+        line-height: 1.6;
+        color: #7f8c8d;
+    }
+
+    .hint-list span{
+        color: #1a202c;
+    }
+
+    .hint-list:empty {
+        display: none;
     }
 
     .form-control {
@@ -173,34 +256,41 @@
             <h2 id="formTitle">Выберите переменную</h2>
         </div>
 
+        <!-- Дефолтный текст: показывается, пока не выбрана переменная -->
+        <div class="default-text" id="defaultText">
+            Выберите переменную слева в меню, чтобы отредактировать ее.
+        </div>
+
         <form id="dataForm">
             <input type="hidden" id="id">
 
             <div class="form-layout-grid">
                 <!-- Левая колонка -->
                 <div class="left-col">
-                    <div class="form-group">
-                        <label>Название</label>
-                        <input type="text" id="name" class="form-control" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Нода</label>
-                        <select id="node_id" class="form-control">
-                            <option value="">Выберите ноду...</option>
-                        </select>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Название</label>
+                            <input type="text" id="name" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Нода</label>
+                            <select id="node_id" class="form-control">
+                                <option value="">Выберите ноду...</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Описание</label>
                         <input type="text" id="description" class="form-control">
                     </div>
                     <div class="form-group">
-                        <label>Паттерн преобразования из системных переменных</label>
-                        <textarea id="pattern" class="form-control" rows="5"></textarea>
-                    </div>
-                    <div class="form-group">
                         <label>Роли</label>
                         <select id="role_ids" class="form-control" multiple size="4">
                         </select>
+                    </div>
+                    <div class="form-group form-group-checkbox">
+                        <input type="checkbox" id="use_as_hint">
+                        <label for="use_as_hint">Использовать как подсказку</label>
                     </div>
                 </div>
 
@@ -208,7 +298,9 @@
                 <div class="right-col">
                     <div class="form-group" style="height: 100%;">
                         <label>Значение</label>
-                        <textarea id="default" class="form-control" style="height: calc(100% - 20px);"></textarea>
+                        <textarea id="default" class="form-control" style="flex: 1;"></textarea>
+                        <!-- Переменные-подсказки (use_as_hint) с позицией выше текущей -->
+                        <div class="hint-list" id="hintList"></div>
                     </div>
                 </div>
             </div>
@@ -230,6 +322,25 @@
     const itemList = document.getElementById('itemList');
     const dataForm = document.getElementById('dataForm');
     const deleteBtn = document.getElementById('deleteBtn');
+    const defaultText = document.getElementById('defaultText');
+
+    function toggleForm(visible) {
+        defaultText.style.display = visible ? 'none' : 'block';
+        dataForm.style.display = visible ? 'block' : 'none';
+    }
+
+    // Под textarea выводим переменные-подсказки, которые возвращает сервер
+    async function renderHints(variableId) {
+        const hintList = document.getElementById('hintList');
+        hintList.innerHTML = '';
+        if (!variableId) return;
+        const res = await getData(`/agent_workflow_variable/${variableId}/hints`);
+        res.result.forEach(v => {
+            const line = document.createElement('div');
+            line.innerHTML = `🟠 <span>%${v.name}%</span> - ${v.description || ''}`;
+            hintList.appendChild(line);
+        });
+    }
 
     async function loadList(activeId = null) {
         const [res, nodesRes, rolesRes] = await Promise.all([
@@ -269,7 +380,9 @@
 
         itemList.innerHTML = '';
         nodes.forEach(node => {
-            const nodeVars = variables.filter(v => v.node_id === node.id);
+            const nodeVars = variables
+                .filter(v => v.node_id === node.id)
+                .sort((a, b) => (a.position || 0) - (b.position || 0));
             if (nodeVars.length === 0) return;
 
             const header = document.createElement('div');
@@ -280,24 +393,79 @@
             nodeVars.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'agent-item';
-                div.textContent = item.name;
+
+                const handle = document.createElement('span');
+                handle.className = 'drag-handle';
+                handle.textContent = '⠿';
+
+                const label = document.createElement('span');
+                label.className = 'item-label';
+                label.textContent = item.name;
+
+                div.append(handle, label);
+                div.draggable = true;
+                div.dataset.id = item.id;
+                div.dataset.nodeId = node.id;
                 if (activeId !== null && item.id === activeId) div.classList.add('active');
                 div.onclick = () => selectItem(item, div);
+                div.addEventListener('dragstart', onDragStart);
+                div.addEventListener('dragover', onDragOver);
+                div.addEventListener('dragend', onDragEnd);
                 itemList.appendChild(div);
             });
         });
     }
 
+    // Drag-and-drop: перестановка переменных внутри своей ноды, порядок сохраняется в position
+    let draggedItem = null;
+
+    function onDragStart(e) {
+        draggedItem = e.currentTarget;
+        draggedItem.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function onDragOver(e) {
+        const target = e.currentTarget;
+        // Двигаем только в пределах своей ноды
+        if (!draggedItem || draggedItem === target || draggedItem.dataset.nodeId !== target.dataset.nodeId) return;
+        e.preventDefault();
+        const rect = target.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        itemList.insertBefore(draggedItem, after ? target.nextSibling : target);
+    }
+
+    async function onDragEnd() {
+        if (!draggedItem) return;
+        const nodeId = draggedItem.dataset.nodeId;
+        draggedItem.classList.remove('dragging');
+        draggedItem = null;
+
+        // Новый порядок группы по DOM → сохраняем индексы в position
+        const items = Array.from(itemList.querySelectorAll(`.agent-item[data-node-id="${nodeId}"]`));
+        await Promise.all(items.map((el, index) =>
+            putData(`/agent_workflow_variable/${el.dataset.id}`, {position: index})
+        ));
+
+        // Перестраиваем подсказки открытой переменной с учётом новых позиций
+        const openedId = parseInt(document.getElementById('id').value);
+        if (openedId) await renderHints(openedId);
+
+        showNotification('Порядок сохранён', 'success');
+    }
+
     function selectItem(item, element) {
         document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
         element.classList.add('active');
+        toggleForm(true);
 
         document.getElementById('id').value = item.id;
         document.getElementById('name').value = item.name;
         document.getElementById('description').value = item.description || '';
         document.getElementById('default').value = item.default || '';
         document.getElementById('node_id').value = item.node_id || '';
-        document.getElementById('pattern').value = item.pattern || '';
+        document.getElementById('use_as_hint').checked = !!item.use_as_hint;
+        renderHints(item.id);
 
         // Установка выбранных ролей
         const roleSelect = document.getElementById('role_ids');
@@ -321,7 +489,7 @@
             default: document.getElementById('default').value,
             node_id: document.getElementById('node_id').value ? parseInt(document.getElementById('node_id').value) : null,
             role_ids: selectedRoles,
-            pattern: document.getElementById('pattern').value
+            use_as_hint: document.getElementById('use_as_hint').checked ? 1 : 0
         };
 
         // Запоминаем фокус, чтобы вернуть его после перерисовки списка
@@ -356,6 +524,7 @@
         deleteBtn.style.display = 'none';
         document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
         document.getElementById('formTitle').textContent = 'Выберите переменную';
+        toggleForm(false);
         loadList();
     };
 
@@ -367,6 +536,8 @@
         document.getElementById('formTitle').textContent = 'Новая переменная';
         // Сброс ролей
         Array.from(document.getElementById('role_ids').options).forEach(o => o.selected = false);
+        document.getElementById('hintList').innerHTML = '';
+        toggleForm(true);
     };
 
     loadList();
