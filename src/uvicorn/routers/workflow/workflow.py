@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request, Depends
 
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflow import ai_workflow_variables_global_get
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
 from src.mysql_.repository.agent_workflow_step_repository import AgentWorkflowStepRepository
 from src.mysql_.repository.agent_workflow_step_type_repository import AgentWorkflowStepTypeRepository
@@ -96,21 +95,16 @@ async def workflow_variables(
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
 ):
     sql = """
-            SELECT v.*
-            FROM `agent_workflow_variable` v
-            JOIN `agent_workflow_variable_workflow` vw ON v.id = vw.variable_id
-            WHERE vw.workflow_id = %s
-            ORDER BY v.name ASC
-        """
+        SELECT v.*
+        FROM `agent_workflow_variable` v
+        JOIN `agent_workflow_variable_workflow` vw ON v.id = vw.variable_id
+        WHERE vw.workflow_id = %s OR v.type = 'global' OR (v.type = 'node' AND v.node_id = (SELECT node_id FROM agent_workflow WHERE id = %s))
+        ORDER BY v.name ASC
+    """
     async with mysql_get_db_async() as db:
-        await db.execute(sql, (workflow_id,))
+        await db.execute(sql, (workflow_id,workflow_id,))
         db_variables = await db.fetchall()
-
-        return {
-            "result":
-                [{"id": 0, "name": i} for i in await ai_workflow_variables_global_get()]
-                + list(db_variables)
-        }
+        return {"result": db_variables}
 
 
 @router.post("/workflow/{workflow_id}/step")
