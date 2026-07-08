@@ -202,7 +202,6 @@ INSERT INTO `agent_workflow_variable` (`id`, `node_id`, `name`, `type`, `default
 (45, NULL, 'prompt_user_facts_man', 'workflow', NULL, 0, 0, NULL),
 (46, NULL, 'prompt_user_facts_talk', 'workflow', NULL, 0, 0, NULL),
 (47, NULL, 'fact_collection_man_name', 'workflow', 'dating_man', 0, 0, NULL),
-(48, NULL, 'fact_collection_output_format_response', 'workflow', NULL, 0, 0, NULL),
 (49, NULL, 'prompt_user_tags', 'workflow', NULL, 0, 0, NULL),
 (50, NULL, 'prompt_user_category', 'workflow', NULL, 0, 0, NULL),
 (53, NULL, 'fact_collection_man_filter', 'workflow', NULL, 0, 0, NULL),
