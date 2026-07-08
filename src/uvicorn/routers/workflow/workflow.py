@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, Depends
 
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflowl import ai_workflow_variables_default_get
+from src.ai.ai_workflow import ai_workflow_variables_global_get
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
 from src.mysql_.repository.agent_workflow_step_repository import AgentWorkflowStepRepository
 from src.mysql_.repository.agent_workflow_step_type_repository import AgentWorkflowStepTypeRepository
@@ -19,7 +19,12 @@ async def workflow_list(request: Request, user=Depends(AuthChecker([AuthPermissi
 
 
 @router.post("/workflow")
-async def workflow_create(request: Request, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.WORKFLOW_CREATE]))):
+async def workflow_create(
+        request: Request,
+        data: dict,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_CREATE]))
+):
     async with db:
         sql = """
             INSERT INTO agent_workflow (name, title, node_id, description, position)
@@ -54,7 +59,12 @@ async def workflow(request: Request, workflow_id: int, user=Depends(AuthChecker(
 
 
 @router.put("/workflow/{workflow_id}")
-async def workflow(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
+async def workflow(
+        request: Request,
+        workflow_id: int,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
+):
     repo = AgentWorkflowRepository()
     return {"result": await repo.update(workflow_id, data)}
 
@@ -80,7 +90,11 @@ async def workflow_steps(request: Request, workflow_id: int, user=Depends(AuthCh
 
 
 @router.get("/workflow/{workflow_id}/variables")
-async def workflow_variables(request: Request, workflow_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
+async def workflow_variables(
+        request: Request,
+        workflow_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
+):
     sql = """
             SELECT v.*
             FROM `agent_workflow_variable` v
@@ -92,11 +106,20 @@ async def workflow_variables(request: Request, workflow_id: int, user=Depends(Au
         await db.execute(sql, (workflow_id,))
         db_variables = await db.fetchall()
 
-        return {"result": [{"id": 0, "name": i} for i in await ai_workflow_variables_default_get()] + list(db_variables)}
+        return {
+            "result":
+                [{"id": 0, "name": i} for i in await ai_workflow_variables_global_get()]
+                + list(db_variables)
+        }
 
 
 @router.post("/workflow/{workflow_id}/step")
-async def workflow_step_add(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
+async def workflow_step_add(
+        request: Request,
+        workflow_id: int,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
+):
     repo_workflow_step = AgentWorkflowStepRepository()
     repo_workflow_step_type = AgentWorkflowStepTypeRepository()
 
@@ -123,7 +146,12 @@ async def workflow_step_add(request: Request, workflow_id: int, data: dict, user
 
 
 @router.post("/workflow/{workflow_id}/variable")
-async def workflow_variable_add(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
+async def workflow_variable_add(
+        request: Request,
+        workflow_id: int,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
+):
     async with mysql_get_db_async() as db:
         # Check if relation already exists
         sql_check = """
@@ -142,8 +170,13 @@ async def workflow_variable_add(request: Request, workflow_id: int, data: dict, 
         wf = await db.fetchone()
         node_id = wf.get("node_id") if wf else None
 
+        variable_type = data.get("type", "workflow")
+
         # Check if variable exists under this node_id
-        await db.execute("SELECT id FROM agent_workflow_variable WHERE name = %s AND node_id <=> %s", (data.get("name"), node_id))
+        await db.execute(
+            "SELECT id FROM agent_workflow_variable WHERE name = %s AND node_id <=> %s AND `type` = %s",
+            (data.get("name"), node_id, variable_type)
+        )
         existing_var = await db.fetchone()
 
         if existing_var:
@@ -151,10 +184,10 @@ async def workflow_variable_add(request: Request, workflow_id: int, data: dict, 
         else:
             # Create new variable
             sql_insert_var = """
-                INSERT INTO agent_workflow_variable (name, `default`, node_id)
+                INSERT INTO agent_workflow_variable (name, `default`, `type`)
                 VALUES (%s, %s, %s)
             """
-            await db.execute(sql_insert_var, (data.get("name"), data.get("default"), node_id))
+            await db.execute(sql_insert_var, (data.get("name"), data.get("default"), variable_type))
             variable_id = db.lastrowid
 
         # Insert relationship
@@ -168,7 +201,12 @@ async def workflow_variable_add(request: Request, workflow_id: int, data: dict, 
 
 
 @router.put("/workflow/{workflow_id}/steps/reorder")
-async def workflow_steps_reorder(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
+async def workflow_steps_reorder(
+        request: Request,
+        workflow_id: int,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
+):
     repo = AgentWorkflowStepRepository()
     positions = data.get("positions", [])
 
@@ -183,18 +221,31 @@ async def workflow_steps_reorder(request: Request, workflow_id: int, data: dict,
 
 
 @router.put("/workflow/{workflow_id}/step/{workflow_step_id}")
-async def workflow_step_update(request: Request, workflow_step_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
+async def workflow_step_update(
+        request: Request,
+        workflow_step_id: int,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
+):
     repo = AgentWorkflowStepRepository()
     return {"result": await repo.update(workflow_step_id, data)}
 
 
 @router.delete("/workflow/{workflow_id}/step/{workflow_step_id}")
-async def workflow_step_delete(request: Request, workflow_step_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))):
+async def workflow_step_delete(
+        request: Request,
+        workflow_step_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))
+):
     repo = AgentWorkflowStepRepository()
     return {"result": await repo.delete(workflow_step_id)}
 
 
 @router.delete("/workflow/{workflow_id}/variable/{workflow_variable_id}")
-async def workflow_variable_delete(request: Request, workflow_variable_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))):
+async def workflow_variable_delete(
+        request: Request,
+        workflow_variable_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))
+):
     repo = AgentWorkflowVariableRepository()
     return {"result": await repo.delete(workflow_variable_id)}
