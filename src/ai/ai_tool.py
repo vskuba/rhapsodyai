@@ -206,6 +206,16 @@ async def ai_tool_sync(force: bool = False) -> int:
     return len(all_tools_data)
 
 
+async def ai_tool_get(tool_name: str) -> dict:
+    """
+    Получает инструмент по имени из базы данных.
+    Возвращает словарь с данными инструмента или None, если не найден.
+    """
+    tool_repo = ToolRepository()
+    tool_data = await tool_repo.find_one_by(criteria={"name": tool_name})
+    return tool_data
+
+
 def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict) -> tuple:
     """
     Загружает функцию инструмента и приводит сырые аргументы
