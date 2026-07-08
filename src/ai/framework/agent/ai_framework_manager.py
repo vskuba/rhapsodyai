@@ -288,16 +288,15 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         )
 
                         if isinstance(raw_result, dict):
-                            for output_key, expect_variable in outputs_map.items():
-                                if output_key in raw_result:
-                                    val = raw_result[output_key]
-                                    if isinstance(val, (dict, list)):
-                                        val = json.dumps(val, ensure_ascii=False)
-                                    else:
-                                        val = str(val)
-                                    model.workflow_variables[expect_variable.strip()] = val
-                                    logger_info(
-                                        f"🏷️ Переменная '%{expect_variable}%' получила значение '{val}'")
+                            for output_key, result in raw_result.items():
+                                var_name = f'{tool_name}_result_{output_key}'
+                                if isinstance(result, (dict, list)):
+                                    result = json.dumps(result, ensure_ascii=False)
+                                else:
+                                    result = str(result)
+                                model.workflow_variables[var_name] = result
+                                logger_info(
+                                    f"🏷️ Переменная '%{var_name}%' получила значение '{result}'")
 
                         else:
                             # Для не-словарей определяем текстовый ключ на основе строгого isinstance
@@ -318,17 +317,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                 logger_info(
                                     f"🛠 Тип результата инструмента '{type_key}'")
 
-                            # Пытаемся найти переменную по вычисленному ключу типа
-                            var_name = outputs_map.get(type_key, None)
-                            if var_name:
-                                model.workflow_variables[var_name] = raw_result
-                                logger_info(
-                                    f"🏷️ Переменная '%{var_name}%' получила значение '{raw_result}'")
-                            else:
-                                logger_info(
-                                    f"⚠️ не найден маппинг результатов инструмента '{tool_name}'. "
-                                    f"Тип результата: '{type_key}'"
-                                )
+                            var_name = f'{tool_name}_result_{type_key}'
+                            model.workflow_variables[var_name] = raw_result
+                            logger_info(
+                                f"🏷️ Переменная '%{var_name}%' получила значение '{raw_result}'")
 
                     except Exception as e:
                         backtrace = traceback.format_exc()
