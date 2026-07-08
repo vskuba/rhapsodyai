@@ -64,7 +64,7 @@
 
     .editor-section {
         flex: 1;
-        padding: 20px 40px;
+        padding: 20px 20px;
         overflow-y: auto;
     }
 
@@ -93,6 +93,20 @@
     }
 
     .settings-column {
+        flex: 2;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .variables-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .steps-column {
         flex: 1;
         display: flex;
         flex-direction: column;
@@ -360,7 +374,6 @@
         flex-direction: column;
         gap: 8px;
         margin-top: 10px;
-        background-color: #f9f9f9;
         font-size: 14px;
     }
 
@@ -476,13 +489,6 @@
         align-items: center;
     }
 
-    .variables-section {
-        border: 1px solid #e0e0e0;
-        border-radius: 6px;
-        padding: 16px;
-        background-color: #f9f9f9;
-    }
-
     /* Заголовок секции */
     .variables-section h3 {
         margin-top: 0;
@@ -512,6 +518,45 @@
     }
 
     /* Кнопка добавления (на всю ширину под инпутами для удобства) */
+    .variables-editor-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 8px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    /* Строка с парой Ключ-Значение */
+    .variable-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .variable-row .form-control {
+        padding: 6px 10px;
+        font-size: 13px;
+        font-family: 'Consolas', 'Monaco', monospace;
+    }
+
+    /* Кнопка удаления строки */
+    .btn-del-var {
+        background: #e74c3c;
+        color: white;
+        border: none;
+        padding: 6px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 14px;
+        transition: background 0.2s;
+    }
+
+    .btn-del-var:hover {
+        background: #c0392b;
+    }
+
     .btn-add-var {
         background-color: #28a745;
         color: white;
@@ -545,7 +590,7 @@
         justify-content: space-between;
         align-items: center;
         background: white;
-        padding: 8px 12px;
+        padding: 8px 6px;
         border: 1px solid #e0e0e0;
         border-radius: 4px;
         font-family: monospace;
@@ -555,25 +600,55 @@
         border-left: 3px solid #2974df;
     }
 
+    .variable-item:hover {
+        background-color: #edf4f9;
+    }
+
     .variable-item-common {
         border-left: 2px solid limegreen;
+    }
+
+    .variable-item-common:hover {
+        background-color: #dfffd9;
     }
 
     .variable-item-node {
         border-left: 2px solid #ffd73b;
     }
 
-    .variable-item-tool {
-        border-left: 2px solid #3be8ff;
+    .variable-item-node:hover {
+        background-color: #fff2d9;
     }
 
-    .variable-item.has-default:hover {
-        background-color: #edf4f9;
+    .variable-item-tool {
+        border-left: 2px solid #f488d5;
+    }
+
+    .variable-item-tool:hover {
+        background-color: #ffd9ea;
+    }
+
+    .variable-item-input {
+        border-left: 2px solid #26c6da;
+    }
+
+    .variable-item-input:hover {
+        background-color: #d9f7fb;
     }
 
     .variable-item.has-default:hover .variable-badge {
         background-color: #dfe3e6;
         color: #333;
+    }
+
+    .variable-item.unused-variable {
+        border-left-color: #b0b0b0;
+        background-color: #f5f5f5;
+        opacity: 0.6;
+    }
+
+    .variable-item.unused-variable .variable-name {
+        color: #3a3535;
     }
 
     .variable-name {
@@ -585,7 +660,6 @@
 
     .variable-name:hover {
         color: #004494;
-        font-size: 12px;
     }
 
     .variable-badge {
@@ -594,7 +668,7 @@
         font-size: 11px;
         padding: 2px 6px;
         border-radius: 4px;
-        margin: 0 10px;
+        margin: 0 4px;
         max-width: 150px; /* Защита от слишком длинных строк */
         white-space: nowrap;
         overflow: hidden;
@@ -730,14 +804,22 @@
                     </div>
                 </div>
                 <div class="prompt-column">
-                    <!-- Здесь пусто или доп. инфо, так как шаги теперь в другом виде -->
+                    <div class="form-group" id="inputVariablesGroup">
+                        <label>Входящие переменные</label>
+                        <div id="inputVariablesContainer" class="variables-editor-container">
+                            <!-- Сюда динамически будут добавляться строки с входящими переменными -->
+                        </div>
+                        <button type="button" class="btn-add-var" id="addInputVariableBtn">+ Добавить
+                            переменную
+                        </button>
+                    </div>
                 </div>
             </div>
 
             <!-- 2. Контейнер ШАГОВ (Две колонки) -->
             <div id="stepsEditorView" class="form-layout-grid" style="display: none;">
 
-                <div class="settings-column">
+                <div class="variables-column">
                     <div class="variables-section">
                         <div class="variables-header">
                             <h3>Переменные</h3>
@@ -766,7 +848,7 @@
                 </div>
 
                 <!-- Колонки управления шагами -->
-                <div class="settings-column" style="border-right: 1px solid #eee; padding-right: 15px;">
+                <div class="steps-column">
 
                     <!-- Блоки 1 и 2: Выбор и Кнопка Добавить -->
                     <div style="display: flex; gap: 10px; margin-bottom: 10px;">
@@ -933,6 +1015,7 @@
     let allWorkflowStepsType = {};
     let allCurrentVariables = {};
     let allAvailableTools = [];
+    let allUsedVariables = [];
 
     /**
      * Инициализация страницы: загрузка задач и нод для селекта
@@ -964,12 +1047,27 @@
             const activeWorkflowLink = workflowListContainer.querySelector('.agent-item.active .workflow-name-link');
             const activeWorkflowLinkId = activeWorkflowLink ? activeWorkflowLink.id : null;
 
+            // Запоминаем текущий режим: если открыта форма настроек workflow,
+            // после перерисовки списка нужно остаться на ней, а не переключаться на шаги
+            const settingsViewEl = document.getElementById('workflowSettingsView');
+            const isSettingsViewOpen = !!activeWorkflowLinkId && settingsViewEl && settingsViewEl.style.display !== 'none';
+
             renderWorkflowList(workflows, nodes);
             initVariablesHandlers();
 
             if (activeWorkflowLinkId) {
                 const activeWorkflowLink = workflowListContainer.querySelector('#' + activeWorkflowLinkId);
-                activeWorkflowLink.click();
+                if (isSettingsViewOpen) {
+                    // Остаемся в форме редактирования: кликаем по иконке параметров
+                    const editIcon = activeWorkflowLink.closest('.agent-item')?.querySelector('.edit-icon');
+                    if (editIcon) {
+                        editIcon.click();
+                    } else {
+                        activeWorkflowLink.click();
+                    }
+                } else {
+                    activeWorkflowLink.click();
+                }
             } else {
                 const firstWorkflowLink = workflowListContainer.querySelector('.agent-item .workflow-name-link');
                 firstWorkflowLink.click();
@@ -1159,7 +1257,7 @@
         document.getElementById('addStepToWorkflowBtn').style.display = 'block';
 
         // 2. ЗАПОЛНЯЕМ ДАННЫЕ
-        fillWorkflowForm(workflow);
+        await fillWorkflowForm(workflow);
         await loadWorkflowSteps(workflow.id);
 
         // 3. ОБНОВЛЯЕМ ЗАГОЛОВОК
@@ -1225,6 +1323,7 @@
             }
 
             collectWorkflowTargetSteps()
+            extractVariablesFromSteps(allCurrentStepsData);
             renderWorkflowSteps(allCurrentStepsData);
 
             if (activeStepId) {
@@ -1263,6 +1362,77 @@
         }
     }
 
+    /**
+     * Собирает имена всех переменных, используемых в шагах workflow,
+     * и сохраняет их в allUsedVariables.
+     */
+    function extractVariablesFromSteps(steps) {
+        const usedVariables = new Set();
+        const stepsArray = Array.isArray(steps) ? steps : [];
+
+        // Вхождения по паттерну %varname% в произвольном тексте
+        const collectFromText = (text) => {
+            if (typeof text !== 'string') return;
+            for (const match of text.matchAll(/%([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
+                usedVariables.add(match[1]);
+            }
+        };
+
+        stepsArray.forEach(step => {
+            const metadata = parseMetadata(step.metadata);
+            const typeName = allWorkflowStepsType[step.type_id]?.name;
+
+            // return_response_llm / return_response_text / llm_to_json: %varname% в prompt_user
+            if (['return_response_llm', 'return_response_text', 'llm_to_json'].includes(typeName)) {
+                collectFromText(metadata.prompt_user);
+            }
+
+            // llm_to_json: массив объектов с ключом "variable"
+            if (typeName === 'llm_to_json' && Array.isArray(metadata.llm_to_json_variable)) {
+                metadata.llm_to_json_variable.forEach(item => {
+                    if (item?.variable) usedVariables.add(item.variable);
+                });
+            }
+
+            // tool_invoke: значения inputs_map — имена переменных
+            if (typeName === 'tool_invoke') {
+                const inputsMap = metadata.inputs_map || metadata.tool_invoke?.inputs_map;
+                if (inputsMap && typeof inputsMap === 'object') {
+                    Object.values(inputsMap).forEach(value => {
+                        if (typeof value === 'string' && value) usedVariables.add(value);
+                    });
+                }
+            }
+
+            // variable_conversion: %varname% в поле "text" каждого объекта
+            if (typeName === 'variable_conversion' && Array.isArray(metadata.variable_conversion)) {
+                metadata.variable_conversion.forEach(item => collectFromText(item?.text));
+            }
+
+            // Переходы (у всех типов шагов): ключ "variable" в условиях
+            ['transitions_before', 'transitions_after'].forEach(key => {
+                if (Array.isArray(metadata[key])) {
+                    metadata[key].forEach(transition => {
+                        if (transition?.variable) usedVariables.add(transition.variable);
+                    });
+                }
+            });
+        });
+
+        allUsedVariables = Array.from(usedVariables);
+        markUnusedWorkflowVariables();
+    }
+
+    /**
+     * Помечает переменные группы "Переменные workflow", не используемые ни в одном шаге.
+     */
+    function markUnusedWorkflowVariables() {
+        document.querySelectorAll('.variables-accordion-section[data-key="workflow"] .variable-item')
+            .forEach(item => {
+                item.classList.toggle('unused-variable', !allUsedVariables.includes(item.dataset.name));
+            });
+    }
+
     function collectWorkflowTargetSteps() {
         const targetStepsSet = new Set();
         allCurrentStepsData.forEach(step => {
@@ -1298,11 +1468,122 @@
             // 3. Отрисовываем переменные в интерфейсе
             renderWorkflowVariables(allCurrentVariables);
 
+            // 4. Отрисовываем входящие переменные в форме настроек workflow
+            renderInputVariables();
+
         } catch (e) {
             console.error("Ошибка загрузки переменных:", e);
             allCurrentVariables = [];
             window.allCurrentVariables = [];
             container.innerHTML = ''; // Очищаем контейнер при ошибке
+            renderInputVariables();
+        }
+    }
+
+    // ===== Входящие переменные (type === 'input') в форме "Редактирование задачи" =====
+
+    function renderInputVariables() {
+        const container = document.getElementById('inputVariablesContainer');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const variablesArray = Array.isArray(allCurrentVariables) ? allCurrentVariables : [];
+        variablesArray.filter(v => v.type === 'input').forEach(variable => {
+            createInputVariableRow(variable);
+        });
+    }
+
+    function createInputVariableRow(variable = null) {
+        const container = document.getElementById('inputVariablesContainer');
+        if (!container) return;
+
+        const row = document.createElement('div');
+        row.className = 'variable-row input-variable-row';
+        if (variable) {
+            row.dataset.id = variable.id;
+            // Исходные значения — чтобы при сохранении отправлять PUT только для измененных строк
+            row.dataset.originalName = variable.name;
+            row.dataset.originalDefault = variable.default ?? '';
+        }
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'form-control var-key';
+        nameInput.placeholder = 'Имя переменной';
+        nameInput.value = variable ? variable.name : '';
+
+        const valInput = document.createElement('input');
+        valInput.type = 'text';
+        valInput.className = 'form-control var-value';
+        valInput.placeholder = 'Значение по умолчанию';
+        valInput.value = variable ? (variable.default ?? '') : '';
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn-del-var';
+        delBtn.title = 'Удалить переменную';
+        delBtn.innerHTML = '&times;';
+        delBtn.onclick = async () => {
+            // Новая (еще не сохраненная) строка — просто убираем из DOM
+            if (!variable) {
+                row.remove();
+                return;
+            }
+
+            const workflowId = document.getElementById('workflowId')?.value;
+            if (!confirm(`Удалить переменную "${variable.name}"?`)) return;
+
+            try {
+                await deleteData(`/workflow/${workflowId}/variable/${variable.id}`);
+                showNotification('Переменная успешно удалена', 'success');
+                await loadWorkflowVariables(workflowId);
+            } catch (err) {
+                console.error("Ошибка удаления переменной:", err);
+                showNotification(`Ошибка удаления: ${err.message}`, 'error');
+            }
+        };
+
+        row.append(nameInput, valInput, delBtn);
+        container.appendChild(row);
+    }
+
+    /**
+     * Сохраняет входящие переменные: новые строки (без data-id) создаются через POST
+     * с type='input', измененные существующие обновляются через PUT.
+     */
+    async function saveInputVariables(workflowId) {
+        const rows = document.querySelectorAll('#inputVariablesContainer .input-variable-row');
+
+        for (const row of rows) {
+            const name = row.querySelector('.var-key').value.trim();
+            const value = row.querySelector('.var-value').value.trim();
+            const variableId = row.dataset.id;
+
+            if (!name) continue;
+
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+                showNotification(`Недопустимое имя переменной: "${name}"`, 'error');
+                continue;
+            }
+
+            if (variableId) {
+                // Существующая переменная: обновляем только если имя или значение изменились
+                const isChanged = name !== row.dataset.originalName
+                    || value !== (row.dataset.originalDefault || '');
+
+                if (isChanged) {
+                    await putData(`/agent_workflow_variable/${variableId}`, {
+                        name: name,
+                        "default": value === '' ? null : value
+                    });
+                }
+            } else {
+                await postData(`/workflow/${workflowId}/variable`, {
+                    name: name,
+                    "default": value === '' ? null : value,
+                    type: 'input'
+                });
+            }
         }
     }
 
@@ -1427,6 +1708,10 @@
             fieldWrapper.className = 'form-group';
             fieldWrapper.style = "display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;";
 
+            if (field.type === 'checkbox') {
+                fieldWrapper.style = "display: flex; flex-direction: row;";
+            }
+
             const label = document.createElement('label');
             label.style = "font-size: 12px; font-weight: 600; color: #4a5568;";
             label.textContent = field.label;
@@ -1520,22 +1805,11 @@
                     const row = document.createElement('div');
                     row.className = 'widget-row';
 
-                    // 1. Создаем селект с переменными из allCurrentVariables
+                    // 1. Создаем селект с переменными, сгруппированными как в #variablesContainer
                     const select = document.createElement('select');
                     select.className = 'form-control widget-select';
                     select.style = "flex: 1; padding: 5px; font-size: 12px;";
-
-                    // Дефолтный пустой вариант
-                    select.innerHTML = '<option value="">Выбрать...</option>';
-                    if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
-                        window.allCurrentVariables.forEach(v => {
-                            const opt = document.createElement('option');
-                            opt.value = v.name;
-                            opt.textContent = '%' + v.name + '%';
-                            if (v.name === initialVariable) opt.selected = true;
-                            select.appendChild(opt);
-                        });
-                    }
+                    fillVariablesSelectOptions(select, initialVariable, 'Выбрать...');
 
                     // 2. Создаем текстовое поле textarea
                     const txt = document.createElement('textarea');
@@ -1719,7 +1993,6 @@
                 const collectToolWidgetData = () => {
                     const selectedName = selectElement.value; // Теперь тут лежит имя инструмента
                     const inputsMap = {};
-                    const outputsMap = {};
 
                     // Собираем Inputs
                     mappingContainer.querySelectorAll('.input-map-row').forEach(row => {
@@ -1730,39 +2003,21 @@
                         }
                     });
 
-                    // Собираем Outputs
-                    mappingContainer.querySelectorAll('.output-map-row').forEach(row => {
-                        const argSel = row.querySelector('.map-arg-select');
-                        const varSel = row.querySelector('.map-var-select');
-                        if (argSel && argSel.value && varSel && varSel.value) {
-                            outputsMap[argSel.value] = varSel.value;
-                        }
-                    });
-
                     // Сохраняем структуру с tool_name
                     saveChanges({
                         tool_name: selectedName || null,
                         inputs_map: inputsMap,
-                        outputs_map: outputsMap
+                        outputs_map: {}
                     });
                 };
 
                 // Вспомогательный хелпер генерации селекта со списком глобальных переменных {{var}}
+                // Переменные сгруппированы через optgroup так же, как в списке #variablesContainer
                 const createVariablesSelect = (selectedVal = '') => {
                     const sel = document.createElement('select');
                     sel.className = 'form-control map-var-select';
                     sel.style = "flex: 1; padding: 4px; font-size: 12px; height: 32px;";
-                    sel.innerHTML = '<option value="">-- Переменная --</option>';
-
-                    if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
-                        window.allCurrentVariables.forEach(v => {
-                            const opt = document.createElement('option');
-                            opt.value = v.name;
-                            opt.textContent = `%${v.name}%`;
-                            if (v.name === selectedVal) opt.selected = true;
-                            sel.appendChild(opt);
-                        });
-                    }
+                    fillVariablesSelectOptions(sel, selectedVal);
                     sel.onchange = collectToolWidgetData;
                     return sel;
                 };
@@ -1793,21 +2048,8 @@
                     const inputs = argsObj.input || {};
                     const inputKeys = Object.keys(inputs);
 
-                    // 2. Извлекаем выходящие параметры строго по вашей структуре: args.output.keys
-                    let outputKeys = [];
-                    if (argsObj.output) {
-                        if (argsObj.output.keys) {
-                            outputKeys = Object.keys(argsObj.output.keys);
-                        } else if (typeof argsObj.output === 'object' && argsObj.output.type) {
-                            outputKeys = [argsObj.output.type];
-                        } else if (typeof argsObj.output === 'object') {
-                            outputKeys = Object.keys(argsObj.output);
-                        } else if (typeof argsObj.output === 'string') {
-                            outputKeys = ['str'];
-                        } else if (typeof argsObj.output === 'int') {
-                            outputKeys = ['int'];
-                        }
-                    }
+                    // 2. Извлекаем выходящие параметры инструмента
+                    const outputKeys = getToolOutputKeys(toolName);
 
                     // --- РЕНДЕРИНГ ВХОДЯЩИХ (Input) ---
                     if (inputKeys.length > 0) {
@@ -1862,24 +2104,55 @@
                             row.className = 'output-map-row';
                             row.style = "display: flex; align-items: center; gap: 8px; background: #fff; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;";
 
-                            // Левый селект: фиксированный аргумент выхода инструмента
-                            const argSelect = document.createElement('select');
-                            argSelect.className = 'form-control map-arg-select';
-                            argSelect.style = "flex: 1; padding: 4px; font-size: 12px; height: 32px; background: #edf2f7; pointer-events: none;";
-                            argSelect.innerHTML = '<option value="' + argName + '" selected>' + argName + '</option>';
+                            // Левая часть: текстовое название выходного ключа инструмента
+                            const argText = document.createElement('span');
+                            argText.style = "flex: 1; padding: 4px; font-size: 12px; color: #ea3d3d; font-weight: bold;";
+                            argText.textContent = argName;
+
+                            // Скрытый инпут для сбора ключа (argSel.value)
+                            const argHidden = document.createElement('input');
+                            argHidden.type = 'hidden';
+                            argHidden.className = 'map-arg-select';
+                            argHidden.value = argName;
 
                             // Стрелочка разделитель
                             const arrow = document.createElement('span');
                             arrow.innerHTML = '➔';
                             arrow.style = "color: #a0aec0; font-size: 12px;";
 
-                            // Правый селект: переменные, куда записать результат
-                            const savedVar = (currentValue && currentValue.outputs_map) ? currentValue.outputs_map[argName] : '';
-                            const varSelect = createVariablesSelect(savedVar);
+                            // Правая часть: переменная, куда записывается результат (в стиле variable-name с копированием)
+                            const varSpanContainer = document.createElement('div');
+                            varSpanContainer.style = "flex: 1; display: flex; align-items: center; padding: 4px;font-size: 11px;";
 
-                            row.appendChild(argSelect);
+                            const varSpan = document.createElement('span');
+                            varSpan.className = 'variable-name';
+                            varSpan.style.marginRight = '0';
+                            varSpan.title = 'Нажмите, чтобы скопировать';
+                            const varText = `%${toolName}_result_${argName}%`;
+                            varSpan.textContent = varText;
+
+                            varSpan.onclick = async () => {
+                                try {
+                                    await navigator.clipboard.writeText(varText);
+                                    showNotification(`Переменная ${varText} скопирована в буфер`, 'success');
+                                } catch (err) {
+                                    showNotification('Не удалось скопировать переменную', 'error');
+                                }
+                            };
+
+                            varSpanContainer.appendChild(varSpan);
+
+                            // Скрытый инпут для сбора значения (varSel.value)
+                            const varHidden = document.createElement('input');
+                            varHidden.type = 'hidden';
+                            varHidden.className = 'map-var-select';
+                            varHidden.value = `${toolName}_result_${argName}`;
+
+                            row.appendChild(argHidden);
+                            row.appendChild(argText);
                             row.appendChild(arrow);
-                            row.appendChild(varSelect);
+                            row.appendChild(varSpanContainer);
+                            row.appendChild(varHidden);
                             mappingContainer.appendChild(row);
                         });
                     }
@@ -1964,6 +2237,104 @@
         });
     }
 
+    // Извлекает выходящие ключи инструмента по его названию (из allAvailableTools, структура args.output)
+    function getToolOutputKeys(toolName) {
+        const tool = allAvailableTools.find(t => String(t.name) === String(toolName));
+        if (!tool) return [];
+
+        const argsObj = parseMetadata(tool.args);
+        if (!argsObj || !argsObj.output) return [];
+
+        const output = argsObj.output;
+        if (typeof output === 'object') {
+            if (output.keys) return Object.keys(output.keys);
+            if (output.type) return [output.type];
+            return Object.keys(output);
+        }
+        if (typeof output === 'string') return [output];
+        return [];
+    }
+
+    // Распределяет переменные по группам (общие / ноды / tool / workflow) — единая логика
+    // для списка #variablesContainer и селектов переменных
+    function groupWorkflowVariables(variables) {
+        const variablesArray = Array.isArray(variables) ? variables : [];
+        const commonGroup = [];
+        const nodeGroup = [];
+        const workflowGroup = [];
+        const toolGroup = [];
+        const inputGroup = [];
+
+        variablesArray.forEach(variable => {
+            if (variable.type === 'input') {
+                inputGroup.push(variable);
+            } else if (variable.type === 'global') {
+                commonGroup.push(variable);
+            } else if (variable.type === 'node') {
+                nodeGroup.push(variable);
+            } else {
+                workflowGroup.push(variable);
+            }
+        });
+
+        // Динамические переменные из инструментов:
+        // имена формируются по шаблону '{tool_name}_result_{output_key}' на основе args.output самого инструмента
+        const foundToolVariables = new Set();
+        if (typeof allCurrentStepsData !== 'undefined' && Array.isArray(allCurrentStepsData)) {
+            allCurrentStepsData.forEach(step => {
+                let metadata = parseMetadata(step.metadata);
+                if (metadata && metadata.tool_invoke && metadata.tool_invoke.tool_name) {
+                    const tool_name = metadata.tool_invoke.tool_name;
+                    getToolOutputKeys(tool_name).forEach(key => {
+                        foundToolVariables.add(tool_name + '_result_' + key);
+                    });
+                }
+            });
+        }
+
+        foundToolVariables.forEach(varName => {
+            toolGroup.push({
+                id: -2, // Отрицательный ID чтобы не появилась кнопка удаления
+                name: varName,
+                default: null,
+            });
+        });
+
+        return {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup};
+    }
+
+    // Порядок и названия групп — единые для списка #variablesContainer и селектов переменных
+    function workflowVariableSections(groups) {
+        return [
+            ['📥 Входящие переменные', groups.inputGroup, 'input'],
+            ['🇬 Глобальные переменные', groups.commonGroup, 'common'],
+            ['🇳 Переменные ноды', groups.nodeGroup, 'node'],
+            ['⚙️ Tool переменные', groups.toolGroup, 'tool'],
+            ['🇼 Переменные workflow', groups.workflowGroup, 'workflow'],
+        ];
+    }
+
+    // Заполняет селект опциями переменных из window.allCurrentVariables,
+    // сгруппированными через optgroup так же, как в списке #variablesContainer
+    function fillVariablesSelectOptions(sel, selectedVal = '', placeholder = '-- Переменная --') {
+        sel.innerHTML = '<option value="">' + placeholder + '</option>';
+
+        const groups = groupWorkflowVariables(window.allCurrentVariables);
+        workflowVariableSections(groups).forEach(([label, items]) => {
+            if (items.length === 0) return;
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = label;
+            items.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.name;
+                opt.textContent = '%' + v.name + '%';
+                if (v.name === selectedVal) opt.selected = true;
+                optgroup.appendChild(opt);
+            });
+            sel.appendChild(optgroup);
+        });
+    }
+
     function renderWorkflowVariables(variables) {
         const container = document.getElementById('variablesContainer');
         if (!container) return;
@@ -1977,52 +2348,23 @@
         }
 
         // 1. Распределяем переменные по группам
-        const commonGroup = [];
-        const nodeGroup = [];
-        const workflowGroup = [];
-        const toolGroup = [];
-        const foundToolNames = new Set();
-
-        variablesArray.forEach(variable => {
-            if (variable.id < 1) {
-                commonGroup.push(variable);
-            } else if (variable.node_id !== null && variable.node_id !== undefined && variable.node_id !== '') {
-                nodeGroup.push(variable);
-            } else {
-                workflowGroup.push(variable);
-            }
-        });
-
-        // Добавляем динамические переменные из инструментов
-        if (typeof allCurrentStepsData !== 'undefined' && Array.isArray(allCurrentStepsData)) {
-            allCurrentStepsData.forEach(step => {
-                let metadata = parseMetadata(step.metadata);
-                if (metadata && metadata.tool_invoke && metadata.tool_invoke.tool_name) {
-                    foundToolNames.add(metadata.tool_invoke.tool_name);
-                }
-            });
-        }
-
-        foundToolNames.forEach(toolName => {
-            toolGroup.push({
-                id: -2, // Отрицательный ID чтобы не появилась кнопка удаления
-                name: toolName + '_result',
-                default: null,
-            });
-        });
+        const {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup} = groupWorkflowVariables(variablesArray);
 
         // 2. Функция создания DOM-элемента отдельной переменной
         function createVariableElement(variable) {
             const div = document.createElement('div');
             div.className = 'variable-item';
-            if (variable.id === 0) {
+            if (variable.type === 'global') {
                 div.className += ' variable-item-common';
             }
             if (variable.id === -2) {
                 div.className += ' variable-item-tool';
             }
-            if (variable.node_id > 0) {
+            if (variable.type === 'node') {
                 div.className += ' variable-item-node';
+            }
+            if (variable.type === 'input') {
+                div.className += ' variable-item-input';
             }
             div.setAttribute('data-name', variable.name);
             div.setAttribute('data-id', variable.id);
@@ -2102,6 +2444,7 @@
         function createAccordionSection(title, groupItems, storageKey) {
             const section = document.createElement('div');
             section.className = 'variables-accordion-section';
+            section.dataset.key = storageKey;
 
             // По умолчанию открыта только группа "Переменные workflow"
             if (storageKey === 'workflow') {
@@ -2125,7 +2468,7 @@
 
             header.onclick = () => {
                 const isActive = section.classList.contains('active');
-                
+
                 // Схлопываем все группы
                 const allSections = container.querySelectorAll('.variables-accordion-section');
                 allSections.forEach(s => s.classList.remove('active'));
@@ -2140,11 +2483,13 @@
             return section;
         }
 
-        // 4. Добавляем 3 секции аккордеона в контейнер
-        container.appendChild(createAccordionSection('🇨 Общие переменные', commonGroup, 'common'));
-        container.appendChild(createAccordionSection('🇳 Переменные ноды', nodeGroup, 'node'));
-        container.appendChild(createAccordionSection('⚙️ Tool переменные', toolGroup, 'tool'));
-        container.appendChild(createAccordionSection('🇼 Переменные workflow', workflowGroup, 'workflow'));
+        // 4. Добавляем секции аккордеона в контейнер
+        workflowVariableSections({commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup}).forEach(([title, groupItems, storageKey]) => {
+            container.appendChild(createAccordionSection(title, groupItems, storageKey));
+        });
+
+        // 5. Помечаем неиспользуемые переменные workflow (если шаги уже загружены)
+        markUnusedWorkflowVariables();
     }
 
     async function addWorkflowVariable() {
@@ -2234,21 +2579,12 @@
         };
 
         // Вспомогательный хелпер для генерации селекта переменных воркфлоу с процентами %
+        // (сгруппированы через optgroup как в #variablesContainer)
         const createTrVariablesSelect = (selectedVar = '') => {
             const sel = document.createElement('select');
             sel.className = 'form-control tr-variable';
             sel.style = "flex: 1.5; padding: 4px; font-size: 12px; height: 32px;";
-            sel.innerHTML = '<option value="">-- Переменная --</option>';
-
-            if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
-                window.allCurrentVariables.forEach(v => {
-                    const opt = document.createElement('option');
-                    opt.value = v.name;
-                    opt.textContent = '%' + v.name + '%';
-                    if (v.name === selectedVar) opt.selected = true;
-                    sel.appendChild(opt);
-                });
-            }
+            fillVariablesSelectOptions(sel, selectedVar);
             return sel;
         };
 
@@ -2407,6 +2743,12 @@
                 await addWorkflowVariable();
             }
         };
+
+        // Кнопка "+ Добавить переменную" в блоке входящих переменных (настройки workflow)
+        const addInputVariableBtn = document.getElementById('addInputVariableBtn');
+        if (addInputVariableBtn) {
+            addInputVariableBtn.onclick = () => createInputVariableRow();
+        }
     }
 
     function syncTransitionsToStepState(step, type) {
@@ -2443,16 +2785,9 @@
             row.className = 'transition-row transition-row-' + type.toLowerCase();
             row.style = "display: flex; gap: 6px; align-items: center; background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #edf2f7; margin-bottom: 5px;";
 
-            let varOptions = '<option value="">-- Переменная --</option>';
-            if (window.allCurrentVariables && Array.isArray(window.allCurrentVariables)) {
-                window.allCurrentVariables.forEach(v => {
-                    varOptions += '<option value="' + v.name + '">%' + v.name + '%</option>';
-                });
-            }
-
             // Рендерим 4 элемента в ряд без бэктиков во избежание конфликтов со знаком доллара
             row.innerHTML =
-                '<select class="form-control tr-variable" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' + varOptions + '</select>' +
+                '<select class="form-control tr-variable" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;"></select>' +
                 '<select class="form-control tr-operator" style="width: 65px; padding: 4px; font-size: 12px; height: 32px; text-align: center;">' +
                 '<option value="==">==</option>' +
                 '<option value="!=">!=</option>' +
@@ -2466,6 +2801,7 @@
                 '<button type="button" class="btn-delete-transition" style="background:none; border:none; color:#dc3545; font-size:16px; cursor:pointer; padding:0 4px;">&times;</button>';
 
             const varSelect = row.querySelector('.tr-variable');
+            fillVariablesSelectOptions(varSelect);
             const opSelect = row.querySelector('.tr-operator');
             const valInput = row.querySelector('.tr-value'); // Находим новый инпут
             const targetSelect = row.querySelector('.tr-target');
@@ -2538,10 +2874,14 @@
                 }
 
                 await putData(`/workflow/${id}`, payload);
+                await saveInputVariables(id); // Создаем новые и обновляем измененные входящие переменные
                 showNotification('Изменения успешно сохранены', 'success');
                 await initWorkflowManager(); // Полностью обновляем списки в UI
             } else {
                 const createRes = await postData('/workflow', payload);
+                if (createRes && createRes.result && createRes.result.id) {
+                    await saveInputVariables(createRes.result.id);
+                }
                 showNotification('Новый workflow успешно создан!', 'success');
 
                 await initWorkflowManager();
@@ -2582,6 +2922,10 @@
             if (workflowIdEl) workflowIdEl.value = '';
             if (nameEl) nameEl.value = '';
             if (formTitleEl) formTitleEl.textContent = 'Новый workflow';
+
+            // Очищаем список входящих переменных предыдущего workflow
+            const inputVarsContainer = document.getElementById('inputVariablesContainer');
+            if (inputVarsContainer) inputVarsContainer.innerHTML = '';
 
             // Безопасно скрываем кнопки управления шагами для нового воркфлоу
             if (deleteBtn) deleteBtn.style.display = 'none';

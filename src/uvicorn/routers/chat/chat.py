@@ -7,11 +7,14 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
+from src.ai.ai_workflow import ai_workflow_variables_render
+from src.ai.ai_workflow import ai_workflow_variables_input_get
+from src.ai.ai_workflow import ai_workflow_variables_node_get
 from src.mysql_.repository.companion_repository import CompanionRepository
 from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflowl import ai_workflow_variables_default_get
+from src.ai.ai_workflow import ai_workflow_variables_global_get
 from src.auth.auth import AuthChecker
 from src.auth.auth_session import AuthSession
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
@@ -117,14 +120,17 @@ async def ask_ai(
             "metadata": json_from_string(step.get('metadata', {}))
         })
 
-    # Собираем переменные: базовые + динамические из БД
-    workflow_variables = {
+    # Собираем переменные: базовые + из агента + из запроса пользователя
+    workflow_variables_all = {
         'prompt_user': json_request.question.strip(),
         'user_id': user.user_id,
         'user_username': entity_user.get('username'),
+        'user_email': entity_user.get('email'),
         'companion_id': json_request.companion_id,
+        'companion_name': entity_companion.get('name'),
         'companion_title': entity_companion.get('title'),
         'agent_id': json_request.agent_id,
+        'agent_name': entity_agent.get('name'),
         'agent_title': entity_agent.get('title'),
         'agent_greeting': entity_agent.get('greeting'),
         'session_uuid': session_uuid,
@@ -134,16 +140,37 @@ async def ask_ai(
         **json_request.variables
     }
 
+    # Получаем переменные ноды воркфлоу и рендерим их с учетом уже собранных переменных
+    node_id = entity_agent.get('node_id')
+    if node_id:
+        for x in await ai_workflow_variables_node_get(node_id):
+            # Рендерим переменные ноды по очереди с учетом сортировки по позиции, чтобы переменные могли ссылаться друг на друга
+            workflow_variable_node = ai_workflow_variables_render(
+                {x.get('name'): x.get('default', None)},
+                workflow_variables_all
+            )
+            workflow_variables_all.update(workflow_variable_node)
+
+    # получаем переменные из БД для воркфлоу и добавляем их в workflow_variables_all
     for v in raw_workflow_variables:
         v_name = v.get('name', '').strip()
-        if v_name and v_name not in workflow_variables:
-            workflow_variables[v_name] = v.get('default', None)
+        if v_name and v_name not in workflow_variables_all:
+            workflow_variables_all[v_name] = v.get('default', None)
 
-    for i in await ai_workflow_variables_default_get():
-        if i not in workflow_variables:
+    # Проверяем, что все глобальные переменные присутствуют в workflow_variables_all
+    for i in [x.get('name') for x in await ai_workflow_variables_global_get()]:
+        if i not in workflow_variables_all:
             raise HTTPException(
-                status_code=401,
-                detail=f"Переменная '{i}' системная, но отсутствует в маппинге."
+                status_code=400,
+                detail=f"Переменная '{i}' глобальная, но отсутствует в маппинге."
+            )
+
+    # Проверяем, что все входящие переменные workflow присутствуют в workflow_variables_all
+    for i in [x.get('name') for x in await ai_workflow_variables_input_get(workflow_id)]:
+        if i not in workflow_variables_all:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Переменная '{i}' обязательная для workflow, но отсутствует в маппинге."
             )
 
     tools = {}
@@ -168,7 +195,7 @@ async def ask_ai(
         "entity_agent": entity_agent,
         "entities_llm": entities_llm,
         "workflow_steps": workflow_steps,
-        "workflow_variables": workflow_variables,
+        "workflow_variables": workflow_variables_all,
         "prompt_user": json_request.question,
         "user_id": user.user_id,
         "companion_id": json_request.companion_id,

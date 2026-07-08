@@ -94,17 +94,23 @@ async def workflow_variables(
         workflow_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
 ):
+    # Получает все переменные, связанные с конкретным workflow (включая глобальные и переменные ноды)
     sql = """
-        SELECT v.*
-        FROM `agent_workflow_variable` v
-        JOIN `agent_workflow_variable_workflow` vw ON v.id = vw.variable_id
-        WHERE vw.workflow_id = %s OR v.type = 'global' OR (v.type = 'node' AND v.node_id = (SELECT node_id FROM agent_workflow WHERE id = %s))
-        ORDER BY v.name ASC
+        (SELECT v.* FROM `agent_workflow_variable` v
+         JOIN `agent_workflow_variable_workflow` vw ON v.id = vw.variable_id
+         WHERE vw.workflow_id = %s)
+        UNION
+        (SELECT v.* FROM `agent_workflow_variable` v
+         WHERE v.type = 'global')
+        UNION
+        (SELECT v.* FROM `agent_workflow_variable` v
+         WHERE v.type = 'node' AND v.node_id in (SELECT node_id FROM agent_workflow WHERE id = %s))
+        ORDER BY name ASC
     """
     async with mysql_get_db_async() as db:
         await db.execute(sql, (workflow_id,workflow_id,))
-        db_variables = await db.fetchall()
-        return {"result": db_variables}
+        rows = await db.fetchall()
+        return {"result": rows}
 
 
 @router.post("/workflow/{workflow_id}/step")

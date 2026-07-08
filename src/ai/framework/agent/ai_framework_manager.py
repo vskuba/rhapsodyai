@@ -7,6 +7,7 @@ import uuid
 from typing import Any, Callable, Awaitable, cast
 
 from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
+from src.ai.ai_workflow import ai_workflow_variables_render
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
 from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
@@ -90,7 +91,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 )
 
                 # Подставляем накопленные переменные в метаданные текущего шага
-                step_meta = self.variables_render(step_meta, model.workflow_variables)
+                step_meta = ai_workflow_variables_render(step_meta, model.workflow_variables)
 
                 transitions = step_meta.get('transitions_before', [])
                 if transitions:
@@ -414,21 +415,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             logger_info(f"❌ Ошибка в воркфлоу: {e}\n{traceback.format_exc()}")
             if not future.done():
                 loop.call_soon_threadsafe(future.set_exception, e)
-
-    def variables_render(self, meta_data: Any, variables: dict) -> Any:
-        """ Рекурсивно подставляет значения %переменных% во все строки метаданных шага """
-        if isinstance(meta_data, str):
-            rendered_str = meta_data
-            for key, val in variables.items():
-                placeholder = f"%{key}%"
-                if placeholder in rendered_str:
-                    rendered_str = rendered_str.replace(placeholder, str(val))
-            return rendered_str
-        elif isinstance(meta_data, dict):
-            return {k: self.variables_render(v, variables) for k, v in meta_data.items()}
-        elif isinstance(meta_data, list):
-            return [self.variables_render(item, variables) for item in meta_data]
-        return meta_data
 
     async def prompt_system_create(self, metadata: dict) -> str:
         entity_agent = metadata.get('entity_agent', {})

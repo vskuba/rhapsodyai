@@ -168,6 +168,7 @@ CREATE TABLE `agent_workflow_variable` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `node_id` INT NULL,
     `name` CHAR(50) NOT NULL,
+    `type` ENUM('global', 'node', 'input', 'workflow') NOT NULL DEFAULT 'workflow',
     `default` LONGTEXT NULL,
     `position` INT NOT NULL DEFAULT 0,
     `use_as_hint` INT NOT NULL DEFAULT 0,
