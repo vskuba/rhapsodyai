@@ -246,7 +246,6 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (45, 5),
 (46, 5),
 (47, 5),
-(48, 5),
 (49, 5),
 (50, 5),
 (53, 5),
