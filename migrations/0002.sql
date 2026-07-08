@@ -264,7 +264,8 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 --
 
 INSERT INTO `agent_workflow_variable_role` (`variable_id`, `role_id`) VALUES
-(13, 2);
+(13, 2),
+(13, 4);
 
 --
 
