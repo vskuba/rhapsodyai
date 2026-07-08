@@ -2,6 +2,9 @@ from src.mysql_.repository.agent_workflow_repository import AgentWorkflowReposit
 
 
 async def agent_workflow_id(name: str) -> int:
+    """
+    Возвращает ID workflow по его имени.
+    """
     repo = AgentWorkflowRepository()
     entity_agent_workflow = await repo.find_one_by({"name": name})
 
