@@ -39,7 +39,7 @@ async def companion_get_or_create(
         user: AuthSession = Depends(AuthChecker([]))
 ) -> dict:
     repo = CompanionRepository()
-    name = data.name
+    name = data.name.lower()
     title = data.title or name
     try:
         entity_companion = await repo.find_one_by({"name": name})
