@@ -563,6 +563,10 @@
         border-left: 2px solid #ffd73b;
     }
 
+    .variable-item-tool {
+        border-left: 2px solid #3be8ff;
+    }
+
     .variable-item.has-default:hover {
         background-color: #edf4f9;
     }
@@ -1976,6 +1980,8 @@
         const commonGroup = [];
         const nodeGroup = [];
         const workflowGroup = [];
+        const toolGroup = [];
+        const foundToolNames = new Set();
 
         variablesArray.forEach(variable => {
             if (variable.id < 1) {
@@ -1987,12 +1993,33 @@
             }
         });
 
+        // Добавляем динамические переменные из инструментов
+        if (typeof allCurrentStepsData !== 'undefined' && Array.isArray(allCurrentStepsData)) {
+            allCurrentStepsData.forEach(step => {
+                let metadata = parseMetadata(step.metadata);
+                if (metadata && metadata.tool_invoke && metadata.tool_invoke.tool_name) {
+                    foundToolNames.add(metadata.tool_invoke.tool_name);
+                }
+            });
+        }
+
+        foundToolNames.forEach(toolName => {
+            toolGroup.push({
+                id: -2, // Отрицательный ID чтобы не появилась кнопка удаления
+                name: toolName + '_result',
+                default: null,
+            });
+        });
+
         // 2. Функция создания DOM-элемента отдельной переменной
         function createVariableElement(variable) {
             const div = document.createElement('div');
             div.className = 'variable-item';
-            if (variable.id < 1) {
+            if (variable.id === 0) {
                 div.className += ' variable-item-common';
+            }
+            if (variable.id === -2) {
+                div.className += ' variable-item-tool';
             }
             if (variable.node_id > 0) {
                 div.className += ' variable-item-node';
@@ -2116,6 +2143,7 @@
         // 4. Добавляем 3 секции аккордеона в контейнер
         container.appendChild(createAccordionSection('🇨 Общие переменные', commonGroup, 'common'));
         container.appendChild(createAccordionSection('🇳 Переменные ноды', nodeGroup, 'node'));
+        container.appendChild(createAccordionSection('⚙️ Tool переменные', toolGroup, 'tool'));
         container.appendChild(createAccordionSection('🇼 Переменные workflow', workflowGroup, 'workflow'));
     }
 
