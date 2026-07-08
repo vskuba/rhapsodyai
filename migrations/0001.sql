@@ -137,6 +137,7 @@ CREATE TABLE `agent_workflow` (
     `title` CHAR(50) NOT NULL,
     `description` CHAR(200) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
+    `subflow` INT NOT NULL DEFAULT 0,
     CONSTRAINT `workflow_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
     UNIQUE INDEX `ux_workflow_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
