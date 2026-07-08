@@ -68,6 +68,7 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> dict:
         raise ValueError(f"Конфигурация полей для коллекции '{collection_name}' пуста или отсутствует в БД.")
 
     field_document = 'document'
+    field_document_id = 'document_id'
     documents: list[str] = []
 
     async with mysql_get_db_async() as db:
@@ -82,7 +83,22 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> dict:
                 fact_fields = ['collection_id'] + present_fields
                 fact_values = [collection_id] + [entry.get(f) for f in present_fields]
 
-                documents.append(entry.get(field_document, ''))
+                document_value = entry.get(field_document, '')
+                document_id_value = entry.get(field_document_id, '')
+
+                documents.append(document_value)
+
+                sql = """
+                    SELECT `id` FROM `fact`
+                    WHERE `collection_id` = %s AND `document` = %s AND `document_id` = %s
+                """
+                await db.execute(sql, (collection_id, document_value, document_id_value))
+                row = await db.fetchone()
+                if  row:
+                    logger_info(
+                        f"⚠️ Факт с collection_id={collection_id}, document='{document_value}', document_id='{document_id_value}' "
+                        f"уже существует в таблице 'fact'. Пропускаем добавление.")
+                    continue
 
                 f_str = ", ".join([f"`{f}`" for f in fact_fields])
                 f_placeholders = ", ".join(["%s"] * len(fact_fields))
