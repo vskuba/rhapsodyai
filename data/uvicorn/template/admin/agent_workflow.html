@@ -559,10 +559,8 @@
         border-left: 2px solid limegreen;
     }
 
-    .variable-item.has-default {
-        background-color: #f4f8fb; /* Очень мягкий синеватый фон */
-        border-left: 2px solid #007bff; /* Четкий синий маркер слева */
-        padding-left: 9px; /* Компенсируем ширину бордера, чтобы текст не уехал */
+    .variable-item-node {
+        border-left: 2px solid #ffd73b;
     }
 
     .variable-item.has-default:hover {
@@ -576,7 +574,14 @@
 
     .variable-name {
         margin-right: auto;
-        color: #333;
+        color: #1c4a73;
+        cursor: pointer;
+        transition: color 0.15s ease;
+    }
+
+    .variable-name:hover {
+        color: #004494;
+        font-size: 12px;
     }
 
     .variable-badge {
@@ -606,6 +611,54 @@
 
     .btn-delete-var:hover {
         color: #bd2130;
+    }
+
+    /* Аккордеон для переменных */
+    .variables-accordion-section {
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        margin-bottom: 0px;
+        overflow: hidden;
+    }
+
+    .variables-accordion-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #f7f7f7;
+        padding: 8px 12px;
+        font-weight: bold;
+        font-size: 11px;
+        cursor: pointer;
+        user-select: none;
+        color: #444;
+        transition: background-color 0.15s;
+    }
+
+    .variables-accordion-header:hover {
+        background: #ededed;
+    }
+
+    .variables-accordion-header .arrow {
+        font-size: 8px;
+        transition: transform 0.2s;
+    }
+
+    .variables-accordion-section.active .variables-accordion-header .arrow {
+        transform: rotate(90deg);
+    }
+
+    .variables-accordion-content {
+        display: none;
+        flex-direction: column;
+        gap: 0;
+        background: #fdfdfd;
+        padding: 0;
+        border-top: 1px solid #eee;
+    }
+
+    .variables-accordion-section.active .variables-accordion-content {
+        display: flex;
     }
 
     .transitions-editor {
@@ -1919,30 +1972,57 @@
             return;
         }
 
+        // 1. Распределяем переменные по группам
+        const commonGroup = [];
+        const nodeGroup = [];
+        const workflowGroup = [];
+
         variablesArray.forEach(variable => {
+            if (variable.id < 1) {
+                commonGroup.push(variable);
+            } else if (variable.node_id !== null && variable.node_id !== undefined && variable.node_id !== '') {
+                nodeGroup.push(variable);
+            } else {
+                workflowGroup.push(variable);
+            }
+        });
+
+        // 2. Функция создания DOM-элемента отдельной переменной
+        function createVariableElement(variable) {
             const div = document.createElement('div');
             div.className = 'variable-item';
             if (variable.id < 1) {
                 div.className += ' variable-item-common';
             }
+            if (variable.node_id > 0) {
+                div.className += ' variable-item-node';
+            }
             div.setAttribute('data-name', variable.name);
             div.setAttribute('data-id', variable.id);
 
-            // Контейнер для имени переменной
+            // Имя переменной
             const nameSpan = document.createElement('span');
             nameSpan.className = 'variable-name';
-            nameSpan.textContent = `%${variable.name}%`;
+            nameSpan.title = 'Нажмите, чтобы скопировать';
+            const varText = `%${variable.name}%`;
+            nameSpan.textContent = varText;
+            nameSpan.onclick = async () => {
+                try {
+                    await navigator.clipboard.writeText(varText);
+                    showNotification(`Переменная ${varText} скопирована в буфер`, 'success');
+                } catch (err) {
+                    showNotification('Не удалось скопировать переменную', 'error');
+                }
+            };
             div.appendChild(nameSpan);
 
             // Проверяем наличие значения по умолчанию
             if (variable.default !== undefined && variable.default !== null && variable.default !== '') {
-                // Подсвечиваем саму строку переменной
                 div.classList.add('has-default');
 
-                // Создаем красивый бейдж для значения
                 const badgeSpan = document.createElement('span');
                 badgeSpan.className = 'variable-badge';
-                badgeSpan.title = `Значение по умолчанию: ${variable.default}`;
+                badgeSpan.title = `${variable.default}`;
                 badgeSpan.textContent = String(variable.default).slice(0, 10);
 
                 div.appendChild(badgeSpan);
@@ -1965,6 +2045,7 @@
                         }
                         window.allCurrentVariables = (window.allCurrentVariables || []).filter(v => v !== variable);
                         div.remove();
+                        renderWorkflowVariables(typeof allCurrentVariables !== 'undefined' ? allCurrentVariables : window.allCurrentVariables);
                     };
 
                     if (!workflowId) {
@@ -1987,8 +2068,55 @@
                 div.appendChild(deleteBtn);
             }
 
-            container.appendChild(div);
-        });
+            return div;
+        }
+
+        // 3. Функция создания секции аккордеона (классическое поведение)
+        function createAccordionSection(title, groupItems, storageKey) {
+            const section = document.createElement('div');
+            section.className = 'variables-accordion-section';
+
+            // По умолчанию открыта только группа "Переменные workflow"
+            if (storageKey === 'workflow') {
+                section.classList.add('active');
+            }
+
+            const header = document.createElement('div');
+            header.className = 'variables-accordion-header';
+            header.innerHTML = `<span>${title} (${groupItems.length})</span><span class="arrow">▶</span>`;
+
+            const content = document.createElement('div');
+            content.className = 'variables-accordion-content';
+
+            if (groupItems.length === 0) {
+                content.innerHTML = '<div class="empty-text" style="font-size: 11px; padding: 4px; color: #888;">Нет переменных</div>';
+            } else {
+                groupItems.forEach(item => {
+                    content.appendChild(createVariableElement(item));
+                });
+            }
+
+            header.onclick = () => {
+                const isActive = section.classList.contains('active');
+                
+                // Схлопываем все группы
+                const allSections = container.querySelectorAll('.variables-accordion-section');
+                allSections.forEach(s => s.classList.remove('active'));
+
+                // Раскрываем текущую, только если она была закрыта
+                if (!isActive) {
+                    section.classList.add('active');
+                }
+            };
+
+            section.append(header, content);
+            return section;
+        }
+
+        // 4. Добавляем 3 секции аккордеона в контейнер
+        container.appendChild(createAccordionSection('🇨 Общие переменные', commonGroup, 'common'));
+        container.appendChild(createAccordionSection('🇳 Переменные ноды', nodeGroup, 'node'));
+        container.appendChild(createAccordionSection('🇼 Переменные workflow', workflowGroup, 'workflow'));
     }
 
     async function addWorkflowVariable() {
