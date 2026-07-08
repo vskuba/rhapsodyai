@@ -226,6 +226,19 @@ async def logging_middleware(request: Request, call_next):
 
     duration = time.time() - start_time
     status_code = response.status_code
+
+    status_code_icon = '✅'
+    if status_code == 400:
+        status_code_icon = '⚠️'
+    elif status_code == 401:
+        status_code_icon = '🔒'
+    elif status_code == 403:
+        status_code_icon = '⛔'
+    elif status_code == 404:
+        status_code_icon = '❓'
+    elif status_code == 500:
+        status_code_icon = '❌'
+
     response_headers = {str(k): str(v) for k, v in response.headers.items()}
 
     request_data = f", data: {request_body.decode('utf-8', errors='ignore')}" if len(request_body) > 3 else ''
@@ -235,7 +248,7 @@ async def logging_middleware(request: Request, call_next):
         f"🌐 [HTTP] Request {method} {path}"
         f"{'?' + query_params if query_params else ''}"
         f"{request_data}\n\n"
-        f"Response: [{status_code}] {duration:.3f}s"
+        f"Response: [{status_code} {status_code_icon}] {duration:.3f}s"
         f"{response_data}\n\n"
         f"Request headers: {headers}\n"
         f"Response headers: {response_headers}"
