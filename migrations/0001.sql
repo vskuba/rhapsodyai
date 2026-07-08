@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS `fact`;
 DROP TABLE IF EXISTS `fact_collection`;
 DROP TABLE IF EXISTS `companion`;
 DROP TABLE IF EXISTS `agent_workflow_variable_role`;
+DROP TABLE IF EXISTS `agent_workflow_variable_workflow`;
 DROP TABLE IF EXISTS `agent_workflow_variable`;
 DROP TABLE IF EXISTS `agent_workflow_step`;
 DROP TABLE IF EXISTS `agent_workflow_step_type`;
@@ -108,14 +109,14 @@ CREATE TABLE `session` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `uuid` CHAR(36) NOT NULL,
     `metadata` LONGTEXT DEFAULT NULL,
-    UNIQUE INDEX `ui_session_uuid` (`uuid`)
+    UNIQUE INDEX `u_session_uuid` (`uuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица инструментов
 CREATE TABLE `tool_group` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
-    UNIQUE INDEX `ux_tool_group_name` (`name`)
+    UNIQUE INDEX `u_tool_group_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `tool` (
@@ -126,7 +127,7 @@ CREATE TABLE `tool` (
     `description` LONGTEXT DEFAULT NULL,
     `args` LONGTEXT DEFAULT NULL,
     CONSTRAINT `fk_tool_group` FOREIGN KEY (`group_id`) REFERENCES `tool_group` (`id`) ON DELETE SET NULL,
-    UNIQUE INDEX `ux_tool_name` (`name`)
+    UNIQUE INDEX `u_tool_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица задач
@@ -139,7 +140,7 @@ CREATE TABLE `agent_workflow` (
     `position` INT NOT NULL DEFAULT 0,
     `subflow` INT NOT NULL DEFAULT 0,
     CONSTRAINT `workflow_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
-    UNIQUE INDEX `ux_workflow_name` (`name`)
+    UNIQUE INDEX `u_w_workflow_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `agent_workflow_step_type` (
@@ -149,7 +150,7 @@ CREATE TABLE `agent_workflow_step_type` (
     `description` CHAR(200) NOT NULL,
     `description_full` LONGTEXT DEFAULT NULL,
     `metadata` LONGTEXT NOT NULL,
-    UNIQUE INDEX `ux_workflow_step_type_name` (`name`)
+    UNIQUE INDEX `u_st_workflow_step_type_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `agent_workflow_step` (
@@ -159,29 +160,35 @@ CREATE TABLE `agent_workflow_step` (
     `title` CHAR(50) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
     `metadata` LONGTEXT NOT NULL,
-    CONSTRAINT `workflow_step_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `workflow_step_workflow_step_type` FOREIGN KEY (`type_id`) REFERENCES `agent_workflow_step_type` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_ws_workflow_step_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_ws_workflow_step_workflow_step_type` FOREIGN KEY (`type_id`) REFERENCES `agent_workflow_step_type` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `agent_workflow_variable` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `node_id` INT NULL,
-    `workflow_id` INT NULL,
     `name` CHAR(50) NOT NULL,
     `default` LONGTEXT NULL,
     `position` INT NOT NULL DEFAULT 0,
     `use_as_hint` INT NOT NULL DEFAULT 0,
     `description` CHAR(200) DEFAULT NULL,
-    CONSTRAINT `workflow_variable_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_v_workflow_variable_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `agent_workflow_variable_workflow` (
+    `variable_id` INT NOT NULL,
+    `workflow_id` INT NOT NULL,
+    PRIMARY KEY (`variable_id`, `workflow_id`),
+    CONSTRAINT `fk_vw_workflow_variable` FOREIGN KEY (`variable_id`) REFERENCES `agent_workflow_variable` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_vw_workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `agent_workflow_variable_role` (
     `variable_id` INT NOT NULL,
     `role_id` INT NOT NULL,
     PRIMARY KEY (`variable_id`, `role_id`),
-    CONSTRAINT `fk_workflow_variable` FOREIGN KEY (`variable_id`) REFERENCES `agent_workflow_variable` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_workflow_variable_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_vr_workflow_variable` FOREIGN KEY (`variable_id`) REFERENCES `agent_workflow_variable` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_vr_workflow_variable_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `companion` (

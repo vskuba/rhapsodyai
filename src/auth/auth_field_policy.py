@@ -6,14 +6,14 @@ ALL_FIELDS = '*'
 # admin проверять не нужно — он всегда получает ALL_FIELDS в auth_allowed_fields.
 AUTH_FIELD_POLICY = {
     'agent_workflow_variable': {
-        'fields': {'name', 'description', 'default', 'workflow_id', 'node_id', 'position', 'use_as_hint'},
+        'fields': {'name', 'description', 'default', 'workflow_ids', 'node_id', 'position', 'use_as_hint'},
         'write': {
             '*': {'default'},  # не-админы пишут только поле `default`
             # 'manager_dating': {'default', 'description'},  # пример точечной настройки роли
         },
         'read': {
             # id/name/node_id нужны фронту для списка и PUT; скрываем только служебные поля
-            '*': {'id', 'name', 'node_id', 'default', 'position', 'use_as_hint'},
+            '*': {'id', 'name', 'node_id', 'default', 'position', 'use_as_hint', 'workflow_ids'},
         },
     },
 }

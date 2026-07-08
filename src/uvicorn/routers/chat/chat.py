@@ -95,7 +95,12 @@ async def ask_ai(
         raw_workflow_steps = await db.fetchall()
 
         # 2. Запрашиваем динамические переменные воркфлоу
-        sql_vars = "SELECT name, `default` FROM agent_workflow_variable WHERE workflow_id = %s"
+        sql_vars = """
+            SELECT v.name, v.`default`
+            FROM agent_workflow_variable v
+            JOIN agent_workflow_variable_workflow vw ON v.id = vw.variable_id
+            WHERE vw.workflow_id = %s
+        """
         await db.execute(sql_vars, workflow_id)
         raw_workflow_variables = await db.fetchall()
 

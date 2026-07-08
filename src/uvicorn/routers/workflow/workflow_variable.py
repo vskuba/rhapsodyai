@@ -15,10 +15,14 @@ async def variable_list(
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_VIEW]))
 ):
     sql = """
-        SELECT v.*, GROUP_CONCAT(r.name) as role_names, GROUP_CONCAT(r.id) as role_ids
+        SELECT v.*, 
+               GROUP_CONCAT(DISTINCT r.name) as role_names, 
+               GROUP_CONCAT(DISTINCT r.id) as role_ids,
+               GROUP_CONCAT(DISTINCT vw.workflow_id) as workflow_ids
         FROM agent_workflow_variable v
         LEFT JOIN agent_workflow_variable_role vr ON v.id = vr.variable_id
         LEFT JOIN role r ON vr.role_id = r.id
+        LEFT JOIN agent_workflow_variable_workflow vw ON v.id = vw.variable_id
         WHERE v.node_id IS NOT NULL
     """
     params = []
@@ -45,12 +49,16 @@ async def variable_list(
     async with mysql_get_db_async() as db:
         await db.execute(sql, params or None)
         results = await db.fetchall()
-        # Преобразуем role_ids в список чисел
+        # Преобразуем role_ids и workflow_ids в списки чисел
         for row in results:
             if row['role_ids']:
                 row['role_ids'] = [int(r) for r in row['role_ids'].split(',')]
             else:
                 row['role_ids'] = []
+            if row.get('workflow_ids'):
+                row['workflow_ids'] = [int(w) for w in row['workflow_ids'].split(',')]
+            else:
+                row['workflow_ids'] = []
 
         # Отдаём только поля, разрешённые роли пользователя на чтение
         allowed = auth_fields_allowed('agent_workflow_variable', 'read', user.role)
@@ -105,11 +113,11 @@ async def variable_create(
             position = (await db.fetchone())['position']
 
         sql = """
-            INSERT INTO agent_workflow_variable (name, description, `default`, workflow_id, node_id, position, use_as_hint)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO agent_workflow_variable (name, description, `default`, node_id, position, use_as_hint)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
         await db.execute(sql, (data.get('name'), data.get('description'), data.get('default'),
-                               data.get('workflow_id'), data.get('node_id'), position,
+                               data.get('node_id'), position,
                                int(bool(data.get('use_as_hint')))))
         variable_id = db.lastrowid
 
@@ -118,6 +126,20 @@ async def variable_create(
         for role_id in role_ids:
             await db.execute("INSERT INTO agent_workflow_variable_role (variable_id, role_id) VALUES (%s, %s)",
                              (variable_id, role_id))
+
+        # Сохранение workflow_ids
+        workflow_ids = data.get('workflow_ids', [])
+        if not isinstance(workflow_ids, list):
+            workflow_ids = [workflow_ids] if workflow_ids is not None else []
+        
+        single_workflow_id = data.get('workflow_id')
+        if single_workflow_id and single_workflow_id not in workflow_ids:
+            workflow_ids.append(single_workflow_id)
+
+        for w_id in workflow_ids:
+            if w_id:
+                await db.execute("INSERT INTO agent_workflow_variable_workflow (variable_id, workflow_id) VALUES (%s, %s)",
+                                 (variable_id, w_id))
 
         return {"result": {"id": variable_id}}
 
@@ -134,9 +156,12 @@ async def variable_update(
 
     async with mysql_get_db_async() as db:
         if fields:
-            set_clause = ', '.join(f"`{f}`=%s" for f in fields)
-            values = [data[f] for f in fields] + [variable_id]
-            await db.execute(f"UPDATE agent_workflow_variable SET {set_clause} WHERE id=%s", values)
+            # Исключаем реляционные и нетабличные поля из UPDATE-запроса к agent_workflow_variable
+            db_fields = [f for f in fields if f not in ('workflow_id', 'workflow_ids', 'role_ids')]
+            if db_fields:
+                set_clause = ', '.join(f"`{f}`=%s" for f in db_fields)
+                values = [data[f] for f in db_fields] + [variable_id]
+                await db.execute(f"UPDATE agent_workflow_variable SET {set_clause} WHERE id=%s", values)
 
         # Обновление ролей — только если поле role_ids разрешено политикой
         if 'role_ids' in data:
@@ -144,6 +169,23 @@ async def variable_update(
             for role_id in data.get('role_ids') or []:
                 await db.execute("INSERT INTO agent_workflow_variable_role (variable_id, role_id) VALUES (%s, %s)",
                                  (variable_id, role_id))
+
+        # Обновление workflow_ids — если передано в data (или если workflow_id передан)
+        if 'workflow_ids' in data or 'workflow_id' in data:
+            await db.execute("DELETE FROM agent_workflow_variable_workflow WHERE variable_id=%s", (variable_id,))
+            
+            workflow_ids = data.get('workflow_ids', [])
+            if not isinstance(workflow_ids, list):
+                workflow_ids = [workflow_ids] if workflow_ids is not None else []
+            
+            single_workflow_id = data.get('workflow_id')
+            if single_workflow_id and single_workflow_id not in workflow_ids:
+                workflow_ids.append(single_workflow_id)
+                
+            for w_id in workflow_ids:
+                if w_id:
+                    await db.execute("INSERT INTO agent_workflow_variable_workflow (variable_id, workflow_id) VALUES (%s, %s)",
+                                     (variable_id, w_id))
 
         return {"result": "success"}
 

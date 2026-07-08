@@ -171,7 +171,7 @@
         color: #7f8c8d;
     }
 
-    .hint-list span{
+    .hint-list span {
         color: #1a202c;
     }
 
@@ -283,11 +283,19 @@
                         <label>Описание</label>
                         <input type="text" id="description" class="form-control">
                     </div>
-                    <div class="form-group">
-                        <label>Роли</label>
-                        <select id="role_ids" class="form-control" multiple size="4">
-                        </select>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Роли</label>
+                            <select id="role_ids" class="form-control" multiple size="4">
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Workflow</label>
+                            <select id="workflow_ids" class="form-control" multiple size="4">
+                            </select>
+                        </div>
                     </div>
+
                     <div class="form-group form-group-checkbox">
                         <input type="checkbox" id="use_as_hint">
                         <label for="use_as_hint">Использовать как подсказку</label>
@@ -324,9 +332,31 @@
     const deleteBtn = document.getElementById('deleteBtn');
     const defaultText = document.getElementById('defaultText');
 
+    let allWorkflows = [];
+
     function toggleForm(visible) {
         defaultText.style.display = visible ? 'none' : 'block';
         dataForm.style.display = visible ? 'block' : 'none';
+    }
+
+    function renderWorkflowSelect(selectedNodeId, activeWorkflowIds = []) {
+        const workflowSelect = document.getElementById('workflow_ids');
+        workflowSelect.innerHTML = '';
+        
+        const targetNodeId = selectedNodeId ? parseInt(selectedNodeId) : null;
+        
+        const filteredWorkflows = allWorkflows.filter(wf => {
+            const wfNodeId = wf.node_id ? parseInt(wf.node_id) : null;
+            return (wf.subflow === 0) && (wfNodeId === targetNodeId);
+        });
+
+        filteredWorkflows.forEach(wf => {
+            const opt = document.createElement('option');
+            opt.value = wf.id;
+            opt.textContent = wf.title || wf.name;
+            opt.selected = activeWorkflowIds.includes(wf.id);
+            workflowSelect.appendChild(opt);
+        });
     }
 
     // Под textarea выводим переменные-подсказки, которые возвращает сервер
@@ -343,21 +373,26 @@
     }
 
     async function loadList(activeId = null) {
-        const [res, nodesRes, rolesRes] = await Promise.all([
+        const [res, nodesRes, rolesRes, workflowsRes] = await Promise.all([
             getData('/agent_workflow_variable/list'),
             getData('/node/list'),
-            getData('/role/list')
+            getData('/role/list'),
+            getData('/workflow/list')
         ]);
 
         const variables = res.result;
         const nodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
         const roles = rolesRes.result;
+        const workflows = workflowsRes.result;
+        allWorkflows = workflows;
 
         // Сохраняем текущие значения селектов формы перед перерисовкой
         const nodeSelect = document.getElementById('node_id');
         const roleSelect = document.getElementById('role_ids');
+        const workflowSelect = document.getElementById('workflow_ids');
         const prevNodeValue = nodeSelect.value;
         const prevRoleValues = Array.from(roleSelect.selectedOptions).map(opt => opt.value);
+        const prevWorkflowValues = Array.from(workflowSelect.selectedOptions).map(opt => opt.value);
 
         nodeSelect.innerHTML = '<option value="">Выберите ноду...</option>';
         nodes.forEach(node => {
@@ -377,6 +412,10 @@
             opt.selected = prevRoleValues.includes(String(role.id));
             roleSelect.appendChild(opt);
         });
+
+        // Заполняем Select воркфлоу на основе текущей ноды
+        const prevWorkflowIds = prevWorkflowValues.map(v => parseInt(v)).filter(v => !isNaN(v));
+        renderWorkflowSelect(prevNodeValue, prevWorkflowIds);
 
         itemList.innerHTML = '';
         nodes.forEach(node => {
@@ -473,6 +512,9 @@
             opt.selected = item.role_ids.includes(parseInt(opt.value));
         });
 
+        // Заполняем Select воркфлоу на основе ноды выбранной переменной и предустанавливаем выбранные
+        renderWorkflowSelect(item.node_id, item.workflow_ids || []);
+
         document.getElementById('formTitle').textContent = `Редактирование: ${item.name}`;
         deleteBtn.style.display = 'inline-block';
     }
@@ -483,12 +525,16 @@
         const roleSelect = document.getElementById('role_ids');
         const selectedRoles = Array.from(roleSelect.selectedOptions).map(opt => parseInt(opt.value));
 
+        const workflowSelect = document.getElementById('workflow_ids');
+        const selectedWorkflows = Array.from(workflowSelect.selectedOptions).map(opt => parseInt(opt.value)).filter(v => !isNaN(v));
+
         const payload = {
             name: document.getElementById('name').value,
             description: document.getElementById('description').value,
             default: document.getElementById('default').value,
             node_id: document.getElementById('node_id').value ? parseInt(document.getElementById('node_id').value) : null,
             role_ids: selectedRoles,
+            workflow_ids: selectedWorkflows,
             use_as_hint: document.getElementById('use_as_hint').checked ? 1 : 0
         };
 
@@ -536,9 +582,18 @@
         document.getElementById('formTitle').textContent = 'Новая переменная';
         // Сброс ролей
         Array.from(document.getElementById('role_ids').options).forEach(o => o.selected = false);
+        // Сброс воркфлоу
+        Array.from(document.getElementById('workflow_ids').options).forEach(o => o.selected = false);
         document.getElementById('hintList').innerHTML = '';
         toggleForm(true);
     };
+
+    document.getElementById('node_id').addEventListener('change', (e) => {
+        const selectedNodeId = e.target.value;
+        const workflowSelect = document.getElementById('workflow_ids');
+        const selectedWorkflowIds = Array.from(workflowSelect.selectedOptions).map(opt => parseInt(opt.value)).filter(v => !isNaN(v));
+        renderWorkflowSelect(selectedNodeId, selectedWorkflowIds);
+    });
 
     loadList();
 </script>

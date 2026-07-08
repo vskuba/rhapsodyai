@@ -81,11 +81,12 @@ async def workflow_steps(request: Request, workflow_id: int, user=Depends(AuthCh
 
 @router.get("/workflow/{workflow_id}/variables")
 async def workflow_variables(request: Request, workflow_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
-    sql = f"""
-            SELECT *
-            FROM `agent_workflow_variable`
-            WHERE workflow_id = %s
-            ORDER BY name ASC
+    sql = """
+            SELECT v.*
+            FROM `agent_workflow_variable` v
+            JOIN `agent_workflow_variable_workflow` vw ON v.id = vw.variable_id
+            WHERE vw.workflow_id = %s
+            ORDER BY v.name ASC
         """
     async with mysql_get_db_async() as db:
         await db.execute(sql, (workflow_id,))
@@ -123,21 +124,47 @@ async def workflow_step_add(request: Request, workflow_id: int, data: dict, user
 
 @router.post("/workflow/{workflow_id}/variable")
 async def workflow_variable_add(request: Request, workflow_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))):
-    repo_workflow_variable = AgentWorkflowVariableRepository()
+    async with mysql_get_db_async() as db:
+        # Check if relation already exists
+        sql_check = """
+            SELECT v.id 
+            FROM agent_workflow_variable v
+            JOIN agent_workflow_variable_workflow vw ON v.id = vw.variable_id
+            WHERE vw.workflow_id = %s AND v.name = %s
+        """
+        await db.execute(sql_check, (workflow_id, data.get("name")))
+        variable = await db.fetchone()
+        if variable:
+            return {"result": variable.get("id")}
 
-    variable = await repo_workflow_variable.find_one_by({"workflow_id": workflow_id, "name": data.get("name")})
-    if variable:
-        return {"result": variable.get("id")}
+        # Find node_id of workflow
+        await db.execute("SELECT node_id FROM agent_workflow WHERE id = %s", (workflow_id,))
+        wf = await db.fetchone()
+        node_id = wf.get("node_id") if wf else None
 
-    new_variable_data = {
-        "workflow_id": workflow_id,
-        "name": data.get("name"),
-        "default": data.get("default"),
-    }
+        # Check if variable exists under this node_id
+        await db.execute("SELECT id FROM agent_workflow_variable WHERE name = %s AND node_id <=> %s", (data.get("name"), node_id))
+        existing_var = await db.fetchone()
 
-    new_id = await repo_workflow_variable.add(new_variable_data)
+        if existing_var:
+            variable_id = existing_var.get("id")
+        else:
+            # Create new variable
+            sql_insert_var = """
+                INSERT INTO agent_workflow_variable (name, `default`, node_id)
+                VALUES (%s, %s, %s)
+            """
+            await db.execute(sql_insert_var, (data.get("name"), data.get("default"), node_id))
+            variable_id = db.lastrowid
 
-    return {"result": new_id}
+        # Insert relationship
+        sql_insert_link = """
+            INSERT INTO agent_workflow_variable_workflow (variable_id, workflow_id)
+            VALUES (%s, %s)
+        """
+        await db.execute(sql_insert_link, (variable_id, workflow_id))
+
+        return {"result": variable_id}
 
 
 @router.put("/workflow/{workflow_id}/steps/reorder")
