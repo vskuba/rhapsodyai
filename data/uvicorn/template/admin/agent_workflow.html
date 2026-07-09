@@ -2661,9 +2661,9 @@
         const createOperatorSelect = (selectedOp = '==') => {
             const sel = document.createElement('select');
             sel.className = 'form-control tr-operator';
-            sel.style = "width: 65px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
+            sel.style = "width: 110px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
 
-            const ops = ['==', '!=', '>', '<', 'contains'];
+            const ops = ['==', '!=', '>', '<', '>=', '<=', 'contains', 'not_contains', 'regex', 'exists', 'empty'];
             ops.forEach(op => {
                 const opt = document.createElement('option');
                 opt.value = op;
@@ -2874,12 +2874,18 @@
             // Рендерим 4 элемента в ряд без бэктиков во избежание конфликтов со знаком доллара
             row.innerHTML =
                 '<select class="form-control tr-variable" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;"></select>' +
-                '<select class="form-control tr-operator" style="width: 65px; padding: 4px; font-size: 12px; height: 32px; text-align: center;">' +
+                '<select class="form-control tr-operator" style="width: 110px; padding: 4px; font-size: 12px; height: 32px; text-align: center;">' +
                 '<option value="==">==</option>' +
                 '<option value="!=">!=</option>' +
                 '<option value=">">&gt;</option>' +
                 '<option value="<">&lt;</option>' +
+                '<option value=">=">&gt;=</option>' +
+                '<option value="<=">&lt;=</option>' +
                 '<option value="contains">contains</option>' +
+                '<option value="not_contains">not_contains</option>' +
+                '<option value="regex">regex</option>' +
+                '<option value="exists">exists</option>' +
+                '<option value="empty">empty</option>' +
                 '</select>' +
                 '<input type="text" class="form-control tr-value" placeholder="Значение" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' +
                 '<span style="color: #a0aec0; font-size: 12px; margin: 0 2px;">➔</span>' +

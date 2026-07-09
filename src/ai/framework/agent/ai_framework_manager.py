@@ -134,16 +134,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         step_index = workflow_steps_mapping[target_step_id]
                         next_step = model.workflow_steps[step_index]
 
-                        # Отсутствующая переменная — условие не выполнено, а не падение workflow
-                        if variable_name not in model.workflow_variables:
+                        condition = self._transition_condition_check(model.workflow_variables, variable_name, operator, value)
+
+                        # None: переменная отсутствует — пропускаем условие, а не роняем workflow
+                        if condition is None:
                             logger_info(
                                 f"⚠️ Переход (before) пропущен: переменная '%{variable_name}%' не найдена"
                             )
                             continue
 
-                        current_value = model.workflow_variables[variable_name]
-
-                        if self._transition_condition_check(current_value, operator, value):
+                        if condition:
                             logger_info(
                                 f"🔀️ Переход на шаг {next_step['title']} (before) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
@@ -427,16 +427,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         step_index = workflow_steps_mapping[target_step_id]
                         next_step = model.workflow_steps[step_index]
 
-                        # Отсутствующая переменная — условие не выполнено, а не падение workflow
-                        if variable_name not in model.workflow_variables:
+                        condition = self._transition_condition_check(model.workflow_variables, variable_name, operator, value)
+
+                        # None: переменная отсутствует — пропускаем условие, а не роняем workflow
+                        if condition is None:
                             logger_info(
                                 f"⚠️ Переход (after) пропущен: переменная '%{variable_name}%' не найдена"
                             )
                             continue
 
-                        current_value = model.workflow_variables[variable_name]
-
-                        if self._transition_condition_check(current_value, operator, value):
+                        if condition:
                             logger_info(
                                 f"🔀️ Переход на шаг {next_step['title']} (after) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
@@ -452,9 +452,37 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 loop.call_soon_threadsafe(future.set_exception, e)
 
     @staticmethod
-    def _transition_condition_check(current_value, operator: str, value) -> bool:
-        """Проверка условия перехода: если оба операнда — числа, сравниваем численно,
-        иначе — как строки (str(10) > str(5) лексикографически дает False)."""
+    def _transition_condition_check(variables: dict, variable_name: str, operator: str, value):
+        """Проверка условия перехода.
+
+        Возвращает True/False, либо None — если переменная отсутствует, а оператор
+        требует ее значения (такой переход нужно пропустить с предупреждением).
+        exists/empty оценивают сам факт наличия/пустоты переменной, поэтому
+        работают и для отсутствующих переменных.
+        Числа сравниваются численно, иначе — как строки
+        (str(10) > str(5) лексикографически дает False)."""
+        variable_exists = variable_name in variables
+        current_value = variables.get(variable_name)
+
+        if operator == 'exists':
+            return variable_exists
+        if operator == 'empty':
+            return not variable_exists or current_value is None or str(current_value).strip() == ''
+
+        if not variable_exists:
+            return None
+
+        if operator == 'contains':
+            return str(value) in str(current_value)
+        if operator == 'not_contains':
+            return str(value) not in str(current_value)
+        if operator == 'regex':
+            try:
+                return re.search(str(value), str(current_value)) is not None
+            except re.error as e:
+                logger_info(f"⚠️ Некорректное регулярное выражение в переходе '{value}': {e}")
+                return False
+
         a, b = str(current_value), str(value)
         try:
             a, b = float(a), float(b)
@@ -466,7 +494,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 or operator == "!=" and a != b
                 or operator == ">" and a > b
                 or operator == "<" and a < b
-                or operator == "contains" and str(value) in str(current_value)
+                or operator == ">=" and a >= b
+                or operator == "<=" and a <= b
         )
 
     @staticmethod
