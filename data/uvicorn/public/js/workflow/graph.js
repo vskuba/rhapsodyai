@@ -3,21 +3,12 @@
 import {state} from './state.js';
 import {parseMetadata, graphLabelEscape} from './utils.js';
 import {showNotification} from '../notification.js';
-
-// Функции из других модулей (steps), передаются через initGraphMode —
-// пока steps-код живет в шаблоне, прямой import невозможен
-let deps = {
-    loadWorkflowSteps: null,
-    selectStep: null,
-};
+import {loadWorkflowSteps, selectStep} from './steps.js';
 
 /**
  * Инициализация режима графа: настройка mermaid и кнопка Graph.
- * dependencies: {loadWorkflowSteps, selectStep}
  */
-export function initGraphMode(dependencies) {
-    deps = dependencies;
-
+export function initGraphMode() {
     if (window.mermaid) {
         window.mermaid.initialize({startOnLoad: false, securityLevel: 'strict', flowchart: {curve: 'basis'}});
     }
@@ -139,7 +130,7 @@ export async function openWorkflowGraph() {
     // Из режима настроек шаги могли не загружаться (или лежат от другого workflow)
     if (!Array.isArray(state.allCurrentStepsData) || state.allCurrentStepsData.length === 0
         || String(state.allCurrentStepsData[0].workflow_id) !== String(workflowId)) {
-        await deps.loadWorkflowSteps(workflowId);
+        await loadWorkflowSteps(workflowId);
         // loadWorkflowSteps показывает редактор шагов через selectStep — возвращаем граф
         document.getElementById('stepsEditorView').style.display = 'none';
         document.getElementById('stepsGraph').style.display = 'block';
@@ -203,7 +194,7 @@ function attachGraphNodeHandlers(container) {
             document.getElementById('stepsGraph').style.display = 'none';
             document.getElementById('stepsEditorView').style.display = 'flex';
             const stepBlock = document.querySelector(`.step-item-block[data-id="${stepId}"]`);
-            if (stepBlock) deps.selectStep(step, stepBlock);
+            if (stepBlock) selectStep(step, stepBlock);
         });
     });
 }
