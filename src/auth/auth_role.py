@@ -16,6 +16,7 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.AGENT_VIEW,
     AuthPermission.WORKFLOW_VIEW,
     AuthPermission.WORKFLOW_VARIABLE_VIEW,
+    AuthPermission.WORKFLOW_TRACE_VIEW,
     AuthPermission.WORKFLOW_VARIABLE_UPDATE,
     AuthPermission.NODE_VIEW,
     AuthPermission.TOOL_VIEW,
