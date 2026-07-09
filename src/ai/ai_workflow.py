@@ -1,6 +1,48 @@
 from typing import Any
 
+from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
+
+
+async def ai_workflow_load(workflow_id: int) -> dict:
+    """Загружает workflow для выполнения: сущность workflow, нормализованные шаги
+    (metadata распарсен, строки очищены от пробелов CHAR-типа) и переменные
+    с default-значениями.
+    Используется точкой входа chat.py и шагом workflow_invoke (sub-workflow)."""
+    sql_workflow = "SELECT * FROM agent_workflow WHERE id = %s"
+    sql_steps = """
+        SELECT ws.*, wst.name as step_type_name
+        FROM agent_workflow_step ws
+        LEFT JOIN agent_workflow_step_type wst ON ws.type_id = wst.id
+        WHERE ws.workflow_id = %s
+        ORDER BY ws.position ASC
+    """
+    sql_vars = """
+        SELECT v.name, v.`default`
+        FROM agent_workflow_variable v
+        JOIN agent_workflow_variable_workflow vw ON v.id = vw.variable_id
+        WHERE vw.workflow_id = %s
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(sql_workflow, (workflow_id,))
+        workflow_row = await db.fetchone()
+
+        await db.execute(sql_steps, (workflow_id,))
+        raw_steps = await db.fetchall()
+
+        await db.execute(sql_vars, (workflow_id,))
+        raw_variables = await db.fetchall()
+
+    steps = []
+    for step in raw_steps:
+        steps.append({
+            "id": step.get('id'),
+            "step_type_name": step.get('step_type_name', '').strip(),
+            "title": step.get('title', '').strip(),
+            "metadata": json_from_string(step.get('metadata', {}))
+        })
+
+    return {"workflow": workflow_row or {}, "steps": steps, "variables": list(raw_variables)}
 
 
 async def ai_workflow_variables_global_get() -> list[dict]:
