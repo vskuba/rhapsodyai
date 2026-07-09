@@ -102,12 +102,14 @@ INSERT INTO `role_node` (`role_id`, `node_id`) VALUES
 
 --
 
-INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`) VALUES
-(1, 1, 'response_cashier', 'Чат кашира', 'Ответить пользователю', 0),
-(2, 2, 'dating_bot', 'Dating bot', 'Генерируем коллекции девушки', 0),
-(3, 3, 'response_soko', 'Чат суши-бара', 'Ответить пользователю', 0),
-(4, 5, 'test', 'Test', 'Simple test workflow', -1),
-(5, 2, 'dating_talk', 'Чат с девушкой', 'Чат с девушкой', 0);
+INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`, `subflow`) VALUES
+(1, 1, 'response_cashier', 'Чат кашира', 'Ответить пользователю', 0, 0),
+(2, 2, 'dating_bot', 'Dating bot', 'Генерируем коллекции девушки', 0, 0),
+(3, 3, 'response_soko', 'Чат суши-бара', 'Ответить пользователю', 0, 0),
+(4, 5, 'test', 'Test', 'Simple test workflow', -1, 0),
+(5, 2, 'dating_talk', 'Чат с девушкой', 'Чат с девушкой', 0, 0),
+(6, 2, 'girl_fact_invent', 'Придумать факты девушки', 'Sub-workflow: придумывает новые факты о девушке для ответа на личный вопрос', 0, 1),
+(7, 2, 'companion_fact_extract', 'Извлечь факты собеседника', 'Sub-workflow: извлекает из сообщения факты о собеседнике и переписке, сохраняет в коллекции', 0, 1);
 
 --
 
@@ -116,7 +118,8 @@ INSERT INTO `agent_workflow_step_type` (`id`, `name`, `icon`, `description`, `de
 (2, 'llm_to_json', '🧠', 'LLM -> JSON', 'Ожидает ответ от LLM в виде JSON. Далее каждый ключ JSON доступен в последующих шагах', ''),
 (3, 'tool_invoke', '⚙️', 'Вызов инструмента', 'Вызываем инструмент. Передаем в аргументы текущие переменные и сохраняем ответ в переменные.', ''),
 (4, 'return_response_text', '↩T', 'Вернуть текстовый ответ', 'Возращаем текстовый ответ на основе шаблона из переменных', ''),
-(5, 'variable_conversion', '❴❵', 'Переменные', 'Переопределяем значения переменных', '');
+(5, 'variable_conversion', '❴❵', 'Переменные', 'Переопределяем значения переменных', ''),
+(6, 'workflow_invoke', '🇼', 'Вызов workflow', 'Вызываем вложенный workflow (sub-workflow): передаем входящие переменные, получаем результат в переменную и продолжаем выполнение.', '');
 
 --
 
@@ -149,21 +152,26 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (29, 5, 3, 'session_messages', 2, '{"tool_invoke":{"tool_name":"session_messages","inputs_map":{"session_uuid":"session_uuid","limit":"session_messages_limit"},"outputs_map":{"str":"session_messages_result"}},"transitions_before":[],"transitions_after":[]}'),
 (30, 2, 3, 'qdrant_fact_remove', 9, '{"tool_invoke":{"tool_name":"qdrant_fact_remove","inputs_map":{"collection_name":"fact_collection_girl_name","metadata_filter":"qdrant_metada_filter"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (31, 2, 5, 'Переменные', 8, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"qdrant_metada_filter","text":"{\\"document_id\\":\\"%text_to_lower_37_result_str%\\"}"}]}'),
-(32, 5, 2, 'Факты из промта', 1, '{"prompt_user":"=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_facts_man\\": список фактов что касаются персонально о %companion_title%: биографии, любимые занятия, образование, работа, жизненные факты\\n- \\"prompt_user_facts_talk\\": список фактов, что связаны с перепиской с %companion_title%, это могут быть какие-то договоронности, споры, дискусии на разные темы, мнения, мысли, желания\\n\\nдля \'prompt_user_facts_man\' используй document_id: \'%companion_name%\'\\nдля \'prompt_user_facts_talk\' используй document_id: \'%document_id%_%companion_name%\'\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_facts_man\\": %fact_collection_output_format_33_result_str%,\\n  \\"prompt_user_facts_talk\\": %fact_collection_output_format_33_result_str%\\n}\\n\\nНе нужно придумывать и создавать факты. Они должны быть в тексте %companion_title% написаны явно. Если явных фактов нет - нужно вернуть 0 для ключей.\\n\\nExample of JSON response one more:\\n{\\n  \\"prompt_user_facts_man\\": 0,\\n  \\"prompt_user_facts_talk\\": 0\\n}","transitions_before":[],"transitions_after":[{"variable":"prompt_user_facts_man","operator":"!=","value":"0","step_id":"34"}],"llm_to_json_variable":[{"variable":"prompt_user_facts_man","text":"список фактов что касаются персонально о %companion_title%, его биографии, любимые занятия, образование, работа, жизненные факты"},{"variable":"prompt_user_facts_talk","text":"список фактов, что связаны с перепиской с %companion_title%, это могут быть какие-то договоронности, споры, дискусии на разные темы, мнения, мысли, желания, планы на будущее"}]}'),
-(33, 5, 3, 'fact_collection_output_format', 0, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_man_name"},"outputs_map":{"str":"fact_collection_output_format_response"}},"transitions_before":[],"transitions_after":[]}'),
-(34, 5, 3, 'fact_collection_add_man', 14, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_man_name","data":"prompt_user_facts_man"},"outputs_map":{}},"transitions_before":[],"transitions_after":[{"variable":"prompt_user_facts_talk","operator":"!=","value":"0","step_id":"35"},{"variable":"agent_id","operator":">","value":"0","step_id":"29"}]}'),
-(35, 5, 3, 'fact_collection_add_talk', 15, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_talk_name","data":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[],"transitions_after":[{"variable":"agent_id","operator":">","value":"0","step_id":"29"}]}'),
 (36, 5, 2, 'Категория,теги,вопрос', 4, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"prompt_user_category","text":"категории, к которым можно отнести текст, что написаный %companion_title%. Например: образование, личная жизнь, любовь"},{"variable":"prompt_user_tags","text":"таги через запятую, которые встречаются в тексте написаный %companion_title%. Например: машина,права,пунктуальность"},{"variable":"prompt_user_question","text":"принимает значение 0 по умолчанию или 1, где:\\n1 означает - что в тексте написаный %companion_title%, есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %document_id% должна ответить. Если вопрос общий, например какая погода, время, новости, все что не касается лично девушки ответ только 0."}],"prompt_user":"=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_category\\": категория (одно-два слова), к которым можно отнести текст написаный мужчиной. Например: образование, личная жизнь, любовь\\n- \\"prompt_user_tags\\": таги через запятую, которые относятся к тексту %companion_title%. Например: машина,права,пунктуальность\\n- \\"prompt_user_question\\": принимает значение 0 по умолчанию или 1, где 1 означает - что в тексте написаный %companion_title%, есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %document_id% должна ответить\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_category\\": \\"образование\\",\\n  \\"prompt_user_tags\\": \\"чтение,училище,фильмы\\",\\n  \\"prompt_user_question\\": 0\\n}"}'),
 (37, 2, 3, 'text_to_lower', 3, '{"tool_invoke":{"tool_name":"text_to_lower","inputs_map":{"text":"text_translit_cyr_to_lat_22_result_str"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (38, 5, 3, 'qdrant_fact_search_companion', 9, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_man_name","metadata_filter":"fact_collection_man_filter","limit":"fact_collection_limit"},"outputs_map":{"str":"qdrant_fact_search_result_man"}},"transitions_before":[],"transitions_after":[]}'),
 (39, 5, 3, 'qdrant_fact_search_talk', 11, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_talk_name","metadata_filter":"fact_collection_talk_filter","limit":"fact_collection_limit"},"outputs_map":{"str":"qdrant_fact_search_result_talk"}},"transitions_before":[],"transitions_after":[]}'),
-(41, 5, 2, 'Новый факты', 16, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"prompt_user_facts_girl","text":"в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %document_id% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос."}],"prompt_user":"=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Уже существующие факты о девушке %agent_title% ===\\n%qdrant_fact_search_result_girl%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_facts_girl\\": в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %agent_title% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос. Уже существующие факты не должны противоречить новым.\\n\\nдля \'prompt_user_facts_girl\' используй для document_id: значение \'%document_id%\' (пример: \\"document_id\\":\\"%document_id%\\")\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_facts_girl\\": %fact_collection_output_format_33_result_str%\\n}"}'),
-(42, 5, 3, 'fact_collection_add_girl', 17, '{"transitions_before":[],"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_name","data":"prompt_user_facts_girl"},"outputs_map":{"facts_str":"qdrant_fact_search_result_girl"}},"transitions_after":[{"variable":"agent_id","operator":">","value":"0","step_id":"38"}]}'),
 (43, 2, 5, 'Переменные', 4, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"agent_exists_find_by","text":"{\\"name\\":\\"%text_to_lower_37_result_str%\\"}"}]}'),
 (44, 2, 4, 'Агент уже существует', 15, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Девушка с таким именем \\"%prompt_user%\\" уже зарегистрирована, придумайте другое имя"}'),
 (45, 5, 3, 'datetime_current_get', 12, '{"tool_invoke":{"tool_name":"datetime_current_get","inputs_map":{"timezone":"datetime_current_get_zone"},"outputs_map":{"str":"datetime_current_get_response"}},"transitions_before":[],"transitions_after":[]}'),
-(46, 5, 5, 'Переменные', 8, '{"variable_conversion":[{"variable":"qdrant_fact_search_result_girl","text":"%qdrant_fact_search_25_result_str%"}],"transitions_before":[],"transitions_after":[{"variable":"prompt_user_question","operator":"==","value":"1","step_id":"41"}]}'),
-(47, 5, 5, 'Переменные', 10, '{"variable_conversion":[{"variable":"qdrant_fact_search_result_companion","text":"%qdrant_fact_search_38_result_str%"}],"transitions_before":[],"transitions_after":[]}');
+(46, 5, 5, 'Переменные', 8, '{"variable_conversion":[{"variable":"qdrant_fact_search_result_girl","text":"%qdrant_fact_search_25_result_str%"}],"transitions_before":[],"transitions_after":[{"variable":"prompt_user_question","operator":"==","value":"1","step_id":"48"}]}'),
+(47, 5, 5, 'Переменные', 10, '{"variable_conversion":[{"variable":"qdrant_fact_search_result_companion","text":"%qdrant_fact_search_38_result_str%"}],"transitions_before":[],"transitions_after":[]}'),
+(48, 5, 6, 'girl_fact_create', 16, '{"workflow_invoke":{"workflow_id":6,"inputs_map":{"document_id":"document_id","girl_existing_facts":"qdrant_fact_search_result_girl"},"outputs_map":{"fact_collection_add_51_result_facts_str":"qdrant_fact_search_result_girl"}},"transitions_before":[],"transitions_after":[{"variable":"agent_id","operator":">","value":"0","step_id":"38"}]}'),
+(49, 6, 3, 'fact_collection_output_format', 0, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_girl_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(50, 6, 2, 'Новый факты', 1, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"prompt_user_facts_girl","text":"в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %document_id% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос."}],"prompt_user":"=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Уже существующие факты о девушке %agent_title% ===\\n%girl_existing_facts%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_facts_girl\\": в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %agent_title% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос. Уже существующие факты не должны противоречить новым.\\n\\nдля \'prompt_user_facts_girl\' используй для document_id: значение \'%document_id%\' (пример: \\"document_id\\":\\"%document_id%\\")\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_facts_girl\\": %fact_collection_output_format_49_result_str%\\n}"}'),
+(51, 6, 3, 'fact_collection_add_girl', 2, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_name","data":"prompt_user_facts_girl"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(52, 6, 4, 'Вернуть факты', 3, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%fact_collection_add_51_result_facts_str%","continue_workflow":false}'),
+(53, 7, 3, 'fact_collection_output_format', 0, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_man_name"},"outputs_map":{"str":"fact_collection_output_format_response"}},"transitions_before":[],"transitions_after":[]}'),
+(54, 7, 2, 'Факты из промта', 1, '{"prompt_user":"=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_facts_man\\": список фактов что касаются персонально о %companion_title%: биографии, любимые занятия, образование, работа, жизненные факты\\n- \\"prompt_user_facts_talk\\": список фактов, что связаны с перепиской с %companion_title%, это могут быть какие-то договоронности, споры, дискусии на разные темы, мнения, мысли, желания\\n\\nдля \'prompt_user_facts_man\' используй document_id: \'%companion_name%\'\\nдля \'prompt_user_facts_talk\' используй document_id: \'%document_id%_%companion_name%\'\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_facts_man\\": %fact_collection_output_format_53_result_str%,\\n  \\"prompt_user_facts_talk\\": %fact_collection_output_format_53_result_str%\\n}\\n\\nНе нужно придумывать и создавать факты. Они должны быть в тексте %companion_title% написаны явно. Если явных фактов нет - нужно вернуть 0 для ключей.\\n\\nExample of JSON response one more:\\n{\\n  \\"prompt_user_facts_man\\": 0,\\n  \\"prompt_user_facts_talk\\": 0\\n}","transitions_before":[],"transitions_after":[{"variable":"prompt_user_facts_man","operator":"==","value":"0","step_id":"57"}],"llm_to_json_variable":[{"variable":"prompt_user_facts_man","text":"список фактов что касаются персонально о %companion_title%, его биографии, любимые занятия, образование, работа, жизненные факты"},{"variable":"prompt_user_facts_talk","text":"список фактов, что связаны с перепиской с %companion_title%, это могут быть какие-то договоронности, споры, дискусии на разные темы, мнения, мысли, желания, планы на будущее"}]}'),
+(55, 7, 3, 'fact_collection_add_man', 2, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_man_name","data":"prompt_user_facts_man"},"outputs_map":{}},"transitions_before":[],"transitions_after":[{"variable":"prompt_user_facts_talk","operator":"==","value":"0","step_id":"57"}]}'),
+(56, 7, 3, 'fact_collection_add_talk', 3, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_talk_name","data":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(57, 7, 4, 'Вернуть факты', 4, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%prompt_user_facts_man%","continue_workflow":false}'),
+(58, 5, 6, 'companion_fact_extract', 0, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"document_id":"document_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}');
 
 --
 
@@ -215,7 +223,8 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (71, 'companion_id', 'global', NULL, NULL),
 (72, 'companion_title', 'global', NULL, NULL),
 (73, 'companion_name', 'global', NULL, NULL),
-(74, 'qdrant_fact_search_result_companion', 'workflow', NULL, NULL);
+(74, 'qdrant_fact_search_result_companion', 'workflow', NULL, NULL),
+(75, 'girl_existing_facts', 'input', NULL, 'Существующие факты о девушке (вход sub-workflow girl_fact_invent)');
 
 --
 
@@ -253,7 +262,16 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (61, 5),
 (64, 5),
 (70, 5),
-(74, 5);
+(74, 5),
+(34, 6),
+(61, 6),
+(70, 6),
+(75, 6),
+(45, 7),
+(46, 7),
+(47, 7),
+(59, 7),
+(70, 7);
 
 --
 
