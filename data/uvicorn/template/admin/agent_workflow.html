@@ -1346,6 +1346,7 @@
 
             collectWorkflowTargetSteps()
             extractVariablesFromSteps(allCurrentStepsData);
+            renderWorkflowVariables(allCurrentVariables);
             renderWorkflowSteps(allCurrentStepsData);
 
             if (activeStepId) {
