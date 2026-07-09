@@ -412,7 +412,9 @@
 
             const workflowSelect = document.getElementById('workflow_id');
             workflowSelect.innerHTML = '<option value="">Нет</option>';
-            workflows.forEach(g => {
+            // subflow=1 — переиспользуемые под-процессы: агентам напрямую не назначаются,
+            // вызываются только шагом workflow_invoke
+            workflows.filter(g => !g.subflow).forEach(g => {
                 const opt = document.createElement('option');
                 opt.value = g.id;
                 opt.textContent = g.title;
