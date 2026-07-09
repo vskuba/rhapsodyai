@@ -26,15 +26,16 @@ async def workflow_create(
 ):
     async with db:
         sql = """
-            INSERT INTO agent_workflow (name, title, node_id, description, position)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO agent_workflow (name, title, node_id, description, position, subflow)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
         values = (
             data.get('name'),
             data.get('title'),
             data.get('node_id') or None,
             data.get('description', ''),
-            int(data.get('position', 0))
+            int(data.get('position', 0)),
+            int(data.get('subflow', 0))
         )
         await db.execute(sql, values)
         await db.connection.commit()
