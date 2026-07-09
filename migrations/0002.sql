@@ -139,7 +139,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (13, 2, 3, 'agent_exists', 5, '{"tool_invoke":{"tool_name":"agent_exists","inputs_map":{"find_by":"agent_exists_find_by"},"outputs_map":{"bool":"agent_exists_find_by_result"}},"transitions_before":[],"transitions_after":[{"variable":"agent_exists_13_result_bool","operator":"==","value":"True","step_id":"44"}]}'),
 (14, 2, 4, 'Вернуть список команд', 0, '{"transitions_before":[{"variable":"prompt_user","operator":"==","value":"/girl_create","step_id":"16"}],"transitions_after":[],"prompt_user":"%agent_greeting%","continue_workflow":true}'),
 (15, 2, 4, 'dating_girl_create_response', 14, '{"prompt_user":"Девушка %prompt_user% успешно создана.\\n\\nБыло создано %fact_collection_add_20_result_facts_qty% фактов.","transitions_before":[],"transitions_after":[]}'),
-(16, 2, 4, 'Спросить имя девушки', 1, '{"prompt_user":"Напишите желаемое имя девушки или выберите из списка:\\n\\n[[Таня]] [[Дуня]] [[Лена]] [[Вера]] [[Катя]] [[Маша]] [[Анна]] [[Елена]] ","transitions_before":[],"transitions_after":[],"continue_workflow":true}'),
+(16, 2, 4, 'Спросить имя девушки', 1, '{"prompt_user":"Напишите желаемое имя девушки или выберите из списка:\\n\\n[[Таня]] [[Руслана]] [[Лена]] [[Вера]] [[Катя]] [[Маша]] [[Анна]] [[Елена]] ","transitions_before":[],"transitions_after":[],"continue_workflow":true}'),
 (18, 2, 3, 'fact_collection_output_format', 6, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_girl_name"},"outputs_map":{"str":"fact_collection_output_format_response"}},"transitions_before":[],"transitions_after":[]}'),
 (19, 2, 2, 'LLM -> JSON', 7, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"facts","text":"список фактов"}],"prompt_user":"Нужно придумать биографию девушки. Известны такие факты о ней:\\n- имя: %prompt_user%\\n\\nНужно придумать биографию. Основные исходные данные: \\n1. она родом из города в Украине\\n2. возраст от 20 до 35\\n3. имеет образование\\n4. не имеет детей\\n5. не в отношениях\\n\\nОстальные детали придумай. Все факты и детали не должны противоречить друг другу. Нужно придумать, как минимум, 4 факта в биографии по каждому пункту:\\n- подростковый возраст\\n- учеба\\n- отношения с родителями\\n- любимые занятия и увлечения\\n- любовные отношения\\n- путешествия\\n- работа\\n\\nВсего фактов должно быть 32.\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"facts\\": список фактов\\n\\ndocument_id всегда \'%text_to_lower_37_result_str%\'\\n\\nExample of JSON response:\\n{\\n  \\"facts\\": %fact_collection_output_format_18_result_str%\\n}"}'),
 (20, 2, 3, 'fact_collection_add', 10, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_name","data":"facts"},"outputs_map":{"facts_qty":"facts_qty"}},"transitions_before":[],"transitions_after":[]}'),
@@ -174,7 +174,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (56, 7, 3, 'fact_collection_add_talk', 3, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_talk_name","data":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (57, 7, 4, 'Вернуть факты', 4, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%prompt_user_facts_man%","continue_workflow":false}'),
 (58, 5, 6, 'companion_fact_extract', 0, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"document_id":"document_id","prompt_user":"prompt_user","companion_title":"companion_title","companion_name":"companion_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
-(59, 8, 3, 'mysql_export_to_migration', 1, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_pattern","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(59, 8, 3, 'mysql_export_to_migration', 1, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_find_62_result_tables_str","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (60, 8, 4, 'Отчет экспорта', 2, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Экспорт завершен. Таблиц: %mysql_export_to_migration_59_result_tables_qty%, строк: %mysql_export_to_migration_59_result_rows_qty%.\nОбновлены: %mysql_export_to_migration_59_result_report_str%","continue_workflow":false}'),
 (61, 8, 4, 'Подсказка', 3, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Доступные команды:\n\n/export_agent_workflow - экспорт таблиц agent_workflow* в миграцию 0002.sql","continue_workflow":false}'),
 (62, 8, 3, 'mysql_tables_find', 0, '{"tool_invoke":{"tool_name":"mysql_tables_find","inputs_map":{"substr":"mysql_tables_pattern"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user","operator":"!=","value":"/export_agent_workflow","step_id":"61"}],"transitions_after":[]}');
@@ -287,9 +287,9 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (76, 8),
 (77, 8),
 (78, 6),
+(78, 7),
 (79, 6),
 (80, 6),
-(78, 7),
 (80, 7),
 (81, 7);
 
