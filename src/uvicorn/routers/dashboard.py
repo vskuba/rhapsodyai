@@ -16,7 +16,7 @@ template_role_mapping: dict = {
     '/admin/variable': [
         {
             'role': {'manager_dating', 'manager_dating_junior'},
-            'template': 'custom/dating/agent_workflow_variable.html'
+            'template': 'custom/dating/agent_workflow_variable_public.html'
         }
     ],
 }
@@ -157,7 +157,7 @@ async def workflow_variable_page(request: Request, user: AuthSession = Depends(r
         get_template_for_role(
             request.url.path,
             user.role,
-            "admin/agent_workflow_variable.html",
+            "admin/agent_workflow_variable_public.html",
             request.app.state.jinja2_template
         )
     )
