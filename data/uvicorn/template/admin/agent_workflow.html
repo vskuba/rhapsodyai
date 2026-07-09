@@ -183,6 +183,57 @@
         font-weight: bold;
     }
 
+    .btn-graph {
+        background: #fff;
+        color: #3498db;
+        border: 1px solid #3498db;
+        padding: 12px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+    }
+
+    .btn-graph:hover {
+        background: #eef6fc;
+    }
+
+    /* Режим графа переходов */
+    .graph-container {
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 15px;
+        overflow: auto;
+        max-height: calc(100vh - 220px);
+    }
+
+    .graph-container svg {
+        max-width: none; /* Не сжимаем диаграмму — контейнер скроллится */
+    }
+
+    .graph-container .node {
+        cursor: pointer;
+    }
+
+    .graph-warnings {
+        margin-bottom: 10px;
+        font-size: 13px;
+        color: #c0392b;
+    }
+
+    .graph-warnings div {
+        background: #fdecea;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
+        padding: 6px 10px;
+        margin-bottom: 4px;
+    }
+
+    .graph-warnings:empty {
+        display: none;
+    }
+
     .btn-create {
         background: #27ae60;
         width: 100%;
@@ -797,7 +848,10 @@
         <form id="workflowForm" novalidate>
             <div class="form-header">
                 <h2 id="formTitle">Выберите workflow</h2>
-                <button type="submit" class="btn-save">Сохранить workflow</button>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-graph" id="graphBtn">Graph</button>
+                    <button type="submit" class="btn-save">Сохранить workflow</button>
+                </div>
             </div>
 
             <input type="hidden" id="workflowId">
@@ -963,6 +1017,14 @@
 
             </div>
 
+            <!-- 3. Контейнер ГРАФА переходов -->
+            <div id="stepsGraph" style="display: none;">
+                <div id="stepsGraphWarnings" class="graph-warnings"></div>
+                <div id="stepsGraphContainer" class="graph-container">
+                    <!-- Сюда рендерится mermaid-диаграмма -->
+                </div>
+            </div>
+
             <div class="editor-footer">
                 <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
                 <button type="submit" class="btn-save">Сохранить workflow</button>
@@ -973,71 +1035,21 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/vendor/mermaid.min.js"></script>
 <script type="module">
     import {getData, putData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
+    import {state, WORKFLOW_STEP_CONFIG} from '/static/js/workflow/state.js';
+    import {parseMetadata, getToolOutputKeys, getDragAfterElement} from '/static/js/workflow/utils.js';
+    import {initGraphMode} from '/static/js/workflow/graph.js';
+
+    // Режим Graph вынесен в отдельный модуль; передаем ему функции steps-кода
+    initGraphMode({loadWorkflowSteps, selectStep});
 
     const workflowListContainer = document.getElementById('workflowList');
     const workflowForm = document.getElementById('workflowForm');
     const deleteBtn = document.getElementById('deleteBtn');
     const addStepBtn = document.getElementById('addStepToWorkflowBtn');
-
-    const WORKFLOW_STEP_CONFIG = {
-        'llm_to_json': [ // ID типа "Инструменты"
-            {
-                key: 'llm_to_json_variable',
-                type: 'widget_json_variable',
-            },
-            {
-                key: 'prompt_user',
-                label: 'User prompt',
-                type: 'textarea',
-                placeholder: '',
-                value: '%prompt_user%'
-            }
-        ],
-        'tool_invoke': [ // ID типа "Инструменты"
-            {
-                key: 'tool_invoke',
-                type: 'widget_tool_invoke',
-            },
-        ],
-        'return_response_llm': [ // ID типа "Вернуть ответ"
-            {
-                key: 'prompt_user',
-                label: 'User prompt',
-                type: 'textarea',
-                placeholder: ''
-            }
-        ],
-        'return_response_text': [ // ID типа "Вернуть ответ"
-            {
-                key: 'prompt_user',
-                label: 'User prompt',
-                type: 'textarea',
-                placeholder: ''
-            },
-            {
-                key: 'continue_workflow',
-                label: 'Продолжить workflow',
-                type: 'checkbox',
-                placeholder: ''
-            }
-        ],
-        'variable_conversion': [ // ID типа "Вернуть ответ"
-            {
-                key: 'variable_conversion',
-                type: 'widget_variable_conversion',
-            }
-        ]
-    };
-
-    let allCurrentStepsData = [];
-    let allTargetSteps = [];
-    let allWorkflowStepsType = {};
-    let allCurrentVariables = {};
-    let allAvailableTools = [];
-    let allUsedVariables = [];
 
     /**
      * Инициализация страницы: загрузка задач и нод для селекта
@@ -1050,7 +1062,7 @@
                 getData('/tool/list')
             ]);
 
-            allAvailableTools = toolsRes.result || toolsRes || [];
+            state.allAvailableTools = toolsRes.result || toolsRes || [];
 
             // Также загружаем типы шагов для селекта
             await loadAvailableStepTypes();
@@ -1163,12 +1175,12 @@
             const div = document.createElement('div');
             div.className = 'step-item-block';
             if (
-                allWorkflowStepsType[step.type_id].name === 'return_response_text'
-                || allWorkflowStepsType[step.type_id].name === 'return_response_llm'
+                state.allWorkflowStepsType[step.type_id].name === 'return_response_text'
+                || state.allWorkflowStepsType[step.type_id].name === 'return_response_llm'
             ) {
                 div.className += ' step-return-response';
             }
-            if (allTargetSteps.includes(String(step.id))) {
+            if (state.allTargetSteps.includes(String(step.id))) {
                 div.className += ' step-transition-target';
             }
             div.draggable = true;
@@ -1247,35 +1259,13 @@
         return transitionInfo;
     }
 
-    function parseMetadata(metadataFieldValue) {
-        if (!metadataFieldValue) return {};
-        if (typeof metadataFieldValue !== 'string') return metadataFieldValue;
-
-        try {
-            // Пробуем распарсить напрямую
-            return JSON.parse(metadataFieldValue);
-        } catch (e) {
-            try {
-                // Если упало, лечим неэкранированные управляющие символы (переносы строк, табы)
-                let fixedStr = metadataFieldValue
-                    .replace(/[\n\u000a]/g, '\\n')
-                    .replace(/[\r\u000d]/g, '\\r')
-                    .replace(/[\t\u0009]/g, '\\t');
-
-                return JSON.parse(fixedStr);
-            } catch (innerErr) {
-                console.warn("Критический сбой JSON. parse не справился, применен фоллбек {}:", innerErr);
-                return {}; // Полный фоллбек, гарантирующий, что интерфейс не упадет
-            }
-        }
-    }
-
     async function openWorkflowSteps(workflow, element) {
         setActiveItem(element);
 
         // 1. ПЕРЕКЛЮЧАЕМ ВИДИМОСТЬ (Явно скрываем настройки и показываем шаги)
         document.getElementById('workflowSettingsView').style.display = 'none';
         document.getElementById('stepsEditorView').style.display = 'flex';
+        document.getElementById('stepsGraph').style.display = 'none';
         document.getElementById('addStepToWorkflowBtn').style.display = 'block';
 
         // 2. ЗАПОЛНЯЕМ ДАННЫЕ
@@ -1295,6 +1285,7 @@
         // Переключаем видимость блоков
         document.getElementById('workflowSettingsView').style.display = 'flex';
         document.getElementById('stepsEditorView').style.display = 'none';
+        document.getElementById('stepsGraph').style.display = 'none';
         document.getElementById('formTitle').textContent = `Редактирование задачи: ${workflow.title}`;
 
         fillWorkflowForm(workflow);
@@ -1333,7 +1324,7 @@
 
             // 2. Сохраняем полученные шаги в глобальную переменную
             // Это позволит функции добавления условий видеть актуальный список шагов
-            allCurrentStepsData = data.result || [];
+            state.allCurrentStepsData = data.result || [];
 
             let activeStepId = null;
             let currentStepData = null;
@@ -1345,12 +1336,12 @@
             }
 
             collectWorkflowTargetSteps()
-            extractVariablesFromSteps(allCurrentStepsData);
-            renderWorkflowVariables(allCurrentVariables);
-            renderWorkflowSteps(allCurrentStepsData);
+            extractVariablesFromSteps(state.allCurrentStepsData);
+            renderWorkflowVariables(state.allCurrentVariables);
+            renderWorkflowSteps(state.allCurrentStepsData);
 
             if (activeStepId) {
-                currentStepData = allCurrentStepsData.find(s => String(s.id) === String(activeStepId));
+                currentStepData = state.allCurrentStepsData.find(s => String(s.id) === String(activeStepId));
                 currentStepBlock = container.querySelector(`.step-item-block[data-id="${activeStepId}"]`);
             }
 
@@ -1359,7 +1350,7 @@
             if (currentStepData) {
                 selectStep(currentStepData, currentStepBlock);
             } else if (firstStepBlock) {
-                const firstStepData = allCurrentStepsData[0];
+                const firstStepData = state.allCurrentStepsData[0];
                 selectStep(firstStepData, firstStepBlock);
             } else {
                 document.getElementById('stepDetailsContent').style.display = 'none';
@@ -1381,13 +1372,13 @@
             });
         } catch (e) {
             console.error("Ошибка загрузки шагов:", e);
-            allCurrentStepsData = [];
+            state.allCurrentStepsData = [];
         }
     }
 
     /**
      * Собирает имена всех переменных, используемых в шагах workflow,
-     * и сохраняет их в allUsedVariables.
+     * и сохраняет их в state.allUsedVariables.
      */
     function extractVariablesFromSteps(steps) {
         const usedVariables = new Set();
@@ -1403,7 +1394,7 @@
 
         stepsArray.forEach(step => {
             const metadata = parseMetadata(step.metadata);
-            const typeName = allWorkflowStepsType[step.type_id]?.name;
+            const typeName = state.allWorkflowStepsType[step.type_id]?.name;
 
             // return_response_llm / return_response_text / llm_to_json: %varname% в prompt_user
             if (['return_response_llm', 'return_response_text', 'llm_to_json'].includes(typeName)) {
@@ -1442,7 +1433,7 @@
             });
         });
 
-        allUsedVariables = Array.from(usedVariables);
+        state.allUsedVariables = Array.from(usedVariables);
         markUnusedWorkflowVariables();
     }
 
@@ -1452,13 +1443,13 @@
     function markUnusedWorkflowVariables() {
         document.querySelectorAll('.variables-accordion-section[data-key="workflow"] .variable-item')
             .forEach(item => {
-                item.classList.toggle('unused-variable', !allUsedVariables.includes(item.dataset.name));
+                item.classList.toggle('unused-variable', !state.allUsedVariables.includes(item.dataset.name));
             });
     }
 
     function collectWorkflowTargetSteps() {
         const targetStepsSet = new Set();
-        allCurrentStepsData.forEach(step => {
+        state.allCurrentStepsData.forEach(step => {
             let metadata = parseMetadata(step.metadata);
             ['transitions_before', 'transitions_after'].forEach(key => {
                 if (metadata[key] && Array.isArray(metadata[key])) {
@@ -1472,7 +1463,7 @@
             });
         });
 
-        allTargetSteps = Array.from(targetStepsSet);
+        state.allTargetSteps = Array.from(targetStepsSet);
     }
 
     async function loadWorkflowVariables(workflowId) {
@@ -1485,18 +1476,18 @@
 
             // 2. Сохраняем полученные переменные в глобальные стейты модуля.
             // Это позволит функциям генерации полей и автодополнения видеть актуальный список.
-            allCurrentVariables = data.result || data || [];
-            window.allCurrentVariables = allCurrentVariables; // Дублируем для генератора динамических полей
+            state.allCurrentVariables = data.result || data || [];
+            window.allCurrentVariables = state.allCurrentVariables; // Дублируем для генератора динамических полей
 
             // 3. Отрисовываем переменные в интерфейсе
-            renderWorkflowVariables(allCurrentVariables);
+            renderWorkflowVariables(state.allCurrentVariables);
 
             // 4. Отрисовываем входящие переменные в форме настроек workflow
             renderInputVariables();
 
         } catch (e) {
             console.error("Ошибка загрузки переменных:", e);
-            allCurrentVariables = [];
+            state.allCurrentVariables = [];
             window.allCurrentVariables = [];
             container.innerHTML = ''; // Очищаем контейнер при ошибке
             renderInputVariables();
@@ -1510,7 +1501,7 @@
         if (!container) return;
         container.innerHTML = '';
 
-        const variablesArray = Array.isArray(allCurrentVariables) ? allCurrentVariables : [];
+        const variablesArray = Array.isArray(state.allCurrentVariables) ? state.allCurrentVariables : [];
         variablesArray.filter(v => v.type === 'input').forEach(variable => {
             createInputVariableRow(variable);
         });
@@ -1621,7 +1612,7 @@
                 opt.textContent = stepType.icon + ' ' + stepType.description;
                 select.appendChild(opt);
 
-                allWorkflowStepsType[stepType.id] = stepType
+                state.allWorkflowStepsType[stepType.id] = stepType
             });
         } catch (e) {
             select.innerHTML = '<option>Ошибка загрузки</option>';
@@ -1682,12 +1673,12 @@
 
         const stepTitle = document.getElementById('stepTitle');
         if (stepTitle) {
-            stepTitle.value = step.title || allWorkflowStepsType[step.type_id].description || '';
+            stepTitle.value = step.title || state.allWorkflowStepsType[step.type_id].description || '';
         }
 
         const stepDescriptionFull = document.getElementById('stepDescriptionFull');
         if (stepDescriptionFull) {
-            stepDescriptionFull.innerHTML = allWorkflowStepsType[step.type_id].description_full || '';
+            stepDescriptionFull.innerHTML = state.allWorkflowStepsType[step.type_id].description_full || '';
         }
 
         // 4. Заполнение Метаданных (сырой текст в textarea)
@@ -1701,11 +1692,11 @@
 
         // 5. Отрисовка переходов
         ['Before', 'After'].forEach(type => {
-            renderTransitions(step, allCurrentStepsData, type);
+            renderTransitions(step, state.allCurrentStepsData, type);
         });
 
         const stepTransitionsViews = document.querySelectorAll('.transitions-editor');
-        if (allWorkflowStepsType[step.type_id].name === 'return_response_llm') {
+        if (state.allWorkflowStepsType[step.type_id].name === 'return_response_llm') {
             stepTransitionsViews.forEach(view => {
                 view.style.display = 'none';
             });
@@ -1736,7 +1727,7 @@
 
         const metadata = parseMetadata(step.metadata);
         const toolName = metadata?.tool_invoke?.tool_name;
-        if (allWorkflowStepsType[step.type_id]?.name !== 'tool_invoke' || !toolName) return;
+        if (state.allWorkflowStepsType[step.type_id]?.name !== 'tool_invoke' || !toolName) return;
 
         const toolSection = container.querySelector('.variables-accordion-section[data-key="tool"]');
         if (!toolSection) return;
@@ -1767,7 +1758,7 @@
         container.querySelectorAll('.variable-item.workflow-var-highlight')
             .forEach(el => el.classList.remove('workflow-var-highlight'));
 
-        if (allWorkflowStepsType[step.type_id]?.name !== 'variable_conversion') return;
+        if (state.allWorkflowStepsType[step.type_id]?.name !== 'variable_conversion') return;
 
         // Значения селектов в форме шага — имена переменных, в которые идет запись
         const fieldsContainer = document.getElementById('dynamicStepFieldsContainer');
@@ -1798,8 +1789,8 @@
     document.getElementById('dynamicStepFieldsContainer')?.addEventListener('change', (e) => {
         if (e.target.tagName !== 'SELECT') return;
         const activeStepBlock = document.querySelector('.step-item-block.active');
-        if (!activeStepBlock || !Array.isArray(allCurrentStepsData)) return;
-        const activeStep = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
+        if (!activeStepBlock || !Array.isArray(state.allCurrentStepsData)) return;
+        const activeStep = state.allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
         if (activeStep) highlightStepWorkflowVariables(activeStep);
     });
 
@@ -1808,7 +1799,7 @@
         if (!container) return;
         container.innerHTML = '';
 
-        let stepType = allWorkflowStepsType[step.type_id];
+        let stepType = state.allWorkflowStepsType[step.type_id];
 
         // Получаем схему полей для данного типа шага
         const fieldsSchema = WORKFLOW_STEP_CONFIG[stepType.name] || WORKFLOW_STEP_CONFIG['default'];
@@ -2075,7 +2066,7 @@
 
                 // Группировка инструментов по optgroup
                 const groups = {};
-                allAvailableTools.forEach(t => {
+                state.allAvailableTools.forEach(t => {
                     const groupName = t.group_name || t.group_id || 'Без группы';
                     if (!groups[groupName]) groups[groupName] = [];
                     groups[groupName].push(t);
@@ -2140,7 +2131,7 @@
                     if (!toolName) return;
 
                     // ВАЖНО: Ищем инструмент в массиве по его названию (name)
-                    const selectedTool = allAvailableTools.find(t => String(t.name) === String(toolName));
+                    const selectedTool = state.allAvailableTools.find(t => String(t.name) === String(toolName));
                     if (!selectedTool) return;
 
                     // Отрисовка описания
@@ -2347,24 +2338,6 @@
         });
     }
 
-    // Извлекает выходящие ключи инструмента по его названию (из allAvailableTools, структура args.output)
-    function getToolOutputKeys(toolName) {
-        const tool = allAvailableTools.find(t => String(t.name) === String(toolName));
-        if (!tool) return [];
-
-        const argsObj = parseMetadata(tool.args);
-        if (!argsObj || !argsObj.output) return [];
-
-        const output = argsObj.output;
-        if (typeof output === 'object') {
-            if (output.keys) return Object.keys(output.keys);
-            if (output.type) return [output.type];
-            return Object.keys(output);
-        }
-        if (typeof output === 'string') return [output];
-        return [];
-    }
-
     // Распределяет переменные по группам (общие / ноды / tool / workflow) — единая логика
     // для списка #variablesContainer и селектов переменных
     function groupWorkflowVariables(variables) {
@@ -2391,8 +2364,8 @@
         // имена формируются по шаблону '{tool_name}_{step_id}_result_{output_key}' — ID шага
         // делает имя уникальным при повторных вызовах одного инструмента
         const foundToolVariables = new Set();
-        if (typeof allCurrentStepsData !== 'undefined' && Array.isArray(allCurrentStepsData)) {
-            allCurrentStepsData.forEach(step => {
+        if (typeof state.allCurrentStepsData !== 'undefined' && Array.isArray(state.allCurrentStepsData)) {
+            state.allCurrentStepsData.forEach(step => {
                 let metadata = parseMetadata(step.metadata);
                 if (metadata && metadata.tool_invoke && metadata.tool_invoke.tool_name) {
                     const tool_name = metadata.tool_invoke.tool_name;
@@ -2522,12 +2495,12 @@
                     const workflowId = document.getElementById('workflowId')?.value;
 
                     const cleanLocalState = () => {
-                        if (typeof allCurrentVariables !== 'undefined') {
-                            allCurrentVariables = allCurrentVariables.filter(v => v !== variable);
+                        if (typeof state.allCurrentVariables !== 'undefined') {
+                            state.allCurrentVariables = state.allCurrentVariables.filter(v => v !== variable);
                         }
                         window.allCurrentVariables = (window.allCurrentVariables || []).filter(v => v !== variable);
                         div.remove();
-                        renderWorkflowVariables(typeof allCurrentVariables !== 'undefined' ? allCurrentVariables : window.allCurrentVariables);
+                        renderWorkflowVariables(typeof state.allCurrentVariables !== 'undefined' ? state.allCurrentVariables : window.allCurrentVariables);
                     };
 
                     if (!workflowId) {
@@ -2606,8 +2579,8 @@
 
         // 6. Восстанавливаем подсветку переменных активного шага после перерисовки
         const activeStepBlock = document.querySelector('.step-item-block.active');
-        if (activeStepBlock && Array.isArray(allCurrentStepsData)) {
-            const activeStep = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
+        if (activeStepBlock && Array.isArray(state.allCurrentStepsData)) {
+            const activeStep = state.allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
             if (activeStep) {
                 highlightStepToolVariables(activeStep);
                 highlightStepWorkflowVariables(activeStep);
@@ -2643,7 +2616,7 @@
         }
 
         // Проверяем дубликаты локально по свойству .name внутри объектов стейта
-        const isDuplicate = allCurrentVariables.some(v => v.name === varName);
+        const isDuplicate = state.allCurrentVariables.some(v => v.name === varName);
         if (isDuplicate) {
             showNotification('Такая переменная уже существует в этом workflow', 'error');
             return;
@@ -2771,16 +2744,6 @@
         });
     }
 
-    function getDragAfterElement(container, y) {
-        const draggableElements = [...container.querySelectorAll('.step-item-block:not(.dragging)')];
-        return draggableElements.reduce((closest, child) => {
-            const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
-            if (offset < 0 && offset > closest.offset) return {offset: offset, element: child};
-            else return closest;
-        }, {offset: Number.NEGATIVE_INFINITY}).element;
-    }
-
     async function deleteStep(stepId, stepTitle) {
         const workflowId = document.getElementById('workflowId').value;
 
@@ -2898,9 +2861,9 @@
 
             const activeStepBlock = document.querySelector('.step-item-block.active');
             if (!activeStepBlock) return;
-            const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
+            const currentStepData = state.allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
 
-            const optionsHtml = allCurrentStepsData.map(s =>
+            const optionsHtml = state.allCurrentStepsData.map(s =>
                 '<option value="' + s.id + '">' + s.title + '</option>'
             ).join('');
 
@@ -2969,9 +2932,9 @@
             if (id) {
                 const activeStepBlock = document.querySelector('.step-item-block.active');
 
-                if (activeStepBlock && allCurrentStepsData.length > 0) {
+                if (activeStepBlock && state.allCurrentStepsData.length > 0) {
                     const stepId = activeStepBlock.dataset.id;
-                    const currentStepData = allCurrentStepsData.find(s => String(s.id) === String(stepId));
+                    const currentStepData = state.allCurrentStepsData.find(s => String(s.id) === String(stepId));
 
                     if (currentStepData) {
                         // Извлекаем текущие живые метаданные (они уже обновлены функциями ввода/oninput)
@@ -3059,8 +3022,10 @@
             // Скрываем редактор шагов и показываем базовую форму
             const settingsView = document.getElementById('workflowSettingsView');
             const stepsView = document.getElementById('stepsEditorView');
+            const graphView = document.getElementById('stepsGraph');
             if (settingsView) settingsView.style.display = 'flex';
             if (stepsView) stepsView.style.display = 'none';
+            if (graphView) graphView.style.display = 'none';
         };
     }
 
