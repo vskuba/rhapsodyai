@@ -37,7 +37,7 @@ from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
 from src.uvicorn.routers.tool import tool
-from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_variable
+from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_variable, workflow_trace
 from src.uvicorn.routers.user import user
 from src.uvicorn.routers.companion import companion
 from src.uvicorn.routers.role import role
@@ -317,6 +317,7 @@ app.include_router(role.router, include_in_schema=False)
 app.include_router(workflow.router, include_in_schema=False)
 app.include_router(workflow_step.router, include_in_schema=False)
 app.include_router(workflow_variable.router, include_in_schema=False)
+app.include_router(workflow_trace.router, include_in_schema=False)
 app.include_router(tool.router, include_in_schema=False)
 app.include_router(fact_collection.router, include_in_schema=False)
 app.include_router(companion.router, include_in_schema=False)
