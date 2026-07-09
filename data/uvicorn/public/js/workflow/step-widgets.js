@@ -493,6 +493,183 @@ export function renderCustomStepFields(step, metadata) {
             toolContainer.appendChild(mappingContainer);
             fieldWrapper.appendChild(toolContainer);
 
+        } else if (field.type === 'widget_workflow_invoke') {
+            // --- Виджет вызова вложенного workflow (sub-workflow) ---
+            const wfContainer = document.createElement('div');
+            wfContainer.id = `field_${field.key}`;
+            wfContainer.style = "display: flex; flex-direction: column; gap: 12px; background: #f8fafc; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px;";
+
+            // 1. Селект workflow (кроме текущего; subflow помечены 🔁)
+            const selectElement = document.createElement('select');
+            selectElement.className = 'form-control subflow-select';
+            selectElement.style = "width: 100%; padding: 6px; font-size: 13px; height: 36px; font-weight: 500;";
+            selectElement.innerHTML = '<option value="">-- Выберите workflow --</option>';
+
+            const currentWorkflowId = document.getElementById('workflowId')?.value;
+            (state.allWorkflows || [])
+                .filter(wf => String(wf.id) !== String(currentWorkflowId))
+                .forEach(wf => {
+                    const option = document.createElement('option');
+                    option.value = wf.id;
+                    option.textContent = (wf.subflow ? '🔁 ' : '') + (wf.title || wf.name);
+                    if (currentValue && String(currentValue.workflow_id) === String(wf.id)) {
+                        option.selected = true;
+                    }
+                    selectElement.appendChild(option);
+                });
+
+            // 2. Маппинг входящих переменных ребенка + выходящие параметры
+            const mappingContainer = document.createElement('div');
+            mappingContainer.style = "display: flex; flex-direction: column; gap: 10px; margin-top: 5px;";
+
+            const childWorkflowName = (wfId) => {
+                const wf = (state.allWorkflows || []).find(w => String(w.id) === String(wfId));
+                return wf ? wf.name : ('workflow_' + wfId);
+            };
+
+            // Сборка и сохранение metadata.workflow_invoke
+            const collectSubflowData = () => {
+                const wfId = selectElement.value ? parseInt(selectElement.value) : null;
+                const inputsMap = {};
+                mappingContainer.querySelectorAll('.subflow-input-row').forEach(row => {
+                    const argEl = row.querySelector('.map-arg-select');
+                    const varEl = row.querySelector('.map-var-select');
+                    if (argEl && argEl.value && varEl && varEl.value) {
+                        inputsMap[argEl.value] = varEl.value;
+                    }
+                });
+
+                saveChanges({
+                    workflow_id: wfId,
+                    inputs_map: inputsMap,
+                    outputs_map: (currentValue && currentValue.outputs_map) || {}
+                });
+            };
+
+            // Секция "Выходящие параметры" — как у виджета инструментов:
+            // тип результата ➔ переменная с копированием по клику
+            const renderSubflowOutputs = (wfId) => {
+                const title = document.createElement('div');
+                title.style = "font-size: 11px; font-weight: bold; color: #4a5568; margin-top: 5px;";
+                title.textContent = "Выходящие параметры (Output Mapping):";
+                mappingContainer.appendChild(title);
+
+                const row = document.createElement('div');
+                row.className = 'output-map-row';
+                row.style = "display: flex; align-items: center; gap: 8px; background: #fff; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;";
+
+                // Левая часть: тип результата sub-workflow
+                const argText = document.createElement('span');
+                argText.style = "flex: 1; padding: 4px; font-size: 12px; color: #ea3d3d; font-weight: bold;";
+                argText.textContent = 'str';
+
+                // Стрелочка разделитель
+                const arrow = document.createElement('span');
+                arrow.innerHTML = '➔';
+                arrow.style = "color: #a0aec0; font-size: 12px;";
+
+                // Правая часть: переменная результата (в стиле variable-name с копированием)
+                const varSpanContainer = document.createElement('div');
+                varSpanContainer.style = "flex: 1; display: flex; align-items: center; padding: 4px;font-size: 11px;";
+
+                const varSpan = document.createElement('span');
+                varSpan.className = 'variable-name';
+                varSpan.style.marginRight = '0';
+                varSpan.title = 'Нажмите, чтобы скопировать';
+                const varText = `%${childWorkflowName(wfId)}_${step.id}_result_str%`;
+                varSpan.textContent = varText;
+
+                varSpan.onclick = async () => {
+                    try {
+                        await navigator.clipboard.writeText(varText);
+                        showNotification(`Переменная ${varText} скопирована в буфер`, 'success');
+                    } catch (err) {
+                        showNotification('Не удалось скопировать переменную', 'error');
+                    }
+                };
+
+                varSpanContainer.appendChild(varSpan);
+
+                row.appendChild(argText);
+                row.appendChild(arrow);
+                row.appendChild(varSpanContainer);
+                mappingContainer.appendChild(row);
+            };
+
+            // Рендер строк inputs_map по input-переменным выбранного workflow
+            const renderSubflowDetails = async (wfId) => {
+                mappingContainer.innerHTML = '';
+                if (!wfId) return;
+
+                let inputVars = [];
+                try {
+                    const res = await getData(`/workflow/${wfId}/variables`);
+                    inputVars = (res.result || []).filter(v => v.type === 'input');
+                } catch (e) {
+                    console.error('Ошибка загрузки переменных sub-workflow:', e);
+                    return;
+                }
+
+                if (inputVars.length === 0) {
+                    const emptyNote = document.createElement('div');
+                    emptyNote.style = "font-size: 11px; color: #94a3b8;";
+                    emptyNote.textContent = 'У выбранного workflow нет входящих переменных';
+                    mappingContainer.appendChild(emptyNote);
+                } else {
+                    const title = document.createElement('div');
+                    title.style = "font-size: 11px; font-weight: bold; color: #4a5568; margin-top: 5px;";
+                    title.textContent = "Входящие переменные (Input Mapping):";
+                    mappingContainer.appendChild(title);
+
+                    const savedInputs = (currentValue && currentValue.inputs_map) || {};
+                    inputVars.forEach(v => {
+                        const row = document.createElement('div');
+                        row.className = 'subflow-input-row';
+                        row.style = "display: flex; align-items: center; gap: 8px; background: #fff; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;";
+
+                        const argHidden = document.createElement('input');
+                        argHidden.type = 'hidden';
+                        argHidden.className = 'map-arg-select';
+                        argHidden.value = v.name;
+
+                        const argText = document.createElement('span');
+                        argText.style = "flex: 1; padding: 4px; font-size: 12px; color: #2b6cb0; font-weight: bold;";
+                        argText.textContent = v.name;
+
+                        const arrow = document.createElement('span');
+                        arrow.innerHTML = '⬅';
+                        arrow.style = "color: #a0aec0; font-size: 12px;";
+
+                        // Селект родительской переменной (сгруппирован как в #variablesContainer)
+                        const varSelect = document.createElement('select');
+                        varSelect.className = 'form-control map-var-select';
+                        varSelect.style = "flex: 1; padding: 4px; font-size: 12px; height: 32px;";
+                        fillVariablesSelectOptions(varSelect, savedInputs[v.name] || '');
+                        varSelect.onchange = collectSubflowData;
+
+                        row.append(argHidden, argText, arrow, varSelect);
+                        mappingContainer.appendChild(row);
+                    });
+                }
+
+                // Выходящие параметры — всегда после входящих
+                renderSubflowOutputs(wfId);
+            };
+
+            selectElement.onchange = async () => {
+                await renderSubflowDetails(selectElement.value);
+                collectSubflowData();
+            };
+
+            // Первичный рендер при открытии шага
+            if (currentValue && currentValue.workflow_id) {
+                renderSubflowDetails(currentValue.workflow_id);
+            }
+
+            wfContainer.appendChild(selectElement);
+            wfContainer.appendChild(mappingContainer);
+            fieldWrapper.appendChild(wfContainer);
+
         } else {
             // --- СТАНДАРТНАЯ ОТРИСОВКА ОСТАЛЬНЫХ ТИПОВ ПОЛЕЙ ---
             if (field.type === 'textarea') {

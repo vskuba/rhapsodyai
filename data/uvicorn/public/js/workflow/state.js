@@ -50,6 +50,12 @@ export const WORKFLOW_STEP_CONFIG = {
             key: 'variable_conversion',
             type: 'widget_variable_conversion',
         }
+    ],
+    'workflow_invoke': [ // Вызов вложенного workflow (sub-workflow)
+        {
+            key: 'workflow_invoke',
+            type: 'widget_workflow_invoke',
+        }
     ]
 };
 
@@ -60,4 +66,5 @@ export const state = {
     allCurrentVariables: {},     // переменные выбранного workflow
     allAvailableTools: [],       // все инструменты (для виджетов и tool-переменных)
     allUsedVariables: [],        // имена переменных, используемых в шагах
+    allWorkflows: [],            // все workflow (для виджета workflow_invoke и имен sub-workflow)
 };

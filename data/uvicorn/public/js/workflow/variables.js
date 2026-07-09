@@ -249,6 +249,12 @@ function groupWorkflowVariables(variables) {
                     foundToolVariables.add(tool_name + '_' + step.id + '_result_' + key);
                 });
             }
+            // Результат шага workflow_invoke: {имя_sub_workflow}_{step_id}_result_str
+            if (metadata && metadata.workflow_invoke && metadata.workflow_invoke.workflow_id) {
+                const wf = (state.allWorkflows || []).find(w => String(w.id) === String(metadata.workflow_invoke.workflow_id));
+                const childName = wf ? wf.name : ('workflow_' + metadata.workflow_invoke.workflow_id);
+                foundToolVariables.add(childName + '_' + step.id + '_result_str');
+            }
         });
     }
 
@@ -537,13 +543,22 @@ export function highlightStepToolVariables(step) {
         .forEach(el => el.classList.remove('tool-var-highlight'));
 
     const metadata = parseMetadata(step.metadata);
-    const toolName = metadata?.tool_invoke?.tool_name;
-    if (state.allWorkflowStepsType[step.type_id]?.name !== 'tool_invoke' || !toolName) return;
+    const typeName = state.allWorkflowStepsType[step.type_id]?.name;
+
+    // Префикс переменных результата: tool_invoke — по имени инструмента,
+    // workflow_invoke — по имени вызываемого sub-workflow
+    let prefix = null;
+    if (typeName === 'tool_invoke' && metadata?.tool_invoke?.tool_name) {
+        prefix = `${metadata.tool_invoke.tool_name}_${step.id}_result_`;
+    } else if (typeName === 'workflow_invoke' && metadata?.workflow_invoke?.workflow_id) {
+        const wf = (state.allWorkflows || []).find(w => String(w.id) === String(metadata.workflow_invoke.workflow_id));
+        const childName = wf ? wf.name : ('workflow_' + metadata.workflow_invoke.workflow_id);
+        prefix = `${childName}_${step.id}_result_`;
+    }
+    if (!prefix) return;
 
     const toolSection = container.querySelector('.variables-accordion-section[data-key="tool"]');
     if (!toolSection) return;
-
-    const prefix = `${toolName}_${step.id}_result_`;
     const matched = [...toolSection.querySelectorAll('.variable-item')]
         .filter(el => (el.dataset.name || '').startsWith(prefix));
     if (matched.length === 0) return;
