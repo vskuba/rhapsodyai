@@ -21,12 +21,12 @@ async def test_variable_crud():
             "role_ids": [1], # Убедитесь, что роль с ID=1 существует
             "pattern": "{}"
         }
-        response = await client.post("/agent_workflow_variable", json=payload)
+        response = await client.post("/node/workflow_variable", json=payload)
         assert response.status_code == 200
         variable_id = response.json()["result"]["id"]
 
         # 2. Чтение
-        response = await client.get("/agent_workflow_variable/list")
+        response = await client.get("/node/workflow_variable/list")
         assert response.status_code == 200
         variables = response.json()["result"]
         assert any(v["id"] == variable_id for v in variables)
@@ -34,14 +34,14 @@ async def test_variable_crud():
         # 3. Обновление
         update_payload = payload.copy()
         update_payload["name"] = "updated_var"
-        response = await client.put(f"/agent_workflow_variable/{variable_id}", json=update_payload)
+        response = await client.put(f"/node/workflow_variable/{variable_id}", json=update_payload)
         assert response.status_code == 200
 
         # 4. Удаление
-        response = await client.delete(f"/agent_workflow_variable/{variable_id}")
+        response = await client.delete(f"/node/workflow_variable/{variable_id}")
         assert response.status_code == 200
 
         # Проверка удаления
-        response = await client.get("/agent_workflow_variable/list")
+        response = await client.get("/node/workflow_variable/list")
         variables = response.json()["result"]
         assert not any(v["id"] == variable_id for v in variables)
