@@ -91,8 +91,8 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 (2, 'Dating', -3),
 (3, 'Soko', 0),
 (4, 'Chat', -1),
-(5, 'Test', -2),
-(6, 'Dev', 1);
+(5, 'Test', 3),
+(6, 'Dev', -2);
 
 --
 
