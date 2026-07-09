@@ -163,7 +163,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (45, 5, 3, 'datetime_current_get', 12, '{"tool_invoke":{"tool_name":"datetime_current_get","inputs_map":{"timezone":"datetime_current_get_zone"},"outputs_map":{"str":"datetime_current_get_response"}},"transitions_before":[],"transitions_after":[]}'),
 (46, 5, 5, 'Переменные', 8, '{"variable_conversion":[{"variable":"qdrant_fact_search_result_girl","text":"%qdrant_fact_search_25_result_str%"}],"transitions_before":[],"transitions_after":[{"variable":"prompt_user_question","operator":"==","value":"1","step_id":"48"}]}'),
 (47, 5, 5, 'Переменные', 10, '{"variable_conversion":[{"variable":"qdrant_fact_search_result_companion","text":"%qdrant_fact_search_38_result_str%"}],"transitions_before":[],"transitions_after":[]}'),
-(48, 5, 6, 'girl_fact_create', 16, '{"workflow_invoke":{"workflow_id":6,"inputs_map":{"document_id":"document_id","girl_existing_facts":"qdrant_fact_search_result_girl"},"outputs_map":{"fact_collection_add_51_result_facts_str":"qdrant_fact_search_result_girl"}},"transitions_before":[],"transitions_after":[{"variable":"agent_id","operator":">","value":"0","step_id":"38"}]}'),
+(48, 5, 6, 'girl_fact_create', 16, '{"workflow_invoke":{"workflow_id":6,"inputs_map":{"document_id":"document_id","girl_existing_facts":"qdrant_fact_search_result_girl","prompt_user":"prompt_user","agent_title":"agent_title","companion_title":"companion_title"},"outputs_map":{"fact_collection_add_51_result_facts_str":"qdrant_fact_search_result_girl"}},"transitions_before":[],"transitions_after":[{"variable":"agent_id","operator":">","value":"0","step_id":"38"}]}'),
 (49, 6, 3, 'fact_collection_output_format', 0, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_girl_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (50, 6, 2, 'Новый факты', 1, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"prompt_user_facts_girl","text":"в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %document_id% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос."}],"prompt_user":"=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Уже существующие факты о девушке %agent_title% ===\\n%girl_existing_facts%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_facts_girl\\": в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %agent_title% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос. Уже существующие факты не должны противоречить новым.\\n\\nдля \'prompt_user_facts_girl\' используй для document_id: значение \'%document_id%\' (пример: \\"document_id\\":\\"%document_id%\\")\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_facts_girl\\": %fact_collection_output_format_49_result_str%\\n}"}'),
 (51, 6, 3, 'fact_collection_add_girl', 2, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_name","data":"prompt_user_facts_girl"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
@@ -173,7 +173,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (55, 7, 3, 'fact_collection_add_man', 2, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_man_name","data":"prompt_user_facts_man"},"outputs_map":{}},"transitions_before":[],"transitions_after":[{"variable":"prompt_user_facts_talk","operator":"==","value":"0","step_id":"57"}]}'),
 (56, 7, 3, 'fact_collection_add_talk', 3, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_talk_name","data":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (57, 7, 4, 'Вернуть факты', 4, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%prompt_user_facts_man%","continue_workflow":false}'),
-(58, 5, 6, 'companion_fact_extract', 0, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"document_id":"document_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(58, 5, 6, 'companion_fact_extract', 0, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"document_id":"document_id","prompt_user":"prompt_user","companion_title":"companion_title","companion_name":"companion_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (59, 8, 3, 'mysql_export_to_migration', 1, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_find_62_result_dict","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (60, 8, 4, 'Отчет экспорта', 2, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Экспорт завершен. Таблиц: %mysql_export_to_migration_59_result_tables_qty%, строк: %mysql_export_to_migration_59_result_rows_qty%.\nОбновлены: %mysql_export_to_migration_59_result_report_str%","continue_workflow":false}'),
 (61, 8, 4, 'Подсказка', 3, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Доступные команды:\n\n/export_agent_workflow - экспорт таблиц agent_workflow* в миграцию 0002.sql","continue_workflow":false}'),
@@ -232,7 +232,11 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (74, 'qdrant_fact_search_result_companion', 'workflow', NULL, NULL),
 (75, 'girl_existing_facts', 'input', NULL, 'Существующие факты о девушке (вход sub-workflow girl_fact_invent)'),
 (76, 'mysql_tables_pattern', 'workflow', 'agent_workflow', 'Подстрока для поиска таблиц экспорта'),
-(77, 'migration_file', 'workflow', 'migrations/0002.sql', 'Файл миграции для экспорта данных');
+(77, 'migration_file', 'workflow', 'migrations/0002.sql', 'Файл миграции для экспорта данных'),
+(78, 'prompt_user', 'input', NULL, 'Текст сообщения пользователя (вход sub-workflow)'),
+(79, 'agent_title', 'input', NULL, 'Отображаемое имя агента (вход sub-workflow)'),
+(80, 'companion_title', 'input', NULL, 'Отображаемое имя собеседника (вход sub-workflow)'),
+(81, 'companion_name', 'input', NULL, 'Системное имя собеседника (вход sub-workflow)');
 
 --
 
@@ -281,7 +285,13 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (74, 5),
 (75, 6),
 (76, 8),
-(77, 8);
+(77, 8),
+(78, 6),
+(79, 6),
+(80, 6),
+(78, 7),
+(80, 7),
+(81, 7);
 
 --
 

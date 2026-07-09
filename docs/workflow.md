@@ -143,9 +143,11 @@ continue_workflow, если не были возвращены пользова�
   переиспользуется chat.py и движком;
 - цикл шагов вынесен в runner `_workflow_steps_run(model, steps, variables, start_index, depth,
   workflow_stack)` — терминальные шаги возвращают результат, а не пишут в future;
-- шаг `workflow_invoke`: изолированный scope ребенка (`SUBFLOW_BASE_VARIABLES` + inputs_map +
-  default'ы), валидация input-контракта, лимит глубины (`MAX_WORKFLOW_DEPTH=5`), детект циклов
-  по стеку workflow-id; результат → `{child_name}_{step_id}_result_str` + копии по outputs_map;
+- шаг `workflow_invoke`: изолированный scope ребенка — **только явные входы** (inputs_map +
+  default'ы переменных ребенка, никакого неявного наследования из родителя); контракт задают
+  input-переменные ребенка (даже базовые вроде `prompt_user` объявляются input'ом subflow и
+  мапятся явно); лимит глубины (`MAX_WORKFLOW_DEPTH=5`), детект циклов по стеку workflow-id;
+  результат → `{child_name}_{step_id}_result_str` + копии по outputs_map;
 - в sub-workflow подавлены побочные эффекты верхнего уровня: system/user-prompt и response-final
   не пишутся в историю, `continue_workflow` игнорируется с warning, `is_transition=True` для
   return_response_llm (ответ ребенка — промежуточный, не финальный).
