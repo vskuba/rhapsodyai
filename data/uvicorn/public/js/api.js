@@ -1,3 +1,18 @@
+// Ошибка ответа API: вытягивает detail/message из JSON-тела, иначе — HTTP-статус.
+// FastAPI кладет причину в {detail: "..."} (или массив объектов при 422-валидации).
+async function apiError(response) {
+    let message = `Ошибка: ${response.status}`;
+    try {
+        const body = await response.json();
+        const detail = body.detail ?? body.message;
+        if (typeof detail === 'string' && detail) message = detail;
+        else if (detail) message = JSON.stringify(detail);
+    } catch {
+        // тело не JSON (HTML от прокси и т.п.) — оставляем статус
+    }
+    return new Error(message);
+}
+
 export async function getData(url) {
     const options = {
         method: 'GET',
@@ -6,7 +21,7 @@ export async function getData(url) {
     };
 
     const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`Ошибка GET: ${response.status}`);
+    if (!response.ok) throw await apiError(response);
     return await response.json();
 }
 
@@ -19,7 +34,7 @@ export async function postData(url, data = {}) {
     };
 
     const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`Ошибка: ${response.status}`);
+    if (!response.ok) throw await apiError(response);
     return await response.json();
 }
 
@@ -30,10 +45,7 @@ export async function putData(url, data = {}) {
         body: JSON.stringify(data),
         credentials: 'include'
     });
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || `Ошибка: ${response.status}`);
-    }
+    if (!response.ok) throw await apiError(response);
     return await response.json();
 }
 
@@ -45,11 +57,6 @@ export async function deleteData(url) {
     };
 
     const response = await fetch(url, options);
-
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || `Ошибка: ${response.status}`);
-    }
-
+    if (!response.ok) throw await apiError(response);
     return await response.json();
 }

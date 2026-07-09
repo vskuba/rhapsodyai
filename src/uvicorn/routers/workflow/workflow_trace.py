@@ -1,8 +1,14 @@
+import asyncio
+import uuid
+
 from fastapi import APIRouter, Request, Depends, HTTPException
 
+from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflow import ai_workflow_load
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from src.mysql_.repository.agent_repository import AgentRepository
 
 router = APIRouter()
 
@@ -136,6 +142,101 @@ async def trace_run_detail(
             runs[parent_id]['children'].append(run)
 
     return {"result": root}
+
+
+@router.post("/workflow_trace/run/{run_uuid}/replay")
+async def trace_run_replay(
+        request: Request,
+        run_uuid: str,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_REPLAY]))
+):
+    """Повторяет запуск workflow с сохраненным снапшотом переменных (variables_start).
+
+    Шаги берутся из ТЕКУЩЕГО определения workflow — replay нужен, чтобы проверить
+    правки сценария на реальных входных данных. История и continue_workflow-индекс
+    пишутся в НОВУЮ сессию, чтобы не засорять оригинальную переписку; сам снапшот
+    переменных (включая старый session_uuid как значение) не изменяется."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT * FROM agent_workflow_run WHERE run_uuid = %s AND depth = 0",
+            (run_uuid,)
+        )
+        run = await db.fetchone()
+
+    if not run:
+        raise HTTPException(status_code=404, detail="Запуск не найден (replay доступен только для верхнего уровня)")
+    if not run.get('workflow_id'):
+        raise HTTPException(status_code=400, detail="Workflow этого запуска удален — повторить невозможно")
+
+    variables = json_from_string(run.get('variables_start') or '{}')
+    if not isinstance(variables, dict) or not variables:
+        raise HTTPException(status_code=400, detail="У запуска нет снапшота переменных (variables_start)")
+    variables.setdefault('prompt_user', run.get('prompt_user') or '')
+
+    entity_agent = {}
+    if run.get('agent_id'):
+        entity_agent = await AgentRepository().find_one_by({'id': run['agent_id']}) or {}
+    if not entity_agent:
+        raise HTTPException(status_code=400, detail="Агент этого запуска удален — повторить невозможно")
+
+    workflow_data = await ai_workflow_load(run['workflow_id'])
+    if not workflow_data['steps']:
+        raise HTTPException(status_code=400, detail="Workflow не содержит шагов")
+
+    # LLM оригинального пользователя запуска; если их нет — текущего пользователя
+    async with mysql_get_db_async() as db:
+        entities_llm = []
+        for candidate_user_id in dict.fromkeys([run.get('user_id'), user.user_id]):
+            if not candidate_user_id:
+                continue
+            await db.execute(
+                """
+                SELECT l.*
+                FROM `llm` l
+                JOIN `user_llm` ul ON l.id = ul.llm_id
+                WHERE ul.user_id = %s
+                ORDER BY ul.rate_limit_at ASC, ul.position ASC
+                """,
+                (candidate_user_id,)
+            )
+            entities_llm = await db.fetchall()
+            if entities_llm:
+                break
+        if not entities_llm:
+            raise HTTPException(status_code=404, detail="Не найдены LLM ни у пользователя запуска, ни у текущего")
+
+        await db.execute("SELECT name, path FROM tool WHERE id > 0")
+        raw_tools = await db.fetchall()
+    tools = {t['name'].strip(): t['path'].strip() for t in raw_tools if t.get('name') and t.get('path')}
+
+    # Новая сессия: история и continue_workflow-индекс replay-запуска не трогают оригинал
+    replay_session_uuid = str(uuid.uuid4())
+
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+
+    agent_manager = request.app.state.agent_manager
+    framework_model = await agent_manager.framework_model_create({
+        "entity_agent": entity_agent,
+        "entities_llm": entities_llm,
+        "workflow_steps": workflow_data['steps'],
+        "workflow_variables": variables,
+        "prompt_user": variables.get('prompt_user', ''),
+        "user_id": run.get('user_id') or user.user_id,
+        "companion_id": variables.get('companion_id', 0),
+        "session_uuid": replay_session_uuid,
+        "tools": tools,
+    })
+    agent_manager.framework_workflow_run(framework_model, future, loop)
+
+    timeout = 60.0
+    try:
+        result_text = await asyncio.wait_for(future, timeout=timeout)
+    except asyncio.TimeoutError:
+        future.cancel()
+        raise HTTPException(status_code=504, detail=f"Превышено время ожидания ответа ({timeout} сек.)")
+
+    return {"result": result_text, "session_uuid": replay_session_uuid}
 
 
 @router.delete("/workflow_trace/run/{run_uuid}")

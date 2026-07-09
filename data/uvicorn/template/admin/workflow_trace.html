@@ -332,6 +332,22 @@
         margin-left: auto;
     }
 
+    .btn-replay-run {
+        background: transparent;
+        color: #2b6cb0;
+        border: 1px solid #2b6cb0;
+        border-radius: 4px;
+        padding: 3px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        margin-left: 8px;
+    }
+
+    .btn-replay-run:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
     .empty-note {
         color: #999;
         text-align: center;
@@ -390,7 +406,7 @@
 
 {% block scripts %}
 <script type="module">
-    import {getData, deleteData} from '/static/js/api.js';
+    import {getData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
 
     const runsList = document.getElementById('runsList');
@@ -546,6 +562,27 @@
         headRow.appendChild(el('span', 'run-meta', `  ${fmtDate(run.started_at)}`));
         headRow.appendChild(el('span', 'run-meta-time', `  ${fmtDuration(run.duration_ms)}`));
 
+        // Replay: повторный прогон workflow с сохраненным снапшотом переменных.
+        // Шаги берутся из текущего определения workflow, история пишется в новую сессию.
+        const replayBtn = el('button', 'btn-replay-run', '▶️ Повторить');
+        replayBtn.onclick = async () => {
+            if (!confirm('Повторить запуск с теми же входными переменными? Workflow выполнится по-настоящему.')) return;
+            replayBtn.disabled = true;
+            replayBtn.textContent = 'Выполняется…';
+            try {
+                await postData(`/workflow_trace/run/${run.run_uuid}/replay`, {});
+                showNotification('Запуск повторен', 'success');
+                // Сбрасываем выбор: loadRuns автоматически откроет свежий (replay) запуск
+                state.activeRunUuid = null;
+                state.page = 1;
+                await loadRuns();
+            } catch (e) {
+                showNotification(`Ошибка replay: ${e.message}`, 'error');
+                replayBtn.disabled = false;
+                replayBtn.textContent = '▶️ Повторить';
+            }
+        };
+
         const delBtn = el('button', 'btn-delete-run', 'Удалить лог');
         delBtn.style.float = 'right';
         delBtn.onclick = async () => {
@@ -562,6 +599,7 @@
             }
         };
         headRow.appendChild(delBtn);
+        headRow.appendChild(replayBtn);
         summary.appendChild(headRow);
 
         const promptRow = el('div', 'row');
