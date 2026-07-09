@@ -647,6 +647,28 @@
         opacity: 0.6;
     }
 
+    /* Подсветка tool-переменных, относящихся к выбранному шагу-инструменту */
+    .variable-item.tool-var-highlight {
+        background-color: #ffe9f5;
+        border-left-color: #e91e63;
+        box-shadow: 0 0 0 1px #f488d5 inset;
+    }
+
+    .variable-item.tool-var-highlight .variable-name {
+        font-weight: bold;
+    }
+
+    /* Подсветка workflow-переменных, в которые пишет выбранный шаг "Переменные" */
+    .variable-item.workflow-var-highlight {
+        background-color: #e3f0ff;
+        border-left-color: #1565c0;
+        box-shadow: 0 0 0 1px #90caf9 inset;
+    }
+
+    .variable-item.workflow-var-highlight .variable-name {
+        font-weight: bold;
+    }
+
     .variable-item.unused-variable .variable-name {
         color: #3a3535;
     }
@@ -1691,7 +1713,94 @@
                 view.style.display = '';
             });
         }
+
+        // 6. Для шага-инструмента раскрываем группу tool-переменных и подсвечиваем его результаты,
+        // для шага "Переменные" — группу workflow-переменных, в которые он пишет
+        highlightStepToolVariables(step);
+        highlightStepWorkflowVariables(step);
     }
+
+    /**
+     * При выборе шага tool_invoke раскрывает аккордеон "Tool переменные" и подсвечивает
+     * переменные результата этого шага ({tool_name}_{step_id}_result_*).
+     * Для остальных шагов просто снимает подсветку.
+     */
+    function highlightStepToolVariables(step) {
+        const container = document.getElementById('variablesContainer');
+        if (!container) return;
+
+        // Снимаем прошлую подсветку
+        container.querySelectorAll('.variable-item.tool-var-highlight')
+            .forEach(el => el.classList.remove('tool-var-highlight'));
+
+        const metadata = parseMetadata(step.metadata);
+        const toolName = metadata?.tool_invoke?.tool_name;
+        if (allWorkflowStepsType[step.type_id]?.name !== 'tool_invoke' || !toolName) return;
+
+        const toolSection = container.querySelector('.variables-accordion-section[data-key="tool"]');
+        if (!toolSection) return;
+
+        const prefix = `${toolName}_${step.id}_result_`;
+        const matched = [...toolSection.querySelectorAll('.variable-item')]
+            .filter(el => (el.dataset.name || '').startsWith(prefix));
+        if (matched.length === 0) return;
+
+        // Раскрываем группу tool (сворачиваем остальные — стандартное поведение аккордеона)
+        container.querySelectorAll('.variables-accordion-section').forEach(s => s.classList.remove('active'));
+        toolSection.classList.add('active');
+
+        matched.forEach(el => el.classList.add('tool-var-highlight'));
+    }
+
+    /**
+     * При выборе шага "Переменные" (variable_conversion) раскрывает группу "Переменные workflow"
+     * и подсвечивает переменные, в которые пишет этот шаг. Имена берутся из значений селектов
+     * формы шага справа (#dynamicStepFieldsContainer).
+     * Для остальных шагов просто снимает подсветку.
+     */
+    function highlightStepWorkflowVariables(step) {
+        const container = document.getElementById('variablesContainer');
+        if (!container) return;
+
+        // Снимаем прошлую подсветку
+        container.querySelectorAll('.variable-item.workflow-var-highlight')
+            .forEach(el => el.classList.remove('workflow-var-highlight'));
+
+        if (allWorkflowStepsType[step.type_id]?.name !== 'variable_conversion') return;
+
+        // Значения селектов в форме шага — имена переменных, в которые идет запись
+        const fieldsContainer = document.getElementById('dynamicStepFieldsContainer');
+        if (!fieldsContainer) return;
+
+        const variableNames = new Set(
+            [...fieldsContainer.querySelectorAll('select')]
+                .map(sel => (sel.value || '').trim())
+                .filter(Boolean)
+        );
+        if (variableNames.size === 0) return;
+
+        const workflowSection = container.querySelector('.variables-accordion-section[data-key="workflow"]');
+        if (!workflowSection) return;
+
+        const matched = [...workflowSection.querySelectorAll('.variable-item')]
+            .filter(el => variableNames.has(el.dataset.name || ''));
+        if (matched.length === 0) return;
+
+        // Раскрываем группу workflow (сворачиваем остальные — стандартное поведение аккордеона)
+        container.querySelectorAll('.variables-accordion-section').forEach(s => s.classList.remove('active'));
+        workflowSection.classList.add('active');
+
+        matched.forEach(el => el.classList.add('workflow-var-highlight'));
+    }
+
+    // Живое обновление подсветки при смене переменной в селектах формы шага
+    document.getElementById('dynamicStepFieldsContainer')?.addEventListener('change', (e) => {
+        if (e.target.tagName !== 'SELECT') return;
+        const activeStepBlock = document.querySelector('.step-item-block.active');
+        if (!activeStepBlock || !Array.isArray(allCurrentStepsData)) return;
+        const activeStep = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
+        if (activeStep) highlightStepWorkflowVariables(activeStep);
+    });
 
     function renderCustomStepFields(step, metadata) {
         const container = document.getElementById('dynamicStepFieldsContainer');
@@ -2128,7 +2237,7 @@
                             varSpan.className = 'variable-name';
                             varSpan.style.marginRight = '0';
                             varSpan.title = 'Нажмите, чтобы скопировать';
-                            const varText = `%${toolName}_result_${argName}%`;
+                            const varText = `%${toolName}_${step.id}_result_${argName}%`;
                             varSpan.textContent = varText;
 
                             varSpan.onclick = async () => {
@@ -2146,7 +2255,7 @@
                             const varHidden = document.createElement('input');
                             varHidden.type = 'hidden';
                             varHidden.className = 'map-var-select';
-                            varHidden.value = `${toolName}_result_${argName}`;
+                            varHidden.value = `${toolName}_${step.id}_result_${argName}`;
 
                             row.appendChild(argHidden);
                             row.appendChild(argText);
@@ -2278,7 +2387,8 @@
         });
 
         // Динамические переменные из инструментов:
-        // имена формируются по шаблону '{tool_name}_result_{output_key}' на основе args.output самого инструмента
+        // имена формируются по шаблону '{tool_name}_{step_id}_result_{output_key}' — ID шага
+        // делает имя уникальным при повторных вызовах одного инструмента
         const foundToolVariables = new Set();
         if (typeof allCurrentStepsData !== 'undefined' && Array.isArray(allCurrentStepsData)) {
             allCurrentStepsData.forEach(step => {
@@ -2286,7 +2396,7 @@
                 if (metadata && metadata.tool_invoke && metadata.tool_invoke.tool_name) {
                     const tool_name = metadata.tool_invoke.tool_name;
                     getToolOutputKeys(tool_name).forEach(key => {
-                        foundToolVariables.add(tool_name + '_result_' + key);
+                        foundToolVariables.add(tool_name + '_' + step.id + '_result_' + key);
                     });
                 }
             });
@@ -2492,6 +2602,16 @@
 
         // 5. Помечаем неиспользуемые переменные workflow (если шаги уже загружены)
         markUnusedWorkflowVariables();
+
+        // 6. Восстанавливаем подсветку переменных активного шага после перерисовки
+        const activeStepBlock = document.querySelector('.step-item-block.active');
+        if (activeStepBlock && Array.isArray(allCurrentStepsData)) {
+            const activeStep = allCurrentStepsData.find(s => String(s.id) === String(activeStepBlock.dataset.id));
+            if (activeStep) {
+                highlightStepToolVariables(activeStep);
+                highlightStepWorkflowVariables(activeStep);
+            }
+        }
     }
 
     async function addWorkflowVariable() {

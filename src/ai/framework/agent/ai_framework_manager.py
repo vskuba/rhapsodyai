@@ -59,6 +59,37 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         logger_info('Запуск воркфлоу агента в отдельной асинхронной задаче...')
         asyncio.create_task(self._framework_workflow_run(framework_model, future, loop))
 
+    async def prompt_system_create(self, metadata: dict) -> str:
+        entity_agent = metadata.get('entity_agent', {})
+        prompt_system = entity_agent.get('prompt_system', '')
+
+        if not (specialization_id := entity_agent.get('specialization_id', 0)):
+            return prompt_system
+
+        repo = AgentSpecializationRepository()
+        specialization_entity = await repo.find(specialization_id)
+
+        if specialization_entity.get('name') == 'fact_extractor' \
+                and metadata \
+                and (collection_name := metadata.get('collection_name')):
+
+            collection_metadata = await ai_fact_collection_metadata_get(collection_name)
+
+            example_fact_extract = ''
+            if collection_metadata:
+                example_fact_extract = "\n\nOUTPUT FORMAT EXAMPLE:\n"
+
+                example_fact_extract += "\n[{\n"
+                lines = [f'  "{f}": "' + v['description'] for f, v in collection_metadata.items()]
+                example_fact_extract += ",\n".join(lines)
+                example_fact_extract += "\n},{\n"
+                example_fact_extract += ",\n".join(lines)
+                example_fact_extract += "\n}]"
+
+            return prompt_system + example_fact_extract
+
+        return prompt_system
+
     async def _framework_workflow_run(self, model: AiFrameworkAgentModel, future: asyncio.Future, loop):
         try:
             steps_count = len(model.workflow_steps)
@@ -103,15 +134,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         step_index = workflow_steps_mapping[target_step_id]
                         next_step = model.workflow_steps[step_index]
 
+                        # Отсутствующая переменная — условие не выполнено, а не падение workflow
+                        if variable_name not in model.workflow_variables:
+                            logger_info(
+                                f"⚠️ Переход (before) пропущен: переменная '%{variable_name}%' не найдена"
+                            )
+                            continue
+
                         current_value = model.workflow_variables[variable_name]
 
-                        if (
-                                operator == "==" and str(current_value) == str(value)
-                                or operator == "!=" and str(current_value) != str(value)
-                                or operator == ">" and str(current_value) > str(value)
-                                or operator == "<" and str(current_value) < str(value)
-                                or operator == "contains" and str(value) in str(current_value)
-                        ):
+                        if self._transition_condition_check(current_value, operator, value):
                             logger_info(
                                 f"🔀️ Переход на шаг {next_step['title']} (before) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
@@ -240,9 +272,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     tool_metadata = step_meta.get('tool_invoke', {})
                     tool_name = tool_metadata.get('tool_name', '')
+                    # ID шага делает имя переменной результата уникальным:
+                    # повторные вызовы одного инструмента не перезаписывают друг друга
+                    step_id = current_step.get('id')
 
                     inputs_map = tool_metadata.get('inputs_map', {})
-                    outputs_map = tool_metadata.get('outputs_map', {})
 
                     tools = model.metadata.get('tools', {})
 
@@ -290,7 +324,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                         if isinstance(raw_result, dict):
                             for output_key, result in raw_result.items():
-                                var_name = f'{tool_name}_result_{output_key}'
+                                var_name = f'{tool_name}_{step_id}_result_{output_key}'
                                 if isinstance(result, (dict, list)):
                                     result = json.dumps(result, ensure_ascii=False)
                                 else:
@@ -318,7 +352,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                 logger_info(
                                     f"🛠 Тип результата инструмента '{type_key}'")
 
-                            var_name = f'{tool_name}_result_{type_key}'
+                            var_name = f'{tool_name}_{step_id}_result_{type_key}'
                             model.workflow_variables[var_name] = raw_result
                             logger_info(
                                 f"🏷️ Переменная '%{var_name}%' получила значение '{raw_result}'")
@@ -393,15 +427,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         step_index = workflow_steps_mapping[target_step_id]
                         next_step = model.workflow_steps[step_index]
 
+                        # Отсутствующая переменная — условие не выполнено, а не падение workflow
+                        if variable_name not in model.workflow_variables:
+                            logger_info(
+                                f"⚠️ Переход (after) пропущен: переменная '%{variable_name}%' не найдена"
+                            )
+                            continue
+
                         current_value = model.workflow_variables[variable_name]
 
-                        if (
-                                operator == "==" and str(current_value) == str(value)
-                                or operator == "!=" and str(current_value) != str(value)
-                                or operator == ">" and str(current_value) > str(value)
-                                or operator == "<" and str(current_value) < str(value)
-                                or operator == "contains" and str(value) in str(current_value)
-                        ):
+                        if self._transition_condition_check(current_value, operator, value):
                             logger_info(
                                 f"🔀️ Переход на шаг {next_step['title']} (after) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                             )
@@ -416,37 +451,25 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             if not future.done():
                 loop.call_soon_threadsafe(future.set_exception, e)
 
-    async def prompt_system_create(self, metadata: dict) -> str:
-        entity_agent = metadata.get('entity_agent', {})
-        prompt_system = entity_agent.get('prompt_system', '')
+    @staticmethod
+    def _transition_condition_check(current_value, operator: str, value) -> bool:
+        """Проверка условия перехода: если оба операнда — числа, сравниваем численно,
+        иначе — как строки (str(10) > str(5) лексикографически дает False)."""
+        a, b = str(current_value), str(value)
+        try:
+            a, b = float(a), float(b)
+        except (ValueError, TypeError):
+            pass
 
-        if not (specialization_id := entity_agent.get('specialization_id', 0)):
-            return prompt_system
+        return (
+                operator == "==" and a == b
+                or operator == "!=" and a != b
+                or operator == ">" and a > b
+                or operator == "<" and a < b
+                or operator == "contains" and str(value) in str(current_value)
+        )
 
-        repo = AgentSpecializationRepository()
-        specialization_entity = await repo.find(specialization_id)
-
-        if specialization_entity.get('name') == 'fact_extractor' \
-                and metadata \
-                and (collection_name := metadata.get('collection_name')):
-
-            collection_metadata = await ai_fact_collection_metadata_get(collection_name)
-
-            example_fact_extract = ''
-            if collection_metadata:
-                example_fact_extract = "\n\nOUTPUT FORMAT EXAMPLE:\n"
-
-                example_fact_extract += "\n[{\n"
-                lines = [f'  "{f}": "' + v['description'] for f, v in collection_metadata.items()]
-                example_fact_extract += ",\n".join(lines)
-                example_fact_extract += "\n},{\n"
-                example_fact_extract += ",\n".join(lines)
-                example_fact_extract += "\n}]"
-
-            return prompt_system + example_fact_extract
-
-        return prompt_system
-
+    @staticmethod
     def _json_str_clean(self, json_str: str) -> str:
         """
         Очищает строку JSON, извлекая только содержимое между первой открывающей

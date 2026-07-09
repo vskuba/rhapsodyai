@@ -177,6 +177,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                 _exception = e
                 continue
 
+    @staticmethod
     async def _error_complete(self, framework_model: AiFrameworkAgentModel, e: Exception):
         error_text = 'Произошла ошибка: %s' % e
         if framework_model.on_complete:
