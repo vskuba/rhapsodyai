@@ -30,6 +30,7 @@
     .node-list {
         flex: 1;
         overflow-y: auto;
+        min-width: 300px;
     }
 
     /* Элементы списка нод */
@@ -59,14 +60,22 @@
         font-weight: 600;
     }
 
-    /* Метка позиции в списке (опционально) */
-    .node-pos-badge {
-        font-size: 11px;
-        color: #bdc3c7;
-        background: #fff;
-        padding: 2px 6px;
-        border-radius: 10px;
-        border: 1px solid #eee;
+    .node-item.dragging {
+        opacity: 0.4;
+    }
+
+    /* Ручка перетаскивания для drag-and-drop сортировки */
+    .node-item .drag-handle {
+        color: #c0c8ce;
+        cursor: grab;
+        font-size: 12px;
+        flex-shrink: 0;
+        user-select: none;
+        margin-right: 8px;
+    }
+
+    .node-item:hover .drag-handle {
+        color: #7f8c8d;
     }
 
     /* 3. Основная секция формы */
@@ -227,7 +236,7 @@
         <div class="sidebar-header">
             <button class="btn-create" id="createNewNode">+ Создать ноду</button>
         </div>
-        <div class="agent-list" id="nodeList">
+        <div class="node-list" id="nodeList">
             <!-- Сюда JS будет рендерить список нод -->
         </div>
     </div>
@@ -244,16 +253,10 @@
             <div class="form-layout-grid">
                 <!-- Основные настройки -->
                 <div class="settings-column">
-                    <div class="form-grid">
-                        <div class="form-group form-group-name">
-                            <label>Название ноды</label>
-                            <input type="text" id="name" class="form-control" required
-                                   placeholder="Напр: Workflow Engine">
-                        </div>
-                        <div class="form-group">
-                            <label>Позиция</label>
-                            <input type="number" id="position" class="form-control" value="0">
-                        </div>
+                    <div class="form-group form-group-name">
+                        <label>Название ноды</label>
+                        <input type="text" id="name" class="form-control" required
+                               placeholder="Напр: Workflow Engine">
                     </div>
                 </div>
 
@@ -325,14 +328,18 @@
         nodes.forEach(node => {
             const div = document.createElement('div');
             div.className = 'node-item';
+            div.draggable = true;
+            div.dataset.id = node.id;
 
-            // Добавляем имя и бейдж позиции для наглядности
             div.innerHTML = `
-                <span>${node.name}</span>
-                <span class="node-pos-badge">${node.position}</span>
+                <span class="drag-handle" title="Перетащите для изменения порядка">⠿</span>
+                <span style="flex: 1;">${node.name}</span>
             `;
 
             div.onclick = () => selectNodeForEdit(node.id, div);
+            div.addEventListener('dragstart', onDragStart);
+            div.addEventListener('dragover', onDragOver);
+            div.addEventListener('dragend', onDragEnd);
             nodeListContainer.appendChild(div);
         });
 
@@ -340,6 +347,42 @@
         const firstElement = nodeListContainer.querySelector('.node-item');
         if (firstNode && firstElement) {
             selectNodeForEdit(firstNode.id, firstElement);
+        }
+    }
+
+    // Drag-and-drop: перестановка нод, порядок сохраняется в position
+    let draggedItem = null;
+
+    function onDragStart(e) {
+        draggedItem = e.currentTarget;
+        draggedItem.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function onDragOver(e) {
+        const target = e.currentTarget;
+        if (!draggedItem || draggedItem === target) return;
+        e.preventDefault();
+        const rect = target.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        nodeListContainer.insertBefore(draggedItem, after ? target.nextSibling : target);
+    }
+
+    async function onDragEnd() {
+        if (!draggedItem) return;
+        draggedItem.classList.remove('dragging');
+        draggedItem = null;
+
+        // Новый порядок по DOM -> сохраняем индексы в position
+        const items = Array.from(nodeListContainer.querySelectorAll('.node-item'));
+        try {
+            await Promise.all(items.map((el, index) =>
+                putData(`/node/${el.dataset.id}`, {position: index})
+            ));
+            showNotification('Порядок нод сохранён', 'success');
+        } catch (e) {
+            console.error("Ошибка сохранения порядка:", e);
+            showNotification(`Ошибка сохранения порядка: ${e.message}`, 'error');
         }
     }
 
@@ -360,7 +403,6 @@
             // Заполнение полей формы
             document.getElementById('nodeId').value = node.id;
             document.getElementById('name').value = node.name;
-            document.getElementById('position').value = node.position || 0;
 
             document.getElementById('formTitle').textContent = `Редактирование ноды: ${node.name}`;
             if (saveBtn) saveBtn.disabled = false;
@@ -380,7 +422,6 @@
         nodeForm.reset();
         document.getElementById('nodeId').value = '';
         document.getElementById('formTitle').textContent = 'Создание новой ноды';
-        document.getElementById('position').value = 0;
         if (saveBtn) saveBtn.disabled = false;
         if (deleteBtn) deleteBtn.style.display = 'none';
     }
@@ -393,9 +434,13 @@
 
         const id = document.getElementById('nodeId').value;
         const payload = {
-            name: document.getElementById('name').value,
-            position: parseInt(document.getElementById('position').value) || 0
+            name: document.getElementById('name').value
         };
+
+        // Новая нода добавляется в конец списка
+        if (!id) {
+            payload.position = nodeListContainer.querySelectorAll('.node-item').length;
+        }
 
         if (saveBtn) saveBtn.disabled = true;
 
