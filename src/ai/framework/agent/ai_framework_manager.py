@@ -2,12 +2,14 @@ import asyncio
 import inspect
 import json
 import re
+import time
 import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
 from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render
+from src.ai.ai_workflow_trace import trace_run_start, trace_run_finish, trace_step, variables_diff
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
 from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
@@ -114,10 +116,37 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
             # Стек workflow-id — для детекта циклов sub-workflow
             top_workflow_id = model.workflow_variables.get('workflow_id')
-            result = await self._workflow_steps_run(
-                model, model.workflow_steps, model.workflow_variables,
-                start_index=start_index,
-                workflow_stack=[top_workflow_id] if top_workflow_id else []
+
+            # Журнал выполнения: запись запуска (сбой трейса не влияет на workflow)
+            run_started = time.monotonic()
+            trace_run_id = await trace_run_start(
+                run_uuid=str(uuid.uuid4()),
+                workflow_id=top_workflow_id,
+                agent_id=model.entity_agent.get('id'),
+                user_id=model.user_id,
+                session_uuid=model.session_uuid,
+                request_uuid=model.request_uuid,
+                prompt_user=model.workflow_variables.get('prompt_user'),
+                variables=model.workflow_variables,
+            )
+
+            try:
+                result = await self._workflow_steps_run(
+                    model, model.workflow_steps, model.workflow_variables,
+                    start_index=start_index,
+                    workflow_stack=[top_workflow_id] if top_workflow_id else [],
+                    trace_run_id=trace_run_id
+                )
+            except Exception as e:
+                await trace_run_finish(
+                    trace_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
+                    duration_ms=int((time.monotonic() - run_started) * 1000)
+                )
+                raise
+
+            await trace_run_finish(
+                trace_run_id, 'success', result=result,
+                duration_ms=int((time.monotonic() - run_started) * 1000)
             )
 
             if not future.done():
@@ -132,7 +161,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
     async def _workflow_steps_run(self, model: AiFrameworkAgentModel, steps: list, variables: dict,
                                   start_index: int = 0, depth: int = 0,
-                                  workflow_stack: list | None = None) -> str | None:
+                                  workflow_stack: list | None = None,
+                                  trace_run_id: int | None = None) -> str | None:
         """Runner цикла шагов workflow: выполняет шаги и возвращает текст финального
         ответа (return_response_llm / return_response_text) либо None, если шаги
         закончились без финального шага.
@@ -147,10 +177,29 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         iteration = 0
         iteration_exception = 0
         max_llm_iteration_exception = 3
+        trace_exec_index = 0
         while current_index < steps_count:
             current_step = steps[current_index]
             step_type = current_step['step_type_name']
             step_meta = current_step['metadata']
+
+            # Журнал: снимки для записи шага
+            trace_exec_index += 1
+            trace_step_started = time.monotonic()
+            trace_vars_before = dict(variables)
+            trace_transition = None
+            trace_output = None
+
+            # Запись текущего шага в журнал (замыкание видит состояние итерации)
+            async def trace_current_step(status: str = 'success', error: str | None = None):
+                await trace_step(
+                    trace_run_id, trace_exec_index, current_step,
+                    metadata_rendered=step_meta,
+                    variables_changed=variables_diff(trace_vars_before, variables),
+                    output=trace_output, transition=trace_transition,
+                    status=status, error=error,
+                    duration_ms=int((time.monotonic() - trace_step_started) * 1000),
+                )
 
             logger_info(
                 f"▶️ Выполнение шага [{current_index + 1}/{steps_count}]: "
@@ -183,11 +232,18 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         logger_info(
                             f"🔀️ Переход на шаг {next_step['title']} (before) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                         )
+                        trace_transition = {
+                            "phase": "before",
+                            "condition": f"%{variable_name}% {operator} {value}",
+                            "from_step_id": current_step.get('id'),
+                            "to_step_id": target_step_id,
+                        }
                         current_index = step_index
 
                         current_step = steps[current_index]
                         step_type = current_step['step_type_name']
-                        step_meta = current_step['metadata']
+                        # Рендерим metadata целевого шага (иначе он выполнится с сырыми %переменными%)
+                        step_meta = ai_workflow_variables_render(current_step['metadata'], variables)
 
                         logger_info(
                             f"▶️ Выполнение шага [{current_index + 1}/{steps_count}]: "
@@ -265,6 +321,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                 model.is_transition = True
                 response_from_llm = await execute_llm_step()
+                trace_output = response_from_llm
 
                 try:
                     response_from_llm = self._json_str_clean(response_from_llm)
@@ -301,8 +358,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         iteration_exception += 1
                         logger_info(
                             f"⚠️ Повторная попытка шага '{current_step['title']}' ({iteration_exception}/{max_llm_iteration_exception})")
+                        await trace_current_step(status='retry', error=str(e))
                         continue
 
+                    await trace_current_step(status='error', error=str(e))
                     raise e
 
             # ОБРАБОТКА ШАГА: Вызов инструмента/MCP-сервера
@@ -345,6 +404,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         raw_result = func(**tool_args)
 
                     logger_info(f"🛠 Инструмент '{tool_name}'({tool_args}) вернул ответ: {str(raw_result)}")
+                    trace_output = str(raw_result)
 
                     # Запись выполнения в историю сессии
                     await ai_session_message_add(
@@ -401,6 +461,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         f"❌ Ошибка при выполнении динамического инструмента '{tool_name}': {e}.\n"
                         f"Полный стек вызовов:\n{backtrace}"
                     )
+                    await trace_current_step(status='error', error=str(e))
                     raise e
 
             elif step_type == 'variable_conversion':
@@ -470,10 +531,41 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                 logger_info(f"🔁 Запуск sub-workflow '{child_name}' (id {child_workflow_id}, глубина {depth + 1})")
 
-                child_result = await self._workflow_steps_run(
-                    model, child_steps, child_scope,
-                    depth=depth + 1, workflow_stack=stack + [child_workflow_id]
+                # Журнал: дочерний запуск с привязкой к родителю и шагу-инициатору
+                child_run_started = time.monotonic()
+                child_run_id = await trace_run_start(
+                    run_uuid=str(uuid.uuid4()),
+                    workflow_id=child_workflow_id,
+                    agent_id=model.entity_agent.get('id'),
+                    user_id=model.user_id,
+                    session_uuid=model.session_uuid,
+                    request_uuid=model.request_uuid,
+                    prompt_user=child_scope.get('prompt_user'),
+                    variables=child_scope,
+                    parent_run_id=trace_run_id,
+                    parent_step_id=step_id,
+                    depth=depth + 1,
                 )
+
+                try:
+                    child_result = await self._workflow_steps_run(
+                        model, child_steps, child_scope,
+                        depth=depth + 1, workflow_stack=stack + [child_workflow_id],
+                        trace_run_id=child_run_id
+                    )
+                except Exception as e:
+                    await trace_run_finish(
+                        child_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
+                        duration_ms=int((time.monotonic() - child_run_started) * 1000)
+                    )
+                    await trace_current_step(status='error', error=str(e))
+                    raise
+
+                await trace_run_finish(
+                    child_run_id, 'success', result=child_result,
+                    duration_ms=int((time.monotonic() - child_run_started) * 1000)
+                )
+                trace_output = child_result
 
                 # Результат ребенка -> переменная родителя по конвенции tool-шагов (с id шага)
                 result_var = f'{child_name}_{step_id}_result_str'
@@ -497,6 +589,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 model.is_transition = depth > 0
                 response_from_llm = await execute_llm_step()
 
+                trace_output = response_from_llm
+                await trace_current_step()
                 return response_from_llm
 
             elif step_type == 'return_response_text':
@@ -526,6 +620,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         ai_session_metadata['workflow_step_current_index'] = next_index
                         await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
 
+                trace_output = model.prompt_user
+                await trace_current_step()
                 return model.prompt_user
 
             # Переходим к следующему шагу (строго инкрементируем индекс)
@@ -556,9 +652,17 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         logger_info(
                             f"🔀️ Переход на шаг {next_step['title']} (after) [{step_index}/{steps_count}]: (%{variable_name}% {operator} {value})"
                         )
+                        trace_transition = {
+                            "phase": "after",
+                            "condition": f"%{variable_name}% {operator} {value}",
+                            "from_step_id": current_step.get('id'),
+                            "to_step_id": target_step_id,
+                        }
                         current_index = step_index
                         break
 
+            # Журнал: запись выполненного шага (вход/выход/переход/длительность)
+            await trace_current_step()
 
         return None
 

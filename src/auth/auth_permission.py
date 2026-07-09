@@ -32,6 +32,10 @@ class AuthPermission(str, Enum):
     WORKFLOW_VARIABLE_UPDATE = "workflow_variable:update"
     WORKFLOW_VARIABLE_DELETE = "workflow_variable:delete"
 
+    # Workflow trace permissions
+    WORKFLOW_TRACE_VIEW = "workflow_trace:view"
+    WORKFLOW_TRACE_DELETE = "workflow_trace:delete"
+
     # Node permissions
     NODE_VIEW = "node:view"
     NODE_CREATE = "node:create"
