@@ -34,6 +34,7 @@ async function initWorkflowManager() {
         await loadAvailableStepTypes();
 
         const workflows = workflowsRes.result;
+        state.allWorkflows = workflows || [];
         const nodes = nodesRes.result.sort((a, b) => a.position - b.position);
 
         const nodeSelect = document.getElementById('node_id');
@@ -55,7 +56,7 @@ async function initWorkflowManager() {
         renderWorkflowList(workflows, nodes);
         initVariablesHandlers();
 
-        if (activeWorkflowLinkId) {
+        if (activeWorkflowLinkId && workflowListContainer.querySelector('#' + activeWorkflowLinkId)) {
             const activeWorkflowLink = workflowListContainer.querySelector('#' + activeWorkflowLinkId);
             if (isSettingsViewOpen) {
                 // Остаемся в форме редактирования: кликаем по иконке параметров
@@ -70,7 +71,7 @@ async function initWorkflowManager() {
             }
         } else {
             const firstWorkflowLink = workflowListContainer.querySelector('.agent-item .workflow-name-link');
-            firstWorkflowLink.click();
+            if (firstWorkflowLink) firstWorkflowLink.click();
         }
 
         if (deleteBtn) {
@@ -82,53 +83,113 @@ async function initWorkflowManager() {
     }
 }
 
+// Карусель нод: ноды в порядке position (+ «Вне нод» в конце), листается по кругу
+let carouselNodes = [];
+let carouselIndex = 0;
+let sidebarWorkflows = [];
+
 function renderWorkflowList(workflows, nodes) {
+    sidebarWorkflows = workflows || [];
+
+    carouselNodes = nodes.map(n => ({id: n.id, name: n.name}));
+    if (sidebarWorkflows.some(w => !w.node_id) || carouselNodes.length === 0) {
+        carouselNodes.push({id: 'none', name: 'Вне нод'});
+    }
+
+    // Показываем ноду активного workflow, чтобы выбор пережил перерисовку списка
+    const activeLink = workflowListContainer.querySelector('.agent-item.active .workflow-name-link');
+    if (activeLink) {
+        const wfId = activeLink.id.replace('workflow_link_', '');
+        const wf = sidebarWorkflows.find(w => String(w.id) === String(wfId));
+        if (wf) {
+            const idx = carouselNodes.findIndex(n => String(n.id) === String(wf.node_id || 'none'));
+            if (idx >= 0) carouselIndex = idx;
+        }
+    }
+    if (carouselIndex >= carouselNodes.length) carouselIndex = 0;
+
+    renderCarouselNode();
+}
+
+function renderCarouselNode() {
+    const node = carouselNodes[carouselIndex];
+    const nameEl = document.getElementById('nodeCarouselName');
+    if (nameEl) {
+        nameEl.textContent = node.name;
+        nameEl.title = node.name;
+    }
+
     workflowListContainer.innerHTML = '';
 
-    const workflowsByNode = workflows.reduce((acc, t) => {
-        const nid = t.node_id || 'none';
-        if (!acc[nid]) acc[nid] = [];
-        acc[nid].push(t);
-        return acc;
-    }, {});
+    const nodeWorkflows = sidebarWorkflows.filter(w => String(w.node_id || 'none') === String(node.id));
 
-    const renderSection = (nid, name) => {
-        const nodeWorkflows = workflowsByNode[nid];
-        if (!nodeWorkflows) return;
+    if (nodeWorkflows.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'workflow-list-empty';
+        empty.textContent = 'В ноде нет workflow';
+        workflowListContainer.appendChild(empty);
+        return;
+    }
 
-        const header = document.createElement('div');
-        header.className = 'group-header';
-        header.textContent = name;
-        workflowListContainer.appendChild(header);
+    // Алфавитная сортировка; сверху — workflow агентов, под разделителем — subflow
+    const byTitle = (a, b) => (a.title || a.name || '').localeCompare(b.title || b.name || '');
+    const agentWorkflows = nodeWorkflows.filter(w => !w.subflow).sort(byTitle);
+    const subflows = nodeWorkflows.filter(w => w.subflow).sort(byTitle);
 
-        nodeWorkflows.sort((a, b) => a.position - b.position).forEach(workflow => {
-            const div = document.createElement('div');
-            div.className = 'agent-item';
+    const renderItem = (workflow) => {
+        const div = document.createElement('div');
+        div.className = 'agent-item';
 
-            div.innerHTML = `
-        <span class="workflow-name-link" id="workflow_link_${workflow.id}" style="flex:1;">${workflow.title}</span>
-        <div class="workflow-actions">
-            <span class="edit-icon" title="Параметры задачи">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-            </span>
-        </div>
-    `;
+        div.innerHTML = `
+    <span class="workflow-name-link" id="workflow_link_${workflow.id}" style="flex:1;">${workflow.title}</span>
+    <div class="workflow-actions">
+        <span class="edit-icon" title="Параметры задачи">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+        </span>
+    </div>
+`;
 
-            // Клик по названию — ШАГИ
-            div.querySelector('.workflow-name-link').onclick = () => openWorkflowSteps(workflow, div);
+        // Клик по названию — ШАГИ
+        div.querySelector('.workflow-name-link').onclick = () => openWorkflowSteps(workflow, div);
 
-            // Клик по иконке — ПАРАМЕТРЫ
-            div.querySelector('.edit-icon').onclick = () => openWorkflowSettings(workflow, div);
+        // Клик по иконке — ПАРАМЕТРЫ
+        div.querySelector('.edit-icon').onclick = () => openWorkflowSettings(workflow, div);
 
-            workflowListContainer.appendChild(div);
-        });
+        workflowListContainer.appendChild(div);
     };
-    nodes.forEach(n => renderSection(n.id, n.name));
-    renderSection('none', 'Вне нод');
+
+    agentWorkflows.forEach(renderItem);
+
+    if (subflows.length > 0) {
+        const divider = document.createElement('div');
+        divider.className = 'workflow-divider';
+        workflowListContainer.appendChild(divider);
+        subflows.forEach(renderItem);
+    }
+
+    // Восстанавливаем выделение открытого workflow, если он в этой ноде
+    const currentId = document.getElementById('workflowId')?.value;
+    if (currentId) {
+        const link = workflowListContainer.querySelector(`#workflow_link_${currentId}`);
+        if (link) link.closest('.agent-item').classList.add('active');
+    }
 }
+
+// Стрелки карусели: следующая/предыдущая нода по кругу
+document.getElementById('nodeCarouselPrev')?.addEventListener('click', () => {
+    if (!carouselNodes.length) return;
+    carouselIndex = (carouselIndex - 1 + carouselNodes.length) % carouselNodes.length;
+    renderCarouselNode();
+});
+
+document.getElementById('nodeCarouselNext')?.addEventListener('click', () => {
+    if (!carouselNodes.length) return;
+    carouselIndex = (carouselIndex + 1) % carouselNodes.length;
+    renderCarouselNode();
+});
 
 async function openWorkflowSteps(workflow, element) {
     setActiveItem(element);
@@ -175,6 +236,7 @@ async function fillWorkflowForm(workflow) {
     document.getElementById('node_id').value = workflow.node_id || '';
     document.getElementById('position').value = workflow.position || 0;
     document.getElementById('description').value = workflow.description || '';
+    document.getElementById('subflow').checked = !!workflow.subflow;
 
     if (workflow.id) {
         await loadWorkflowVariables(workflow.id);
@@ -218,6 +280,7 @@ workflowForm.onsubmit = async (e) => {
         node_id: document.getElementById('node_id')?.value || null,
         description: document.getElementById('description')?.value || '',
         position: parseInt(document.getElementById('position')?.value) || 0,
+        subflow: document.getElementById('subflow')?.checked ? 1 : 0,
     };
 
     try {

@@ -103,6 +103,7 @@ export function buildWorkflowGraphDefinition(steps) {
     lines.push('classDef type_llm_to_json fill:#e8daef,stroke:#8e44ad,color:#5b2c6f;');
     lines.push('classDef type_tool_invoke fill:#fdebf3,stroke:#f488d5,color:#943b6d;');
     lines.push('classDef type_variable_conversion fill:#e3f0ff,stroke:#2974df,color:#1a4d8f;');
+    lines.push('classDef type_workflow_invoke fill:#fff3e0,stroke:#f39c12,color:#9c640c;');
     lines.push('classDef unreachable fill:#fdecea,stroke:#e74c3c,color:#922b21,stroke-width:2px;');
 
     return {definition: lines.join('\n'), warnings};

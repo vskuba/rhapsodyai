@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
+from src.ai.ai_workflow import ai_workflow_load
 from src.ai.ai_workflow import ai_workflow_variables_render
 from src.ai.ai_workflow import ai_workflow_variables_input_get
 from src.ai.ai_workflow import ai_workflow_variables_public_get
@@ -85,40 +86,10 @@ async def ask_ai(
     if not entities_llm:
         raise HTTPException(status_code=404, detail="LLM models not found for user ID: %s" % user.user_id)
 
-    async with db:
-        # 1. Запрашиваем шаги воркфлоу, строго сортируя их по позиции
-        sql_steps = """
-            SELECT ws.*, wst.name as step_type_name 
-            FROM agent_workflow_step ws 
-            LEFT JOIN agent_workflow_step_type wst ON ws.type_id = wst.id 
-            WHERE ws.workflow_id = %s 
-            ORDER BY ws.position ASC
-        """
-        await db.execute(sql_steps, workflow_id)
-        raw_workflow_steps = await db.fetchall()
-
-        # 2. Запрашиваем динамические переменные воркфлоу
-        sql_vars = """
-            SELECT v.name, v.`default`
-            FROM agent_workflow_variable v
-            JOIN agent_workflow_variable_workflow vw ON v.id = vw.variable_id
-            WHERE vw.workflow_id = %s
-        """
-        await db.execute(sql_vars, workflow_id)
-        raw_workflow_variables = await db.fetchall()
-
-    # Парсим метаданные и очищаем строки от пробелов CHAR-типа
-    workflow_steps = []
-    for step in raw_workflow_steps:
-        step_type = step.get('step_type_name', '').strip()
-        step_title = step.get('title', '').strip()
-
-        workflow_steps.append({
-            "id": step.get('id'),
-            "step_type_name": step_type,
-            "title": step_title,
-            "metadata": json_from_string(step.get('metadata', {}))
-        })
+    # Загружаем шаги (нормализованные) и переменные workflow
+    workflow_data = await ai_workflow_load(workflow_id)
+    workflow_steps = workflow_data['steps']
+    raw_workflow_variables = workflow_data['variables']
 
     # Собираем переменные: базовые + из агента + из запроса пользователя
     workflow_variables_all = {
