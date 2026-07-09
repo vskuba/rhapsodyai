@@ -9,7 +9,9 @@ DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `fact`;
 DROP TABLE IF EXISTS `fact_collection`;
 DROP TABLE IF EXISTS `companion`;
-DROP TABLE IF EXISTS `agent_workflow_variable_role`;
+DROP TABLE IF EXISTS `agent_workflow_variable_public_workflow`;
+DROP TABLE IF EXISTS `agent_workflow_variable_public_role`;
+DROP TABLE IF EXISTS `agent_workflow_variable_public`;
 DROP TABLE IF EXISTS `agent_workflow_variable_workflow`;
 DROP TABLE IF EXISTS `agent_workflow_variable`;
 DROP TABLE IF EXISTS `agent_workflow_step`;
@@ -166,14 +168,10 @@ CREATE TABLE `agent_workflow_step` (
 
 CREATE TABLE `agent_workflow_variable` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `node_id` INT NULL,
     `name` CHAR(50) NOT NULL,
-    `type` ENUM('global', 'node', 'input', 'workflow') NOT NULL DEFAULT 'workflow',
+    `type` ENUM('global', 'input', 'workflow') NOT NULL DEFAULT 'workflow',
     `default` LONGTEXT NULL,
-    `position` INT NOT NULL DEFAULT 0,
-    `use_as_hint` INT NOT NULL DEFAULT 0,
-    `description` CHAR(200) DEFAULT NULL,
-    CONSTRAINT `fk_v_workflow_variable_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL
+    `description` CHAR(200) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `agent_workflow_variable_workflow` (
@@ -184,12 +182,36 @@ CREATE TABLE `agent_workflow_variable_workflow` (
     CONSTRAINT `fk_vw_workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `agent_workflow_variable_role` (
-    `variable_id` INT NOT NULL,
+-- Публичные переменные (бывшие "переменные ноды"): привязаны к ноде, редактируются менеджерами.
+-- type='proxy' — переменная-подсказка: показывается как доступный %плейсхолдер% при
+-- редактировании публичных переменных той же ноды (замена старого механизма use_as_hint)
+CREATE TABLE `agent_workflow_variable_public` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `node_id` INT NULL,
+    `name` CHAR(50) NOT NULL,
+    `type` ENUM('public', 'proxy') NOT NULL DEFAULT 'public',
+    `default` LONGTEXT NULL,
+    `position` INT NOT NULL DEFAULT 0,
+    `description` CHAR(200) DEFAULT NULL,
+    CONSTRAINT `fk_vp_workflow_variable_public_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `agent_workflow_variable_public_role` (
+    `public_variable_id` INT NOT NULL,
     `role_id` INT NOT NULL,
-    PRIMARY KEY (`variable_id`, `role_id`),
-    CONSTRAINT `fk_vr_workflow_variable` FOREIGN KEY (`variable_id`) REFERENCES `agent_workflow_variable` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_vr_workflow_variable_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
+    PRIMARY KEY (`public_variable_id`, `role_id`),
+    CONSTRAINT `fk_vpr_workflow_variable_public` FOREIGN KEY (`public_variable_id`) REFERENCES `agent_workflow_variable_public` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_vpr_workflow_variable_public_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Привязка публичной переменной к workflow: переменная видна не во всех workflow ноды,
+-- а только в тех, где реально используется
+CREATE TABLE `agent_workflow_variable_public_workflow` (
+    `public_variable_id` INT NOT NULL,
+    `workflow_id` INT NOT NULL,
+    PRIMARY KEY (`public_variable_id`, `workflow_id`),
+    CONSTRAINT `fk_vpw_workflow_variable_public` FOREIGN KEY (`public_variable_id`) REFERENCES `agent_workflow_variable_public` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_vpw_workflow_variable_public_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `companion` (

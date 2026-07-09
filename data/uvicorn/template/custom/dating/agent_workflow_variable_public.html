@@ -174,7 +174,7 @@
             <div class="form-group">
                 <label>Значение</label>
                 <textarea id="default" class="form-control" style="flex: 1;"></textarea>
-                <!-- Переменные-подсказки (use_as_hint) с позицией выше текущей -->
+                <!-- Переменные-подсказки: proxy-переменные той же ноды -->
                 <div class="hint-list" id="hintList"></div>
             </div>
 
@@ -199,7 +199,7 @@
         const hintList = document.getElementById('hintList');
         hintList.innerHTML = '';
         if (!variableId) return;
-        const res = await getData(`/node/workflow_variable/${variableId}/hints`);
+        const res = await getData(`/workflow_variable/public/${variableId}/hints`);
         res.result.forEach(v => {
             const line = document.createElement('div');
             line.innerHTML = `🟠 <span>%${v.name}%</span> - ${v.description || ''}`;
@@ -209,7 +209,7 @@
 
     async function loadList(activeId = null) {
         const [res, nodesRes] = await Promise.all([
-            getData('/node/workflow_variable/list'),
+            getData('/workflow_variable/public/list'),
             getData('/node/list')
         ]);
 
@@ -255,7 +255,7 @@
         const id = document.getElementById('id').value;
         if (!id) return;
 
-        await putData(`/node/workflow_variable/${id}`, {
+        await putData(`/workflow_variable/public/${id}`, {
             default: document.getElementById('default').value
         });
         showNotification('Обновлено', 'success');

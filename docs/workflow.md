@@ -20,9 +20,11 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 | `agent_workflow` | Сам workflow: name, title, node_id, position, description, **subflow** (зарезервирован: 0=основной, 1=под-процесс — пока не используется движком) |
 | `agent_workflow_step` | Шаг: workflow_id, type_id, title, position (порядок выполнения), **metadata LONGTEXT** — JSON-конфиг шага |
 | `agent_workflow_step_type` | Справочник 5 типов шагов (name, icon, description, metadata-схема) |
-| `agent_workflow_variable` | Реестр переменных: name, **type ENUM('global','node','input','workflow')**, default, node_id, position, use_as_hint, description |
-| `agent_workflow_variable_workflow` | M:N переменная ↔ workflow |
-| `agent_workflow_variable_role` | M:N переменная ↔ роль (гранулярный доступ) |
+| `agent_workflow_variable` | Реестр переменных: name, **type ENUM('global','input','workflow')**, default, description |
+| `agent_workflow_variable_workflow` | M:N переменная ↔ workflow (для workflow/input-переменных) |
+| `agent_workflow_variable_public` | Публичные переменные (бывшие «переменные ноды»): name, node_id, **type ENUM('public','proxy')**, default, position, description. Редактируются менеджерами на публичных страницах |
+| `agent_workflow_variable_public_role` | M:N публичная переменная ↔ роль (гранулярный доступ) |
+| `agent_workflow_variable_public_workflow` | M:N публичная переменная ↔ workflow: переменная видна в редакторе только тех workflow ноды, к которым привязана |
 | `agent` | workflow_id (FK) + workflow_variable (JSON-инициализация) |
 | `session.metadata` | Персистентное состояние: `workflow_step_current_index` для continue_workflow |
 | `agent_session` | История: user-prompt / response-final / tool-call / system-prompt |
@@ -34,7 +36,7 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 1. **Базовые** — `prompt_user`, `user_id/username/email`, `agent_*`, `companion_*`, `session_uuid`, `workflow_id`, `node_id`.
 2. **Из агента** — `agent.workflow_variable` (JSON).
 3. **Из запроса** — `request.variables` (клиент может передать переменные).
-4. **Переменные ноды** (`type='node'`) — рендерятся с учетом уже собранных (могут ссылаться на них: `girl_title` default=`%prompt_user%`).
+4. **Публичные переменные ноды** (таблица `agent_workflow_variable_public`, включая proxy) — рендерятся по порядку `position` с учетом уже собранных (могут ссылаться на них: `girl_title` default=`%prompt_user%`).
 5. **Переменные workflow** (`type='workflow'`) — default-значения, добавляются только если ключа еще нет.
 6. **Валидация global** — все `type='global'` обязаны присутствовать, иначе HTTP 400.
 7. **Валидация input** — все `type='input'` обязаны присутствовать, иначе HTTP 400. **Это готовый контракт входа для будущих sub-workflow.**
@@ -93,9 +95,12 @@ continue_workflow, если не были возвращены пользова�
   панель переменных в 5 группах: входящие/общие/ноды/tool/workflow, конструктор metadata по типу шага,
   редактор переходов before/after). Неиспользуемые в шагах workflow-переменные подсвечиваются серым
   (`extractVariablesFromSteps` → класс `unused-variable`).
-- **`/admin/agent_workflow_variable`** — реестр переменных по нодам: name, node, description, роли,
-  привязка к workflow, default, use_as_hint (переменные-«подсказки» видны ниже по position), drag-drop
-  порядка. Field-policy: не-админ читает ограниченный набор полей и пишет только `default`.
+- **`/admin/variable`** (шаблоны `agent_workflow_variable_public.html` — admin и custom/dating) — реестр
+  публичных переменных по нодам: name, node, description, роли, type (public/proxy), default, drag-drop
+  порядка (position). Подсказки под полем «Значение» — proxy-переменные той же ноды (эндпоинт
+  `/workflow_variable/public/{id}/hints`). Для ролей manager_dating* рендерится упрощенный кастомный шаблон
+  (только значение + подсказки). Field-policy (`agent_workflow_variable_public`): не-админ читает
+  ограниченный набор полей и пишет только `default`.
 
 ## 8. Известные баги и тонкости (найдено при анализе)
 
@@ -110,8 +115,7 @@ continue_workflow, если не были возвращены пользова�
 5. **Дубликат `input_values_set()`** в task-фреймворке (`py_modules/ai/framework/task/ai_framework_manager.py:106-107`).
 6. Результаты инструментов сериализуются в строки — `%tool_result%`-переменная со списком после
    вставки в шаблон становится JSON-строкой; «умная замена типов» помогает только когда плейсхолдер — вся строка.
-7. Колонка `subflow` в `agent_workflow` есть в схеме и уже фильтруется в UI переменных (subflow=0), но
-   движком не используется.
+7. Колонка `subflow` в `agent_workflow` есть в схеме, но движком не используется — задел под под-процессы.
 8. Переменные с одинаковыми именами: `inputs_map` в `tool_invoke` хранится и как `metadata.tool_invoke.inputs_map`
    (движок) — фронтовые обработчики должны учитывать вложенность.
 

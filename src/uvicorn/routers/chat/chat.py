@@ -9,7 +9,7 @@ from fastapi import UploadFile, File
 
 from src.ai.ai_workflow import ai_workflow_variables_render
 from src.ai.ai_workflow import ai_workflow_variables_input_get
-from src.ai.ai_workflow import ai_workflow_variables_node_get
+from src.ai.ai_workflow import ai_workflow_variables_public_get
 from src.mysql_.repository.companion_repository import CompanionRepository
 from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
@@ -143,7 +143,7 @@ async def ask_ai(
     # Получаем переменные ноды воркфлоу и рендерим их с учетом уже собранных переменных
     node_id = entity_agent.get('node_id')
     if node_id:
-        for x in await ai_workflow_variables_node_get(node_id):
+        for x in await ai_workflow_variables_public_get(node_id):
             # Рендерим переменные ноды по очереди с учетом сортировки по позиции, чтобы переменные могли ссылаться друг на друга
             workflow_variable_node = ai_workflow_variables_render(
                 {x.get('name'): x.get('default', None)},

@@ -5,15 +5,15 @@ ALL_FIELDS = '*'
 # Роли динамические (таблица `role`), поэтому '*' — fallback для любой не-админской роли.
 # admin проверять не нужно — он всегда получает ALL_FIELDS в auth_allowed_fields.
 AUTH_FIELD_POLICY = {
-    'agent_workflow_variable': {
-        'fields': {'name', 'description', 'default', 'workflow_ids', 'node_id', 'position', 'use_as_hint'},
+    'agent_workflow_variable_public': {
+        'fields': {'name', 'description', 'default', 'node_id', 'position', 'type', 'role_ids', 'workflow_ids'},
         'write': {
             '*': {'default'},  # не-админы пишут только поле `default`
             # 'manager_dating': {'default', 'description'},  # пример точечной настройки роли
         },
         'read': {
             # id/name/node_id нужны фронту для списка и PUT; скрываем только служебные поля
-            '*': {'id', 'name', 'node_id', 'default', 'position', 'use_as_hint', 'workflow_ids'},
+            '*': {'id', 'name', 'node_id', 'default', 'position', 'type'},
         },
     },
 }

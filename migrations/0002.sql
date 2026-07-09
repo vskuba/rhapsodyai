@@ -157,7 +157,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (37, 2, 3, 'text_to_lower', 3, '{"tool_invoke":{"tool_name":"text_to_lower","inputs_map":{"text":"text_translit_cyr_to_lat_result_str"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (38, 5, 3, 'qdrant_fact_search_companion', 9, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_man_name","metadata_filter":"fact_collection_man_filter","limit":"fact_collection_limit"},"outputs_map":{"str":"qdrant_fact_search_result_man"}},"transitions_before":[],"transitions_after":[]}'),
 (39, 5, 3, 'qdrant_fact_search_talk', 11, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_talk_name","metadata_filter":"fact_collection_talk_filter","limit":"fact_collection_limit"},"outputs_map":{"str":"qdrant_fact_search_result_talk"}},"transitions_before":[],"transitions_after":[]}'),
-(41, 5, 2, 'Новый факты', 16, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"prompt_user_facts_girl","text":"в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %document_id% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос."}],"prompt_user":"=== Мужчина написал ===\\n%prompt_user%\\n\\n=== Уже существующие факты о девушке %agent_title% ===\\n%qdrant_fact_search_result_girl%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_facts_girl\\": в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %agent_title% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос. Уже существующие факты не должны противоречить новым.\\n\\nдля \'prompt_user_facts_girl\' используй для document_id: значение \'%document_id%\' (пример: \\"document_id\\":\\"%document_id%\\")\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_facts_girl\\": %fact_collection_output_format_result_str%\\n}"}'),
+(41, 5, 2, 'Новый факты', 16, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"prompt_user_facts_girl","text":"в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %document_id% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос."}],"prompt_user":"=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Уже существующие факты о девушке %agent_title% ===\\n%qdrant_fact_search_result_girl%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_facts_girl\\": в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %agent_title% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос. Уже существующие факты не должны противоречить новым.\\n\\nдля \'prompt_user_facts_girl\' используй для document_id: значение \'%document_id%\' (пример: \\"document_id\\":\\"%document_id%\\")\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_facts_girl\\": %fact_collection_output_format_result_str%\\n}"}'),
 (42, 5, 3, 'fact_collection_add_girl', 17, '{"transitions_before":[],"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_name","data":"prompt_user_facts_girl"},"outputs_map":{"facts_str":"qdrant_fact_search_result_girl"}},"transitions_after":[{"variable":"agent_id","operator":">","value":"0","step_id":"38"}]}'),
 (43, 2, 5, 'Переменные', 4, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"agent_exists_find_by","text":"{\\"name\\":\\"%text_to_lower_result_str%\\"}"}]}'),
 (44, 2, 4, 'Агент уже существует', 15, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Девушка с таким именем \\"%prompt_user%\\" уже зарегистрирована, придумайте другое имя"}'),
@@ -167,65 +167,61 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 
 --
 
-INSERT INTO `agent_workflow_variable` (`id`, `node_id`, `name`, `type`, `default`, `position`, `use_as_hint`, `description`) VALUES
-(1, NULL, 'agent_greeting', 'global', NULL, 0, 0, NULL),
-(2, NULL, 'agent_id', 'global', NULL, 0, 0, NULL),
-(3, NULL, 'agent_title', 'global', NULL, 0, 0, NULL),
-(4, NULL, 'agent_name', 'global', NULL, 0, 0, NULL),
-(5, NULL, 'node_id', 'global', NULL, 0, 0, NULL),
-(6, NULL, 'prompt_user', 'global', NULL, 0, 0, NULL),
-(7, NULL, 'session_uuid', 'global', NULL, 0, 0, NULL),
-(8, NULL, 'user_id', 'global', NULL, 0, 0, NULL),
-(9, NULL, 'user_username', 'global', NULL, 0, 0, NULL),
-(10, NULL, 'user_email', 'global', NULL, 0, 0, NULL),
-(11, NULL, 'workflow_id', 'global', NULL, 0, 0, NULL),
-(12, 2, 'girl_title', 'node', '%prompt_user%', 0, 1, 'Имя девушки'),
-(13, 2, 'girl_prompt_system', 'node', 'Ты девушка %girl_title%. Всегда отвечай от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах, пиши с маленькой буквы или пропускай знаки пунктуации. Ты никогда не соглашаешься на личные встречи или звонки. Ты любишь флиртовать. Если возникают вопросы о встречах, звонках или другой личной информации, ты пытаешься мягко отшутиться или перевести тему. То же касается и фото: ты не скидываешь их и не обещаешь ничего конкретного. Но в то же время ты точно знаешь, что ищешь любовь, отношения, и пытаешься лучше узнать друг друга в переписке. Возвращай всегда лаконичный ответ, не более пары десятков слов. Больше слов — только если необходимо.', 2, 0, ''),
-(15, NULL, 'tags', 'workflow', NULL, 0, 0, NULL),
-(16, NULL, 'facts', 'workflow', NULL, 0, 0, NULL),
-(17, NULL, 'tags', 'workflow', NULL, 0, 0, NULL),
-(18, NULL, 'session_messages_limit', 'workflow', '10', 0, 0, NULL),
-(19, NULL, 'session_messages', 'workflow', NULL, 0, 0, NULL),
-(21, NULL, 'session_messages_rendered', 'workflow', NULL, 0, 0, NULL),
-(24, NULL, 'fact_collection_girl_name', 'workflow', 'dating_girl', 0, 0, NULL),
-(26, NULL, 'facts', 'workflow', NULL, 0, 0, NULL),
-(30, NULL, 'girl_prompt_system', 'workflow', NULL, 0, 0, NULL),
-(32, NULL, 'workflow_variable', 'workflow', NULL, 0, 0, NULL),
-(34, NULL, 'fact_collection_girl_name', 'workflow', 'dating_girl', 0, 0, NULL),
-(35, NULL, 'fact_collection_girl_filter', 'workflow', NULL, 0, 0, NULL),
-(36, NULL, 'session_messages_limit', 'workflow', '20', 0, 0, NULL),
-(38, NULL, 'session_messages_result_processed', 'workflow', NULL, 0, 0, NULL),
-(40, NULL, 'girl_agent_workflow_name', 'workflow', 'dating_talk', 0, 0, NULL),
-(41, NULL, 'girl_description', 'workflow', NULL, 0, 0, NULL),
-(42, NULL, 'girl_greeting', 'workflow', NULL, 0, 0, NULL),
-(43, NULL, 'qdrant_metada_filter', 'workflow', NULL, 0, 0, NULL),
-(45, NULL, 'prompt_user_facts_man', 'workflow', NULL, 0, 0, NULL),
-(46, NULL, 'prompt_user_facts_talk', 'workflow', NULL, 0, 0, NULL),
-(47, NULL, 'fact_collection_man_name', 'workflow', 'dating_man', 0, 0, NULL),
-(49, NULL, 'prompt_user_tags', 'workflow', NULL, 0, 0, NULL),
-(50, NULL, 'prompt_user_category', 'workflow', NULL, 0, 0, NULL),
-(53, NULL, 'fact_collection_man_filter', 'workflow', NULL, 0, 0, NULL),
-(54, NULL, 'qdrant_fact_search_result_girl', 'workflow', NULL, 0, 0, NULL),
-(56, NULL, 'fact_collection_talk_filter', 'workflow', NULL, 0, 0, NULL),
-(57, NULL, 'fact_collection_limit', 'workflow', '2', 0, 0, NULL),
-(59, NULL, 'fact_collection_talk_name', 'workflow', 'dating_talk', 0, 0, NULL),
-(60, NULL, 'prompt_user_question', 'workflow', NULL, 0, 0, NULL),
-(61, NULL, 'prompt_user_facts_girl', 'workflow', NULL, 0, 0, NULL),
-(62, NULL, 'agent_exists_find_by', 'workflow', NULL, 0, 0, NULL),
-(64, NULL, 'datetime_current_get_zone', 'workflow', '+3', 0, 0, NULL),
-(70, NULL, 'document_id', 'input', NULL, 0, 0, NULL),
-(71, NULL, 'companion_id', 'global', NULL, 0, 0, NULL),
-(72, NULL, 'companion_title', 'global', NULL, 0, 0, NULL),
-(73, NULL, 'companion_name', 'global', NULL, 0, 0, NULL),
-(74, NULL, 'qdrant_fact_search_result_companion', 'workflow', NULL, 0, 0, NULL);
+INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `description`) VALUES
+(1, 'agent_greeting', 'global', NULL, NULL),
+(2, 'agent_id', 'global', NULL, NULL),
+(3, 'agent_title', 'global', NULL, NULL),
+(4, 'agent_name', 'global', NULL, NULL),
+(5, 'node_id', 'global', NULL, NULL),
+(6, 'prompt_user', 'global', NULL, NULL),
+(7, 'session_uuid', 'global', NULL, NULL),
+(8, 'user_id', 'global', NULL, NULL),
+(9, 'user_username', 'global', NULL, NULL),
+(10, 'user_email', 'global', NULL, NULL),
+(11, 'workflow_id', 'global', NULL, NULL),
+(15, 'tags', 'workflow', NULL, NULL),
+(16, 'facts', 'workflow', NULL, NULL),
+(17, 'tags', 'workflow', NULL, NULL),
+(18, 'session_messages_limit', 'workflow', '10', NULL),
+(19, 'session_messages', 'workflow', NULL, NULL),
+(21, 'session_messages_rendered', 'workflow', NULL, NULL),
+(24, 'fact_collection_girl_name', 'workflow', 'dating_girl', NULL),
+(26, 'facts', 'workflow', NULL, NULL),
+(30, 'girl_prompt_system', 'workflow', NULL, NULL),
+(32, 'workflow_variable', 'workflow', NULL, NULL),
+(34, 'fact_collection_girl_name', 'workflow', 'dating_girl', NULL),
+(35, 'fact_collection_girl_filter', 'workflow', NULL, NULL),
+(36, 'session_messages_limit', 'workflow', '20', NULL),
+(38, 'session_messages_result_processed', 'workflow', NULL, NULL),
+(40, 'girl_agent_workflow_name', 'workflow', 'dating_talk', NULL),
+(41, 'girl_description', 'workflow', NULL, NULL),
+(42, 'girl_greeting', 'workflow', NULL, NULL),
+(43, 'qdrant_metada_filter', 'workflow', NULL, NULL),
+(45, 'prompt_user_facts_man', 'workflow', NULL, NULL),
+(46, 'prompt_user_facts_talk', 'workflow', NULL, NULL),
+(47, 'fact_collection_man_name', 'workflow', 'dating_man', NULL),
+(49, 'prompt_user_tags', 'workflow', NULL, NULL),
+(50, 'prompt_user_category', 'workflow', NULL, NULL),
+(53, 'fact_collection_man_filter', 'workflow', NULL, NULL),
+(54, 'qdrant_fact_search_result_girl', 'workflow', NULL, NULL),
+(56, 'fact_collection_talk_filter', 'workflow', NULL, NULL),
+(57, 'fact_collection_limit', 'workflow', '2', NULL),
+(59, 'fact_collection_talk_name', 'workflow', 'dating_talk', NULL),
+(60, 'prompt_user_question', 'workflow', NULL, NULL),
+(61, 'prompt_user_facts_girl', 'workflow', NULL, NULL),
+(62, 'agent_exists_find_by', 'workflow', NULL, NULL),
+(64, 'datetime_current_get_zone', 'workflow', '+3', NULL),
+(70, 'document_id', 'input', NULL, NULL),
+(71, 'companion_id', 'global', NULL, NULL),
+(72, 'companion_title', 'global', NULL, NULL),
+(73, 'companion_name', 'global', NULL, NULL),
+(74, 'qdrant_fact_search_result_companion', 'workflow', NULL, NULL);
 
 --
 
 INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VALUES
 (15, 1),
 (16, 1),
-(12, 2),
-(13, 2),
 (24, 2),
 (26, 2),
 (30, 2),
@@ -261,9 +257,21 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 
 --
 
-INSERT INTO `agent_workflow_variable_role` (`variable_id`, `role_id`) VALUES
-(13, 2),
-(13, 4);
+INSERT INTO `agent_workflow_variable_public` (`id`, `node_id`, `name`, `type`, `default`, `position`, `description`) VALUES
+(1, 2, 'girl_title', 'proxy', '%prompt_user%', 0, 'Имя девушки'),
+(2, 2, 'girl_prompt_system', 'public', 'Ты девушка %girl_title%. Всегда отвечай от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах, пиши с маленькой буквы или пропускай знаки пунктуации. Ты никогда не соглашаешься на личные встречи или звонки. Ты любишь флиртовать. Если возникают вопросы о встречах, звонках или другой личной информации, ты пытаешься мягко отшутиться или перевести тему. То же касается и фото: ты не скидываешь их и не обещаешь ничего конкретного. Но в то же время ты точно знаешь, что ищешь любовь, отношения, и пытаешься лучше узнать друг друга в переписке. Возвращай всегда лаконичный ответ, не более пары десятков слов. Больше слов — только если необходимо.', 2, '');
+
+--
+
+INSERT INTO `agent_workflow_variable_public_role` (`public_variable_id`, `role_id`) VALUES
+(2, 2),
+(2, 4);
+
+--
+
+INSERT INTO `agent_workflow_variable_public_workflow` (`public_variable_id`, `workflow_id`) VALUES
+(1, 2),
+(2, 2);
 
 --
 

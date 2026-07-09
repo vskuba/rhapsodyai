@@ -2308,9 +2308,9 @@
         return [
             ['📥 Входящие переменные', groups.inputGroup, 'input'],
             ['🇬 Глобальные переменные', groups.commonGroup, 'common'],
-            ['🇳 Переменные ноды', groups.nodeGroup, 'node'],
+            ['🇳 Публичные переменные', groups.nodeGroup, 'node'],
             ['⚙️ Tool переменные', groups.toolGroup, 'tool'],
-            ['🇼 Переменные workflow', groups.workflowGroup, 'workflow'],
+            ['🇼 Workflow переменные ', groups.workflowGroup, 'workflow'],
         ];
     }
 
@@ -2397,8 +2397,10 @@
                 div.appendChild(badgeSpan);
             }
 
-            // Кнопка удаления переменной
-            if (variable.id > 0) {
+            // Кнопка удаления переменной.
+            // Публичные (node) и глобальные переменные живут в других таблицах —
+            // из редактора workflow их удалять нельзя
+            if (variable.id > 0 && variable.type !== 'node' && variable.type !== 'global') {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.type = 'button';
                 deleteBtn.className = 'btn-delete-var';

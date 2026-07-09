@@ -94,17 +94,21 @@ async def workflow_variables(
         workflow_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
 ):
-    # Получает все переменные, связанные с конкретным workflow (включая глобальные и переменные ноды)
+    # Получает все переменные, связанные с конкретным workflow (включая глобальные и публичные переменные ноды)
     sql = """
-        (SELECT v.* FROM `agent_workflow_variable` v
+        (SELECT v.id, v.name, v.`type`, v.`default`, v.description, NULL as node_id
+         FROM `agent_workflow_variable` v
          JOIN `agent_workflow_variable_workflow` vw ON v.id = vw.variable_id
          WHERE vw.workflow_id = %s)
         UNION
-        (SELECT v.* FROM `agent_workflow_variable` v
+        (SELECT v.id, v.name, v.`type`, v.`default`, v.description, NULL as node_id
+         FROM `agent_workflow_variable` v
          WHERE v.type = 'global')
         UNION
-        (SELECT v.* FROM `agent_workflow_variable` v
-         WHERE v.type = 'node' AND v.node_id in (SELECT node_id FROM agent_workflow WHERE id = %s))
+        (SELECT v.id, v.name, 'node' as `type`, v.`default`, v.description, v.node_id
+         FROM `agent_workflow_variable_public` v
+         JOIN `agent_workflow_variable_public_workflow` vw ON v.id = vw.public_variable_id
+         WHERE vw.workflow_id = %s)
         ORDER BY name ASC
     """
     async with mysql_get_db_async() as db:
@@ -165,17 +169,12 @@ async def workflow_variable_add(
         if variable:
             return {"result": variable.get("id")}
 
-        # Find node_id of workflow
-        await db.execute("SELECT node_id FROM agent_workflow WHERE id = %s", (workflow_id,))
-        wf = await db.fetchone()
-        node_id = wf.get("node_id") if wf else None
-
         variable_type = data.get("type", "workflow")
 
-        # Check if variable exists under this node_id
+        # Check if variable with same name and type already exists
         await db.execute(
-            "SELECT id FROM agent_workflow_variable WHERE name = %s AND node_id <=> %s AND `type` = %s",
-            (data.get("name"), node_id, variable_type)
+            "SELECT id FROM agent_workflow_variable WHERE name = %s AND `type` = %s",
+            (data.get("name"), variable_type)
         )
         existing_var = await db.fetchone()
 
