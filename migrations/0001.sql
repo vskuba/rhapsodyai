@@ -4,6 +4,8 @@ USE `project`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
+DROP TABLE IF EXISTS `agent_workflow_run_step`;
+DROP TABLE IF EXISTS `agent_workflow_run`;
 DROP TABLE IF EXISTS `agent_session`;
 DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `fact`;
@@ -293,4 +295,52 @@ CREATE TABLE `agent_session` (
     CONSTRAINT `fk_memory_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_memory_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_memory_companion` FOREIGN KEY (`companion_id`) REFERENCES `companion` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Журнал выполнения workflow: один запуск (включая вложенные sub-workflow через parent_run_id)
+CREATE TABLE `agent_workflow_run` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `run_uuid` CHAR(36) NOT NULL,
+    `parent_run_id` INT NULL,                    -- запуск sub-workflow ссылается на родителя
+    `parent_step_id` INT NULL,                   -- id шага workflow_invoke, породившего запуск
+    `depth` INT NOT NULL DEFAULT 0,
+    `workflow_id` INT NULL,
+    `agent_id` INT NULL,
+    `user_id` INT NULL,
+    `session_uuid` CHAR(36) DEFAULT NULL,
+    `request_uuid` CHAR(36) DEFAULT NULL,
+    `prompt_user` LONGTEXT NULL,
+    `variables_start` LONGTEXT NULL,             -- полный снапшот переменных на старте (JSON)
+    `result` LONGTEXT NULL,                      -- финальный ответ workflow
+    `status` ENUM('running', 'success', 'error') NOT NULL DEFAULT 'running',
+    `error` LONGTEXT NULL,
+    `started_at` DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+    `finished_at` DATETIME(3) NULL,
+    `duration_ms` INT NULL,
+    UNIQUE INDEX `u_workflow_run_uuid` (`run_uuid`),
+    INDEX `idx_workflow_run_workflow` (`workflow_id`, `started_at`),
+    INDEX `idx_workflow_run_session` (`session_uuid`),
+    INDEX `idx_workflow_run_parent` (`parent_run_id`),
+    CONSTRAINT `fk_wr_run_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_wr_run_parent` FOREIGN KEY (`parent_run_id`) REFERENCES `agent_workflow_run` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Журнал выполнения workflow: выполненный шаг (вход/выход/переход/длительность)
+CREATE TABLE `agent_workflow_run_step` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `run_id` INT NOT NULL,
+    `exec_index` INT NOT NULL,                   -- порядковый номер выполнения (не position шага)
+    `step_id` INT NULL,
+    `step_title` CHAR(100) DEFAULT NULL,
+    `step_type` CHAR(50) DEFAULT NULL,
+    `metadata_rendered` LONGTEXT NULL,           -- вход: metadata после рендера %переменных%
+    `variables_changed` LONGTEXT NULL,           -- выход: JSON измененных шагом переменных
+    `output` LONGTEXT NULL,                      -- ответ LLM / результат инструмента / результат sub-workflow
+    `transition` LONGTEXT NULL,                  -- сработавший переход: {phase, condition, to_step_id}
+    `status` ENUM('success', 'error', 'retry') NOT NULL DEFAULT 'success',
+    `error` LONGTEXT NULL,
+    `created_at` DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+    `duration_ms` INT NULL,
+    INDEX `idx_workflow_run_step_run` (`run_id`, `exec_index`),
+    CONSTRAINT `fk_wrs_run` FOREIGN KEY (`run_id`) REFERENCES `agent_workflow_run` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
