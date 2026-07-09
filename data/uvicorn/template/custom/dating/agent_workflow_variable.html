@@ -199,7 +199,7 @@
         const hintList = document.getElementById('hintList');
         hintList.innerHTML = '';
         if (!variableId) return;
-        const res = await getData(`/agent_workflow_variable/${variableId}/hints`);
+        const res = await getData(`/node/workflow_variable/${variableId}/hints`);
         res.result.forEach(v => {
             const line = document.createElement('div');
             line.innerHTML = `🟠 <span>%${v.name}%</span> - ${v.description || ''}`;
@@ -209,7 +209,7 @@
 
     async function loadList(activeId = null) {
         const [res, nodesRes] = await Promise.all([
-            getData('/agent_workflow_variable/list'),
+            getData('/node/workflow_variable/list'),
             getData('/node/list')
         ]);
 
@@ -255,7 +255,7 @@
         const id = document.getElementById('id').value;
         if (!id) return;
 
-        await putData(`/agent_workflow_variable/${id}`, {
+        await putData(`/node/workflow_variable/${id}`, {
             default: document.getElementById('default').value
         });
         showNotification('Обновлено', 'success');

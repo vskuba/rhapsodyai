@@ -364,7 +364,7 @@
         const hintList = document.getElementById('hintList');
         hintList.innerHTML = '';
         if (!variableId) return;
-        const res = await getData(`/agent_workflow_variable/${variableId}/hints`);
+        const res = await getData(`/node/workflow_variable/${variableId}/hints`);
         res.result.forEach(v => {
             const line = document.createElement('div');
             line.innerHTML = `🟠 <span>%${v.name}%</span> - ${v.description || ''}`;
@@ -374,7 +374,7 @@
 
     async function loadList(activeId = null) {
         const [res, nodesRes, rolesRes, workflowsRes] = await Promise.all([
-            getData('/agent_workflow_variable/list'),
+            getData('/node/workflow_variable/list'),
             getData('/node/list'),
             getData('/role/list'),
             getData('/workflow/list')
@@ -483,7 +483,7 @@
         // Новый порядок группы по DOM → сохраняем индексы в position
         const items = Array.from(itemList.querySelectorAll(`.agent-item[data-node-id="${nodeId}"]`));
         await Promise.all(items.map((el, index) =>
-            putData(`/agent_workflow_variable/${el.dataset.id}`, {position: index})
+            putData(`/node/workflow_variable/${el.dataset.id}`, {position: index})
         ));
 
         // Перестраиваем подсказки открытой переменной с учётом новых позиций
@@ -543,12 +543,12 @@
 
         let savedId;
         if (id) {
-            await putData(`/agent_workflow_variable/${id}`, payload);
+            await putData(`/node/workflow_variable/${id}`, payload);
             savedId = parseInt(id);
             document.getElementById('formTitle').textContent = `Редактирование: ${payload.name}`;
             showNotification('Обновлено', 'success');
         } else {
-            const createRes = await postData('/agent_workflow_variable', payload);
+            const createRes = await postData('/node/workflow_variable', payload);
             savedId = createRes.result.id;
             document.getElementById('id').value = savedId;
             document.getElementById('formTitle').textContent = `Редактирование: ${payload.name}`;
@@ -563,7 +563,7 @@
     deleteBtn.onclick = async () => {
         const id = document.getElementById('id').value;
         if (!id || !confirm('Вы уверены?')) return;
-        await deleteData(`/agent_workflow_variable/${id}`);
+        await deleteData(`/node/workflow_variable/${id}`);
         showNotification('Удалено', 'success');
         dataForm.reset();
         document.getElementById('id').value = '';

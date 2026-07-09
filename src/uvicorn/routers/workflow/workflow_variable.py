@@ -9,7 +9,7 @@ from src.auth.auth_permission import AuthPermission
 router = APIRouter()
 
 
-@router.get("/agent_workflow_variable/list")
+@router.get("/node/workflow_variable/list")
 async def variable_list(
         request: Request,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_VIEW]))
@@ -68,7 +68,7 @@ async def variable_list(
         return {"result": results}
 
 
-@router.get("/agent_workflow_variable/{variable_id}/hints")
+@router.get("/node/workflow_variable/{variable_id}/hints")
 async def variable_hints(
         request: Request,
         variable_id: int,
@@ -97,7 +97,7 @@ async def variable_hints(
 
 
 
-@router.post("/agent_workflow_variable")
+@router.post("/node/workflow_variable")
 async def variable_create(
         request: Request,
         data: dict,
@@ -144,7 +144,7 @@ async def variable_create(
         return {"result": {"id": variable_id}}
 
 
-@router.put("/agent_workflow_variable/{variable_id}")
+@router.put("/node/workflow_variable/{variable_id}")
 async def variable_update(
         request: Request,
         variable_id: int,
@@ -190,7 +190,7 @@ async def variable_update(
         return {"result": "success"}
 
 
-@router.delete("/agent_workflow_variable/{variable_id}")
+@router.delete("/node/workflow_variable/{variable_id}")
 async def variable_delete(
         request: Request,
         variable_id: int,
