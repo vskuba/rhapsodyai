@@ -100,13 +100,19 @@ pos 17 fact_collection_add (girl)  ─┘
 
 Естественные под-процессы, переиспользуемые и для других персонажей/нод:
 
-1. **`fact_extract`** (шаги 0, 1, 14, 15) — извлечение фактов из сообщения и сохранение.
-   Вызывается ПОСЛЕ ответа (не блокирует латентность) или параллельно.
-   Вход: prompt_user, companion_name, document_id. Выход: facts_qty.
+1. ✅ **`companion_fact_extract`** — вынесен в sub-workflow (id 7, subflow=1, 5 шагов:
+   output_format → llm_to_json «Факты из промта» → add_man → add_talk → return). Вход
+   (type='input'): `document_id`. Внутри — инвертированные переходы: `facts_man == 0` /
+   `facts_talk == 0` прыгают на выход (в родителе шаги были достижимы только через goto).
+   В dating_talk шаги 32/33/34/35 заменены шагом 58 `workflow_invoke` (pos 0). Пока вызывается
+   ДО ответа, как в оригинале; вынос после ответа — отдельная оптимизация.
 2. **`context_retrieve`** (шаги 2-12) — сбор контекста: история+суммаризация, 3 поиска, время.
    Вход: prompt_user, document_id, companion_name, session_uuid. Выход: context-переменные.
-3. **`girl_fact_invent`** (шаги 16-17) — придумывание фактов при вопросе о девушке.
-   Вход: prompt_user, document_id, существующие факты. Выход: facts_str.
+3. ✅ **`girl_fact_invent`** — вынесен в sub-workflow (id 6, subflow=1, 4 шага:
+   output_format → llm_to_json «Новый факты» → fact_collection_add → return_response_text).
+   Вход (type='input'): `document_id`, `girl_existing_facts`. Выход: facts_str (после дедупа) —
+   через outputs_map попадает в `qdrant_fact_search_result_girl` родителя. В dating_talk шаги
+   41/42 заменены шагом 48 `workflow_invoke`; переход `question == 1` ведет на него.
 4. Главный `dating_talk`: `context_retrieve` → [`girl_fact_invent`] → ответ → `fact_extract`.
 
 Требует типа шага `workflow_invoke` (дизайн в docs/workflow.md §9.2). Профит: изоляция изменений,
