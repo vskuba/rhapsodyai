@@ -39,6 +39,25 @@ INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `crea
 --
 
 
+INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `code_error`, `position`) VALUES
+(1, 1, NULL, NULL, 1),
+(1, 5, NULL, NULL, 0),
+(1, 6, NULL, NULL, 4),
+(1, 12, NULL, NULL, 3),
+(1, 16, NULL, NULL, 5),
+(1, 17, NULL, NULL, 2),
+(2, 1, NULL, NULL, 1),
+(2, 5, NULL, NULL, 0),
+(2, 6, NULL, NULL, 4),
+(2, 12, NULL, NULL, 3),
+(2, 16, NULL, NULL, 5),
+(2, 17, NULL, NULL, 2),
+(4, 1, NULL, NULL, 1),
+(4, 5, NULL, NULL, 0),
+(4, 6, NULL, NULL, 4),
+(4, 12, NULL, NULL, 3),
+(4, 16, NULL, NULL, 5),
+(4, 17, NULL, NULL, 2);
 
 --
 
