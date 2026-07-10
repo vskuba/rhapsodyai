@@ -1,5 +1,6 @@
 import uuid
 
+from ai.ai_session import ai_session_message_add
 from mysql_.mysql_ import mysql_get_db_async
 
 
@@ -54,3 +55,35 @@ async def session_messages(session_uuid: str, limit: int = 10) -> str:
 
 async def session_uuid_create() -> str:
     return str(uuid.uuid4())
+
+
+async def session_message_add(session_uuid: str, user_message: str, agent_response: str,
+                             agent_id: int = 0, user_id: int = 0) -> str:
+    """
+    Записывает в сессию пару сообщений диалога: user-prompt (сообщение собеседника)
+    и response-final (ответ агента) под одним request_uuid. Нужен workflow-оберткам,
+    которые ведут диалог с целевым workflow: его session_messages видит эту переписку
+    как обычную историю. agent_id задает, чьим именем подписывается ответ.
+    """
+    request_uuid = str(uuid.uuid4())
+    agent_id = int(agent_id) or None
+    user_id = int(user_id) or None
+
+    for role, kind_type, content in (
+            ('user', 'user-prompt', user_message),
+            ('llm', 'response-final', agent_response),
+    ):
+        await ai_session_message_add(
+            session_uuid=session_uuid,
+            request_uuid=request_uuid,
+            llm_id=None,
+            user_id=user_id,
+            companion_id=None,
+            role=role,
+            agent_id=agent_id,
+            kind_type=kind_type,
+            content=content,
+            token=0,
+        )
+
+    return request_uuid
