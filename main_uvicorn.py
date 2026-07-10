@@ -300,7 +300,18 @@ jinja2_template_path = os.path.join(current_dir, config_get('DATA_DIR'), config_
 app.state.agent_manager = AiFrameworkAgentManager()
 app.state.jinja2_template = Jinja2Templates(directory=jinja2_template_path)
 
-app.mount("/static", StaticFiles(directory=public_static_path), name="static")
+class NoCacheStaticFiles(StaticFiles):
+    """Статика без heuristic-кэша браузера: no-cache заставляет ревалидировать
+    файл (304 по ETag/Last-Modified, если не менялся) — правки js/css видны
+    после обычного обновления страницы, без версионирования импортов."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
+
+
+app.mount("/static", NoCacheStaticFiles(directory=public_static_path), name="static")
 
 app.include_router(dashboard.router, include_in_schema=False)
 app.include_router(chat.router)

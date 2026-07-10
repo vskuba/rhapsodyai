@@ -518,6 +518,34 @@ export function renderCustomStepFields(step, metadata) {
                     selectElement.appendChild(option);
                 });
 
+            // 1.1. Ссылка на выбранный sub-workflow: клик открывает его в этом же редакторе
+            const openLink = document.createElement('a');
+            openLink.className = 'subflow-open-link';
+            openLink.style = "display: none; align-self: flex-start; font-size: 12px; font-weight: 600; color: #3e8ee3; text-decoration: none;";
+            openLink.onmouseenter = () => openLink.style.textDecoration = 'underline';
+            openLink.onmouseleave = () => openLink.style.textDecoration = 'none';
+            openLink.onclick = (e) => {
+                // Обычный клик — переход внутри страницы (событие ловит main.js,
+                // импортировать его отсюда нельзя — цикл); Ctrl/средняя кнопка — новая вкладка
+                if (e.ctrlKey || e.metaKey) return;
+                e.preventDefault();
+                document.dispatchEvent(new CustomEvent('workflow:open', {
+                    detail: {workflowId: selectElement.value}
+                }));
+            };
+
+            const openLinkUpdate = () => {
+                const wfId = selectElement.value;
+                const wf = (state.allWorkflows || []).find(w => String(w.id) === String(wfId));
+                if (!wf) {
+                    openLink.style.display = 'none';
+                    return;
+                }
+                openLink.textContent = `🔗 Перейти в '${wf.title || wf.name}'`;
+                openLink.href = `/admin/workflow?workflow_id=${wf.id}`;
+                openLink.style.display = 'inline-flex';
+            };
+
             // 2. Маппинг входящих переменных ребенка + выходящие параметры
             const mappingContainer = document.createElement('div');
             mappingContainer.style = "display: flex; flex-direction: column; gap: 10px; margin-top: 5px;";
@@ -657,6 +685,7 @@ export function renderCustomStepFields(step, metadata) {
             };
 
             selectElement.onchange = async () => {
+                openLinkUpdate();
                 await renderSubflowDetails(selectElement.value);
                 collectSubflowData();
             };
@@ -665,8 +694,10 @@ export function renderCustomStepFields(step, metadata) {
             if (currentValue && currentValue.workflow_id) {
                 renderSubflowDetails(currentValue.workflow_id);
             }
+            openLinkUpdate();
 
             wfContainer.appendChild(selectElement);
+            wfContainer.appendChild(openLink);
             wfContainer.appendChild(mappingContainer);
             fieldWrapper.appendChild(wfContainer);
 

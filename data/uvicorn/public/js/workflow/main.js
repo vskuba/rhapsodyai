@@ -5,7 +5,7 @@ import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state} from './state.js';
 import {parseMetadata} from './utils.js';
-import {initGraphMode} from './graph.js?v=2';
+import {initGraphMode} from './graph.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 
@@ -93,6 +93,13 @@ let carouselNodes = [];
 let carouselIndex = 0;
 let sidebarWorkflows = [];
 let deepLinkApplied = false;
+
+// Клик по ссылке sub-workflow в виджете шага (step-widgets.js шлет событие,
+// прямой импорт оттуда невозможен — циклическая зависимость модулей)
+document.addEventListener('workflow:open', (e) => {
+    const workflowId = e.detail && e.detail.workflowId;
+    if (workflowId) openWorkflowById(workflowId);
+});
 
 // Открывает workflow по id: переключает карусель на его ноду и кликает по ссылке
 function openWorkflowById(workflowId) {
