@@ -227,6 +227,7 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
     else:
         url = base_url.rstrip('/') + '/models'
         headers, params = {}, {}
+
         if provider == 'gemini':
             url = base_url.rstrip('/') + '/v1/models'
             params['key'] = api_key  # Google API авторизуется query-параметром
