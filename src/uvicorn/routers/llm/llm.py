@@ -113,12 +113,16 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
                    SUM(created_at >= NOW() - INTERVAL 5 MINUTE)  AS m5,
                    SUM(created_at >= NOW() - INTERVAL 10 MINUTE) AS m10,
                    COUNT(*)                                      AS d7,
-                   SUM(status_code >= 400)                       AS d7_errors
+                   SUM(status_code >= 400)                       AS d7_errors,
+                   AVG(CASE WHEN status_code < 400 THEN duration_ms END) AS avg_ms
             FROM llm_request
             GROUP BY llm_id
             """
         )
         counters = {r['llm_id']: r for r in await db.fetchall()}
+        for c in counters.values():
+            # AVG возвращает Decimal | None — приводим к int для JSON
+            c['avg_ms'] = int(c['avg_ms']) if c['avg_ms'] is not None else None
 
         # Спарклайн: последний час 12 корзинами по 5 минут (0 — самая свежая)
         await db.execute(
@@ -171,6 +175,8 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
                     'm10': int((counters.get(row['id']) or {}).get('m10') or 0),
                     'd7': int((counters.get(row['id']) or {}).get('d7') or 0),
                     'd7_errors': int((counters.get(row['id']) or {}).get('d7_errors') or 0),
+                    # Среднее время успешного ответа за 7 дней, мс (None — нет данных)
+                    'avg_ms': (counters.get(row['id']) or {}).get('avg_ms'),
                     'sparkline': sparklines.get(row['id']) or [],
                 },
             }

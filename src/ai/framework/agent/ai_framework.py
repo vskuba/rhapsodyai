@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import queue
+import time
 import traceback
 
 from pydantic_ai import Agent, AgentRunResult, ModelSettings
@@ -81,6 +82,8 @@ class AiFrameworkAgent(AbstractAiFramework):
             except queue.Empty:
                 pass
 
+            run_started = None  # время старта LLM-вызова: для duration_ms в журнале при ошибке
+
             try:
                 if _exception and framework_model:
                     if catch_exception_retry_attempt > 1:
@@ -93,6 +96,7 @@ class AiFrameworkAgent(AbstractAiFramework):
 
                 await self.engine_prepare(framework_model)
 
+                run_started = time.monotonic()
                 result = await self.engine_run(framework_model)
 
                 # Журнал запросов к LLM: успешный вызов (метрики /admin/llm)
@@ -100,6 +104,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                     framework_model.entity_llm_current.get('id'),
                     framework_model.user_id,
                     status_code=200,
+                    duration_ms=int((time.monotonic() - run_started) * 1000),
                 )
 
                 response = await self.engine_result_handle(result, framework_model)
@@ -138,6 +143,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                     framework_model.user_id,
                     status_code=error_code or 500,
                     error=str(e),
+                    duration_ms=int((time.monotonic() - run_started) * 1000) if run_started else None,
                 )
 
                 # 429 - Too Many Requests, 413 - Payload Too Large, 402 - Payment Required,

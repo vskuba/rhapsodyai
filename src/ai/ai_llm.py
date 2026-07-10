@@ -5,8 +5,12 @@ from mysql_.mysql_ import mysql_get_db_async
 LLM_REQUEST_TTL_DAYS = 7
 
 
-async def ai_llm_request_log(llm_id: int | None, user_id: int | None,
-                             status_code: int = 200, error: str | None = None):
+async def ai_llm_request_log(
+        llm_id: int | None,
+        user_id: int | None,
+        status_code: int = 200, error: str | None = None,
+        duration_ms: int | None = None
+):
     """Пишет запрос к LLM в журнал llm_request (метрики страницы /admin/llm).
 
     Заодно оппортунистически удаляет записи старше LLM_REQUEST_TTL_DAYS
@@ -18,8 +22,10 @@ async def ai_llm_request_log(llm_id: int | None, user_id: int | None,
     try:
         async with mysql_get_db_async() as db:
             await db.execute(
-                "INSERT INTO llm_request (llm_id, user_id, status_code, error) VALUES (%s, %s, %s, %s)",
-                (llm_id, user_id or None, status_code, (error or None) and str(error)[:255])
+                "INSERT INTO llm_request (llm_id, user_id, status_code, duration_ms, error) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (llm_id, user_id or None, status_code, duration_ms,
+                 (error or None) and str(error)[:255])
             )
             await db.execute(
                 "DELETE FROM llm_request WHERE created_at < NOW() - INTERVAL %s DAY LIMIT 500",

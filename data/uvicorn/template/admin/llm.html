@@ -298,6 +298,14 @@
         cursor: help;
     }
 
+    .req-avg-ms {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        color: #7f8c8d;
+        white-space: nowrap;
+    }
+
     .req-errors-badge {
         display: inline-block;
         margin-left: 12px;
@@ -472,10 +480,15 @@
         cell.innerHTML = '';
         const r = requests || {};
         const counts = el('span', 'req-counts', `${r.m1 ?? 0} / ${r.m5 ?? 0} / ${r.m10 ?? 0}`);
-        counts.title = `За 7 дней: ${r.d7 ?? 0} запросов, из них ошибок: ${r.d7_errors ?? 0}`;
+        counts.title = `За 7 дней: ${r.d7 ?? 0} запросов, из них ошибок: ${r.d7_errors ?? 0}`
+            + (r.avg_ms != null ? `, среднее время ответа: ${r.avg_ms} ms` : '');
         cell.appendChild(counts);
         if (r.d7_errors) {
             cell.appendChild(el('span', 'req-errors-badge', `${r.d7_errors}`));
+        }
+        // Среднее время успешного ответа провайдера за 7 дней
+        if (r.avg_ms != null) {
+            cell.appendChild(el('span', 'req-avg-ms', `⌀ ${r.avg_ms} ms`));
         }
     }
 
