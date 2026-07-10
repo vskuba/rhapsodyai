@@ -56,7 +56,12 @@ async function initWorkflowManager() {
         renderWorkflowList(workflows, nodes);
         initVariablesHandlers();
 
-        if (activeWorkflowLinkId && workflowListContainer.querySelector('#' + activeWorkflowLinkId)) {
+        // Deep-link: /admin/workflow?workflow_id=N — открываем конкретный workflow
+        // (только при первой загрузке, чтобы не сбивать навигацию после сохранений)
+        const deepLinkId = new URLSearchParams(window.location.search).get('workflow_id');
+        if (!deepLinkApplied && deepLinkId && openWorkflowById(deepLinkId)) {
+            deepLinkApplied = true;
+        } else if (activeWorkflowLinkId && workflowListContainer.querySelector('#' + activeWorkflowLinkId)) {
             const activeWorkflowLink = workflowListContainer.querySelector('#' + activeWorkflowLinkId);
             if (isSettingsViewOpen) {
                 // Остаемся в форме редактирования: кликаем по иконке параметров
@@ -87,6 +92,24 @@ async function initWorkflowManager() {
 let carouselNodes = [];
 let carouselIndex = 0;
 let sidebarWorkflows = [];
+let deepLinkApplied = false;
+
+// Открывает workflow по id: переключает карусель на его ноду и кликает по ссылке
+function openWorkflowById(workflowId) {
+    const workflow = sidebarWorkflows.find(w => String(w.id) === String(workflowId));
+    if (!workflow) return false;
+
+    const nodeIndex = carouselNodes.findIndex(n => String(n.id) === String(workflow.node_id || 'none'));
+    if (nodeIndex >= 0 && nodeIndex !== carouselIndex) {
+        carouselIndex = nodeIndex;
+        renderCarouselNode();
+    }
+
+    const link = workflowListContainer.querySelector(`#workflow_link_${workflow.id}`);
+    if (!link) return false;
+    link.click();
+    return true;
+}
 
 function renderWorkflowList(workflows, nodes) {
     sidebarWorkflows = workflows || [];
