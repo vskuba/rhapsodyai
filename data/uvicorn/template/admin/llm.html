@@ -300,13 +300,14 @@
 
     .req-errors-badge {
         display: inline-block;
-        margin-left: 6px;
+        margin-left: 12px;
         background: #fdecea;
         color: #c0392b;
-        border-radius: 8px;
+        border-radius: 4px;
         padding: 0 6px;
-        font-size: 10px;
+        font-size: 12px;
         font-weight: bold;
+        border: 1px dashed brown;
     }
 
     .req-sparkline {
@@ -336,7 +337,7 @@
             <label class="filter-label" for="resetHoursSelect">Сброс ошибок старше</label>
             <div class="reset-row">
                 <select id="resetHoursSelect">
-                    <option value="1">1 час</option>
+                    <option value="1" selected>1 час</option>
                     <option value="6">6 часов</option>
                     <option value="12">12 часов</option>
                     <option value="24">24 часа</option>
@@ -474,7 +475,7 @@
         counts.title = `За 7 дней: ${r.d7 ?? 0} запросов, из них ошибок: ${r.d7_errors ?? 0}`;
         cell.appendChild(counts);
         if (r.d7_errors) {
-            cell.appendChild(el('span', 'req-errors-badge', `${r.d7_errors}✗`));
+            cell.appendChild(el('span', 'req-errors-badge', `${r.d7_errors}`));
         }
     }
 

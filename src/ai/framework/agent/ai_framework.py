@@ -25,7 +25,7 @@ class AiFrameworkAgent(AbstractAiFramework):
             model,
             system_prompt=framework_model.prompt_system.strip(),
             output_type=framework_model.response_model,
-            retries=len(framework_model.entities_llm) * 3 # количество попыток = количество LLM * 3
+            retries=len(framework_model.entities_llm) * 10 # количество попыток = количество LLM * 3
         )
 
         self.engine_storage[framework_model.name] = engine
