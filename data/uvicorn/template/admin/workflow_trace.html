@@ -109,6 +109,19 @@
         max-width: 100%;
     }
 
+    .run-summary .run-title {
+        margin-left: 10px;
+    }
+
+    .run-summary .run-name {
+        margin: 0 10px;
+        color: #d63434;
+    }
+
+    .run-summary .status-badge {
+        margin-right: 10px;
+    }
+
     .run-card .run-meta {
         color: #7f8c8d;
         font-size: 11px;
@@ -310,7 +323,7 @@
     /* Вложенный запуск sub-workflow */
     .child-run {
         margin: 8px 0 4px 26px;
-        border-left: 3px solid #f39c12;
+        border-left: 3px solid #12c9f3;
         padding-left: 10px;
     }
 
@@ -416,7 +429,7 @@
 
     function fmtDuration(ms) {
         if (ms === null || ms === undefined) return '';
-        return ms >= 1000 ? (ms / 1000).toFixed(1) + ' с' : ms + ' мс';
+        return ms >= 1000 ? (ms / 1000).toFixed(1) + ' sec' : ms + ' ms';
     }
 
     function fmtDate(value) {
@@ -557,7 +570,9 @@
         // Сводка запуска
         const summary = el('div', 'run-summary');
         const headRow = el('div', 'row');
+        headRow.appendChild(el('span', 'run-pre-title', `Workflow `));
         headRow.appendChild(el('span', 'run-title', `${run.workflow_title || run.workflow_name || ''} `));
+        headRow.appendChild(el('span', 'run-name', `${run.workflow_name || ''} `));
         headRow.appendChild(el('span', `status-badge status-${run.status}`, run.status));
         headRow.appendChild(el('span', 'run-meta', `  ${fmtDate(run.started_at)}`));
         headRow.appendChild(el('span', 'run-meta-time', `  ${fmtDuration(run.duration_ms)}`));
@@ -609,7 +624,7 @@
         summary.appendChild(promptRow);
 
         const resultRow = el('div', 'row');
-        resultRow.appendChild(el('div', 'label', run.status === 'error' ? 'Ошибка' : 'Результат'));
+        resultRow.appendChild(el('div', 'label', run.status === 'error' ? 'Ошибка' : 'Ответ'));
         resultRow.appendChild(el('pre', null, (run.status === 'error' ? run.error : run.result) || '—'));
         summary.appendChild(resultRow);
 
@@ -667,7 +682,7 @@
             (childrenByStep[String(step.step_id)] || []).forEach(child => {
                 const block = el('div', 'child-run');
                 const title = el('div', 'child-title');
-                title.textContent = `🔁 ${child.workflow_title || child.workflow_name || 'sub-workflow'} `;
+                title.textContent = `${child.workflow_title || child.workflow_name || 'sub-workflow'} `;
                 const badge = el('span', `status-badge status-${child.status}`, child.status);
                 title.appendChild(badge);
                 title.appendChild(el('span', 'run-meta', ` ${fmtDuration(child.duration_ms)}`));
