@@ -45,9 +45,16 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 6. **Валидация global** — все `type='global'` обязаны присутствовать, иначе HTTP 400.
 7. **Валидация input** — все `type='input'` обязаны присутствовать, иначе HTTP 400. **Это готовый контракт входа для будущих sub-workflow.**
 
-Рендеринг: `ai_workflow_variables_render()` (`src/ai/ai_workflow.py:43`) — рекурсивная подстановка `%name%`
+Рендеринг: `ai_workflow_variables_render()` (`src/ai/ai_workflow.py`) — рекурсивная подстановка `%name%`
 в строки/dict/list. **Нюанс — умная замена типов**: если строка состоит только из плейсхолдера (`"%id%"`),
 возвращается исходное значение с типом (int/list/bool), а не строка.
+
+**Условные блоки в шаблонах**: `%if var%...%else%...%endif%` (+ отрицание `%if !var%`) —
+разворачиваются ДО подстановки переменных (`ai_workflow_if_blocks_render`). Переменная «истинна»,
+если существует и ее значение не пустое, не `0` и не `false` (`0` — принятый сигнал «ничего нет»
+из llm_to_json-шагов). Вложенность поддерживается (блоки разворачиваются изнутри наружу),
+`%else%` опционален, незакрытый блок остается в тексте как есть. Основной кейс — скрытие пустых
+секций промпта: `%if search_result%=== Заголовок ===\n%search_result%\n\n%endif%`.
 
 ## 4. Типы шагов (семантика движка)
 
@@ -328,3 +335,87 @@ UI и БД тоже готовы: тип шага id=6 (сиды), виджет 
            email (str): The email address associated with the authenticated user's GitHub account.
        """
    ```
+
+## 12. Workflow-оболочка для тестирования (`workflow_shell_test`, id 9)
+
+Универсальный тестер: LLM играет роль собеседника и в цикле разговаривает с целевым
+workflow. Запускается из чата агентом **Workflow tester** (нода Dev). Сначала мастер
+из трех вопросов собирает цель (выбор чипсами `[[...]]`): нода → workflow ноды → агент
+этого workflow. Затем пользователь пишет сценарий (кто собеседник, о чем говорит,
+чего добивается) — и запускается цикл диалога.
+
+**Шаги (нода Dev, workflow 9):**
+
+Мастер построен на универсальных инструментах — конвейер «выборка → колонка → чипсы»:
+`mysql_find_by(table, criteria)` → `dict_column(rows, 'name')` → `list_render(names,
+'[[%s]]', ' ')`. Параметры выборки задаются шагом `variable_conversion` перед каждым
+вызовом (переменные `find_table`, `find_criteria`).
+
+```
+-- Мастер выбора цели (каждый вопрос — continue_workflow, ответ приходит следующим сообщением)
+pos 0-4   ноды:     conversion(node, {}) → mysql_find_by → dict_column(name)
+                    → list_render → return «Спросить ноду» [continue]
+pos 5-11  workflow: conversion({name: prompt_user}) → mysql_find_one_by(node) →
+                    conversion({node_id: X, subflow: 0}) → mysql_find_by → dict_column
+                    → list_render → return «Спросить workflow» [continue]
+pos 12-18 агенты:   mysql_find_one_by(agent_workflow по имени) → test_workflow_id →
+                    mysql_find_by(agent по workflow_id) → dict_column → list_render
+                    → return «Спросить агента» [continue]
+pos 19-23 конфиг:   mysql_find_one_by(agent по имени) → dict_column(workflow_variable,
+                    document_id) → conversion(target_agent_*, document_id)
+                    → return «Спросить сценарий» [continue]
+
+-- Цикл диалога
+pos 24 session_uuid_create            — отдельная сессия диалога (не засоряет сессию тестера)
+pos 25 llm_to_json «Сообщение тестера» — LLM придумывает следующее сообщение по сценарию
+                                         и накопленному диалогу (%test_dialog%)
+pos 26 workflow_invoke                — вызов целевого workflow: id из %test_workflow_id%,
+                                         передаются prompt_user, session_uuid и identity цели
+pos 27 session_message_add             — пишет пару user-prompt/response-final в сессию диалога,
+                                         чтобы session_messages целевого workflow видел историю
+pos 28 counter_increment              — +1 к счетчику
+pos 29 variable_conversion            — append диалога + счетчик; переход
+                                         test_iteration < %test_iterations_limit% → на pos 25
+pos 30 return_response_text           — стенограмма диалога + uuid сессии
+```
+
+**Настройка (переменные workflow 9; мастер заполняет их сам, defaults — запасной вариант):**
+
+| Переменная | Default | Назначение |
+|---|---|---|
+| `test_workflow_id` | 5 | Целевой workflow (заполняет мастер) |
+| `test_iterations_limit` | 20 | Сколько циклов диалога |
+| `target_agent_id/name/title` | 20/anna/Анна | Identity целевого агента (заполняет мастер) |
+| `document_id` | anna | Из workflow_variable выбранного агента (заполняет мастер) |
+| `chat_timeout` | 1800 | Таймаут ответа в чате, сек (см. ниже) |
+
+**Что для этого добавлено в платформу:**
+
+- Движок: алиас результата `workflow_invoke_{step_id}_result_str` (не зависит от имени
+  целевого workflow — `workflow_id` можно задавать переменной).
+- Движок: переменная `prompt_system` в scope переопределяет системный промпт агента.
+  Критично для оболочки: model принадлежит агенту-тестеру, и без переопределения
+  целевой workflow отвечал бы промптом тестера, а не персоной целевого агента
+  (мастер передает `agent.prompt_system` цели через inputs_map шага workflow_invoke).
+- Движок: **переменные переживают continue_workflow** — вместе с индексом шага в metadata
+  сессии сохраняется снапшот изменённых переменных (`workflow_variables_saved`) и
+  восстанавливается при resume. Переменные запроса (prompt_user, session_uuid, agent_* —
+  всё с `type='global'` в `agent_workflow_variable`) в снапшот не попадают и не
+  восстанавливаются: их владелец — чат-слой, каждое сообщение приносит их заново
+  (`_workflow_variables_protected()`). Без этого мастер терял бы выбор пользователя
+  между сообщениями.
+- Универсальные инструменты:
+  `mysql_find_by(table_name, criteria, limit)` / `mysql_find_one_by(table_name, criteria)`
+  (src/tool/mysql/) — выборка записей; criteria — dict, значение-список → IN, None → IS NULL,
+  имена таблицы/колонок валидируются, datetime приводится к строке;
+  `dict_column(data, column_name)` (src/tool/dict/) — значения по ключу из списка словарей,
+  словаря или JSON-строки; `list_render(items, template, separator)` — форматирование списка
+  ("[[%s]]" + " " = чипсы чата); `counter_increment(value, step)` — счетчик циклов;
+  `session_message_add(session_uuid, user_message, agent_response, agent_id, user_id)` —
+  запись пары сообщений в сессию.
+- Чат: переменная `chat_timeout` поднимает таймаут ожидания ответа (по умолчанию 60 сек).
+
+**Ограничения:** бюджет `MAX_WORKFLOW_ITERATIONS = 300` шагов на запуск — при 5 шагах цикла
+лимит итераций ~55; каждый цикл — это 1 LLM-вызов тестера + LLM-вызовы целевого workflow,
+20 циклов dating_talk ≈ 60+ LLM-вызовов (минуты). Прогон целиком виден в
+`/admin/workflow_trace`: каждый вызов целевого workflow — вложенный child-run.
