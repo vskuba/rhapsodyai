@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ai.ai_llm import ai_llm_provider
 from config.config import config_get
 from mysql_.mysql_ import mysql_get_db_async
+from setting_.setting_ import setting_get, setting_set
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 
@@ -56,14 +57,14 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
     if reset_hours is not None and reset_hours not in LLM_ERROR_RESET_HOURS:
         raise HTTPException(status_code=400, detail=f"reset_hours: допустимые значения {LLM_ERROR_RESET_HOURS}")
 
-    async with mysql_get_db_async() as db:
-        if reset_hours is not None:
-            await _global_setting_set(db, 'llm_error_reset_hours', str(reset_hours))
-            hours = reset_hours
-        else:
-            stored = await _global_setting_get(db, 'llm_error_reset_hours')
-            hours = int(stored) if stored and stored.isdigit() else LLM_ERROR_RESET_DEFAULT
+    if reset_hours is not None:
+        await setting_set('llm_error_reset_hours', reset_hours)
+        hours = reset_hours
+    else:
+        stored = str(await setting_get('llm_error_reset_hours'))
+        hours = int(stored) if stored and stored.isdigit() else LLM_ERROR_RESET_DEFAULT
 
+    async with mysql_get_db_async() as db:
         # Сброс просроченных ошибок: модель снова участвует в очереди по своей позиции
         await db.execute(
             """
@@ -102,7 +103,7 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
         )
         rows = await db.fetchall()
 
-        pings = {row['id']: await _ping_get(db, row['id']) for row in rows}
+        pings = {row['id']: await _ping_get(row['id']) for row in rows}
 
         # Счетчики запросов по окнам (журнал llm_request хранится 7 дней)
         await db.execute(
@@ -239,7 +240,7 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
                 response = await client.get(url, headers=headers, params=params)
             ping['ms'] = int((time.monotonic() - started) * 1000)
-            ping['http_status'] = response.status_code
+            ping['http_status'] = str(response.status_code)
             if response.is_success:
                 ping['status'] = 'ok'
             else:
@@ -248,42 +249,15 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
             ping['ms'] = int((time.monotonic() - started) * 1000)
             ping['error'] = f'{type(e).__name__}: {e}'
 
-    async with mysql_get_db_async() as db:
-        await _global_setting_set(db, f'llm_ping_{llm_id}', json.dumps(ping, ensure_ascii=False))
+    await setting_set(f'llm_ping_{llm_id}', json.dumps(ping, ensure_ascii=False))
     return {"result": ping}
 
 
-async def _ping_get(db, llm_id: int) -> dict | None:
-    value = await _global_setting_get(db, f'llm_ping_{llm_id}')
+async def _ping_get(llm_id: int) -> dict | None:
+    value = str(await setting_get(f'llm_ping_{llm_id}'))
     if not value:
         return None
     try:
         return json.loads(value)
     except (ValueError, TypeError):
         return None
-
-
-async def _global_setting_get(db, key: str) -> str | None:
-    await db.execute(
-        "SELECT value FROM setting WHERE `key` = %s AND user_id IS NULL",
-        (key,)
-    )
-    row = await db.fetchone()
-    return row['value'] if row else None
-
-
-async def _global_setting_set(db, key: str, value: str):
-    # Свой upsert: уникальный индекс (key, user_id) не ловит дубли при user_id NULL
-    await db.execute(
-        "UPDATE setting SET value = %s WHERE `key` = %s AND user_id IS NULL",
-        (value, key)
-    )
-    if not db.rowcount:
-        await db.execute(
-            "SELECT id FROM setting WHERE `key` = %s AND user_id IS NULL", (key,)
-        )
-        if not await db.fetchone():
-            await db.execute(
-                "INSERT INTO setting (`key`, value, user_id) VALUES (%s, %s, NULL)",
-                (key, value)
-            )
