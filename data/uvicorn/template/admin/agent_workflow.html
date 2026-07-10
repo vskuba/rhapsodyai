@@ -176,6 +176,18 @@
         flex-direction: column;
     }
 
+    /* Плавающие детали шага: при длинном списке шагов колонка липнет к верху
+       видимой области (.editor-section скроллится), а не уезжает вместе со списком.
+       align-self отменяет stretch — без него sticky не работает; своя прокрутка
+       внутри, если детали выше окна */
+    #stepDetailsView {
+        position: sticky;
+        top: 0;
+        align-self: flex-start;
+        max-height: calc(100vh - 140px);
+        overflow-y: auto;
+    }
+
     .form-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
