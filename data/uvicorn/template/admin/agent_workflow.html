@@ -263,10 +263,14 @@
         padding: 15px;
         overflow: auto;
         max-height: calc(100vh - 220px);
+        /* Центровка диаграммы: svg — inline-block, узкий граф встает по центру,
+           широкий скроллится как раньше (flex-центровка обрезала бы левый край) */
+        text-align: center;
     }
 
     .graph-container svg {
         max-width: none; /* Не сжимаем диаграмму — контейнер скроллится */
+        display: inline-block;
     }
 
     .graph-container .node {
@@ -631,7 +635,6 @@
         flex-direction: column;
         gap: 8px;
         margin-bottom: 8px;
-        max-height: 200px;
         overflow-y: auto;
     }
 
@@ -1104,5 +1107,5 @@
 
 {% block scripts %}
 <script src="/static/js/vendor/mermaid.min.js"></script>
-<script type="module" src="/static/js/workflow/main.js?v=2"></script>
+<script type="module" src="/static/js/workflow/main.js?v=3"></script>
 {% endblock %}

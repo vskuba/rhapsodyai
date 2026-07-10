@@ -5,7 +5,7 @@ import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state} from './state.js';
 import {parseMetadata} from './utils.js';
-import {initGraphMode} from './graph.js';
+import {initGraphMode} from './graph.js?v=2';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 

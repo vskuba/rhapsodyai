@@ -24,6 +24,12 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
     # Защита sub-workflow (workflow_invoke) от неограниченной рекурсии
     MAX_WORKFLOW_DEPTH = 5
 
+    # Максимум выполненных шагов за один запуск workflow: защита от цикла
+    # after-переходов (шаг → after → тот же/ранний шаг), который иначе крутился бы
+    # бесконечно с LLM-вызовом на каждом витке. Намеренные циклы допустимы,
+    # пока укладываются в лимит
+    MAX_WORKFLOW_ITERATIONS = 300
+
     async def framework_model_create(self, metadata: dict) -> AiFrameworkAgentModel:
         logger_info('Создание модели агента на основе метаданных...')
         try:
@@ -178,7 +184,14 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         iteration_exception = 0
         max_llm_iteration_exception = 3
         trace_exec_index = 0
+        before_jump_chain = 0  # подряд идущие before-прыжки без выполнения шага (детект цикла)
         while current_index < steps_count:
+            if iteration >= self.MAX_WORKFLOW_ITERATIONS:
+                raise ValueError(
+                    f"Превышен лимит шагов workflow ({self.MAX_WORKFLOW_ITERATIONS}): "
+                    f"вероятен цикл after-переходов."
+                )
+
             current_step = steps[current_index]
             step_type = current_step['step_type_name']
             step_meta = current_step['metadata']
@@ -210,6 +223,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             step_meta = ai_workflow_variables_render(step_meta, variables)
 
             transitions = step_meta.get('transitions_before', [])
+            transition_jumped = False
             if transitions:
                 for transition in transitions:
                     variable_name = transition.get('variable')
@@ -239,18 +253,21 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             "to_step_id": target_step_id,
                         }
                         current_index = step_index
-
-                        current_step = steps[current_index]
-                        step_type = current_step['step_type_name']
-                        # Рендерим metadata целевого шага (иначе он выполнится с сырыми %переменными%)
-                        step_meta = ai_workflow_variables_render(current_step['metadata'], variables)
-
-                        logger_info(
-                            f"▶️ Выполнение шага [{current_index + 1}/{steps_count}]: "
-                            f"{current_step['title']} ({step_type})"
-                        )
-
+                        transition_jumped = True
                         break
+
+            if transition_jumped:
+                # Целевой шаг должен пройти полный цикл обработки, включая СВОИ
+                # transitions_before: иначе цепочка прыжков A → B → C рвется и шаг B
+                # выполняется вопреки собственному условию пропуска
+                before_jump_chain += 1
+                if before_jump_chain > steps_count:
+                    raise ValueError(
+                        f"Цикл before-переходов: {before_jump_chain} прыжков подряд без выполнения шага."
+                    )
+                await trace_current_step()
+                continue
+            before_jump_chain = 0
 
             # --- Функция отправки в LLM (остается внутри цикла как инлайн-логика) ---
             async def execute_llm_step() -> str:

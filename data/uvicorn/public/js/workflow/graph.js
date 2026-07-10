@@ -70,20 +70,29 @@ export function buildWorkflowGraphDefinition(steps) {
         }
 
         // Условные переходы before/after
+        const isTerminal = typeName === 'return_response_llm' || typeName === 'return_response_text';
         ['transitions_before', 'transitions_after'].forEach(key => {
             const suffix = key === 'transitions_before' ? 'before' : 'after';
             const transitions = Array.isArray(metadata[key]) ? metadata[key] : [];
+
+            // Финальные шаги возвращают ответ сразу — их after-переходы движок не проверяет
+            const deadAfter = suffix === 'after' && isTerminal && transitions.length > 0;
+            if (deadAfter) {
+                warnings.push(`Шаг "${step.title}" (id ${step.id}): transitions_after у финального шага никогда не сработают — workflow завершается до их проверки`);
+            }
+
             transitions.forEach(tr => {
                 if (!tr || !tr.step_id) return;
                 const target = String(tr.step_id);
-                const cond = graphLabelEscape(`${tr.variable} ${tr.operator || '=='} ${tr.value ?? ''} (${suffix})`);
+                const cond = graphLabelEscape(`${deadAfter ? '⚠ ' : ''}${tr.variable} ${tr.operator || '=='} ${tr.value ?? ''} (${suffix})`);
 
                 if (!stepIds.has(target)) {
                     warnings.push(`Шаг "${step.title}" (id ${step.id}): переход (${suffix}) на несуществующий шаг id ${target}`);
                     return;
                 }
                 lines.push(`S${step.id} -. "${cond}" .-> S${target}`);
-                hasIncoming.add(target);
+                // Мертвое ребро не делает целевой шаг достижимым
+                if (!deadAfter) hasIncoming.add(target);
             });
         });
     });
