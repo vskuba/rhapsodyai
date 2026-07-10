@@ -99,6 +99,7 @@ CREATE TABLE `llm_request` (
     `llm_id` INT NOT NULL,
     `user_id` INT NULL,
     `status_code` INT NULL,                            -- 200 = успех; 429/413/402/503/500 = ошибка
+    `duration_ms` INT NULL,                            -- время ответа провайдера в мс
     `error` VARCHAR(255) NULL,                         -- краткий текст ошибки
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_llm_request_llm` (`llm_id`, `created_at`),
