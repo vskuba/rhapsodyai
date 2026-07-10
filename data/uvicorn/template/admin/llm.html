@@ -1,0 +1,515 @@
+{% extends "base.html" %}
+
+{% block title %}LLM{% endblock %}
+
+{% block head %}
+<style>
+    .llm-layout {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        flex-direction: column;
+    }
+
+    .llm-header {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 15px 25px;
+        background: #fff;
+        border-bottom: 1px solid #e0e0e0;
+        flex-shrink: 0;
+    }
+
+    .llm-header h2 {
+        margin: 0;
+        font-size: 1.1rem;
+        color: #2c3e50;
+    }
+
+    .filter-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .filter-label {
+        font-size: 11px;
+        font-weight: bold;
+        color: #718096;
+        text-transform: uppercase;
+    }
+
+    .llm-header select {
+        padding: 7px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        min-width: 180px;
+        font-size: 13px;
+    }
+
+    .btn-ping-all {
+        background: #3498db;
+        color: #fff;
+        border: none;
+        border-radius: 5px;
+        padding: 8px 20px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-left: auto;
+        align-self: flex-end;
+    }
+
+    .btn-ping-all:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .llm-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 15px 25px;
+    }
+
+    .llm-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        font-size: 13px;
+    }
+
+    .llm-table thead th {
+        position: sticky;
+        top: 0;
+        background: #f8fafc;
+        color: #4a5568;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 2px solid #e2e8f0;
+        z-index: 1;
+    }
+
+    .llm-table td {
+        padding: 4px 12px;
+        border-bottom: 1px solid #edf2f7;
+        vertical-align: middle;
+    }
+
+    .llm-table tbody tr:hover {
+        background: #fcfdfe;
+    }
+
+    /* Подсветка строк очереди: активная — зеленым, с ошибкой — красным */
+    .llm-table tbody tr.row-active {
+        background: #eafaf1;
+        border-left: 3px solid #27ae60;
+    }
+
+    .llm-table tbody tr.row-active:hover {
+        background: #dff5e8;
+    }
+
+    .llm-table tbody tr.row-error {
+        background: #fdf3f2;
+    }
+
+    .llm-table tbody tr.row-error:hover {
+        background: #fbeae8;
+    }
+
+    .position-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 22px;
+        height: 22px;
+        background: #eef2f7;
+        color: #64748b;
+        border-radius: 50%;
+        font-size: 11px;
+        font-weight: bold;
+    }
+
+    .row-active .position-badge {
+        background: #27ae60;
+        color: #fff;
+    }
+
+    .llm-model-name {
+        font-family: 'SFMono-Regular', Consolas, monospace;
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .active-mark {
+        display: inline-block;
+        margin-left: 8px;
+        background: #d4efdf;
+        color: #1e6b3a;
+        border: 1px solid #27ae60;
+        border-radius: 8px;
+        padding: 1px 8px;
+        font-size: 10px;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .provider-badge {
+        display: inline-block;
+        background: #e3f0ff;
+        color: #1a4d8f;
+        border-radius: 8px;
+        padding: 2px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .provider-badge.unknown {
+        background: #fdecea;
+        color: #922b21;
+    }
+
+    /* Ошибка провайдера из user_llm: код + дата */
+    .error-code-badge {
+        display: inline-block;
+        background: #fdecea;
+        color: #c0392b;
+        border: 1px solid #f5c6cb;
+        border-radius: 8px;
+        padding: 1px 8px;
+        font-size: 11px;
+        font-weight: bold;
+        margin-right: 6px;
+    }
+
+    .error-date {
+        color: #7f8c8d;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    /* Статус модели по последнему пингу */
+    .llm-status {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 10px;
+        border-radius: 9px;
+        white-space: nowrap;
+    }
+
+    .llm-status.ok {
+        background: #eafaf1;
+        color: #1e8449;
+    }
+
+    .llm-status.error {
+        background: #fdecea;
+        color: #c0392b;
+        cursor: help;
+    }
+
+    .llm-status.unknown {
+        background: #eef2f7;
+        color: #64748b;
+    }
+
+    .ping-meta {
+        color: #7f8c8d;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    .ping-ms {
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .btn-ping {
+        background: #fff;
+        color: #3498db;
+        border: 1px solid #3498db;
+        border-radius: 4px;
+        padding: 4px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .btn-ping:hover:not(:disabled) {
+        background: #3498db;
+        color: #fff;
+    }
+
+    .btn-ping:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .empty-note {
+        color: #999;
+        text-align: center;
+        padding: 40px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="llm-layout">
+
+    <div class="llm-header">
+        <h2>🧠 LLM модели</h2>
+
+        <div class="filter-item">
+            <label class="filter-label" for="userSelect">Пользователь</label>
+            <select id="userSelect"></select>
+        </div>
+
+        <div class="filter-item">
+            <label class="filter-label" for="resetHoursSelect">Сброс ошибок старше</label>
+            <select id="resetHoursSelect">
+                <option value="6">6 часов</option>
+                <option value="12">12 часов</option>
+                <option value="24">24 часа</option>
+                <option value="48">48 часов</option>
+            </select>
+        </div>
+
+        <button type="button" class="btn-ping-all" id="pingAllBtn">Ping всех</button>
+    </div>
+
+    <div class="llm-body">
+        <table class="llm-table">
+            <thead>
+            <tr>
+                <th style="width: 4%;">#</th>
+                <th style="width: 28%;">Модель</th>
+                <th style="width: 10%;">Провайдер</th>
+                <th style="width: 18%;">Ошибка провайдера</th>
+                <th style="width: 12%;">Статус пинга</th>
+                <th style="width: 16%;">Последний пинг</th>
+                <th style="width: 90px;"></th>
+            </tr>
+            </thead>
+            <tbody id="llmTableBody">
+            <tr>
+                <td colspan="7" class="empty-note">Загрузка...</td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, postData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const tableBody = document.getElementById('llmTableBody');
+    const pingAllBtn = document.getElementById('pingAllBtn');
+    const userSelect = document.getElementById('userSelect');
+    const resetHoursSelect = document.getElementById('resetHoursSelect');
+
+    let llmList = [];
+
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = text;
+        return node;
+    }
+
+    function renderStatusCell(cell, ping) {
+        cell.innerHTML = '';
+        if (!ping) {
+            cell.appendChild(el('span', 'llm-status unknown', '⚪ не проверялась'));
+            return;
+        }
+        if (ping.status === 'ok') {
+            cell.appendChild(el('span', 'llm-status ok', `🟢 online (${ping.http_status})`));
+        } else {
+            const badge = el('span', 'llm-status error',
+                ping.http_status ? `🔴 error (${ping.http_status})` : '🔴 error');
+            badge.title = ping.error || '';
+            cell.appendChild(badge);
+        }
+    }
+
+    function renderPingCell(cell, ping) {
+        cell.innerHTML = '';
+        if (!ping) {
+            cell.appendChild(el('span', 'ping-meta', '—'));
+            return;
+        }
+        const meta = el('span', 'ping-meta');
+        if (ping.ms !== null && ping.ms !== undefined) {
+            meta.appendChild(el('span', 'ping-ms', `${ping.ms} ms`));
+            meta.appendChild(document.createTextNode(` · ${ping.at || ''}`));
+        } else {
+            meta.textContent = ping.at || '—';
+        }
+        cell.appendChild(meta);
+    }
+
+    function renderErrorCell(cell, llm) {
+        cell.innerHTML = '';
+        if (!llm.rate_limit_at && !llm.code_error) {
+            cell.appendChild(el('span', 'ping-meta', '—'));
+            return;
+        }
+        if (llm.code_error) {
+            cell.appendChild(el('span', 'error-code-badge', String(llm.code_error)));
+        }
+        if (llm.rate_limit_at) {
+            cell.appendChild(el('span', 'error-date', llm.rate_limit_at));
+        }
+    }
+
+    async function pingLlm(llmId, button) {
+        button.disabled = true;
+        button.textContent = '...';
+        try {
+            const res = await postData(`/llm/ping/${llmId}`, {});
+            const ping = res.result;
+            const row = tableBody.querySelector(`tr[data-id="${llmId}"]`);
+            if (row) {
+                renderStatusCell(row.querySelector('.cell-status'), ping);
+                renderPingCell(row.querySelector('.cell-ping'), ping);
+            }
+            if (ping.status === 'ok') {
+                showNotification(`Ping OK: ${ping.ms} ms`, 'success');
+            } else {
+                showNotification(`Ping error: ${ping.error || ping.http_status}`, 'warning');
+            }
+        } catch (e) {
+            showNotification(`Ошибка ping: ${e.message}`, 'error');
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Ping';
+        }
+    }
+
+    function renderTable(llms) {
+        tableBody.innerHTML = '';
+
+        if (!llms.length) {
+            const row = document.createElement('tr');
+            const cell = el('td', 'empty-note', 'У пользователя нет моделей');
+            cell.colSpan = 7;
+            row.appendChild(cell);
+            tableBody.appendChild(row);
+            return;
+        }
+
+        llms.forEach(llm => {
+            const row = document.createElement('tr');
+            row.dataset.id = llm.id;
+            if (llm.active) {
+                row.className = 'row-active';
+                row.title = 'Активная модель: следующий запрос пользователя пойдет в нее';
+            } else if (llm.rate_limit_at || llm.code_error) {
+                row.className = 'row-error';
+                row.title = 'Модель ответила ошибкой и опущена в конец очереди';
+            }
+
+            const posCell = document.createElement('td');
+            posCell.appendChild(el('span', 'position-badge', llm.position ?? '—'));
+            row.appendChild(posCell);
+
+            const nameCell = el('td', 'llm-model-name', llm.name);
+            if (llm.active) nameCell.appendChild(el('span', 'active-mark', 'активная'));
+            row.appendChild(nameCell);
+
+            const providerCell = document.createElement('td');
+            providerCell.appendChild(
+                llm.provider
+                    ? el('span', 'provider-badge', llm.provider)
+                    : el('span', 'provider-badge unknown', 'не определен')
+            );
+            row.appendChild(providerCell);
+
+            const errorCell = document.createElement('td');
+            renderErrorCell(errorCell, llm);
+            row.appendChild(errorCell);
+
+            const statusCell = el('td', 'cell-status');
+            renderStatusCell(statusCell, llm.ping);
+            row.appendChild(statusCell);
+
+            const pingCell = el('td', 'cell-ping');
+            renderPingCell(pingCell, llm.ping);
+            row.appendChild(pingCell);
+
+            const actionCell = document.createElement('td');
+            const pingBtn = el('button', 'btn-ping', 'Ping');
+            pingBtn.type = 'button';
+            pingBtn.onclick = () => pingLlm(llm.id, pingBtn);
+            actionCell.appendChild(pingBtn);
+            row.appendChild(actionCell);
+
+            tableBody.appendChild(row);
+        });
+    }
+
+    async function loadStatus(params = {}) {
+        const query = new URLSearchParams();
+        if (params.userId) query.set('user_id', params.userId);
+        if (params.resetHours) query.set('reset_hours', params.resetHours);
+
+        try {
+            const data = await getData(`/llm/status?${query}`);
+            const result = data.result;
+
+            // Селект пользователей (по умолчанию сервер выбирает первого)
+            userSelect.innerHTML = '';
+            (result.users || []).forEach(u => {
+                const opt = el('option', null, u.username);
+                opt.value = u.id;
+                if (u.id === result.user_id) opt.selected = true;
+                userSelect.appendChild(opt);
+            });
+
+            resetHoursSelect.value = String(result.reset_hours);
+
+            llmList = result.llms || [];
+            renderTable(llmList);
+        } catch (e) {
+            console.error('Ошибка загрузки LLM:', e);
+            tableBody.innerHTML = '';
+            const row = document.createElement('tr');
+            const cell = el('td', 'empty-note', 'Ошибка загрузки');
+            cell.colSpan = 7;
+            row.appendChild(cell);
+            tableBody.appendChild(row);
+        }
+    }
+
+    userSelect.onchange = () => loadStatus({userId: userSelect.value, resetHours: resetHoursSelect.value});
+    resetHoursSelect.onchange = () => loadStatus({userId: userSelect.value, resetHours: resetHoursSelect.value});
+
+    pingAllBtn.onclick = async () => {
+        pingAllBtn.disabled = true;
+        try {
+            // Последовательно, чтобы не бомбить провайдеров пачкой запросов
+            for (const llm of llmList) {
+                const button = tableBody.querySelector(`tr[data-id="${llm.id}"] .btn-ping`);
+                if (button) await pingLlm(llm.id, button);
+            }
+        } finally {
+            pingAllBtn.disabled = false;
+        }
+    };
+
+    loadStatus();
+</script>
+{% endblock %}
