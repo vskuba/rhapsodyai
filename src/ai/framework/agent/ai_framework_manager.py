@@ -589,6 +589,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 variables[result_var] = child_result if child_result is not None else ''
                 logger_info(f"🏷️ Переменная '%{result_var}%' получила значение '{variables[result_var]}'")
 
+                # Универсальный алиас: имя не зависит от названия целевого workflow —
+                # для шагов-оберток, где workflow_id задается переменной (%test_workflow_id%)
+                alias_var = f'workflow_invoke_{step_id}_result_str'
+                variables[alias_var] = variables[result_var]
+
                 # Явные выходы по outputs_map: переменная ребенка -> переменная родителя
                 for child_var, parent_var in outputs_map.items():
                     child_var, parent_var = str(child_var).strip(), str(parent_var).strip()

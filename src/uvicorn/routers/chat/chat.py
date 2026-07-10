@@ -175,7 +175,13 @@ async def ask_ai(
     })
     agent_manager.framework_workflow_run(framework_model, future, loop)
 
-    timeout = 60.0
+    # Долгие workflow (например, тестовые прогоны в цикле) поднимают таймаут
+    # переменной chat_timeout; обычные — 60 секунд
+    try:
+        timeout = float(workflow_variables_all.get('chat_timeout') or 60.0)
+    except (TypeError, ValueError):
+        timeout = 60.0
+
     try:
         result_text = await asyncio.wait_for(future, timeout=timeout)
         return {"result": result_text}
