@@ -140,8 +140,9 @@ class AiFrameworkAgent(AbstractAiFramework):
                             try:
                                 async with mysql_get_db_async() as db:
                                     await db.execute(
-                                        "UPDATE user_llm SET rate_limit_at = NOW() WHERE user_id = %s AND llm_id = %s",
-                                        (user_id, problem_llm_id)
+                                        "UPDATE user_llm SET rate_limit_at = NOW(), code_error = %s "
+                                        "WHERE user_id = %s AND llm_id = %s",
+                                        (error_code, user_id, problem_llm_id)
                                     )
                                 logger_info(f"🔄 Модель ID {problem_llm_id} помечена как ошибочная (rate_limit_at обновлен). Она опустится в конец списка.")
                             except Exception as db_err:
