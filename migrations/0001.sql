@@ -94,7 +94,8 @@ CREATE TABLE `user_node` (
 CREATE TABLE `user_llm` (
     `user_id` INT NOT NULL,
     `llm_id` INT NOT NULL,
-    `rate_limit_at` DATETIME DEFAULT NULL,
+    `rate_limit_at` DATETIME DEFAULT NULL,             -- время последней ошибки провайдера (модель уходит в конец очереди)
+    `code_error` INT DEFAULT NULL,                     -- HTTP-код ошибки провайдера (429/413/402/503)
     `position` INT DEFAULT NULL,
     PRIMARY KEY (`user_id`, `llm_id`),
     CONSTRAINT `fk_user_llm_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
