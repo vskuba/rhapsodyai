@@ -54,7 +54,7 @@ INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `code_error`, `pos
 (4, 6, NULL, NULL, 3),
 (4, 10, NULL, NULL, 4),
 (4, 12, NULL, NULL, 0),
-(4, 15, NULL, NULL, 5),;
+(4, 15, NULL, NULL, 5);
 
 --
 
