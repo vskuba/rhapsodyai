@@ -14,7 +14,7 @@ from src.auth.auth_permission import AuthPermission
 router = APIRouter()
 
 # Допустимые интервалы сброса ошибок и настройка по умолчанию
-LLM_ERROR_RESET_HOURS = (6, 12, 24, 48)
+LLM_ERROR_RESET_HOURS = (1, 6, 12, 24, 48)
 LLM_ERROR_RESET_DEFAULT = 24
 
 
