@@ -124,26 +124,12 @@
         color: #fff;
     }
 
-    /* В синем сообщении пользователя чип делаем контрастным */
-    .user-msg .chat-command {
-        font-weight: normal;
-        border: none;
-        background: none;
-        color: inherit;
-        font-size: inherit;
-    }
-
-    .user-msg .chat-command:hover {
-        background: #fff;
-        color: #1d6fa5;
-    }
-
-    /* Подсказки [[текст]]: клик вставляет текст в поле ввода без отправки */
+    /* Подсказки [[текст]]: клик подставляет текст и сразу отправляет */
     .chat-suggestion {
         display: inline-block;
-        background: #eafaf1;
-        color: #1e8449;
-        border: 1px dashed #82d3a8;
+        background: #eaedfa;
+        color: #1e6c84;
+        border: 1px dashed #82bcd3;
         border-radius: 4px;
         padding: 0 6px;
         cursor: pointer;
@@ -151,21 +137,9 @@
     }
 
     .chat-suggestion:hover {
-        background: #27ae60;
-        border-color: #27ae60;
+        background: #e0e3ef;
+        border-color: transparent;
         border-style: solid;
-        color: #fff;
-    }
-
-    .user-msg .chat-suggestion {
-        background: rgba(255, 255, 255, 0.2);
-        border-color: rgba(255, 255, 255, 0.6);
-        color: #fff;
-    }
-
-    .user-msg .chat-suggestion:hover {
-        background: #fff;
-        color: #1e8449;
     }
 
     /* --- Yes/No Button Styles --- */
@@ -180,7 +154,10 @@
         transition: 0.2s;
         margin-right: 5px;
     }
-    .btn-yes:hover { background-color: #c3e6cb; }
+
+    .btn-yes:hover {
+        background-color: #c3e6cb;
+    }
 
     .btn-no {
         background-color: #f8d7da;
@@ -192,7 +169,10 @@
         font-size: 12px;
         transition: 0.2s;
     }
-    .btn-no:hover { background-color: #f5c6cb; }
+
+    .btn-no:hover {
+        background-color: #f5c6cb;
+    }
 
     .input-wrapper {
         flex: 1;
@@ -516,12 +496,12 @@
     }
 
     // Интерактивные фрагменты сообщений:
-    // 1. [[текст]] — подсказка: клик вставляет текст в поле ввода (без отправки)
+    // 1. [[текст]] — подсказка: клик вставляет текст по курсору (черновик сохраняется) и отправляет
     // 2. /команда — клик подставляет команду и сразу отправляет.
     //    Негативный lookbehind отсекает слэши внутри URL и путей (http://..., path/to)
     const MESSAGE_TOKEN_REGEX = /\[\[([\s\S]+?)\]\]|(?<![\w/])\/[a-zA-Z0-9_-]+/g;
 
-    // Вставка текста в textarea по позиции курсора, без отправки
+    // Вставка текста в textarea по позиции курсора
     function insertIntoInput(text) {
         const start = userInput.selectionStart ?? userInput.value.length;
         const end = userInput.selectionEnd ?? userInput.value.length;
@@ -543,12 +523,15 @@
             const span = document.createElement('span');
 
             if (match[1] !== undefined) {
-                // Подсказка [[текст]]: показываем без скобок, клик — вставка в поле ввода
+                // Подсказка [[текст]]: показываем без скобок, клик — вставка по курсору и отправка
                 const suggestion = match[1];
                 span.className = 'chat-suggestion';
-                span.title = 'Нажмите, чтобы вставить в поле ввода';
+                span.title = 'Нажмите, чтобы отправить';
                 span.textContent = suggestion;
-                span.onclick = () => insertIntoInput(suggestion);
+                span.onclick = () => {
+                    insertIntoInput(suggestion);
+                    sendMessage(toggleLoading);
+                };
             } else {
                 // Команда /cmd: клик — подстановка и отправка
                 const command = match[0];
@@ -573,7 +556,13 @@
     function addMessage(text, role) {
         const div = document.createElement('div');
         div.className = `message ${role === 'user' ? 'user-msg' : 'ai-msg'}`;
-        renderMessageWithCommands(div, String(text ?? ''));
+        // Кликабельные чипы (команды/подсказки) — только в сообщениях AI;
+        // в сообщениях пользователя команды из истории выводим обычным текстом
+        if (role === 'user') {
+            div.textContent = String(text ?? '');
+        } else {
+            renderMessageWithCommands(div, String(text ?? ''));
+        }
         chatMessages.appendChild(div);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
