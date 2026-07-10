@@ -16,7 +16,9 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (15, 'mistral/mistral-medium-2505'),
 (16, 'mistral/mistral-medium-2508'),
 (17, 'huggingface/meta-llama/Llama-3.3-70B-Instruct'),
-(18, 'cerebras/gpt-oss-120b');
+(18, 'cerebras/gpt-oss-120b'),
+(19, 'gemini/gemini-3-flash'),
+(20, 'gemini/gemini-3.1-flash-lite');
 
 --
 
