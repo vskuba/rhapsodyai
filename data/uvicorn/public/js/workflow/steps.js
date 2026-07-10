@@ -594,3 +594,70 @@ if (addStepToWorkflowBtn) {
         }
     };
 }
+
+// --- Автосохранение деталей шага ---
+// Селекты и чекбоксы сохраняются при изменении, textarea и текстовые поля —
+// при уходе фокуса. Снимок состояния делается синхронно в момент события
+// (пока таймер ждет, пользователь может переключиться на другой шаг —
+// сохранится именно измененный), отправка — с коротким дебаунсом.
+let stepAutoSavePending = null;
+let stepAutoSaveTimer = null;
+
+function stepAutoSaveSchedule() {
+    const workflowId = document.getElementById('workflowId')?.value;
+    const activeStepBlock = document.querySelector('.step-item-block.active');
+    if (!workflowId || !activeStepBlock) return;
+
+    const stepId = activeStepBlock.dataset.id;
+    const currentStepData = (state.allCurrentStepsData || []).find(s => String(s.id) === String(stepId));
+    if (!currentStepData) return;
+
+    // Собираем актуальное состояние: metadata обновляется виджетами живьем,
+    // переходы интегрируем из UI (как делает кнопка Save)
+    const metadata = parseMetadata(currentStepData.metadata);
+    metadata.transitions_before = collectTransitions('Before');
+    metadata.transitions_after = collectTransitions('After');
+
+    const stepTitleEl = document.getElementById('stepTitle');
+    const title = (stepTitleEl && stepTitleEl.value.trim()) || currentStepData.title;
+
+    currentStepData.metadata = JSON.stringify(metadata);
+    currentStepData.title = title;
+
+    stepAutoSavePending = {
+        workflowId,
+        stepId,
+        payload: {metadata: currentStepData.metadata, title: title},
+        titleEl: activeStepBlock.querySelector('.step-title-text'),
+    };
+
+    clearTimeout(stepAutoSaveTimer);
+    stepAutoSaveTimer = setTimeout(stepAutoSaveFlush, 400);
+}
+
+async function stepAutoSaveFlush() {
+    if (!stepAutoSavePending) return;
+    const {workflowId, stepId, payload, titleEl} = stepAutoSavePending;
+    stepAutoSavePending = null;
+
+    try {
+        await putData(`/workflow/${workflowId}/step/${stepId}`, payload);
+        if (titleEl) titleEl.textContent = payload.title;
+        showNotification(`Шаг «${payload.title}» сохранен`, 'success');
+    } catch (e) {
+        console.error('Ошибка автосохранения шага:', e);
+        showNotification(`Ошибка автосохранения шага: ${e.message}`, 'error');
+    }
+}
+
+// Делегирование на всю колонку деталей: работает и для динамических
+// виджетов, которые перерисовываются при каждом выборе шага
+const stepDetailsViewEl = document.getElementById('stepDetailsView');
+if (stepDetailsViewEl) {
+    stepDetailsViewEl.addEventListener('change', (e) => {
+        if (e.target.matches('select, input[type="checkbox"]')) stepAutoSaveSchedule();
+    });
+    stepDetailsViewEl.addEventListener('focusout', (e) => {
+        if (e.target.matches('textarea, input[type="text"], input[type="number"]')) stepAutoSaveSchedule();
+    });
+}
