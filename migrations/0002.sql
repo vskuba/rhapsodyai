@@ -111,7 +111,8 @@ INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `
 (5, 2, 'dating_talk', 'Чат с девушкой', 'Чат с девушкой', -1, 0),
 (6, 2, 'girl_fact_invent', 'Придумать факты девушки', 'Sub-workflow: придумывает новые факты о девушке для ответа на личный вопрос', 0, 1),
 (7, 2, 'companion_fact_extract', 'Сохранить факты собеседника', 'Sub-workflow: сохраняет переданные факты о собеседнике и переписке в коллекции (извлечение — в объединенном LLM-шаге родителя)', 0, 1),
-(8, 6, 'export_agent_workflow', 'Экспорт workflow таблиц', 'Экспортирует agent_workflow и agent_workflow_* таблицы из БД в миграцию 0002.sql', 0, 0);
+(8, 6, 'export_agent_workflow', 'Экспорт workflow таблиц', 'Экспортирует agent_workflow и agent_workflow_* таблицы из БД в миграцию 0002.sql', 0, 0),
+(9, 6, 'workflow_shell', 'Workflow оболочка', 'Оболочка-тестер: LLM играет собеседника, в цикле вызывает целевой workflow (test_workflow_id), ведет диалог в отдельной сессии и возвращает стенограмму', 0, 0);
 
 --
 
@@ -175,7 +176,14 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (62, 8, 3, 'mysql_tables_find', 0, '{"tool_invoke":{"tool_name":"mysql_tables_find","inputs_map":{"substr":"mysql_tables_pattern"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user","operator":"!=","value":"/export_agent_workflow","step_id":"61"}],"transitions_after":[]}'),
 (63, 5, 3, 'fact_collection_output_format', 1, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_companion_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (64, 6, 5, 'Переменные', 1, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"fact_invent_filter","text":"{\\"document_id\\":\\"%girl_name%\\"}"}]}'),
-(65, 6, 3, 'qdrant_fact_search_girl_bio', 2, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_girl_name","metadata_filter":"fact_invent_filter","limit":"fact_invent_limit"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}');
+(65, 6, 3, 'qdrant_fact_search_girl_bio', 2, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_girl_name","metadata_filter":"fact_invent_filter","limit":"fact_invent_limit"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(66, 9, 3, 'session_uuid_create', 0, '{"tool_invoke":{"tool_name":"session_uuid_create","inputs_map":{},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(67, 9, 2, 'Сообщение тестера', 1, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"test_message","text":"следующее сообщение собеседника-тестера: короткое, естественное, по сценарию"}],"prompt_user":"Ты тестировщик чат-агента: играешь роль собеседника по имени %companion_title%, который переписывается с агентом %target_agent_title%.\\n\\n=== Сценарий тестирования ===\\n%prompt_user%\\n%if test_dialog%\\n\\n=== Диалог до этого момента ===\\n%test_dialog%\\n%endif%\\n\\nПридумай СЛЕДУЮЩЕЕ сообщение собеседника: короткое (до 30 слов), естественное, продолжает диалог и следует сценарию. Не повторяй уже отправленные сообщения.\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"test_message\\": следующее сообщение собеседника\\n\\nExample of JSON response:\\n{\\n  \\"test_message\\": \\"Привет! Чем увлекаешься?\\"\\n}"}'),
+(68, 9, 6, 'Вызов тестируемого workflow', 2, '{"workflow_invoke":{"workflow_id":"%test_workflow_id%","inputs_map":{"prompt_user":"test_message","session_uuid":"session_uuid_create_66_result_str","agent_id":"target_agent_id","agent_name":"target_agent_name","agent_title":"target_agent_title","document_id":"document_id","companion_id":"companion_id","companion_title":"companion_title","companion_name":"companion_name","user_id":"user_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(69, 9, 3, 'session_message_add', 3, '{"tool_invoke":{"tool_name":"session_message_add","inputs_map":{"session_uuid":"session_uuid_create_66_result_str","user_message":"test_message","agent_response":"workflow_invoke_68_result_str","agent_id":"target_agent_id","user_id":"user_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(70, 9, 3, 'counter_increment', 4, '{"tool_invoke":{"tool_name":"counter_increment","inputs_map":{"value":"test_iteration"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(71, 9, 5, 'Обновить контекст', 5, '{"transitions_before":[],"transitions_after":[{"variable":"test_iteration","operator":"<","value":"%test_iterations_limit%","step_id":"67"}],"variable_conversion":[{"variable":"test_dialog","text":"%test_dialog%\\n[%companion_title%]: %test_message%\\n[%target_agent_title%]: %workflow_invoke_68_result_str%"},{"variable":"test_iteration","text":"%counter_increment_70_result_int%"}]}'),
+(72, 9, 4, 'Отчет теста', 6, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Тест завершен: %test_iteration% итераций workflow #%test_workflow_id%.\\n\\n=== Диалог ===\\n%test_dialog%\\n\\nСессия диалога: %session_uuid_create_66_result_str%","continue_workflow":false}');
 
 --
 
@@ -237,7 +245,17 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (88, 'girl_title', 'input', NULL, NULL),
 (89, 'girl_name', 'input', NULL, NULL),
 (90, 'fact_invent_limit', 'workflow', '12', 'Лимит фактов биографии для шага «Новый факты»: широкий контекст против противоречий'),
-(91, 'fact_invent_filter', 'workflow', NULL, 'Фильтр поиска биографии для придумывания фактов: только document_id, без tags');
+(91, 'fact_invent_filter', 'workflow', NULL, 'Фильтр поиска биографии для придумывания фактов: только document_id, без tags'),
+(92, 'test_workflow_id', 'workflow', '5', 'ID целевого workflow для тестового прогона'),
+(93, 'test_iterations_limit', 'workflow', '20', 'Сколько циклов диалога прогнать'),
+(94, 'test_iteration', 'workflow', '0', 'Счетчик выполненных циклов'),
+(95, 'test_dialog', 'workflow', '', 'Накопленная стенограмма диалога тестового прогона'),
+(96, 'test_message', 'workflow', NULL, 'Очередное сообщение LLM-собеседника'),
+(97, 'target_agent_name', 'workflow', 'anna', 'Системное имя целевого агента (передается в тестируемый workflow)'),
+(98, 'target_agent_title', 'workflow', 'Анна', 'Отображаемое имя целевого агента'),
+(99, 'target_agent_id', 'workflow', '20', 'ID целевого агента: им подписываются ответы в сессии диалога'),
+(100, 'document_id', 'workflow', 'anna', 'document_id целевого агента (для workflow с фактами)'),
+(101, 'chat_timeout', 'workflow', '1800', 'Таймаут ожидания ответа в чате, сек (долгий тестовый прогон)');
 
 --
 
@@ -288,7 +306,17 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (88, 6),
 (89, 6),
 (90, 6),
-(91, 6);
+(91, 6),
+(92, 9),
+(93, 9),
+(94, 9),
+(95, 9),
+(96, 9),
+(97, 9),
+(98, 9),
+(99, 9),
+(100, 9),
+(101, 9);
 
 --
 
@@ -460,7 +488,8 @@ INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_
 (21, 2, 'dasha', 'Даша', 'Описание девушки Даша', 5, 'Ты девушка Даша. Всегда отвечать от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах или пиши с маленькой буквы или пропускай знаки пунктуации. Ты никогда не соглашаешся на личные встречи или звонки. Ты любишь флиртовать. Если возникают вопросы с встречей, звонками или другой личной информации ты пытаешся мягко отшутиться или перевести тему. Тоже касается и фото. Ты не кидаешь и не обещаешь ничего конкертного. Но в то же время ты точно знаешь, что ищешь любовь, отношения и пытаешся лучше узнать друг друга в переписке. Возращай всегда лаконичный ответ, не более пары десятков слов. Больше слов, только если необходимо.', 'Привет, я Даша, буду рада пообщаться с тобой', 0, '{"document_id":"dasha"}'),
 (22, 2, 'lera', 'Лера', 'Описание девушки Лера', 5, 'Ты девушка Лера. Всегда отвечать от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах или пиши с маленькой буквы или пропускай знаки пунктуации. Ты никогда не соглашаешся на личные встречи или звонки. Ты любишь флиртовать. Если возникают вопросы с встречей, звонками или другой личной информации ты пытаешся мягко отшутиться или перевести тему. Тоже касается и фото. Ты не кидаешь и не обещаешь ничего конкертного. Но в то же время ты точно знаешь, что ищешь любовь, отношения и пытаешся лучше узнать друг друга в переписке. Возращай всегда лаконичный ответ, не более пары десятков слов. Больше слов, только если необходимо.', 'Привет, я Лера, буду рада пообщаться с тобой', 0, '{"document_id":"lera"}'),
 (23, 2, 'elena', 'Елена', 'Описание девушки Елена', 5, 'Ты девушка Елена. Всегда отвечать от имени девушки. С вероятностью 15% допускай синтаксические ошибки в словах или пиши с маленькой буквы или пропускай знаки пунктуации. Ты никогда не соглашаешся на личные встречи или звонки. Ты любишь флиртовать. Если возникают вопросы с встречей, звонками или другой личной информации ты пытаешся мягко отшутиться или перевести тему. Тоже касается и фото. Ты не кидаешь и не обещаешь ничего конкертного. Но в то же время ты точно знаешь, что ищешь любовь, отношения и пытаешся лучше узнать друг друга в переписке. Возращай всегда лаконичный ответ, не более пары десятков слов. Больше слов, только если необходимо.', 'Привет, я Елена, буду рада пообщаться с тобой', 0, '{"document_id":"elena"}'),
-(24, 6, 'dev_bot', 'Dev bot', 'Служебный агент для dev-операций', 8, 'Ты служебный dev-агент. Выполняешь технические операции по командам.', 'Привет! Я Dev bot.\n\nДоступные команды:\n\n/export_agent_workflow - экспорт workflow-таблиц в миграцию 0002.sql', 0, NULL);
+(24, 6, 'dev_bot', 'Dev bot', 'Служебный агент для dev-операций', 8, 'Ты служебный dev-агент. Выполняешь технические операции по командам.', 'Привет! Я Dev bot.\n\nДоступные команды:\n\n/export_agent_workflow - экспорт workflow-таблиц в миграцию 0002.sql', 0, NULL),
+(25, 6, 'workflow_tester', 'Workflow tester', 'Тестовый прогон workflow: LLM-собеседник ведет диалог с целевым workflow в цикле', 9, 'Ты отвественный исполнитель. Выполняешь все, что тебе пишут. Если в запросе написано вернуть ответ в JSON обязательно верни в JSON.', 'Привет! Я Workflow tester.\n\nНапиши сценарий тестирования (кто собеседник, о чем говорит, чего добивается) — я прогоню диалог с целевым workflow и верну стенограмму.\n\nЦель настраивается переменными: test_workflow_id, test_iterations_limit, target_agent_id/name/title, document_id.', 0, NULL);
 
 --
 
