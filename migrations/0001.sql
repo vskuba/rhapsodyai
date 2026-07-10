@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS `tool`;
 DROP TABLE IF EXISTS `tool_group`;
 DROP TABLE IF EXISTS `session`;
 DROP TABLE IF EXISTS `role_node`;
+DROP TABLE IF EXISTS `llm_request`;
 DROP TABLE IF EXISTS `user_llm`;
 DROP TABLE IF EXISTS `user_node`;
 DROP TABLE IF EXISTS `setting`;
@@ -89,6 +90,21 @@ CREATE TABLE `user_node` (
     PRIMARY KEY (`user_id`, `node_id`),
     CONSTRAINT `fk_user_node_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_user_node_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Журнал запросов к LLM: метрики страницы /admin/llm (счетчики за интервалы, графики).
+-- Записи старше 7 дней удаляются оппортунистически при вставке (ai_llm_request_log)
+CREATE TABLE `llm_request` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `llm_id` INT NOT NULL,
+    `user_id` INT NULL,
+    `status_code` INT NULL,                            -- 200 = успех; 429/413/402/503/500 = ошибка
+    `error` VARCHAR(255) NULL,                         -- краткий текст ошибки
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_llm_request_llm` (`llm_id`, `created_at`),
+    INDEX `idx_llm_request_created` (`created_at`),
+    CONSTRAINT `fk_llm_request_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_llm_request_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `user_llm` (
