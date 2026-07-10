@@ -179,7 +179,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (65, 6, 3, 'qdrant_fact_search_girl_bio', 2, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_girl_name","metadata_filter":"fact_invent_filter","limit":"fact_invent_limit"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (66, 9, 3, 'session_uuid_create', 24, '{"tool_invoke":{"tool_name":"session_uuid_create","inputs_map":{},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (67, 9, 2, 'Сообщение тестера', 25, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"test_message","text":"следующее сообщение собеседника-тестера: короткое, естественное, по сценарию"}],"prompt_user":"Ты тестировщик чат-агента: играешь роль собеседника по имени %companion_title%, который переписывается с агентом %target_agent_title%.\\n\\n=== Сценарий тестирования ===\\n%prompt_user%\\n%if test_dialog%\\n\\n=== Диалог до этого момента ===\\n%test_dialog%\\n%endif%\\n\\nПридумай СЛЕДУЮЩЕЕ сообщение собеседника: короткое (до 30 слов), естественное, продолжает диалог и следует сценарию. Не повторяй уже отправленные сообщения.\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"test_message\\": следующее сообщение собеседника\\n\\nExample of JSON response:\\n{\\n  \\"test_message\\": \\"Привет! Чем увлекаешься?\\"\\n}"}'),
-(68, 9, 6, 'Вызов тестируемого workflow', 26, '{"workflow_invoke":{"workflow_id":"%test_workflow_id%","inputs_map":{"prompt_user":"test_message","session_uuid":"session_uuid_create_66_result_str","agent_id":"target_agent_id","agent_name":"target_agent_name","agent_title":"target_agent_title","document_id":"document_id","companion_id":"companion_id","companion_title":"companion_title","companion_name":"companion_name","user_id":"user_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(68, 9, 6, 'Вызов тестируемого workflow', 26, '{"workflow_invoke":{"workflow_id":"%test_workflow_id%","inputs_map":{"prompt_user":"test_message","prompt_system":"target_prompt_system","session_uuid":"session_uuid_create_66_result_str","agent_id":"target_agent_id","agent_name":"target_agent_name","agent_title":"target_agent_title","document_id":"document_id","companion_id":"companion_id","companion_title":"companion_title","companion_name":"companion_name","user_id":"user_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (69, 9, 3, 'session_message_add', 27, '{"tool_invoke":{"tool_name":"session_message_add","inputs_map":{"session_uuid":"session_uuid_create_66_result_str","user_message":"test_message","agent_response":"workflow_invoke_68_result_str","agent_id":"target_agent_id","user_id":"user_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (70, 9, 3, 'counter_increment', 28, '{"tool_invoke":{"tool_name":"counter_increment","inputs_map":{"value":"test_iteration"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (71, 9, 5, 'Обновить контекст', 29, '{"transitions_before":[],"transitions_after":[{"variable":"test_iteration","operator":"<","value":"%test_iterations_limit%","step_id":"67"}],"variable_conversion":[{"variable":"test_dialog","text":"%test_dialog%\\n[%companion_title%]: %test_message%\\n[%target_agent_title%]: %workflow_invoke_68_result_str%"},{"variable":"test_iteration","text":"%counter_increment_70_result_int%"}]}'),
@@ -206,7 +206,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (92, 9, 5, 'Параметры: агент по имени', 19, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"find_table","text":"agent"},{"variable":"find_criteria","text":"{\\"name\\":\\"%prompt_user%\\",\\"workflow_id\\": %test_workflow_id%}"}]}'),
 (93, 9, 3, 'Найти агента', 20, '{"tool_invoke":{"tool_name":"mysql_find_one_by","inputs_map":{"table_name":"find_table","criteria":"find_criteria"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (94, 9, 3, 'document_id агента', 21, '{"tool_invoke":{"tool_name":"dict_column","inputs_map":{"data":"mysql_find_one_by_93_result_workflow_variable","column_name":"doc_key"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
-(95, 9, 5, 'Применить конфиг', 22, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"target_agent_id","text":"%mysql_find_one_by_93_result_id%"},{"variable":"target_agent_name","text":"%mysql_find_one_by_93_result_name%"},{"variable":"target_agent_title","text":"%mysql_find_one_by_93_result_title%"},{"variable":"document_id","text":"%dict_column_94_result_str%"}]}'),
+(95, 9, 5, 'Применить конфиг', 22, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"target_agent_id","text":"%mysql_find_one_by_93_result_id%"},{"variable":"target_agent_name","text":"%mysql_find_one_by_93_result_name%"},{"variable":"target_agent_title","text":"%mysql_find_one_by_93_result_title%"},{"variable":"target_prompt_system","text":"%mysql_find_one_by_93_result_prompt_system%"},{"variable":"document_id","text":"%dict_column_94_result_str%"}]}'),
 (96, 9, 4, 'Спросить сценарий', 23, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Цель: %target_agent_title% (workflow #%test_workflow_id%, документ «%document_id%»).\\n\\nНапишите сценарий тестирования: кто собеседник, о чем говорит, чего добивается. Итераций диалога: %test_iterations_limit%.","continue_workflow":true}');
 
 --
@@ -285,7 +285,8 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (104, 'chips_template', 'workflow', '[[%s]]', 'Шаблон элемента list_render: чипс чата'),
 (105, 'chips_separator', 'workflow', ' ', 'Разделитель элементов list_render'),
 (106, 'chips_column', 'workflow', 'name', 'Колонка для dict_column при построении чипсов'),
-(107, 'doc_key', 'workflow', 'document_id', 'Ключ для извлечения document_id из workflow_variable агента');
+(107, 'doc_key', 'workflow', 'document_id', 'Ключ для извлечения document_id из workflow_variable агента'),
+(108, 'target_prompt_system', 'workflow', '', 'Системный промпт целевого агента: персона для ответов тестируемого workflow');
 
 --
 
@@ -352,7 +353,8 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (104, 9),
 (105, 9),
 (106, 9),
-(107, 9);
+(107, 9),
+(108, 9);
 
 --
 

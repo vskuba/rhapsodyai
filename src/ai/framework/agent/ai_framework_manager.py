@@ -325,7 +325,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
             # -----------------------------------------------------------------------
 
-            model.prompt_system = await self.prompt_system_create(model.metadata)
+            # Переменная prompt_system переопределяет системный промпт агента.
+            # Нужна sub-workflow: model принадлежит запустившему агенту (например,
+            # workflow-оболочке тестера), а отвечать LLM должна от имени целевого
+            # агента — его персона передается через inputs_map
+            model.prompt_system = variables.get('prompt_system') or await self.prompt_system_create(model.metadata)
             model.prompt_user = step_meta.get('prompt_user', '')
 
             # system/user-prompt пишем в историю только на верхнем уровне:
