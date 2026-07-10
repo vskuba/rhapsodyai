@@ -20,6 +20,10 @@ export function extractVariablesFromSteps(steps) {
         for (const match of text.matchAll(/%([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
             usedVariables.add(match[1]);
         }
+        // Условные блоки: переменная в условии %if var% / %if !var%
+        for (const match of text.matchAll(/%if !?([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
+            usedVariables.add(match[1]);
+        }
     };
 
     stepsArray.forEach(step => {

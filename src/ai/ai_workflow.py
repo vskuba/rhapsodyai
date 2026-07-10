@@ -1,7 +1,19 @@
+import re
 from typing import Any
 
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
+
+# Условный блок в шаблонах: %if var%...%else%...%endif% (с отрицанием %if !var%).
+# Регулярка матчит только ВНУТРЕННИЕ блоки (содержимое без вложенных %if) —
+# вложенность разрешается повторными проходами изнутри наружу.
+WORKFLOW_IF_BLOCK_RE = re.compile(
+    r'%if (!?)(\w+)%'
+    r'((?:(?!%if ).)*?)'
+    r'(?:%else%((?:(?!%if ).)*?))?'
+    r'%endif%',
+    re.DOTALL
+)
 
 
 async def ai_workflow_load(workflow_id: int) -> dict:
@@ -84,6 +96,38 @@ async def ai_workflow_variables_input_get(workflow_id: int) -> list[dict]:
         return await db.fetchall()
 
 
+def ai_workflow_variable_truthy(variables: dict, name: str) -> bool:
+    """Истинность переменной для %if%: существует и значение не пустое,
+    не '0' и не 'false' ('0' — принятый в workflow сигнал «ничего нет»)."""
+    value = variables.get(name)
+    if value is None:
+        return False
+    return str(value).strip().lower() not in ('', '0', 'false')
+
+
+def ai_workflow_if_blocks_render(source: str, variables: dict) -> str:
+    """Разворачивает условные блоки %if var%...%else%...%endif% в строке шаблона.
+
+    Условие проверяется по словарю переменных ДО подстановки %переменных%:
+    блок остается (или берется ветка else) в зависимости от истинности переменной.
+    %if !var% — отрицание. Вложенные блоки поддерживаются (изнутри наружу).
+    Незакрытый/некорректный блок остается в тексте как есть."""
+
+    def replace(match: re.Match) -> str:
+        negate, name, then_text, else_text = match.groups()
+        condition = ai_workflow_variable_truthy(variables, name)
+        if negate:
+            condition = not condition
+        return then_text if condition else (else_text or '')
+
+    while '%if ' in source:
+        rendered = WORKFLOW_IF_BLOCK_RE.sub(replace, source)
+        if rendered == source:
+            break
+        source = rendered
+    return source
+
+
 def ai_workflow_variables_render(source: Any, variables: dict) -> Any:
     """ Рекурсивно подставляет значения %переменных% во все строки метаданных """
     if isinstance(source, str):
@@ -91,7 +135,8 @@ def ai_workflow_variables_render(source: Any, variables: dict) -> Any:
         if "%" not in source:
             return source
 
-        rendered_str = source
+        # Сначала разворачиваем условные блоки, затем подставляем переменные
+        rendered_str = ai_workflow_if_blocks_render(source, variables)
         for key, val in variables.items():
             placeholder = f"%{key}%"
 
