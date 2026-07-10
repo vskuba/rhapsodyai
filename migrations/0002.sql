@@ -2,23 +2,23 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (1, 'openrouter/meta-llama/llama-3.3-70b-instruct:free'),
 (2, 'openrouter/openai/gpt-oss-120b:free'),
 (3, 'openrouter/qwen/qwen3-next-80b-a3b-instruct:free'),
-(4, 'ollama/qwen2.5:7b'),
-(5, 'ollama/qwen2.5:14b'),
-(6, 'ollama/qwen2.5-coder:7b'),
-(7, 'ollama/gpt-oss:20b'),
-(8, 'ollama/qwen3:30b'),
-(9, 'ollama/qwen3-coder:30b'),
-(10, 'groq/llama-3.3-70b-versatile'),
-(11, 'groq/openai/gpt-oss-120b'),
-(12, 'gemini/gemini-2.5-flash-lite'),
-(13, 'gemini/gemini-2.5-flash'),
-(14, 'gemini/gemini-2.5-pro'),
-(15, 'mistral/mistral-medium-2505'),
-(16, 'mistral/mistral-medium-2508'),
-(17, 'huggingface/meta-llama/Llama-3.3-70B-Instruct'),
-(18, 'cerebras/gpt-oss-120b'),
-(19, 'gemini/gemini-3-flash-preview'),
-(20, 'gemini/gemini-3.1-flash-lite');
+(4, 'ollama/qwen2.5:14b'),
+(5, 'groq/llama-3.3-70b-versatile'),
+(6, 'groq/openai/gpt-oss-120b'),
+(7, 'gemini/gemini-3-flash-preview'),
+(8, 'gemini/gemini-3.1-flash-lite')
+(9, 'gemini/gemini-2.5-pro'),
+(10, 'mistral/mistral-large-2512'),
+(11, 'mistral/mistral-medium-latest'),
+(12, 'mistral/mistral-medium-2508'),
+(13, 'mistral/mistral-medium-2505'),
+(14, 'huggingface/meta-llama/Llama-3.3-70B-Instruct'),
+(15, 'cerebras/gpt-oss-120b'),
+(16, 'openai/gpt-5.6-luna'),
+(17, 'openai/gpt-5.5-pro'),
+(18, 'openai/gpt-5.5'),
+(19, 'openai/gpt-5.6-sol'),
+(20, 'openai/gpt-5.6-terra');
 
 --
 
@@ -38,44 +38,7 @@ INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `crea
 
 --
 
-INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `code_error`, `position`) VALUES
-(1, 1, NULL, NULL, 11),
-(1, 2, NULL, NULL, 12),
-(1, 3, NULL, NULL, 13),
-(1, 10, NULL, NULL, 0),
-(1, 11, NULL, NULL, 1),
-(1, 12, NULL, NULL, 5),
-(1, 13, NULL, NULL, 6),
-(1, 14, NULL, NULL, 7),
-(1, 15, NULL, NULL, 8),
-(1, 16, NULL, NULL, 9),
-(1, 17, NULL, NULL, 2),
-(1, 18, NULL, NULL, 10),
-(1, 19, NULL, NULL, 4),
-(1, 20, NULL, NULL, 3),
-(2, 1, NULL, NULL, 9),
-(2, 2, NULL, NULL, 10),
-(2, 3, NULL, NULL, 11),
-(2, 10, NULL, NULL, 0),
-(2, 11, NULL, NULL, 1),
-(2, 12, NULL, NULL, 3),
-(2, 13, NULL, NULL, 4),
-(2, 14, NULL, NULL, 5),
-(2, 15, NULL, NULL, 6),
-(2, 16, NULL, NULL, 7),
-(2, 17, NULL, NULL, 2),
-(2, 18, NULL, NULL, 8),
-(4, 1, NULL, NULL, 9),
-(4, 2, NULL, NULL, 10),
-(4, 10, NULL, NULL, 0),
-(4, 11, NULL, NULL, 1),
-(4, 12, NULL, NULL, 3),
-(4, 13, NULL, NULL, 4),
-(4, 14, NULL, NULL, 5),
-(4, 15, NULL, NULL, 6),
-(4, 16, NULL, NULL, 7),
-(4, 17, NULL, NULL, 2),
-(4, 18, NULL, NULL, 8);
+
 
 --
 
