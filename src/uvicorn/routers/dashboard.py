@@ -126,6 +126,14 @@ async def workflow_trace_page(request: Request, user: AuthSession = Depends(requ
     )
 
 
+@router.get("/admin/llm", response_class=HTMLResponse)
+async def llm_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/llm.html"
+    )
+
+
 @router.get("/admin/fact", response_class=HTMLResponse)
 async def fact_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
