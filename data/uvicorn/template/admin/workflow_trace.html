@@ -113,6 +113,16 @@
         margin-left: 10px;
     }
 
+    a.run-title {
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    a.run-title:hover {
+        text-decoration: underline;
+        border-color: #2b6cb0;
+    }
+
     .run-summary .run-name {
         margin: 0 10px;
         color: #d63434;
@@ -299,10 +309,221 @@
         margin-bottom: 10px;
     }
 
+    /* Ряд из двух блоков: вход слева, сопутствующие данные справа */
+    .step-details .section-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .step-details .section-row .section {
+        margin-bottom: 0;
+        min-width: 0;
+    }
+
+    /* Визуальная расшифровка перехода: шаг → шаг с условием под стрелкой */
+    .transition-visual {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #f8fafc;
+        border: 1px solid #edf2f7;
+        border-radius: 4px;
+        padding: 12px 10px;
+        font-size: 12px;
+    }
+
+    /* Карточка шага в стиле редактора workflow (agent_workflow.html: .step-item-block) */
+    .transition-step {
+        flex: 0 1 auto;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 10px 12px;
+        transition: background 0.2s, border-color 0.2s;
+    }
+
+    .transition-step:hover {
+        border-color: #3498db;
+        background: #fcfdfe;
+    }
+
+    .transition-step .step-number-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        background-color: #3498db;
+        color: white;
+        border-radius: 50%;
+        font-size: 12px;
+        font-weight: bold;
+        margin-right: 10px;
+        flex-shrink: 0;
+    }
+
+    .transition-step .step-type-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        margin-right: 6px;
+        flex-shrink: 0;
+    }
+
+    .transition-step .step-title-text {
+        font-weight: 500;
+        color: #2c3e50;
+        font-size: 13px;
+        word-break: break-word;
+    }
+
+    .transition-arrow-block {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-width: 70px;
+        gap: 1px;
+    }
+
+    .transition-phase {
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #94a3b8;
+        letter-spacing: 0.5px;
+    }
+
+    .transition-arrow {
+        color: #8e44ad;
+        font-size: 17px;
+        line-height: 1;
+    }
+
+    .transition-condition {
+        font-family: 'SFMono-Regular', Consolas, monospace;
+        font-size: 10.5px;
+        color: #8e44ad;
+        background: #f5ecfb;
+        border: 1px solid #e8d8f3;
+        border-radius: 8px;
+        padding: 1px 8px;
+        margin-top: 2px;
+        text-align: center;
+        word-break: break-word;
+    }
+
+    /* Metadata по ключам: зебра-фон для каждого ключа */
+    .meta-kv-list {
+        background: #f8fafc;
+        border: 1px solid #edf2f7;
+        border-radius: 4px;
+        max-height: 320px;
+        overflow: auto;
+    }
+
+    .step-details .meta-kv-list pre.meta-kv {
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        max-height: none;
+        overflow: visible;
+    }
+
+    .meta-kv-list pre.meta-kv:nth-child(even) {
+        background: #eceef2;
+    }
+
+    .meta-kv-list pre.meta-kv + pre.meta-kv {
+        border-top: 1px solid #e3e9f0;
+    }
+
+    /* Список переменных шага: имя + значение */
+    .vars-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        background: #f8fafc;
+        border: 1px solid #edf2f7;
+        border-radius: 4px;
+        max-height: 320px;
+        overflow: auto;
+    }
+
+    .vars-list li {
+        padding: 6px 10px;
+        border-bottom: 1px solid #edf2f7;
+        font-size: 11.5px;
+    }
+
+    .vars-list li:last-child {
+        border-bottom: none;
+    }
+
+    .var-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .var-name {
+        font-family: 'SFMono-Regular', Consolas, monospace;
+        font-weight: 600;
+        font-size: 11px;
+        color: #8e44ad;
+        background: #f5ecfb;
+        border: 1px solid #e8d8f3;
+        border-radius: 4px;
+        padding: 1px 6px;
+        white-space: nowrap;
+    }
+
+    .var-sep {
+        color: #94a3b8;
+        font-weight: 600;
+    }
+
+    .var-type {
+        font-size: 10px;
+        font-weight: 600;
+        color: #64748b;
+        background: #eef2f7;
+        border-radius: 8px;
+        padding: 1px 7px;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .var-value-inline {
+        color: #2c3e50;
+        white-space: pre-wrap;
+        word-break: break-word;
+        min-width: 0;
+    }
+
+    .var-value-empty {
+        color: #b0b8c0;
+        font-style: italic;
+    }
+
+    .vars-list pre.var-value-complex {
+        margin: 5px 0 0;
+        background: #fff;
+        border: 1px solid #e8ecef;
+        max-height: 180px;
+    }
+
     .step-details .section-title {
         font-size: 11px;
         text-transform: uppercase;
-        color: #7f8c8d;
+        color: #ab740b;
         font-weight: bold;
         margin-bottom: 4px;
     }
@@ -332,6 +553,16 @@
         font-weight: 600;
         color: #9c640c;
         margin-bottom: 6px;
+    }
+
+    .child-run .child-title-link {
+        color: #9c640c;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    .child-run .child-title-link:hover {
+        text-decoration: underline;
     }
 
     .btn-delete-run {
@@ -445,6 +676,15 @@
         return node;
     }
 
+    // Название workflow как ссылка на редактор; без workflow_id (удален) — обычный span
+    function workflowLink(text, workflowId, className) {
+        if (!workflowId) return el('span', className, text);
+        const link = el('a', className, text);
+        link.href = `/admin/workflow?workflow_id=${workflowId}`;
+        link.title = 'Открыть workflow в редакторе';
+        return link;
+    }
+
     function prettyJson(raw) {
         if (raw === null || raw === undefined || raw === '') return null;
         try {
@@ -452,6 +692,129 @@
         } catch {
             return String(raw);
         }
+    }
+
+    function parseJson(raw) {
+        if (raw === null || raw === undefined || raw === '') return null;
+        if (typeof raw !== 'string') return raw;
+        try {
+            return JSON.parse(raw);
+        } catch {
+            return null;
+        }
+    }
+
+    // Metadata для pre-блока: строковые значения выводятся как есть (с реальными
+    // переносами строк), а не как экранированный JSON ("\n")
+    function prettyMetadata(raw) {
+        const data = parseJson(raw);
+        if (data === null) {
+            if (raw === null || raw === undefined || raw === '') return null;
+            return String(raw);
+        }
+        if (typeof data !== 'object' || Array.isArray(data)) return prettyJson(data);
+
+        const parts = Object.entries(data).map(([key, value]) => {
+            if (typeof value === 'string') {
+                return value.includes('\n') ? `${key}:\n${value}` : `${key}: ${value}`;
+            }
+            return `${key}: ${JSON.stringify(value, null, 2)}`;
+        });
+        return parts.length ? parts.join('\n\n') : null;
+    }
+
+    // Metadata как список ключей с зебра-фоном: каждый ключ — отдельный pre-ряд
+    function renderMetadataBlock(raw) {
+        const data = parseJson(raw);
+        if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+            const text = prettyMetadata(raw);
+            return text === null ? null : el('pre', null, text);
+        }
+
+        const entries = Object.entries(data);
+        if (!entries.length) return null;
+
+        const wrap = el('div', 'meta-kv-list');
+        entries.forEach(([key, value]) => {
+            let text;
+            if (typeof value === 'string') {
+                text = value.includes('\n') ? `${key}:\n${value}` : `${key}: ${value}`;
+            } else {
+                text = `${key}: ${JSON.stringify(value, null, 2)}`;
+            }
+            wrap.appendChild(el('pre', 'meta-kv', text));
+        });
+        return wrap;
+    }
+
+    // Карточка шага в стиле редактора workflow: номер + иконка типа + название
+    function transitionStepCard(stepId, info) {
+        const card = el('div', 'transition-step');
+        if (info) {
+            card.appendChild(el('span', 'step-number-badge', info.execIndex));
+            card.appendChild(el('span', 'step-type-icon', info.icon));
+            card.appendChild(el('span', 'step-title-text', info.title));
+        } else {
+            card.appendChild(el('span', 'step-title-text', stepId ? `шаг #${stepId}` : '?'));
+        }
+        return card;
+    }
+
+    // Расшифровка перехода: [шаг-источник] —условие→ [шаг-назначение]
+    function renderTransitionVisual(transition, stepInfo) {
+        const t = parseJson(transition);
+        if (!t || typeof t !== 'object') return null;
+
+        const wrap = el('div', 'transition-visual');
+        wrap.appendChild(transitionStepCard(t.from_step_id, stepInfo[String(t.from_step_id)]));
+
+        const mid = el('div', 'transition-arrow-block');
+        if (t.phase) mid.appendChild(el('div', 'transition-phase', t.phase));
+        mid.appendChild(el('div', 'transition-arrow', '⟶'));
+        if (t.condition) mid.appendChild(el('div', 'transition-condition', t.condition));
+        wrap.appendChild(mid);
+
+        wrap.appendChild(transitionStepCard(t.to_step_id, stepInfo[String(t.to_step_id)]));
+        return wrap;
+    }
+
+    // UL-список переменных: скаляры — в строку, list/dict — бейдж типа + вложенный JSON
+    function renderVariablesList(vars) {
+        const ul = el('ul', 'vars-list');
+        Object.entries(vars).forEach(([name, value]) => {
+            const li = document.createElement('li');
+            const head = el('div', 'var-head');
+            head.appendChild(el('span', 'var-name', `%${name}%`));
+            head.appendChild(el('span', 'var-sep', ':'));
+
+            if (value !== null && typeof value === 'object') {
+                const isList = Array.isArray(value);
+                const size = isList ? value.length : Object.keys(value).length;
+                head.appendChild(el('span', 'var-type', isList ? `list · ${size}` : `dict · ${size}`));
+                li.appendChild(head);
+                li.appendChild(el('pre', 'var-value-complex', JSON.stringify(value, null, 2)));
+            } else {
+                const empty = value === null || value === undefined || value === '';
+                const valueEl = el('span', 'var-value-inline' + (empty ? ' var-value-empty' : ''),
+                    empty ? 'пусто' : String(value));
+                head.appendChild(valueEl);
+                li.appendChild(head);
+            }
+            ul.appendChild(li);
+        });
+        return ul;
+    }
+
+    // Значения переменных, участвующих в metadata шага: имя ищется как
+    // плейсхолдер %name% либо как строковое значение "name" (маппинги tool_invoke, переходы)
+    function stepInputVariables(metadataRendered, snapshot) {
+        if (!metadataRendered) return null;
+        const text = typeof metadataRendered === 'string' ? metadataRendered : JSON.stringify(metadataRendered);
+        const values = {};
+        Object.keys(snapshot).forEach(name => {
+            if (text.includes(`%${name}%`) || text.includes(`"${name}"`)) values[name] = snapshot[name];
+        });
+        return Object.keys(values).length ? values : null;
     }
 
     async function init() {
@@ -571,7 +934,7 @@
         const summary = el('div', 'run-summary');
         const headRow = el('div', 'row');
         headRow.appendChild(el('span', 'run-pre-title', `Workflow `));
-        headRow.appendChild(el('span', 'run-title', `${run.workflow_title || run.workflow_name || ''} `));
+        headRow.appendChild(workflowLink(`${run.workflow_title || run.workflow_name || ''} `, run.workflow_id, 'run-title'));
         headRow.appendChild(el('span', 'run-name', `${run.workflow_name || ''} `));
         headRow.appendChild(el('span', `status-badge status-${run.status}`, run.status));
         headRow.appendChild(el('span', 'run-meta', `  ${fmtDate(run.started_at)}`));
@@ -644,6 +1007,21 @@
             (childrenByStep[key] ||= []).push(child);
         });
 
+        // Снапшот переменных на входе шага: старт запуска + изменения предыдущих шагов
+        let variablesSnapshot = parseJson(run.variables_start) || {};
+
+        // Данные шагов для расшифровки переходов (step_id → номер/иконка/название)
+        const stepInfo = {};
+        (run.steps || []).forEach(s => {
+            if (s.step_id && !stepInfo[String(s.step_id)]) {
+                stepInfo[String(s.step_id)] = {
+                    execIndex: s.exec_index,
+                    icon: state.stepTypeIcons[s.step_type] || '·',
+                    title: s.step_title || s.step_type,
+                };
+            }
+        });
+
         (run.steps || []).forEach(step => {
             const row = el('div', 'step-row');
             const head = el('div', 'step-head');
@@ -660,21 +1038,56 @@
 
             // Детали шага: вход / выход / output / переход / ошибка
             const details = el('div', 'step-details');
-            const sections = [
-                ['Переход', prettyJson(step.transition)],
-                ['Вход (metadata после рендера)', prettyJson(step.metadata_rendered)],
-                ['Выход (измененные переменные)', prettyJson(step.variables_changed)],
-                ['Raw output', step.output],
-                ['Ошибка', step.error],
-            ];
-            sections.forEach(([title, value]) => {
-                if (value === null || value === undefined || value === '' || value === '{}') return;
+
+            const isEmpty = v => v === null || v === undefined || v === '' || v === '{}';
+
+            // value может быть строкой (рендерится в pre) или готовым DOM-узлом
+            function appendSection(parent, title, value) {
                 const section = el('div', 'section');
                 section.appendChild(el('div', 'section-title', title));
-                section.appendChild(el('pre', null, value));
-                details.appendChild(section);
-            });
+                if (value instanceof Node) section.appendChild(value);
+                else section.appendChild(el('pre', null, isEmpty(value) ? '—' : value));
+                parent.appendChild(section);
+            }
+
+            // Ряд из двух блоков: пропускается целиком, если оба пустые
+            function appendSectionRow(leftTitle, leftValue, rightTitle, rightValue) {
+                if (isEmpty(leftValue) && isEmpty(rightValue)) return;
+                const rowEl = el('div', 'section-row');
+                appendSection(rowEl, leftTitle, leftValue);
+                appendSection(rowEl, rightTitle, rightValue);
+                details.appendChild(rowEl);
+            }
+
+            // Переход: слева сырой JSON, справа визуальная расшифровка шаг → шаг
+            appendSectionRow(
+                'Переход', prettyJson(step.transition),
+                'Переход (расшифровка)', renderTransitionVisual(step.transition, stepInfo)
+            );
+
+            // Ряд 1: metadata после рендера + значения участвующих в ней переменных
+            const inputVariables = stepInputVariables(step.metadata_rendered, variablesSnapshot);
+            appendSectionRow(
+                'Вход (metadata после рендера)', renderMetadataBlock(step.metadata_rendered),
+                'Вход (metadata)', inputVariables ? renderVariablesList(inputVariables) : null
+            );
+
+            // Ряд 2: измененные шагом переменные + сырой результат
+            appendSectionRow(
+                'Выход (измененные переменные)', renderMetadataBlock(step.variables_changed),
+                'Raw output', step.output
+            );
+
+            const errorValue = step.error;
+            if (!isEmpty(errorValue)) appendSection(details, 'Ошибка', errorValue);
+
             row.appendChild(details);
+
+            // Накапливаем изменения переменных для входного снапшота следующих шагов
+            const changed = parseJson(step.variables_changed);
+            if (changed && typeof changed === 'object') {
+                variablesSnapshot = {...variablesSnapshot, ...changed};
+            }
 
             container.appendChild(row);
 
@@ -682,7 +1095,10 @@
             (childrenByStep[String(step.step_id)] || []).forEach(child => {
                 const block = el('div', 'child-run');
                 const title = el('div', 'child-title');
-                title.textContent = `${child.workflow_title || child.workflow_name || 'sub-workflow'} `;
+                title.appendChild(workflowLink(
+                    `${child.workflow_title || child.workflow_name || 'sub-workflow'} `,
+                    child.workflow_id, 'child-title-link'
+                ));
                 const badge = el('span', `status-badge status-${child.status}`, child.status);
                 title.appendChild(badge);
                 title.appendChild(el('span', 'run-meta', ` ${fmtDuration(child.duration_ms)}`));
