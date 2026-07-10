@@ -165,15 +165,15 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (50, 6, 2, 'Новый факты', 1, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"prompt_user_facts_girl","text":"в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %document_id% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос."}],"prompt_user":"=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Уже существующие факты о девушке %agent_title% ===\\n%girl_existing_facts%\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"prompt_user_facts_girl\\": в тексте написаный мужчиной есть вопрос к девушке о ее прошлом, ее увлечениях и на этот вопрос %agent_title% должна ответить. Придумай пару новых фактов о себе, которые помогут ответить на вопрос. Уже существующие факты не должны противоречить новым.\\n\\nдля \'prompt_user_facts_girl\' используй для document_id: значение \'%document_id%\' (пример: \\"document_id\\":\\"%document_id%\\")\\n\\nExample of JSON response:\\n{\\n  \\"prompt_user_facts_girl\\": %fact_collection_output_format_49_result_str%\\n}"}'),
 (51, 6, 3, 'fact_collection_add_girl', 2, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_name","data":"prompt_user_facts_girl"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (52, 6, 4, 'Вернуть факты', 3, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%fact_collection_add_51_result_facts_str%","continue_workflow":false}'),
-(55, 7, 3, 'fact_collection_add_companion', 0, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_companion_name","data":"prompt_user_facts_man"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user_facts_man","operator":"==","value":"0","step_id":"56"}],"transitions_after":[]}'),
+(55, 7, 3, 'fact_collection_add_companion', 0, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_companion_name","data":"prompt_user_facts_man"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user_facts_companion","operator":"==","value":"0","step_id":"56"}],"transitions_after":[]}'),
 (56, 7, 3, 'fact_collection_add_talk', 1, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_talk_name","data":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user_facts_talk","operator":"==","value":"0","step_id":"57"}],"transitions_after":[]}'),
-(57, 7, 4, 'Вернуть факты', 2, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%prompt_user_facts_man%","continue_workflow":false}'),
+(57, 7, 4, 'Вернуть факты', 2, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%prompt_user_facts_companion%","continue_workflow":false}'),
 (58, 5, 6, 'companion_fact_extract', 3, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"prompt_user_facts_companion":"prompt_user_facts_companion","prompt_user_facts_talk":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (59, 8, 3, 'mysql_export_to_migration', 1, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_find_62_result_tables_str","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (60, 8, 4, 'Отчет экспорта', 2, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Экспорт завершен. Таблиц: %mysql_export_to_migration_59_result_tables_qty%, строк: %mysql_export_to_migration_59_result_rows_qty%.\nОбновлены: %mysql_export_to_migration_59_result_report_str%","continue_workflow":false}'),
 (61, 8, 4, 'Подсказка', 3, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Доступные команды:\n\n/export_agent_workflow - экспорт таблиц agent_workflow* в миграцию 0002.sql","continue_workflow":false}'),
 (62, 8, 3, 'mysql_tables_find', 0, '{"tool_invoke":{"tool_name":"mysql_tables_find","inputs_map":{"substr":"mysql_tables_pattern"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user","operator":"!=","value":"/export_agent_workflow","step_id":"61"}],"transitions_after":[]}'),
-(63, 5, 3, 'fact_collection_output_format', 1, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_man_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}');
+(63, 5, 3, 'fact_collection_output_format', 1, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_companion_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}');
 
 --
 
@@ -279,6 +279,7 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (80, 6),
 (82, 5),
 (84, 7),
+(85, 5),
 (85, 7),
 (86, 5),
 (87, 7),
