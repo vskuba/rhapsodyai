@@ -6,7 +6,7 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (5, 'groq/llama-3.3-70b-versatile'),
 (6, 'groq/openai/gpt-oss-120b'),
 (7, 'gemini/gemini-3-flash-preview'),
-(8, 'gemini/gemini-3.1-flash-lite')
+(8, 'gemini/gemini-3.1-flash-lite'),
 (9, 'gemini/gemini-2.5-pro'),
 (10, 'mistral/mistral-large-2512'),
 (11, 'mistral/mistral-medium-latest'),
