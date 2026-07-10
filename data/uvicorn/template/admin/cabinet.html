@@ -221,7 +221,7 @@
     async function initCabinet() {
         try {
             // 1. Fetch LLM models and map them
-            const llmResponse = await getData('/llm/list');
+            const llmResponse = await getData('/llm/user/list');
             if (llmResponse && llmResponse.result) {
                 llmResponse.result.forEach(model => {
                     allLlmModels[model.id] = model.name;

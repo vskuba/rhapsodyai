@@ -5,6 +5,7 @@ import traceback
 
 from pydantic_ai import Agent, AgentRunResult, ModelSettings
 
+from src.ai.ai_llm import ai_llm_request_log
 from ai.framework.ai_framework import AbstractAiFramework, AiFrameworkResult, AgentRateLimitError
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from logging_.logging_ import logger_info
@@ -92,6 +93,14 @@ class AiFrameworkAgent(AbstractAiFramework):
                 await self.engine_prepare(framework_model)
 
                 result = await self.engine_run(framework_model)
+
+                # Журнал запросов к LLM: успешный вызов (метрики /admin/llm)
+                await ai_llm_request_log(
+                    framework_model.entity_llm_current.get('id'),
+                    framework_model.user_id,
+                    status_code=200,
+                )
+
                 response = await self.engine_result_handle(result, framework_model)
 
                 await self.message_history_save(framework_model)
@@ -116,6 +125,14 @@ class AiFrameworkAgent(AbstractAiFramework):
 
                 # rate limit handling
                 error_code = getattr(e, 'status_code', None)
+
+                # Журнал запросов к LLM: неуспешный вызов (метрики /admin/llm)
+                await ai_llm_request_log(
+                    framework_model.entity_llm_current.get('id'),
+                    framework_model.user_id,
+                    status_code=error_code or 500,
+                    error=str(e),
+                )
                 # 429 - Too Many Requests, 413 - Payload Too Large, 402 - Payment Required, 503 - Service Unavailable
                 if error_code in [429, 413, 402, 503]:
                     logger_info(

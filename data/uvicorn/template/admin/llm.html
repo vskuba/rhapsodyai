@@ -49,6 +49,40 @@
         font-size: 13px;
     }
 
+    .reset-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* Иконка немедленного сброса ошибок (время + код) */
+    .btn-reset-errors {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        color: #e67e22;
+        border: 1px solid #e67e22;
+        border-radius: 4px;
+        font-size: 17px;
+        line-height: 1;
+        cursor: pointer;
+        transition: all 0.15s;
+        padding: 0;
+    }
+
+    .btn-reset-errors:hover:not(:disabled) {
+        background: #e67e22;
+        color: #fff;
+    }
+
+    .btn-reset-errors:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
     .btn-ping-all {
         background: #3498db;
         color: #fff;
@@ -254,6 +288,31 @@
         cursor: default;
     }
 
+    /* Счетчики запросов и спарклайн */
+    .req-counts {
+        font-family: 'SFMono-Regular', Consolas, monospace;
+        font-size: 12px;
+        font-weight: 600;
+        color: #2c3e50;
+        white-space: nowrap;
+        cursor: help;
+    }
+
+    .req-errors-badge {
+        display: inline-block;
+        margin-left: 6px;
+        background: #fdecea;
+        color: #c0392b;
+        border-radius: 8px;
+        padding: 0 6px;
+        font-size: 10px;
+        font-weight: bold;
+    }
+
+    .req-sparkline {
+        display: block;
+    }
+
     .empty-note {
         color: #999;
         text-align: center;
@@ -275,13 +334,18 @@
 
         <div class="filter-item">
             <label class="filter-label" for="resetHoursSelect">Сброс ошибок старше</label>
-            <select id="resetHoursSelect">
-                <option value="1">1 час</option>
-                <option value="6">6 часов</option>
-                <option value="12">12 часов</option>
-                <option value="24">24 часа</option>
-                <option value="48">48 часов</option>
-            </select>
+            <div class="reset-row">
+                <select id="resetHoursSelect">
+                    <option value="1">1 час</option>
+                    <option value="6">6 часов</option>
+                    <option value="12">12 часов</option>
+                    <option value="24">24 часа</option>
+                    <option value="48">48 часов</option>
+                </select>
+                <button type="button" class="btn-reset-errors" id="resetErrorsBtn"
+                        title="Сбросить ошибки моделей пользователя сейчас (очистить время и код ошибки)">↺
+                </button>
+            </div>
         </div>
 
         <button type="button" class="btn-ping-all" id="pingAllBtn">Ping всех</button>
@@ -291,18 +355,20 @@
         <table class="llm-table">
             <thead>
             <tr>
-                <th style="width: 4%;">#</th>
-                <th style="width: 28%;">Модель</th>
-                <th style="width: 10%;">Провайдер</th>
-                <th style="width: 18%;">Ошибка провайдера</th>
-                <th style="width: 12%;">Статус пинга</th>
-                <th style="width: 16%;">Последний пинг</th>
-                <th style="width: 90px;"></th>
+                <th style="width: 3%;">#</th>
+                <th style="width: 22%;">Модель</th>
+                <th style="width: 8%;">Провайдер</th>
+                <th style="width: 14%;">Ошибка провайдера</th>
+                <th style="width: 11%;" title="Запросов за последние 1 / 5 / 10 минут">Запросы 1/5/10 мин</th>
+                <th style="width: 12%;" title="Запросы за последний час, корзины по 5 минут; красное — ошибки">За час</th>
+                <th style="width: 10%;">Статус пинга</th>
+                <th style="width: 13%;">Последний пинг</th>
+                <th style="width: 80px;"></th>
             </tr>
             </thead>
             <tbody id="llmTableBody">
             <tr>
-                <td colspan="7" class="empty-note">Загрузка...</td>
+                <td colspan="9" class="empty-note">Загрузка...</td>
             </tr>
             </tbody>
         </table>
@@ -400,13 +466,76 @@
         }
     }
 
+    // Счетчики запросов: 1 / 5 / 10 минут, в тултипе — итог за 7 дней
+    function renderRequestsCell(cell, requests) {
+        cell.innerHTML = '';
+        const r = requests || {};
+        const counts = el('span', 'req-counts', `${r.m1 ?? 0} / ${r.m5 ?? 0} / ${r.m10 ?? 0}`);
+        counts.title = `За 7 дней: ${r.d7 ?? 0} запросов, из них ошибок: ${r.d7_errors ?? 0}`;
+        cell.appendChild(counts);
+        if (r.d7_errors) {
+            cell.appendChild(el('span', 'req-errors-badge', `${r.d7_errors}✗`));
+        }
+    }
+
+    // Мини-график: последний час, 12 корзин по 5 минут (слева — старые, справа — свежие).
+    // Высота столбика — количество запросов, красная часть — ошибки
+    function renderSparkline(requests) {
+        const buckets = (requests && requests.sparkline && requests.sparkline.length)
+            ? requests.sparkline
+            : Array.from({length: 12}, () => ({qty: 0, errors: 0}));
+
+        const W = 96, H = 26, bar = 6, gap = 2;
+        const max = Math.max(1, ...buckets.map(b => b.qty));
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', W);
+        svg.setAttribute('height', H);
+        svg.classList.add('req-sparkline');
+
+        // bucket 0 — самая свежая пятиминутка, рисуем её справа
+        buckets.forEach((b, bucketIndex) => {
+            const x = W - (bucketIndex + 1) * (bar + gap);
+            const total = Math.round((b.qty / max) * (H - 2));
+            const errH = b.qty ? Math.round(total * (b.errors / b.qty)) : 0;
+            const okH = Math.max(total - errH, b.qty ? 1 : 0);
+
+            const okRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            okRect.setAttribute('x', x);
+            okRect.setAttribute('y', H - okH);
+            okRect.setAttribute('width', bar);
+            okRect.setAttribute('height', Math.max(okH, b.qty ? 1 : 0.5));
+            okRect.setAttribute('fill', b.qty ? '#3498db' : '#edf2f7');
+
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            const fromMin = (bucketIndex + 1) * 5;
+            title.textContent = `${fromMin}-${fromMin - 5} мин назад: ${b.qty} запросов` +
+                (b.errors ? `, ошибок: ${b.errors}` : '');
+            okRect.appendChild(title);
+            svg.appendChild(okRect);
+
+            if (errH > 0) {
+                const errRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                errRect.setAttribute('x', x);
+                errRect.setAttribute('y', H - okH - errH);
+                errRect.setAttribute('width', bar);
+                errRect.setAttribute('height', errH);
+                errRect.setAttribute('fill', '#e74c3c');
+                errRect.appendChild(title.cloneNode(true));
+                svg.appendChild(errRect);
+            }
+        });
+
+        return svg;
+    }
+
     function renderTable(llms) {
         tableBody.innerHTML = '';
 
         if (!llms.length) {
             const row = document.createElement('tr');
             const cell = el('td', 'empty-note', 'У пользователя нет моделей');
-            cell.colSpan = 7;
+            cell.colSpan = 9;
             row.appendChild(cell);
             tableBody.appendChild(row);
             return;
@@ -442,6 +571,14 @@
             const errorCell = document.createElement('td');
             renderErrorCell(errorCell, llm);
             row.appendChild(errorCell);
+
+            const requestsCell = document.createElement('td');
+            renderRequestsCell(requestsCell, llm.requests);
+            row.appendChild(requestsCell);
+
+            const sparkCell = document.createElement('td');
+            sparkCell.appendChild(renderSparkline(llm.requests));
+            row.appendChild(sparkCell);
 
             const statusCell = el('td', 'cell-status');
             renderStatusCell(statusCell, llm.ping);
@@ -489,7 +626,7 @@
             tableBody.innerHTML = '';
             const row = document.createElement('tr');
             const cell = el('td', 'empty-note', 'Ошибка загрузки');
-            cell.colSpan = 7;
+            cell.colSpan = 9;
             row.appendChild(cell);
             tableBody.appendChild(row);
         }
@@ -497,6 +634,21 @@
 
     userSelect.onchange = () => loadStatus({userId: userSelect.value, resetHours: resetHoursSelect.value});
     resetHoursSelect.onchange = () => loadStatus({userId: userSelect.value, resetHours: resetHoursSelect.value});
+
+    // Немедленный сброс ошибок моделей выбранного пользователя (время + код)
+    const resetErrorsBtn = document.getElementById('resetErrorsBtn');
+    resetErrorsBtn.onclick = async () => {
+        resetErrorsBtn.disabled = true;
+        try {
+            const res = await postData('/llm/errors/reset', {user_id: userSelect.value || null});
+            showNotification(`Ошибки сброшены (моделей: ${res.result.reset_qty})`, 'success');
+            await loadStatus({userId: userSelect.value});
+        } catch (e) {
+            showNotification(`Ошибка сброса: ${e.message}`, 'error');
+        } finally {
+            resetErrorsBtn.disabled = false;
+        }
+    };
 
     pingAllBtn.onclick = async () => {
         pingAllBtn.disabled = true;

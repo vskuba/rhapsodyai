@@ -20,6 +20,15 @@ LLM_ERROR_RESET_DEFAULT = 24
 
 @router.get("/llm/list")
 async def llm_list(db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
+    """Все LLM независимо от пользователя (справочник для админских страниц)."""
+    async with db:
+        await db.execute("SELECT * FROM `llm` ORDER BY `name` ASC")
+        return {"result": await db.fetchall()}
+
+
+@router.get("/llm/user/list")
+async def llm_user_list(db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
+    """LLM, привязанные к текущему пользователю, в порядке очереди выбора движка."""
     async with db:
         sql = """
             SELECT l.*
@@ -95,6 +104,42 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
 
         pings = {row['id']: await _ping_get(db, row['id']) for row in rows}
 
+        # Счетчики запросов по окнам (журнал llm_request хранится 7 дней)
+        await db.execute(
+            """
+            SELECT llm_id,
+                   SUM(created_at >= NOW() - INTERVAL 1 MINUTE)  AS m1,
+                   SUM(created_at >= NOW() - INTERVAL 5 MINUTE)  AS m5,
+                   SUM(created_at >= NOW() - INTERVAL 10 MINUTE) AS m10,
+                   COUNT(*)                                      AS d7,
+                   SUM(status_code >= 400)                       AS d7_errors
+            FROM llm_request
+            GROUP BY llm_id
+            """
+        )
+        counters = {r['llm_id']: r for r in await db.fetchall()}
+
+        # Спарклайн: последний час 12 корзинами по 5 минут (0 — самая свежая)
+        await db.execute(
+            """
+            SELECT llm_id,
+                   FLOOR(TIMESTAMPDIFF(SECOND, created_at, NOW()) / 300) AS bucket,
+                   COUNT(*)                AS qty,
+                   SUM(status_code >= 400) AS errors
+            FROM llm_request
+            WHERE created_at >= NOW() - INTERVAL 60 MINUTE
+            GROUP BY llm_id, bucket
+            """
+        )
+        spark_rows = await db.fetchall()
+
+    sparklines = {}
+    for r in spark_rows:
+        bucket = int(r['bucket'])
+        if 0 <= bucket <= 11:
+            buckets = sparklines.setdefault(r['llm_id'], [{'qty': 0, 'errors': 0} for _ in range(12)])
+            buckets[bucket] = {'qty': int(r['qty']), 'errors': int(r['errors'] or 0)}
+
     # Активная модель — первая по порядку выбора движка:
     # rate_limit_at ASC (NULL раньше любых ошибок), затем position ASC
     active_id = None
@@ -119,10 +164,38 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
                 'code_error': row['code_error'],
                 'active': row['id'] == active_id,
                 'ping': pings.get(row['id']),
+                'requests': {
+                    'm1': int((counters.get(row['id']) or {}).get('m1') or 0),
+                    'm5': int((counters.get(row['id']) or {}).get('m5') or 0),
+                    'm10': int((counters.get(row['id']) or {}).get('m10') or 0),
+                    'd7': int((counters.get(row['id']) or {}).get('d7') or 0),
+                    'd7_errors': int((counters.get(row['id']) or {}).get('d7_errors') or 0),
+                    'sparkline': sparklines.get(row['id']) or [],
+                },
             }
             for row in rows
         ],
     }}
+
+
+@router.post("/llm/errors/reset")
+async def llm_errors_reset(data: dict, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
+    """Немедленно очищает время и код ошибки моделей (rate_limit_at, code_error):
+    все модели возвращаются на свои позиции в очереди. С user_id — только для
+    одного пользователя, без — для всех."""
+    reset_user_id = data.get('user_id')
+
+    async with mysql_get_db_async() as db:
+        if reset_user_id:
+            await db.execute(
+                "UPDATE user_llm SET rate_limit_at = NULL, code_error = NULL WHERE user_id = %s",
+                (int(reset_user_id),)
+            )
+        else:
+            await db.execute("UPDATE user_llm SET rate_limit_at = NULL, code_error = NULL")
+        reset_qty = db.rowcount
+
+    return {"result": {"reset_qty": reset_qty}}
 
 
 @router.post("/llm/ping/{llm_id}")
