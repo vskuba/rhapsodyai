@@ -22,4 +22,8 @@ class AiFrameworkAgentModel(AiFrameworkModel):
         self.workflow_step_current_index: int = 0
         self.workflow_variables: dict = {}
 
+        # Переменные, восстановленные из сессии при continue_workflow-resume:
+        # переносятся в следующий снапшот, чтобы пережить несколько границ запросов
+        self.workflow_variables_restored: dict = {}
+
 

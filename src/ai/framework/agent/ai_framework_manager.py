@@ -8,7 +8,8 @@ import uuid
 from typing import Any, Callable, Awaitable, cast
 
 from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
-from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render
+from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
+    ai_workflow_variables_global_get
 from src.ai.ai_workflow_trace import trace_run_start, trace_run_finish, trace_step, variables_diff
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
@@ -111,13 +112,33 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             # Продолжение workflow с сохраненного шага (continue_workflow предыдущего запроса)
             ai_session_metadata = await ai_session_metadata_get(model.session_uuid)
             start_index = ai_session_metadata.get('workflow_step_current_index', 0)
+            saved_variables = ai_session_metadata.get('workflow_variables_saved') or {}
+
             if start_index > 0:
                 next_step = model.workflow_steps[start_index]
                 logger_info(
                     f"🔀️ Переход на шаг {next_step['title']} (сессия) [{start_index}/{steps_count}]"
                 )
-                # Делаем очистку индекса текущего шага в метаданных сессии
+
+                # Восстанавливаем переменные, накопленные до continue_workflow:
+                # выбор пользователя в многошаговых мастерах переживает границу запросов.
+                # Переменные запроса (type='global') не трогаем — их принес новый запрос
+                if saved_variables:
+                    variables_protected = await self._workflow_variables_protected()
+                    for var_name, var_value in saved_variables.items():
+                        if var_name in variables_protected:
+                            continue
+                        model.workflow_variables[var_name] = var_value
+                        model.workflow_variables_restored[var_name] = var_value
+                    logger_info(
+                        f"🏷️ Восстановлены переменные continue_workflow: "
+                        f"{', '.join(model.workflow_variables_restored)}"
+                    )
+
+            # Индекс и снапшот одноразовые: очищаем (continue_workflow запишет новые)
+            if start_index > 0 or saved_variables:
                 ai_session_metadata['workflow_step_current_index'] = 0
+                ai_session_metadata['workflow_variables_saved'] = {}
                 await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
 
             # Стек workflow-id — для детекта циклов sub-workflow
@@ -178,6 +199,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         depth и workflow_stack — защита от рекурсии, используются шагом workflow_invoke."""
         steps_count = len(steps)
         workflow_steps_mapping = {step['id']: index for index, step in enumerate(steps)}
+
+        # Снапшот переменных на входе: continue_workflow сохранит изменения относительно него
+        variables_run_start = dict(variables) if depth == 0 else {}
 
         current_index = start_index
         iteration = 0
@@ -507,9 +531,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 # Защита от рекурсии: лимит глубины и детект циклов по стеку workflow-id
                 stack = list(workflow_stack or [])
                 if depth >= self.MAX_WORKFLOW_DEPTH:
-                    raise ValueError(f"Превышена максимальная глубина вложенности sub-workflow ({self.MAX_WORKFLOW_DEPTH}).")
+                    raise ValueError(
+                        f"Превышена максимальная глубина вложенности sub-workflow ({self.MAX_WORKFLOW_DEPTH}).")
                 if child_workflow_id in stack:
-                    raise ValueError(f"Обнаружен цикл sub-workflow: {' -> '.join(map(str, stack + [child_workflow_id]))}")
+                    raise ValueError(
+                        f"Обнаружен цикл sub-workflow: {' -> '.join(map(str, stack + [child_workflow_id]))}")
 
                 child_data = await ai_workflow_load(child_workflow_id)
                 child_steps = child_data['steps']
@@ -599,7 +625,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     child_var, parent_var = str(child_var).strip(), str(parent_var).strip()
                     if child_var in child_scope:
                         variables[parent_var] = child_scope[child_var]
-                        logger_info(f"🏷️ outputs_map: '%{parent_var}%' <- '%{child_var}%' из sub-workflow '{child_name}'")
+                        logger_info(
+                            f"🏷️ outputs_map: '%{parent_var}%' <- '%{child_var}%' из sub-workflow '{child_name}'")
                     else:
                         logger_info(
                             f"⚠️ outputs_map: переменная '%{child_var}%' не найдена в scope sub-workflow '{child_name}'")
@@ -640,6 +667,19 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     elif steps[next_index]:
                         ai_session_metadata = await ai_session_metadata_get(model.session_uuid)
                         ai_session_metadata['workflow_step_current_index'] = next_index
+                        # Изменения переменных этого запуска (+ восстановленные ранее):
+                        # выбор пользователя в мастерах переживает границу запросов.
+                        # Переменные запроса (type='global') в снапшот не попадают —
+                        # каждое сообщение приносит их заново
+                        variables_protected = await self._workflow_variables_protected()
+                        ai_session_metadata['workflow_variables_saved'] = {
+                            var_name: var_value
+                            for var_name, var_value in {
+                                **model.workflow_variables_restored,
+                                **variables_diff(variables_run_start, variables),
+                            }.items()
+                            if var_name not in variables_protected
+                        }
                         await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
 
                 trace_output = model.prompt_user
@@ -753,3 +793,12 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
         # Если фигурные скобки не найдены, возвращаем очищенный оригинал
         return json_str.strip()
+
+    @staticmethod
+    async def _workflow_variables_protected() -> set:
+        """Имена переменных запроса: их каждое сообщение приносит заново, поэтому они
+        не попадают в continue_workflow-снапшот и не восстанавливаются из него.
+        Источник — переменные type='global' (agent_workflow_variable): владелец этих
+        значений — чат-слой, а не workflow. request_uuid — служебная, в таблице ее нет."""
+        variables_global = await ai_workflow_variables_global_get()
+        return {v.get('name', '').strip() for v in variables_global if v.get('name')} | {'request_uuid'}
