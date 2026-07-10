@@ -14,8 +14,8 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (13, 'mistral/mistral-medium-2505'),
 (14, 'huggingface/meta-llama/Llama-3.3-70B-Instruct'),
 (15, 'cerebras/gpt-oss-120b'),
-(16, 'openai/gpt-5.5-pro-2026-04-23'),
-(17, 'openai/gpt-5.5-2026-04-23');
+(16, 'openai/gpt-5.2'),
+(17, 'openai/gpt-5.3-codex');
 
 --
 
