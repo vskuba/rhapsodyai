@@ -4,9 +4,10 @@ import queue
 import traceback
 
 from pydantic_ai import Agent, AgentRunResult, ModelSettings
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from src.ai.ai_llm import ai_llm_request_log
-from ai.framework.ai_framework import AbstractAiFramework, AiFrameworkResult, AgentRateLimitError
+from ai.framework.ai_framework import AbstractAiFramework, AiFrameworkResult, AgentRateLimitError, LlmProviderError
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
@@ -126,6 +127,11 @@ class AiFrameworkAgent(AbstractAiFramework):
                 # rate limit handling
                 error_code = getattr(e, 'status_code', None)
 
+                # Некорректный ответ провайдера (не-JSON и т.п.) — повторный запрос к той же
+                # модели бесполезен, лечится только сменой провайдера (код 500 в user_llm)
+                if error_code is None and isinstance(e, UnexpectedModelBehavior):
+                    error_code = 500
+
                 # Журнал запросов к LLM: неуспешный вызов (метрики /admin/llm)
                 await ai_llm_request_log(
                     framework_model.entity_llm_current.get('id'),
@@ -133,8 +139,10 @@ class AiFrameworkAgent(AbstractAiFramework):
                     status_code=error_code or 500,
                     error=str(e),
                 )
-                # 429 - Too Many Requests, 413 - Payload Too Large, 402 - Payment Required, 503 - Service Unavailable
-                if error_code in [429, 413, 402, 503]:
+
+                # 429 - Too Many Requests, 413 - Payload Too Large, 402 - Payment Required,
+                # 503 - Service Unavailable, 500 - некорректный ответ провайдера (UnexpectedModelBehavior)
+                if error_code in [429, 413, 402, 503, 500]:
                     logger_info(
                         f"❌ Код ошибки: {error_code}."
                     )
@@ -179,13 +187,19 @@ class AiFrameworkAgent(AbstractAiFramework):
                         continue
 
                     await self.message_history_save(framework_model)
-                    await self._error_complete(
-                        framework_model,
-                        AgentRateLimitError(
+
+                    if error_code == 500:
+                        final_error = LlmProviderError(
+                            f"AI-провайдер вернул некорректный ответ (Код: {error_code}). "
+                            f"Оригинальная ошибка: {e}",
+                            status_code=error_code
+                        )
+                    else:
+                        final_error = AgentRateLimitError(
                             f"Превышены лимиты AI-провайдера (Код: {error_code}). Оригинальная ошибка: {e}",
                             status_code=error_code
                         )
-                    )
+                    await self._error_complete(framework_model, final_error)
 
                     return
 
