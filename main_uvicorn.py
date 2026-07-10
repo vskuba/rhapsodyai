@@ -118,6 +118,16 @@ async def catch_exceptions_middleware(request: Request, call_next):
                 }
             )
 
+        # Некорректный ответ AI-провайдера (502 Bad Gateway — сбой вышестоящего сервиса)
+        if instance == 'LlmProviderError':
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "status": "error",
+                    "message": str(e),
+                }
+            )
+
         # Возвращаем клиенту понятный JSON, чтобы фронтенд не гас
         return JSONResponse(
             status_code=500,
