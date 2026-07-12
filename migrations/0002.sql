@@ -95,7 +95,7 @@ INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `
 (5, 2, 'dating_talk', 'Чат с девушкой', 'Чат с девушкой', -1, 0),
 (6, 2, 'girl_fact_invent', 'Придумать факты девушки', 'Sub-workflow: придумывает новые факты о девушке для ответа на личный вопрос', 0, 1),
 (7, 2, 'companion_fact_extract', 'Сохранить факты собеседника', 'Sub-workflow: сохраняет переданные факты о собеседнике и переписке в коллекции (извлечение — в объединенном LLM-шаге родителя)', 0, 1),
-(8, 6, 'export_agent_workflow', 'Экспорт workflow таблиц', 'Экспортирует agent_workflow и agent_workflow_* таблицы из БД в миграцию 0002.sql', 0, 0),
+(8, 6, 'mysql_export_tables', 'Экспорт таблиц', 'Экспортирует таблицы БД по префиксу в миграцию 0002.sql: команда «Экспорт <префикс> таблиц»', 0, 0),
 (9, 6, 'workflow_shell_test', 'Workflow оболочка', 'Оболочка-тестер: LLM играет собеседника, в цикле вызывает целевой workflow (test_workflow_id), ведет диалог в отдельной сессии и возвращает стенограмму', 0, 0);
 
 --
@@ -154,10 +154,11 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (56, 7, 3, 'fact_collection_add_talk', 1, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_talk_name","data":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user_facts_talk","operator":"==","value":"0","step_id":"57"}],"transitions_after":[]}'),
 (57, 7, 4, 'Вернуть факты', 2, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%prompt_user_facts_companion%","continue_workflow":false}'),
 (58, 5, 6, 'companion_fact_extract', 3, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"prompt_user_facts_companion":"prompt_user_facts_companion","prompt_user_facts_talk":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
-(59, 8, 3, 'mysql_export_to_migration', 1, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_find_62_result_tables_str","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
-(60, 8, 4, 'Отчет экспорта', 2, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Экспорт завершен. Таблиц: %mysql_export_to_migration_59_result_tables_qty%, строк: %mysql_export_to_migration_59_result_rows_qty%.\nОбновлены: %mysql_export_to_migration_59_result_report_str%","continue_workflow":false}'),
-(61, 8, 4, 'Подсказка', 3, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Доступные команды:\n\n/export_agent_workflow - экспорт таблиц agent_workflow* в миграцию 0002.sql","continue_workflow":false}'),
-(62, 8, 3, 'mysql_tables_find', 0, '{"tool_invoke":{"tool_name":"mysql_tables_find","inputs_map":{"substr":"mysql_tables_pattern"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user","operator":"!=","value":"/export_agent_workflow","step_id":"61"}],"transitions_after":[]}'),
+(59, 8, 3, 'mysql_export_to_migration', 2, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_find_62_result_tables_str","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[{"variable":"mysql_tables_find_62_result_tables_qty","operator":"==","value":"0","step_id":"61"}],"transitions_after":[]}'),
+(60, 8, 4, 'Отчет экспорта', 3, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Экспорт завершен. Таблиц: %mysql_export_to_migration_59_result_tables_qty%, строк: %mysql_export_to_migration_59_result_rows_qty%.\nОбновлены: %mysql_export_to_migration_59_result_report_str%","continue_workflow":false}'),
+(61, 8, 4, 'Подсказка', 4, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Доступные команды — экспорт таблиц по префиксу в %migration_file%:\\n\\n[[Экспорт agent_workflow таблиц]]\\n[[Экспорт user таблиц]]\\n\\nРаботает любой префикс: «Экспорт <префикс> таблиц»","continue_workflow":false}'),
+(62, 8, 3, 'mysql_tables_find', 1, '{"tool_invoke":{"tool_name":"mysql_tables_find","inputs_map":{"substr":"text_regex_extract_98_result_str"},"outputs_map":{}},"transitions_before":[{"variable":"text_regex_extract_98_result_str","operator":"empty","value":"","step_id":"61"}],"transitions_after":[]}'),
+(98, 8, 3, 'Извлечь префикс таблиц', 0, '{"tool_invoke":{"tool_name":"text_regex_extract","inputs_map":{"text":"prompt_user","pattern":"export_command_regex"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (63, 5, 3, 'fact_collection_output_format', 1, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_companion_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (64, 6, 5, 'Переменные', 1, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"fact_invent_filter","text":"{\\"document_id\\":\\"%girl_name%\\"}"}]}'),
 (65, 6, 3, 'qdrant_fact_search_girl_bio', 2, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_girl_name","metadata_filter":"fact_invent_filter","limit":"fact_invent_limit"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
@@ -239,7 +240,7 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (71, 'companion_id', 'global', NULL, NULL),
 (72, 'companion_title', 'global', NULL, NULL),
 (73, 'companion_name', 'global', NULL, NULL),
-(76, 'mysql_tables_pattern', 'workflow', 'agent_workflow', 'Подстрока для поиска таблиц экспорта'),
+(76, 'export_command_regex', 'workflow', 'Экспорт\\s+([A-Za-z0-9_]+)\\s+таблиц', 'Регулярка команды экспорта: группа 1 — префикс таблиц для миграции'),
 (77, 'migration_file', 'workflow', 'migrations/0002.sql', 'Файл миграции для экспорта данных'),
 (78, 'prompt_user', 'input', NULL, 'Текст сообщения пользователя (вход sub-workflow)'),
 (80, 'companion_title', 'input', NULL, 'Отображаемое имя собеседника (вход sub-workflow)'),

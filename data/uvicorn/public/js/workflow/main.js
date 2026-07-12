@@ -171,12 +171,18 @@ function renderCarouselNode() {
         div.className = 'agent-item';
 
         div.innerHTML = `
-    <span class="workflow-name-link" id="workflow_link_${workflow.id}" style="flex:1;">${workflow.title}</span>
+    <span class="workflow-name-link" id="workflow_link_${workflow.id}">${workflow.title}</span>
     <div class="workflow-actions">
         <span class="edit-icon" title="Параметры задачи">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+        </span>
+        <span class="duplicate-icon" title="Создать дубликат workflow">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
         </span>
     </div>
@@ -187,6 +193,9 @@ function renderCarouselNode() {
 
         // Клик по иконке — ПАРАМЕТРЫ
         div.querySelector('.edit-icon').onclick = () => openWorkflowSettings(workflow, div);
+
+        // Клик по иконке — ДУБЛИКАТ
+        div.querySelector('.duplicate-icon').onclick = () => duplicateWorkflow(workflow);
 
         workflowListContainer.appendChild(div);
     };
@@ -220,6 +229,22 @@ document.getElementById('nodeCarouselNext')?.addEventListener('click', () => {
     carouselIndex = (carouselIndex + 1) % carouselNodes.length;
     renderCarouselNode();
 });
+
+/**
+ * Дубликат workflow: сервер копирует строку agent_workflow (title + ' copy'),
+ * шаги (с ремапом id в transitions и переменных результатов) и связи переменных
+ */
+async function duplicateWorkflow(workflow) {
+    try {
+        const res = await postData(`/workflow/${workflow.id}/duplicate`, {});
+        const newId = res.result?.id;
+        showNotification(`Создан дубликат: ${res.result?.title || workflow.title + ' copy'}`, 'success');
+        await initWorkflowManager();
+        if (newId) openWorkflowById(newId);
+    } catch (e) {
+        showNotification(`Ошибка дублирования: ${e.message}`, 'error');
+    }
+}
 
 async function openWorkflowSteps(workflow, element) {
     setActiveItem(element);

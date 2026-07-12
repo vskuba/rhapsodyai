@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Request, Depends
+import re
+
+from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
@@ -46,6 +48,102 @@ async def workflow_create(
         return {"status": "success", "result": {"id": new_id}}
 
 
+@router.post("/workflow/{workflow_id}/duplicate")
+async def workflow_duplicate(
+        request: Request,
+        workflow_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_CREATE]))
+):
+    """Полный дубликат workflow: строка agent_workflow (title + ' copy', уникальный name),
+    все шаги и связи переменных. Внутри metadata шагов ремапятся id: переходы
+    (step_id) и переменные результатов (tool_{id}_result_*) указывают на новые шаги."""
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT * FROM agent_workflow WHERE id = %s", (workflow_id,))
+        source = await db.fetchone()
+        if not source:
+            raise HTTPException(status_code=404, detail="Workflow не найден")
+
+        # Уникальное имя (u_w_workflow_name, CHAR(50)): name_copy, name_copy2, ...
+        new_name = None
+        for i in range(1, 100):
+            suffix = '_copy' if i == 1 else f'_copy{i}'
+            candidate = source['name'][:50 - len(suffix)] + suffix
+            await db.execute("SELECT id FROM agent_workflow WHERE name = %s", (candidate,))
+            if not await db.fetchone():
+                new_name = candidate
+                break
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Не удалось подобрать уникальное имя дубликата")
+
+        new_title = (source['title'] + ' copy')[:50]
+
+        await db.execute(
+            """
+            INSERT INTO agent_workflow (node_id, name, title, description, position, subflow)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (source['node_id'], new_name, new_title, source['description'],
+             source['position'], source['subflow'])
+        )
+        new_workflow_id = db.lastrowid
+
+        # Шаги: первый проход — вставка копий, собираем соответствие old id -> new id
+        await db.execute(
+            "SELECT * FROM agent_workflow_step WHERE workflow_id = %s ORDER BY position ASC",
+            (workflow_id,)
+        )
+        steps = await db.fetchall()
+
+        id_map = {}
+        metadata_by_new_id = {}
+        for step in steps:
+            await db.execute(
+                """
+                INSERT INTO agent_workflow_step (workflow_id, type_id, title, position, metadata)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (new_workflow_id, step['type_id'], step['title'], step['position'], step['metadata'])
+            )
+            id_map[step['id']] = db.lastrowid
+            metadata_by_new_id[db.lastrowid] = step['metadata'] or ''
+
+        # Второй проход — ремап id шагов в metadata. Новые id (AUTO_INCREMENT) всегда
+        # больше всех старых, поэтому последовательные замены не пересекаются
+        for new_step_id, metadata in metadata_by_new_id.items():
+            updated = metadata
+            for old_id, new_id in id_map.items():
+                # Переходы: "step_id": "66" (строкой) и "step_id": 66 (числом)
+                updated = re.sub(rf'("step_id"\s*:\s*"){old_id}(")', rf'\g<1>{new_id}\g<2>', updated)
+                updated = re.sub(rf'("step_id"\s*:\s*){old_id}(\s*[,}}\]])', rf'\g<1>{new_id}\g<2>', updated)
+                # Переменные результатов шагов: tool_66_result_* -> tool_<new>_result_*
+                updated = updated.replace(f'_{old_id}_result', f'_{new_id}_result')
+            if updated != metadata:
+                await db.execute(
+                    "UPDATE agent_workflow_step SET metadata = %s WHERE id = %s",
+                    (updated, new_step_id)
+                )
+
+        # Связи переменных: обычные и публичные (сами переменные общие, копируем только связи)
+        await db.execute(
+            """
+            INSERT INTO agent_workflow_variable_workflow (variable_id, workflow_id)
+            SELECT variable_id, %s FROM agent_workflow_variable_workflow WHERE workflow_id = %s
+            """,
+            (new_workflow_id, workflow_id)
+        )
+        await db.execute(
+            """
+            INSERT INTO agent_workflow_variable_public_workflow (public_variable_id, workflow_id)
+            SELECT public_variable_id, %s FROM agent_workflow_variable_public_workflow WHERE workflow_id = %s
+            """,
+            (new_workflow_id, workflow_id)
+        )
+
+        await db.connection.commit()
+
+        return {"status": "success", "result": {"id": new_workflow_id, "title": new_title, "name": new_name}}
+
+
 @router.get("/workflow/{node_id}/list")
 async def workflow_list(request: Request, node_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
     repo = AgentWorkflowRepository()
@@ -67,6 +165,27 @@ async def workflow(
 ):
     repo = AgentWorkflowRepository()
     return {"result": await repo.update(workflow_id, data)}
+
+
+@router.delete("/workflow/{workflow_id}")
+async def workflow_delete(
+        request: Request,
+        workflow_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))
+):
+    """Удаляет workflow вместе с его шагами. Связи переменных чистит FK CASCADE;
+    у агентов и журнала запусков workflow_id обнуляется (FK SET NULL).
+    Шаги удаляем явно: их FK — ON DELETE SET NULL, иначе остались бы сироты."""
+    async with mysql_get_db_async() as db:
+        await db.execute("DELETE FROM agent_workflow_step WHERE workflow_id = %s", (workflow_id,))
+        await db.execute("DELETE FROM agent_workflow WHERE id = %s", (workflow_id,))
+        deleted = db.rowcount
+        await db.connection.commit()
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Workflow не найден")
+
+    return {"status": "success", "result": deleted}
 
 
 @router.get("/workflow/{workflow_id}/steps")

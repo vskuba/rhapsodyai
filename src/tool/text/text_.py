@@ -1,3 +1,28 @@
+import re
+
+
+async def text_regex_extract(text: str, pattern: str, default: str = '') -> str:
+    """
+    Извлекает из текста первую группу регулярного выражения.
+    Если групп в выражении нет — возвращает все совпадение целиком.
+    Если совпадения нет или выражение некорректно — значение default.
+    Пример:
+        text = "User: John Doe, Age: 30"
+        pattern = r"Age: \d+"
+        result = await text_regex_extract(text, pattern, default="N/A")
+        # result будет "30"
+    """
+    try:
+        match = re.search(str(pattern or ''), str(text or ''))
+    except re.error:
+        return str(default)
+
+    if not match:
+        return str(default)
+
+    return match.group(1) if match.groups() else match.group(0)
+
+
 async def text_translit_cyr_to_lat(text: str) -> str:
     """Трансформация кириллицы в латиницу"""
     translit_table = {
