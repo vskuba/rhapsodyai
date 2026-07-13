@@ -99,32 +99,36 @@
         table-layout: fixed; /* Фиксирует ширину колонок */
     }
 
+    /* РАСПРЕДЕЛЕНИЕ ШИРИНЫ КОЛОНОК: ID, Title, Контент, Lang, Категория, Таги, Статус, действия */
     .fact-table th:nth-child(1), .fact-table td:nth-child(1) {
         width: 2%;
     }
 
-    /* РАСПРЕДЕЛЕНИЕ ШИРИНЫ КОЛОНОК */
     .fact-table th:nth-child(2), .fact-table td:nth-child(2) {
-        width: 55%;
+        width: 6%;
     }
 
     .fact-table th:nth-child(3), .fact-table td:nth-child(3) {
-        width: 3%;
+        width: 47%;
     }
 
     .fact-table th:nth-child(4), .fact-table td:nth-child(4) {
-        width: 10%;
+        width: 3%;
     }
 
     .fact-table th:nth-child(5), .fact-table td:nth-child(5) {
-        width: 15%;
+        width: 10%;
     }
 
     .fact-table th:nth-child(6), .fact-table td:nth-child(6) {
-        width: 2%;
+        width: 15%;
     }
 
     .fact-table th:nth-child(7), .fact-table td:nth-child(7) {
+        width: 2%;
+    }
+
+    .fact-table th:nth-child(8), .fact-table td:nth-child(8) {
         width: 3%;
     }
 
@@ -307,6 +311,7 @@
                     <thead>
                     <tr>
                         <th>ID</th>
+                        <th>Title</th>
                         <th>Контент</th>
                         <th>Lang</th>
                         <th>Категория</th>
@@ -317,7 +322,7 @@
                     </thead>
                     <tbody id="factTableBody">
                     <tr>
-                        <td colspan="6" class="placeholder">Загрузка данных...</td>
+                        <td colspan="8" class="placeholder">Загрузка данных...</td>
                     </tr>
                     </tbody>
                 </table>
@@ -451,7 +456,7 @@
                 if (activeCollectionTitle) {
                     activeCollectionTitle.innerText = 'Коллекции отсутствуют';
                 }
-                factTableBody.innerHTML = '<tr><td colspan="6" class="text-center">Нет фактов для отображения</td></tr>';
+                factTableBody.innerHTML = '<tr><td colspan="8" class="text-center">Нет фактов для отображения</td></tr>';
             }
         } catch (e) {
             console.error("Ошибка загрузки коллекций:", e);
@@ -498,7 +503,7 @@
             renderTable(data.result);
             renderPagination(data.pagination);
         } catch (err) {
-            factTableBody.innerHTML = '<tr><td colspan="6" class="error">Ошибка загрузки данных</td></tr>';
+            factTableBody.innerHTML = '<tr><td colspan="8" class="error">Ошибка загрузки данных</td></tr>';
         }
     }
 
@@ -506,13 +511,14 @@
         if (!factTableBody) return;
 
         if (!facts || facts.length === 0) {
-            factTableBody.innerHTML = '<tr><td colspan="6" class="placeholder">Ничего не найдено</td></tr>';
+            factTableBody.innerHTML = '<tr><td colspan="8" class="placeholder">Ничего не найдено</td></tr>';
             return;
         }
 
         factTableBody.innerHTML = facts.map(f => `
         <tr data-id="${f.id}">
             <td><div class="doc-name-cell">${f.id}</div></td>
+            <td><div class="doc-name-cell">${escapeHtml(f.document_title || '')}</div></td>
             <td><div class="doc-name-cell inline-editable" data-field="document" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.document)}</div></td>
             <td><div class="content-preview">${escapeHtml(f.language)}</div></td>
             <td><div class="content-preview inline-editable" data-field="category" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.category || '')}</div></td>
