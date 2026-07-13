@@ -229,7 +229,7 @@
             nodeVars.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'agent-item';
-                div.textContent = item.name;
+                div.textContent = item.title || item.name;
                 if (activeId !== null && item.id === activeId) div.classList.add('active');
                 div.onclick = () => selectItem(item, div);
                 itemList.appendChild(div);
@@ -246,7 +246,7 @@
 
         document.getElementById('id').value = item.id;
         document.getElementById('default').value = item.default || '';
-        document.getElementById('formTitle').textContent = `Редактирование: ${item.name}`;
+        document.getElementById('formTitle').textContent = `Редактирование: ${item.title || item.name}`;
         renderHints(item.id);
     }
 
