@@ -80,8 +80,8 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 --
 
 INSERT INTO `role_node` (`role_id`, `node_id`) VALUES
-(3, 1),
 (2, 2),
+(3, 1),
 (4, 2);
 
 --
