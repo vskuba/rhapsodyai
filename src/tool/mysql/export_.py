@@ -63,11 +63,14 @@ async def mysql_export_to_migration(tables: str, migration_file: str = 'migratio
             skipped.append(f"{table} (таблица пуста, блок оставлен как есть)")
             continue
 
-        # Конец блока: первая строка, оканчивающаяся на ';' (строки таблиц — по одной на строку,
-        # переносы внутри значений экранированы как \n и не рвут строки файла)
         end = start
-        while end < len(lines) and not lines[end].rstrip().endswith(';'):
+        while end < len(lines) and not re.search(r';\s*(?:--.*)?$', lines[end]):
             end += 1
+
+        # Терминатор не найден: пропускаем таблицу, иначе замена снесла бы файл до конца
+        if end >= len(lines):
+            skipped.append(f"{table} (не найден конец INSERT-блока ';')")
+            continue
 
         cols_sql = ', '.join(f'`{c}`' for c in columns)
         block = [f"INSERT INTO `{table}` ({cols_sql}) VALUES"]
