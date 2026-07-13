@@ -95,7 +95,7 @@ INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `
 (5, 2, 'dating_talk', 'Чат с девушкой', 'Чат с девушкой', -1, 0),
 (6, 2, 'girl_fact_invent', 'Придумать факты девушки', 'Sub-workflow: придумывает новые факты о девушке для ответа на личный вопрос', 0, 1),
 (7, 2, 'companion_fact_extract', 'Сохранить факты собеседника', 'Sub-workflow: сохраняет переданные факты о собеседнике и переписке в коллекции (извлечение — в объединенном LLM-шаге родителя)', 0, 1),
-(8, 6, 'mysql_export_tables', 'Экспорт таблиц', 'Экспортирует таблицы БД по префиксу в миграцию 0002.sql: команда «Экспорт <префикс> таблиц»', 0, 0),
+(8, 6, 'mysql_export_tables', 'Экспорт таблиц', 'Экспортирует таблицы БД по точным именам в миграцию 0002.sql: команда «Экспорт <таблица1>,<таблица2> таблиц»', 0, 0),
 (9, 6, 'workflow_shell_test', 'Workflow оболочка', 'Оболочка-тестер: LLM играет собеседника, в цикле вызывает целевой workflow (test_workflow_id), ведет диалог в отдельной сессии и возвращает стенограмму', 0, 0);
 
 --
@@ -157,7 +157,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (59, 8, 3, 'mysql_export_to_migration', 3, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_find_62_result_tables_str","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[{"variable":"mysql_tables_find_62_result_tables_qty","operator":"==","value":"0","step_id":"61"}],"transitions_after":[]}'),
 (60, 8, 4, 'Отчет экспорта', 4, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Экспорт завершен. Таблиц: %mysql_export_to_migration_59_result_tables_qty%, строк: %mysql_export_to_migration_59_result_rows_qty%.\nОбновлены: %mysql_export_to_migration_59_result_report_str%","continue_workflow":false}'),
 (61, 8, 4, 'Подсказка', 5, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Доступные команды — экспорт таблиц по префиксам в %migration_file%:\\n\\n[[Экспорт agent_workflow таблиц]]\\n[[Экспорт node,role,setting,user таблиц]]\\n[[Экспорт agent таблиц]]\\n\\nРаботает любой набор префиксов через запятую: «Экспорт <префикс1>,<префикс2> таблиц»","continue_workflow":false}'),
-(62, 8, 3, 'mysql_tables_find', 2, '{"tool_invoke":{"tool_name":"mysql_tables_find","inputs_map":{"substrs":"text_split_99_result_list"},"outputs_map":{}},"transitions_before":[{"variable":"text_split_99_result_qty","operator":"==","value":"0","step_id":"61"}],"transitions_after":[]}'),
+(62, 8, 3, 'mysql_tables_find', 2, '{"tool_invoke":{"tool_name":"mysql_tables_find","inputs_map":{"tables":"text_split_99_result_list"},"outputs_map":{}},"transitions_before":[{"variable":"text_split_99_result_qty","operator":"==","value":"0","step_id":"61"}],"transitions_after":[]}'),
 (63, 5, 3, 'fact_collection_output_format', 1, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_companion_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (64, 6, 5, 'Переменные', 1, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"fact_invent_filter","text":"{\\"document_id\\":\\"%girl_name%\\"}"}]}'),
 (65, 6, 3, 'qdrant_fact_search_girl_bio', 2, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"prompt_user","collection_name":"fact_collection_girl_name","metadata_filter":"fact_invent_filter","limit":"fact_invent_limit"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
@@ -193,8 +193,8 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (95, 9, 5, 'Применить конфиг', 22, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"target_agent_id","text":"%mysql_find_one_by_93_result_id%"},{"variable":"target_agent_name","text":"%mysql_find_one_by_93_result_name%"},{"variable":"target_agent_title","text":"%mysql_find_one_by_93_result_title%"},{"variable":"target_prompt_system","text":"%mysql_find_one_by_93_result_prompt_system%"},{"variable":"document_id","text":"%dict_column_94_result_str%"}]}'),
 (96, 9, 4, 'Спросить сценарий', 23, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Цель: %target_agent_title% (workflow #%test_workflow_id%, документ «%document_id%»).\\n\\nНапишите сценарий тестирования: кто собеседник, о чем говорит, чего добивается. Итераций диалога: %test_iterations_limit%.\\n\\nЗаготовки (клик вставит текст в поле, отредактируйте под себя):\\n\\n[[+Ты мужчина 35 лет, познакомился с %target_agent_title% в приложении знакомств. Пиши коротко и неформально, как в мессенджере. Расспрашивай о ее увлечениях, работе и прошлом, делись фактами о себе (работа, машина, хобби) и мягко добивайся личной встречи.]]\\n\\n[[+Ты скептичный собеседник: подозреваешь, что %target_agent_title% — бот. Задавай личные вопросы о ее прошлом, ищи противоречия в ответах, возвращайся к ранее сказанному и проверяй, помнит ли она детали переписки.]]\\n\\n[[+Ты немногословный мужчина: пишешь по 2-5 слов, иногда с опечатками, отвечаешь односложно и редко задаешь вопросы. Проверка, как %target_agent_title% поддерживает вялый диалог.]]","continue_workflow":true}'),
 (97, 5, 5, 'Влить придуманные факты', 17, '{"transitions_before":[],"transitions_after":[{"variable":"agent_id","operator":">","value":"0","step_id":"38"}],"variable_conversion":[{"variable":"qdrant_fact_search_25_result_str","text":"%qdrant_fact_search_25_result_str%%if workflow_invoke_48_result_str%\\n%workflow_invoke_48_result_str%%endif%"}]}'),
-(98, 8, 3, 'Извлечь префиксы таблиц', 0, '{"tool_invoke":{"tool_name":"text_regex_extract","inputs_map":{"text":"prompt_user","pattern":"export_command_regex"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
-(99, 8, 3, 'Разбить префиксы по запятой', 1, '{"tool_invoke":{"tool_name":"text_split","inputs_map":{"text":"text_regex_extract_98_result_str"},"outputs_map":{}},"transitions_before":[{"variable":"text_regex_extract_98_result_str","operator":"empty","value":"","step_id":"61"}],"transitions_after":[]}');
+(98, 8, 3, 'Извлечь имена таблиц', 0, '{"tool_invoke":{"tool_name":"text_regex_extract","inputs_map":{"text":"prompt_user","pattern":"export_command_regex"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(99, 8, 3, 'Разбить имена по запятой', 1, '{"tool_invoke":{"tool_name":"text_split","inputs_map":{"text":"text_regex_extract_98_result_str"},"outputs_map":{}},"transitions_before":[{"variable":"text_regex_extract_98_result_str","operator":"empty","value":"","step_id":"61"}],"transitions_after":[]}');
 
 --
 
@@ -241,7 +241,7 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (71, 'companion_id', 'global', NULL, NULL),
 (72, 'companion_title', 'global', NULL, NULL),
 (73, 'companion_name', 'global', NULL, NULL),
-(76, 'export_command_regex', 'workflow', 'Экспорт\\s+([A-Za-z0-9_,\\s]+?)\\s+таблиц', 'Регулярка команды экспорта: группа 1 — префиксы таблиц через запятую'),
+(76, 'export_command_regex', 'workflow', 'Экспорт\\s+([A-Za-z0-9_,\\s]+?)\\s+таблиц', 'Регулярка команды экспорта: группа 1 — точные имена таблиц через запятую'),
 (77, 'migration_file', 'workflow', 'migrations/0002.sql', 'Файл миграции для экспорта данных'),
 (78, 'prompt_user', 'input', NULL, 'Текст сообщения пользователя (вход sub-workflow)'),
 (80, 'companion_title', 'input', NULL, 'Отображаемое имя собеседника (вход sub-workflow)'),
