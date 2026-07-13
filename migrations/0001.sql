@@ -246,6 +246,7 @@ CREATE TABLE `fact_collection` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `node_id` INT NULL,
     `name` CHAR(40) NOT NULL,
+    `title` CHAR(100) NOT NULL DEFAULT '',            -- отображаемое название (в списках и меню)
     `field` CHAR(250) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
     `language` CHAR(40) NOT NULL,

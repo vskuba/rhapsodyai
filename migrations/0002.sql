@@ -156,7 +156,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (58, 5, 6, 'companion_fact_extract', 3, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"prompt_user_facts_companion":"prompt_user_facts_companion","prompt_user_facts_talk":"prompt_user_facts_talk"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (59, 8, 3, 'mysql_export_to_migration', 3, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_find_62_result_tables_str","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[{"variable":"mysql_tables_find_62_result_tables_qty","operator":"==","value":"0","step_id":"61"}],"transitions_after":[]}'),
 (60, 8, 4, 'Отчет экспорта', 4, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Экспорт завершен. Таблиц: %mysql_export_to_migration_59_result_tables_qty%, строк: %mysql_export_to_migration_59_result_rows_qty%.\nОбновлены: %mysql_export_to_migration_59_result_report_str%","continue_workflow":false}'),
-(61, 8, 4, 'Подсказка', 5, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Привет! Я Dev bot.\\n\\nДоступные команды:\\n\\n[[Экспорт agent_workflow,agent_workflow_step, \\tagent_workflow_variable,agent_workflow_variable_public,agent_workflow_variable_public_role,agent_workflow_variable_public_workflow,agent_workflow_variable_workflow таблиц]]\\n\\n[[Экспорт node,role,role_node,setting,user,user_access_token,user_llm,user_node таблиц]]\\n\\n[[Экспорт agent,agent_role таблиц]]\\n","continue_workflow":false}'),
+(61, 8, 4, 'Подсказка', 5, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Привет! Я Dev bot.\\n\\nДоступные команды:\\n\\n[[Экспорт agent_workflow,agent_workflow_step, \\tagent_workflow_variable,agent_workflow_variable_public,agent_workflow_variable_public_role,agent_workflow_variable_public_workflow,agent_workflow_variable_workflow таблиц]]\\n\\n[[Экспорт node,role,role_node,setting,user,user_access_token,user_llm,user_node таблиц]]\\n\\n[[Экспорт agent,agent_role таблиц]]\\n\\n[[Экспорт fact,fact_collection таблиц]]\\n","continue_workflow":false}'),
 (62, 8, 3, 'mysql_tables_find', 2, '{"tool_invoke":{"tool_name":"mysql_tables_find","inputs_map":{"tables":"text_split_99_result_list"},"outputs_map":{}},"transitions_before":[{"variable":"text_split_99_result_qty","operator":"==","value":"0","step_id":"61"}],"transitions_after":[]}'),
 (63, 5, 3, 'fact_collection_output_format', 1, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_companion_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (64, 6, 5, 'Переменные', 1, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"fact_invent_filter","text":"{\\"document_id\\":\\"%girl_name%\\"}"}]}'),
@@ -366,12 +366,12 @@ INSERT INTO `agent_workflow_variable_public_workflow` (`public_variable_id`, `wo
 
 --
 
-INSERT INTO `fact_collection` (`id`, `node_id`, `name`, `field`, `position`, `language`, `description`) VALUES
-(1, NULL, 'cashier_service', 'document_id,category,language,document,tags', 0, 'ru', 'Микросервисы'),
-(2, 2, 'dating_girl', 'document_id,category,language,document,tags', 0, 'ru,en', 'Биография девушки и личная информация'),
-(3, NULL, 'soko_menu', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Меню'),
-(4, 2, 'dating_companion', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Факты о собеседнике'),
-(5, 2, 'dating_talk', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Факты в процессе переписки');
+INSERT INTO `fact_collection` (`id`, `node_id`, `name`, `title`, `field`, `position`, `language`, `description`) VALUES
+(1, NULL, 'cashier_service', 'cashier_service', 'document_id,category,language,document,tags', 0, 'ru', 'Микросервисы'),
+(2, 2, 'dating_girl', 'Биография девушек', 'document_id,category,language,document,tags', 0, 'ru,en', 'Биография девушки и личная информация'),
+(3, NULL, 'soko_menu', 'soko_menu', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Меню'),
+(4, 2, 'dating_companion', 'Биография собеседников', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Факты о собеседнике'),
+(5, 2, 'dating_talk', 'Общение, договоренности, выводы', 'document_id,category,language,document,tags', 0, 'ru,en,ua', 'Факты в процессе переписки');
 
 --
 
