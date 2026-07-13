@@ -330,7 +330,7 @@ CREATE TABLE `agent_workflow_run` (
     `prompt_user` LONGTEXT NULL,
     `variables_start` LONGTEXT NULL,             -- полный снапшот переменных на старте (JSON)
     `result` LONGTEXT NULL,                      -- финальный ответ workflow
-    `status` ENUM('running', 'success', 'error') NOT NULL DEFAULT 'running',
+    `status` ENUM('running', 'success', 'error', 'stopped') NOT NULL DEFAULT 'running',
     `error` LONGTEXT NULL,
     `started_at` DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
     `finished_at` DATETIME(3) NULL,
