@@ -24,7 +24,9 @@
                 <li><a href="/admin/agent">Агенты</a></li>
                 {% endif %}
                 <li><a href="/admin/fact">Факты</a></li>
+                {% if request.session.get('role') == 'admin' %}
                 <li><a href="/admin/llm">LLM</a></li>
+                {% endif %}
             </ul>
         </li>
 
