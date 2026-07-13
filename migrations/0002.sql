@@ -275,7 +275,8 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (105, 'chips_separator', 'workflow', ' ', 'Разделитель элементов list_render'),
 (106, 'chips_column', 'workflow', 'name', 'Колонка для dict_column при построении чипсов'),
 (107, 'doc_key', 'workflow', 'girl_id', 'Ключ для извлечения girl_id из workflow_variable агента'),
-(108, 'target_prompt_system', 'workflow', '', 'Системный промпт целевого агента: персона для ответов тестируемого workflow');
+(108, 'target_prompt_system', 'workflow', '', 'Системный промпт целевого агента: персона для ответов тестируемого workflow'),
+(109, 'girl_id', 'input', NULL, NULL);
 
 --
 
@@ -340,7 +341,8 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (105, 9),
 (106, 9),
 (107, 9),
-(108, 9);
+(108, 9),
+(109, 5);
 
 --
 
