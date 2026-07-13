@@ -291,6 +291,14 @@
         background: #ccc;
         border-radius: 10px;
     }
+
+    .doc-name-cell-title {
+        color: #1e6c84;
+        background: #eef6fc;
+        border: 1px dashed #82bcd3;
+        text-align: center;
+    }
+
 </style>
 
 {% endblock %}
@@ -508,7 +516,7 @@
             activeCollections.forEach((col) => {
                 const colName = col.name || col;
                 // Показываем заголовок, значением остается системное имя
-                const option = new Option(`${col.title || colName} (${col.fact_count})`, colName);
+                const option = new Option(`${col.title || colName}`, colName);
                 collectionSelect.add(option);
             });
 
@@ -593,7 +601,7 @@
         factTableBody.innerHTML = facts.map(f => `
         <tr data-id="${f.id}">
             <td><div class="doc-name-cell">${f.id}</div></td>
-            <td><div class="doc-name-cell">${escapeHtml(f.document_title || '')}</div></td>
+            <td><div class="doc-name-cell doc-name-cell-title">${escapeHtml(f.document_title || '')}</div></td>
             <td><div class="doc-name-cell inline-editable" data-field="document" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.document)}</div></td>
             <td><div class="content-preview">${escapeHtml(f.language)}</div></td>
             <td><div class="content-preview inline-editable" data-field="category" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.category || '')}</div></td>
