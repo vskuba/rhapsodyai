@@ -764,8 +764,8 @@
                 group.agents.forEach(agent => {
                     const option = document.createElement('option');
                     option.value = agent.id;
-                    // Добавляем иконку робота перед именем агента
-                    option.textContent = `🤖 ${agent.name}`;
+                    // Добавляем иконку робота перед отображаемым названием агента
+                    option.textContent = `🤖 ${agent.title || agent.name}`;
                     optgroup.appendChild(option);
                 });
 
