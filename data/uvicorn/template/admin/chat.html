@@ -93,6 +93,8 @@
         color: white;
         align-self: flex-end;
         border-bottom-right-radius: 4px; /* "Хвостик" сообщения */
+        white-space: pre-wrap;
+        word-break: break-word;
     }
 
     /* Сообщение AI: Светло-серый с легким бортиком */
@@ -102,11 +104,13 @@
         align-self: flex-start;
         border: 1px solid #edf2f7;
         border-bottom-left-radius: 4px; /* "Хвостик" сообщения */
+        white-space: pre-wrap;
+        word-break: break-word;
     }
 
     /* Команды в тексте сообщений: подсветка + клик отправляет команду */
     .chat-command,
-    .chat-suggestion{
+    .chat-suggestion {
         display: inline-block;
         background: #eef6fc;
         color: #1e6c84;
