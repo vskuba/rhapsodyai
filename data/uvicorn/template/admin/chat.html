@@ -105,7 +105,8 @@
     }
 
     /* Команды в тексте сообщений: подсветка + клик отправляет команду */
-    .chat-command {
+    .chat-command,
+    .chat-suggestion{
         display: inline-block;
         background: #eef6fc;
         color: #1e6c84;
@@ -114,27 +115,11 @@
         padding: 0 6px;
         cursor: pointer;
         transition: all 0.15s;
+        margin-bottom: 5px;
     }
 
+    .chat-suggestion:hover,
     .chat-command:hover {
-        background: #dfedf6;
-        border-color: #40a3e5;
-        border-style: solid;
-    }
-
-    /* Подсказки [[текст]]: клик подставляет текст и сразу отправляет */
-    .chat-suggestion {
-        display: inline-block;
-        background: #eaedfa;
-        color: #1e6c84;
-        border: 1px dashed #82bcd3;
-        border-radius: 4px;
-        padding: 0 6px;
-        cursor: pointer;
-        transition: all 0.15s;
-    }
-
-    .chat-suggestion:hover {
         background: #dfedf6;
         border-color: #40a3e5;
         border-style: solid;
