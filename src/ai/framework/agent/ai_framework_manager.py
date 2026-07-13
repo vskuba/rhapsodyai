@@ -27,6 +27,10 @@ from src.mysql_.repository.agent_specialization_repository import AgentSpecializ
 WORKFLOW_CANCEL_WORDS = {'отмена', 'cancel', '/cancel'}
 WORKFLOW_CANCEL_CHIP = '[[!Отмена]]'
 
+# Реестр живых запусков workflow: run_uuid -> asyncio.Task.
+# Кнопка «Стоп» (/workflow_trace/run/{uuid}/stop) отменяет задачу по run_uuid
+workflow_runs_active: dict[str, asyncio.Task] = {}
+
 
 class AiFrameworkAgentManager(AbstractAiFrameworkManager):
     # Защита sub-workflow (workflow_invoke) от неограниченной рекурсии
@@ -195,8 +199,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
             # Журнал выполнения: запись запуска (сбой трейса не влияет на workflow)
             run_started = time.monotonic()
+            run_uuid = str(uuid.uuid4())
             trace_run_id = await trace_run_start(
-                run_uuid=str(uuid.uuid4()),
+                run_uuid=run_uuid,
                 workflow_id=top_workflow_id,
                 agent_id=model.entity_agent.get('id'),
                 user_id=model.user_id,
@@ -206,6 +211,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 variables=model.workflow_variables,
             )
 
+            # Регистрируем задачу запуска: кнопка «Стоп» отменяет её по run_uuid
+            workflow_runs_active[run_uuid] = asyncio.current_task()
+
             try:
                 result = await self._workflow_steps_run(
                     model, model.workflow_steps, model.workflow_variables,
@@ -213,12 +221,24 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     workflow_stack=[top_workflow_id] if top_workflow_id else [],
                     trace_run_id=trace_run_id
                 )
+            except asyncio.CancelledError:
+                # Остановка кнопкой «Стоп»: закрываем журнал и отвечаем без ошибки
+                logger_info(f"⏹ Workflow остановлен пользователем (run {run_uuid})")
+                await trace_run_finish(
+                    trace_run_id, 'stopped', error='Остановлен пользователем',
+                    duration_ms=int((time.monotonic() - run_started) * 1000)
+                )
+                if not future.done():
+                    loop.call_soon_threadsafe(future.set_result, '⏹ Workflow остановлен')
+                return
             except Exception as e:
                 await trace_run_finish(
                     trace_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
                     duration_ms=int((time.monotonic() - run_started) * 1000)
                 )
                 raise
+            finally:
+                workflow_runs_active.pop(run_uuid, None)
 
             await trace_run_finish(
                 trace_run_id, 'success', result=result,
