@@ -326,8 +326,13 @@
                 <div class="settings-column">
                     <div class="form-grid">
                         <div class="form-group form-group-name">
-                            <label>Название коллекции</label>
+                            <label>Техническое название</label>
                             <input type="text" id="name" class="form-control" required>
+                        </div>
+
+                        <div class="form-group form-group-name">
+                            <label>Название коллекции</label>
+                            <input type="text" id="title" class="form-control">
                         </div>
 
                         <div class="three-fields-row">
@@ -474,7 +479,7 @@
                 div.setAttribute('data-id', collection.id);
 
                 div.innerHTML = `
-                    <span>${collection.name}</span>
+                    <span>${collection.title || collection.name}</span>
                     <span class="collection-pos-badge">${collection.position}</span>
                 `;
 
@@ -525,6 +530,7 @@
             // Заполнение полей формы
             document.getElementById('collectionId').value = collection.id;
             document.getElementById('name').value = collection.name;
+            document.getElementById('title').value = collection.title || '';
             document.getElementById('position').value = collection.position || 0;
             document.getElementById('language').value = collection.language;
             document.getElementById('node_id').value = collection.node_id || 0;
@@ -532,7 +538,7 @@
 
             renderSchemaTable(collection.schema);
 
-            document.getElementById('formTitle').textContent = `Редактирование коллекции: ${collection.name}`;
+            document.getElementById('formTitle').textContent = `Редактирование коллекции: ${collection.title || collection.name}`;
             if (saveBtn) saveBtn.disabled = false;
 
             if (deleteBtn) deleteBtn.style.display = 'block';
@@ -592,6 +598,7 @@
         collectionForm.reset();
         document.getElementById('collectionId').value = '';
         document.getElementById('formTitle').textContent = 'Создание новой коллекции';
+        document.getElementById('title').value = '';
         document.getElementById('position').value = 0;
         document.getElementById('language').value = 'en,ua,ru';
         document.getElementById('node_id').value = 0;
@@ -606,6 +613,8 @@
         const id = document.getElementById('collectionId').value;
         const payload = {
             name: document.getElementById('name').value,
+            // Пустой заголовок — сервер подставит значение name
+            title: document.getElementById('title').value.trim(),
             position: parseInt(document.getElementById('position').value) || 0,
             language: document.getElementById('language').value || 'en',
             node_id: parseInt(document.getElementById('node_id').value) || 0,

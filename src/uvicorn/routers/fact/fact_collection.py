@@ -29,6 +29,8 @@ async def fact_collection_create(request: Request, data: dict, user=Depends(Auth
     new_id = await repo.add({
         "node_id": data.get("node_id", None),
         "name": data.get("name"),
+        # Заголовок не задан — по умолчанию совпадает с системным именем
+        "title": data.get("title") or data.get("name"),
         "field": data.get("field", "document_id,category,language,document,tags"),
         "position": data.get("position", 0),
         "language": data.get("language", "en,ua,ru"),
@@ -43,6 +45,7 @@ async def fact_collection_update(request: Request, collection_id: int, data: dic
     return {"result": await repo.update(collection_id, {
         "node_id": data.get("node_id", None),
         "name": data.get("name"),
+        "title": data.get("title") or data.get("name"),
         "position": data.get("position"),
         "language": data.get("language"),
         "description": data.get("description")

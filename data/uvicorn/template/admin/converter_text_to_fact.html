@@ -304,7 +304,7 @@
             data.result.forEach(name => {
                 const div = document.createElement('div');
                 div.className = 'collection-item';
-                div.textContent = name.name;
+                div.textContent = name.title || name.name;
                 div.onclick = () => {
                     document.querySelectorAll('.collection-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');

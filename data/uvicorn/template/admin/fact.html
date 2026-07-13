@@ -378,7 +378,7 @@
                 await loadFacts();
 
                 if (activeCollectionTitle && selectedCollection) {
-                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.name} (${selectedCollection.fact_count})`;
+                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.title || selectedCollection.name} (${selectedCollection.fact_count})`;
                 }
             };
         }
@@ -426,7 +426,8 @@
 
             activeCollections.forEach((col) => {
                 const colName = col.name || col;
-                const option = new Option(`${colName} (${col.fact_count})`, colName);
+                // Показываем заголовок, значением остается системное имя
+                const option = new Option(`${col.title || colName} (${col.fact_count})`, colName);
                 collectionSelect.add(option);
             });
 
@@ -436,7 +437,7 @@
                 collectionSelect.value = selectedCollection.name || selectedCollection;
 
                 if (activeCollectionTitle) {
-                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.name} (${selectedCollection.fact_count})`;
+                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.title || selectedCollection.name} (${selectedCollection.fact_count})`;
                 }
 
                 // Загружаем список документов для выбранной коллекции
