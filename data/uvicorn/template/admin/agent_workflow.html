@@ -361,14 +361,13 @@
         justify-content: center;
         width: 24px;
         height: 24px;
-        background: #eef6fc; /* Нежно-голубой фон */
-        color: #3498db; /* Яркий основной цвет */
+        color: #cccaca;
         border-radius: 4px; /* Скругление как у инпутов */
         font-size: 14px;
         cursor: pointer;
         transition: all 0.2s ease;
-        border: 1px solid #d6eaf8;
-        opacity: 0;
+        border: 1px solid #dfdcdc;
+        opacity: 1;
     }
 
     .agent-item:hover .edit-icon,
@@ -376,6 +375,9 @@
     .agent-item.active .edit-icon,
     .agent-item.active .duplicate-icon {
         opacity: 1;
+        color: #3498db;
+        background: #eef6fc;
+        border: 1px solid #d6eaf8;
     }
 
     /* Эффект при наведении на саму иконку */
