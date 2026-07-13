@@ -172,6 +172,11 @@
         color: #b7950b;
     }
 
+    .status-stopped {
+        background: #eaecee;
+        color: #566573;
+    }
+
     .runs-pager {
         display: flex;
         justify-content: space-between;
@@ -592,6 +597,28 @@
         cursor: default;
     }
 
+    /* Стоп выполняющегося запуска: заметная красная заливка */
+    .btn-stop-run {
+        background: #e74c3c;
+        color: #fff;
+        border: 1px solid #e74c3c;
+        border-radius: 4px;
+        padding: 3px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        margin-left: 8px;
+    }
+
+    .btn-stop-run:hover {
+        background: #c0392b;
+        border-color: #c0392b;
+    }
+
+    .btn-stop-run:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
     .empty-note {
         color: #999;
         text-align: center;
@@ -978,6 +1005,30 @@
         };
         headRow.appendChild(delBtn);
         headRow.appendChild(replayBtn);
+
+        // Стоп: только для выполняющегося запуска — отменяет задачу на сервере
+        if (run.status === 'running') {
+            const stopBtn = el('button', 'btn-stop-run', '⏹ Стоп');
+            stopBtn.onclick = async () => {
+                if (!confirm('Остановить выполняющийся workflow?')) return;
+                stopBtn.disabled = true;
+                stopBtn.textContent = 'Остановка…';
+                try {
+                    await postData(`/workflow_trace/run/${run.run_uuid}/stop`, {});
+                    showNotification('Workflow остановлен', 'success');
+                    // Небольшая пауза: обработчик отмены на сервере закрывает журнал асинхронно
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await loadRunDetail(run.run_uuid);
+                    await loadRuns();
+                } catch (e) {
+                    showNotification(`Ошибка остановки: ${e.message}`, 'error');
+                    stopBtn.disabled = false;
+                    stopBtn.textContent = '⏹ Стоп';
+                }
+            };
+            headRow.appendChild(stopBtn);
+        }
+
         summary.appendChild(headRow);
 
         const promptRow = el('div', 'row');

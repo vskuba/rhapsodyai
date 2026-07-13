@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load
+from src.ai.framework.agent.ai_framework_manager import workflow_runs_active
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.agent_repository import AgentRepository
@@ -237,6 +238,66 @@ async def trace_run_replay(
         raise HTTPException(status_code=504, detail=f"Превышено время ожидания ответа ({timeout} сек.)")
 
     return {"result": result_text, "session_uuid": replay_session_uuid}
+
+
+@router.post("/workflow_trace/run/{run_uuid}/stop")
+async def trace_run_stop(
+        request: Request,
+        run_uuid: str,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_STOP]))
+):
+    """Останавливает выполняющийся workflow: отменяет asyncio-задачу запуска
+    (журнал закроет статусом 'stopped' обработчик отмены в менеджере).
+
+    Если живой задачи нет (сервер перезапускался и 'running'-лог завис) — запуск
+    помечается остановленным напрямую. Дочерние 'running'-запуски (sub-workflow)
+    в обоих случаях закрываются здесь: их trace-финализация при отмене не вызывается."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id, status FROM agent_workflow_run WHERE run_uuid = %s AND depth = 0",
+            (run_uuid,)
+        )
+        run = await db.fetchone()
+
+    if not run:
+        raise HTTPException(status_code=404, detail="Запуск не найден (стоп доступен только для верхнего уровня)")
+    if run['status'] != 'running':
+        raise HTTPException(status_code=400, detail=f"Запуск уже завершен (статус: {run['status']})")
+
+    task = workflow_runs_active.get(run_uuid)
+    task_alive = bool(task and not task.done())
+    if task_alive:
+        task.cancel()
+
+    async with mysql_get_db_async() as db:
+        # Задачи в процессе нет (зависший лог после рестарта) — закрываем запись сами
+        if not task_alive:
+            await db.execute(
+                "UPDATE agent_workflow_run SET status = 'stopped', error = 'Остановлен пользователем', "
+                "finished_at = NOW(3) WHERE id = %s AND status = 'running'",
+                (run['id'],)
+            )
+
+        # Дочерние запуски уровень за уровнем (глубина ограничена MAX_WORKFLOW_DEPTH)
+        run_ids = [run['id']]
+        while run_ids:
+            placeholders = ', '.join(['%s'] * len(run_ids))
+            await db.execute(
+                f"SELECT id FROM agent_workflow_run "
+                f"WHERE parent_run_id IN ({placeholders}) AND status = 'running'",
+                run_ids
+            )
+            run_ids = [r['id'] for r in await db.fetchall()]
+            if run_ids:
+                placeholders = ', '.join(['%s'] * len(run_ids))
+                await db.execute(
+                    f"UPDATE agent_workflow_run SET status = 'stopped', "
+                    f"error = 'Остановлен пользователем', finished_at = NOW(3) "
+                    f"WHERE id IN ({placeholders})",
+                    run_ids
+                )
+
+    return {"result": "stopped", "task_cancelled": task_alive}
 
 
 @router.delete("/workflow_trace/run/{run_uuid}")
