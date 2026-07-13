@@ -352,6 +352,7 @@ INSERT INTO `agent_workflow_variable_public` (`id`, `node_id`, `name`, `title`, 
 --
 
 INSERT INTO `agent_workflow_variable_public_role` (`public_variable_id`, `role_id`) VALUES
+(1, 1),
 (2, 2),
 (2, 4),
 (3, 2),
