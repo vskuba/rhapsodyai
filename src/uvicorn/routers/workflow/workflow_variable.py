@@ -111,10 +111,12 @@ async def variable_create(
             position = (await db.fetchone())['position']
 
         sql = """
-            INSERT INTO agent_workflow_variable_public (name, description, `default`, node_id, position, `type`)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO agent_workflow_variable_public (name, `title`, description, `default`, node_id, position, `type`)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        await db.execute(sql, (data.get('name'), data.get('description'), data.get('default'),
+        # Заголовок не задан — по умолчанию совпадает с системным именем
+        await db.execute(sql, (data.get('name'), data.get('title') or data.get('name'),
+                               data.get('description'), data.get('default'),
                                data.get('node_id'), position,
                                data.get('type', 'public')))
         variable_id = db.lastrowid

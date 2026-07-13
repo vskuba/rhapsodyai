@@ -269,8 +269,12 @@
                 <div class="left-col">
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Название</label>
+                            <label>Переменная</label>
                             <input type="text" id="name" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Title</label>
+                            <input type="text" id="title" class="form-control">
                         </div>
                         <div class="form-group">
                             <label>Нода</label>
@@ -442,7 +446,7 @@
 
                 const label = document.createElement('span');
                 label.className = 'item-label';
-                label.textContent = item.name;
+                label.textContent = item.title || item.name;
 
                 div.append(handle, label);
                 div.draggable = true;
@@ -503,6 +507,7 @@
 
         document.getElementById('id').value = item.id;
         document.getElementById('name').value = item.name;
+        document.getElementById('title').value = item.title || '';
         document.getElementById('description').value = item.description || '';
         document.getElementById('default').value = item.default || '';
         document.getElementById('node_id').value = item.node_id || '';
@@ -518,7 +523,7 @@
         // Workflow ноды выбранной переменной + предустановка привязанных
         renderWorkflowSelect(item.node_id, item.workflow_ids || []);
 
-        document.getElementById('formTitle').textContent = `Редактирование: ${item.name}`;
+        document.getElementById('formTitle').textContent = `Редактирование: ${item.title || item.name}`;
         deleteBtn.style.display = 'inline-block';
     }
 
@@ -534,6 +539,8 @@
 
         const payload = {
             name: document.getElementById('name').value,
+            // Пустой заголовок — сервер подставит значение name
+            title: document.getElementById('title').value.trim(),
             description: document.getElementById('description').value,
             default: document.getElementById('default').value,
             node_id: document.getElementById('node_id').value ? parseInt(document.getElementById('node_id').value) : null,
@@ -549,13 +556,13 @@
         if (id) {
             await putData(`/workflow_variable/public/${id}`, payload);
             savedId = parseInt(id);
-            document.getElementById('formTitle').textContent = `Редактирование: ${payload.name}`;
+            document.getElementById('formTitle').textContent = `Редактирование: ${payload.title || payload.name}`;
             showNotification('Обновлено', 'success');
         } else {
             const createRes = await postData('/node/workflow_variable', payload);
             savedId = createRes.result.id;
             document.getElementById('id').value = savedId;
-            document.getElementById('formTitle').textContent = `Редактирование: ${payload.name}`;
+            document.getElementById('formTitle').textContent = `Редактирование: ${payload.title || payload.name}`;
             deleteBtn.style.display = 'inline-block';
             showNotification('Создано', 'success');
         }

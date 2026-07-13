@@ -209,6 +209,7 @@ CREATE TABLE `agent_workflow_variable_public` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `node_id` INT NULL,
     `name` CHAR(50) NOT NULL,
+    `title` CHAR(100) NOT NULL DEFAULT '',             -- отображаемое название (в списках и меню)
     `type` ENUM('public', 'proxy') NOT NULL DEFAULT 'public',
     `default` LONGTEXT NULL,
     `position` INT NOT NULL DEFAULT 0,
