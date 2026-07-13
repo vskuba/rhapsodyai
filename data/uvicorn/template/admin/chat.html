@@ -146,6 +146,25 @@
         font-size: 11px;
     }
 
+    /* Опасные действия [[!текст]] (отмена мастера и т.п.): красные тона, клик отправляет */
+    .chat-danger {
+        display: inline-block;
+        background: #fdecea;
+        color: #c0392b;
+        border: 1px dashed #e74c3c;
+        border-radius: 4px;
+        padding: 0 6px;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-bottom: 5px;
+    }
+
+    .chat-danger:hover {
+        background: #fadbd8;
+        border-color: #c0392b;
+        border-style: solid;
+    }
+
     .chat-insertion:hover {
         background: #f3eee4;
         border-style: solid;
@@ -506,10 +525,11 @@
 
     // Интерактивные фрагменты сообщений:
     // 1. [[+текст]] — вставка: клик вставляет текст по курсору БЕЗ отправки (можно дописать)
-    // 2. [[текст]] — подсказка: клик вставляет текст по курсору (черновик сохраняется) и отправляет
-    // 3. /команда — клик подставляет команду и сразу отправляет.
+    // 2. [[!текст]] — опасное действие (красный стиль): клик отправляет текст (отмена мастера и т.п.)
+    // 3. [[текст]] — подсказка: клик вставляет текст по курсору (черновик сохраняется) и отправляет
+    // 4. /команда — клик подставляет команду и сразу отправляет.
     //    Негативный lookbehind отсекает слэши внутри URL и путей (http://..., path/to)
-    const MESSAGE_TOKEN_REGEX = /\[\[\+([\s\S]+?)\]\]|\[\[([\s\S]+?)\]\]|(?<![\w/])\/[a-zA-Z0-9_-]+/g;
+    const MESSAGE_TOKEN_REGEX = /\[\[\+([\s\S]+?)\]\]|\[\[!([\s\S]+?)\]\]|\[\[([\s\S]+?)\]\]|(?<![\w/])\/[a-zA-Z0-9_-]+/g;
 
     // Вставка текста в textarea по позиции курсора
     function insertIntoInput(text) {
@@ -540,8 +560,18 @@
                 span.textContent = insertion;
                 span.onclick = () => insertIntoInput(insertion);
             } else if (match[2] !== undefined) {
+                // Опасное действие [[!текст]]: красный чипс, клик — вставка и отправка
+                const danger = match[2];
+                span.className = 'chat-danger';
+                span.title = 'Нажмите, чтобы отправить';
+                span.textContent = danger;
+                span.onclick = () => {
+                    insertIntoInput(danger);
+                    sendMessage(toggleLoading);
+                };
+            } else if (match[3] !== undefined) {
                 // Подсказка [[текст]]: показываем без скобок, клик — вставка по курсору и отправка
-                const suggestion = match[2];
+                const suggestion = match[3];
                 span.className = 'chat-suggestion';
                 span.title = 'Нажмите, чтобы отправить';
                 span.textContent = suggestion;

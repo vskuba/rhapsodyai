@@ -21,6 +21,13 @@ from ai.framework.ai_framework_manager import AbstractAiFrameworkManager
 from src.mysql_.repository.agent_specialization_repository import AgentSpecializationRepository
 
 
+# Универсальная отмена многошагового мастера (continue_workflow): слова-команды,
+# прерывающие любой workflow, и чипс, который движок добавляет к каждому ответу
+# с сохраненным продолжением
+WORKFLOW_CANCEL_WORDS = {'отмена', 'cancel', '/cancel'}
+WORKFLOW_CANCEL_CHIP = '[[!Отмена]]'
+
+
 class AiFrameworkAgentManager(AbstractAiFrameworkManager):
     # Защита sub-workflow (workflow_invoke) от неограниченной рекурсии
     MAX_WORKFLOW_DEPTH = 5
@@ -113,6 +120,48 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             ai_session_metadata = await ai_session_metadata_get(model.session_uuid)
             start_index = ai_session_metadata.get('workflow_step_current_index', 0)
             saved_variables = ai_session_metadata.get('workflow_variables_saved') or {}
+
+            # Отмена мастера: универсальный выход из любого многошагового workflow.
+            # Состояние сбрасывается, шаги не выполняются — следующее сообщение
+            # начнет workflow с начала. Шаг 0 запускать нельзя: у части workflow
+            # он безусловно открывает новый мастер
+            prompt_user_text = str(model.workflow_variables.get('prompt_user', '')).strip().lower()
+            if start_index > 0 and prompt_user_text in WORKFLOW_CANCEL_WORDS:
+                step_title = (model.workflow_steps[start_index]['title']
+                              if start_index < len(model.workflow_steps) else '?')
+                logger_info(f"🚫 Workflow прерван пользователем перед шагом [{start_index}] {step_title}")
+
+                ai_session_metadata['workflow_step_current_index'] = 0
+                ai_session_metadata['workflow_variables_saved'] = {}
+                await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
+
+                # История сессии: команда пользователя и ответ об отмене
+                await ai_session_message_add(
+                    session_uuid=model.session_uuid,
+                    request_uuid=model.request_uuid,
+                    llm_id=model.entity_llm_current.get('id'),
+                    user_id=model.user_id,
+                    role='user',
+                    agent_id=model.entity_agent.get('id'),
+                    kind_type='user-prompt',
+                    content=model.workflow_variables.get('prompt_user', ''),
+                    companion_id=model.companion_id
+                )
+                await ai_session_message_add(
+                    session_uuid=model.session_uuid,
+                    request_uuid=model.request_uuid,
+                    llm_id=model.entity_llm_current.get('id'),
+                    user_id=model.user_id,
+                    role='workflow',
+                    agent_id=model.entity_agent.get('id'),
+                    kind_type='response-final',
+                    content='',
+                    companion_id=model.companion_id
+                )
+
+                if not future.done():
+                    loop.call_soon_threadsafe(future.set_result, '')
+                return
 
             if start_index > 0:
                 next_step = model.workflow_steps[start_index]
@@ -647,6 +696,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 return response_from_llm
 
             elif step_type == 'return_response_text':
+                continue_workflow = step_meta.get('continue_workflow', False)
+                next_index = current_index + 1
+
+                # Мастер продолжится следующим сообщением: добавляем чипс отмены
+                # (до записи в историю, чтобы он пережил перезагрузку чата).
+                # Перехват слова отмены — в _framework_workflow_run
+                if depth == 0 and continue_workflow and next_index < steps_count \
+                        and WORKFLOW_CANCEL_CHIP not in model.prompt_user:
+                    model.prompt_user += f'\n\n{WORKFLOW_CANCEL_CHIP}'
+
                 # 'response-final' пишем только на верхнем уровне: результат sub-workflow
                 # не является ответом пользователю и не должен попадать в историю переписки
                 if depth == 0:
@@ -663,8 +722,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     )
 
                 # Если после этого шага есть еще шаги, сохраняем обновленный индекс текущего шага в метаданных сессии
-                continue_workflow = step_meta.get('continue_workflow', False)
-                next_index = current_index + 1
                 if continue_workflow and next_index < steps_count:
                     if depth > 0:
                         logger_info("⚠️ continue_workflow внутри sub-workflow игнорируется")
