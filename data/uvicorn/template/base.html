@@ -56,17 +56,20 @@
                 <li><a href="/admin/role">Роли</a></li>
             </ul>
         </li>
-
+        {% endif %}
         <li class="nav-item">
             <a href="#">📊 Логи</a>
             <ul class="submenu">
+                {% if request.session.get('role') == 'admin' %}
                 <li><a target="_blank"
                        href="http://localhost:5601/app/data-explorer/discover#?_a=(discover:(columns:!(message),isDirty:!f,sort:!()),metadata:(indexPattern:'9d4339a0-3761-11f1-82cd-c50d8f73f9fd',view:discover))&_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-15m,to:now))&_q=(filters:!(),query:(language:kuery,query:''))">Opensearch</a>
                 </li>
                 <li><a href="/admin/workflow_trace">Workflow trace</a></li>
+                {% endif %}
                 <li><a href="/admin/session">Сессии</a></li>
             </ul>
         </li>
+        {% if request.session.get('role') == 'admin' %}
         <li class="nav-item">
             <a href="#">🗄️ Базы данных</a>
             <ul class="submenu">

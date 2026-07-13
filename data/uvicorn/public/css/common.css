@@ -22,7 +22,7 @@ body {
     display: flex;
     width: 100%;
     max-width: 1100px; /* Ширина самого интерфейса чата */
-    height: 90%; /* Высота относительно доступной зоны */
+    height: 95%; /* Высота относительно доступной зоны */
     background: white;
     border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
