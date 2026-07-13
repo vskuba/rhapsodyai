@@ -14,15 +14,17 @@
         overflow: hidden;
     }
 
-    /* 2. ВЕРХНЯЯ ПАНЕЛЬ (ФИЛЬТРЫ) */
-    .fact-header-filters {
+    /* 2. ЛЕВАЯ КОЛОНКА (ФИЛЬТРЫ) — как на странице Сессий */
+    .fact-sidebar {
+        width: 250px;
+        min-width: 250px;
+        border-right: 1px solid #e0e4e8;
+        background: #fcfcfc;
+        padding: 15px;
         display: flex;
-        align-items: center;
-        gap: 20px;
-        padding: 15px 25px;
-        background: #fff;
-        border-bottom: 1px solid #e0e0e0;
-        flex-shrink: 0;
+        flex-direction: column;
+        gap: 15px;
+        overflow-y: auto;
     }
 
     .filter-item {
@@ -39,20 +41,21 @@
         letter-spacing: 0.5px;
     }
 
-    .admin-select, #factSearch, #statusFilter {
+    .admin-select, #factSearch, #syncSelect {
+        width: 100%;
+        box-sizing: border-box;
         padding: 8px 12px;
         border: 1px solid #ced4da;
         border-radius: 4px;
-        min-width: 220px;
         font-size: 14px;
+        background: #fff;
     }
 
-    /* 3. КОНТЕНТНАЯ ОБЛАСТЬ */
+    /* 3. КОНТЕНТНАЯ ОБЛАСТЬ: сайдбар слева, факты справа */
     .fact-body-container {
         flex: 1;
         display: flex;
-        flex-direction: column;
-        padding: 0 5px;
+        flex-direction: row;
         min-height: 0;
     }
 
@@ -65,7 +68,7 @@
     }
 
     #activeCollectionTitle {
-        font-size: 1.1rem;
+        font-size: 0.9rem;
         font-weight: 700;
         color: #333;
     }
@@ -77,6 +80,8 @@
         display: flex;
         flex-direction: column;
         min-height: 0;
+        min-width: 0;
+        padding: 0 15px;
     }
 
     /* 4. ТАБЛИЦА И СКРОЛЛ */
@@ -116,7 +121,7 @@
     }
 
     .fact-table th:nth-child(6), .fact-table td:nth-child(6) {
-        width: 6%;
+        width: 2%;
     }
 
     .fact-table th:nth-child(7), .fact-table td:nth-child(7) {
@@ -186,22 +191,20 @@
     }
 
     /* 6. БЕДЖИ И КНОПКИ */
+    /* Статус Qdrant: лаконичный значок вместо текста (смысл — в тултипе) */
     .status-badge {
         display: inline-block;
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-size: 11px;
-        font-weight: 600;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: default;
     }
 
     .status-badge.synced {
-        background: #e8f5e9;
         color: #2e7d32;
     }
 
     .status-badge.pending {
-        background: #fff3e0;
-        color: #ef6c00;
+        font-size: 13px;
     }
 
     .tag-chip {
@@ -247,46 +250,44 @@
 {% block content %}
 <div class="fact-layout">
 
-    <!-- БЛОК 1: Фильтры, Коллекции и Поиск (Сверху) -->
-    <div class="fact-header-filters" id="block-1">
-
-
-        <!-- Перенесенный список коллекций -->
-        <div class="filter-item">
-            <span class="sidebar-label">Коллекции</span>
-            <select id="collectionSelect" class="admin-select">
-                <option value="">Загрузка...</option>
-            </select>
-        </div>
-
-        <div class="filter-item">
-            <span class="sidebar-label">Document ID</span>
-            <select id="documentSelect" class="admin-select">
-                <option value="all">Все</option>
-            </select>
-        </div>
-
-        <div class="filter-item">
-            <span class="sidebar-label">Статус Qdrant</span>
-            <select id="syncSelect">
-                <option value="all">Все</option>
-                <option value="1">Синхронизировано</option>
-                <option value="0">Ожидает</option>
-            </select>
-        </div>
-
-        <div class="filter-item search-box">
-            <span class="sidebar-label">Поиск по контенту</span>
-            <input type="text" id="factSearch" placeholder="Введите текст...">
-        </div>
-
-        <!-- Кнопка "Добавить факт" удалена -->
-    </div>
-
     <div class="fact-body-container">
-        <!-- БЛОК 2 (Боковая панель) удален или скрыт, так как коллекции теперь вверху -->
 
-        <!-- БЛОК 3: Список фактов (На всю ширину) -->
+        <!-- ЛЕВАЯ КОЛОНКА: Фильтры (как на странице Сессий) -->
+        <div class="fact-sidebar" id="block-1">
+            <div class="sidebar-label" style="font-size: 0.85rem; color: #4a5568;">Фильтры</div>
+
+            <div class="filter-item search-box">
+                <span class="sidebar-label">Поиск по контенту</span>
+                <input type="text" id="factSearch" placeholder="Введите текст...">
+            </div>
+
+            <div class="filter-item">
+                <span class="sidebar-label">Коллекции</span>
+                <select id="collectionSelect" class="admin-select">
+                    <option value="">Загрузка...</option>
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <span class="sidebar-label">Document Title</span>
+                <select id="documentSelect" class="admin-select">
+                    <option value="all">Все</option>
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <span class="sidebar-label">Статус Qdrant</span>
+                <select id="syncSelect">
+                    <option value="all">Все</option>
+                    <option value="1">Синхронизировано</option>
+                    <option value="0">Ожидает</option>
+                </select>
+            </div>
+
+
+        </div>
+
+        <!-- ПРАВАЯ КОЛОНКА: Список фактов -->
         <div class="fact-detail-view" id="block-3" style="flex: 1;">
             <div class="detail-header">
                 <div id="activeCollectionTitle">Коллекция: dating_girl_bio</div>
@@ -310,7 +311,7 @@
                         <th>Lang</th>
                         <th>Категория</th>
                         <th>Таги</th>
-                        <th>Статус</th>
+                        <th>Sync</th>
                         <th></th>
                     </tr>
                     </thead>
@@ -378,7 +379,7 @@
                 await loadFacts();
 
                 if (activeCollectionTitle && selectedCollection) {
-                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.title || selectedCollection.name} (${selectedCollection.fact_count})`;
+                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.title || selectedCollection.name} (всего фактов ${selectedCollection.fact_count})`;
                 }
             };
         }
@@ -437,7 +438,7 @@
                 collectionSelect.value = selectedCollection.name || selectedCollection;
 
                 if (activeCollectionTitle) {
-                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.title || selectedCollection.name} (${selectedCollection.fact_count})`;
+                    activeCollectionTitle.innerText = `Коллекция: ${selectedCollection.title || selectedCollection.name} (всего фактов ${selectedCollection.fact_count})`;
                 }
 
                 // Загружаем список документов для выбранной коллекции
@@ -459,7 +460,7 @@
     }
 
     /**
-     * Загрузка списка уникальных document_id для выбранной коллекции
+     * Загрузка списка уникальных document_title для выбранной коллекции
      */
     async function loadDocuments() {
         if (!documentSelect || !selectedCollection) return;
@@ -471,8 +472,8 @@
             documentSelect.innerHTML = '<option value="all">Все</option>'; // Все по умолчанию
 
             if (data && data.result) {
-                data.result.forEach(docId => {
-                    const option = new Option(docId, docId);
+                data.result.forEach(docTitle => {
+                    const option = new Option(docTitle, docTitle);
                     documentSelect.add(option);
                 });
             }
@@ -490,7 +491,7 @@
         if (!selectedCollection || !factTableBody) return;
 
         const colName = selectedCollection.name || selectedCollection;
-        const url = `/fact/collection/${colName}?page=${state.currentPage}&limit=${state.limit}&query=${state.query}&document_id=${state.documentId}&status=${state.status}`;
+        const url = `/fact/collection/${colName}?page=${state.currentPage}&limit=${state.limit}&query=${state.query}&document_title=${encodeURIComponent(state.documentId)}&status=${state.status}`;
 
         try {
             const data = await getData(url);
@@ -517,9 +518,8 @@
             <td><div class="content-preview inline-editable" data-field="category" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.category || '')}</div></td>
             <td><div class="content-preview inline-editable" data-field="tags" style="cursor: pointer; min-height: 20px;">${escapeHtml(f.tags || '')}</div></td>
             <td>
-                <span class="status-badge ${f.qdrant_synced ? 'synced' : 'pending'}">
-                    ${f.qdrant_synced ? 'Синхрон.' : 'Ожидает'}
-                </span>
+                <span class="status-badge ${f.qdrant_synced ? 'synced' : 'pending'}"
+                      title="${f.qdrant_synced ? 'Синхронизировано с Qdrant' : 'Ожидает синхронизации'}">${f.qdrant_synced ? '✓' : '⏳'}</span>
             </td>
             <td>
                 <div class="actions-cell">
@@ -755,11 +755,12 @@
                             showNotification('Запись успешно обновлена!', 'success');
                             restoreCell(newVal);
 
-                            // Сбрасываем статус в "Ожидает"
+                            // Сбрасываем статус в "Ожидает синхронизации"
                             const statusBadge = cell.closest('tr').querySelector('.status-badge');
                             if (statusBadge) {
                                 statusBadge.className = 'status-badge pending';
-                                statusBadge.textContent = 'Ожидает';
+                                statusBadge.textContent = '⏳';
+                                statusBadge.title = 'Ожидает синхронизации';
                             }
                         } else {
                             showNotification('Не удалось обновить запись.', 'error');

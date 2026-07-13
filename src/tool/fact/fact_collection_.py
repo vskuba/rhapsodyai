@@ -26,16 +26,19 @@ async def fact_collection_output_format(collection_name: str) -> str:
     return example_fact_extract
 
 
-async def fact_collection_add(collection_name: str, data: list[dict]) -> dict:
+async def fact_collection_add(collection_name: str, data: list[dict], document_title: str = '') -> dict:
     """
     Добавляет данные напрямую в базовую таблицу фактов 'fact'.
      - collection_name: имя коллекции для поиска ее ID и разрешенных полей в базе
      - data: список словарей с данными или валидная JSON-строка-массив
+     - document_title: заголовок документа (title сущности агента) — проставляется
+       всем добавляемым фактам, если передан
     Возвращает текстовую строку со всеми добавленными фактами.
 
     Example:
         collection_name: dating_talk
         data: [{"document_id": "alla_user1", "language": "ru", "document": "Мы обсуждали его привычки в тренировках.", "tags": "тренажерный зал, физическая активность"}]
+        document_title: Анна
 
     Returns:
         facts_qty (int): количество добавленных фактов
@@ -82,6 +85,11 @@ async def fact_collection_add(collection_name: str, data: list[dict]) -> dict:
 
                 fact_fields = ['collection_id'] + present_fields
                 fact_values = [collection_id] + [entry.get(f) for f in present_fields]
+
+                # Заголовок документа (title агента): общий для всех фактов вызова
+                if document_title and 'document_title' not in present_fields:
+                    fact_fields.append('document_title')
+                    fact_values.append(str(document_title)[:200])
 
                 document_value = entry.get(field_document, '')
                 document_id_value = entry.get(field_document_id, '')

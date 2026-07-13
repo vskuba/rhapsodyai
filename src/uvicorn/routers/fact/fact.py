@@ -29,14 +29,15 @@ async def fact_collection_documents(
 ):
     async with db:
         sql = """
-            SELECT DISTINCT f.document_id 
+            SELECT DISTINCT f.document_title
             FROM fact f
             JOIN fact_collection fc ON f.collection_id = fc.id
-            WHERE fc.name = %s AND f.document_id IS NOT NULL AND f.document_id != ''
+            WHERE fc.name = %s AND f.document_title IS NOT NULL AND f.document_title != ''
+            ORDER BY f.document_title ASC
         """
         await db.execute(sql, (collection_name,))
         rows = await db.fetchall()
-        return {"result": [r["document_id"] for r in rows]}
+        return {"result": [r["document_title"] for r in rows]}
 
 
 @router.get("/fact/collection/{collection_name}")
@@ -47,6 +48,7 @@ async def fact_list(
         limit: int = 20,
         query: str = '',
         document_id: str = '',
+        document_title: str = '',
         status: str = 'all',
         db=Depends(mysql_get_db_async),
         user=Depends(AuthChecker([AuthPermission.FACT_VIEW]))
@@ -65,6 +67,10 @@ async def fact_list(
     if document_id and document_id != "all":
         search_condition += " AND f.`document_id` = %s"
         params.append(document_id)
+
+    if document_title and document_title != "all":
+        search_condition += " AND f.`document_title` = %s"
+        params.append(document_title)
 
     if status == '1':
         search_condition += " AND f.`qdrant_synced` = 1"
