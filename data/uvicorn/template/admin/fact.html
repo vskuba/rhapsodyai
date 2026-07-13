@@ -6,10 +6,15 @@
 
 <style>
     /* 1. ГЛОБАЛЬНАЯ СТРУКТУРА */
+    /* Высоту диктует родитель (.page-content — flex с overflow: hidden), а не 100vh-математика:
+       calc(100vh - 65px) не учитывал реальную высоту меню и паддинги .page-content,
+       контейнер выходил ниже видимой области и скролл таблицы не доезжал до конца */
     .fact-layout {
         display: flex;
         flex-direction: column;
-        height: calc(100vh - 65px);
+        flex: 1;
+        min-height: 0;
+        min-width: 0;
         background: #f5f7f9;
         overflow: hidden;
     }
@@ -33,12 +38,51 @@
         gap: 5px;
     }
 
+    .filter-item-inline {
+        flex-direction: row;
+    }
+
+    .filter-item-inline select {
+        width: 89%;
+    }
+
     .sidebar-label {
         font-weight: bold;
         color: #555;
         text-transform: uppercase;
         font-size: 0.75rem;
         letter-spacing: 0.5px;
+    }
+
+    /* Лейбл с кнопкой-действием справа */
+    .label-with-action {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .btn-resync {
+        background: #eef6fc;
+        color: #3498db;
+        border: 1px solid #d6eaf8;
+        border-radius: 4px;
+        width: 22px;
+        height: 22px;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+        transition: all 0.2s;
+        padding: 0;
+    }
+
+    .btn-resync:hover:not(:disabled) {
+        background: #3498db;
+        color: #fff;
+    }
+
+    .btn-resync:disabled {
+        opacity: 0.5;
+        cursor: default;
     }
 
     .admin-select, #factSearch, #syncSelect {
@@ -273,10 +317,16 @@
             </div>
 
             <div class="filter-item">
-                <span class="sidebar-label">Document Title</span>
-                <select id="documentSelect" class="admin-select">
-                    <option value="all">Все</option>
-                </select>
+                <span class="sidebar-label label-with-action">Document Title</span>
+                <div class="filter-item-inline">
+                    <select id="documentSelect" class="admin-select">
+                        <option value="all">Все</option>
+                    </select>
+                    <button type="button" id="resyncBtn" class="btn-resync"
+                            title="Пересинхронизировать в Qdrant: удалить записи выбранного документа и записать заново из базы">
+                        ⟳
+                    </button>
+                </div>
             </div>
 
             <div class="filter-item">
@@ -335,6 +385,7 @@
 {% block scripts %}
 <script type="module">
     import {postData, getData, putData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
 
     // --- Константы и глобальные переменные модуля ---
     const inputTextarea = document.getElementById('inputText');
@@ -402,6 +453,30 @@
                 state.status = e.target.value;
                 state.currentPage = 1;
                 await loadFacts();
+            };
+        }
+
+        // Ресинк Qdrant: удалить записи выбранного документа и записать заново из базы
+        const resyncBtn = document.getElementById('resyncBtn');
+        if (resyncBtn) {
+            resyncBtn.onclick = async () => {
+                if (!selectedCollection) return;
+
+                const title = state.documentId;
+                const scope = title === 'all' ? 'всей коллекции' : `документа «${title}»`;
+                if (!confirm(`Пересинхронизировать факты ${scope} в Qdrant?\nЗаписи будут удалены из Qdrant и записаны заново из базы.`)) return;
+
+                resyncBtn.disabled = true;
+                try {
+                    const colName = selectedCollection.name || selectedCollection;
+                    const res = await postData(`/fact/collection/${colName}/resync`, {document_title: title});
+                    showNotification(`Ресинк выполнен (документов: ${res.result.documents_qty}). ${res.result.report_str}`, 'success');
+                    await loadFacts();
+                } catch (e) {
+                    showNotification(`Ошибка ресинка: ${e.message}`, 'error');
+                } finally {
+                    resyncBtn.disabled = false;
+                }
             };
         }
 

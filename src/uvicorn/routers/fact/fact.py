@@ -1,11 +1,74 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
+from qdrant_.qdrant_ import qdrant_remove_by
+from src.ai.ai_fact import fact_qdrant_sync
+from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
+
+
+@router.post("/fact/collection/{collection_name}/resync")
+async def fact_collection_resync(
+        request: Request,
+        collection_name: str,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.FACT_UPDATE]))
+):
+    """Пересинхронизация фактов в Qdrant: удаляет из Qdrant все записи выбранного
+    document_title (или всей коллекции при 'all'), помечает факты в БД
+    несинхронизированными и заново заливает их в Qdrant."""
+    document_title = (data or {}).get('document_title') or 'all'
+
+    repo = FactCollectionRepository()
+    collection = await repo.find_one_by({"name": collection_name})
+    if not collection:
+        raise HTTPException(status_code=404, detail=f"Коллекция '{collection_name}' не найдена")
+
+    condition = "collection_id = %s"
+    params = [collection['id']]
+    if document_title != 'all':
+        condition += " AND document_title = %s"
+        params.append(document_title)
+
+    async with mysql_get_db_async() as db:
+        # Qdrant хранит document_id (не title) — собираем их для удаления
+        await db.execute(
+            f"SELECT DISTINCT document_id FROM fact "
+            f"WHERE {condition} AND document_id IS NOT NULL AND document_id != ''",
+            params
+        )
+        document_ids = [r['document_id'] for r in await db.fetchall()]
+
+        if not document_ids:
+            raise HTTPException(status_code=404, detail="По выбранному фильтру нет фактов с document_id")
+
+        # Помечаем факты несинхронизированными — заново зальет цикл ниже (или крон)
+        await db.execute(f"UPDATE fact SET qdrant_synced = 0 WHERE {condition}", params)
+
+    # Удаляем из Qdrant все записи выбранных document_id
+    collection_metadata = await ai_fact_collection_metadata_get(collection_name)
+    for document_id in document_ids:
+        await qdrant_remove_by(collection_name, collection_metadata, {"document_id": document_id})
+
+    # Заново записываем из БД: пачки по 50, стоп при отсутствии прогресса
+    report = 'нет несинхронизированных фактов'
+    unsynced_before = None
+    for _ in range(20):
+        async with mysql_get_db_async() as db:
+            await db.execute("SELECT COUNT(*) AS qty FROM `fact` WHERE `qdrant_synced` = 0")
+            unsynced = (await db.fetchone())['qty']
+        if not unsynced:
+            break
+        if unsynced_before is not None and unsynced >= unsynced_before:
+            break
+        unsynced_before = unsynced
+        report = await fact_qdrant_sync()
+
+    return {"result": {"documents_qty": len(document_ids), "report_str": report}}
 
 
 @router.get("/fact/collection/list")
