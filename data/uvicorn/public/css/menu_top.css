@@ -38,6 +38,7 @@ nav {
     box-sizing: border-box;
 }
 
+
 /* 5. ПОДМЕНЮ: ВЕРТИКАЛЬНО ПО ПРАВОМУ КРАЮ */
 .submenu {
     display: flex;
@@ -70,8 +71,9 @@ nav {
     white-space: nowrap;
 }
 
+.nav-item > a:hover,
 .submenu li a:hover {
-    color: #3498db;
+    color: #78b5da;
 }
 
 .logo {
