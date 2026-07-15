@@ -23,13 +23,16 @@ async def ai_fact_collection_metadata_get(collection_name) -> dict:
 
         for field, m in table_metadata.items():
             comment_metadata = m.get('comment_metadata')
+            # 'extract' — поле заполняет LLM при экстракции; 'filter' — системное поле,
+            # заполняется кодом и участвует только в фильтрации Qdrant (например, agent_id)
             if (
-                    comment_metadata and comment_metadata.get('tag') == 'extract'
+                    comment_metadata and comment_metadata.get('tag') in ('extract', 'filter')
                     and field in fields_allowed
             ):
                 collection_metadata[field] = {
                     'table_name': table_name,
-                    'description': m['comment_metadata']['desc'],
+                    'tag': comment_metadata.get('tag'),
+                    'description': comment_metadata.get('desc', ''),
                 }
 
     collection_metadata_cache[collection_name] = collection_metadata

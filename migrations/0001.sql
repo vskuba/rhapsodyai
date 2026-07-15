@@ -266,6 +266,7 @@ CREATE TABLE `agent` (
     `prompt_system` LONGTEXT NOT NULL,
     `greeting` LONGTEXT NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
+    UNIQUE INDEX `u_agent_name` (`name`),              -- name — системный идентификатор (document_id в Qdrant); отображаемое имя — title
     CONSTRAINT `ag_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
     CONSTRAINT `ag_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -282,7 +283,7 @@ CREATE TABLE `agent_role` (
 CREATE TABLE `fact` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `collection_id` INT NOT NULL,
-    `agent_id` INT NULL,                               -- агент, запустивший workflow, создавший факт (заполняется кодом, не LLM)
+    `agent_id` INT NULL COMMENT 'tag:filter|type:int|desc:Agent that ran the workflow which created the fact (system field, filled by code, used for Qdrant filtering)',
     `document_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:Document ID string (example: dasha)',
     `document_title` CHAR(200) NULL,                   -- заголовок документа: title сущности агента (заполняется кодом, не LLM)
     `file_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:File ID as key for single storage (example: filename.pdf)',

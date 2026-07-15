@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, Body
+from fastapi import APIRouter, Request, Depends, Body, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
 import json
 
@@ -131,6 +131,8 @@ async def agent_get_prompt_system(
 async def agent_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.AGENT_CREATE]))):
     repo = AgentRepository()
 
+    await _agent_name_unique_check(repo, data.get('name'))
+
     # Serialize workflow_variable to JSON if it's a dict
     workflow_variable = data.get('workflow_variable', None)
     if isinstance(workflow_variable, dict):
@@ -166,6 +168,9 @@ async def agent_update(
     current_agent = await repo.find(agent_id)
     if not current_agent:
         return {"status": "error", "message": "Агент не найден"}
+
+    if 'name' in data and data.get('name') != current_agent.get('name'):
+        await _agent_name_unique_check(repo, data.get('name'), exclude_id=agent_id)
 
     # Merge current data with updates (only update provided fields)
     # For fields not in request, keep current values
@@ -263,6 +268,22 @@ async def _agent_role_ids_set(agent_id: int, role_ids: list, replace: bool = Fal
             await db.execute("DELETE FROM agent_role WHERE agent_id = %s", (agent_id,))
         for role_id in role_ids:
             await db.execute("INSERT INTO agent_role (agent_id, role_id) VALUES (%s, %s)", (agent_id, role_id))
+
+
+async def _agent_name_unique_check(repo: AgentRepository, name: str | None, exclude_id: int | None = None):
+    """Имя агента — системный идентификатор (document_id в Qdrant, заголовок фактов),
+    поэтому оно должно быть глобально уникальным. Отображаемое имя — поле title."""
+    name = (name or '').strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Имя агента (name) не может быть пустым")
+
+    existing = await repo.find_one_by({"name": name})
+    if existing and existing.get('id') != exclude_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Имя агента '{name}' уже занято. Системное имя должно быть уникальным — "
+                   f"используйте другое name (отображаемое имя задается в поле title)."
+        )
 
 
 async def _agent_list_for_user(repo: AgentRepository, user_id: int, find_by: dict) -> list:

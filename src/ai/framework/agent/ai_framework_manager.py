@@ -98,6 +98,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
             collection_metadata = await ai_fact_collection_metadata_get(collection_name)
 
+            # Только поля экстракции LLM — системные поля-фильтры (tag:filter) не показываем
+            collection_metadata = {f: v for f, v in collection_metadata.items() if v.get('tag') == 'extract'}
+
             example_fact_extract = ''
             if collection_metadata:
                 example_fact_extract = "\n\nOUTPUT FORMAT EXAMPLE:\n"
