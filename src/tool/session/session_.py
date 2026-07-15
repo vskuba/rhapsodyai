@@ -50,7 +50,11 @@ async def session_messages(session_uuid: str, limit: int = 10) -> str:
                 role = message.get('agent_title', '')
 
             content = message.get('content', '')
-            rendered_messages.append(f"[{role}]: {content}")
+            created_at = message.get('created_at', '')
+            # Время сообщения нужно LLM, чтобы отличать "прощание минуту назад"
+            # от "прощание вчера вечером" (логика тишины/пробуждения)
+            timestamp = created_at.strftime('%Y-%m-%d %H:%M') if created_at else ''
+            rendered_messages.append(f"[{timestamp}] [{role}]: {content}")
 
         return "\n".join(rendered_messages)
 
