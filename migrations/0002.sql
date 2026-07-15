@@ -1,5 +1,5 @@
 INSERT INTO `llm` (`id`, `name`) VALUES
-(1, 'openrouter/google/gemma-4-31b-it:free'),
+(1, 'openrouter/google/gemma-4-31b:free'),
 (2, 'openrouter/openai/gpt-oss-120b:free'),
 (3, 'openrouter/qwen/qwen3-next-80b-a3b-instruct:free'),
 (4, 'ollama/qwen2.5:14b'),
