@@ -151,9 +151,9 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (51, 6, 3, 'fact_collection_add_girl', 4, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_girl_name","data":"prompt_user_facts_girl","document_title":"girl_title"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user_facts_girl","operator":"==","value":"0","step_id":"52"}],"transitions_after":[]}'),
 (52, 6, 4, 'Вернуть факты', 6, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%if fact_collection_add_51_result_facts_str%%fact_collection_add_51_result_facts_str%%else%%qdrant_fact_search_65_result_str%%endif%","continue_workflow":false}'),
 (55, 7, 3, 'fact_collection_add_companion', 0, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_companion_name","data":"prompt_user_facts_companion","document_title":"companion_title"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user_facts_companion","operator":"==","value":"0","step_id":"56"}],"transitions_after":[]}'),
-(56, 7, 3, 'fact_collection_add_talk', 1, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_talk_name","data":"prompt_user_facts_talk","document_title":"companion_title"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user_facts_talk","operator":"==","value":"0","step_id":"57"}],"transitions_after":[]}'),
-(57, 7, 4, 'Вернуть факты', 2, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%prompt_user_facts_companion%","continue_workflow":false}'),
-(58, 5, 6, 'companion_fact_extract', 3, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"prompt_user_facts_companion":"prompt_user_facts_companion","prompt_user_facts_talk":"prompt_user_facts_talk","companion_title":"companion_title"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(56, 7, 3, 'fact_collection_add_talk', 2, '{"tool_invoke":{"tool_name":"fact_collection_add","inputs_map":{"collection_name":"fact_collection_talk_name","data":"prompt_user_facts_talk","document_title":"document_title"},"outputs_map":{}},"transitions_before":[{"variable":"prompt_user_facts_talk","operator":"==","value":"0","step_id":"57"}],"transitions_after":[]}'),
+(57, 7, 4, 'Вернуть факты', 3, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%prompt_user_facts_companion%","continue_workflow":false}'),
+(58, 5, 6, 'companion_fact_extract', 3, '{"workflow_invoke":{"workflow_id":7,"inputs_map":{"prompt_user_facts_companion":"prompt_user_facts_companion","prompt_user_facts_talk":"prompt_user_facts_talk","user_name":"agent_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (59, 8, 3, 'mysql_export_to_migration', 3, '{"tool_invoke":{"tool_name":"mysql_export_to_migration","inputs_map":{"tables":"mysql_tables_find_62_result_tables_str","migration_file":"migration_file"},"outputs_map":{}},"transitions_before":[{"variable":"mysql_tables_find_62_result_tables_qty","operator":"==","value":"0","step_id":"61"}],"transitions_after":[]}'),
 (60, 8, 4, 'Отчет экспорта', 4, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Экспорт завершен. Таблиц: %mysql_export_to_migration_59_result_tables_qty%, строк: %mysql_export_to_migration_59_result_rows_qty%.\nОбновлены: %mysql_export_to_migration_59_result_report_str%","continue_workflow":false}'),
 (61, 8, 4, 'Подсказка', 5, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Привет! Я Dev bot.\\n\\nДоступные команды:\\n\\n[[Экспорт agent_workflow,agent_workflow_step, \\tagent_workflow_variable,agent_workflow_variable_public,agent_workflow_variable_public_role,agent_workflow_variable_public_workflow,agent_workflow_variable_workflow таблиц]]\\n\\n[[Экспорт node,role,role_node,setting,user,user_access_token,user_llm,user_node таблиц]]\\n\\n[[Экспорт agent,agent_role таблиц]]\\n\\n[[Экспорт fact,fact_collection таблиц]]\\n","continue_workflow":false}'),
@@ -164,7 +164,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (66, 9, 3, 'session_uuid_create', 24, '{"tool_invoke":{"tool_name":"session_uuid_create","inputs_map":{},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (67, 9, 2, 'Сообщение тестера', 25, '{"transitions_before":[],"transitions_after":[],"llm_to_json_variable":[{"variable":"test_message","text":"следующее сообщение собеседника-тестера: короткое, естественное, по сценарию"}],"prompt_user":"Ты тестировщик чат-агента: играешь роль собеседника по имени %companion_title%, который переписывается с агентом %target_agent_title%.\\n\\n=== Сценарий тестирования ===\\n%prompt_user%\\n%if test_dialog%\\n\\n=== Диалог до этого момента ===\\n%test_dialog%\\n%endif%\\n\\nПридумай СЛЕДУЮЩЕЕ сообщение собеседника: короткое (до 30 слов), естественное, продолжает диалог и следует сценарию. Не повторяй уже отправленные сообщения.\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"test_message\\": следующее сообщение собеседника\\n\\nExample of JSON response:\\n{\\n  \\"test_message\\": \\"Привет! Чем увлекаешься?\\"\\n}"}'),
 (68, 9, 6, 'Вызов тестируемого workflow', 26, '{"workflow_invoke":{"workflow_id":"%test_workflow_id%","inputs_map":{"prompt_user":"test_message","prompt_system":"target_prompt_system","session_uuid":"session_uuid_create_66_result_str","agent_id":"target_agent_id","agent_name":"target_agent_name","agent_title":"target_agent_title","girl_id":"girl_id","companion_id":"companion_id","companion_title":"companion_title","companion_name":"companion_name","user_id":"user_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
-(69, 9, 3, 'session_message_add', 27, '{"tool_invoke":{"tool_name":"session_message_add","inputs_map":{"session_uuid":"session_uuid_create_66_result_str","user_message":"test_message","agent_response":"workflow_invoke_68_result_str","agent_id":"target_agent_id","user_id":"user_id","companion_id":"companion_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(69, 9, 3, 'session_message_add', 27, '{"tool_invoke": {"tool_name": "session_message_add", "inputs_map": {"user_id": "user_id", "agent_id": "target_agent_id", "companion_id": "companion_id", "session_uuid": "session_uuid_create_66_result_str", "user_message": "test_message", "agent_response": "workflow_invoke_68_result_str"}, "outputs_map": {}}, "transitions_after": [], "transitions_before": []}'),
 (70, 9, 3, 'counter_increment', 28, '{"tool_invoke":{"tool_name":"counter_increment","inputs_map":{"value":"test_iteration"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (71, 9, 5, 'Обновить контекст', 29, '{"transitions_before":[],"transitions_after":[{"variable":"test_iteration","operator":"<","value":"%test_iterations_limit%","step_id":"67"}],"variable_conversion":[{"variable":"test_dialog","text":"%test_dialog%\\n[%companion_title%]: %test_message%\\n[%target_agent_title%]: %workflow_invoke_68_result_str%"},{"variable":"test_iteration","text":"%counter_increment_70_result_int%"}]}'),
 (72, 9, 4, 'Отчет теста', 30, '{"transitions_before":[],"transitions_after":[],"prompt_user":"✅ Тест завершен: %test_iteration% итераций workflow #%test_workflow_id%.\\n\\n=== Диалог ===\\n%test_dialog%\\n\\nСессия диалога: %session_uuid_create_66_result_str%","continue_workflow":false}'),
@@ -198,7 +198,8 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (100, 2, 5, 'Сохранить имя девушки', 6, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"girl_title_saved","text":"%prompt_user%"}]}'),
 (101, 2, 4, 'Спросить биографию', 10, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Добавьте краткую биографию девушки %girl_title_saved%.\\n\\nНапишите свободным текстом 15-20 предложений: сколько лет, где родилась и живет, чем занимается, где училась, увлечения, семья, характер.\\n\\nПример:\\n[[+%girl_bio_example%]]","continue_workflow":true}'),
 (102, 2, 3, 'qdrant_fact_sync', 16, '{"tool_invoke":{"tool_name":"qdrant_fact_sync","inputs_map":{},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
-(103, 6, 3, 'qdrant_fact_sync', 5, '{"tool_invoke":{"tool_name":"qdrant_fact_sync","inputs_map":{},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}');
+(103, 6, 3, 'qdrant_fact_sync', 5, '{"tool_invoke":{"tool_name":"qdrant_fact_sync","inputs_map":{},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(104, 7, 5, 'Переменные', 1, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"document_title","text":"%user_name%_%companion_name%"}]}');
 
 --
 
@@ -276,7 +277,9 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (106, 'chips_column', 'workflow', 'name', 'Колонка для dict_column при построении чипсов'),
 (107, 'doc_key', 'workflow', 'girl_id', 'Ключ для извлечения girl_id из workflow_variable агента'),
 (108, 'target_prompt_system', 'workflow', '', 'Системный промпт целевого агента: персона для ответов тестируемого workflow'),
-(109, 'girl_id', 'input', NULL, NULL);
+(109, 'girl_id', 'input', NULL, NULL),
+(110, 'document_title', 'workflow', NULL, NULL),
+(111, 'user_name', 'input', NULL, NULL);
 
 --
 
@@ -342,7 +345,9 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (106, 9),
 (107, 9),
 (108, 9),
-(109, 5);
+(109, 5),
+(110, 7),
+(111, 7);
 
 --
 
