@@ -406,9 +406,7 @@ INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_
 
 INSERT INTO `agent_role` (`agent_id`, `role_id`) VALUES
 (9, 2),
-(9, 4),
-(26, 1),
-(27, 4);
+(9, 4);
 
 --
 
