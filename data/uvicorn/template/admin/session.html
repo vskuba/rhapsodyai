@@ -257,9 +257,11 @@
         });
 
         sessionSelect.innerHTML = '';
-        allSessions = data.result || [];
-        
-        allSessions.forEach((s) => {
+        // Локальный список: allSessions хранит ПОЛНУЮ выборку для populateFilters —
+        // перезапись отфильтрованным результатом опустошала фильтр собеседников
+        const sessions = data.result || [];
+
+        sessions.forEach((s) => {
             const shortUuid = s.session_uuid.substring(0, 12);
             const option = new Option(`${shortUuid} | 💬 ${s.msg_count}`, s.session_uuid);
             sessionSelect.add(option);
