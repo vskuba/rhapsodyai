@@ -10,6 +10,15 @@ from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
+# Видимость фактов для не-админов: только факты агентов, роли которых
+# совпадают с ролью пользователя (fact.agent_id -> agent_role -> role.name)
+FACT_AGENT_ROLE_CONDITION = (
+    "f.`agent_id` IN ("
+    "SELECT ar.`agent_id` FROM `agent_role` ar "
+    "JOIN `role` r ON r.`id` = ar.`role_id` "
+    "WHERE r.`name` = %s)"
+)
+
 
 @router.post("/fact/collection/{collection_name}/resync")
 async def fact_collection_resync(
@@ -73,13 +82,19 @@ async def fact_collection_resync(
 
 @router.get("/fact/collection/list")
 async def fact_collection_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.FACT_COLLECTION_VIEW]))):
+    join_condition = "fc.id = f.collection_id"
+    params = []
+    if user.role != 'admin':
+        join_condition += f" AND {FACT_AGENT_ROLE_CONDITION}"
+        params.append(user.role)
+
     async with db:
-        await db.execute("""
+        await db.execute(f"""
             SELECT fc.*, COUNT(f.id) as fact_count
             FROM fact_collection fc
-            LEFT JOIN fact f ON fc.id = f.collection_id
+            LEFT JOIN fact f ON {join_condition}
             GROUP BY fc.id
-        """)
+        """, params)
         return {"result": await db.fetchall()}
 
 
@@ -90,15 +105,21 @@ async def fact_collection_documents(
         db=Depends(mysql_get_db_async),
         user=Depends(AuthChecker([AuthPermission.FACT_VIEW]))
 ):
+    role_condition = ""
+    params = [collection_name]
+    if user.role != 'admin':
+        role_condition = f" AND {FACT_AGENT_ROLE_CONDITION}"
+        params.append(user.role)
+
     async with db:
-        sql = """
+        sql = f"""
             SELECT DISTINCT f.document_title
             FROM fact f
             JOIN fact_collection fc ON f.collection_id = fc.id
-            WHERE fc.name = %s AND f.document_title IS NOT NULL AND f.document_title != ''
+            WHERE fc.name = %s AND f.document_title IS NOT NULL AND f.document_title != ''{role_condition}
             ORDER BY f.document_title ASC
         """
-        await db.execute(sql, (collection_name,))
+        await db.execute(sql, params)
         rows = await db.fetchall()
         return {"result": [r["document_title"] for r in rows]}
 
@@ -139,6 +160,10 @@ async def fact_list(
         search_condition += " AND f.`qdrant_synced` = 1"
     elif status == '0':
         search_condition += " AND f.`qdrant_synced` = 0"
+
+    if user.role != 'admin':
+        search_condition += f" AND {FACT_AGENT_ROLE_CONDITION}"
+        params.append(user.role)
 
     async with db:
 

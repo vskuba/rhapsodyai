@@ -20,7 +20,12 @@ class SessionMessagesJsonRequest(BaseModel):
 
 
 @router.post("/session/list")
-async def session_list(request: Request, json_request: SessionJsonRequest, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
+async def session_list(
+        request: Request,
+        json_request: SessionJsonRequest,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
+):
     async with db:
         sql = """
             SELECT
@@ -44,6 +49,10 @@ async def session_list(request: Request, json_request: SessionJsonRequest, db=De
         if json_request.companion_id:
             sql += " AND companion_id = %s"
             params.append(json_request.companion_id)
+
+        if user.role != 'admin':
+            sql += f" AND {_agent_role_condition()}"
+            params.append(user.role)
 
         sql += " GROUP BY session_uuid ORDER BY last_message_at DESC"
 
@@ -52,15 +61,31 @@ async def session_list(request: Request, json_request: SessionJsonRequest, db=De
 
 
 @router.get("/session/kind_type/list")
-async def session_kind_types_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
+async def session_kind_types_list(
+        request: Request,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
+):
+    sql = "SELECT DISTINCT kind_type FROM agent_session"
+    params = []
+    if user.role != 'admin':
+        sql += f" WHERE {_agent_role_condition()}"
+        params.append(user.role)
+    sql += " ORDER BY kind_type ASC"
+
     async with db:
-        await db.execute("SELECT DISTINCT kind_type FROM agent_session ORDER BY kind_type ASC")
+        await db.execute(sql, params)
         rows = await db.fetchall()
         return {"result": [row["kind_type"] for row in rows]}
 
 
 @router.post("/session/last")
-async def session_last(request: Request, json_request: SessionJsonRequest, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
+async def session_last(
+        request: Request,
+        json_request: SessionJsonRequest,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
+):
     async with db:
         sql = """
             SELECT
@@ -85,6 +110,10 @@ async def session_last(request: Request, json_request: SessionJsonRequest, db=De
             sql += " AND companion_id = %s"
             params.append(json_request.companion_id)
 
+        if user.role != 'admin':
+            sql += f" AND {_agent_role_condition()}"
+            params.append(user.role)
+
         sql += " GROUP BY session_uuid ORDER BY last_message_at DESC LIMIT 1"
 
         await db.execute(sql, tuple(params))
@@ -92,7 +121,12 @@ async def session_last(request: Request, json_request: SessionJsonRequest, db=De
 
 
 @router.post("/session/last/uuid")
-async def session_last_uuid(request: Request, json_request: SessionJsonRequest, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
+async def session_last_uuid(
+        request: Request,
+        json_request: SessionJsonRequest,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
+):
     async with db:
         sql = """
             SELECT session_uuid
@@ -110,17 +144,26 @@ async def session_last_uuid(request: Request, json_request: SessionJsonRequest, 
             sql += " AND companion_id = %s"
             params.append(json_request.companion_id)
 
+        if user.role != 'admin':
+            sql += f" AND {_agent_role_condition()}"
+            params.append(user.role)
+
         sql += " ORDER BY created_at DESC LIMIT 1"
 
         await db.execute(sql, tuple(params))
         row = await db.fetchone()
-        
+
         session_uuid = row["session_uuid"] if row else None
         return {"result": session_uuid}
 
 
 @router.post("/session/messages")
-async def session_messages(request: Request, json_request: SessionMessagesJsonRequest, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))):
+async def session_messages(
+        request: Request,
+        json_request: SessionMessagesJsonRequest,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
+):
     async with db:
         # Выбираем сообщения в обратном порядке (DESC), чтобы отсчитать 5 последних запросов
         sql = """
@@ -128,9 +171,16 @@ async def session_messages(request: Request, json_request: SessionMessagesJsonRe
             FROM agent_session s
             LEFT JOIN llm l ON s.llm_id = l.id
             WHERE s.session_uuid = %s
-            ORDER BY s.id DESC
         """
-        await db.execute(sql, (json_request.session_uuid,))
+        params = [json_request.session_uuid]
+
+        if user.role != 'admin':
+            sql += f" AND {_agent_role_condition('s')}"
+            params.append(user.role)
+
+        sql += " ORDER BY s.id DESC"
+
+        await db.execute(sql, params)
         rows = await db.fetchall()
 
     selected_messages = []
@@ -138,12 +188,24 @@ async def session_messages(request: Request, json_request: SessionMessagesJsonRe
     for m in rows:
         if request_count >= 5:
             break
-        
+
         selected_messages.append(m)
-        
+
         kind = m.get("kind_type", "").strip().lower()
         if kind == "user-prompt":
             request_count += 1
 
     # Возвращаем сообщения в правильном хронологическом порядке (ASC)
     return {"result": list(reversed(selected_messages))}
+
+
+def _agent_role_condition(alias: str = '') -> str:
+    """Видимость сессий для не-админов: только сессии агентов, роли которых
+    совпадают с ролью пользователя (agent_id -> agent_role -> role.name)."""
+    prefix = f"{alias}." if alias else ""
+    return (
+        f"{prefix}`agent_id` IN ("
+        "SELECT ar.`agent_id` FROM `agent_role` ar "
+        "JOIN `role` r ON r.`id` = ar.`role_id` "
+        "WHERE r.`name` = %s)"
+    )
