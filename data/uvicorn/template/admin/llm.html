@@ -327,6 +327,22 @@
         text-align: center;
         padding: 40px 0;
     }
+
+    /* Drag-and-drop: перестановка строк меняет приоритет очереди */
+    .llm-table tbody tr[draggable="true"] {
+        cursor: grab;
+    }
+
+    .llm-table tbody tr.dragging {
+        opacity: 0.4;
+    }
+
+    .drag-handle {
+        color: #b0bec5;
+        margin-right: 8px;
+        cursor: grab;
+        user-select: none;
+    }
 </style>
 {% endblock %}
 
@@ -566,7 +582,15 @@
                 row.title = 'Модель ответила ошибкой и опущена в конец очереди';
             }
 
+            row.draggable = true;
+            row.addEventListener('dragstart', onRowDragStart);
+            row.addEventListener('dragover', onRowDragOver);
+            row.addEventListener('dragend', onRowDragEnd);
+
             const posCell = document.createElement('td');
+            const handle = el('span', 'drag-handle', '⠿');
+            handle.title = 'Перетащите для изменения приоритета в очереди';
+            posCell.appendChild(handle);
             posCell.appendChild(el('span', 'position-badge', llm.position ?? '—'));
             row.appendChild(posCell);
 
@@ -611,6 +635,45 @@
 
             tableBody.appendChild(row);
         });
+    }
+
+    // Drag-and-drop: новый порядок строк сохраняется как приоритет очереди (user_llm.position)
+    let draggedRow = null;
+
+    function onRowDragStart(e) {
+        draggedRow = e.currentTarget;
+        draggedRow.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function onRowDragOver(e) {
+        const target = e.currentTarget;
+        if (!draggedRow || draggedRow === target) return;
+        e.preventDefault();
+        const rect = target.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        tableBody.insertBefore(draggedRow, after ? target.nextSibling : target);
+    }
+
+    async function onRowDragEnd() {
+        if (!draggedRow) return;
+        draggedRow.classList.remove('dragging');
+        draggedRow = null;
+
+        // Новый порядок по DOM -> позиции 1..N
+        const positions = Array.from(tableBody.querySelectorAll('tr[data-id]')).map((row, index) => ({
+            llm_id: parseInt(row.dataset.id),
+            position: index + 1
+        }));
+
+        try {
+            await postData('/llm/queue/reorder', {user_id: parseInt(userSelect.value), positions});
+            showNotification('Порядок очереди сохранен', 'success');
+        } catch (e) {
+            showNotification(`Ошибка сохранения порядка: ${e.message}`, 'error');
+        }
+        // Перезагружаем в обоих случаях: обновляются бейджи позиций и активная модель
+        await loadStatus({userId: userSelect.value});
     }
 
     async function loadStatus(params = {}) {

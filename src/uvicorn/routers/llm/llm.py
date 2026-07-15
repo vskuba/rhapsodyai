@@ -185,6 +185,30 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
     }}
 
 
+@router.post("/llm/queue/reorder")
+async def llm_queue_reorder(data: dict, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
+    """Сохраняет новый порядок очереди LLM пользователя (user_llm.position).
+    Ожидает {user_id, positions: [{llm_id, position}, ...]}."""
+    reorder_user_id = data.get('user_id')
+    positions = data.get('positions') or []
+
+    if not reorder_user_id or not positions:
+        raise HTTPException(status_code=400, detail="user_id и positions обязательны")
+
+    async with mysql_get_db_async() as db:
+        for item in positions:
+            llm_id = item.get('llm_id')
+            position = item.get('position')
+            if llm_id is None or position is None:
+                continue
+            await db.execute(
+                "UPDATE user_llm SET position = %s WHERE user_id = %s AND llm_id = %s",
+                (int(position), int(reorder_user_id), int(llm_id))
+            )
+
+    return {"result": "success"}
+
+
 @router.post("/llm/errors/reset")
 async def llm_errors_reset(data: dict, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
     """Немедленно очищает время и код ошибки моделей (rate_limit_at, code_error):
