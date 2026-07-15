@@ -10,14 +10,9 @@ from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
-# Видимость фактов для не-админов: только факты агентов, роли которых
-# совпадают с ролью пользователя (fact.agent_id -> agent_role -> role.name)
-FACT_AGENT_ROLE_CONDITION = (
-    "f.`agent_id` IN ("
-    "SELECT ar.`agent_id` FROM `agent_role` ar "
-    "JOIN `role` r ON r.`id` = ar.`role_id` "
-    "WHERE r.`name` = %s)"
-)
+# Видимость фактов для не-админов: только собственные факты — созданные
+# workflow-запусками этого пользователя (fact.user_id)
+FACT_OWNER_CONDITION = "f.`user_id` = %s"
 
 
 @router.post("/fact/collection/{collection_name}/resync")
@@ -85,8 +80,8 @@ async def fact_collection_list(request: Request, db=Depends(mysql_get_db_async),
     join_condition = "fc.id = f.collection_id"
     params = []
     if user.role != 'admin':
-        join_condition += f" AND {FACT_AGENT_ROLE_CONDITION}"
-        params.append(user.role)
+        join_condition += f" AND {FACT_OWNER_CONDITION}"
+        params.append(user.user_id)
 
     async with db:
         await db.execute(f"""
@@ -108,8 +103,8 @@ async def fact_collection_documents(
     role_condition = ""
     params = [collection_name]
     if user.role != 'admin':
-        role_condition = f" AND {FACT_AGENT_ROLE_CONDITION}"
-        params.append(user.role)
+        role_condition = f" AND {FACT_OWNER_CONDITION}"
+        params.append(user.user_id)
 
     async with db:
         sql = f"""
@@ -162,8 +157,8 @@ async def fact_list(
         search_condition += " AND f.`qdrant_synced` = 0"
 
     if user.role != 'admin':
-        search_condition += f" AND {FACT_AGENT_ROLE_CONDITION}"
-        params.append(user.role)
+        search_condition += f" AND {FACT_OWNER_CONDITION}"
+        params.append(user.user_id)
 
     async with db:
 

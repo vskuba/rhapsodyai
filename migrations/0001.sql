@@ -283,7 +283,7 @@ CREATE TABLE `agent_role` (
 CREATE TABLE `fact` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `collection_id` INT NOT NULL,
-    `agent_id` INT NULL COMMENT 'tag:filter|type:int|desc:Agent that ran the workflow which created the fact (system field, filled by code, used for Qdrant filtering)',
+    `user_id` INT NULL COMMENT 'tag:filter|type:int|desc:User that ran the workflow which created the fact (owner; system field, filled by code, used for Qdrant filtering)',
     `document_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:Document ID string (example: dasha)',
     `document_title` CHAR(200) NULL,                   -- заголовок документа: title сущности агента (заполняется кодом, не LLM)
     `file_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:File ID as key for single storage (example: filename.pdf)',
@@ -295,9 +295,9 @@ CREATE TABLE `fact` (
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_qdrant_synced` (`qdrant_synced`),
     INDEX `idx_collection_lang` (`collection_id`, `language`),
-    INDEX `idx_fact_agent` (`agent_id`),
+    INDEX `idx_fact_user` (`user_id`),
     CONSTRAINT `fk_fact_fact_collection` FOREIGN KEY (`collection_id`) REFERENCES `fact_collection` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_fact_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_fact_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица памяти (история диалогов/действий)
