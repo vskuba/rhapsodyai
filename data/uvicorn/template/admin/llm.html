@@ -83,6 +83,15 @@
         cursor: default;
     }
 
+    /* Селект интервала автообновления прижимает себя и кнопку "Ping всех" вправо */
+    .auto-refresh-item {
+        margin-left: auto;
+    }
+
+    #autoRefreshSelect {
+        min-width: 111px;
+    }
+
     .btn-ping-all {
         background: #3498db;
         color: #fff;
@@ -91,7 +100,6 @@
         padding: 8px 20px;
         font-weight: bold;
         cursor: pointer;
-        margin-left: auto;
         align-self: flex-end;
     }
 
@@ -373,6 +381,15 @@
             </div>
         </div>
 
+        <div class="filter-item auto-refresh-item">
+            <label class="filter-label" for="autoRefreshSelect">Автообновление</label>
+            <select id="autoRefreshSelect">
+                <option value="1" selected>1 сек</option>
+                <option value="3">3 сек</option>
+                <option value="7">7 сек</option>
+            </select>
+        </div>
+
         <button type="button" class="btn-ping-all" id="pingAllBtn">Ping всех</button>
     </div>
 
@@ -411,6 +428,7 @@
     const pingAllBtn = document.getElementById('pingAllBtn');
     const userSelect = document.getElementById('userSelect');
     const resetHoursSelect = document.getElementById('resetHoursSelect');
+    const autoRefreshSelect = document.getElementById('autoRefreshSelect');
 
     let llmList = [];
 
@@ -470,6 +488,7 @@
     async function pingLlm(llmId, button) {
         button.disabled = true;
         button.textContent = '...';
+        autoRefreshPaused = true;
         try {
             const res = await postData(`/llm/ping/${llmId}`, {});
             const ping = res.result;
@@ -488,6 +507,7 @@
         } finally {
             button.disabled = false;
             button.textContent = 'Ping';
+            autoRefreshPaused = pingAllRunning;
         }
     }
 
@@ -729,6 +749,8 @@
 
     pingAllBtn.onclick = async () => {
         pingAllBtn.disabled = true;
+        pingAllRunning = true;
+        autoRefreshPaused = true;
         try {
             // Последовательно, чтобы не бомбить провайдеров пачкой запросов
             for (const llm of llmList) {
@@ -737,8 +759,27 @@
             }
         } finally {
             pingAllBtn.disabled = false;
+            pingAllRunning = false;
+            autoRefreshPaused = false;
         }
     };
+
+    // Автообновление страницы: перечитываем статус с выбранным интервалом.
+    // Пауза на время пинга и drag-and-drop, чтобы перерисовка не сбивала процесс
+    let autoRefreshTimer = null;
+    let autoRefreshPaused = false;
+    let pingAllRunning = false;
+
+    function autoRefreshStart() {
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+        autoRefreshTimer = setInterval(() => {
+            if (autoRefreshPaused || draggedRow) return;
+            loadStatus({userId: userSelect.value, resetHours: resetHoursSelect.value});
+        }, parseInt(autoRefreshSelect.value) * 1000);
+    }
+
+    autoRefreshSelect.onchange = autoRefreshStart;
+    autoRefreshStart();
 
     loadStatus();
 </script>
