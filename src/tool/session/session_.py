@@ -1,4 +1,6 @@
+import re
 import uuid
+from difflib import SequenceMatcher
 
 from ai.ai_session import ai_session_message_add
 from mysql_.mysql_ import mysql_get_db_async
@@ -53,6 +55,69 @@ async def session_messages(session_uuid: str, limit: int = 10) -> str:
         return "\n".join(rendered_messages)
 
 
+async def session_response_repeat_check(session_uuid: str, response: str, prompt_user: str = '', limit: int = 5) -> dict:
+    """
+    Проверяет, является ли сгенерированный ответ зацикливанием (анти-луп: "сплю уже"
+    на каждое "ок"). Зацикливание — это когда ОБА условия выполнены: ответ повторяет
+    один из последних ответов агента И входящее сообщение повторяет одно из последних
+    сообщений собеседника (не несет новизны). Легитимные повторы ("да"/"нет" на серию
+    РАЗНЫХ вопросов) не гасятся: новое входящее сообщение -> repeat всегда 0.
+    Сравнение по нормализованному тексту: точное совпадение или сходство выше порога 0.85.
+     - session_uuid: сессия переписки
+     - response: сгенерированный ответ до отправки
+     - prompt_user: входящее сообщение собеседника (без него проверяется только ответ)
+     - limit: сколько последних сообщений каждой стороны сравнивать
+    Returns:
+        A dictionary with the check result.
+        repeat (int): 1 — зацикливание (и ответ, и входящее сообщение — повторы), 0 — отвечать можно.
+    """
+    normalized = _response_normalize(response)
+    if not normalized:
+        return {"repeat": 0}
+
+    async def _history_get(db_session, kind_type: str) -> list:
+        await db_session.execute(
+            """
+            SELECT content FROM agent_session
+            WHERE session_uuid = %s AND kind_type = %s
+            ORDER BY id DESC
+            LIMIT %s
+            """,
+            (session_uuid, kind_type, int(limit))
+        )
+        return await db.fetchall()
+
+    def _is_repeat(text: str, rows: list) -> bool:
+        for row in rows:
+            previous = _response_normalize(row.get('content', ''))
+            if not previous:
+                continue
+            if previous == text or SequenceMatcher(None, text, previous).ratio() >= 0.85:
+                return True
+        return False
+
+    async with mysql_get_db_async() as db:
+        response_rows = await _history_get(db, 'response-final')
+
+        if not _is_repeat(normalized, response_rows):
+            return {"repeat": 0}
+
+        # Ответ повторяется, но входящее сообщение новое (другой вопрос) —
+        # повтор легитимен ("да"/"нет" на разные вопросы), отвечаем
+        normalized_prompt = _response_normalize(prompt_user)
+        if normalized_prompt:
+            prompt_rows = await _history_get(db, 'user-prompt')
+            # Свежее сообщение уже записано в историю первым — сравниваем с предыдущими
+            previous_prompts = [
+                r for r in prompt_rows
+                if _response_normalize(r.get('content', '')) != ''
+            ][1:] if prompt_rows else []
+            if not _is_repeat(normalized_prompt, previous_prompts):
+                return {"repeat": 0}
+
+    return {"repeat": 1}
+
+
 async def session_uuid_create() -> str:
     return str(uuid.uuid4())
 
@@ -94,3 +159,10 @@ async def session_message_add(
         )
 
     return request_uuid
+
+
+def _response_normalize(text: str) -> str:
+    """Нормализация ответа для сравнения на повтор: нижний регистр,
+    только буквы/цифры, схлопнутые пробелы (скобки, эмодзи, пунктуация не влияют)."""
+    text = re.sub(r'[^\w\s]+', '', str(text or '').lower(), flags=re.UNICODE)
+    return re.sub(r'\s+', ' ', text).strip()
