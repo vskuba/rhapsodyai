@@ -254,24 +254,6 @@ CREATE TABLE `fact_collection` (
     `description` CHAR(200) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Таблица фактов
-CREATE TABLE `fact` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `collection_id` INT NOT NULL,
-    `document_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:Document ID string (example: dasha)',
-    `document_title` CHAR(200) NULL,                   -- заголовок документа: title сущности агента (заполняется кодом, не LLM)
-    `file_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:File ID as key for single storage (example: filename.pdf)',
-    `category` CHAR(50) DEFAULT NULL COMMENT 'tag:extract|type:string|desc:High-level classification (example: delivery)',
-    `language` CHAR(2) NOT NULL COMMENT 'tag:extract|type:string|desc:The language two char format, ISO 639-1 code (example: en)',
-    `document` LONGTEXT NOT NULL COMMENT 'tag:extract|type:string|desc:The clean, factual text extracted from the source',
-    `tags` CHAR(250) NOT NULL COMMENT 'tag:extract|type:array_string|desc:A comma-separated list of tags extracted from the source (example: tag1,tag2,tag3)',
-    `qdrant_synced` INT NOT NULL DEFAULT 0,
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_qdrant_synced` (`qdrant_synced`),
-    INDEX `idx_collection_lang` (`collection_id`, `language`),
-    CONSTRAINT `fk_fact_fact_collection` FOREIGN KEY (`collection_id`) REFERENCES `fact_collection` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 -- Таблица агентов
 CREATE TABLE `agent` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -294,6 +276,27 @@ CREATE TABLE `agent_role` (
     PRIMARY KEY (`agent_id`, `role_id`),
     CONSTRAINT `fk_agent_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_agent_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Таблица фактов
+CREATE TABLE `fact` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `collection_id` INT NOT NULL,
+    `agent_id` INT NULL,                               -- агент, запустивший workflow, создавший факт (заполняется кодом, не LLM)
+    `document_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:Document ID string (example: dasha)',
+    `document_title` CHAR(200) NULL,                   -- заголовок документа: title сущности агента (заполняется кодом, не LLM)
+    `file_id` CHAR(100) NULL COMMENT 'tag:extract|type:string|desc:File ID as key for single storage (example: filename.pdf)',
+    `category` CHAR(50) DEFAULT NULL COMMENT 'tag:extract|type:string|desc:High-level classification (example: delivery)',
+    `language` CHAR(2) NOT NULL COMMENT 'tag:extract|type:string|desc:The language two char format, ISO 639-1 code (example: en)',
+    `document` LONGTEXT NOT NULL COMMENT 'tag:extract|type:string|desc:The clean, factual text extracted from the source',
+    `tags` CHAR(250) NOT NULL COMMENT 'tag:extract|type:array_string|desc:A comma-separated list of tags extracted from the source (example: tag1,tag2,tag3)',
+    `qdrant_synced` INT NOT NULL DEFAULT 0,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_qdrant_synced` (`qdrant_synced`),
+    INDEX `idx_collection_lang` (`collection_id`, `language`),
+    INDEX `idx_fact_agent` (`agent_id`),
+    CONSTRAINT `fk_fact_fact_collection` FOREIGN KEY (`collection_id`) REFERENCES `fact_collection` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_fact_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица памяти (история диалогов/действий)
