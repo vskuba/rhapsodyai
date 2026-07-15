@@ -169,6 +169,13 @@
                 <select id="kindTypeFilter" class="form-control" multiple size="5" style="margin-bottom: 10px; height: 100px;">
                     <option>Загрузка...</option>
                 </select>
+
+                <label for="limitFilter" class="filter-label">Limit сообщений</label>
+                <select id="limitFilter" class="form-control" style="margin-bottom: 10px;">
+                    <option value="10" selected>10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                </select>
             </div>
 
             <div class="session-group">
@@ -199,6 +206,7 @@
     const agentFilter = document.getElementById('agentFilter');
     const companionFilter = document.getElementById('companionFilter');
     const kindTypeFilter = document.getElementById('kindTypeFilter');
+    const limitFilter = document.getElementById('limitFilter');
 
     let allSessions = [];
     let allAgents = {};
@@ -337,6 +345,16 @@
                 renderMessages(currentSessionMessages);
             };
 
+            const savedLimit = sessionStorage.getItem('sessions_filter_limit');
+            if (savedLimit && Array.from(limitFilter.options).some(o => o.value === savedLimit)) {
+                limitFilter.value = savedLimit;
+            }
+
+            limitFilter.onchange = () => {
+                sessionStorage.setItem('sessions_filter_limit', limitFilter.value);
+                if (sessionSelect.value) loadSessionDetails(sessionSelect.value);
+            };
+
             sessionSelect.onchange = () => loadSessionDetails(sessionSelect.value);
 
             // Init values
@@ -392,7 +410,7 @@
         document.getElementById('activeSessionTitle').innerText = "Сессия: " + uuid;
         messagesContainer.innerHTML = 'Загрузка...';
         try {
-            const data = await postData('/session/messages', { session_uuid: uuid });
+            const data = await postData('/session/messages', { session_uuid: uuid, limit: parseInt(limitFilter.value) });
             currentSessionMessages = data.result || [];
             renderMessages(currentSessionMessages);
         } catch (e) {

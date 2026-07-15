@@ -16,7 +16,8 @@ class SessionJsonRequest(BaseModel):
 
 class SessionMessagesJsonRequest(BaseModel):
     session_uuid: str
-    limit: int = 5
+    # Максимум диалоговых сообщений (user-prompt + response-final) в выдаче
+    limit: int = 10
 
 
 @router.post("/session/list")
@@ -165,7 +166,7 @@ async def session_messages(
         user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
 ):
     async with db:
-        # Выбираем сообщения в обратном порядке (DESC), чтобы отсчитать 5 последних запросов
+        # Выбираем сообщения в обратном порядке (DESC), чтобы отсчитать последние диалоговые сообщения
         sql = """
             SELECT s.*, l.name as llm_name
             FROM agent_session s
@@ -183,17 +184,21 @@ async def session_messages(
         await db.execute(sql, params)
         rows = await db.fetchall()
 
+    limit = min(max(json_request.limit, 1), 200)
     selected_messages = []
-    request_count = 0
+    dialog_count = 0
     for m in rows:
-        if request_count >= 5:
+        kind = m.get("kind_type", "").strip().lower()
+        is_dialog = kind in ("user-prompt", "response-final")
+
+        # Лимит считаем по диалоговым сообщениям; служебные записи (llm-request и пр.)
+        # включаются, пока принадлежат выбранным запросам
+        if is_dialog and dialog_count >= limit:
             break
 
         selected_messages.append(m)
-
-        kind = m.get("kind_type", "").strip().lower()
-        if kind == "user-prompt":
-            request_count += 1
+        if is_dialog:
+            dialog_count += 1
 
     # Возвращаем сообщения в правильном хронологическом порядке (ASC)
     return {"result": list(reversed(selected_messages))}
