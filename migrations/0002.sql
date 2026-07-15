@@ -38,24 +38,27 @@ INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `crea
 --
 
 INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `code_error`, `position`) VALUES
-(1, 1, NULL, NULL, 2),
-(1, 5, NULL, NULL, 1),
-(1, 6, NULL, NULL, 3),
-(1, 10, NULL, NULL, 4),
-(1, 12, NULL, NULL, 0),
-(1, 15, NULL, NULL, 5),
-(2, 1, NULL, NULL, 2),
-(2, 5, NULL, NULL, 1),
-(2, 6, NULL, NULL, 3),
-(2, 10, NULL, NULL, 4),
-(2, 12, NULL, NULL, 0),
-(2, 15, NULL, NULL, 5),
-(4, 1, NULL, NULL, 2),
-(4, 5, NULL, NULL, 1),
-(4, 6, NULL, NULL, 3),
-(4, 10, NULL, NULL, 4),
-(4, 12, NULL, NULL, 0),
-(4, 15, NULL, NULL, 5);
+(1, 5, NULL, NULL, 2),
+(1, 6, NULL, NULL, 5),
+(1, 10, NULL, NULL, 6),
+(1, 11, NULL, NULL, 1),
+(1, 12, NULL, NULL, 4),
+(1, 15, NULL, NULL, 3),
+(1, 16, NULL, NULL, 7),
+(2, 5, NULL, NULL, 2),
+(2, 6, NULL, NULL, 5),
+(2, 10, NULL, NULL, 6),
+(2, 11, NULL, NULL, 1),
+(2, 12, NULL, NULL, 4),
+(2, 15, NULL, NULL, 3),
+(2, 16, NULL, NULL, 7),
+(4, 5, NULL, NULL, 2),
+(4, 6, NULL, NULL, 5),
+(4, 10, NULL, NULL, 6),
+(4, 11, NULL, NULL, 1),
+(4, 12, NULL, NULL, 4),
+(4, 15, NULL, NULL, 3),
+(4, 16, NULL, NULL, 7);
 
 --
 

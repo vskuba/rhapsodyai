@@ -40,10 +40,7 @@
 
     .filter-item-inline {
         flex-direction: row;
-    }
-
-    .filter-item-inline select {
-        width: 89%;
+        text-align: right;
     }
 
     .sidebar-label {
@@ -330,10 +327,14 @@
                     <select id="documentSelect" class="admin-select">
                         <option value="all">Все</option>
                     </select>
+
+                    {% if request.session.get('role') == 'admin' %}
                     <button type="button" id="resyncBtn" class="btn-resync"
                             title="Пересинхронизировать в Qdrant: удалить записи выбранного документа и записать заново из базы">
                         ⟳
                     </button>
+                    {% endif %}
+
                 </div>
             </div>
 
