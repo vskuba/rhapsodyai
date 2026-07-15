@@ -17,7 +17,7 @@ class SessionJsonRequest(BaseModel):
 class SessionMessagesJsonRequest(BaseModel):
     session_uuid: str
     # Максимум диалоговых сообщений (user-prompt + response-final) в выдаче
-    limit: int = 10
+    limit: int = 25
 
 
 @router.post("/session/list")
