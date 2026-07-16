@@ -1,30 +1,69 @@
 # Анализ workflow `dating_talk` («Чат с девушкой») и план улучшений
 
-## 1. Как работает сейчас (11 шагов, объединенный LLM-анализ)
+## 1. Как работает сейчас (17 шагов, LLM-анализ + генерация + валидация)
 
 ```
-pos 0  session_messages (limit 20)             — история переписки
-pos 1  fact_collection_output_format(companion) — JSON-шаблон фактов для промпта
-pos 2  llm_to_json «Анализ сообщения»          — LLM#1 (объединенный): history_summary,
-       category, tags, question(0/1), search_query, facts_companion, facts_talk
-pos 3  workflow_invoke companion_fact_extract  — сохранение facts_companion/facts_talk (subflow 7, без LLM)
-pos 4  variable_conversion                     — 3 фильтра {document_id, tags}
-pos 5  qdrant_fact_search (girl, limit=6)      — query: search_query
-       └─ если question == 1 → pos 16 girl_fact_create (LLM) → назад на pos 6
-pos 6  qdrant_fact_search (companion, limit=6) — query: search_query
-pos 7  qdrant_fact_search (talk, limit=6)      — query: search_query
-pos 8  datetime_current_get (+3)
-pos 9  return_response_llm                     — LLM#2: финальный ответ. КОНЕЦ
-pos 16 workflow_invoke girl_fact_create        — достижим только переходом question==1
+pos 0  session_messages (id 29, limit 20, timezone) — детальная история с метками времени
+pos 1  session_messages (id 108, limit 50, timezone) — расширенная история для краткой выдержки
+pos 2  fact_collection_output_format(companion)     — JSON-шаблон фактов для промпта
+pos 3  datetime_current_get (+3)                    — текущее время + словами («поздний вечер»)
+pos 4  llm_to_json «Анализ сообщения» (id 27)       — LLM#1: session_messages_result_processed
+       (краткая выдержка с привязкой ко времени), category, tags, question(0/1), search_query,
+       facts_companion, facts_talk, prompt_user_ignore(0/1)
+       └─ если prompt_user_ignore == 1 → pos 14 «Тишина». КОНЕЦ
+pos 5  workflow_invoke companion_fact_extract       — сохранение facts_companion/facts_talk (subflow 7, без LLM)
+pos 6  variable_conversion                          — 3 фильтра {document_id, tags}
+pos 7  qdrant_fact_search (girl, limit=6)           — query: search_query
+       └─ если question == 1 → pos 16 girl_fact_create (LLM) → назад на pos 8
+pos 8  qdrant_fact_search (companion, limit=6)      — query: search_query
+pos 9  qdrant_fact_search (talk, limit=6)           — query: search_query
+pos 10 llm_to_json «Генерация ответа» (id 24)       — LLM#2: girl_response (пустая строка = молчать);
+       в промпте два блока истории: детальная (pos 0) + краткая выдержка (из анализа)
+pos 11 llm_to_json «Валидация ответа» (id 109)      — LLM#3-критик: girl_response_skip(0/1)
+       └─ если girl_response_skip == 1 → pos 14 «Тишина»
+pos 12 tool session_response_repeat_check (id 105)  — детерминированный анти-луп (без LLM)
+       └─ если repeat == 1 → pos 14 «Тишина»
+pos 13 return_response_text «Ответ»                 — отдает %girl_response%. КОНЕЦ
+pos 14 return_response_text «Тишина»                — пустой ответ. КОНЕЦ
+pos 16 workflow_invoke girl_fact_create             — достижим только переходом question==1
+pos 17 variable_conversion «Влить придуманные факты»
 ```
 
 Сущности «мужчина» переименованы в «собеседника»: коллекция `dating_man` → `dating_companion`,
 переменные `prompt_user_facts_man` → `prompt_user_facts_companion`,
 `fact_collection_man_name` → `fact_collection_companion_name`.
 
-Обычный путь: **2 последовательных LLM-вызова** (объединенный анализ + финальный ответ) + 3 запроса
-в Qdrant; худший (личный вопрос) — 3 LLM-вызова. Ранее было 3-5 LLM-вызовов: извлечение фактов,
-суммаризация истории и категоризация выполнялись отдельными шагами.
+Обычный путь: **3 последовательных LLM-вызова** (анализ + генерация + валидация) + 3 запроса
+в Qdrant; худший (личный вопрос) — 4 LLM-вызова; лучший (ignore на анализе) — 1. Ранее было
+3-5 LLM-вызовов: извлечение фактов, суммаризация истории и категоризация выполнялись
+отдельными шагами.
+
+### 1.1. Механика тишины (реалистичность диалога)
+
+Четыре фильтра, каждый может завершить workflow пустым ответом (шаг «Тишина»):
+
+1. **Анализ, `prompt_user_ignore`** — диалог завершен прощанием, а новое сообщение не несет
+   контента (повторные «спокойной ночи», «ок», смайл). Учитывает текущее время против меток
+   времени истории: если после прощания реально прошла ночь и наступило утро — это новый
+   диалог, отвечаем; если «доброе утро» пишут через минуту после прощания вечером — молчим.
+2. **Генерация** — критическое правило: пустая строка на неразборчивый набор букв/бессмыслицу.
+3. **Валидация, `girl_response_skip`** — отдельный LLM-критик видит сообщение, историю и уже
+   готовый черновик ответа; пропускает ответ, если он не обязателен (реплика-реакция,
+   поддакивание, повтор уже сказанного). При сомнении — молчать. Генератор структурно предвзят
+   к тому, чтобы ответить, поэтому оценка вынесена в отдельный шаг с переходом в workflow.
+4. **Проверка повтора** — `session_response_repeat_check` (без LLM): repeat=1 только если И ответ
+   повторяет один из 5 последних ответов агента (нормализация + SequenceMatcher ≥ 0.85),
+   И входящее сообщение повторяет одно из предыдущих сообщений собеседника.
+
+### 1.2. Время в истории переписки
+
+- `created_at` в БД хранится в UTC; `session_messages` принимает `timezone` («+3») и конвертирует
+  время в SQL (`CONVERT_TZ`) — история и «Текущее время» в промптах в одном поясе
+  (обе — из переменной `datetime_current_get_zone`).
+- Каждая реплика рендерится с меткой `[YYYY-MM-DD HH:MM]` — LLM отличает «прощание минуту назад»
+  от «прощание вчера вечером».
+- `datetime_current_get` дополняет точное время словесным описанием времени суток
+  (глубокая ночь / раннее утро / утро / середина дня / ближе к вечеру / вечер / поздний вечер / ночь).
 
 ## 2. Найденные баги и рассинхроны
 
@@ -43,10 +82,10 @@ pos 16 workflow_invoke girl_fact_create        — достижим только
    численно (`_transition_condition_check`), отсутствующая переменная пропускает переход с warning.
 4. **Нет score_threshold в qdrant_search** (закомментирован, `qdrant_.py:250,259`) — при limit=2 в
    контекст попадают 2 ближайших факта, даже если они нерелевантны вопросу.
-5. **Дедупликация фактов — только точное совпадение текста** (`fact_collection_.py:91`) —
+5. **Дедупликация фактов — только точное совпадение текста** (`fact_collection_.py:111`) —
    перефразированный факт («у меня бмв» / «езжу на BMW») создаёт дубликат.
 6. **`session_messages` отбрасывает последнее сообщение при нечётном количестве**
-   (`session_.py:34`) — теряется контекст.
+   (`session_.py:45`) — теряется контекст.
 7. **[РЕШЕНО: %if%-блоки в шаблонах]** Пустые секции в финальном промпте: раньше при пустом
    поиске LLM видела «=== Информация о ... === (пусто)». Теперь рендер поддерживает условные
    блоки `%if var%...%else%...%endif%` (см. docs/workflow.md §3), и три секции фактов в промпте
@@ -56,9 +95,15 @@ pos 16 workflow_invoke girl_fact_create        — достижим только
 ## 3. Улучшения точности ответов
 
 - ✅ **Слить LLM-шаги 1, 3, 4 в один `llm_to_json`** — сделано: шаг 27 «Анализ сообщения»
-  возвращает facts_companion, facts_talk, category, tags, question, history_summary, search_query
+  возвращает facts_companion, facts_talk, category, tags, question,
+  session_messages_result_processed (краткая выдержка), search_query и prompt_user_ignore
   за один вызов (−2 LLM-вызова). Извлечение фактов переехало из subflow 7 в объединенный шаг;
   subflow 7 теперь только сохраняет переданные факты (входы `prompt_user_facts_companion/talk`).
+- ✅ **Два блока истории в финальном промпте** — сделано: детальная переписка с метками времени
+  (последние 20 реплик) + краткая выдержка по расширенной истории (50 реплик) — LLM видит и
+  точный таймлайн, и суть длинного хвоста (§1.2).
+- ✅ **Механика тишины** — сделано: ignore на анализе, пустой ответ генерации, LLM-валидация
+  важности ответа, детерминированная проверка повтора (§1.1) — девушка не отвечает на всё подряд.
 - ✅ **Переформулировка поискового запроса** — сделано: объединенный шаг возвращает
   `search_query` (самодостаточная формулировка с референтами из истории), все три
   qdrant_fact_search используют её вместо сырого `prompt_user`.
@@ -137,7 +182,7 @@ pos 16 workflow_invoke girl_fact_create        — достижим только
 |---|---|---|
 | `qdrant_multi_search(searches_json, limit, score_threshold)` | Несколько поисков одним вызовом, параллельно внутри; возвращает dict по ключам | 3 шага tool_invoke + 2 шага копий переменных |
 | `fact_add_unique(collection_name, data, similarity_threshold, sync_now)` | Добавление с семантическим дедупом и опц. мгновенным синком в Qdrant | fact_collection_add + крон-гонка |
-| `session_summary_get(session_uuid, limit)` | История + кэшированная суммаризация в session.metadata, инкрементальное обновление | session_messages + LLM-шаг суммаризации на каждый запрос |
+| `session_summary_get(session_uuid, limit)` | История + кэшированная суммаризация в session.metadata, инкрементальное обновление. Частично закрыто: выдержка генерируется шагом анализа (§1), но без кэша — пересчитывается каждый запрос | session_messages + LLM-шаг суммаризации на каждый запрос |
 | `fact_context_render(results_json, empty_text)` | Форматирует результаты поисков в секции промпта, скрывая пустые | ручная сборка секций в финальном промпте |
 | `qdrant_save_now(collection_name, facts_json)` | Немедленная запись в Qdrant (минуя крон) | ожидание fact_qdrant_sync |
 
@@ -148,7 +193,8 @@ pos 16 workflow_invoke girl_fact_create        — достижим только
    переменной вместо KeyError.
 2. **Быстрые победы (workflow)**: ✅ слить LLM-шаги 1+3+4 (шаг «Анализ сообщения»);
    ✅ search_query вместо сырого prompt_user; ✅ fact_collection_limit = 6 и отдельный
-   fact_invent_limit = 12 для «Новый факты».
+   fact_invent_limit = 12 для «Новый факты»; ✅ механика тишины (§1.1); ✅ время в истории
+   с учетом часового пояса + два блока истории в финальном промпте (§1.2).
 3. **Инструменты**: fact_add_unique (дедуп + sync_now), qdrant_multi_search, score_threshold.
 4. **Архитектура**: ✅ workflow_invoke + 2 subflow (companion_fact_extract, girl_fact_invent);
    осталось — context_retrieve и вынос fact_extract из критического пути; доделать
