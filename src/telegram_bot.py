@@ -15,7 +15,7 @@ from src.mysql_.repository.agent_repository import AgentRepository
 agent_manager = AiFrameworkAgentManager()
 
 async def init_telegram_bot(agent_name: str):
-    bot = Bot(token=config_get('telegram_token'))
+    bot = Bot(token=config_get('TELEGRAM_TOKEN'))
     dp = Dispatcher()
     queues = queue_get()
 

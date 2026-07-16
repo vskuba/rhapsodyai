@@ -5,6 +5,7 @@ anthropic
 bcrypt
 click
 crawl4ai
+ddgs
 fastapi
 fastembed
 groq
