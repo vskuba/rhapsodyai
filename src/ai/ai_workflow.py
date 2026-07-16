@@ -16,6 +16,52 @@ WORKFLOW_IF_BLOCK_RE = re.compile(
 )
 
 
+def ai_workflow_variables_base(
+        *,
+        prompt_user: str,
+        user_id: int,
+        entity_agent: dict,
+        session_uuid: str,
+        workflow_id: int,
+        user_username: str = '',
+        user_email: str = '',
+        companion_id: int | None = None,
+        companion_name: str = '',
+        companion_title: str = '',
+) -> dict:
+    """
+    Единый набор базовых переменных workflow — имена соответствуют глобальным
+    переменным (agent_workflow_variable type='global'). Единственный источник
+    этих имен: используется всеми точками входа (веб-чат, переводчик и т.д.),
+    чтобы правки не приходилось дублировать по копиям словаря.
+    """
+    return {
+        'prompt_user': prompt_user,
+        'user_id': user_id,
+        'user_username': user_username,
+        'user_email': user_email,
+        'companion_id': companion_id,
+        'companion_name': companion_name,
+        'companion_title': companion_title,
+        'agent_id': entity_agent.get('id'),
+        'agent_name': entity_agent.get('name'),
+        'agent_title': entity_agent.get('title'),
+        'agent_greeting': entity_agent.get('greeting'),
+        'session_uuid': session_uuid,
+        'workflow_id': workflow_id,
+        'node_id': entity_agent.get('node_id'),
+    }
+
+
+def ai_workflow_variables_defaults_apply(variables: dict, raw_variables: list[dict]) -> dict:
+    """Дозаполняет scope default-значениями переменных workflow (не перезаписывая уже заданные)."""
+    for v in raw_variables:
+        v_name = (v.get('name') or '').strip()
+        if v_name and v_name not in variables:
+            variables[v_name] = v.get('default')
+    return variables
+
+
 async def ai_workflow_load(workflow_id: int) -> dict:
     """Загружает workflow для выполнения: сущность workflow, нормализованные шаги
     (metadata распарсен, строки очищены от пробелов CHAR-типа) и переменные
