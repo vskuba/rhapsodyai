@@ -11,7 +11,11 @@ from src.ai.ai_workflow import ai_workflow_load
 from src.ai.ai_workflow import ai_workflow_variables_render
 from src.ai.ai_workflow import ai_workflow_variables_input_get
 from src.ai.ai_workflow import ai_workflow_variables_public_get
+from src.ai.ai_workflow import ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.mysql_.repository.companion_repository import CompanionRepository
+from setting_.setting_ import setting_get
+from src.tool.setting.setting_ import setting_value_get
+from i18n_.i18n_ import i18n_text_resolve, i18n_languages_parse
 from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
@@ -91,28 +95,48 @@ async def ask_ai(
     workflow_steps = workflow_data['steps']
     raw_workflow_variables = workflow_data['variables']
 
-    # Собираем переменные: базовые + из агента + из запроса пользователя
+    # Собираем переменные: базовые (единый сборщик) + из агента + из запроса пользователя
     workflow_variables_all = {
-        'prompt_user': json_request.question.strip(),
-        'user_id': user.user_id,
-        'user_username': entity_user.get('username'),
-        'user_email': entity_user.get('email'),
-        'companion_id': json_request.companion_id,
-        'companion_name': entity_companion.get('name'),
-        'companion_title': entity_companion.get('title'),
-        'agent_id': json_request.agent_id,
-        'agent_name': entity_agent.get('name'),
-        'agent_title': entity_agent.get('title'),
-        'agent_greeting': entity_agent.get('greeting'),
-        'session_uuid': session_uuid,
-        'workflow_id': workflow_id,
-        'node_id': entity_agent.get('node_id'),
+        **ai_workflow_variables_base(
+            prompt_user=json_request.question.strip(),
+            user_id=user.user_id,
+            user_username=entity_user.get('username'),
+            user_email=entity_user.get('email'),
+            companion_id=json_request.companion_id,
+            companion_name=entity_companion.get('name'),
+            companion_title=entity_companion.get('title'),
+            entity_agent=entity_agent,
+            session_uuid=session_uuid,
+            workflow_id=workflow_id,
+        ),
         **json_from_string(entity_agent.get('workflow_variable', {})),
         **json_request.variables
     }
 
-    # Получаем переменные ноды воркфлоу и рендерим их с учетом уже собранных переменных
+    # Языки ноды из настройки 'languages' ('ru' | 'ru,en'; нодовая перекрывает общую).
+    # Первый язык — активный: на нем девушка отвечает и в него резолвятся переводы.
+    # setdefault — агент/запрос могут переопределить язык своей workflow_variable
     node_id = entity_agent.get('node_id')
+    node_languages = i18n_languages_parse(
+        (await setting_value_get('languages', node_id or 0, 'ru'))['value']
+    )
+    workflow_variables_all.setdefault('node_languages', ','.join(node_languages))
+
+    # Приоритет языка: workflow_variable агента/запроса (уже в dict, setdefault не перебьет)
+    # → выбор пользователя из кабинета (если поддерживается нодой) → первый язык ноды
+    user_language = str(await setting_get('language', '', user_id=user.user_id) or '').strip().lower()
+    if user_language in node_languages:
+        workflow_variables_all.setdefault('user_language', user_language)
+    workflow_variables_all.setdefault('user_language', node_languages[0])
+    language_active = str(workflow_variables_all.get('user_language') or 'ru')
+
+    # Поля агента уходят в движок напрямую (prompt_system_create читает entity_agent,
+    # минуя workflow-переменные) — резолвим их мультиязычные значения здесь же
+    entity_agent['prompt_system'] = i18n_text_resolve(entity_agent.get('prompt_system'), language_active)
+    entity_agent['greeting'] = i18n_text_resolve(entity_agent.get('greeting'), language_active)
+    workflow_variables_all['agent_greeting'] = entity_agent['greeting']
+
+    # Получаем переменные ноды воркфлоу и рендерим их с учетом уже собранных переменных
     if node_id:
         for x in await ai_workflow_variables_public_get(node_id):
             # Рендерим переменные ноды по очереди с учетом сортировки по позиции, чтобы переменные могли ссылаться друг на друга
@@ -123,10 +147,12 @@ async def ask_ai(
             workflow_variables_all.update(workflow_variable_node)
 
     # получаем переменные из БД для воркфлоу и добавляем их в workflow_variables_all
-    for v in raw_workflow_variables:
-        v_name = v.get('name', '').strip()
-        if v_name and v_name not in workflow_variables_all:
-            workflow_variables_all[v_name] = v.get('default', None)
+    ai_workflow_variables_defaults_apply(workflow_variables_all, raw_workflow_variables)
+
+    # Мультиязычные значения ({"ru": "...", "en": "..."} — переменные, default'ы)
+    # приводим к активному языку
+    for v_name, v_value in workflow_variables_all.items():
+        workflow_variables_all[v_name] = i18n_text_resolve(v_value, language_active)
 
     # Проверяем, что все глобальные переменные присутствуют в workflow_variables_all
     for i in [x.get('name') for x in await ai_workflow_variables_global_get()]:
