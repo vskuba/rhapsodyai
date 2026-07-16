@@ -36,6 +36,11 @@ RUN python3 -c "from fastembed import TextEmbedding, SparseTextEmbedding; TextEm
 
 RUN pip install rq rq-dashboard redis
 
+# Модели уже скачаны выше в слои образа — в рантайме работаем только с локальным кэшем,
+# без HEAD-проверок huggingface.co (иначе его недоступность блокирует старт сервера)
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+
 # Копируем весь код проекта в контейнер
 COPY . /app
 

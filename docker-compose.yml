@@ -82,6 +82,10 @@ services:
     env_file:
       - .env
     environment:
+      # Модели предзагружены в образ (dockerfile) — в рантайме HF не нужен,
+      # иначе каждый старт блокируется HEAD-проверками свежести на huggingface.co
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
       - HF_HUB_DISABLE_SYMLINKS_WARNING=1
       - HF_HOME=/root/.cache/huggingface
       - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
@@ -132,6 +136,7 @@ services:
       - "9181:9181"
     environment:
       - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
       - HF_HUB_DISABLE_SYMLINKS_WARNING=1
       - HF_HOME=/root/.cache/huggingface
       - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
@@ -153,6 +158,7 @@ services:
       - .env
     environment:
       - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
       - HF_HUB_DISABLE_SYMLINKS_WARNING=1
       - HF_HOME=/root/.cache/huggingface
       - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
