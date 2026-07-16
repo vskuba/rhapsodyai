@@ -159,8 +159,9 @@
 
     <!-- Форма -->
     <div class="editor-section">
-        <div class="form-header">
+        <div class="form-header" style="display: flex; align-items: center; justify-content: space-between; gap: 15px;">
             <h2 id="formTitle">Выберите переменную</h2>
+            <div id="langSwitcherContainer"></div>
         </div>
 
         <!-- Дефолтный текст: показывается, пока не выбрана переменная -->
@@ -190,9 +191,15 @@
 <script type="module">
     import {getData, putData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
+    import {langSwitcherCreate, nodeLanguagesGet} from '/static/js/lang_switcher.js';
 
     const itemList = document.getElementById('itemList');
     const dataForm = document.getElementById('dataForm');
+
+    // Переключатель языков: переводимое поле — «Значение»; значение может быть
+    // строкой или словарем переводов {"ru": "...", "en": "..."}
+    const langSwitcher = langSwitcherCreate(document.getElementById('langSwitcherContainer'));
+    langSwitcher.fieldBind(document.getElementById('default'));
 
     // Под textarea выводим переменные-подсказки, которые возвращает сервер
     async function renderHints(variableId) {
@@ -245,8 +252,14 @@
         dataForm.style.display = 'flex';
 
         document.getElementById('id').value = item.id;
-        document.getElementById('default').value = item.default || '';
         document.getElementById('formTitle').textContent = `Редактирование: ${item.title || item.name}`;
+
+        // Языки — по ноде переменной, затем загружаем значение в переводимое поле
+        nodeLanguagesGet(item.node_id).then(langs => {
+            langSwitcher.setLanguages(langs);
+            langSwitcher.fieldLoad(document.getElementById('default'), item.default || '');
+        });
+
         renderHints(item.id);
     }
 
@@ -256,7 +269,7 @@
         if (!id) return;
 
         await putData(`/workflow_variable/public/${id}`, {
-            default: document.getElementById('default').value
+            default: langSwitcher.fieldSerialize(document.getElementById('default'))
         });
         showNotification('Обновлено', 'success');
         await loadList(parseInt(id));
