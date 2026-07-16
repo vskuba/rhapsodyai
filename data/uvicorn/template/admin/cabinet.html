@@ -158,6 +158,13 @@
                             <label for="email">Электронная почта (Email)</label>
                             <input type="email" id="email" class="form-control" required placeholder="example@domain.com">
                         </div>
+
+                        <div class="form-group">
+                            <label for="language">Язык общения</label>
+                            <select id="language" class="form-control">
+                                <option value="">Загрузка...</option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Секция токенов доступа (доступна только для текущего пользователя) -->
@@ -211,6 +218,7 @@
     const usernameInput = document.getElementById('username');
     const roleInput = document.getElementById('role');
     const emailInput = document.getElementById('email');
+    const languageSelect = document.getElementById('language');
     const llmList = document.getElementById('llm_list');
     const btnSubmit = document.getElementById('btn-submit');
 
@@ -226,6 +234,21 @@
                 llmResponse.result.forEach(model => {
                     allLlmModels[model.id] = model.name;
                 });
+            }
+
+            // Язык общения: список — объединение языков нод пользователя,
+            // выбранный язык перекрывает язык ноды по умолчанию в чате
+            try {
+                const langResponse = await getData('/auth/me/languages');
+                const {languages = [], current = null} = langResponse.result || {};
+                languageSelect.innerHTML = '';
+                languages.forEach(lang => {
+                    const opt = new Option(lang.toUpperCase(), lang);
+                    languageSelect.add(opt);
+                });
+                languageSelect.value = current || languages[0] || '';
+            } catch (err) {
+                console.error('Не удалось загрузить языки:', err);
             }
 
             // 2. Fetch current user data
@@ -282,7 +305,8 @@
         btnSubmit.disabled = true;
         
         const payload = {
-            email: emailInput.value.trim()
+            email: emailInput.value.trim(),
+            language: languageSelect.value || ''
         };
 
         try {
