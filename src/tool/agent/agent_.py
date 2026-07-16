@@ -66,6 +66,97 @@ async def agent_create_or_update(
     return agent_id
 
 
+async def agent_exists(find_by: dict) -> bool:
+    repo = AgentRepository()
+    entity_agent = await repo.find_one_by(find_by)
+
+    return bool(entity_agent)
+
+
+async def agent_list(user_id: int, workflow_name: str = '') -> dict:
+    """
+    Возвращает список агентов, доступных пользователю: агенты, роли которых
+    пересекаются с ролью пользователя (agent_role), опционально отфильтрованные
+    по workflow.
+     - user_id: активный пользователь (workflow-переменная user_id)
+     - workflow_name: системное имя workflow для фильтра; пустая строка - все агенты
+    Returns:
+        dict: Словарь со списком агентов, содержащий:
+            chips (str): чипсы вида [[Название1]] [[Название2]] для выбора в чате.
+            qty (int): количество найденных агентов.
+    """
+    workflow_name = str(workflow_name or '').strip()
+
+    sql = """
+        SELECT DISTINCT a.title
+        FROM agent a
+        JOIN agent_role ar ON ar.agent_id = a.id
+        JOIN `user` u ON u.role_id = ar.role_id AND u.id = %s
+    """
+    params: list = [int(user_id)]
+    if workflow_name:
+        sql += " JOIN agent_workflow w ON w.id = a.workflow_id AND w.name = %s"
+        params.append(workflow_name)
+    sql += " ORDER BY a.title ASC"
+
+    async with mysql_get_db_async() as db:
+        await db.execute(sql, params)
+        rows = await db.fetchall()
+
+    titles = [r['title'] for r in rows if r.get('title')]
+    return {
+        "chips": " ".join(f"[[{t}]]" for t in titles),
+        "qty": len(titles)
+    }
+
+
+async def agent_remove(title: str, user_id: int, workflow_name: str = '') -> dict:
+    """
+    Удаляет агента по названию (title или name), если он доступен пользователю:
+    роли агента пересекаются с ролью пользователя (agent_role), опциональный
+    фильтр по workflow. Связи agent_role удаляются каскадом, agent_session
+    отвязывается (SET NULL) — история переписок сохраняется.
+     - title: название агента из чипса (сравнивается с agent.title и agent.name)
+     - user_id: активный пользователь (workflow-переменная user_id)
+     - workflow_name: системное имя workflow для фильтра; пустая строка - без фильтра
+    Returns:
+        dict: Словарь с результатом удаления, содержащий:
+            removed (int): 1 - агент удален, 0 - не найден среди доступных.
+            title (str): название удаленного агента (пустая строка, если не найден).
+    """
+    title = str(title or '').strip()
+    if not title:
+        return {"removed": 0, "title": ""}
+
+    workflow_name = str(workflow_name or '').strip()
+
+    sql = """
+        SELECT DISTINCT a.id, a.title
+        FROM agent a
+        JOIN agent_role ar ON ar.agent_id = a.id
+        JOIN `user` u ON u.role_id = ar.role_id AND u.id = %s
+    """
+    params: list = [int(user_id)]
+    if workflow_name:
+        sql += " JOIN agent_workflow w ON w.id = a.workflow_id AND w.name = %s"
+        params.append(workflow_name)
+    sql += " WHERE (a.title = %s OR a.name = %s) LIMIT 1"
+    params += [title, title]
+
+    async with mysql_get_db_async() as db:
+        await db.execute(sql, params)
+        entity_agent = await db.fetchone()
+
+        if not entity_agent:
+            return {"removed": 0, "title": ""}
+
+        await db.execute("DELETE FROM agent WHERE id = %s", (entity_agent['id'],))
+        await db.connection.commit()
+
+    logger_info(f"🗑 Агент удален: id={entity_agent['id']}, title='{entity_agent['title']}' (user {user_id})")
+    return {"removed": 1, "title": entity_agent['title']}
+
+
 async def _agent_roles_add_from_user(agent_id: int, user_id: int):
     """Добавляет агенту роль активного пользователя (agent_role).
     Существующие роли агента не трогаем: повторное сохранение другим
@@ -83,10 +174,3 @@ async def _agent_roles_add_from_user(agent_id: int, user_id: int):
             "INSERT IGNORE INTO agent_role (agent_id, role_id) VALUES (%s, %s)",
             (agent_id, role_id)
         )
-
-
-async def agent_exists(find_by: dict) -> bool:
-    repo = AgentRepository()
-    entity_agent = await repo.find_one_by(find_by)
-
-    return bool(entity_agent)

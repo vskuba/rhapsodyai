@@ -75,6 +75,10 @@
         margin-bottom: 10px;
         border-bottom: 2px solid #f4f4f9;
         padding-bottom: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
     }
 
     .form-header h2 {
@@ -289,6 +293,7 @@
     <div class="editor-section">
         <div class="form-header">
             <h2 id="formTitle">Выберите агента</h2>
+            <div id="langSwitcherContainer"></div>
         </div>
 
         <form id="agentForm">
@@ -375,6 +380,18 @@
 <script type="module">
     import {getData, putData, postData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
+    import {langSwitcherCreate, nodeLanguagesGet} from '/static/js/lang_switcher.js';
+
+    // Переключатель языков (переводимые поля — «Приветствие» и «System Prompt»);
+    // языки берутся из настройки ноды, кнопка перевода действует на сфокусированное поле
+    const langSwitcher = langSwitcherCreate(document.getElementById('langSwitcherContainer'));
+    langSwitcher.fieldBind(document.getElementById('greeting'));
+    langSwitcher.fieldBind(document.getElementById('prompt_system'));
+
+    // Смена ноды в форме — обновляем набор языков (введенные переводы сохраняются в памяти поля)
+    document.getElementById('node_id').addEventListener('change', async (e) => {
+        langSwitcher.setLanguages(await nodeLanguagesGet(e.target.value));
+    });
 
     const agentListContainer = document.getElementById('agentList');
     const saveBtn = document.getElementById('saveBtn');
@@ -529,9 +546,7 @@
                 'node_id': agent.node_id || '',
                 'title': agent.title || '',
                 'description': agent.description || '',
-                'workflow_id': agent.workflow_id || '',
-                'prompt_system': agent.prompt_system || '',
-                'greeting': agent.greeting || ''
+                'workflow_id': agent.workflow_id || ''
             };
 
             for (const [id, value] of Object.entries(fields)) {
@@ -542,6 +557,12 @@
                     console.error(`Элемент с id="${id}" не найден в HTML!`);
                 }
             }
+
+            // Приветствие и System Prompt — переводимые поля: языки из настроек ноды агента,
+            // значение может быть строкой или словарем {"ru": "...", "en": "..."}
+            langSwitcher.setLanguages(await nodeLanguagesGet(agent.node_id));
+            langSwitcher.fieldLoad(document.getElementById('greeting'), agent.greeting || '');
+            langSwitcher.fieldLoad(document.getElementById('prompt_system'), agent.prompt_system || '');
 
             setSelectedRoles(agent.role_ids || []);
 
@@ -604,8 +625,8 @@
             title: document.getElementById('title').value,
             workflow_id: document.getElementById('workflow_id').value || null,
             role_ids: currentRoleIds,
-            prompt_system: document.getElementById('prompt_system').value,
-            greeting: document.getElementById('greeting').value,
+            prompt_system: langSwitcher.fieldSerialize(document.getElementById('prompt_system')),
+            greeting: langSwitcher.fieldSerialize(document.getElementById('greeting')),
             description: document.getElementById('description').value,
             workflow_variable: JSON.stringify(workflowVariableObj)
         };
@@ -702,6 +723,10 @@
 
             const varContainer = document.getElementById('variablesContainer');
             if (varContainer) varContainer.innerHTML = ''; // Очищаем переменные
+
+            // Очищаем переводы прошлого агента
+            langSwitcher.fieldLoad(document.getElementById('greeting'), '');
+            langSwitcher.fieldLoad(document.getElementById('prompt_system'), '');
         });
     }
 
