@@ -666,7 +666,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     depth=depth + 1,
                 )
 
+                # Движковые записи child-прогона (final-user-prompt и пр.) пишутся в
+                # model.session_uuid. Если ребенку передана СВОЯ сессия (workflow-оболочки
+                # вроде workflow_shell_test ведут sub-диалог в отдельной сессии) — на время
+                # прогона подменяем, чтобы полные промпты LLM-шагов попали в сессию sub-диалога
+                parent_session_uuid = model.session_uuid
+                child_session_uuid = str(child_scope.get('session_uuid') or '').strip()
+
                 try:
+                    if child_session_uuid:
+                        model.session_uuid = child_session_uuid
                     child_result = await self._workflow_steps_run(
                         model, child_steps, child_scope,
                         depth=depth + 1, workflow_stack=stack + [child_workflow_id],
@@ -679,6 +688,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     )
                     await trace_current_step(status='error', error=str(e))
                     raise
+                finally:
+                    model.session_uuid = parent_session_uuid
 
                 await trace_run_finish(
                     child_run_id, 'success', result=child_result,
