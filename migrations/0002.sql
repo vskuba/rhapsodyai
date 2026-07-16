@@ -93,10 +93,10 @@ INSERT INTO `role_node` (`role_id`, `node_id`) VALUES
 
 INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`, `subflow`) VALUES
 (1, 1, 'response_cashier', 'Чат кашира', 'Ответить пользователю', 0, 0),
-(2, 2, 'dating_bot', 'Dating bot', 'Генерируем коллекции девушки', 0, 0),
+(2, 2, 'dating_bot', 'Dating bot', 'Генерируем коллекции девушки', 1, 0),
 (3, 3, 'response_soko', 'Чат суши-бара', 'Ответить пользователю', 0, 0),
 (4, 5, 'test', 'Test', 'Simple test workflow', -1, 0),
-(5, 2, 'dating_talk', 'Чат с девушкой', 'Чат с девушкой', -1, 0),
+(5, 2, 'dating_talk', 'Чат с девушкой', 'Чат с девушкой', 0, 0),
 (6, 2, 'girl_fact_invent', 'Придумать факты девушки', 'Sub-workflow: придумывает новые факты о девушке для ответа на личный вопрос', 0, 1),
 (7, 2, 'companion_fact_extract', 'Сохранить факты собеседника', 'Sub-workflow: сохраняет переданные факты о собеседнике и переписке в коллекции (извлечение — в объединенном LLM-шаге родителя)', 0, 1),
 (8, 6, 'mysql_export_tables', 'Экспорт таблиц', 'Экспортирует таблицы БД по точным именам в миграцию 0002.sql: команда «Экспорт <таблица1>,<таблица2> таблиц»', 0, 0),
@@ -292,7 +292,8 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (113, 'prompt_user_ignore', 'workflow', '0', 'Флаг анализа: 1 - отвечать не нужно (диалог завершен, сообщение без нового содержания)'),
 (114, 'session_messages_limit_summary', 'workflow', '50', 'Лимит сообщений для краткой выдержки истории (шире детального блока)'),
 (115, 'session_messages_result_processed', 'workflow', NULL, 'Краткая выдержка истории переписки (результат шага Анализ сообщения)'),
-(116, 'girl_response_skip', 'workflow', '0', 'Флаг валидации ответа: 1 - ответ не обязателен, пропускаем для реалистичности');
+(116, 'girl_response_skip', 'workflow', '0', 'Флаг валидации ответа: 1 - ответ не обязателен, пропускаем для реалистичности'),
+(117, 'girl_response', 'workflow', NULL, NULL);
 
 --
 
@@ -367,7 +368,8 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (113, 5),
 (114, 5),
 (115, 5),
-(116, 5);
+(116, 5),
+(117, 5);
 
 --
 
