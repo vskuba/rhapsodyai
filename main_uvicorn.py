@@ -37,6 +37,7 @@ from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
 from src.uvicorn.routers.tool import tool
+from src.uvicorn.routers.translate import translate
 from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_variable, workflow_trace
 from src.uvicorn.routers.user import user
 from src.uvicorn.routers.companion import companion
@@ -331,6 +332,7 @@ app.include_router(user.router, include_in_schema=False)
 app.include_router(cronjob.router, include_in_schema=False)
 app.include_router(fact.router, include_in_schema=False)
 app.include_router(setting.router, include_in_schema=False)
+app.include_router(translate.router, include_in_schema=False)
 app.include_router(llm.router, include_in_schema=False)
 app.include_router(session.router, include_in_schema=False)
 app.include_router(node.router, include_in_schema=False)
