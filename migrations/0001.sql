@@ -294,8 +294,11 @@ CREATE TABLE `fact` (
     `document` LONGTEXT NOT NULL COMMENT 'tag:extract|type:string|desc:The clean, factual text extracted from the source',
     `tags` CHAR(250) NOT NULL COMMENT 'tag:extract|type:array_string|desc:A comma-separated list of tags extracted from the source (example: tag1,tag2,tag3)',
     `qdrant_synced` INT NOT NULL DEFAULT 0,
+    `verify_status` CHAR(20) DEFAULT NULL,             -- фактчек кроном: ok | corrected | unverifiable (NULL - не проверялся)
+    `verified_at` DATETIME DEFAULT NULL,               -- когда факт проверялся в последний раз
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_qdrant_synced` (`qdrant_synced`),
+    INDEX `idx_fact_verified` (`verified_at`),
     INDEX `idx_collection_lang` (`collection_id`, `language`),
     INDEX `idx_fact_user` (`user_id`),
     CONSTRAINT `fk_fact_fact_collection` FOREIGN KEY (`collection_id`) REFERENCES `fact_collection` (`id`) ON DELETE CASCADE,
