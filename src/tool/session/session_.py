@@ -6,24 +6,32 @@ from ai.ai_session import ai_session_message_add
 from mysql_.mysql_ import mysql_get_db_async
 
 
-async def session_messages(session_uuid: str, limit: int = 10) -> str:
+async def session_messages(session_uuid: str, limit: int = 10, timezone: str = '0') -> str:
     """
     Возвращает список сообщений в ввиде текстовой строки.
     Сообщения фильтруются по типу ('user-prompt', 'response-final') и сортируются по дате создания в порядке убывания.
     Если количество сообщений нечетное, последнее сообщение будет удалено из списка.
+     - timezone: смещение часового пояса для времени сообщений ("+3", "-2", "0" — не конвертировать);
+       created_at хранится во времени БД (UTC), конвертация приводит его к поясу пользователя
     """
+    tz_sql = _timezone_to_sql_offset(timezone)
+
     async with mysql_get_db_async() as db:
-        sql = '''
-            SELECT s.role, s.content, s.kind_type, s.created_at, s.id, a.title as agent_title
+        # Время сообщения конвертируем из пояса БД в пояс пользователя прямо в SQL
+        created_at_expr = (
+            f"CONVERT_TZ(s.created_at, @@session.time_zone, '{tz_sql}')" if tz_sql else "s.created_at"
+        )
+        sql = f'''
+            SELECT s.role, s.content, s.kind_type, {created_at_expr} as created_at, s.id, a.title as agent_title
             FROM agent_session s
             LEFT JOIN agent a ON a.id = s.agent_id
             JOIN (
                 -- Находим максимальный ID для каждой комбинации request_uuid и kind_type.
-                -- Для user-prompt это будет его единственный ID, 
+                -- Для user-prompt это будет его единственный ID,
                 -- а для response-final — ID самого последнего ответа.
                 SELECT MAX(id) as max_id
                 FROM agent_session
-                WHERE session_uuid = %s 
+                WHERE session_uuid = %s
                   AND kind_type IN ('user-prompt', 'response-final')
                 GROUP BY request_uuid, kind_type
             ) t ON s.id = t.max_id
@@ -163,6 +171,18 @@ async def session_message_add(
         )
 
     return request_uuid
+
+
+def _timezone_to_sql_offset(timezone: str) -> str:
+    """Смещение вида "+3"/"-2"/"UTC+2" -> формат MySQL CONVERT_TZ "+03:00".
+    Возвращает пустую строку для нулевого/нераспознанного смещения (без конвертации)."""
+    match = re.search(r'([+-]?\d+)', str(timezone or '').strip())
+    if not match:
+        return ''
+    hours = int(match.group(1))
+    if not hours:
+        return ''
+    return f"{'+' if hours >= 0 else '-'}{abs(hours):02d}:00"
 
 
 def _response_normalize(text: str) -> str:
