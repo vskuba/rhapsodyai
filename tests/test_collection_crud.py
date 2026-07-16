@@ -63,7 +63,7 @@ class TestCollectionCRUD:
         # Verify the seeded collections exist
         names = [c["name"] for c in data["result"]]
         assert "dating_girl" in names
-        assert "dating_man" in names
+        assert "dating_companion" in names
 
     async def test_create_collection(self, client: httpx.AsyncClient):
         """Test creating a new collection with a custom node_id."""
