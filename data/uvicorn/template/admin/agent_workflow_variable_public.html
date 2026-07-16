@@ -252,8 +252,9 @@
 
     <!-- Форма -->
     <div class="editor-section">
-        <div class="form-header">
+        <div class="form-header" style="display: flex; align-items: center; justify-content: space-between; gap: 15px;">
             <h2 id="formTitle">Выберите переменную</h2>
+            <div id="langSwitcherContainer"></div>
         </div>
 
         <!-- Дефолтный текст: показывается, пока не выбрана переменная -->
@@ -332,6 +333,7 @@
 {% block scripts %}
 <script type="module">
     import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {langSwitcherCreate, nodeLanguagesGet} from '/static/js/lang_switcher.js';
     import {showNotification} from '/static/js/notification.js';
 
     const itemList = document.getElementById('itemList');
@@ -508,9 +510,15 @@
         document.getElementById('id').value = item.id;
         document.getElementById('name').value = item.name;
         document.getElementById('title').value = item.title || '';
-        document.getElementById('description').value = item.description || '';
-        document.getElementById('default').value = item.default || '';
         document.getElementById('node_id').value = item.node_id || '';
+
+        // Переводимые поля: языки из настроек ноды переменной,
+        // значение может быть строкой или словарем {"ru": "...", "en": "..."}
+        nodeLanguagesGet(item.node_id).then(langs => {
+            langSwitcher.setLanguages(langs);
+            langSwitcher.fieldLoad(document.getElementById('default'), item.default || '');
+            langSwitcher.fieldLoad(document.getElementById('description'), item.description || '');
+        });
         document.getElementById('type').value = item.type || 'public';
         renderHints(item.id);
 
@@ -541,8 +549,8 @@
             name: document.getElementById('name').value,
             // Пустой заголовок — сервер подставит значение name
             title: document.getElementById('title').value.trim(),
-            description: document.getElementById('description').value,
-            default: document.getElementById('default').value,
+            description: langSwitcher.fieldSerialize(document.getElementById('description')),
+            default: langSwitcher.fieldSerialize(document.getElementById('default')),
             node_id: document.getElementById('node_id').value ? parseInt(document.getElementById('node_id').value) : null,
             role_ids: selectedRoles,
             workflow_ids: selectedWorkflows,
@@ -596,16 +604,27 @@
         document.getElementById('type').value = 'public';
         renderWorkflowSelect(document.getElementById('node_id').value, []);
         document.getElementById('hintList').innerHTML = '';
+        // Очищаем переводы прошлой переменной, чтобы не утекли в новую
+        langSwitcher.fieldLoad(document.getElementById('default'), '');
+        langSwitcher.fieldLoad(document.getElementById('description'), '');
         toggleForm(true);
     };
 
     // При смене ноды перезаполняем список workflow, сохраняя ещё актуальные выборы
-    document.getElementById('node_id').addEventListener('change', (e) => {
+    document.getElementById('node_id').addEventListener('change', async (e) => {
         const workflowSelect = document.getElementById('workflow_ids');
         const selectedWorkflowIds = Array.from(workflowSelect.selectedOptions)
             .map(opt => parseInt(opt.value)).filter(v => !isNaN(v));
         renderWorkflowSelect(e.target.value, selectedWorkflowIds);
+        // Языки — по выбранной ноде (введенные переводы сохраняются в памяти поля)
+        langSwitcher.setLanguages(await nodeLanguagesGet(e.target.value));
     });
+
+    // Переключатель языков: переводимые поля — «Значение» (default) и «Описание».
+    // Кнопка перевода действует на сфокусированное поле
+    const langSwitcher = langSwitcherCreate(document.getElementById('langSwitcherContainer'));
+    langSwitcher.fieldBind(document.getElementById('default'));
+    langSwitcher.fieldBind(document.getElementById('description'));
 
     loadList();
 </script>
