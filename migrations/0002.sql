@@ -69,8 +69,8 @@ INSERT INTO `companion` (`id`, `name`, `title`) VALUES
 --
 
 INSERT INTO `setting` (`id`, `key`, `user_id`, `value`) VALUES
-(1, 'llm_active', 1, 'groq:openai/gpt-oss-120b'),
-(2, 'llm_error_reset_hours', NULL, '1');
+(1, 'llm_error_reset_hours', NULL, '1'),
+(2, 'timezone', NULL, '+3');
 
 --
 

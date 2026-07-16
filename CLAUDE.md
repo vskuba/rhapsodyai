@@ -295,8 +295,7 @@ template/
 │   ├── fact.html                      # Fact CRUD
 │   ├── fact_collection.html           # Fact Collection management
 │   ├── session.html                   # Agent session viewer
-│   ├── queue.html                     # Queue monitor (in-memory)
-│   └── converter_text_to_fact.html    # Text-to-Fact converter
+│   └── queue.html                     # Queue monitor (in-memory)
 ```
 
 ### Base Layout (`base.html`)
@@ -304,7 +303,7 @@ template/
 - **Top Navigation Bar** with dropdown menus for:
   - 💬 Chat (→ `/`, `/admin/session`, `/admin/user`)
   - ⛓ Nodes (→ `/admin/node`, `/admin/tool`, `/admin/workflow`, `/admin/agent`)
-  - 🔄 Collections (→ `/admin/fact_collection`, `/admin/fact`, `/admin/converter/text-to-fact`)
+  - 🔄 Collections (→ `/admin/fact_collection`, `/admin/fact`)
   - 📜 Logs (→ OpenSearch Dashboard)
   - 📊 Queues (→ `/admin/queue`, Redis RQ Dashboard)
   - 🗄️ Databases (→ PhpMyAdmin, Qdrant)
@@ -704,13 +703,6 @@ deleteBtn.addEventListener('click', deleteEntity);
 - **Inline delete**: `window.deleteFact = async (id) => { await fetch(...); loadFacts(); }`
 - **Markdown Editor**: CodeMirror integration for fact content
 
-#### E. **Three-Panel Pipeline** (converter_text_to_fact.html)
-- **Left**: Two stacked lists (Collections, Extractors) — single select each
-- **Center**: Two stacked editors (Input Text, System Prompt)
-- **Right**: CodeMirror Markdown output + Action buttons (Extract, Save)
-- **Flow**: Select Collection → Select Extractor → loads prompt → Paste text → Extract → Save
-- **Hotkeys**: `Ctrl+Enter` = Extract, `Ctrl+S` = Save
-
 #### F. **Session Browser** (session.html)
 - **Layout**: Horizontal filters (Agent, User, Date) + Sidebar (sessions) + Detail (messages)
 - **Session List**: Cards with UUID, message count, date
@@ -746,7 +738,7 @@ Special:
 ### 6. Common Utilities (Copied/Reused)
 
 ```javascript
-// Debounce (fact.html, converter_text_to_fact.html)
+// Debounce (fact.html)
 function debounce(fn, ms=300) {
     let t; return (...a) => { clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
 }

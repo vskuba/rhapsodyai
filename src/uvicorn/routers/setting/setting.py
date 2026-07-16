@@ -1,10 +1,65 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
+from pydantic import BaseModel
 
-from setting_.setting_ import setting_get, setting_set
+from mysql_.mysql_ import mysql_get_db_async
+from py_modules.setting_.setting_ import setting_get, setting_set, setting_delete
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
+
+
+class SettingSaveJsonRequest(BaseModel):
+    key: str
+    value: str = ''
+    node_id: int | None = None
+
+
+@router.get("/setting/list")
+async def setting_list_route(request: Request, user=Depends(AuthChecker([AuthPermission.SETTING_VIEW]))):
+    """Общие и нодовые настройки (пользовательские user_id-настройки не показываем)."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id, `key`, node_id, value FROM setting WHERE user_id IS NULL ORDER BY `key` ASC"
+        )
+        return {"result": await db.fetchall()}
+
+
+@router.post("/setting")
+async def setting_save_route(
+        request: Request,
+        json_request: SettingSaveJsonRequest,
+        user=Depends(AuthChecker([AuthPermission.SETTING_UPDATE]))
+):
+    """Upsert настройки: пустое значение удаляет запись (нодовая ячейка возвращается к общей)."""
+    key = json_request.key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Key is required")
+
+    node_id = json_request.node_id or None
+
+    if json_request.value == '':
+        await setting_delete(key, node_id=node_id)
+    else:
+        await setting_set(key, json_request.value, node_id=node_id)
+
+    return {"result": True}
+
+
+@router.delete("/setting/key/{key}")
+async def setting_delete_key_route(
+        request: Request,
+        key: str,
+        user=Depends(AuthChecker([AuthPermission.SETTING_UPDATE]))
+):
+    """Удаляет настройку целиком: общее значение и все нодовые переопределения."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "DELETE FROM setting WHERE `key` = %s AND user_id IS NULL",
+            (key,)
+        )
+        await db.connection.commit()
+    return {"result": True}
 
 
 @router.get("/setting/{key}/user/{user_id}")

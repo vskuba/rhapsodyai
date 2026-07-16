@@ -57,11 +57,32 @@ async def datetime_current_get(timezone: str = "0") -> str:
         month_name = months[local_now.month]
         year = local_now.year
         time_str = local_now.strftime("%H:%M:%S")
-        
+
         # Описание временной зоны
         tz_desc = f"UTC{'+' if hours_offset >= 0 else ''}{hours_offset}"
-        
-        result_text = f"Сегодня {day_of_week}, {day} {month_name} {year} года, точное время по {tz_desc}: {time_str}."
+
+        time_of_day = _time_of_day_describe(local_now.hour)
+
+        result_text = f"Сегодня {day_of_week}, {day} {month_name} {year} года, точное время по {tz_desc}: {time_str} ({time_of_day})."
         return result_text
     except Exception as e:
         return f"Ошибка при получении времени: {str(e)}"
+
+
+def _time_of_day_describe(hour: int) -> str:
+    """Словесное описание времени суток по часу (0-23)."""
+    if hour < 5:
+        return "глубокая ночь"
+    if hour < 7:
+        return "раннее утро"
+    if hour < 12:
+        return "утро"
+    if hour < 16:
+        return "середина дня"
+    if hour < 18:
+        return "ближе к вечеру"
+    if hour < 21:
+        return "вечер"
+    if hour < 23:
+        return "поздний вечер"
+    return "ночь"

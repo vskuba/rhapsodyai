@@ -74,15 +74,17 @@ CREATE TABLE `node` (
     `position` INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Таблица настроек (связь с user)
+-- Таблица настроек (scope: user_id — пользовательская, node_id — нодовая, оба NULL — общая)
 CREATE TABLE `setting` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `key` CHAR(50) NOT NULL,
     `user_id` INT DEFAULT NULL,
+    `node_id` INT DEFAULT NULL,
     `value` LONGTEXT NOT NULL,
-    CONSTRAINT `fk_settings_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_settings_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_settings_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-ALTER TABLE setting ADD UNIQUE INDEX idx_key_user (`key`, user_id);
+ALTER TABLE setting ADD UNIQUE INDEX idx_key_user (`key`, user_id, node_id);
 
 CREATE TABLE `user_node` (
     `user_id` INT NOT NULL,

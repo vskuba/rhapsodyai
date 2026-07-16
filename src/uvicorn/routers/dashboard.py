@@ -179,6 +179,14 @@ async def workflow_variable_page(request: Request, user: AuthSession = Depends(r
     )
 
 
+@router.get("/admin/setting", response_class=HTMLResponse)
+async def setting_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/setting.html"
+    )
+
+
 @router.get("/admin/queue", response_class=HTMLResponse)
 async def queue_page(request: Request, user: AuthSession = Depends(require_auth)):
     queues = queue_get_all()
@@ -194,14 +202,6 @@ async def queue_page(request: Request, user: AuthSession = Depends(require_auth)
         {
             "rows": rows
         }
-    )
-
-
-@router.get("/admin/converter/text-to-fact", response_class=HTMLResponse)
-async def converter_page(request: Request, user: AuthSession = Depends(require_auth)):
-    return request.app.state.jinja2_template.TemplateResponse(
-        request,
-        "admin/converter_text_to_fact.html"
     )
 
 
