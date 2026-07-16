@@ -204,10 +204,11 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (102, 2, 3, 'qdrant_fact_sync', 16, '{"tool_invoke":{"tool_name":"qdrant_fact_sync","inputs_map":{},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (103, 6, 3, 'qdrant_fact_sync', 5, '{"tool_invoke":{"tool_name":"qdrant_fact_sync","inputs_map":{},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (104, 7, 5, 'Переменные', 1, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"document_title","text":"%user_name%_%companion_name%"}]}'),
-(105, 5, 3, 'Проверка повтора', 11, '{"tool_invoke":{"tool_name":"session_response_repeat_check","inputs_map":{"session_uuid":"session_uuid","response":"girl_response","prompt_user":"prompt_user"},"outputs_map":{}},"transitions_before":[],"transitions_after":[{"variable":"session_response_repeat_check_105_result_repeat","operator":"==","value":"1","step_id":"107"}]}'),
-(106, 5, 4, 'Ответ', 12, '{"transitions_before": [], "transitions_after": [], "prompt_user": "%girl_response%", "continue_workflow": false}'),
-(107, 5, 4, 'Тишина', 13, '{"transitions_before": [], "transitions_after": [], "prompt_user": "", "continue_workflow": false}'),
-(108, 5, 3, 'session_messages_summary', 1, '{"tool_invoke":{"tool_name":"session_messages","inputs_map":{"session_uuid":"session_uuid","limit":"session_messages_limit_summary","timezone":"datetime_current_get_zone"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}');
+(105, 5, 3, 'Проверка повтора', 12, '{"tool_invoke":{"tool_name":"session_response_repeat_check","inputs_map":{"session_uuid":"session_uuid","response":"girl_response","prompt_user":"prompt_user"},"outputs_map":{}},"transitions_before":[],"transitions_after":[{"variable":"session_response_repeat_check_105_result_repeat","operator":"==","value":"1","step_id":"107"}]}'),
+(106, 5, 4, 'Ответ', 13, '{"transitions_before": [], "transitions_after": [], "prompt_user": "%girl_response%", "continue_workflow": false}'),
+(107, 5, 4, 'Тишина', 14, '{"transitions_before": [], "transitions_after": [], "prompt_user": "", "continue_workflow": false}'),
+(108, 5, 3, 'session_messages_summary', 1, '{"tool_invoke":{"tool_name":"session_messages","inputs_map":{"session_uuid":"session_uuid","limit":"session_messages_limit_summary","timezone":"datetime_current_get_zone"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(109, 5, 2, 'Валидация ответа', 11, '{"transitions_before": [], "transitions_after": [{"variable": "girl_response_skip", "operator": "==", "value": "1", "step_id": "107"}], "llm_to_json_variable": [{"variable": "girl_response_skip", "text": "1 - ответ не обязателен, пропускаем (девушка молчит), 0 - ответ важен, отправляем"}], "prompt_user": "=== Текущее время ===\\n%datetime_current_get_45_result_str%\\n\\n%if session_messages_29_result_str%=== История переписки (время сообщений в квадратных скобках) ===\\n%session_messages_29_result_str%\\n\\n%endif%=== %companion_title% пишет ===\\n%prompt_user%\\n\\n=== Черновик ответа девушки ===\\n%girl_response%\\n\\n=== Что нужно ===\\nТы строгий редактор реалистичности переписки. Реальная девушка не отвечает на каждое сообщение: часть реплик она оставляет без ответа, иногда просто молчит. Автоответ на все подряд выглядит фальшиво. Критически оцени, обязателен ли этот ответ.\\n\\ngirl_response_skip = 1 (пропустить ответ), если:\\n- сообщение %companion_title% - реплика-реакция, не требующая ответа: ок, ясно, понятно, ахах, круто, одиночный смайл\\n- черновик не несет новой информации: поддакивание, повтор уже сказанного, вежливое поддержание разговора ради разговора\\n- на суть сообщения девушка уже ответила ранее в истории\\n- черновик пустой или бессодержательный\\n\\ngirl_response_skip = 0 (ответ нужен), если:\\n- есть прямой вопрос к девушке или запрос информации\\n- обсуждаются планы, договоренности, место или время встречи\\n- новая тема или сообщение с новыми фактами, на которые естественно отреагировать\\n- первое сообщение диалога или сообщение после долгой паузы (сравни метки времени с текущим временем)\\n- %companion_title% делится чем-то личным и молчание выглядело бы грубо\\n\\nЕсли сомневаешься между 0 и 1 - выбирай 1: молчание реалистичнее лишнего ответа.\\n\\n=== Important information about final response ===\\nPlease return your response in JSON format. The JSON response must contain follow keys: \\n- \\"girl_response_skip\\": 0 или 1, где 1 - ответ пропускаем (девушка молчит), 0 - ответ отправляем\\n\\nExample of JSON response:\\n{\\n  \\"girl_response_skip\\": 1\\n}"}');
 
 --
 
@@ -289,7 +290,9 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (111, 'user_name', 'input', NULL, NULL),
 (112, 'user_id', 'input', NULL, 'ID пользователя, запустившего workflow — владелец создаваемых фактов (вход sub-workflow)'),
 (113, 'prompt_user_ignore', 'workflow', '0', 'Флаг анализа: 1 - отвечать не нужно (диалог завершен, сообщение без нового содержания)'),
-(114, 'session_messages_limit_summary', 'workflow', '50', 'Лимит сообщений для краткой выдержки истории (шире детального блока)');
+(114, 'session_messages_limit_summary', 'workflow', '50', 'Лимит сообщений для краткой выдержки истории (шире детального блока)'),
+(115, 'session_messages_result_processed', 'workflow', NULL, 'Краткая выдержка истории переписки (результат шага Анализ сообщения)'),
+(116, 'girl_response_skip', 'workflow', '0', 'Флаг валидации ответа: 1 - ответ не обязателен, пропускаем для реалистичности');
 
 --
 
@@ -362,7 +365,9 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (112, 6),
 (112, 7),
 (113, 5),
-(114, 5);
+(114, 5),
+(115, 5),
+(116, 5);
 
 --
 
