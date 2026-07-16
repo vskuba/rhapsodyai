@@ -13,6 +13,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # py_modules — git-сабмодуль: без него образ соберется без половины кода
+          submodules: recursive
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -48,7 +51,7 @@ jobs:
           script: |
             set -e  # Останавливаем скрипт при любой ошибке
 
-            REPO_DIR="$HOME/marina_ai"
+            REPO_DIR="$HOME/rhapsodyai"
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
 
             echo "🔄 Подготовка репозитория..."
@@ -73,6 +76,10 @@ jobs:
             # Дополнительно очищаем untracked файлы и папки (очень важно!)
             git clean -fd
 
+            echo "📦 Обновляем сабмодуль py_modules до зафиксированного коммита..."
+            git submodule sync --recursive
+            git submodule update --init --recursive --force
+
             echo "📝 Создаём .env файл..."
             cat << 'EOF' > .env
             ${{ secrets.ENV_FILE }}
@@ -82,8 +89,10 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             echo "🚀 Обновляем и перезапускаем контейнеры..."
-            docker compose pull
-            docker compose --profile on_prod_only up -d --remove-orphans --force-recreate
+            docker compose pull --ignore-buildable
+            # --build: пересборка локальных образов (uvicorn/worker) при изменении
+            # requirements/dockerfile — иначе контейнеры пересоздаются из старого образа
+            docker compose --profile on_prod_only up -d --build --remove-orphans --force-recreate
 
             echo "🧹 Очистка..."
             mkdir -p ./data/log/sincedb
