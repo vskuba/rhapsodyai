@@ -161,17 +161,24 @@ function renderCarouselNode() {
         return;
     }
 
-    // Алфавитная сортировка; сверху — workflow агентов, под разделителем — subflow
-    const byTitle = (a, b) => (a.title || a.name || '').localeCompare(b.title || b.name || '');
-    const agentWorkflows = nodeWorkflows.filter(w => !w.subflow).sort(byTitle);
-    const subflows = nodeWorkflows.filter(w => w.subflow).sort(byTitle);
+    // Сортировка по position (перетаскиванием), при равных — по алфавиту;
+    // сверху — workflow агентов, под разделителем — subflow
+    const byPosition = (a, b) => (a.position || 0) - (b.position || 0)
+        || (a.title || a.name || '').localeCompare(b.title || b.name || '');
+    const agentWorkflows = nodeWorkflows.filter(w => !w.subflow).sort(byPosition);
+    const subflows = nodeWorkflows.filter(w => w.subflow).sort(byPosition);
 
-    const renderItem = (workflow) => {
+    const renderItem = (workflow, group) => {
         const div = document.createElement('div');
         div.className = 'agent-item';
+        div.dataset.id = workflow.id;
+        div.dataset.group = group;
 
         div.innerHTML = `
-    <span class="workflow-name-link" id="workflow_link_${workflow.id}">${workflow.title}</span>
+    <div class="workflow-title-row">
+        <span class="drag-handle" title="Перетащите для изменения позиции">⠿</span>
+        <span class="workflow-name-link" id="workflow_link_${workflow.id}">${workflow.title}</span>
+    </div>
     <div class="workflow-actions">
         <span class="edit-icon" title="Параметры задачи">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -197,16 +204,22 @@ function renderCarouselNode() {
         // Клик по иконке — ДУБЛИКАТ
         div.querySelector('.duplicate-icon').onclick = () => duplicateWorkflow(workflow);
 
+        // Перетаскивание пункта — смена позиции внутри своей группы
+        div.draggable = true;
+        div.addEventListener('dragstart', onItemDragStart);
+        div.addEventListener('dragover', onItemDragOver);
+        div.addEventListener('dragend', onItemDragEnd);
+
         workflowListContainer.appendChild(div);
     };
 
-    agentWorkflows.forEach(renderItem);
+    agentWorkflows.forEach(w => renderItem(w, 'main'));
 
     if (subflows.length > 0) {
         const divider = document.createElement('div');
         divider.className = 'workflow-divider';
         workflowListContainer.appendChild(divider);
-        subflows.forEach(renderItem);
+        subflows.forEach(w => renderItem(w, 'sub'));
     }
 
     // Восстанавливаем выделение открытого workflow, если он в этой ноде
@@ -214,6 +227,45 @@ function renderCarouselNode() {
     if (currentId) {
         const link = workflowListContainer.querySelector(`#workflow_link_${currentId}`);
         if (link) link.closest('.agent-item').classList.add('active');
+    }
+}
+
+// Drag-and-drop пунктов: перестановка внутри своей группы (workflow агентов или subflow),
+// новый порядок по DOM сохраняется в agent_workflow.position
+let draggedItem = null;
+
+function onItemDragStart(e) {
+    draggedItem = e.currentTarget;
+    draggedItem.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function onItemDragOver(e) {
+    const target = e.currentTarget;
+    if (!draggedItem || draggedItem === target || draggedItem.dataset.group !== target.dataset.group) return;
+    e.preventDefault();
+    const rect = target.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    workflowListContainer.insertBefore(draggedItem, after ? target.nextSibling : target);
+}
+
+async function onItemDragEnd() {
+    if (!draggedItem) return;
+    const group = draggedItem.dataset.group;
+    draggedItem.classList.remove('dragging');
+    draggedItem = null;
+
+    const items = Array.from(workflowListContainer.querySelectorAll(`.agent-item[data-group="${group}"]`));
+
+    try {
+        await Promise.all(items.map((el, index) => {
+            const workflow = sidebarWorkflows.find(w => String(w.id) === String(el.dataset.id));
+            if (workflow) workflow.position = index;
+            return putData(`/workflow/${el.dataset.id}`, {position: index});
+        }));
+        showNotification('Порядок workflow сохранен', 'success');
+    } catch (e) {
+        showNotification(`Ошибка сохранения порядка: ${e.message}`, 'error');
     }
 }
 
@@ -289,7 +341,6 @@ async function fillWorkflowForm(workflow) {
     document.getElementById('name').value = workflow.name || '';
     document.getElementById('title').value = workflow.title || '';
     document.getElementById('node_id').value = workflow.node_id || '';
-    document.getElementById('position').value = workflow.position || 0;
     document.getElementById('description').value = workflow.description || '';
     document.getElementById('subflow').checked = !!workflow.subflow;
 
@@ -334,7 +385,6 @@ workflowForm.onsubmit = async (e) => {
         title: document.getElementById('title')?.value || '',
         node_id: document.getElementById('node_id')?.value || null,
         description: document.getElementById('description')?.value || '',
-        position: parseInt(document.getElementById('position')?.value) || 0,
         subflow: document.getElementById('subflow')?.checked ? 1 : 0,
     };
 

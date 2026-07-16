@@ -338,6 +338,30 @@
         position: relative;
     }
 
+    /* Перетаскивание пунктов: порядок сохраняется в position (как на странице переменных) */
+    .agent-item.dragging {
+        opacity: 0.4;
+    }
+
+    .workflow-title-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .agent-item .drag-handle {
+        color: #c0c8ce;
+        cursor: grab;
+        font-size: 12px;
+        flex-shrink: 0;
+        user-select: none;
+    }
+
+    .agent-item:hover .drag-handle {
+        color: #7f8c8d;
+    }
+
     /* Название workflow не налезает на иконки и обрезается многоточием */
     .workflow-name-link {
         white-space: nowrap;
@@ -944,12 +968,8 @@
                         <label>Технический ID (name)</label>
                         <input type="text" id="name" class="form-control" required>
                     </div>
-                    <div class="form-grid">
-                        <div class="form-group"><label>Нода</label><select id="node_id"
-                                                                           class="form-control"></select></div>
-                        <div class="form-group"><label>Позиция</label><input type="number" id="position"
-                                                                             class="form-control"></div>
-                    </div>
+                    <div class="form-group"><label>Нода</label><select id="node_id"
+                                                                       class="form-control"></select></div>
                     <div class="form-group">
                         <label>Описание</label>
                         <textarea id="description" class="form-control"
@@ -1117,5 +1137,5 @@
 
 {% block scripts %}
 <script src="/static/js/vendor/mermaid.min.js"></script>
-<script type="module" src="/static/js/workflow/main.js?v=5"></script>
+<script type="module" src="/static/js/workflow/main.js?v=6"></script>
 {% endblock %}
