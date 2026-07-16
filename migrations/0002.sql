@@ -68,14 +68,6 @@ INSERT INTO `companion` (`id`, `name`, `title`) VALUES
 
 --
 
-INSERT INTO `setting` (`id`, `key`, `user_id`, `node_id`, `value`) VALUES
-(1, 'llm_error_reset_hours', NULL, NULL, '1'),
-(2, 'timezone', NULL, NULL, '+3'),
-(3, 'languages', NULL, NULL, 'ru'),
-(4, 'languages', NULL, 2, 'ru,en');
-
---
-
 INSERT INTO `node` (`id`, `name`, `position`) VALUES
 (1, 'Cashier', 0),
 (2, 'Dating', -3),
@@ -83,6 +75,14 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 (4, 'Chat', -1),
 (5, 'Test', 3),
 (6, 'Dev', -2);
+
+--
+
+INSERT INTO `setting` (`id`, `key`, `user_id`, `node_id`, `value`) VALUES
+(1, 'llm_error_reset_hours', NULL, NULL, '1'),
+(2, 'timezone', NULL, NULL, '+3'),
+(3, 'languages', NULL, NULL, 'ru'),
+(4, 'languages', NULL, 2, 'ru,en');
 
 --
 
