@@ -48,6 +48,9 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
+          # Первая сборка uvicorn-образа на ARM (torch, модели) занимает далеко
+          # больше дефолтных 10 минут
+          command_timeout: 60m
           script: |
             set -e  # Останавливаем скрипт при любой ошибке
 
