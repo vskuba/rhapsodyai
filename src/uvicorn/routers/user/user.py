@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 import uuid
 import bcrypt
 
@@ -128,6 +128,14 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
         update_data["email"] = data.get("email")
     if data.get("role_id") is not None:
         update_data["role_id"] = data.get("role_id")
+
+    # Смена пароля пользователю (доступно только обладателю USER_UPDATE — админу):
+    # пустое поле — пароль не меняется
+    if data.get("password"):
+        password = str(data.get("password"))
+        if len(password) < 8:
+            raise HTTPException(status_code=400, detail="Пароль должен быть не короче 8 символов")
+        update_data["password_hash"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     if update_data:
         await repo.update(user_id, update_data)

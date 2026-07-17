@@ -289,6 +289,12 @@
                             <label>Email</label>
                             <input type="text" id="email" class="form-control" value="0">
                         </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label>Новый пароль</label>
+                            <input type="password" id="password" class="form-control"
+                                   autocomplete="new-password"
+                                   placeholder="Пусто — без изменений (мин. 8)">
+                        </div>
                     </div>
                     <div style="display: flex; gap: 15px; width: 100%;">
                         <div class="form-group" style="flex: 1; margin-bottom: 0;">
@@ -561,6 +567,7 @@
             document.getElementById('userId').value = user.id;
             document.getElementById('username').value = user.username;
             document.getElementById('email').value = user.email;
+            document.getElementById('password').value = ''; // пароль не «прилипает» между пользователями
             document.getElementById('role').value = user.role_id ?? '';
 
             // Update selected options in the llm_list_sortable element
@@ -636,6 +643,7 @@
         document.getElementById('formTitle').textContent = 'Создание нового пользователя';
         document.getElementById('username').value = '';
         document.getElementById('email').value = '';
+        document.getElementById('password').value = '';
         const roleSelect = document.getElementById('role');
         if (roleSelect && roleSelect.options.length > 0) roleSelect.selectedIndex = 0;
 
@@ -700,6 +708,16 @@
             llm_ids: selectedLlmIds,
             node_ids: selectedNodeIds
         };
+
+        // Пароль: только если админ заполнил поле (пустое — без изменений)
+        const passwordValue = document.getElementById('password').value;
+        if (passwordValue) {
+            if (passwordValue.length < 8) {
+                showNotification('Пароль должен быть не короче 8 символов', 'warning');
+                return;
+            }
+            payload.password = passwordValue;
+        }
 
         if (saveBtn) saveBtn.disabled = true;
 
