@@ -41,6 +41,8 @@ RUN chmod -R 777 data/qdrant_storage data/history data/log data/report data/sqli
 # Указываем переменную окружения, чтобы Python не буферизировал логи
 ENV PYTHONUNBUFFERED=1
 ENV HF_HUB_OFFLINE=1
+# py_modules — отдельный корень импортов (как в uvicorn-образе)
+ENV PYTHONPATH="/app:/app/py_modules"
 
 # Команда запуска (соответствует вашему main.py)
 CMD ["python", "main_telegram.py"]

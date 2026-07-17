@@ -210,7 +210,7 @@ services:
       - mysql
 
   phpmyadmin:
-    platform: linux/x86_64
+    # платформу не фиксируем: на ARM-сервере (Oracle A1) берется родной arm64-образ
     image: phpmyadmin/phpmyadmin
     networks:
       - os-net
