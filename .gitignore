@@ -26,3 +26,5 @@ data/history
 # Специфично для MCP/Node (если используешь npx)
 node_modules/
 npm-debug.log
+
+.ssh/
