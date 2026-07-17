@@ -92,7 +92,9 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             echo "🚀 Обновляем и перезапускаем контейнеры..."
-            docker compose pull --ignore-buildable
+            # --profile обязателен и для pull: без него образы профильных сервисов
+            # (telegram из GHCR) не обновляются
+            docker compose --profile on_prod_only pull --ignore-buildable
             # --build: пересборка локальных образов (uvicorn/worker) при изменении
             # requirements/dockerfile — иначе контейнеры пересоздаются из старого образа
             docker compose --profile on_prod_only up -d --build --remove-orphans --force-recreate
