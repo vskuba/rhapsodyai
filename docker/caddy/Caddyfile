@@ -1,0 +1,10 @@
+# HTTPS для админки без собственного домена: sslip.io резолвит
+# 92.5.17.195.sslip.io в сам IP, Let's Encrypt выдает обычный сертификат
+92.5.17.195.sslip.io {
+    reverse_proxy uvicorn:8000
+}
+
+# Голый IP: http://92.5.17.195 -> редирект на https с sslip.io-именем
+http://92.5.17.195 {
+    redir https://92.5.17.195.sslip.io{uri} permanent
+}

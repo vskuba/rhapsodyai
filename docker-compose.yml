@@ -226,10 +226,29 @@ services:
       MYSQL_ROOT_PASSWORD: password
       PMA_HOST: mysql
 
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    profiles: ["on_prod_only"]
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - os-net
+    depends_on:
+      - uvicorn
+
 volumes:
   opensearch-data:
   cronicle-data:
   cronicle-logs:
+  caddy-data:
+  caddy-config:
 
 networks:
   os-net:

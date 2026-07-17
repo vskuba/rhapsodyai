@@ -100,6 +100,36 @@ async def me_languages(request: Request):
     return {"result": {"languages": languages, "current": current}}
 
 
+@router.put("/auth/me/password")
+async def update_me_password(request: Request, data: dict):
+    """Смена пароля текущим пользователем: требует действующий пароль."""
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    password_current = str(data.get("password_current") or '')
+    password_new = str(data.get("password_new") or '')
+
+    if len(password_new) < 8:
+        raise HTTPException(status_code=400, detail="Новый пароль должен быть не короче 8 символов")
+
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT password_hash FROM `user` WHERE id = %s", (user_id,))
+        row = await db.fetchone()
+
+        if not row or not bcrypt.checkpw(password_current.encode(), row['password_hash'].encode()):
+            raise HTTPException(status_code=401, detail="Текущий пароль неверен")
+
+        password_hash = bcrypt.hashpw(password_new.encode(), bcrypt.gensalt()).decode()
+        await db.execute(
+            "UPDATE `user` SET password_hash = %s WHERE id = %s",
+            (password_hash, user_id)
+        )
+        await db.connection.commit()
+
+    return {"message": "Пароль успешно изменен."}
+
+
 @router.put("/auth/me")
 async def update_me(request: Request, data: dict):
     user_id = request.session.get("user_id")
