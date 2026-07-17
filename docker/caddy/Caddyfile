@@ -1,6 +1,11 @@
 # HTTPS для админки без собственного домена: sslip.io резолвит
 # 92.5.17.195.sslip.io в сам IP, Let's Encrypt выдает обычный сертификат
 92.5.17.195.sslip.io {
+    # /cronjob не имеет авторизации и предназначен только для Cronicle
+    # внутри docker-сети — снаружи не публикуем
+    @cronjob path /cronjob /cronjob/*
+    respond @cronjob 403
+
     reverse_proxy uvicorn:8000
 }
 
