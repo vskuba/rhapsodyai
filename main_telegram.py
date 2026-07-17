@@ -22,19 +22,23 @@ if __name__ == "__main__":
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
 
+    # Очереди бота + очереди движка workflow: LLM-шаги идут через ai_framework_model,
+    # ответы/ошибки фреймворк кладет в chat
     queue_init([
+        'chat',
+        'chat_response',
+        'chat_input_send',
         'task',
+        'task_abort',
+        'task_complete',
+        'task_continue',
+        'tool',
         'agent',
         'agent_abort',
         'agent_response',
-        'telegram_response'
+        'telegram_response',
+        'ai_framework_model',
     ])
-
-    asyncio.create_task(ai_thread_framework_run(
-        [
-            AiFrameworkAgent(),
-        ]
-    ))
 
     state_set('mode_telegram', True)
 
@@ -50,7 +54,12 @@ if __name__ == "__main__":
 
     print("Telegram bot is running. Press Ctrl+C to stop.")
     try:
-        while True:
-            time.sleep(1)
+        # Главный event loop процесса: вечный обработчик очереди ai_framework_model
+        # (create_task вне запущенного loop падает RuntimeError: no running event loop)
+        asyncio.run(ai_thread_framework_run(
+            [
+                AiFrameworkAgent(),
+            ]
+        ))
     except KeyboardInterrupt:
         print("Shutting down...")
