@@ -56,6 +56,11 @@
         width: 100%;
     }
 
+    .form-fields-password {
+        flex-wrap: nowrap;
+        align-items: flex-end;
+    }
+
     .form-group {
         display: flex;
         flex-direction: column;
@@ -75,7 +80,7 @@
         text-overflow: ellipsis;
     }
 
-    .form-group-language select{
+    .form-group-language select {
         width: 103px;
     }
 
@@ -134,6 +139,12 @@
         background: #bdc3c7;
         cursor: not-allowed;
     }
+
+    #btn-password {
+        background: #2293e6;
+        width: 100%;
+    }
+
 </style>
 {% endblock %}
 
@@ -160,7 +171,8 @@
 
                         <div class="form-group">
                             <label for="email">Электронная почта (Email)</label>
-                            <input type="email" id="email" class="form-control" required placeholder="example@domain.com">
+                            <input type="email" id="email" class="form-control" required
+                                   placeholder="example@domain.com">
                         </div>
 
                         <div class="form-group form-group-language">
@@ -174,24 +186,30 @@
                     <!-- Секция смены пароля -->
                     <div style="margin-top: 40px; width: 100%;">
                         <div style="border-bottom: 2px solid #f4f4f9; padding-bottom: 10px; margin-bottom: 15px;">
-                            <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">🔒 Смена пароля</h3>
+                            <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">
+                                🔒 Смена пароля</h3>
                         </div>
-                        <div class="form-fields">
+                        <div class="form-fields form-fields-password">
                             <div class="form-group">
                                 <label for="password_current">Текущий пароль</label>
-                                <input type="password" id="password_current" class="form-control" autocomplete="current-password">
+                                <input type="password" id="password_current" class="form-control"
+                                       autocomplete="current-password">
                             </div>
                             <div class="form-group">
                                 <label for="password_new">Новый пароль (мин. 8 символов)</label>
-                                <input type="password" id="password_new" class="form-control" autocomplete="new-password">
+                                <input type="password" id="password_new" class="form-control"
+                                       autocomplete="new-password">
                             </div>
                             <div class="form-group">
                                 <label for="password_repeat">Повторите новый пароль</label>
-                                <input type="password" id="password_repeat" class="form-control" autocomplete="new-password">
+                                <input type="password" id="password_repeat" class="form-control"
+                                       autocomplete="new-password">
                             </div>
-                            <div class="form-group" style="justify-content: flex-end;">
-                                <label>&nbsp;</label>
-                                <button type="button" class="btn-save" id="btn-password" style="background: #e67e22;">Сменить пароль</button>
+                            <div class="form-group">
+                                <label></label>
+                                <button type="button" class="btn-save" id="btn-password">
+                                    Сменить пароль
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -199,18 +217,25 @@
                     <!-- Секция токенов доступа (доступна только для текущего пользователя) -->
                     <div id="tokensSection" style="margin-top: 40px; display: none; width: 100%;">
                         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f4f4f9; padding-bottom: 10px; margin-bottom: 15px;">
-                            <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">🔑 Токены доступа</h3>
-                            <button type="button" class="btn-save" id="generateTokenBtn" style="padding: 6px 15px; font-size: 12px; height: auto;">Сгенерировать новый ключ</button>
+                            <h3 style="margin: 0; color: #2c3e50; font-size: 14px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">
+                                🔑 Токены доступа</h3>
+                            <button type="button" class="btn-save" id="generateTokenBtn"
+                                    style="padding: 6px 15px; font-size: 12px; height: auto;">Сгенерировать новый ключ
+                            </button>
                         </div>
                         <table class="tokens-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
                             <thead>
-                                <tr style="background-color: #fcfcfc; border-bottom: 1px solid #eee;">
-                                    <th style="text-align: left; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold;">Токен</th>
-                                    <th style="text-align: right; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; width: 100px;">Действие</th>
-                                </tr>
+                            <tr style="background-color: #fcfcfc; border-bottom: 1px solid #eee;">
+                                <th style="text-align: left; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold;">
+                                    Токен
+                                </th>
+                                <th style="text-align: right; padding: 10px; font-size: 11px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; width: 100px;">
+                                    Действие
+                                </th>
+                            </tr>
                             </thead>
                             <tbody id="tokensList">
-                                <!-- JS will render tokens here -->
+                            <!-- JS will render tokens here -->
                             </tbody>
                         </table>
                     </div>
@@ -221,8 +246,11 @@
                     <div class="form-group">
                         <label>Модели LLM</label>
                         <div style="background: #f9f9f9; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 6px; min-height: 44px; box-sizing: border-box;">
-                            <ul id="llm_list" style="margin: 0; padding-left: 15px; display: flex; flex-direction: column; gap: 6px; color: #4a5568; font-size: 14px;">
-                                <li style="color: #a0aec0; list-style-type: none; margin-left: -15px;">Загрузка моделей...</li>
+                            <ul id="llm_list"
+                                style="margin: 0; padding-left: 15px; display: flex; flex-direction: column; gap: 6px; color: #4a5568; font-size: 14px;">
+                                <li style="color: #a0aec0; list-style-type: none; margin-left: -15px;">Загрузка
+                                    моделей...
+                                </li>
                             </ul>
                         </div>
                     </div>
@@ -288,7 +316,7 @@
                 usernameInput.value = user.username || '';
                 roleInput.value = user.role || '';
                 emailInput.value = user.email || '';
-                
+
                 // Render associated LLMs as a plain text list column
                 if (llmList) {
                     llmList.innerHTML = '';
@@ -332,7 +360,7 @@
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         btnSubmit.disabled = true;
-        
+
         const payload = {
             email: emailInput.value.trim(),
             language: languageSelect.value || ''
