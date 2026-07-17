@@ -13,3 +13,8 @@ python-dotenv
 python-json-logger
 qdrant_client
 sentence_transformers
+aiomysql
+pymysql
+fastembed
+ddgs
+beautifulsoup4

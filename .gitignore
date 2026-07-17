@@ -28,3 +28,4 @@ node_modules/
 npm-debug.log
 
 .ssh/
+docker-compose.override.yml

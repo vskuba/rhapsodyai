@@ -210,8 +210,9 @@ services:
       - mysql
 
   phpmyadmin:
-    # платформу не фиксируем: на ARM-сервере (Oracle A1) берется родной arm64-образ
-    image: phpmyadmin/phpmyadmin
+    # официальный образ (library/phpmyadmin): в отличие от phpmyadmin/phpmyadmin
+    # имеет arm64-вариант для Oracle A1; платформу не фиксируем
+    image: phpmyadmin:latest
     networks:
       - os-net
     links:
