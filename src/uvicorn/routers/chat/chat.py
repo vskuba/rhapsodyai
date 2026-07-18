@@ -260,7 +260,7 @@ async def voice_to_text(file: UploadFile = File(...)):
         buffer.write(content)
 
     # Здесь логика Faster Whisper
-    segments, _ = faster_whisper_create_model().transcribe(
+    segments, _ = (await faster_whisper_create_model()).transcribe(
         temp_file,
         beam_size=5,
         best_of=5,

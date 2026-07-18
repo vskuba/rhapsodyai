@@ -82,7 +82,8 @@ INSERT INTO `setting` (`id`, `key`, `user_id`, `node_id`, `value`) VALUES
 (1, 'llm_error_reset_hours', NULL, NULL, '1'),
 (2, 'timezone', NULL, NULL, '+3'),
 (3, 'languages', NULL, NULL, 'ru'),
-(4, 'languages', NULL, 2, 'ru,en');
+(4, 'languages', NULL, 2, 'ru,en'),
+(5, 'whisper_model_name', NULL, NULL, 'base');
 
 --
 

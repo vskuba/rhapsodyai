@@ -40,7 +40,7 @@ async def init_telegram_bot(agent_name: str):
             file_path = f"temp_{file_id}.ogg"
             await message.bot.download_file(file.file_path, file_path)
 
-            segments, info = faster_whisper_create_model().transcribe(
+            segments, info = (await faster_whisper_create_model()).transcribe(
                 file_path,
                 beam_size=5,
                 best_of=5,
