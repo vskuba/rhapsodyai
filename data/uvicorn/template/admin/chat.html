@@ -38,6 +38,38 @@
         font-weight: bold;
     }
 
+    /* Язык общения пользователя рядом с его именем */
+    .user-lang-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: #eaf4fb;
+        color: #2980b9;
+        padding: 2px 9px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+    }
+
+    .user-lang-chip:empty {
+        display: none;
+    }
+
+    .user-lang-chip::before {
+        content: '🌐';
+        font-size: 11px;
+    }
+
+    .user-lang-chip.unset {
+        background: #f2f2f2;
+        color: #999;
+        font-weight: normal;
+        text-transform: none;
+    }
+
     /* Блок 3: Кнопка */
     .action-btn {
         background: #f0913d; /* В цвет ваших сообщений пользователя */
@@ -423,6 +455,7 @@
                 {% else %}
                 <label>Пользователь: {{ request.session.get('username') }}</label>
                 {% endif %}
+                <span class="user-lang-chip" id="userLanguageChip" title="Язык общения пользователя"></span>
             </div>
 
             <div class="header-block session-current">
@@ -472,6 +505,7 @@
 <script type="module">
     import {postData, getData, putData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
+    import {userLanguageGet} from '/static/js/lang_switcher.js';
 
     const CURRENT_USER_ROLE = "{{ request.session.get('role') }}";
     const CURRENT_USER_ID = "{{ request.session.get('user_id') }}";
@@ -521,6 +555,20 @@
         if (!isAdmin) return CURRENT_USERNAME;
         const user = allUsers[userSelect.value];
         return user ? user.username : null;
+    }
+
+    // Язык общения показанного пользователя: для админа — выбранный в селекте,
+    // для обычного пользователя — свой собственный (setting 'language' из кабинета)
+    async function renderUserLanguageChip() {
+        const chip = document.getElementById('userLanguageChip');
+        if (!chip) return;
+
+        const lang = isAdmin
+            ? (allUsers[userSelect.value] || {}).language
+            : await userLanguageGet();
+
+        chip.classList.toggle('unset', !lang);
+        chip.textContent = lang ? lang.toUpperCase() : 'не задан';
     }
 
     // Интерактивные фрагменты сообщений:
@@ -876,6 +924,8 @@
             await loadAgents(getSelectedUserId());
         }
 
+        await renderUserLanguageChip();
+
         const loadSettings = async () => {
             await getAgentSessionLastEntry();
         };
@@ -924,6 +974,8 @@
 
                 // Получаем последнюю сессию и историю сообщений (включая greeting) для выбранного агента и пользователя
                 await getAgentSessionLastEntry();
+
+                await renderUserLanguageChip();
             });
         }
 

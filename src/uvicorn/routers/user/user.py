@@ -14,7 +14,12 @@ router = APIRouter()
 async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     async with db:
         await db.execute(
-            "SELECT u.*, r.name AS role FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id"
+            """
+            SELECT u.*, r.name AS role, s.value AS language
+            FROM `user` u
+            LEFT JOIN `role` r ON r.id = u.role_id
+            LEFT JOIN `setting` s ON s.user_id = u.id AND s.node_id IS NULL AND s.`key` = 'language'
+            """
         )
         users = await db.fetchall()
 
@@ -54,7 +59,13 @@ async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depen
 async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     async with db:
         await db.execute(
-            "SELECT u.*, r.name AS role FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id WHERE u.id = %s",
+            """
+            SELECT u.*, r.name AS role, s.value AS language
+            FROM `user` u
+            LEFT JOIN `role` r ON r.id = u.role_id
+            LEFT JOIN `setting` s ON s.user_id = u.id AND s.node_id IS NULL AND s.`key` = 'language'
+            WHERE u.id = %s
+            """,
             user_id
         )
         user_data = await db.fetchone()
