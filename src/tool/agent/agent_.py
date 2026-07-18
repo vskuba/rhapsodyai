@@ -77,7 +77,7 @@ async def agent_list(user_id: int, workflow_name: str = '') -> dict:
     """
     Возвращает список агентов, доступных пользователю: агенты, роли которых
     пересекаются с ролью пользователя (agent_role), опционально отфильтрованные
-    по workflow.
+    по workflow. Админ видит ВСЕ агенты независимо от роли создателя.
      - user_id: активный пользователь (workflow-переменная user_id)
      - workflow_name: системное имя workflow для фильтра; пустая строка - все агенты
     Returns:
@@ -86,14 +86,13 @@ async def agent_list(user_id: int, workflow_name: str = '') -> dict:
             qty (int): количество найденных агентов.
     """
     workflow_name = str(workflow_name or '').strip()
+    is_admin = await _user_is_admin(user_id)
 
-    sql = """
-        SELECT DISTINCT a.title
-        FROM agent a
-        JOIN agent_role ar ON ar.agent_id = a.id
-        JOIN `user` u ON u.role_id = ar.role_id AND u.id = %s
-    """
-    params: list = [int(user_id)]
+    sql = "SELECT DISTINCT a.title FROM agent a"
+    params: list = []
+    if not is_admin:
+        sql += " JOIN agent_role ar ON ar.agent_id = a.id JOIN `user` u ON u.role_id = ar.role_id AND u.id = %s"
+        params.append(int(user_id))
     if workflow_name:
         sql += " JOIN agent_workflow w ON w.id = a.workflow_id AND w.name = %s"
         params.append(workflow_name)
@@ -114,8 +113,9 @@ async def agent_remove(title: str, user_id: int, workflow_name: str = '') -> dic
     """
     Удаляет агента по названию (title или name), если он доступен пользователю:
     роли агента пересекаются с ролью пользователя (agent_role), опциональный
-    фильтр по workflow. Связи agent_role удаляются каскадом, agent_session
-    отвязывается (SET NULL) — история переписок сохраняется.
+    фильтр по workflow. Админ может удалить ЛЮБОЙ агент независимо от роли
+    создателя. Связи agent_role удаляются каскадом, agent_session отвязывается
+    (SET NULL) — история переписок сохраняется.
      - title: название агента из чипса (сравнивается с agent.title и agent.name)
      - user_id: активный пользователь (workflow-переменная user_id)
      - workflow_name: системное имя workflow для фильтра; пустая строка - без фильтра
@@ -129,14 +129,13 @@ async def agent_remove(title: str, user_id: int, workflow_name: str = '') -> dic
         return {"removed": 0, "title": ""}
 
     workflow_name = str(workflow_name or '').strip()
+    is_admin = await _user_is_admin(user_id)
 
-    sql = """
-        SELECT DISTINCT a.id, a.title
-        FROM agent a
-        JOIN agent_role ar ON ar.agent_id = a.id
-        JOIN `user` u ON u.role_id = ar.role_id AND u.id = %s
-    """
-    params: list = [int(user_id)]
+    sql = "SELECT DISTINCT a.id, a.title FROM agent a"
+    params: list = []
+    if not is_admin:
+        sql += " JOIN agent_role ar ON ar.agent_id = a.id JOIN `user` u ON u.role_id = ar.role_id AND u.id = %s"
+        params.append(int(user_id))
     if workflow_name:
         sql += " JOIN agent_workflow w ON w.id = a.workflow_id AND w.name = %s"
         params.append(workflow_name)
@@ -174,3 +173,14 @@ async def _agent_roles_add_from_user(agent_id: int, user_id: int):
             "INSERT IGNORE INTO agent_role (agent_id, role_id) VALUES (%s, %s)",
             (agent_id, role_id)
         )
+
+
+async def _user_is_admin(user_id: int) -> bool:
+    """Проверяет, обладает ли пользователь ролью 'admin' (тогда фильтр по agent_role снимается)."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT r.name FROM `user` u JOIN `role` r ON r.id = u.role_id WHERE u.id = %s",
+            (int(user_id),)
+        )
+        row = await db.fetchone()
+        return bool(row) and row.get('name') == 'admin'
