@@ -252,6 +252,35 @@
         min-height: 198px;
     }
 
+    /* Глазик показа пароля внутри поля */
+    .password-wrap {
+        position: relative;
+    }
+
+    .password-wrap .form-control {
+        padding-right: 38px; /* текст не заезжает под иконку */
+    }
+
+    .password-eye {
+        position: absolute;
+        right: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        border: none;
+        background: transparent;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 4px;
+        color: #7f8c8d;
+        opacity: 0.6;
+        transition: opacity 0.15s;
+    }
+
+    .password-eye:hover {
+        opacity: 1;
+    }
+
 </style>
 {% endblock %}
 
@@ -291,9 +320,13 @@
                         </div>
                         <div class="form-group" style="flex: 1;">
                             <label>Новый пароль</label>
-                            <input type="password" id="password" class="form-control"
-                                   autocomplete="new-password"
-                                   title="Пусто — без изменений (8 символов минимум)">
+                            <div class="password-wrap">
+                                <input type="password" id="password" class="form-control"
+                                       autocomplete="new-password"
+                                       title="Пусто — без изменений (8 символов минимум)">
+                                <button type="button" class="password-eye" id="passwordEye"
+                                        title="Показать/скрыть пароль" tabindex="-1">👁</button>
+                            </div>
                         </div>
                     </div>
                     <div style="display: flex; gap: 15px; width: 100%;">
@@ -781,6 +814,17 @@
         // Кнопка "Создать пользователя"
         if (createNewUserBtn) {
             createNewUserBtn.addEventListener('click', resetFormForCreate);
+        }
+
+        // Глазик: показать/скрыть значение пароля
+        const passwordEye = document.getElementById('passwordEye');
+        if (passwordEye) {
+            passwordEye.addEventListener('click', () => {
+                const passwordInput = document.getElementById('password');
+                const show = passwordInput.type === 'password';
+                passwordInput.type = show ? 'text' : 'password';
+                passwordEye.textContent = show ? '🙈' : '👁';
+            });
         }
 
         if (deleteBtn) {

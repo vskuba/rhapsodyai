@@ -772,7 +772,16 @@
                 agentSelect.appendChild(optgroup);
             });
 
-            if (agentsResponse.result.length > 0) agentSelect.selectedIndex = 0;
+            // Восстанавливаем выбранного агента после обновления страницы;
+            // если сохраненный недоступен (сменился пользователь) — первый по списку
+            if (agentsResponse.result.length > 0) {
+                const savedAgentId = sessionStorage.getItem('chat_selected_agent_id');
+                if (savedAgentId && agentSelect.querySelector(`option[value="${CSS.escape(savedAgentId)}"]`)) {
+                    agentSelect.value = savedAgentId;
+                } else {
+                    agentSelect.selectedIndex = 0;
+                }
+            }
 
         } catch (e) {
             console.error("Ошибка загрузки агентов для чата:", e);
@@ -900,7 +909,11 @@
             }
         });
 
-        agentSelect.addEventListener('change', getAgentSessionLastEntry);
+        agentSelect.addEventListener('change', () => {
+            // Выбор агента переживает обновление страницы
+            sessionStorage.setItem('chat_selected_agent_id', agentSelect.value);
+            getAgentSessionLastEntry();
+        });
 
         if (isAdmin) {
             userSelect.addEventListener('change', async () => {
