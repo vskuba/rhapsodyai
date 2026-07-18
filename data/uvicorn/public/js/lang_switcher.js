@@ -87,6 +87,24 @@ export function i18nTextResolve(raw, lang) {
     }
 }
 
+// Кэш языка пользователя из кабинета: один запрос на страницу
+let userLanguageCached;
+
+/**
+ * Язык общения текущего пользователя (выбор в личном кабинете) или null.
+ */
+export async function userLanguageGet() {
+    if (userLanguageCached !== undefined) return userLanguageCached;
+    try {
+        const res = await getData('/auth/me/languages');
+        userLanguageCached = (res.result || {}).current || null;
+    } catch (e) {
+        console.error('Не удалось загрузить язык пользователя:', e);
+        userLanguageCached = null;
+    }
+    return userLanguageCached;
+}
+
 /**
  * Языки ноды из настроек: нодовая запись 'languages' перекрывает общую. ['ru'] по умолчанию.
  */
@@ -208,8 +226,13 @@ export function langSwitcherCreate(container, languages = ['ru']) {
         }
     }
 
+    // Ручной клик по чипу «залипает» в рамках страницы: предпочтение из кабинета
+    // не перебивает осознанный выбор при переключении между записями
+    let manualChoice = false;
+
     function switchTo(lang) {
         if (lang === active) return;
+        manualChoice = true;
         // Текущий текст полей — в словарь старого языка, показываем новый
         fields.forEach(el => {
             el._i18n.translations[active] = el.value;
@@ -220,9 +243,18 @@ export function langSwitcherCreate(container, languages = ['ru']) {
         changeListeners.forEach(cb => cb(active));
     }
 
-    function setLanguages(newLangs) {
+    function setLanguages(newLangs, preferred = null) {
         langs = (newLangs && newLangs.length) ? newLangs : ['ru'];
-        if (!langs.includes(active)) active = langs[0];
+
+        if (manualChoice && langs.includes(active)) {
+            // сохраняем ручной выбор
+        } else if (preferred && langs.includes(preferred)) {
+            // язык пользователя из кабинета — активный по умолчанию
+            active = preferred;
+        } else if (!langs.includes(active)) {
+            active = langs[0];
+        }
+
         render();
     }
 

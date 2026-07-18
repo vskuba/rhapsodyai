@@ -380,7 +380,7 @@
 <script type="module">
     import {getData, putData, postData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
-    import {langSwitcherCreate, nodeLanguagesGet} from '/static/js/lang_switcher.js';
+    import {langSwitcherCreate, nodeLanguagesGet, userLanguageGet} from '/static/js/lang_switcher.js';
 
     // Переключатель языков (переводимые поля — «Приветствие» и «System Prompt»);
     // языки берутся из настройки ноды, кнопка перевода действует на сфокусированное поле
@@ -559,8 +559,8 @@
             }
 
             // Приветствие и System Prompt — переводимые поля: языки из настроек ноды агента,
-            // значение может быть строкой или словарем {"ru": "...", "en": "..."}
-            langSwitcher.setLanguages(await nodeLanguagesGet(agent.node_id));
+            // активный по умолчанию — язык пользователя из кабинета
+            langSwitcher.setLanguages(await nodeLanguagesGet(agent.node_id), await userLanguageGet());
             langSwitcher.fieldLoad(document.getElementById('greeting'), agent.greeting || '');
             langSwitcher.fieldLoad(document.getElementById('prompt_system'), agent.prompt_system || '');
 

@@ -333,7 +333,7 @@
 {% block scripts %}
 <script type="module">
     import {getData, putData, postData, deleteData} from '/static/js/api.js';
-    import {langSwitcherCreate, nodeLanguagesGet, i18nTextResolve} from '/static/js/lang_switcher.js';
+    import {langSwitcherCreate, nodeLanguagesGet, userLanguageGet, i18nTextResolve} from '/static/js/lang_switcher.js';
     import {showNotification} from '/static/js/notification.js';
 
     const itemList = document.getElementById('itemList');
@@ -514,10 +514,10 @@
         document.getElementById('title').value = item.title || '';
         document.getElementById('node_id').value = item.node_id || '';
 
-        // Переводимые поля: языки из настроек ноды переменной,
-        // значение может быть строкой или словарем {"ru": "...", "en": "..."}
-        nodeLanguagesGet(item.node_id).then(langs => {
-            langSwitcher.setLanguages(langs);
+        // Переводимые поля: языки из настроек ноды переменной, активный по умолчанию —
+        // язык пользователя из кабинета; значение — строка или словарь {"ru": "...", "en": "..."}
+        Promise.all([nodeLanguagesGet(item.node_id), userLanguageGet()]).then(([langs, userLang]) => {
+            langSwitcher.setLanguages(langs, userLang);
             langSwitcher.fieldLoad(document.getElementById('default'), item.default || '');
             langSwitcher.fieldLoad(document.getElementById('description'), item.description || '');
         });

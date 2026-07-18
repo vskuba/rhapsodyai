@@ -191,7 +191,7 @@
 <script type="module">
     import {getData, putData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
-    import {langSwitcherCreate, nodeLanguagesGet, i18nTextResolve} from '/static/js/lang_switcher.js';
+    import {langSwitcherCreate, nodeLanguagesGet, userLanguageGet, i18nTextResolve} from '/static/js/lang_switcher.js';
 
     const itemList = document.getElementById('itemList');
     const dataForm = document.getElementById('dataForm');
@@ -262,9 +262,9 @@
         document.getElementById('id').value = item.id;
         document.getElementById('formTitle').textContent = `Редактирование: ${item.title || item.name}`;
 
-        // Языки — по ноде переменной, затем загружаем значение в переводимое поле
-        nodeLanguagesGet(item.node_id).then(langs => {
-            langSwitcher.setLanguages(langs);
+        // Языки — по ноде переменной, активный по умолчанию — язык пользователя из кабинета
+        Promise.all([nodeLanguagesGet(item.node_id), userLanguageGet()]).then(([langs, userLang]) => {
+            langSwitcher.setLanguages(langs, userLang);
             langSwitcher.fieldLoad(document.getElementById('default'), item.default || '');
         });
 
