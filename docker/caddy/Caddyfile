@@ -6,7 +6,12 @@
     @cronjob path /cronjob /cronjob/*
     respond @cronjob 403
 
-    reverse_proxy uvicorn:8000
+    # Во время деплоя uvicorn пересоздается и ~минуту недоступен: держим запрос
+    # и ретраим до 90 секунд вместо мгновенного 502
+    reverse_proxy uvicorn:8000 {
+        lb_try_duration 90s
+        lb_try_interval 2s
+    }
 }
 
 # Голый IP: http://92.5.17.195 -> редирект на https с sslip.io-именем
