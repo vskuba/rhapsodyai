@@ -191,7 +191,7 @@
 <script type="module">
     import {getData, putData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
-    import {langSwitcherCreate, nodeLanguagesGet} from '/static/js/lang_switcher.js';
+    import {langSwitcherCreate, nodeLanguagesGet, i18nTextResolve} from '/static/js/lang_switcher.js';
 
     const itemList = document.getElementById('itemList');
     const dataForm = document.getElementById('dataForm');
@@ -201,6 +201,12 @@
     const langSwitcher = langSwitcherCreate(document.getElementById('langSwitcherContainer'));
     langSwitcher.fieldBind(document.getElementById('default'));
 
+    // При переключении языка перерисовываем хинт-подсказки на новом языке
+    langSwitcher.onChange(() => {
+        const openedId = document.getElementById('id').value;
+        if (openedId) renderHints(openedId);
+    });
+
     // Под textarea выводим переменные-подсказки, которые возвращает сервер
     async function renderHints(variableId) {
         const hintList = document.getElementById('hintList');
@@ -209,7 +215,9 @@
         const res = await getData(`/workflow_variable/public/${variableId}/hints`);
         res.result.forEach(v => {
             const line = document.createElement('div');
-            line.innerHTML = `🟠 <span>%${v.name}%</span> - ${v.description || ''}`;
+            // Описание может быть словарем переводов — показываем активный язык, а не JSON
+            const description = i18nTextResolve(v.description || '', langSwitcher.getLang());
+            line.innerHTML = `🟠 <span>%${v.name}%</span> - ${description}`;
             hintList.appendChild(line);
         });
     }

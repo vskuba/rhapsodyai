@@ -67,6 +67,27 @@ function styleInject() {
 }
 
 /**
+ * Разбирает значение-перевод: если raw — JSON-словарь {"ru": "...", "en": "..."},
+ * возвращает текст для lang (fallback — первый язык словаря). Обычные строки — как есть.
+ * Для отображения переводимых значений вне полей формы (подсказки, списки).
+ */
+export function i18nTextResolve(raw, lang) {
+    const text = String(raw ?? '').trim();
+    if (!(text.startsWith('{') && text.endsWith('}'))) return raw ?? '';
+
+    try {
+        const data = JSON.parse(text);
+        const isLangDict = data && typeof data === 'object' && !Array.isArray(data)
+            && Object.keys(data).length > 0
+            && Object.keys(data).every(k => /^[a-z]{2}(-[a-zA-Z]{2})?$/.test(k));
+        if (!isLangDict) return raw ?? '';
+        return data[lang] ?? Object.values(data)[0] ?? '';
+    } catch (e) {
+        return raw ?? '';
+    }
+}
+
+/**
  * Языки ноды из настроек: нодовая запись 'languages' перекрывает общую. ['ru'] по умолчанию.
  */
 export async function nodeLanguagesGet(nodeId) {
@@ -102,6 +123,7 @@ export function langSwitcherCreate(container, languages = ['ru']) {
     let langs = [];
     let active = 'ru';
     const fields = new Set();
+    const changeListeners = new Set();
     // Последнее сфокусированное переводимое поле: кнопка перевода действует на него;
     // пока фокуса не было — переводятся все пустые поля формы
     let focusedField = null;
@@ -195,6 +217,7 @@ export function langSwitcherCreate(container, languages = ['ru']) {
         });
         active = lang;
         render();
+        changeListeners.forEach(cb => cb(active));
     }
 
     function setLanguages(newLangs) {
@@ -261,5 +284,13 @@ export function langSwitcherCreate(container, languages = ['ru']) {
 
     setLanguages(languages);
 
-    return {getLang: () => active, setLanguages, fieldBind, fieldLoad, fieldSerialize};
+    return {
+        getLang: () => active,
+        setLanguages,
+        fieldBind,
+        fieldLoad,
+        fieldSerialize,
+        // Подписка на переключение языка (например, перерисовать подсказки)
+        onChange: (cb) => changeListeners.add(cb),
+    };
 }
