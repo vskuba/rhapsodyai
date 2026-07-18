@@ -621,8 +621,14 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     raise ValueError(f"Sub-workflow '{child_name}' (id {child_workflow_id}) не содержит шагов.")
 
                 # 1. Изолированный scope ребенка: только явные входы (inputs_map) и default'ы —
-                # контракт задают input-переменные ребенка. workflow_id — служебная переменная
+                # контракт задают input-переменные ребенка. workflow_id — служебная переменная.
+                # user_language/node_languages — тоже сквозные служебные: язык пользователя
+                # должен быть одинаковым во всех вложенных workflow без ручного inputs_map
+                # на каждом шаге (inputs_map ниже все еще может явно переопределить их)
                 child_scope = {'workflow_id': child_workflow_id}
+                for service_var in ('user_language', 'node_languages'):
+                    if service_var in variables:
+                        child_scope[service_var] = variables[service_var]
 
                 # 2. Входы по inputs_map: переменная ребенка <- значение родительской переменной
                 for child_var, parent_var in inputs_map.items():

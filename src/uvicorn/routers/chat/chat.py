@@ -113,21 +113,20 @@ async def ask_ai(
         **json_request.variables
     }
 
-    # Языки ноды из настройки 'languages' ('ru' | 'ru,en'; нодовая перекрывает общую).
-    # Первый язык — активный: на нем девушка отвечает и в него резолвятся переводы.
-    # setdefault — агент/запрос могут переопределить язык своей workflow_variable
+    # node_languages — список языков, которые поддерживает нода (настройка 'languages':
+    # 'ru' | 'ru,en'; нодовая перекрывает общую). Только справочный список для UI/промптов.
     node_id = entity_agent.get('node_id')
     node_languages = i18n_languages_parse(
         (await setting_value_get('languages', node_id or 0, 'ru'))['value']
     )
     workflow_variables_all.setdefault('node_languages', ','.join(node_languages))
 
-    # Приоритет языка: workflow_variable агента/запроса (уже в dict, setdefault не перебьет)
-    # → выбор пользователя из кабинета (если поддерживается нодой) → первый язык ноды
+    # user_language — активный язык workflow: всегда выбор пользователя из личного кабинета,
+    # а не настройка ноды. Нода лишь публикует СПИСОК поддерживаемых языков (node_languages) —
+    # решение, укладывается ли в него выбор пользователя, если нужно, принимает сам workflow.
+    # setdefault — явный workflow_variable агента/запроса все еще может переопределить язык
     user_language = str(await setting_get('language', '', user_id=user.user_id) or '').strip().lower()
-    if user_language in node_languages:
-        workflow_variables_all.setdefault('user_language', user_language)
-    workflow_variables_all.setdefault('user_language', node_languages[0])
+    workflow_variables_all.setdefault('user_language', user_language or node_languages[0])
     language_active = str(workflow_variables_all.get('user_language') or 'ru')
 
     # Поля агента уходят в движок напрямую (prompt_system_create читает entity_agent,
@@ -144,6 +143,12 @@ async def ask_ai(
                 {x.get('name'): x.get('default', None)},
                 workflow_variables_all
             )
+            # Резолвим i18n сразу, а не одним проходом в конце: следующие по позиции
+            # public-переменные подставляют %эту_переменную% и должны видеть уже
+            # готовый текст, а не сырой JSON-словарь переводов (иначе он подмешивается
+            # как текст внутрь следующей переменной и ломает ее JSON при финальном резолве)
+            for v_name, v_value in workflow_variable_node.items():
+                workflow_variable_node[v_name] = i18n_text_resolve(v_value, language_active)
             workflow_variables_all.update(workflow_variable_node)
 
     # получаем переменные из БД для воркфлоу и добавляем их в workflow_variables_all
