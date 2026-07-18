@@ -46,12 +46,22 @@ async function initWorkflowManager() {
         }
 
         const activeWorkflowLink = workflowListContainer.querySelector('.agent-item.active .workflow-name-link');
-        const activeWorkflowLinkId = activeWorkflowLink ? activeWorkflowLink.id : null;
+        let activeWorkflowLinkId = activeWorkflowLink ? activeWorkflowLink.id : null;
 
         // Запоминаем текущий режим: если открыта форма настроек workflow,
         // после перерисовки списка нужно остаться на ней, а не переключаться на шаги
         const settingsViewEl = document.getElementById('workflowSettingsView');
-        const isSettingsViewOpen = !!activeWorkflowLinkId && settingsViewEl && settingsViewEl.style.display !== 'none';
+        let isSettingsViewOpen = !!activeWorkflowLinkId && settingsViewEl && settingsViewEl.style.display !== 'none';
+
+        // Холодная перезагрузка страницы: DOM еще пуст (нет .agent-item.active) —
+        // восстанавливаем выбор из sessionStorage, чтобы не улетать на первый пункт списка
+        if (!activeWorkflowLinkId) {
+            const savedWorkflowId = sessionStorage.getItem('workflow_selected_id');
+            if (savedWorkflowId) {
+                activeWorkflowLinkId = 'workflow_link_' + savedWorkflowId;
+                isSettingsViewOpen = sessionStorage.getItem('workflow_selected_view') === 'settings';
+            }
+        }
 
         renderWorkflowList(workflows, nodes);
         initVariablesHandlers();
@@ -128,13 +138,18 @@ function renderWorkflowList(workflows, nodes) {
 
     // Показываем ноду активного workflow, чтобы выбор пережил перерисовку списка
     const activeLink = workflowListContainer.querySelector('.agent-item.active .workflow-name-link');
+    let activeNodeId = null;
     if (activeLink) {
         const wfId = activeLink.id.replace('workflow_link_', '');
         const wf = sidebarWorkflows.find(w => String(w.id) === String(wfId));
-        if (wf) {
-            const idx = carouselNodes.findIndex(n => String(n.id) === String(wf.node_id || 'none'));
-            if (idx >= 0) carouselIndex = idx;
-        }
+        if (wf) activeNodeId = wf.node_id || 'none';
+    } else {
+        // Холодная перезагрузка: DOM еще пуст — берем ноду из sessionStorage
+        activeNodeId = sessionStorage.getItem('workflow_selected_node_id');
+    }
+    if (activeNodeId !== null) {
+        const idx = carouselNodes.findIndex(n => String(n.id) === String(activeNodeId));
+        if (idx >= 0) carouselIndex = idx;
     }
     if (carouselIndex >= carouselNodes.length) carouselIndex = 0;
 
@@ -300,6 +315,7 @@ async function duplicateWorkflow(workflow) {
 
 async function openWorkflowSteps(workflow, element) {
     setActiveItem(element);
+    workflowSelectionSave(workflow, 'steps');
 
     // 1. ПЕРЕКЛЮЧАЕМ ВИДИМОСТЬ (Явно скрываем настройки и показываем шаги)
     document.getElementById('workflowSettingsView').style.display = 'none';
@@ -320,6 +336,7 @@ async function openWorkflowSteps(workflow, element) {
  */
 function openWorkflowSettings(workflow, element) {
     setActiveItem(element);
+    workflowSelectionSave(workflow, 'settings');
 
     // Переключаем видимость блоков
     document.getElementById('workflowSettingsView').style.display = 'flex';
@@ -328,6 +345,13 @@ function openWorkflowSettings(workflow, element) {
     document.getElementById('formTitle').textContent = `Редактирование задачи: ${workflow.title}`;
 
     fillWorkflowForm(workflow);
+}
+
+// Запоминаем ноду + выбранный workflow + режим (шаги/настройки), чтобы пережить перезагрузку страницы
+function workflowSelectionSave(workflow, view) {
+    sessionStorage.setItem('workflow_selected_node_id', workflow.node_id || 'none');
+    sessionStorage.setItem('workflow_selected_id', workflow.id);
+    sessionStorage.setItem('workflow_selected_view', view);
 }
 
 // Вспомогательные функции
