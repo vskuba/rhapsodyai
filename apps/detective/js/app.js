@@ -11,7 +11,22 @@ const inputEl = document.getElementById('userInput');
 const sendButtonEl = document.getElementById('sendButton');
 
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/play/detective/sw.js');
+    // register() требует secure context (https или localhost) - на голом
+    // HTTP (прод сейчас без сертификата) молча отклонится, ловим, чтобы не
+    // сыпать unhandled promise rejection в консоль
+    navigator.serviceWorker.register('/play/detective/sw.js').catch(() => {});
+}
+
+// crypto.randomUUID() тоже требует secure context - на голом HTTP (прод
+// сейчас без сертификата) его просто нет в объекте crypto. Свой генератор
+// не завязан на Crypto API - работает в любом контексте, криптостойкость
+// тут не нужна, только уникальность игровой сессии.
+function uuidV4() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 }
 
 // Текущий собеседник: detective_bot по умолчанию, подозреваемый/сержант - после клика по чипсу
@@ -72,7 +87,7 @@ function addMessage(text, role) {
 function getSessionUuid() {
     let sessionUuid = localStorage.getItem(SESSION_STORAGE_KEY);
     if (!sessionUuid) {
-        sessionUuid = crypto.randomUUID();
+        sessionUuid = uuidV4();
         localStorage.setItem(SESSION_STORAGE_KEY, sessionUuid);
     }
     return sessionUuid;
