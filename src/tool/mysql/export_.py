@@ -110,6 +110,12 @@ _CATCHALL_TABLE_QUERIES = {
 # tool/tool_group сюда не входят - их наполняет ai_tool_sync() из кода на
 # каждом окружении отдельно, id тулов между окружениями не совпадают.
 # session тоже не входит - чисто рантаймовые UUID-сессии, экспорту не подлежат.
+# Таблицы без собственной колонки dynamic, но зависящие от user_id: без
+# фильтра через них "утекают" зависимости dynamic-пользователей (guest-сессии
+# PWA) - сам user отфильтровывается по dynamic=0, а его user_llm/llm_request
+# остаются в экспорте, т.к. у этих таблиц своей dynamic-колонки нет.
+_USER_DEPENDENT_TABLES = {'user_llm', 'llm_request'}
+
 _CATCHALL_GLOBAL_TABLES = [
     'node', 'llm', 'role', 'user', 'user_access_token', 'user_llm', 'setting',
     'agent_workflow_step_type', 'companion', 'llm_request',
@@ -167,7 +173,8 @@ async def mysql_export_to_migration(tables: str, migration_file: str = 'migratio
 
             # Детерминированный порядок строк: по id, для связок — по всем колонкам
             order_by = '`id`' if 'id' in columns else ', '.join(f'`{c}`' for c in columns)
-            await db.execute(f"SELECT * FROM `{table}` ORDER BY {order_by}")
+            row_filter = _dynamic_row_filter(table, columns)
+            await db.execute(f"SELECT * FROM `{table}` {row_filter} ORDER BY {order_by}")
             exports[table] = (columns, await db.fetchall())
 
     return _migration_file_splice(migration_file, exports, skipped)
@@ -238,7 +245,8 @@ async def mysql_export_node_to_migration(node_id: int, migration_file: str = '')
                 await db.execute(f"SHOW COLUMNS FROM `{table}`")
                 columns = [c['Field'] for c in await db.fetchall()]
                 order_by = '`id`' if 'id' in columns else ', '.join(f'`{c}`' for c in columns)
-                await db.execute(f"SELECT * FROM `{table}` ORDER BY {order_by}")
+                row_filter = _dynamic_row_filter(table, columns)
+                await db.execute(f"SELECT * FROM `{table}` {row_filter} ORDER BY {order_by}")
                 rows = await db.fetchall()
                 if rows:
                     exports[table] = (columns, rows)
@@ -277,6 +285,25 @@ def _is_prod_environment() -> bool:
     на проде нет смысла (там свой рантайм, а не разработка): APP_ENV на проде
     выставлен в '_prod' (см. docker-compose.yml, read-app-logs${APP_ENV}.conf)."""
     return 'prod' in config_get('APP_ENV', '').lower()
+
+
+def _dynamic_row_filter(table: str, columns: list, user_dynamic_exists: bool = True) -> str:
+    """WHERE-условие, исключающее строки dynamic-пользователей/агентов
+    (созданы рантаймом - guest-сессии PWA и т.п., не seed): таблицы со своей
+    колонкой dynamic (agent, user) фильтруются напрямую; таблицы, зависящие
+    от user_id, но без своей dynamic-колонки (user_llm, llm_request) -
+    через подзапрос к user.dynamic. NULL user_id (запрос не привязан ни к
+    какому пользователю) не считается dynamic - остается в экспорте.
+     - user_dynamic_exists: есть ли колонка user.dynamic НА ТОЙ ЖЕ СТОРОНЕ
+       (локаль/прод), для которой строится фильтр - если нет (например,
+       ALTER еще не применен к проду в момент сравнения), подзапрос к
+       несуществующей колонке уронит запрос "Unknown column", поэтому в
+       этом случае фильтр по user_id просто не применяется."""
+    if 'dynamic' in columns:
+        return "WHERE `dynamic` = 0"
+    if table in _USER_DEPENDENT_TABLES and 'user_id' in columns and user_dynamic_exists:
+        return "WHERE `user_id` IS NULL OR `user_id` NOT IN (SELECT `id` FROM `user` WHERE `dynamic` = 1)"
+    return ""
 
 
 async def _table_primary_key_columns(db, table: str) -> list:

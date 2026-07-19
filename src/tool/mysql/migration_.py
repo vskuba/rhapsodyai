@@ -4,8 +4,8 @@ import re
 import pymysql
 
 from logging_.logging_ import logger_info
-from src.tool.mysql.export_ import _migration_file_ownership_fix, _next_migration_file, _sql_escape, \
-    _table_primary_key_columns
+from src.tool.mysql.export_ import _dynamic_row_filter, _migration_file_ownership_fix, _next_migration_file, \
+    _sql_escape, _table_primary_key_columns
 from mysql_.mysql_ import mysql_get_db_async
 
 # Таблицы, которые НИКОГДА не участвуют в сравнении/синке с продом - чисто
@@ -48,18 +48,24 @@ async def mysql_migration_prod_create(
        agent_session, detective_case, agent_workflow_run*, fact, llm_request,
        служебных таблиц yoyo - это исключительно динамический рантайм, не
        seed; и кроме tool, tool_group - их наполняет ai_tool_sync() из кода на
-       каждом окружении отдельно, переносить данные между средами не нужно)
-       делает построчный diff по первичному ключу: строки, полностью
-       совпадающие на проде и локально, в миграцию НЕ попадают. Для строк,
-       измененных локально (ключ есть на обеих сторонах, но данные другие) -
-       в файл попадают ОБЕ версии (сначала прод-версия для сравнения, затем
-       новая локальная - upsert, локальная побеждает), чтобы можно было
-       визуально увидеть, что именно меняется. Строки без пары на другой
-       стороне показываются один раз (новые локально - upsert; только на
-       проде - сохраняются как есть, например заведено вручную прямо там).
-       Миграция получается точечной - только реально затронутые строки, а не
-       вся таблица целиком.
-    3. Все пишется в СЛЕДУЮЩИЙ свободный файл миграции (mysql_migration_next_file).
+       каждом окружении отдельно, переносить данные между средами не нужно):
+       если структура таблицы (набор колонок) совпадает у прода и локали -
+       построчный diff по первичному ключу (строки, полностью совпадающие,
+       в миграцию не попадают; измененные - обе версии, прод для сравнения и
+       новая локальная - upsert; без пары на другой стороне - по разу). Если
+       структура ОТЛИЧАЕТСЯ (типичный случай - колонка появилась только что
+       локально, ALTER еще не применен к проду в момент сравнения) - точечное
+       сравнение ненадежно, таблица переносится ЦЕЛИКОМ каждой стороной своим
+       набором колонок, без попытки сопоставить построчно.
+    3. Файл собран ПО-ТАБЛИЧНО, блок за блоком: для каждой затронутой таблицы -
+       разделитель (`-- ===== имя_таблицы =====`), данные прода этой таблицы
+       (старой структурой), ALTER/CREATE этой же таблицы (пункт 1, если есть),
+       локальные правки этой же таблицы (upsert, новой структурой) - и так по
+       каждой таблице, а не глобальными фазами "все прод -> вся структура -
+       вся локаль". Порядок внутри блока (прод -> ALTER -> локаль) гарантирует,
+       что прод-часть не наткнется на еще не добавленную колонку, а локальная -
+       на неполную схему.
+    4. Все пишется в СЛЕДУЮЩИЙ свободный файл миграции (mysql_migration_next_file).
        Номер выбирается по ЛОКАЛЬНЫМ файлам - если предыдущий выкаченный файл с
        этим же номером уже удален локально (что и есть штатный процесс после
        успешного деплоя), номер переиспользуется. yoyo на проде иначе молча
@@ -101,22 +107,31 @@ async def mysql_migration_prod_create(
 
     try:
         _yoyo_migration_unmark(prod_conn, migration_id)
-        schema_lines, review_notes = await _schema_diff_generate(prod_conn)
-        data_blocks, tables_qty, rows_qty = await _data_diff_generate(prod_conn)
+        schema_lines_by_table, review_notes = await _schema_diff_generate(prod_conn)
+        data_blocks_by_table, tables_qty, rows_qty = await _data_diff_generate(prod_conn)
     finally:
         prod_conn.close()
 
     content_lines = [
         "-- Синхронизация с продом (сгенерировано mysql_migration_prod_create).",
-        "-- Структура: CREATE/ALTER для нового, что появилось локально. Данные: построчный",
-        "-- diff по первичному ключу - только затронутые строки. Для измененных строк",
-        "-- показаны обе версии (прод для сравнения, затем новая локальная - upsert).",
+        "-- Блок за блоком по каждой таблице: данные прода (старая структура) ->",
+        "-- ALTER/CREATE этой таблицы -> локальные правки (upsert, новая структура).",
         "",
     ]
-    if schema_lines:
-        content_lines.extend(schema_lines)
-        content_lines.append("")
-    content_lines.extend(data_blocks)
+    all_tables = sorted(set(schema_lines_by_table) | set(data_blocks_by_table))
+    for table in all_tables:
+        table_data = data_blocks_by_table.get(table, {})
+        content_lines.append(f"-- ===== {table} =====\n")
+        for block in table_data.get('prod', []):
+            content_lines.append(block)
+            content_lines.append('')
+        for line in schema_lines_by_table.get(table, []):
+            content_lines.append(line)
+        if table in schema_lines_by_table:
+            content_lines.append('')
+        for block in table_data.get('local', []):
+            content_lines.append(block)
+            content_lines.append('')
 
     with open(target_file, 'w', encoding='utf-8') as f:
         f.write('\n'.join(content_lines))
@@ -124,11 +139,12 @@ async def mysql_migration_prod_create(
 
     logger_info(f"📦 Создана prod-миграция {target_file}: {tables_qty} таблиц, {rows_qty} строк")
 
+    schema_lines_flat = [line for lines in schema_lines_by_table.values() for line in lines]
     return {
         "migration_file": target_file,
         "tables_qty": tables_qty,
         "rows_qty": rows_qty,
-        "schema_changes": '; '.join(re.sub(r'\s+', ' ', s).strip() for s in schema_lines if s.strip()) or 'нет изменений структуры',
+        "schema_changes": '; '.join(re.sub(r'\s+', ' ', s).strip() for s in schema_lines_flat if s.strip()) or 'нет изменений структуры',
         "review_needed": '; '.join(review_notes) or '',
         "report_str": f"файл {target_file} создан",
     }
@@ -150,8 +166,9 @@ def _yoyo_migration_unmark(prod_conn, migration_id: str) -> None:
 
 async def _schema_diff_generate(prod_conn) -> tuple:
     """Сравнивает структуру таблиц (локально vs прод), возвращает
-    (список строк CREATE/ALTER TABLE для отсутствующего на проде,
-    список пометок для ручного review - обратные расхождения/смена типа)."""
+    (schema_lines_by_table: dict[str, list[str]] - строки CREATE/ALTER TABLE
+    для отсутствующего на проде, по таблицам, для сборки файла по-табличным
+    блоком; список пометок для ручного review - обратные расхождения/смена типа)."""
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT TABLE_NAME FROM information_schema.TABLES "
@@ -166,7 +183,7 @@ async def _schema_diff_generate(prod_conn) -> tuple:
         )
         prod_tables = {r['TABLE_NAME'] for r in cur.fetchall()} - _RUNTIME_EXCLUDED_TABLES
 
-    schema_lines = []
+    schema_lines_by_table = {}
     review_notes = []
 
     # Таблицы, которых нет на проде - переносим DDL как есть (CREATE TABLE IF NOT EXISTS)
@@ -176,8 +193,7 @@ async def _schema_diff_generate(prod_conn) -> tuple:
             ddl = (await db.fetchone())['Create Table']
         ddl = ddl.replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ', 1)
         ddl = re.sub(r'\s*AUTO_INCREMENT=\d+', '', ddl)
-        schema_lines.append(ddl + ';')
-        schema_lines.append('')
+        schema_lines_by_table.setdefault(table, []).append(ddl + ';')
 
     # Таблиц, которые есть только на проде - не трогаем, только сообщаем
     for table in sorted(prod_tables - local_tables):
@@ -203,7 +219,9 @@ async def _schema_diff_generate(prod_conn) -> tuple:
 
         for col_name, col_row in local_columns.items():
             if col_name not in prod_columns:
-                schema_lines.append(f"ALTER TABLE `{table}` ADD COLUMN {_column_definition_sql(col_name, col_row)};")
+                schema_lines_by_table.setdefault(table, []).append(
+                    f"ALTER TABLE `{table}` ADD COLUMN {_column_definition_sql(col_name, col_row)};"
+                )
             elif _column_type_normalize(col_row['COLUMN_TYPE']) != _column_type_normalize(prod_columns[col_name]['COLUMN_TYPE']):
                 review_notes.append(
                     f"'{table}.{col_name}': тип отличается (локально {col_row['COLUMN_TYPE']}, "
@@ -216,7 +234,7 @@ async def _schema_diff_generate(prod_conn) -> tuple:
                     f"'{table}.{col_name}' есть на проде, но не локально - не удаляется, проверьте вручную"
                 )
 
-    return schema_lines, review_notes
+    return schema_lines_by_table, review_notes
 
 
 def _column_type_normalize(column_type: str) -> str:
@@ -228,18 +246,26 @@ def _column_type_normalize(column_type: str) -> str:
 
 
 async def _data_diff_generate(prod_conn) -> tuple:
-    """Для каждой не-рантаймовой и не tool-sync таблицы - построчный diff по
-    первичному ключу: строки, полностью совпадающие на проде и локально,
-    пропускаются - в миграцию попадают только реально затронутые. Для строк,
-    измененных локально (ключ есть на обеих сторонах, но данные отличаются) -
-    показывает ОБЕ версии (сначала текущую прод-версию, затем новую локальную),
-    чтобы можно было визуально сравнить, что именно меняется - не только
-    точечный список задетых строк, но и видимый до/после. Строки, которых нет
-    на одной из сторон, показываются один раз (новые локально - upsert;
-    только на проде - сохраняются как есть). Таблицы без первичного ключа
-    сравниваются и мигрируют целиком (построчное сопоставление без ключа
-    ненадежно). Возвращает (список строк SQL-блоков, количество таблиц с
-    расхождениями, суммарное количество затронутых строк)."""
+    """Для каждой не-рантаймовой и не tool-sync таблицы: если структура (набор
+    колонок) совпадает у прода и локали - построчный diff по первичному
+    ключу: строки, полностью совпадающие, пропускаются; для измененных (ключ
+    есть на обеих сторонах, данные разные) показываются ОБЕ версии (прод для
+    сравнения, затем новая локальная - upsert); без пары на другой стороне -
+    по разу (новые локально - upsert; только на проде - сохраняются как есть).
+
+    Если структура ОТЛИЧАЕТСЯ (типичный случай - колонка появилась только что
+    локально, ALTER на прод в файле есть, но еще не применен в момент этого
+    сравнения) - построчное сопоставление ненадежно (типы строк физически
+    разные), таблица переносится ЦЕЛИКОМ каждой стороной СВОИМ набором колонок,
+    без попытки сопоставить построчно.
+
+    Возвращает (data_blocks_by_table: dict[str, dict] - на таблицу словарь
+    {'prod': list[str] | отсутствует, 'local': list[str] | отсутствует},
+    tables_qty, rows_qty) - по таблицам, для сборки файла по-табличным
+    блоком (прод-блок этой таблицы -> ALTER этой таблицы -> локальный блок
+    этой таблицы), чтобы прод-блок (старая структура) не наткнулся на еще не
+    добавленную колонку, а локальный (новая структура) применялся уже ПОСЛЕ
+    ALTER этой же таблицы."""
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT TABLE_NAME FROM information_schema.TABLES "
@@ -247,25 +273,72 @@ async def _data_diff_generate(prod_conn) -> tuple:
         )
         tables = sorted({r['TABLE_NAME'] for r in await db.fetchall()} - _DATA_DIFF_EXCLUDED_TABLES)
 
-    blocks = []
+    # user.dynamic может еще не существовать на проде (ALTER той же миграцией
+    # еще не применен в момент сравнения) - фильтр user_llm/llm_request по
+    # подзапросу к user.dynamic на ПРОД-стороне безопасен только если она там уже есть
+    with prod_conn.cursor() as cur:
+        cur.execute("SHOW COLUMNS FROM `user`")
+        prod_user_dynamic_exists = 'dynamic' in {c['Field'] for c in cur.fetchall()}
+
+    data_blocks_by_table = {}
     tables_qty = 0
     rows_qty = 0
 
     for table in tables:
         async with mysql_get_db_async() as db:
             await db.execute(f"SHOW COLUMNS FROM `{table}`")
-            columns = [c['Field'] for c in await db.fetchall()]
+            local_columns = [c['Field'] for c in await db.fetchall()]
             pk_columns = await _table_primary_key_columns(db, table)
 
-        row_filter = "WHERE `dynamic` = 0" if 'dynamic' in columns else ""
+        with prod_conn.cursor() as cur:
+            cur.execute(f"SHOW COLUMNS FROM `{table}`")
+            prod_columns = [c['Field'] for c in cur.fetchall()]
+
+        if set(local_columns) != set(prod_columns):
+            # Структура отличается - точечный diff ненадежен, переносим
+            # таблицу целиком, каждая сторона СВОИМИ колонками
+            prod_row_filter = _dynamic_row_filter(table, prod_columns, prod_user_dynamic_exists)
+            prod_pk = [c for c in pk_columns if c in prod_columns]
+            prod_order_by = '`' + prod_pk[0] + '`' if prod_pk else ', '.join(f'`{c}`' for c in prod_columns)
+            with prod_conn.cursor() as cur:
+                cur.execute(f"SELECT * FROM `{table}` {prod_row_filter} ORDER BY {prod_order_by}")
+                prod_rows = cur.fetchall()
+
+            local_row_filter = _dynamic_row_filter(table, local_columns)
+            local_order_by = '`' + pk_columns[0] + '`' if pk_columns else ', '.join(f'`{c}`' for c in local_columns)
+            async with mysql_get_db_async() as db:
+                await db.execute(f"SELECT * FROM `{table}` {local_row_filter} ORDER BY {local_order_by}")
+                local_rows = await db.fetchall()
+
+            if prod_rows:
+                data_blocks_by_table.setdefault(table, {})['prod'] = [_upsert_block_build(
+                    table, prod_columns, prod_rows, prod_pk, f'-- {table}: данные прода (структура отличается - таблица целиком)'
+                )]
+            if local_rows:
+                data_blocks_by_table.setdefault(table, {})['local'] = [_upsert_block_build(
+                    table, local_columns, local_rows, pk_columns, f'-- {table}: локальные данные (структура отличается - таблица целиком)'
+                )]
+
+            if prod_rows or local_rows:
+                tables_qty += 1
+                rows_qty += len(prod_rows) + len(local_rows)
+            continue
+
+        # Структуры совпадают - построчный diff по первичному ключу.
+        # Фильтр считаем ОТДЕЛЬНО для каждой стороны: у user_llm/llm_request
+        # своя схема может совпадать, а вот user.dynamic (от чего зависит их
+        # фильтр) - еще нет, если ALTER применится этой же миграцией позже
+        columns = local_columns
         order_by = '`' + pk_columns[0] + '`' if pk_columns else ', '.join(f'`{c}`' for c in columns)
+        prod_row_filter = _dynamic_row_filter(table, columns, prod_user_dynamic_exists)
+        local_row_filter = _dynamic_row_filter(table, columns)
 
         with prod_conn.cursor() as cur:
-            cur.execute(f"SELECT * FROM `{table}` {row_filter} ORDER BY {order_by}")
+            cur.execute(f"SELECT * FROM `{table}` {prod_row_filter} ORDER BY {order_by}")
             prod_rows = cur.fetchall()
 
         async with mysql_get_db_async() as db:
-            await db.execute(f"SELECT * FROM `{table}` {row_filter} ORDER BY {order_by}")
+            await db.execute(f"SELECT * FROM `{table}` {local_row_filter} ORDER BY {order_by}")
             local_rows = await db.fetchall()
 
         if not pk_columns:
@@ -296,29 +369,33 @@ async def _data_diff_generate(prod_conn) -> tuple:
             continue
 
         if prod_only_rows:
-            blocks.append(_upsert_block_build(table, columns, prod_only_rows, pk_columns, '-- только на проде (сохраняем)'))
-            blocks.append('')
+            data_blocks_by_table.setdefault(table, {}).setdefault('prod', []).append(
+                _upsert_block_build(table, columns, prod_only_rows, pk_columns, '-- только на проде (сохраняем)')
+            )
         if changed_prod_rows:
-            blocks.append(_upsert_block_build(
+            data_blocks_by_table.setdefault(table, {}).setdefault('prod', []).append(_upsert_block_build(
                 table, columns, changed_prod_rows, pk_columns, '-- прод: текущее значение измененных строк (для сравнения)'
             ))
-            blocks.append('')
         if new_local_rows:
-            blocks.append(_upsert_block_build(table, columns, new_local_rows, pk_columns, '-- локально: новое/измененное значение'))
-            blocks.append('')
+            data_blocks_by_table.setdefault(table, {}).setdefault('local', []).append(
+                _upsert_block_build(table, columns, new_local_rows, pk_columns, '-- локально: новое/измененное значение')
+            )
 
         tables_qty += 1
         rows_qty += affected_keys_qty
 
-    return blocks, tables_qty, rows_qty
+    return data_blocks_by_table, tables_qty, rows_qty
 
 
 def _row_sql_text(columns: list, row: dict) -> tuple:
     """Строковое SQL-представление ОДНОЙ строки (кортеж экранированных значений
     по колонкам) - для сравнения "совпадают ли данные прода и локали по сути",
     не по внутреннему Python-типу драйвера (pymysql/aiomysql могут по-разному
-    типизировать одно и то же значение - Decimal/float, datetime/str)."""
-    return tuple(_sql_escape(row[c]) for c in columns)
+    типизировать одно и то же значение - Decimal/float, datetime/str).
+    row.get(c) вместо row[c]: колонка columns (локальная схема) может еще не
+    существовать на проде (появилась только что, ALTER на прод той же
+    миграцией применится позже) - тогда в строке ее просто нет, а не NULL."""
+    return tuple(_sql_escape(row.get(c)) for c in columns)
 
 
 def _rows_as_sql_text(columns: list, rows: list) -> list:
