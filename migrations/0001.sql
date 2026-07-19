@@ -73,7 +73,8 @@ CREATE TABLE `node` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
-    `migration_file` CHAR(100) NULL COMMENT 'Файл миграции для экспорта данных этой ноды (mysql_export_node_to_migration)'
+    `migration_file` CHAR(100) NULL COMMENT 'Файл миграции для экспорта данных этой ноды (mysql_export_node_to_migration)',
+    `is_catchall` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 - эта нода забирает при экспорте все данные, не относящиеся к другим подпроектам'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица настроек (scope: user_id — пользовательская, node_id — нодовая, оба NULL — общая)

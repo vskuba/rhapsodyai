@@ -349,6 +349,18 @@
             nodeListContainer.appendChild(div);
         });
 
+        // Восстанавливаем ранее выбранную ноду из sessionStorage (переживает обновление
+        // страницы), иначе - первый пункт списка
+        const savedNodeId = sessionStorage.getItem('node_page_selected_id');
+        const savedElement = savedNodeId
+            ? Array.from(nodeListContainer.querySelectorAll('.node-item')).find(el => el.dataset.id === savedNodeId)
+            : null;
+
+        if (savedNodeId && savedElement) {
+            selectNodeForEdit(savedNodeId, savedElement);
+            return;
+        }
+
         const firstNode = nodes[0];
         const firstElement = nodeListContainer.querySelector('.node-item');
         if (firstNode && firstElement) {
@@ -400,6 +412,9 @@
         document.querySelectorAll('.node-item').forEach(el => el.classList.remove('active'));
         element.classList.add('active');
 
+        // Запоминаем выбор, чтобы пережить обновление страницы
+        sessionStorage.setItem('node_page_selected_id', String(nodeId));
+
         try {
             const data = await getData(`/node/${nodeId}`);
             const node = data.result;
@@ -431,6 +446,7 @@
         document.getElementById('formTitle').textContent = 'Создание новой ноды';
         if (saveBtn) saveBtn.disabled = false;
         if (deleteBtn) deleteBtn.style.display = 'none';
+        sessionStorage.removeItem('node_page_selected_id');
     }
 
     /**

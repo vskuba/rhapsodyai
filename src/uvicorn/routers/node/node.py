@@ -35,3 +35,12 @@ async def node_update(request: Request, node_id: int, data: dict, user=Depends(A
     # Обновляем только переданные поля: drag-and-drop сортировка шлет только position
     update_data = {key: data[key] for key in ("name", "position", "migration_file") if key in data}
     return {"result": await repo.update(node_id, update_data)}
+
+
+@router.delete("/node/{node_id}")
+async def node_delete(request: Request, node_id: int, user=Depends(AuthChecker([AuthPermission.NODE_DELETE]))):
+    repo = NodeRepository()
+    deleted = await repo.delete(node_id)
+    if not deleted:
+        return {"status": "error", "message": "Нода не найдена"}
+    return {"status": "success", "result": "Нода удалена"}
