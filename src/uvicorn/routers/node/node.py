@@ -24,7 +24,8 @@ async def node_create(request: Request, data: dict, user=Depends(AuthChecker([Au
     repo = NodeRepository()
     return {"result": await repo.add({
         "name": data.get("name"),
-        "position": data.get("position")
+        "position": data.get("position"),
+        "migration_file": data.get("migration_file")
     })}
 
 
@@ -32,5 +33,5 @@ async def node_create(request: Request, data: dict, user=Depends(AuthChecker([Au
 async def node_update(request: Request, node_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.NODE_UPDATE]))):
     repo = NodeRepository()
     # Обновляем только переданные поля: drag-and-drop сортировка шлет только position
-    update_data = {key: data[key] for key in ("name", "position") if key in data}
+    update_data = {key: data[key] for key in ("name", "position", "migration_file") if key in data}
     return {"result": await repo.update(node_id, update_data)}
