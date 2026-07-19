@@ -18,6 +18,11 @@ async def agent_create_or_update(
     Создает или обновляет агента по системному имени.
     user_id — активный пользователь (workflow-переменная user_id из сессии):
     агент получает те же роли, что и пользователь (agent_role).
+    Всегда проставляет agent.dynamic=1 - это единственная точка создания
+    агентов в рантайме (девушки в dating, подозреваемые/сержант в detective
+    и т.п.), в отличие от статичных ботов, которые заводятся только через
+    INSERT в миграциях. Флаг нужен mysql_export_node_to_migration, чтобы не
+    запекать реальные игровые данные в seed-экспорт подпроекта.
     """
     repo = AgentRepository()
     entity_agent = await repo.find_one_by({"name": name})
@@ -39,6 +44,7 @@ async def agent_create_or_update(
             k: v for k, v in all_fields.items()
             if v is not None and v != ''
         }
+        update_data["dynamic"] = 1
 
         # Обновляем в БД только отфильтрованные поля
         if update_data:
@@ -56,6 +62,7 @@ async def agent_create_or_update(
             "workflow_variable": workflow_variable,
             "prompt_system": prompt_system,
             "description": description,
+            "dynamic": 1,
             "greeting": greeting
         })
 
