@@ -555,6 +555,120 @@ export function renderCustomStepFields(step, metadata) {
                 return wf ? wf.name : ('workflow_' + wfId);
             };
 
+            // --- Секция "Повтор вызова" (repeat): condition-строка в стиле transition
+            // (переменная / оператор / значение) для режима until, либо фиксированное число попыток ---
+            const repeatContainer = document.createElement('div');
+            repeatContainer.style = "display: flex; flex-direction: column; gap: 8px; margin-top: 5px; "
+                + "padding-top: 10px; border-top: 1px dashed #e2e8f0;";
+
+            const repeatTitle = document.createElement('div');
+            repeatTitle.style = "font-size: 11px; font-weight: bold; color: #4a5568;";
+            repeatTitle.textContent = "Повтор вызова:";
+            repeatContainer.appendChild(repeatTitle);
+
+            const repeatModeSelect = document.createElement('select');
+            repeatModeSelect.className = 'form-control repeat-mode-select';
+            repeatModeSelect.style = "padding: 6px; font-size: 12px; height: 32px;";
+            [['none', 'Не повторять'], ['until', 'Повторять, пока условие не выполнено'],
+                ['count', 'Фиксированное число попыток']].forEach(([val, label]) => {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = label;
+                repeatModeSelect.appendChild(opt);
+            });
+            repeatContainer.appendChild(repeatModeSelect);
+
+            // until: строка условия — как строка перехода (transition), но без целевого шага:
+            // здесь условие останавливает повтор, а не переключает шаг
+            const untilRow = document.createElement('div');
+            untilRow.className = 'repeat-until-row';
+            untilRow.style = "display: none; gap: 6px; align-items: center; background: #f9fafb; "
+                + "padding: 8px; border-radius: 6px; border: 1px solid #edf2f7;";
+
+            const untilVarSelect = document.createElement('select');
+            untilVarSelect.className = 'form-control repeat-until-variable';
+            untilVarSelect.style = "flex: 1.5; padding: 4px; font-size: 12px; height: 32px;";
+            fillVariablesSelectOptions(untilVarSelect, (currentValue?.repeat?.until?.variable) || '');
+
+            const untilOpSelect = document.createElement('select');
+            untilOpSelect.className = 'form-control repeat-until-operator';
+            untilOpSelect.style = "width: 110px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
+            ['==', '!=', '>', '<', '>=', '<=', 'contains', 'not_contains', 'regex', 'exists', 'empty'].forEach(op => {
+                const opt = document.createElement('option');
+                opt.value = op;
+                opt.textContent = op;
+                if (op === ((currentValue?.repeat?.until?.operator) || '==')) opt.selected = true;
+                untilOpSelect.appendChild(opt);
+            });
+
+            const untilValInput = document.createElement('input');
+            untilValInput.type = 'text';
+            untilValInput.className = 'form-control repeat-until-value';
+            untilValInput.placeholder = 'Значение';
+            untilValInput.value = (currentValue?.repeat?.until?.value) || '';
+            untilValInput.style = "flex: 1.5; padding: 4px; font-size: 12px; height: 32px;";
+
+            // Прячем поле "Значение", когда оператор его не использует (exists/empty) — как у transitions
+            const untilToggleValueVisibility = () => {
+                const hidden = untilOpSelect.value === 'exists' || untilOpSelect.value === 'empty';
+                untilValInput.style.visibility = hidden ? 'hidden' : 'visible';
+            };
+
+            const maxIterLabel = document.createElement('span');
+            maxIterLabel.textContent = 'до';
+            maxIterLabel.style = "color: #a0aec0; font-size: 12px;";
+
+            const maxIterInput = document.createElement('input');
+            maxIterInput.type = 'number';
+            maxIterInput.min = '1';
+            maxIterInput.max = '20';
+            maxIterInput.className = 'form-control repeat-max-iterations';
+            maxIterInput.value = (currentValue?.repeat?.max_iterations) || 3;
+            maxIterInput.title = 'Предохранитель: сколько попыток максимум, даже если условие не выполнилось';
+            maxIterInput.style = "width: 55px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
+
+            const maxIterSuffix = document.createElement('span');
+            maxIterSuffix.textContent = 'попыток';
+            maxIterSuffix.style = "color: #a0aec0; font-size: 12px; white-space: nowrap;";
+
+            untilRow.append(untilVarSelect, untilOpSelect, untilValInput, maxIterLabel, maxIterInput, maxIterSuffix);
+            repeatContainer.appendChild(untilRow);
+
+            // count: без условия, просто фиксированное число вызовов подряд
+            const countRow = document.createElement('div');
+            countRow.className = 'repeat-count-row';
+            countRow.style = "display: none; gap: 6px; align-items: center;";
+
+            const countLabel = document.createElement('span');
+            countLabel.textContent = 'Повторить';
+            countLabel.style = "font-size: 12px; color: #4a5568;";
+
+            const countInput = document.createElement('input');
+            countInput.type = 'number';
+            countInput.min = '1';
+            countInput.max = '20';
+            countInput.className = 'form-control repeat-count';
+            countInput.value = (currentValue?.repeat?.count) || 3;
+            countInput.style = "width: 55px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
+
+            const countSuffix = document.createElement('span');
+            countSuffix.textContent = 'раз(а)';
+            countSuffix.style = "font-size: 12px; color: #4a5568;";
+
+            countRow.append(countLabel, countInput, countSuffix);
+            repeatContainer.appendChild(countRow);
+
+            // Начальный режим — по уже сохраненному значению metadata
+            let initialRepeatMode = 'none';
+            if (currentValue?.repeat?.until) initialRepeatMode = 'until';
+            else if (currentValue?.repeat?.count) initialRepeatMode = 'count';
+            repeatModeSelect.value = initialRepeatMode;
+
+            const updateRepeatRowsVisibility = () => {
+                untilRow.style.display = repeatModeSelect.value === 'until' ? 'flex' : 'none';
+                countRow.style.display = repeatModeSelect.value === 'count' ? 'flex' : 'none';
+            };
+
             // Сборка и сохранение metadata.workflow_invoke
             const collectSubflowData = () => {
                 const wfId = selectElement.value ? parseInt(selectElement.value) : null;
@@ -567,12 +681,40 @@ export function renderCustomStepFields(step, metadata) {
                     }
                 });
 
-                saveChanges({
+                const payload = {
                     workflow_id: wfId,
                     inputs_map: inputsMap,
                     outputs_map: (currentValue && currentValue.outputs_map) || {}
-                });
+                };
+
+                if (repeatModeSelect.value === 'until') {
+                    payload.repeat = {
+                        until: {
+                            variable: untilVarSelect.value,
+                            operator: untilOpSelect.value,
+                            value: untilValInput.value.trim()
+                        },
+                        max_iterations: parseInt(maxIterInput.value, 10) || 3
+                    };
+                } else if (repeatModeSelect.value === 'count') {
+                    payload.repeat = {count: parseInt(countInput.value, 10) || 1};
+                }
+                // mode 'none' — repeat не добавляется в payload: обычный однократный вызов
+
+                saveChanges(payload);
             };
+
+            updateRepeatRowsVisibility();
+            untilToggleValueVisibility();
+
+            [repeatModeSelect, untilVarSelect, untilOpSelect, maxIterInput, countInput].forEach(el => {
+                el.addEventListener('change', () => {
+                    updateRepeatRowsVisibility();
+                    untilToggleValueVisibility();
+                    collectSubflowData();
+                });
+            });
+            untilValInput.addEventListener('input', collectSubflowData);
 
             // Секция "Выходящие параметры" — как у виджета инструментов:
             // тип результата ➔ переменная с копированием по клику
@@ -699,6 +841,7 @@ export function renderCustomStepFields(step, metadata) {
             wfContainer.appendChild(selectElement);
             wfContainer.appendChild(openLink);
             wfContainer.appendChild(mappingContainer);
+            wfContainer.appendChild(repeatContainer);
             fieldWrapper.appendChild(wfContainer);
 
         } else {

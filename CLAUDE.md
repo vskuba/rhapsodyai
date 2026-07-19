@@ -175,6 +175,7 @@ Repositories in `src/mysql_/repository/` cover:
 |------|------------|
 | `0001.sql` | DDL схема (CREATE TABLE, FK, индексы) |
 | `0002.sql` | DML сиды (INSERT: LLM, users, nodes, workflows, agents, fact_collections) |
+| `0003.sql` | Инкрементальная фича-миграция (детективная игра: таблица `detective_case`, workflow `detective_bot`/`detective_talk`). В отличие от 0001/0002 — идемпотентна (`CREATE TABLE IF NOT EXISTS`, `INSERT IGNORE`), применяется поверх уже существующей БД без полного пересоздания |
 
 **Порядок таблиц в 0001.sql** важен из-за FK:
 1. `llm` → 2. `user` → 3. `setting` → 4. `node` → 5. `session` → 6. `tool_group`/`tool` → 7. `agent_workflow`/`step_type`/`step`/`variable` → 8. `dating_girl` → 9. `fact_collection`/`fact` → 10. `agent` → 11. `agent_session`

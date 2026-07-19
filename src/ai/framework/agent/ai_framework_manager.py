@@ -598,6 +598,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 child_workflow_id = invoke_meta.get('workflow_id')
                 inputs_map = invoke_meta.get('inputs_map', {}) or {}
                 outputs_map = invoke_meta.get('outputs_map', {}) or {}
+                repeat_meta = invoke_meta.get('repeat') or {}
                 step_id = current_step.get('id')
 
                 if not child_workflow_id:
@@ -620,87 +621,145 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 if not child_steps:
                     raise ValueError(f"Sub-workflow '{child_name}' (id {child_workflow_id}) не содержит шагов.")
 
-                # 1. Изолированный scope ребенка: только явные входы (inputs_map) и default'ы —
-                # контракт задают input-переменные ребенка. workflow_id — служебная переменная.
-                # user_language/node_languages — тоже сквозные служебные: язык пользователя
-                # должен быть одинаковым во всех вложенных workflow без ручного inputs_map
-                # на каждом шаге (inputs_map ниже все еще может явно переопределить их)
-                child_scope = {'workflow_id': child_workflow_id}
-                for service_var in ('user_language', 'node_languages'):
-                    if service_var in variables:
-                        child_scope[service_var] = variables[service_var]
+                # Повтор вызова (опционально): 'until' - условие остановки в формате transition
+                # {variable, operator, value}, 'count' - фиксированное число попыток.
+                # Без repeat в metadata цикл выполняется РОВНО один раз - полная обратная
+                # совместимость с шагами workflow_invoke без повтора.
+                until_condition = repeat_meta.get('until')
+                repeat_count = repeat_meta.get('count')
+                max_iterations = int(repeat_meta.get('max_iterations') or repeat_count or 1)
+                if repeat_count:
+                    max_iterations = min(max_iterations, int(repeat_count))
+                is_repeating = bool(until_condition or repeat_count)
 
-                # 2. Входы по inputs_map: переменная ребенка <- значение родительской переменной
-                for child_var, parent_var in inputs_map.items():
-                    child_var, parent_var = str(child_var).strip(), str(parent_var).strip()
-                    if parent_var not in variables:
-                        raise ValueError(
-                            f"Sub-workflow '{child_name}': родительская переменная '%{parent_var}%' "
-                            f"для входа '{child_var}' не найдена."
-                        )
-                    child_scope[child_var] = variables[parent_var]
+                child_result = None
+                iteration = 0
+                # Стартуем с False всегда: цикл обязан выполниться минимум один раз
+                # (без until одной попытки достаточно - выставляется внутри цикла)
+                condition_satisfied = False
 
-                # 3. Default-значения переменных ребенка (не перекрывают переданное)
-                for v in child_data['variables']:
-                    v_name = (v.get('name') or '').strip()
-                    if v_name and v_name not in child_scope:
-                        child_scope[v_name] = v.get('default')
+                while iteration < max_iterations and not condition_satisfied:
+                    iteration += 1
 
-                # 4. Контракт входа: все input-переменные ребенка должны быть заполнены
-                for v in await ai_workflow_variables_input_get(child_workflow_id):
-                    if v.get('name') not in child_scope:
-                        raise ValueError(
-                            f"Sub-workflow '{child_name}': не передана обязательная "
-                            f"входящая переменная '%{v.get('name')}%'."
-                        )
+                    # 1. Изолированный scope ребенка: только явные входы (inputs_map) и default'ы —
+                    # контракт задают input-переменные ребенка. workflow_id — служебная переменная.
+                    # user_language/node_languages — тоже сквозные служебные: язык пользователя
+                    # должен быть одинаковым во всех вложенных workflow без ручного inputs_map
+                    # на каждом шаге (inputs_map ниже все еще может явно переопределить их).
+                    # Строится заново на КАЖДОЙ попытке — повтор не должен видеть промежуточные
+                    # переменные предыдущей неудачной попытки
+                    child_scope = {'workflow_id': child_workflow_id}
+                    for service_var in ('user_language', 'node_languages'):
+                        if service_var in variables:
+                            child_scope[service_var] = variables[service_var]
 
-                logger_info(f"🔁 Запуск sub-workflow '{child_name}' (id {child_workflow_id}, глубина {depth + 1})")
+                    # 2. Входы по inputs_map: переменная ребенка <- значение родительской переменной
+                    for child_var, parent_var in inputs_map.items():
+                        child_var, parent_var = str(child_var).strip(), str(parent_var).strip()
+                        if parent_var not in variables:
+                            raise ValueError(
+                                f"Sub-workflow '{child_name}': родительская переменная '%{parent_var}%' "
+                                f"для входа '{child_var}' не найдена."
+                            )
+                        child_scope[child_var] = variables[parent_var]
 
-                # Журнал: дочерний запуск с привязкой к родителю и шагу-инициатору
-                child_run_started = time.monotonic()
-                child_run_id = await trace_run_start(
-                    run_uuid=str(uuid.uuid4()),
-                    workflow_id=child_workflow_id,
-                    agent_id=model.entity_agent.get('id'),
-                    user_id=model.user_id,
-                    session_uuid=model.session_uuid,
-                    request_uuid=model.request_uuid,
-                    prompt_user=child_scope.get('prompt_user'),
-                    variables=child_scope,
-                    parent_run_id=trace_run_id,
-                    parent_step_id=step_id,
-                    depth=depth + 1,
-                )
+                    # 3. Default-значения переменных ребенка (не перекрывают переданное)
+                    for v in child_data['variables']:
+                        v_name = (v.get('name') or '').strip()
+                        if v_name and v_name not in child_scope:
+                            child_scope[v_name] = v.get('default')
 
-                # Движковые записи child-прогона (final-user-prompt и пр.) пишутся в
-                # model.session_uuid. Если ребенку передана СВОЯ сессия (workflow-оболочки
-                # вроде workflow_shell_test ведут sub-диалог в отдельной сессии) — на время
-                # прогона подменяем, чтобы полные промпты LLM-шагов попали в сессию sub-диалога
-                parent_session_uuid = model.session_uuid
-                child_session_uuid = str(child_scope.get('session_uuid') or '').strip()
+                    # 4. Контракт входа: все input-переменные ребенка должны быть заполнены
+                    for v in await ai_workflow_variables_input_get(child_workflow_id):
+                        if v.get('name') not in child_scope:
+                            raise ValueError(
+                                f"Sub-workflow '{child_name}': не передана обязательная "
+                                f"входящая переменная '%{v.get('name')}%'."
+                            )
 
-                try:
-                    if child_session_uuid:
-                        model.session_uuid = child_session_uuid
-                    child_result = await self._workflow_steps_run(
-                        model, child_steps, child_scope,
-                        depth=depth + 1, workflow_stack=stack + [child_workflow_id],
-                        trace_run_id=child_run_id
+                    logger_info(
+                        f"🔁 Запуск sub-workflow '{child_name}' (id {child_workflow_id}, глубина {depth + 1}"
+                        + (f", попытка {iteration}/{max_iterations}" if is_repeating else "") + ")"
                     )
-                except Exception as e:
+
+                    # Журнал: дочерний запуск с привязкой к родителю и шагу-инициатору
+                    child_run_started = time.monotonic()
+                    child_run_id = await trace_run_start(
+                        run_uuid=str(uuid.uuid4()),
+                        workflow_id=child_workflow_id,
+                        agent_id=model.entity_agent.get('id'),
+                        user_id=model.user_id,
+                        session_uuid=model.session_uuid,
+                        request_uuid=model.request_uuid,
+                        prompt_user=child_scope.get('prompt_user'),
+                        variables=child_scope,
+                        parent_run_id=trace_run_id,
+                        parent_step_id=step_id,
+                        depth=depth + 1,
+                    )
+
+                    # Движковые записи child-прогона (final-user-prompt и пр.) пишутся в
+                    # model.session_uuid. Если ребенку передана СВОЯ сессия (workflow-оболочки
+                    # вроде workflow_shell_test ведут sub-диалог в отдельной сессии) — на время
+                    # прогона подменяем, чтобы полные промпты LLM-шагов попали в сессию sub-диалога
+                    parent_session_uuid = model.session_uuid
+                    child_session_uuid = str(child_scope.get('session_uuid') or '').strip()
+
+                    try:
+                        if child_session_uuid:
+                            model.session_uuid = child_session_uuid
+                        child_result = await self._workflow_steps_run(
+                            model, child_steps, child_scope,
+                            depth=depth + 1, workflow_stack=stack + [child_workflow_id],
+                            trace_run_id=child_run_id
+                        )
+                    except Exception as e:
+                        await trace_run_finish(
+                            child_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
+                            duration_ms=int((time.monotonic() - child_run_started) * 1000)
+                        )
+                        await trace_current_step(status='error', error=str(e))
+                        raise
+                    finally:
+                        model.session_uuid = parent_session_uuid
+
                     await trace_run_finish(
-                        child_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
+                        child_run_id, 'success', result=child_result,
                         duration_ms=int((time.monotonic() - child_run_started) * 1000)
                     )
-                    await trace_current_step(status='error', error=str(e))
-                    raise
-                finally:
-                    model.session_uuid = parent_session_uuid
 
-                await trace_run_finish(
-                    child_run_id, 'success', result=child_result,
-                    duration_ms=int((time.monotonic() - child_run_started) * 1000)
-                )
+                    # Явные выходы по outputs_map: переменная ребенка -> переменная родителя.
+                    # Применяются СРАЗУ после попытки (а не после цикла) — until-условие ниже
+                    # почти всегда проверяет именно эти переменные и должно видеть свежие значения
+                    for child_var, parent_var in outputs_map.items():
+                        child_var, parent_var = str(child_var).strip(), str(parent_var).strip()
+                        if child_var in child_scope:
+                            variables[parent_var] = child_scope[child_var]
+                            logger_info(
+                                f"🏷️ outputs_map: '%{parent_var}%' <- '%{child_var}%' из sub-workflow '{child_name}'")
+                        else:
+                            logger_info(
+                                f"⚠️ outputs_map: переменная '%{child_var}%' не найдена в scope sub-workflow '{child_name}'")
+
+                    if until_condition:
+                        condition_satisfied = bool(self._transition_condition_check(
+                            variables,
+                            until_condition.get('variable', ''),
+                            until_condition.get('operator', '=='),
+                            until_condition.get('value', '')
+                        ))
+                    else:
+                        # Без until: 'count' крутится ровно repeat_count раз (останов
+                        # отдаем на откуп max_iterations), обычный однократный вызов -
+                        # одной попытки достаточно
+                        condition_satisfied = not repeat_count
+
+                if until_condition and not condition_satisfied:
+                    logger_info(
+                        f"⚠️ workflow_invoke '{child_name}': условие until не выполнено за {max_iterations} "
+                        f"попыток, используется результат последней попытки"
+                    )
+
                 trace_output = child_result
 
                 # Результат ребенка -> переменная родителя по конвенции tool-шагов (с id шага)
@@ -712,17 +771,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 # для шагов-оберток, где workflow_id задается переменной (%test_workflow_id%)
                 alias_var = f'workflow_invoke_{step_id}_result_str'
                 variables[alias_var] = variables[result_var]
-
-                # Явные выходы по outputs_map: переменная ребенка -> переменная родителя
-                for child_var, parent_var in outputs_map.items():
-                    child_var, parent_var = str(child_var).strip(), str(parent_var).strip()
-                    if child_var in child_scope:
-                        variables[parent_var] = child_scope[child_var]
-                        logger_info(
-                            f"🏷️ outputs_map: '%{parent_var}%' <- '%{child_var}%' из sub-workflow '{child_name}'")
-                    else:
-                        logger_info(
-                            f"⚠️ outputs_map: переменная '%{child_var}%' не найдена в scope sub-workflow '{child_name}'")
 
             # ОБРАБОТКА ШАГА: Финал воркфлоу, возврат ответа
             elif step_type == 'return_response_llm':
