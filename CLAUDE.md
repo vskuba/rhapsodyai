@@ -170,15 +170,22 @@ Repositories in `src/mysql_/repository/` cover:
 
 Проект использует **yoyo-migrations** для управления схемой БД. Миграции применяются автоматически при старте Uvicorn через `mysql_migration_up()`.
 
-**Структура:**
+**Структура (по принципу «структура / система / подпроект-per-нода»):**
 | Файл | Назначение |
 |------|------------|
-| `0001.sql` | DDL схема (CREATE TABLE, FK, индексы) |
-| `0002.sql` | DML сиды (INSERT: LLM, users, nodes, workflows, agents, fact_collections) |
-| `0003.sql` | Инкрементальная фича-миграция (детективная игра: таблица `detective_case`, workflow `detective_bot`/`detective_talk`). В отличие от 0001/0002 — идемпотентна (`CREATE TABLE IF NOT EXISTS`, `INSERT IGNORE`), применяется поверх уже существующей БД без полного пересоздания |
+| `0001.sql` | DDL схема ЦЕЛИКОМ (CREATE TABLE, FK, индексы, все таблицы всех подпроектов) |
+| `0002.sql` | Системные данные — НЕ относящиеся ни к одному подпроекту (ноде): LLM, users, roles, nodes, settings, tools, служебные workflow (Cashier/Soko/Test/Dev, translator, fact_verify) |
+| `0003.sql` | Данные подпроекта **Dating** (node_id=2): workflow, шаги, переменные, публичные переменные, агент `dating_bot` |
+| `0004.sql` | Данные подпроекта **Detective** (node_id=4): workflow, шаги, переменные, агент `detective_bot` |
+
+Каждая нода (подпроект) — это отдельный будущий файл миграции: `node.migration_file` хранит путь для данной ноды, используется `mysql_export_node_to_migration(node_id)` при экспорте изменений. Новый подпроект = новый `000N.sql` с DML-данными этой ноды; схема (таблицы) для него добавляется в `0001.sql`, если подпроекту нужна своя таблица (как `detective_case`).
+
+**Важно:** динамические данные, создаваемые ВО ВРЕМЯ работы приложения (не seed), никогда не входят ни в один файл миграции:
+- `agent.dynamic=1` — агенты, создаваемые `agent_create_or_update` в рантайме (девушки в dating, подозреваемые/сержант в detective)
+- `agent_session`, `detective_case` — история переписки/игровых сессий
 
 **Порядок таблиц в 0001.sql** важен из-за FK:
-1. `llm` → 2. `user` → 3. `setting` → 4. `node` → 5. `session` → 6. `tool_group`/`tool` → 7. `agent_workflow`/`step_type`/`step`/`variable` → 8. `dating_girl` → 9. `fact_collection`/`fact` → 10. `agent` → 11. `agent_session`
+1. `llm` → 2. `user` → 3. `setting` → 4. `node` → 5. `session` → 6. `tool_group`/`tool` → 7. `agent_workflow`/`step_type`/`step`/`variable` → 8. `fact_collection`/`fact` → 9. `agent` → 10. `agent_session` → 11. `detective_case` (и таблицы будущих подпроектов)
 
 **Особенности 0001.sql:**
 - `DROP TABLE IF EXISTS` в начале (чистое пересоздание)
@@ -188,7 +195,7 @@ Repositories in `src/mysql_/repository/` cover:
 
 **Процесс изменения схемы:**
 ```bash
-# 1. Редактируете 0001.sql (схему) и/или 0002.sql (сиды)
+# 1. Редактируете 0001.sql (схему) и/или 0002/0003/0004.sql (данные нужного подпроекта)
 # 2. Очищаете БД полностью:
 mysql -u developer -p -h localhost -P 3302 -e "DROP DATABASE IF EXISTS project; CREATE DATABASE project CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 # 3. Запускаете сервер — миграции применятся автоматически:
