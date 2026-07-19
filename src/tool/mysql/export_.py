@@ -1,3 +1,4 @@
+import glob
 import os
 import re
 
@@ -118,8 +119,9 @@ async def mysql_export_to_migration(tables: str, migration_file: str = 'migratio
     заменяет их актуальными данными. Порядок блоков в файле сохраняется (важно
     для FK). Для таблиц, общих для всех подпроектов (node, role, user, tool и
     т.п.). Для экспорта данных ОДНОГО подпроекта используйте
-    mysql_export_node_to_migration - иначе экспорт смешает строки всех нод
-    в одном файле.
+    mysql_export_node_to_migration - иначе экспорт смешает строки всех нод в
+    одном файле. Для выката на прод используйте mysql_migration_prod_create -
+    она сравнивает структуру/данные с продом и сама строит upsert-миграцию.
     tables — имена таблиц через запятую (например: 'agent_workflow, agent_workflow_step');
     migration_file — путь к файлу миграции относительно корня проекта.
     Returns:
@@ -127,6 +129,7 @@ async def mysql_export_to_migration(tables: str, migration_file: str = 'migratio
         tables_qty (int): Количество экспортированных таблиц.
         rows_qty (int): Суммарное количество экспортированных строк.
         report_str (str): Отчет: обновленные таблицы и причины пропусков.
+        migration_file (str): фактический путь файла миграции, в который записан экспорт.
     """
     table_names = [t.strip() for t in str(tables or '').split(',') if t.strip()]
     if not table_names:
@@ -161,17 +164,17 @@ async def mysql_export_to_migration(tables: str, migration_file: str = 'migratio
 async def mysql_export_node_to_migration(node_id: int, migration_file: str = '') -> dict:
     """
     Экспортирует данные ОДНОЙ НОДЫ (подпроекта) - её workflow, шаги, переменные,
-    агентов, публичные переменные, факт-коллекции и роли - в собственный файл
-    миграции подпроекта, без смешивания с данными других нод. Если для таблицы
-    в файле еще нет INSERT-блока (новый подпроект/файл миграции) - блок
-    дописывается в конец файла.
+    агентов, публичные переменные, факт-коллекции и роли - в файл миграции
+    подпроекта, без смешивания с данными других нод. Если для таблицы в файле
+    еще нет INSERT-блока (новый подпроект/файл) - блок дописывается в конец;
+    если блок уже есть - заменяется целиком актуальным снимком текущих данных.
+    Для выката на прод используйте mysql_migration_prod_create - она сама
+    сравнивает структуру/данные с продом и строит upsert-миграцию.
 
     Если у ноды выставлен node.is_catchall=1 (ровно одна такая нода, например
     Dashboard) - экспортируется ВСЕ, что НЕ относится ни к одной ДРУГОЙ ноде со
     своим migration_file (включая записи с node_id IS NULL), плюс полностью
     глобальные таблицы без node_id вообще (llm, user, role, tool и т.п.).
-    Так подпроекты, у которых еще нет своего файла миграции, продолжают
-    попадать в общий файл, пока для них не заведут отдельный.
      - node_id: ID ноды-подпроекта (см. таблицу node)
      - migration_file: путь к файлу миграции; если не передан - берется
        из node.migration_file (задается на странице Node в админке)
@@ -186,6 +189,7 @@ async def mysql_export_node_to_migration(node_id: int, migration_file: str = '')
         return {"tables_qty": 0, "rows_qty": 0, "report_str": f"нода {node_id} не найдена"}
 
     target_file = (migration_file or node_row.get('migration_file') or '').strip()
+
     if not target_file:
         return {
             "tables_qty": 0, "rows_qty": 0,
@@ -224,15 +228,57 @@ async def mysql_export_node_to_migration(node_id: int, migration_file: str = '')
     return _migration_file_splice(target_file, exports, skipped)
 
 
+async def mysql_migration_next_file() -> dict:
+    """
+    Возвращает путь следующего свободного файла миграции (например
+    migrations/0005.sql, если самый старший существующий - 0004.sql).
+    Удобно, чтобы каждая выкатка на прод шла в новый файл, не трогая уже
+    примененные (yoyo помечает миграции примененными по имени файла и
+    повторно их не запускает - править 0001-0004.sql после первого прод-деплоя
+    бессмысленно, нужен новый номер).
+    Returns:
+        dict: Словарь с результатом, содержащий:
+            migration_file (str): путь к следующему свободному файлу миграции.
+    """
+    return {"migration_file": _next_migration_file()}
+
+
+def _next_migration_file() -> str:
+    """Сканирует migrations/*.sql и возвращает путь следующего по номеру
+    файла (например 'migrations/0005.sql'), относительно корня проекта (CWD)."""
+    existing = glob.glob('migrations/[0-9][0-9][0-9][0-9].sql')
+    numbers = [int(os.path.basename(f)[:4]) for f in existing]
+    next_number = (max(numbers) + 1) if numbers else 1
+    return f"migrations/{next_number:04d}.sql"
+
+
+async def _table_primary_key_columns(db, table: str) -> list:
+    """Колонки первичного ключа таблицы - нужны для upsert-а (ON DUPLICATE KEY
+    UPDATE) в mysql_migration_prod_create (migration_.py); сам export_.py
+    больше не строит upsert (см. mysql_migration_prod_create)."""
+    await db.execute(
+        "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND CONSTRAINT_NAME = 'PRIMARY' "
+        "ORDER BY ORDINAL_POSITION",
+        (table,)
+    )
+    return [r['COLUMN_NAME'] for r in await db.fetchall()]
+
+
 def _migration_file_splice(migration_file: str, exports: dict, skipped: list) -> dict:
     """Общая логика замены/добавления INSERT-блоков в файле миграции.
     Используется mysql_export_to_migration и mysql_export_node_to_migration.
-    Если для таблицы в файле уже есть INSERT-блок - заменяет его. Если блока
-    еще нет (например, свежий пустой файл миграции нового подпроекта) -
-    дописывает новый блок в конец файла, а не пропускает таблицу."""
+    Если для таблицы в файле уже есть INSERT-блок - заменяет его целиком
+    актуальным снимком. Если блока еще нет (например, свежий пустой файл
+    миграции нового подпроекта или совсем новый файл) - дописывает новый блок
+    в конец файла, а не пропускает таблицу."""
     path = os.path.abspath(migration_file)
-    with open(path, encoding='utf-8') as f:
-        lines = f.read().split('\n')
+    if os.path.exists(path):
+        with open(path, encoding='utf-8') as f:
+            lines = f.read().split('\n')
+    else:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        lines = []
 
     replaced = []
     rows_total = 0
@@ -286,6 +332,7 @@ def _migration_file_splice(migration_file: str, exports: dict, skipped: list) ->
         "tables_qty": len(replaced),
         "rows_qty": rows_total,
         "report_str": report,
+        "migration_file": migration_file,
     }
 
 
