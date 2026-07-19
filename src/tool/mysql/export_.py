@@ -323,6 +323,7 @@ def _migration_file_splice(migration_file: str, exports: dict, skipped: list) ->
 
     with open(path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
+    _migration_file_ownership_fix(path)
 
     report = ', '.join(replaced) or 'ничего'
     if skipped:
@@ -334,6 +335,19 @@ def _migration_file_splice(migration_file: str, exports: dict, skipped: list) ->
         "report_str": report,
         "migration_file": migration_file,
     }
+
+
+def _migration_file_ownership_fix(path: str) -> None:
+    """Инструменты выполняются внутри контейнера от root - НОВЫЙ файл миграции
+    достается хостовому файлу с владельцем root, и хостовый пользователь не
+    может удалить его без sudo. Приводим владельца/группу к владельцу
+    директории миграций (обычному хостовому dev-юзеру, которому и так уже
+    принадлежат остальные файлы в ней)."""
+    try:
+        dir_stat = os.stat(os.path.dirname(os.path.abspath(path)))
+        os.chown(path, dir_stat.st_uid, dir_stat.st_gid)
+    except OSError:
+        pass
 
 
 def _sql_escape(value) -> str:

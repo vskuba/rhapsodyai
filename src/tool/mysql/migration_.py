@@ -1,9 +1,11 @@
+import os
 import re
 
 import pymysql
 
 from logging_.logging_ import logger_info
-from src.tool.mysql.export_ import _next_migration_file, _sql_escape, _table_primary_key_columns
+from src.tool.mysql.export_ import _migration_file_ownership_fix, _next_migration_file, _sql_escape, \
+    _table_primary_key_columns
 from mysql_.mysql_ import mysql_get_db_async
 
 # Таблицы, которые НИКОГДА не участвуют в сравнении/синке с продом - чисто
@@ -51,8 +53,14 @@ async def mysql_migration_prod_create(
        строки с локальной базы тем же upsert-ом. Так сохраняется то, что есть
        ТОЛЬКО на проде (например, что-то заведено вручную прямо там), а
        локальные правки побеждают, где они пересекаются по первичному ключу.
-    3. Все пишется в СЛЕДУЮЩИЙ свободный файл миграции (mysql_migration_next_file) -
-       на проде он применяется через yoyo один раз.
+    3. Все пишется в СЛЕДУЮЩИЙ свободный файл миграции (mysql_migration_next_file).
+       Номер выбирается по ЛОКАЛЬНЫМ файлам - если предыдущий выкаченный файл с
+       этим же номером уже удален локально (что и есть штатный процесс после
+       успешного деплоя), номер переиспользуется. yoyo на проде иначе молча
+       пропустил бы файл с уже отмеченным migration_id, даже не открывая его -
+       поэтому ПЕРЕД генерацией эта функция сама удаляет отметку "применена"
+       для этого номера из _yoyo_migration на проде: writing ничего вручную не
+       требует, повторный вызов всегда создает применимую миграцию.
 
     Требует SSH-туннель к проду: `ssh -f -N rhapsody-prod-db` (см.
     ~/.ssh/config) пробрасывает MySQL прода на localhost:3307 - отдельным
@@ -69,6 +77,9 @@ async def mysql_migration_prod_create(
             review_needed (str): расхождения, требующие ручного решения (пусто, если таких нет).
             report_str (str): текстовый отчет по данным (как у mysql_export_node_to_migration).
     """
+    target_file = _next_migration_file()
+    migration_id = os.path.basename(target_file)[:4]
+
     try:
         prod_conn = pymysql.connect(
             host=prod_host, port=prod_port, user=prod_user, password=prod_password,
@@ -83,12 +94,12 @@ async def mysql_migration_prod_create(
         }
 
     try:
+        _yoyo_migration_unmark(prod_conn, migration_id)
         schema_lines, review_notes = await _schema_diff_generate(prod_conn)
         data_blocks, tables_qty, rows_qty = await _data_diff_generate(prod_conn)
     finally:
         prod_conn.close()
 
-    target_file = _next_migration_file()
     content_lines = [
         "-- Синхронизация с продом (сгенерировано mysql_migration_prod_create).",
         "-- Структура: CREATE/ALTER для нового, что появилось локально. Данные: сначала",
@@ -102,6 +113,7 @@ async def mysql_migration_prod_create(
 
     with open(target_file, 'w', encoding='utf-8') as f:
         f.write('\n'.join(content_lines))
+    _migration_file_ownership_fix(target_file)
 
     logger_info(f"📦 Создана prod-миграция {target_file}: {tables_qty} таблиц, {rows_qty} строк")
 
@@ -113,6 +125,20 @@ async def mysql_migration_prod_create(
         "review_needed": '; '.join(review_notes) or '',
         "report_str": f"файл {target_file} создан",
     }
+
+
+def _yoyo_migration_unmark(prod_conn, migration_id: str) -> None:
+    """Снимает с прода отметку "миграция применена" (yoyo хранит примененные
+    миграции в служебной таблице _yoyo_migration по migration_id - имени
+    файла без пути и расширения, например '0005'). yoyo пропускает файл с уже
+    отмеченным migration_id молча, даже не открывая его - поэтому перед
+    генерацией файла с этим номером снимаем возможную старую отметку заранее,
+    чтобы новый файл с тем же номером гарантированно применился на проде."""
+    with prod_conn.cursor() as cur:
+        cur.execute("DELETE FROM `_yoyo_migration` WHERE `migration_id` = %s", (migration_id,))
+        if cur.rowcount:
+            logger_info(f"🗑️ Прод-миграция {migration_id}: старая отметка применения снята")
+    prod_conn.commit()
 
 
 async def _schema_diff_generate(prod_conn) -> tuple:
