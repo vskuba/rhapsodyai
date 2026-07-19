@@ -6,6 +6,15 @@
     @cronjob path /cronjob /cronjob/*
     respond @cronjob 403
 
+    # PWA подпроектов (apps/<name>/): статика раздается Caddy напрямую,
+    # отдельно от uvicorn/FastAPI - изоляция фронтенда подпроекта от админки.
+    # Каждый новый подпроект с фронтендом добавляет свой handle_path сюда.
+    handle_path /play/detective/* {
+        root * /srv/apps/detective
+        try_files {path} /index.html
+        file_server
+    }
+
     # Во время деплоя uvicorn пересоздается и ~минуту недоступен: держим запрос
     # и ретраим до 90 секунд вместо мгновенного 502
     reverse_proxy uvicorn:8000 {

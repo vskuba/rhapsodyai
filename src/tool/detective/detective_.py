@@ -1,5 +1,30 @@
+import random
+
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+
+
+async def detective_case_seed_generate(location_pool: list, weapon_pool: list) -> dict:
+    """
+    Выбирает случайные "якоря" для генерации дела ДО вызова LLM: тему места
+    преступления, тему орудия убийства и номер виновного подозреваемого (1-4).
+    Решает две проблемы свободной LLM-генерации: повторяющиеся сеттинги
+    (кабинет/кинжал/окно в каждом деле) и предсказуемость виновного (LLM
+    почти всегда делает виновным подозреваемого №1 с очевидным мотивом) -
+    случайный выбор навязывается программно, а не отдается на волю модели.
+     - location_pool: список тем места преступления (workflow-переменная location_pool)
+     - weapon_pool: список тем орудия убийства (workflow-переменная weapon_pool)
+    Returns:
+        dict: Словарь с результатом, содержащий:
+            location_theme (str): случайно выбранная тема места преступления.
+            weapon_theme (str): случайно выбранная тема орудия убийства.
+            guilty_suspect_index (int): номер виновного подозреваемого (1-4).
+    """
+    return {
+        "location_theme": random.choice(location_pool),
+        "weapon_theme": random.choice(weapon_pool),
+        "guilty_suspect_index": random.randint(1, 4),
+    }
 
 
 async def detective_case_create(
