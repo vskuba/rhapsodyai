@@ -318,7 +318,8 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 (123, 'verify_query', 'workflow', '0', 'Поисковый запрос фактчека; 0 - проверять нечего'),
 (124, 'verify_status', 'workflow', 'ok', 'Вердикт фактчека: ok | corrected | unverifiable'),
 (125, 'document_corrected', 'workflow', '', 'Исправленный текст факта (только при verify_status=corrected)'),
-(126, 'verify_search_limit', 'workflow', '5', 'Количество результатов веб-поиска для фактчека');
+(126, 'verify_search_limit', 'workflow', '5', 'Количество результатов веб-поиска для фактчека'),
+(127, 'prompt_user_facts_girl', 'workflow', NULL, 'Придуманные факты о девушке или 0 (выход llm_to_json шага «Новый факты»)');
 
 --
 
@@ -401,7 +402,8 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 (123, 11),
 (124, 11),
 (125, 11),
-(126, 11);
+(126, 11),
+(127, 6);
 
 --
 

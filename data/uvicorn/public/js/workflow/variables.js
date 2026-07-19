@@ -289,6 +289,7 @@ function workflowVariableSections(groups) {
 export function fillVariablesSelectOptions(sel, selectedVal = '', placeholder = '-- Переменная --') {
     sel.innerHTML = '<option value="">' + placeholder + '</option>';
 
+    let selectedMatched = false;
     const groups = groupWorkflowVariables(window.allCurrentVariables);
     workflowVariableSections(groups).forEach(([label, items]) => {
         if (items.length === 0) return;
@@ -298,11 +299,28 @@ export function fillVariablesSelectOptions(sel, selectedVal = '', placeholder = 
             const opt = document.createElement('option');
             opt.value = v.name;
             opt.textContent = '%' + v.name + '%';
-            if (v.name === selectedVal) opt.selected = true;
+            if (v.name === selectedVal) {
+                opt.selected = true;
+                selectedMatched = true;
+            }
             optgroup.appendChild(opt);
         });
         sel.appendChild(optgroup);
     });
+
+    // Сохраненное в metadata значение не объявлено среди переменных workflow:
+    // показываем его отдельной группой, иначе селект выглядит пустым, а
+    // автосохранение формы молча затирает значение в metadata
+    if (selectedVal && !selectedMatched) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = '⚠️ Не в списке переменных';
+        const opt = document.createElement('option');
+        opt.value = selectedVal;
+        opt.textContent = '%' + selectedVal + '%';
+        opt.selected = true;
+        optgroup.appendChild(opt);
+        sel.appendChild(optgroup);
+    }
 }
 
 export function renderWorkflowVariables(variables) {
