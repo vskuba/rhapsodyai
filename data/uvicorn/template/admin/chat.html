@@ -202,6 +202,30 @@
         border-style: solid;
     }
 
+    /* Ссылки [[link:URL|текст]]: открываются в новой вкладке, зеленые тона */
+    .chat-link {
+        display: inline-block;
+        background: #eafaf1;
+        color: #1e8449;
+        border: 1px solid #7dcea0;
+        border-radius: 4px;
+        padding: 0 6px;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-bottom: 5px;
+    }
+
+    .chat-link::before {
+        content: '🔗 ';
+        font-size: 11px;
+    }
+
+    .chat-link:hover {
+        background: #d5f5e3;
+        border-color: #229954;
+    }
+
     /* --- Yes/No Button Styles --- */
     .btn-yes {
         background-color: #d4edda;
@@ -572,12 +596,14 @@
     }
 
     // Интерактивные фрагменты сообщений:
-    // 1. [[+текст]] — вставка: клик вставляет текст по курсору БЕЗ отправки (можно дописать)
-    // 2. [[!текст]] — опасное действие (красный стиль): клик отправляет текст (отмена мастера и т.п.)
-    // 3. [[текст]] — подсказка: клик вставляет текст по курсору (черновик сохраняется) и отправляет
-    // 4. /команда — клик подставляет команду и сразу отправляет.
+    // 1. [[link:URL|текст]] — ссылка: открывается в новой вкладке (текст опционален,
+    //    без него показывается сам URL)
+    // 2. [[+текст]] — вставка: клик вставляет текст по курсору БЕЗ отправки (можно дописать)
+    // 3. [[!текст]] — опасное действие (красный стиль): клик отправляет текст (отмена мастера и т.п.)
+    // 4. [[текст]] — подсказка: клик вставляет текст по курсору (черновик сохраняется) и отправляет
+    // 5. /команда — клик подставляет команду и сразу отправляет.
     //    Негативный lookbehind отсекает слэши внутри URL и путей (http://..., path/to)
-    const MESSAGE_TOKEN_REGEX = /\[\[\+([\s\S]+?)\]\]|\[\[!([\s\S]+?)\]\]|\[\[([\s\S]+?)\]\]|(?<![\w/])\/[a-zA-Z0-9_-]+/g;
+    const MESSAGE_TOKEN_REGEX = /\[\[link:([\s\S]+?)\]\]|\[\[\+([\s\S]+?)\]\]|\[\[!([\s\S]+?)\]\]|\[\[([\s\S]+?)\]\]|(?<![\w/])\/[a-zA-Z0-9_-]+/g;
 
     // Вставка текста в textarea по позиции курсора
     function insertIntoInput(text) {
@@ -598,18 +624,32 @@
                 container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
             }
 
+            if (match[1] !== undefined) {
+                // Ссылка [[link:URL|текст]]: реальный <a>, открывается в новой вкладке
+                const [url, label] = match[1].split('|');
+                const link = document.createElement('a');
+                link.className = 'chat-link';
+                link.href = url.trim();
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = (label ?? url).trim();
+                container.appendChild(link);
+                lastIndex = match.index + match[0].length;
+                continue;
+            }
+
             const span = document.createElement('span');
 
-            if (match[1] !== undefined) {
+            if (match[2] !== undefined) {
                 // Вставка [[+текст]]: клик — только вставка по курсору, без отправки
-                const insertion = match[1];
+                const insertion = match[2];
                 span.className = 'chat-insertion';
                 span.title = 'Нажмите, чтобы вставить в поле ввода';
                 span.textContent = insertion;
                 span.onclick = () => insertIntoInput(insertion);
-            } else if (match[2] !== undefined) {
+            } else if (match[3] !== undefined) {
                 // Опасное действие [[!текст]]: красный чипс, клик — вставка и отправка
-                const danger = match[2];
+                const danger = match[3];
                 span.className = 'chat-danger';
                 span.title = 'Нажмите, чтобы отправить';
                 span.textContent = danger;
@@ -617,9 +657,9 @@
                     insertIntoInput(danger);
                     sendMessage(toggleLoading);
                 };
-            } else if (match[3] !== undefined) {
+            } else if (match[4] !== undefined) {
                 // Подсказка [[текст]]: показываем без скобок, клик — вставка по курсору и отправка
-                const suggestion = match[3];
+                const suggestion = match[4];
                 span.className = 'chat-suggestion';
                 span.title = 'Нажмите, чтобы отправить';
                 span.textContent = suggestion;

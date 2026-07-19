@@ -21,7 +21,7 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 |---|---|
 | `agent_workflow` | Сам workflow: name, title, node_id, position, description, **subflow** (зарезервирован: 0=основной, 1=под-процесс — пока не используется движком) |
 | `agent_workflow_step` | Шаг: workflow_id, type_id, title, position (порядок выполнения), **metadata LONGTEXT** — JSON-конфиг шага |
-| `agent_workflow_step_type` | Справочник 5 типов шагов (name, icon, description, metadata-схема) |
+| `agent_workflow_step_type` | Справочник 6 типов шагов (name, icon, description, metadata-схема) |
 | `agent_workflow_variable` | Реестр переменных: name, **type ENUM('global','input','workflow')**, default, description |
 | `agent_workflow_variable_workflow` | M:N переменная ↔ workflow (для workflow/input-переменных) |
 | `agent_workflow_variable_public` | Публичные переменные (бывшие «переменные ноды»): name, node_id, **type ENUM('public','proxy')**, default, position, description. Редактируются менеджерами на публичных страницах |
@@ -58,7 +58,8 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 
 ## 4. Типы шагов (семантика движка)
 
-Движок: `_framework_workflow_run()` (`src/ai/framework/agent/ai_framework_manager.py:62-417`).
+Движок: `_framework_workflow_run()` (`src/ai/framework/agent/ai_framework_manager.py:119-260`) —
+обертка резюме/`continue_workflow`; сам цикл шагов и переходов — `_workflow_steps_run()` (строки 261-878).
 Цикл: `while step_index < steps_count`, на каждой итерации metadata шага прогоняется через рендер переменных.
 
 | Тип | Что делает | Ключи metadata |
@@ -133,24 +134,27 @@ continue_workflow, если не были возвращены пользова�
 2. **[ИСПРАВЛЕНО] KeyError при отсутствии переменной в переходе** — отсутствующая переменная теперь
    означает «условие не выполнено» (переход пропускается с warning в логе), а не падение workflow.
 3. **Жадная регулярка в `_json_str_clean`** — `(\{.*})` захватит от первой `{` до последней `}`;
-   на ответе LLM с двумя JSON-блоками парсинг сломается (`ai_framework_manager.py:727`).
-4. **Потенциальный deadlock в `execute_llm_step`** — если `on_complete` не будет вызван consumer'ом
-   очереди, `await step_future` повиснет (спасает только 60-сек timeout запроса).
+   на ответе LLM с двумя JSON-блоками парсинг сломается (`ai_framework_manager.py:938`).
+4. **Потенциальный deadlock в `execute_llm_step`** (строка 369) — если `on_complete` не будет вызван
+   consumer'ом очереди, `await step_future` повиснет (спасает только таймаут запроса, см. §9 ниже).
 5. **Временный JSON-prompt в `execute_llm_step` фактически не применяется** — `model.prompt_system`
-   подменяется перед `queue.put(model)` и восстанавливается сразу после (строки 272-281), до того как
+   подменяется перед `queue.put(model)` и восстанавливается сразу после (строки 385-394), до того как
    consumer очереди прочитает модель: LLM почти всегда получает оригинальный prompt, JSON спасает
    только `_json_str_clean`. Если consumer в другом потоке — это гонка. Правильно: передавать
    переопределение отдельным полем модели, а не мутировать общий prompt_system.
 6. **IndexError при continue_workflow после правки workflow** — сохраненный
    `workflow_step_current_index` не проверяется на границы: если шаги удалили между запросами,
-   `model.workflow_steps[start_index]` упадет (`_framework_workflow_run`, строка ~109).
+   `model.workflow_steps[start_index]` упадет (`_framework_workflow_run`, строка 174).
 7. **Переход на удаленный шаг роняет workflow** — `workflow_steps_mapping[target_step_id]` дает
-   KeyError, а `int(transition.get('step_id'))` — TypeError при пустом step_id. Graph-режим
-   редактора предупреждает о битых ссылках, но сохранить их по-прежнему можно.
-8. **Счетчик ретраев llm_to_json общий на весь запуск** — `iteration_exception` не сбрасывается
-   между шагами: 3 неудачные попытки суммарно на ВСЕ llm_to_json-шаги запуска, а не на каждый.
-9. **Таймаут запроса не останавливает workflow** — по timeout 60с chat.py отменяет только future;
-   фоновая asyncio-задача продолжает выполнять шаги, жечь LLM-токены и писать в журнал/сессию.
+   KeyError (строки 329 и 850, before/after), а `int(transition.get('step_id'))` — TypeError при
+   пустом step_id. Graph-режим редактора предупреждает о битых ссылках, но сохранить их по-прежнему можно.
+8. **Счетчик ретраев llm_to_json общий на весь запуск** — `iteration_exception` (инициализация
+   строка 280, инкремент 474-475) не сбрасывается между шагами: 3 неудачные попытки суммарно на ВСЕ
+   llm_to_json-шаги запуска, а не на каждый.
+9. **Таймаут запроса не останавливает workflow** — по timeout `chat.py:217` отменяет только future
+   (`future.cancel()`, строка 221); фоновая asyncio-задача (`asyncio.create_task(...)`,
+   `ai_framework_manager.py:83`, ссылка на task нигде не сохраняется) продолжает выполнять шаги,
+   жечь LLM-токены и писать в журнал/сессию.
 10. **Зависшие `status='running'` в журнале** — при рестарте сервера посреди запуска записи
     `agent_workflow_run` остаются running навсегда (нужен janitor при старте или в крон-чистке).
 11. **Рендер раскрывает плейсхолдеры внутри подставленных значений** —
@@ -303,6 +307,7 @@ UI и БД тоже готовы: тип шага id=6 (сиды), виджет 
 | Git | `src/tool/git/` | будущие git-инструменты |
 | Факты | `src/tool/fact/` | `fact_collection_add`, `fact_collection_output_format` |
 | Сессии | `src/tool/session/` | `session_messages` |
+| Окружение (прод/локаль) | `src/tool/env/` | `env_is_prod` |
 
 Правила:
 1. **Имя функции начинается с области**: `mysql_*`, `qdrant_*`, `git_*` — по имени сразу видно,
@@ -315,8 +320,16 @@ UI и БД тоже готовы: тип шага id=6 (сиды), виджет 
    списки передаются строкой через запятую, сложные структуры — JSON-строкой.
 4. **Возврат — dict с говорящими ключами** (`{"tables_qty": ..., "report_str": ...}`): каждый
    ключ станет переменной `{tool}_{step_id}_result_{key}` в workflow.
-5. **Регистрация автоматическая**: `ai_tool_sync()` при старте uvicorn сканирует `src/tool/`,
-   группа инструмента создается по имени папки. После добавления файла нужен рестарт uvicorn.
+5. **Регистрация автоматическая, но с нюансом force**: `ai_tool_sync()` сканирует `src/tool/` и
+   пересобирает таблицу `tool` (группа — по имени папки), НО пропускает синк молча, если в `tool`
+   уже есть хоть одна запись, а `force=True` не передан (`src/ai/ai_tool.py:26-29`) — а после первого
+   же деплоя запись там есть всегда. `main_uvicorn.py` (лайфспан, вокруг строки 89) вызывает синк
+   по-разному в зависимости от окружения: `ai_tool_sync(force=True)` на проде (`env_is_prod()`),
+   `ai_tool_sync()` (без force) локально. Значит на ПРОДЕ новый/переименованный/перемещенный
+   инструмент подхватится автоматически при каждом рестарте uvicorn; ЛОКАЛЬНО простой рестарт
+   недостаточен — нужен ручной `ai_tool_sync(force=True)` (или очистка таблицы `tool`). Дважды
+   наступали на эти грабли: `mysql_migration_prod_create` и `env_is_prod` тихо не появлялись в
+   `tool` после деплоя, пока не был сделан форс-синк вручную.
 6. **Безопасность**: все, что попадает в SQL/shell/пути из аргументов, валидируется
    (см. проверку имен таблиц в `mysql_export_to_migration`).
 7. **Инструмент возвращает dict — ключи ОБЯЗАТЕЛЬНО описываются в docstring** (секция
@@ -344,7 +357,24 @@ workflow. Запускается из чата агентом **Workflow tester*
 этого workflow. Затем пользователь пишет сценарий (кто собеседник, о чем говорит,
 чего добивается) — и запускается цикл диалога.
 
-**Шаги (нода Dev, workflow 9):**
+**Прод-заглушка (шаги id 154/155, position -2/-1)** — тестовые прогоны имеют смысл только
+локально (жгут LLM-токены и пишут в БД, ничего не проверяют на реальном проде), поэтому
+самый первый шаг workflow (по порядку выполнения, ДО мастера на position 0) — проверка
+окружения:
+```
+pos -2  id=154  tool_invoke  env_is_prod() → is_prod ('1'/'0')
+                transitions_after: is_prod=='1' → шаг 155 (заглушка)
+                                   is_prod=='0' → шаг 73  (первый шаг мастера, "ноды")
+pos -1  id=155  return_response_text  «🚫 Тестовые прогоны workflow доступны только
+                локально, на проде отключены.» (continue_workflow=false, завершает запуск)
+```
+Оба исхода — явные переходы по `step_id`, а не «естественный next-step» (грабли, на которые
+уже наступали при первой реализации: раз шаг 155 идет сразу за 154 по position, он выполнился
+бы ВСЕГДА, если не прописать переход и для ветки is_prod=='0' тоже — простое `False` условие
+лишь не прыгает, а не пропускает следующий по порядку шаг). Инструмент `env_is_prod`
+(`src/tool/env/env_.py`) смотрит `APP_ENV` (на проде — `_prod`, см. §11 про force-синк).
+
+**Шаги мастера и цикла (нода Dev, workflow 9, position 0+ — не сдвинуты, заглушка выше добавлена с отрицательным position):**
 
 Мастер построен на универсальных инструментах — конвейер «выборка → колонка → чипсы»:
 `mysql_find_by(table, criteria)` → `dict_column(rows, 'name')` → `list_render(names,
