@@ -34,8 +34,8 @@ INSERT INTO `role` (`id`, `name`) VALUES
 -- Password: user123
 
 INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `created_at`) VALUES
-(1, 'admin', 'admin@example.com', '$2b$12$7i4Q9GNhQ.jMRL9R.juWh.txIaVBC0vqv9Deg5aBj4OO/Q.YLICnC', 1, '2026-04-26 09:17:35'),
-(2, 'lilia', 'lilia@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 2, '2026-04-26 09:17:35'),
+(1, 'admin', 'admin@example.com', '$2b$12$HgW3UjBwpAX6vYk5M6JykOM73WQuAVDw/.zHu8DxEZ3p8H0/FySx.', 1, '2026-04-26 09:17:35'),
+(2, 'lilia', 'lilia@example.com', '$2b$12$XG.UEUHZz3kkq73DpN52Z.7rqVMgrlCnsbyK2bR2tuXTLkBPhACDK', 2, '2026-04-26 09:17:35'),
 (3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35'),
 (4, 'alena', 'alena@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 4, '2026-04-26 09:17:35');
 
@@ -63,13 +63,13 @@ INSERT INTO `setting` (`id`, `key`, `user_id`, `node_id`, `value`) VALUES
 --
 
 INSERT INTO `user_llm` (`user_id`, `llm_id`, `rate_limit_at`, `code_error`, `position`) VALUES
-(1, 5, NULL, NULL, 2),
-(1, 6, NULL, NULL, 5),
-(1, 10, NULL, NULL, 6),
-(1, 11, NULL, NULL, 1),
-(1, 12, NULL, NULL, 4),
-(1, 15, NULL, NULL, 3),
-(1, 16, NULL, NULL, 7),
+(1, 5, NULL, NULL, 1),
+(1, 6, NULL, NULL, 4),
+(1, 10, NULL, NULL, 5),
+(1, 11, NULL, NULL, 0),
+(1, 12, NULL, NULL, 3),
+(1, 15, NULL, NULL, 2),
+(1, 16, NULL, NULL, 6),
 (2, 5, NULL, NULL, 2),
 (2, 6, NULL, NULL, 5),
 (2, 10, NULL, NULL, 6),
