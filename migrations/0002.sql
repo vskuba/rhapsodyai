@@ -33,11 +33,11 @@ INSERT INTO `role` (`id`, `name`) VALUES
 -- Password: admin123
 -- Password: user123
 
-INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `created_at`) VALUES
-(1, 'admin', 'admin@example.com', '$2b$12$HgW3UjBwpAX6vYk5M6JykOM73WQuAVDw/.zHu8DxEZ3p8H0/FySx.', 1, '2026-04-26 09:17:35'),
-(2, 'lilia', 'lilia@example.com', '$2b$12$XG.UEUHZz3kkq73DpN52Z.7rqVMgrlCnsbyK2bR2tuXTLkBPhACDK', 2, '2026-04-26 09:17:35'),
-(3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35'),
-(4, 'alena', 'alena@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 4, '2026-04-26 09:17:35');
+INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `created_at`, `dynamic`) VALUES
+(1, 'admin', 'admin@example.com', '$2b$12$HgW3UjBwpAX6vYk5M6JykOM73WQuAVDw/.zHu8DxEZ3p8H0/FySx.', 1, '2026-04-26 09:17:35', 0),
+(2, 'lilia', 'lilia@example.com', '$2b$12$XG.UEUHZz3kkq73DpN52Z.7rqVMgrlCnsbyK2bR2tuXTLkBPhACDK', 2, '2026-04-26 09:17:35', 0),
+(3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35', 0),
+(4, 'alena', 'alena@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 4, '2026-04-26 09:17:35', 0);
 
 --
 
@@ -115,7 +115,8 @@ INSERT INTO `agent_workflow_step_type` (`id`, `name`, `icon`, `description`, `de
 INSERT INTO `companion` (`id`, `name`, `title`) VALUES
 (1, 'Vadim', 'Vadim'),
 (2, 'Olenka', 'Olenka'),
-(3, 'user_admin', 'admin');
+(3, 'user_admin', 'admin'),
+(4, 'detective_player', 'Ð˜Ð³Ñ€Ð¾Ðº');
 
 --
 
