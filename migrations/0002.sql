@@ -72,7 +72,7 @@ INSERT INTO `node` (`id`, `name`, `position`) VALUES
 (1, 'Cashier', 0),
 (2, 'Dating', -3),
 (3, 'Soko', 0),
-(4, 'Chat', -1),
+(4, 'Detective', -1),
 (5, 'Test', 3),
 (6, 'Dev', -2);
 
