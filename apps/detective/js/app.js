@@ -85,6 +85,18 @@ function addMessage(text, role) {
     return div;
 }
 
+// Индикатор "печатает" - три пульсирующие точки вместо статичного текста,
+// генерация дела занимает заметное время (большой LLM-промпт), нужно
+// показать, что процесс идет, а не завис
+function addTypingIndicator() {
+    const div = document.createElement('div');
+    div.className = 'message ai-msg loading';
+    div.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+}
+
 function getSessionUuid() {
     let sessionUuid = localStorage.getItem(SESSION_STORAGE_KEY);
     if (!sessionUuid) {
@@ -171,8 +183,7 @@ async function sendMessage(text, displayText) {
     sendButtonEl.disabled = true;
     addMessage(displayText ?? question, 'user');
 
-    const loadingDiv = addMessage('Печатает...', 'ai');
-    loadingDiv.classList.add('loading');
+    const loadingDiv = addTypingIndicator();
 
     try {
         const res = await fetch('/chat/ask', {
