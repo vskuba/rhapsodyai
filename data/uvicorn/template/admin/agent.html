@@ -208,6 +208,23 @@
         cursor: pointer;
     }
 
+    .btn-delete {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 11px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+        margin-right: auto;
+    }
+
+    .btn-delete:hover {
+        background: #e74c3c;
+        color: white;
+    }
+
     #statusLabel {
         font-size: 13px;
         color: #27ae60;
@@ -368,6 +385,7 @@
 
             <div class="editor-footer">
                 <span id="statusLabel"></span>
+                <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить агента</button>
                 <button type="submit" class="btn-save" id="saveBtn">Сохранить агента</button>
             </div>
         </form>
@@ -378,7 +396,7 @@
 
 {% block scripts %}
 <script type="module">
-    import {getData, putData, postData} from '/static/js/api.js';
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
     import {langSwitcherCreate, nodeLanguagesGet, userLanguageGet} from '/static/js/lang_switcher.js';
 
@@ -396,6 +414,7 @@
     const agentListContainer = document.getElementById('agentList');
     const saveBtn = document.getElementById('saveBtn');
     const agentForm = document.getElementById('agentForm');
+    const deleteBtn = document.getElementById('deleteBtn');
 
     /**
      * Инициализация менеджера: загрузка групп и списка агентов
@@ -592,9 +611,40 @@
             document.getElementById('formTitle').textContent = `Редактирование: ${agent.name}`;
 
             if (saveBtn) saveBtn.disabled = false;
+            if (deleteBtn) deleteBtn.style.display = 'block';
 
         } catch (e) {
             console.error("Ошибка при заполнении формы:", e);
+        }
+    }
+
+    /**
+     * Удаление агента
+     */
+    async function deleteAgentConfig() {
+        const id = document.getElementById('agentId').value;
+        const title = document.getElementById('title').value || document.getElementById('name').value;
+
+        if (!id) return;
+
+        if (!confirm(`Вы уверены, что хотите удалить агента "${title}"?`)) return;
+
+        if (deleteBtn) deleteBtn.disabled = true;
+
+        try {
+            await deleteData(`/agent/${id}`);
+            showNotification(`Агент "${title}" удален`, 'success');
+
+            document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+            if (createBtn) createBtn.click();
+            else agentForm.reset();
+
+            await initAgentsManager();
+        } catch (e) {
+            console.error("Ошибка удаления:", e);
+            showNotification(`Ошибка при удалении: ${e.message}`, 'error');
+        } finally {
+            if (deleteBtn) deleteBtn.disabled = false;
         }
     }
 
@@ -717,6 +767,7 @@
             // Обновляем UI
             document.getElementById('formTitle').textContent = 'Новый агент';
             if (saveBtn) saveBtn.disabled = false;
+            if (deleteBtn) deleteBtn.style.display = 'none';
 
             // Снимаем выделение с активного агента в списке
             document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
@@ -728,6 +779,11 @@
             langSwitcher.fieldLoad(document.getElementById('greeting'), '');
             langSwitcher.fieldLoad(document.getElementById('prompt_system'), '');
         });
+    }
+
+    // 3. Обработка кнопки "Удалить агента"
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', deleteAgentConfig);
     }
 
     const addVarBtn = document.getElementById('addVariableBtn');
