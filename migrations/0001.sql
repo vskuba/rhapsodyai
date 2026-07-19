@@ -7,6 +7,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `agent_workflow_run_step`;
 DROP TABLE IF EXISTS `agent_workflow_run`;
 DROP TABLE IF EXISTS `agent_session`;
+DROP TABLE IF EXISTS `detective_case`;
 DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `fact`;
 DROP TABLE IF EXISTS `fact_collection`;
@@ -71,7 +72,8 @@ CREATE TABLE `user_access_token` (
 CREATE TABLE `node` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
-    `position` INT NOT NULL DEFAULT 0
+    `position` INT NOT NULL DEFAULT 0,
+    `migration_file` CHAR(100) NULL COMMENT 'Файл миграции для экспорта данных этой ноды (mysql_export_node_to_migration)'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица настроек (scope: user_id — пользовательская, node_id — нодовая, оба NULL — общая)
@@ -268,6 +270,7 @@ CREATE TABLE `agent` (
     `prompt_system` LONGTEXT NOT NULL,
     `greeting` LONGTEXT NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
+    `dynamic` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 - создан во время игры (agent_create_or_update), не входит в seed-экспорт',
     UNIQUE INDEX `u_agent_name` (`name`),              -- name — системный идентификатор (document_id в Qdrant); отображаемое имя — title
     CONSTRAINT `ag_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
     CONSTRAINT `ag_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL
@@ -373,4 +376,21 @@ CREATE TABLE `agent_workflow_run_step` (
     `duration_ms` INT NULL,
     INDEX `idx_workflow_run_step_run` (`run_id`, `exec_index`),
     CONSTRAINT `fk_wrs_run` FOREIGN KEY (`run_id`) REFERENCES `agent_workflow_run` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Детективная игра (нода Detective, см. миграцию 0004): дело игровой сессии.
+-- Данные не сеются ни в одной миграции - это динамическая игровая история,
+-- как agent_session (создается runtime через detective_case_create)
+CREATE TABLE `detective_case` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_uuid` CHAR(36) NOT NULL,
+    `user_id` INT NULL,
+    `victim_name` CHAR(100) NOT NULL,
+    `crime_description` TEXT NOT NULL,
+    `guilty_suspect_name` CHAR(100) NOT NULL,
+    `solution_reveal` TEXT NOT NULL,
+    `solved` TINYINT NOT NULL DEFAULT 0,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_detective_case_session` (`session_uuid`),
+    CONSTRAINT `fk_detective_case_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
