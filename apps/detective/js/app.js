@@ -1,6 +1,227 @@
-// Точка входа PWA detective. Заготовка - реальный игровой UI (чат с
-// подозреваемыми/сержантом через /chat/ask) добавляется отдельным шагом.
+// Точка входа PWA detective: guest-сессия + чат с detective_bot/подозреваемыми
+// через /chat/ask, переключение агента по чипсу с именем подозреваемого.
+
+const DETECTIVE_BOT_AGENT_ID = 30;
+const COMPANION_ID = 4; // companion 'detective_player'
+const SESSION_STORAGE_KEY = 'detective_session_uuid';
+
+const messagesEl = document.getElementById('messages');
+const formEl = document.getElementById('inputForm');
+const inputEl = document.getElementById('userInput');
+const sendButtonEl = document.getElementById('sendButton');
 
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/play/detective/sw.js');
 }
+
+// Текущий собеседник: detective_bot по умолчанию, подозреваемый/сержант - после клика по чипсу
+let currentAgentId = DETECTIVE_BOT_AGENT_ID;
+let currentAgentTitle = 'Детектив-бот';
+
+// Интерактивные фрагменты сообщений AI:
+// [[link:URL|текст]] — ссылка, [[текст]] — чипс (имя подозреваемого или обычная подсказка)
+const MESSAGE_TOKEN_REGEX = /\[\[link:([\s\S]+?)\]\]|\[\[([\s\S]+?)\]\]/g;
+
+function renderMessageContent(container, text) {
+    let lastIndex = 0;
+
+    for (const match of text.matchAll(MESSAGE_TOKEN_REGEX)) {
+        if (match.index > lastIndex) {
+            container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+        }
+
+        if (match[1] !== undefined) {
+            const [url, label] = match[1].split('|');
+            const link = document.createElement('a');
+            link.className = 'chat-link';
+            link.href = url.trim();
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = (label ?? url).trim();
+            container.appendChild(link);
+        } else {
+            const suggestion = match[2];
+            const chip = document.createElement('span');
+            chip.className = 'chat-suggestion';
+            chip.textContent = suggestion;
+            chip.onclick = () => onChipClick(suggestion);
+            container.appendChild(chip);
+        }
+
+        lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+        container.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+}
+
+function addMessage(text, role) {
+    const div = document.createElement('div');
+    div.className = `message ${role}-msg`;
+    if (role === 'ai') {
+        renderMessageContent(div, text);
+    } else {
+        div.textContent = text;
+    }
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+}
+
+function getSessionUuid() {
+    let sessionUuid = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!sessionUuid) {
+        sessionUuid = crypto.randomUUID();
+        localStorage.setItem(SESSION_STORAGE_KEY, sessionUuid);
+    }
+    return sessionUuid;
+}
+
+async function guestLoginEnsure() {
+    const res = await fetch('/auth/guest', { method: 'POST', credentials: 'same-origin' });
+    if (!res.ok) {
+        throw new Error(`Guest login failed: ${res.status}`);
+    }
+    return res.json();
+}
+
+// Подозреваемые/сержант текущего дела - для резолва чипса с именем в agent_id
+async function caseAgentsFetch() {
+    const res = await fetch(`/detective/case_agents?session_uuid=${encodeURIComponent(getSessionUuid())}`, {
+        credentials: 'same-origin',
+    });
+    if (!res.ok) return { suspects: [], sergeant: null };
+    const data = await res.json();
+    return data.result;
+}
+
+function switchToDetectiveBot() {
+    currentAgentId = DETECTIVE_BOT_AGENT_ID;
+    currentAgentTitle = 'Детектив-бот';
+    addMessage('🔙 Вернулись к делу', 'system');
+    renderBackChip();
+}
+
+function switchToCaseAgent(agentId, title, greeting) {
+    currentAgentId = agentId;
+    currentAgentTitle = title;
+    addMessage(`🔎 Допрос: ${title}`, 'system');
+    if (greeting) {
+        addMessage(greeting, 'ai');
+    }
+    renderBackChip();
+}
+
+// Чипс "назад к детективу" виден, только пока собеседник — не сам detective_bot
+function renderBackChip() {
+    const existing = document.getElementById('backChip');
+    if (existing) existing.remove();
+
+    if (currentAgentId === DETECTIVE_BOT_AGENT_ID) return;
+
+    const div = document.createElement('div');
+    div.className = 'message system-msg';
+    div.id = 'backChip';
+    const chip = document.createElement('span');
+    chip.className = 'chat-suggestion';
+    chip.textContent = '🔙 Вернуться к делу';
+    chip.onclick = () => switchToDetectiveBot();
+    div.appendChild(chip);
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// Клик по чипсу в сообщении: если текст совпадает с именем подозреваемого/сержанта
+// текущего дела - переключаем собеседника, иначе отправляем как обычное сообщение
+async function onChipClick(text) {
+    const { suspects, sergeant } = await caseAgentsFetch();
+    const candidates = sergeant ? [...suspects, sergeant] : suspects;
+    const match = candidates.find((a) => a.title.trim() === text.trim());
+
+    if (match) {
+        switchToCaseAgent(match.id, match.title, match.greeting);
+        return;
+    }
+
+    sendMessage(text);
+}
+
+async function sendMessage(text) {
+    const question = (text ?? inputEl.value).trim();
+    if (!question) return;
+
+    inputEl.value = '';
+    sendButtonEl.disabled = true;
+    addMessage(question, 'user');
+
+    const loadingDiv = addMessage('Печатает...', 'ai');
+    loadingDiv.classList.add('loading');
+
+    try {
+        const res = await fetch('/chat/ask', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                question,
+                agent_id: currentAgentId,
+                companion_id: COMPANION_ID,
+                session_uuid: getSessionUuid(),
+            }),
+        });
+
+        loadingDiv.remove();
+
+        if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            addMessage(`⚠️ Ошибка: ${errBody.detail || res.status}`, 'ai');
+            return;
+        }
+
+        const data = await res.json();
+        addMessage(data.result || '(пустой ответ)', 'ai');
+
+        // /new_case создает новых подозреваемых - чипс "назад" мог устареть
+        // (например, до этого шел допрос уже нерелевантного подозреваемого)
+        if (currentAgentId === DETECTIVE_BOT_AGENT_ID) {
+            renderBackChip();
+        }
+    } catch (e) {
+        loadingDiv.remove();
+        addMessage(`⚠️ Не удалось связаться с сервером: ${e.message}`, 'ai');
+    } finally {
+        sendButtonEl.disabled = false;
+        inputEl.focus();
+    }
+}
+
+formEl.addEventListener('submit', (e) => {
+    e.preventDefault();
+    sendMessage();
+});
+
+async function init() {
+    addMessage('Добро пожаловать в детективное агентство!', 'system');
+    sendButtonEl.disabled = true;
+
+    try {
+        await guestLoginEnsure();
+    } catch (e) {
+        addMessage(`⚠️ Не удалось начать сессию: ${e.message}`, 'system');
+        return;
+    }
+
+    sendButtonEl.disabled = false;
+
+    const startDiv = document.createElement('div');
+    startDiv.className = 'message system-msg';
+    const startChip = document.createElement('span');
+    startChip.className = 'chat-suggestion';
+    startChip.textContent = 'Начать новое дело (/new_case)';
+    startChip.onclick = () => sendMessage('/new_case');
+    startDiv.appendChild(startChip);
+    messagesEl.appendChild(startDiv);
+}
+
+init();

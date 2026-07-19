@@ -1,3 +1,5 @@
+import uuid
+
 import bcrypt
 from fastapi import APIRouter, Request, HTTPException
 from mysql_.mysql_ import mysql_get_db_async
@@ -6,6 +8,53 @@ from i18n_.i18n_ import i18n_languages_parse
 from src.tool.setting.setting_ import setting_value_get
 
 router = APIRouter()
+
+
+@router.post("/auth/guest")
+async def guest_login(request: Request):
+    """
+    Анонимная guest-сессия для публичных PWA (например /play/detective) - без
+    формы логина. Идемпотентно: если в сессии уже есть валидный user_id,
+    просто возвращает его, не плодя новых guest-пользователей при перезагрузке
+    страницы. role_id намеренно NULL (гость не подпадает ни под одну реальную
+    роль) - для AuthChecker([]) (как у /chat/ask) этого достаточно, т.к. он
+    требует лишь непустую роль в сессии, не проверяя ее против AUTH_ROLE_PERMISSIONS.
+    dynamic=1 (аналог agent.dynamic) - гость не должен попадать ни в обычный
+    экспорт ноды, ни в прод-миграцию (mysql_migration_prod_create фильтрует
+    dynamic=0 для любой таблицы, где есть эта колонка).
+    """
+    existing_user_id = request.session.get("user_id")
+    if existing_user_id:
+        async with mysql_get_db_async() as db:
+            await db.execute("SELECT id, username FROM `user` WHERE id = %s", (existing_user_id,))
+            existing_user = await db.fetchone()
+        if existing_user:
+            return {"user": {"id": existing_user['id'], "username": existing_user['username']}}
+
+    guest_username = f"guest_{uuid.uuid4().hex[:12]}"
+    random_password_hash = bcrypt.hashpw(uuid.uuid4().hex.encode(), bcrypt.gensalt()).decode()
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "INSERT INTO `user` (username, email, password_hash, role_id, dynamic) VALUES (%s, %s, %s, NULL, 1)",
+            (guest_username, f"{guest_username}@guest.local", random_password_hash)
+        )
+        new_user_id = db.lastrowid
+
+        # Та же ротация LLM, что у admin (user_id=1) - без своего набора
+        # /chat/ask ответит 404 "LLM models not found"
+        await db.execute(
+            "INSERT INTO user_llm (user_id, llm_id, position) "
+            "SELECT %s, llm_id, position FROM user_llm WHERE user_id = 1",
+            (new_user_id,)
+        )
+        await db.connection.commit()
+
+    request.session["user_id"] = new_user_id
+    request.session["username"] = guest_username
+    request.session["role"] = "guest"
+
+    return {"user": {"id": new_user_id, "username": guest_username}}
 
 
 @router.post("/auth/login")
