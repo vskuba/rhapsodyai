@@ -43,31 +43,35 @@ async def detective_case_create(
 
 async def detective_suspects_queue_build(
         session_uuid: str,
-        suspect_1_name: str, suspect_1_sheet: str, suspect_1_greeting: str,
-        suspect_2_name: str, suspect_2_sheet: str, suspect_2_greeting: str,
-        suspect_3_name: str, suspect_3_sheet: str, suspect_3_greeting: str,
-        suspect_4_name: str, suspect_4_sheet: str, suspect_4_greeting: str
+        suspect_1_name: str, suspect_1_sheet: str, suspect_1_greeting: str, suspect_1_interrogation: str,
+        suspect_2_name: str, suspect_2_sheet: str, suspect_2_greeting: str, suspect_2_interrogation: str,
+        suspect_3_name: str, suspect_3_sheet: str, suspect_3_greeting: str, suspect_3_interrogation: str,
+        suspect_4_name: str, suspect_4_sheet: str, suspect_4_greeting: str, suspect_4_interrogation: str
 ) -> list:
     """
     Собирает плоские suspect_N_* переменные (результат генерации дела через
     llm_to_json) в очередь агентов на создание - по одному элементу на
     подозреваемого, с именем агента по конвенции 'case_<session_uuid>_sN'.
-    Очередь скармливается в workflow_invoke с repeat.until (list_shift +
-    detective_talk), что заменяет 4 отдельных шага создания агента одним циклом.
+    Очередь скармливается в workflow_invoke с repeat.count=4 (list_shift +
+    detective_suspect_create), что заменяет 4 отдельных шага создания агента одним циклом.
      - session_uuid: сессия игрока (workflow-переменная session_uuid) - для имени агента
      - suspect_N_name/sheet/greeting: сгенерированные поля подозреваемого N (1-4)
+     - suspect_N_interrogation: протокол предварительного допроса подозреваемого N полицией
+       (алиби кратко, род занятий, приметы, отношения с жертвой, семейное положение) -
+       добавляется к легенде, чтобы подозреваемый не противоречил уже данным показаниям
     Returns:
-        list: 4 объекта {agent_name, name, sheet, greeting} в порядке подозреваемых.
+        list: 4 объекта {agent_name, name, sheet, greeting, interrogation} в порядке подозреваемых.
     """
     suspects = [
-        (suspect_1_name, suspect_1_sheet, suspect_1_greeting),
-        (suspect_2_name, suspect_2_sheet, suspect_2_greeting),
-        (suspect_3_name, suspect_3_sheet, suspect_3_greeting),
-        (suspect_4_name, suspect_4_sheet, suspect_4_greeting),
+        (suspect_1_name, suspect_1_sheet, suspect_1_greeting, suspect_1_interrogation),
+        (suspect_2_name, suspect_2_sheet, suspect_2_greeting, suspect_2_interrogation),
+        (suspect_3_name, suspect_3_sheet, suspect_3_greeting, suspect_3_interrogation),
+        (suspect_4_name, suspect_4_sheet, suspect_4_greeting, suspect_4_interrogation),
     ]
     return [
-        {"agent_name": f"case_{session_uuid}_s{index}", "name": name, "sheet": sheet, "greeting": greeting}
-        for index, (name, sheet, greeting) in enumerate(suspects, start=1)
+        {"agent_name": f"case_{session_uuid}_s{index}", "name": name, "sheet": sheet,
+         "greeting": greeting, "interrogation": interrogation}
+        for index, (name, sheet, greeting, interrogation) in enumerate(suspects, start=1)
     ]
 
 
