@@ -181,7 +181,11 @@ async function sendMessage(text, displayText) {
 
     inputEl.value = '';
     sendButtonEl.disabled = true;
-    addMessage(displayText ?? question, 'user');
+    // displayText === null - явно скрыть пузырь "пользователь написал"
+    // (например, клик по кнопке "Начать новое дело" не должен ничего показывать)
+    if (displayText !== null) {
+        addMessage(displayText ?? question, 'user');
+    }
 
     const loadingDiv = addTypingIndicator();
 
@@ -246,7 +250,7 @@ async function init() {
     const startChip = document.createElement('span');
     startChip.className = 'chat-suggestion';
     startChip.textContent = 'Начать новое дело';
-    startChip.onclick = () => sendMessage('/new_case', 'Начать новое дело');
+    startChip.onclick = () => sendMessage('/new_case', null);
     startDiv.appendChild(startChip);
     messagesEl.appendChild(startDiv);
 
