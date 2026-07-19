@@ -4,6 +4,34 @@ from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
 
+async def detective_dynamic_agents_cleanup(session_uuid: str) -> dict:
+    """
+    Удаляет ВСЕХ динамических агентов (подозреваемых и сержанта) ПРЕДЫДУЩЕГО
+    дела этой же игровой сессии - вызывается первым шагом /new_case, перед
+    генерацией нового дела, иначе агенты от старых дел копятся бесконечно.
+    Scope намеренно по session_uuid, а не по user_id: конвенция имен
+    'case_<session_uuid>_sN' / 'sergeant_<session_uuid>' уже изолирует игроков
+    друг от друга, поэтому очистка одного игрока никогда не затронет агентов
+    другого, даже если оба играют одновременно.
+     - session_uuid: сессия игрока (workflow-переменная session_uuid)
+    Returns:
+        dict: Словарь с результатом, содержащий:
+            deleted_qty (int): количество удаленных агентов.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "DELETE FROM `agent` WHERE `dynamic` = 1 AND (`name` LIKE %s OR `name` = %s)",
+            (f"case_{session_uuid}_%", f"sergeant_{session_uuid}")
+        )
+        deleted_qty = db.rowcount
+        await db.connection.commit()
+
+    if deleted_qty:
+        logger_info(f"🧹 Очищено {deleted_qty} динамических агентов старого дела: session={session_uuid}")
+
+    return {"deleted_qty": deleted_qty}
+
+
 async def detective_case_seed_generate(location_pool: list, weapon_pool: list) -> dict:
     """
     Выбирает случайные "якоря" для генерации дела ДО вызова LLM: тему места
