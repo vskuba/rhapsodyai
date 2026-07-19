@@ -16,6 +16,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from env.env_ import env_is_prod
 from py_modules.ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_tool import ai_tool_sync
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
@@ -80,7 +81,15 @@ async def lifespan(app: FastAPI):
         ]
     ))
 
-    await ai_tool_sync()
+    # force=True: без этого синк молча пропускается, если в tool уже есть
+    # хоть одна запись (а после первого деплоя она есть всегда) - новые/
+    # переименованные/перемещенные инструменты в коде иначе никогда не
+    # попадут в БД без ручного форс-синка (именно так тихо не подхватились
+    # mysql_migration_prod_create и env_is_prod после деплоя на прод)
+    if await env_is_prod():
+        await ai_tool_sync(force=True)
+    else:
+        await ai_tool_sync()
 
     print("Background thread started.")
 

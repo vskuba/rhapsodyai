@@ -50,12 +50,15 @@ async def mysql_migration_prod_create(
        seed; и кроме tool, tool_group - их наполняет ai_tool_sync() из кода на
        каждом окружении отдельно, переносить данные между средами не нужно)
        делает построчный diff по первичному ключу: строки, полностью
-       совпадающие на проде и локально, в миграцию НЕ попадают - только те,
-       что реально отличаются (upsert, локальная версия побеждает) или
-       существуют лишь на одной стороне (новые локально, либо сохраняются
-       как есть, если существуют только на проде - например, заведено вручную
-       прямо там). Миграция получается точечной - минимум строк, только то,
-       что реально нужно применить.
+       совпадающие на проде и локально, в миграцию НЕ попадают. Для строк,
+       измененных локально (ключ есть на обеих сторонах, но данные другие) -
+       в файл попадают ОБЕ версии (сначала прод-версия для сравнения, затем
+       новая локальная - upsert, локальная побеждает), чтобы можно было
+       визуально увидеть, что именно меняется. Строки без пары на другой
+       стороне показываются один раз (новые локально - upsert; только на
+       проде - сохраняются как есть, например заведено вручную прямо там).
+       Миграция получается точечной - только реально затронутые строки, а не
+       вся таблица целиком.
     3. Все пишется в СЛЕДУЮЩИЙ свободный файл миграции (mysql_migration_next_file).
        Номер выбирается по ЛОКАЛЬНЫМ файлам - если предыдущий выкаченный файл с
        этим же номером уже удален локально (что и есть штатный процесс после
@@ -106,8 +109,8 @@ async def mysql_migration_prod_create(
     content_lines = [
         "-- Синхронизация с продом (сгенерировано mysql_migration_prod_create).",
         "-- Структура: CREATE/ALTER для нового, что появилось локально. Данные: построчный",
-        "-- diff по первичному ключу - только новые/измененные локально строки (upsert) и",
-        "-- строки, существующие только на проде (сохраняются как есть).",
+        "-- diff по первичному ключу - только затронутые строки. Для измененных строк",
+        "-- показаны обе версии (прод для сравнения, затем новая локальная - upsert).",
         "",
     ]
     if schema_lines:
@@ -227,12 +230,16 @@ def _column_type_normalize(column_type: str) -> str:
 async def _data_diff_generate(prod_conn) -> tuple:
     """Для каждой не-рантаймовой и не tool-sync таблицы - построчный diff по
     первичному ключу: строки, полностью совпадающие на проде и локально,
-    пропускаются, в миграцию попадают только те, что реально отличаются
-    (изменены) или существуют лишь на одной из сторон (новые локально/только
-    на проде). Таблицы без первичного ключа сравниваются и мигрируют целиком
-    (построчное сопоставление без ключа ненадежно). Возвращает (список строк
-    SQL-блоков, количество таблиц с расхождениями, суммарное количество
-    затронутых строк)."""
+    пропускаются - в миграцию попадают только реально затронутые. Для строк,
+    измененных локально (ключ есть на обеих сторонах, но данные отличаются) -
+    показывает ОБЕ версии (сначала текущую прод-версию, затем новую локальную),
+    чтобы можно было визуально сравнить, что именно меняется - не только
+    точечный список задетых строк, но и видимый до/после. Строки, которых нет
+    на одной из сторон, показываются один раз (новые локально - upsert;
+    только на проде - сохраняются как есть). Таблицы без первичного ключа
+    сравниваются и мигрируют целиком (построчное сопоставление без ключа
+    ненадежно). Возвращает (список строк SQL-блоков, количество таблиц с
+    расхождениями, суммарное количество затронутых строк)."""
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT TABLE_NAME FROM information_schema.TABLES "
@@ -266,31 +273,42 @@ async def _data_diff_generate(prod_conn) -> tuple:
             # сравниваем и (при расхождении) мигрируем таблицу целиком
             if _rows_as_sql_text(columns, prod_rows) == _rows_as_sql_text(columns, local_rows):
                 continue
-            prod_only_rows, changed_rows = prod_rows, local_rows
+            prod_only_rows, changed_prod_rows, new_local_rows = [], prod_rows, local_rows
+            affected_keys_qty = len(prod_rows) if not local_rows else max(len(prod_rows), len(local_rows))
         else:
             prod_by_key = {tuple(row[c] for c in pk_columns): row for row in prod_rows}
             local_by_key = {tuple(row[c] for c in pk_columns): row for row in local_rows}
 
             # Есть только на проде - сохраняем как есть (например, заведено вручную)
             prod_only_rows = [row for key, row in prod_by_key.items() if key not in local_by_key]
-            # Новые локально или отличаются от прода - локальная версия побеждает
-            changed_rows = [
-                row for key, row in local_by_key.items()
-                if key not in prod_by_key or _row_sql_text(columns, row) != _row_sql_text(columns, prod_by_key[key])
+            # Есть на обеих сторонах, но данные отличаются - нужны ОБЕ версии для сравнения
+            changed_keys = [
+                key for key, row in local_by_key.items()
+                if key in prod_by_key and _row_sql_text(columns, row) != _row_sql_text(columns, prod_by_key[key])
             ]
+            changed_prod_rows = [prod_by_key[key] for key in changed_keys]
+            # Новые локально (ключа еще нет на проде) - сравнивать не с чем, только upsert
+            new_only_local_rows = [row for key, row in local_by_key.items() if key not in prod_by_key]
+            new_local_rows = [local_by_key[key] for key in changed_keys] + new_only_local_rows
+            affected_keys_qty = len(prod_only_rows) + len(changed_keys) + len(new_only_local_rows)
 
-        if not prod_only_rows and not changed_rows:
+        if not prod_only_rows and not changed_prod_rows and not new_local_rows:
             continue
 
         if prod_only_rows:
             blocks.append(_upsert_block_build(table, columns, prod_only_rows, pk_columns, '-- только на проде (сохраняем)'))
             blocks.append('')
-        if changed_rows:
-            blocks.append(_upsert_block_build(table, columns, changed_rows, pk_columns, '-- новые/измененные локально'))
+        if changed_prod_rows:
+            blocks.append(_upsert_block_build(
+                table, columns, changed_prod_rows, pk_columns, '-- прод: текущее значение измененных строк (для сравнения)'
+            ))
+            blocks.append('')
+        if new_local_rows:
+            blocks.append(_upsert_block_build(table, columns, new_local_rows, pk_columns, '-- локально: новое/измененное значение'))
             blocks.append('')
 
         tables_qty += 1
-        rows_qty += len(prod_only_rows) + len(changed_rows)
+        rows_qty += affected_keys_qty
 
     return blocks, tables_qty, rows_qty
 
