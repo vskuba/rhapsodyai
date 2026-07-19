@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from pydantic import BaseModel
 
 from mysql_.mysql_ import mysql_get_db_async
@@ -202,6 +202,32 @@ async def session_messages(
 
     # Возвращаем сообщения в правильном хронологическом порядке (ASC)
     return {"result": list(reversed(selected_messages))}
+
+
+@router.delete("/session/{session_uuid}")
+async def session_delete(
+        request: Request,
+        session_uuid: str,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.SESSION_DELETE]))
+):
+    """Удаляет всю переписку сессии (все сообщения agent_session с этим session_uuid)."""
+    async with db:
+        sql = "DELETE FROM agent_session WHERE session_uuid = %s"
+        params = [session_uuid]
+
+        if user.role != 'admin':
+            sql += f" AND {_agent_role_condition()}"
+            params.append(user.role)
+
+        await db.execute(sql, params)
+        deleted = db.rowcount
+        await db.connection.commit()
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Сессия не найдена")
+
+    return {"result": deleted}
 
 
 def _agent_role_condition(alias: str = '') -> str:

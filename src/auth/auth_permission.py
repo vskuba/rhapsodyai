@@ -71,6 +71,7 @@ class AuthPermission(str, Enum):
 
     # Session permissions
     SESSION_VIEW = "session:view"
+    SESSION_DELETE = "session:delete"
 
     # Setting permissions
     SETTING_VIEW = "setting:view"
