@@ -58,6 +58,7 @@ CREATE TABLE `user` (
     `password_hash` CHAR(100) NOT NULL,
     `role_id` INT NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `dynamic` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Создан рантаймом (guest-сессия PWA), не seed - исключается из экспорта/prod-миграции',
     CONSTRAINT `fk_user_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
