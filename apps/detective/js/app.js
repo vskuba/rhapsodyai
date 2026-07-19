@@ -9,6 +9,7 @@ const messagesEl = document.getElementById('messages');
 const formEl = document.getElementById('inputForm');
 const inputEl = document.getElementById('userInput');
 const sendButtonEl = document.getElementById('sendButton');
+const micButtonEl = document.getElementById('micButton');
 
 if ('serviceWorker' in navigator) {
     // register() требует secure context (https или localhost) - на голом
@@ -162,13 +163,13 @@ async function onChipClick(text) {
     sendMessage(text);
 }
 
-async function sendMessage(text) {
+async function sendMessage(text, displayText) {
     const question = (text ?? inputEl.value).trim();
     if (!question) return;
 
     inputEl.value = '';
     sendButtonEl.disabled = true;
-    addMessage(question, 'user');
+    addMessage(displayText ?? question, 'user');
 
     const loadingDiv = addMessage('Печатает...', 'ai');
     loadingDiv.classList.add('loading');
@@ -233,10 +234,81 @@ async function init() {
     startDiv.className = 'message system-msg';
     const startChip = document.createElement('span');
     startChip.className = 'chat-suggestion';
-    startChip.textContent = 'Начать новое дело (/new_case)';
-    startChip.onclick = () => sendMessage('/new_case');
+    startChip.textContent = 'Начать новое дело';
+    startChip.onclick = () => sendMessage('/new_case', 'Начать новое дело');
     startDiv.appendChild(startChip);
     messagesEl.appendChild(startDiv);
+
+    voiceInit();
+}
+
+// Голосовой ввод: зажать - говорить, отпустить - расшифровка (Faster Whisper,
+// /chat/voice - тот же эндпоинт, что у веб-чата в админке) подставляется в
+// поле ввода на проверку, а не отправляется сразу. getUserMedia требует
+// secure context (https или localhost) - на голом HTTP кнопка скрывается,
+// а не падает с ошибкой.
+function voiceInit() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+        micButtonEl.hidden = true;
+        return;
+    }
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let stream = null;
+
+    async function recordingStart() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e) {
+            addMessage(`⚠️ Микрофон недоступен: ${e.message}`, 'system');
+            return;
+        }
+        audioChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+            stream.getTracks().forEach((t) => t.stop());
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'voice.wav');
+
+            micButtonEl.disabled = true;
+            try {
+                const res = await fetch('/chat/voice', { method: 'POST', credentials: 'same-origin', body: formData });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.result) {
+                        inputEl.value = data.result;
+                        inputEl.focus();
+                    }
+                }
+            } catch (e) {
+                addMessage(`⚠️ Не удалось расшифровать голос: ${e.message}`, 'system');
+            } finally {
+                micButtonEl.disabled = false;
+            }
+        };
+        mediaRecorder.start();
+        micButtonEl.classList.add('recording');
+    }
+
+    function recordingStop() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+        }
+        micButtonEl.classList.remove('recording');
+    }
+
+    // pointerdown/up вместо mousedown/up - единый обработчик для мыши,
+    // тача и стилуса (мобильный PWA - основная площадка использования)
+    micButtonEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        recordingStart();
+    });
+    micButtonEl.addEventListener('pointerup', recordingStop);
+    micButtonEl.addEventListener('pointerleave', recordingStop);
 }
 
 init();
