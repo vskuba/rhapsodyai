@@ -116,7 +116,7 @@ INSERT INTO `companion` (`id`, `name`, `title`) VALUES
 (1, 'Vadim', 'Vadim'),
 (2, 'Olenka', 'Olenka'),
 (3, 'user_admin', 'admin'),
-(4, 'detective_player', 'Ð˜Ð³Ñ€Ð¾Ðº');
+(4, 'detective_player', 'Игрок');
 
 --
 
