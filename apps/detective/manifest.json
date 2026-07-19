@@ -1,0 +1,11 @@
+{
+  "name": "Детектив",
+  "short_name": "Детектив",
+  "description": "Детективная игра: расследуй дела, допрашивай подозреваемых, назови виновного.",
+  "start_url": "/play/detective/",
+  "scope": "/play/detective/",
+  "display": "standalone",
+  "background_color": "#1b1f27",
+  "theme_color": "#1b1f27",
+  "icons": []
+}
