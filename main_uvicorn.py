@@ -43,6 +43,7 @@ from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_varia
 from src.uvicorn.routers.user import user
 from src.uvicorn.routers.companion import companion
 from src.uvicorn.routers.role import role
+from src.uvicorn.routers.detective import detective
 
 
 @asynccontextmanager
@@ -165,6 +166,7 @@ async def auth_middleware(request: Request, call_next):
                 '/login',
                 '/auth/login',
                 '/auth/logout',
+                '/auth/guest',
                 '/cronjob',
                 '/favicon.ico',
                 '/static',
@@ -341,6 +343,7 @@ apps_static_path = os.path.join(current_dir, "apps")
 if os.path.isdir(apps_static_path):
     app.mount("/play", NoCacheStaticFiles(directory=apps_static_path, html=True), name="play")
 
+app.include_router(detective.router)
 app.include_router(dashboard.router, include_in_schema=False)
 app.include_router(chat.router)
 app.include_router(agent.router)
