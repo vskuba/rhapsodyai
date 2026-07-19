@@ -8,14 +8,24 @@ from mysql_.mysql_ import mysql_get_db_async
 
 # Таблицы, которые НИКОГДА не участвуют в сравнении/синке с продом - чисто
 # динамические рантайм-данные (история переписки, игровые сессии, журналы
-# выполнения workflow, метрики LLM, факты, извлеченные во время диалогов) и
-# служебные таблицы yoyo. Аналог agent.dynamic=1 у обычного экспорта, но на
-# уровне целых таблиц - в этих таблицах КАЖДАЯ строка рантаймовая.
+# выполнения workflow, метрики LLM, факты, извлеченные во время диалогов,
+# UUID-сессии браузера/чата) и служебные таблицы yoyo. Аналог agent.dynamic=1
+# у обычного экспорта, но на уровне целых таблиц - в этих таблицах КАЖДАЯ
+# строка рантаймовая. Локальные сессии никак не относятся к продовским -
+# переносить их между окружениями бессмысленно.
 _RUNTIME_EXCLUDED_TABLES = {
     'agent_session', 'detective_case', 'agent_workflow_run', 'agent_workflow_run_step',
-    'fact', 'llm_request',
+    'fact', 'llm_request', 'session',
     '_yoyo_migration', '_yoyo_log', '_yoyo_version', 'yoyo_lock',
 }
+
+# Таблицы, наполняемые ai_tool_sync() из самого кода (AST-скан src/tool/**) -
+# на каждом окружении они пересобираются из своего же исходника при синке
+# инструментов, поэтому переносить их СОДЕРЖИМОЕ между локалью и продом не
+# нужно (и вредно: id тулов на проде могут не совпадать с локальными).
+_TOOL_EXCLUDED_TABLES = {'tool', 'tool_group'}
+
+_DATA_DIFF_EXCLUDED_TABLES = _RUNTIME_EXCLUDED_TABLES | _TOOL_EXCLUDED_TABLES
 
 
 async def mysql_migration_prod_create(
@@ -32,10 +42,12 @@ async def mysql_migration_prod_create(
        расхождения (что-то есть на проде, но не локально) и смена типа
        существующей колонки НЕ трогает - только сообщает в review_needed,
        такое требует ручного решения (может быть осознанным отличием прода).
-    2. Данные: по каждой не-рантаймовой таблице (кроме agent_session,
-       detective_case, agent_workflow_run*, fact, llm_request, служебных
-       таблиц yoyo - это исключительно динамический рантайм, не seed) сначала
-       кладет ТЕКУЩИЕ данные прода как основу (upsert), затем ПОВЕРХ - те же
+    2. Данные: по каждой не-рантаймовой и не tool-sync таблице (кроме
+       agent_session, detective_case, agent_workflow_run*, fact, llm_request,
+       служебных таблиц yoyo - это исключительно динамический рантайм, не
+       seed; и кроме tool, tool_group - их наполняет ai_tool_sync() из кода на
+       каждом окружении отдельно, переносить данные между средами не нужно)
+       сначала кладет ТЕКУЩИЕ данные прода как основу (upsert), затем ПОВЕРХ - те же
        строки с локальной базы тем же upsert-ом. Так сохраняется то, что есть
        ТОЛЬКО на проде (например, что-то заведено вручную прямо там), а
        локальные правки побеждают, где они пересекаются по первичному ключу.
@@ -183,15 +195,17 @@ def _column_type_normalize(column_type: str) -> str:
 
 
 async def _data_diff_generate(prod_conn) -> tuple:
-    """Для каждой не-рантаймовой таблицы: сначала данные прода (upsert), затем
-    те же данные с локальной базы (upsert поверх). Возвращает (список строк
+    """Для каждой не-рантаймовой и не tool-sync таблицы, где данные ОТЛИЧАЮТСЯ
+    от прода: сначала данные прода (upsert), затем те же данные с локальной
+    базы (upsert поверх). Таблицы с полностью совпадающими данными в
+    миграцию не попадают - мигрировать в них нечего. Возвращает (список строк
     SQL-блоков, количество таблиц, суммарное количество строк)."""
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT TABLE_NAME FROM information_schema.TABLES "
             "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'"
         )
-        tables = sorted({r['TABLE_NAME'] for r in await db.fetchall()} - _RUNTIME_EXCLUDED_TABLES)
+        tables = sorted({r['TABLE_NAME'] for r in await db.fetchall()} - _DATA_DIFF_EXCLUDED_TABLES)
 
     blocks = []
     tables_qty = 0
@@ -214,6 +228,13 @@ async def _data_diff_generate(prod_conn) -> tuple:
             await db.execute(f"SELECT * FROM `{table}` {row_filter} ORDER BY {order_by}")
             local_rows = await db.fetchall()
 
+        # Сравниваем не сырые значения (pymysql/aiomysql могут по-разному
+        # типизировать одно и то же значение - Decimal/float, datetime/str),
+        # а их итоговое SQL-текстовое представление - то же самое, что попадет
+        # в файл. При полном совпадении данных для таблицы мигрировать нечего.
+        if _rows_as_sql_text(columns, prod_rows) == _rows_as_sql_text(columns, local_rows):
+            continue
+
         if prod_rows:
             blocks.append(_upsert_block_build(table, columns, prod_rows, pk_columns, '-- из прода (основа)'))
             blocks.append('')
@@ -226,6 +247,13 @@ async def _data_diff_generate(prod_conn) -> tuple:
             rows_qty += len(prod_rows) + len(local_rows)
 
     return blocks, tables_qty, rows_qty
+
+
+def _rows_as_sql_text(columns: list, rows: list) -> list:
+    """Строковое SQL-представление набора строк (список кортежей экранированных
+    значений по колонкам, в порядке строк) - для сравнения "совпадают ли
+    данные прода и локали по сути", не по внутреннему Python-типу драйвера."""
+    return [tuple(_sql_escape(row[c]) for c in columns) for row in rows]
 
 
 def _column_definition_sql(col_name: str, col_row: dict) -> str:
