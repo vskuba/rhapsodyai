@@ -2,6 +2,7 @@ import glob
 import os
 import re
 
+from config.config import config_get
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
@@ -106,9 +107,12 @@ _CATCHALL_TABLE_QUERIES = {
 # Полностью глобальные таблицы без node_id вообще - экспортируются ЦЕЛИКОМ,
 # но только для catch-all ноды (для обычного подпроекта они не относятся
 # к экспорту вовсе - у Dating/Detective нет причин трогать llm/user/role).
+# tool/tool_group сюда не входят - их наполняет ai_tool_sync() из кода на
+# каждом окружении отдельно, id тулов между окружениями не совпадают.
+# session тоже не входит - чисто рантаймовые UUID-сессии, экспорту не подлежат.
 _CATCHALL_GLOBAL_TABLES = [
     'node', 'llm', 'role', 'user', 'user_access_token', 'user_llm', 'setting',
-    'tool_group', 'tool', 'agent_workflow_step_type', 'companion', 'session', 'llm_request',
+    'agent_workflow_step_type', 'companion', 'llm_request',
 ]
 
 
@@ -122,6 +126,8 @@ async def mysql_export_to_migration(tables: str, migration_file: str = 'migratio
     mysql_export_node_to_migration - иначе экспорт смешает строки всех нод в
     одном файле. Для выката на прод используйте mysql_migration_prod_create -
     она сравнивает структуру/данные с продом и сама строит upsert-миграцию.
+    На проде (APP_ENV содержит 'prod') экспорт заблокирован - это dev-only
+    операция, возвращается report_str с пояснением и blocked=1.
     tables — имена таблиц через запятую (например: 'agent_workflow, agent_workflow_step');
     migration_file — путь к файлу миграции относительно корня проекта.
     Returns:
@@ -131,6 +137,12 @@ async def mysql_export_to_migration(tables: str, migration_file: str = 'migratio
         report_str (str): Отчет: обновленные таблицы и причины пропусков.
         migration_file (str): фактический путь файла миграции, в который записан экспорт.
     """
+    if _is_prod_environment():
+        return {
+            "tables_qty": 0, "rows_qty": 0, "blocked": "1",
+            "report_str": "🚫 Это прод - экспорт недоступен, доступен только локально",
+        }
+
     table_names = [t.strip() for t in str(tables or '').split(',') if t.strip()]
     if not table_names:
         return {"tables_qty": 0, "rows_qty": 0, "report_str": "не переданы имена таблиц"}
@@ -170,6 +182,8 @@ async def mysql_export_node_to_migration(node_id: int, migration_file: str = '')
     если блок уже есть - заменяется целиком актуальным снимком текущих данных.
     Для выката на прод используйте mysql_migration_prod_create - она сама
     сравнивает структуру/данные с продом и строит upsert-миграцию.
+    На проде (APP_ENV содержит 'prod') экспорт заблокирован - это dev-only
+    операция, возвращается report_str с пояснением и blocked=1.
 
     Если у ноды выставлен node.is_catchall=1 (ровно одна такая нода, например
     Dashboard) - экспортируется ВСЕ, что НЕ относится ни к одной ДРУГОЙ ноде со
@@ -181,6 +195,12 @@ async def mysql_export_node_to_migration(node_id: int, migration_file: str = '')
     Returns:
         dict: отчет экспорта - tables_qty, rows_qty, report_str (как у mysql_export_to_migration).
     """
+    if _is_prod_environment():
+        return {
+            "tables_qty": 0, "rows_qty": 0, "blocked": "1",
+            "report_str": "🚫 Это прод - экспорт недоступен, доступен только локально",
+        }
+
     async with mysql_get_db_async() as db:
         await db.execute("SELECT `name`, `migration_file`, `is_catchall` FROM `node` WHERE `id` = %s", (node_id,))
         node_row = await db.fetchone()
@@ -250,6 +270,13 @@ def _next_migration_file() -> str:
     numbers = [int(os.path.basename(f)[:4]) for f in existing]
     next_number = (max(numbers) + 1) if numbers else 1
     return f"migrations/{next_number:04d}.sql"
+
+
+def _is_prod_environment() -> bool:
+    """Экспорт локальных данных в файлы миграции подпроекта - dev-операция,
+    на проде нет смысла (там свой рантайм, а не разработка): APP_ENV на проде
+    выставлен в '_prod' (см. docker-compose.yml, read-app-logs${APP_ENV}.conf)."""
+    return 'prod' in config_get('APP_ENV', '').lower()
 
 
 async def _table_primary_key_columns(db, table: str) -> list:
