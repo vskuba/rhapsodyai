@@ -16,7 +16,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from env.env_ import env_is_prod
+from src.tool.env.env_ import env_is_prod
 from py_modules.ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_tool import ai_tool_sync
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
@@ -168,6 +168,7 @@ async def auth_middleware(request: Request, call_next):
                 '/cronjob',
                 '/favicon.ico',
                 '/static',
+                '/play',
                 '/user'
             ],
         },
@@ -332,6 +333,13 @@ class NoCacheStaticFiles(StaticFiles):
 
 
 app.mount("/static", NoCacheStaticFiles(directory=public_static_path), name="static")
+
+# PWA-подпроекты (apps/<name>/) - публичные игровые фронтенды, отдаются
+# статикой по /play/<name>/. html=True - индекс отдается на корне папки
+# (нужно для start_url/scope PWA-манифеста и открытия без явного /index.html)
+apps_static_path = os.path.join(current_dir, "apps")
+if os.path.isdir(apps_static_path):
+    app.mount("/play", NoCacheStaticFiles(directory=apps_static_path, html=True), name="play")
 
 app.include_router(dashboard.router, include_in_schema=False)
 app.include_router(chat.router)
