@@ -22,7 +22,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_variables_global_get
 from src.auth.auth import AuthChecker
 from src.auth.auth_session import AuthSession
-from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
+from src.faster_whisper.faster_whisper_model import faster_whisper_transcribe
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.user_repository import UserRepository
 
@@ -264,16 +264,8 @@ async def voice_to_text(file: UploadFile = File(...)):
     with open(temp_file, "wb") as buffer:
         buffer.write(content)
 
-    # Здесь логика Faster Whisper
-    segments, _ = (await faster_whisper_create_model()).transcribe(
-        temp_file,
-        beam_size=5,
-        best_of=5,
-        language=None,
-        condition_on_previous_text=False
-    )
-    text = "".join([s.text for s in segments])
+    text = await faster_whisper_transcribe(temp_file)
 
     os.remove(temp_file)
 
-    return {"result": text.strip()}
+    return {"result": text}

@@ -27,3 +27,23 @@ async def faster_whisper_create_model() -> WhisperModel:
         )
 
     return _model_cache[model_name]
+
+
+async def faster_whisper_transcribe(file_path: str) -> str:
+    """
+    Транскрибирует аудиофайл в текст. vad_filter отсеивает тишину/фон до
+    распознавания и сегменты с высоким no_speech_prob отбрасываются - без
+    этого faster-whisper на пустом звуке нередко галлюцинирует однословные
+    артефакты вроде "You"/"Thank you." (известная особенность моделей Whisper,
+    обученных на YouTube-субтитрах, где тишине часто предшествовали эти фразы).
+    """
+    model = await faster_whisper_create_model()
+    segments, _ = model.transcribe(
+        file_path,
+        beam_size=5,
+        best_of=5,
+        language=None,
+        condition_on_previous_text=False,
+        vad_filter=True,
+    )
+    return "".join(s.text for s in segments if s.no_speech_prob < 0.6).strip()

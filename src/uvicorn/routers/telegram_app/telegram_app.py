@@ -15,7 +15,7 @@ from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
-from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
+from src.faster_whisper.faster_whisper_model import faster_whisper_transcribe
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.event_log_repository import EventLogRepository
 
@@ -152,18 +152,11 @@ async def telegram_app_chat_voice(request: Request, file: UploadFile = File(...)
         buffer.write(content)
 
     try:
-        segments, _ = (await faster_whisper_create_model()).transcribe(
-            temp_file,
-            beam_size=5,
-            best_of=5,
-            language=None,
-            condition_on_previous_text=False
-        )
-        text = "".join([s.text for s in segments])
+        text = await faster_whisper_transcribe(temp_file)
     finally:
         os.remove(temp_file)
 
-    return {"result": text.strip()}
+    return {"result": text}
 
 
 def _require_telegram_owner(request: Request):
