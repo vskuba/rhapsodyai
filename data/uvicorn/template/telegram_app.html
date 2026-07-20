@@ -370,6 +370,9 @@
     let audioChunks = [];
     let micStream = null;
     let recordCancelled = false;
+    let recordStartedAt = 0;
+
+    const MIN_RECORD_MS = 1000;
 
     async function init() {
         tg?.ready();
@@ -500,6 +503,7 @@
         mediaRecorder.onstop = onRecordingStop;
 
         mediaRecorder.start();
+        recordStartedAt = performance.now();
         chatMicBtn.classList.add('recording');
     }
 
@@ -513,7 +517,9 @@
     async function onRecordingStop() {
         const audioBlob = new Blob(audioChunks, {type: 'audio/wav'});
         audioChunks = [];
-        if (audioBlob.size === 0 || recordCancelled) return;
+
+        const tooShort = performance.now() - recordStartedAt < MIN_RECORD_MS;
+        if (audioBlob.size === 0 || recordCancelled || tooShort) return;
 
         const formData = new FormData();
         formData.append('file', audioBlob, 'voice.wav');
