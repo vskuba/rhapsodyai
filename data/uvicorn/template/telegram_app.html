@@ -323,6 +323,7 @@
     let chatSessionUuid = null;
     let mediaRecorder = null;
     let audioChunks = [];
+    let micStream = null;
 
     async function init() {
         tg?.ready();
@@ -410,8 +411,14 @@
     async function startRecording() {
         if (mediaRecorder && mediaRecorder.state === 'recording') return;
 
-        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-        mediaRecorder = new MediaRecorder(stream);
+        // Микрофон запрашивается один раз за сессию и переиспользуется -
+        // иначе каждое нажатие заново дергает getUserMedia и телефон
+        // повторно спрашивает разрешение
+        if (!micStream) {
+            micStream = await navigator.mediaDevices.getUserMedia({audio: true});
+        }
+
+        mediaRecorder = new MediaRecorder(micStream);
         audioChunks = [];
 
         mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
@@ -424,7 +431,6 @@
     function stopRecording() {
         if (mediaRecorder && mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
-            mediaRecorder.stream.getTracks().forEach(t => t.stop());
         }
         chatMicBtn.classList.remove('recording');
     }
