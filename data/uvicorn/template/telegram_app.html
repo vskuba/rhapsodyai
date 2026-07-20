@@ -254,6 +254,11 @@
             flex-shrink: 0;
         }
 
+        .mic-wrap {
+            position: relative;
+            flex-shrink: 0;
+        }
+
         .mic-btn {
             width: 52px;
             height: 52px;
@@ -266,6 +271,7 @@
             flex-shrink: 0;
             transition: all 0.15s;
             user-select: none;
+            touch-action: none;
         }
 
         .mic-btn.recording {
@@ -274,10 +280,45 @@
             animation: mic-pulse 1s ease-in-out infinite;
         }
 
+        .mic-btn.cancel-armed {
+            background: #94a3b8;
+            animation: none;
+        }
+
         @keyframes mic-pulse {
             0% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.5); transform: scale(1); }
             50% { box-shadow: 0 0 0 12px rgba(255, 77, 77, 0); transform: scale(1.12); }
             100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); transform: scale(1); }
+        }
+
+        /* Крестик отмены записи: появляется над микрофоном, пока идет
+           запись - увести палец на него и отпустить = отмена без отправки */
+        .mic-cancel {
+            position: absolute;
+            bottom: 64px;
+            left: 50%;
+            transform: translateX(-50%) scale(0.7);
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: #ff4d4d;
+            color: #ffffff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            opacity: 0;
+            transition: opacity 0.15s, transform 0.15s;
+        }
+
+        .mic-cancel.visible {
+            display: flex;
+            opacity: 1;
+        }
+
+        .mic-cancel.armed {
+            transform: translateX(-50%) scale(1.15);
+            background: #c0392b;
         }
     </style>
 </head>
@@ -302,7 +343,10 @@
 
     <div class="chat-progress" id="chatProgress"><div class="chat-progress-fill"></div></div>
     <div class="chat-input-bar" id="chatInputBar">
-        <button class="mic-btn" id="chatMicBtn">🎤</button>
+        <div class="mic-wrap">
+            <div class="mic-cancel" id="micCancel">✕</div>
+            <button class="mic-btn" id="chatMicBtn">🎤</button>
+        </div>
         <input type="text" class="chat-text-input" id="chatTextInput" placeholder="Сообщение...">
         <button class="chat-send-btn" id="chatSendBtn">➤</button>
     </div>
@@ -317,6 +361,7 @@
     const chatTextInput = document.getElementById('chatTextInput');
     const chatSendBtn = document.getElementById('chatSendBtn');
     const chatMicBtn = document.getElementById('chatMicBtn');
+    const micCancel = document.getElementById('micCancel');
     const chatProgress = document.getElementById('chatProgress');
     const chatInputBar = document.getElementById('chatInputBar');
 
@@ -324,6 +369,7 @@
     let mediaRecorder = null;
     let audioChunks = [];
     let micStream = null;
+    let recordCancelled = false;
 
     async function init() {
         tg?.ready();
@@ -401,11 +447,40 @@
             return;
         }
 
-        chatMicBtn.addEventListener('mousedown', startRecording);
-        chatMicBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
-        chatMicBtn.addEventListener('mouseup', stopRecording);
-        chatMicBtn.addEventListener('mouseleave', stopRecording);
-        chatMicBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
+        // Pointer Events вместо mouse/touch по отдельности: один и тот же
+        // обработчик для мыши и пальца, плюс move продолжает приходить,
+        // даже если палец уйдет с кнопки (нужно для жеста "увести на крестик")
+        chatMicBtn.addEventListener('pointerdown', onMicPointerDown);
+        chatMicBtn.addEventListener('pointerup', onMicPointerUp);
+        chatMicBtn.addEventListener('pointercancel', onMicPointerUp);
+        chatMicBtn.addEventListener('pointermove', onMicPointerMove);
+    }
+
+    async function onMicPointerDown(e) {
+        e.preventDefault();
+        chatMicBtn.setPointerCapture(e.pointerId);
+        recordCancelled = false;
+        micCancel.classList.remove('armed');
+        micCancel.classList.add('visible');
+        await startRecording();
+    }
+
+    function onMicPointerMove(e) {
+        if (!(mediaRecorder && mediaRecorder.state === 'recording')) return;
+
+        const rect = micCancel.getBoundingClientRect();
+        const overCancel = e.clientX >= rect.left && e.clientX <= rect.right
+            && e.clientY >= rect.top && e.clientY <= rect.bottom;
+
+        recordCancelled = overCancel;
+        chatMicBtn.classList.toggle('cancel-armed', overCancel);
+        micCancel.classList.toggle('armed', overCancel);
+    }
+
+    function onMicPointerUp() {
+        micCancel.classList.remove('visible', 'armed');
+        chatMicBtn.classList.remove('cancel-armed');
+        stopRecording();
     }
 
     async function startRecording() {
@@ -438,7 +513,7 @@
     async function onRecordingStop() {
         const audioBlob = new Blob(audioChunks, {type: 'audio/wav'});
         audioChunks = [];
-        if (audioBlob.size === 0) return;
+        if (audioBlob.size === 0 || recordCancelled) return;
 
         const formData = new FormData();
         formData.append('file', audioBlob, 'voice.wav');
