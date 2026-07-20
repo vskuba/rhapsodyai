@@ -175,10 +175,19 @@ async function onChipClick(text) {
     sendMessage(text);
 }
 
+// Пока запрос в полете - блокируем ВСЕ чипсы (не только кнопку отправки):
+// иначе можно кликнуть "Начать новое дело" (или чипс подозреваемого) второй
+// раз до ответа сервера и открыть несколько дел параллельно
+let requestInFlight = false;
+
 async function sendMessage(text, displayText) {
+    if (requestInFlight) return;
+
     const question = (text ?? inputEl.value).trim();
     if (!question) return;
 
+    requestInFlight = true;
+    messagesEl.classList.add('busy');
     inputEl.value = '';
     sendButtonEl.disabled = true;
     // displayText === null - явно скрыть пузырь "пользователь написал"
@@ -222,6 +231,8 @@ async function sendMessage(text, displayText) {
         loadingDiv.remove();
         addMessage(`⚠️ Не удалось связаться с сервером: ${e.message}`, 'ai');
     } finally {
+        requestInFlight = false;
+        messagesEl.classList.remove('busy');
         sendButtonEl.disabled = false;
         inputEl.focus();
     }
@@ -232,8 +243,34 @@ formEl.addEventListener('submit', (e) => {
     sendMessage();
 });
 
+// Восстанавливает переписку текущей сессии после перезагрузки страницы
+// (та же сессия живет в localStorage - см. getSessionUuid). Возвращает true,
+// если история была и отрисована - тогда приветствие/кнопка "Начать новое
+// дело" не нужны, игрок и так посреди дела.
+async function restoreHistory() {
+    try {
+        const res = await fetch('/chat/messages', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_uuid: getSessionUuid(), limit: 50 }),
+        });
+        if (!res.ok) return false;
+
+        const data = await res.json();
+        const rows = data.result || [];
+        if (!rows.length) return false;
+
+        for (const row of rows) {
+            addMessage(row.content, row.role === 'user' ? 'user' : 'ai');
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 async function init() {
-    addMessage('Добро пожаловать в детективное агентство!', 'system');
     sendButtonEl.disabled = true;
 
     try {
@@ -245,14 +282,19 @@ async function init() {
 
     sendButtonEl.disabled = false;
 
-    const startDiv = document.createElement('div');
-    startDiv.className = 'message system-msg';
-    const startChip = document.createElement('span');
-    startChip.className = 'chat-suggestion';
-    startChip.textContent = 'Начать новое дело';
-    startChip.onclick = () => sendMessage('/new_case', null);
-    startDiv.appendChild(startChip);
-    messagesEl.appendChild(startDiv);
+    const historyRestored = await restoreHistory();
+    if (!historyRestored) {
+        addMessage('Добро пожаловать в детективное агентство!', 'system');
+
+        const startDiv = document.createElement('div');
+        startDiv.className = 'message system-msg';
+        const startChip = document.createElement('span');
+        startChip.className = 'chat-suggestion';
+        startChip.textContent = 'Начать новое дело';
+        startChip.onclick = () => sendMessage('/new_case', null);
+        startDiv.appendChild(startChip);
+        messagesEl.appendChild(startDiv);
+    }
 
     voiceInit();
 }
