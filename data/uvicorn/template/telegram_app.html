@@ -17,9 +17,16 @@
             overflow: hidden;
         }
 
+        .app-wrapper {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
         .app-shell {
             display: flex;
-            height: 100vh;
+            flex: 1;
+            min-height: 0;
         }
 
         .icon-sidebar {
@@ -178,12 +185,26 @@
             font-style: italic;
         }
 
+        /* Прогресс-бар и input-бар вынесены за пределы .content-panel: общий
+           ряд на всю ширину экрана (под обеими колонками), не только под чатом */
         .chat-progress {
             height: 3px;
             background: #edf2f7;
             overflow: hidden;
             flex-shrink: 0;
             visibility: hidden;
+        }
+
+        .chat-progress, .chat-input-bar {
+            display: none;
+        }
+
+        .chat-progress.chat-visible, .chat-input-bar.chat-visible {
+            display: block;
+        }
+
+        .chat-input-bar.chat-visible {
+            display: flex;
         }
 
         .chat-progress.active {
@@ -261,26 +282,29 @@
     </style>
 </head>
 <body>
-<div class="app-shell">
-    <div class="icon-sidebar">
-        <button class="icon-btn active" id="tabBtnEvents" data-tab="events" title="События">🔔</button>
-        <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
-    </div>
-
-    <div class="content-panel">
-        <div class="tab-view active" id="tab-events">
-            <div class="empty-state">Загрузка...</div>
+<div class="app-wrapper">
+    <div class="app-shell">
+        <div class="icon-sidebar">
+            <button class="icon-btn active" id="tabBtnEvents" data-tab="events" title="События">🔔</button>
+            <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
         </div>
 
-        <div class="tab-view" id="tab-chat">
-            <div class="chat-messages" id="chatMessages"></div>
-            <div class="chat-progress" id="chatProgress"><div class="chat-progress-fill"></div></div>
-            <div class="chat-input-bar">
-                <button class="mic-btn" id="chatMicBtn">🎤</button>
-                <input type="text" class="chat-text-input" id="chatTextInput" placeholder="Сообщение...">
-                <button class="chat-send-btn" id="chatSendBtn">➤</button>
+        <div class="content-panel">
+            <div class="tab-view active" id="tab-events">
+                <div class="empty-state">Загрузка...</div>
+            </div>
+
+            <div class="tab-view" id="tab-chat">
+                <div class="chat-messages" id="chatMessages"></div>
             </div>
         </div>
+    </div>
+
+    <div class="chat-progress" id="chatProgress"><div class="chat-progress-fill"></div></div>
+    <div class="chat-input-bar" id="chatInputBar">
+        <button class="mic-btn" id="chatMicBtn">🎤</button>
+        <input type="text" class="chat-text-input" id="chatTextInput" placeholder="Сообщение...">
+        <button class="chat-send-btn" id="chatSendBtn">➤</button>
     </div>
 </div>
 
@@ -294,6 +318,7 @@
     const chatSendBtn = document.getElementById('chatSendBtn');
     const chatMicBtn = document.getElementById('chatMicBtn');
     const chatProgress = document.getElementById('chatProgress');
+    const chatInputBar = document.getElementById('chatInputBar');
 
     let chatSessionUuid = null;
     let mediaRecorder = null;
@@ -324,6 +349,10 @@
                 document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+
+                const isChatTab = btn.dataset.tab === 'chat';
+                chatInputBar.classList.toggle('chat-visible', isChatTab);
+                chatProgress.classList.toggle('chat-visible', isChatTab);
             });
         });
     }
