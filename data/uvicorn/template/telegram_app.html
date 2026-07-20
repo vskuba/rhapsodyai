@@ -178,6 +178,30 @@
             font-style: italic;
         }
 
+        .chat-progress {
+            height: 3px;
+            background: #edf2f7;
+            overflow: hidden;
+            flex-shrink: 0;
+            visibility: hidden;
+        }
+
+        .chat-progress.active {
+            visibility: visible;
+        }
+
+        .chat-progress-fill {
+            height: 100%;
+            width: 30%;
+            background: #007bff;
+            animation: chat-progress-slide 1s ease-in-out infinite;
+        }
+
+        @keyframes chat-progress-slide {
+            0% { margin-left: -30%; }
+            100% { margin-left: 100%; }
+        }
+
         .chat-input-bar {
             flex-shrink: 0;
             display: flex;
@@ -226,8 +250,13 @@
         .mic-btn.recording {
             background: #ff4d4d;
             color: #ffffff;
-            box-shadow: 0 0 10px rgba(255, 77, 77, 0.5);
-            transform: scale(1.12);
+            animation: mic-pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes mic-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.5); transform: scale(1); }
+            50% { box-shadow: 0 0 0 12px rgba(255, 77, 77, 0); transform: scale(1.12); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); transform: scale(1); }
         }
     </style>
 </head>
@@ -245,10 +274,11 @@
 
         <div class="tab-view" id="tab-chat">
             <div class="chat-messages" id="chatMessages"></div>
+            <div class="chat-progress" id="chatProgress"><div class="chat-progress-fill"></div></div>
             <div class="chat-input-bar">
+                <button class="mic-btn" id="chatMicBtn">🎤</button>
                 <input type="text" class="chat-text-input" id="chatTextInput" placeholder="Сообщение...">
                 <button class="chat-send-btn" id="chatSendBtn">➤</button>
-                <button class="mic-btn" id="chatMicBtn">🎤</button>
             </div>
         </div>
     </div>
@@ -263,6 +293,7 @@
     const chatTextInput = document.getElementById('chatTextInput');
     const chatSendBtn = document.getElementById('chatSendBtn');
     const chatMicBtn = document.getElementById('chatMicBtn');
+    const chatProgress = document.getElementById('chatProgress');
 
     let chatSessionUuid = null;
     let mediaRecorder = null;
@@ -377,14 +408,17 @@
         const formData = new FormData();
         formData.append('file', audioBlob, 'voice.wav');
 
+        chatProgress.classList.add('active');
         try {
             const data = await postData('/telegram-app/chat/voice', formData);
             if (data.result) {
                 chatTextInput.value = data.result;
-                sendChatMessage();
+                await sendChatMessage();
             }
         } catch (err) {
             appendBubble('assistant', '⚠️ Не удалось распознать голос');
+        } finally {
+            chatProgress.classList.remove('active');
         }
     }
 
@@ -396,6 +430,7 @@
         appendBubble('user', message);
         const pending = appendBubble('assistant', '...', true);
 
+        chatProgress.classList.add('active');
         try {
             const data = await postData('/telegram-app/chat/ask', {
                 message,
@@ -407,6 +442,8 @@
         } catch (err) {
             pending.textContent = '⚠️ ' + (err.message || 'Ошибка');
             pending.classList.remove('pending');
+        } finally {
+            chatProgress.classList.remove('active');
         }
     }
 
