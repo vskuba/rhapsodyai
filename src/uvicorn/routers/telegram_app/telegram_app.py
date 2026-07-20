@@ -1,17 +1,38 @@
+import asyncio
 import hashlib
 import hmac
 import json
+import os
 import time
+import uuid
 from urllib.parse import parse_qsl
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse
 
 from config.config import config_get
+from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
+from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
+from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.event_log_repository import EventLogRepository
 
 router = APIRouter()
+
+agent_manager = AiFrameworkAgentManager()
+
+# Владелец бота (тот же user_id, что и в telegram_bot.py) - его LLM-очередь
+# используется для ответов ассистента в Mini App
+TELEGRAM_CHAT_USER_ID = 1
+TELEGRAM_CHAT_AGENT_NAME = 'telegram_assistant'
+
+# companion обязателен для записи истории (agent_session.companion_id FK) -
+# переиспользуем существующего 'user_admin' (id=3), другой companion не нужен
+TELEGRAM_CHAT_COMPANION_ID = 3
+TELEGRAM_CHAT_COMPANION_NAME = 'user_admin'
+TELEGRAM_CHAT_COMPANION_TITLE = 'admin'
 
 # initData считается валидным не дольше суток - защита от повторного
 # использования старой открытой сессии Mini App (replay)
@@ -51,6 +72,98 @@ async def telegram_app_agents(request: Request):
         rows = await db.fetchall()
 
     return {"result": rows}
+
+
+@router.post("/telegram-app/chat/ask")
+async def telegram_app_chat_ask(request: Request, data: dict):
+    _require_telegram_owner(request)
+
+    message = str(data.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    session_uuid = data.get("session_uuid") or str(uuid.uuid4())
+
+    repo_agent = AgentRepository()
+    entity_agent = await repo_agent.find_one_by({"name": TELEGRAM_CHAT_AGENT_NAME})
+    if not entity_agent:
+        raise HTTPException(status_code=500, detail="Telegram assistant agent not found")
+
+    workflow_id = entity_agent["workflow_id"]
+    workflow_data = await ai_workflow_load(workflow_id)
+
+    workflow_variables_all = {
+        **ai_workflow_variables_base(
+            prompt_user=message,
+            user_id=TELEGRAM_CHAT_USER_ID,
+            entity_agent=entity_agent,
+            session_uuid=session_uuid,
+            workflow_id=workflow_id,
+            companion_id=TELEGRAM_CHAT_COMPANION_ID,
+            companion_name=TELEGRAM_CHAT_COMPANION_NAME,
+            companion_title=TELEGRAM_CHAT_COMPANION_TITLE,
+        ),
+        **json_from_string(entity_agent.get("workflow_variable") or "{}"),
+    }
+    ai_workflow_variables_defaults_apply(workflow_variables_all, workflow_data["variables"])
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            """
+            SELECT l.* FROM `llm` l
+            JOIN `user_llm` ul ON l.id = ul.llm_id
+            WHERE ul.user_id = %s
+            ORDER BY ul.rate_limit_at ASC, ul.position ASC
+            """,
+            (TELEGRAM_CHAT_USER_ID,)
+        )
+        entities_llm = await db.fetchall()
+
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+
+    framework_model = await agent_manager.framework_model_create({
+        "entity_agent": entity_agent,
+        "entities_llm": entities_llm,
+        "workflow_steps": workflow_data["steps"],
+        "workflow_variables": workflow_variables_all,
+        "prompt_user": message,
+        "user_id": TELEGRAM_CHAT_USER_ID,
+        "companion_id": TELEGRAM_CHAT_COMPANION_ID,
+        "session_uuid": session_uuid,
+    })
+    agent_manager.framework_workflow_run(framework_model, future, loop)
+
+    try:
+        result_text = await asyncio.wait_for(future, timeout=60.0)
+        return {"result": result_text, "session_uuid": framework_model.session_uuid}
+    except asyncio.TimeoutError:
+        future.cancel()
+        raise HTTPException(status_code=504, detail="Превышено время ожидания ответа от ИИ")
+
+
+@router.post("/telegram-app/chat/voice")
+async def telegram_app_chat_voice(request: Request, file: UploadFile = File(...)):
+    _require_telegram_owner(request)
+
+    temp_file = f"temp_{file.filename}.wav"
+    content = await file.read()
+    with open(temp_file, "wb") as buffer:
+        buffer.write(content)
+
+    try:
+        segments, _ = (await faster_whisper_create_model()).transcribe(
+            temp_file,
+            beam_size=5,
+            best_of=5,
+            language=None,
+            condition_on_previous_text=False
+        )
+        text = "".join([s.text for s in segments])
+    finally:
+        os.remove(temp_file)
+
+    return {"result": text.strip()}
 
 
 def _require_telegram_owner(request: Request):

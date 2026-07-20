@@ -9,25 +9,83 @@
     <link rel="stylesheet" href="/static/css/notification.css">
 
     <style>
-        body {
+        html, body {
+            height: 100%;
+            margin: 0;
             background: var(--tg-theme-bg-color, #f5f6f8);
             color: var(--tg-theme-text-color, #2c3e50);
+            overflow: hidden;
         }
 
-        .panel-wrapper {
-            max-width: 480px;
-            margin: 0 auto;
-            padding: 16px;
+        .app-shell {
+            display: flex;
+            height: 100vh;
+        }
+
+        .icon-sidebar {
+            width: 60px;
+            flex-shrink: 0;
+            background: #ffffff;
+            border-right: 1px solid #edf2f7;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 12px;
+            gap: 6px;
+        }
+
+        .icon-btn {
+            width: 44px;
+            height: 44px;
+            border: none;
+            border-radius: 12px;
+            background: transparent;
+            font-size: 22px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .icon-btn.active {
+            background: #eef6fc;
+        }
+
+        .content-panel {
+            flex: 1;
+            min-width: 0;
+            overflow-y: auto;
             box-sizing: border-box;
+        }
+
+        .tab-view {
+            display: none;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .tab-view.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- Events tab --- */
+        #tab-events {
+            padding: 16px;
+            overflow-y: auto;
         }
 
         .panel-title {
             font-size: 16px;
             font-weight: bold;
-            margin: 20px 0 10px;
+            margin: 0 0 10px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: #8e9091;
+        }
+
+        .panel-title:not(:first-child) {
+            margin-top: 20px;
         }
 
         .panel-card {
@@ -76,18 +134,139 @@
             padding: 40px 16px;
             font-size: 14px;
         }
+
+        /* --- Chat tab --- */
+        #tab-chat {
+            padding: 0;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            box-sizing: border-box;
+        }
+
+        .chat-bubble {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 14px;
+            margin-bottom: 10px;
+            font-size: 14px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .chat-bubble.user {
+            background: #007bff;
+            color: #ffffff;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-bubble.assistant {
+            background: #ffffff;
+            color: #2c3e50;
+            border: 1px solid #edf2f7;
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-bubble.pending {
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        .chat-input-bar {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-top: 1px solid #edf2f7;
+            background: #ffffff;
+        }
+
+        .chat-text-input {
+            flex: 1;
+            border: 1px solid #cbd5e0;
+            border-radius: 18px;
+            padding: 10px 14px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .chat-send-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: #007bff;
+            color: #ffffff;
+            font-size: 16px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .mic-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: none;
+            background: #f0f0f0;
+            color: #333;
+            font-size: 22px;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: all 0.15s;
+            user-select: none;
+        }
+
+        .mic-btn.recording {
+            background: #ff4d4d;
+            color: #ffffff;
+            box-shadow: 0 0 10px rgba(255, 77, 77, 0.5);
+            transform: scale(1.12);
+        }
     </style>
 </head>
 <body>
-<div class="panel-wrapper" id="panelWrapper">
-    <div class="empty-state">Загрузка...</div>
+<div class="app-shell">
+    <div class="icon-sidebar">
+        <button class="icon-btn active" id="tabBtnEvents" data-tab="events" title="События">🔔</button>
+        <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
+    </div>
+
+    <div class="content-panel">
+        <div class="tab-view active" id="tab-events">
+            <div class="empty-state">Загрузка...</div>
+        </div>
+
+        <div class="tab-view" id="tab-chat">
+            <div class="chat-messages" id="chatMessages"></div>
+            <div class="chat-input-bar">
+                <input type="text" class="chat-text-input" id="chatTextInput" placeholder="Сообщение...">
+                <button class="chat-send-btn" id="chatSendBtn">➤</button>
+                <button class="mic-btn" id="chatMicBtn">🎤</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script type="module">
     import {getData, postData} from '/static/js/api.js';
 
-    const wrapper = document.getElementById('panelWrapper');
     const tg = window.Telegram?.WebApp;
+    const eventsTab = document.getElementById('tab-events');
+    const chatMessagesEl = document.getElementById('chatMessages');
+    const chatTextInput = document.getElementById('chatTextInput');
+    const chatSendBtn = document.getElementById('chatSendBtn');
+    const chatMicBtn = document.getElementById('chatMicBtn');
+
+    let chatSessionUuid = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
 
     async function init() {
         tg?.ready();
@@ -98,19 +277,35 @@
         try {
             await postData('/telegram-app/auth', {init_data: initData});
         } catch (err) {
-            wrapper.innerHTML = `<div class="denied-state">⛔ Доступ запрещён</div>`;
+            eventsTab.innerHTML = '<div class="denied-state">⛔ Доступ запрещён</div>';
             return;
         }
 
+        initTabs();
+        initChat();
+        await loadEvents();
+    }
+
+    function initTabs() {
+        document.querySelectorAll('.icon-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.icon-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+            });
+        });
+    }
+
+    async function loadEvents() {
         const [eventsRes, agentsRes] = await Promise.all([
             getData('/telegram-app/events'),
             getData('/telegram-app/agents'),
         ]);
-
-        render(eventsRes.result || [], agentsRes.result || []);
+        renderEvents(eventsRes.result || [], agentsRes.result || []);
     }
 
-    function render(events, agents) {
+    function renderEvents(events, agents) {
         const eventsHtml = events.length
             ? events.map(e => `
                 <div class="event-row">
@@ -124,13 +319,104 @@
             ? agents.map(a => `<div class="agent-row">${escapeHtml(a.title || a.name)}</div>`).join('')
             : '<div class="empty-state">Агентов пока нет</div>';
 
-        wrapper.innerHTML = `
+        eventsTab.innerHTML = `
             <div class="panel-title">Последние события</div>
             <div class="panel-card">${eventsHtml}</div>
 
             <div class="panel-title">Агенты</div>
             <div class="panel-card">${agentsHtml}</div>
         `;
+    }
+
+    function initChat() {
+        chatSendBtn.addEventListener('click', sendChatMessage);
+        chatTextInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendChatMessage();
+        });
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            chatMicBtn.disabled = true;
+            chatMicBtn.title = 'Микрофон недоступен в этом клиенте';
+            return;
+        }
+
+        chatMicBtn.addEventListener('mousedown', startRecording);
+        chatMicBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+        chatMicBtn.addEventListener('mouseup', stopRecording);
+        chatMicBtn.addEventListener('mouseleave', stopRecording);
+        chatMicBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
+    }
+
+    async function startRecording() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') return;
+
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+        mediaRecorder.onstop = onRecordingStop;
+
+        mediaRecorder.start();
+        chatMicBtn.classList.add('recording');
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        }
+        chatMicBtn.classList.remove('recording');
+    }
+
+    async function onRecordingStop() {
+        const audioBlob = new Blob(audioChunks, {type: 'audio/wav'});
+        audioChunks = [];
+        if (audioBlob.size === 0) return;
+
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'voice.wav');
+
+        try {
+            const data = await postData('/telegram-app/chat/voice', formData);
+            if (data.result) {
+                chatTextInput.value = data.result;
+                sendChatMessage();
+            }
+        } catch (err) {
+            appendBubble('assistant', '⚠️ Не удалось распознать голос');
+        }
+    }
+
+    async function sendChatMessage() {
+        const message = chatTextInput.value.trim();
+        if (!message) return;
+
+        chatTextInput.value = '';
+        appendBubble('user', message);
+        const pending = appendBubble('assistant', '...', true);
+
+        try {
+            const data = await postData('/telegram-app/chat/ask', {
+                message,
+                session_uuid: chatSessionUuid
+            });
+            chatSessionUuid = data.session_uuid || chatSessionUuid;
+            pending.textContent = data.result;
+            pending.classList.remove('pending');
+        } catch (err) {
+            pending.textContent = '⚠️ ' + (err.message || 'Ошибка');
+            pending.classList.remove('pending');
+        }
+    }
+
+    function appendBubble(role, text, pending = false) {
+        const bubble = document.createElement('div');
+        bubble.className = `chat-bubble ${role}${pending ? ' pending' : ''}`;
+        bubble.textContent = text;
+        chatMessagesEl.appendChild(bubble);
+        chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        return bubble;
     }
 
     function escapeHtml(t) {
