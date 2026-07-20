@@ -2,6 +2,7 @@ import uuid
 
 import bcrypt
 from fastapi import APIRouter, Request, HTTPException
+from event_.event_ import event_emit
 from mysql_.mysql_ import mysql_get_db_async
 from setting_.setting_ import setting_get, setting_set
 from i18n_.i18n_ import i18n_languages_parse
@@ -90,6 +91,8 @@ async def login(request: Request, data: dict):
     request.session["user_id"] = user_id
     request.session["username"] = user['username']
     request.session["role"] = role
+
+    event_emit('user.login', {'user_id': user_id, 'username': user['username'], 'role': role})
 
     return {
         "message": "Успешный вход! Сессия создана.",

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rhapsody Panel</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="/static/css/common.css">
+    <link rel="stylesheet" href="/static/css/notification.css">
+
+    <style>
+        body {
+            background: var(--tg-theme-bg-color, #f5f6f8);
+            color: var(--tg-theme-text-color, #2c3e50);
+        }
+
+        .panel-wrapper {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 16px;
+            box-sizing: border-box;
+        }
+
+        .panel-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin: 20px 0 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #8e9091;
+        }
+
+        .panel-card {
+            background: #ffffff;
+            border: 1px solid #edf2f7;
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 8px;
+        }
+
+        .event-row {
+            font-size: 13px;
+            border-bottom: 1px solid #edf2f7;
+            padding: 8px 0;
+        }
+
+        .event-row:last-child {
+            border-bottom: none;
+        }
+
+        .event-type {
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .event-time {
+            float: right;
+            color: #94a3b8;
+            font-size: 11px;
+        }
+
+        .agent-row {
+            font-size: 14px;
+            padding: 8px 0;
+            border-bottom: 1px solid #edf2f7;
+        }
+
+        .agent-row:last-child {
+            border-bottom: none;
+        }
+
+        .empty-state, .denied-state {
+            text-align: center;
+            color: #94a3b8;
+            padding: 40px 16px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+<div class="panel-wrapper" id="panelWrapper">
+    <div class="empty-state">Загрузка...</div>
+</div>
+
+<script type="module">
+    import {getData, postData} from '/static/js/api.js';
+
+    const wrapper = document.getElementById('panelWrapper');
+    const tg = window.Telegram?.WebApp;
+
+    async function init() {
+        tg?.ready();
+        tg?.expand();
+
+        const initData = tg?.initData || '';
+
+        try {
+            await postData('/telegram-app/auth', {init_data: initData});
+        } catch (err) {
+            wrapper.innerHTML = `<div class="denied-state">⛔ Доступ запрещён</div>`;
+            return;
+        }
+
+        const [eventsRes, agentsRes] = await Promise.all([
+            getData('/telegram-app/events'),
+            getData('/telegram-app/agents'),
+        ]);
+
+        render(eventsRes.result || [], agentsRes.result || []);
+    }
+
+    function render(events, agents) {
+        const eventsHtml = events.length
+            ? events.map(e => `
+                <div class="event-row">
+                    <span class="event-time">${escapeHtml(e.created_at || '')}</span>
+                    <span class="event-type">${escapeHtml(e.type)}</span>
+                </div>
+            `).join('')
+            : '<div class="empty-state">Событий пока нет</div>';
+
+        const agentsHtml = agents.length
+            ? agents.map(a => `<div class="agent-row">${escapeHtml(a.title || a.name)}</div>`).join('')
+            : '<div class="empty-state">Агентов пока нет</div>';
+
+        wrapper.innerHTML = `
+            <div class="panel-title">Последние события</div>
+            <div class="panel-card">${eventsHtml}</div>
+
+            <div class="panel-title">Агенты</div>
+            <div class="panel-card">${agentsHtml}</div>
+        `;
+    }
+
+    function escapeHtml(t) {
+        return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    init();
+</script>
+</body>
+</html>

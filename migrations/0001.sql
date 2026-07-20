@@ -396,3 +396,14 @@ CREATE TABLE `detective_case` (
     INDEX `idx_detective_case_session` (`session_uuid`),
     CONSTRAINT `fk_detective_case_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Журнал событий event-системы (py_modules/event_/event_.py): аудит + лента
+-- для Telegram Mini App. Без FK - события системные и не привязаны к ноде.
+CREATE TABLE `event_log` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `type` VARCHAR(100) NOT NULL,
+    `payload` JSON NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_event_log_type` (`type`),
+    INDEX `idx_event_log_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

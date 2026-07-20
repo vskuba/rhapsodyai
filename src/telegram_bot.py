@@ -3,6 +3,7 @@ import queue
 
 from functools import partial
 from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
 
 from config.config import config_get
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
@@ -18,12 +19,35 @@ agent_manager = AiFrameworkAgentManager()
 # Пользователь-владелец телеграм-бота: его очередь LLM используется для ответов
 TELEGRAM_BOT_USER_ID = 1
 
+
 async def init_telegram_bot(agent_name: str):
     bot = Bot(token=config_get('TELEGRAM_TOKEN'))
     dp = Dispatcher()
 
+    await bot.set_my_commands([
+        types.BotCommand(command='start', description='Начать работу с ботом'),
+        types.BotCommand(command='help', description='Список доступных команд'),
+    ])
+
+    @dp.message(Command('start', 'help'))
+    async def handle_help(message: types.Message):
+        if not _is_owner(message):
+            await message.answer("⛔ Доступ запрещён.")
+            return
+
+        await message.answer(
+            "📋 Доступные команды:\n"
+            "/help — это меню\n\n"
+            "Любое другое сообщение (текст или голос) отправляется агенту "
+            f"\"{agent_name}\" как обычный запрос."
+        )
+
     @dp.message()
     async def handle_message(message: types.Message):
+        if not _is_owner(message):
+            await message.answer("⛔ Доступ запрещён.")
+            return
+
         user_text = ""
 
         # 1. Если это текст
@@ -105,3 +129,8 @@ async def init_telegram_bot(agent_name: str):
 
     # Запускаем бесконечный поллинг
     await dp.start_polling(bot, handle_signals=False)
+
+
+def _is_owner(message: types.Message) -> bool:
+    owner_chat_id = config_get('TELEGRAM_OWNER_CHAT_ID')
+    return bool(owner_chat_id) and message.chat.id == int(owner_chat_id)

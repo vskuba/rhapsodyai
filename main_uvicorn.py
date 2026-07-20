@@ -27,6 +27,8 @@ from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.event.event_handlers import event_handlers_register
+from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import dashboard
 from src.uvicorn.routers.agent import agent
@@ -37,6 +39,7 @@ from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
+from src.uvicorn.routers.telegram_app import telegram_app
 from src.uvicorn.routers.tool import tool
 from src.uvicorn.routers.translate import translate
 from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_variable, workflow_trace
@@ -55,6 +58,9 @@ async def lifespan(app: FastAPI):
     print("Starting Uvicorn (Fast-Api) mode...")
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
+
+    event_handlers_register()
+    await telegram_notify_bot_setup()
 
     queue_init([
         'chat',
@@ -171,7 +177,8 @@ async def auth_middleware(request: Request, call_next):
                 '/favicon.ico',
                 '/static',
                 '/play',
-                '/user'
+                '/user',
+                '/telegram-app'
             ],
         },
         "exact": {
@@ -364,3 +371,4 @@ app.include_router(workflow_trace.router, include_in_schema=False)
 app.include_router(tool.router, include_in_schema=False)
 app.include_router(fact_collection.router, include_in_schema=False)
 app.include_router(companion.router, include_in_schema=False)
+app.include_router(telegram_app.router, include_in_schema=False)
