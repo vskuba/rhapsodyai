@@ -65,8 +65,8 @@ async def llm_status(node_id: int | None = None, reset_hours: int | None = None,
         if not nodes:
             return {"result": {"nodes": [], "node_id": None, "reset_hours": hours, "llms": []}}
 
-        # По умолчанию — первая нода
-        selected_node_id = node_id if node_id in {n['id'] for n in nodes} else nodes[0]['id']
+        # По умолчанию — нода последнего LLM-запроса (а не первая по алфавиту)
+        selected_node_id = node_id if node_id in {n['id'] for n in nodes} else await _llm_node_last_used_get(db, nodes)
 
         # Порядок отображения — приоритет (position), как настроено в node_llm
         await db.execute(
@@ -311,3 +311,16 @@ async def _ping_get(llm_id: int) -> dict | None:
         return json.loads(value)
     except (ValueError, TypeError):
         return None
+
+
+async def _llm_node_last_used_get(db, nodes: list[dict]) -> int:
+    """Нода последнего LLM-запроса (llm_request.node_id) — фоллбэк, если node_id не передан.
+    Если запросов еще не было, откатываемся на первую ноду по алфавиту."""
+    await db.execute(
+        "SELECT node_id FROM llm_request WHERE node_id IS NOT NULL ORDER BY created_at DESC LIMIT 1"
+    )
+    row = await db.fetchone()
+    node_ids = {n['id'] for n in nodes}
+    if row and row['node_id'] in node_ids:
+        return row['node_id']
+    return nodes[0]['id']
