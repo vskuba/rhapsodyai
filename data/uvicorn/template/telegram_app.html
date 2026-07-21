@@ -225,7 +225,6 @@
 
         .chat-input-bar {
             flex-shrink: 0;
-            display: flex;
             align-items: center;
             gap: 8px;
             padding: 10px 12px;
@@ -252,6 +251,17 @@
             font-size: 16px;
             cursor: pointer;
             flex-shrink: 0;
+        }
+
+        .plan-text-input {
+            resize: none;
+            font-family: inherit;
+            line-height: 1.4;
+            border-radius: 14px;
+        }
+
+        #planInputBar {
+            align-items: flex-end;
         }
 
         .mic-wrap {
@@ -428,7 +438,7 @@
             <button class="mic-cancel" id="planMicCancel">✕</button>
             <button class="mic-btn" id="planMicBtn">🎤</button>
         </div>
-        <input type="text" class="chat-text-input" id="planTextInput" placeholder="Инструкция по правке...">
+        <textarea class="chat-text-input plan-text-input" id="planTextInput" rows="4" placeholder="Инструкция по правке..."></textarea>
         <button class="chat-send-btn" id="planSendBtn">➤</button>
     </div>
 </div>
@@ -685,8 +695,12 @@
     function initPlans() {
         planBackBtn.addEventListener('click', closePlanDetail);
         planSendBtn.addEventListener('click', sendPlanEdit);
+        // Textarea в 4 строки: Enter отправляет, Shift+Enter - перенос строки
         planTextInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') sendPlanEdit();
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendPlanEdit();
+            }
         });
 
         createVoiceRecorder({
