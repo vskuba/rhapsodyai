@@ -142,6 +142,11 @@ async def _telegram_agent_chat_ask(data: dict, agent_name: str) -> dict:
 
     entities_llm = await ai_llm_node_get(entity_agent.get("node_id"))
 
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT name, path FROM tool WHERE id > 0")
+        raw_tools = await db.fetchall()
+    tools = {t['name'].strip(): t['path'].strip() for t in raw_tools if t.get('name') and t.get('path')}
+
     loop = asyncio.get_running_loop()
     future = loop.create_future()
 
@@ -154,6 +159,7 @@ async def _telegram_agent_chat_ask(data: dict, agent_name: str) -> dict:
         "user_id": TELEGRAM_CHAT_USER_ID,
         "companion_id": TELEGRAM_CHAT_COMPANION_ID,
         "session_uuid": session_uuid,
+        "tools": tools,
     })
     agent_manager.framework_workflow_run(framework_model, future, loop)
 
