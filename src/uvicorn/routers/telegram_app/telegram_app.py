@@ -59,7 +59,24 @@ async def telegram_app_page(request: Request):
 
 @router.post("/telegram-app/auth")
 async def telegram_app_auth(request: Request, data: dict):
-    telegram_user_id = _telegram_init_data_verify(data.get("init_data", ""))
+    access_token = str(data.get("access_token") or "").strip()
+
+    if access_token:
+        # Открытие вне Telegram (обычный браузер, для тестирования) - нет
+        # initData для проверки; переиспользуем существующие user_access_token
+        # (та же таблица, что и X-API-KEY для остального admin API), но только
+        # для владельца (user_id=1) - Mini App не для чужих токенов
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "SELECT user_id FROM `user_access_token` WHERE token = %s AND user_id = 1",
+                (access_token,)
+            )
+            row = await db.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="Invalid access_token")
+        telegram_user_id = row["user_id"]
+    else:
+        telegram_user_id = _telegram_init_data_verify(data.get("init_data", ""))
 
     request.session["telegram_owner_id"] = telegram_user_id
 

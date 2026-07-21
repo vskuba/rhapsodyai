@@ -669,9 +669,12 @@
         tg?.expand();
 
         const initData = tg?.initData || '';
+        // Доступ вне Telegram (обычный браузер, для тестирования) - через
+        // ?access_token= в URL вместо initData
+        const accessToken = new URLSearchParams(window.location.search).get('access_token') || '';
 
         try {
-            await postData('/telegram-app/auth', {init_data: initData});
+            await postData('/telegram-app/auth', {init_data: initData, access_token: accessToken});
         } catch (err) {
             eventsTab.innerHTML = '<div class="denied-state">⛔ Доступ запрещён</div>';
             return;
