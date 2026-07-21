@@ -213,6 +213,36 @@
             display: block;
         }
 
+        /* Индикатор "Claude думает": замена текстового "..." на пульсирующие
+           точки - исчезает сам, как только приходит настоящий ответ */
+        .typing-dots {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 0;
+        }
+
+        .typing-dots span {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #D97757;
+            animation: typing-bounce 1.2s infinite ease-in-out;
+        }
+
+        .typing-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing-bounce {
+            0%, 60%, 100% { transform: scale(0.6); opacity: 0.4; }
+            30% { transform: scale(1); opacity: 1; }
+        }
+
         #chatSendBtnClaude, #claudeSendBtn {
             background: #D97757;
         }
@@ -578,6 +608,7 @@
     let claudeSessionUuid = null;
     let claudePollTimer = null;
     let claudeRenderedCount = 0;
+    let claudeTypingBubble = null;
     let currentTab = 'events';
     let currentPlanId = null;
 
@@ -818,6 +849,17 @@
         return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // Пузырь "Claude думает": пульсирующие точки вместо текста "...".
+    // Убирается сам, как только приходит настоящий ответ (см. loadClaudeMessages)
+    function appendTypingIndicator(container) {
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble assistant';
+        bubble.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+        container.appendChild(bubble);
+        container.scrollTop = container.scrollHeight;
+        return bubble;
+    }
+
     // Отдельный чат с Claude Code: свой агент/workflow/история (не смешивается
     // с telegram_assistant). Ответ на /claude/ask всегда "..." мгновенно -
     // настоящий ответ Claude Code пишет позже отдельным процессом прямо в
@@ -850,7 +892,8 @@
         claudeTextInput.value = '';
         appendBubble('user', message, false, claudeMessagesEl);
         claudeRenderedCount++;
-        appendBubble('assistant', '...', false, claudeMessagesEl);
+        claudeTypingBubble?.remove();
+        claudeTypingBubble = appendTypingIndicator(claudeMessagesEl);
         claudeRenderedCount++;
 
         claudeProgress.classList.add('active');
@@ -862,24 +905,29 @@
             claudeSessionUuid = data.session_uuid || claudeSessionUuid;
             updateClaudePolling();
         } catch (err) {
+            claudeTypingBubble?.remove();
+            claudeTypingBubble = null;
             appendBubble('assistant', '⚠️ ' + (err.message || 'Ошибка'), false, claudeMessagesEl);
-            claudeRenderedCount++;
         } finally {
             claudeProgress.classList.remove('active');
         }
     }
 
     // Раз в несколько секунд подтягивает полную историю сессии и дорисовывает
-    // только новые сообщения (ответ Claude Code появляется в agent_session
-    // асинхронно, после того как этот запрос уже вернул "...")
+    // только новые сообщения. Плейсхолдер "..." (пульсирующие точки на клиенте)
+    // не дублируется текстом; как только приходит настоящий ответ Claude Code
+    // (любой response-final с содержимым, отличным от "..."), индикатор
+    // убирается и появляется реальный ответ
     async function loadClaudeMessages() {
         if (!claudeSessionUuid) return;
         try {
             const res = await getData(`/telegram-app/claude/messages?session_uuid=${encodeURIComponent(claudeSessionUuid)}`);
             const rows = res.result || [];
             for (const row of rows.slice(claudeRenderedCount)) {
-                const role = row.kind_type === 'user-prompt' ? 'user' : 'assistant';
-                appendBubble(role, row.content, false, claudeMessagesEl);
+                if (row.kind_type === 'user-prompt' || row.content === '...') continue;
+                claudeTypingBubble?.remove();
+                claudeTypingBubble = null;
+                appendBubble('assistant', row.content, false, claudeMessagesEl);
             }
             claudeRenderedCount = rows.length;
         } catch (err) {

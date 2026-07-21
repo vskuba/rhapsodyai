@@ -19,6 +19,7 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.faster_whisper.faster_whisper_model import faster_whisper_transcribe
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.event_log_repository import EventLogRepository
+from src.telegram_.telegram_notify import telegram_send_owner
 from src.tool.claude_.claude_ import claude_message_cloud
 
 router = APIRouter()
@@ -127,6 +128,10 @@ async def telegram_app_claude_respond(request: Request, data: dict):
         raise HTTPException(status_code=400, detail="inbox_id, session_uuid, response required")
 
     result = await claude_message_cloud(inbox_id=int(inbox_id), session_uuid=session_uuid, response=response)
+
+    if data.get("notify", True):
+        await telegram_send_owner(response)
+
     return {"result": result}
 
 
