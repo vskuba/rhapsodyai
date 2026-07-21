@@ -29,6 +29,10 @@ agent_manager = AiFrameworkAgentManager()
 TELEGRAM_CHAT_USER_ID = 1
 TELEGRAM_CHAT_AGENT_NAME = 'telegram_assistant'
 
+# Отдельный чат Mini App для общения с Claude Code (не LLM-ассистент) - свой
+# агент/workflow/история, не смешивается с TELEGRAM_CHAT_AGENT_NAME
+TELEGRAM_CLAUDE_AGENT_NAME = 'telegram_claude'
+
 # companion обязателен для записи истории (agent_session.companion_id FK) -
 # переиспользуем существующего 'user_admin' (id=3), другой companion не нужен
 TELEGRAM_CHAT_COMPANION_ID = 3
@@ -78,7 +82,35 @@ async def telegram_app_agents(request: Request):
 @router.post("/telegram-app/chat/ask")
 async def telegram_app_chat_ask(request: Request, data: dict):
     _require_telegram_owner(request)
+    return await _telegram_agent_chat_ask(data, TELEGRAM_CHAT_AGENT_NAME)
 
+
+@router.post("/telegram-app/claude/ask")
+async def telegram_app_claude_ask(request: Request, data: dict):
+    _require_telegram_owner(request)
+    return await _telegram_agent_chat_ask(data, TELEGRAM_CLAUDE_AGENT_NAME)
+
+
+@router.get("/telegram-app/claude/messages")
+async def telegram_app_claude_messages(request: Request, session_uuid: str):
+    _require_telegram_owner(request)
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            """
+            SELECT role, kind_type, content, created_at
+            FROM agent_session
+            WHERE session_uuid = %s AND kind_type IN ('user-prompt', 'response-final')
+            ORDER BY id ASC
+            """,
+            (session_uuid,)
+        )
+        rows = await db.fetchall()
+
+    return {"result": rows}
+
+
+async def _telegram_agent_chat_ask(data: dict, agent_name: str) -> dict:
     message = str(data.get("message") or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
@@ -86,9 +118,9 @@ async def telegram_app_chat_ask(request: Request, data: dict):
     session_uuid = data.get("session_uuid") or str(uuid.uuid4())
 
     repo_agent = AgentRepository()
-    entity_agent = await repo_agent.find_one_by({"name": TELEGRAM_CHAT_AGENT_NAME})
+    entity_agent = await repo_agent.find_one_by({"name": agent_name})
     if not entity_agent:
-        raise HTTPException(status_code=500, detail="Telegram assistant agent not found")
+        raise HTTPException(status_code=500, detail=f"Agent '{agent_name}' not found")
 
     workflow_id = entity_agent["workflow_id"]
     workflow_data = await ai_workflow_load(workflow_id)

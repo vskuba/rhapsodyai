@@ -356,6 +356,22 @@ CREATE TABLE `agent_session` (
     CONSTRAINT `fk_memory_companion` FOREIGN KEY (`companion_id`) REFERENCES `companion` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Очередь сообщений Telegram Claude chat (Mini App) для внешней обработки
+-- Claude Code: воркфлоу telegram_claude_cli кладет сюда сообщение и мгновенно
+-- отвечает "..." без LLM, настоящий ответ пишет отдельный процесс Claude Code
+-- (handled/response/responded_at) - см. migrations/0005.sql и src/tool/claude_/claude_.py
+CREATE TABLE `ai_claude_session` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_uuid` CHAR(36) NOT NULL,
+    `content` LONGTEXT NOT NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `handled` TINYINT(1) NOT NULL DEFAULT 0,
+    `response` LONGTEXT NULL,
+    `responded_at` DATETIME NULL,
+    INDEX `idx_claude_session_handled` (`handled`, `created_at`),
+    INDEX `idx_claude_session_uuid` (`session_uuid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Журнал выполнения workflow: один запуск (включая вложенные sub-workflow через parent_run_id)
 CREATE TABLE `agent_workflow_run` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,

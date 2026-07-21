@@ -74,3 +74,24 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 
 INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_id`, `workflow_variable`, `prompt_system`, `greeting`, `position`, `dynamic`) VALUES
 (33, 7, 'plan_creator', 'Создатель планов', 'Служебный агент: создает новый план (Markdown) по инструкции пользователя', 17, NULL, 'Ты внимательный помощник по составлению структурированных текстовых планов.', '', 2, 0);
+
+-- Claude CLI: отдельный чат Mini App для общения с Claude Code (не с обычным
+-- LLM-ассистентом telegram_assistant). Воркфлоу не вызывает LLM вообще: шаг
+-- tool_invoke кладет сообщение в очередь ai_claude_session (см. 0001.sql),
+-- шаг return_response_text мгновенно отвечает "...". Реальный ответ пишет
+-- отдельный внешний процесс (Claude Code), опрашивающий ai_claude_session,
+-- напрямую в agent_session (виден в этом же чате) и дублирует его в Telegram.
+
+INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`, `subflow`) VALUES
+(18, 7, 'telegram_claude_cli', 'Claude CLI', 'Кладет сообщение в очередь ai_claude_session для Claude Code и мгновенно отвечает без LLM', 3, 0);
+
+--
+
+INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) VALUES
+(160, 18, 3, 'В очередь Claude Code', 0, '{"tool_invoke":{"tool_name":"claude_message_user","inputs_map":{"prompt_user":"prompt_user","session_uuid":"session_uuid"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
+(161, 18, 4, 'Ответ', 1, '{"prompt_user":"...","continue_workflow":false,"transitions_before":[],"transitions_after":[]}');
+
+--
+
+INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_id`, `workflow_variable`, `prompt_system`, `greeting`, `position`, `dynamic`) VALUES
+(34, 7, 'telegram_claude', 'Claude', 'Отдельный чат для общения с Claude Code (не LLM-ассистент) через Telegram Mini App', 18, NULL, '', 'Напишите сообщение — Claude Code ответит здесь и в Telegram.', 3, 0);

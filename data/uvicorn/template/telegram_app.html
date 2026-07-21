@@ -201,6 +201,22 @@
             font-style: italic;
         }
 
+        /* --- Claude tab: тот же чат-UI, что и обычный чат, но с акцентным
+           оранжевым цветом, чтобы визуально не путать с telegram_assistant --- */
+        #tab-claude .chat-bubble.user {
+            background: #D97757;
+        }
+
+        .claude-icon {
+            width: 26px;
+            height: 26px;
+            display: block;
+        }
+
+        #chatSendBtnClaude, #claudeSendBtn {
+            background: #D97757;
+        }
+
         /* Прогресс-бар и input-бар вынесены за пределы .content-panel: общий
            ряд на всю ширину экрана (под обеими колонками), не только под чатом */
         .chat-progress {
@@ -430,6 +446,21 @@
         <div class="icon-sidebar">
             <div class="icon-sidebar-group active-group" id="sidebarDefaultIcons">
                 <button class="icon-btn active" id="tabBtnEvents" data-tab="events" title="События">🔔</button>
+                <button class="icon-btn" id="tabBtnClaude" data-tab="claude" title="Claude">
+                    <svg class="claude-icon" viewBox="0 0 24 24">
+                        <g fill="#D97757">
+                            <path d="M12 1 L13.4 9.4 L12 12 L10.6 9.4 Z"/>
+                            <path d="M12 23 L13.4 14.6 L12 12 L10.6 14.6 Z"/>
+                            <path d="M1 12 L9.4 10.6 L12 12 L9.4 13.4 Z"/>
+                            <path d="M23 12 L14.6 10.6 L12 12 L14.6 13.4 Z"/>
+                            <path d="M4.2 4.2 L11.3 10.2 L12 12 L9.8 11.3 Z"/>
+                            <path d="M19.8 19.8 L12.7 13.8 L12 12 L14.2 12.7 Z"/>
+                            <path d="M19.8 4.2 L12.7 10.2 L12 12 L14.2 11.3 Z"/>
+                            <path d="M4.2 19.8 L11.3 13.8 L12 12 L9.8 12.7 Z"/>
+                        </g>
+                        <circle cx="12" cy="12" r="2.4" fill="#D97757"/>
+                    </svg>
+                </button>
                 <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
                 <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
             </div>
@@ -444,6 +475,10 @@
                 <div class="empty-state">Загрузка...</div>
             </div>
 
+            <div class="tab-view" id="tab-claude">
+                <div class="chat-messages" id="claudeMessages"></div>
+            </div>
+
             <div class="tab-view" id="tab-chat">
                 <div class="chat-messages" id="chatMessages"></div>
             </div>
@@ -456,6 +491,16 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <div class="chat-progress" id="claudeProgress"><div class="chat-progress-fill"></div></div>
+    <div class="chat-input-bar" id="claudeInputBar">
+        <div class="mic-wrap">
+            <button class="mic-cancel" id="claudeMicCancel">✕</button>
+            <button class="mic-btn" id="claudeMicBtn">🎤</button>
+        </div>
+        <textarea class="chat-text-input plan-text-input" id="claudeTextInput" rows="4" placeholder="Сообщение для Claude Code..."></textarea>
+        <button class="chat-send-btn" id="claudeSendBtn">➤</button>
     </div>
 
     <div class="chat-progress" id="chatProgress"><div class="chat-progress-fill"></div></div>
@@ -500,6 +545,14 @@
     const chatProgress = document.getElementById('chatProgress');
     const chatInputBar = document.getElementById('chatInputBar');
 
+    const claudeMessagesEl = document.getElementById('claudeMessages');
+    const claudeTextInput = document.getElementById('claudeTextInput');
+    const claudeSendBtn = document.getElementById('claudeSendBtn');
+    const claudeMicBtn = document.getElementById('claudeMicBtn');
+    const claudeMicCancel = document.getElementById('claudeMicCancel');
+    const claudeProgress = document.getElementById('claudeProgress');
+    const claudeInputBar = document.getElementById('claudeInputBar');
+
     const plansListView = document.getElementById('plansListView');
     const plansDetailView = document.getElementById('plansDetailView');
     const planDetailTitle = document.getElementById('planDetailTitle');
@@ -522,6 +575,9 @@
     const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
 
     let chatSessionUuid = null;
+    let claudeSessionUuid = null;
+    let claudePollTimer = null;
+    let claudeRenderedCount = 0;
     let currentTab = 'events';
     let currentPlanId = null;
 
@@ -540,6 +596,7 @@
 
         initTabs();
         initChat();
+        initClaude();
         initPlans();
         await loadEvents();
     }
@@ -557,6 +614,7 @@
                 currentTab = btn.dataset.tab;
                 if (currentTab === 'plans') loadPlans();
                 updateInputBarsVisibility();
+                updateClaudePolling();
             });
         });
     }
@@ -567,6 +625,10 @@
         const isChatTab = currentTab === 'chat';
         chatInputBar.classList.toggle('chat-visible', isChatTab);
         chatProgress.classList.toggle('chat-visible', isChatTab);
+
+        const isClaudeTab = currentTab === 'claude';
+        claudeInputBar.classList.toggle('chat-visible', isClaudeTab);
+        claudeProgress.classList.toggle('chat-visible', isClaudeTab);
 
         const isPlanDetailOpen = currentTab === 'plans' && currentPlanId !== null;
         planInputBar.classList.toggle('chat-visible', isPlanDetailOpen);
@@ -743,17 +805,97 @@
         }
     }
 
-    function appendBubble(role, text, pending = false) {
+    function appendBubble(role, text, pending = false, container = chatMessagesEl) {
         const bubble = document.createElement('div');
         bubble.className = `chat-bubble ${role}${pending ? ' pending' : ''}`;
         bubble.textContent = text;
-        chatMessagesEl.appendChild(bubble);
-        chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        container.appendChild(bubble);
+        container.scrollTop = container.scrollHeight;
         return bubble;
     }
 
     function escapeHtml(t) {
         return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Отдельный чат с Claude Code: свой агент/workflow/история (не смешивается
+    // с telegram_assistant). Ответ на /claude/ask всегда "..." мгновенно -
+    // настоящий ответ Claude Code пишет позже отдельным процессом прямо в
+    // agent_session, поэтому вкладку нужно периодически опрашивать
+    function initClaude() {
+        claudeSendBtn.addEventListener('click', sendClaudeMessage);
+        claudeTextInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendClaudeMessage();
+            }
+        });
+
+        createVoiceRecorder({
+            micBtn: claudeMicBtn,
+            cancelBtn: claudeMicCancel,
+            progressEl: claudeProgress,
+            onError: () => appendBubble('assistant', '⚠️ Не удалось распознать голос', false, claudeMessagesEl),
+            onTranscript: async (text) => {
+                claudeTextInput.value = text;
+                await sendClaudeMessage();
+            },
+        });
+    }
+
+    async function sendClaudeMessage() {
+        const message = claudeTextInput.value.trim();
+        if (!message) return;
+
+        claudeTextInput.value = '';
+        appendBubble('user', message, false, claudeMessagesEl);
+        claudeRenderedCount++;
+        appendBubble('assistant', '...', false, claudeMessagesEl);
+        claudeRenderedCount++;
+
+        claudeProgress.classList.add('active');
+        try {
+            const data = await postData('/telegram-app/claude/ask', {
+                message,
+                session_uuid: claudeSessionUuid
+            });
+            claudeSessionUuid = data.session_uuid || claudeSessionUuid;
+            updateClaudePolling();
+        } catch (err) {
+            appendBubble('assistant', '⚠️ ' + (err.message || 'Ошибка'), false, claudeMessagesEl);
+            claudeRenderedCount++;
+        } finally {
+            claudeProgress.classList.remove('active');
+        }
+    }
+
+    // Раз в несколько секунд подтягивает полную историю сессии и дорисовывает
+    // только новые сообщения (ответ Claude Code появляется в agent_session
+    // асинхронно, после того как этот запрос уже вернул "...")
+    async function loadClaudeMessages() {
+        if (!claudeSessionUuid) return;
+        try {
+            const res = await getData(`/telegram-app/claude/messages?session_uuid=${encodeURIComponent(claudeSessionUuid)}`);
+            const rows = res.result || [];
+            for (const row of rows.slice(claudeRenderedCount)) {
+                const role = row.kind_type === 'user-prompt' ? 'user' : 'assistant';
+                appendBubble(role, row.content, false, claudeMessagesEl);
+            }
+            claudeRenderedCount = rows.length;
+        } catch (err) {
+            // Тихо пропускаем - следующий опрос попробует снова
+        }
+    }
+
+    // Опрос идет только пока открыта вкладка Claude - не тратим запросы впустую
+    function updateClaudePolling() {
+        if (claudePollTimer) {
+            clearInterval(claudePollTimer);
+            claudePollTimer = null;
+        }
+        if (currentTab === 'claude' && claudeSessionUuid) {
+            claudePollTimer = setInterval(loadClaudeMessages, 4000);
+        }
     }
 
     function initPlans() {
