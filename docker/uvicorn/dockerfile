@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV HF_HOME=/root/.cache/huggingface
 ENV FASTEMBED_CACHE_PATH=/root/.cache/fastembed
 
-RUN python3 -c "from faster_whisper import download_model; download_model('base')"
+RUN python3 -c "from faster_whisper import download_model; download_model('base'); download_model('small')"
 RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 RUN python3 -c "from fastembed import TextEmbedding, SparseTextEmbedding; TextEmbedding(model_name='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'); SparseTextEmbedding(model_name='Qdrant/bm25')"
