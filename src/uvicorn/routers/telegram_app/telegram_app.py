@@ -19,6 +19,7 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.faster_whisper.faster_whisper_model import faster_whisper_transcribe
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.event_log_repository import EventLogRepository
+from src.tool.claude_.claude_ import claude_message_cloud
 
 router = APIRouter()
 
@@ -108,6 +109,32 @@ async def telegram_app_claude_messages(request: Request, session_uuid: str):
         rows = await db.fetchall()
 
     return {"result": rows}
+
+
+@router.post("/telegram-app/claude/respond")
+async def telegram_app_claude_respond(request: Request, data: dict):
+    """
+    Вызывается извне (процесс Claude Code, опрашивающий ai_claude_session) -
+    не Mini App, поэтому авторизация через общий секрет (заголовок), а не
+    сессию владельца.
+    """
+    _require_claude_secret(request)
+
+    inbox_id = data.get("inbox_id")
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    response = str(data.get("response") or "").strip()
+    if not inbox_id or not session_uuid or not response:
+        raise HTTPException(status_code=400, detail="inbox_id, session_uuid, response required")
+
+    result = await claude_message_cloud(inbox_id=int(inbox_id), session_uuid=session_uuid, response=response)
+    return {"result": result}
+
+
+def _require_claude_secret(request: Request):
+    expected = config_get("TELEGRAM_NOTIFY_TOKEN")
+    provided = request.headers.get("X-Claude-Secret")
+    if not expected or not provided or not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
 
 async def _telegram_agent_chat_ask(data: dict, agent_name: str) -> dict:
