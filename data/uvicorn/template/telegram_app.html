@@ -391,6 +391,21 @@
             height: 16px;
             flex-shrink: 0;
         }
+
+        /* Панель "создать план": только микрофон по центру, показывается на
+           списке планов (пока не открыт конкретный план) */
+        .mic-only-bar {
+            display: none;
+            justify-content: center;
+            flex-shrink: 0;
+            padding: 12px;
+            border-top: 1px solid #edf2f7;
+            background: #ffffff;
+        }
+
+        .mic-only-bar.chat-visible {
+            display: flex;
+        }
     </style>
 </head>
 <body>
@@ -441,6 +456,14 @@
         <textarea class="chat-text-input plan-text-input" id="planTextInput" rows="4" placeholder="Инструкция по правке..."></textarea>
         <button class="chat-send-btn" id="planSendBtn">➤</button>
     </div>
+
+    <div class="chat-progress" id="planCreateProgress"><div class="chat-progress-fill"></div></div>
+    <div class="mic-only-bar" id="planCreateBar">
+        <div class="mic-wrap">
+            <button class="mic-cancel" id="planCreateMicCancel">✕</button>
+            <button class="mic-btn" id="planCreateMicBtn">🎤</button>
+        </div>
+    </div>
 </div>
 
 <script type="module">
@@ -467,6 +490,11 @@
     const planMicCancel = document.getElementById('planMicCancel');
     const planProgress = document.getElementById('planProgress');
     const planInputBar = document.getElementById('planInputBar');
+
+    const planCreateBar = document.getElementById('planCreateBar');
+    const planCreateProgress = document.getElementById('planCreateProgress');
+    const planCreateMicBtn = document.getElementById('planCreateMicBtn');
+    const planCreateMicCancel = document.getElementById('planCreateMicCancel');
 
     let chatSessionUuid = null;
     let currentTab = 'events';
@@ -516,6 +544,11 @@
         const isPlanDetailOpen = currentTab === 'plans' && currentPlanId !== null;
         planInputBar.classList.toggle('chat-visible', isPlanDetailOpen);
         planProgress.classList.toggle('chat-visible', isPlanDetailOpen);
+
+        // Микрофон создания плана - только на списке планов, пока ни один не открыт
+        const isPlansListOpen = currentTab === 'plans' && currentPlanId === null;
+        planCreateBar.classList.toggle('chat-visible', isPlansListOpen);
+        planCreateProgress.classList.toggle('chat-visible', isPlansListOpen);
     }
 
     async function loadEvents() {
@@ -713,6 +746,16 @@
                 await sendPlanEdit();
             },
         });
+
+        // Микрофон на списке планов - только создание нового плана с нуля;
+        // микрофон внутри открытого плана (выше) - только правка уже созданного
+        createVoiceRecorder({
+            micBtn: planCreateMicBtn,
+            cancelBtn: planCreateMicCancel,
+            progressEl: planCreateProgress,
+            onError: () => showPlansListError('Не удалось распознать голос'),
+            onTranscript: createPlanFromInstruction,
+        });
     }
 
     async function loadPlans() {
@@ -728,10 +771,31 @@
     function renderPlansList(plans) {
         plansListView.innerHTML = plans.length
             ? plans.map(p => `<div class="plan-list-item" data-id="${p.id}">${escapeHtml(p.title)}</div>`).join('')
-            : '<div class="empty-state">Планов пока нет</div>';
+            : '<div class="empty-state">Планов пока нет. Надиктуйте новый план в микрофон внизу</div>';
 
         plansListView.querySelectorAll('.plan-list-item').forEach(el =>
             el.addEventListener('click', () => openPlanDetail(Number(el.dataset.id))));
+    }
+
+    async function createPlanFromInstruction(instruction) {
+        planCreateProgress.classList.add('active');
+        try {
+            const data = await postData('/telegram-app/plans', {instruction});
+            await loadPlans();
+            await openPlanDetail(data.result.id);
+        } catch (err) {
+            showPlansListError(err.message || 'Не удалось создать план');
+        } finally {
+            planCreateProgress.classList.remove('active');
+        }
+    }
+
+    function showPlansListError(message) {
+        const banner = document.createElement('div');
+        banner.className = 'denied-state';
+        banner.style.color = '#e74c3c';
+        banner.textContent = '⚠️ ' + message;
+        plansListView.prepend(banner);
     }
 
     async function openPlanDetail(planId) {

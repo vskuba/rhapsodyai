@@ -1,4 +1,5 @@
 import asyncio
+import re
 import uuid
 
 from fastapi import APIRouter, Request, HTTPException
@@ -17,7 +18,8 @@ from src.uvicorn.routers.telegram_app.telegram_app import (
 router = APIRouter()
 
 TELEGRAM_PLAN_USER_ID = TELEGRAM_CHAT_USER_ID
-TELEGRAM_PLAN_AGENT_NAME = 'plan_editor'
+TELEGRAM_PLAN_EDITOR_AGENT_NAME = 'plan_editor'
+TELEGRAM_PLAN_CREATOR_AGENT_NAME = 'plan_creator'
 
 
 @router.get("/telegram-app/plans")
@@ -46,6 +48,31 @@ async def telegram_app_plan_get(request: Request, plan_id: int):
     return {"result": entity_plan}
 
 
+@router.post("/telegram-app/plans")
+async def telegram_app_plan_create(request: Request, data: dict):
+    _require_telegram_owner(request)
+
+    instruction = str(data.get("instruction") or "").strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="Instruction is required")
+
+    content = await _plan_workflow_run(TELEGRAM_PLAN_CREATOR_AGENT_NAME, instruction)
+
+    title_match = re.match(r"^#\s+(.+)$", content, re.MULTILINE)
+    title = (title_match.group(1).strip() if title_match else instruction)[:150]
+
+    plan_id = await PlanRepository().add({
+        "node_id": None,
+        "user_id": TELEGRAM_PLAN_USER_ID,
+        "title": title,
+        "content": content,
+        "status": "active",
+        "position": 0,
+    })
+
+    return {"result": {"id": plan_id, "title": title, "content": content}, "instruction": instruction}
+
+
 @router.post("/telegram-app/plans/{plan_id}/edit")
 async def telegram_app_plan_edit(request: Request, plan_id: int, data: dict):
     _require_telegram_owner(request)
@@ -58,15 +85,27 @@ async def telegram_app_plan_edit(request: Request, plan_id: int, data: dict):
     if not instruction:
         raise HTTPException(status_code=400, detail="Instruction is required")
 
+    updated_content = await _plan_workflow_run(
+        TELEGRAM_PLAN_EDITOR_AGENT_NAME, instruction,
+        extra_variables={"plan_current_content": entity_plan["content"]}
+    )
+    await PlanRepository().update(plan_id, {"content": updated_content})
+
+    return {"result": {"content": updated_content}, "instruction": instruction}
+
+
+async def _plan_workflow_run(agent_name: str, instruction: str, extra_variables: dict | None = None) -> str:
+    """Прогоняет instruction через одношаговый workflow агента (return_response_llm)
+    и возвращает его текстовый ответ. Общая часть для создания и правки плана -
+    отдельная одноразовая сессия, не смешивается с историей чата."""
     repo_agent = AgentRepository()
-    entity_agent = await repo_agent.find_one_by({"name": TELEGRAM_PLAN_AGENT_NAME})
+    entity_agent = await repo_agent.find_one_by({"name": agent_name})
     if not entity_agent or not entity_agent.get("workflow_id"):
-        raise HTTPException(status_code=500, detail="Plan editor agent not found")
+        raise HTTPException(status_code=500, detail=f"Agent '{agent_name}' not found")
 
     workflow_id = entity_agent["workflow_id"]
     workflow_data = await ai_workflow_load(workflow_id)
 
-    # Отдельная одноразовая сессия: правки плана не смешиваются с историей чата
     session_uuid = str(uuid.uuid4())
     workflow_variables_all = {
         **ai_workflow_variables_base(
@@ -76,13 +115,13 @@ async def telegram_app_plan_edit(request: Request, plan_id: int, data: dict):
             session_uuid=session_uuid,
             workflow_id=workflow_id,
         ),
-        "plan_current_content": entity_plan["content"],
+        **(extra_variables or {}),
     }
     ai_workflow_variables_defaults_apply(workflow_variables_all, workflow_data["variables"])
 
     entities_llm = await ai_llm_node_get(entity_agent.get("node_id"))
     if not entities_llm:
-        raise HTTPException(status_code=404, detail="LLM models not found for agent 'plan_editor'")
+        raise HTTPException(status_code=404, detail=f"LLM models not found for agent '{agent_name}'")
 
     loop = asyncio.get_running_loop()
     future = loop.create_future()
@@ -103,9 +142,6 @@ async def telegram_app_plan_edit(request: Request, plan_id: int, data: dict):
         result_text = await asyncio.wait_for(future, timeout=60.0)
     except asyncio.TimeoutError:
         future.cancel()
-        raise HTTPException(status_code=504, detail="Превышено время ожидания правки плана (60 сек.)")
+        raise HTTPException(status_code=504, detail=f"Превышено время ожидания ответа агента '{agent_name}' (60 сек.)")
 
-    updated_content = str(result_text).strip()
-    await PlanRepository().update(plan_id, {"content": updated_content})
-
-    return {"result": {"content": updated_content}, "instruction": instruction}
+    return str(result_text).strip()

@@ -55,3 +55,22 @@ INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `descrip
 
 INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VALUES
 (185, 16);
+
+-- Создатель планов: с экрана списка планов (до открытия конкретного плана)
+-- пользователь надиктовывает/печатает описание нового плана - агент создает
+-- документ Markdown с нуля (первая строка - заголовок "# ..."), см.
+-- src/uvicorn/routers/telegram_app/telegram_app_plan.py (POST /telegram-app/plans).
+-- Отдельный агент от plan_editor: там разметка "текст+правка", здесь - "создать с нуля".
+
+INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`, `subflow`) VALUES
+(17, 7, 'plan_creator', 'Создатель планов', 'Создает новый план (Markdown) с нуля по инструкции пользователя', 2, 0);
+
+--
+
+INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) VALUES
+(159, 17, 1, 'Создать план', 0, '{"transitions_before": [], "transitions_after": [], "prompt_user": "Ты - помощник по созданию текстовых планов в формате Markdown. Пользователь (обычно голосом) описал, какой план ему нужен.\\n\\n=== Инструкция пользователя ===\\n%prompt_user%\\n\\n=== Правила ===\\n1. Первая строка результата - короткий заголовок плана в виде \\"# Название плана\\".\\n2. Дальше, если из инструкции понятны шаги, оформляй их как чекбоксы Markdown: \\"- [ ] шаг\\" (пока не выполнен).\\n3. Верни ТОЛЬКО итоговый текст плана целиком в Markdown, без пояснений, без обрамления в кавычки или блоки кода, без вступлений."}');
+
+--
+
+INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_id`, `workflow_variable`, `prompt_system`, `greeting`, `position`, `dynamic`) VALUES
+(33, 7, 'plan_creator', 'Создатель планов', 'Служебный агент: создает новый план (Markdown) по инструкции пользователя', 17, NULL, 'Ты внимательный помощник по составлению структурированных текстовых планов.', '', 2, 0);
