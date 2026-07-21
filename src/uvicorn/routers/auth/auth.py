@@ -41,14 +41,6 @@ async def guest_login(request: Request):
             (guest_username, f"{guest_username}@guest.local", random_password_hash)
         )
         new_user_id = db.lastrowid
-
-        # Та же ротация LLM, что у admin (user_id=1) - без своего набора
-        # /chat/ask ответит 404 "LLM models not found"
-        await db.execute(
-            "INSERT INTO user_llm (user_id, llm_id, position) "
-            "SELECT %s, llm_id, position FROM user_llm WHERE user_id = 1",
-            (new_user_id,)
-        )
         await db.connection.commit()
 
     request.session["user_id"] = new_user_id
@@ -123,12 +115,6 @@ async def me(request: Request):
             (user_id,)
         )
         user = await db.fetchone()
-
-        if user:
-            # Получаем все связанные LLM
-            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC, `position` ASC", (user_id,))
-            llm_rows = await db.fetchall()
-            user['llm_ids'] = [row['llm_id'] for row in llm_rows]
 
     if not user:
         request.session.clear()
@@ -213,11 +199,6 @@ async def update_me(request: Request, data: dict):
             (user_id,)
         )
         updated_user = await db.fetchone()
-
-        if updated_user:
-            await db.execute("SELECT llm_id FROM user_llm WHERE user_id = %s ORDER BY rate_limit_at ASC, `position` ASC", (user_id,))
-            llm_rows = await db.fetchall()
-            updated_user['llm_ids'] = [row['llm_id'] for row in llm_rows]
 
     return {"message": "Профиль успешно обновлен.", "user": updated_user}
 

@@ -42,7 +42,7 @@
 
     .cabinet-grid {
         display: grid;
-        grid-template-columns: 2fr 1fr;
+        grid-template-columns: 1fr;
         gap: 30px;
         width: 100%;
         align-items: start;
@@ -240,21 +240,6 @@
                         </table>
                     </div>
                 </div>
-
-                <!-- Вторая колонка: список LLM -->
-                <div class="cabinet-col-right">
-                    <div class="form-group">
-                        <label>Модели LLM</label>
-                        <div style="background: #f9f9f9; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 6px; min-height: 44px; box-sizing: border-box;">
-                            <ul id="llm_list"
-                                style="margin: 0; padding-left: 15px; display: flex; flex-direction: column; gap: 6px; color: #4a5568; font-size: 14px;">
-                                <li style="color: #a0aec0; list-style-type: none; margin-left: -15px;">Загрузка
-                                    моделей...
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <div class="editor-footer">
@@ -276,23 +261,13 @@
     const roleInput = document.getElementById('role');
     const emailInput = document.getElementById('email');
     const languageSelect = document.getElementById('language');
-    const llmList = document.getElementById('llm_list');
     const btnSubmit = document.getElementById('btn-submit');
 
     let currentUserId = null;
-    let allLlmModels = {};
 
     // Initialize page
     async function initCabinet() {
         try {
-            // 1. Fetch LLM models and map them
-            const llmResponse = await getData('/llm/user/list');
-            if (llmResponse && llmResponse.result) {
-                llmResponse.result.forEach(model => {
-                    allLlmModels[model.id] = model.name;
-                });
-            }
-
             // Язык общения: список — объединение языков нод пользователя,
             // выбранный язык перекрывает язык ноды по умолчанию в чате
             try {
@@ -316,31 +291,6 @@
                 usernameInput.value = user.username || '';
                 roleInput.value = user.role || '';
                 emailInput.value = user.email || '';
-
-                // Render associated LLMs as a plain text list column
-                if (llmList) {
-                    llmList.innerHTML = '';
-                    const userLlmIds = user.llm_ids || [];
-                    if (userLlmIds.length === 0 && user.llm_id) {
-                        userLlmIds.push(user.llm_id);
-                    }
-
-                    if (userLlmIds.length > 0) {
-                        userLlmIds.forEach(id => {
-                            const modelName = allLlmModels[id] || `Модель ID ${id}`;
-                            const li = document.createElement('li');
-                            li.textContent = modelName;
-                            llmList.appendChild(li);
-                        });
-                    } else {
-                        const li = document.createElement('li');
-                        li.textContent = 'Нет привязанных моделей LLM';
-                        li.style.color = '#7f8c8d';
-                        li.style.listStyleType = 'none';
-                        li.style.marginLeft = '-15px';
-                        llmList.appendChild(li);
-                    }
-                }
 
                 // Show tokens section and load tokens for the current user
                 const tokensSection = document.getElementById('tokensSection');

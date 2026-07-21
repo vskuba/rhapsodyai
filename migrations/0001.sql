@@ -25,7 +25,7 @@ DROP TABLE IF EXISTS `tool_group`;
 DROP TABLE IF EXISTS `session`;
 DROP TABLE IF EXISTS `role_node`;
 DROP TABLE IF EXISTS `llm_request`;
-DROP TABLE IF EXISTS `user_llm`;
+DROP TABLE IF EXISTS `node_llm`;
 DROP TABLE IF EXISTS `user_node`;
 DROP TABLE IF EXISTS `setting`;
 DROP TABLE IF EXISTS `node`;
@@ -114,15 +114,17 @@ CREATE TABLE `llm_request` (
     CONSTRAINT `fk_llm_request_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `user_llm` (
-    `user_id` INT NOT NULL,
+-- Список LLM настраивается на ноду (не на пользователя) - при росте числа
+-- пользователей настраивать каждому вручную нереально, а нод намного меньше
+CREATE TABLE `node_llm` (
+    `node_id` INT NOT NULL,
     `llm_id` INT NOT NULL,
     `rate_limit_at` DATETIME DEFAULT NULL,             -- время последней ошибки провайдера (модель уходит в конец очереди)
     `code_error` INT DEFAULT NULL,                     -- HTTP-код ошибки провайдера (429/413/402/503)
     `position` INT DEFAULT NULL,
-    PRIMARY KEY (`user_id`, `llm_id`),
-    CONSTRAINT `fk_user_llm_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_user_llm_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
+    PRIMARY KEY (`node_id`, `llm_id`),
+    CONSTRAINT `fk_node_llm_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_node_llm_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `role_node` (

@@ -274,8 +274,8 @@ async def _data_diff_generate(prod_conn) -> tuple:
         tables = sorted({r['TABLE_NAME'] for r in await db.fetchall()} - _DATA_DIFF_EXCLUDED_TABLES)
 
     # user.dynamic может еще не существовать на проде (ALTER той же миграцией
-    # еще не применен в момент сравнения) - фильтр user_llm/llm_request по
-    # подзапросу к user.dynamic на ПРОД-стороне безопасен только если она там уже есть
+    # еще не применен в момент сравнения) - фильтр llm_request по подзапросу
+    # к user.dynamic на ПРОД-стороне безопасен только если она там уже есть
     with prod_conn.cursor() as cur:
         cur.execute("SHOW COLUMNS FROM `user`")
         prod_user_dynamic_exists = 'dynamic' in {c['Field'] for c in cur.fetchall()}
@@ -325,9 +325,9 @@ async def _data_diff_generate(prod_conn) -> tuple:
             continue
 
         # Структуры совпадают - построчный diff по первичному ключу.
-        # Фильтр считаем ОТДЕЛЬНО для каждой стороны: у user_llm/llm_request
-        # своя схема может совпадать, а вот user.dynamic (от чего зависит их
-        # фильтр) - еще нет, если ALTER применится этой же миграцией позже
+        # Фильтр считаем ОТДЕЛЬНО для каждой стороны: у llm_request своя схема
+        # может совпадать, а вот user.dynamic (от чего зависит ее фильтр) -
+        # еще нет, если ALTER применится этой же миграцией позже
         columns = local_columns
         order_by = '`' + pk_columns[0] + '`' if pk_columns else ', '.join(f'`{c}`' for c in columns)
         prod_row_filter = _dynamic_row_filter(table, columns, prod_user_dynamic_exists)

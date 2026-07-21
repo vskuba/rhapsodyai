@@ -37,6 +37,7 @@ _NODE_SCOPED_TABLE_QUERIES = {
     'fact_collection': "SELECT * FROM `fact_collection` WHERE `node_id` = %s ORDER BY `id`",
     'role_node': "SELECT * FROM `role_node` WHERE `node_id` = %s ORDER BY `role_id`, `node_id`",
     'user_node': "SELECT * FROM `user_node` WHERE `node_id` = %s ORDER BY `user_id`, `node_id`",
+    'node_llm': "SELECT * FROM `node_llm` WHERE `node_id` = %s ORDER BY `llm_id`",
     'agent_workflow_variable_public': "SELECT * FROM `agent_workflow_variable_public` WHERE `node_id` = %s ORDER BY `id`",
     'agent_workflow_variable_public_role': (
         "SELECT * FROM `agent_workflow_variable_public_role` "
@@ -83,6 +84,7 @@ _CATCHALL_TABLE_QUERIES = {
     'fact_collection': f"SELECT * FROM `fact_collection` WHERE `node_id` IS NULL OR `node_id` NOT IN {_OTHER_SUBPROJECT_NODES} ORDER BY `id`",
     'role_node': f"SELECT * FROM `role_node` WHERE `node_id` NOT IN {_OTHER_SUBPROJECT_NODES} ORDER BY `role_id`, `node_id`",
     'user_node': f"SELECT * FROM `user_node` WHERE `node_id` NOT IN {_OTHER_SUBPROJECT_NODES} ORDER BY `user_id`, `node_id`",
+    'node_llm': f"SELECT * FROM `node_llm` WHERE `node_id` NOT IN {_OTHER_SUBPROJECT_NODES} ORDER BY `llm_id`",
     'agent_workflow_variable_public': (
         f"SELECT * FROM `agent_workflow_variable_public` "
         f"WHERE `node_id` IS NULL OR `node_id` NOT IN {_OTHER_SUBPROJECT_NODES} ORDER BY `id`"
@@ -112,12 +114,14 @@ _CATCHALL_TABLE_QUERIES = {
 # session тоже не входит - чисто рантаймовые UUID-сессии, экспорту не подлежат.
 # Таблицы без собственной колонки dynamic, но зависящие от user_id: без
 # фильтра через них "утекают" зависимости dynamic-пользователей (guest-сессии
-# PWA) - сам user отфильтровывается по dynamic=0, а его user_llm/llm_request
-# остаются в экспорте, т.к. у этих таблиц своей dynamic-колонки нет.
-_USER_DEPENDENT_TABLES = {'user_llm', 'llm_request'}
+# PWA) - сам user отфильтровывается по dynamic=0, а его llm_request
+# остаются в экспорте, т.к. у этой таблицы своей dynamic-колонки нет.
+# node_llm сюда не входит - список LLM настраивается на ноду, экспортируется
+# как node-scoped таблица (см. _NODE_SCOPED_TABLE_QUERIES/_CATCHALL_TABLE_QUERIES).
+_USER_DEPENDENT_TABLES = {'llm_request'}
 
 _CATCHALL_GLOBAL_TABLES = [
-    'node', 'llm', 'role', 'user', 'user_access_token', 'user_llm', 'setting',
+    'node', 'llm', 'role', 'user', 'user_access_token', 'setting',
     'agent_workflow_step_type', 'companion', 'llm_request',
 ]
 
@@ -291,7 +295,7 @@ def _dynamic_row_filter(table: str, columns: list, user_dynamic_exists: bool = T
     """WHERE-условие, исключающее строки dynamic-пользователей/агентов
     (созданы рантаймом - guest-сессии PWA и т.п., не seed): таблицы со своей
     колонкой dynamic (agent, user) фильтруются напрямую; таблицы, зависящие
-    от user_id, но без своей dynamic-колонки (user_llm, llm_request) -
+    от user_id, но без своей dynamic-колонки (llm_request) -
     через подзапрос к user.dynamic. NULL user_id (запрос не привязан ни к
     какому пользователю) не считается dynamic - остается в экспорте.
      - user_dynamic_exists: есть ли колонка user.dynamic НА ТОЙ ЖЕ СТОРОНЕ

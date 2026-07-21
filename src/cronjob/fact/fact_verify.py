@@ -12,6 +12,7 @@ import json
 import sys
 import uuid
 
+from ai.ai_llm import ai_llm_node_get
 from logging_.logging_ import logger_info, logging_init
 from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_init
@@ -21,7 +22,7 @@ from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 
-VERIFY_USER_ID = 1  # LLM-модели берутся у этого пользователя (admin)
+VERIFY_USER_ID = 1  # только для атрибуции session/log; LLM теперь берутся у ноды агента
 WORKFLOW_TIMEOUT = 120.0
 
 
@@ -59,18 +60,9 @@ async def main():
         print("Агент 'fact_verifier' с workflow не найден")
         return
 
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            """
-            SELECT l.* FROM `llm` l
-            JOIN `user_llm` ul ON l.id = ul.llm_id
-            WHERE ul.user_id = %s
-            ORDER BY ul.rate_limit_at ASC, ul.position ASC
-            """,
-            (VERIFY_USER_ID,)
-        )
-        entities_llm = await db.fetchall()
+    entities_llm = await ai_llm_node_get(entity_agent.get('node_id'))
 
+    async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT id, document FROM fact WHERE verified_at IS NULL ORDER BY id ASC LIMIT %s",
             (limit,)
@@ -78,7 +70,7 @@ async def main():
         facts = await db.fetchall()
 
     if not entities_llm:
-        print(f"У пользователя {VERIFY_USER_ID} нет LLM-моделей")
+        print("У ноды агента 'fact_verifier' нет LLM-моделей")
         return
     if not facts:
         print("Непроверенных фактов нет")

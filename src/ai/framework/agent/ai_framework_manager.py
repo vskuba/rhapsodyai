@@ -7,6 +7,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
+from ai.ai_llm import ai_llm_node_id_default_get
 from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
     ai_workflow_variables_global_get
@@ -66,6 +67,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.metadata = metadata or {}
             framework_model.user_id = metadata.get('user_id', 0)
             framework_model.companion_id = metadata.get('companion_id', 0)
+            framework_model.node_id = entity_agent.get('node_id') or await ai_llm_node_id_default_get()
             framework_model.workflow_steps = metadata.get('workflow_steps', [])
             framework_model.workflow_variables = metadata.get('workflow_variables', {})
 

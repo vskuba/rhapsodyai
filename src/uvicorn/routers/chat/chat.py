@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi import UploadFile, File
 
+from ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load
 from src.ai.ai_workflow import ai_workflow_variables_render
 from src.ai.ai_workflow import ai_workflow_variables_input_get
@@ -72,23 +73,11 @@ async def ask_ai(
     if not entity_companion:
         raise HTTPException(status_code=401, detail="Companion not found by ID: %s" % json_request.companion_id)
 
-    # Получаем все связанные с пользователем LLM
-    entities_llm = []
-    async with db:
-        await db.execute(
-            """
-            SELECT l.* 
-            FROM `llm` l
-            JOIN `user_llm` ul ON l.id = ul.llm_id
-            WHERE ul.user_id = %s
-            ORDER BY ul.rate_limit_at ASC, ul.position ASC
-            """,
-            (user.user_id,)
-        )
-        entities_llm = await db.fetchall()
+    # LLM ноды агента (список настраивается на ноду, не на пользователя)
+    entities_llm = await ai_llm_node_get(entity_agent.get('node_id'))
 
     if not entities_llm:
-        raise HTTPException(status_code=404, detail="LLM models not found for user ID: %s" % user.user_id)
+        raise HTTPException(status_code=404, detail="LLM models not found for agent '%s'" % entity_agent.get('name'))
 
     # Загружаем шаги (нормализованные) и переменные workflow
     workflow_data = await ai_workflow_load(workflow_id)

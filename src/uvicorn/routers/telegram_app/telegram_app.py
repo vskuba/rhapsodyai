@@ -10,6 +10,7 @@ from urllib.parse import parse_qsl
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse
 
+from ai.ai_llm import ai_llm_node_get
 from config.config import config_get
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
@@ -107,17 +108,7 @@ async def telegram_app_chat_ask(request: Request, data: dict):
     }
     ai_workflow_variables_defaults_apply(workflow_variables_all, workflow_data["variables"])
 
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            """
-            SELECT l.* FROM `llm` l
-            JOIN `user_llm` ul ON l.id = ul.llm_id
-            WHERE ul.user_id = %s
-            ORDER BY ul.rate_limit_at ASC, ul.position ASC
-            """,
-            (TELEGRAM_CHAT_USER_ID,)
-        )
-        entities_llm = await db.fetchall()
+    entities_llm = await ai_llm_node_get(entity_agent.get("node_id"))
 
     loop = asyncio.get_running_loop()
     future = loop.create_future()

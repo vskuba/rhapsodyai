@@ -7,6 +7,17 @@ INSERT INTO `node` (`id`, `name`, `position`, `migration_file`, `is_catchall`) V
 
 --
 
+INSERT INTO `node_llm` (`node_id`, `llm_id`, `rate_limit_at`, `code_error`, `position`) VALUES
+(7, 5, NULL, NULL, 2),
+(7, 6, NULL, NULL, 5),
+(7, 10, NULL, NULL, 6),
+(7, 11, NULL, NULL, 1),
+(7, 12, NULL, NULL, 4),
+(7, 15, NULL, NULL, 3),
+(7, 16, NULL, NULL, 7);
+
+--
+
 INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`, `subflow`) VALUES
 (15, 7, 'telegram_chat', 'Telegram чат', 'Простой вопрос-ответ для чата в Telegram Mini App', 0, 0);
 

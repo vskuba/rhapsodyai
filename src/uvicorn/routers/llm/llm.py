@@ -27,25 +27,10 @@ async def llm_list(db=Depends(mysql_get_db_async), user=Depends(AuthChecker([Aut
         return {"result": await db.fetchall()}
 
 
-@router.get("/llm/user/list")
-async def llm_user_list(db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
-    """LLM, привязанные к текущему пользователю, в порядке очереди выбора движка."""
-    async with db:
-        sql = """
-            SELECT l.*
-            FROM `llm` l
-            JOIN `user_llm` ul ON l.id = ul.llm_id
-            WHERE ul.user_id = %s
-            ORDER BY ul.rate_limit_at ASC, ul.position ASC
-        """
-        await db.execute(sql, (user.user_id,))
-        return {"result": await db.fetchall()}
-
-
 @router.get("/llm/status")
-async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
+async def llm_status(node_id: int | None = None, reset_hours: int | None = None,
                      user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
-    """Очередь LLM выбранного пользователя в порядке приоритета (position).
+    """Очередь LLM выбранной ноды в порядке приоритета (position).
 
     Активная модель — та, которую выберет движок: первая по сортировке
     rate_limit_at ASC, position ASC (ошибки 429/413/402/503 двигают модель
@@ -68,38 +53,31 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
         # Сброс просроченных ошибок: модель снова участвует в очереди по своей позиции
         await db.execute(
             """
-            UPDATE user_llm SET rate_limit_at = NULL, code_error = NULL
+            UPDATE node_llm SET rate_limit_at = NULL, code_error = NULL
             WHERE rate_limit_at IS NOT NULL AND rate_limit_at < NOW() - INTERVAL %s HOUR
             """,
             (hours,)
         )
 
+        await db.execute("SELECT id, name FROM `node` ORDER BY name ASC")
+        nodes = await db.fetchall()
+
+        if not nodes:
+            return {"result": {"nodes": [], "node_id": None, "reset_hours": hours, "llms": []}}
+
+        # По умолчанию — первая нода
+        selected_node_id = node_id if node_id in {n['id'] for n in nodes} else nodes[0]['id']
+
+        # Порядок отображения — приоритет (position), как настроено в node_llm
         await db.execute(
             """
-            SELECT DISTINCT u.id, u.username
-            FROM `user` u
-            JOIN user_llm ul ON ul.user_id = u.id
-            ORDER BY u.id
-            """
-        )
-        users = await db.fetchall()
-
-        if not users:
-            return {"result": {"users": [], "user_id": None, "reset_hours": hours, "llms": []}}
-
-        # По умолчанию — первый пользователь
-        selected_user_id = user_id if user_id in {u['id'] for u in users} else users[0]['id']
-
-        # Порядок отображения — приоритет (position), как настроено в user_llm
-        await db.execute(
-            """
-            SELECT l.id, l.name, ul.position, ul.rate_limit_at, ul.code_error
-            FROM user_llm ul
-            JOIN llm l ON l.id = ul.llm_id
-            WHERE ul.user_id = %s
-            ORDER BY ul.position ASC, l.id ASC
+            SELECT l.id, l.name, nl.position, nl.rate_limit_at, nl.code_error
+            FROM node_llm nl
+            JOIN llm l ON l.id = nl.llm_id
+            WHERE nl.node_id = %s
+            ORDER BY nl.position ASC, l.id ASC
             """,
-            (selected_user_id,)
+            (selected_node_id,)
         )
         rows = await db.fetchall()
 
@@ -156,8 +134,8 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
         ))['id']
 
     return {"result": {
-        "users": users,
-        "user_id": selected_user_id,
+        "nodes": nodes,
+        "node_id": selected_node_id,
         "reset_hours": hours,
         "llms": [
             {
@@ -187,13 +165,13 @@ async def llm_status(user_id: int | None = None, reset_hours: int | None = None,
 
 @router.post("/llm/queue/reorder")
 async def llm_queue_reorder(data: dict, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
-    """Сохраняет новый порядок очереди LLM пользователя (user_llm.position).
-    Ожидает {user_id, positions: [{llm_id, position}, ...]}."""
-    reorder_user_id = data.get('user_id')
+    """Сохраняет новый порядок очереди LLM ноды (node_llm.position).
+    Ожидает {node_id, positions: [{llm_id, position}, ...]}."""
+    reorder_node_id = data.get('node_id')
     positions = data.get('positions') or []
 
-    if not reorder_user_id or not positions:
-        raise HTTPException(status_code=400, detail="user_id и positions обязательны")
+    if not reorder_node_id or not positions:
+        raise HTTPException(status_code=400, detail="node_id и positions обязательны")
 
     async with mysql_get_db_async() as db:
         for item in positions:
@@ -202,8 +180,8 @@ async def llm_queue_reorder(data: dict, user=Depends(AuthChecker([AuthPermission
             if llm_id is None or position is None:
                 continue
             await db.execute(
-                "UPDATE user_llm SET position = %s WHERE user_id = %s AND llm_id = %s",
-                (int(position), int(reorder_user_id), int(llm_id))
+                "UPDATE node_llm SET position = %s WHERE node_id = %s AND llm_id = %s",
+                (int(position), int(reorder_node_id), int(llm_id))
             )
 
     return {"result": "success"}
@@ -212,21 +190,49 @@ async def llm_queue_reorder(data: dict, user=Depends(AuthChecker([AuthPermission
 @router.post("/llm/errors/reset")
 async def llm_errors_reset(data: dict, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
     """Немедленно очищает время и код ошибки моделей (rate_limit_at, code_error):
-    все модели возвращаются на свои позиции в очереди. С user_id — только для
-    одного пользователя, без — для всех."""
-    reset_user_id = data.get('user_id')
+    все модели возвращаются на свои позиции в очереди. С node_id — только для
+    одной ноды, без — для всех."""
+    reset_node_id = data.get('node_id')
 
     async with mysql_get_db_async() as db:
-        if reset_user_id:
+        if reset_node_id:
             await db.execute(
-                "UPDATE user_llm SET rate_limit_at = NULL, code_error = NULL WHERE user_id = %s",
-                (int(reset_user_id),)
+                "UPDATE node_llm SET rate_limit_at = NULL, code_error = NULL WHERE node_id = %s",
+                (int(reset_node_id),)
             )
         else:
-            await db.execute("UPDATE user_llm SET rate_limit_at = NULL, code_error = NULL")
+            await db.execute("UPDATE node_llm SET rate_limit_at = NULL, code_error = NULL")
         reset_qty = db.rowcount
 
     return {"result": {"reset_qty": reset_qty}}
+
+
+@router.get("/llm/usage/stats")
+async def llm_usage_stats(days: int = 7, user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
+    """Статистика использования LLM по пользователям за последние `days` дней
+    (клампится до 7 - дальше llm_request не хранит записи, см. миграцию)."""
+    days = max(1, min(int(days), 7))
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            """
+            SELECT u.id AS user_id, u.username, r.llm_id, l.name AS llm_name,
+                   COUNT(*) AS requests, SUM(r.status_code >= 400) AS errors
+            FROM llm_request r
+            JOIN llm l ON l.id = r.llm_id
+            LEFT JOIN `user` u ON u.id = r.user_id
+            WHERE r.created_at >= NOW() - INTERVAL %s DAY
+            GROUP BY u.id, r.llm_id
+            ORDER BY requests DESC
+            """,
+            (days,)
+        )
+        rows = await db.fetchall()
+        for row in rows:
+            row['requests'] = int(row['requests'])
+            row['errors'] = int(row['errors'] or 0)
+
+    return {"result": {"days": days, "rows": rows}}
 
 
 @router.post("/llm/ping/{llm_id}")

@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 
+from ai.ai_llm import ai_llm_node_get
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load
@@ -184,28 +185,12 @@ async def trace_run_replay(
     if not workflow_data['steps']:
         raise HTTPException(status_code=400, detail="Workflow не содержит шагов")
 
-    # LLM оригинального пользователя запуска; если их нет — текущего пользователя
-    async with mysql_get_db_async() as db:
-        entities_llm = []
-        for candidate_user_id in dict.fromkeys([run.get('user_id'), user.user_id]):
-            if not candidate_user_id:
-                continue
-            await db.execute(
-                """
-                SELECT l.*
-                FROM `llm` l
-                JOIN `user_llm` ul ON l.id = ul.llm_id
-                WHERE ul.user_id = %s
-                ORDER BY ul.rate_limit_at ASC, ul.position ASC
-                """,
-                (candidate_user_id,)
-            )
-            entities_llm = await db.fetchall()
-            if entities_llm:
-                break
-        if not entities_llm:
-            raise HTTPException(status_code=404, detail="Не найдены LLM ни у пользователя запуска, ни у текущего")
+    # LLM ноды агента этого запуска (не пользователя — список настраивается на ноду)
+    entities_llm = await ai_llm_node_get(entity_agent.get('node_id'))
+    if not entities_llm:
+        raise HTTPException(status_code=404, detail="Не найдены LLM для ноды этого агента")
 
+    async with mysql_get_db_async() as db:
         await db.execute("SELECT name, path FROM tool WHERE id > 0")
         raw_tools = await db.fetchall()
     tools = {t['name'].strip(): t['path'].strip() for t in raw_tools if t.get('name') and t.get('path')}

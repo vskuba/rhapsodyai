@@ -1,6 +1,17 @@
 -- Dating: все данные подпроекта - workflow (dating_bot/dating_talk/sub-flows),
 -- их шаги и переменные, публичные переменные, агент dating_bot, привязки ролей.
 
+INSERT INTO `node_llm` (`node_id`, `llm_id`, `rate_limit_at`, `code_error`, `position`) VALUES
+(2, 5, NULL, NULL, 2),
+(2, 6, NULL, NULL, 5),
+(2, 10, NULL, NULL, 6),
+(2, 11, NULL, NULL, 1),
+(2, 12, NULL, NULL, 4),
+(2, 15, NULL, NULL, 3),
+(2, 16, NULL, NULL, 7);
+
+--
+
 INSERT INTO `role_node` (`role_id`, `node_id`) VALUES
 (2, 2),
 (4, 2);

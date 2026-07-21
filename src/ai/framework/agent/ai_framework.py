@@ -133,7 +133,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                 error_code = getattr(e, 'status_code', None)
 
                 # Некорректный ответ провайдера (не-JSON и т.п.) — повторный запрос к той же
-                # модели бесполезен, лечится только сменой провайдера (код 500 в user_llm)
+                # модели бесполезен, лечится только сменой провайдера (код 500 в node_llm)
                 if error_code is None and isinstance(e, UnexpectedModelBehavior):
                     error_code = 500
 
@@ -165,15 +165,15 @@ class AiFrameworkAgent(AbstractAiFramework):
                         if current_idx != -1 and current_idx + 1 < len(framework_model.entities_llm):
                             # Предыдущей (проблемной) модели проставляем время ошибки, чтобы опустить в конец сортировки!
                             problem_llm_id = framework_model.entity_llm_current.get('id')
-                            user_id = framework_model.user_id
-                            
+                            node_id = framework_model.node_id
+
                             from mysql_.mysql_ import mysql_get_db_async
                             try:
                                 async with mysql_get_db_async() as db:
                                     await db.execute(
-                                        "UPDATE user_llm SET rate_limit_at = NOW(), code_error = %s "
-                                        "WHERE user_id = %s AND llm_id = %s",
-                                        (error_code, user_id, problem_llm_id)
+                                        "UPDATE node_llm SET rate_limit_at = NOW(), code_error = %s "
+                                        "WHERE node_id = %s AND llm_id = %s",
+                                        (error_code, node_id, problem_llm_id)
                                     )
                                 logger_info(f"🔄 Модель ID {problem_llm_id} помечена как ошибочная (rate_limit_at обновлен). Она опустится в конец списка.")
                             except Exception as db_err:

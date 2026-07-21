@@ -224,6 +224,17 @@
         font-size: 13px;
         color: #27ae60;
     }
+
+    #llm_list_sortable {
+        min-height: 198px;
+        height: 350px;
+        overflow-y: auto;
+        padding: 5px;
+        border: 1px solid #cbd5e0;
+        border-radius: 4px;
+        background: #fff;
+        box-sizing: border-box;
+    }
 </style>
 
 {% endblock %}
@@ -265,13 +276,13 @@
                     </div>
                 </div>
 
-                <!-- Пустая колонка для сохранения симметрии с агентами или под описание -->
-                <div class="prompt-column">
-                    <div class="form-group form-group-info">
-                        <label>Инфо</label>
-                        Ноды используются для группировки агентов и определения логики их взаимодействия в
-                        рабочих процессах. Файл миграции — куда инструмент mysql_export_node_to_migration
-                        экспортирует workflow/шаги/переменные/агентов этой ноды (изоляция подпроекта от других нод).
+                <!-- Модели LLM этой ноды -->
+                <div class="prompt-column" style="flex: 1;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Модели LLM (отметьте и перетащите для сортировки)</label>
+                        <div id="llm_list_sortable">
+                            <!-- Items will be dynamically generated here -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -301,6 +312,60 @@
     const createNewNodeBtn = document.getElementById('createNewNode');
     const deleteBtn = document.getElementById('deleteBtn');
 
+    function makeLlmListDraggable(container) {
+        let dragSrcEl = null;
+
+        container.addEventListener('dragstart', function (e) {
+            const item = e.target.closest('.llm-sortable-item');
+            if (!item) return;
+            dragSrcEl = item;
+            e.dataTransfer.effectAllowed = 'move';
+            item.style.opacity = '0.4';
+        });
+
+        container.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        });
+
+        container.addEventListener('dragenter', function (e) {
+            const item = e.target.closest('.llm-sortable-item');
+            if (item && item !== dragSrcEl) {
+                item.style.border = '1px dashed #4299e1';
+            }
+        });
+
+        container.addEventListener('dragleave', function (e) {
+            const item = e.target.closest('.llm-sortable-item');
+            if (item) {
+                item.style.border = '1px solid #e2e8f0';
+            }
+        });
+
+        container.addEventListener('drop', function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            const targetItem = e.target.closest('.llm-sortable-item');
+            if (targetItem && dragSrcEl && dragSrcEl !== targetItem) {
+                const rect = targetItem.getBoundingClientRect();
+                const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+                container.insertBefore(dragSrcEl, next ? targetItem.nextSibling : targetItem);
+            }
+            return false;
+        });
+
+        container.addEventListener('dragend', function (e) {
+            const item = e.target.closest('.llm-sortable-item');
+            if (item) {
+                item.style.opacity = '1';
+            }
+            container.querySelectorAll('.llm-sortable-item').forEach(el => {
+                el.style.border = '1px solid #e2e8f0';
+            });
+        });
+    }
+
     /**
      * Инициализация менеджера: загрузка списка нод
      */
@@ -308,11 +373,34 @@
         if (!nodeListContainer) return;
 
         try {
-            const response = await getData('/node/list');
-            const nodes = response.result;
+            const [nodesRes, llmRes] = await Promise.all([
+                getData('/node/list'),
+                getData('/llm/list'),
+            ]);
+            const nodes = nodesRes.result;
 
             // Сортируем ноды по полю position
             nodes.sort((a, b) => (a.position || 0) - (b.position || 0));
+
+            const sortableContainer = document.getElementById('llm_list_sortable');
+            sortableContainer.innerHTML = '';
+            llmRes.result.forEach(g => {
+                const div = document.createElement('div');
+                div.className = 'llm-sortable-item';
+                div.setAttribute('draggable', 'true');
+                div.setAttribute('data-id', g.id);
+                div.style.cssText = "display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; margin-bottom: 4px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 4px; cursor: move; user-select: none;";
+
+                div.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" class="llm-checkbox" style="cursor: pointer;">
+                        <span style="font-size: 13px; color: #2d3748;">${g.name}</span>
+                    </div>
+                    <span style="font-size: 14px; color: #a0aec0; cursor: grab;">☰</span>
+                `;
+                sortableContainer.appendChild(div);
+            });
+            makeLlmListDraggable(sortableContainer);
 
             renderNodeList(nodes);
         } catch (e) {
@@ -426,6 +514,36 @@
             document.getElementById('name').value = node.name;
             document.getElementById('migrationFile').value = node.migration_file || '';
 
+            // Отметить/переставить LLM ноды в сохранённом порядке
+            const nodeLlmIds = node.llm_ids || [];
+            const sortableContainer = document.getElementById('llm_list_sortable');
+            if (sortableContainer) {
+                const items = Array.from(sortableContainer.querySelectorAll('.llm-sortable-item'));
+
+                items.forEach(item => {
+                    const chk = item.querySelector('.llm-checkbox');
+                    const lid = parseInt(item.getAttribute('data-id'), 10);
+                    if (chk) chk.checked = nodeLlmIds.includes(lid);
+                });
+
+                const selectedItemsMap = {};
+                const unselectedItems = [];
+                items.forEach(item => {
+                    const lid = parseInt(item.getAttribute('data-id'), 10);
+                    if (nodeLlmIds.includes(lid)) {
+                        selectedItemsMap[lid] = item;
+                    } else {
+                        unselectedItems.push(item);
+                    }
+                });
+
+                sortableContainer.innerHTML = '';
+                nodeLlmIds.forEach(lid => {
+                    if (selectedItemsMap[lid]) sortableContainer.appendChild(selectedItemsMap[lid]);
+                });
+                unselectedItems.forEach(item => sortableContainer.appendChild(item));
+            }
+
             document.getElementById('formTitle').textContent = `Редактирование ноды: ${node.name}`;
             if (saveBtn) saveBtn.disabled = false;
 
@@ -444,6 +562,12 @@
         nodeForm.reset();
         document.getElementById('nodeId').value = '';
         document.getElementById('formTitle').textContent = 'Создание новой ноды';
+
+        const sortableContainer = document.getElementById('llm_list_sortable');
+        if (sortableContainer) {
+            sortableContainer.querySelectorAll('.llm-checkbox').forEach(chk => { chk.checked = false; });
+        }
+
         if (saveBtn) saveBtn.disabled = false;
         if (deleteBtn) deleteBtn.style.display = 'none';
         sessionStorage.removeItem('node_page_selected_id');
@@ -455,10 +579,22 @@
     async function saveNodeConfig(e) {
         if (e) e.preventDefault();
 
+        const selectedLlmIds = [];
+        const sortableContainer = document.getElementById('llm_list_sortable');
+        if (sortableContainer) {
+            sortableContainer.querySelectorAll('.llm-sortable-item').forEach(item => {
+                const chk = item.querySelector('.llm-checkbox');
+                if (chk && chk.checked) {
+                    selectedLlmIds.push(parseInt(item.getAttribute('data-id'), 10));
+                }
+            });
+        }
+
         const id = document.getElementById('nodeId').value;
         const payload = {
             name: document.getElementById('name').value,
-            migration_file: document.getElementById('migrationFile').value.trim() || null
+            migration_file: document.getElementById('migrationFile').value.trim() || null,
+            llm_ids: selectedLlmIds
         };
 
         // Новая нода добавляется в конец списка

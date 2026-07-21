@@ -3,6 +3,17 @@
 -- Таблица detective_case - см. 0001.sql (схема); данные не сеются (динамическая
 -- игровая история, как agent_session).
 
+INSERT INTO `node_llm` (`node_id`, `llm_id`, `rate_limit_at`, `code_error`, `position`) VALUES
+(4, 5, NULL, NULL, 2),
+(4, 6, NULL, NULL, 5),
+(4, 10, NULL, NULL, 6),
+(4, 11, NULL, NULL, 1),
+(4, 12, NULL, NULL, 4),
+(4, 15, NULL, NULL, 3),
+(4, 16, NULL, NULL, 7);
+
+--
+
 INSERT INTO `agent_workflow` (`id`, `node_id`, `name`, `title`, `description`, `position`, `subflow`) VALUES
 (12, 4, 'detective_bot', 'Детектив-бот', 'Мастер игры: генерирует дело, создает подозреваемых-агентов, принимает финальное обвинение', 0, 0),
 (13, 4, 'detective_talk', 'Допрос подозреваемого', 'Диалог с подозреваемым: отвечает в характере, опираясь на свою легенду (prompt_system)', 1, 0),

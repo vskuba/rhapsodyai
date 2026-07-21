@@ -219,7 +219,7 @@
         color: #922b21;
     }
 
-    /* Ошибка провайдера из user_llm: код + дата */
+    /* Ошибка провайдера из node_llm: код + дата */
     .error-code-badge {
         display: inline-block;
         background: #fdecea;
@@ -359,8 +359,8 @@
 
     <div class="llm-header">
         <div class="filter-item">
-            <label class="filter-label" for="userSelect">Пользователь</label>
-            <select id="userSelect"></select>
+            <label class="filter-label" for="nodeSelect">Нода</label>
+            <select id="nodeSelect"></select>
         </div>
 
         <div class="filter-item">
@@ -374,7 +374,7 @@
                     <option value="48">48 часов</option>
                 </select>
                 <button type="button" class="btn-reset-errors" id="resetErrorsBtn"
-                        title="Сбросить ошибки моделей пользователя сейчас (очистить время и код ошибки)">↺
+                        title="Сбросить ошибки моделей ноды сейчас (очистить время и код ошибки)">↺
                 </button>
             </div>
         </div>
@@ -412,6 +412,32 @@
             </tr>
             </tbody>
         </table>
+
+        <div class="llm-header" style="margin-top: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <div class="filter-item">
+                <label class="filter-label" for="usageStatsDays">Статистика использования за</label>
+                <select id="usageStatsDays">
+                    <option value="1">1 день</option>
+                    <option value="3">3 дня</option>
+                    <option value="7" selected>7 дней</option>
+                </select>
+            </div>
+        </div>
+        <table class="llm-table" style="margin-top: 0;">
+            <thead>
+            <tr>
+                <th style="width: 30%;">Пользователь</th>
+                <th style="width: 40%;">Модель</th>
+                <th style="width: 15%;">Запросов</th>
+                <th style="width: 15%;">Ошибок</th>
+            </tr>
+            </thead>
+            <tbody id="usageStatsBody">
+            <tr>
+                <td colspan="4" class="empty-note">Загрузка...</td>
+            </tr>
+            </tbody>
+        </table>
     </div>
 
 </div>
@@ -424,9 +450,11 @@
 
     const tableBody = document.getElementById('llmTableBody');
     const pingAllBtn = document.getElementById('pingAllBtn');
-    const userSelect = document.getElementById('userSelect');
+    const nodeSelect = document.getElementById('nodeSelect');
     const resetHoursSelect = document.getElementById('resetHoursSelect');
     const autoRefreshSelect = document.getElementById('autoRefreshSelect');
+    const usageStatsBody = document.getElementById('usageStatsBody');
+    const usageStatsDays = document.getElementById('usageStatsDays');
 
     let llmList = [];
 
@@ -582,7 +610,7 @@
 
         if (!llms.length) {
             const row = document.createElement('tr');
-            const cell = el('td', 'empty-note', 'У пользователя нет моделей');
+            const cell = el('td', 'empty-note', 'У ноды нет моделей');
             cell.colSpan = 9;
             row.appendChild(cell);
             tableBody.appendChild(row);
@@ -655,7 +683,7 @@
         });
     }
 
-    // Drag-and-drop: новый порядок строк сохраняется как приоритет очереди (user_llm.position)
+    // Drag-and-drop: новый порядок строк сохраняется как приоритет очереди (node_llm.position)
     let draggedRow = null;
 
     function onRowDragStart(e) {
@@ -685,31 +713,31 @@
         }));
 
         try {
-            await postData('/llm/queue/reorder', {user_id: parseInt(userSelect.value), positions});
+            await postData('/llm/queue/reorder', {node_id: parseInt(nodeSelect.value), positions});
             showNotification('Порядок очереди сохранен', 'success');
         } catch (e) {
             showNotification(`Ошибка сохранения порядка: ${e.message}`, 'error');
         }
         // Перезагружаем в обоих случаях: обновляются бейджи позиций и активная модель
-        await loadStatus({userId: userSelect.value});
+        await loadStatus({nodeId: nodeSelect.value});
     }
 
     async function loadStatus(params = {}) {
         const query = new URLSearchParams();
-        if (params.userId) query.set('user_id', params.userId);
+        if (params.nodeId) query.set('node_id', params.nodeId);
         if (params.resetHours) query.set('reset_hours', params.resetHours);
 
         try {
             const data = await getData(`/llm/status?${query}`);
             const result = data.result;
 
-            // Селект пользователей (по умолчанию сервер выбирает первого)
-            userSelect.innerHTML = '';
-            (result.users || []).forEach(u => {
-                const opt = el('option', null, u.username);
-                opt.value = u.id;
-                if (u.id === result.user_id) opt.selected = true;
-                userSelect.appendChild(opt);
+            // Селект нод (по умолчанию сервер выбирает первую)
+            nodeSelect.innerHTML = '';
+            (result.nodes || []).forEach(n => {
+                const opt = el('option', null, n.name);
+                opt.value = n.id;
+                if (n.id === result.node_id) opt.selected = true;
+                nodeSelect.appendChild(opt);
             });
 
             resetHoursSelect.value = String(result.reset_hours);
@@ -727,17 +755,49 @@
         }
     }
 
-    userSelect.onchange = () => loadStatus({userId: userSelect.value, resetHours: resetHoursSelect.value});
-    resetHoursSelect.onchange = () => loadStatus({userId: userSelect.value, resetHours: resetHoursSelect.value});
+    async function loadUsageStats(days) {
+        try {
+            const data = await getData(`/llm/usage/stats?days=${encodeURIComponent(days)}`);
+            const rows = data.result.rows || [];
 
-    // Немедленный сброс ошибок моделей выбранного пользователя (время + код)
+            usageStatsBody.innerHTML = '';
+            if (!rows.length) {
+                const row = document.createElement('tr');
+                const cell = el('td', 'empty-note', 'Запросов за период не было');
+                cell.colSpan = 4;
+                row.appendChild(cell);
+                usageStatsBody.appendChild(row);
+                return;
+            }
+
+            rows.forEach(r => {
+                const row = document.createElement('tr');
+                row.appendChild(el('td', null, r.username || '—'));
+                row.appendChild(el('td', 'llm-model-name', r.llm_name));
+                row.appendChild(el('td', null, String(r.requests)));
+                const errorsCell = document.createElement('td');
+                if (r.errors) errorsCell.appendChild(el('span', 'req-errors-badge', String(r.errors)));
+                else errorsCell.textContent = '—';
+                row.appendChild(errorsCell);
+                usageStatsBody.appendChild(row);
+            });
+        } catch (e) {
+            console.error('Ошибка загрузки статистики использования:', e);
+        }
+    }
+
+    nodeSelect.onchange = () => loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
+    resetHoursSelect.onchange = () => loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
+    usageStatsDays.onchange = () => loadUsageStats(usageStatsDays.value);
+
+    // Немедленный сброс ошибок моделей выбранной ноды (время + код)
     const resetErrorsBtn = document.getElementById('resetErrorsBtn');
     resetErrorsBtn.onclick = async () => {
         resetErrorsBtn.disabled = true;
         try {
-            const res = await postData('/llm/errors/reset', {user_id: userSelect.value || null});
+            const res = await postData('/llm/errors/reset', {node_id: nodeSelect.value || null});
             showNotification(`Ошибки сброшены (моделей: ${res.result.reset_qty})`, 'success');
-            await loadStatus({userId: userSelect.value});
+            await loadStatus({nodeId: nodeSelect.value});
         } catch (e) {
             showNotification(`Ошибка сброса: ${e.message}`, 'error');
         } finally {
@@ -772,7 +832,7 @@
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         autoRefreshTimer = setInterval(() => {
             if (autoRefreshPaused || draggedRow) return;
-            loadStatus({userId: userSelect.value, resetHours: resetHoursSelect.value});
+            loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
         }, parseInt(autoRefreshSelect.value) * 1000);
     }
 
@@ -780,5 +840,6 @@
     autoRefreshStart();
 
     loadStatus();
+    loadUsageStats(usageStatsDays.value);
 </script>
 {% endblock %}

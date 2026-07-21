@@ -5,12 +5,12 @@ from functools import partial
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
+from ai.ai_llm import ai_llm_node_get
 from config.config import config_get
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
 from logging_.logging_ import logger_info
-from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_get
 from src.mysql_.repository.agent_repository import AgentRepository
 
@@ -80,19 +80,9 @@ async def init_telegram_bot(agent_name: str):
         repo = AgentRepository()
         entity = await repo.find_one_by({"name": agent_name})
 
-        # LLM-очередь пользователя-владельца бота: без entities_llm
-        # у модели нет активной LLM и запрос падает
-        async with mysql_get_db_async() as db:
-            await db.execute(
-                """
-                SELECT l.* FROM `llm` l
-                JOIN `user_llm` ul ON l.id = ul.llm_id
-                WHERE ul.user_id = %s
-                ORDER BY ul.rate_limit_at ASC, ul.position ASC
-                """,
-                (TELEGRAM_BOT_USER_ID,)
-            )
-            entities_llm = await db.fetchall()
+        # LLM-список ноды агента (без entities_llm у модели нет активной LLM
+        # и запрос падает); Soko без своей ноды - фоллбэк на catchall-ноду
+        entities_llm = await ai_llm_node_get(entity.get('node_id'))
 
         framework_model = await agent_manager.framework_model_create({
             "entity_agent": entity,

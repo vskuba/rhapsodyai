@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel
 
-from mysql_.mysql_ import mysql_get_db_async
+from ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.auth.auth import AuthChecker
 from src.mysql_.repository.agent_repository import AgentRepository
@@ -37,20 +37,9 @@ async def translate(
 
     workflow_id = entity_agent['workflow_id']
 
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            """
-            SELECT l.* FROM `llm` l
-            JOIN `user_llm` ul ON l.id = ul.llm_id
-            WHERE ul.user_id = %s
-            ORDER BY ul.rate_limit_at ASC, ul.position ASC
-            """,
-            (user.user_id,)
-        )
-        entities_llm = await db.fetchall()
-
+    entities_llm = await ai_llm_node_get(entity_agent.get('node_id'))
     if not entities_llm:
-        raise HTTPException(status_code=404, detail=f"LLM models not found for user ID: {user.user_id}")
+        raise HTTPException(status_code=404, detail="LLM models not found for agent 'translator'")
 
     workflow_data = await ai_workflow_load(workflow_id)
 
