@@ -23,6 +23,7 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.LLM_VIEW,
     AuthPermission.FACT_VIEW,
     AuthPermission.FACT_COLLECTION_VIEW,
+    AuthPermission.PLAN_VIEW,
     AuthPermission.SESSION_VIEW,
     AuthPermission.SETTING_VIEW,
     AuthPermission.QUEUE_VIEW,

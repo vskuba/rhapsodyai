@@ -313,6 +313,74 @@
             opacity: 1;
             transform: translateX(-50%) scale(1);
         }
+
+        /* --- Plans tab --- */
+        #tab-plans {
+            padding: 0;
+        }
+
+        .plans-list-view, .plans-detail-view {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            box-sizing: border-box;
+        }
+
+        .plan-list-item {
+            font-size: 14px;
+            padding: 12px 14px;
+            cursor: pointer;
+        }
+
+        .plan-list-item:last-child {
+            border-bottom: none;
+        }
+
+        .plan-back-btn {
+            border: none;
+            background: transparent;
+            color: #007bff;
+            font-size: 14px;
+            cursor: pointer;
+            padding: 0 0 10px;
+        }
+
+        .plan-title {
+            font-size: 17px;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+
+        .plan-content {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .plan-heading {
+            font-weight: bold;
+            font-size: 15px;
+            margin: 10px 0 4px;
+        }
+
+        .plan-line {
+            padding: 2px 0;
+        }
+
+        .plan-line-empty {
+            height: 8px;
+        }
+
+        .plan-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .plan-checkbox input {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 <body>
@@ -321,6 +389,7 @@
         <div class="icon-sidebar">
             <button class="icon-btn active" id="tabBtnEvents" data-tab="events" title="События">🔔</button>
             <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
+            <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
         </div>
 
         <div class="content-panel">
@@ -330,6 +399,15 @@
 
             <div class="tab-view" id="tab-chat">
                 <div class="chat-messages" id="chatMessages"></div>
+            </div>
+
+            <div class="tab-view" id="tab-plans">
+                <div class="plans-list-view" id="plansListView"></div>
+                <div class="plans-detail-view" id="plansDetailView" style="display:none;">
+                    <button class="plan-back-btn" id="planBackBtn">← Назад</button>
+                    <div class="plan-title" id="planDetailTitle"></div>
+                    <div class="plan-content" id="planDetailContent"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -342,6 +420,16 @@
         </div>
         <input type="text" class="chat-text-input" id="chatTextInput" placeholder="Сообщение...">
         <button class="chat-send-btn" id="chatSendBtn">➤</button>
+    </div>
+
+    <div class="chat-progress" id="planProgress"><div class="chat-progress-fill"></div></div>
+    <div class="chat-input-bar" id="planInputBar">
+        <div class="mic-wrap">
+            <button class="mic-cancel" id="planMicCancel">✕</button>
+            <button class="mic-btn" id="planMicBtn">🎤</button>
+        </div>
+        <input type="text" class="chat-text-input" id="planTextInput" placeholder="Инструкция по правке...">
+        <button class="chat-send-btn" id="planSendBtn">➤</button>
     </div>
 </div>
 
@@ -358,14 +446,21 @@
     const chatProgress = document.getElementById('chatProgress');
     const chatInputBar = document.getElementById('chatInputBar');
 
-    let chatSessionUuid = null;
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let micStream = null;
-    let recordCancelled = false;
-    let recordStartedAt = 0;
+    const plansListView = document.getElementById('plansListView');
+    const plansDetailView = document.getElementById('plansDetailView');
+    const planBackBtn = document.getElementById('planBackBtn');
+    const planDetailTitle = document.getElementById('planDetailTitle');
+    const planDetailContent = document.getElementById('planDetailContent');
+    const planTextInput = document.getElementById('planTextInput');
+    const planSendBtn = document.getElementById('planSendBtn');
+    const planMicBtn = document.getElementById('planMicBtn');
+    const planMicCancel = document.getElementById('planMicCancel');
+    const planProgress = document.getElementById('planProgress');
+    const planInputBar = document.getElementById('planInputBar');
 
-    const MIN_RECORD_MS = 1000;
+    let chatSessionUuid = null;
+    let currentTab = 'events';
+    let currentPlanId = null;
 
     async function init() {
         tg?.ready();
@@ -382,6 +477,7 @@
 
         initTabs();
         initChat();
+        initPlans();
         await loadEvents();
     }
 
@@ -393,11 +489,23 @@
                 btn.classList.add('active');
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
 
-                const isChatTab = btn.dataset.tab === 'chat';
-                chatInputBar.classList.toggle('chat-visible', isChatTab);
-                chatProgress.classList.toggle('chat-visible', isChatTab);
+                currentTab = btn.dataset.tab;
+                if (currentTab === 'plans') loadPlans();
+                updateInputBarsVisibility();
             });
         });
+    }
+
+    // Показывает свой input-бар под текущую вкладку: чат - всегда на вкладке
+    // "chat"; планы - только когда открыт конкретный план (не на списке)
+    function updateInputBarsVisibility() {
+        const isChatTab = currentTab === 'chat';
+        chatInputBar.classList.toggle('chat-visible', isChatTab);
+        chatProgress.classList.toggle('chat-visible', isChatTab);
+
+        const isPlanDetailOpen = currentTab === 'plans' && currentPlanId !== null;
+        planInputBar.classList.toggle('chat-visible', isPlanDetailOpen);
+        planProgress.classList.toggle('chat-visible', isPlanDetailOpen);
     }
 
     async function loadEvents() {
@@ -431,93 +539,109 @@
         `;
     }
 
+    // Общая фабрика записи голоса: тап-старт/тап-стоп (первый клик по
+    // микрофону запускает запись - кнопка пульсирует, крестик отмены
+    // появляется; второй клик - останавливает и передает распознанный текст
+    // в onTranscript). Клик по крестику в любой момент записи - отмена без
+    // отправки. Микрофон запрашивается один раз за сессию на каждый рекордер
+    // и переиспользуется - иначе телефон повторно спрашивает разрешение
+    function createVoiceRecorder({micBtn, cancelBtn, progressEl, onError, onTranscript}) {
+        const MIN_RECORD_MS = 1000;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let micStream = null;
+        let recordCancelled = false;
+        let recordStartedAt = 0;
+
+        async function startRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') return;
+
+            if (!micStream) {
+                micStream = await navigator.mediaDevices.getUserMedia({audio: true});
+            }
+
+            mediaRecorder = new MediaRecorder(micStream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+            mediaRecorder.onstop = onRecordingStop;
+
+            mediaRecorder.start();
+            recordStartedAt = performance.now();
+            micBtn.classList.add('recording');
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+            micBtn.classList.remove('recording');
+            cancelBtn.classList.remove('visible');
+        }
+
+        async function onRecordingStop() {
+            const audioBlob = new Blob(audioChunks, {type: 'audio/wav'});
+            audioChunks = [];
+
+            const tooShort = performance.now() - recordStartedAt < MIN_RECORD_MS;
+            if (audioBlob.size === 0 || recordCancelled || tooShort) return;
+
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'voice.wav');
+
+            progressEl.classList.add('active');
+            try {
+                const data = await postData('/telegram-app/chat/voice', formData);
+                if (data.result) await onTranscript(data.result);
+            } catch (err) {
+                onError?.(err);
+            } finally {
+                progressEl.classList.remove('active');
+            }
+        }
+
+        async function onMicClick() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                stopRecording();
+                return;
+            }
+
+            recordCancelled = false;
+            cancelBtn.classList.add('visible');
+            await startRecording();
+        }
+
+        function onCancelClick() {
+            recordCancelled = true;
+            stopRecording();
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            micBtn.disabled = true;
+            micBtn.title = 'Микрофон недоступен в этом клиенте';
+            return;
+        }
+
+        micBtn.addEventListener('click', onMicClick);
+        cancelBtn.addEventListener('click', onCancelClick);
+    }
+
     function initChat() {
         chatSendBtn.addEventListener('click', sendChatMessage);
         chatTextInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') sendChatMessage();
         });
 
-        if (!navigator.mediaDevices?.getUserMedia) {
-            chatMicBtn.disabled = true;
-            chatMicBtn.title = 'Микрофон недоступен в этом клиенте';
-            return;
-        }
-
-        // Тап-старт/тап-стоп: первый клик по микрофону запускает запись
-        // (кнопка пульсирует, крестик отмены появляется), второй клик по
-        // микрофону - останавливает и отправляет. Клик по крестику в любой
-        // момент записи - отмена без отправки
-        chatMicBtn.addEventListener('click', onMicClick);
-        micCancel.addEventListener('click', onCancelClick);
-    }
-
-    async function onMicClick() {
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            stopRecording();
-            return;
-        }
-
-        recordCancelled = false;
-        micCancel.classList.add('visible');
-        await startRecording();
-    }
-
-    function onCancelClick() {
-        recordCancelled = true;
-        stopRecording();
-    }
-
-    async function startRecording() {
-        if (mediaRecorder && mediaRecorder.state === 'recording') return;
-
-        // Микрофон запрашивается один раз за сессию и переиспользуется -
-        // иначе каждое нажатие заново дергает getUserMedia и телефон
-        // повторно спрашивает разрешение
-        if (!micStream) {
-            micStream = await navigator.mediaDevices.getUserMedia({audio: true});
-        }
-
-        mediaRecorder = new MediaRecorder(micStream);
-        audioChunks = [];
-
-        mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-        mediaRecorder.onstop = onRecordingStop;
-
-        mediaRecorder.start();
-        recordStartedAt = performance.now();
-        chatMicBtn.classList.add('recording');
-    }
-
-    function stopRecording() {
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
-        }
-        chatMicBtn.classList.remove('recording');
-        micCancel.classList.remove('visible');
-    }
-
-    async function onRecordingStop() {
-        const audioBlob = new Blob(audioChunks, {type: 'audio/wav'});
-        audioChunks = [];
-
-        const tooShort = performance.now() - recordStartedAt < MIN_RECORD_MS;
-        if (audioBlob.size === 0 || recordCancelled || tooShort) return;
-
-        const formData = new FormData();
-        formData.append('file', audioBlob, 'voice.wav');
-
-        chatProgress.classList.add('active');
-        try {
-            const data = await postData('/telegram-app/chat/voice', formData);
-            if (data.result) {
-                chatTextInput.value = data.result;
+        createVoiceRecorder({
+            micBtn: chatMicBtn,
+            cancelBtn: micCancel,
+            progressEl: chatProgress,
+            onError: () => appendBubble('assistant', '⚠️ Не удалось распознать голос'),
+            onTranscript: async (text) => {
+                chatTextInput.value = text;
                 await sendChatMessage();
-            }
-        } catch (err) {
-            appendBubble('assistant', '⚠️ Не удалось распознать голос');
-        } finally {
-            chatProgress.classList.remove('active');
-        }
+            },
+        });
     }
 
     async function sendChatMessage() {
@@ -556,6 +680,115 @@
 
     function escapeHtml(t) {
         return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function initPlans() {
+        planBackBtn.addEventListener('click', closePlanDetail);
+        planSendBtn.addEventListener('click', sendPlanEdit);
+        planTextInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendPlanEdit();
+        });
+
+        createVoiceRecorder({
+            micBtn: planMicBtn,
+            cancelBtn: planMicCancel,
+            progressEl: planProgress,
+            onError: () => showPlanError('Не удалось распознать голос'),
+            onTranscript: async (text) => {
+                planTextInput.value = text;
+                await sendPlanEdit();
+            },
+        });
+    }
+
+    async function loadPlans() {
+        plansListView.innerHTML = '<div class="empty-state">Загрузка...</div>';
+        try {
+            const res = await getData('/telegram-app/plans');
+            renderPlansList(res.result || []);
+        } catch (err) {
+            plansListView.innerHTML = '<div class="denied-state">⚠️ Не удалось загрузить планы</div>';
+        }
+    }
+
+    function renderPlansList(plans) {
+        plansListView.innerHTML = plans.length
+            ? plans.map(p => `<div class="plan-list-item" data-id="${p.id}">${escapeHtml(p.title)}</div>`).join('')
+            : '<div class="empty-state">Планов пока нет</div>';
+
+        plansListView.querySelectorAll('.plan-list-item').forEach(el =>
+            el.addEventListener('click', () => openPlanDetail(Number(el.dataset.id))));
+    }
+
+    async function openPlanDetail(planId) {
+        const res = await getData(`/telegram-app/plans/${planId}`);
+        currentPlanId = planId;
+        planDetailTitle.textContent = res.result.title;
+        renderPlanContent(res.result.content);
+        plansListView.style.display = 'none';
+        plansDetailView.style.display = 'block';
+        updateInputBarsVisibility();
+    }
+
+    function closePlanDetail() {
+        currentPlanId = null;
+        plansDetailView.style.display = 'none';
+        plansListView.style.display = 'block';
+        updateInputBarsVisibility();
+    }
+
+    async function sendPlanEdit() {
+        const instruction = planTextInput.value.trim();
+        if (!instruction || !currentPlanId) return;
+
+        planTextInput.value = '';
+        planProgress.classList.add('active');
+        try {
+            const data = await postData(`/telegram-app/plans/${currentPlanId}/edit`, {instruction});
+            renderPlanContent(data.result.content);
+        } catch (err) {
+            showPlanError(err.message || 'Ошибка правки плана');
+        } finally {
+            planProgress.classList.remove('active');
+        }
+    }
+
+    function showPlanError(message) {
+        const banner = document.createElement('div');
+        banner.className = 'denied-state';
+        banner.style.color = '#e74c3c';
+        banner.textContent = '⚠️ ' + message;
+        planDetailContent.prepend(banner);
+    }
+
+    // Небольшой чекбокс-осознанный рендерер Markdown - не полноценный CommonMark,
+    // но чекбоксы "- [ ]"/"- [x]" (единственный механизм шагов плана) рендерятся
+    // как настоящие disabled-чекбоксы, остальное - заголовки/списки/жирный текст
+    // или экранированный текст построчно как безопасный фолбэк
+    function renderPlanContent(markdown) {
+        const lines = String(markdown || '').split('\n');
+        const html = lines.map(line => {
+            const escaped = escapeHtml(line).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+
+            const checkbox = line.match(/^\s*-\s\[([ xX])]\s(.*)$/);
+            if (checkbox) {
+                const checked = checkbox[1].toLowerCase() === 'x';
+                const label = escapeHtml(checkbox[2]).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+                return `<div class="plan-line plan-checkbox"><input type="checkbox" disabled ${checked ? 'checked' : ''}><span>${label}</span></div>`;
+            }
+            if (/^#{1,3}\s/.test(line)) {
+                return `<div class="plan-heading">${escaped.replace(/^#{1,3}\s/, '')}</div>`;
+            }
+            if (/^\s*-\s/.test(line)) {
+                return `<div class="plan-line">• ${escaped.replace(/^\s*-\s/, '')}</div>`;
+            }
+            if (!line.trim()) {
+                return '<div class="plan-line-empty"></div>';
+            }
+            return `<div class="plan-line">${escaped}</div>`;
+        }).join('');
+
+        planDetailContent.innerHTML = html;
     }
 
     init();

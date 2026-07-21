@@ -47,7 +47,7 @@ nav {
     list-style: none;
     padding: 0 20px 15px 0; /* Отступ справа 20px, чтобы текст был под текстом заголовка */
     margin: 0;
-    gap: 10px;
+    gap: 5px;
     width: 100%;
 }
 

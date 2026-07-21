@@ -150,6 +150,14 @@ async def fact_collection_page(request: Request, user: AuthSession = Depends(req
     )
 
 
+@router.get("/admin/plan", response_class=HTMLResponse)
+async def plan_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/plan.html"
+    )
+
+
 @router.get("/admin/tool", response_class=HTMLResponse)
 async def tool_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(

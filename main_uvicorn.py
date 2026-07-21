@@ -35,11 +35,13 @@ from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.auth import auth as auth_router
 from src.uvicorn.routers.cronjob import cronjob
 from src.uvicorn.routers.fact import fact, fact_collection
+from src.uvicorn.routers.plan import plan
 from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
 from src.uvicorn.routers.telegram_app import telegram_app
+from src.uvicorn.routers.telegram_app import telegram_app_plan
 from src.uvicorn.routers.tool import tool
 from src.uvicorn.routers.translate import translate
 from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_variable, workflow_trace
@@ -370,5 +372,7 @@ app.include_router(workflow_variable.router, include_in_schema=False)
 app.include_router(workflow_trace.router, include_in_schema=False)
 app.include_router(tool.router, include_in_schema=False)
 app.include_router(fact_collection.router, include_in_schema=False)
+app.include_router(plan.router, include_in_schema=False)
 app.include_router(companion.router, include_in_schema=False)
 app.include_router(telegram_app.router, include_in_schema=False)
+app.include_router(telegram_app_plan.router, include_in_schema=False)

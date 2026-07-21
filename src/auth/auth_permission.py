@@ -69,6 +69,12 @@ class AuthPermission(str, Enum):
     FACT_COLLECTION_UPDATE = "fact_collection:update"
     FACT_COLLECTION_DELETE = "fact_collection:delete"
 
+    # Plan permissions
+    PLAN_VIEW = "plan:view"
+    PLAN_CREATE = "plan:create"
+    PLAN_UPDATE = "plan:update"
+    PLAN_DELETE = "plan:delete"
+
     # Session permissions
     SESSION_VIEW = "session:view"
     SESSION_DELETE = "session:delete"

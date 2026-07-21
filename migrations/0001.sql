@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS `agent_workflow_run_step`;
 DROP TABLE IF EXISTS `agent_workflow_run`;
 DROP TABLE IF EXISTS `agent_session`;
 DROP TABLE IF EXISTS `detective_case`;
+DROP TABLE IF EXISTS `plan`;
 DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `fact`;
 DROP TABLE IF EXISTS `fact_collection`;
@@ -289,6 +290,24 @@ CREATE TABLE `agent_role` (
     PRIMARY KEY (`agent_id`, `role_id`),
     CONSTRAINT `fk_agent_agent` FOREIGN KEY (`agent_id`) REFERENCES `agent` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_agent_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Таблица планов (Markdown-документы, редактируемые голосом/текстом в Telegram Mini App)
+CREATE TABLE `plan` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `node_id` INT NULL,
+    `user_id` INT NULL,
+    `title` CHAR(150) NOT NULL,
+    `content` LONGTEXT NOT NULL COMMENT 'Markdown-текст плана; шаги/прогресс — чекбоксы "- [ ]"/"- [x]" внутри этого текста',
+    `status` ENUM('active', 'archived') NOT NULL DEFAULT 'active',
+    `position` INT NOT NULL DEFAULT 0,
+    `dynamic` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1 - создан во время работы (mini-app), не входит в seed-экспорт',
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_plan_node` (`node_id`),
+    INDEX `idx_plan_user_status` (`user_id`, `status`),
+    CONSTRAINT `fk_plan_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_plan_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица фактов

@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+
+{% block title %}Планы{% endblock %}
+
+{% block head %}
+<style>
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    .group-header {
+        padding: 10px 15px 5px;
+        font-size: 11px;
+        color: #df983d;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .plan-item {
+        padding: 10px 15px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .plan-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .plan-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+    }
+
+    .plan-status-badge {
+        font-size: 11px;
+        color: #bdc3c7;
+        background: #fff;
+        padding: 2px 6px;
+        border-radius: 10px;
+        border: 1px solid #eee;
+    }
+
+    .editor-section {
+        flex: 1;
+        padding: 20px 40px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 10px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-header h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 20px;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        align-items: start;
+        margin-bottom: 15px;
+    }
+
+    .three-fields-row {
+        display: flex;
+        gap: 15px;
+        grid-column: 1 / -1;
+        width: 100%;
+    }
+
+    .three-fields-row .form-group {
+        flex: 1;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .form-group-textarea textarea {
+        width: 100%;
+        min-height: 320px;
+        font-family: monospace;
+        resize: vertical;
+    }
+
+    .form-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        border-color: #3498db;
+        outline: none;
+        box-shadow: 0 0 5px rgba(52, 152, 219, 0.2);
+    }
+
+    .editor-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 12px 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-save:hover {
+        background: #2980b9;
+    }
+
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .btn-delete {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 11px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+        margin-right: auto;
+    }
+
+    .btn-delete:hover {
+        background: #e74c3c;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-container">
+
+    <div class="agents-sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="createNewPlan">+ Создать план</button>
+        </div>
+        <div class="agent-list" id="planList"></div>
+    </div>
+
+    <div class="editor-section">
+        <div class="form-header">
+            <h2 id="formTitle">Выберите план</h2>
+        </div>
+
+        <form id="planForm">
+            <input type="hidden" id="planId">
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Название</label>
+                    <input type="text" id="title" class="form-control" required>
+                </div>
+
+                <div class="three-fields-row">
+                    <div class="form-group">
+                        <label>Нода</label>
+                        <select id="node_id" class="form-control">
+                            <option value="0">Вне ноды</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Статус</label>
+                        <select id="status" class="form-control">
+                            <option value="active">active</option>
+                            <option value="archived">archived</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Владелец (user_id)</label>
+                        <input type="number" id="user_id" class="form-control" value="1">
+                    </div>
+                </div>
+
+                <div class="form-group form-group-textarea">
+                    <label>Содержимое (Markdown)</label>
+                    <textarea id="content" class="form-control"></textarea>
+                </div>
+            </div>
+
+            <div class="editor-footer">
+                <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить план</button>
+                <button type="submit" class="btn-save" id="saveBtn">Сохранить план</button>
+            </div>
+        </form>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const planListContainer = document.getElementById('planList');
+    const saveBtn = document.getElementById('saveBtn');
+    const planForm = document.getElementById('planForm');
+    const createNewPlanBtn = document.getElementById('createNewPlan');
+    const deleteBtn = document.getElementById('deleteBtn');
+
+    let nodesLoaded = false;
+    let cachedNodes = [];
+
+    async function loadNodesSelect() {
+        if (nodesLoaded) return;
+        try {
+            const response = await getData('/node/list');
+            const nodes = response.result.sort((a, b) => (a.position || 0) - (b.position || 0));
+            cachedNodes = nodes;
+            const nodeSelect = document.getElementById('node_id');
+            nodeSelect.innerHTML = '<option value="0">Вне ноды</option>';
+            nodes.forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n.id;
+                opt.textContent = n.name;
+                nodeSelect.appendChild(opt);
+            });
+            nodesLoaded = true;
+        } catch (e) {
+            console.error('Ошибка при загрузке нод:', e);
+        }
+    }
+
+    async function initPlanManager(activeId = null) {
+        try {
+            await loadNodesSelect();
+            const response = await getData('/plan/list');
+            const plans = response.result || [];
+            plans.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+            renderPlanList(plans, activeId);
+        } catch (e) {
+            console.error('Ошибка инициализации планов:', e);
+        }
+    }
+
+    function renderPlanList(plans, activeId = null) {
+        planListContainer.innerHTML = '';
+
+        if (plans.length === 0) {
+            planListContainer.innerHTML = '<div style="padding:20px; color:#999; font-size:13px;">Нет созданных планов</div>';
+            return;
+        }
+
+        plans.forEach(plan => {
+            const div = document.createElement('div');
+            div.className = 'plan-item';
+            div.setAttribute('data-id', plan.id);
+            div.innerHTML = `
+                <span>${plan.title}</span>
+                <span class="plan-status-badge">${plan.status}</span>
+            `;
+            div.onclick = () => selectPlanForEdit(plan.id, div);
+            planListContainer.appendChild(div);
+        });
+
+        let targetItem = activeId ? plans.find(p => String(p.id) === String(activeId)) : null;
+        let targetElement = activeId ? planListContainer.querySelector(`.plan-item[data-id="${activeId}"]`) : null;
+
+        if (!targetItem || !targetElement) {
+            targetItem = plans[0];
+            targetElement = planListContainer.querySelector('.plan-item');
+        }
+
+        if (targetItem && targetElement) selectPlanForEdit(targetItem.id, targetElement);
+    }
+
+    async function selectPlanForEdit(planId, element) {
+        document.querySelectorAll('.plan-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        try {
+            const data = await getData(`/plan/${planId}`);
+            const plan = data.result;
+            if (!plan) return;
+
+            document.getElementById('planId').value = plan.id;
+            document.getElementById('title').value = plan.title || '';
+            document.getElementById('node_id').value = plan.node_id || 0;
+            document.getElementById('status').value = plan.status || 'active';
+            document.getElementById('user_id').value = plan.user_id || '';
+            document.getElementById('content').value = plan.content || '';
+
+            document.getElementById('formTitle').textContent = `Редактирование плана: ${plan.title}`;
+            saveBtn.disabled = false;
+            deleteBtn.style.display = 'block';
+        } catch (e) {
+            console.error('Ошибка при получении плана:', e);
+            showNotification('Не удалось загрузить план', 'error');
+        }
+    }
+
+    function resetFormForCreate() {
+        document.querySelectorAll('.plan-item').forEach(el => el.classList.remove('active'));
+        planForm.reset();
+        document.getElementById('planId').value = '';
+        document.getElementById('formTitle').textContent = 'Создание нового плана';
+        document.getElementById('node_id').value = 0;
+        document.getElementById('status').value = 'active';
+        document.getElementById('user_id').value = 1;
+        document.getElementById('content').value = '';
+        saveBtn.disabled = false;
+        deleteBtn.style.display = 'none';
+    }
+
+    async function savePlanConfig(e) {
+        if (e) e.preventDefault();
+
+        const id = document.getElementById('planId').value;
+        const payload = {
+            title: document.getElementById('title').value,
+            node_id: parseInt(document.getElementById('node_id').value) || null,
+            status: document.getElementById('status').value,
+            user_id: parseInt(document.getElementById('user_id').value) || null,
+            content: document.getElementById('content').value || '',
+        };
+
+        saveBtn.disabled = true;
+        try {
+            if (id) {
+                await putData(`/plan/${id}`, payload);
+                showNotification(`План "${payload.title}" обновлен`, 'success');
+            } else {
+                await postData('/plan', payload);
+                showNotification(`План "${payload.title}" создан`, 'success');
+            }
+            await initPlanManager(id || null);
+            if (!id) resetFormForCreate();
+        } catch (e) {
+            console.error('Ошибка сохранения плана:', e);
+            showNotification(`Ошибка: ${e.message}`, 'error');
+        } finally {
+            saveBtn.disabled = false;
+        }
+    }
+
+    async function deletePlan() {
+        const id = document.getElementById('planId').value;
+        const title = document.getElementById('title').value;
+        if (!id) return;
+
+        if (confirm(`Вы уверены, что хотите удалить план "${title}"?`)) {
+            try {
+                await deleteData(`/plan/${id}`);
+                showNotification(`План "${title}" удален`, 'success');
+                resetFormForCreate();
+                await initPlanManager();
+            } catch (e) {
+                console.error('Ошибка удаления:', e);
+                showNotification(`Ошибка при удалении: ${e.message}`, 'error');
+            }
+        }
+    }
+
+    initPlanManager();
+    planForm.addEventListener('submit', savePlanConfig);
+    createNewPlanBtn.addEventListener('click', resetFormForCreate);
+    deleteBtn.addEventListener('click', deletePlan);
+</script>
+{% endblock %}

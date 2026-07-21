@@ -12,7 +12,7 @@
 
 <nav>
     <div class="logo">
-        <a href="/"><img src="/static/assets/logo.png" alt="Logo" style="width: 130px"></a>
+        <a href="/"><img src="/static/assets/logo.png" alt="Logo" style="width: 140px"></a>
     </div>
 
     <ul class="top-nav">
@@ -24,6 +24,7 @@
                 <li><a href="/admin/agent">Агенты</a></li>
                 {% endif %}
                 <li><a href="/admin/fact">Факты</a></li>
+                <li><a href="/admin/plan">Планы</a></li>
                 {% if request.session.get('role') == 'admin' %}
                 <li><a href="/admin/llm">LLM</a></li>
                 {% endif %}
