@@ -77,8 +77,33 @@
         .content-panel {
             flex: 1;
             min-width: 0;
-            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
             box-sizing: border-box;
+        }
+
+        /* Заголовок текущей "страницы" (виден, когда сайдбар в режиме
+           "назад", а не меню из 4 иконок) */
+        .page-header {
+            display: none;
+            flex-shrink: 0;
+            padding: 14px 16px;
+            font-size: 16px;
+            font-weight: bold;
+            border-bottom: 1px solid #edf2f7;
+            background: #ffffff;
+        }
+
+        .page-header.visible {
+            display: block;
+        }
+
+        .tab-views {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
 
         .tab-view {
@@ -322,10 +347,6 @@
             border-radius: 14px;
         }
 
-        #chatInputBar, #planInputBar {
-            align-items: flex-end;
-        }
-
         .mic-wrap {
             position: relative;
             flex-shrink: 0;
@@ -494,6 +515,9 @@
                 <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
                 <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
             </div>
+            <div class="icon-sidebar-group" id="sidebarPageIcons">
+                <button class="icon-btn" id="pageBackIconBtn" title="Назад к меню">🔙</button>
+            </div>
             <div class="icon-sidebar-group" id="sidebarPlanIcons">
                 <button class="icon-btn" id="planBackIconBtn" title="Назад к списку планов">🔙</button>
                 <button class="icon-btn icon-btn-danger" id="planDeleteIconBtn" title="Удалить план">🗑</button>
@@ -501,6 +525,8 @@
         </div>
 
         <div class="content-panel">
+            <div class="page-header" id="pageHeader"><span id="pageHeaderTitle"></span></div>
+            <div class="tab-views" id="tabViews">
             <div class="tab-view active" id="tab-events">
                 <div class="empty-state">Загрузка...</div>
             </div>
@@ -519,6 +545,7 @@
                     <div class="plan-title" id="planDetailTitle"></div>
                     <div class="plan-content" id="planDetailContent"></div>
                 </div>
+            </div>
             </div>
         </div>
     </div>
@@ -600,12 +627,22 @@
     const planCreateMicCancel = document.getElementById('planCreateMicCancel');
 
     const sidebarDefaultIcons = document.getElementById('sidebarDefaultIcons');
+    const sidebarPageIcons = document.getElementById('sidebarPageIcons');
+    const pageBackIconBtn = document.getElementById('pageBackIconBtn');
+    const pageHeader = document.getElementById('pageHeader');
+    const pageHeaderTitle = document.getElementById('pageHeaderTitle');
     const sidebarPlanIcons = document.getElementById('sidebarPlanIcons');
     const planBackIconBtn = document.getElementById('planBackIconBtn');
     const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
 
+    // Заголовки страниц для сайдбара 2 уровня (меню -> страница)
+    const PAGE_TITLES = {events: 'События', claude: 'Claude', chat: 'Чат', plans: 'Планы'};
+
     let chatSessionUuid = null;
-    let claudeSessionUuid = null;
+    // session_uuid переживает обновление страницы - иначе рефреш стирает
+    // историю чата с Claude Code (ответы могут приходить асинхронно, спустя
+    // время после перезагрузки)
+    let claudeSessionUuid = localStorage.getItem('claudeSessionUuid') || null;
     let claudePollTimer = null;
     let claudeRenderedCount = 0;
     let claudeTypingBubble = null;
@@ -634,7 +671,9 @@
 
     function initTabs() {
         // [data-tab] отсекает иконки "назад"/"удалить" сайдбара плана - у них
-        // своя логика (закрыть план / удалить), они не переключают вкладки
+        // своя логика (закрыть план / удалить), они не переключают вкладки.
+        // Клик по любой иконке меню "проваливает" на страницу: сайдбар
+        // схлопывается до одной иконки "назад", наверху появляется заголовок
         document.querySelectorAll('.icon-btn[data-tab]').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.icon-btn[data-tab]').forEach(b => b.classList.remove('active'));
@@ -644,10 +683,23 @@
 
                 currentTab = btn.dataset.tab;
                 if (currentTab === 'plans') loadPlans();
+                setSidebarPageMode(true);
                 updateInputBarsVisibility();
                 updateClaudePolling();
             });
         });
+
+        pageBackIconBtn.addEventListener('click', () => setSidebarPageMode(false));
+    }
+
+    // Уровень 1 сайдбара: меню из 4 иконок <-> одна иконка "назад" + заголовок
+    // текущей страницы. Возврат в меню НЕ меняет содержимое (как и у планов) -
+    // просто снова показывает меню поверх последней открытой страницы
+    function setSidebarPageMode(isInPage) {
+        sidebarDefaultIcons.classList.toggle('active-group', !isInPage);
+        sidebarPageIcons.classList.toggle('active-group', isInPage);
+        pageHeader.classList.toggle('visible', isInPage);
+        pageHeaderTitle.textContent = PAGE_TITLES[currentTab] || '';
     }
 
     // Показывает свой input-бар под текущую вкладку: чат - всегда на вкладке
@@ -883,6 +935,11 @@
                 await sendClaudeMessage();
             },
         });
+
+        // Сессия восстановлена из localStorage - подгружаем всю историю разом
+        if (claudeSessionUuid) {
+            loadClaudeMessages(true).then(updateClaudePolling);
+        }
     }
 
     async function sendClaudeMessage() {
@@ -903,6 +960,7 @@
                 session_uuid: claudeSessionUuid
             });
             claudeSessionUuid = data.session_uuid || claudeSessionUuid;
+            localStorage.setItem('claudeSessionUuid', claudeSessionUuid);
             updateClaudePolling();
         } catch (err) {
             claudeTypingBubble?.remove();
@@ -917,17 +975,22 @@
     // только новые сообщения. Плейсхолдер "..." (пульсирующие точки на клиенте)
     // не дублируется текстом; как только приходит настоящий ответ Claude Code
     // (любой response-final с содержимым, отличным от "..."), индикатор
-    // убирается и появляется реальный ответ
-    async function loadClaudeMessages() {
+    // убирается и появляется реальный ответ.
+    // isInitialLoad=true - восстановление истории после перезагрузки страницы:
+    // тогда рендерим и сообщения пользователя тоже (обычно их пропускаем,
+    // т.к. они уже отрисованы сразу при отправке)
+    async function loadClaudeMessages(isInitialLoad = false) {
         if (!claudeSessionUuid) return;
         try {
             const res = await getData(`/telegram-app/claude/messages?session_uuid=${encodeURIComponent(claudeSessionUuid)}`);
             const rows = res.result || [];
             for (const row of rows.slice(claudeRenderedCount)) {
-                if (row.kind_type === 'user-prompt' || row.content === '...') continue;
+                if (row.content === '...') continue;
+                if (row.kind_type === 'user-prompt' && !isInitialLoad) continue;
                 claudeTypingBubble?.remove();
                 claudeTypingBubble = null;
-                appendBubble('assistant', row.content, false, claudeMessagesEl);
+                const role = row.kind_type === 'user-prompt' ? 'user' : 'assistant';
+                appendBubble(role, row.content, false, claudeMessagesEl);
             }
             claudeRenderedCount = rows.length;
         } catch (err) {
@@ -1043,7 +1106,9 @@
     // (события/чат/планы) и режимом открытого плана (назад/удалить) -
     // без пересборки DOM, просто скрывает/показывает готовые группы
     function setSidebarPlanMode(isPlanOpen) {
-        sidebarDefaultIcons.classList.toggle('active-group', !isPlanOpen);
+        // Уровень 2 (план): назад из плана возвращает на уровень 1 (страница
+        // "Планы"), а не сразу в меню - планы уже были "открыты" как страница
+        sidebarPageIcons.classList.toggle('active-group', !isPlanOpen);
         sidebarPlanIcons.classList.toggle('active-group', isPlanOpen);
     }
 
