@@ -147,10 +147,14 @@ async def telegram_app_claude_respond(request: Request, data: dict):
     inbox_id = data.get("inbox_id")
     session_uuid = str(data.get("session_uuid") or "").strip()
     response = str(data.get("response") or "").strip()
-    if not inbox_id or not session_uuid or not response:
-        raise HTTPException(status_code=400, detail="inbox_id, session_uuid, response required")
+    if not session_uuid or not response:
+        raise HTTPException(status_code=400, detail="session_uuid, response required")
 
-    result = await claude_message_cloud(inbox_id=int(inbox_id), session_uuid=session_uuid, response=response)
+    result = await claude_message_cloud(
+        session_uuid=session_uuid,
+        response=response,
+        inbox_id=int(inbox_id) if inbox_id else None,
+    )
 
     if data.get("notify", True):
         await telegram_send_owner(response)

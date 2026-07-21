@@ -24,21 +24,24 @@ async def claude_message_user(prompt_user: str, session_uuid: str) -> dict:
     return {"id": inbox_id}
 
 
-async def claude_message_cloud(inbox_id: int, session_uuid: str, response: str) -> dict:
+async def claude_message_cloud(session_uuid: str, response: str, inbox_id: int | None = None) -> dict:
     """
-    Записывает ответ Claude Code на сообщение из очереди ai_claude_session:
-    помечает запись обработанной и добавляет ответ в agent_session, откуда
-    его подхватывает чат Mini App. Не вызывается workflow-шагом - дергается
-    напрямую внешним процессом Claude Code после обработки запроса.
+    Записывает ответ Claude Code в agent_session, откуда его подхватывает чат
+    Mini App - основной способ "написать в чат Claude", включая произвольные
+    промежуточные сообщения без привязки к конкретному запросу пользователя
+    (inbox_id тогда не передается - нечего помечать обработанным). Не
+    вызывается workflow-шагом - дергается напрямую внешним процессом Claude
+    Code.
     Returns:
         dict:
             request_uuid (str): request_uuid созданной записи в agent_session.
     """
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "UPDATE ai_claude_session SET handled = 1, response = %s, responded_at = NOW() WHERE id = %s",
-            (response, inbox_id)
-        )
+    if inbox_id is not None:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "UPDATE ai_claude_session SET handled = 1, response = %s, responded_at = NOW() WHERE id = %s",
+                (response, inbox_id)
+            )
 
     request_uuid = str(uuid.uuid4())
     await ai_session_message_add(
