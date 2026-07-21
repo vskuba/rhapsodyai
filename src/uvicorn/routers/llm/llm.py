@@ -208,31 +208,38 @@ async def llm_errors_reset(data: dict, user=Depends(AuthChecker([AuthPermission.
 
 
 @router.get("/llm/usage/stats")
-async def llm_usage_stats(days: int = 7, user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
+async def llm_usage_stats(node_id: int | None = None, days: int = 7,
+                          user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
     """Статистика использования LLM по пользователям за последние `days` дней
-    (клампится до 7 - дальше llm_request не хранит записи, см. миграцию)."""
+    (клампится до 7 - дальше llm_request не хранит записи, см. миграцию).
+    Без node_id - по всем моделям; с node_id - только по моделям этой ноды
+    (через node_llm), иначе цифры не меняются при переключении ноды."""
     days = max(1, min(int(days), 7))
+
+    node_filter = "AND r.llm_id IN (SELECT llm_id FROM node_llm WHERE node_id = %s)" if node_id else ""
+    params = (days, node_id) if node_id else (days,)
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            """
+            f"""
             SELECT u.id AS user_id, u.username, r.llm_id, l.name AS llm_name,
                    COUNT(*) AS requests, SUM(r.status_code >= 400) AS errors
             FROM llm_request r
             JOIN llm l ON l.id = r.llm_id
             LEFT JOIN `user` u ON u.id = r.user_id
             WHERE r.created_at >= NOW() - INTERVAL %s DAY
+            {node_filter}
             GROUP BY u.id, r.llm_id
             ORDER BY requests DESC
             """,
-            (days,)
+            params
         )
         rows = await db.fetchall()
         for row in rows:
             row['requests'] = int(row['requests'])
             row['errors'] = int(row['errors'] or 0)
 
-    return {"result": {"days": days, "rows": rows}}
+    return {"result": {"days": days, "node_id": node_id, "rows": rows}}
 
 
 @router.post("/llm/ping/{llm_id}")

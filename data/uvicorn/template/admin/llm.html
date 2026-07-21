@@ -755,9 +755,11 @@
         }
     }
 
-    async function loadUsageStats(days) {
+    async function loadUsageStats(nodeId, days) {
         try {
-            const data = await getData(`/llm/usage/stats?days=${encodeURIComponent(days)}`);
+            const query = new URLSearchParams({days});
+            if (nodeId) query.set('node_id', nodeId);
+            const data = await getData(`/llm/usage/stats?${query}`);
             const rows = data.result.rows || [];
 
             usageStatsBody.innerHTML = '';
@@ -786,9 +788,12 @@
         }
     }
 
-    nodeSelect.onchange = () => loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
+    nodeSelect.onchange = () => {
+        loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
+        loadUsageStats(nodeSelect.value, usageStatsDays.value);
+    };
     resetHoursSelect.onchange = () => loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
-    usageStatsDays.onchange = () => loadUsageStats(usageStatsDays.value);
+    usageStatsDays.onchange = () => loadUsageStats(nodeSelect.value, usageStatsDays.value);
 
     // Немедленный сброс ошибок моделей выбранной ноды (время + код)
     const resetErrorsBtn = document.getElementById('resetErrorsBtn');
@@ -839,7 +844,6 @@
     autoRefreshSelect.onchange = autoRefreshStart;
     autoRefreshStart();
 
-    loadStatus();
-    loadUsageStats(usageStatsDays.value);
+    loadStatus().then(() => loadUsageStats(nodeSelect.value, usageStatsDays.value));
 </script>
 {% endblock %}
