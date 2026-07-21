@@ -83,7 +83,9 @@ async def llm_status(node_id: int | None = None, reset_hours: int | None = None,
 
         pings = {row['id']: await _ping_get(row['id']) for row in rows}
 
-        # Счетчики запросов по окнам (журнал llm_request хранится 7 дней)
+        # Счетчики запросов по окнам (журнал llm_request хранится 7 дней).
+        # Фильтр по node_id самого запроса (не по текущему списку моделей ноды) -
+        # node_llm может делить одну модель между нодами
         await db.execute(
             """
             SELECT llm_id,
@@ -94,8 +96,10 @@ async def llm_status(node_id: int | None = None, reset_hours: int | None = None,
                    SUM(status_code >= 400)                       AS d7_errors,
                    AVG(CASE WHEN status_code < 400 THEN duration_ms END) AS avg_ms
             FROM llm_request
+            WHERE node_id = %s
             GROUP BY llm_id
-            """
+            """,
+            (selected_node_id,)
         )
         counters = {r['llm_id']: r for r in await db.fetchall()}
         for c in counters.values():
@@ -110,9 +114,10 @@ async def llm_status(node_id: int | None = None, reset_hours: int | None = None,
                    COUNT(*)                AS qty,
                    SUM(status_code >= 400) AS errors
             FROM llm_request
-            WHERE created_at >= NOW() - INTERVAL 60 MINUTE
+            WHERE created_at >= NOW() - INTERVAL 60 MINUTE AND node_id = %s
             GROUP BY llm_id, bucket
-            """
+            """,
+            (selected_node_id,)
         )
         spark_rows = await db.fetchall()
 
