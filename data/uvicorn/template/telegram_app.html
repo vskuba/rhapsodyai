@@ -58,6 +58,21 @@
             background: #eef6fc;
         }
 
+        /* Группы иконок сайдбара: дефолтная (события/чат/планы) и режим
+           открытого плана (назад/удалить) - переключаются целиком, без
+           перестройки DOM, чтобы избежать мигания при входе в план */
+        .icon-sidebar-group {
+            display: none;
+        }
+
+        .icon-sidebar-group.active-group {
+            display: contents;
+        }
+
+        .icon-btn.icon-btn-danger {
+            color: #e74c3c;
+        }
+
         .content-panel {
             flex: 1;
             min-width: 0;
@@ -412,9 +427,15 @@
 <div class="app-wrapper">
     <div class="app-shell">
         <div class="icon-sidebar">
-            <button class="icon-btn active" id="tabBtnEvents" data-tab="events" title="События">🔔</button>
-            <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
-            <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
+            <div class="icon-sidebar-group active-group" id="sidebarDefaultIcons">
+                <button class="icon-btn active" id="tabBtnEvents" data-tab="events" title="События">🔔</button>
+                <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
+                <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
+            </div>
+            <div class="icon-sidebar-group" id="sidebarPlanIcons">
+                <button class="icon-btn" id="planBackIconBtn" title="Назад к списку планов">←</button>
+                <button class="icon-btn icon-btn-danger" id="planDeleteIconBtn" title="Удалить план">🗑</button>
+            </div>
         </div>
 
         <div class="content-panel">
@@ -429,7 +450,6 @@
             <div class="tab-view" id="tab-plans">
                 <div class="plans-list-view" id="plansListView"></div>
                 <div class="plans-detail-view" id="plansDetailView" style="display:none;">
-                    <button class="plan-back-btn" id="planBackBtn">← Назад</button>
                     <div class="plan-title" id="planDetailTitle"></div>
                     <div class="plan-content" id="planDetailContent"></div>
                 </div>
@@ -467,7 +487,7 @@
 </div>
 
 <script type="module">
-    import {getData, postData} from '/static/js/api.js';
+    import {getData, postData, deleteData} from '/static/js/api.js';
 
     const tg = window.Telegram?.WebApp;
     const eventsTab = document.getElementById('tab-events');
@@ -481,7 +501,6 @@
 
     const plansListView = document.getElementById('plansListView');
     const plansDetailView = document.getElementById('plansDetailView');
-    const planBackBtn = document.getElementById('planBackBtn');
     const planDetailTitle = document.getElementById('planDetailTitle');
     const planDetailContent = document.getElementById('planDetailContent');
     const planTextInput = document.getElementById('planTextInput');
@@ -495,6 +514,11 @@
     const planCreateProgress = document.getElementById('planCreateProgress');
     const planCreateMicBtn = document.getElementById('planCreateMicBtn');
     const planCreateMicCancel = document.getElementById('planCreateMicCancel');
+
+    const sidebarDefaultIcons = document.getElementById('sidebarDefaultIcons');
+    const sidebarPlanIcons = document.getElementById('sidebarPlanIcons');
+    const planBackIconBtn = document.getElementById('planBackIconBtn');
+    const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
 
     let chatSessionUuid = null;
     let currentTab = 'events';
@@ -520,9 +544,11 @@
     }
 
     function initTabs() {
-        document.querySelectorAll('.icon-btn').forEach(btn => {
+        // [data-tab] отсекает иконки "назад"/"удалить" сайдбара плана - у них
+        // своя логика (закрыть план / удалить), они не переключают вкладки
+        document.querySelectorAll('.icon-btn[data-tab]').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.icon-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.icon-btn[data-tab]').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
@@ -726,7 +752,8 @@
     }
 
     function initPlans() {
-        planBackBtn.addEventListener('click', closePlanDetail);
+        planBackIconBtn.addEventListener('click', closePlanDetail);
+        planDeleteIconBtn.addEventListener('click', deleteCurrentPlan);
         planSendBtn.addEventListener('click', sendPlanEdit);
         // Textarea в 4 строки: Enter отправляет, Shift+Enter - перенос строки
         planTextInput.addEventListener('keydown', (e) => {
@@ -805,6 +832,7 @@
         renderPlanContent(res.result.content);
         plansListView.style.display = 'none';
         plansDetailView.style.display = 'block';
+        setSidebarPlanMode(true);
         updateInputBarsVisibility();
     }
 
@@ -812,7 +840,43 @@
         currentPlanId = null;
         plansDetailView.style.display = 'none';
         plansListView.style.display = 'block';
+        setSidebarPlanMode(false);
         updateInputBarsVisibility();
+    }
+
+    // Переключает сайдбар целиком между дефолтными вкладками
+    // (события/чат/планы) и режимом открытого плана (назад/удалить) -
+    // без пересборки DOM, просто скрывает/показывает готовые группы
+    function setSidebarPlanMode(isPlanOpen) {
+        sidebarDefaultIcons.classList.toggle('active-group', !isPlanOpen);
+        sidebarPlanIcons.classList.toggle('active-group', isPlanOpen);
+    }
+
+    async function deleteCurrentPlan() {
+        if (!currentPlanId) return;
+
+        const confirmed = await confirmDialog('Удалить этот план?');
+        if (!confirmed) return;
+
+        try {
+            await deleteData(`/telegram-app/plans/${currentPlanId}`);
+            closePlanDetail();
+            await loadPlans();
+        } catch (err) {
+            showPlanError(err.message || 'Не удалось удалить план');
+        }
+    }
+
+    // Диалог подтверждения через нативный Telegram UI, если доступен
+    // (в WebView браузера showConfirm отсутствует - тогда обычный confirm())
+    function confirmDialog(message) {
+        return new Promise(resolve => {
+            if (tg?.showConfirm) {
+                tg.showConfirm(message, resolve);
+            } else {
+                resolve(window.confirm(message));
+            }
+        });
     }
 
     async function sendPlanEdit() {

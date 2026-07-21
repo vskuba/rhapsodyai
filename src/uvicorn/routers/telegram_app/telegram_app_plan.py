@@ -73,6 +73,19 @@ async def telegram_app_plan_create(request: Request, data: dict):
     return {"result": {"id": plan_id, "title": title, "content": content}, "instruction": instruction}
 
 
+@router.delete("/telegram-app/plans/{plan_id}")
+async def telegram_app_plan_delete(request: Request, plan_id: int):
+    _require_telegram_owner(request)
+
+    entity_plan = await PlanRepository().find(plan_id)
+    if not entity_plan or entity_plan.get("user_id") != TELEGRAM_PLAN_USER_ID:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    await PlanRepository().delete(plan_id)
+
+    return {"result": {"id": plan_id}}
+
+
 @router.post("/telegram-app/plans/{plan_id}/edit")
 async def telegram_app_plan_edit(request: Request, plan_id: int, data: dict):
     _require_telegram_owner(request)
