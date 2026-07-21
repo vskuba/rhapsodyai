@@ -103,6 +103,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                 await ai_llm_request_log(
                     framework_model.entity_llm_current.get('id'),
                     framework_model.user_id,
+                    node_id=framework_model.node_id,
                     status_code=200,
                     duration_ms=int((time.monotonic() - run_started) * 1000),
                 )
@@ -141,6 +142,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                 await ai_llm_request_log(
                     framework_model.entity_llm_current.get('id'),
                     framework_model.user_id,
+                    node_id=framework_model.node_id,
                     status_code=error_code or 500,
                     error=str(e),
                     duration_ms=int((time.monotonic() - run_started) * 1000) if run_started else None,

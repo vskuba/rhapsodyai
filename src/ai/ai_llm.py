@@ -8,10 +8,15 @@ LLM_REQUEST_TTL_DAYS = 7
 async def ai_llm_request_log(
         llm_id: int | None,
         user_id: int | None,
+        node_id: int | None = None,
         status_code: int = 200, error: str | None = None,
         duration_ms: int | None = None
 ):
     """Пишет запрос к LLM в журнал llm_request (метрики страницы /admin/llm).
+
+    node_id — нода, под которой реально шел запрос: node_llm может делить одну
+    модель между несколькими нодами, поэтому фильтр статистики по ноде нужно
+    строить по факту запроса, а не по текущему списку моделей ноды.
 
     Заодно оппортунистически удаляет записи старше LLM_REQUEST_TTL_DAYS
     (порциями, чтобы не блокировать таблицу). Сбой журнала не должен
@@ -22,9 +27,9 @@ async def ai_llm_request_log(
     try:
         async with mysql_get_db_async() as db:
             await db.execute(
-                "INSERT INTO llm_request (llm_id, user_id, status_code, duration_ms, error) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                (llm_id, user_id or None, status_code, duration_ms,
+                "INSERT INTO llm_request (llm_id, user_id, node_id, status_code, duration_ms, error) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (llm_id, user_id or None, node_id or None, status_code, duration_ms,
                  (error or None) and str(error)[:255])
             )
             await db.execute(

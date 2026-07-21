@@ -212,11 +212,13 @@ async def llm_usage_stats(node_id: int | None = None, days: int = 7,
                           user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
     """Статистика использования LLM по пользователям за последние `days` дней
     (клампится до 7 - дальше llm_request не хранит записи, см. миграцию).
-    Без node_id - по всем моделям; с node_id - только по моделям этой ноды
-    (через node_llm), иначе цифры не меняются при переключении ноды."""
+    Фильтр по node_id - это node_id самого запроса (llm_request.node_id),
+    а не текущий список моделей ноды: node_llm может делить одну модель
+    между нодами, так что "модель числится за нодой" не значит "запрос был
+    сделан под этой нодой"."""
     days = max(1, min(int(days), 7))
 
-    node_filter = "AND r.llm_id IN (SELECT llm_id FROM node_llm WHERE node_id = %s)" if node_id else ""
+    node_filter = "AND r.node_id = %s" if node_id else ""
     params = (days, node_id) if node_id else (days,)
 
     async with mysql_get_db_async() as db:

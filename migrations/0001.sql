@@ -104,14 +104,17 @@ CREATE TABLE `llm_request` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `llm_id` INT NOT NULL,
     `user_id` INT NULL,
+    `node_id` INT NULL,                                -- нода, под которой реально шел запрос (для /admin/llm статистики по ноде - node_llm может делить одну модель между нодами, этого недостаточно для фильтра)
     `status_code` INT NULL,                            -- 200 = успех; 429/413/402/503/500 = ошибка
     `duration_ms` INT NULL,                            -- время ответа провайдера в мс
     `error` VARCHAR(255) NULL,                         -- краткий текст ошибки
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_llm_request_llm` (`llm_id`, `created_at`),
     INDEX `idx_llm_request_created` (`created_at`),
+    INDEX `idx_llm_request_node` (`node_id`, `created_at`),
     CONSTRAINT `fk_llm_request_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_llm_request_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_llm_request_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_llm_request_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Список LLM настраивается на ноду (не на пользователя) - при росте числа
