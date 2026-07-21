@@ -48,7 +48,13 @@ INIT_DATA_MAX_AGE_SECONDS = 24 * 3600
 
 @router.get("/telegram-app", response_class=HTMLResponse)
 async def telegram_app_page(request: Request):
-    return request.app.state.jinja2_template.TemplateResponse(request, "telegram_app.html")
+    # Telegram WebView кэширует эту страницу агрессивнее обычного браузера и
+    # игнорирует стандартные заголовки без явного no-store - после каждого
+    # деплоя фронтенда пользователь иначе видит старую версию до принудительного
+    # сброса кэша
+    response = request.app.state.jinja2_template.TemplateResponse(request, "telegram_app.html")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
 
 
 @router.post("/telegram-app/auth")

@@ -91,7 +91,17 @@
             font-size: 16px;
             font-weight: bold;
             border-bottom: 1px solid #edf2f7;
-            background: #ffffff;
+            background: #f5f6f8;
+        }
+
+        /* Небольшая коррекция позиции иконки "назад", чтобы визуально
+           совпадать по высоте с заголовком страницы напротив */
+        #sidebarPageIcons {
+            margin-top: -6px;
+        }
+
+        #claudeNewSessionIconBtn {
+            display: none;
         }
 
         .page-header.visible {
@@ -517,6 +527,7 @@
             </div>
             <div class="icon-sidebar-group" id="sidebarPageIcons">
                 <button class="icon-btn" id="pageBackIconBtn" title="Назад к меню">🔙</button>
+                <button class="icon-btn" id="claudeNewSessionIconBtn" title="Новая сессия">➕</button>
             </div>
             <div class="icon-sidebar-group" id="sidebarPlanIcons">
                 <button class="icon-btn" id="planBackIconBtn" title="Назад к списку планов">🔙</button>
@@ -629,6 +640,7 @@
     const sidebarDefaultIcons = document.getElementById('sidebarDefaultIcons');
     const sidebarPageIcons = document.getElementById('sidebarPageIcons');
     const pageBackIconBtn = document.getElementById('pageBackIconBtn');
+    const claudeNewSessionIconBtn = document.getElementById('claudeNewSessionIconBtn');
     const pageHeader = document.getElementById('pageHeader');
     const pageHeaderTitle = document.getElementById('pageHeaderTitle');
     const sidebarPlanIcons = document.getElementById('sidebarPlanIcons');
@@ -643,6 +655,9 @@
     // историю чата с Claude Code (ответы могут приходить асинхронно, спустя
     // время после перезагрузки)
     let claudeSessionUuid = localStorage.getItem('claudeSessionUuid') || null;
+    // Порядковый номер сессии Claude чата - виден в заголовке, растет при
+    // каждом нажатии "новая сессия"; не связан с session_uuid, чисто для UX
+    let claudeSessionNumber = Number(localStorage.getItem('claudeSessionNumber')) || 1;
     let claudePollTimer = null;
     let claudeRenderedCount = 0;
     let claudeTypingBubble = null;
@@ -690,6 +705,7 @@
         });
 
         pageBackIconBtn.addEventListener('click', () => setSidebarPageMode(false));
+        claudeNewSessionIconBtn.addEventListener('click', startNewClaudeSession);
     }
 
     // Уровень 1 сайдбара: меню из 4 иконок <-> одна иконка "назад" + заголовок
@@ -699,7 +715,31 @@
         sidebarDefaultIcons.classList.toggle('active-group', !isInPage);
         sidebarPageIcons.classList.toggle('active-group', isInPage);
         pageHeader.classList.toggle('visible', isInPage);
-        pageHeaderTitle.textContent = PAGE_TITLES[currentTab] || '';
+        pageHeaderTitle.textContent = currentTab === 'claude'
+            ? `Claude #${claudeSessionNumber}`
+            : (PAGE_TITLES[currentTab] || '');
+        // Кнопка "новая сессия" - только на странице Claude
+        claudeNewSessionIconBtn.style.display = (isInPage && currentTab === 'claude') ? 'flex' : 'none';
+    }
+
+    // Полностью сбрасывает чат с Claude Code: новый session_uuid (следующее
+    // сообщение создаст его на сервере), очищенная история на экране,
+    // остановленный опрос старой сессии
+    function startNewClaudeSession() {
+        claudeSessionUuid = null;
+        localStorage.removeItem('claudeSessionUuid');
+        claudeRenderedCount = 0;
+        claudeTypingBubble = null;
+        claudeMessagesEl.innerHTML = '';
+
+        claudeSessionNumber++;
+        localStorage.setItem('claudeSessionNumber', String(claudeSessionNumber));
+        pageHeaderTitle.textContent = `Claude #${claudeSessionNumber}`;
+
+        if (claudePollTimer) {
+            clearInterval(claudePollTimer);
+            claudePollTimer = null;
+        }
     }
 
     // Показывает свой input-бар под текущую вкладку: чат - всегда на вкладке
