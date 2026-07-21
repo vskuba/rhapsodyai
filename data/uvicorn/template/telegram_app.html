@@ -55,7 +55,8 @@
         }
 
         .icon-btn.active {
-            background: #eef6fc;
+            background: #007bff;
+            box-shadow: 0 2px 6px rgba(0, 123, 255, 0.4);
         }
 
         /* Группы иконок сайдбара: дефолтная (события/чат/планы) и режим
@@ -275,7 +276,7 @@
             border-radius: 14px;
         }
 
-        #planInputBar {
+        #chatInputBar, #planInputBar {
             align-items: flex-end;
         }
 
@@ -433,7 +434,7 @@
                 <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
             </div>
             <div class="icon-sidebar-group" id="sidebarPlanIcons">
-                <button class="icon-btn" id="planBackIconBtn" title="Назад к списку планов">←</button>
+                <button class="icon-btn" id="planBackIconBtn" title="Назад к списку планов">🔙</button>
                 <button class="icon-btn icon-btn-danger" id="planDeleteIconBtn" title="Удалить план">🗑</button>
             </div>
         </div>
@@ -463,7 +464,7 @@
             <button class="mic-cancel" id="micCancel">✕</button>
             <button class="mic-btn" id="chatMicBtn">🎤</button>
         </div>
-        <input type="text" class="chat-text-input" id="chatTextInput" placeholder="Сообщение...">
+        <textarea class="chat-text-input plan-text-input" id="chatTextInput" rows="4" placeholder="Сообщение..."></textarea>
         <button class="chat-send-btn" id="chatSendBtn">➤</button>
     </div>
 
@@ -697,8 +698,12 @@
 
     function initChat() {
         chatSendBtn.addEventListener('click', sendChatMessage);
+        // Textarea в 4 строки: Enter отправляет, Shift+Enter - перенос строки
         chatTextInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') sendChatMessage();
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChatMessage();
+            }
         });
 
         createVoiceRecorder({
