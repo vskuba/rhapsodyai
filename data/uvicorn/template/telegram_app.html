@@ -108,10 +108,6 @@
             margin-top: -6px;
         }
 
-        #claudeNewSessionIconBtn {
-            display: none;
-        }
-
         .page-header.visible {
             display: block;
         }
@@ -447,6 +443,39 @@
             border-bottom: none;
         }
 
+        /* --- Claude session list (вкладка Cloud) --- */
+        .claude-session-item {
+            font-size: 14px;
+            padding: 12px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #edf2f7;
+        }
+
+        .claude-session-item:last-child {
+            border-bottom: none;
+        }
+
+        .claude-session-item .session-title {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .claude-session-item .session-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #2ecc71;
+            flex-shrink: 0;
+        }
+
+        .claude-session-item .session-subtitle {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+
         .plan-back-btn {
             border: none;
             background: transparent;
@@ -535,11 +564,14 @@
             </div>
             <div class="icon-sidebar-group" id="sidebarPageIcons">
                 <button class="icon-btn" id="pageBackIconBtn" title="Назад к меню">🔙</button>
-                <button class="icon-btn" id="claudeNewSessionIconBtn" title="Новая сессия">➕</button>
             </div>
             <div class="icon-sidebar-group" id="sidebarPlanIcons">
                 <button class="icon-btn" id="planBackIconBtn" title="Назад к списку планов">🔙</button>
                 <button class="icon-btn icon-btn-danger" id="planDeleteIconBtn" title="Удалить план">🗑</button>
+            </div>
+            <div class="icon-sidebar-group" id="sidebarClaudeIcons">
+                <button class="icon-btn" id="claudeBackToListIconBtn" title="К списку сессий">🔙</button>
+                <button class="icon-btn icon-btn-danger" id="claudeCloseSessionIconBtn" title="Отключить сессию">⏻</button>
             </div>
         </div>
 
@@ -551,7 +583,8 @@
             </div>
 
             <div class="tab-view" id="tab-claude">
-                <div class="chat-messages" id="claudeMessages"></div>
+                <div class="plans-list-view" id="claudeSessionListView"></div>
+                <div class="chat-messages" id="claudeMessages" style="display:none;"></div>
             </div>
 
             <div class="tab-view" id="tab-chat">
@@ -622,6 +655,7 @@
     const chatInputBar = document.getElementById('chatInputBar');
 
     const claudeMessagesEl = document.getElementById('claudeMessages');
+    const claudeSessionListView = document.getElementById('claudeSessionListView');
     const claudeTextInput = document.getElementById('claudeTextInput');
     const claudeSendBtn = document.getElementById('claudeSendBtn');
     const claudeMicBtn = document.getElementById('claudeMicBtn');
@@ -648,24 +682,26 @@
     const sidebarDefaultIcons = document.getElementById('sidebarDefaultIcons');
     const sidebarPageIcons = document.getElementById('sidebarPageIcons');
     const pageBackIconBtn = document.getElementById('pageBackIconBtn');
-    const claudeNewSessionIconBtn = document.getElementById('claudeNewSessionIconBtn');
     const pageHeader = document.getElementById('pageHeader');
     const pageHeaderTitle = document.getElementById('pageHeaderTitle');
     const sidebarPlanIcons = document.getElementById('sidebarPlanIcons');
     const planBackIconBtn = document.getElementById('planBackIconBtn');
     const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
+    const sidebarClaudeIcons = document.getElementById('sidebarClaudeIcons');
+    const claudeBackToListIconBtn = document.getElementById('claudeBackToListIconBtn');
+    const claudeCloseSessionIconBtn = document.getElementById('claudeCloseSessionIconBtn');
 
     // Заголовки страниц для сайдбара 2 уровня (меню -> страница)
     const PAGE_TITLES = {events: 'События', claude: 'Claude', chat: 'Чат', plans: 'Планы'};
 
     let chatSessionUuid = null;
-    // session_uuid переживает обновление страницы - иначе рефреш стирает
-    // историю чата с Claude Code (ответы могут приходить асинхронно, спустя
-    // время после перезагрузки)
-    let claudeSessionUuid = localStorage.getItem('claudeSessionUuid') || null;
-    // Порядковый номер сессии Claude чата - виден в заголовке, растет при
-    // каждом нажатии "новая сессия"; не связан с session_uuid, чисто для UX
-    let claudeSessionNumber = Number(localStorage.getItem('claudeSessionNumber')) || 1;
+    // session_uuid выбранной сессии Claude Code - не персистится в
+    // localStorage: источник правды теперь реестр ai_claude_session_registry
+    // на сервере (см. .claude/docs/claude_session_registry.md), при каждом
+    // открытии вкладки заново показывается список зарегистрированных сессий
+    let claudeSessionUuid = null;
+    // Роль + метка проекта выбранной сессии - для заголовка страницы
+    let claudeSessionLabel = '';
     let claudePollTimer = null;
     let claudeRenderedCount = 0;
     let claudeTypingBubble = null;
@@ -709,6 +745,9 @@
 
                 currentTab = btn.dataset.tab;
                 if (currentTab === 'plans') loadPlans();
+                // Если сессия уже открыта (просто переключились на другую
+                // вкладку и вернулись) - не сбрасываем на список заново
+                if (currentTab === 'claude' && !claudeSessionUuid) loadClaudeSessionList();
                 setSidebarPageMode(true);
                 updateInputBarsVisibility();
                 updateClaudePolling();
@@ -716,41 +755,23 @@
         });
 
         pageBackIconBtn.addEventListener('click', () => setSidebarPageMode(false));
-        claudeNewSessionIconBtn.addEventListener('click', startNewClaudeSession);
+        claudeBackToListIconBtn.addEventListener('click', closeClaudeSessionView);
+        claudeCloseSessionIconBtn.addEventListener('click', requestCloseClaudeSession);
     }
 
     // Уровень 1 сайдбара: меню из 4 иконок <-> одна иконка "назад" + заголовок
     // текущей страницы. Возврат в меню НЕ меняет содержимое (как и у планов) -
-    // просто снова показывает меню поверх последней открытой страницы
+    // просто снова показывает меню поверх последней открытой страницы.
+    // Полностью реактивна от claudeSessionUuid - переключает все 3 группы
+    // иконок явно на каждый вызов, поэтому переключение вкладок не может
+    // оставить "залипшей" не ту группу (она не завязана на предыдущий вызов)
     function setSidebarPageMode(isInPage) {
+        const isClaudeSessionOpen = currentTab === 'claude' && claudeSessionUuid !== null;
         sidebarDefaultIcons.classList.toggle('active-group', !isInPage);
-        sidebarPageIcons.classList.toggle('active-group', isInPage);
+        sidebarPageIcons.classList.toggle('active-group', isInPage && !isClaudeSessionOpen);
+        sidebarClaudeIcons.classList.toggle('active-group', isInPage && isClaudeSessionOpen);
         pageHeader.classList.toggle('visible', isInPage);
-        pageHeaderTitle.textContent = currentTab === 'claude'
-            ? `Claude #${claudeSessionNumber}`
-            : (PAGE_TITLES[currentTab] || '');
-        // Кнопка "новая сессия" - только на странице Claude
-        claudeNewSessionIconBtn.style.display = (isInPage && currentTab === 'claude') ? 'flex' : 'none';
-    }
-
-    // Полностью сбрасывает чат с Claude Code: новый session_uuid (следующее
-    // сообщение создаст его на сервере), очищенная история на экране,
-    // остановленный опрос старой сессии
-    function startNewClaudeSession() {
-        claudeSessionUuid = null;
-        localStorage.removeItem('claudeSessionUuid');
-        claudeRenderedCount = 0;
-        claudeTypingBubble = null;
-        claudeMessagesEl.innerHTML = '';
-
-        claudeSessionNumber++;
-        localStorage.setItem('claudeSessionNumber', String(claudeSessionNumber));
-        pageHeaderTitle.textContent = `Claude #${claudeSessionNumber}`;
-
-        if (claudePollTimer) {
-            clearInterval(claudePollTimer);
-            claudePollTimer = null;
-        }
+        pageHeaderTitle.textContent = isClaudeSessionOpen ? claudeSessionLabel : (PAGE_TITLES[currentTab] || '');
     }
 
     // Показывает свой input-бар под текущую вкладку: чат - всегда на вкладке
@@ -760,9 +781,10 @@
         chatInputBar.classList.toggle('chat-visible', isChatTab);
         chatProgress.classList.toggle('chat-visible', isChatTab);
 
-        const isClaudeTab = currentTab === 'claude';
-        claudeInputBar.classList.toggle('chat-visible', isClaudeTab);
-        claudeProgress.classList.toggle('chat-visible', isClaudeTab);
+        // Input-бар Claude - только когда открыта конкретная сессия, не на списке
+        const isClaudeSessionOpen = currentTab === 'claude' && claudeSessionUuid !== null;
+        claudeInputBar.classList.toggle('chat-visible', isClaudeSessionOpen);
+        claudeProgress.classList.toggle('chat-visible', isClaudeSessionOpen);
 
         const isPlanDetailOpen = currentTab === 'plans' && currentPlanId !== null;
         planInputBar.classList.toggle('chat-visible', isPlanDetailOpen);
@@ -772,6 +794,94 @@
         const isPlansListOpen = currentTab === 'plans' && currentPlanId === null;
         planCreateBar.classList.toggle('chat-visible', isPlansListOpen);
         planCreateProgress.classList.toggle('chat-visible', isPlansListOpen);
+    }
+
+    // Список зарегистрированных сессий Claude Code для этого проекта
+    // (ai_claude_session_registry) - открывается сразу при входе на вкладку
+    // Cloud, если ни одна сессия ещё не выбрана. См.
+    // .claude/docs/claude_session_registry.md §6
+    async function loadClaudeSessionList() {
+        claudeSessionListView.innerHTML = '<div class="empty-state">Загрузка...</div>';
+        try {
+            const res = await getData('/telegram-app/claude/sessions/active');
+            renderClaudeSessionList(res.result || []);
+        } catch (err) {
+            claudeSessionListView.innerHTML = '<div class="denied-state">⚠️ Не удалось загрузить сессии</div>';
+        }
+    }
+
+    function renderClaudeSessionList(sessions) {
+        claudeSessionListView.innerHTML = sessions.length
+            ? sessions.map(s => `
+                <div class="claude-session-item" data-uuid="${escapeHtml(s.session_uuid)}"
+                     data-role="${escapeHtml(s.role)}" data-project="${escapeHtml(s.project_label)}">
+                    <div class="session-title">
+                        <span class="session-status-dot"></span>
+                        ${escapeHtml(s.role)} — ${escapeHtml(s.project_label)}
+                    </div>
+                    <div class="session-subtitle">${escapeHtml(s.summary || 'Нет краткого содержания')}</div>
+                </div>
+            `).join('')
+            : '<div class="empty-state">Активных сессий нет. Запустите терминал в проекте, чтобы зарегистрировать сессию</div>';
+
+        claudeSessionListView.querySelectorAll('.claude-session-item').forEach(el =>
+            el.addEventListener('click', () => openClaudeSession(
+                el.dataset.uuid, el.dataset.role, el.dataset.project
+            )));
+    }
+
+    // Открывает чат конкретной сессии - подтягивает историю целиком (как при
+    // восстановлении после перезагрузки), запускает опрос новых сообщений
+    async function openClaudeSession(sessionUuid, role, projectLabel) {
+        claudeSessionUuid = sessionUuid;
+        claudeSessionLabel = `${role} — ${projectLabel}`;
+        claudeRenderedCount = 0;
+        claudeTypingBubble = null;
+        claudeMessagesEl.innerHTML = '';
+
+        claudeSessionListView.style.display = 'none';
+        claudeMessagesEl.style.display = 'block';
+        setSidebarPageMode(true);
+        updateInputBarsVisibility();
+
+        await loadClaudeMessages(true);
+        updateClaudePolling();
+    }
+
+    // Возврат со страницы конкретной сессии на список сессий (уровень 2 -> 1
+    // внутри вкладки Cloud) - не выходит из вкладки целиком
+    function closeClaudeSessionView() {
+        claudeSessionUuid = null;
+        claudeSessionLabel = '';
+        if (claudePollTimer) {
+            clearInterval(claudePollTimer);
+            claudePollTimer = null;
+        }
+
+        claudeMessagesEl.style.display = 'none';
+        claudeSessionListView.style.display = 'block';
+        setSidebarPageMode(true);
+        updateInputBarsVisibility();
+
+        loadClaudeSessionList();
+    }
+
+    // Кнопка "Отключить сессию" - мягкий стоп (status='closing'), НЕ убивает
+    // терминал; /loop сам доведет до inactive на следующем heartbeat. См.
+    // .claude/docs/claude_session_registry.md §5
+    async function requestCloseClaudeSession() {
+        if (!claudeSessionUuid) return;
+
+        const confirmed = await confirmDialog(`Отключить сессию "${claudeSessionLabel}"?`);
+        if (!confirmed) return;
+
+        try {
+            await postData('/telegram-app/claude/session/close-request', {session_uuid: claudeSessionUuid});
+        } catch (err) {
+            // Тихо пропускаем - сессия сама покажется устаревшей по heartbeat,
+            // если запрос не дошел
+        }
+        closeClaudeSessionView();
     }
 
     async function loadEvents() {
@@ -986,16 +1096,14 @@
                 await sendClaudeMessage();
             },
         });
-
-        // Сессия восстановлена из localStorage - подгружаем всю историю разом
-        if (claudeSessionUuid) {
-            loadClaudeMessages(true).then(updateClaudePolling);
-        }
     }
 
     async function sendClaudeMessage() {
         const message = claudeTextInput.value.trim();
-        if (!message) return;
+        // Сообщение может уйти только внутри уже выбранной зарегистрированной
+        // сессии (session_uuid из реестра) - без неё input-бар и не показан
+        // (см. updateInputBarsVisibility), это подстраховка
+        if (!message || !claudeSessionUuid) return;
 
         claudeTextInput.value = '';
         appendBubble('user', message, false, claudeMessagesEl);
@@ -1006,12 +1114,10 @@
 
         claudeProgress.classList.add('active');
         try {
-            const data = await postData('/telegram-app/claude/ask', {
+            await postData('/telegram-app/claude/ask', {
                 message,
                 session_uuid: claudeSessionUuid
             });
-            claudeSessionUuid = data.session_uuid || claudeSessionUuid;
-            localStorage.setItem('claudeSessionUuid', claudeSessionUuid);
             updateClaudePolling();
         } catch (err) {
             claudeTypingBubble?.remove();
