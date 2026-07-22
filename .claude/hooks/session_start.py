@@ -39,7 +39,7 @@ def main():
     project_label = os.path.basename(os.path.normpath(cwd))
 
     env = env_file_load(os.path.join(PROJECT_ROOT, ".env"))
-    secret = os.environ.get("TELEGRAM_NOTIFY_TOKEN") or env.get("TELEGRAM_NOTIFY_TOKEN", "")
+    secret = os.environ.get("TELEGRAM_TOKEN_RHAPSODY") or env.get("TELEGRAM_TOKEN_RHAPSODY", "")
     mini_app_url = os.environ.get("TELEGRAM_MINI_APP_URL") or env.get("TELEGRAM_MINI_APP_URL", "")
     base_url = mini_app_url.rsplit("/telegram-app", 1)[0] if mini_app_url else "http://localhost:8011"
 
@@ -57,7 +57,7 @@ def main():
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
             context_lines.append(f"(не удалось получить список зарегистрированных сессий: {e})")
     else:
-        context_lines.append("(TELEGRAM_NOTIFY_TOKEN не найден - реестр сессий недоступен)")
+        context_lines.append("(TELEGRAM_TOKEN_RHAPSODY не найден - реестр сессий недоступен)")
 
     if sessions is not None:
         if sessions:
