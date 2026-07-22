@@ -140,7 +140,7 @@ See `.claude/docs/database.md` for full migration structure, FK table order, and
 - `WHISPER_MODEL_NAME`, `WHISPER_LANGUAGE`
 - `DATA_DIR`, `HISTORY_DIR`, `REPORT_DIR`, `TASK_DIR`, `LOG_DIR`
 - `SESSION_SECRET_KEY` — FastAPI session secret
-- `TELEGRAM_NOTIFY_TOKEN`, `TELEGRAM_OWNER_CHAT_ID` — Telegram Mini App
+- `TELEGRAM_TOKEN_RHAPSODY`, `TELEGRAM_OWNER_CHAT_ID` — Telegram Mini App
 
 ## Development Notes
 
@@ -174,7 +174,7 @@ Located at `GET /telegram-app`. Uses Telegram WebApp initData auth (not admin se
 See `.claude/docs/telegram_mini_app.md` for full architecture, API endpoints, voice input, and DB schema.
 
 Да, все верно, эти миграции не будут запускаться при дефлоре. Но ты можешь сам зайти на прот и вручную выполнить все. ### Sending the user a Telegram notification (as Claude Code)
-Don't rely on the Telegram MCP plugin being connected — it can disconnect mid-session. `TELEGRAM_NOTIFY_TOKEN` and `TELEGRAM_OWNER_CHAT_ID` are already in `.env`/the running container, which is enough to message the user directly over the Bot API, no plugin needed. Reuse the existing helper instead of hand-rolling an HTTP call:
+Don't rely on the Telegram MCP plugin being connected — it can disconnect mid-session. `TELEGRAM_TOKEN_RHAPSODY` and `TELEGRAM_OWNER_CHAT_ID` are already in `.env`/the running container, which is enough to message the user directly over the Bot API, no plugin needed. Reuse the existing helper instead of hand-rolling an HTTP call:
 
 ```bash
 docker exec uvicorn python3 -c "
@@ -184,7 +184,7 @@ asyncio.run(telegram_send_owner('your message'))
 "
 ```
 
-`telegram_send_owner()` (`src/telegram_/telegram_notify.py`) posts to `https://api.telegram.org/bot{TELEGRAM_NOTIFY_TOKEN}/sendMessage` with `chat_id=TELEGRAM_OWNER_CHAT_ID`. Use this whenever asked to "send me a Telegram message" and the MCP plugin route isn't available.
+`telegram_send_owner()` (`src/telegram_/telegram_notify.py`) posts to `https://api.telegram.org/bot{TELEGRAM_TOKEN_RHAPSODY}/sendMessage` with `chat_id=TELEGRAM_OWNER_CHAT_ID`. Use this whenever asked to "send me a Telegram message" and the MCP plugin route isn't available.
 
 ### Key Files
 
