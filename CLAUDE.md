@@ -190,8 +190,8 @@ asyncio.run(telegram_send_owner('your message'))
 If `.claude/session_uuid` exists in this checkout, this terminal is a registered session (see `.claude/docs/claude_session_registry.md`) tracked in `ai_claude_session_registry` and shown in the Mini App "Cloud" tab. When registered:
 
 - Run `/loop` in **dynamic** (self-paced) mode (if not already running) so a heartbeat keeps the session marked active and the Mini App chat's inbox gets drained — do NOT use a fixed interval (`/loop 60s`), it can't back off. Each iteration should: `heartbeat` → `inbox` → process any unread inbox messages as normal user prompts. Pace via `ScheduleWakeup`: start at 60s; on an empty inbox, double the previous delay (cap at 900s = 15 min, keeping ≥2× margin under the 30-min staleness cutoff `sessions/active` uses); on any inbox message, reset to 60s.
-- Mirror your responses — intermediate progress *and* the final answer, not just the final one — into the Mini App chat via `.claude/hooks/claude_session_client.py respond --session-uuid "$(cat .claude/session_uuid)" --response "..."`. Use `--no-notify` for intermediate steps (chat history only, no push) and the default (push) for the final answer, so the user sees live progress instead of just an end result.
-- Use `.claude/hooks/claude_session_client.py` for all registry calls (`heartbeat`, `inbox`, `respond`, `finalize`) instead of hand-rolling curl — it already reads the secret/base URL from `.env`.
+- Mirror your responses — intermediate progress *and* the final answer, not just the final one — into the Mini App chat via `.claude/hooks/session_client.py respond --session-uuid "$(cat .claude/session_uuid)" --response "..."`. Use `--no-notify` for intermediate steps (chat history only, no push) and the default (push) for the final answer, so the user sees live progress instead of just an end result.
+- Use `.claude/hooks/session_client.py` for all registry calls (`heartbeat`, `inbox`, `respond`, `finalize`) instead of hand-rolling curl — it already reads the secret/base URL from `.env`.
 
 ### Key Files
 

@@ -7,10 +7,10 @@ CLI-обертка над эндпоинтами реестра сессий Cla
 session_start.py. См. .claude/docs/claude_session_registry.md §4.
 
 Использование:
-  claude_session_client.py heartbeat --session-uuid UUID
-  claude_session_client.py inbox --session-uuid UUID
-  claude_session_client.py respond --session-uuid UUID --response TEXT [--inbox-id N] [--no-notify]
-  claude_session_client.py finalize --session-uuid UUID [--summary TEXT]
+  session_client.py heartbeat --session-uuid UUID
+  session_client.py inbox --session-uuid UUID
+  session_client.py respond --session-uuid UUID --response TEXT [--inbox-id N] [--no-notify]
+  session_client.py finalize --session-uuid UUID [--summary TEXT]
 """
 
 import argparse
