@@ -333,7 +333,7 @@ async def telegram_app_claude_session_close_request(request: Request, data: dict
 
 
 def _require_claude_secret(request: Request):
-    expected = config_get("TELEGRAM_NOTIFY_TOKEN")
+    expected = config_get("TELEGRAM_TOKEN_RHAPSODY")
     provided = request.headers.get("X-Claude-Secret")
     if not expected or not provided or not hmac.compare_digest(provided, expected):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -439,7 +439,7 @@ def _telegram_init_data_verify(init_data: str) -> int:
 
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    bot_token = config_get("TELEGRAM_NOTIFY_TOKEN")
+    bot_token = config_get("TELEGRAM_TOKEN_RHAPSODY")
     secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
