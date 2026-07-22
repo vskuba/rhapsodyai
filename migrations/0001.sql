@@ -372,6 +372,25 @@ CREATE TABLE `ai_claude_session` (
     INDEX `idx_claude_session_uuid` (`session_uuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Реестр терминальных сессий Claude Code (не путать с очередью выше) - какие
+-- session_uuid сейчас зарегистрированы/активны, под какой ролью и проектом;
+-- нужен, чтобы Mini App могла показывать список открытых сессий в виде иконок
+-- и резюмировать конкретную при повторном запуске терминала - см.
+-- .claude/docs/claude_session_registry.md
+CREATE TABLE `ai_claude_session_registry` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_uuid` CHAR(36) NOT NULL UNIQUE,
+    `role` VARCHAR(50) NOT NULL DEFAULT 'developer',
+    `project_label` VARCHAR(255) NOT NULL,
+    `status` ENUM('active','closing','inactive') NOT NULL DEFAULT 'active',
+    `summary` VARCHAR(500) NULL,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `last_seen_at` DATETIME NULL,
+    `closed_at` DATETIME NULL,
+    INDEX `idx_claude_registry_status` (`status`),
+    INDEX `idx_claude_registry_project` (`project_label`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Журнал выполнения workflow: один запуск (включая вложенные sub-workflow через parent_run_id)
 CREATE TABLE `agent_workflow_run` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,

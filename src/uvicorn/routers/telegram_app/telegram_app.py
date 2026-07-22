@@ -5,6 +5,7 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime
 from urllib.parse import parse_qsl
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
@@ -18,6 +19,7 @@ from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.faster_whisper.faster_whisper_model import faster_whisper_transcribe
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
 from src.mysql_.repository.event_log_repository import EventLogRepository
 from src.telegram_.telegram_notify import telegram_send_owner
 from src.tool.claude_.claude_ import claude_message_cloud
@@ -160,6 +162,174 @@ async def telegram_app_claude_respond(request: Request, data: dict):
         await telegram_send_owner(response)
 
     return {"result": result}
+
+
+@router.get("/telegram-app/claude/sessions")
+async def telegram_app_claude_sessions(request: Request, project_label: str):
+    """
+    Список зарегистрированных сессий (любой статус) для проекта - вызывается
+    хуком SessionStart при старте терминала, чтобы показать пользователю
+    выбор существующих сессий для резюме. См. .claude/docs/claude_session_registry.md §3.
+    """
+    _require_claude_secret(request)
+
+    repo = AiClaudeSessionRegistryRepository()
+    rows = await repo.find_by({"project_label": project_label}, order_by="last_seen_at DESC, created_at DESC")
+
+    return {"result": rows}
+
+
+@router.post("/telegram-app/claude/session/register")
+async def telegram_app_claude_session_register(request: Request, data: dict):
+    """
+    Регистрирует новую терминальную сессию - вызывается хуком SessionStart,
+    если пользователь не выбрал резюме существующей сессии.
+    """
+    _require_claude_secret(request)
+
+    role = str(data.get("role") or "developer").strip()
+    project_label = str(data.get("project_label") or "").strip()
+    if not project_label:
+        raise HTTPException(status_code=400, detail="project_label required")
+
+    session_uuid = str(uuid.uuid4())
+    repo = AiClaudeSessionRegistryRepository()
+    await repo.add({
+        "session_uuid": session_uuid,
+        "role": role,
+        "project_label": project_label,
+        "status": "active",
+        "last_seen_at": datetime.now(),
+    })
+
+    return {"result": {"session_uuid": session_uuid}}
+
+
+@router.post("/telegram-app/claude/session/resume")
+async def telegram_app_claude_session_resume(request: Request, data: dict):
+    """
+    Резюмирует существующую сессию - помечает active, обновляет heartbeat,
+    возвращает историю переписки (тот же источник, что и Mini App чат).
+    """
+    _require_claude_secret(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    repo = AiClaudeSessionRegistryRepository()
+    row = await repo.find_one_by({"session_uuid": session_uuid})
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await repo.update(row["id"], {"status": "active", "last_seen_at": datetime.now()})
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            """
+            SELECT role, kind_type, content, created_at
+            FROM agent_session
+            WHERE session_uuid = %s AND kind_type IN ('user-prompt', 'response-final')
+            ORDER BY id ASC
+            """,
+            (session_uuid,)
+        )
+        messages = await db.fetchall()
+
+    return {"result": {"session": row, "messages": messages}}
+
+
+@router.post("/telegram-app/claude/session/heartbeat")
+async def telegram_app_claude_session_heartbeat(request: Request, data: dict):
+    """
+    Вызывается /loop на каждой итерации - обновляет last_seen_at и сообщает
+    терминалу текущий статус (в частности 'closing', если отключение уже
+    запрошено через Telegram).
+    """
+    _require_claude_secret(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    repo = AiClaudeSessionRegistryRepository()
+    row = await repo.find_one_by({"session_uuid": session_uuid})
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await repo.update(row["id"], {"last_seen_at": datetime.now()})
+
+    return {"result": {"status": row["status"]}}
+
+
+@router.post("/telegram-app/claude/session/finalize")
+async def telegram_app_claude_session_finalize(request: Request, data: dict):
+    """
+    Финальная уборка сессии - вызывается /loop, увидевшим status='closing' на
+    heartbeat, после того как сам сгенерировал краткое summary переписки.
+    """
+    _require_claude_secret(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    summary = data.get("summary")
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    repo = AiClaudeSessionRegistryRepository()
+    row = await repo.find_one_by({"session_uuid": session_uuid})
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    update_data = {"status": "inactive", "closed_at": datetime.now()}
+    if summary:
+        update_data["summary"] = str(summary)[:500]
+    await repo.update(row["id"], update_data)
+
+    return {"result": {"ok": True}}
+
+
+@router.get("/telegram-app/claude/sessions/active")
+async def telegram_app_claude_sessions_active(request: Request):
+    """
+    Активные сессии для иконок во вкладке Cloud Mini App - учитывает
+    staleness heartbeat, не только поле status (см.
+    .claude/docs/claude_session_registry.md §4).
+    """
+    _require_telegram_owner(request)
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            """
+            SELECT * FROM `ai_claude_session_registry`
+            WHERE status = 'active' AND last_seen_at >= (NOW() - INTERVAL 30 MINUTE)
+            ORDER BY last_seen_at DESC
+            """
+        )
+        rows = await db.fetchall()
+
+    return {"result": rows}
+
+
+@router.post("/telegram-app/claude/session/close-request")
+async def telegram_app_claude_session_close_request(request: Request, data: dict):
+    """
+    Кнопка "Отключить" в Mini App - мягкий стоп, не убивает терминал (см.
+    .claude/docs/claude_session_registry.md §5).
+    """
+    _require_telegram_owner(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    repo = AiClaudeSessionRegistryRepository()
+    row = await repo.find_one_by({"session_uuid": session_uuid})
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await repo.update(row["id"], {"status": "closing"})
+
+    return {"result": {"ok": True}}
 
 
 def _require_claude_secret(request: Request):
