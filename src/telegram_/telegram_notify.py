@@ -12,7 +12,7 @@ async def telegram_send_owner(text: str):
     запускает main_telegram.py и не может положить ответ в его in-memory очереди.
     """
     owner_chat_id = config_get('TELEGRAM_OWNER_CHAT_ID')
-    bot_token = config_get('TELEGRAM_NOTIFY_TOKEN')
+    bot_token = config_get('TELEGRAM_TOKEN_RHAPSODY')
     if not owner_chat_id or not bot_token:
         logger_info('⚠️ TELEGRAM_OWNER_CHAT_ID/TELEGRAM_TOKEN не заданы, уведомление в Telegram пропущено')
         return
@@ -30,12 +30,12 @@ async def telegram_send_owner(text: str):
 async def telegram_notify_bot_setup():
     """
     Настраивает кнопку Mini App в чате владельца для бота уведомлений
-    (TELEGRAM_NOTIFY_TOKEN). Этот бот не поллит сообщения (нет Dispatcher) -
+    (TELEGRAM_TOKEN_RHAPSODY). Этот бот не поллит сообщения (нет Dispatcher) -
     поэтому настройка через голый HTTP, а не aiogram. Идемпотентно, безопасно
     вызывать при каждом старте uvicorn.
     """
     owner_chat_id = config_get('TELEGRAM_OWNER_CHAT_ID')
-    bot_token = config_get('TELEGRAM_NOTIFY_TOKEN')
+    bot_token = config_get('TELEGRAM_TOKEN_RHAPSODY')
     mini_app_url = config_get('TELEGRAM_MINI_APP_URL')
     if not (owner_chat_id and bot_token and mini_app_url):
         return
