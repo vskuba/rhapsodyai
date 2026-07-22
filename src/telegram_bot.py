@@ -21,7 +21,7 @@ TELEGRAM_BOT_USER_ID = 1
 
 
 async def init_telegram_bot(agent_name: str):
-    bot = Bot(token=config_get('TELEGRAM_TOKEN'))
+    bot = Bot(token=config_get('TELEGRAM_TOKEN_SOKO'))
     dp = Dispatcher()
 
     await bot.set_my_commands([
