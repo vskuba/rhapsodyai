@@ -22,7 +22,7 @@ from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
 from src.mysql_.repository.event_log_repository import EventLogRepository
 from src.telegram_.telegram_notify import telegram_send_owner
-from src.tool.claude_.claude_ import claude_message_cloud
+from src.tool.claude_.claude_ import claude_message_cloud, claude_message_user
 
 router = APIRouter()
 
@@ -36,6 +36,11 @@ TELEGRAM_CHAT_AGENT_NAME = 'telegram_assistant'
 # Отдельный чат Mini App для общения с Claude Code (не LLM-ассистент) - свой
 # агент/workflow/история, не смешивается с TELEGRAM_CHAT_AGENT_NAME
 TELEGRAM_CLAUDE_AGENT_NAME = 'telegram_claude'
+
+# Спец-контент сообщения ai_claude_session, которым Mini App будит
+# поставленную на паузу сессию (см. wake-request ниже) - терминал должен
+# распознать этот маркер и не отвечать на него как на обычный промпт
+SESSION_WAKE_MARKER = '__SESSION_WAKE__'
 
 # companion обязателен для записи истории (agent_session.companion_id FK) -
 # переиспользуем существующего 'user_admin' (id=3), другой companion не нужен
@@ -315,9 +320,13 @@ async def telegram_app_claude_session_finalize(request: Request, data: dict):
 @router.get("/telegram-app/claude/sessions/active")
 async def telegram_app_claude_sessions_active(request: Request):
     """
-    Активные сессии для иконок во вкладке Cloud Mini App - учитывает
-    staleness heartbeat, не только поле status (см.
-    .claude/docs/claude_session_registry.md §4).
+    Сессии для иконок во вкладке Cloud Mini App - видимость решает только
+    staleness heartbeat (см. .claude/docs/claude_session_registry.md §4),
+    не поле status: фоновый процесс `session_client.py watch` пингует
+    heartbeat каждые ~30с всё время, пока жив терминал, вне зависимости от
+    того, активна сессия или на паузе - поэтому 60с (2x интервал) без пинга
+    надёжно значит "терминал реально закрылся". Поле `status` в каждой
+    строке фронт использует только чтобы выбрать иконку (активна/пауза).
     """
     _require_telegram_owner(request)
 
@@ -325,13 +334,39 @@ async def telegram_app_claude_sessions_active(request: Request):
         await db.execute(
             """
             SELECT * FROM `ai_claude_session_registry`
-            WHERE status = 'active' AND last_seen_at >= (NOW() - INTERVAL 30 MINUTE)
+            WHERE last_seen_at >= (NOW() - INTERVAL 60 SECOND)
             ORDER BY last_seen_at DESC
             """
         )
         rows = await db.fetchall()
 
     return {"result": rows}
+
+
+@router.post("/telegram-app/claude/session/wake-request")
+async def telegram_app_claude_session_wake_request(request: Request, data: dict):
+    """
+    Кнопка "Возобновить" в Mini App для сессии на паузе - не может напрямую
+    разбудить процесс терминала, поэтому кладёт спец-сообщение в ту же
+    очередь ai_claude_session, которую слушает фоновый поллер/Monitor
+    терминала (см. .claude/docs/claude_session_registry.md §5). Терминал,
+    увидев маркер SESSION_WAKE_MARKER, сам вызывает session/resume и
+    продолжает обычный цикл - здесь статус не трогаем.
+    """
+    _require_telegram_owner(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    repo = AiClaudeSessionRegistryRepository()
+    row = await repo.find_one_by({"session_uuid": session_uuid})
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await claude_message_user(SESSION_WAKE_MARKER, session_uuid)
+
+    return {"result": {"ok": True}}
 
 
 @router.post("/telegram-app/claude/session/close-request")

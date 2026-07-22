@@ -11,12 +11,25 @@ session_start.py. См. .claude/docs/claude_session_registry.md §4.
   session_client.py inbox --session-uuid UUID
   session_client.py respond --session-uuid UUID --response TEXT [--inbox-id N] [--no-notify]
   session_client.py finalize --session-uuid UUID [--summary TEXT]
+  session_client.py watch --session-uuid UUID [--interval SECONDS]
+
+`watch` - бесресурсный (без LLM) фоновый процесс, запускается ОДИН раз при
+регистрации/резюме сессии и живёт, пока жив терминал (умирает вместе с
+процессом при закрытии окна - см. claude_session_registry.md §4). На каждом
+тике (по умолчанию 30с): 1) пингует heartbeat - обновляет last_seen_at
+независимо от того, думает ли сейчас LLM (решает staleness для Mini App,
+порог 60с - 2x интервала); 2) проверяет inbox и печатает маркерную строку в
+stdout, только если там непрочитанное сообщение. Сам по себе не тратит
+токены - предназначен для Monitor, который слушает stdout этого процесса и
+будит агента только по реальному событию (новое сообщение), а не на каждом
+тике.
 """
 
 import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -53,6 +66,24 @@ def api_call(method: str, path: str, secret: str, base_url: str, params: dict = 
         return json.load(resp)
 
 
+def watch(session_uuid: str, secret: str, base_url: str, interval: int):
+    while True:
+        try:
+            api_call("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
+                      body={"session_uuid": session_uuid})
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            pass
+        try:
+            result = api_call("GET", "/telegram-app/claude/session/inbox", secret, base_url,
+                               params={"session_uuid": session_uuid})
+            rows = result.get("result") or []
+            if rows:
+                print(f"NEW_MESSAGES count={len(rows)}", flush=True)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            pass
+        time.sleep(interval)
+
+
 def main():
     env = env_file_load(os.path.join(PROJECT_ROOT, ".env"))
     secret = os.environ.get("TELEGRAM_TOKEN_RHAPSODY") or env.get("TELEGRAM_TOKEN_RHAPSODY", "")
@@ -82,7 +113,15 @@ def main():
     p_finalize.add_argument("--session-uuid", required=True)
     p_finalize.add_argument("--summary", default=None)
 
+    p_watch = sub.add_parser("watch")
+    p_watch.add_argument("--session-uuid", required=True)
+    p_watch.add_argument("--interval", type=int, default=30)
+
     args = parser.parse_args()
+
+    if args.command == "watch":
+        watch(args.session_uuid, secret, base_url, args.interval)
+        return
 
     try:
         if args.command == "heartbeat":
