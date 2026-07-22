@@ -24,7 +24,7 @@ Mini App использует **Telegram WebApp initData** — не сессию
 4. Все эндпоинты вызывают `_require_telegram_owner(request)` — проверяет наличие `telegram_owner_id` в сессии
 
 **Env-переменные:**
-- `TELEGRAM_NOTIFY_TOKEN` — токен бота (используется для проверки подписи)
+- `TELEGRAM_TOKEN_RHAPSODY` — токен бота (используется для проверки подписи)
 - `TELEGRAM_OWNER_CHAT_ID` — Telegram user_id владельца
 
 ## Вкладки и интерфейс
