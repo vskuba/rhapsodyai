@@ -74,13 +74,6 @@
             color: #e74c3c;
         }
 
-        /* Кнопка "Пауза/Возобновить" сессии Claude - выглядит приглушённой
-           (на паузе), когда её нажатие означает "разбудить обратно" */
-        .icon-btn.icon-btn-paused {
-            color: #94a3b8;
-            opacity: 0.6;
-        }
-
         #pageBackIconBtn {
             margin-top: -9px;
         }
@@ -477,10 +470,6 @@
             flex-shrink: 0;
         }
 
-        .claude-session-item .session-status-dot.paused {
-            background: #94a3b8;
-        }
-
         .claude-session-item .session-subtitle {
             font-size: 12px;
             color: #94a3b8;
@@ -582,7 +571,6 @@
             </div>
             <div class="icon-sidebar-group" id="sidebarClaudeIcons">
                 <button class="icon-btn" id="claudeBackToListIconBtn" title="К списку сессий">🔙</button>
-                <button class="icon-btn" id="claudePauseSessionIconBtn" title="Пауза">⏸</button>
             </div>
         </div>
 
@@ -700,8 +688,6 @@
     const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
     const sidebarClaudeIcons = document.getElementById('sidebarClaudeIcons');
     const claudeBackToListIconBtn = document.getElementById('claudeBackToListIconBtn');
-    const claudePauseSessionIconBtn = document.getElementById('claudePauseSessionIconBtn');
-
     // Заголовки страниц для сайдбара 2 уровня (меню -> страница)
     const PAGE_TITLES = {events: 'События', claude: 'Claude', chat: 'Чат', plans: 'Планы'};
 
@@ -713,12 +699,11 @@
     let claudeSessionUuid = null;
     // Роль + метка проекта выбранной сессии - для заголовка страницы
     let claudeSessionLabel = '';
-    // status последней известной строки реестра для открытой сессии
-    // ('active'/'closing'/'inactive') либо 'unreachable', если сессия
-    // пропала из /claude/sessions/active (терминал реально закрыт, см.
-    // .claude/docs/claude_session_registry.md §4) - управляет видом кнопки
-    // паузы/возобновления
-    let claudeSessionStatus = null;
+    // Пропала ли открытая сессия из /claude/sessions/active (терминал
+    // реально закрыт, см. .claude/docs/claude_session_registry.md §4) -
+    // единственное, что нас интересует про её состояние: сессия либо
+    // достижима (терминал открыт и слушает), либо нет
+    let claudeSessionUnreachable = false;
     let claudePollTimer = null;
     // Отдельный, более редкий опрос статуса (пауза/активна/недоступна) -
     // работает и на списке сессий, и внутри открытого чата, пока открыта
@@ -779,7 +764,6 @@
 
         pageBackIconBtn.addEventListener('click', () => setSidebarPageMode(false));
         claudeBackToListIconBtn.addEventListener('click', closeClaudeSessionView);
-        claudePauseSessionIconBtn.addEventListener('click', togglePauseClaudeSession);
     }
 
     // Уровень 1 сайдбара: меню из 4 иконок <-> одна иконка "назад" + заголовок
@@ -837,10 +821,9 @@
         claudeSessionListView.innerHTML = sessions.length
             ? sessions.map(s => `
                 <div class="claude-session-item" data-uuid="${escapeHtml(s.session_uuid)}"
-                     data-role="${escapeHtml(s.role)}" data-project="${escapeHtml(s.project_label)}"
-                     data-status="${escapeHtml(s.status)}">
+                     data-role="${escapeHtml(s.role)}" data-project="${escapeHtml(s.project_label)}">
                     <div class="session-title">
-                        <span class="session-status-dot${s.status !== 'active' ? ' paused' : ''}"></span>
+                        <span class="session-status-dot"></span>
                         ${escapeHtml(s.role)} — ${escapeHtml(s.project_label)}
                     </div>
                     <div class="session-subtitle">${escapeHtml(s.summary || 'Нет краткого содержания')}</div>
@@ -850,16 +833,16 @@
 
         claudeSessionListView.querySelectorAll('.claude-session-item').forEach(el =>
             el.addEventListener('click', () => openClaudeSession(
-                el.dataset.uuid, el.dataset.role, el.dataset.project, el.dataset.status
+                el.dataset.uuid, el.dataset.role, el.dataset.project
             )));
     }
 
     // Открывает чат конкретной сессии - подтягивает историю целиком (как при
     // восстановлении после перезагрузки), запускает опрос новых сообщений
-    async function openClaudeSession(sessionUuid, role, projectLabel, status) {
+    async function openClaudeSession(sessionUuid, role, projectLabel) {
         claudeSessionUuid = sessionUuid;
         claudeSessionLabel = `${role} — ${projectLabel}`;
-        claudeSessionStatus = status || 'active';
+        claudeSessionUnreachable = false;
         claudeRenderedCount = 0;
         claudeTypingBubble = null;
         claudeMessagesEl.innerHTML = '';
@@ -868,7 +851,6 @@
         claudeMessagesEl.style.display = 'block';
         setSidebarPageMode(true);
         updateInputBarsVisibility();
-        updatePauseButtonUI();
 
         await loadClaudeMessages(true);
         updateClaudePolling();
@@ -880,7 +862,7 @@
     function closeClaudeSessionView() {
         claudeSessionUuid = null;
         claudeSessionLabel = '';
-        claudeSessionStatus = null;
+        claudeSessionUnreachable = false;
         if (claudePollTimer) {
             clearInterval(claudePollTimer);
             claudePollTimer = null;
@@ -895,50 +877,12 @@
         updateClaudeStatusPolling();
     }
 
-    // Кнопка-тумблер "Пауза"/"Возобновить" - Пауза шлёт мягкий стоп
-    // (status='closing', НЕ убивает терминал), Возобновить будит терминал
-    // через специальное сообщение в очереди (см. wake-request и
-    // .claude/docs/claude_session_registry.md §5). Оптимистично переключает
-    // вид сразу, не дожидаясь подтверждения с сервера - несёт риск
-    // разъехаться с реальным статусом на пару секунд, поправляется
-    // ближайшим тиком updateClaudeStatusPolling
-    async function togglePauseClaudeSession() {
-        if (!claudeSessionUuid || claudeSessionStatus === 'unreachable') return;
-
-        if (claudeSessionStatus === 'active') {
-            claudeSessionStatus = 'inactive';
-            updatePauseButtonUI();
-            try {
-                await postData('/telegram-app/claude/session/close-request', {session_uuid: claudeSessionUuid});
-            } catch (err) {
-                // Тихо пропускаем - следующий тик статуса поправит
-            }
-        } else {
-            claudeSessionStatus = 'active';
-            updatePauseButtonUI();
-            try {
-                await postData('/telegram-app/claude/session/wake-request', {session_uuid: claudeSessionUuid});
-            } catch (err) {
-                // Тихо пропускаем - следующий тик статуса поправит
-            }
-        }
-    }
-
-    // Синхронизирует вид кнопки паузы с claudeSessionStatus
-    function updatePauseButtonUI() {
-        const isPaused = claudeSessionStatus !== 'active';
-        claudePauseSessionIconBtn.classList.toggle('icon-btn-paused', isPaused);
-        claudePauseSessionIconBtn.textContent = isPaused ? '▶' : '⏸';
-        claudePauseSessionIconBtn.title = claudeSessionStatus === 'unreachable'
-            ? 'Сессия недоступна (терминал закрыт)'
-            : (isPaused ? 'Возобновить' : 'Пауза');
-    }
-
-    // Более редкий (не при каждом сообщении) опрос актуального статуса -
-    // решает две вещи разом: 1) обновляет точки статуса в списке сессий,
-    // 2) если открыт конкретный чат - сверяет его статус и убирает
-    // "залипшую" картинку, если окно Mini App долго простаивало (см. вопрос
-    // пользователя в claude_session_registry.md §4)
+    // Более редкий (не при каждом сообщении) опрос достижимости сессии -
+    // решает две вещи разом: 1) обновляет список сессий, пока он открыт,
+    // 2) если открыт конкретный чат - замечает, что терминал реально закрылся
+    // (пропал из /claude/sessions/active по staleness, см.
+    // .claude/docs/claude_session_registry.md §4), и один раз предупреждает
+    // об этом в чате вместо того, чтобы молча "залипать" на устаревшей картине
     async function refreshClaudeSessionStatus() {
         let sessions;
         try {
@@ -953,9 +897,13 @@
             return;
         }
 
-        const current = sessions.find(s => s.session_uuid === claudeSessionUuid);
-        claudeSessionStatus = current ? current.status : 'unreachable';
-        updatePauseButtonUI();
+        const stillReachable = sessions.some(s => s.session_uuid === claudeSessionUuid);
+        if (!stillReachable && !claudeSessionUnreachable) {
+            claudeSessionUnreachable = true;
+            appendBubble('assistant', '⚠️ Терминал недоступен (сессия закрыта)', false, claudeMessagesEl);
+        } else if (stillReachable) {
+            claudeSessionUnreachable = false;
+        }
     }
 
     // Опрос статуса идёт, пока открыта вкладка Claude - и на списке, и
@@ -966,7 +914,7 @@
             claudeStatusPollTimer = null;
         }
         if (currentTab === 'claude') {
-            claudeStatusPollTimer = setInterval(refreshClaudeSessionStatus, 15000);
+            claudeStatusPollTimer = setInterval(refreshClaudeSessionStatus, 5000);
         }
     }
 

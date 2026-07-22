@@ -16,10 +16,11 @@ session_start.py. См. .claude/docs/claude_session_registry.md §4.
 `watch` - бесресурсный (без LLM) фоновый процесс, запускается ОДИН раз при
 регистрации/резюме сессии и живёт, пока жив терминал (умирает вместе с
 процессом при закрытии окна - см. claude_session_registry.md §4). На каждом
-тике (по умолчанию 30с): 1) пингует heartbeat - обновляет last_seen_at
-независимо от того, думает ли сейчас LLM (решает staleness для Mini App,
-порог 60с - 2x интервала); 2) проверяет inbox и печатает маркерную строку в
-stdout, только если там непрочитанное сообщение. Сам по себе не тратит
+тике (по умолчанию 5с - дёшево, это просто HTTP+SQL, не LLM): 1) пингует
+heartbeat - обновляет last_seen_at независимо от того, думает ли сейчас LLM
+(решает staleness для Mini App, порог 15с - 3x интервала); 2) проверяет
+inbox и печатает маркерную строку в stdout, только если там непрочитанное
+сообщение. Сам по себе не тратит
 токены - предназначен для Monitor, который слушает stdout этого процесса и
 будит агента только по реальному событию (новое сообщение), а не на каждом
 тике.
@@ -115,7 +116,7 @@ def main():
 
     p_watch = sub.add_parser("watch")
     p_watch.add_argument("--session-uuid", required=True)
-    p_watch.add_argument("--interval", type=int, default=30)
+    p_watch.add_argument("--interval", type=int, default=5)
 
     args = parser.parse_args()
 
