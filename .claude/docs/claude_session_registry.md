@@ -130,7 +130,7 @@ CREATE TABLE ai_claude_session_registry (
 | `POST /telegram-app/claude/session/close-request` | Mini App (кнопка) | `status='closing'` |
 
 Авторизация — тем же паттерном, что уже есть в файле: терминальные вызовы через
-`_require_claude_secret` (заголовок `X-Claude-Secret`, секрет = `TELEGRAM_NOTIFY_TOKEN`), вызовы
+`_require_claude_secret` (заголовок `X-Claude-Secret`, секрет = `TELEGRAM_TOKEN_RHAPSODY`), вызовы
 из Mini App — через `_require_telegram_owner` (сессия владельца).
 
 ## 8. Открытые вопросы / TODO
@@ -143,7 +143,7 @@ CREATE TABLE ai_claude_session_registry (
       (lifespan) не проверен из-за сетевого ограничения тестового окружения (недоступен Telegram
       Bot API при старте) — нужно перепроверить на реальной машине.
 - [x] Хук `SessionStart` — `.claude/settings.json` (`matcher: "startup"`, `type: "command"`) +
-      `.claude/hooks/session_start.py`. Читает `.env` (`TELEGRAM_NOTIFY_TOKEN`, `TELEGRAM_MINI_APP_URL`),
+      `.claude/hooks/session_start.py`. Читает `.env` (`TELEGRAM_TOKEN_RHAPSODY`, `TELEGRAM_MINI_APP_URL`),
       определяет `project_label` из `cwd`, зовёт прод-эндпоинт `GET /telegram-app/claude/sessions`,
       инжектит список (или инструкцию создать новую) в `additionalContext`. Сам выбор — через
       `AskUserQuestion` агентом, как и спроектировано в §3. Проверено end-to-end на реальном проде
