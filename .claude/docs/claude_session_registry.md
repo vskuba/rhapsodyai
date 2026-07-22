@@ -76,16 +76,44 @@ CREATE TABLE ai_claude_session_registry (
    добавить в `.gitignore`), чтобы `/loop`-промпт на каждой итерации знал, за какой registry-строкой
    ему обновлять heartbeat.
 
-## 4. Heartbeat и обнаружение "пропажи" сессии
+## 4. Heartbeat, разбор входящих и пересылка ответов в чат Mini App
 
 Прямого способа узнать, что терминал закрылся (крash, разрядился ноутбук, сеть) — не существует.
 Единственный надёжный механизм — **staleness по heartbeat**:
 
-- Каждое пробуждение `/loop` обновляет `ai_claude_session_registry.last_seen_at = NOW()` для своего
-  `session_uuid` (одновременно с проверкой очереди сообщений — см. `workflow_dev_qa_agents.md` §7).
+- Каждое пробуждение `/loop` (интервал 60 секунд, см. `/loop 60s ...` при старте сессии, п. 3.4 ниже)
+  обновляет `ai_claude_session_registry.last_seen_at = NOW()` для своего `session_uuid` через
+  `POST /telegram-app/claude/session/heartbeat`.
 - API/Mini App считает сессию реально активной, если `last_seen_at` не старше ~2× интервала `/loop`.
   Если старше — статус в БД может всё ещё быть `active`, но UI показывает "отвалилась"
   (например, серая иконка вместо зелёной), не дожидаясь явного `closed_at`.
+
+**Каждая итерация `/loop` (60s) делает три вещи, в этом порядке:**
+
+1. `POST /telegram-app/claude/session/heartbeat` с `{session_uuid}` — обновляет `last_seen_at`,
+   получает текущий `status`. Если `status == 'closing'` — см. §5 (финальная уборка), дальнейшие шаги
+   пропускаются.
+2. `GET /telegram-app/claude/session/inbox?session_uuid=...` — непрочитанные (`handled=0`) сообщения
+   из `ai_claude_session`, отправленные пользователем через чат "Claude" в Mini App
+   (`claude_message_user`, `src/tool/claude_/claude_.py`).
+3. Для каждого непрочитанного сообщения — обработать его как обычный промпт пользователя (это и есть
+   работа терминальной сессии Claude Code) и переслать результат через
+   `POST /telegram-app/claude/respond` с `{session_uuid, response, inbox_id}` — `inbox_id` помечает
+   исходное сообщение обработанным (`handled=1`).
+
+**Правило пересылки ответов (не только для входящих через inbox):** пока сессия
+зарегистрирована в реестре (`.claude/session_uuid` существует), **любой** ответ, который эта
+терминальная сессия производит — промежуточные шаги/размышления и финальный ответ, а не только
+ответы на сообщения из inbox — дублируется в чат Mini App через `POST /telegram-app/claude/respond`,
+чтобы пользователь видел прогресс в реальном времени, не только по завершении. Для промежуточных
+шагов — `notify: false` (пишет в историю чата, без пуша в Telegram); для финального ответа —
+`notify: true` (по умолчанию) — реальный пуш пользователю. Это симметрично уже принятому паттерну
+для прямых Telegram-сообщений (см. `telegram-progress-visibility` в памяти: react + reply + edit для
+промежуточных статусов, новый reply в конце для пуша) — тот же принцип, другой канал.
+
+Эта пересылка — **не** задача хука `SessionStart` (тот исполняется один раз при старте и не может
+перехватывать текст ответов в течение сессии). Правило закреплено в `CLAUDE.md` (durable,
+перечитывается каждый запуск сессии), т.к. хук физически не может обернуть каждый последующий ответ.
 
 ## 5. Мягкое отключение через Telegram (подтверждено пользователем)
 
@@ -125,6 +153,8 @@ CREATE TABLE ai_claude_session_registry (
 | `POST /telegram-app/claude/session/register` | Хук `SessionStart` | Создать новую запись (`role`, `project_label`) → `session_uuid` |
 | `POST /telegram-app/claude/session/resume` | Хук `SessionStart` | `status='active'`, вернуть историю сообщений (`agent_session`) |
 | `POST /telegram-app/claude/session/heartbeat` | `/loop` (каждая итерация) | Обновить `last_seen_at`, вернуть текущий `status` |
+| `GET /telegram-app/claude/session/inbox?session_uuid=...` | `/loop` (каждая итерация) | Непрочитанные (`handled=0`) сообщения из `ai_claude_session` для этого `session_uuid` |
+| `POST /telegram-app/claude/respond` | Терминал Claude Code (после обработки inbox или для промежуточных апдейтов) | Пишет ответ в `agent_session` (видно в чате Mini App), опционально `inbox_id` помечает сообщение обработанным, опционально пушит в Telegram (`notify`) |
 | `POST /telegram-app/claude/session/finalize` | `/loop` (увидев `status='closing'`) | Записать `summary`, `status='inactive'`, `closed_at` |
 | `GET /telegram-app/claude/sessions/active` | Mini App | Активные сессии для иконок (heartbeat ≤ 30 мин) |
 | `POST /telegram-app/claude/session/close-request` | Mini App (кнопка) | `status='closing'` |

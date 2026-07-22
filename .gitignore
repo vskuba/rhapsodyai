@@ -30,3 +30,5 @@ npm-debug.log
 .ssh/
 docker-compose.override.yml
 .aider*
+
+.claude/session_uuid

@@ -164,6 +164,30 @@ async def telegram_app_claude_respond(request: Request, data: dict):
     return {"result": result}
 
 
+@router.get("/telegram-app/claude/session/inbox")
+async def telegram_app_claude_session_inbox(request: Request, session_uuid: str):
+    """
+    Непрочитанные сообщения из ai_claude_session для данного session_uuid -
+    опрашивается /loop на каждой итерации вместе с heartbeat, чтобы подхватить
+    сообщения, отправленные пользователем через чат Claude в Mini App.
+    """
+    _require_claude_secret(request)
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            """
+            SELECT id, content, created_at
+            FROM ai_claude_session
+            WHERE session_uuid = %s AND handled = 0
+            ORDER BY id ASC
+            """,
+            (session_uuid,)
+        )
+        rows = await db.fetchall()
+
+    return {"result": rows}
+
+
 @router.get("/telegram-app/claude/sessions")
 async def telegram_app_claude_sessions(request: Request, project_label: str):
     """
