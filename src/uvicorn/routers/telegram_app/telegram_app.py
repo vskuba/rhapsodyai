@@ -347,7 +347,7 @@ async def telegram_app_claude_sessions_active(request: Request):
                       AND a.kind_type IN ('user-prompt', 'response-final')
                     ORDER BY a.id DESC LIMIT 1) AS last_message
             FROM `ai_claude_session_registry` r
-            WHERE r.last_seen_at >= (NOW() - INTERVAL 15 SECOND)
+            WHERE r.last_seen_at >= (NOW() - INTERVAL 60 SECOND)
             ORDER BY r.last_seen_at DESC
             """
         )
