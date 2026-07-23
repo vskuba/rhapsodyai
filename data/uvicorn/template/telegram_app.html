@@ -734,6 +734,7 @@
     // бездействующем окне Mini App
     let claudeStatusPollTimer = null;
     let claudeRenderedCount = 0;
+    let claudeLastContent = null;
     let claudeTypingBubble = null;
     let currentTab = 'events';
     let currentPlanId = null;
@@ -931,6 +932,7 @@
         claudeSessionLabel = `${role} — ${projectLabel}`;
         claudeSessionUnreachable = false;
         claudeRenderedCount = 0;
+        claudeLastContent = null;
         claudeTypingBubble = null;
         claudeMessagesEl.innerHTML = '';
 
@@ -1302,6 +1304,8 @@
             for (const row of rows.slice(claudeRenderedCount)) {
                 if (row.content === '...') continue;
                 if (row.kind_type === 'user-prompt' && !isInitialLoad) continue;
+                if (row.content === claudeLastContent) continue;
+                claudeLastContent = row.content;
                 claudeTypingBubble?.remove();
                 claudeTypingBubble = null;
                 const role = row.kind_type === 'user-prompt' ? 'user' : 'assistant';
