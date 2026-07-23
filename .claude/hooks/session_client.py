@@ -218,7 +218,7 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int, terminal
                 # разорвать строку лога на части, которые grep не заметит.
                 for r in new_rows:
                     content_flat = " ".join(str(r["content"]).split())
-                    print(f"NEW_MESSAGES id={r['id']} content={content_flat!r}", flush=True)
+                    print(f"NEW_MESSAGES Message: {content_flat!r}", flush=True)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             pass
         time.sleep(interval)
