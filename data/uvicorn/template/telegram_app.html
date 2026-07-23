@@ -76,12 +76,12 @@
 
         @keyframes home-pulse {
             0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.15); opacity: 0.85; }
+            50% { transform: scale(1.2); opacity: 0.7; }
         }
 
         @keyframes home-ripple {
-            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
-            100% { transform: translate(-50%, -50%) scale(2.6); opacity: 0; }
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+            100% { transform: translate(-50%, -50%) scale(2.8); opacity: 0; }
         }
 
         #homeIconBtn {
@@ -90,8 +90,9 @@
         }
 
         #homeIconBtn.pulsing {
-            animation: home-pulse 2s ease-in-out infinite;
+            animation: home-pulse 1.2s ease-in-out infinite;
             will-change: transform;
+            filter: drop-shadow(0 0 6px rgba(231, 76, 60, 0.8));
         }
 
         #homeIconBtn.pulsing::before,
@@ -103,14 +104,14 @@
             width: 100%;
             height: 100%;
             border-radius: 50%;
-            background: rgba(0, 123, 255, 0.25);
-            animation: home-ripple 2s ease-out infinite;
+            background: rgba(231, 76, 60, 0.45);
+            animation: home-ripple 1.2s ease-out infinite;
             will-change: transform, opacity;
             pointer-events: none;
         }
 
         #homeIconBtn.pulsing::after {
-            animation-delay: 1s;
+            animation-delay: 0.6s;
         }
 
         .chat-link {
@@ -861,10 +862,10 @@
         try {
             await fetch('/telegram-app/ping', {signal: controller.signal});
             pingFailCount = 0;
-            homeIconBtn.classList.add('pulsing');
+            homeIconBtn.classList.remove('pulsing');
         } catch {
             pingFailCount++;
-            if (pingFailCount >= 2) homeIconBtn.classList.remove('pulsing');
+            if (pingFailCount >= 2) homeIconBtn.classList.add('pulsing');
         } finally {
             clearTimeout(timeout);
         }
