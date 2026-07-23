@@ -19,6 +19,7 @@ AskUserQuestion). Агенту сообщается только то, что н
 import json
 import os
 import sys
+import urllib.error
 
 from session_client import (SESSION_UUID_PATH, activate_session, api_call_retry,
                              format_status_checklist, session_status)
@@ -86,13 +87,34 @@ def main():
                 "промпты и ответь через `respond --inbox-id <id>` (--no-notify для промежуточных "
                 "шагов, без флага - для финального ответа)."
             )
+            emit(context_lines)
+            return
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                # Сессия удалена из базы или никогда не регистрировалась -
+                # файл session_uuid устарел. Удаляем его и падаем в обычную
+                # ветку "нет session_uuid": хук запросит список сессий для
+                # проекта и предложит агенту создать новую или выбрать из
+                # существующих. 404 - не временная ошибка, повтор бессмысленен.
+                os.remove(SESSION_UUID_PATH)
+                context_lines.append(
+                    f"(сохранённая сессия {session_uuid} не найдена в реестре - "
+                    "файл session_uuid удалён, ниже предложены варианты для нового старта)"
+                )
+            else:
+                context_lines.append(
+                    f"(не удалось резюмировать сохранённую сессию {session_uuid}: {e} - "
+                    "можно продолжать работу как обычно, реестр сессий недоступен временно)"
+                )
+                emit(context_lines)
+                return
         except Exception as e:
             context_lines.append(
                 f"(не удалось резюмировать сохранённую сессию {session_uuid}: {e} - "
                 "можно продолжать работу как обычно, реестр сессий недоступен временно)"
             )
-        emit(context_lines)
-        return
+            emit(context_lines)
+            return
 
     try:
         result = api_call_retry("GET", "/telegram-app/claude/sessions", secret, base_url,
