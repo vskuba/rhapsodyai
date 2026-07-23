@@ -170,7 +170,7 @@ async def telegram_app_claude_session_clear_messages(request: Request, data: dic
         raise HTTPException(status_code=400, detail="session_uuid required")
 
     async with mysql_get_db_async() as db:
-        await db.execute("DELETE FROM agent_session WHERE session_uuid = %s", (session_uuid,))
+        await db.execute("DELETE FROM ai_claude_session WHERE session_uuid = %s", (session_uuid,))
 
     return {"result": {"ok": True}}
 
