@@ -70,8 +70,10 @@ def main():
                 "Сразу после того, как заведёшь Monitor, вызови `python3 .claude/hooks/"
                 "session_client.py status --session-uuid " + session_uuid + "` и выведи пользователю "
                 "итоговый чек-лист по её результату (watch/server/session_uuid_file) плюс отдельной "
-                "строкой 'Monitor: ✅ armed' от себя (это единственное, что снаружи не проверить - "
-                "ты сам знаешь, что его завёл)."
+                "строкой Monitor от себя (это единственное, что снаружи не проверить - ты сам знаешь, "
+                "что его завёл). Формат чек-листа: 🟢 перед каждым пунктом, который true/armed, 🔴 "
+                "перед любым, который false - яркие цветные кружки, не текстовые галочки, чтобы "
+                "сразу было видно, всё ли в порядке."
             )
         except Exception as e:
             context_lines.append(
@@ -113,7 +115,9 @@ def main():
             "Monitor обрабатывай inbox так же, как описано для случая автовозобновления. Сразу после "
             "того, как заведёшь Monitor, вызови `python3 .claude/hooks/session_client.py status "
             "--session-uuid <uuid>` и выведи пользователю итоговый чек-лист (watch/server/"
-            "session_uuid_file из результата) плюс строкой от себя 'Monitor: ✅ armed'."
+            "session_uuid_file из результата) плюс строкой Monitor от себя. Формат: 🟢 перед каждым "
+            "пунктом, который true/armed, 🔴 перед любым, который false - яркие цветные кружки, не "
+            "текстовые галочки."
         )
     else:
         context_lines.append(
@@ -127,7 +131,9 @@ def main():
             "(persistent: true) на этот лог-файл, паттерн NEW_MESSAGES - обязательная часть того же "
             "шага, не отдельная задача на потом. Затем вызови `python3 .claude/hooks/"
             "session_client.py status --session-uuid <uuid>` и выведи пользователю итоговый "
-            "чек-лист (watch/server/session_uuid_file) плюс строкой от себя 'Monitor: ✅ armed'."
+            "чек-лист (watch/server/session_uuid_file) плюс строкой Monitor от себя. Формат: 🟢 "
+            "перед каждым пунктом, который true/armed, 🔴 перед любым, который false - яркие "
+            "цветные кружки, не текстовые галочки."
         )
 
     emit(context_lines)

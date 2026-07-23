@@ -13,7 +13,7 @@ session_start.py. См. .claude/docs/claude_session_registry.md §4.
   session_client.py inbox --session-uuid UUID
   session_client.py respond --session-uuid UUID --response TEXT [--inbox-id N] [--no-notify]
   session_client.py finalize --session-uuid UUID [--summary TEXT]
-  session_client.py watch --session-uuid UUID [--interval SECONDS]
+  session_client.py watch --session-uuid UUID [--interval SECONDS] [--terminal-pid PID]
   session_client.py status --session-uuid UUID
 
 Общие вспомогательные инструменты (не завязанные на конкретную сессию) - в
@@ -83,6 +83,34 @@ def is_watch_running(session_uuid: str) -> bool:
         return False
 
 
+def find_terminal_pid(start_pid: int):
+    # Ищем реального "владельца" терминала - процесс, который одновременно
+    # 1) лидер своей сессии (SID == его собственный PID) и 2) имеет
+    # настоящий TTY. Наивно проверять os.getsid(0) не работает: харнесс
+    # заводит каждый вызов инструмента Bash в СВОЕЙ изолированной сессии
+    # (SID == PID процесса-обёртки), но без TTY - это не терминал, а сам
+    # `claude` хоть и видит настоящий TTY, но не лидер сессии (сессией
+    # владеет запустивший его шелл). Только шелл терминала одновременно
+    # удовлетворяет обоим условиям.
+    pid = start_pid
+    for _ in range(20):
+        try:
+            out = subprocess.run(["ps", "-o", "pid=,ppid=,sid=,tty=", "-p", str(pid)],
+                                  capture_output=True, text=True, timeout=3).stdout.strip()
+        except Exception:
+            return None
+        if not out:
+            return None
+        parts = out.split()
+        cur_pid, ppid, sid, tty = int(parts[0]), int(parts[1]), int(parts[2]), parts[3]
+        if tty != "?" and sid == cur_pid:
+            return cur_pid
+        if ppid <= 1:
+            return None
+        pid = ppid
+    return None
+
+
 def start_watch_detached(session_uuid: str):
     # setsid (start_new_session=True) - без него фоновый watch привязан к
     # жизни самого процесса Claude Code, а не терминала: если Claude Code
@@ -90,14 +118,25 @@ def start_watch_detached(session_uuid: str):
     # окно терминала осталось открыто (обнаружено на живом тесте). Побочный
     # эффект register/resume - гарантированно, не завязано на то, вспомнит
     # ли агент запустить его вручную через инструкцию.
+    #
+    # Но полная отвязка через setsid - тоже перебор: теперь watch не умирает
+    # и при реальном закрытии окна терминала (второй живой тест это подтвердил
+    # - last_seen_at продолжал обновляться часами после закрытия окна). Поэтому
+    # передаём watch PID процесса-шелла терминала (find_terminal_pid), пока мы
+    # ещё в обычном дереве процессов - watch сам проверяет его на каждом тике и
+    # завершается, если тот пропал (терминал реально закрыт), но переживает
+    # перезапуск самого Claude Code (шелл остаётся тем же).
     if is_watch_running(session_uuid):
         return
+    terminal_pid = find_terminal_pid(os.getpid())
     log_path = f"/tmp/claude_watch_{os.path.basename(PROJECT_ROOT)}.log"
     log_file = open(log_path, "a")
+    cmd = [sys.executable, "-u", os.path.join(os.path.dirname(os.path.abspath(__file__)), "session_client.py"),
+           "watch", "--session-uuid", session_uuid]
+    if terminal_pid:
+        cmd += ["--terminal-pid", str(terminal_pid)]
     subprocess.Popen(
-        [sys.executable, "-u", os.path.join(os.path.dirname(os.path.abspath(__file__)), "session_client.py"),
-         "watch", "--session-uuid", session_uuid],
-        stdout=log_file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        cmd, stdout=log_file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
         start_new_session=True, cwd=PROJECT_ROOT,
     )
 
@@ -130,7 +169,7 @@ def cleanup_session(session_uuid: str, secret: str, base_url: str):
         os.remove(SESSION_UUID_PATH)
 
 
-def watch(session_uuid: str, secret: str, base_url: str, interval: int):
+def watch(session_uuid: str, secret: str, base_url: str, interval: int, terminal_pid: int = None):
     # last_seen_max_id дедуплицирует маркер: без него watch печатал бы
     # NEW_MESSAGES на каждом тике, пока сообщение остаётся необработанным
     # (handled=0), а не один раз при появлении. id - глобальный
@@ -138,6 +177,14 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
     # контента (не путает два разных сообщения с одинаковым текстом).
     last_seen_max_id = 0
     while True:
+        # terminal_pid - PID шелла терминала, захваченный до setsid-отвязки
+        # (см. find_terminal_pid/start_watch_detached). Если его больше нет
+        # в /proc - терминал реально закрыт, а не просто перезапустился
+        # Claude Code (тогда шелл остаётся тем же, PID не меняется) - самое
+        # время завершиться самому, раз больше некому это сделать за нас.
+        if terminal_pid and not os.path.exists(f"/proc/{terminal_pid}"):
+            print(f"TERMINAL_CLOSED terminal_pid={terminal_pid}", flush=True)
+            return
         try:
             api_call_retry("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
                             body={"session_uuid": session_uuid})
@@ -162,7 +209,16 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
                     })
                 except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
                     pass
-                print(f"NEW_MESSAGES count={len(new_rows)}", flush=True)
+                # Сырой текст сообщения в самой строке лога - Monitor матчит
+                # по "NEW_MESSAGES" и отдаёт всю строку как есть в событие,
+                # так сразу видно, что именно пришло, без отдельного inbox.
+                # Одна строка на сообщение (не одна строка на батч) - если
+                # пришло сразу несколько, каждое видно по отдельности.
+                # Переносы строк в контенте схлопываются в пробел, чтобы не
+                # разорвать строку лога на части, которые grep не заметит.
+                for r in new_rows:
+                    content_flat = " ".join(str(r["content"]).split())
+                    print(f"NEW_MESSAGES id={r['id']} content={content_flat!r}", flush=True)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             pass
         time.sleep(interval)
@@ -223,6 +279,7 @@ def main():
     p_watch = sub.add_parser("watch")
     p_watch.add_argument("--session-uuid", required=True)
     p_watch.add_argument("--interval", type=int, default=5)
+    p_watch.add_argument("--terminal-pid", type=int, default=None)
 
     p_status = sub.add_parser("status")
     p_status.add_argument("--session-uuid", required=True)
@@ -230,7 +287,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "watch":
-        watch(args.session_uuid, secret, base_url, args.interval)
+        watch(args.session_uuid, secret, base_url, args.interval, args.terminal_pid)
         return
 
     try:
