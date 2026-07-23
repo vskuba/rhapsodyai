@@ -7,6 +7,8 @@ CLI-обертка над эндпоинтами реестра сессий Cla
 session_start.py. См. .claude/docs/claude_session_registry.md §4.
 
 Использование:
+  session_client.py register --role ROLE --project-label LABEL
+  session_client.py resume --session-uuid UUID
   session_client.py heartbeat --session-uuid UUID
   session_client.py inbox --session-uuid UUID
   session_client.py respond --session-uuid UUID --response TEXT [--inbox-id N] [--no-notify]
@@ -106,6 +108,13 @@ def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
 
+    p_register = sub.add_parser("register")
+    p_register.add_argument("--role", default="developer")
+    p_register.add_argument("--project-label", required=True)
+
+    p_resume = sub.add_parser("resume")
+    p_resume.add_argument("--session-uuid", required=True)
+
     p_heartbeat = sub.add_parser("heartbeat")
     p_heartbeat.add_argument("--session-uuid", required=True)
 
@@ -133,7 +142,13 @@ def main():
         return
 
     try:
-        if args.command == "heartbeat":
+        if args.command == "register":
+            body = {"role": args.role, "project_label": args.project_label}
+            result = api_call("POST", "/telegram-app/claude/session/register", secret, base_url, body=body)
+        elif args.command == "resume":
+            result = api_call("POST", "/telegram-app/claude/session/resume", secret, base_url,
+                               body={"session_uuid": args.session_uuid})
+        elif args.command == "heartbeat":
             result = api_call("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
                                body={"session_uuid": args.session_uuid})
         elif args.command == "inbox":

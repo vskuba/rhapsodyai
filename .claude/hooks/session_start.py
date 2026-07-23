@@ -53,20 +53,21 @@ def main():
             context_lines.append(
                 "\nИНСТРУКЦИЯ АГЕНТУ: спроси пользователя через AskUserQuestion, какую из этих "
                 "сессий продолжить (кратко покажи роль/дату закрытия/summary по каждой), либо "
-                "создать новую. При выборе существующей - вызови POST "
-                f"{base_url}/telegram-app/claude/session/resume с {{session_uuid}} "
-                "(заголовок X-Claude-Secret), подтяни вернувшуюся историю сообщений как контекст "
-                "своей работы. При выборе 'создать новую' - уточни роль (пока только 'developer') "
-                f"и вызови POST {base_url}/telegram-app/claude/session/register с "
-                f"{{role, project_label: '{project_label}'}}."
+                "создать новую. При выборе существующей - вызови "
+                "`python3 .claude/hooks/session_client.py resume --session-uuid <session_uuid>` "
+                "(секрет и URL берёт из .env/.env.local сам, ничего передавать не нужно), подтяни "
+                "вернувшуюся историю сообщений как контекст своей работы. При выборе 'создать "
+                "новую' - уточни роль (пока только 'developer') и вызови "
+                "`python3 .claude/hooks/session_client.py register --role <роль> "
+                f"--project-label {project_label}`."
             )
         else:
             context_lines.append(
                 "Зарегистрированных сессий для этого проекта нет.\n"
                 "ИНСТРУКЦИЯ АГЕНТУ: спроси пользователя через AskUserQuestion, под какой ролью "
-                "создать новую сессию (пока только 'developer'), затем вызови POST "
-                f"{base_url}/telegram-app/claude/session/register с "
-                f"{{role, project_label: '{project_label}'}} (заголовок X-Claude-Secret)."
+                "создать новую сессию (пока только 'developer'), затем вызови "
+                "`python3 .claude/hooks/session_client.py register --role <роль> "
+                f"--project-label {project_label}` (секрет и URL берёт из .env/.env.local сам)."
             )
 
     output = {

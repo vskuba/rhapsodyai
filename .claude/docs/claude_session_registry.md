@@ -68,14 +68,18 @@ CREATE TABLE ai_claude_session_registry (
 2. Хук возвращает этот список как дополнительный контекст в начало сессии, вместе с инструкцией:
    "покажи пользователю через AskUserQuestion выбор из этих сессий (роль/id/дата закрытия/summary)
    + опцию "создать новую"; при создании новой — уточни роль (пока только `developer`)".
-3. Я (агент) в начале сессии вижу эту инструкцию и данные, показываю выбор пользователю.
-   - **Выбрана существующая** — вызываю `POST /api/session/resume` с её `session_uuid`, подтягиваю
-     историю из `ai_claude_session` (content/response пары) как контекст, `status='active'`.
-   - **Создать новую** — уточняю роль, вызываю `POST /api/session/register` (uuid4, `role`,
-     `project_label` = cwd), `status='active'`.
-4. Сохраняю `session_uuid` локально в проекте (например `.claude/session_uuid` — не коммитить,
-   добавить в `.gitignore`), чтобы `/loop`-промпт на каждой итерации знал, за какой registry-строкой
-   ему обновлять heartbeat.
+3. Я (агент) в начале сессии вижу эту инструкцию и данные, показываю выбор пользователю. Хук не
+   диктует сырой HTTP (URL + заголовок) - агент в другом проекте не знает, откуда взять
+   `X-Claude-Secret`, и придумывает что попало. Вместо этого текст инструкции ссылается на
+   готовые CLI-команды `session_client.py register`/`resume`, которые сами читают секрет/URL из
+   `.env`/`.env.local` (см. §4 про `session_tool.py`) - агенту не нужно знать, откуда он берётся.
+   - **Выбрана существующая** — `python3 .claude/hooks/session_client.py resume --session-uuid <uuid>`,
+     подтягиваю вернувшуюся историю из `ai_claude_session`/`agent_session` как контекст, `status='active'`.
+   - **Создать новую** — уточняю роль, `python3 .claude/hooks/session_client.py register --role <роль>
+     --project-label <label>` (uuid4 генерируется на сервере), `status='active'`.
+4. Сохраняю `session_uuid` локально в проекте (`.claude/session_uuid` — не коммитить, добавлен в
+   `.gitignore`), чтобы `watch` и остальные команды `session_client.py` знали, за какой
+   registry-строкой обновлять heartbeat.
 
 ## 4. Heartbeat, разбор входящих и пересылка ответов в чат Mini App
 
@@ -170,8 +174,8 @@ heartbeat **не завязан** на то, думает ли сейчас LLM 
 | Эндпоинт | Кто вызывает | Действие |
 |---|---|---|
 | `GET /telegram-app/claude/sessions?project_label=...` | Хук `SessionStart` | Список всех registry-записей для проекта (любой статус) |
-| `POST /telegram-app/claude/session/register` | Хук `SessionStart` | Создать новую запись (`role`, `project_label`) → `session_uuid` |
-| `POST /telegram-app/claude/session/resume` | Хук `SessionStart` | `status='active'`, вернуть историю сообщений (`agent_session`) |
+| `POST /telegram-app/claude/session/register` | Агент через `session_client.py register` | Создать новую запись (`role`, `project_label`) → `session_uuid` |
+| `POST /telegram-app/claude/session/resume` | Агент через `session_client.py resume` | `status='active'`, вернуть историю сообщений (`agent_session`) |
 | `POST /telegram-app/claude/session/heartbeat` | Фоновый `session_client.py watch` (каждые ~5с) | Обновить `last_seen_at`, вернуть текущий `status` |
 | `GET /telegram-app/claude/session/inbox?session_uuid=...` | Фоновый `session_client.py watch` (каждые ~5с) | Непрочитанные (`handled=0`) сообщения из `ai_claude_session` для этого `session_uuid` |
 | `POST /telegram-app/claude/respond` | Терминал Claude Code (после обработки inbox или для промежуточных апдейтов) | Пишет ответ в `agent_session` (видно в чате Mini App), опционально `inbox_id` помечает сообщение обработанным, опционально пушит в Telegram (`notify`) |
