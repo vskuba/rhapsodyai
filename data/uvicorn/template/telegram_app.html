@@ -76,12 +76,41 @@
 
         @keyframes home-pulse {
             0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.2); opacity: 0.7; }
+            50% { transform: scale(1.15); opacity: 0.85; }
+        }
+
+        @keyframes home-ripple {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+            100% { transform: translate(-50%, -50%) scale(2.6); opacity: 0; }
+        }
+
+        #homeIconBtn {
+            position: relative;
+            overflow: visible;
         }
 
         #homeIconBtn.pulsing {
             animation: home-pulse 2s ease-in-out infinite;
             will-change: transform;
+        }
+
+        #homeIconBtn.pulsing::before,
+        #homeIconBtn.pulsing::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(0, 123, 255, 0.25);
+            animation: home-ripple 2s ease-out infinite;
+            will-change: transform, opacity;
+            pointer-events: none;
+        }
+
+        #homeIconBtn.pulsing::after {
+            animation-delay: 1s;
         }
 
         .chat-link {
@@ -90,7 +119,7 @@
             word-break: break-all;
         }
 
-        #claudeDeleteSessionIconBtn {
+        #claudeClearMessagesIconBtn {
             margin-top: auto;
         }
 
@@ -333,11 +362,12 @@
             width: 30%;
             background: #007bff;
             animation: chat-progress-slide 1s ease-in-out infinite;
+            will-change: transform;
         }
 
         @keyframes chat-progress-slide {
-            0% { margin-left: -30%; }
-            100% { margin-left: 100%; }
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(333%); }
         }
 
         .chat-input-bar {
@@ -589,7 +619,8 @@
             </div>
             <div class="icon-sidebar-group" id="sidebarClaudeIcons">
                 <button class="icon-btn" id="claudeBackToListIconBtn" title="К списку сессий">🔙</button>
-                <button class="icon-btn icon-btn-danger" id="claudeDeleteSessionIconBtn" title="Удалить">🗑</button>
+                <button class="icon-btn" id="claudeClearMessagesIconBtn" title="Очистить сообщения">🧹</button>
+                <button class="icon-btn icon-btn-danger" id="claudeDeleteSessionIconBtn" title="Удалить сессию">🗑</button>
             </div>
         </div>
 
@@ -708,6 +739,7 @@
     const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
     const sidebarClaudeIcons = document.getElementById('sidebarClaudeIcons');
     const claudeBackToListIconBtn = document.getElementById('claudeBackToListIconBtn');
+    const claudeClearMessagesIconBtn = document.getElementById('claudeClearMessagesIconBtn');
     const claudeDeleteSessionIconBtn = document.getElementById('claudeDeleteSessionIconBtn');
     const siteLoginIconBtn = document.getElementById('siteLoginIconBtn');
     const SITE_LOGIN_URL = 'https://92.5.17.195.sslip.io/login';
@@ -763,6 +795,8 @@
         await loadEvents();
     }
 
+    let pingFailCount = 0;
+
     function initHomePing() {
         homeIconBtn.addEventListener('click', goHome);
         pingServer();
@@ -774,9 +808,11 @@
         const timeout = setTimeout(() => controller.abort(), 1000);
         try {
             await fetch('/telegram-app/ping', {signal: controller.signal});
+            pingFailCount = 0;
             homeIconBtn.classList.add('pulsing');
         } catch {
-            homeIconBtn.classList.remove('pulsing');
+            pingFailCount++;
+            if (pingFailCount >= 2) homeIconBtn.classList.remove('pulsing');
         } finally {
             clearTimeout(timeout);
         }
@@ -833,6 +869,7 @@
 
         pageBackIconBtn.addEventListener('click', () => setSidebarPageMode(false));
         claudeBackToListIconBtn.addEventListener('click', closeClaudeSessionView);
+        claudeClearMessagesIconBtn.addEventListener('click', clearCurrentClaudeMessages);
         claudeDeleteSessionIconBtn.addEventListener('click', deleteCurrentClaudeSession);
         // Не переключает вкладку (нет data-tab) - просто уводит на страницу
         // логина основного сайта, вне Mini App. tg.openLink корректно
@@ -964,6 +1001,26 @@
 
         loadClaudeSessionList();
         updateClaudeStatusPolling();
+    }
+
+    async function clearCurrentClaudeMessages() {
+        if (!claudeSessionUuid) return;
+
+        const confirmed = await confirmDialog('Очистить все сообщения текущей сессии?');
+        if (!confirmed) return;
+
+        try {
+            await postData('/telegram-app/claude/session/clear-messages', {session_uuid: claudeSessionUuid});
+        } catch (err) {
+            appendBubble('assistant', '⚠️ Не удалось очистить сообщения', false, claudeMessagesEl);
+            return;
+        }
+
+        claudeMessagesEl.innerHTML = '';
+        claudeRenderedCount = 0;
+        claudeLastContent = null;
+        claudeTypingBubble?.remove();
+        claudeTypingBubble = null;
     }
 
     // Кнопка "Удалить" - безвозвратно (не мягкий стоп): удаляет запись из

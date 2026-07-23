@@ -356,6 +356,20 @@ async def telegram_app_claude_sessions_active(request: Request):
     return {"result": rows}
 
 
+@router.post("/telegram-app/claude/session/clear-messages")
+async def telegram_app_claude_session_clear_messages(request: Request, data: dict):
+    _require_telegram_owner(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    async with mysql_get_db_async() as db:
+        await db.execute("DELETE FROM agent_session WHERE session_uuid = %s", (session_uuid,))
+
+    return {"result": {"ok": True}}
+
+
 @router.post("/telegram-app/claude/session/delete-request")
 async def telegram_app_claude_session_delete_request(request: Request, data: dict):
     """
