@@ -41,6 +41,9 @@ from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
 from src.uvicorn.routers.telegram_app import telegram_app
+from src.uvicorn.routers.telegram_app import telegram_app_chat
+from src.uvicorn.routers.telegram_app import telegram_app_claude
+from src.uvicorn.routers.telegram_app import telegram_app_claude_session
 from src.uvicorn.routers.telegram_app import telegram_app_plan
 from src.uvicorn.routers.tool import tool
 from src.uvicorn.routers.translate import translate
@@ -375,4 +378,7 @@ app.include_router(fact_collection.router, include_in_schema=False)
 app.include_router(plan.router, include_in_schema=False)
 app.include_router(companion.router, include_in_schema=False)
 app.include_router(telegram_app.router, include_in_schema=False)
+app.include_router(telegram_app_chat.router, include_in_schema=False)
+app.include_router(telegram_app_claude.router, include_in_schema=False)
+app.include_router(telegram_app_claude_session.router, include_in_schema=False)
 app.include_router(telegram_app_plan.router, include_in_schema=False)

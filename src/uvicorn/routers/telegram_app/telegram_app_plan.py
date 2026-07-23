@@ -9,7 +9,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.plan_repository import PlanRepository
-from src.uvicorn.routers.telegram_app.telegram_app import (
+from src.uvicorn.routers.telegram_app.telegram_app_common import (
     TELEGRAM_CHAT_USER_ID,
     _require_telegram_owner,
     agent_manager,
