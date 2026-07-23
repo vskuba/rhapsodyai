@@ -70,8 +70,12 @@ def api_call_retry(method: str, path: str, secret: str, base_url: str, params: d
     for attempt in range(retries):
         try:
             return api_call(method, path, secret, base_url, params=params, body=body)
-        except urllib.error.HTTPError:
-            raise  # HTTP-ответ - не временная недоступность, ретраить бессмысленно
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                raise  # 4xx - постоянная ошибка, ретраить бессмысленно
+            last_error = e
+            if attempt < retries - 1:
+                time.sleep(delay)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
             last_error = e
             if attempt < retries - 1:
