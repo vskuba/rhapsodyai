@@ -306,6 +306,14 @@
             opacity: 0.82;
         }
 
+        .send-countdown {
+            font-size: 11px;
+            color: #64748b;
+            text-align: right;
+            padding-right: 2px;
+            margin-top: 3px;
+        }
+
         .chat-bubble.assistant {
             background: #ffffff;
             color: #2c3e50;
@@ -1436,17 +1444,34 @@
         bubble.className = 'chat-bubble user sending';
         bubble.innerHTML = linkify(message);
 
+        const countdown = document.createElement('span');
+        countdown.className = 'send-countdown';
+        countdown.textContent = 'отправка через 5с';
+
+        const bubbleWrap = document.createElement('div');
+        bubbleWrap.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;';
+        bubbleWrap.appendChild(bubble);
+        bubbleWrap.appendChild(countdown);
+
         const delBtn = document.createElement('button');
         delBtn.className = 'del-msg-btn visible';
         delBtn.textContent = '✕';
 
         row.appendChild(delBtn);
-        row.appendChild(bubble);
+        row.appendChild(bubbleWrap);
         claudeMessagesEl.appendChild(row);
         claudeMessagesEl.scrollTop = claudeMessagesEl.scrollHeight;
 
+        let secondsLeft = 4;
+        const countdownInterval = setInterval(() => {
+            countdown.textContent = secondsLeft > 0 ? `отправка через ${secondsLeft}с` : 'отправка…';
+            secondsLeft--;
+        }, 1000);
+
         const sendTimer = setTimeout(async () => {
+            clearInterval(countdownInterval);
             bubble.classList.remove('sending');
+            bubbleWrap.removeChild(countdown);
             delBtn.remove();
 
             claudePendingUserCount++;
@@ -1471,6 +1496,7 @@
 
         delBtn.addEventListener('click', () => {
             clearTimeout(sendTimer);
+            clearInterval(countdownInterval);
             row.remove();
         });
     }
