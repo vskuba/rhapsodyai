@@ -42,6 +42,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Log deploy start
+        run: |
+          curl -s -o /dev/null -X POST "http://${{ secrets.HOST }}:8011/event-log" \
+            -H "Content-Type: application/json" \
+            -H "X-Claude-Secret: ${{ secrets.TELEGRAM_TOKEN_RHAPSODY }}" \
+            -d '{
+              "type": "github",
+              "payload": {
+                "event": "deploy.started",
+                "branch": "${{ github.ref_name }}",
+                "commit": "${{ github.sha }}",
+                "actor": "${{ github.actor }}",
+                "run_id": "${{ github.run_id }}",
+                "run_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              }
+            }' || true
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -106,3 +123,22 @@ jobs:
 
             echo "✅ Деплой завершён успешно! Текущий коммит:"
             git log -1 --oneline
+
+      - name: Log deploy result
+        if: always()
+        run: |
+          curl -s -o /dev/null -X POST "http://${{ secrets.HOST }}:8011/event-log" \
+            -H "Content-Type: application/json" \
+            -H "X-Claude-Secret: ${{ secrets.TELEGRAM_TOKEN_RHAPSODY }}" \
+            -d "{
+              \"type\": \"github\",
+              \"payload\": {
+                \"event\": \"deploy.finished\",
+                \"status\": \"${{ job.status }}\",
+                \"branch\": \"${{ github.ref_name }}\",
+                \"commit\": \"${{ github.sha }}\",
+                \"actor\": \"${{ github.actor }}\",
+                \"run_id\": \"${{ github.run_id }}\",
+                \"run_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+              }
+            }" || true
