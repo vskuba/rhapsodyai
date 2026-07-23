@@ -244,12 +244,14 @@ def session_status(session_uuid: str, secret: str, base_url: str) -> dict:
 
 
 def format_status_checklist(status: dict) -> str:
-    # Общий формат чек-листа (🟢/🔴, не текстовые галочки) - использует и
+    # Общий формат чек-листа (🍏/🔴, не текстовые галочки) - использует и
     # хук (встраивает уже готовый текст с реальными данными прямо в
     # additionalContext, гарантированно, до всякого решения агента), и
     # агент, если вызывает `status` вручную сам. Строку "Monitor" сюда не
-    # добавляет - см. session_status().
-    icon = lambda ok: "🟢" if ok else "🔴"
+    # добавляет - см. session_status(). 🟢 (зелёный кружок) заменён на 🍏
+    # (зелёное яблоко) - у пользователя 🟢 рендерился серым из-за проблем
+    # со шрифтом эмодзи в его терминале, 🍏 показывает реальный зелёный.
+    icon = lambda ok: "🍏" if ok else "🔴"
     return (
         f"{icon(status['watch'])} watch\n"
         f"{icon(status['server'])} server\n"
