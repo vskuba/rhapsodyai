@@ -301,6 +301,11 @@
             border-bottom-right-radius: 4px;
         }
 
+        .chat-bubble.user.sending {
+            border: 2px dashed rgba(255, 255, 255, 0.65);
+            opacity: 0.82;
+        }
+
         .chat-bubble.assistant {
             background: #ffffff;
             color: #2c3e50;
@@ -1105,7 +1110,6 @@
         claudePendingUserCount = 0;
         claudeTypingBubble?.remove();
         claudeTypingBubble = null;
-        updateLastUserDeleteBtn();
     }
 
     // Кнопка "Удалить" - безвозвратно (не мягкий стоп): удаляет запись из
@@ -1354,16 +1358,9 @@
             });
         }
 
-        if (role === 'user' && msgId && container === claudeMessagesEl) {
+        if (role === 'user' && container === claudeMessagesEl) {
             const row = document.createElement('div');
             row.className = 'user-msg-row';
-            row.dataset.msgId = msgId;
-
-            const delBtn = document.createElement('button');
-            delBtn.className = 'del-msg-btn';
-            delBtn.textContent = '✕';
-            delBtn.addEventListener('click', () => deleteClaudeMessage(msgId, row));
-            row.appendChild(delBtn);
             row.appendChild(bubble);
             container.appendChild(row);
             container.scrollTop = container.scrollHeight;
@@ -1375,27 +1372,6 @@
         return bubble;
     }
 
-    function updateLastUserDeleteBtn() {
-        const rows = claudeMessagesEl.querySelectorAll('.user-msg-row');
-        rows.forEach(r => r.querySelector('.del-msg-btn').classList.remove('visible'));
-        if (rows.length > 0) {
-            rows[rows.length - 1].querySelector('.del-msg-btn').classList.add('visible');
-        }
-    }
-
-    async function deleteClaudeMessage(msgId, rowEl) {
-        try {
-            await postData('/telegram-app/claude/session/delete-message', {
-                message_id: msgId,
-                session_uuid: claudeSessionUuid,
-            });
-            rowEl.remove();
-            claudeRenderedUserIds.delete(msgId);
-            updateLastUserDeleteBtn();
-        } catch (err) {
-            appendBubble('assistant', '⚠️ Не удалось удалить сообщение', false, claudeMessagesEl);
-        }
-    }
 
     function escapeHtml(t) {
         return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1451,25 +1427,52 @@
         if (!message || !claudeSessionUuid) return;
 
         claudeTextInput.value = '';
-        appendBubble('user', message, false, claudeMessagesEl);
-        claudePendingUserCount++;
-        claudeTypingBubble?.remove();
-        claudeTypingBubble = appendTypingIndicator(claudeMessagesEl);
 
-        claudeProgress.classList.add('active');
-        try {
-            await postData('/telegram-app/claude/ask', {
-                message,
-                session_uuid: claudeSessionUuid
-            });
-            updateClaudePolling();
-        } catch (err) {
+        // Показываем сообщение в состоянии ожидания (5 с) — пользователь может нажать ✕ и отменить
+        const row = document.createElement('div');
+        row.className = 'user-msg-row';
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble user sending';
+        bubble.innerHTML = linkify(message);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'del-msg-btn visible';
+        delBtn.textContent = '✕';
+
+        row.appendChild(delBtn);
+        row.appendChild(bubble);
+        claudeMessagesEl.appendChild(row);
+        claudeMessagesEl.scrollTop = claudeMessagesEl.scrollHeight;
+
+        const sendTimer = setTimeout(async () => {
+            bubble.classList.remove('sending');
+            delBtn.remove();
+
+            claudePendingUserCount++;
             claudeTypingBubble?.remove();
-            claudeTypingBubble = null;
-            appendBubble('assistant', '⚠️ ' + (err.message || 'Ошибка'), false, claudeMessagesEl);
-        } finally {
-            claudeProgress.classList.remove('active');
-        }
+            claudeTypingBubble = appendTypingIndicator(claudeMessagesEl);
+
+            claudeProgress.classList.add('active');
+            try {
+                await postData('/telegram-app/claude/ask', {
+                    message,
+                    session_uuid: claudeSessionUuid
+                });
+                updateClaudePolling();
+            } catch (err) {
+                claudeTypingBubble?.remove();
+                claudeTypingBubble = null;
+                appendBubble('assistant', '⚠️ ' + (err.message || 'Ошибка'), false, claudeMessagesEl);
+            } finally {
+                claudeProgress.classList.remove('active');
+            }
+        }, 5000);
+
+        delBtn.addEventListener('click', () => {
+            clearTimeout(sendTimer);
+            row.remove();
+        });
     }
 
     // Раз в несколько секунд подтягивает историю из ai_claude_session и дорисовывает
@@ -1483,13 +1486,11 @@
         try {
             const res = await getData(`/telegram-app/claude/messages?session_uuid=${encodeURIComponent(claudeSessionUuid)}`);
             const rows = res.result || [];
-            let needsDeleteBtnUpdate = false;
             for (const row of rows) {
                 if (row.content && !claudeRenderedUserIds.has(row.id)) {
                     claudeRenderedUserIds.add(row.id);
                     if (isInitialLoad) {
-                        appendBubble('user', row.content, false, claudeMessagesEl, row.id);
-                        needsDeleteBtnUpdate = true;
+                        appendBubble('user', row.content, false, claudeMessagesEl);
                     } else if (claudePendingUserCount > 0) {
                         claudePendingUserCount--;
                     }
@@ -1507,7 +1508,6 @@
                     claudeTypingBubble = appendTypingIndicator(claudeMessagesEl);
                 }
             }
-            if (needsDeleteBtnUpdate) updateLastUserDeleteBtn();
         } catch (err) {
             // Тихо пропускаем - следующий опрос попробует снова
         }
