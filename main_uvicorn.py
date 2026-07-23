@@ -208,8 +208,10 @@ async def auth_middleware(request: Request, call_next):
     # Check if user is authenticated via session
     user_id = request.session.get("user_id")
     if not user_id:
-        # Если передан X-API-KEY, разрешаем пропустить редирект/блокировку и доверяем авторизацию FastAPI
-        if request.headers.get("X-API-KEY") or request.headers.get("x-api-key"):
+        # Если передан X-API-KEY или X-Claude-Secret, разрешаем пропустить редирект/блокировку
+        # и доверяем авторизацию самому роутеру (_require_claude_secret / _require_api_key)
+        if (request.headers.get("X-API-KEY") or request.headers.get("x-api-key")
+                or request.headers.get("X-Claude-Secret")):
             return await call_next(request)
 
         # For HTML routes, redirect to login
