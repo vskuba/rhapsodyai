@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Request, HTTPException
+from typing import Annotated, Literal, Optional, Union
+
+from fastapi import APIRouter, Body, Request
+from pydantic import BaseModel, Field
 
 from src.mysql_.repository.event_log_repository import EventLogRepository
 from src.uvicorn.routers.telegram_app.telegram_app_common import _require_claude_secret
@@ -6,8 +9,109 @@ from src.uvicorn.routers.telegram_app.telegram_app_common import _require_claude
 router = APIRouter()
 
 
+# ── system ────────────────────────────────────────────────────────────────────
+
+class SystemPayload(BaseModel):
+    event_type: str
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    role: Optional[str] = None
+
+
+class EventLogSystemRequest(BaseModel):
+    type: Literal['system']
+    payload: SystemPayload
+
+
+# ── github ────────────────────────────────────────────────────────────────────
+
+class GithubDeployStartedPayload(BaseModel):
+    event: Literal['deploy.started']
+    branch: str
+    commit: str
+    actor: str
+    run_url: str
+
+
+class GithubDeployFinishedPayload(BaseModel):
+    event: Literal['deploy.finished']
+    branch: str
+    commit: str
+    actor: str
+    run_url: str
+    status: str  # success | failure | cancelled | timed_out
+
+
+GithubPayload = Annotated[
+    Union[GithubDeployStartedPayload, GithubDeployFinishedPayload],
+    Field(discriminator='event')
+]
+
+
+class EventLogGithubRequest(BaseModel):
+    type: Literal['github']
+    payload: GithubPayload
+
+
+# ── claude_session ────────────────────────────────────────────────────────────
+
+class ClaudeSessionPayload(BaseModel):
+    event_type: str
+    session_uuid: str
+    project_label: Optional[str] = None
+    role: Optional[str] = None
+
+
+class EventLogClaudeSessionRequest(BaseModel):
+    type: Literal['claude_session']
+    payload: ClaudeSessionPayload
+
+
+# ── agent ─────────────────────────────────────────────────────────────────────
+
+class AgentPayload(BaseModel):
+    event_type: str
+    agent_name: Optional[str] = None
+    node_id: Optional[int] = None
+    session_uuid: Optional[str] = None
+
+
+class EventLogAgentRequest(BaseModel):
+    type: Literal['agent']
+    payload: AgentPayload
+
+
+# ── llm ───────────────────────────────────────────────────────────────────────
+
+class LlmPayload(BaseModel):
+    event_type: str
+    model: Optional[str] = None
+    tokens_input: Optional[int] = None
+    tokens_output: Optional[int] = None
+    session_uuid: Optional[str] = None
+
+
+class EventLogLlmRequest(BaseModel):
+    type: Literal['llm']
+    payload: LlmPayload
+
+
+# ── discriminated union ───────────────────────────────────────────────────────
+
+EventLogRequest = Annotated[
+    Union[
+        EventLogSystemRequest,
+        EventLogGithubRequest,
+        EventLogClaudeSessionRequest,
+        EventLogAgentRequest,
+        EventLogLlmRequest,
+    ],
+    Field(discriminator='type')
+]
+
+
 @router.post("/event-log")
-async def event_log_create(request: Request, data: dict):
+async def event_log_create(request: Request, data: EventLogRequest = Body(...)):
     """
     Добавляет запись в event_log.
     Авторизация: X-Claude-Secret (TELEGRAM_TOKEN_RHAPSODY).
@@ -16,22 +120,14 @@ async def event_log_create(request: Request, data: dict):
         curl -X POST http://localhost:8011/event-log \\
              -H "Content-Type: application/json" \\
              -H "X-Claude-Secret: <token>" \\
-             -d '{"type": "deploy.started", "payload": {"branch": "master", "commit": "abc123"}}'
+             -d '{"type": "github", "payload": {"event": "deploy.started", "branch": "master", "commit": "abc123", "actor": "vskuba", "run_url": "https://..."}}'
     """
     _require_claude_secret(request)
 
-    event_type = str(data.get("type") or "").strip()
-    if not event_type:
-        raise HTTPException(status_code=400, detail="type is required")
-
-    payload = data.get("payload")
-
     repo = EventLogRepository()
-    row = {"type": event_type}
-    if payload is not None:
-        import json
-        row["payload"] = json.dumps(payload, ensure_ascii=False) if not isinstance(payload, str) else payload
+    created_id = await repo.add({
+        'type': data.type,
+        'payload': data.payload.model_dump_json(),
+    })
 
-    created_id = await repo.add(row)
-
-    return {"result": {"id": created_id, "type": event_type}}
+    return {"result": {"id": created_id, "type": data.type}}
