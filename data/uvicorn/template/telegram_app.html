@@ -1188,8 +1188,12 @@
     }
 
     async function loadEvents() {
-        const res = await getData('/events');
-        renderEvents(res.result || []);
+        try {
+            const res = await getData('/events');
+            renderEvents(res.result || []);
+        } catch (err) {
+            eventsTab.innerHTML = `<div class="denied-state">⚠️ Не удалось загрузить события: ${escapeHtml(err.message || 'Ошибка')}</div>`;
+        }
     }
 
     function formatEventSummary(type, payloadRaw) {

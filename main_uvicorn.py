@@ -188,8 +188,9 @@ async def auth_middleware(request: Request, call_next):
             ],
         },
         "exact": {
-            'GET': ['/openapi.json'],
-            'POST': ['/agent/list']
+            'GET': ['/openapi.json', '/events'],
+            'DELETE': ['/events'],
+            'POST': ['/agent/list', '/event-log']
         }
     }
 
