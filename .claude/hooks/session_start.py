@@ -52,6 +52,9 @@ def main():
 
     watch_log = f"/tmp/claude_watch_{project_label}.log"
 
+    if os.path.isfile(watch_log):
+        os.remove(watch_log)
+
     if os.path.isfile(SESSION_UUID_PATH):
         with open(SESSION_UUID_PATH, "r", encoding="utf-8") as f:
             session_uuid = f.read().strip()
