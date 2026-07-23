@@ -20,7 +20,7 @@ import json
 import os
 import sys
 
-from session_client import SESSION_UUID_PATH, activate_session, api_call
+from session_client import SESSION_UUID_PATH, activate_session, api_call, format_status_checklist, session_status
 from session_tool import load_config
 
 
@@ -57,23 +57,28 @@ def main():
             api_call("POST", "/telegram-app/claude/session/resume", secret, base_url,
                       body={"session_uuid": session_uuid})
             activate_session(session_uuid)
+            # Статус считаем прямо здесь, в хуке, с реальными данными - не
+            # просим агента посчитать и не забыть вывести (текстовые
+            # инструкции на это оказались ненадёжны, см. claude_session_
+            # registry.md). watch/server/session_uuid_file гарантированно
+            # попадают в контекст сессии независимо от того, выполнит ли
+            # агент дальнейшие инструкции - осталось только "Monitor",
+            # который до его вызова агентом физически не проверить снаружи.
+            checklist = format_status_checklist(session_status(session_uuid, secret, base_url))
             context_lines.append(
                 f"Сессия session_uuid={session_uuid} автоматически возобновлена, "
-                f"фоновый watch (heartbeat+inbox) уже поднят и пишет в {watch_log}.\n"
+                f"фоновый watch (heartbeat+inbox) уже поднят и пишет в {watch_log}.\n\n"
+                f"Статус:\n{checklist}\n🔴 Monitor (ещё не заведён)\n\n"
                 "⚠️ ОБЯЗАТЕЛЬНО ПЕРВЫМ ДЕЙСТВИЕМ В ЭТОМ ЖЕ ОТВЕТЕ (не откладывай, не пропускай): "
-                f"заведи Monitor (persistent: true) на {watch_log}, паттерн NEW_MESSAGES. Без этого "
-                "шага сообщения из чата Mini App будут приходить в очередь, но никто их не увидит - "
-                "watch их находит, но разбудить тебя может только Monitor. По срабатыванию Monitor "
-                "вызови `python3 .claude/hooks/session_client.py inbox --session-uuid " + session_uuid +
-                "`, обработай непрочитанные как обычные промпты и ответь через `respond --inbox-id "
-                "<id>` (--no-notify для промежуточных шагов, без флага - для финального ответа).\n"
-                "Сразу после того, как заведёшь Monitor, вызови `python3 .claude/hooks/"
-                "session_client.py status --session-uuid " + session_uuid + "` и выведи пользователю "
-                "итоговый чек-лист по её результату (watch/server/session_uuid_file) плюс отдельной "
-                "строкой Monitor от себя (это единственное, что снаружи не проверить - ты сам знаешь, "
-                "что его завёл). Формат чек-листа: 🟢 перед каждым пунктом, который true/armed, 🔴 "
-                "перед любым, который false - яркие цветные кружки, не текстовые галочки, чтобы "
-                "сразу было видно, всё ли в порядке."
+                f"выведи пользователю статус-блок выше как есть (он уже посчитан, просто "
+                "ретранслируй), затем заведи Monitor (persistent: true) на "
+                f"{watch_log}, паттерн NEW_MESSAGES, и замени последнюю строку статуса на "
+                "🟢 Monitor (заведён). Без Monitor сообщения из чата Mini App будут приходить в "
+                "очередь, но никто их не увидит - watch их находит, но разбудить тебя может только "
+                "Monitor. По срабатыванию Monitor вызови `python3 .claude/hooks/session_client.py "
+                "inbox --session-uuid " + session_uuid + "`, обработай непрочитанные как обычные "
+                "промпты и ответь через `respond --inbox-id <id>` (--no-notify для промежуточных "
+                "шагов, без флага - для финального ответа)."
             )
         except Exception as e:
             context_lines.append(

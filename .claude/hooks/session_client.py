@@ -243,6 +243,20 @@ def session_status(session_uuid: str, secret: str, base_url: str) -> dict:
     return {"watch": watch_ok, "server": server_ok, "session_uuid_file": file_ok}
 
 
+def format_status_checklist(status: dict) -> str:
+    # Общий формат чек-листа (🟢/🔴, не текстовые галочки) - использует и
+    # хук (встраивает уже готовый текст с реальными данными прямо в
+    # additionalContext, гарантированно, до всякого решения агента), и
+    # агент, если вызывает `status` вручную сам. Строку "Monitor" сюда не
+    # добавляет - см. session_status().
+    icon = lambda ok: "🟢" if ok else "🔴"
+    return (
+        f"{icon(status['watch'])} watch\n"
+        f"{icon(status['server'])} server\n"
+        f"{icon(status['session_uuid_file'])} session_uuid_file"
+    )
+
+
 def main():
     secret, base_url = load_config()
 
