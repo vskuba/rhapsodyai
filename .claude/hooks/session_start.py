@@ -156,8 +156,7 @@ def main():
             "того, как заведёшь Monitor, вызови `python3 .claude/hooks/session_client.py status "
             "--session-uuid <uuid>` и выведи пользователю итоговый чек-лист (watch/server/"
             "session_uuid_file из результата) плюс строкой Monitor от себя. Формат: 🍏 перед каждым "
-            "пунктом, который true/armed, 🔴 перед любым, который false (именно эти два значка - "
-            "не 🟢, у пользователя он рендерится серым)."
+            "пунктом, который true/armed, 🔴 перед любым, который false"
         )
     else:
         context_lines.append(
@@ -172,8 +171,7 @@ def main():
             "шага, не отдельная задача на потом. Затем вызови `python3 .claude/hooks/"
             "session_client.py status --session-uuid <uuid>` и выведи пользователю итоговый "
             "чек-лист (watch/server/session_uuid_file) плюс строкой Monitor от себя. Формат: 🍏 "
-            "перед каждым пунктом, который true/armed, 🔴 перед любым, который false (именно эти "
-            "два значка - не 🟢, у пользователя он рендерится серым)."
+            "перед каждым пунктом, который true/armed, 🔴 перед любым, который false."
         )
 
     emit(context_lines)
