@@ -25,9 +25,16 @@ heartbeat - обновляет last_seen_at независимо от того, 
 inbox и печатает маркерную строку в stdout, только если там сообщение с id
 больше последнего уже увиденного (дедуп по id - без этого маркер печатался
 бы на каждом тике, пока сообщение остаётся необработанным, а не один раз
-при появлении). Сам по себе не тратит токены - предназначен для Monitor,
-который слушает stdout этого процесса и будит агента только по реальному
-новому событию.
+при появлении). При обнаружении новых сообщений сам (без участия LLM,
+гарантированно - не завязано на то, вспомнит ли агент) шлёт короткий push
+"получено, разбираюсь" - агенту не нужно помнить об этом вручную. Сам по
+себе не тратит токены - предназначен для Monitor, который слушает stdout
+этого процесса и будит агента только по реальному новому событию.
+
+Все исходящие запросы (heartbeat, auto-ack, respond, finalize) идут через
+`api_call_retry` - если сервер недоступен (например, идёт передеплой),
+не проваливаются сразу, а повторяют попытку с паузой до ~1 минуты, чтобы
+сообщения не терялись в окне недоступности.
 """
 
 import argparse
@@ -71,6 +78,22 @@ def api_call(method: str, path: str, secret: str, base_url: str, params: dict = 
         return json.load(resp)
 
 
+def api_call_retry(method: str, path: str, secret: str, base_url: str, params: dict = None,
+                    body: dict = None, retries: int = 12, delay: int = 5) -> dict:
+    # Повторяет запрос при недоступности сервера (например, идёт передеплой
+    # - в наблюдении контейнер поднимался за 10-20с, 12x5с=60с даёт запас) -
+    # чтобы heartbeat/ack/respond/finalize не терялись молча в этом окне.
+    last_error = None
+    for attempt in range(retries):
+        try:
+            return api_call(method, path, secret, base_url, params=params, body=body)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            last_error = e
+            if attempt < retries - 1:
+                time.sleep(delay)
+    raise last_error
+
+
 def watch(session_uuid: str, secret: str, base_url: str, interval: int):
     # last_seen_max_id дедуплицирует маркер: без него watch печатал бы
     # NEW_MESSAGES на каждом тике, пока сообщение остаётся необработанным
@@ -80,8 +103,8 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
     last_seen_max_id = 0
     while True:
         try:
-            api_call("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
-                      body={"session_uuid": session_uuid})
+            api_call_retry("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
+                            body={"session_uuid": session_uuid})
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             pass
         try:
@@ -91,6 +114,14 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
             if rows and rows[-1]["id"] > last_seen_max_id:
                 new_count = sum(1 for r in rows if r["id"] > last_seen_max_id)
                 last_seen_max_id = rows[-1]["id"]
+                try:
+                    api_call_retry("POST", "/telegram-app/claude/respond", secret, base_url, body={
+                        "session_uuid": session_uuid,
+                        "response": "Получено, разбираюсь…",
+                        "notify": True,
+                    })
+                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                    pass
                 print(f"NEW_MESSAGES count={new_count}", flush=True)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             pass
@@ -147,12 +178,12 @@ def main():
             body = {"session_uuid": args.session_uuid, "response": args.response, "notify": not args.no_notify}
             if args.inbox_id is not None:
                 body["inbox_id"] = args.inbox_id
-            result = api_call("POST", "/telegram-app/claude/respond", secret, base_url, body=body)
+            result = api_call_retry("POST", "/telegram-app/claude/respond", secret, base_url, body=body)
         elif args.command == "finalize":
             body = {"session_uuid": args.session_uuid}
             if args.summary:
                 body["summary"] = args.summary
-            result = api_call("POST", "/telegram-app/claude/session/finalize", secret, base_url, body=body)
+            result = api_call_retry("POST", "/telegram-app/claude/session/finalize", secret, base_url, body=body)
         else:
             raise ValueError(f"unknown command: {args.command}")
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
