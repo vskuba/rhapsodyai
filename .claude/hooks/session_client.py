@@ -57,6 +57,9 @@ SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, ".claude", "session_uuid")
 # cleanup_session ниже и SESSION_CLEANUP_MARKER в telegram_app.py)
 CLEANUP_MARKER = "__SESSION_CLEANUP__"
 
+# Кнопка «Статус» в Mini App - просит watch перезапустить себя.
+RESTART_WATCH_MARKER = "__RESTART_WATCH__"
+
 
 def api_call_retry(method: str, path: str, secret: str, base_url: str, params: dict = None,
                     body: dict = None, retries: int = 12, delay: int = 5) -> dict:
@@ -113,6 +116,19 @@ def find_terminal_pid(start_pid: int):
     return None
 
 
+def _spawn_watch(session_uuid: str, terminal_pid: int = None):
+    log_path = f"/tmp/claude_watch_{os.path.basename(PROJECT_ROOT)}.log"
+    log_file = open(log_path, "a")
+    cmd = [sys.executable, "-u", os.path.join(os.path.dirname(os.path.abspath(__file__)), "session_client.py"),
+           "watch", "--session-uuid", session_uuid]
+    if terminal_pid:
+        cmd += ["--terminal-pid", str(terminal_pid)]
+    subprocess.Popen(
+        cmd, stdout=log_file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        start_new_session=True, cwd=PROJECT_ROOT,
+    )
+
+
 def start_watch_detached(session_uuid: str):
     # setsid (start_new_session=True) - без него фоновый watch привязан к
     # жизни самого процесса Claude Code, а не терминала: если Claude Code
@@ -131,16 +147,7 @@ def start_watch_detached(session_uuid: str):
     if is_watch_running(session_uuid):
         return
     terminal_pid = find_terminal_pid(os.getpid())
-    log_path = f"/tmp/claude_watch_{os.path.basename(PROJECT_ROOT)}.log"
-    log_file = open(log_path, "a")
-    cmd = [sys.executable, "-u", os.path.join(os.path.dirname(os.path.abspath(__file__)), "session_client.py"),
-           "watch", "--session-uuid", session_uuid]
-    if terminal_pid:
-        cmd += ["--terminal-pid", str(terminal_pid)]
-    subprocess.Popen(
-        cmd, stdout=log_file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-        start_new_session=True, cwd=PROJECT_ROOT,
-    )
+    _spawn_watch(session_uuid, terminal_pid)
 
 
 def save_session_uuid(session_uuid: str):
@@ -203,24 +210,43 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int, terminal
                     cleanup_session(session_uuid, secret, base_url)
                     print("SESSION_CLEANED_UP", flush=True)
                     return
-                try:
-                    api_call_retry("POST", "/telegram-app/claude/respond", secret, base_url, body={
-                        "session_uuid": session_uuid,
-                        "response": "Получено, разбираюсь…",
-                        "notify": True,
-                    })
-                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-                    pass
-                # Сырой текст сообщения в самой строке лога - Monitor матчит
-                # по "NEW_MESSAGES" и отдаёт всю строку как есть в событие,
-                # так сразу видно, что именно пришло, без отдельного inbox.
-                # Одна строка на сообщение (не одна строка на батч) - если
-                # пришло сразу несколько, каждое видно по отдельности.
-                # Переносы строк в контенте схлопываются в пробел, чтобы не
-                # разорвать строку лога на части, которые grep не заметит.
-                for r in new_rows:
-                    content_flat = " ".join(str(r["content"]).split())
-                    print(f"NEW_MESSAGES Message: {content_flat!r}", flush=True)
+                restart_rows = [r for r in new_rows if r["content"] == RESTART_WATCH_MARKER]
+                if restart_rows:
+                    # Помечаем маркер обработанным, чтобы новый watch-процесс
+                    # его не увидел и не зациклил перезапуски.
+                    try:
+                        api_call_retry("POST", "/telegram-app/claude/session/inbox-ack", secret, base_url, body={
+                            "session_uuid": session_uuid,
+                            "ids": [r["id"] for r in restart_rows],
+                        })
+                    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                        pass
+                    # Запускаем новый watch с тем же terminal_pid - old watch выходит после return.
+                    # terminal_pid передаём чтобы новый watch тоже корректно отслеживал закрытие
+                    # терминала (find_terminal_pid уже не сработает из detached-процесса).
+                    _spawn_watch(session_uuid, terminal_pid)
+                    print("WATCH_RESTARTING", flush=True)
+                    return
+                user_rows = [r for r in new_rows if r["content"] != RESTART_WATCH_MARKER]
+                if user_rows:
+                    try:
+                        api_call_retry("POST", "/telegram-app/claude/respond", secret, base_url, body={
+                            "session_uuid": session_uuid,
+                            "response": "Получено, разбираюсь…",
+                            "notify": True,
+                        })
+                    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                        pass
+                    # Сырой текст сообщения в самой строке лога - Monitor матчит
+                    # по "NEW_MESSAGES" и отдаёт всю строку как есть в событие,
+                    # так сразу видно, что именно пришло, без отдельного inbox.
+                    # Одна строка на сообщение (не одна строка на батч) - если
+                    # пришло сразу несколько, каждое видно по отдельности.
+                    # Переносы строк в контенте схлопываются в пробел, чтобы не
+                    # разорвать строку лога на части, которые grep не заметит.
+                    for r in user_rows:
+                        content_flat = " ".join(str(r["content"]).split())
+                        print(f"NEW_MESSAGES Message: {content_flat!r}", flush=True)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             pass
         time.sleep(interval)

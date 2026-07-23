@@ -147,7 +147,7 @@
             display: block;
         }
 
-        #claudeClearMessagesIconBtn {
+        #claudeStatusIconBtn {
             margin-top: auto;
         }
 
@@ -647,6 +647,7 @@
             </div>
             <div class="icon-sidebar-group" id="sidebarClaudeIcons">
                 <button class="icon-btn" id="claudeBackToListIconBtn" title="К списку сессий">🔙</button>
+                <button class="icon-btn" id="claudeStatusIconBtn" title="Статус процессов">📊</button>
                 <button class="icon-btn" id="claudeClearMessagesIconBtn" title="Очистить сообщения">🧹</button>
                 <button class="icon-btn icon-btn-danger" id="claudeDeleteSessionIconBtn" title="Удалить сессию">🗑</button>
             </div>
@@ -767,6 +768,7 @@
     const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
     const sidebarClaudeIcons = document.getElementById('sidebarClaudeIcons');
     const claudeBackToListIconBtn = document.getElementById('claudeBackToListIconBtn');
+    const claudeStatusIconBtn = document.getElementById('claudeStatusIconBtn');
     const claudeClearMessagesIconBtn = document.getElementById('claudeClearMessagesIconBtn');
     const claudeDeleteSessionIconBtn = document.getElementById('claudeDeleteSessionIconBtn');
     const siteLoginIconBtn = document.getElementById('siteLoginIconBtn');
@@ -897,6 +899,7 @@
 
         pageBackIconBtn.addEventListener('click', () => setSidebarPageMode(false));
         claudeBackToListIconBtn.addEventListener('click', closeClaudeSessionView);
+        claudeStatusIconBtn.addEventListener('click', restartClaudeProcesses);
         claudeClearMessagesIconBtn.addEventListener('click', clearCurrentClaudeMessages);
         claudeDeleteSessionIconBtn.addEventListener('click', deleteCurrentClaudeSession);
         // Не переключает вкладку (нет data-tab) - просто уводит на страницу
@@ -1029,6 +1032,55 @@
 
         loadClaudeSessionList();
         updateClaudeStatusPolling();
+    }
+
+    async function restartClaudeProcesses() {
+        if (!claudeSessionUuid) return;
+
+        claudeStatusIconBtn.disabled = true;
+
+        const statusBubble = document.createElement('div');
+        statusBubble.className = 'chat-bubble assistant';
+        statusBubble.textContent = '🔄 Отправляю команду перезапуска…';
+        claudeMessagesEl.appendChild(statusBubble);
+        claudeMessagesEl.scrollTop = claudeMessagesEl.scrollHeight;
+
+        let initialStatus;
+        try {
+            const data = await postData('/telegram-app/claude/session/restart-processes', {session_uuid: claudeSessionUuid});
+            initialStatus = data.result;
+        } catch (err) {
+            statusBubble.textContent = '⚠️ Не удалось отправить команду перезапуска';
+            claudeStatusIconBtn.disabled = false;
+            return;
+        }
+
+        statusBubble.textContent = '🔄 Команда перезапуска отправлена. Проверяю статус через 5с…';
+
+        await new Promise(r => setTimeout(r, 5000));
+
+        let freshStatus = null;
+        try {
+            const data = await getData(`/telegram-app/claude/session/process-status?session_uuid=${encodeURIComponent(claudeSessionUuid)}`);
+            freshStatus = data.result;
+        } catch (err) { /* игнорируем, используем initialStatus */ }
+
+        const s = freshStatus || initialStatus;
+        const watchIcon = s.watch_alive ? '🍏' : '🔴';
+        const secsAgo = s.seconds_ago !== null && s.seconds_ago !== undefined ? `${s.seconds_ago}с назад` : 'нет данных';
+
+        const lines = [
+            `📊 Статус процессов сессии`,
+            `${watchIcon} watch  (heartbeat: ${secsAgo})`,
+            `🍏 server`,
+            `📁 ${s.project_label || ''} / ${s.role || ''}`,
+        ];
+        if (!s.watch_alive) {
+            lines.push('⚠️ watch не отвечает — откройте терминал или нажмите ещё раз');
+        }
+        statusBubble.textContent = lines.join('\n');
+
+        claudeStatusIconBtn.disabled = false;
     }
 
     async function clearCurrentClaudeMessages() {

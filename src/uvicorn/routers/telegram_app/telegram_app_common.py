@@ -22,6 +22,7 @@ TELEGRAM_CHAT_COMPANION_NAME = 'user_admin'
 TELEGRAM_CHAT_COMPANION_TITLE = 'admin'
 
 SESSION_CLEANUP_MARKER = '__SESSION_CLEANUP__'
+RESTART_WATCH_MARKER = '__RESTART_WATCH__'
 
 
 def _require_telegram_owner(request: Request):

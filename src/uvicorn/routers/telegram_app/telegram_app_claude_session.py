@@ -1,15 +1,17 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
+from src.telegram_.telegram_notify import telegram_send_owner
 from src.tool.claude_.claude_ import claude_message_user
 from src.uvicorn.routers.telegram_app.telegram_app_common import (
     _require_telegram_owner,
     _require_claude_secret,
     SESSION_CLEANUP_MARKER,
+    RESTART_WATCH_MARKER,
 )
 
 router = APIRouter()
@@ -212,3 +214,99 @@ async def telegram_app_claude_session_cleanup_confirm(request: Request, data: di
         await db.execute("DELETE FROM ai_claude_session WHERE session_uuid = %s", (session_uuid,))
 
     return {"result": {"ok": True}}
+
+
+@router.post("/telegram-app/claude/session/inbox-ack")
+async def telegram_app_claude_session_inbox_ack(request: Request, data: dict):
+    """
+    Помечает конкретные inbox-сообщения как обработанные (handled=1).
+    Вызывается терминалом после обработки внутренних маркеров (RESTART_WATCH и т.п.),
+    которые не нужно показывать агенту.
+    """
+    _require_claude_secret(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    ids = [int(i) for i in (data.get("ids") or []) if str(i).isdigit()]
+    if not session_uuid or not ids:
+        raise HTTPException(status_code=400, detail="session_uuid and ids required")
+
+    placeholders = ",".join(["%s"] * len(ids))
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            f"UPDATE ai_claude_session SET handled = 1 WHERE session_uuid = %s AND id IN ({placeholders})",
+            (session_uuid, *ids),
+        )
+
+    return {"result": {"ok": True}}
+
+
+def _compute_process_status(row: dict) -> dict:
+    last_seen_at = row.get("last_seen_at")
+    seconds_ago = None
+    watch_alive = False
+    if last_seen_at:
+        delta = (datetime.now() - last_seen_at).total_seconds()
+        seconds_ago = int(delta)
+        watch_alive = delta <= 15
+    return {
+        "watch_alive": watch_alive,
+        "server_ok": True,
+        "seconds_ago": seconds_ago,
+        "last_seen_at": str(last_seen_at) if last_seen_at else None,
+        "role": row.get("role"),
+        "project_label": row.get("project_label"),
+        "status": row.get("status"),
+    }
+
+
+@router.get("/telegram-app/claude/session/process-status")
+async def telegram_app_claude_session_process_status(request: Request, session_uuid: str):
+    """
+    Статус процессов сессии - вызывается из Mini App по кнопке «Статус».
+    watch_alive = last_seen_at не старше 15с (3× интервал heartbeat).
+    """
+    _require_telegram_owner(request)
+
+    repo = AiClaudeSessionRegistryRepository()
+    row = await repo.find_one_by({"session_uuid": session_uuid})
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return {"result": _compute_process_status(row)}
+
+
+@router.post("/telegram-app/claude/session/restart-processes")
+async def telegram_app_claude_session_restart_processes(request: Request, data: dict):
+    """
+    Кнопка «Статус» в Mini App - отправляет терминалу сигнал перезапустить watch-процесс
+    и возвращает текущий статус (до перезапуска, т.к. новый heartbeat придёт позже).
+    """
+    _require_telegram_owner(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    repo = AiClaudeSessionRegistryRepository()
+    row = await repo.find_one_by({"session_uuid": session_uuid})
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await claude_message_user(RESTART_WATCH_MARKER, session_uuid)
+
+    status = _compute_process_status(row)
+    status["restart_sent"] = True
+
+    # Telegram-уведомление как fallback-канал на случай если watch мёртв
+    # (inbox не читается) — Telegram MCP в терминале получит это сообщение
+    # и разбудит агента, который перезапустит watch/Monitor вручную.
+    try:
+        await telegram_send_owner(
+            f"🔄 Запрос перезапуска процессов сессии из Mini App\n"
+            f"Сессия: {row.get('project_label')} / {row.get('role')}\n"
+            f"watch alive: {'да' if status['watch_alive'] else 'нет'}"
+        )
+    except Exception:
+        pass
+
+    return {"result": status}
