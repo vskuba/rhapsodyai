@@ -248,6 +248,13 @@
             color: #007bff;
         }
 
+        .event-summary {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+            word-break: break-all;
+        }
+
         .event-time {
             float: right;
             color: #94a3b8;
@@ -1185,14 +1192,61 @@
         renderEvents(res.result || []);
     }
 
+    function formatEventSummary(type, payloadRaw) {
+        let p = {};
+        try { p = JSON.parse(payloadRaw || '{}'); } catch { return ''; }
+
+        if (type === 'github') {
+            const ev = p.event || '';
+            const branch = p.branch ? `#${p.branch}` : '';
+            const commit = p.commit ? p.commit.slice(0, 7) : '';
+            const actor = p.actor ? `@${p.actor}` : '';
+            if (ev === 'deploy.started') return `🚀 deploy.started ${branch} ${commit} ${actor}`.trim();
+            if (ev === 'deploy.finished') {
+                const icon = p.status === 'success' ? '✅' : '❌';
+                return `${icon} deploy.finished · ${p.status || ''} ${branch} ${commit}`.trim();
+            }
+            return ev;
+        }
+
+        if (type === 'system' || (!type && p.username)) {
+            const ev = p.event_type || 'event';
+            const who = p.username ? `${p.username} (${p.role || '?'})` : (p.role || '');
+            return `👤 ${ev} · ${who}`.trim();
+        }
+
+        if (type === 'claude_session') {
+            const parts = [p.event_type, p.project_label, p.role].filter(Boolean);
+            return `🖥 ${parts.join(' · ')}`;
+        }
+
+        if (type === 'agent') {
+            const parts = [p.event_type, p.agent_name].filter(Boolean);
+            return `🤖 ${parts.join(' · ')}`;
+        }
+
+        if (type === 'llm') {
+            const tokens = (p.tokens_input || p.tokens_output)
+                ? `↑${p.tokens_input || 0} ↓${p.tokens_output || 0}`
+                : '';
+            const parts = [p.event_type, p.model, tokens].filter(Boolean);
+            return `💬 ${parts.join(' · ')}`;
+        }
+
+        return '';
+    }
+
     function renderEvents(events) {
         const eventsHtml = events.length
-            ? events.map(e => `
+            ? events.map(e => {
+                const summary = formatEventSummary(e.type, e.payload);
+                return `
                 <div class="event-row">
                     <span class="event-time">${escapeHtml(e.created_at || '')}</span>
-                    <span class="event-type">${escapeHtml(e.type)}</span>
-                </div>
-            `).join('')
+                    <span class="event-type">${escapeHtml(e.type || 'system')}</span>
+                    ${summary ? `<div class="event-summary">${escapeHtml(summary)}</div>` : ''}
+                </div>`;
+            }).join('')
             : '<div class="empty-state">Событий пока нет</div>';
 
         eventsTab.innerHTML = `
