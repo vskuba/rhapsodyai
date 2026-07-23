@@ -31,6 +31,7 @@ from src.event.event_handlers import event_handlers_register
 from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import dashboard
+from src.uvicorn.routers.event import event as event_router
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.auth import auth as auth_router
 from src.uvicorn.routers.cronjob import cronjob
@@ -382,3 +383,4 @@ app.include_router(telegram_app_chat.router, include_in_schema=False)
 app.include_router(telegram_app_claude.router, include_in_schema=False)
 app.include_router(telegram_app_claude_session.router, include_in_schema=False)
 app.include_router(telegram_app_plan.router, include_in_schema=False)
+app.include_router(event_router.router, include_in_schema=False)
