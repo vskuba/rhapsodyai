@@ -15,22 +15,7 @@ import sys
 import urllib.error
 import urllib.request
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def env_file_load(path: str) -> dict:
-    values = {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                values[key.strip()] = value.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return values
+from session_tool import load_config
 
 
 def main():
@@ -38,10 +23,7 @@ def main():
     cwd = hook_input.get("cwd") or os.getcwd()
     project_label = os.path.basename(os.path.normpath(cwd))
 
-    env = env_file_load(os.path.join(PROJECT_ROOT, ".env"))
-    secret = os.environ.get("TELEGRAM_TOKEN_RHAPSODY") or env.get("TELEGRAM_TOKEN_RHAPSODY", "")
-    mini_app_url = os.environ.get("TELEGRAM_MINI_APP_URL") or env.get("TELEGRAM_MINI_APP_URL", "")
-    base_url = mini_app_url.rsplit("/telegram-app", 1)[0] if mini_app_url else "http://localhost:8011"
+    secret, base_url = load_config()
 
     context_lines = [f"[session-registry] project_label: {project_label}"]
 

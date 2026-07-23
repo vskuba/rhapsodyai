@@ -39,43 +39,11 @@ inbox и печатает маркерную строку в stdout, тольк�
 
 import argparse
 import json
-import os
 import sys
 import time
 import urllib.error
-import urllib.request
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def env_file_load(path: str) -> dict:
-    values = {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                values[key.strip()] = value.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return values
-
-
-def api_call(method: str, path: str, secret: str, base_url: str, params: dict = None, body: dict = None) -> dict:
-    url = f"{base_url}{path}"
-    if params:
-        query = "&".join(f"{k}={urllib.request.quote(str(v))}" for k, v in params.items())
-        url = f"{url}?{query}"
-
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers={
-        "X-Claude-Secret": secret,
-        "Content-Type": "application/json",
-    })
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.load(resp)
+from session_tool import api_call, load_config
 
 
 def api_call_retry(method: str, path: str, secret: str, base_url: str, params: dict = None,
@@ -129,13 +97,10 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
 
 
 def main():
-    env = env_file_load(os.path.join(PROJECT_ROOT, ".env"))
-    secret = os.environ.get("TELEGRAM_TOKEN_RHAPSODY") or env.get("TELEGRAM_TOKEN_RHAPSODY", "")
-    mini_app_url = os.environ.get("TELEGRAM_MINI_APP_URL") or env.get("TELEGRAM_MINI_APP_URL", "")
-    base_url = mini_app_url.rsplit("/telegram-app", 1)[0] if mini_app_url else "http://localhost:8011"
+    secret, base_url = load_config()
 
     if not secret:
-        print(json.dumps({"error": "TELEGRAM_TOKEN_RHAPSODY not found in .env"}), file=sys.stderr)
+        print(json.dumps({"error": "TELEGRAM_TOKEN_RHAPSODY not found in .env/.env.local"}), file=sys.stderr)
         sys.exit(1)
 
     parser = argparse.ArgumentParser()

@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-Session Tools - вспомогательные CLI-инструменты общего назначения,
-не завязанные на конкретную сессию (в отличие от session_client.py). Цель -
-не переписывать заново boilerplate (чтение .env, авторизация, HTTP-запрос)
-через inline-python каждый раз, когда нужно что-то быстро проверить на
-проде. Новые инструменты добавляются сюда же, сгруппированные по секциям
-ниже - см. заголовки "=== ... ===".
+Session Tools - базовый модуль общих утилит + CLI-инструменты общего
+назначения, не завязанные на конкретную сессию (в отличие от
+session_client.py, который его импортирует, а не наоборот - здесь ноль
+зависимостей от соседних файлов, чтобы не было циклического импорта).
+Портируется в другой проект вместе с session_client.py/session_start.py
+без правок - project_label и .env/.env.local определяются на месте.
+
+Цель - не переписывать заново boilerplate (чтение .env, авторизация,
+HTTP-запрос) через inline-python каждый раз, когда нужно что-то быстро
+проверить на проде. Новые инструменты добавляются сюда же, сгруппированные
+по секциям ниже - см. заголовки "=== ... ===".
 
 Использование:
   session_tool.py call METHOD PATH [--params k=v,k2=v2] [--body JSON]
@@ -15,8 +20,46 @@ import argparse
 import json
 import os
 import sys
+import urllib.request
 
-from session_client import PROJECT_ROOT, api_call, env_file_load
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+# === Загрузка .env ===
+
+def env_file_load(path: str) -> dict:
+    values = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                values[key.strip()] = value.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    return values
+
+
+def env_file_find(project_root: str) -> dict:
+    # .env.local первым - частый паттерн, где .env закоммичен (шаблон/
+    # дефолты), а локальные значения живут в незакоммиченном .env.local
+    for name in (".env.local", ".env"):
+        path = os.path.join(project_root, name)
+        if os.path.isfile(path):
+            return env_file_load(path)
+    return {}
+
+
+def load_config() -> tuple[str, str]:
+    # Единственное место, где собираются secret/base_url - session_start.py,
+    # session_client.py и main() ниже импортируют это отсюда, не дублируют
+    env = env_file_find(PROJECT_ROOT)
+    secret = os.environ.get("TELEGRAM_TOKEN_RHAPSODY") or env.get("TELEGRAM_TOKEN_RHAPSODY", "")
+    mini_app_url = os.environ.get("TELEGRAM_MINI_APP_URL") or env.get("TELEGRAM_MINI_APP_URL", "")
+    base_url = mini_app_url.rsplit("/telegram-app", 1)[0] if mini_app_url else "http://localhost:8011"
+    return secret, base_url
 
 
 # === HTTP API (X-Claude-Secret) ===
@@ -26,6 +69,21 @@ from session_client import PROJECT_ROOT, api_call, env_file_load
 # не обходит, это осознанно не поддерживается (владельческую сессию Mini App
 # не подделываем).
 
+def api_call(method: str, path: str, secret: str, base_url: str, params: dict = None, body: dict = None) -> dict:
+    url = f"{base_url}{path}"
+    if params:
+        query = "&".join(f"{k}={urllib.request.quote(str(v))}" for k, v in params.items())
+        url = f"{url}?{query}"
+
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers={
+        "X-Claude-Secret": secret,
+        "Content-Type": "application/json",
+    })
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.load(resp)
+
+
 def call(method: str, path: str, secret: str, base_url: str, params_arg: str, body_arg: str):
     params = dict(kv.split("=", 1) for kv in params_arg.split(",")) if params_arg else None
     body = json.loads(body_arg) if body_arg else None
@@ -33,13 +91,10 @@ def call(method: str, path: str, secret: str, base_url: str, params_arg: str, bo
 
 
 def main():
-    env = env_file_load(f"{PROJECT_ROOT}/.env")
-    secret = os.environ.get("TELEGRAM_TOKEN_RHAPSODY") or env.get("TELEGRAM_TOKEN_RHAPSODY", "")
-    mini_app_url = os.environ.get("TELEGRAM_MINI_APP_URL") or env.get("TELEGRAM_MINI_APP_URL", "")
-    base_url = mini_app_url.rsplit("/telegram-app", 1)[0] if mini_app_url else "http://localhost:8011"
+    secret, base_url = load_config()
 
     if not secret:
-        print(json.dumps({"error": "TELEGRAM_TOKEN_RHAPSODY not found in .env"}), file=sys.stderr)
+        print(json.dumps({"error": "TELEGRAM_TOKEN_RHAPSODY not found in .env/.env.local"}), file=sys.stderr)
         sys.exit(1)
 
     parser = argparse.ArgumentParser()
