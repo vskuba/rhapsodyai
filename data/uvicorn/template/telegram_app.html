@@ -75,12 +75,19 @@
         }
 
         @keyframes home-pulse {
-            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.4); }
-            50% { transform: scale(1.18); box-shadow: 0 0 0 8px rgba(0, 123, 255, 0); }
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
         }
 
         #homeIconBtn.pulsing {
             animation: home-pulse 2s ease-in-out infinite;
+            will-change: transform;
+        }
+
+        .chat-link {
+            color: inherit;
+            text-decoration: underline;
+            word-break: break-all;
         }
 
         #claudeDeleteSessionIconBtn {
@@ -1172,7 +1179,7 @@
                 session_uuid: chatSessionUuid
             });
             chatSessionUuid = data.session_uuid || chatSessionUuid;
-            pending.textContent = data.result;
+            pending.innerHTML = linkify(data.result);
             pending.classList.remove('pending');
         } catch (err) {
             pending.textContent = '⚠️ ' + (err.message || 'Ошибка');
@@ -1185,7 +1192,19 @@
     function appendBubble(role, text, pending = false, container = chatMessagesEl) {
         const bubble = document.createElement('div');
         bubble.className = `chat-bubble ${role}${pending ? ' pending' : ''}`;
-        bubble.textContent = text;
+        if (pending) {
+            bubble.textContent = text;
+        } else {
+            bubble.innerHTML = linkify(text);
+            bubble.querySelectorAll('a.chat-link').forEach(a => {
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const url = a.getAttribute('href');
+                    if (tg?.openLink) tg.openLink(url);
+                    else window.open(url, '_blank');
+                });
+            });
+        }
         container.appendChild(bubble);
         container.scrollTop = container.scrollHeight;
         return bubble;
@@ -1193,6 +1212,12 @@
 
     function escapeHtml(t) {
         return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function linkify(text) {
+        return escapeHtml(text).replace(/(https?:\/\/[^\s<>"]+)/g, url =>
+            `<a href="${url}" class="chat-link">${url}</a>`
+        );
     }
 
     // Пузырь "Claude думает": пульсирующие точки вместо текста "...".
