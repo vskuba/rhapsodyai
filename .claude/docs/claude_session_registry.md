@@ -176,7 +176,7 @@ heartbeat **не завязан** на то, думает ли сейчас LLM 
 | `GET /telegram-app/claude/session/inbox?session_uuid=...` | Фоновый `session_client.py watch` (каждые ~5с) | Непрочитанные (`handled=0`) сообщения из `ai_claude_session` для этого `session_uuid` |
 | `POST /telegram-app/claude/respond` | Терминал Claude Code (после обработки inbox или для промежуточных апдейтов) | Пишет ответ в `agent_session` (видно в чате Mini App), опционально `inbox_id` помечает сообщение обработанным, опционально пушит в Telegram (`notify`) |
 | `POST /telegram-app/claude/session/finalize` | Агент вручную (не автоматически, см. §5) | Записать `summary`, `status='inactive'`, `closed_at` |
-| `GET /telegram-app/claude/sessions/active` | Mini App (каждые 5с, пока открыта вкладка Cloud) | Сессии для иконок — видимость только по heartbeat ≤ 15с |
+| `GET /telegram-app/claude/sessions/active` | Mini App (каждые 5с, пока открыта вкладка Cloud) | Сессии для иконок — видимость только по heartbeat ≤ 15с; добавляет `last_message` (превью последнего сообщения из `agent_session`, живой, не `summary`) |
 
 Авторизация — тем же паттерном, что уже есть в файле: терминальные вызовы через
 `_require_claude_secret` (заголовок `X-Claude-Secret`, секрет = `TELEGRAM_TOKEN_RHAPSODY`), вызовы

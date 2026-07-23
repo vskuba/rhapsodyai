@@ -817,6 +817,16 @@
         }
     }
 
+    // Подзаголовок карточки сессии - живое превью последнего сообщения
+    // переписки (не summary: тот пишется вручную только при finalize и
+    // почти всегда устарел, см. claude_session_registry.md §5), с фолбэком
+    // на summary, если сообщений ещё не было вовсе
+    function claudeSessionPreviewText(s) {
+        const text = (s.last_message || s.summary || '').trim();
+        if (!text) return 'Нет сообщений';
+        return text.length > 80 ? text.slice(0, 80) + '…' : text;
+    }
+
     function renderClaudeSessionList(sessions) {
         claudeSessionListView.innerHTML = sessions.length
             ? sessions.map(s => `
@@ -826,7 +836,7 @@
                         <span class="session-status-dot"></span>
                         ${escapeHtml(s.role)} — ${escapeHtml(s.project_label)}
                     </div>
-                    <div class="session-subtitle">${escapeHtml(s.summary || 'Нет краткого содержания')}</div>
+                    <div class="session-subtitle">${escapeHtml(claudeSessionPreviewText(s))}</div>
                 </div>
             `).join('')
             : '<div class="empty-state">Активных сессий нет. Запустите терминал в проекте, чтобы зарегистрировать сессию</div>';

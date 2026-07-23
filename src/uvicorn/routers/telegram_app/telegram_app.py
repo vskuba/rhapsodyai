@@ -321,16 +321,24 @@ async def telegram_app_claude_sessions_active(request: Request):
     staleness heartbeat (см. .claude/docs/claude_session_registry.md §4):
     фоновый процесс `session_client.py watch` пингует heartbeat каждые ~5с
     всё время, пока жив терминал, поэтому 15с (3x интервал) без пинга
-    надёжно значит "терминал реально закрылся".
+    надёжно значит "терминал реально закрылся". `last_message` - превью
+    последнего сообщения переписки (не `summary` - тот пишется только
+    вручную при `finalize` и часто устарел, см. `claude_session_registry.md`
+    §5), фронт использует его в подзаголовке карточки сессии.
     """
     _require_telegram_owner(request)
 
     async with mysql_get_db_async() as db:
         await db.execute(
             """
-            SELECT * FROM `ai_claude_session_registry`
-            WHERE last_seen_at >= (NOW() - INTERVAL 15 SECOND)
-            ORDER BY last_seen_at DESC
+            SELECT r.*,
+                   (SELECT content FROM agent_session a
+                    WHERE a.session_uuid = r.session_uuid
+                      AND a.kind_type IN ('user-prompt', 'response-final')
+                    ORDER BY a.id DESC LIMIT 1) AS last_message
+            FROM `ai_claude_session_registry` r
+            WHERE r.last_seen_at >= (NOW() - INTERVAL 15 SECOND)
+            ORDER BY r.last_seen_at DESC
             """
         )
         rows = await db.fetchall()
