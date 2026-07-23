@@ -12,9 +12,11 @@ def event_handlers_register():
 
 async def _event_log_persist(event: Event):
     repo = EventLogRepository()
+    payload = dict(event.payload)
+    payload['event_type'] = event.type
     await repo.add({
-        'type': event.type,
-        'payload': json.dumps(event.payload, ensure_ascii=False),
+        'type': 'system',
+        'payload': json.dumps(payload, ensure_ascii=False),
     })
 
 

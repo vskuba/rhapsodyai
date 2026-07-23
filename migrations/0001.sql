@@ -460,7 +460,7 @@ CREATE TABLE `detective_case` (
 -- для Telegram Mini App. Без FK - события системные и не привязаны к ноде.
 CREATE TABLE `event_log` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `type` VARCHAR(100) NOT NULL,
+    `type` ENUM('system', 'github', 'claude_session', 'agent', 'llm') NOT NULL,
     `payload` JSON NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_event_log_type` (`type`),

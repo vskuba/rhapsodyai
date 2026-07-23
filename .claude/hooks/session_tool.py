@@ -90,6 +90,15 @@ def call(method: str, path: str, secret: str, base_url: str, params_arg: str, bo
     return api_call(method.upper(), path, secret, base_url, params=params, body=body)
 
 
+# === Event Log ===
+
+def event_log_add(event_type: str, payload: dict | None, secret: str, base_url: str) -> dict:
+    body = {"type": event_type}
+    if payload is not None:
+        body["payload"] = payload
+    return api_call("POST", "/event-log", secret, base_url, body=body)
+
+
 def main():
     secret, base_url = load_config()
 
@@ -106,11 +115,18 @@ def main():
     p_call.add_argument("--params", default=None, help="k=v,k2=v2")
     p_call.add_argument("--body", default=None, help="raw JSON")
 
+    p_event_log = sub.add_parser("event-log")
+    p_event_log.add_argument("--type", required=True, dest="event_type")
+    p_event_log.add_argument("--payload", default=None, help="raw JSON object")
+
     args = parser.parse_args()
 
     try:
         if args.command == "call":
             result = call(args.method, args.path, secret, base_url, args.params, args.body)
+        elif args.command == "event-log":
+            payload = json.loads(args.payload) if args.payload else None
+            result = event_log_add(args.event_type, payload, secret, base_url)
         else:
             raise ValueError(f"unknown command: {args.command}")
     except Exception as e:
