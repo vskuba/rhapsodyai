@@ -52,29 +52,7 @@ jobs:
           # больше дефолтных 10 минут
           command_timeout: 60m
           script: |
-            # curl идёт на localhost — порт 8011 открыт только изнутри сервера,
-            # поэтому логирование событий нельзя делать со стороны GitHub runner.
-            _CLAUDE_SECRET="${{ secrets.TELEGRAM_TOKEN_RHAPSODY }}"
-            _COMMIT="${{ github.sha }}"
-            _BRANCH="${{ github.ref_name }}"
-            _ACTOR="${{ github.actor }}"
-            _RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            _API="http://localhost:8011/event-log"
-
-            _log_event() {
-              curl -s -o /dev/null -X POST "$_API" \
-                -H "Content-Type: application/json" \
-                -H "X-Claude-Secret: $_CLAUDE_SECRET" \
-                -d "{\"type\":\"github\",\"payload\":$1}" || true
-            }
-
-            _log_event "{\"event\":\"deploy.started\",\"branch\":\"$_BRANCH\",\"commit\":\"$_COMMIT\",\"actor\":\"$_ACTOR\",\"run_url\":\"$_RUN_URL\"}"
-
-            # trap срабатывает при EXIT (и при set -e ошибке) — фиксирует итог
-            DEPLOY_STATUS=failure
-            trap '_log_event "{\"event\":\"deploy.finished\",\"status\":\"$DEPLOY_STATUS\",\"branch\":\"$_BRANCH\",\"commit\":\"$_COMMIT\",\"actor\":\"$_ACTOR\",\"run_url\":\"$_RUN_URL\"}"' EXIT
-
-            set -e  # Останавливаем скрипт при любой ошибке (после trap)
+            set -e  # Останавливаем скрипт при любой ошибке
 
             REPO_DIR="$HOME/rhapsodyai"
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
@@ -128,6 +106,3 @@ jobs:
 
             echo "✅ Деплой завершён успешно! Текущий коммит:"
             git log -1 --oneline
-
-            DEPLOY_STATUS=success
-            # trap EXIT отработает автоматически при выходе скрипта
