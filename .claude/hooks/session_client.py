@@ -41,11 +41,15 @@ inbox и печатает маркерную строку в stdout, тольк�
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 import time
 import urllib.error
 
-from session_tool import api_call, load_config
+from session_tool import PROJECT_ROOT, api_call, load_config
+
+SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, ".claude", "session_uuid")
 
 
 def api_call_retry(method: str, path: str, secret: str, base_url: str, params: dict = None,
@@ -62,6 +66,49 @@ def api_call_retry(method: str, path: str, secret: str, base_url: str, params: d
             if attempt < retries - 1:
                 time.sleep(delay)
     raise last_error
+
+
+def is_watch_running(session_uuid: str) -> bool:
+    try:
+        result = subprocess.run(["pgrep", "-f", f"session_client.py watch --session-uuid {session_uuid}"],
+                                 capture_output=True, timeout=3)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def start_watch_detached(session_uuid: str):
+    # setsid (start_new_session=True) - без него фоновый watch привязан к
+    # жизни самого процесса Claude Code, а не терминала: если Claude Code
+    # перезапустится/упадёт, watch молча умирает вместе с ним, даже если
+    # окно терминала осталось открыто (обнаружено на живом тесте). Побочный
+    # эффект register/resume - гарантированно, не завязано на то, вспомнит
+    # ли агент запустить его вручную через инструкцию.
+    if is_watch_running(session_uuid):
+        return
+    log_path = f"/tmp/claude_watch_{os.path.basename(PROJECT_ROOT)}.log"
+    log_file = open(log_path, "a")
+    subprocess.Popen(
+        [sys.executable, "-u", os.path.join(os.path.dirname(os.path.abspath(__file__)), "session_client.py"),
+         "watch", "--session-uuid", session_uuid],
+        stdout=log_file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        start_new_session=True, cwd=PROJECT_ROOT,
+    )
+
+
+def save_session_uuid(session_uuid: str):
+    os.makedirs(os.path.dirname(SESSION_UUID_PATH), exist_ok=True)
+    with open(SESSION_UUID_PATH, "w", encoding="utf-8") as f:
+        f.write(session_uuid)
+
+
+def activate_session(session_uuid: str):
+    # Общая точка входа для register/resume - и хук, и агент дёргают её
+    # косвенно через CLI, поэтому "сессия стала активной" всегда значит
+    # одно и то же: файл сохранён, watch поднят, дублировать эти два шага
+    # по всем вызывающим местам не нужно
+    save_session_uuid(session_uuid)
+    start_watch_detached(session_uuid)
 
 
 def watch(session_uuid: str, secret: str, base_url: str, interval: int):
@@ -145,9 +192,11 @@ def main():
         if args.command == "register":
             body = {"role": args.role, "project_label": args.project_label}
             result = api_call("POST", "/telegram-app/claude/session/register", secret, base_url, body=body)
+            activate_session(result["result"]["session_uuid"])
         elif args.command == "resume":
             result = api_call("POST", "/telegram-app/claude/session/resume", secret, base_url,
                                body={"session_uuid": args.session_uuid})
+            activate_session(args.session_uuid)
         elif args.command == "heartbeat":
             result = api_call("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
                                body={"session_uuid": args.session_uuid})
