@@ -9,7 +9,6 @@ from fastapi.responses import HTMLResponse
 
 from config.config import config_get
 from mysql_.mysql_ import mysql_get_db_async
-from src.mysql_.repository.event_log_repository import EventLogRepository
 from src.uvicorn.routers.telegram_app.telegram_app_common import _require_telegram_owner
 
 router = APIRouter()
@@ -49,26 +48,6 @@ async def telegram_app_auth(request: Request, data: dict):
         telegram_user_id = _telegram_init_data_verify(data.get("init_data", ""))
 
     request.session["telegram_owner_id"] = telegram_user_id
-
-    return {"result": {"ok": True}}
-
-
-@router.get("/telegram-app/events")
-async def telegram_app_events(request: Request):
-    _require_telegram_owner(request)
-
-    repo = EventLogRepository()
-    rows = await repo.find_by({}, order_by="created_at DESC")
-
-    return {"result": rows[:50]}
-
-
-@router.delete("/telegram-app/events")
-async def telegram_app_events_clear(request: Request):
-    _require_telegram_owner(request)
-
-    async with mysql_get_db_async() as db:
-        await db.execute("DELETE FROM event_log")
 
     return {"result": {"ok": True}}
 

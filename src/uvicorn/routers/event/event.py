@@ -3,8 +3,9 @@ from typing import Annotated, Literal, Optional, Union
 from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
+from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.event_log_repository import EventLogRepository
-from src.uvicorn.routers.telegram_app.telegram_app_common import _require_claude_secret
+from src.uvicorn.routers.telegram_app.telegram_app_common import _require_claude_secret, _require_telegram_owner
 
 router = APIRouter()
 
@@ -108,6 +109,26 @@ EventLogRequest = Annotated[
     ],
     Field(discriminator='type')
 ]
+
+
+@router.get("/events")
+async def event_list(request: Request):
+    _require_telegram_owner(request)
+
+    repo = EventLogRepository()
+    rows = await repo.find_by({}, order_by="created_at DESC")
+
+    return {"result": rows[:50]}
+
+
+@router.delete("/events")
+async def event_clear(request: Request):
+    _require_telegram_owner(request)
+
+    async with mysql_get_db_async() as db:
+        await db.execute("DELETE FROM event_log")
+
+    return {"result": {"ok": True}}
 
 
 @router.post("/event-log")

@@ -1181,7 +1181,7 @@
     }
 
     async function loadEvents() {
-        const res = await getData('/telegram-app/events');
+        const res = await getData('/events');
         renderEvents(res.result || []);
     }
 
@@ -1207,7 +1207,7 @@
             const confirmed = await confirmDialog('Удалить все события?');
             if (!confirmed) return;
             try {
-                await deleteData('/telegram-app/events');
+                await deleteData('/events');
                 renderEvents([]);
             } catch (err) {
                 eventsTab.insertAdjacentHTML('beforeend', '<div class="denied-state">⚠️ Не удалось очистить события</div>');
