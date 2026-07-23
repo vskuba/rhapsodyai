@@ -14,6 +14,7 @@ session_start.py. См. .claude/docs/claude_session_registry.md §4.
   session_client.py respond --session-uuid UUID --response TEXT [--inbox-id N] [--no-notify]
   session_client.py finalize --session-uuid UUID [--summary TEXT]
   session_client.py watch --session-uuid UUID [--interval SECONDS]
+  session_client.py status --session-uuid UUID
 
 Общие вспомогательные инструменты (не завязанные на конкретную сессию) - в
 соседнем `session_tool.py`.
@@ -167,6 +168,25 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
         time.sleep(interval)
 
 
+def session_status(session_uuid: str, secret: str, base_url: str) -> dict:
+    # Проверяет только то, что реально проверяемо снаружи (процесс watch,
+    # доступность сервера, файл session_uuid) - "Monitor: armed" сюда не
+    # входит принципиально: это состояние самой сессии Claude Code, знает
+    # о нём только сам агент (он его вызывал), не внешний процесс. Агент
+    # обязан дописать эту строку сам после вызова этой команды - см.
+    # session_start.py.
+    watch_ok = is_watch_running(session_uuid)
+    try:
+        api_call("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
+                  body={"session_uuid": session_uuid})
+        server_ok = True
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        server_ok = False
+    file_ok = os.path.isfile(SESSION_UUID_PATH) and open(SESSION_UUID_PATH).read().strip() == session_uuid
+
+    return {"watch": watch_ok, "server": server_ok, "session_uuid_file": file_ok}
+
+
 def main():
     secret, base_url = load_config()
 
@@ -204,6 +224,9 @@ def main():
     p_watch.add_argument("--session-uuid", required=True)
     p_watch.add_argument("--interval", type=int, default=5)
 
+    p_status = sub.add_parser("status")
+    p_status.add_argument("--session-uuid", required=True)
+
     args = parser.parse_args()
 
     if args.command == "watch":
@@ -211,7 +234,9 @@ def main():
         return
 
     try:
-        if args.command == "register":
+        if args.command == "status":
+            result = {"result": session_status(args.session_uuid, secret, base_url)}
+        elif args.command == "register":
             body = {"role": args.role, "project_label": args.project_label}
             result = api_call("POST", "/telegram-app/claude/session/register", secret, base_url, body=body)
             activate_session(result["result"]["session_uuid"])

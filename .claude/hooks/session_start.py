@@ -60,11 +60,18 @@ def main():
             context_lines.append(
                 f"Сессия session_uuid={session_uuid} автоматически возобновлена, "
                 f"фоновый watch (heartbeat+inbox) уже поднят и пишет в {watch_log}.\n"
-                "ИНСТРУКЦИЯ АГЕНТУ: заведи Monitor (persistent: true) на этот лог-файл, паттерн "
-                "NEW_MESSAGES - по срабатыванию вызови `python3 .claude/hooks/session_client.py "
-                "inbox --session-uuid " + session_uuid + "`, обработай непрочитанные как обычные "
-                "промпты и ответь через `respond --inbox-id <id>` (--no-notify для промежуточных "
-                "шагов, без флага - для финального ответа)."
+                "⚠️ ОБЯЗАТЕЛЬНО ПЕРВЫМ ДЕЙСТВИЕМ В ЭТОМ ЖЕ ОТВЕТЕ (не откладывай, не пропускай): "
+                f"заведи Monitor (persistent: true) на {watch_log}, паттерн NEW_MESSAGES. Без этого "
+                "шага сообщения из чата Mini App будут приходить в очередь, но никто их не увидит - "
+                "watch их находит, но разбудить тебя может только Monitor. По срабатыванию Monitor "
+                "вызови `python3 .claude/hooks/session_client.py inbox --session-uuid " + session_uuid +
+                "`, обработай непрочитанные как обычные промпты и ответь через `respond --inbox-id "
+                "<id>` (--no-notify для промежуточных шагов, без флага - для финального ответа).\n"
+                "Сразу после того, как заведёшь Monitor, вызови `python3 .claude/hooks/"
+                "session_client.py status --session-uuid " + session_uuid + "` и выведи пользователю "
+                "итоговый чек-лист по её результату (watch/server/session_uuid_file) плюс отдельной "
+                "строкой 'Monitor: ✅ armed' от себя (это единственное, что снаружи не проверить - "
+                "ты сам знаешь, что его завёл)."
             )
         except Exception as e:
             context_lines.append(
@@ -98,8 +105,15 @@ def main():
             "--session-uuid <session_uuid>`. При выборе 'создать новую' - уточни роль (пока только "
             "'developer') и вызови `python3 .claude/hooks/session_client.py register --role <роль> "
             f"--project-label {project_label}`. Обе команды сами сохраняют session_uuid и "
-            "поднимают фоновый watch - после вызова заведи на его лог (см. вывод команды) Monitor "
-            "и обрабатывай inbox так же, как описано для случая автовозобновления."
+            "поднимают фоновый watch, пишущий в /tmp/claude_watch_" + project_label + ".log.\n"
+            "⚠️ ОБЯЗАТЕЛЬНО СРАЗУ ПОСЛЕ ЭТОГО ВЫЗОВА, В ТОМ ЖЕ ОТВЕТЕ: заведи Monitor "
+            "(persistent: true) на этот лог-файл, паттерн NEW_MESSAGES - это не отдельная задача "
+            "на потом, а обязательная часть того же самого шага регистрации/резюме. Без него "
+            "сообщения из чата Mini App будут копиться в очереди незамеченными. По срабатыванию "
+            "Monitor обрабатывай inbox так же, как описано для случая автовозобновления. Сразу после "
+            "того, как заведёшь Monitor, вызови `python3 .claude/hooks/session_client.py status "
+            "--session-uuid <uuid>` и выведи пользователю итоговый чек-лист (watch/server/"
+            "session_uuid_file из результата) плюс строкой от себя 'Monitor: ✅ armed'."
         )
     else:
         context_lines.append(
@@ -107,7 +121,13 @@ def main():
             "ИНСТРУКЦИЯ АГЕНТУ: спроси пользователя через AskUserQuestion, под какой ролью создать "
             "новую сессию (пока только 'developer'), затем вызови "
             "`python3 .claude/hooks/session_client.py register --role <роль> "
-            f"--project-label {project_label}` - сама сохранит session_uuid и поднимет watch."
+            f"--project-label {project_label}` - сама сохранит session_uuid и поднимет watch, "
+            f"пишущий в /tmp/claude_watch_{project_label}.log.\n"
+            "⚠️ ОБЯЗАТЕЛЬНО СРАЗУ ПОСЛЕ ЭТОГО ВЫЗОВА, В ТОМ ЖЕ ОТВЕТЕ: заведи Monitor "
+            "(persistent: true) на этот лог-файл, паттерн NEW_MESSAGES - обязательная часть того же "
+            "шага, не отдельная задача на потом. Затем вызови `python3 .claude/hooks/"
+            "session_client.py status --session-uuid <uuid>` и выведи пользователю итоговый "
+            "чек-лист (watch/server/session_uuid_file) плюс строкой от себя 'Monitor: ✅ armed'."
         )
 
     emit(context_lines)
