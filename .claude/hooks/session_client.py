@@ -19,11 +19,12 @@ session_start.py. См. .claude/docs/claude_session_registry.md §4.
 тике (по умолчанию 5с - дёшево, это просто HTTP+SQL, не LLM): 1) пингует
 heartbeat - обновляет last_seen_at независимо от того, думает ли сейчас LLM
 (решает staleness для Mini App, порог 15с - 3x интервала); 2) проверяет
-inbox и печатает маркерную строку в stdout, только если там непрочитанное
-сообщение. Сам по себе не тратит
-токены - предназначен для Monitor, который слушает stdout этого процесса и
-будит агента только по реальному событию (новое сообщение), а не на каждом
-тике.
+inbox и печатает маркерную строку в stdout, только если там сообщение с id
+больше последнего уже увиденного (дедуп по id - без этого маркер печатался
+бы на каждом тике, пока сообщение остаётся необработанным, а не один раз
+при появлении). Сам по себе не тратит токены - предназначен для Monitor,
+который слушает stdout этого процесса и будит агента только по реальному
+новому событию.
 """
 
 import argparse
@@ -68,6 +69,12 @@ def api_call(method: str, path: str, secret: str, base_url: str, params: dict = 
 
 
 def watch(session_uuid: str, secret: str, base_url: str, interval: int):
+    # last_seen_max_id дедуплицирует маркер: без него watch печатал бы
+    # NEW_MESSAGES на каждом тике, пока сообщение остаётся необработанным
+    # (handled=0), а не один раз при появлении. id - глобальный
+    # auto-increment (ai_claude_session), монотонный и надёжнее хэша
+    # контента (не путает два разных сообщения с одинаковым текстом).
+    last_seen_max_id = 0
     while True:
         try:
             api_call("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
@@ -78,8 +85,10 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
             result = api_call("GET", "/telegram-app/claude/session/inbox", secret, base_url,
                                params={"session_uuid": session_uuid})
             rows = result.get("result") or []
-            if rows:
-                print(f"NEW_MESSAGES count={len(rows)}", flush=True)
+            if rows and rows[-1]["id"] > last_seen_max_id:
+                new_count = sum(1 for r in rows if r["id"] > last_seen_max_id)
+                last_seen_max_id = rows[-1]["id"]
+                print(f"NEW_MESSAGES count={new_count}", flush=True)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             pass
         time.sleep(interval)
