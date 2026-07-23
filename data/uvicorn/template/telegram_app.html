@@ -561,6 +561,7 @@
                 </button>
                 <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
                 <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
+                <button class="icon-btn" id="siteLoginIconBtn" title="Открыть сайт">🌐</button>
             </div>
             <div class="icon-sidebar-group" id="sidebarPageIcons">
                 <button class="icon-btn" id="pageBackIconBtn" title="Назад к меню">🔙</button>
@@ -688,6 +689,8 @@
     const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
     const sidebarClaudeIcons = document.getElementById('sidebarClaudeIcons');
     const claudeBackToListIconBtn = document.getElementById('claudeBackToListIconBtn');
+    const siteLoginIconBtn = document.getElementById('siteLoginIconBtn');
+    const SITE_LOGIN_URL = 'https://92.5.17.195.sslip.io/login';
     // Заголовки страниц для сайдбара 2 уровня (меню -> страница)
     const PAGE_TITLES = {events: 'События', claude: 'Claude', chat: 'Чат', plans: 'Планы'};
 
@@ -764,6 +767,14 @@
 
         pageBackIconBtn.addEventListener('click', () => setSidebarPageMode(false));
         claudeBackToListIconBtn.addEventListener('click', closeClaudeSessionView);
+        // Не переключает вкладку (нет data-tab) - просто уводит на страницу
+        // логина основного сайта, вне Mini App. tg.openLink корректно
+        // открывает внешние ссылки из Telegram WebView; window.open - фолбэк
+        // для тестирования в обычном браузере (см. init(), ?access_token=)
+        siteLoginIconBtn.addEventListener('click', () => {
+            if (tg?.openLink) tg.openLink(SITE_LOGIN_URL);
+            else window.open(SITE_LOGIN_URL, '_blank');
+        });
     }
 
     // Уровень 1 сайдбара: меню из 4 иконок <-> одна иконка "назад" + заголовок
