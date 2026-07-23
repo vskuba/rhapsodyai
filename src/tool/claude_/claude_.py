@@ -1,6 +1,3 @@
-import uuid
-
-from ai.ai_session import ai_session_message_add
 from mysql_.mysql_ import mysql_get_db_async
 
 
@@ -26,35 +23,24 @@ async def claude_message_user(prompt_user: str, session_uuid: str) -> dict:
 
 async def claude_message_cloud(session_uuid: str, response: str, inbox_id: int | None = None) -> dict:
     """
-    Записывает ответ Claude Code в agent_session, откуда его подхватывает чат
-    Mini App - основной способ "написать в чат Claude", включая произвольные
-    промежуточные сообщения без привязки к конкретному запросу пользователя
-    (inbox_id тогда не передается - нечего помечать обработанным). Не
-    вызывается workflow-шагом - дергается напрямую внешним процессом Claude
-    Code.
+    Записывает ответ Claude Code в ai_claude_session.
+    Если inbox_id задан - обновляет существующую запись (ответ на запрос пользователя).
+    Если inbox_id не задан - вставляет новую запись (спонтанное сообщение от Claude Code,
+    например промежуточный статус; content='', handled=1).
     Returns:
-        dict:
-            request_uuid (str): request_uuid созданной записи в agent_session.
+        dict: {"ok": True}
     """
-    if inbox_id is not None:
-        async with mysql_get_db_async() as db:
+    async with mysql_get_db_async() as db:
+        if inbox_id is not None:
             await db.execute(
                 "UPDATE ai_claude_session SET handled = 1, response = %s, responded_at = NOW() WHERE id = %s",
                 (response, inbox_id)
             )
+        else:
+            await db.execute(
+                "INSERT INTO ai_claude_session (session_uuid, content, handled, response, responded_at) "
+                "VALUES (%s, '', 1, %s, NOW())",
+                (session_uuid, response)
+            )
 
-    request_uuid = str(uuid.uuid4())
-    await ai_session_message_add(
-        session_uuid=session_uuid,
-        request_uuid=request_uuid,
-        llm_id=None,
-        user_id=None,
-        companion_id=None,
-        role='claude_code',
-        agent_id=None,
-        kind_type='response-final',
-        content=response,
-        token=0,
-    )
-
-    return {"request_uuid": request_uuid}
+    return {"ok": True}

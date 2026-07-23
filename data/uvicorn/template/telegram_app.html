@@ -796,8 +796,9 @@
     // вкладка Claude, чтобы не показывать устаревшую картину при долго
     // бездействующем окне Mini App
     let claudeStatusPollTimer = null;
-    let claudeRenderedCount = 0;
-    let claudeLastContent = null;
+    let claudeRenderedUserIds = new Set();
+    let claudeRenderedResponseIds = new Set();
+    let claudePendingUserCount = 0;
     let claudeTypingBubble = null;
     let currentTab = 'events';
     let currentPlanId = null;
@@ -1000,8 +1001,9 @@
         claudeSessionUuid = sessionUuid;
         claudeSessionLabel = `${role} — ${projectLabel}`;
         claudeSessionUnreachable = false;
-        claudeRenderedCount = 0;
-        claudeLastContent = null;
+        claudeRenderedUserIds = new Set();
+        claudeRenderedResponseIds = new Set();
+        claudePendingUserCount = 0;
         claudeTypingBubble = null;
         claudeMessagesEl.innerHTML = '';
 
@@ -1098,8 +1100,9 @@
         }
 
         claudeMessagesEl.innerHTML = '';
-        claudeRenderedCount = 0;
-        claudeLastContent = null;
+        claudeRenderedUserIds = new Set();
+        claudeRenderedResponseIds = new Set();
+        claudePendingUserCount = 0;
         claudeTypingBubble?.remove();
         claudeTypingBubble = null;
         updateLastUserDeleteBtn();
@@ -1387,8 +1390,7 @@
                 session_uuid: claudeSessionUuid,
             });
             rowEl.remove();
-            claudeRenderedCount = Math.max(0, claudeRenderedCount - 1);
-            claudeLastContent = null;
+            claudeRenderedUserIds.delete(msgId);
             updateLastUserDeleteBtn();
         } catch (err) {
             appendBubble('assistant', '⚠️ Не удалось удалить сообщение', false, claudeMessagesEl);
@@ -1450,10 +1452,9 @@
 
         claudeTextInput.value = '';
         appendBubble('user', message, false, claudeMessagesEl);
-        claudeRenderedCount++;
+        claudePendingUserCount++;
         claudeTypingBubble?.remove();
         claudeTypingBubble = appendTypingIndicator(claudeMessagesEl);
-        claudeRenderedCount++;
 
         claudeProgress.classList.add('active');
         try {
@@ -1471,32 +1472,41 @@
         }
     }
 
-    // Раз в несколько секунд подтягивает полную историю сессии и дорисовывает
-    // только новые сообщения. Плейсхолдер "..." (пульсирующие точки на клиенте)
-    // не дублируется текстом; как только приходит настоящий ответ Claude Code
-    // (любой response-final с содержимым, отличным от "..."), индикатор
-    // убирается и появляется реальный ответ.
-    // isInitialLoad=true - восстановление истории после перезагрузки страницы:
-    // тогда рендерим и сообщения пользователя тоже (обычно их пропускаем,
-    // т.к. они уже отрисованы сразу при отправке)
+    // Раз в несколько секунд подтягивает историю из ai_claude_session и дорисовывает
+    // только новые элементы. Каждая строка таблицы = 1 пара: сообщение пользователя
+    // (content) + ответ Claude Code (response, null если ещё обрабатывается).
+    // Отслеживание через Set-ы по id строки: claudeRenderedUserIds / claudeRenderedResponseIds.
+    // isInitialLoad=true - восстановление истории; на обычном опросе сообщения
+    // пользователя уже нарисованы локально при отправке, пропускаем их.
     async function loadClaudeMessages(isInitialLoad = false) {
         if (!claudeSessionUuid) return;
         try {
             const res = await getData(`/telegram-app/claude/messages?session_uuid=${encodeURIComponent(claudeSessionUuid)}`);
             const rows = res.result || [];
             let needsDeleteBtnUpdate = false;
-            for (const row of rows.slice(claudeRenderedCount)) {
-                if (row.content === '...') continue;
-                if (row.kind_type === 'user-prompt' && !isInitialLoad) continue;
-                if (row.content === claudeLastContent) continue;
-                claudeLastContent = row.content;
-                claudeTypingBubble?.remove();
-                claudeTypingBubble = null;
-                const role = row.kind_type === 'user-prompt' ? 'user' : 'assistant';
-                appendBubble(role, row.content, false, claudeMessagesEl, row.id);
-                if (role === 'user') needsDeleteBtnUpdate = true;
+            for (const row of rows) {
+                if (row.content && !claudeRenderedUserIds.has(row.id)) {
+                    claudeRenderedUserIds.add(row.id);
+                    if (isInitialLoad) {
+                        appendBubble('user', row.content, false, claudeMessagesEl, row.id);
+                        needsDeleteBtnUpdate = true;
+                    } else if (claudePendingUserCount > 0) {
+                        claudePendingUserCount--;
+                    }
+                }
+                if (row.response && !claudeRenderedResponseIds.has(row.id)) {
+                    claudeRenderedResponseIds.add(row.id);
+                    claudeTypingBubble?.remove();
+                    claudeTypingBubble = null;
+                    appendBubble('assistant', row.response, false, claudeMessagesEl);
+                }
             }
-            claudeRenderedCount = rows.length;
+            if (isInitialLoad) {
+                const lastRow = rows[rows.length - 1];
+                if (lastRow && !lastRow.response) {
+                    claudeTypingBubble = appendTypingIndicator(claudeMessagesEl);
+                }
+            }
             if (needsDeleteBtnUpdate) updateLastUserDeleteBtn();
         } catch (err) {
             // Тихо пропускаем - следующий опрос попробует снова

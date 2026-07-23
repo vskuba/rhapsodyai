@@ -2,12 +2,10 @@ from fastapi import APIRouter, Request, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.telegram_.telegram_notify import telegram_send_owner
-from src.tool.claude_.claude_ import claude_message_cloud
+from src.tool.claude_.claude_ import claude_message_cloud, claude_message_user
 from src.uvicorn.routers.telegram_app.telegram_app_common import (
     _require_telegram_owner,
     _require_claude_secret,
-    _telegram_agent_chat_ask,
-    TELEGRAM_CLAUDE_AGENT_NAME,
 )
 
 router = APIRouter()
@@ -16,7 +14,14 @@ router = APIRouter()
 @router.post("/telegram-app/claude/ask")
 async def telegram_app_claude_ask(request: Request, data: dict):
     _require_telegram_owner(request)
-    return await _telegram_agent_chat_ask(data, TELEGRAM_CLAUDE_AGENT_NAME)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    message = str(data.get("message") or "").strip()
+    if not session_uuid or not message:
+        raise HTTPException(status_code=400, detail="session_uuid and message required")
+
+    await claude_message_user(prompt_user=message, session_uuid=session_uuid)
+    return {"result": "...", "session_uuid": session_uuid}
 
 
 @router.get("/telegram-app/claude/messages")
@@ -26,9 +31,9 @@ async def telegram_app_claude_messages(request: Request, session_uuid: str):
     async with mysql_get_db_async() as db:
         await db.execute(
             """
-            SELECT id, role, kind_type, content, created_at
-            FROM agent_session
-            WHERE session_uuid = %s AND kind_type IN ('user-prompt', 'response-final')
+            SELECT id, content, response, handled, created_at, responded_at
+            FROM ai_claude_session
+            WHERE session_uuid = %s
             ORDER BY id ASC
             """,
             (session_uuid,)
@@ -52,7 +57,7 @@ async def telegram_app_claude_respond(request: Request, data: dict):
     if not session_uuid or not response:
         raise HTTPException(status_code=400, detail="session_uuid, response required")
 
-    result = await claude_message_cloud(
+    await claude_message_cloud(
         session_uuid=session_uuid,
         response=response,
         inbox_id=int(inbox_id) if inbox_id else None,
@@ -61,7 +66,7 @@ async def telegram_app_claude_respond(request: Request, data: dict):
     if data.get("notify", True):
         await telegram_send_owner(response)
 
-    return {"result": result}
+    return {"result": {"ok": True}}
 
 
 @router.post("/telegram-app/claude/session/delete-message")
@@ -75,7 +80,7 @@ async def telegram_app_claude_session_delete_message(request: Request, data: dic
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            "DELETE FROM agent_session WHERE id = %s AND session_uuid = %s",
+            "DELETE FROM ai_claude_session WHERE id = %s AND session_uuid = %s",
             (int(message_id), session_uuid)
         )
 
@@ -94,10 +99,10 @@ async def telegram_app_claude_sessions_active(request: Request):
         await db.execute(
             """
             SELECT r.*,
-                   (SELECT content FROM agent_session a
-                    WHERE a.session_uuid = r.session_uuid
-                      AND a.kind_type IN ('user-prompt', 'response-final')
-                    ORDER BY a.id DESC LIMIT 1) AS last_message
+                   (SELECT COALESCE(cs.response, cs.content)
+                    FROM ai_claude_session cs
+                    WHERE cs.session_uuid = r.session_uuid
+                    ORDER BY cs.id DESC LIMIT 1) AS last_message
             FROM `ai_claude_session_registry` r
             WHERE r.last_seen_at >= (NOW() - INTERVAL 60 SECOND)
             ORDER BY r.last_seen_at DESC
