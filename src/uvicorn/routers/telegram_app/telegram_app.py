@@ -22,7 +22,7 @@ from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
 from src.mysql_.repository.event_log_repository import EventLogRepository
 from src.telegram_.telegram_notify import telegram_send_owner
-from src.tool.claude_.claude_ import claude_message_cloud
+from src.tool.claude_.claude_ import claude_message_cloud, claude_message_user
 
 router = APIRouter()
 
@@ -42,6 +42,11 @@ TELEGRAM_CLAUDE_AGENT_NAME = 'telegram_claude'
 TELEGRAM_CHAT_COMPANION_ID = 3
 TELEGRAM_CHAT_COMPANION_NAME = 'user_admin'
 TELEGRAM_CHAT_COMPANION_TITLE = 'admin'
+
+# Спец-контент сообщения ai_claude_session, которым Mini App просит терминал
+# самоочиститься (кнопка "Удалить", см. delete-request/cleanup-confirm ниже) -
+# watch распознаёт этот маркер сам, без LLM (см. .claude/hooks/session_client.py)
+SESSION_CLEANUP_MARKER = '__SESSION_CLEANUP__'
 
 # initData считается валидным не дольше суток - защита от повторного
 # использования старой открытой сессии Mini App (replay)
@@ -344,6 +349,57 @@ async def telegram_app_claude_sessions_active(request: Request):
         rows = await db.fetchall()
 
     return {"result": rows}
+
+
+@router.post("/telegram-app/claude/session/delete-request")
+async def telegram_app_claude_session_delete_request(request: Request, data: dict):
+    """
+    Кнопка "Удалить" в чате Mini App - удаляет сессию из реестра насовсем
+    (не мягкий стоп, как раньше отменённая пауза). Порядок важен: сначала
+    кладём маркер очистки в очередь (пока сессия ещё в реестре и terminal
+    может её найти), потом удаляем саму registry-строку. Терминал сам
+    заберёт маркер через watch (без LLM, см. session_client.py), удалит
+    .claude/session_uuid и дёрнет cleanup-confirm, который уже подчистит
+    ai_claude_session. Если терминал не отвечает (закрыт) - registry-строка
+    всё равно удалена, а осиротевшие ai_claude_session-строки почистятся
+    сами по TTL/вручную (не блокирует основной сценарий).
+    """
+    _require_telegram_owner(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    repo = AiClaudeSessionRegistryRepository()
+    row = await repo.find_one_by({"session_uuid": session_uuid})
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await claude_message_user(SESSION_CLEANUP_MARKER, session_uuid)
+    await repo.delete(row["id"])
+
+    return {"result": {"ok": True}}
+
+
+@router.post("/telegram-app/claude/session/cleanup-confirm")
+async def telegram_app_claude_session_cleanup_confirm(request: Request, data: dict):
+    """
+    Вызывается терминалом (не Mini App) после того, как watch увидел
+    SESSION_CLEANUP_MARKER и уже удалил .claude/session_uuid - чистит
+    очередь ai_claude_session (всю переписку этой сессии, включая сам
+    маркер) начисто, чтобы новая регистрация под тем же project_label
+    начиналась действительно с нуля.
+    """
+    _require_claude_secret(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    async with mysql_get_db_async() as db:
+        await db.execute("DELETE FROM ai_claude_session WHERE session_uuid = %s", (session_uuid,))
+
+    return {"result": {"ok": True}}
 
 
 def _require_claude_secret(request: Request):

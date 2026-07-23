@@ -169,6 +169,22 @@ heartbeat **не завязан** на то, думает ли сейчас LLM 
 для случая, когда сессию осознанно "закрывают" насовсем (например для аккуратного summary в пикере
 хука `SessionStart`, §3), но ничего не вызывает её автоматически по кнопке из Telegram.
 
+**Кнопка "Удалить" (безвозвратно, не путать с отменённой паузой)** — другой сценарий: пользователь
+явно хочет стереть сессию и начать с чистого листа. `POST /claude/session/delete-request` (owner):
+
+1. Кладёт маркер `SESSION_CLEANUP_MARKER` (`__SESSION_CLEANUP__`) в очередь `ai_claude_session` -
+   это должно случиться **до** удаления registry-строки, иначе терминалу нечего будет найти.
+2. Удаляет саму registry-строку (`ai_claude_session_registry.delete`).
+3. Терминал получает маркер через `watch` (как обычный тик опроса inbox) - и обрабатывает его **сам,
+   без LLM**: `cleanup_session()` в `session_client.py` вызывает `POST
+   /claude/session/cleanup-confirm` (чистит все строки `ai_claude_session` для этого `session_uuid`,
+   включая сам маркер), удаляет локальный `.claude/session_uuid`, и `watch` завершает свой процесс
+   (сессии больше нет - heartbeat гнать некому). Никакого `Monitor`-пробуждения агента не происходит
+   - это чисто механическое действие, LLM тут нечего решать.
+4. Если терминал не отвечает (закрыт) - registry-строка всё равно удалена шагом 2, что уже
+   достаточно для "новый терминал зарегистрируется с нуля"; осиротевшие `ai_claude_session`-строки
+   просто останутся, не мешают.
+
 ## 6. Telegram Mini App — UI
 
 - Вкладка Cloud: первая (верхняя) иконка — "назад", дальше — по одной иконке на каждую
@@ -176,7 +192,8 @@ heartbeat **не завязан** на то, думает ли сейчас LLM 
 - Иконка показывает роль + `project_label` (например "Developer — RhapsodyAi").
 - Клик по иконке → чат, отфильтрованный по конкретному `session_uuid` — подтягивает историю из
   `ai_claude_session` (уже готовый механизм, просто параметризованный по uuid, а не хардкод одного).
-  Никакой кнопки управления в чате нет (см. §5 — пауза убрана как бесполезная).
+  Единственная кнопка управления в чате — "Удалить" (безвозвратно, см. выше); паузы нет (§5 — убрана
+  как бесполезная).
 - И список сессий, и открытый чат периодически (раз в 5с, `refreshClaudeSessionStatus` в
   `telegram_app.html`) переспрашивают `GET /claude/sessions/active`, пока открыта вкладка Cloud —
   иначе, если окно Mini App простаивает без взаимодействия, картина визуально "залипает" на
@@ -196,6 +213,8 @@ heartbeat **не завязан** на то, думает ли сейчас LLM 
 | `POST /telegram-app/claude/respond` | Терминал Claude Code (после обработки inbox или для промежуточных апдейтов) | Пишет ответ в `agent_session` (видно в чате Mini App), опционально `inbox_id` помечает сообщение обработанным, опционально пушит в Telegram (`notify`) |
 | `POST /telegram-app/claude/session/finalize` | Агент вручную (не автоматически, см. §5) | Записать `summary`, `status='inactive'`, `closed_at` |
 | `GET /telegram-app/claude/sessions/active` | Mini App (каждые 5с, пока открыта вкладка Cloud) | Сессии для иконок — видимость только по heartbeat ≤ 15с; добавляет `last_message` (превью последнего сообщения из `agent_session`, живой, не `summary`) |
+| `POST /telegram-app/claude/session/delete-request` | Mini App (кнопка "Удалить") | Кладёт `SESSION_CLEANUP_MARKER` в `ai_claude_session`, затем удаляет registry-строку |
+| `POST /telegram-app/claude/session/cleanup-confirm` | `session_client.py watch`, автоматически по маркеру (без LLM) | Удаляет все строки `ai_claude_session` для этого `session_uuid` |
 
 Авторизация — тем же паттерном, что уже есть в файле: терминальные вызовы через
 `_require_claude_secret` (заголовок `X-Claude-Secret`, секрет = `TELEGRAM_TOKEN_RHAPSODY`), вызовы

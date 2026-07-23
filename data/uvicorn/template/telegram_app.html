@@ -572,6 +572,7 @@
             </div>
             <div class="icon-sidebar-group" id="sidebarClaudeIcons">
                 <button class="icon-btn" id="claudeBackToListIconBtn" title="К списку сессий">🔙</button>
+                <button class="icon-btn icon-btn-danger" id="claudeDeleteSessionIconBtn" title="Удалить">🗑</button>
             </div>
         </div>
 
@@ -689,6 +690,7 @@
     const planDeleteIconBtn = document.getElementById('planDeleteIconBtn');
     const sidebarClaudeIcons = document.getElementById('sidebarClaudeIcons');
     const claudeBackToListIconBtn = document.getElementById('claudeBackToListIconBtn');
+    const claudeDeleteSessionIconBtn = document.getElementById('claudeDeleteSessionIconBtn');
     const siteLoginIconBtn = document.getElementById('siteLoginIconBtn');
     const SITE_LOGIN_URL = 'https://92.5.17.195.sslip.io/login';
     // Заголовки страниц для сайдбара 2 уровня (меню -> страница)
@@ -767,6 +769,7 @@
 
         pageBackIconBtn.addEventListener('click', () => setSidebarPageMode(false));
         claudeBackToListIconBtn.addEventListener('click', closeClaudeSessionView);
+        claudeDeleteSessionIconBtn.addEventListener('click', deleteCurrentClaudeSession);
         // Не переключает вкладку (нет data-tab) - просто уводит на страницу
         // логина основного сайта, вне Mini App. tg.openLink корректно
         // открывает внешние ссылки из Telegram WebView; window.open - фолбэк
@@ -896,6 +899,25 @@
 
         loadClaudeSessionList();
         updateClaudeStatusPolling();
+    }
+
+    // Кнопка "Удалить" - безвозвратно (не мягкий стоп): удаляет запись из
+    // ai_claude_session_registry и просит терминал самоочиститься (маркер
+    // в очереди ai_claude_session, который watch распознаёт без LLM - см.
+    // .claude/hooks/session_client.py и claude_session_registry.md). Новый
+    // терминал в этом же проекте зарегистрируется с нуля.
+    async function deleteCurrentClaudeSession() {
+        if (!claudeSessionUuid) return;
+
+        const confirmed = await confirmDialog(`Удалить сессию "${claudeSessionLabel}"? Терминал начнёт с чистого листа при следующем запуске.`);
+        if (!confirmed) return;
+
+        try {
+            await postData('/telegram-app/claude/session/delete-request', {session_uuid: claudeSessionUuid});
+        } catch (err) {
+            // Тихо пропускаем - запись всё равно скорее всего удалена на сервере
+        }
+        closeClaudeSessionView();
     }
 
     // Более редкий (не при каждом сообщении) опрос достижимости сессии -

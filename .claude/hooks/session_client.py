@@ -51,6 +51,11 @@ from session_tool import PROJECT_ROOT, api_call, load_config
 
 SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, ".claude", "session_uuid")
 
+# Спец-контент, которым Mini App (кнопка "Удалить") просит терминал
+# самоочиститься - watch распознаёт и обрабатывает его сам, без LLM (см.
+# cleanup_session ниже и SESSION_CLEANUP_MARKER в telegram_app.py)
+CLEANUP_MARKER = "__SESSION_CLEANUP__"
+
 
 def api_call_retry(method: str, path: str, secret: str, base_url: str, params: dict = None,
                     body: dict = None, retries: int = 12, delay: int = 5) -> dict:
@@ -111,6 +116,19 @@ def activate_session(session_uuid: str):
     start_watch_detached(session_uuid)
 
 
+def cleanup_session(session_uuid: str, secret: str, base_url: str):
+    # Реакция на CLEANUP_MARKER - полностью механическая (удалить файл,
+    # почистить очередь), LLM тут решать нечего, поэтому обрабатывается
+    # прямо в watch, не пробрасывается агенту через NEW_MESSAGES
+    try:
+        api_call_retry("POST", "/telegram-app/claude/session/cleanup-confirm", secret, base_url,
+                        body={"session_uuid": session_uuid})
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        pass
+    if os.path.isfile(SESSION_UUID_PATH):
+        os.remove(SESSION_UUID_PATH)
+
+
 def watch(session_uuid: str, secret: str, base_url: str, interval: int):
     # last_seen_max_id дедуплицирует маркер: без него watch печатал бы
     # NEW_MESSAGES на каждом тике, пока сообщение остаётся необработанным
@@ -128,9 +146,13 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
             result = api_call("GET", "/telegram-app/claude/session/inbox", secret, base_url,
                                params={"session_uuid": session_uuid})
             rows = result.get("result") or []
-            if rows and rows[-1]["id"] > last_seen_max_id:
-                new_count = sum(1 for r in rows if r["id"] > last_seen_max_id)
-                last_seen_max_id = rows[-1]["id"]
+            new_rows = [r for r in rows if r["id"] > last_seen_max_id]
+            if new_rows:
+                last_seen_max_id = new_rows[-1]["id"]
+                if any(r["content"] == CLEANUP_MARKER for r in new_rows):
+                    cleanup_session(session_uuid, secret, base_url)
+                    print("SESSION_CLEANED_UP", flush=True)
+                    return
                 try:
                     api_call_retry("POST", "/telegram-app/claude/respond", secret, base_url, body={
                         "session_uuid": session_uuid,
@@ -139,7 +161,7 @@ def watch(session_uuid: str, secret: str, base_url: str, interval: int):
                     })
                 except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
                     pass
-                print(f"NEW_MESSAGES count={new_count}", flush=True)
+                print(f"NEW_MESSAGES count={len(new_rows)}", flush=True)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             pass
         time.sleep(interval)
