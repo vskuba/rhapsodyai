@@ -1181,9 +1181,23 @@
             : '<div class="empty-state">Событий пока нет</div>';
 
         eventsTab.innerHTML = `
-            <div class="panel-title">Последние события</div>
+            <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Последние события</span>
+                <button id="clearEventsBtn" style="background:none;border:none;font-size:18px;cursor:pointer;padding:0 2px;color:#e74c3c;" title="Очистить события">🗑</button>
+            </div>
             <div class="panel-card">${eventsHtml}</div>
         `;
+
+        document.getElementById('clearEventsBtn').addEventListener('click', async () => {
+            const confirmed = await confirmDialog('Удалить все события?');
+            if (!confirmed) return;
+            try {
+                await deleteData('/telegram-app/events');
+                renderEvents([]);
+            } catch (err) {
+                eventsTab.insertAdjacentHTML('beforeend', '<div class="denied-state">⚠️ Не удалось очистить события</div>');
+            }
+        });
     }
 
     // Общая фабрика записи голоса: тап-старт/тап-стоп (первый клик по

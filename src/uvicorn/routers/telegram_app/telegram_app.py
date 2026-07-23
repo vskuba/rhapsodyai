@@ -63,6 +63,16 @@ async def telegram_app_events(request: Request):
     return {"result": rows[:50]}
 
 
+@router.delete("/telegram-app/events")
+async def telegram_app_events_clear(request: Request):
+    _require_telegram_owner(request)
+
+    async with mysql_get_db_async() as db:
+        await db.execute("DELETE FROM event_log")
+
+    return {"result": {"ok": True}}
+
+
 @router.get("/telegram-app/agents")
 async def telegram_app_agents(request: Request):
     _require_telegram_owner(request)
