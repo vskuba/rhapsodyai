@@ -13,6 +13,9 @@ session_start.py. См. .claude/docs/claude_session_registry.md §4.
   session_client.py finalize --session-uuid UUID [--summary TEXT]
   session_client.py watch --session-uuid UUID [--interval SECONDS]
 
+Общие вспомогательные инструменты (не завязанные на конкретную сессию) - в
+соседнем `session_tool.py`.
+
 `watch` - бесресурсный (без LLM) фоновый процесс, запускается ОДИН раз при
 регистрации/резюме сессии и живёт, пока жив терминал (умирает вместе с
 процессом при закрытии окна - см. claude_session_registry.md §4). На каждом

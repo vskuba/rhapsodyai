@@ -194,6 +194,7 @@ If `.claude/session_uuid` exists in this checkout, this terminal is a registered
 - Don't run a separate fixed-interval or backoff `/loop` purely to keep heartbeat alive — `watch` already does that continuously, independent of whether the LLM itself is awake. A `/loop`/`ScheduleWakeup` cadence is only useful here if you want the LLM itself to periodically re-check things beyond what `Monitor` triggers.
 - Mirror your responses — intermediate progress *and* the final answer, not just the final one — into the Mini App chat via `.claude/hooks/session_client.py respond --session-uuid "$(cat .claude/session_uuid)" --response "..."`. Use `--no-notify` for intermediate steps (chat history only, no push) and the default (push) for the final answer, so the user sees live progress instead of just an end result.
 - Use `.claude/hooks/session_client.py` for all registry calls (`heartbeat`, `inbox`, `respond`, `finalize`, `watch`) instead of hand-rolling curl — it already reads the secret/base URL from `.env`.
+- For one-off authorized calls to other `/telegram-app/...` endpoints (hook-secret auth only), use `.claude/hooks/session_tool.py call METHOD PATH [--params k=v] [--body JSON]` instead of writing an inline-python heredoc each time. If you notice yourself repeating the same multi-step diagnostic dance more than once in a session, add it as a new tool there (grouped under a `# === ... ===` section) rather than repeating it by hand again.
 
 ### Key Files
 
