@@ -233,8 +233,12 @@ def session_status(session_uuid: str, secret: str, base_url: str) -> dict:
     # session_start.py.
     watch_ok = is_watch_running(session_uuid)
     try:
-        api_call("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
-                  body={"session_uuid": session_uuid})
+        # api_call_retry, не голый api_call - если сервер сейчас недоступен
+        # (например, идёт передеплой), статус не должен сразу показывать
+        # 🔴 и заставлять пользователя вручную просить повторить - тихо
+        # пробуем до ~60с (12x5с), прежде чем реально признать недоступность
+        api_call_retry("POST", "/telegram-app/claude/session/heartbeat", secret, base_url,
+                        body={"session_uuid": session_uuid})
         server_ok = True
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
         server_ok = False

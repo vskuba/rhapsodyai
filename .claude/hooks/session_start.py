@@ -20,7 +20,8 @@ import json
 import os
 import sys
 
-from session_client import SESSION_UUID_PATH, activate_session, api_call, format_status_checklist, session_status
+from session_client import (SESSION_UUID_PATH, activate_session, api_call_retry,
+                             format_status_checklist, session_status)
 from session_tool import load_config
 
 
@@ -54,8 +55,13 @@ def main():
         with open(SESSION_UUID_PATH, "r", encoding="utf-8") as f:
             session_uuid = f.read().strip()
         try:
-            api_call("POST", "/telegram-app/claude/session/resume", secret, base_url,
-                      body={"session_uuid": session_uuid})
+            # api_call_retry - если сервер сейчас недоступен (например,
+            # идёт передеплой, живой случай), не проваливаемся сразу с
+            # "не удалось резюмировать", а тихо пробуем до ~60с, прежде
+            # чем реально признать неудачу (по просьбе пользователя - не
+            # заставлять его самого просить повторить)
+            api_call_retry("POST", "/telegram-app/claude/session/resume", secret, base_url,
+                            body={"session_uuid": session_uuid})
             activate_session(session_uuid)
             # Статус считаем прямо здесь, в хуке, с реальными данными - не
             # просим агента посчитать и не забыть вывести (текстовые
@@ -89,8 +95,8 @@ def main():
         return
 
     try:
-        result = api_call("GET", "/telegram-app/claude/sessions", secret, base_url,
-                           params={"project_label": project_label})
+        result = api_call_retry("GET", "/telegram-app/claude/sessions", secret, base_url,
+                                 params={"project_label": project_label})
         sessions = result.get("result", [])
     except Exception as e:
         context_lines.append(f"(не удалось получить список зарегистрированных сессий: {e})")
