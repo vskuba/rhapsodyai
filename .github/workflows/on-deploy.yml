@@ -5,9 +5,25 @@ name: On Deploy Status
 on:
   workflow_run:
     workflows: ["Deploy to Oracle Cloud"]
-    types: [completed]
+    types: [requested, completed]
 
 jobs:
+  log_started:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'requested'
+    steps:
+      - name: Log deploy.started via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            curl -s -o /dev/null -X POST http://localhost:8011/event-log \
+              -H "Content-Type: application/json" \
+              -H "X-Claude-Secret: ${{ secrets.TELEGRAM_TOKEN_RHAPSODY }}" \
+              -d "{\"type\":\"github\",\"payload\":{\"event\":\"deploy.started\",\"branch\":\"${{ github.event.workflow_run.head_branch }}\",\"commit\":\"${{ github.event.workflow_run.head_sha }}\",\"actor\":\"${{ github.event.workflow_run.triggering_actor.login }}\",\"run_url\":\"${{ github.event.workflow_run.html_url }}\"}}" || true
+
   log_success:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success'
