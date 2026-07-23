@@ -135,7 +135,7 @@ async def telegram_app_claude_messages(request: Request, session_uuid: str):
     async with mysql_get_db_async() as db:
         await db.execute(
             """
-            SELECT role, kind_type, content, created_at
+            SELECT id, role, kind_type, content, created_at
             FROM agent_session
             WHERE session_uuid = %s AND kind_type IN ('user-prompt', 'response-final')
             ORDER BY id ASC
@@ -145,6 +145,24 @@ async def telegram_app_claude_messages(request: Request, session_uuid: str):
         rows = await db.fetchall()
 
     return {"result": rows}
+
+
+@router.post("/telegram-app/claude/session/delete-message")
+async def telegram_app_claude_session_delete_message(request: Request, data: dict):
+    _require_telegram_owner(request)
+
+    message_id = data.get("message_id")
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not message_id or not session_uuid:
+        raise HTTPException(status_code=400, detail="message_id and session_uuid required")
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "DELETE FROM agent_session WHERE id = %s AND session_uuid = %s",
+            (int(message_id), session_uuid)
+        )
+
+    return {"result": {"ok": True}}
 
 
 @router.post("/telegram-app/claude/respond")

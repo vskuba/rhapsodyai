@@ -119,6 +119,34 @@
             word-break: break-all;
         }
 
+        .user-msg-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 6px;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+        }
+
+        .user-msg-row .chat-bubble.user {
+            margin-bottom: 0;
+        }
+
+        .del-msg-btn {
+            display: none;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 15px;
+            cursor: pointer;
+            padding: 4px 2px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        .del-msg-btn.visible {
+            display: block;
+        }
+
         #claudeClearMessagesIconBtn {
             margin-top: auto;
         }
@@ -1021,6 +1049,7 @@
         claudeLastContent = null;
         claudeTypingBubble?.remove();
         claudeTypingBubble = null;
+        updateLastUserDeleteBtn();
     }
 
     // Кнопка "Удалить" - безвозвратно (не мягкий стоп): удаляет запись из
@@ -1084,14 +1113,11 @@
     }
 
     async function loadEvents() {
-        const [eventsRes, agentsRes] = await Promise.all([
-            getData('/telegram-app/events'),
-            getData('/telegram-app/agents'),
-        ]);
-        renderEvents(eventsRes.result || [], agentsRes.result || []);
+        const res = await getData('/telegram-app/events');
+        renderEvents(res.result || []);
     }
 
-    function renderEvents(events, agents) {
+    function renderEvents(events) {
         const eventsHtml = events.length
             ? events.map(e => `
                 <div class="event-row">
@@ -1101,16 +1127,9 @@
             `).join('')
             : '<div class="empty-state">Событий пока нет</div>';
 
-        const agentsHtml = agents.length
-            ? agents.map(a => `<div class="agent-row">${escapeHtml(a.title || a.name)}</div>`).join('')
-            : '<div class="empty-state">Агентов пока нет</div>';
-
         eventsTab.innerHTML = `
             <div class="panel-title">Последние события</div>
             <div class="panel-card">${eventsHtml}</div>
-
-            <div class="panel-title">Агенты</div>
-            <div class="panel-card">${agentsHtml}</div>
         `;
     }
 
@@ -1248,7 +1267,7 @@
         }
     }
 
-    function appendBubble(role, text, pending = false, container = chatMessagesEl) {
+    function appendBubble(role, text, pending = false, container = chatMessagesEl, msgId = null) {
         const bubble = document.createElement('div');
         bubble.className = `chat-bubble ${role}${pending ? ' pending' : ''}`;
         if (pending) {
@@ -1264,9 +1283,49 @@
                 });
             });
         }
+
+        if (role === 'user' && msgId && container === claudeMessagesEl) {
+            const row = document.createElement('div');
+            row.className = 'user-msg-row';
+            row.dataset.msgId = msgId;
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'del-msg-btn';
+            delBtn.textContent = '✕';
+            delBtn.addEventListener('click', () => deleteClaudeMessage(msgId, row));
+            row.appendChild(delBtn);
+            row.appendChild(bubble);
+            container.appendChild(row);
+            container.scrollTop = container.scrollHeight;
+            return bubble;
+        }
+
         container.appendChild(bubble);
         container.scrollTop = container.scrollHeight;
         return bubble;
+    }
+
+    function updateLastUserDeleteBtn() {
+        const rows = claudeMessagesEl.querySelectorAll('.user-msg-row');
+        rows.forEach(r => r.querySelector('.del-msg-btn').classList.remove('visible'));
+        if (rows.length > 0) {
+            rows[rows.length - 1].querySelector('.del-msg-btn').classList.add('visible');
+        }
+    }
+
+    async function deleteClaudeMessage(msgId, rowEl) {
+        try {
+            await postData('/telegram-app/claude/session/delete-message', {
+                message_id: msgId,
+                session_uuid: claudeSessionUuid,
+            });
+            rowEl.remove();
+            claudeRenderedCount = Math.max(0, claudeRenderedCount - 1);
+            claudeLastContent = null;
+            updateLastUserDeleteBtn();
+        } catch (err) {
+            appendBubble('assistant', '⚠️ Не удалось удалить сообщение', false, claudeMessagesEl);
+        }
     }
 
     function escapeHtml(t) {
@@ -1358,6 +1417,7 @@
         try {
             const res = await getData(`/telegram-app/claude/messages?session_uuid=${encodeURIComponent(claudeSessionUuid)}`);
             const rows = res.result || [];
+            let needsDeleteBtnUpdate = false;
             for (const row of rows.slice(claudeRenderedCount)) {
                 if (row.content === '...') continue;
                 if (row.kind_type === 'user-prompt' && !isInitialLoad) continue;
@@ -1366,9 +1426,11 @@
                 claudeTypingBubble?.remove();
                 claudeTypingBubble = null;
                 const role = row.kind_type === 'user-prompt' ? 'user' : 'assistant';
-                appendBubble(role, row.content, false, claudeMessagesEl);
+                appendBubble(role, row.content, false, claudeMessagesEl, row.id);
+                if (role === 'user') needsDeleteBtnUpdate = true;
             }
             claudeRenderedCount = rows.length;
+            if (needsDeleteBtnUpdate) updateLastUserDeleteBtn();
         } catch (err) {
             // Тихо пропускаем - следующий опрос попробует снова
         }
