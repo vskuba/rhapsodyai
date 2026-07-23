@@ -74,8 +74,13 @@
             color: #e74c3c;
         }
 
-        #pageBackIconBtn {
-            margin-top: -9px;
+        @keyframes home-pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.4); }
+            50% { transform: scale(1.18); box-shadow: 0 0 0 8px rgba(0, 123, 255, 0); }
+        }
+
+        #homeIconBtn.pulsing {
+            animation: home-pulse 2s ease-in-out infinite;
         }
 
         #claudeDeleteSessionIconBtn {
@@ -546,6 +551,7 @@
 <div class="app-wrapper">
     <div class="app-shell">
         <div class="icon-sidebar">
+            <button class="icon-btn" id="homeIconBtn" title="На главную">🏠</button>
             <div class="icon-sidebar-group active-group" id="sidebarDefaultIcons">
                 <button class="icon-btn active" id="tabBtnEvents" data-tab="events" title="События">🔔</button>
                 <button class="icon-btn" id="tabBtnClaude" data-tab="claude" title="Claude">
@@ -684,6 +690,7 @@
     const planCreateMicBtn = document.getElementById('planCreateMicBtn');
     const planCreateMicCancel = document.getElementById('planCreateMicCancel');
 
+    const homeIconBtn = document.getElementById('homeIconBtn');
     const sidebarDefaultIcons = document.getElementById('sidebarDefaultIcons');
     const sidebarPageIcons = document.getElementById('sidebarPageIcons');
     const pageBackIconBtn = document.getElementById('pageBackIconBtn');
@@ -744,7 +751,52 @@
         initChat();
         initClaude();
         initPlans();
+        initHomePing();
         await loadEvents();
+    }
+
+    function initHomePing() {
+        homeIconBtn.addEventListener('click', goHome);
+        pingServer();
+        setInterval(pingServer, 5000);
+    }
+
+    async function pingServer() {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1000);
+        try {
+            await fetch('/telegram-app/ping', {signal: controller.signal});
+            homeIconBtn.classList.add('pulsing');
+        } catch {
+            homeIconBtn.classList.remove('pulsing');
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    function goHome() {
+        if (currentPlanId !== null) {
+            currentPlanId = null;
+            plansDetailView.style.display = 'none';
+            plansListView.style.display = 'block';
+        }
+        if (claudeSessionUuid !== null) {
+            claudeSessionUuid = null;
+            claudeSessionLabel = '';
+            claudeSessionUnreachable = false;
+            if (claudePollTimer) { clearInterval(claudePollTimer); claudePollTimer = null; }
+            claudeMessagesEl.style.display = 'none';
+            claudeSessionListView.style.display = 'block';
+        }
+        document.querySelectorAll('.icon-btn[data-tab]').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
+        document.getElementById('tabBtnEvents').classList.add('active');
+        document.getElementById('tab-events').classList.add('active');
+        currentTab = 'events';
+        setSidebarPageMode(false);
+        updateInputBarsVisibility();
+        updateClaudePolling();
+        updateClaudeStatusPolling();
     }
 
     function initTabs() {

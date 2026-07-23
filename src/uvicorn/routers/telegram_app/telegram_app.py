@@ -64,6 +64,11 @@ async def telegram_app_page(request: Request):
     return response
 
 
+@router.get("/telegram-app/ping")
+async def telegram_app_ping():
+    return {"ok": True}
+
+
 @router.post("/telegram-app/auth")
 async def telegram_app_auth(request: Request, data: dict):
     access_token = str(data.get("access_token") or "").strip()
