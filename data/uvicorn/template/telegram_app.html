@@ -647,7 +647,7 @@
             </div>
             <div class="icon-sidebar-group" id="sidebarClaudeIcons">
                 <button class="icon-btn" id="claudeBackToListIconBtn" title="К списку сессий">🔙</button>
-                <button class="icon-btn" id="claudeStatusIconBtn" title="Статус процессов">📊</button>
+                <button class="icon-btn" id="claudeStatusIconBtn" title="Статус процессов">⟳</button>
                 <button class="icon-btn" id="claudeClearMessagesIconBtn" title="Очистить сообщения">🧹</button>
                 <button class="icon-btn icon-btn-danger" id="claudeDeleteSessionIconBtn" title="Удалить сессию">🗑</button>
             </div>
@@ -1041,7 +1041,7 @@
 
         const statusBubble = document.createElement('div');
         statusBubble.className = 'chat-bubble assistant';
-        statusBubble.textContent = '🔄 Отправляю команду перезапуска…';
+        statusBubble.textContent = '⟳ Отправляю команду перезапуска…';
         claudeMessagesEl.appendChild(statusBubble);
         claudeMessagesEl.scrollTop = claudeMessagesEl.scrollHeight;
 
@@ -1055,7 +1055,7 @@
             return;
         }
 
-        statusBubble.textContent = '🔄 Команда перезапуска отправлена. Проверяю статус через 5с…';
+        statusBubble.textContent = '⟳ Команда перезапуска отправлена. Проверяю статус через 5с…';
 
         await new Promise(r => setTimeout(r, 5000));
 
