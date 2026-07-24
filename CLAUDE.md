@@ -173,6 +173,10 @@ Located at `GET /telegram-app`. Uses Telegram WebApp initData auth (not admin se
 
 See `.claude/docs/telegram_mini_app.md` for full architecture, API endpoints, voice input, and DB schema.
 
+### Deployment (Blue-Green / Zero-Downtime)
+
+See `.claude/docs/deploy.md` for full Blue-Green deployment architecture, `bluegreen.sh` flow, rollback procedure, and healthcheck configuration.
+
 Да, все верно, эти миграции не будут запускаться при дефлоре. Но ты можешь сам зайти на прот и вручную выполнить все. ### Sending the user a Telegram notification (as Claude Code)
 Don't rely on the Telegram MCP plugin being connected — it can disconnect mid-session. `TELEGRAM_TOKEN_RHAPSODY` and `TELEGRAM_OWNER_CHAT_ID` are already in `.env`/the running container, which is enough to message the user directly over the Bot API, no plugin needed. Reuse the existing helper instead of hand-rolling an HTTP call:
 

@@ -52,57 +52,67 @@ jobs:
           # больше дефолтных 10 минут
           command_timeout: 60m
           script: |
-            set -e  # Останавливаем скрипт при любой ошибке
+            set -e
 
             REPO_DIR="$HOME/rhapsodyai"
             REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
 
-            echo "🔄 Подготовка репозитория..."
+            echo "Подготовка репозитория..."
 
-            # Если папки нет или это не git-репозиторий — клонируем заново
             if [ ! -d "$REPO_DIR/.git" ]; then
-              echo "📥 Клонируем репозиторий..."
+              echo "Клонируем репозиторий..."
               git clone "$REPO_URL" "$REPO_DIR"
             fi
 
             cd "$REPO_DIR"
 
-            # Обновляем URL remote (на случай смены токена)
             git remote set-url origin "$REPO_URL"
 
-            echo "⬇️ Получаем последние изменения с GitHub..."
+            echo "Получаем последние изменения с GitHub..."
             git fetch origin master --prune
 
-            echo "🔄 Жёстко сбрасываем рабочую директорию на состояние master..."
+            echo "Сбрасываем рабочую директорию на состояние master..."
             git reset --hard origin/master
-
-            # Дополнительно очищаем untracked файлы и папки (очень важно!)
             git clean -fd
 
-            echo "📦 Обновляем сабмодуль py_modules до зафиксированного коммита..."
+            echo "Обновляем сабмодуль py_modules..."
             git submodule sync --recursive
             git submodule update --init --recursive --force
 
-            echo "📝 Создаём .env файл..."
+            echo "Создаём .env файл..."
             cat << 'EOF' > .env
             ${{ secrets.ENV_FILE }}
             EOF
 
-            echo "🔑 Логинимся в GHCR..."
+            echo "Логинимся в GHCR..."
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            echo "🚀 Обновляем и перезапускаем контейнеры..."
-            # --profile обязателен и для pull: без него образы профильных сервисов
-            # (telegram из GHCR) не обновляются
+            # --- Обновляем сервисы без uvicorn (они не требуют zero-downtime) ---
+            echo "Обновляем образы из GHCR..."
             docker compose --profile on_prod_only pull --ignore-buildable
-            # --build: пересборка локальных образов (uvicorn/worker) при изменении
-            # requirements/dockerfile — иначе контейнеры пересоздаются из старого образа
-            docker compose --profile on_prod_only up -d --build --remove-orphans --force-recreate
 
-            echo "🧹 Очистка..."
+            echo "Перезапускаем Telegram-бота (новый образ из GHCR)..."
+            docker compose --profile on_prod_only up -d --force-recreate telegram
+
+            echo "Обеспечиваем работу базовых сервисов (qdrant, redis, mysql, caddy)..."
+            docker compose --profile on_prod_only up -d qdrant redis mysql caddy
+
+            # --- Blue-Green деплой uvicorn (zero-downtime) ---
+            echo "Запускаем Blue-Green деплой uvicorn..."
+            chmod +x ./bluegreen.sh
+            ./bluegreen.sh
+
+            # --- Обновляем worker с новым образом (downtime допустим — очередь) ---
+            # --no-deps: не запускать зависимости (uvicorn/qdrant), bluegreen.sh уже
+            # управляет active slot; без флага compose поднял бы uvicorn, сломав Blue-Green
+            echo "Перезапускаем worker с новым образом..."
+            docker compose up -d --build --force-recreate --no-deps worker
+
+            # --- Очистка ---
+            echo "Очистка..."
             mkdir -p ./data/log/sincedb
             sudo chown -R 1000:1000 ./data/log/sincedb
             docker image prune -f
 
-            echo "✅ Деплой завершён успешно! Текущий коммит:"
+            echo "Деплой завершён успешно! Текущий коммит:"
             git log -1 --oneline
