@@ -31,5 +31,6 @@ npm-debug.log
 docker-compose.override.yml
 .aider*
 
-.claude/session_uuid
-.claude/wrapper.pid
+/claude_code_shell/session_uuid
+/claude_code_shell/wrapper.pid
+/claude_code_shell/logs
