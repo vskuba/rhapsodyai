@@ -1,10 +1,7 @@
 #!/bin/bash
 # Blue-Green zero-downtime deployment for uvicorn service.
 # Alternates between 'blue' (uvicorn:8011) and 'green' (uvicorn_green:8012).
-# Caddy is switched atomically via sed + caddy reload (graceful, no dropped connections).
-#
-# Source of truth for active slot: Caddyfile (what Caddy actually serves).
-# .deploy_slot is a convenience cache; Caddyfile always wins.
+# Active slot is tracked in .deploy_slot (gitignored, survives git reset --hard).
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,12 +11,12 @@ HEALTH_TIMEOUT=90   # seconds to wait for new slot to become healthy
 HEALTH_INTERVAL=5   # polling interval in seconds
 
 # --- Determine active slot ---
-# .deploy_slot is the primary source of truth — it survives git reset --hard
-# (untracked + gitignored). Caddyfile is used only on first-ever run when
-# .deploy_slot doesn't exist yet.
+# .deploy_slot is the primary source of truth — survives git reset --hard and
+# git clean (untracked + listed in .gitignore).
+# Caddyfile is used only on first-ever run when .deploy_slot doesn't exist yet.
 if [ -f "$STATE_FILE" ]; then
     ACTIVE_SLOT=$(cat "$STATE_FILE")
-    echo "[BG] State из .deploy_slot: $ACTIVE_SLOT"
+    echo "[BG] Активный слот из .deploy_slot: $ACTIVE_SLOT"
 else
     CADDY_BACKEND=$(grep -oP 'reverse_proxy \K[a-zA-Z_]+:[0-9]+' "$CADDYFILE" 2>/dev/null | head -1 || echo "")
     if [ "$CADDY_BACKEND" = "uvicorn_green:8000" ]; then
@@ -27,7 +24,7 @@ else
     else
         ACTIVE_SLOT="blue"
     fi
-    echo "[BG] .deploy_slot не найден, определяем по Caddyfile: $ACTIVE_SLOT (backend: $CADDY_BACKEND)"
+    echo "[BG] .deploy_slot не найден, определяем по Caddyfile ($CADDY_BACKEND): $ACTIVE_SLOT"
 fi
 
 if [ "$ACTIVE_SLOT" = "blue" ]; then
@@ -44,7 +41,7 @@ else
     OLD_SERVICE="uvicorn_green"
 fi
 
-echo "[BG] Caddy backend: $CADDY_BACKEND | Активный: $ACTIVE_SLOT -> Новый: $NEW_SLOT ($NEW_SERVICE:$NEW_PORT)"
+echo "[BG] Активный: $ACTIVE_SLOT -> Новый: $NEW_SLOT ($NEW_SERVICE:$NEW_PORT)"
 
 # --- Build and start new slot ---
 echo "[BG] Сборка и запуск $NEW_SERVICE..."

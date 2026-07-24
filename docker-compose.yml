@@ -271,8 +271,8 @@ services:
       - caddy-config:/config
     networks:
       - os-net
-    depends_on:
-      - uvicorn
+    # No depends_on uvicorn: Blue-Green manages which uvicorn slot is active.
+    # Caddy handles upstream unavailability gracefully via lb_try_duration.
 
 volumes:
   opensearch-data:
