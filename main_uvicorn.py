@@ -387,3 +387,4 @@ app.include_router(telegram_app_claude.router, include_in_schema=False)
 app.include_router(telegram_app_claude_session.router, include_in_schema=False)
 app.include_router(telegram_app_plan.router, include_in_schema=False)
 app.include_router(event_router.router, include_in_schema=False)
+

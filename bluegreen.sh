@@ -2,6 +2,11 @@
 # Blue-Green zero-downtime deployment for uvicorn service.
 # Alternates between 'blue' (uvicorn:8011) and 'green' (uvicorn_green:8012).
 # Active slot is tracked in .deploy_slot (gitignored, survives git reset --hard).
+
+#  ТЕСТИРОВАНИЕ В ТЕРМИНАЛЕ !!!!! ПРОСТО ЗАПУСТИТЬ КОМАНДУ В ТЕРМИНПЛЕ И ПОКАЖЕТ ЗАДЕРЖКИ ПРИ ДЕПЛОЕ
+# last_time=$(date +%s); while true; do current_time=$(date +%s); diff=$((current_time - last_time)); last_time=$current_time; echo -n "$(date '+[%Y-%m-%d %H:%M:%S]') (Задержка: ${diff}с) "; curl -s -o /dev/null -w "%{http_code}\n" https://92.5.17.195.sslip.io/login; sleep 1; done
+#
+
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
