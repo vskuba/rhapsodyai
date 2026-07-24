@@ -393,6 +393,7 @@ def _session_info_print(session_uuid: str, mini_app_url: str):
     print(f"  UUID: {session_uuid}")
     print(f"  URL:  {mini_app_url}")
     print(f"{line}\n", flush=True)
+    time.sleep(2)
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
