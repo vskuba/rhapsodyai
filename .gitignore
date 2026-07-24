@@ -32,3 +32,4 @@ docker-compose.override.yml
 .aider*
 
 .claude/session_uuid
+.claude/wrapper.pid
