@@ -1505,7 +1505,7 @@
 
         const countdown = document.createElement('span');
         countdown.className = 'send-countdown';
-        countdown.textContent = 'отправка через 10с';
+        countdown.textContent = 'отправка через 7с';
 
         const bubbleWrap = document.createElement('div');
         bubbleWrap.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;';
@@ -1521,7 +1521,7 @@
         claudeMessagesEl.appendChild(row);
         claudeMessagesEl.scrollTop = claudeMessagesEl.scrollHeight;
 
-        let secondsLeft = 10;
+        let secondsLeft = 7;
         const countdownInterval = setInterval(() => {
             countdown.textContent = secondsLeft > 0 ? `отправка через ${secondsLeft}с` : 'отправка…';
             secondsLeft--;
@@ -1551,7 +1551,7 @@
             } finally {
                 claudeProgress.classList.remove('active');
             }
-        }, 11000);
+        }, 8000);
 
         delBtn.addEventListener('click', () => {
             clearTimeout(sendTimer);
