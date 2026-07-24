@@ -191,7 +191,7 @@ def _paste_to_terminal(content, terminal_pid):
             env=xenv,
         )
         if xclip.stdin:
-            xclip.stdin.write(content.encode())
+            xclip.stdin.write(content.encode().strip())
             xclip.stdin.close()
         xclip.wait(timeout=3)
 
