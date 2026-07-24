@@ -243,7 +243,11 @@ def watch(session_uuid, secret, base_url, interval, terminal_pid=None):
                             pass
                     if terminal_pid:
                         if len(user_rows) == 1:
-                            combined = "[await_respond] " + " ".join(str(user_rows[0]["content"]).split())
+                            message = " ".join(str(user_rows[0]["content"]).split())
+                            if message.startswith('/'):
+                                combined = message
+                            else :
+                                combined = "[await_respond] " + message
                         else:
                             parts = [f"[{i+1}] {' '.join(str(r['content']).split())}"
                                      for i, r in enumerate(user_rows)]
