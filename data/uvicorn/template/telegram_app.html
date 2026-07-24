@@ -1190,13 +1190,29 @@
         }
     }
 
+    let eventsTimezone = '+0';
+
     async function loadEvents() {
         try {
             const res = await getData('/events');
+            eventsTimezone = res.timezone || '+0';
             renderEvents(res.result || []);
         } catch (err) {
             eventsTab.innerHTML = `<div class="denied-state">⚠️ Не удалось загрузить события: ${escapeHtml(err.message || 'Ошибка')}</div>`;
         }
+    }
+
+    function formatEventTime(utcDateStr, tzOffset) {
+        if (!utcDateStr) return '';
+        const match = String(tzOffset || '0').match(/^([+-]?)(\d+)(?::(\d+))?$/);
+        if (!match) return String(utcDateStr);
+        const sign = match[1] === '-' ? -1 : 1;
+        const offsetMin = sign * (parseInt(match[2], 10) * 60 + parseInt(match[3] || '0', 10));
+        const date = new Date(String(utcDateStr).replace(' ', 'T') + 'Z');
+        if (isNaN(date.getTime())) return String(utcDateStr);
+        const local = new Date(date.getTime() + offsetMin * 60000);
+        const pad = n => String(n).padStart(2, '0');
+        return `${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())} ${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
     }
 
     function formatEventSummary(type, payloadRaw) {
@@ -1247,9 +1263,10 @@
         const eventsHtml = events.length
             ? events.map(e => {
                 const summary = formatEventSummary(e.type, e.payload);
+                const timeStr = formatEventTime(e.created_at, eventsTimezone);
                 return `
                 <div class="event-row">
-                    <span class="event-time">${escapeHtml(e.created_at || '')}</span>
+                    <span class="event-time">${escapeHtml(timeStr)}</span>
                     <span class="event-type">${escapeHtml(e.type || 'system')}</span>
                     ${summary ? `<div class="event-summary">${escapeHtml(summary)}</div>` : ''}
                 </div>`;
