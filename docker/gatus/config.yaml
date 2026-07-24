@@ -1,0 +1,38 @@
+web:
+  port: 8080
+
+storage:
+  type: sqlite
+  path: /data/gatus.db
+
+alerting:
+  telegram:
+    token: "${TELEGRAM_TOKEN_RHAPSODY}"
+    id: "${TELEGRAM_OWNER_CHAT_ID}"
+    default-alert:
+      enabled: true
+      failure-threshold: 2
+      success-threshold: 2
+      send-on-resolved: true
+
+endpoints:
+  - name: "🌐 RhapsodyAi — Сайт"
+    url: https://92.5.17.195.sslip.io
+    interval: 1m
+    alerts:
+      - type: telegram
+        description: "Главная страница недоступна или вернула ошибку 5xx. Проверь контейнер uvicorn и Caddy. [Открыть сайт](https://92.5.17.195.sslip.io)"
+    conditions:
+      - "[STATUS] < 500"
+      - "[RESPONSE_TIME] < 5000"
+
+  - name: "🔌 RhapsodyAi — API"
+    url: https://92.5.17.195.sslip.io/telegram-app/ping
+    interval: 1m
+    alerts:
+      - type: telegram
+        description: "Эндпоинт /telegram-app/ping не отвечает или вернул неожиданный ответ. Приложение нестабильно. [Открыть ping](https://92.5.17.195.sslip.io/telegram-app/ping)"
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY] == {\"ok\":true}"
+      - "[RESPONSE_TIME] < 3000"

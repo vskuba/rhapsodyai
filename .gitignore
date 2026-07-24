@@ -9,6 +9,7 @@ __pycache__/
 # Конфиги и секреты
 .env
 config.yaml
+!docker/gatus/config.yaml
 *.log
 
 data/cronicle
