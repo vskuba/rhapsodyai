@@ -24,6 +24,18 @@ import urllib.request
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+WRAPPER_PID_FILE = os.path.join(PROJECT_ROOT, ".claude", "wrapper.pid")
+
+
+def is_wrapper_running() -> bool:
+    try:
+        with open(WRAPPER_PID_FILE) as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)
+        return True
+    except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
+        return False
+
 
 # === Загрузка .env ===
 

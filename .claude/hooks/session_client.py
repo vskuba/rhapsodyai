@@ -21,7 +21,7 @@ import sys
 import time
 import urllib.error
 
-from session_tool import PROJECT_ROOT, api_call, load_config
+from session_tool import PROJECT_ROOT, api_call, load_config, is_wrapper_running
 
 SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, ".claude", "session_uuid")
 
@@ -48,6 +48,8 @@ def api_call_retry(method, path, secret, base_url, params=None, body=None, retri
 
 
 def is_watch_running(session_uuid):
+    if is_wrapper_running():
+        return True
     try:
         result = subprocess.run(
             ["pgrep", "-f", f"session_client.py watch --session-uuid {session_uuid}"],
@@ -127,6 +129,15 @@ def cleanup_session(session_uuid, secret, base_url):
         pass
     if os.path.isfile(SESSION_UUID_PATH):
         os.remove(SESSION_UUID_PATH)
+
+
+def _write_inbox_pending(session_uuid: str, inbox_id: int):
+    pending_path = os.path.join(PROJECT_ROOT, ".claude", "inbox_pending.json")
+    try:
+        with open(pending_path, "w", encoding="utf-8") as f:
+            json.dump({"session_uuid": session_uuid, "inbox_id": inbox_id}, f)
+    except Exception:
+        pass
 
 
 def _paste_to_terminal(content, terminal_pid):
@@ -238,20 +249,19 @@ def watch(session_uuid, secret, base_url, interval, terminal_pid=None):
                                            body={"session_uuid": session_uuid,
                                                  "response": "Принял",
                                                  "inbox_id": r["id"],
-                                                 "notify": True})
+                                                 "notify": False})
                         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
                             pass
                     if terminal_pid:
                         if len(user_rows) == 1:
-                            message = " ".join(str(user_rows[0]["content"]).split())
-                            if message.startswith('/'):
-                                combined = message
-                            else :
-                                combined = "[await_respond] " + message
+                            combined = " ".join(str(user_rows[0]["content"]).split())
+                            last_inbox_id = user_rows[0]["id"]
                         else:
                             parts = [f"[{i+1}] {' '.join(str(r['content']).split())}"
                                      for i, r in enumerate(user_rows)]
-                            combined = "[await_respond] Несколько сообщений:\n" + "\n".join(parts)
+                            combined = "Несколько сообщений:\n" + "\n".join(parts)
+                            last_inbox_id = user_rows[-1]["id"]
+                        _write_inbox_pending(session_uuid, last_inbox_id)
                         _paste_to_terminal(combined, terminal_pid)
                     try:
                         api_call_retry("POST", "/telegram-app/claude/session/inbox-ack", secret, base_url,
