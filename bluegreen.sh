@@ -59,8 +59,10 @@ while [ "$ELAPSED" -lt "$HEALTH_TIMEOUT" ]; do
     sleep "$HEALTH_INTERVAL"
     ELAPSED=$((ELAPSED + HEALTH_INTERVAL))
 
-    # curl always writes http_code even on failure (000 = no connection)
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$NEW_PORT/" 2>/dev/null)
+    # curl exits non-zero when app isn't ready yet (e.g. 56 = connection reset by
+    # docker-proxy before uvicorn binds the port). The || prevents set -e from
+    # killing the script; we rely on the HTTP code check below instead.
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$NEW_PORT/" 2>/dev/null) || HTTP_CODE="000"
     # Accept any 2xx/3xx/4xx — the app is up even if auth returns 401/403
     if [[ "$HTTP_CODE" =~ ^[2-4][0-9][0-9]$ ]]; then
         echo "[BG] Готов (HTTP $HTTP_CODE) за ${ELAPSED}с"
