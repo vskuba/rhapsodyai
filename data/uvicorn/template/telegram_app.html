@@ -1212,7 +1212,7 @@
         if (isNaN(date.getTime())) return String(utcDateStr);
         const local = new Date(date.getTime() + offsetMin * 60000);
         const pad = n => String(n).padStart(2, '0');
-        return `${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())} ${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
+        return `${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())} ${pad(local.getUTCDate())}.${pad(local.getUTCMonth() + 1)}`;
     }
 
     function formatEventSummary(type, payloadRaw) {
