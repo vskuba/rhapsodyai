@@ -2,6 +2,9 @@
 # Blue-Green zero-downtime deployment for uvicorn service.
 # Alternates between 'blue' (uvicorn:8011) and 'green' (uvicorn_green:8012).
 # Caddy is switched atomically via sed + caddy reload (graceful, no dropped connections).
+#
+# Source of truth for active slot: Caddyfile (what Caddy actually serves).
+# .deploy_slot is a convenience cache; Caddyfile always wins.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,8 +13,18 @@ CADDYFILE="$REPO_DIR/docker/caddy/Caddyfile"
 HEALTH_TIMEOUT=90   # seconds to wait for new slot to become healthy
 HEALTH_INTERVAL=5   # polling interval in seconds
 
-# --- Determine active/new slot ---
-ACTIVE_SLOT=$(cat "$STATE_FILE" 2>/dev/null || echo "blue")
+# --- Determine active slot from Caddyfile (source of truth) ---
+CADDY_BACKEND=$(grep -oP 'reverse_proxy \K[a-zA-Z_]+:[0-9]+' "$CADDYFILE" 2>/dev/null | head -1 || echo "")
+
+if [ "$CADDY_BACKEND" = "uvicorn_green:8000" ]; then
+    ACTIVE_SLOT="green"
+elif [ "$CADDY_BACKEND" = "uvicorn:8000" ]; then
+    ACTIVE_SLOT="blue"
+else
+    # Fallback to state file if Caddyfile pattern is unrecognized
+    ACTIVE_SLOT=$(cat "$STATE_FILE" 2>/dev/null || echo "blue")
+    echo "[BG] Caddyfile backend '$CADDY_BACKEND' не распознан, используем state: $ACTIVE_SLOT"
+fi
 
 if [ "$ACTIVE_SLOT" = "blue" ]; then
     NEW_SLOT="green"
@@ -27,14 +40,14 @@ else
     OLD_SERVICE="uvicorn_green"
 fi
 
-echo "[BG] Активный слот: $ACTIVE_SLOT -> Новый: $NEW_SLOT ($NEW_SERVICE, порт $NEW_PORT)"
+echo "[BG] Caddy backend: $CADDY_BACKEND | Активный: $ACTIVE_SLOT -> Новый: $NEW_SLOT ($NEW_SERVICE:$NEW_PORT)"
 
 # --- Build and start new slot ---
 echo "[BG] Сборка и запуск $NEW_SERVICE..."
 if [ "$NEW_SLOT" = "green" ]; then
-    docker compose --profile green up -d --build --force-recreate "$NEW_SERVICE"
+    docker compose --profile green up -d --build --force-recreate --no-deps "$NEW_SERVICE"
 else
-    docker compose up -d --build --force-recreate "$NEW_SERVICE"
+    docker compose up -d --build --force-recreate --no-deps "$NEW_SERVICE"
 fi
 
 # --- Health check (from host via mapped port) ---
@@ -46,7 +59,7 @@ while [ "$ELAPSED" -lt "$HEALTH_TIMEOUT" ]; do
     sleep "$HEALTH_INTERVAL"
     ELAPSED=$((ELAPSED + HEALTH_INTERVAL))
 
-    # curl always prints http_code (000 on failure) — no fallback needed
+    # curl always writes http_code even on failure (000 = no connection)
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$NEW_PORT/" 2>/dev/null)
     # Accept any 2xx/3xx/4xx — the app is up even if auth returns 401/403
     if [[ "$HTTP_CODE" =~ ^[2-4][0-9][0-9]$ ]]; then
@@ -55,7 +68,7 @@ while [ "$ELAPSED" -lt "$HEALTH_TIMEOUT" ]; do
         break
     fi
 
-    echo "[BG] Ожидание... ${ELAPSED}с (последний HTTP код: $HTTP_CODE)"
+    echo "[BG] Ожидание... ${ELAPSED}с (HTTP $HTTP_CODE)"
 done
 
 if [ "$HEALTHY" != "true" ]; then
