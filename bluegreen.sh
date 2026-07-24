@@ -13,17 +13,21 @@ CADDYFILE="$REPO_DIR/docker/caddy/Caddyfile"
 HEALTH_TIMEOUT=90   # seconds to wait for new slot to become healthy
 HEALTH_INTERVAL=5   # polling interval in seconds
 
-# --- Determine active slot from Caddyfile (source of truth) ---
-CADDY_BACKEND=$(grep -oP 'reverse_proxy \K[a-zA-Z_]+:[0-9]+' "$CADDYFILE" 2>/dev/null | head -1 || echo "")
-
-if [ "$CADDY_BACKEND" = "uvicorn_green:8000" ]; then
-    ACTIVE_SLOT="green"
-elif [ "$CADDY_BACKEND" = "uvicorn:8000" ]; then
-    ACTIVE_SLOT="blue"
+# --- Determine active slot ---
+# .deploy_slot is the primary source of truth — it survives git reset --hard
+# (untracked + gitignored). Caddyfile is used only on first-ever run when
+# .deploy_slot doesn't exist yet.
+if [ -f "$STATE_FILE" ]; then
+    ACTIVE_SLOT=$(cat "$STATE_FILE")
+    echo "[BG] State из .deploy_slot: $ACTIVE_SLOT"
 else
-    # Fallback to state file if Caddyfile pattern is unrecognized
-    ACTIVE_SLOT=$(cat "$STATE_FILE" 2>/dev/null || echo "blue")
-    echo "[BG] Caddyfile backend '$CADDY_BACKEND' не распознан, используем state: $ACTIVE_SLOT"
+    CADDY_BACKEND=$(grep -oP 'reverse_proxy \K[a-zA-Z_]+:[0-9]+' "$CADDYFILE" 2>/dev/null | head -1 || echo "")
+    if [ "$CADDY_BACKEND" = "uvicorn_green:8000" ]; then
+        ACTIVE_SLOT="green"
+    else
+        ACTIVE_SLOT="blue"
+    fi
+    echo "[BG] .deploy_slot не найден, определяем по Caddyfile: $ACTIVE_SLOT (backend: $CADDY_BACKEND)"
 fi
 
 if [ "$ACTIVE_SLOT" = "blue" ]; then
