@@ -121,7 +121,9 @@ services:
       - qdrant
     networks:
       - os-net
-    restart: "no"
+    # unless-stopped: restarts on crash (when active), but NOT after explicit
+    # `docker stop` (when inactive slot is being stopped by bluegreen.sh)
+    restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

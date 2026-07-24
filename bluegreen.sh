@@ -80,15 +80,18 @@ if [ "$HEALTHY" != "true" ]; then
     exit 1
 fi
 
-# --- Switch Caddy atomically ---
+# --- Switch Caddy ---
 # Matches: reverse_proxy uvicorn:8000 {
 #      or: reverse_proxy uvicorn_green:8000 {
 echo "[BG] Переключение Caddy -> $NEW_BACKEND"
 sed -i "s|reverse_proxy [a-zA-Z_]*:[0-9]* {|reverse_proxy $NEW_BACKEND {|" "$CADDYFILE"
 
-# Graceful reload — Caddy drains active connections, no 502s
-docker exec caddy caddy reload --config /etc/caddy/Caddyfile
-echo "[BG] Caddy переключён на $NEW_BACKEND"
+# caddy reload returns 0 even when it silently rejects the new config (e.g. when
+# the new upstream isn't DNS-resolvable yet at reload time). A full restart is
+# reliable: Caddy reads the Caddyfile fresh and starts with the correct upstream.
+# Downtime window: ~2-3 seconds while Caddy restarts (TLS sessions resume quickly).
+docker restart caddy
+echo "[BG] Caddy перезапущен с backend $NEW_BACKEND"
 
 # --- Persist new active slot ---
 echo "$NEW_SLOT" > "$STATE_FILE"
