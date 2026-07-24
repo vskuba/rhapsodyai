@@ -196,6 +196,8 @@ export async function loadClaudeMessages(isInitialLoad = false) {
     try {
         const res = await getData(`/telegram-app/claude/messages?session_uuid=${encodeURIComponent(state.claude.sessionUuid)}`);
         const rows = res.result || [];
+        let newResponsesAdded = false;
+
         for (const row of rows) {
             if (row.content && !state.claude.renderedUserIds.has(row.id)) {
                 state.claude.renderedUserIds.add(row.id);
@@ -208,8 +210,7 @@ export async function loadClaudeMessages(isInitialLoad = false) {
             if (row.response) {
                 const existing = state.claude.renderedResponses.get(row.id);
                 if (!existing) {
-                    state.claude.typingBubble?.remove();
-                    state.claude.typingBubble = null;
+                    newResponsesAdded = true;
                     const el = appendBubble('assistant', row.response, false, _claudeEl);
                     state.claude.renderedResponses.set(row.id, { text: row.response, el });
                 } else if (existing.text !== row.response) {
@@ -223,9 +224,21 @@ export async function loadClaudeMessages(isInitialLoad = false) {
                 }
             }
         }
-        if (isInitialLoad) {
-            const last = rows[rows.length - 1];
-            if (last && !last.response) state.claude.typingBubble = appendTypingIndicator(_claudeEl);
+
+        // Пузырь управляется ПОСЛЕ цикла — один раз, на основе реального состояния.
+        // Так не возникает нескольких пузырей при нескольких pending-сообщениях.
+        const stillPending = rows.some(r => r.content && !r.response) || state.claude.pendingUserCount > 0;
+
+        if (stillPending) {
+            if (!state.claude.typingBubble || !_claudeEl.contains(state.claude.typingBubble)) {
+                state.claude.typingBubble = appendTypingIndicator(_claudeEl);
+            } else if (newResponsesAdded) {
+                // Сдвинуть пузырь в конец, если между ним и концом появились новые ответы
+                _claudeEl.appendChild(state.claude.typingBubble);
+            }
+        } else {
+            state.claude.typingBubble?.remove();
+            state.claude.typingBubble = null;
         }
     } catch { /* тихо, следующий тик попробует снова */ }
 }

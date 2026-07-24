@@ -34,7 +34,7 @@ INSERT INTO `role` (`id`, `name`) VALUES
 -- Password: user123
 
 INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `created_at`, `dynamic`) VALUES
-(1, 'admin', 'admin@example.com', '$2b$12$HgW3UjBwpAX6vYk5M6JykOM73WQuAVDw/.zHu8DxEZ3p8H0/FySx.', 1, '2026-04-26 09:17:35', 0),
+(1, 'admin', 'admin@example.com', '$2b$12$GiCtKwt8AvL/RcTDEJUx9Ou8g3elZ0E5a4l1pj7aF.Xg4Ep2UAR8q', 1, '2026-04-26 09:17:35', 0),
 (2, 'lilia', 'lilia@example.com', '$2b$12$XG.UEUHZz3kkq73DpN52Z.7rqVMgrlCnsbyK2bR2tuXTLkBPhACDK', 2, '2026-04-26 09:17:35', 0),
 (3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35', 0),
 (4, 'alena', 'alena@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 4, '2026-04-26 09:17:35', 0);
@@ -42,7 +42,8 @@ INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `crea
 --
 
 INSERT INTO `user_access_token` (`id`, `user_id`, `token`) VALUES
-(1, 2, '8fd15581-36ae-48ed-812f-3b3d11d427f0');
+(1, 2, '8fd15581-36ae-48ed-812f-3b3d11d427f0'),
+(2, 1, 'a0000000-1111-4444-bbbb-000000000001');
 
 --
 
