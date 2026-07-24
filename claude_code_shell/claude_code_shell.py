@@ -284,12 +284,20 @@ class ClaudeShell:
 
     def _inject(self, text: str):
         if self._child and self._child.isalive():
-            data = (text + "\r").encode("utf-8")
             with _WRITE_LOCK:
                 try:
-                    os.write(self._child.child_fd, data)
+                    os.write(self._child.child_fd, text.encode("utf-8"))
                 except OSError as e:
                     self._log(f"inject error: {e}")
+                    return
+            # Пауза даёт prompt_toolkit время отрендерить текст (включая перенос строки)
+            # до получения \r — иначе Enter не распознаётся при длинных сообщениях.
+            time.sleep(0.1)
+            with _WRITE_LOCK:
+                try:
+                    os.write(self._child.child_fd, b"\r")
+                except OSError as e:
+                    self._log(f"inject enter error: {e}")
             self._log(f"injected: {text[:80]!r}")
 
     def _spawn(self):
