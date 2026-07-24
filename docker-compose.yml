@@ -239,6 +239,20 @@ services:
       - opensearch-dashboards
       - mysql
 
+  gatus:
+    image: twinproduction/gatus:latest
+    container_name: gatus
+    restart: always
+    ports:
+      - "8090:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./docker/gatus/config.yaml:/config/config.yaml:ro
+      - gatus-data:/data
+    networks:
+      - os-net
+
   phpmyadmin:
     # официальный образ (library/phpmyadmin): в отличие от phpmyadmin/phpmyadmin
     # имеет arm64-вариант для Oracle A1; платформу не фиксируем
@@ -280,6 +294,7 @@ volumes:
   cronicle-logs:
   caddy-data:
   caddy-config:
+  gatus-data:
 
 networks:
   os-net:
