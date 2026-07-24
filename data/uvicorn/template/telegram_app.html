@@ -846,6 +846,7 @@
         initPlans();
         initHomePing();
         await loadEvents();
+        setInterval(loadEvents, 5000);
     }
 
     let pingFailCount = 0;
