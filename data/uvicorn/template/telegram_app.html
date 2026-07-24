@@ -818,7 +818,7 @@
     // бездействующем окне Mini App
     let claudeStatusPollTimer = null;
     let claudeRenderedUserIds = new Set();
-    let claudeRenderedResponseIds = new Set();
+    let claudeRenderedResponses = new Map(); // id -> {text, el}
     let claudePendingUserCount = 0;
     let claudeTypingBubble = null;
     let currentTab = 'events';
@@ -1023,7 +1023,7 @@
         claudeSessionLabel = `${role} — ${projectLabel}`;
         claudeSessionUnreachable = false;
         claudeRenderedUserIds = new Set();
-        claudeRenderedResponseIds = new Set();
+        claudeRenderedResponses = new Map();
         claudePendingUserCount = 0;
         claudeTypingBubble = null;
         claudeMessagesEl.innerHTML = '';
@@ -1124,7 +1124,7 @@
 
         claudeMessagesEl.innerHTML = '';
         claudeRenderedUserIds = new Set();
-        claudeRenderedResponseIds = new Set();
+        claudeRenderedResponses = new Map();
         claudePendingUserCount = 0;
         claudeTypingBubble?.remove();
         claudeTypingBubble = null;
@@ -1565,9 +1565,10 @@
     // Раз в несколько секунд подтягивает историю из ai_claude_session и дорисовывает
     // только новые элементы. Каждая строка таблицы = 1 пара: сообщение пользователя
     // (content) + ответ Claude Code (response, null если ещё обрабатывается).
-    // Отслеживание через Set-ы по id строки: claudeRenderedUserIds / claudeRenderedResponseIds.
-    // isInitialLoad=true - восстановление истории; на обычном опросе сообщения
-    // пользователя уже нарисованы локально при отправке, пропускаем их.
+    // claudeRenderedUserIds — Set id-шников, чьи user-пузыри уже нарисованы.
+    // claudeRenderedResponses — Map<id, {text, el}>: отслеживает последний
+    // показанный текст ответа и DOM-элемент, чтобы обновлять пузырь на месте
+    // когда ответ меняется (напр. "Принял" → реальный ответ).
     async function loadClaudeMessages(isInitialLoad = false) {
         if (!claudeSessionUuid) return;
         try {
@@ -1582,11 +1583,23 @@
                         claudePendingUserCount--;
                     }
                 }
-                if (row.response && !claudeRenderedResponseIds.has(row.id)) {
-                    claudeRenderedResponseIds.add(row.id);
-                    claudeTypingBubble?.remove();
-                    claudeTypingBubble = null;
-                    appendBubble('assistant', row.response, false, claudeMessagesEl);
+                if (row.response) {
+                    const existing = claudeRenderedResponses.get(row.id);
+                    if (!existing) {
+                        claudeTypingBubble?.remove();
+                        claudeTypingBubble = null;
+                        const el = appendBubble('assistant', row.response, false, claudeMessagesEl);
+                        claudeRenderedResponses.set(row.id, {text: row.response, el});
+                    } else if (existing.text !== row.response) {
+                        // Ответ обновился (напр. "Принял" → реальный текст) — обновляем на месте
+                        existing.el.innerHTML = linkify(row.response);
+                        existing.el.querySelectorAll('a.chat-link').forEach(a => {
+                            a.target = '_blank';
+                            a.rel = 'noopener noreferrer';
+                        });
+                        existing.text = row.response;
+                        claudeMessagesEl.scrollTop = claudeMessagesEl.scrollHeight;
+                    }
                 }
             }
             if (isInitialLoad) {

@@ -3,8 +3,8 @@
 Stop hook — срабатывает после каждого завершённого turn-а Claude Code.
 
 Если .claude/inbox_pending.json существует (оболочка положила его перед
-инъекцией сообщения из Mini App inbox), читает последнее ассистентское
-сообщение из transcript и отправляет в /telegram-app/claude/respond.
+инъекцией сообщения из Mini App inbox), берёт ответ из hook_input
+last_assistant_message и отправляет в /telegram-app/claude/respond.
 Файл inbox_pending.json удаляется сразу, чтобы повторный Stop не отправил
 тот же ответ дважды.
 """
@@ -12,6 +12,7 @@ Stop hook — срабатывает после каждого завершён�
 import json
 import os
 import sys
+import time
 
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(HOOK_DIR))
@@ -23,7 +24,17 @@ from claude_code_shell.session_client import api_call_retry
 from claude_code_shell.session_tool import load_config
 
 INBOX_PENDING_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "inbox_pending.json")
-SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "session_uuid")
+LOG_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "logs", "session_stop.log")
+
+
+def _log(msg: str):
+    try:
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
 
 
 def _extract_text(content) -> str | None:
@@ -40,8 +51,9 @@ def _extract_text(content) -> str | None:
     return None
 
 
-def _last_assistant_text(transcript_path: str) -> str | None:
+def _last_assistant_text_from_transcript(transcript_path: str) -> str | None:
     if not transcript_path or not os.path.isfile(transcript_path):
+        _log(f"  transcript not found: {transcript_path!r}")
         return None
     last_text = None
     with open(transcript_path, "r", encoding="utf-8") as f:
@@ -56,10 +68,10 @@ def _last_assistant_text(transcript_path: str) -> str | None:
             msg = entry.get("message") or entry
             if msg.get("role") != "assistant":
                 continue
-            content = msg.get("content")
-            text = _extract_text(content)
+            text = _extract_text(msg.get("content"))
             if text:
                 last_text = text
+    _log(f"  transcript fallback result: {last_text is not None}")
     return last_text
 
 
@@ -69,35 +81,46 @@ def main():
     except (json.JSONDecodeError, ValueError):
         hook_input = {}
 
-    inbox_id = None
-    if os.path.isfile(INBOX_PENDING_PATH):
-        try:
-            with open(INBOX_PENDING_PATH, "r", encoding="utf-8") as f:
-                pending = json.load(f)
-            session_uuid = pending.get("session_uuid")
-            inbox_id = pending.get("inbox_id")
-            os.remove(INBOX_PENDING_PATH)
-        except Exception:
-            session_uuid = None
-    else:
-        session_uuid = None
+    _log(f"hook fired, inbox_pending exists={os.path.isfile(INBOX_PENDING_PATH)}")
 
-    if not session_uuid and os.path.isfile(SESSION_UUID_PATH):
-        try:
-            with open(SESSION_UUID_PATH, "r", encoding="utf-8") as f:
-                session_uuid = f.read().strip() or None
-        except Exception:
-            session_uuid = None
+    # Только при наличии inbox_pending.json отправляем ответ в Mini App
+    if not os.path.isfile(INBOX_PENDING_PATH):
+        _log("  no inbox_pending.json — skipping")
+        sys.exit(0)
+
+    try:
+        with open(INBOX_PENDING_PATH, "r", encoding="utf-8") as f:
+            pending = json.load(f)
+        session_uuid = pending.get("session_uuid")
+        inbox_id = pending.get("inbox_id")
+        os.remove(INBOX_PENDING_PATH)
+        _log(f"  loaded inbox_pending: session_uuid={session_uuid}, inbox_id={inbox_id}")
+    except Exception as e:
+        _log(f"  inbox_pending read error: {e}")
+        sys.exit(0)
 
     if not session_uuid:
+        _log("  no session_uuid in inbox_pending, exiting")
         sys.exit(0)
 
     secret, base_url = load_config()
     if not secret:
+        _log("  no secret, exiting")
         sys.exit(0)
 
-    transcript_path = hook_input.get("transcript_path")
-    response_text = _last_assistant_text(transcript_path) or "(ответ не найден в transcript)"
+    # Берём ответ из hook_input напрямую, без парсинга transcript
+    last_msg = hook_input.get("last_assistant_message", "")
+    if isinstance(last_msg, str):
+        response_text = last_msg.strip()
+    else:
+        response_text = _extract_text(last_msg) or ""
+
+    if not response_text:
+        _log("  last_assistant_message empty, falling back to transcript")
+        transcript_path = hook_input.get("transcript_path")
+        response_text = _last_assistant_text_from_transcript(transcript_path) or "(ответ не найден)"
+
+    _log(f"  response_text preview: {response_text[:200]!r}")
 
     try:
         body: dict = {
@@ -108,7 +131,9 @@ def main():
         if inbox_id is not None:
             body["inbox_id"] = inbox_id
         api_call_retry("POST", "/telegram-app/claude/respond", secret, base_url, body=body)
+        _log("  respond API call OK")
     except Exception as e:
+        _log(f"  respond API call FAILED: {e}")
         sys.stderr.write(f"session_stop: respond failed: {e}\n")
 
     sys.exit(0)
