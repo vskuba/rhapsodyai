@@ -12,7 +12,7 @@ import json
 import sys
 import uuid
 
-from ai.ai_llm import ai_llm_node_get
+from src.ai.ai_llm import ai_llm_node_get
 from logging_.logging_ import logger_info, logging_init
 from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_init

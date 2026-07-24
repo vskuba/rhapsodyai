@@ -7,8 +7,8 @@ import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
-from ai.ai_llm import ai_llm_node_id_default_get
-from ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
+from src.ai.ai_llm import ai_llm_node_id_default_get
+from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
     ai_workflow_variables_global_get
 from src.ai.ai_workflow_trace import trace_run_start, trace_run_finish, trace_step, variables_diff

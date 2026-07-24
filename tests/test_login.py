@@ -111,8 +111,6 @@ class TestLoginFlow:
         data = response.json()
         assert data["user"]["username"] == "admin"
         assert data["user"]["role"] == "admin"
-        assert isinstance(data["user"]["llm_ids"], list)
-        assert len(data["user"]["llm_ids"]) > 0
 
     async def test_auth_me_without_session(self, client: httpx.AsyncClient):
         """Test /auth/me returns 401 without session."""

@@ -5,7 +5,7 @@ from functools import partial
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-from ai.ai_llm import ai_llm_node_get
+from src.ai.ai_llm import ai_llm_node_get
 from config.config import config_get
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel

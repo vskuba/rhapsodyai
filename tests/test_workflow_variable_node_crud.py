@@ -17,8 +17,8 @@ async def test_variable_crud():
             "name": "test_var",
             "description": "desc",
             "default": "val",
-            "node_id": 1,  # Убедитесь, что нода с ID=1 существует
-            "role_ids": [1], # Убедитесь, что роль с ID=1 существует
+            "node_id": 2,  # node 'Dating' (id=2) существует
+            "role_ids": [1], # role 'admin' (id=1) существует
             "pattern": "{}"
         }
         response = await client.post("/node/workflow_variable", json=payload)

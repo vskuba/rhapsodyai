@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Request, HTTPException
 
-from ai.ai_llm import ai_llm_node_get
+from src.ai.ai_llm import ai_llm_node_get
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.mysql_.repository.agent_repository import AgentRepository

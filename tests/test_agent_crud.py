@@ -245,21 +245,21 @@ class TestAgentCRUD:
 
     async def test_agent_list_filtering_by_user_nodes_and_role(self, client: httpx.AsyncClient):
         """Test filtering the agent list by user role and nodes (dual criteria)."""
-        # 1. Create a test user with 'manager_dating' role and associated nodes [1, 2]
+        # 1. Create a test user with 'manager_dating' role and associated nodes [2, 4]
         user_res = await client.post(
             "/user",
             json={
                 "username": "test_filter_user",
                 "email": "test_filter_user@example.com",
                 "role_id": 2,
-                "node_ids": [1, 2]
+                "node_ids": [2, 4]
             },
         )
         assert user_res.status_code == 200
         user_id = user_res.json()["result"]["id"]
 
         # 2. Create 3 agents:
-        # Agent A: matching node and matching role (node_id = 1, role_id = 2)
+        # Agent A: matching node and matching role (node_id = 2, role_id = 2)
         agent_a_res = await client.post(
             "/agent",
             json={
@@ -267,7 +267,7 @@ class TestAgentCRUD:
                 "title": "Agent A (Matching)",
                 "greeting": "Hi",
                 "prompt_system": "",
-                "node_id": 1,
+                "node_id": 2,
                 "role_ids": [2],  # 'manager_dating' role
                 "workflow_id": None,
                 "description": "",
@@ -276,7 +276,7 @@ class TestAgentCRUD:
         assert agent_a_res.status_code == 200
         agent_a_id = agent_a_res.json()["result"]["id"]
 
-        # Agent B: different node but matching role (node_id = 3, role_id = 2)
+        # Agent B: different node but matching role (node_id = 6, role_id = 2)
         agent_b_res = await client.post(
             "/agent",
             json={
@@ -284,7 +284,7 @@ class TestAgentCRUD:
                 "title": "Agent B (Wrong Node)",
                 "greeting": "Hi",
                 "prompt_system": "",
-                "node_id": 3,
+                "node_id": 6,
                 "role_ids": [2],  # 'manager_dating' role
                 "workflow_id": None,
                 "description": "",
@@ -293,7 +293,7 @@ class TestAgentCRUD:
         assert agent_b_res.status_code == 200
         agent_b_id = agent_b_res.json()["result"]["id"]
 
-        # Agent C: matching node but different role (node_id = 1, role_id = 1)
+        # Agent C: matching node but different role (node_id = 2, role_id = 1)
         agent_c_res = await client.post(
             "/agent",
             json={
@@ -301,7 +301,7 @@ class TestAgentCRUD:
                 "title": "Agent C (Wrong Role)",
                 "greeting": "Hi",
                 "prompt_system": "",
-                "node_id": 1,
+                "node_id": 2,
                 "role_ids": [1],  # 'admin' role
                 "workflow_id": None,
                 "description": "",
@@ -351,7 +351,7 @@ class TestAgentCRUD:
                 "email": "test_role_filter_user@example.com",
                 "role_id": 2,
                 "password": "testpass123",
-                "node_ids": [1, 2],
+                "node_ids": [2, 4],
             },
         )
         assert user_res.status_code == 200
@@ -365,7 +365,7 @@ class TestAgentCRUD:
                 "title": "Admin Only Agent",
                 "greeting": "",
                 "prompt_system": "",
-                "node_id": 1,
+                "node_id": 2,
                 "role_ids": [1],  # 'admin' role
                 "workflow_id": None,
                 "description": "",
@@ -381,7 +381,7 @@ class TestAgentCRUD:
                 "title": "User Role Agent",
                 "greeting": "",
                 "prompt_system": "",
-                "node_id": 1,
+                "node_id": 2,
                 "role_ids": [2],  # 'manager_dating' role
                 "workflow_id": None,
                 "description": "",

@@ -8,6 +8,7 @@ from pydantic_ai import Agent, AgentRunResult, ModelSettings
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from src.ai.ai_llm import ai_llm_request_log
+from src.ai.ai_session import ai_session_message_add
 from ai.framework.ai_framework import AbstractAiFramework, AiFrameworkResult, AgentRateLimitError, LlmProviderError
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from logging_.logging_ import logger_info
@@ -27,7 +28,7 @@ class AiFrameworkAgent(AbstractAiFramework):
             model,
             system_prompt=framework_model.prompt_system.strip(),
             output_type=framework_model.response_model,
-            retries=len(framework_model.entities_llm) * 10 # количество попыток = количество LLM * 3
+            retries=len(framework_model.entities_llm) * 10  # количество попыток = количество LLM * 3
         )
 
         self.engine_storage[framework_model.name] = engine
@@ -154,7 +155,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                     logger_info(
                         f"❌ Код ошибки: {error_code}."
                     )
-                    
+
                     # Пробуем переключиться на следующую LLM из списка
                     switched = False
                     if hasattr(framework_model, 'entities_llm') and framework_model.entities_llm:
@@ -163,7 +164,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                             if model_obj.get('id') == framework_model.entity_llm_current.get('id'):
                                 current_idx = idx
                                 break
-                        
+
                         if current_idx != -1 and current_idx + 1 < len(framework_model.entities_llm):
                             # Предыдущей (проблемной) модели проставляем время ошибки, чтобы опустить в конец сортировки!
                             problem_llm_id = framework_model.entity_llm_current.get('id')
@@ -177,19 +178,21 @@ class AiFrameworkAgent(AbstractAiFramework):
                                         "WHERE node_id = %s AND llm_id = %s",
                                         (error_code, node_id, problem_llm_id)
                                     )
-                                logger_info(f"🔄 Модель ID {problem_llm_id} помечена как ошибочная (rate_limit_at обновлен). Она опустится в конец списка.")
+                                logger_info(
+                                    f"🔄 Модель ID {problem_llm_id} помечена как ошибочная (rate_limit_at обновлен). Она опустится в конец списка.")
                             except Exception as db_err:
                                 logger_info(f"⚠️ Ошибка при обновлении rate_limit_at в БД: {db_err}")
 
                             framework_model.entity_llm_current = framework_model.entities_llm[current_idx + 1]
-                            logger_info(f"🔄 Смена LLM из-за ошибки {error_code}. Переключаемся на следующую: {framework_model.entity_llm_current.get('name')}")
-                            
+                            logger_info(
+                                f"🔄 Смена LLM из-за ошибки {error_code}. Переключаемся на следующую: {framework_model.entity_llm_current.get('name')}")
+
                             # Очищаем кэш двигателя, чтобы при подготовке создался новый инстранс с новой моделью
                             if framework_model.name in self.engine_storage:
                                 del self.engine_storage[framework_model.name]
-                                
+
                             switched = True
-                            
+
                     if switched:
                         # Повторяем цикл с новой моделью
                         continue
@@ -226,3 +229,28 @@ class AiFrameworkAgent(AbstractAiFramework):
                 await framework_model.on_complete(error_text, exception=e)
             else:
                 await framework_model.on_complete(error_text)
+
+    async def session_message_add(
+            self,
+            session_uuid,
+            request_uuid,
+            llm_id,
+            user_id,
+            companion_id,
+            role,
+            agent_id,
+            kind_type,
+            content,
+            token=None
+    ):
+        await ai_session_message_add(
+            session_uuid,
+            request_uuid,
+            llm_id,
+            user_id,
+            companion_id,
+            role,
+            agent_id,
+            kind_type,
+            content, token
+        )

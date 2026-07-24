@@ -12,6 +12,8 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
+from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID
+
 BASE_URL = "http://localhost:8011"
 
 
@@ -70,10 +72,10 @@ class TestSessionFlow:
         assert "last_message_at" in first_session
         assert "msg_count" in first_session
 
-        # 2. Get sessions with filters (matching seeded values: agent_id=1, user_id=1)
+        # 2. Get sessions with filters (matching seeded values)
         filtered_response = await client.post(
             "/session/list",
-            json={"agent_id": 1, "user_id": 1},
+            json={"agent_id": TEST_SESSION_AGENT_ID, "user_id": 1},
         )
         assert filtered_response.status_code == 200
         filtered_data = filtered_response.json()
@@ -97,12 +99,12 @@ class TestSessionFlow:
         # 2. Get last session with specific filters
         filtered_response = await client.post(
             "/session/last",
-            json={"agent_id": 1, "user_id": 1},
+            json={"agent_id": TEST_SESSION_AGENT_ID, "user_id": 1},
         )
         assert filtered_response.status_code == 200
         filtered_data = filtered_response.json()
         assert filtered_data["result"] is not None
-        assert filtered_data["result"]["session_uuid"] == "097824c7-c3d3-4925-a63f-bd685292a408"
+        assert filtered_data["result"]["session_uuid"] == TEST_SESSION_UUID
 
         # 3. Get last session with filters that yield no results
         no_match_response = await client.post(
@@ -127,11 +129,11 @@ class TestSessionFlow:
         # 2. Get last session UUID with specific filters (matching seeded values)
         filtered_response = await client.post(
             "/session/last/uuid",
-            json={"agent_id": 1, "user_id": 1},
+            json={"agent_id": TEST_SESSION_AGENT_ID, "user_id": 1},
         )
         assert filtered_response.status_code == 200
         filtered_data = filtered_response.json()
-        assert filtered_data["result"] == "097824c7-c3d3-4925-a63f-bd685292a408"
+        assert filtered_data["result"] == TEST_SESSION_UUID
 
         # 3. Get last session UUID with filters that yield no results
         no_match_response = await client.post(
@@ -144,20 +146,18 @@ class TestSessionFlow:
 
     async def test_session_messages(self, client: httpx.AsyncClient):
         """Test retrieving messages for a specific session UUID."""
-        # Use the seeded session uuid
-        seeded_uuid = "097824c7-c3d3-4925-a63f-bd685292a408"
         response = await client.post(
             "/session/messages",
-            json={"session_uuid": seeded_uuid},
+            json={"session_uuid": TEST_SESSION_UUID},
         )
         assert response.status_code == 200
         data = response.json()
         assert "result" in data
         assert isinstance(data["result"], list)
         assert len(data["result"]) > 0
-        
+
         # Verify message fields
         first_msg = data["result"][0]
-        assert first_msg["session_uuid"] == seeded_uuid
+        assert first_msg["session_uuid"] == TEST_SESSION_UUID
         assert "role" in first_msg
         assert "content" in first_msg

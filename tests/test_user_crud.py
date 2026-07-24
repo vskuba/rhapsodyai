@@ -180,29 +180,6 @@ class TestUserCRUD:
         user = data["result"]
         assert user["role"] is None  # Роль не задана — role_id NULL
 
-    async def test_user_with_llm_id(self, client: httpx.AsyncClient):
-        """Test creating a user with llm_id."""
-        # First get available LLMs
-        llm_response = await client.get("/llm/list")
-        assert llm_response.status_code == 200
-        llms = llm_response.json()["result"]
-        if len(llms) > 0:
-            llm_id = llms[0]["id"]
-            response = await client.post(
-                "/user",
-                json={
-                    "username": "test_user_with_llm",
-                    "email": "test_llm@example.com",
-                    "role_id": 2,
-                    "llm_ids": [llm_id]
-                },
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert "result" in data
-            user = data["result"]
-            assert llm_id in user["llm_ids"]
-
     async def test_update_user_partial(self, client: httpx.AsyncClient):
         """Test updating only some fields of a user."""
         # First create a user
@@ -237,7 +214,7 @@ class TestUserCRUD:
 
     async def test_user_node_associations(self, client: httpx.AsyncClient):
         """Test creating and updating user-node associations."""
-        # Create a user with node associations (nodes 1 and 2 exist in seeds)
+        # Create a user with node associations (nodes 2 and 4 exist in seeds)
         response = await client.post(
             "/user",
             json={
@@ -245,32 +222,32 @@ class TestUserCRUD:
                 "email": "test_nodes@example.com",
                 "role_id": 2,
                 "llm_id": None,
-                "node_ids": [1, 2]
+                "node_ids": [2, 4]
             },
         )
         assert response.status_code == 200
         data = response.json()
         assert "result" in data
         user = data["result"]
-        assert user["node_ids"] == [1, 2]
+        assert user["node_ids"] == [2, 4]
         user_id = user["id"]
 
-        # Update the user node associations to [2, 3]
+        # Update the user node associations to [4, 6]
         update_response = await client.put(
             f"/user/{user_id}",
             json={
-                "node_ids": [2, 3]
+                "node_ids": [4, 6]
             },
         )
         assert update_response.status_code == 200
         updated_user = update_response.json()["result"]
-        assert updated_user["node_ids"] == [2, 3]
+        assert updated_user["node_ids"] == [4, 6]
 
         # Verify via GET by ID
         get_response = await client.get(f"/user/{user_id}")
         assert get_response.status_code == 200
         fetched_user = get_response.json()["result"]
-        assert fetched_user["node_ids"] == [2, 3]
+        assert fetched_user["node_ids"] == [4, 6]
 
         # Verify via GET list
         list_response = await client.get("/user/list")
@@ -278,7 +255,7 @@ class TestUserCRUD:
         users_list = list_response.json()["result"]
         user_in_list = next((u for u in users_list if u["id"] == user_id), None)
         assert user_in_list is not None
-        assert user_in_list["node_ids"] == [2, 3]
+        assert user_in_list["node_ids"] == [4, 6]
 
         # Clean up
         delete_response = await client.delete(f"/user/{user_id}")

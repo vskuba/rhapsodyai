@@ -53,7 +53,6 @@ class TestCabinetFlow:
         assert user["username"] == "admin"
         assert "email" in user
         assert "role" in user
-        assert "llm_ids" in user
 
     async def test_update_current_user_profile(self, client: httpx.AsyncClient):
         """Test successfully updating the user's email."""

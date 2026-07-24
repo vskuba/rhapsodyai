@@ -2,7 +2,10 @@
 import pytest
 import asyncio
 import httpx
+import uuid
 from typing import AsyncGenerator
+
+from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID
 
 
 @pytest.fixture(scope="session")
@@ -86,7 +89,6 @@ async def _cleanup_test_roles(client: httpx.AsyncClient) -> None:
 @pytest.fixture(scope="session", autouse=True)
 async def cleanup_test_users() -> AsyncGenerator[None, None]:
     """Session-scoped fixture to clean up test users before and after all tests."""
-    # Clean up before tests
     async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
         await client.post(
             "/auth/login",
@@ -96,7 +98,6 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
         await _cleanup_test_agents(client)
         await _cleanup_test_roles(client)
     yield
-    # Clean up after tests
     async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
         await client.post(
             "/auth/login",
@@ -105,3 +106,44 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
         await _cleanup_test_users(client)
         await _cleanup_test_agents(client)
         await _cleanup_test_roles(client)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def seed_test_session():
+    """Seed a known agent_session row used by session tests, clean up after."""
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    # Tests run from host; override Docker service name with localhost port
+    os.environ['MYSQL_HOST'] = 'localhost'
+    os.environ['MYSQL_PORT'] = '3302'
+
+    from src.ai.ai_session import ai_session_message_add
+    from mysql_.mysql_ import mysql_get_db_async
+
+    req_uuid = str(uuid.uuid4())
+
+    async def _seed():
+        await ai_session_message_add(TEST_SESSION_UUID, req_uuid, None, 1, None,
+                                     'user', TEST_SESSION_AGENT_ID, 'user-prompt', 'test prompt')
+        await ai_session_message_add(TEST_SESSION_UUID, req_uuid, None, 1, None,
+                                     'assistant', TEST_SESSION_AGENT_ID, 'response-final', 'test response')
+
+    from mysql_.mysql_ import mysql_pool_close
+
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(_seed())
+    loop.run_until_complete(mysql_pool_close())
+    loop.close()
+
+    yield
+
+    async def _cleanup():
+        async with mysql_get_db_async() as db:
+            await db.execute("DELETE FROM agent_session WHERE session_uuid = %s", (TEST_SESSION_UUID,))
+            await db.connection.commit()
+        await mysql_pool_close()
+
+    loop2 = asyncio.new_event_loop()
+    loop2.run_until_complete(_cleanup())
+    loop2.close()

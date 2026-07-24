@@ -5,7 +5,7 @@ from datetime import datetime
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
-from ai.ai_llm import ai_llm_provider
+from src.ai.ai_llm import ai_llm_provider
 from config.config import config_get
 from mysql_.mysql_ import mysql_get_db_async
 from setting_.setting_ import setting_get, setting_set

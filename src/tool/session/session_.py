@@ -2,7 +2,7 @@ import re
 import uuid
 from difflib import SequenceMatcher
 
-from ai.ai_session import ai_session_message_add
+from src.ai.ai_session import ai_session_message_add
 from mysql_.mysql_ import mysql_get_db_async
 
 

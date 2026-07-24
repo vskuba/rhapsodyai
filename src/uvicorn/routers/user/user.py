@@ -80,7 +80,6 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
     user_id = await repo.add(insert_data)
 
     async with db:
-        # Insert user_node relations if node_ids are passed
         if "node_ids" in data and data["node_ids"]:
             for nid in data["node_ids"]:
                 await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
@@ -92,8 +91,7 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
         created_user = await db.fetchone()
         if created_user:
             await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
-            rows = await db.fetchall()
-            created_user["node_ids"] = [row["node_id"] for row in rows]
+            created_user["node_ids"] = [row["node_id"] for row in await db.fetchall()]
 
     return {"result": created_user}
 
@@ -101,7 +99,6 @@ async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_asyn
 @router.put("/user/{user_id}")
 async def user_update(request: Request, user_id: int, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_UPDATE]))):
     repo = UserRepository()
-    # Only update fields that are provided (not None)
     update_data = {}
     if data.get("username") is not None:
         update_data["username"] = data.get("username")
@@ -110,8 +107,6 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
     if data.get("role_id") is not None:
         update_data["role_id"] = data.get("role_id")
 
-    # Смена пароля пользователю (доступно только обладателю USER_UPDATE — админу):
-    # пустое поле — пароль не меняется
     if data.get("password"):
         password = str(data.get("password"))
         if len(password) < 8:
@@ -122,12 +117,9 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
         await repo.update(user_id, update_data)
 
     async with db:
-        # Sync user_node relations if node_ids are passed in data
         if "node_ids" in data:
             node_ids = data["node_ids"] or []
-            # Delete old relations
             await db.execute("DELETE FROM user_node WHERE user_id = %s", user_id)
-            # Insert new relations
             for nid in node_ids:
                 await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
 
@@ -138,8 +130,7 @@ async def user_update(request: Request, user_id: int, data: dict, db=Depends(mys
         updated_user = await db.fetchone()
         if updated_user:
             await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
-            rows = await db.fetchall()
-            updated_user["node_ids"] = [row["node_id"] for row in rows]
+            updated_user["node_ids"] = [row["node_id"] for row in await db.fetchall()]
 
     return {"result": updated_user}
 

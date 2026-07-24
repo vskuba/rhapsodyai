@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 
-from ai.ai_llm import ai_llm_node_get
+from src.ai.ai_llm import ai_llm_node_get
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load

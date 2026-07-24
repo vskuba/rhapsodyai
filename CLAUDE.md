@@ -15,7 +15,7 @@ python3 main_uvicorn.py                        # web server
 python3 main_telegram.py                       # telegram bot
 docker-compose up -d                           # all services
 docker-compose up -d uvicorn qdrant redis mysql
-python3 -m pytest tests/ -v                    # tests (requires uvicorn on :8011)
+.venv/bin/python3 -m pytest tests/ -v          # tests (requires uvicorn on :8011)
 ```
 
 **After editing .py files:** restart uvicorn.
