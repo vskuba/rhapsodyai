@@ -167,6 +167,8 @@ class ClaudeShell:
         self._child = None
         self._old_tc = None
         self._last_id = 0
+        self._last_child_output_time = 0.0
+        self._pending_inject = None  # (msg, inject_after_monotonic)
 
     # ─── Terminal ────────────────────────────────────────────────────────────
 
@@ -304,9 +306,15 @@ class ClaudeShell:
         self._log(f"spawned claude pid={child.pid}")
         return child
 
+    # Минимальная пауза в output Claude перед инъекцией (секунды).
+    # Если Claude молчит дольше этого порога — считаем его готовым к input.
+    _IDLE_BEFORE_INJECT = 1.5
+
     def _io_loop(self, child):
         child_fd = child.child_fd
         stdin_fd = sys.stdin.fileno() if sys.stdin.isatty() else -1
+        self._last_child_output_time = time.monotonic()
+        self._pending_inject = None
 
         while not self._stop.is_set() and not self._restart.is_set():
             if not child.isalive():
@@ -314,11 +322,26 @@ class ClaudeShell:
                 self._stop.set()
                 break
 
-            try:
-                msg = self._cmd_queue.get_nowait()
-                self._inject(msg)
-            except queue.Empty:
-                pass
+            now = time.monotonic()
+            idle = now - self._last_child_output_time
+
+            # Проверяем отложенный inject
+            if self._pending_inject is not None:
+                msg, ready_after = self._pending_inject
+                if now >= ready_after:
+                    self._inject(msg)
+                    self._pending_inject = None
+            elif not self._cmd_queue.empty():
+                try:
+                    msg = self._cmd_queue.get_nowait()
+                    if idle >= self._IDLE_BEFORE_INJECT:
+                        self._inject(msg)
+                    else:
+                        wait = self._IDLE_BEFORE_INJECT - idle
+                        self._pending_inject = (msg, now + wait)
+                        self._log(f"inject deferred {wait:.2f}s (claude active)")
+                except queue.Empty:
+                    pass
 
             fds = [child_fd] + ([stdin_fd] if stdin_fd >= 0 else [])
             try:
@@ -331,6 +354,11 @@ class ClaudeShell:
                     data = os.read(child_fd, 4096)
                     if data:
                         os.write(sys.stdout.fileno(), data)
+                        self._last_child_output_time = time.monotonic()
+                        # Если пришёл output после отложенного inject — сдвигаем дедлайн
+                        if self._pending_inject is not None:
+                            msg, _ = self._pending_inject
+                            self._pending_inject = (msg, self._last_child_output_time + self._IDLE_BEFORE_INJECT)
                 except OSError:
                     break
 
