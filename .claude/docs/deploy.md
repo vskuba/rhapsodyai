@@ -32,10 +32,13 @@ Internet → Caddy (:80/:443) → uvicorn:8000  (blue,  host port 8011)
 ## Процесс деплоя (bluegreen.sh)
 
 ```
-1. Читает .deploy_slot → определяет старый (blue) и новый (green) слот
-2. docker compose up -d --build --force-recreate <new_service>
+1. Читает Caddyfile → определяет старый (blue) и новый (green) слот
+   - Source of truth: grep reverse_proxy из docker/caddy/Caddyfile
+   - Fallback: .deploy_slot файл
+2. docker compose up -d --build --force-recreate --no-deps <new_service>
 3. Polling http://127.0.0.1:<new_port>/ каждые 5с, до 90с
-   - 2xx/3xx/4xx = готов; 000/5xx = ждём
+   - 2xx/3xx/4xx = готов; 000 = ждём (000 = нормально пока uvicorn стартует)
+   - curl exit code 56 (connection reset) обрабатывается через || HTTP_CODE="000"
 4. sed -i: меняет backend в Caddyfile (uvicorn:8000 → uvicorn_green:8000 или обратно)
 5. docker exec caddy caddy reload  ← graceful, без dropped connections
 6. echo <new_slot> > .deploy_slot
@@ -43,6 +46,12 @@ Internet → Caddy (:80/:443) → uvicorn:8000  (blue,  host port 8011)
 ```
 
 Если новый слот не поднялся за 90 секунд — контейнер удаляется, деплой завершается с ошибкой. Старый слот продолжает работать.
+
+### Почему Caddyfile — source of truth
+
+`git reset --hard origin/master` в deploy.yml восстанавливает Caddyfile из git (исходное `uvicorn:8000`), но **не перезагружает Caddy** — Caddy продолжает работать по runtime-конфигу. Поэтому state определяется из ФАЙЛА (что есть в git/на диске), а не из runtime Caddy. Это корректно: `sed` меняет файл → `caddy reload` синхронизирует runtime с файлом.
+
+`.deploy_slot` защищён от `git clean -fd` через `.gitignore`.
 
 ## Первый запуск на свежем сервере
 
