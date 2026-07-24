@@ -4,6 +4,11 @@ on:
   push:
     branches: [ master ] # или master
 
+# Only one deploy at a time — prevents .deploy_slot race conditions in Blue-Green
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
