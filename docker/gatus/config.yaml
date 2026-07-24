@@ -21,7 +21,7 @@ endpoints:
     interval: 1m
     alerts:
       - type: telegram
-        description: "Главная страница недоступна или вернула ошибку 5xx. Проверь контейнер uvicorn и Caddy."
+        description: "Главная страница недоступна или вернула ошибку 5xx. Проверь контейнер uvicorn и Caddy. [Открыть сайт](https://92.5.17.195.sslip.io)"
     conditions:
       - "[STATUS] < 500"
       - "[RESPONSE_TIME] < 5000"
@@ -31,7 +31,7 @@ endpoints:
     interval: 1m
     alerts:
       - type: telegram
-        description: "Эндпоинт /telegram-app/ping не отвечает или вернул неожиданный ответ. Приложение нестабильно."
+        description: "Эндпоинт /telegram-app/ping не отвечает или вернул неожиданный ответ. Приложение нестабильно. [Открыть ping](https://92.5.17.195.sslip.io/telegram-app/ping)"
     conditions:
       - "[STATUS] == 200"
       - "[BODY] == {\"ok\":true}"
