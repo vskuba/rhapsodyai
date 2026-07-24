@@ -46,7 +46,8 @@ while [ "$ELAPSED" -lt "$HEALTH_TIMEOUT" ]; do
     sleep "$HEALTH_INTERVAL"
     ELAPSED=$((ELAPSED + HEALTH_INTERVAL))
 
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$NEW_PORT/" 2>/dev/null || echo "000")
+    # curl always prints http_code (000 on failure) — no fallback needed
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$NEW_PORT/" 2>/dev/null)
     # Accept any 2xx/3xx/4xx — the app is up even if auth returns 401/403
     if [[ "$HTTP_CODE" =~ ^[2-4][0-9][0-9]$ ]]; then
         echo "[BG] Готов (HTTP $HTTP_CODE) за ${ELAPSED}с"
