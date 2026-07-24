@@ -227,7 +227,18 @@ export async function loadClaudeMessages(isInitialLoad = false) {
 
         // Пузырь управляется ПОСЛЕ цикла — один раз, на основе реального состояния.
         // Так не возникает нескольких пузырей при нескольких pending-сообщениях.
-        const stillPending = rows.some(r => r.content && !r.response) || state.claude.pendingUserCount > 0;
+        // «Осиротевшие» строки (content без response) от упавших сессий не считаются
+        // ожидающими — только если они новее последнего ответа в этой сессии.
+        const lastRespondedAt = rows.reduce((max, r) => {
+            if (!r.responded_at) return max;
+            const t = new Date(r.responded_at);
+            return (!max || t > max) ? t : max;
+        }, null);
+        const stillPending = rows.some(r => {
+            if (!r.content || r.response) return false;
+            if (!lastRespondedAt) return true;
+            return new Date(r.created_at) > lastRespondedAt;
+        }) || state.claude.pendingUserCount > 0;
 
         if (stillPending) {
             if (!state.claude.typingBubble || !_claudeEl.contains(state.claude.typingBubble)) {
