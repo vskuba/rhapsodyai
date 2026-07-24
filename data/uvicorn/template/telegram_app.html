@@ -632,6 +632,60 @@
         .mic-only-bar.chat-visible {
             display: flex;
         }
+
+        .send-btn-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .quick-cmd-btn {
+            width: 40px;
+            height: 32px;
+            border-radius: 10px;
+            border: 1px solid #cbd5e0;
+            background: #f7fafc;
+            color: #4a5568;
+            font-size: 16px;
+            cursor: pointer;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        .quick-cmd-popup {
+            position: fixed;
+            background: #fff;
+            border: 1px solid #cbd5e0;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.14);
+            padding: 6px 0;
+            z-index: 9999;
+            min-width: 230px;
+            display: none;
+        }
+
+        .quick-cmd-popup.visible {
+            display: block;
+        }
+
+        .quick-cmd-item {
+            padding: 11px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            color: #2d3748;
+            user-select: none;
+            border-bottom: 1px solid #f0f4f8;
+        }
+
+        .quick-cmd-item:last-child {
+            border-bottom: none;
+        }
+
+        .quick-cmd-item:active {
+            background: #edf2f7;
+        }
     </style>
 </head>
 <body>
@@ -702,6 +756,9 @@
         </div>
     </div>
 
+    <div class="quick-cmd-popup" id="claudeQuickCmdPopup">
+        <div class="quick-cmd-item" data-text="Закомить и запусти деплой">📦 Закомить и запусти деплой</div>
+    </div>
     <div class="chat-progress" id="claudeProgress"><div class="chat-progress-fill"></div></div>
     <div class="chat-input-bar" id="claudeInputBar">
         <div class="mic-wrap">
@@ -709,7 +766,10 @@
             <button class="mic-btn" id="claudeMicBtn">🎤</button>
         </div>
         <textarea class="chat-text-input plan-text-input" id="claudeTextInput" rows="4" placeholder="Сообщение для Claude Code..."></textarea>
-        <button class="chat-send-btn" id="claudeSendBtn">➤</button>
+        <div class="send-btn-col">
+            <button class="quick-cmd-btn" id="claudeQuickCmdBtn">☰</button>
+            <button class="chat-send-btn" id="claudeSendBtn">➤</button>
+        </div>
     </div>
 
     <div class="chat-progress" id="chatProgress"><div class="chat-progress-fill"></div></div>
@@ -1491,6 +1551,29 @@
                 e.preventDefault();
                 sendClaudeMessage();
             }
+        });
+
+        const claudeQuickCmdBtn = document.getElementById('claudeQuickCmdBtn');
+        const claudeQuickCmdPopup = document.getElementById('claudeQuickCmdPopup');
+
+        claudeQuickCmdBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const rect = claudeQuickCmdBtn.getBoundingClientRect();
+            claudeQuickCmdPopup.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+            claudeQuickCmdPopup.style.right = (window.innerWidth - rect.right) + 'px';
+            claudeQuickCmdPopup.classList.toggle('visible');
+        });
+
+        claudeQuickCmdPopup.querySelectorAll('.quick-cmd-item').forEach(item => {
+            item.addEventListener('click', () => {
+                claudeTextInput.value = item.dataset.text;
+                claudeQuickCmdPopup.classList.remove('visible');
+                sendClaudeMessage();
+            });
+        });
+
+        document.addEventListener('click', () => {
+            claudeQuickCmdPopup.classList.remove('visible');
         });
 
         createVoiceRecorder({
