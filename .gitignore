@@ -34,3 +34,4 @@ docker-compose.override.yml
 claude_code_shell/session_uuid
 claude_code_shell/wrapper.pid
 claude_code_shell/logs
+claude_code_shell/inbox_pending.json

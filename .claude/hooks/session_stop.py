@@ -23,6 +23,7 @@ from claude_code_shell.session_client import api_call_retry
 from claude_code_shell.session_tool import load_config
 
 INBOX_PENDING_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "inbox_pending.json")
+SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "session_uuid")
 
 
 def _extract_text(content) -> str | None:
@@ -52,13 +53,10 @@ def _last_assistant_text(transcript_path: str) -> str | None:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            # Два возможных формата transcript:
-            #   1. {"role": "assistant", "content": ...}
-            #   2. {"type": "assistant", "message": {"role": "assistant", "content": ...}}
-            role = entry.get("role") or entry.get("type")
-            if role != "assistant":
+            msg = entry.get("message") or entry
+            if msg.get("role") != "assistant":
                 continue
-            content = entry.get("content") or entry.get("message", {}).get("content")
+            content = msg.get("content")
             text = _extract_text(content)
             if text:
                 last_text = text
@@ -71,19 +69,26 @@ def main():
     except (json.JSONDecodeError, ValueError):
         hook_input = {}
 
-    if not os.path.isfile(INBOX_PENDING_PATH):
-        sys.exit(0)
+    inbox_id = None
+    if os.path.isfile(INBOX_PENDING_PATH):
+        try:
+            with open(INBOX_PENDING_PATH, "r", encoding="utf-8") as f:
+                pending = json.load(f)
+            session_uuid = pending.get("session_uuid")
+            inbox_id = pending.get("inbox_id")
+            os.remove(INBOX_PENDING_PATH)
+        except Exception:
+            session_uuid = None
+    else:
+        session_uuid = None
 
-    try:
-        with open(INBOX_PENDING_PATH, "r", encoding="utf-8") as f:
-            pending = json.load(f)
-    except Exception:
-        sys.exit(0)
+    if not session_uuid and os.path.isfile(SESSION_UUID_PATH):
+        try:
+            with open(SESSION_UUID_PATH, "r", encoding="utf-8") as f:
+                session_uuid = f.read().strip() or None
+        except Exception:
+            session_uuid = None
 
-    os.remove(INBOX_PENDING_PATH)
-
-    session_uuid = pending.get("session_uuid")
-    inbox_id = pending.get("inbox_id")
     if not session_uuid:
         sys.exit(0)
 
