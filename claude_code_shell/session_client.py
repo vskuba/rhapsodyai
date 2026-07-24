@@ -201,7 +201,7 @@ def _paste_to_terminal(content, terminal_pid):
                 env=xenv, capture_output=True, timeout=3,
             )
         subprocess.run(["xdotool", "key", "ctrl+v"], env=xenv, capture_output=True, timeout=3)
-        time.sleep(0.5)
+        time.sleep(0.15)
         subprocess.run(["xdotool", "key", "Return"], env=xenv, capture_output=True, timeout=3)
     except Exception:
         pass
