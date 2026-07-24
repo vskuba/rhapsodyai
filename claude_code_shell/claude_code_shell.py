@@ -31,10 +31,11 @@ import pexpect
 
 # ─── Константы ───────────────────────────────────────────────────────────────
 
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+SHELL_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SHELL_DIR)
 
-WRAPPER_PID_FILE = os.path.join(PROJECT_ROOT, ".claude", "wrapper.pid")
-SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, ".claude", "session_uuid")
+WRAPPER_PID_FILE = os.path.join(SHELL_DIR, "wrapper.pid")
+SESSION_UUID_PATH = os.path.join(SHELL_DIR, "session_uuid")
 
 CLEANUP_MARKER = "__SESSION_CLEANUP__"
 RESTART_WATCH_MARKER = "__RESTART_WATCH__"
@@ -262,7 +263,7 @@ class ClaudeShell:
         self._ack([r["id"] for r in user_rows])
 
     def _write_inbox_pending(self, inbox_id: int):
-        pending_path = os.path.join(PROJECT_ROOT, ".claude", "inbox_pending.json")
+        pending_path = os.path.join(SHELL_DIR, "inbox_pending.json")
         try:
             with open(pending_path, "w", encoding="utf-8") as f:
                 json.dump({"session_uuid": self.session_uuid, "inbox_id": inbox_id}, f)
@@ -369,12 +370,17 @@ class ClaudeShell:
                 child = self._spawn()
                 self._io_loop(child)
 
-                if not child.isalive():
+                if child.isalive():
+                    try:
+                        child.terminate(force=True)
+                    except Exception:
+                        pass
+                else:
                     child.close()
 
                 if self._restart.is_set():
                     self._log("restarting claude...")
-                    time.sleep(0.5)
+                    time.sleep(1.0)
                 else:
                     break
         finally:
@@ -415,7 +421,9 @@ def main():
         sys.exit("ERROR: TELEGRAM_TOKEN_RHAPSODY not found in .env/.env.local")
 
     project_label = args.project_label or os.path.basename(os.path.normpath(PROJECT_ROOT))
-    log_path = f"/tmp/claude_shell_{project_label}.log"
+    logs_dir = os.path.join(SHELL_DIR, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_path = os.path.join(logs_dir, f"claude_code_shell_{project_label}.log")
     log = open(log_path, "a")
 
     def _log(msg):

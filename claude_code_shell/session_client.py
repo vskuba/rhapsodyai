@@ -23,7 +23,7 @@ import urllib.error
 
 from session_tool import PROJECT_ROOT, api_call, load_config, is_wrapper_running
 
-SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, ".claude", "session_uuid")
+SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "session_uuid")
 
 CLEANUP_MARKER = "__SESSION_CLEANUP__"
 RESTART_WATCH_MARKER = "__RESTART_WATCH__"
@@ -132,7 +132,7 @@ def cleanup_session(session_uuid, secret, base_url):
 
 
 def _write_inbox_pending(session_uuid: str, inbox_id: int):
-    pending_path = os.path.join(PROJECT_ROOT, ".claude", "inbox_pending.json")
+    pending_path = os.path.join(PROJECT_ROOT, "claude_code_shell", "inbox_pending.json")
     try:
         with open(pending_path, "w", encoding="utf-8") as f:
             json.dump({"session_uuid": session_uuid, "inbox_id": inbox_id}, f)

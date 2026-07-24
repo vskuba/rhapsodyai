@@ -14,12 +14,15 @@ import os
 import sys
 
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HOOK_DIR)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(HOOK_DIR))
+CLAUDE_SHELL_DIR = os.path.join(PROJECT_ROOT, "claude_code_shell")
+sys.path.insert(0, CLAUDE_SHELL_DIR)
+sys.path.insert(0, PROJECT_ROOT)
 
-from session_client import api_call_retry
-from session_tool import PROJECT_ROOT, load_config
+from claude_code_shell.session_client import api_call_retry
+from claude_code_shell.session_tool import load_config
 
-INBOX_PENDING_PATH = os.path.join(PROJECT_ROOT, ".claude", "inbox_pending.json")
+INBOX_PENDING_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "inbox_pending.json")
 
 
 def _extract_text(content) -> str | None:

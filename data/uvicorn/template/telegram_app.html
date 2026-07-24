@@ -1065,7 +1065,7 @@
 
         const statusBubble = document.createElement('div');
         statusBubble.className = 'chat-bubble assistant';
-        statusBubble.textContent = '⟳ Отправляю команду перезапуска…';
+        statusBubble.textContent = '⟳ Отправляю команду перезапуска Claude Client…';
         claudeMessagesEl.appendChild(statusBubble);
         claudeMessagesEl.scrollTop = claudeMessagesEl.scrollHeight;
 
@@ -1090,17 +1090,19 @@
         } catch (err) { /* игнорируем, используем initialStatus */ }
 
         const s = freshStatus || initialStatus;
-        const watchIcon = s.watch_alive ? '🍏' : '🔴';
+        const clientIcon = s.watch_alive ? '🍏' : '🔴';
         const secsAgo = s.seconds_ago !== null && s.seconds_ago !== undefined ? `${s.seconds_ago}с назад` : 'нет данных';
 
         const lines = [
-            `📊 Статус процессов сессии`,
-            `${watchIcon} watch  (heartbeat: ${secsAgo})`,
+            `📊 Статус после перезапуска`,
+            `${clientIcon} Claude Client  (heartbeat: ${secsAgo})`,
             `🍏 server`,
             `📁 ${s.project_label || ''} / ${s.role || ''}`,
         ];
         if (!s.watch_alive) {
-            lines.push('⚠️ watch не отвечает — откройте терминал или нажмите ещё раз');
+            lines.push('⚠️ Клиент не отвечает — проверьте терминал или нажмите ещё раз');
+        } else {
+            lines.push('✅ Клиент перезапущен и активен');
         }
         statusBubble.textContent = lines.join('\n');
 
