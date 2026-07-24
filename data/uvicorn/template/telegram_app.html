@@ -1090,19 +1090,18 @@
         } catch (err) { /* игнорируем, используем initialStatus */ }
 
         const s = freshStatus || initialStatus;
-        const clientIcon = s.watch_alive ? '🍏' : '🔴';
+        const clientIcon = s.watch_alive ? '✅' : '🔴';
         const secsAgo = s.seconds_ago !== null && s.seconds_ago !== undefined ? `${s.seconds_ago}с назад` : 'нет данных';
 
         const lines = [
-            `📊 Статус после перезапуска`,
-            `${clientIcon} Claude Client  (heartbeat: ${secsAgo})`,
-            `🍏 server`,
-            `📁 ${s.project_label || ''} / ${s.role || ''}`,
+            `⟳ Статус после перезапуска`,
+            `${clientIcon} Claude Code  (heartbeat: ${secsAgo})`,
+            `${s.project_label || ''} / ${s.role || ''}`,
         ];
         if (!s.watch_alive) {
-            lines.push('⚠️ Клиент не отвечает — проверьте терминал или нажмите ещё раз');
+            lines.push('🔴️ Клиент не отвечает — проверьте терминал или нажмите ещё раз');
         } else {
-            lines.push('✅ Клиент перезапущен и активен');
+            lines.push(`${clientIcon} Клиент перезапущен и активен`);
         }
         statusBubble.textContent = lines.join('\n');
 
