@@ -141,7 +141,7 @@ def check_quota_data() -> dict:
         with urllib.request.urlopen(req, timeout=10) as response:
             res_data = json.loads(response.read().decode("utf-8"))
 
-        five_hour = res_data.get("five_hour", {})
+        five_hour = res_data.get("five_hour") or {}
         utilization = five_hour.get("utilization")
         resets_at_raw = five_hour.get("resets_at")
 
@@ -153,7 +153,7 @@ def check_quota_data() -> dict:
             except Exception:
                 reset_time = resets_at_raw
 
-        seven_day = res_data.get("seven_day", {})
+        seven_day = res_data.get("seven_day") or {}
         seven_day_pct = seven_day.get("utilization")
 
         return {

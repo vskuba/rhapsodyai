@@ -102,7 +102,11 @@
         <li class="nav-item user-menu">
             <a href="/admin/cabinet">👤 Личный кабинет</a>
             <ul class="submenu">
+
+                {% if request.session.get('role') == 'admin' %}
                 <li><a href="#" id="miniAppNavLink" target="_blank">Mini App</a></li>
+                {% endif %}
+
                 <li><a href="#" id="logoutBtn">Выйти</a></li>
             </ul>
         </li>
