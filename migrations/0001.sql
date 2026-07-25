@@ -368,6 +368,7 @@ CREATE TABLE `ai_claude_session` (
     `handled` TINYINT(1) NOT NULL DEFAULT 0,
     `response` LONGTEXT NULL,
     `responded_at` DATETIME NULL,
+    `dynamic` TINYINT(1) NOT NULL DEFAULT 0,
     INDEX `idx_claude_session_handled` (`handled`, `created_at`),
     INDEX `idx_claude_session_uuid` (`session_uuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

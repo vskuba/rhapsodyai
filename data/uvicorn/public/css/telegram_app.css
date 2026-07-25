@@ -62,8 +62,30 @@ html, body {
 }
 
 #claudeStatusIconBtn {
-    margin-top: auto;
     color: black;
+}
+
+.quota-chip-btn {
+    margin-top: auto;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    line-height: 1.15;
+    color: #495057;
+    background: #f0f4f8;
+    border-radius: 10px;
+    padding: 4px 2px;
+    white-space: pre-line;
+    text-align: center;
+    transition: background 0.15s, opacity 0.15s;
+}
+
+.quota-chip-btn:active {
+    background: #d9e3ec;
+}
+
+.quota-chip-btn.loading {
+    opacity: 0.4;
 }
 
 /* home btn pulse */

@@ -20,7 +20,9 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
+from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -102,6 +104,78 @@ def call(method: str, path: str, secret: str, base_url: str, params_arg: str, bo
     return api_call(method.upper(), path, secret, base_url, params=params, body=body)
 
 
+# === Claude Quota ===
+
+def get_oauth_token() -> str:
+    cred_path = os.path.expanduser("~/.claude/.credentials.json")
+    if not os.path.exists(cred_path):
+        raise FileNotFoundError(f"Файл авторизации не найден: {cred_path}")
+    with open(cred_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    token = data.get("claudeAiOauth", {}).get("accessToken")
+    if not token:
+        raise KeyError("Поле claudeAiOauth.accessToken отсутствует в файле авторизации")
+    return token
+
+
+def check_quota_data() -> dict:
+    """
+    Запрашивает данные квоты у Anthropic API.
+    Возвращает dict с полями: five_hour, seven_day (None если нет), reset_time, error (None если успех).
+    """
+    try:
+        token = get_oauth_token()
+    except Exception as e:
+        return {"quota": True, "five_hour": None, "seven_day": None, "reset_time": None, "error": str(e)}
+
+    url = "https://api.anthropic.com/api/oauth/usage"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": "claude-code/1.0.85",
+        "Content-Type": "application/json",
+    }
+    req = urllib.request.Request(url, headers=headers, method="GET")
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+
+        five_hour = res_data.get("five_hour", {})
+        utilization = five_hour.get("utilization")
+        resets_at_raw = five_hour.get("resets_at")
+
+        reset_time = None
+        if resets_at_raw:
+            try:
+                dt = datetime.fromisoformat(resets_at_raw.replace("Z", "+00:00"))
+                reset_time = dt.strftime("%Y-%m-%d %H:%M UTC")
+            except Exception:
+                reset_time = resets_at_raw
+
+        seven_day = res_data.get("seven_day", {})
+        seven_day_pct = seven_day.get("utilization")
+
+        return {
+            "quota": True,
+            "five_hour": utilization,
+            "seven_day": seven_day_pct,
+            "reset_time": reset_time,
+            "error": None,
+        }
+
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            msg = "Токен устарел. Напишите любое сообщение в чат Claude Code для его обновления."
+        elif e.code == 429:
+            msg = "Слишком частые запросы (≥1 раза в 3 мин)."
+        else:
+            msg = f"HTTP {e.code}: {e.read().decode(errors='ignore')}"
+        return {"quota": True, "five_hour": None, "seven_day": None, "reset_time": None, "error": msg}
+    except Exception as e:
+        return {"quota": True, "five_hour": None, "seven_day": None, "reset_time": None, "error": str(e)}
+
+
 # === Event Log ===
 
 def event_log_add(event_type: str, payload: dict | None, secret: str, base_url: str) -> dict:
@@ -131,6 +205,8 @@ def main():
     p_event_log.add_argument("--type", required=True, dest="event_type")
     p_event_log.add_argument("--payload", default=None, help="raw JSON object")
 
+    sub.add_parser("quota")
+
     args = parser.parse_args()
 
     try:
@@ -139,6 +215,8 @@ def main():
         elif args.command == "event-log":
             payload = json.loads(args.payload) if args.payload else None
             result = event_log_add(args.event_type, payload, secret, base_url)
+        elif args.command == "quota":
+            result = check_quota_data()
         else:
             raise ValueError(f"unknown command: {args.command}")
     except Exception as e:

@@ -53,6 +53,7 @@ export function initClaude({ bar, textarea, sendBtn, micBtn, micCancel, progress
     });
 
     document.getElementById('claudeBackToListIconBtn').addEventListener('click', closeClaudeSessionView);
+    document.getElementById('claudeQuotaChipBtn').addEventListener('click', requestQuotaCheck);
     document.getElementById('claudeStatusIconBtn').addEventListener('click', restartClaudeProcesses);
     document.getElementById('claudeClearMessagesIconBtn').addEventListener('click', clearCurrentClaudeMessages);
     document.getElementById('claudeDeleteSessionIconBtn').addEventListener('click', deleteCurrentClaudeSession);
@@ -116,6 +117,8 @@ export function closeClaudeSessionView() {
     state.claude.sessionLabel = '';
     state.claude.sessionUnreachable = false;
     if (state.claude.pollTimer) { clearInterval(state.claude.pollTimer); state.claude.pollTimer = null; }
+    const chip = document.getElementById('claudeQuotaChipBtn');
+    if (chip) chip.textContent = '—%';
 
     _claudeEl.style.display = 'none';
     _sessionListEl.style.display = 'block';
@@ -199,6 +202,18 @@ export async function loadClaudeMessages(isInitialLoad = false) {
         let newResponsesAdded = false;
 
         for (const row of rows) {
+            if (row.dynamic) {
+                // dynamic-строки: user content скрыт, response показывается как assistant-bubble
+                if (row.response && !state.claude.renderedResponses.has(row.id)) {
+                    const { displayText, quotaData } = _parseQuotaResponse(row.response);
+                    if (quotaData) _updateQuotaChip(quotaData);
+                    newResponsesAdded = true;
+                    const el = appendBubble('assistant', displayText, false, _claudeEl);
+                    state.claude.renderedResponses.set(row.id, { text: row.response, el });
+                }
+                continue;
+            }
+
             if (row.content && !state.claude.renderedUserIds.has(row.id)) {
                 state.claude.renderedUserIds.add(row.id);
                 if (isInitialLoad) {
@@ -236,7 +251,7 @@ export async function loadClaudeMessages(isInitialLoad = false) {
 
         // Пузырь управляется ПОСЛЕ цикла — один раз, на основе реального состояния.
         // Так не возникает нескольких пузырей при нескольких pending-сообщениях.
-        const stillPending = rows.some(r => r.content && !r.response) || state.claude.pendingUserCount > 0;
+        const stillPending = rows.some(r => !r.dynamic && r.content && !r.response) || state.claude.pendingUserCount > 0;
 
         if (stillPending) {
             if (!state.claude.typingBubble || !_claudeEl.contains(state.claude.typingBubble)) {
@@ -356,4 +371,42 @@ async function deleteCurrentClaudeSession() {
         await postData('/telegram-app/claude/session/delete-request', { session_uuid: state.claude.sessionUuid });
     } catch { /* тихо */ }
     closeClaudeSessionView();
+}
+
+async function requestQuotaCheck() {
+    if (!state.claude.sessionUuid) return;
+    const btn = document.getElementById('claudeQuotaChipBtn');
+    btn.classList.add('loading');
+    try {
+        await postData('/telegram-app/claude/quota-check', { session_uuid: state.claude.sessionUuid });
+    } catch { /* тихо — ответ придёт через polling */ } finally {
+        btn.classList.remove('loading');
+    }
+}
+
+function _parseQuotaResponse(response) {
+    try {
+        const data = JSON.parse(response);
+        if (data.quota === true) {
+            const lines = ['📊 Квота Claude'];
+            if (data.error) {
+                lines.push('⚠️ ' + data.error);
+                return { displayText: lines.join('\n'), quotaData: null };
+            }
+            if (data.five_hour != null) lines.push(`5ч: ${data.five_hour}%`);
+            if (data.seven_day != null) lines.push(`7д: ${data.seven_day}%`);
+            if (data.reset_time) lines.push(`Сброс: ${data.reset_time}`);
+            return { displayText: lines.join('\n'), quotaData: data };
+        }
+    } catch { /* не JSON или не quota */ }
+    return { displayText: response, quotaData: null };
+}
+
+function _updateQuotaChip(data) {
+    const btn = document.getElementById('claudeQuotaChipBtn');
+    if (!btn) return;
+    const h5 = data.five_hour != null ? Math.round(data.five_hour) + '%' : null;
+    const d7 = data.seven_day != null ? Math.round(data.seven_day) + '%' : null;
+    const parts = [h5, d7].filter(Boolean);
+    btn.textContent = parts.length ? parts.join('\n') : '?%';
 }

@@ -31,7 +31,7 @@ async def telegram_app_claude_messages(request: Request, session_uuid: str):
     async with mysql_get_db_async() as db:
         await db.execute(
             """
-            SELECT id, content, response, handled, created_at, responded_at
+            SELECT id, content, response, handled, created_at, responded_at, dynamic
             FROM ai_claude_session
             WHERE session_uuid = %s
             ORDER BY id ASC
@@ -101,7 +101,7 @@ async def telegram_app_claude_sessions_active(request: Request):
             SELECT r.*,
                    (SELECT COALESCE(cs.response, cs.content)
                     FROM ai_claude_session cs
-                    WHERE cs.session_uuid = r.session_uuid
+                    WHERE cs.session_uuid = r.session_uuid AND cs.dynamic = 0
                     ORDER BY cs.id DESC LIMIT 1) AS last_message
             FROM `ai_claude_session_registry` r
             WHERE r.last_seen_at >= (NOW() - INTERVAL 60 SECOND)

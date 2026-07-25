@@ -12,6 +12,7 @@ from src.uvicorn.routers.telegram_app.telegram_app_common import (
     _require_claude_secret,
     SESSION_CLEANUP_MARKER,
     RESTART_WATCH_MARKER,
+    QUOTA_CHECK_MARKER,
 )
 
 router = APIRouter()
@@ -238,6 +239,24 @@ async def telegram_app_claude_session_inbox_ack(request: Request, data: dict):
         )
 
     return {"result": {"ok": True}}
+
+
+@router.post("/telegram-app/claude/quota-check")
+async def telegram_app_claude_quota_check(request: Request, data: dict):
+    """
+    Кладёт маркер __QUOTA_CHECK__ (dynamic=1) в очередь ai_claude_session.
+    Терминал подхватывает маркер через inbox-поллинг, запрашивает квоту у Anthropic
+    и отвечает через /telegram-app/claude/respond. Ответ появляется как сообщение
+    в чате (показывается как assistant-bubble, user-content не отображается).
+    """
+    _require_telegram_owner(request)
+
+    session_uuid = str(data.get("session_uuid") or "").strip()
+    if not session_uuid:
+        raise HTTPException(status_code=400, detail="session_uuid required")
+
+    result = await claude_message_user(QUOTA_CHECK_MARKER, session_uuid, dynamic=1)
+    return {"result": {"ok": True, "message_id": result["id"]}}
 
 
 def _compute_process_status(row: dict) -> dict:

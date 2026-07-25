@@ -102,6 +102,7 @@
         <li class="nav-item user-menu">
             <a href="/admin/cabinet">👤 Личный кабинет</a>
             <ul class="submenu">
+                <li><a href="#" id="miniAppNavLink" target="_blank">Mini App</a></li>
                 <li><a href="#" id="logoutBtn">Выйти</a></li>
             </ul>
         </li>
@@ -127,10 +128,27 @@
                 if (btn) {
                     btn.textContent = `👤 ${response.user.username} (${response.user.role})`;
                 }
+                _loadMiniAppNavLink(response.user.id);
             }
         } catch (e) {
             // Not authenticated
         }
+    }
+
+    async function _loadMiniAppNavLink(userId) {
+        const link = document.getElementById('miniAppNavLink');
+        if (!link) return;
+        try {
+            const res = await getData(`/user/${userId}/token`);
+            const tokens = res.result || [];
+            const base = window.location.origin + '/telegram-app';
+            if (tokens.length > 0) {
+                link.href = `${base}?access_token=${encodeURIComponent(tokens[0].token)}`;
+            } else {
+                link.href = '/admin/cabinet';
+                link.title = 'Создайте токен доступа в личном кабинете';
+            }
+        } catch { /* тихо */ }
     }
 
     // Logout handler

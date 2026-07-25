@@ -39,6 +39,7 @@ SESSION_UUID_PATH = os.path.join(SHELL_DIR, "session_uuid")
 
 CLEANUP_MARKER = "__SESSION_CLEANUP__"
 RESTART_WATCH_MARKER = "__RESTART_WATCH__"
+QUOTA_CHECK_MARKER = "__QUOTA_CHECK__"
 
 _WRITE_LOCK = threading.Lock()
 
@@ -223,6 +224,33 @@ class ClaudeShell:
 
             self._stop.wait(interval)
 
+    def _handle_quota_check(self, ids: list):
+        tool_path = os.path.join(SHELL_DIR, "session_tool.py")
+        import subprocess
+        try:
+            proc = subprocess.run(
+                ["python3", tool_path, "quota"],
+                capture_output=True, text=True, timeout=15,
+            )
+            data = json.loads(proc.stdout.strip()) if proc.stdout.strip() else {}
+        except Exception as e:
+            data = {"quota": True, "error": str(e)}
+
+        try:
+            _api_call_retry("POST", "/telegram-app/claude/respond",
+                            self.secret, self.base_url,
+                            body={
+                                "session_uuid": self.session_uuid,
+                                "response": json.dumps(data, ensure_ascii=False),
+                                "inbox_id": ids[0],
+                                "notify": False,
+                            })
+        except Exception as e:
+            self._log(f"quota respond error: {e}")
+
+        if len(ids) > 1:
+            self._ack(ids[1:])
+
     def _process_rows(self, rows):
         cleanup = [r for r in rows if r["content"] == CLEANUP_MARKER]
         if cleanup:
@@ -235,8 +263,12 @@ class ClaudeShell:
             self._ack([r["id"] for r in restart])
             self._restart.set()
 
-        user_rows = [r for r in rows
-                     if r["content"] not in (CLEANUP_MARKER, RESTART_WATCH_MARKER)]
+        quota = [r for r in rows if r["content"] == QUOTA_CHECK_MARKER]
+        if quota:
+            self._handle_quota_check([r["id"] for r in quota])
+
+        _system_markers = (CLEANUP_MARKER, RESTART_WATCH_MARKER, QUOTA_CHECK_MARKER)
+        user_rows = [r for r in rows if r["content"] not in _system_markers]
         if not user_rows:
             return
 
