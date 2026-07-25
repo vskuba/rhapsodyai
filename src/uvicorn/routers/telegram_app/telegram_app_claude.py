@@ -87,6 +87,20 @@ async def telegram_app_claude_session_delete_message(request: Request, data: dic
     return {"result": {"ok": True}}
 
 
+@router.get("/telegram-app/claude/timezone")
+async def telegram_app_claude_timezone(request: Request):
+    _require_claude_secret(request)
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT value FROM setting WHERE `key` = 'timezone' AND user_id IS NULL AND node_id IS NULL LIMIT 1"
+        )
+        row = await db.fetchone()
+
+    timezone = row["value"] if row else "+0"
+    return {"result": {"timezone": timezone}}
+
+
 @router.get("/telegram-app/claude/sessions/active")
 async def telegram_app_claude_sessions_active(request: Request):
     """
