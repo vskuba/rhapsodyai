@@ -251,7 +251,7 @@ export async function loadClaudeMessages(isInitialLoad = false) {
 
         // Пузырь управляется ПОСЛЕ цикла — один раз, на основе реального состояния.
         // Так не возникает нескольких пузырей при нескольких pending-сообщениях.
-        const stillPending = rows.some(r => !r.dynamic && r.content && !r.response) || state.claude.pendingUserCount > 0;
+        const stillPending = rows.some(r => !r.dynamic && r.content && !r.response && !r.handled) || state.claude.pendingUserCount > 0;
 
         if (stillPending) {
             if (!state.claude.typingBubble || !_claudeEl.contains(state.claude.typingBubble)) {
