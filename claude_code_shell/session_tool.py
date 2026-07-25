@@ -118,7 +118,17 @@ def get_oauth_token() -> str:
     return token
 
 
-def check_quota_data() -> dict:
+def _parse_tz_offset_hours(tz_str: str) -> float:
+    tz_str = tz_str.strip()
+    if ":" in tz_str:
+        sign = -1 if tz_str.startswith("-") else 1
+        tz_str = tz_str.lstrip("+-")
+        parts = tz_str.split(":")
+        return sign * (int(parts[0]) + int(parts[1]) / 60)
+    return float(tz_str)
+
+
+def check_quota_data(secret: str = "", base_url: str = "") -> dict:
     """
     Запрашивает данные квоты у Anthropic API.
     Возвращает dict с полями: five_hour, seven_day (None если нет), reset_time, error (None если успех).
@@ -148,8 +158,18 @@ def check_quota_data() -> dict:
         reset_time = None
         if resets_at_raw:
             try:
+                from datetime import timedelta
                 dt = datetime.fromisoformat(resets_at_raw.replace("Z", "+00:00"))
-                reset_time = dt.strftime("%Y-%m-%d %H:%M UTC")
+                tz_offset_hours = 0.0
+                if secret and base_url:
+                    try:
+                        tz_resp = api_call("GET", "/telegram-app/claude/timezone", secret, base_url)
+                        tz_str = (tz_resp.get("result") or {}).get("timezone", "+0")
+                        tz_offset_hours = _parse_tz_offset_hours(tz_str)
+                    except Exception:
+                        pass
+                dt_local = dt + timedelta(hours=tz_offset_hours)
+                reset_time = dt_local.strftime("%H:%M")
             except Exception:
                 reset_time = resets_at_raw
 
@@ -216,7 +236,7 @@ def main():
             payload = json.loads(args.payload) if args.payload else None
             result = event_log_add(args.event_type, payload, secret, base_url)
         elif args.command == "quota":
-            result = check_quota_data()
+            result = check_quota_data(secret, base_url)
         else:
             raise ValueError(f"unknown command: {args.command}")
     except Exception as e:
