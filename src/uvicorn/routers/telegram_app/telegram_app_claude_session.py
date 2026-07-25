@@ -193,7 +193,7 @@ async def telegram_app_claude_session_delete_request(request: Request, data: dic
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    await claude_message_user(SESSION_CLEANUP_MARKER, session_uuid)
+    await claude_message_user(SESSION_CLEANUP_MARKER, session_uuid, dynamic=1)
     await repo.delete(row["id"])
 
     return {"result": {"ok": True}}
@@ -311,7 +311,7 @@ async def telegram_app_claude_session_restart_processes(request: Request, data: 
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    await claude_message_user(RESTART_WATCH_MARKER, session_uuid)
+    await claude_message_user(RESTART_WATCH_MARKER, session_uuid, dynamic=1)
 
     status = _compute_process_status(row)
     status["restart_sent"] = True
