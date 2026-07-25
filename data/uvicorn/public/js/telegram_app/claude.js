@@ -225,6 +225,15 @@ export async function loadClaudeMessages(isInitialLoad = false) {
             }
         }
 
+        // Удаляем из DOM пузыри, которых больше нет в БД (напр. старые «Принял»).
+        const serverIds = new Set(rows.map(r => r.id));
+        for (const [id, entry] of state.claude.renderedResponses) {
+            if (!serverIds.has(id)) {
+                entry.el.remove();
+                state.claude.renderedResponses.delete(id);
+            }
+        }
+
         // Пузырь управляется ПОСЛЕ цикла — один раз, на основе реального состояния.
         // Так не возникает нескольких пузырей при нескольких pending-сообщениях.
         const stillPending = rows.some(r => r.content && !r.response) || state.claude.pendingUserCount > 0;

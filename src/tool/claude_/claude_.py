@@ -38,6 +38,10 @@ async def claude_message_cloud(session_uuid: str, response: str, inbox_id: int |
             )
         else:
             await db.execute(
+                "DELETE FROM ai_claude_session WHERE session_uuid = %s AND content = '' AND handled = 1",
+                (session_uuid,)
+            )
+            await db.execute(
                 "INSERT INTO ai_claude_session (session_uuid, content, handled, response, responded_at) "
                 "VALUES (%s, '', 1, %s, NOW())",
                 (session_uuid, response)
