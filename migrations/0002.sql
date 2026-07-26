@@ -98,7 +98,8 @@ INSERT INTO `agent_workflow_step_type` (`id`, `name`, `icon`, `description`, `de
 (3, 'tool_invoke', '⚙️', 'Вызов инструмента', 'Вызываем инструмент. Передаем в аргументы текущие переменные и сохраняем ответ в переменные.', ''),
 (4, 'return_response_text', '↩T', 'Вернуть текстовый ответ', 'Возращаем текстовый ответ на основе шаблона из переменных', ''),
 (5, 'variable_conversion', '❴❵', 'Переменные', 'Переопределяем значения переменных', ''),
-(6, 'workflow_invoke', '🇼', 'Вызов workflow', 'Вызываем вложенный workflow (sub-workflow): передаем входящие переменные, получаем результат в переменную и продолжаем выполнение.', '');
+(6, 'workflow_invoke', '🇼', 'Вызов workflow', 'Вызываем вложенный workflow (sub-workflow): передаем входящие переменные, получаем результат в переменную и продолжаем выполнение.', ''),
+(7, 'llm_to_variable', '📝', 'LLM → переменная (Markdown/текст)', 'Вызывает LLM и сохраняет сырой ответ в переменную без JSON-парсинга. Поддерживает встроенный авто-MapReduce через chunk_variable: если контекст превышает chunk_size — автоматически разбивается на чанки (map) и синтезируется (reduce).', '');
 
 --
 
@@ -189,6 +190,22 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 --
 
 INSERT INTO `agent_workflow_variable` (`id`, `name`, `type`, `default`, `description`) VALUES
+(1, 'agent_greeting', 'global', NULL, NULL),
+(2, 'agent_id', 'global', NULL, NULL),
+(3, 'agent_title', 'global', NULL, NULL),
+(4, 'agent_name', 'global', NULL, NULL),
+(5, 'node_id', 'global', NULL, NULL),
+(6, 'prompt_user', 'global', NULL, NULL),
+(7, 'session_uuid', 'global', NULL, NULL),
+(8, 'user_id', 'global', NULL, NULL),
+(9, 'user_username', 'global', NULL, NULL),
+(10, 'user_email', 'global', NULL, NULL),
+(11, 'workflow_id', 'global', NULL, NULL),
+(71, 'companion_id', 'global', NULL, NULL),
+(72, 'companion_title', 'global', NULL, NULL),
+(73, 'companion_name', 'global', NULL, NULL),
+(120, 'user_language', 'global', NULL, 'Активный язык диалога: workflow_variable агента → выбор пользователя в кабинете → первый язык ноды (настройка languages)'),
+(121, 'node_languages', 'global', NULL, 'Языки ноды агента через запятую (настройка languages, нодовая перекрывает общую)'),
 (15, 'tags', 'workflow', NULL, NULL),
 (16, 'facts', 'workflow', NULL, NULL),
 (17, 'tags', 'workflow', NULL, NULL),
