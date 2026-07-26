@@ -449,3 +449,126 @@ pos 30 return_response_text           — стенограмма диалога 
 лимит итераций ~55; каждый цикл — это 1 LLM-вызов тестера + LLM-вызовы целевого workflow,
 20 циклов dating_talk ≈ 60+ LLM-вызовов (минуты). Прогон целиком виден в
 `/admin/workflow_trace`: каждый вызов целевого workflow — вложенный child-run.
+
+## 13. Интерактивный синтаксис чата: чипсы, команды, вопросы
+
+### 13.1 Поддержка по платформам
+
+| Функция | Admin Chat (`/admin/chat`) | Telegram Mini App |
+|---|---|---|
+| `[[text]]` чипсы | ✅ полная | ❌ нет |
+| Авто-ссылки `http://...` | ✅ | ✅ |
+
+В Telegram Mini App `appendBubble()` делает только `linkify()` (преобразует `http://...` в `<a>`).
+`[[]]`-чипсы там НЕ работают — они выведутся как обычный текст со скобками.
+
+### 13.2 Синтаксис чипсов (admin chat)
+
+Regex разбора: `\[\[link:([\s\S]+?)\]\]|\[\[\+([\s\S]+?)\]\]|\[\[!([\s\S]+?)\]\]|\[\[([\s\S]+?)\]\]`
+
+| Синтаксис | Действие при клике | CSS-класс |
+|---|---|---|
+| `[[текст]]` | Вставляет текст в поле и **отправляет** | `.chat-suggestion` |
+| `[[+текст]]` | Вставляет текст в поле **без отправки** (можно дописать) | `.chat-insertion` |
+| `[[!текст]]` | Вставляет и **отправляет** (красный стиль — опасное действие) | `.chat-danger` |
+| `[[link:URL\|текст]]` | Открывает URL в новой вкладке (текст опционален) | `a.chat-link` |
+| `[[/command]]` | Подставляет команду и **отправляет** (распознаётся по ведущему `/`) | `.chat-command` |
+
+После клика `[[текст]]` `prompt_user` содержит **точный текст** (без скобок).
+`[[+текст]]` — только вставка в поле, пользователь сам решает отправлять ли.
+`[[/command]]` — отправляет `/command` целиком (не через insertIntoInput, а прямым присвоением).
+
+### 13.3 Вопросы пользователю через continue_workflow
+
+Шаг `return_response_text` (type_id=4) с `"continue_workflow": true`:
+
+1. Показывает `prompt_user` как ответ бота
+2. Сохраняет `workflow_step_current_index` + снапшот изменённых переменных в `session.metadata`
+3. **Ждёт следующего сообщения** — workflow возобновится со следующего шага
+
+**Персистентность переменных между сообщениями:**
+- Переменные, изменённые в шагах ДО `continue_workflow`, сохраняются в `workflow_variables_saved` и восстанавливаются при resume.
+- Переменные запроса (`type='global'`: `prompt_user`, `user_id`, `session_uuid`, `agent_*`) в снапшот НЕ попадают — приходят заново с каждым запросом (это правильно).
+- После `return_response_text` без `continue_workflow` (или `return_response_llm`) сессия завершена: следующее сообщение стартует workflow с нуля.
+
+**Паттерн «вопрос→ответ»:**
+```
+Step N:   return_response_text, continue_workflow=true
+          prompt_user: "Опишите идею проекта:"
+
+Step N+1: variable_conversion
+          [{variable: "project_idea", text: "%prompt_user%"}]
+          ← prompt_user здесь = ответ пользователя
+
+Step N+2: tool_invoke ...   ← использует project_idea
+```
+
+### 13.4 Команды и маршрутизация через transitions_before
+
+`transitions_before` проверяются ДО выполнения шага → идеальны для маршрутизации по командам:
+
+```
+Step 0: return_response_text (continue_workflow=false)
+        prompt_user: "%agent_greeting%"
+        transitions_before:
+          prompt_user == "/girl_create" → step 16
+          prompt_user == "/girl_remove" → step 111
+```
+
+При запуске workflow `prompt_user` = то, что написал пользователь. Если пользователь кликнул `[[/girl_create]]` — `prompt_user` будет `/girl_create` (без скобок). Переходы сравнивают именно это значение.
+
+**Важно:** в greeting и prompt_user команды пишутся как `[[/command]]`; значения в `transitions_before/after` (`"value": "/command"`) остаются без скобок — это то, что чип отправляет.
+
+### 13.5 Генерация чипсов программно (list_render)
+
+Инструмент `list_render(items, template, separator)` (`src/tool/dict/`):
+- `items` — JSON-строка или список значений
+- `template` — `%s` = элемент, пример: `[[%s]]`
+- `separator` — разделитель, пример: ` ` (пробел между чипсами)
+
+Результат: `list_render_{step_id}_result_str` — строка чипсов для подстановки в `prompt_user`.
+
+**Конвейер «таблица → чипсы»:**
+```
+variable_conversion  → mysql_find_by(table, criteria)
+                     → dict_column(rows, 'name')      ← column_name по ключу
+                     → list_render(names, '[[%s]]', ' ')
+                     → return_response_text(%list_render_{id}_result_str%, continue=true)
+```
+
+Пример из dating_bot: список девушек для удаления → `%agent_list_111_result_chips%`.
+
+### 13.6 Паттерн «главное меню через greeting + chips»
+
+Классический паттерн (dating_bot, mysql_export):
+
+```sql
+-- Agent greeting (статический, из agent.greeting):
+'Привет!\n\n[[Создать проект]] [[Статус проекта]] [[/new_case]]'
+
+-- Workflow step 0 (transitions_before маршрутизируют команду):
+type: return_response_text, continue_workflow=false
+prompt_user: "%agent_greeting%"
+transitions_before:
+  prompt_user == "Создать проект" → step 10
+  prompt_user == "Статус проекта" → step 20
+  prompt_user == "/new_case"      → step 30   ← [[/command]] отправляет "/new_case"
+```
+
+Другой вариант — без команд в greeting, а чипсы в первом `continue_workflow` шаге:
+
+```sql
+-- Workflow step 0: возвращает меню с чипсами и ждёт
+type: return_response_text, continue_workflow=true
+prompt_user: "Что хотите сделать?\n\n[[Создать проект]] [[Статус проекта]]"
+
+-- Workflow step 1: маршрутизация по ответу
+type: variable_conversion
+variable_conversion: [{variable: "bot_action", text: "%prompt_user%"}]
+transitions_after:
+  bot_action == "Статус проекта" → step 20
+  bot_action == "Создать проект" → step 10
+  bot_action != "Создать проект" → step 11  ← free text → treat as idea directly
+```
+
+Третья строка (`!= "Создать проект"`) — catch-all: срабатывает только если первые два не сработали (т.к. transitions_after первый match выигрывает).

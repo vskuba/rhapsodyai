@@ -7,7 +7,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
-from src.ai.ai_llm import ai_llm_node_id_default_get
+from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
     ai_workflow_variables_global_get
@@ -446,7 +446,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     response_from_llm = self._json_str_clean(response_from_llm)
                     logger_info(f"✂️ Парсим JSON:\n\n{response_from_llm}")
 
-                    response_json = json.loads(response_from_llm, strict=False)
+                    response_json = self._json_parse(response_from_llm)
 
                     # Если LLM вернула список словарей (например, [{...}]), берем первый элемент
                     if isinstance(response_json, list) and len(response_json) > 0:
@@ -483,6 +483,64 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     await trace_current_step(status='error', error=str(e))
                     raise e
 
+            # ОБРАБОТКА ШАГА: Сырой ответ LLM → переменная (без JSON-парсинга).
+            # Поддерживает встроенный авто-MapReduce: если chunk_variable указана и её
+            # значение > chunk_size — прозрачно разбивает на чанки (map + reduce)
+            # и подставляет результат вместо %chunk_variable% в prompt_user.
+            elif step_type == 'llm_to_variable':
+                target_variable = (step_meta.get('llm_to_variable') or '').strip()
+                model.is_transition = True
+
+                chunk_variable = (step_meta.get('chunk_variable') or '').strip()
+                chunk_size_meta = step_meta.get('chunk_size')
+                if not chunk_size_meta or str(chunk_size_meta).lower() == 'auto':
+                    _speed = await ai_llm_speed_get(model.entity_llm_current.get('id'))
+                    chunk_size = _speed['chunk_size']
+                    logger_info(f'📐 chunk_size авто: {chunk_size} симв. (chars/ms={_speed["chars_per_ms"]:.3f}, avg={_speed["avg_ms"]:.0f}ms)')
+                else:
+                    chunk_size = max(2000, int(chunk_size_meta))
+                chunk_overlap = max(0, int(step_meta.get('chunk_overlap') or 500))
+                map_prompt_tpl = str(step_meta.get('map_prompt') or (
+                    'Ты анализируешь фрагмент текста.\n\n'
+                    '=== ФРАГМЕНТ %chunk_num% из %total_chunks% ===\n%chunk%\n\n'
+                    'Выдели все важные факты, цифры и ключевые выводы. Краткий структурированный список.'
+                ))
+
+                if chunk_variable:
+                    input_text = str(variables.get(chunk_variable) or '')
+                    chunks = self._text_split_chunks(input_text, chunk_size, chunk_overlap)
+                    total = len(chunks)
+
+                    if total > 1:
+                        # MAP: каждый чанк обрабатывается LLM отдельно
+                        map_results = []
+                        for chunk_idx, chunk in enumerate(chunks, start=1):
+                            chunk_prompt = (
+                                map_prompt_tpl
+                                .replace('%chunk%', chunk)
+                                .replace('%chunk_num%', str(chunk_idx))
+                                .replace('%total_chunks%', str(total))
+                            )
+                            model.prompt_user = chunk_prompt
+                            chunk_result = await execute_llm_step()
+                            map_results.append(chunk_result)
+                            logger_info(f'📄 MapReduce map {chunk_idx}/{total}: {len(chunk)} симв.')
+
+                        # Заменяем %chunk_variable% в prompt_user синтезированным контекстом
+                        combined = '\n\n---\n\n'.join(
+                            f'[Часть {i + 1}/{total}]\n{r}' for i, r in enumerate(map_results)
+                        )
+                        model.prompt_user = model.prompt_user.replace(f'%{chunk_variable}%', combined)
+                        logger_info(f'📄 MapReduce reduce: {total} чанков → {len(combined)} симв.')
+                    else:
+                        logger_info(f'📄 MapReduce: контекст {len(input_text)} симв. ≤ {chunk_size}, прямой вызов')
+
+                response_from_llm = await execute_llm_step()
+                trace_output = response_from_llm
+                if target_variable:
+                    variables[target_variable] = response_from_llm
+                    logger_info(f"🏷️ Переменная '%{target_variable}%' получила ответ LLM")
+
             # ОБРАБОТКА ШАГА: Вызов инструмента/MCP-сервера
             elif step_type == 'tool_invoke':
 
@@ -493,6 +551,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 step_id = current_step.get('id')
 
                 inputs_map = tool_metadata.get('inputs_map', {})
+                outputs_map = tool_metadata.get('outputs_map', {})
 
                 tools = model.metadata.get('tools', {})
 
@@ -549,6 +608,13 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             variables[var_name] = result
                             logger_info(
                                 f"🏷️ Переменная '%{var_name}%' получила значение '{result}'")
+
+                        for map_key, alias_name in (outputs_map or {}).items():
+                            auto_var = f'{tool_name}_{step_id}_result_{map_key}'
+                            if auto_var in variables and alias_name:
+                                variables[alias_name] = variables[auto_var]
+                                logger_info(
+                                    f"🔗 Алиас '%{alias_name}%' → '%{auto_var}%'")
 
                     else:
                         # Для не-словарей определяем текстовый ключ на основе строгого isinstance
@@ -927,23 +993,89 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         )
 
     @staticmethod
+    def _text_split_chunks(text: str, chunk_size: int, overlap: int) -> list[str]:
+        """
+        Разбивает текст на чанки по границам параграфов (\\n\\n).
+        Если параграф длиннее chunk_size — принудительно разбивает его.
+        Overlap добавляет конец предыдущего чанка в начало следующего.
+        """
+        if not text or len(text) <= chunk_size:
+            return [text] if text else []
+
+        paragraphs = text.split('\n\n')
+        chunks: list[str] = []
+        current_parts: list[str] = []
+        current_len = 0
+
+        for para in paragraphs:
+            # Параграф длиннее чанка — принудительно разрезаем
+            while len(para) > chunk_size:
+                head = para[:chunk_size]
+                if current_parts:
+                    chunks.append('\n\n'.join(current_parts) + '\n\n' + head)
+                    current_parts = []
+                    current_len = 0
+                else:
+                    chunks.append(head)
+                para = para[chunk_size - overlap:]
+
+            para_len = len(para) + 2  # +2 for \n\n separator
+            if current_len + para_len > chunk_size and current_parts:
+                chunk_text = '\n\n'.join(current_parts)
+                chunks.append(chunk_text)
+                # Overlap: берём хвост предыдущего чанка
+                if overlap > 0:
+                    tail = chunk_text[-overlap:]
+                    current_parts = [tail, para]
+                    current_len = len(tail) + para_len
+                else:
+                    current_parts = [para]
+                    current_len = para_len
+            else:
+                current_parts.append(para)
+                current_len += para_len
+
+        if current_parts:
+            chunks.append('\n\n'.join(current_parts))
+
+        return chunks or [text]
+
+    @staticmethod
     def _json_str_clean(json_str: str) -> str:
         """
-        Очищает строку JSON, извлекая только содержимое между первой открывающей
-        фигурной скобкой { и последней закрывающей фигурной скобкой }.
+        Очищает строку от markdown-обёртки и извлекает JSON-объект.
+        Если стандартный JSON невалиден, пробует ast.literal_eval как fallback
+        для Python-dict формата (одинарные кавычки).
         """
         if not json_str:
             return ""
 
-        # Ищем текст, начиная с первой открывающей фигурной скобки {
-        # и заканчивая последней закрывающей фигурной скобкой }
-        match = re.search(r"(\{.*})", json_str, re.DOTALL)
+        # Убираем markdown-блоки ```json ... ``` или ``` ... ```
+        stripped = re.sub(r'^```(?:json)?\s*', '', json_str.strip(), flags=re.IGNORECASE)
+        stripped = re.sub(r'\s*```$', '', stripped.strip())
 
+        match = re.search(r"(\{.*})", stripped, re.DOTALL)
         if match:
             return match.group(1).strip()
 
-        # Если фигурные скобки не найдены, возвращаем очищенный оригинал
         return json_str.strip()
+
+    @staticmethod
+    def _json_parse(json_str: str) -> dict:
+        """
+        Парсит JSON-строку; при ошибке пробует ast.literal_eval для Python-dict.
+        """
+        import ast as _ast
+        try:
+            return json.loads(json_str, strict=False)
+        except Exception:
+            try:
+                result = _ast.literal_eval(json_str)
+                if isinstance(result, dict):
+                    return result
+            except Exception:
+                pass
+            raise
 
     @staticmethod
     async def _workflow_variables_protected() -> set:

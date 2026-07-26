@@ -1,7 +1,23 @@
 -- Detective: все данные подпроекта - workflow (detective_bot/detective_talk/
 -- detective_suspect_create), их шаги и переменные, агент detective_bot.
--- Таблица detective_case - см. 0001.sql (схема); данные не сеются (динамическая
--- игровая история, как agent_session).
+
+-- === TABLES ===
+
+-- Дело игровой сессии. Данные не сеются — динамическая игровая история,
+-- создаётся runtime через detective_case_create.
+CREATE TABLE IF NOT EXISTS `detective_case` (
+    `id`                  INT          AUTO_INCREMENT PRIMARY KEY,
+    `session_uuid`        CHAR(36)     NOT NULL,
+    `user_id`             INT          NULL,
+    `victim_name`         CHAR(100)    NOT NULL,
+    `crime_description`   TEXT         NOT NULL,
+    `guilty_suspect_name` CHAR(100)    NOT NULL,
+    `solution_reveal`     TEXT         NOT NULL,
+    `solved`              TINYINT      NOT NULL DEFAULT 0,
+    `created_at`          DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_detective_case_session` (`session_uuid`),
+    CONSTRAINT `fk_detective_case_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO `node_llm` (`node_id`, `llm_id`, `rate_limit_at`, `code_error`, `position`) VALUES
 (4, 5, NULL, NULL, 2),
@@ -27,11 +43,11 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (123, 12, 3, 'agent_workflow_id_talk', 4, '{"transitions_before": [], "transitions_after": [], "tool_invoke": {"tool_name": "agent_workflow_id", "inputs_map": {"name": "detective_talk_workflow_name"}, "outputs_map": {}}}'),
 (124, 12, 3, 'Собрать очередь подозреваемых', 5, '{"transitions_before": [], "transitions_after": [], "tool_invoke": {"tool_name": "detective_suspects_queue_build", "inputs_map": {"session_uuid": "session_uuid", "suspect_1_name": "suspect_1_name", "suspect_1_sheet": "suspect_1_sheet", "suspect_1_greeting": "suspect_1_greeting", "suspect_1_interrogation": "suspect_1_interrogation", "suspect_2_name": "suspect_2_name", "suspect_2_sheet": "suspect_2_sheet", "suspect_2_greeting": "suspect_2_greeting", "suspect_2_interrogation": "suspect_2_interrogation", "suspect_3_name": "suspect_3_name", "suspect_3_sheet": "suspect_3_sheet", "suspect_3_greeting": "suspect_3_greeting", "suspect_3_interrogation": "suspect_3_interrogation", "suspect_4_name": "suspect_4_name", "suspect_4_sheet": "suspect_4_sheet", "suspect_4_greeting": "suspect_4_greeting", "suspect_4_interrogation": "suspect_4_interrogation"}, "outputs_map": {}}}'),
 (129, 12, 3, 'Сохранить дело', 10, '{"transitions_before": [], "transitions_after": [], "tool_invoke": {"tool_name": "detective_case_create", "inputs_map": {"session_uuid": "session_uuid", "user_id": "user_id", "victim_name": "victim_name", "crime_description": "crime_description", "guilty_suspect_name": "guilty_suspect_name", "solution_reveal": "solution_reveal"}, "outputs_map": {}}}'),
-(130, 12, 4, 'Дело открыто', 11, '{"prompt_user": "🕵️ Открыто новое дело\\n\\nЖертва: %victim_name%\\n\\n%crime_description%\\n\\n📋 Сержант Ковальски докладывает: сразу после обнаружения тела полиция собрала первичные данные.\\n\\nВскрытие: %autopsy_report%\\n\\nПодозреваемые:\\n[[%suspect_1_name%]] (%suspect_1_relation%) — %suspect_1_brief%\\n[[%suspect_2_name%]] (%suspect_2_relation%) — %suspect_2_brief%\\n[[%suspect_3_name%]] (%suspect_3_relation%) — %suspect_3_brief%\\n[[%suspect_4_name%]] (%suspect_4_relation%) — %suspect_4_brief%\\n\\nПолное досье (улики, свидетели, банк, опись места) можно узнать у Сержанта полиции в списке агентов.\\n\\nВыбери подозреваемого в списке слева и начни допрос. Когда будешь готов назвать виновного, напиши /accuse.", "continue_workflow": false, "transitions_after": [], "transitions_before": []}'),
+(130, 12, 4, 'Дело открыто', 11, '{"prompt_user": "🕵️ Открыто новое дело\\n\\nЖертва: %victim_name%\\n\\n%crime_description%\\n\\n📋 Сержант Ковальски докладывает: сразу после обнаружения тела полиция собрала первичные данные.\\n\\nВскрытие: %autopsy_report%\\n\\nПодозреваемые:\\n[[%suspect_1_name%]] (%suspect_1_relation%) — %suspect_1_brief%\\n[[%suspect_2_name%]] (%suspect_2_relation%) — %suspect_2_brief%\\n[[%suspect_3_name%]] (%suspect_3_relation%) — %suspect_3_brief%\\n[[%suspect_4_name%]] (%suspect_4_relation%) — %suspect_4_brief%\\n\\nПолное досье (улики, свидетели, банк, опись места) можно узнать у Сержанта полиции в списке агентов.\\n\\nВыбери подозреваемого в списке слева и начни допрос. Когда будешь готов назвать виновного, напиши [[/accuse]].", "continue_workflow": false, "transitions_after": [], "transitions_before": []}'),
 (131, 12, 3, 'Список подозреваемых дела', 12, '{"transitions_before": [], "transitions_after": [], "tool_invoke": {"tool_name": "detective_case_suspects_list", "inputs_map": {"session_uuid": "session_uuid"}, "outputs_map": {}}}'),
 (132, 12, 4, 'Спросить кого обвиняем', 13, '{"transitions_before": [], "transitions_after": [], "prompt_user": "Кого ты обвиняешь в убийстве %detective_case_suspects_list_131_result_victim_name%?\\n\\n%detective_case_suspects_list_131_result_chips%", "continue_workflow": true}'),
 (133, 12, 3, 'Проверить вердикт', 14, '{"transitions_before": [], "transitions_after": [], "tool_invoke": {"tool_name": "detective_case_verdict_check", "inputs_map": {"session_uuid": "session_uuid", "accused_name": "prompt_user"}, "outputs_map": {}}}'),
-(134, 12, 4, 'Вердикт', 15, '{"transitions_before": [], "transitions_after": [], "prompt_user": "%if detective_case_verdict_check_133_result_correct%✅ Верно! Убийца — %detective_case_verdict_check_133_result_guilty_suspect_name%.\\n\\n%detective_case_verdict_check_133_result_solution_reveal%%else%❌ Мимо. Настоящий убийца — %detective_case_verdict_check_133_result_guilty_suspect_name%.\\n\\n%detective_case_verdict_check_133_result_solution_reveal%%endif%\\n\\nЧтобы начать новое дело, напиши /new_case.", "continue_workflow": false}'),
+(134, 12, 4, 'Вердикт', 15, '{"transitions_before": [], "transitions_after": [], "prompt_user": "%if detective_case_verdict_check_133_result_correct%✅ Верно! Убийца — %detective_case_verdict_check_133_result_guilty_suspect_name%.\\n\\n%detective_case_verdict_check_133_result_solution_reveal%%else%❌ Мимо. Настоящий убийца — %detective_case_verdict_check_133_result_guilty_suspect_name%.\\n\\n%detective_case_verdict_check_133_result_solution_reveal%%endif%\\n\\nЧтобы начать новое дело, напиши [[/new_case]].", "continue_workflow": false}'),
 (135, 13, 3, 'session_messages', 0, '{"transitions_before": [], "transitions_after": [], "tool_invoke": {"tool_name": "session_messages", "inputs_map": {"session_uuid": "session_uuid", "limit": "session_messages_limit"}, "outputs_map": {}}}'),
 (136, 13, 1, 'Ответ подозреваемого', 1, '{"transitions_before": [], "transitions_after": [], "prompt_user": "%if session_messages_135_result_str%=== История допроса ===\\n%session_messages_135_result_str%\\n\\n%endif%=== %companion_title% спрашивает ===\\n%prompt_user%\\n\\nОтветь коротко (1-3 предложения), от первого лица, оставаясь в характере. Отвечай на языке: %user_language%."}'),
 (137, 14, 3, 'Извлечь из очереди', 0, '{"transitions_before": [], "transitions_after": [], "tool_invoke": {"tool_name": "list_shift", "inputs_map": {"items": "suspects_queue"}, "outputs_map": {}}}'),
@@ -44,7 +60,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (144, 12, 5, 'Переименовать якоря дела', 2, '{"transitions_before": [], "transitions_after": [], "variable_conversion": [{"variable": "location_theme", "text": "%detective_case_seed_generate_143_result_location_theme%"}, {"variable": "weapon_theme", "text": "%detective_case_seed_generate_143_result_weapon_theme%"}, {"variable": "guilty_suspect_index", "text": "%detective_case_seed_generate_143_result_guilty_suspect_index%"}]}'),
 (156, 12, 3, 'Очистить старых агентов дела', 16, '{"transitions_before": [], "tool_invoke": {"tool_name": "detective_dynamic_agents_cleanup", "inputs_map": {"session_uuid": "session_uuid"}, "outputs_map": {}}, "transitions_after": [{"variable": "session_uuid", "operator": "exists", "value": "", "step_id": "143"}]}'),
 (207, 12, 3, 'Закрыть дело', 20, '{"transitions_before": [], "transitions_after": [{"variable": "session_uuid", "operator": "exists", "value": "", "step_id": "208"}], "tool_invoke": {"tool_name": "detective_dynamic_agents_cleanup", "inputs_map": {"session_uuid": "session_uuid"}, "outputs_map": {}}}'),
-(208, 12, 4, 'Подтверждение закрытия', 21, '{"transitions_before": [], "transitions_after": [], "prompt_user": "🗂️ Дело закрыто. Все агенты, подозреваемые и сержант удалены.\n\nЧтобы начать новое расследование, напиши /new_case.", "continue_workflow": false}');
+(208, 12, 4, 'Подтверждение закрытия', 21, '{"transitions_before": [], "transitions_after": [], "prompt_user": "🗂️ Дело закрыто. Все агенты, подозреваемые и сержант удалены.\n\nЧтобы начать новое расследование, напиши [[/new_case]].", "continue_workflow": false}');
 
 --
 
@@ -151,4 +167,4 @@ INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) VA
 --
 
 INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_id`, `workflow_variable`, `prompt_system`, `greeting`, `position`, `dynamic`) VALUES
-(30, 4, 'detective_bot', 'Детектив-бот', 'Мастер детективной игры: создает дела и подозреваемых', 12, NULL, 'Ты ведущий детективной игры. Выполняешь команды буквально и возвращаешь ответ в JSON, если об этом просят.', '[[link:http://92.5.17.195:8011/play/detective/|🕵️ Играть]]\n\nДобро пожаловать в детективное агентство!\n\nДоступные команды:\n\n/new_case - начать новое дело\n/accuse - обвинить подозреваемого\n/close_case - закрыть текущее дело', 0, 0);
+(30, 4, 'detective_bot', 'Детектив-бот', 'Мастер детективной игры: создает дела и подозреваемых', 12, NULL, 'Ты ведущий детективной игры. Выполняешь команды буквально и возвращаешь ответ в JSON, если об этом просят.', '[[link:http://92.5.17.195:8011/play/detective/|🕵️ Играть]]\n\nДобро пожаловать в детективное агентство!\n\nДоступные команды:\n\n[[/new_case]] - начать новое дело\n[[/accuse]] - обвинить подозреваемого\n[[/close_case]] - закрыть текущее дело', 0, 0);

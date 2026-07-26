@@ -7,7 +7,6 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `agent_workflow_run_step`;
 DROP TABLE IF EXISTS `agent_workflow_run`;
 DROP TABLE IF EXISTS `agent_session`;
-DROP TABLE IF EXISTS `detective_case`;
 DROP TABLE IF EXISTS `plan`;
 DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `fact`;
@@ -41,7 +40,9 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- Таблица LLM
 CREATE TABLE `llm` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` CHAR(50) NOT NULL
+    `name` CHAR(50) NOT NULL,
+    `chunk_size` JSON NULL COMMENT 'Кеш: {"10": 15000, "avg_ms": 32000, "chars_per_ms": 1.5}; ключ = целевые секунды',
+    `chunk_size_refresh_at` DATETIME NULL COMMENT 'Когда истекает кеш chunk_size (NOW + 15 мин); NULL = требует пересчёта'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица ролей
@@ -108,6 +109,7 @@ CREATE TABLE `llm_request` (
     `node_id` INT NULL,                                -- нода, под которой реально шел запрос (для /admin/llm статистики по ноде - node_llm может делить одну модель между нодами, этого недостаточно для фильтра)
     `status_code` INT NULL,                            -- 200 = успех; 429/413/402/503/500 = ошибка
     `duration_ms` INT NULL,                            -- время ответа провайдера в мс
+    `prompt_length` INT NULL,                           -- суммарный размер промпта (system+user) для расчёта chars/ms
     `error` VARCHAR(255) NULL,                         -- краткий текст ошибки
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_llm_request_llm` (`llm_id`, `created_at`),
@@ -438,23 +440,6 @@ CREATE TABLE `agent_workflow_run_step` (
     `duration_ms` INT NULL,
     INDEX `idx_workflow_run_step_run` (`run_id`, `exec_index`),
     CONSTRAINT `fk_wrs_run` FOREIGN KEY (`run_id`) REFERENCES `agent_workflow_run` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Детективная игра (нода Detective, см. миграцию 0004): дело игровой сессии.
--- Данные не сеются ни в одной миграции - это динамическая игровая история,
--- как agent_session (создается runtime через detective_case_create)
-CREATE TABLE `detective_case` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `session_uuid` CHAR(36) NOT NULL,
-    `user_id` INT NULL,
-    `victim_name` CHAR(100) NOT NULL,
-    `crime_description` TEXT NOT NULL,
-    `guilty_suspect_name` CHAR(100) NOT NULL,
-    `solution_reveal` TEXT NOT NULL,
-    `solved` TINYINT NOT NULL DEFAULT 0,
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX `idx_detective_case_session` (`session_uuid`),
-    CONSTRAINT `fk_detective_case_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Журнал событий event-системы (py_modules/event_/event_.py): аудит + лента
