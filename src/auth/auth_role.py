@@ -24,6 +24,7 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.FACT_VIEW,
     AuthPermission.FACT_COLLECTION_VIEW,
     AuthPermission.PLAN_VIEW,
+    AuthPermission.PLANNING_VIEW,
     AuthPermission.SESSION_VIEW,
     AuthPermission.SETTING_VIEW,
     AuthPermission.QUEUE_VIEW,

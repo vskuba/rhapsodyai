@@ -459,6 +459,40 @@
         border-left-color: #3498db;
         font-weight: 600;
     }
+
+    .chat-table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 13px;
+        margin: 6px 0;
+        table-layout: auto;
+    }
+
+    .chat-table th, .chat-table td {
+        border: 1px solid #e0e0e0;
+        padding: 6px 12px;
+        text-align: left;
+        vertical-align: top;
+        white-space: normal;
+    }
+
+    .chat-table td:last-child, .chat-table th:last-child {
+        min-width: 160px;
+    }
+
+    .chat-table td:first-child, .chat-table th:first-child {
+        min-width: 34px;
+    }
+
+    .chat-table th {
+        background: #f5f7fa;
+        font-weight: 600;
+        color: #4a5568;
+    }
+
+    .chat-table tr:hover td {
+        background: #f0f5ff;
+    }
 </style>
 
 {% endblock %}
@@ -603,7 +637,7 @@
     // 4. [[текст]] — подсказка: клик вставляет текст по курсору (черновик сохраняется) и отправляет
     // 5. /команда — клик подставляет команду и сразу отправляет.
     //    Негативный lookbehind отсекает слэши внутри URL и путей (http://..., path/to)
-    const MESSAGE_TOKEN_REGEX = /\[\[link:([\s\S]+?)\]\]|\[\[\+([\s\S]+?)\]\]|\[\[!([\s\S]+?)\]\]|\[\[([\s\S]+?)\]\]|(?<![\w/])\/[a-zA-Z0-9_-]+/g;
+    const MESSAGE_TOKEN_REGEX = /\[\[link:([\s\S]+?)\]\]|\[\[\+([\s\S]+?)\]\]|\[\[!([\s\S]+?)\]\]|\[\[([\s\S]+?)\]\]/g;
 
     // Вставка текста в textarea по позиции курсора
     function insertIntoInput(text) {
@@ -615,8 +649,8 @@
         userInput.setSelectionRange(caret, caret);
     }
 
-    // Разбивает текст на обычные фрагменты и кликабельные чипы (команды и подсказки)
-    function renderMessageWithCommands(container, text) {
+    // Рендерит обычный текст с кликабельными чипами (без таблиц)
+    function _renderTextWithChips(container, text) {
         let lastIndex = 0;
 
         for (const match of text.matchAll(MESSAGE_TOKEN_REGEX)) {
@@ -625,7 +659,6 @@
             }
 
             if (match[1] !== undefined) {
-                // Ссылка [[link:URL|текст]]: реальный <a>, открывается в новой вкладке
                 const [url, label] = match[1].split('|');
                 const link = document.createElement('a');
                 link.className = 'chat-link';
@@ -641,42 +674,30 @@
             const span = document.createElement('span');
 
             if (match[2] !== undefined) {
-                // Вставка [[+текст]]: клик — только вставка по курсору, без отправки
                 const insertion = match[2];
                 span.className = 'chat-insertion';
                 span.title = 'Нажмите, чтобы вставить в поле ввода';
                 span.textContent = insertion;
                 span.onclick = () => insertIntoInput(insertion);
             } else if (match[3] !== undefined) {
-                // Опасное действие [[!текст]]: красный чипс, клик — вставка и отправка
                 const danger = match[3];
                 span.className = 'chat-danger';
                 span.title = 'Нажмите, чтобы отправить';
                 span.textContent = danger;
-                span.onclick = () => {
-                    insertIntoInput(danger);
-                    sendMessage(toggleLoading);
-                };
+                span.onclick = () => { insertIntoInput(danger); sendMessage(toggleLoading); };
             } else if (match[4] !== undefined) {
-                // Подсказка [[текст]]: показываем без скобок, клик — вставка по курсору и отправка
-                const suggestion = match[4];
-                span.className = 'chat-suggestion';
-                span.title = 'Нажмите, чтобы отправить';
-                span.textContent = suggestion;
-                span.onclick = () => {
-                    insertIntoInput(suggestion);
-                    sendMessage(toggleLoading);
-                };
-            } else {
-                // Команда /cmd: клик — подстановка и отправка
-                const command = match[0];
-                span.className = 'chat-command';
-                span.title = 'Нажмите, чтобы отправить команду';
-                span.textContent = command;
-                span.onclick = () => {
-                    userInput.value = command;
-                    sendMessage(toggleLoading);
-                };
+                const text4 = match[4];
+                if (text4.startsWith('/')) {
+                    span.className = 'chat-command';
+                    span.title = 'Нажмите, чтобы отправить команду';
+                    span.textContent = text4;
+                    span.onclick = () => { userInput.value = text4; sendMessage(toggleLoading); };
+                } else {
+                    span.className = 'chat-suggestion';
+                    span.title = 'Нажмите, чтобы отправить';
+                    span.textContent = text4;
+                    span.onclick = () => { insertIntoInput(text4); sendMessage(toggleLoading); };
+                }
             }
 
             container.appendChild(span);
@@ -686,6 +707,58 @@
         if (lastIndex < text.length) {
             container.appendChild(document.createTextNode(text.slice(lastIndex)));
         }
+    }
+
+    // Рендерит строки Markdown-таблицы как HTML <table>
+    function _renderMarkdownTable(container, lines) {
+        const table = document.createElement('table');
+        table.className = 'chat-table';
+        let headerDone = false;
+
+        for (const line of lines) {
+            if (/^\s*\|[-:| ]+\|\s*$/.test(line)) { headerDone = true; continue; }
+            const raw = line.trim().replace(/^\||\|$/g, '');
+            const cells = raw.split('|');
+            const tr = document.createElement('tr');
+            cells.forEach(cell => {
+                const el = document.createElement(headerDone ? 'td' : 'th');
+                _renderTextWithChips(el, cell.trim());
+                tr.appendChild(el);
+            });
+            table.appendChild(tr);
+        }
+
+        container.appendChild(table);
+    }
+
+    // Разбивает текст на блоки таблиц и обычный текст, рендерит каждый
+    function renderMessageWithCommands(container, text) {
+        const lines = text.split('\n');
+        let regularLines = [];
+        let tableLines = [];
+        let inTable = false;
+
+        const flushRegular = () => {
+            if (!regularLines.length) return;
+            _renderTextWithChips(container, regularLines.join('\n'));
+            regularLines = [];
+        };
+        const flushTable = () => {
+            if (!tableLines.length) return;
+            _renderMarkdownTable(container, tableLines);
+            tableLines = [];
+        };
+
+        for (const line of lines) {
+            if (line.trim().startsWith('|')) {
+                if (!inTable) { flushRegular(); inTable = true; }
+                tableLines.push(line);
+            } else {
+                if (inTable) { flushTable(); inTable = false; }
+                regularLines.push(line);
+            }
+        }
+        if (inTable) flushTable(); else flushRegular();
     }
 
     function addMessage(text, role) {
@@ -748,14 +821,23 @@
         progressBar.classList.toggle('progress-active', show);
     }
 
+    function sessionStorageKey() {
+        return `chat_session_${agentSelect.value}_${getSelectedUserId()}`;
+    }
+
     function startNewSession() {
         currentSessionId = crypto.randomUUID();
+        sessionStorage.setItem(sessionStorageKey(), currentSessionId);
 
         if (sessionDisplay) {
             sessionDisplay.innerText = currentSessionId.substring(0, 8) + '...';
-            sessionDisplay.title = currentSessionId; // Полный ID при наведении
+            sessionDisplay.title = currentSessionId;
+        }
 
-            chatMessages.innerHTML = '';
+        chatMessages.innerHTML = '';
+        const agent = allAgents[agentSelect.value];
+        if (agent && agent.greeting) {
+            addMessage(agent.greeting, 'ai');
         }
     }
 
@@ -896,15 +978,20 @@
     }
 
     function updateSessionUI(session_entity) {
-        if (!session_entity) {
+        const stored = sessionStorage.getItem(sessionStorageKey());
+        if (stored) {
+            currentSessionId = stored;
+        } else if (!session_entity) {
             currentSessionId = crypto.randomUUID();
+            sessionStorage.setItem(sessionStorageKey(), currentSessionId);
         } else {
             currentSessionId = session_entity.session_uuid;
+            sessionStorage.setItem(sessionStorageKey(), currentSessionId);
         }
 
         if (sessionDisplay) {
             sessionDisplay.innerText = currentSessionId.substring(0, 8) + '...';
-            sessionDisplay.title = currentSessionId; // Полный ID при наведении
+            sessionDisplay.title = currentSessionId;
         }
     }
 

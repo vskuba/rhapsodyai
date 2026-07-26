@@ -98,6 +98,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                 await self.engine_prepare(framework_model)
 
                 run_started = time.monotonic()
+                _prompt_length = len(framework_model.prompt_system or '') + len(framework_model.prompt_user or '')
                 result = await self.engine_run(framework_model)
 
                 # Журнал запросов к LLM: успешный вызов (метрики /admin/llm)
@@ -107,6 +108,7 @@ class AiFrameworkAgent(AbstractAiFramework):
                     node_id=framework_model.node_id,
                     status_code=200,
                     duration_ms=int((time.monotonic() - run_started) * 1000),
+                    prompt_length=_prompt_length or None,
                 )
 
                 response = await self.engine_result_handle(result, framework_model)
@@ -149,9 +151,10 @@ class AiFrameworkAgent(AbstractAiFramework):
                     duration_ms=int((time.monotonic() - run_started) * 1000) if run_started else None,
                 )
 
-                # 429 - Too Many Requests, 413 - Payload Too Large, 402 - Payment Required,
-                # 503 - Service Unavailable, 500 - некорректный ответ провайдера (UnexpectedModelBehavior)
-                if error_code in [429, 413, 402, 503, 500]:
+                # 401 - Unauthorized, 429 - Too Many Requests, 413 - Payload Too Large,
+                # 402 - Payment Required, 503 - Service Unavailable,
+                # 500 - некорректный ответ провайдера (UnexpectedModelBehavior)
+                if error_code in [401, 429, 413, 402, 503, 500]:
                     logger_info(
                         f"❌ Код ошибки: {error_code}."
                     )

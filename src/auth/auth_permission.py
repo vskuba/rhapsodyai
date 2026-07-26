@@ -83,5 +83,11 @@ class AuthPermission(str, Enum):
     SETTING_VIEW = "setting:view"
     SETTING_UPDATE = "setting:update"
 
+    # Planning permissions
+    PLANNING_VIEW = "planning:view"
+    PLANNING_CREATE = "planning:create"
+    PLANNING_UPDATE = "planning:update"
+    PLANNING_DELETE = "planning:delete"
+
     # Queue permissions
     QUEUE_VIEW = "queue:view"

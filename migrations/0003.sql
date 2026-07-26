@@ -63,7 +63,7 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (38, 5, 3, 'qdrant_fact_search_companion', 8, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"search_query","collection_name":"fact_collection_companion_name","metadata_filter":"fact_collection_man_filter","limit":"fact_collection_limit"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (39, 5, 3, 'qdrant_fact_search_talk', 9, '{"tool_invoke":{"tool_name":"qdrant_fact_search","inputs_map":{"query_text":"search_query","collection_name":"fact_collection_talk_name","metadata_filter":"fact_collection_talk_filter","limit":"fact_collection_limit"},"outputs_map":{"str":"qdrant_fact_search_result_talk"}},"transitions_before":[],"transitions_after":[]}'),
 (43, 2, 5, 'Переменные', 4, '{"transitions_before":[],"transitions_after":[],"variable_conversion":[{"variable":"agent_exists_find_by","text":"{\\"name\\":\\"%text_to_lower_37_result_str%\\"}"}]}'),
-(44, 2, 4, 'Агент уже существует', 18, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Девушка с таким именем \\"%prompt_user%\\" уже зарегистрирована, придумайте другое имя.\\n\\n/start"}'),
+(44, 2, 4, 'Агент уже существует', 18, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Девушка с таким именем \\"%prompt_user%\\" уже зарегистрирована, придумайте другое имя.\\n\\n[[/start]]"}'),
 (45, 5, 3, 'datetime_current_get', 3, '{"tool_invoke":{"tool_name":"datetime_current_get","inputs_map":{"timezone":"datetime_current_get_zone"},"outputs_map":{"str":"datetime_current_get_response"}},"transitions_before":[],"transitions_after":[]}'),
 (48, 5, 6, 'girl_fact_create', 16, '{"workflow_invoke":{"workflow_id":6,"inputs_map":{"companion_title":"companion_title","girl_name":"agent_name","girl_title":"agent_title","prompt_user":"prompt_user","user_id":"user_id"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
 (49, 6, 3, 'fact_collection_output_format', 0, '{"tool_invoke":{"tool_name":"fact_collection_output_format","inputs_map":{"collection_name":"fact_collection_girl_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
@@ -91,8 +91,8 @@ INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `pos
 (111, 2, 3, 'Список девушек', 19, '{"tool_invoke":{"tool_name":"agent_list","inputs_map":{"user_id":"user_id","workflow_name":"girl_agent_workflow_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[{"variable":"agent_list_111_result_qty","operator":"==","value":"0","step_id":"115"}]}'),
 (112, 2, 4, 'Выбрать девушку для удаления', 20, '{"transitions_before":[],"transitions_after":[],"prompt_user":"Выберите девушку для удаления (нажмите на имя):\\n\\n%agent_list_111_result_chips%","continue_workflow":true}'),
 (113, 2, 3, 'agent_remove', 21, '{"tool_invoke":{"tool_name":"agent_remove","inputs_map":{"title":"prompt_user","user_id":"user_id","workflow_name":"girl_agent_workflow_name"},"outputs_map":{}},"transitions_before":[],"transitions_after":[]}'),
-(114, 2, 4, 'Результат удаления', 22, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%if agent_remove_113_result_removed%✅ Девушка «%agent_remove_113_result_title%» удалена.%else%Девушка «%prompt_user%» не найдена среди доступных вам. Запустите /girl_remove еще раз.%endif%","continue_workflow":false}'),
-(115, 2, 4, 'Нет девушек', 23, '{"transitions_before":[],"transitions_after":[],"prompt_user":"У вас пока нет созданных девушек. Создать: /girl_create","continue_workflow":false}');
+(114, 2, 4, 'Результат удаления', 22, '{"transitions_before":[],"transitions_after":[],"prompt_user":"%if agent_remove_113_result_removed%✅ Девушка «%agent_remove_113_result_title%» удалена.%else%Девушка «%prompt_user%» не найдена среди доступных вам. Запустите [[/girl_remove]] еще раз.%endif%","continue_workflow":false}'),
+(115, 2, 4, 'Нет девушек', 23, '{"transitions_before":[],"transitions_after":[],"prompt_user":"У вас пока нет созданных девушек. Создать: [[/girl_create]]","continue_workflow":false}');
 
 --
 
@@ -219,7 +219,7 @@ INSERT INTO `agent_workflow_variable_public_workflow` (`public_variable_id`, `wo
 --
 
 INSERT INTO `agent` (`id`, `node_id`, `name`, `title`, `description`, `workflow_id`, `workflow_variable`, `prompt_system`, `greeting`, `position`, `dynamic`) VALUES
-(9, 2, 'dating_bot', 'Dating bot', '', 2, '{}', '{"en":"You are a responsible performer. You do everything you are asked to. If the request specifies to return the answer in JSON, you must return it in JSON. If nothing about JSON is mentioned, return plain text.","ru":"Ты отвественный исполнитель. Выполняешь все, что тебе пишут. Если в запросе написано вернуть ответ в JSON обязательно верни в JSON. Если про JSON ничего не написано, то возращай обычный текст."}', 'Привет, я dating bot, доступны команды :\n\n/girl_create - создает девушку\n/girl_remove - удаляет девушку', 0, 0);
+(9, 2, 'dating_bot', 'Dating bot', '', 2, '{}', '{"en":"You are a responsible performer. You do everything you are asked to. If the request specifies to return the answer in JSON, you must return it in JSON. If nothing about JSON is mentioned, return plain text.","ru":"Ты отвественный исполнитель. Выполняешь все, что тебе пишут. Если в запросе написано вернуть ответ в JSON обязательно верни в JSON. Если про JSON ничего не написано, то возращай обычный текст."}', 'Привет, я dating bot, доступны команды :\n\n[[/girl_create]] - создает девушку\n[[/girl_remove]] - удаляет девушку', 0, 0);
 
 --
 

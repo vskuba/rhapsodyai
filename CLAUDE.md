@@ -56,7 +56,7 @@ See `.claude/docs/database.md` for schema, FK order, migration details.
 3. API: `src/uvicorn/routers/new_entity/new_entity.py`
 4. Register router in `main_uvicorn.py`
 
-See `.claude/docs/frontend.md` for page patterns, JS architecture, CSS classes.
+See `.claude/docs/dashboard_frontend.md` for page patterns, JS architecture, CSS classes.
 
 ### New Protected Endpoint
 1. Add `AuthPermission` in `src/auth/auth_permission.py`
@@ -98,10 +98,9 @@ asyncio.run(telegram_send_owner('your message'))
 |------|---------|
 | `.claude/docs/architecture.md` | Modules, dependencies, Docker services, env vars, queue names |
 | `.claude/docs/database.md` | Schema, migrations, FK table order |
-| `.claude/docs/frontend.md` | Admin page patterns, JS, CSS, API contracts |
+| `.claude/docs/dashboard_frontend.md` | Admin page patterns, JS, CSS, API contracts |
 | `.claude/docs/auth.md` | Auth system, field-level policies, code examples |
 | `.claude/docs/deploy.md` | Blue-Green deployment, `bluegreen.sh`, rollback |
 | `.claude/docs/telegram_mini_app.md` | Mini App architecture, API endpoints, voice, DB schema |
 | `.claude/docs/workflow.md` | Workflow system overview and development directions |
-| `.claude/docs/session_rules.md` | Claude Code permissions for this project |
 | `.claude/docs/claude_session_registry.md` | Multi-session registry for Telegram Mini App Cloud tab |
