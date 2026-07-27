@@ -21,7 +21,7 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (16, 'cerebras/gemma-4-31b'),
 (17, 'openai/gpt-5.2'),
 (18, 'openai/gpt-5.3-codex'),
-(19, 'ollama/deepseek-r1:8b');
+(19, 'ollama/qwen2.5:7b');
 
 --
 
