@@ -141,6 +141,10 @@ class AiFrameworkAgent(AbstractAiFramework):
                 if error_code is None and isinstance(e, UnexpectedModelBehavior):
                     error_code = 500
 
+                # httpx.TimeoutException не имеет status_code — определяем по тексту ошибки
+                if error_code is None and ('timeout' in str(e).lower() or 'timed out' in str(e).lower()):
+                    error_code = 503
+
                 # Журнал запросов к LLM: неуспешный вызов (метрики /admin/llm)
                 await ai_llm_request_log(
                     framework_model.entity_llm_current.get('id'),
