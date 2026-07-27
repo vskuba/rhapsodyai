@@ -31,11 +31,11 @@ INSERT INTO `role` (`id`, `name`) VALUES
 (3, 'manager_cashier'),
 (4, 'manager_dating_junior');
 
--- Password: admin123
+-- Password: 14Orca_45
 -- Password: user123
 
 INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `created_at`, `dynamic`) VALUES
-(1, 'admin', 'admin@example.com', '$2b$12$GiCtKwt8AvL/RcTDEJUx9Ou8g3elZ0E5a4l1pj7aF.Xg4Ep2UAR8q', 1, '2026-04-26 09:17:35', 0),
+(1, 'admin', 'admin@example.com', '$2b$12$h4r.DMSVURAOMZGzLk1QXegad/PwgaNI/aMu0AKvdGXIyW1KARoke', 1, '2026-04-26 09:17:35', 0),
 (2, 'lilia', 'lilia@example.com', '$2b$12$XG.UEUHZz3kkq73DpN52Z.7rqVMgrlCnsbyK2bR2tuXTLkBPhACDK', 2, '2026-04-26 09:17:35', 0),
 (3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35', 0),
 (4, 'alena', 'alena@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 4, '2026-04-26 09:17:35', 0);
