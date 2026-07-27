@@ -439,12 +439,65 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                     x.get('variable')]
 
                 model.is_transition = True
+
+                # MapReduce: если chunk_variable задана и текст большой — MAP-фаза сжимает
+                # контекст до приемлемого размера, REDUCE-фаза — финальный llm_to_json вызов
+                chunk_variable = (step_meta.get('chunk_variable') or '').strip()
+                if chunk_variable and variables.get(chunk_variable):
+                    raw_value = str(variables[chunk_variable])
+                    chunk_size_meta = step_meta.get('chunk_size')
+                    if not chunk_size_meta or str(chunk_size_meta).lower() == 'auto':
+                        # MAP-фаза: короткий выход (список фактов), поэтому малый target
+                        _speed = await ai_llm_speed_get(model.entity_llm_current.get('id'), target_seconds=6)
+                        chunk_size = _speed['chunk_size']
+                        logger_info(f'📐 chunk_size авто (MAP target=6s): {chunk_size} симв.')
+                    else:
+                        chunk_size = max(2000, int(chunk_size_meta))
+                    chunk_overlap = max(0, int(step_meta.get('chunk_overlap') or 500))
+
+                    chunks = self._text_split_chunks(raw_value, chunk_size, chunk_overlap)
+                    total = len(chunks)
+
+                    if total > 1:
+                        map_prompt_tpl = str(step_meta.get('map_prompt') or (
+                            'Ты анализируешь фрагмент текста.\n\n'
+                            '=== ФРАГМЕНТ %chunk_num% из %total_chunks% ===\n%chunk%\n\n'
+                            'Выдели все важные факты, цифры и ключевые выводы. Краткий структурированный список.'
+                        ))
+                        map_results = []
+                        for chunk_idx, chunk in enumerate(chunks, start=1):
+                            model.prompt_user = (
+                                map_prompt_tpl
+                                .replace('%chunk%', chunk)
+                                .replace('%chunk_num%', str(chunk_idx))
+                                .replace('%total_chunks%', str(total))
+                            )
+                            map_results.append(await execute_llm_step())
+                            logger_info(f'📄 MapReduce map {chunk_idx}/{total}: {len(chunk)} симв.')
+
+                        combined = '\n\n---\n\n'.join(
+                            f'[Часть {i + 1}/{total}]\n{r}' for i, r in enumerate(map_results)
+                        )
+                        logger_info(f'📄 MapReduce reduce: {total} чанков → {len(combined)} симв.')
+
+                        # REDUCE: перерендерить prompt с заменой chunk_variable на сжатый контекст
+                        variables[chunk_variable] = combined
+                        model.prompt_user = ai_workflow_variables_render(
+                            current_step['metadata'].get('prompt_user', ''), variables
+                        )
+                        variables[chunk_variable] = raw_value
+                    else:
+                        logger_info(f'📄 MapReduce: {len(raw_value)} симв. ≤ {chunk_size}, прямой вызов')
+
                 response_from_llm = await execute_llm_step()
                 trace_output = response_from_llm
 
                 try:
                     response_from_llm = self._json_str_clean(response_from_llm)
                     logger_info(f"✂️ Парсим JSON:\n\n{response_from_llm}")
+
+                    if not response_from_llm or not response_from_llm.strip():
+                        raise ValueError("LLM вернула пустой ответ вместо JSON")
 
                     response_json = self._json_parse(response_from_llm)
 
@@ -482,64 +535,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     await trace_current_step(status='error', error=str(e))
                     raise e
-
-            # ОБРАБОТКА ШАГА: Сырой ответ LLM → переменная (без JSON-парсинга).
-            # Поддерживает встроенный авто-MapReduce: если chunk_variable указана и её
-            # значение > chunk_size — прозрачно разбивает на чанки (map + reduce)
-            # и подставляет результат вместо %chunk_variable% в prompt_user.
-            elif step_type == 'llm_to_variable':
-                target_variable = (step_meta.get('llm_to_variable') or '').strip()
-                model.is_transition = True
-
-                chunk_variable = (step_meta.get('chunk_variable') or '').strip()
-                chunk_size_meta = step_meta.get('chunk_size')
-                if not chunk_size_meta or str(chunk_size_meta).lower() == 'auto':
-                    _speed = await ai_llm_speed_get(model.entity_llm_current.get('id'))
-                    chunk_size = _speed['chunk_size']
-                    logger_info(f'📐 chunk_size авто: {chunk_size} симв. (chars/ms={_speed["chars_per_ms"]:.3f}, avg={_speed["avg_ms"]:.0f}ms)')
-                else:
-                    chunk_size = max(2000, int(chunk_size_meta))
-                chunk_overlap = max(0, int(step_meta.get('chunk_overlap') or 500))
-                map_prompt_tpl = str(step_meta.get('map_prompt') or (
-                    'Ты анализируешь фрагмент текста.\n\n'
-                    '=== ФРАГМЕНТ %chunk_num% из %total_chunks% ===\n%chunk%\n\n'
-                    'Выдели все важные факты, цифры и ключевые выводы. Краткий структурированный список.'
-                ))
-
-                if chunk_variable:
-                    input_text = str(variables.get(chunk_variable) or '')
-                    chunks = self._text_split_chunks(input_text, chunk_size, chunk_overlap)
-                    total = len(chunks)
-
-                    if total > 1:
-                        # MAP: каждый чанк обрабатывается LLM отдельно
-                        map_results = []
-                        for chunk_idx, chunk in enumerate(chunks, start=1):
-                            chunk_prompt = (
-                                map_prompt_tpl
-                                .replace('%chunk%', chunk)
-                                .replace('%chunk_num%', str(chunk_idx))
-                                .replace('%total_chunks%', str(total))
-                            )
-                            model.prompt_user = chunk_prompt
-                            chunk_result = await execute_llm_step()
-                            map_results.append(chunk_result)
-                            logger_info(f'📄 MapReduce map {chunk_idx}/{total}: {len(chunk)} симв.')
-
-                        # Заменяем %chunk_variable% в prompt_user синтезированным контекстом
-                        combined = '\n\n---\n\n'.join(
-                            f'[Часть {i + 1}/{total}]\n{r}' for i, r in enumerate(map_results)
-                        )
-                        model.prompt_user = model.prompt_user.replace(f'%{chunk_variable}%', combined)
-                        logger_info(f'📄 MapReduce reduce: {total} чанков → {len(combined)} симв.')
-                    else:
-                        logger_info(f'📄 MapReduce: контекст {len(input_text)} симв. ≤ {chunk_size}, прямой вызов')
-
-                response_from_llm = await execute_llm_step()
-                trace_output = response_from_llm
-                if target_variable:
-                    variables[target_variable] = response_from_llm
-                    logger_info(f"🏷️ Переменная '%{target_variable}%' получила ответ LLM")
 
             # ОБРАБОТКА ШАГА: Вызов инструмента/MCP-сервера
             elif step_type == 'tool_invoke':
@@ -906,6 +901,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             # Переходим к следующему шагу (строго инкрементируем индекс)
             current_index += 1
             iteration += 1
+            iteration_exception = 0
 
             # Проверяем наличие условий переходов в метаданных шага и при выполнении условия изменяем индекс текущего шага на указанный
             transitions = step_meta.get('transitions_after', [])
@@ -994,11 +990,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
     @staticmethod
     def _text_split_chunks(text: str, chunk_size: int, overlap: int) -> list[str]:
-        """
-        Разбивает текст на чанки по границам параграфов (\\n\\n).
-        Если параграф длиннее chunk_size — принудительно разбивает его.
-        Overlap добавляет конец предыдущего чанка в начало следующего.
-        """
+        """Разбивает текст на чанки по границам параграфов. Overlap добавляет хвост
+        предыдущего чанка в начало следующего для сохранения контекста."""
         if not text or len(text) <= chunk_size:
             return [text] if text else []
 
@@ -1008,7 +1001,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         current_len = 0
 
         for para in paragraphs:
-            # Параграф длиннее чанка — принудительно разрезаем
             while len(para) > chunk_size:
                 head = para[:chunk_size]
                 if current_parts:
@@ -1019,11 +1011,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     chunks.append(head)
                 para = para[chunk_size - overlap:]
 
-            para_len = len(para) + 2  # +2 for \n\n separator
+            para_len = len(para) + 2
             if current_len + para_len > chunk_size and current_parts:
                 chunk_text = '\n\n'.join(current_parts)
                 chunks.append(chunk_text)
-                # Overlap: берём хвост предыдущего чанка
                 if overlap > 0:
                     tail = chunk_text[-overlap:]
                     current_parts = [tail, para]
@@ -1063,19 +1054,32 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
     @staticmethod
     def _json_parse(json_str: str) -> dict:
         """
-        Парсит JSON-строку; при ошибке пробует ast.literal_eval для Python-dict.
+        Парсит JSON-строку; при ошибке пробует ast.literal_eval, затем json_repair.
         """
         import ast as _ast
         try:
             return json.loads(json_str, strict=False)
         except Exception:
-            try:
-                result = _ast.literal_eval(json_str)
-                if isinstance(result, dict):
-                    return result
-            except Exception:
-                pass
-            raise
+            pass
+
+        try:
+            result = _ast.literal_eval(json_str)
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
+
+        try:
+            from json_repair import repair_json
+            repaired = repair_json(json_str, return_objects=True)
+            if isinstance(repaired, dict):
+                return repaired
+            if isinstance(repaired, list) and repaired:
+                return repaired[0] if isinstance(repaired[0], dict) else {}
+        except Exception:
+            pass
+
+        raise json.JSONDecodeError("Не удалось распарсить JSON ни одним из методов", json_str, 0)
 
     @staticmethod
     async def _workflow_variables_protected() -> set:
