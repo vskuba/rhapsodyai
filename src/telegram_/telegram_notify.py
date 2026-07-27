@@ -40,14 +40,16 @@ async def telegram_notify_bot_setup():
     if not (owner_chat_id and bot_token and mini_app_url):
         return
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f'https://api.telegram.org/bot{bot_token}/setChatMenuButton',
-            json={
-                'chat_id': int(owner_chat_id),
-                'menu_button': {'type': 'web_app', 'text': 'Панель', 'web_app': {'url': mini_app_url}}
-            }
-        )
-
-    if response.status_code != 200:
-        logger_info(f'❌ Не удалось настроить кнопку Mini App: {response.status_code} {response.text}')
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f'https://api.telegram.org/bot{bot_token}/setChatMenuButton',
+                json={
+                    'chat_id': int(owner_chat_id),
+                    'menu_button': {'type': 'web_app', 'text': 'Панель', 'web_app': {'url': mini_app_url}}
+                }
+            )
+        if response.status_code != 200:
+            logger_info(f'❌ Не удалось настроить кнопку Mini App: {response.status_code} {response.text}')
+    except Exception as e:
+        logger_info(f'⚠️ telegram_notify_bot_setup: не удалось подключиться к Telegram API: {e}')
