@@ -119,14 +119,16 @@ async def trace_run_detail(
             for c in children:
                 runs[c['id']] = c
 
-        # Все шаги всех запусков одним запросом
+        # Все шаги всех запусков одним запросом (с JOIN на LLM)
         run_ids = list(runs.keys())
         placeholders = ', '.join(['%s'] * len(run_ids))
         await db.execute(
             f"""
-            SELECT * FROM agent_workflow_run_step
-            WHERE run_id IN ({placeholders})
-            ORDER BY run_id, exec_index, id
+            SELECT s.*, l.name AS llm_name
+            FROM agent_workflow_run_step s
+            LEFT JOIN llm l ON l.id = s.llm_id
+            WHERE s.run_id IN ({placeholders})
+            ORDER BY s.run_id, s.exec_index, s.id
             """,
             run_ids
         )
