@@ -17,6 +17,7 @@ PyGithub
 pymysql
 python-dotenv
 python-json-logger
+json-repair
 qdrant_client
 uvicorn[standard]
 yoyo-migrations
