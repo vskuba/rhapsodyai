@@ -11,6 +11,8 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
+from tests.constants import TEST_AUTH
+
 BASE_URL = "http://localhost:8011"
 
 
@@ -24,7 +26,7 @@ class TestCabinetFlow:
             # Login as standard user first
             await client.post(
                 "/auth/login",
-                json={"username": "admin", "password": "admin123"},
+                json=TEST_AUTH,
             )
             yield client
 
@@ -50,7 +52,7 @@ class TestCabinetFlow:
         data = response.json()
         assert "user" in data
         user = data["user"]
-        assert user["username"] == "admin"
+        assert user["username"] == TEST_AUTH["username"]
         assert "email" in user
         assert "role" in user
 
@@ -74,9 +76,9 @@ class TestCabinetFlow:
         user = get_response.json()["user"]
         assert user["email"] == "updated_admin@example.com"
 
-        # 3. Restore original admin profile state to prevent test pollution
+        # 3. Restore original test-user email to prevent test pollution
         restore_payload = {
-            "email": "developer@rhapsody.com"
+            "email": f"{TEST_AUTH['username']}@test.local"
         }
         restore_response = await client.put("/auth/me", json=restore_payload)
         assert restore_response.status_code == 200
