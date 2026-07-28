@@ -66,9 +66,11 @@ async def trace_step(run_id: int | None, exec_index: int, step: dict,
                      metadata_rendered=None, variables_changed: dict | None = None,
                      output=None, transition: dict | None = None,
                      status: str = 'success', error: str | None = None,
-                     duration_ms: int | None = None) -> None:
+                     duration_ms: int | None = None,
+                     llm_id: int | None = None) -> None:
     """Записывает выполненный шаг: вход (metadata после рендера), выход (изменённые
-    переменные), сырой output, сработавший переход, статус и длительность."""
+    переменные), сырой output, сработавший переход, статус и длительность.
+    llm_id — модель использованная в LLM-шаге (None для tool/text/variable шагов)."""
     if run_id is None:
         return
     try:
@@ -76,12 +78,13 @@ async def trace_step(run_id: int | None, exec_index: int, step: dict,
             await db.execute(
                 """
                 INSERT INTO agent_workflow_run_step
-                    (run_id, exec_index, step_id, step_title, step_type, metadata_rendered,
-                     variables_changed, output, transition, status, error, duration_ms)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (run_id, exec_index, step_id, step_title, step_type, llm_id,
+                     metadata_rendered, variables_changed, output, transition, status, error, duration_ms)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (run_id, exec_index, step.get('id'),
                  str(step.get('title', ''))[:100], str(step.get('step_type_name', ''))[:50],
+                 llm_id,
                  _json_dump(metadata_rendered), _json_dump(variables_changed),
                  _truncate(output), _json_dump(transition),
                  status, _truncate(error), duration_ms)

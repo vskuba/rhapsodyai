@@ -104,3 +104,4 @@ asyncio.run(telegram_send_owner('your message'))
 | `.claude/docs/telegram_mini_app.md` | Mini App architecture, API endpoints, voice, DB schema |
 | `.claude/docs/workflow.md` | Workflow system overview and development directions |
 | `.claude/docs/claude_session_registry.md` | Multi-session registry for Telegram Mini App Cloud tab |
+| `.claude/docs/planning.md` | Planning node: фазы, агенты, research_loop sub-workflow, инструменты |

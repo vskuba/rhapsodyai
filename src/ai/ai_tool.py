@@ -305,7 +305,11 @@ def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict) -> tupl
                         tool_args[argument_name] = variable_value
                 elif callable(expected_type):
                     # 3. Обычный базовый тип (int, float, str и т.д.)
-                    tool_args[argument_name] = expected_type(variable_value)
+                    # dict/list → str: json.dumps чтобы избежать Python repr ('single quotes')
+                    if expected_type is str and isinstance(variable_value, (dict, list)):
+                        tool_args[argument_name] = json.dumps(variable_value, ensure_ascii=False)
+                    else:
+                        tool_args[argument_name] = expected_type(variable_value)
                 else:
                     tool_args[argument_name] = variable_value
 

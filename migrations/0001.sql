@@ -87,6 +87,7 @@ CREATE TABLE `setting` (
     `user_id` INT DEFAULT NULL,
     `node_id` INT DEFAULT NULL,
     `value` LONGTEXT NOT NULL,
+    `dynamic` TINYINT NOT NULL DEFAULT 0,
     CONSTRAINT `fk_settings_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_settings_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -430,6 +431,7 @@ CREATE TABLE `agent_workflow_run_step` (
     `step_id` INT NULL,
     `step_title` CHAR(100) DEFAULT NULL,
     `step_type` CHAR(50) DEFAULT NULL,
+    `llm_id` INT NULL,                           -- LLM использованная в LLM-шаге (NULL для tool/text/variable шагов)
     `metadata_rendered` LONGTEXT NULL,           -- вход: metadata после рендера %переменных%
     `variables_changed` LONGTEXT NULL,           -- выход: JSON измененных шагом переменных
     `output` LONGTEXT NULL,                      -- ответ LLM / результат инструмента / результат sub-workflow
@@ -439,7 +441,8 @@ CREATE TABLE `agent_workflow_run_step` (
     `created_at` DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
     `duration_ms` INT NULL,
     INDEX `idx_workflow_run_step_run` (`run_id`, `exec_index`),
-    CONSTRAINT `fk_wrs_run` FOREIGN KEY (`run_id`) REFERENCES `agent_workflow_run` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_wrs_run` FOREIGN KEY (`run_id`) REFERENCES `agent_workflow_run` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_wrs_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Журнал событий event-системы (py_modules/event_/event_.py): аудит + лента

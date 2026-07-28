@@ -10,132 +10,144 @@
 </head>
 <body>
 
-<nav>
-    <div class="logo">
-        <a href="/"><img src="/static/assets/logo.png" alt="Logo" style="width: 140px"></a>
-    </div>
+<!-- ══ Nav shell ═════════════════════════════════════════════ -->
+<header class="nav-shell">
 
-    <ul class="top-nav">
+    <!-- Logo: spans both rows -->
+    <a class="nav-logo" href="/">
+        <img src="/static/assets/logo.png" alt="Logo">
+        <span class="nav-logo-name">RhapsodyAI</span>
+    </a>
 
-        <li class="nav-item">
-            <a href="/">💬 Чат</a>
-            <ul class="submenu">
-                {% if request.session.get('role') == 'admin' %}
-                <li><a href="/admin/agent">Агенты</a></li>
-                {% endif %}
-                <li><a href="/admin/fact">Факты</a></li>
-                <li><a href="/admin/plan">Планы</a></li>
-                {% if request.session.get('role') == 'admin' %}
-                <li><a href="/admin/llm">LLM</a></li>
-                {% endif %}
-            </ul>
-        </li>
+    <!-- Right side: two rows stacked -->
+    <div class="nav-right">
 
+        <!-- Row 1: tabs + user -->
+        <div class="topbar">
 
-        <li class="nav-item">
+            <!-- Tab = link to its own page -->
+            <a class="tabnav-group" data-group="chat" href="/">💬 Чат</a>
+            <a class="tabnav-group" data-group="nodes"
+               href="{% if request.session.get('role') == 'admin' %}/admin/node{% else %}#{% endif %}">🕸️ Ноды</a>
             {% if request.session.get('role') == 'admin' %}
-            <a href="/admin/node">⛓ Ноды</a>
-            {% else %}
-            <a>⛓ Ноды</a>
+            <a class="tabnav-group" data-group="people" href="/admin/user">👥 Пользователи</a>
+            <a class="tabnav-group" data-group="logs" href="/admin/workflow_trace">📊 Логи</a>
+            <a class="tabnav-group" data-group="setting" href="/admin/setting">⚙️ Настройки</a>
+            <a class="tabnav-group" data-group="tool" href="/admin/tool">🔧 Инструменты</a>
             {% endif %}
-            <ul class="submenu">
+
+            <div class="topbar-spacer"></div>
+
+            <div class="topbar-user">
+                <span class="user-label">👤 Кабинет</span>
+                <div class="topbar-user-menu">
+                    {% if request.session.get('role') == 'admin' %}
+                    <a href="#" id="miniAppNavLink" target="_blank">Mini App</a>
+                    <div class="topbar-divider"></div>
+                    {% endif %}
+                    <a href="/admin/cabinet">Личный кабинет</a>
+                    <a href="#" id="logoutBtn">Выйти</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="tabnav-delimeter"></div>
+
+
+        <!-- Row 2: sub-items for active tab (tab's own page excluded) -->
+        <div class="tabnav-items">
+
+            <!-- chat: / is the tab itself, so no Чат link here -->
+            <div class="tabnav-panel" data-group="chat">
+                <span class="tabnav-sep"></span>
                 {% if request.session.get('role') == 'admin' %}
-                <li><a href="/admin/tool">Инструменты</a></li>
+                <a href="/admin/llm">🧠 LLM</a>
+                <a href="/admin/agent">🤖 Агенты</a>
+                <span class="tabnav-sep"></span>
+                <a href="/admin/fact_collection">🗃️ Коллекции</a>
                 {% endif %}
-                <li><a href="/admin/variable">Переменные</a></li>
+                <a href="/admin/fact">📋 Факты</a>
+                <span class="tabnav-sep"></span>
+                <a href="/admin/session">🗝️ Сессии</a>
+                <span class="tabnav-sep"></span>
+            </div>
+
+            <!-- nodes: /admin/node is the tab itself, so no Ноды link here -->
+            <div class="tabnav-panel" data-group="nodes">
+                <span class="tabnav-sep"></span>
                 {% if request.session.get('role') == 'admin' %}
-                <li><a href="/admin/workflow">Workflow</a></li>
-
+                <a href="/admin/variable">📦 Переменные</a>
+                <a href="/admin/workflow">🔄 Workflow</a>
+                <span class="tabnav-sep"></span>
+                <a href="/admin/planning">🗂️ Планирование</a>
+                <a href="/admin/developing">💻 Разработка</a>
+                <span class="tabnav-sep"></span>
                 {% endif %}
-            </ul>
-        </li>
+            </div>
 
-        {% if request.session.get('role') == 'admin' %}
-        <li class="nav-item">
-            <a href="/admin/user">👥 Пользователи</a>
-            <ul class="submenu">
-                <li><a href="/admin/role">Роли</a></li>
-                <li><a href="/admin/setting">Настройки</a></li>
-            </ul>
-        </li>
-        {% endif %}
-        <li class="nav-item">
-            <a href="#">📊 Логи</a>
-            <ul class="submenu">
-                {% if request.session.get('role') == 'admin' %}
-                <li><a target="_blank"
-                       href="http://localhost:5601/app/data-explorer/discover#?_a=(discover:(columns:!(message),isDirty:!f,sort:!()),metadata:(indexPattern:'9d4339a0-3761-11f1-82cd-c50d8f73f9fd',view:discover))&_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-15m,to:now))&_q=(filters:!(),query:(language:kuery,query:''))">Opensearch</a>
-                </li>
-                <li><a href="/admin/workflow_trace">Workflow trace</a></li>
-                <li><a target="_blank" href="http://localhost:8090">Gatus</a></li>
-                {% endif %}
-                <li><a href="/admin/session">Сессии</a></li>
-            </ul>
-        </li>
-        {% if request.session.get('role') == 'admin' %}
-        <li class="nav-item">
-            <a href="#">🗄️ Базы данных</a>
-            <ul class="submenu">
-                <li><a target="_blank" href="http://localhost:9634">Phpmyadmin</a></li>
-                <li><a target="_blank" href="http://localhost:6333/dashboard">Qdrant</a></li>
-                <li><a href="/admin/fact_collection">Коллекции</a></li>
-            </ul>
-        </li>
+            <!-- people: /admin/user is the tab itself, so no Пользователи link here -->
+            {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="people">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/role">🛡️ Роли</a>
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
 
-        <li class="nav-item">
-            <a href="#">📊 Очереди</a>
-            <ul class="submenu">
-                <li><a target="_blank" href="/admin/queue">Local in-memory</a></li>
-                <li><a target="_blank" href="http://localhost:9181/">Redis️ queues</a></li>
-            </ul>
-        </li>
+            {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="logs">
+                <span class="tabnav-sep"></span>
+                <a href="http://localhost:5601/app/data-explorer/discover#?_a=(discover:(columns:!(message),isDirty:!f,sort:!()),metadata:(indexPattern:'9d4339a0-3761-11f1-82cd-c50d8f73f9fd',view:discover))&_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-15m,to:now))&_q=(filters:!(),query:(language:kuery,query:''))"
+                   target="_blank">🔎 Opensearch</a>
+                <a href="http://localhost:8090" target="_blank">💚 Gatus</a>
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
 
-        <li class="nav-item">
-            <a href="#">⏰️ Планировщик</a>
-            <ul class="submenu">
-                <li><a href="http://localhost:3012" target="_blank">Cronicle</a></li>
-            </ul>
-        </li>
-        {% endif %}
+            {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="setting">
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
 
-        <!-- User menu with logout -->
-        <li class="nav-item user-menu">
-            <a href="/admin/cabinet">👤 Личный кабинет</a>
-            <ul class="submenu">
+            {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="tool">
+                <span class="tabnav-sep"></span>
+                <a href="http://localhost:9634" target="_blank">🗄️ Phpmyadmin</a>
+                <a href="http://localhost:6333/dashboard" target="_blank">📐 Qdrant</a>
+                <span class="tabnav-sep"></span>
+                <a href="/admin/queue" target="_blank">📬 Local queue</a>
+                <a href="http://localhost:9181/" target="_blank">📮 Redis queues</a>
+                <span class="tabnav-sep"></span>
+                <a href="http://localhost:3012" target="_blank">⏰ Cronicle</a>
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
 
-                {% if request.session.get('role') == 'admin' %}
-                <li><a href="#" id="miniAppNavLink" target="_blank">Mini App</a></li>
-                {% endif %}
+        </div><!-- /tabnav-items -->
+    </div><!-- /nav-right -->
+</header><!-- /nav-shell -->
 
-                <li><a href="#" id="logoutBtn">Выйти</a></li>
-            </ul>
-        </li>
-    </ul>
-</nav>
-
+<!-- ══ Notifications ════════════════════════════════════════ -->
 <div id="event-notification"></div>
 
+<!-- ══ Page content ═════════════════════════════════════════ -->
 <div class="page-content">
     {% block content %}{% endblock %}
 </div>
 
+<!-- ══ Scripts ══════════════════════════════════════════════ -->
 <script type="module">
-    import {postData, getData, putData, deleteData} from '/static/js/api.js';
+    import {postData, getData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
 
-    // Load current user info
     async function loadCurrentUser() {
         try {
             const response = await getData('/auth/me');
             if (response && response.user) {
-                const btn = document.querySelector('.user-menu-btn');
-                if (btn) {
-                    btn.textContent = `👤 ${response.user.username} (${response.user.role})`;
-                }
                 _loadMiniAppNavLink(response.user.id);
             }
         } catch (e) {
-            // Not authenticated
         }
     }
 
@@ -146,16 +158,13 @@
             const res = await getData(`/user/${userId}/token`);
             const tokens = res.result || [];
             const base = window.location.origin + '/telegram-app';
-            if (tokens.length > 0) {
-                link.href = `${base}?access_token=${encodeURIComponent(tokens[0].token)}`;
-            } else {
-                link.href = '/admin/cabinet';
-                link.title = 'Создайте токен доступа в личном кабинете';
-            }
-        } catch { /* тихо */ }
+            link.href = tokens.length > 0
+                ? `${base}?access_token=${encodeURIComponent(tokens[0].token)}`
+                : '/admin/cabinet';
+        } catch {
+        }
     }
 
-    // Logout handler
     document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
         e.preventDefault();
         try {
@@ -167,10 +176,76 @@
         }
     });
 
-    // Load user info on page load
     loadCurrentUser();
 </script>
 
 {% block scripts %}{% endblock %}
+
+<script>
+    (function () {
+        const current = window.location.pathname;
+
+        // Map URL → group
+        const groupMap = {
+            '/': 'chat',
+            '/admin/llm': 'chat',
+            '/admin/agent': 'chat',
+            '/admin/fact_collection': 'chat',
+            '/admin/fact': 'chat',
+            '/admin/session': 'chat',
+            '/admin/cabinet': 'chat',
+            '/admin/node': 'nodes',
+            '/admin/variable': 'nodes',
+            '/admin/workflow': 'nodes',
+            '/admin/planning': 'nodes',
+            '/admin/developing': 'nodes',
+            '/admin/user': 'people',
+            '/admin/role': 'people',
+            '/admin/workflow_trace': 'logs',
+            '/admin/setting': 'setting',
+            '/admin/tool': 'tool',
+            '/admin/queue': 'tool',
+        };
+
+        function activateGroup(groupId) {
+            document.querySelectorAll('.tabnav-group').forEach(el => {
+                el.classList.toggle('active', el.dataset.group === groupId);
+            });
+            document.querySelectorAll('.tabnav-panel').forEach(panel => {
+                panel.classList.toggle('active', panel.dataset.group === groupId);
+            });
+        }
+
+        // Highlight active sub-link (exact match or startsWith(href+'/') to avoid prefix collisions)
+        document.querySelectorAll('.tabnav-panel a').forEach(link => {
+            const href = link.getAttribute('href');
+            if (!href || href === '#') return;
+            const matched = href === '/'
+                ? current === '/'
+                : current === href || current.startsWith(href + '/');
+            if (matched) link.classList.add('active');
+        });
+
+        // Auto-activate group on load.
+        // Use exact match OR startsWith(path+'/') — prevents /admin/workflow matching /admin/workflow_trace.
+        // Pick longest match so more-specific paths win.
+        const activeGroup = (function () {
+            let best = null, bestLen = 0;
+            for (const [path, group] of Object.entries(groupMap)) {
+                const matched = current === path || (path !== '/' && current.startsWith(path + '/'));
+                if (matched && path.length > bestLen) { bestLen = path.length; best = group; }
+            }
+            return best;
+        })();
+
+        if (activeGroup) {
+            activateGroup(activeGroup);
+        } else {
+            const first = document.querySelector('.tabnav-group');
+            if (first) activateGroup(first.dataset.group);
+        }
+    })();
+</script>
+
 </body>
 </html>

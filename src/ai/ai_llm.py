@@ -114,7 +114,7 @@ async def ai_llm_speed_get(llm_id: int | None, target_seconds: int = CHUNK_SIZE_
     chars_per_ms_raw = (row or {}).get('chars_per_ms')
     chars_per_ms = float(chars_per_ms_raw) if chars_per_ms_raw else 15000.0 / max(avg_ms, 1)
 
-    chunk_size = max(5000, int(chars_per_ms * target_seconds * 1000))
+    chunk_size = max(5000, int(chars_per_ms * target_seconds * 1000 * 0.7))
 
     # Сохраняем в кеш: мерджим с существующими ключами других target_seconds
     try:
@@ -144,7 +144,7 @@ async def ai_llm_speed_get(llm_id: int | None, target_seconds: int = CHUNK_SIZE_
 
 
 def _ai_llm_speed_default(target_seconds: int = CHUNK_SIZE_TARGET_SECONDS) -> dict:
-    chunk_size = max(5000, int(1.5 * target_seconds * 1000))
+    chunk_size = max(5000, int(1.5 * target_seconds * 1000 * 0.7))
     return {'chars_per_ms': 1.5, 'avg_ms': 10000.0, 'chunk_size': chunk_size, 'n': 0}
 
 

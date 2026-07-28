@@ -20,7 +20,8 @@ INSERT INTO `llm` (`id`, `name`) VALUES
 (15, 'cerebras/gpt-oss-120b'),
 (16, 'cerebras/gemma-4-31b'),
 (17, 'openai/gpt-5.2'),
-(18, 'openai/gpt-5.3-codex');
+(18, 'openai/gpt-5.3-codex'),
+(19, 'ollama/qwen2.5:7b');
 
 --
 
@@ -30,11 +31,10 @@ INSERT INTO `role` (`id`, `name`) VALUES
 (3, 'manager_cashier'),
 (4, 'manager_dating_junior');
 
--- Password: admin123
--- Password: user123
+--
 
 INSERT INTO `user` (`id`, `username`, `email`, `password_hash`, `role_id`, `created_at`, `dynamic`) VALUES
-(1, 'admin', 'admin@example.com', '$2b$12$GiCtKwt8AvL/RcTDEJUx9Ou8g3elZ0E5a4l1pj7aF.Xg4Ep2UAR8q', 1, '2026-04-26 09:17:35', 0),
+(1, 'admin', 'admin@example.com', '$2b$12$h4r.DMSVURAOMZGzLk1QXegad/PwgaNI/aMu0AKvdGXIyW1KARoke', 1, '2026-04-26 09:17:35', 0),
 (2, 'lilia', 'lilia@example.com', '$2b$12$XG.UEUHZz3kkq73DpN52Z.7rqVMgrlCnsbyK2bR2tuXTLkBPhACDK', 2, '2026-04-26 09:17:35', 0),
 (3, 'olga', 'olga@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 3, '2026-04-26 09:17:35', 0),
 (4, 'alena', 'alena@example.com', '$2b$12$WXFmztot.T5tdQHhjCdRses4YaBeABOaA8DLVPFfly2z.UAlqJ0QS', 4, '2026-04-26 09:17:35', 0);
@@ -98,8 +98,7 @@ INSERT INTO `agent_workflow_step_type` (`id`, `name`, `icon`, `description`, `de
 (3, 'tool_invoke', '⚙️', 'Вызов инструмента', 'Вызываем инструмент. Передаем в аргументы текущие переменные и сохраняем ответ в переменные.', ''),
 (4, 'return_response_text', '↩T', 'Вернуть текстовый ответ', 'Возращаем текстовый ответ на основе шаблона из переменных', ''),
 (5, 'variable_conversion', '❴❵', 'Переменные', 'Переопределяем значения переменных', ''),
-(6, 'workflow_invoke', '🇼', 'Вызов workflow', 'Вызываем вложенный workflow (sub-workflow): передаем входящие переменные, получаем результат в переменную и продолжаем выполнение.', ''),
-(7, 'llm_to_variable', '📝', 'LLM → переменная (Markdown/текст)', 'Вызывает LLM и сохраняет сырой ответ в переменную без JSON-парсинга. Поддерживает встроенный авто-MapReduce через chunk_variable: если контекст превышает chunk_size — автоматически разбивается на чанки (map) и синтезируется (reduce).', '');
+(6, 'workflow_invoke', '🇼', 'Вызов workflow', 'Вызываем вложенный workflow (sub-workflow): передаем входящие переменные, получаем результат в переменную и продолжаем выполнение.', '');
 
 --
 
