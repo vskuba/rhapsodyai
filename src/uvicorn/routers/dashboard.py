@@ -158,6 +158,25 @@ async def plan_page(request: Request, user: AuthSession = Depends(require_auth))
     )
 
 
+@router.get("/admin/planning", response_class=HTMLResponse)
+async def planning_page(request: Request, user: AuthSession = Depends(require_auth)):
+    from py_modules.setting_.setting_ import setting_get
+    tz_offset = await setting_get('timezone', '+0')
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/planning.html",
+        {"tz_offset": str(tz_offset or '+0')},
+    )
+
+
+@router.get("/admin/developing", response_class=HTMLResponse)
+async def developing_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/developing.html",
+    )
+
+
 @router.get("/admin/tool", response_class=HTMLResponse)
 async def tool_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(

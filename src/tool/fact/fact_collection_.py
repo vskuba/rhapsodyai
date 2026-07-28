@@ -62,7 +62,8 @@ async def fact_collection_add(collection_name: str, data: list[dict], document_t
         data = [data]
 
     if not data or not isinstance(data, list):
-        raise ValueError("Fact data collection must be a non-empty list")
+        logger_info("⚠️ fact_collection_add: data пустой или не список — пропускаем добавление")
+        return {"facts_qty": 0, "facts_str": ""}
 
     repo = FactCollectionRepository()
     entity_collection = await repo.find_one_by({"name": collection_name})

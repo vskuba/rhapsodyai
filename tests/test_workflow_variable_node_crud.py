@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 import pytest
 from httpx import AsyncClient
 
@@ -9,7 +10,7 @@ async def test_variable_crud():
     async with AsyncClient(base_url=BASE_URL) as client:
         await client.post(
             "/auth/login",
-            json={"username": "admin", "password": "admin123"},
+            json=TEST_AUTH,
         )
 
         # 1. Создание

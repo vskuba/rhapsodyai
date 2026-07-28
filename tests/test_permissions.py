@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 """Permission boundary tests — non-admin users must get 403 on write operations."""
 import pytest
 import httpx
@@ -16,7 +17,7 @@ class TestPermissions:
     @pytest.fixture
     async def admin(self) -> AsyncGenerator[httpx.AsyncClient, None]:
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
-            await client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+            await client.post("/auth/login", json=TEST_AUTH)
             yield client
 
     @pytest.fixture

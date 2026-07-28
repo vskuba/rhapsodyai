@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 import pytest
 import requests
 from tests.conftest import BASE_URL
@@ -7,7 +8,7 @@ def session():
     """Create an authenticated session for tests."""
     s = requests.Session()
     # Log in as admin to have sufficient permissions
-    login_res = s.post(f"{BASE_URL}/auth/login", json={"username": "admin", "password": "admin123"})
+    login_res = s.post(f"{BASE_URL}/auth/login", json=TEST_AUTH)
     if login_res.status_code != 200:
         raise Exception("Login failed")
     return s

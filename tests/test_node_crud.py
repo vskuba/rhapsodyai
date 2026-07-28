@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 """Node CRUD tests — /node endpoints."""
 import pytest
 import httpx
@@ -12,7 +13,7 @@ class TestNodeCRUD:
     @pytest.fixture
     async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
-            await client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+            await client.post("/auth/login", json=TEST_AUTH)
             await self._cleanup(client)
             yield client
             await self._cleanup(client)

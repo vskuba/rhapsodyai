@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 """
 User Access Token CRUD and API validation tests.
 
@@ -25,7 +26,7 @@ class TestUserAccessToken:
             # Login as admin first
             await client.post(
                 "/auth/login",
-                json={"username": "admin", "password": "admin123"},
+                json=TEST_AUTH,
             )
             yield client
 

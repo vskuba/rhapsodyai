@@ -299,7 +299,7 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
             ping['ms'] = int((time.monotonic() - started) * 1000)
             ping['error'] = f'{type(e).__name__}: {e}'
 
-    await setting_set(f'llm_ping_{llm_id}', json.dumps(ping, ensure_ascii=False))
+    await setting_set(f'llm_ping_{llm_id}', json.dumps(ping, ensure_ascii=False), dynamic=1)
     return {"result": ping}
 
 

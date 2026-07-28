@@ -19,6 +19,7 @@ async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depen
             FROM `user` u
             LEFT JOIN `role` r ON r.id = u.role_id
             LEFT JOIN `setting` s ON s.user_id = u.id AND s.node_id IS NULL AND s.`key` = 'language'
+            WHERE u.dynamic = 0
             """
         )
         users = await db.fetchall()

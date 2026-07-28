@@ -5,7 +5,7 @@ import httpx
 import uuid
 from typing import AsyncGenerator
 
-from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID
+from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH
 
 
 @pytest.fixture(scope="session")
@@ -92,7 +92,7 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
     async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
         await client.post(
             "/auth/login",
-            json={"username": "admin", "password": "admin123"},
+            json=TEST_AUTH,
         )
         await _cleanup_test_users(client)
         await _cleanup_test_agents(client)
@@ -101,11 +101,61 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
     async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
         await client.post(
             "/auth/login",
-            json={"username": "admin", "password": "admin123"},
+            json=TEST_AUTH,
         )
         await _cleanup_test_users(client)
         await _cleanup_test_agents(client)
         await _cleanup_test_roles(client)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def create_test_user():
+    """Create a dedicated test user (TEST_USERNAME / TEST_PASSWORD from .env) with admin role.
+    Deletes the user after the test session ends."""
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    os.environ['MYSQL_HOST'] = 'localhost'
+    os.environ['MYSQL_PORT'] = '3302'
+
+    test_username = os.environ.get('TEST_USERNAME', '')
+    test_password = os.environ.get('TEST_PASSWORD', '')
+    if not test_username or not test_password:
+        yield
+        return
+
+    import bcrypt
+    from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
+
+    password_hash = bcrypt.hashpw(test_password.encode(), bcrypt.gensalt()).decode()
+
+    async def _create():
+        async with mysql_get_db_async() as db:
+            await db.execute("SELECT id FROM `user` WHERE username = %s", (test_username,))
+            row = await db.fetchone()
+            if not row:
+                await db.execute(
+                    "INSERT INTO `user` (username, email, password_hash, role_id, dynamic) VALUES (%s, %s, %s, 1, 1)",
+                    (test_username, f"{test_username}@test.local", password_hash)
+                )
+                await db.connection.commit()
+
+    async def _delete():
+        async with mysql_get_db_async() as db:
+            await db.execute("DELETE FROM `user` WHERE username = %s", (test_username,))
+            await db.connection.commit()
+        await mysql_pool_close()
+
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(_create())
+    loop.run_until_complete(mysql_pool_close())
+    loop.close()
+
+    yield
+
+    loop2 = asyncio.new_event_loop()
+    loop2.run_until_complete(_delete())
+    loop2.close()
 
 
 @pytest.fixture(scope="session", autouse=True)

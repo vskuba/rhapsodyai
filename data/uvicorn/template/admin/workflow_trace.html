@@ -570,6 +570,40 @@
         text-decoration: underline;
     }
 
+    /* LLM-бейдж на шаге */
+    .step-llm-badge {
+        font-size: 10px;
+        font-weight: 600;
+        color: #2563eb;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 1px 7px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 180px;
+    }
+
+    /* Блок статистики LLM */
+    .llm-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+    }
+
+    .llm-stat-item {
+        font-size: 11px;
+        font-weight: 600;
+        color: #1d4ed8;
+        background: #dbeafe;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 2px 9px;
+        white-space: nowrap;
+    }
+
     .btn-delete-run {
         background: transparent;
         color: #e74c3c;
@@ -960,12 +994,12 @@
         // Сводка запуска
         const summary = el('div', 'run-summary');
         const headRow = el('div', 'row');
-        headRow.appendChild(el('span', 'run-pre-title', `Workflow `));
+        headRow.appendChild(el('span', 'run-pre-title', `#${run.id} Workflow `));
         headRow.appendChild(workflowLink(`${run.workflow_title || run.workflow_name || ''} `, run.workflow_id, 'run-title'));
         headRow.appendChild(el('span', 'run-name', `${run.workflow_name || ''} `));
         headRow.appendChild(el('span', `status-badge status-${run.status}`, run.status));
         headRow.appendChild(el('span', 'run-meta', `  ${fmtDate(run.started_at)}`));
-        headRow.appendChild(el('span', 'run-meta-time', `  ${fmtDuration(run.duration_ms)}`));
+        headRow.appendChild(el('span', 'run-meta-time', `  ${fmtDuration(run.duration_ms)}`))
 
         // Replay: повторный прогон workflow с сохраненным снапшотом переменных.
         // Шаги берутся из текущего определения workflow, история пишется в новую сессию.
@@ -1042,10 +1076,36 @@
         resultRow.appendChild(el('pre', null, (run.status === 'error' ? run.error : run.result) || '—'));
         summary.appendChild(resultRow);
 
+        // LLM статистика: подсчёт вызовов по моделям из всех шагов (включая sub-workflow рекурсивно)
+        const llmCounts = collectLlmStats(run);
+        if (Object.keys(llmCounts).length > 0) {
+            const statsRow = el('div', 'row');
+            statsRow.appendChild(el('div', 'label', 'LLM вызовы'));
+            const statsBlock = el('div', 'llm-stats');
+            Object.entries(llmCounts).forEach(([name, count]) => {
+                statsBlock.appendChild(el('span', 'llm-stat-item', `${name} × ${count}`));
+            });
+            statsRow.appendChild(statsBlock);
+            summary.appendChild(statsRow);
+        }
+
         runDetail.appendChild(summary);
 
         // Таймлайн шагов (с рекурсией для sub-workflow)
         runDetail.appendChild(renderRunTimeline(run));
+    }
+
+    // Рекурсивно собирает статистику вызовов LLM по всем шагам запуска и его потомков
+    function collectLlmStats(run) {
+        const counts = {};
+        const addSteps = (r) => {
+            (r.steps || []).forEach(s => {
+                if (s.llm_name) counts[s.llm_name] = (counts[s.llm_name] || 0) + 1;
+            });
+            (r.children || []).forEach(addSteps);
+        };
+        addSteps(run);
+        return counts;
     }
 
     function renderRunTimeline(run) {
@@ -1080,6 +1140,7 @@
             head.appendChild(el('span', 'step-index', `Шаг #${step.exec_index}`));
             head.appendChild(el('span', 'step-icon', state.stepTypeIcons[step.step_type] || '·'));
             head.appendChild(el('span', 'step-name', step.step_title || step.step_type));
+            if (step.llm_name) head.appendChild(el('span', 'step-llm-badge', step.llm_name));
             if (step.transition) head.appendChild(el('span', 'step-transition-mark', '🔀'));
             head.appendChild(el('span', `status-badge status-${step.status}`, step.status));
             head.appendChild(el('span', 'step-duration', fmtDuration(step.duration_ms)));

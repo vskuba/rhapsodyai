@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 """Workflow CRUD tests — /workflow and /workflow_step endpoints."""
 import pytest
 import httpx
@@ -12,7 +13,7 @@ class TestWorkflowCRUD:
     @pytest.fixture
     async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
-            await client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+            await client.post("/auth/login", json=TEST_AUTH)
             await self._cleanup(client)
             yield client
             await self._cleanup(client)
@@ -188,7 +189,7 @@ class TestWorkflowSteps:
     @pytest.fixture
     async def client_with_workflow(self) -> AsyncGenerator[tuple[httpx.AsyncClient, int], None]:
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
-            await client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+            await client.post("/auth/login", json=TEST_AUTH)
             resp = await client.post("/workflow", json={
                 "name": f"{TEST_WF_PREFIX}steps",
                 "title": "Steps Test WF",
@@ -280,7 +281,7 @@ class TestWorkflowSteps:
 
     async def test_delete_workflow_cascades_steps(self, client: httpx.AsyncClient = None):
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
-            await client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+            await client.post("/auth/login", json=TEST_AUTH)
             create_resp = await client.post("/workflow", json={
                 "name": f"{TEST_WF_PREFIX}cascade",
                 "title": "Cascade Test",

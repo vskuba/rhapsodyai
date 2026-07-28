@@ -20,7 +20,7 @@ async def setting_list_route(request: Request, user=Depends(AuthChecker([AuthPer
     """Общие и нодовые настройки (пользовательские user_id-настройки не показываем)."""
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, `key`, node_id, value FROM setting WHERE user_id IS NULL ORDER BY `key` ASC"
+            "SELECT id, `key`, node_id, value FROM setting WHERE user_id IS NULL AND dynamic = 0 ORDER BY `key` ASC"
         )
         return {"result": await db.fetchall()}
 

@@ -12,7 +12,7 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
-from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID
+from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH
 
 BASE_URL = "http://localhost:8011"
 
@@ -27,7 +27,7 @@ class TestSessionFlow:
             # Login as standard user / admin first
             login_response = await client.post(
                 "/auth/login",
-                json={"username": "admin", "password": "admin123"},
+                json=TEST_AUTH,
             )
             assert login_response.status_code == 200
             yield client
