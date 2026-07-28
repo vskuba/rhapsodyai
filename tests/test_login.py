@@ -13,6 +13,7 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
+from tests.constants import TEST_AUTH
 
 BASE_URL = "http://localhost:8011"
 
@@ -49,12 +50,12 @@ class TestLoginFlow:
         """Test login with valid username and password."""
         response = await client.post(
             "/auth/login",
-            json={"username": "admin", "password": "admin123"},
+            json=TEST_AUTH,
         )
         assert response.status_code == 200
         data = response.json()
         assert data["message"] == "Успешный вход! Сессия создана."
-        assert data["user"]["username"] == "admin"
+        assert data["user"]["username"] == TEST_AUTH["username"]
         assert data["user"]["role"] == "admin"
 
         # Verify session cookie is set
@@ -91,7 +92,7 @@ class TestLoginFlow:
         # Missing username
         response = await client.post(
             "/auth/login",
-            json={"password": "admin123"},
+            json={"password": TEST_AUTH["password"]},
         )
         assert response.status_code == 400
         assert response.json()["detail"] == "Username and password required"
@@ -101,7 +102,7 @@ class TestLoginFlow:
         # First login
         login_response = await client.post(
             "/auth/login",
-            json={"username": "admin", "password": "admin123"},
+            json=TEST_AUTH,
         )
         assert login_response.status_code == 200
 
@@ -109,7 +110,7 @@ class TestLoginFlow:
         response = await client.get("/auth/me")
         assert response.status_code == 200
         data = response.json()
-        assert data["user"]["username"] == "admin"
+        assert data["user"]["username"] == TEST_AUTH["username"]
         assert data["user"]["role"] == "admin"
 
     async def test_auth_me_without_session(self, client: httpx.AsyncClient):
@@ -127,7 +128,7 @@ class TestLoginFlow:
         # First login
         login_response = await client.post(
             "/auth/login",
-            json={"username": "admin", "password": "admin123"},
+            json=TEST_AUTH,
         )
         assert login_response.status_code == 200
 
@@ -145,7 +146,7 @@ class TestLoginFlow:
     async def test_protected_route_after_logout(self, client: httpx.AsyncClient):
         """Test that accessing admin routes after logout redirects to login."""
         # Login first
-        await client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+        await client.post("/auth/login", json=TEST_AUTH)
 
         # Logout (POST)
         await client.post("/auth/logout")

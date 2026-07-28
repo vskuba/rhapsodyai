@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 import pytest
 import httpx
 import uuid
@@ -29,7 +30,7 @@ class TestCompanionFlow:
             # Login as standard user first
             await client.post(
                 "/auth/login",
-                json={"username": "admin", "password": "admin123"},
+                json=TEST_AUTH,
             )
             yield client
 

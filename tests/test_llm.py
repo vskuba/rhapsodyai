@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 """LLM endpoint tests — /llm/list, /llm/status, /llm/usage/stats."""
 import pytest
 import httpx
@@ -11,7 +12,7 @@ class TestLlm:
     @pytest.fixture
     async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
-            await client.post("/auth/login", json={"username": "admin", "password": "admin123"})
+            await client.post("/auth/login", json=TEST_AUTH)
             yield client
 
     # --- /llm/list ---
