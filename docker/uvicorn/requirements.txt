@@ -20,4 +20,5 @@ python-json-logger
 json-repair
 qdrant_client
 uvicorn[standard]
-yoyo-migrationsfpdf2
+yoyo-migrations
+fpdf2
