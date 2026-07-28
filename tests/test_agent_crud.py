@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 """
 Agent CRUD tests.
 
@@ -28,7 +29,7 @@ class TestAgentCRUD:
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
             await client.post(
                 "/auth/login",
-                json={"username": "admin", "password": "admin123"},
+                json=TEST_AUTH,
             )
             yield client
 
