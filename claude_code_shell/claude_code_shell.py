@@ -170,6 +170,7 @@ class ClaudeShell:
         self._last_id = 0
         self._last_child_output_time = 0.0
         self._pending_inject = None  # (msg, inject_after_monotonic)
+        self._waiting_for_response = False  # звук только после явного ввода/инъекции
 
     # ─── Terminal ────────────────────────────────────────────────────────────
 
@@ -331,6 +332,7 @@ class ClaudeShell:
                 except OSError as e:
                     self._log(f"inject enter error: {e}")
             self._log(f"injected: {text[:80]!r}")
+            self._waiting_for_response = True
 
     def _spawn(self):
         rows, cols = self._term_size()
@@ -355,6 +357,7 @@ class ClaudeShell:
         stdin_fd = sys.stdin.fileno() if sys.stdin.isatty() else -1
         self._last_child_output_time = time.monotonic()
         self._pending_inject = None
+        self._waiting_for_response = False
 
         while not self._stop.is_set() and not self._restart.is_set():
             if not child.isalive():
@@ -364,6 +367,11 @@ class ClaudeShell:
 
             now = time.monotonic()
             idle = now - self._last_child_output_time
+
+            # Звуковой сигнал: только если мы явно ждали ответа и Claude замолчал
+            if self._waiting_for_response and idle >= self._IDLE_BEFORE_INJECT:
+                self._waiting_for_response = False
+                os.write(sys.stdout.fileno(), b"\a")
 
             # Проверяем отложенный inject
             if self._pending_inject is not None:
@@ -406,6 +414,8 @@ class ClaudeShell:
                 try:
                     data = os.read(stdin_fd, 4096)
                     if data:
+                        if b"\r" in data or b"\n" in data:
+                            self._waiting_for_response = True
                         with _WRITE_LOCK:
                             os.write(child_fd, data)
                 except OSError:
