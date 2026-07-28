@@ -844,6 +844,19 @@ export function renderCustomStepFields(step, metadata) {
             wfContainer.appendChild(repeatContainer);
             fieldWrapper.appendChild(wfContainer);
 
+        } else if (field.type === 'variable_select') {
+            // --- Селект переменной workflow ---
+            inputElement = document.createElement('select');
+            inputElement.id = `field_${field.key}`;
+            inputElement.className = 'form-control';
+            inputElement.style = "padding: 6px; font-size: 13px; height: 36px;";
+            fillVariablesSelectOptions(inputElement, currentValue, field.placeholder || '-- Не выбрано --');
+            inputElement.onchange = () => saveChanges();
+            fieldWrapper.appendChild(inputElement);
+
+            const latestMetaV = parseMetadata(step.metadata);
+            if (latestMetaV[field.key] === undefined && currentValue !== '') saveChanges();
+
         } else {
             // --- СТАНДАРТНАЯ ОТРИСОВКА ОСТАЛЬНЫХ ТИПОВ ПОЛЕЙ ---
             if (field.type === 'textarea') {
