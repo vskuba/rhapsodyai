@@ -58,7 +58,7 @@
     align-items: stretch;
     height: 49px;
     background: #2c3e50;
-    overflow: hidden;
+    position: relative;
 }
 
 .tabnav-delimeter {

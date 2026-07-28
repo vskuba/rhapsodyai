@@ -28,7 +28,7 @@
             <!-- Tab = link to its own page -->
             <a class="tabnav-group" data-group="chat" href="/">💬 Чат</a>
             <a class="tabnav-group" data-group="nodes"
-               href="{% if request.session.get('role') == 'admin' %}/admin/node{% else %}#{% endif %}">🕸️ Ноды</a>
+               href="{% if request.session.get('role') == 'admin' %}/admin/node{% else %}/admin/variable{% endif %}">🕸️ Ноды</a>
             {% if request.session.get('role') == 'admin' %}
             <a class="tabnav-group" data-group="people" href="/admin/user">👥 Пользователи</a>
             <a class="tabnav-group" data-group="logs" href="/admin/workflow_trace">📊 Логи</a>
@@ -75,8 +75,8 @@
             <!-- nodes: /admin/node is the tab itself, so no Ноды link here -->
             <div class="tabnav-panel" data-group="nodes">
                 <span class="tabnav-sep"></span>
-                {% if request.session.get('role') == 'admin' %}
                 <a href="/admin/variable">📦 Переменные</a>
+                {% if request.session.get('role') == 'admin' %}
                 <a href="/admin/workflow">🔄 Workflow</a>
                 <span class="tabnav-sep"></span>
                 <a href="/admin/planning">🗂️ Планирование</a>
