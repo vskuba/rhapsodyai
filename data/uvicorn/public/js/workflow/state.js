@@ -15,6 +15,12 @@ export const WORKFLOW_STEP_CONFIG = {
             type: 'textarea',
             placeholder: '',
             value: '%prompt_user%'
+        },
+        {
+            key: 'chunk_variable',
+            label: 'MapReduce: переменная с большим текстом (необязательно)',
+            type: 'variable_select',
+            placeholder: '-- Не использовать MapReduce --'
         }
     ],
     'tool_invoke': [ // ID типа "Инструменты"
