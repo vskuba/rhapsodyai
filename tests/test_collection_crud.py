@@ -1,3 +1,4 @@
+from tests.constants import TEST_AUTH
 """
 Collection CRUD tests.
 
@@ -27,7 +28,7 @@ class TestCollectionCRUD:
             # Login as admin first
             await client.post(
                 "/auth/login",
-                json={"username": "admin", "password": "admin123"},
+                json=TEST_AUTH,
             )
             # Pre-cleanup in case of previous run failure
             try:
