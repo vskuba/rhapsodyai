@@ -19,6 +19,7 @@ data/qdrant_storage
 data/sqllite3
 data/report
 data/history
+data/planning
 
 # Папки IDE
 .idea/
