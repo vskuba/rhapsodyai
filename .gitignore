@@ -20,6 +20,8 @@ data/sqllite3
 data/report
 data/history
 data/planning
+data/seeds
+data/backups
 
 # Папки IDE
 .idea/
