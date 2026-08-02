@@ -35,7 +35,7 @@ async def trace_run_list(
     if agent_id:
         where.append("r.agent_id = %s")
         params.append(agent_id)
-    if status in ('running', 'success', 'error'):
+    if status in ('running', 'success', 'error', 'stopped'):
         where.append("r.status = %s")
         params.append(status)
 
@@ -45,7 +45,13 @@ async def trace_run_list(
     offset = (page - 1) * limit
 
     async with mysql_get_db_async() as db:
-        await db.execute(f"SELECT COUNT(*) as qty FROM agent_workflow_run r WHERE {where_sql}", params)
+        await db.execute(
+            "DELETE FROM agent_workflow_trace WHERE depth = 0 AND finished_at < NOW() - INTERVAL 7 DAY"
+        )
+        if db.rowcount:
+            await db.connection.commit()
+
+        await db.execute(f"SELECT COUNT(*) as qty FROM agent_workflow_trace r WHERE {where_sql}", params)
         total = (await db.fetchone())['qty']
 
         await db.execute(
@@ -54,9 +60,9 @@ async def trace_run_list(
                    r.prompt_user, r.result, r.error, r.started_at, r.duration_ms,
                    w.title AS workflow_title,
                    a.title AS agent_title,
-                   (SELECT COUNT(*) FROM agent_workflow_run_step s WHERE s.run_id = r.id) AS steps_qty,
-                   (SELECT COUNT(*) FROM agent_workflow_run c WHERE c.parent_run_id = r.id) AS children_qty
-            FROM agent_workflow_run r
+                   (SELECT COUNT(*) FROM agent_workflow_trace_step s WHERE s.run_id = r.id) AS steps_qty,
+                   (SELECT COUNT(*) FROM agent_workflow_trace c WHERE c.parent_run_id = r.id) AS children_qty
+            FROM agent_workflow_trace r
             LEFT JOIN agent_workflow w ON w.id = r.workflow_id
             LEFT JOIN agent a ON a.id = r.agent_id
             WHERE {where_sql}
@@ -88,7 +94,7 @@ async def trace_run_detail(
         await db.execute(
             """
             SELECT r.*, w.title AS workflow_title, w.name AS workflow_name, a.title AS agent_title
-            FROM agent_workflow_run r
+            FROM agent_workflow_trace r
             LEFT JOIN agent_workflow w ON w.id = r.workflow_id
             LEFT JOIN agent a ON a.id = r.agent_id
             WHERE r.run_uuid = %s
@@ -107,7 +113,7 @@ async def trace_run_detail(
             await db.execute(
                 f"""
                 SELECT r.*, w.title AS workflow_title, w.name AS workflow_name, a.title AS agent_title
-                FROM agent_workflow_run r
+                FROM agent_workflow_trace r
                 LEFT JOIN agent_workflow w ON w.id = r.workflow_id
                 LEFT JOIN agent a ON a.id = r.agent_id
                 WHERE r.parent_run_id IN ({placeholders})
@@ -125,7 +131,7 @@ async def trace_run_detail(
         await db.execute(
             f"""
             SELECT s.*, l.name AS llm_name
-            FROM agent_workflow_run_step s
+            FROM agent_workflow_trace_step s
             LEFT JOIN llm l ON l.id = s.llm_id
             WHERE s.run_id IN ({placeholders})
             ORDER BY s.run_id, s.exec_index, s.id
@@ -145,6 +151,57 @@ async def trace_run_detail(
         if parent_id and parent_id in runs:
             runs[parent_id]['children'].append(run)
 
+    # Для running-запусков вычисляем текущий (ещё не завершённый) шаг из определения workflow
+    for run in runs.values():
+        if run.get('status') != 'running':
+            continue
+        wf_id = run.get('workflow_id')
+        if not wf_id:
+            continue
+        try:
+            wf_data = await ai_workflow_load(wf_id)
+            wf_steps = wf_data.get('steps') or []
+            completed_steps = run['steps']
+
+            if not wf_steps:
+                continue
+
+            # Строим карту step_id -> позиция
+            step_pos = {s['id']: i for i, s in enumerate(wf_steps)}
+
+            if not completed_steps:
+                # Ещё ни один шаг не завершён → первый шаг
+                candidate = wf_steps[0]
+            else:
+                # Последний завершённый шаг
+                last = max(completed_steps, key=lambda s: s.get('exec_index', 0))
+                last_step_id = last.get('step_id')
+                transition_raw = last.get('transition')
+
+                next_step = None
+                if transition_raw:
+                    import json as _json
+                    t = transition_raw if isinstance(transition_raw, dict) else _json.loads(transition_raw or '{}')
+                    to_id = t.get('to_step_id')
+                    if to_id:
+                        next_step = next((s for s in wf_steps if s['id'] == to_id), None)
+
+                if next_step is None and last_step_id in step_pos:
+                    pos = step_pos[last_step_id]
+                    if pos + 1 < len(wf_steps):
+                        next_step = wf_steps[pos + 1]
+
+                candidate = next_step
+
+            if candidate:
+                run['current_step'] = {
+                    'step_id': candidate['id'],
+                    'step_title': candidate.get('title', ''),
+                    'step_type': candidate.get('step_type_name', ''),
+                }
+        except Exception:
+            pass
+
     return {"result": root}
 
 
@@ -162,7 +219,7 @@ async def trace_run_replay(
     переменных (включая старый session_uuid как значение) не изменяется."""
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT * FROM agent_workflow_run WHERE run_uuid = %s AND depth = 0",
+            "SELECT * FROM agent_workflow_trace WHERE run_uuid = %s AND depth = 0",
             (run_uuid,)
         )
         run = await db.fetchone()
@@ -241,7 +298,7 @@ async def trace_run_stop(
     в обоих случаях закрываются здесь: их trace-финализация при отмене не вызывается."""
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, status FROM agent_workflow_run WHERE run_uuid = %s AND depth = 0",
+            "SELECT id, status FROM agent_workflow_trace WHERE run_uuid = %s AND depth = 0",
             (run_uuid,)
         )
         run = await db.fetchone()
@@ -260,7 +317,7 @@ async def trace_run_stop(
         # Задачи в процессе нет (зависший лог после рестарта) — закрываем запись сами
         if not task_alive:
             await db.execute(
-                "UPDATE agent_workflow_run SET status = 'stopped', error = 'Остановлен пользователем', "
+                "UPDATE agent_workflow_trace SET status = 'stopped', error = 'Остановлен пользователем', "
                 "finished_at = NOW(3) WHERE id = %s AND status = 'running'",
                 (run['id'],)
             )
@@ -270,7 +327,7 @@ async def trace_run_stop(
         while run_ids:
             placeholders = ', '.join(['%s'] * len(run_ids))
             await db.execute(
-                f"SELECT id FROM agent_workflow_run "
+                f"SELECT id FROM agent_workflow_trace "
                 f"WHERE parent_run_id IN ({placeholders}) AND status = 'running'",
                 run_ids
             )
@@ -278,7 +335,7 @@ async def trace_run_stop(
             if run_ids:
                 placeholders = ', '.join(['%s'] * len(run_ids))
                 await db.execute(
-                    f"UPDATE agent_workflow_run SET status = 'stopped', "
+                    f"UPDATE agent_workflow_trace SET status = 'stopped', "
                     f"error = 'Остановлен пользователем', finished_at = NOW(3) "
                     f"WHERE id IN ({placeholders})",
                     run_ids
@@ -295,5 +352,5 @@ async def trace_run_delete(
 ):
     """Удаляет запуск: шаги и дочерние запуски удаляются каскадно (FK)."""
     async with mysql_get_db_async() as db:
-        await db.execute("DELETE FROM agent_workflow_run WHERE run_uuid = %s", (run_uuid,))
+        await db.execute("DELETE FROM agent_workflow_trace WHERE run_uuid = %s", (run_uuid,))
     return {"result": "success"}
