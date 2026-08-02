@@ -401,6 +401,7 @@
 
     async function initFilters() {
         try {
+            await loadTz();
             const agentData = await (await fetch('/agent/list')).json();
             if (agentData.result) {
                 agentData.result.forEach(agent => {
@@ -516,7 +517,7 @@
         filtered.forEach(m => {
             const msgDiv = document.createElement('div');
             msgDiv.className = 'admin-msg-box';
-            const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
+            const time = m.created_at ? fmtTz(m.created_at) : '';
             msgDiv.innerHTML = `
                 <div class="chips-container">
                     <span class="chip role-${m.role}">${m.role}</span>
