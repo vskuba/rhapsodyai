@@ -15,8 +15,8 @@ from src.auth.auth_permission import AuthPermission
 router = APIRouter()
 
 # Допустимые интервалы сброса ошибок и настройка по умолчанию
-LLM_ERROR_RESET_HOURS = (1, 6, 12, 24, 48)
-LLM_ERROR_RESET_DEFAULT = 24
+LLM_ERROR_RESET_SECONDS = (15, 45, 180, 300)
+LLM_ERROR_RESET_DEFAULT = 300
 
 
 @router.get("/llm/list")
@@ -28,7 +28,7 @@ async def llm_list(db=Depends(mysql_get_db_async), user=Depends(AuthChecker([Aut
 
 
 @router.get("/llm/status")
-async def llm_status(node_id: int | None = None, reset_hours: int | None = None,
+async def llm_status(node_id: int | None = None, reset_seconds: int | None = None,
                      user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
     """Очередь LLM выбранной ноды в порядке приоритета (position).
 
@@ -36,34 +36,34 @@ async def llm_status(node_id: int | None = None, reset_hours: int | None = None,
     rate_limit_at ASC, position ASC (ошибки 429/413/402/503 двигают модель
     в конец очереди через rate_limit_at + code_error).
 
-    Ошибки старше интервала reset_hours сбрасываются в БД перед выборкой
+    Ошибки старше интервала reset_seconds сбрасываются в БД перед выборкой
     (rate_limit_at и code_error -> NULL) — модель возвращается на свою позицию.
-    Переданный reset_hours сохраняется как настройка страницы."""
-    if reset_hours is not None and reset_hours not in LLM_ERROR_RESET_HOURS:
-        raise HTTPException(status_code=400, detail=f"reset_hours: допустимые значения {LLM_ERROR_RESET_HOURS}")
+    Переданный reset_seconds сохраняется как настройка страницы."""
+    if reset_seconds is not None and reset_seconds not in LLM_ERROR_RESET_SECONDS:
+        raise HTTPException(status_code=400, detail=f"reset_seconds: допустимые значения {LLM_ERROR_RESET_SECONDS}")
 
-    if reset_hours is not None:
-        await setting_set('llm_error_reset_hours', reset_hours)
-        hours = reset_hours
+    if reset_seconds is not None:
+        await setting_set('llm_error_reset_seconds', reset_seconds)
+        seconds = reset_seconds
     else:
-        stored = str(await setting_get('llm_error_reset_hours'))
-        hours = int(stored) if stored and stored.isdigit() else LLM_ERROR_RESET_DEFAULT
+        stored = str(await setting_get('llm_error_reset_seconds'))
+        seconds = int(stored) if stored and stored.isdigit() else LLM_ERROR_RESET_DEFAULT
 
     async with mysql_get_db_async() as db:
         # Сброс просроченных ошибок: модель снова участвует в очереди по своей позиции
         await db.execute(
             """
             UPDATE node_llm SET rate_limit_at = NULL, code_error = NULL
-            WHERE rate_limit_at IS NOT NULL AND rate_limit_at < NOW() - INTERVAL %s HOUR
+            WHERE rate_limit_at IS NOT NULL AND rate_limit_at < NOW() - INTERVAL %s SECOND
             """,
-            (hours,)
+            (seconds,)
         )
 
         await db.execute("SELECT id, name FROM `node` ORDER BY name ASC")
         nodes = await db.fetchall()
 
         if not nodes:
-            return {"result": {"nodes": [], "node_id": None, "reset_hours": hours, "llms": []}}
+            return {"result": {"nodes": [], "node_id": None, "reset_seconds": seconds, "llms": []}}
 
         # По умолчанию — нода последнего LLM-запроса (а не первая по алфавиту)
         selected_node_id = node_id if node_id in {n['id'] for n in nodes} else await _llm_node_last_used_get(db, nodes)
@@ -141,7 +141,7 @@ async def llm_status(node_id: int | None = None, reset_hours: int | None = None,
     return {"result": {
         "nodes": nodes,
         "node_id": selected_node_id,
-        "reset_hours": hours,
+        "reset_seconds": seconds,
         "llms": [
             {
                 'id': row['id'],

@@ -721,16 +721,13 @@
             </div>
 
             <div class="filter-item">
-                <label class="filter-label" for="resetMinutesSelect">Сброс ошибок старше</label>
+                <label class="filter-label" for="resetSecondsSelect">Сброс ошибок старше</label>
                 <div class="reset-row">
-                    <select id="resetMinutesSelect">
-                        <option value="3" selected>3 мин</option>
-                        <option value="15">15 мин</option>
-                        <option value="60">1 час</option>
-                        <option value="360">6 часов</option>
-                        <option value="720">12 часов</option>
-                        <option value="1440">24 часа</option>
-                        <option value="2880">48 часов</option>
+                    <select id="resetSecondsSelect">
+                        <option value="15">15 сек</option>
+                        <option value="45">45 сек</option>
+                        <option value="180">3 мин</option>
+                        <option value="300" selected>5 мин</option>
                     </select>
                     <button type="button" class="btn-reset-errors" id="resetErrorsBtn"
                             title="Сбросить ошибки моделей ноды сейчас (очистить время и код ошибки)">↺
@@ -896,7 +893,7 @@
     const tableBody = document.getElementById('llmTableBody');
     const pingAllBtn = document.getElementById('pingAllBtn');
     const nodeSelect = document.getElementById('nodeSelect');
-    const resetMinutesSelect = document.getElementById('resetMinutesSelect');
+    const resetSecondsSelect = document.getElementById('resetSecondsSelect');
     const autoRefreshSelect = document.getElementById('autoRefreshSelect');
     const usageStatsBody = document.getElementById('usageStatsBody');
     const usageStatsDays = document.getElementById('usageStatsDays');
@@ -1170,7 +1167,7 @@
     async function loadStatus(params = {}) {
         const query = new URLSearchParams();
         if (params.nodeId) query.set('node_id', params.nodeId);
-        if (params.resetMinutes) query.set('reset_minutes', params.resetMinutes);
+        if (params.resetSeconds) query.set('reset_seconds', params.resetSeconds);
 
         try {
             const data = await getData(`/llm/status?${query}`);
@@ -1184,7 +1181,7 @@
                 nodeSelect.appendChild(opt);
             });
 
-            resetMinutesSelect.value = String(result.reset_minutes);
+            resetSecondsSelect.value = String(result.reset_seconds);
 
             // Парсим timezone "+3" / "-5" / "0" → число часов
             const tzStr = String(result.timezone || '+0');
@@ -1255,10 +1252,11 @@
     };
 
     nodeSelect.onchange = () => {
-        loadStatus({nodeId: nodeSelect.value, resetMinutes: resetMinutesSelect.value});
+        localStorage.setItem('llm_selected_node_id', nodeSelect.value);
+        loadStatus({nodeId: nodeSelect.value, resetSeconds: resetSecondsSelect.value});
         loadUsageStats(nodeSelect.value, usageStatsDays.value);
     };
-    resetMinutesSelect.onchange = () => loadStatus({nodeId: nodeSelect.value, resetMinutes: resetMinutesSelect.value});
+    resetSecondsSelect.onchange = () => loadStatus({nodeId: nodeSelect.value, resetSeconds: resetSecondsSelect.value});
     usageStatsDays.onchange = () => loadUsageStats(nodeSelect.value, usageStatsDays.value);
 
     const resetErrorsBtn = document.getElementById('resetErrorsBtn');
@@ -1299,14 +1297,15 @@
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         autoRefreshTimer = setInterval(() => {
             if (autoRefreshPaused || draggedRow) return;
-            loadStatus({nodeId: nodeSelect.value, resetMinutes: resetMinutesSelect.value});
+            loadStatus({nodeId: nodeSelect.value, resetSeconds: resetSecondsSelect.value});
         }, parseInt(autoRefreshSelect.value) * 1000);
     }
 
     autoRefreshSelect.onchange = autoRefreshStart;
     autoRefreshStart();
 
-    loadStatus().then(() => loadUsageStats(nodeSelect.value, usageStatsDays.value));
+    const _savedNodeId = localStorage.getItem('llm_selected_node_id');
+    loadStatus(_savedNodeId ? {nodeId: _savedNodeId} : {}).then(() => loadUsageStats(nodeSelect.value, usageStatsDays.value));
 
     /* ===================== CRUD tab ===================== */
     const crudBody = document.getElementById('crudTableBody');

@@ -4,10 +4,29 @@ USE `project`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
-DROP TABLE IF EXISTS `agent_workflow_run_step`;
-DROP TABLE IF EXISTS `agent_workflow_run`;
+-- project / planning (new names)
+DROP TABLE IF EXISTS `project_design_prototype_page_block`;
+DROP TABLE IF EXISTS `project_design_prototype_widget`;
+DROP TABLE IF EXISTS `project_design_prototype_page`;
+DROP TABLE IF EXISTS `project_state`;
+DROP TABLE IF EXISTS `project_design_prototype_block`;
+DROP TABLE IF EXISTS `project_design_prototype_browser_history`;
+DROP TABLE IF EXISTS `project_design_ui_component`;
+DROP TABLE IF EXISTS `project_design_token`;
+DROP TABLE IF EXISTS `project_planning_document`;
+DROP TABLE IF EXISTS `project_planning_phase`;
+DROP TABLE IF EXISTS `project_planning_phase_source`;
+DROP TABLE IF EXISTS `project`;
+-- developing / task / detective
+DROP TABLE IF EXISTS `developing_task`;
+DROP TABLE IF EXISTS `developing_project`;
+DROP TABLE IF EXISTS `task`;
+-- agent workflow trace
+DROP TABLE IF EXISTS `agent_workflow_trace_step`;
+DROP TABLE IF EXISTS `agent_workflow_trace`;
 DROP TABLE IF EXISTS `agent_session`;
 DROP TABLE IF EXISTS `plan`;
+DROP TABLE IF EXISTS `agent_role`;
 DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `fact`;
 DROP TABLE IF EXISTS `fact_collection`;
@@ -30,6 +49,9 @@ DROP TABLE IF EXISTS `user_node`;
 DROP TABLE IF EXISTS `setting`;
 DROP TABLE IF EXISTS `node`;
 DROP TABLE IF EXISTS `user_access_token`;
+DROP TABLE IF EXISTS `ai_claude_session_registry`;
+DROP TABLE IF EXISTS `ai_claude_session`;
+DROP TABLE IF EXISTS `event_log`;
 DROP TABLE IF EXISTS `user`;
 DROP TABLE IF EXISTS `role`;
 DROP TABLE IF EXISTS `llm`;
@@ -41,6 +63,8 @@ SET FOREIGN_KEY_CHECKS = 1;
 CREATE TABLE `llm` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
+    `input_type`  VARCHAR(255) NOT NULL DEFAULT 'text' COMMENT 'Поддерживаемые типы входных данных через запятую: text,image,audio',
+    `output_type` VARCHAR(255) NOT NULL DEFAULT 'text' COMMENT 'Поддерживаемые типы выходных данных через запятую: text,image,audio',
     `chunk_size` JSON NULL COMMENT 'Кеш: {"10": 15000, "avg_ms": 32000, "chars_per_ms": 1.5}; ключ = целевые секунды',
     `chunk_size_refresh_at` DATETIME NULL COMMENT 'Когда истекает кеш chunk_size (NOW + 15 мин); NULL = требует пересчёта'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -76,8 +100,8 @@ CREATE TABLE `node` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` CHAR(50) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
-    `migration_file` CHAR(100) NULL COMMENT 'Файл миграции для экспорта данных этой ноды (mysql_export_node_to_migration)',
-    `is_catchall` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 - эта нода забирает при экспорте все данные, не относящиеся к другим подпроектам'
+    `is_catchall` TINYINT(1) NOT NULL DEFAULT 0,
+    `llm_parallel_per_agent_max` TINYINT NOT NULL DEFAULT 1 COMMENT 'Максимум параллельных LLM-запросов на один агент этой ноды'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица настроек (scope: user_id — пользовательская, node_id — нодовая, оба NULL — общая)
@@ -111,6 +135,8 @@ CREATE TABLE `llm_request` (
     `status_code` INT NULL,                            -- 200 = успех; 429/413/402/503/500 = ошибка
     `duration_ms` INT NULL,                            -- время ответа провайдера в мс
     `prompt_length` INT NULL,                           -- суммарный размер промпта (system+user) для расчёта chars/ms
+    `tokens_input`  INT NULL,                          -- входящие токены LLM-вызова
+    `tokens_output` INT NULL,                          -- исходящие токены LLM-вызова
     `error` VARCHAR(255) NULL,                         -- краткий текст ошибки
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_llm_request_llm` (`llm_id`, `created_at`),
@@ -396,7 +422,7 @@ CREATE TABLE `ai_claude_session_registry` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Журнал выполнения workflow: один запуск (включая вложенные sub-workflow через parent_run_id)
-CREATE TABLE `agent_workflow_run` (
+CREATE TABLE `agent_workflow_trace` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `run_uuid` CHAR(36) NOT NULL,
     `parent_run_id` INT NULL,                    -- запуск sub-workflow ссылается на родителя
@@ -420,11 +446,11 @@ CREATE TABLE `agent_workflow_run` (
     INDEX `idx_workflow_run_session` (`session_uuid`),
     INDEX `idx_workflow_run_parent` (`parent_run_id`),
     CONSTRAINT `fk_wr_run_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `fk_wr_run_parent` FOREIGN KEY (`parent_run_id`) REFERENCES `agent_workflow_run` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_wr_run_parent` FOREIGN KEY (`parent_run_id`) REFERENCES `agent_workflow_trace` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Журнал выполнения workflow: выполненный шаг (вход/выход/переход/длительность)
-CREATE TABLE `agent_workflow_run_step` (
+CREATE TABLE `agent_workflow_trace_step` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `run_id` INT NOT NULL,
     `exec_index` INT NOT NULL,                   -- порядковый номер выполнения (не position шага)
@@ -440,8 +466,10 @@ CREATE TABLE `agent_workflow_run_step` (
     `error` LONGTEXT NULL,
     `created_at` DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
     `duration_ms` INT NULL,
+    `tokens_input` INT NULL,                       -- входящие токены LLM-шага
+    `tokens_output` INT NULL,                      -- исходящие токены LLM-шага
     INDEX `idx_workflow_run_step_run` (`run_id`, `exec_index`),
-    CONSTRAINT `fk_wrs_run` FOREIGN KEY (`run_id`) REFERENCES `agent_workflow_run` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_wrs_run` FOREIGN KEY (`run_id`) REFERENCES `agent_workflow_trace` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_wrs_llm` FOREIGN KEY (`llm_id`) REFERENCES `llm` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -455,3 +483,259 @@ CREATE TABLE `event_log` (
     INDEX `idx_event_log_type` (`type`),
     INDEX `idx_event_log_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ─── Task ──────────────────────────────────────────────────────────────────────
+
+CREATE TABLE `task` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT DEFAULT NULL,
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `description` TEXT NOT NULL,
+    `goals` TEXT NOT NULL,
+    `status` ENUM('pending','queued','active','done','blocked','cancelled') NOT NULL DEFAULT 'pending',
+    `report` TEXT NOT NULL,
+    `position` INT NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_pt_project` (`project_id`),
+    INDEX `idx_pt_status` (`status`),
+    INDEX `idx_pt_position` (`project_id`, `position`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Developing ────────────────────────────────────────────────────────────────
+
+CREATE TABLE `developing_project` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `node_id` INT NOT NULL DEFAULT '10',
+    `planning_project_id` INT DEFAULT NULL,
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `status` ENUM('pending','active','done','blocked','cancelled') NOT NULL DEFAULT 'pending',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_planning_project` (`planning_project_id`),
+    INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `developing_task` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT NOT NULL,
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `description` TEXT NOT NULL,
+    `role` ENUM('manager','backend','frontend','devops','qa') NOT NULL DEFAULT 'backend',
+    `assignee` VARCHAR(100) NOT NULL DEFAULT '',
+    `priority` ENUM('high','medium','low') NOT NULL DEFAULT 'medium',
+    `status` ENUM('pending','active','review','done','blocked','cancelled') NOT NULL DEFAULT 'pending',
+    `hours_planned` SMALLINT NOT NULL DEFAULT '0',
+    `hours_spent` SMALLINT NOT NULL DEFAULT '0',
+    `position` INT NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_project` (`project_id`),
+    INDEX `idx_status` (`status`),
+    INDEX `idx_role` (`role`),
+    INDEX `idx_position` (`project_id`, `position`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Project (planning_project → project) ──────────────────────────────────────
+
+CREATE TABLE `project` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `node_id` INT NOT NULL DEFAULT '6',
+    `user_id` INT NOT NULL DEFAULT '0',
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `idea` LONGTEXT NOT NULL,
+    `status` ENUM('pending','processing','complete','error') NOT NULL DEFAULT 'pending',
+    `phase_current` VARCHAR(100) NOT NULL DEFAULT '',
+    `position` INT NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `score_market` TINYINT DEFAULT NULL,
+    `score_feasibility` TINYINT DEFAULT NULL,
+    `score_financial` TINYINT DEFAULT NULL,
+    `score_total` TINYINT DEFAULT NULL,
+    `score_verdict` VARCHAR(10) DEFAULT NULL,
+    `score_investment` VARCHAR(100) DEFAULT NULL,
+    `score_time_to_market` VARCHAR(100) DEFAULT NULL,
+    `score_summary` TEXT DEFAULT NULL,
+    `cloud_tags` TEXT DEFAULT NULL,
+    `entities` TEXT DEFAULT NULL,
+    `roles` TEXT DEFAULT NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Project Planning ──────────────────────────────────────────────────────────
+
+CREATE TABLE `project_planning_phase_source` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `phase_key` VARCHAR(100) NOT NULL DEFAULT '',
+    `title` VARCHAR(200) NOT NULL DEFAULT '',
+    `doc_file` VARCHAR(200) NOT NULL DEFAULT '',
+    `header_mode` VARCHAR(30) NOT NULL DEFAULT '## ',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_phase_key` (`phase_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_planning_phase` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT NOT NULL,
+    `phase` VARCHAR(100) NOT NULL DEFAULT '',
+    `parent_phase` VARCHAR(100) DEFAULT NULL,
+    `title` VARCHAR(200) NOT NULL DEFAULT '',
+    `status` ENUM('pending','running','waiting','complete','failed') NOT NULL DEFAULT 'pending',
+    `result` LONGTEXT NOT NULL,
+    `error` TEXT NOT NULL,
+    `summary` VARCHAR(150) NOT NULL DEFAULT '',
+    `tokens_used` INT NOT NULL DEFAULT '0',
+    `tokens_input` INT DEFAULT NULL,
+    `tokens_output` INT DEFAULT NULL,
+    `started_at` DATETIME DEFAULT NULL,
+    `completed_at` DATETIME DEFAULT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `project_phase` (`project_id`, `phase`),
+    INDEX `idx_project` (`project_id`),
+    INDEX `idx_status` (`status`),
+    INDEX `idx_parent_phase` (`project_id`, `parent_phase`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_planning_document` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT NOT NULL,
+    `doc_type` VARCHAR(100) NOT NULL DEFAULT '',
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `content` LONGTEXT NOT NULL,
+    `version` INT NOT NULL DEFAULT '1',
+    `status` ENUM('draft','final') NOT NULL DEFAULT 'draft',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_project` (`project_id`),
+    INDEX `idx_doc_type` (`doc_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Project Design ────────────────────────────────────────────────────────────
+
+CREATE TABLE `project_design_prototype_block` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT NOT NULL,
+    `name` VARCHAR(255) NOT NULL DEFAULT '',
+    `title` VARCHAR(255) DEFAULT NULL,
+    `description` TEXT DEFAULT NULL,
+    `content` MEDIUMTEXT DEFAULT NULL,
+    `components` TEXT DEFAULT NULL,
+    `stateless` TINYINT(1) NOT NULL DEFAULT '0',
+    `approved` TINYINT(4) NOT NULL DEFAULT '1',
+    `created_by` ENUM('ai','manual') NOT NULL DEFAULT 'ai',
+    `order_index` INT NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `default_section` VARCHAR(10) DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_project` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_design_prototype_browser_history` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT NOT NULL,
+    `url` VARCHAR(2048) NOT NULL DEFAULT '',
+    `used_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_project_url` (`project_id`, `url`(512)),
+    INDEX `idx_project_used` (`project_id`, `used_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_state` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(50) NOT NULL,
+    `description` VARCHAR(255) DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `project_state` (`id`, `name`, `description`) VALUES
+    (1, 'anon', 'Анонимный пользователь'),
+    (2, 'auth', 'Авторизованный пользователь');
+
+CREATE TABLE `project_design_prototype_page` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT NOT NULL,
+    `parent_id` INT DEFAULT NULL,
+    `name` VARCHAR(255) NOT NULL DEFAULT '',
+    `description` TEXT DEFAULT NULL,
+    `page_type` VARCHAR(50) NOT NULL DEFAULT 'feature',
+    `tags` VARCHAR(500) NOT NULL DEFAULT '',
+    `roles` VARCHAR(500) NOT NULL DEFAULT '',
+    `state_id` INT NOT NULL DEFAULT 1,
+    `wireframe` LONGTEXT DEFAULT NULL,
+    `grid_layout` JSON DEFAULT NULL,
+    `ux_spec` LONGTEXT DEFAULT NULL,
+    `order_index` INT NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_project` (`project_id`),
+    INDEX `idx_parent` (`parent_id`),
+    INDEX `idx_state` (`state_id`),
+    CONSTRAINT `fk_proto_page_state` FOREIGN KEY (`state_id`) REFERENCES `project_state` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_design_prototype_widget` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `block_id` INT NOT NULL,
+    `name` VARCHAR(255) NOT NULL,
+    `description` TEXT DEFAULT NULL,
+    `css` MEDIUMTEXT DEFAULT NULL,
+    `html` MEDIUMTEXT DEFAULT NULL,
+    `created_by` VARCHAR(50) NOT NULL DEFAULT 'ai',
+    `order_index` INT NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_block_id` (`block_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_design_prototype_page_block` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `page_id` INT NOT NULL,
+    `block_id` INT NOT NULL,
+    `widget_id` INT DEFAULT NULL,
+    `widget_name` VARCHAR(255) NOT NULL DEFAULT '',
+    `order_index` INT NOT NULL DEFAULT '0',
+    `section` TINYINT(4) NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_page_block` (`page_id`, `block_id`, `section`),
+    INDEX `idx_page` (`page_id`),
+    INDEX `idx_block` (`block_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_design_ui_component` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL,
+    `description` TEXT NOT NULL,
+    `variants` VARCHAR(500) NOT NULL DEFAULT '',
+    `sizes` VARCHAR(200) NOT NULL DEFAULT '',
+    `states` VARCHAR(300) NOT NULL DEFAULT '',
+    `tailwind_example` TEXT NOT NULL,
+    `tags` VARCHAR(500) NOT NULL DEFAULT '',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_name` (`name`),
+    INDEX `idx_tags` (`tags`(100))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_design_token` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL,
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `description` TEXT DEFAULT NULL,
+    `tokens` JSON NOT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
