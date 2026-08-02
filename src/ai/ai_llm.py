@@ -1,10 +1,15 @@
+import base64
 import json
 from datetime import datetime
 
+import httpx
+
+from config.config import config_get
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
-LLM_PROVIDERS = ('openrouter', 'claude', 'ollama', 'gemini', 'groq', 'mistral', 'huggingface', 'cerebras', 'openai')
+LLM_PROVIDERS = ('openrouter', 'claude', 'ollama', 'gemini', 'groq', 'mistral', 'huggingface', 'cerebras', 'openai',
+                 'gx10')
 
 # Журнал запросов держим неделю: этого хватает для метрик от 1 минуты до 7 дней
 LLM_REQUEST_TTL_DAYS = 7
@@ -17,8 +22,17 @@ def ai_llm_provider(model_name: str) -> str | None:
     return None
 
 
-async def ai_llm_node_get(node_id: int | None) -> list[dict]:
-    """Список LLM ноды (с фоллбэком на catchall-ноду для агентов без своей ноды)."""
+async def ai_llm_node_get(
+        node_id: int | None,
+        input_type: str | None = None,
+        output_type: str | None = None,
+) -> list[dict]:
+    """Список LLM ноды (с фоллбэком на catchall-ноду для агентов без своей ноды).
+
+    input_type / output_type — если указаны, возвращает только LLM у которых
+    соответствующий тип входит в список через запятую (например, input_type='image'
+    вернёт только LLM с 'image' в колонке input_type).
+    """
     effective_node_id = node_id or await ai_llm_node_id_default_get()
 
     async with mysql_get_db_async() as db:
@@ -31,7 +45,140 @@ async def ai_llm_node_get(node_id: int | None) -> list[dict]:
             """,
             (effective_node_id,)
         )
-        return await db.fetchall()
+        rows = await db.fetchall()
+
+    if input_type:
+        rows = [r for r in rows if input_type in (r.get('input_type') or 'text').split(',')]
+    if output_type:
+        rows = [r for r in rows if output_type in (r.get('output_type') or 'text').split(',')]
+    return rows
+
+
+async def ai_llm_image_generate(
+        llm: dict,
+        prompt: str,
+        size: str = '1024x1024',
+        quality: str = 'auto',
+        style: str = '',
+) -> bytes:
+    """Генерирует изображение через LLM-провайдера.
+
+    Возвращает PNG в виде bytes.
+    Провайдеры: openai, openrouter — OpenAI Images API.
+                gx10 — ComfyUI (Flux.1 Dev) на 192.168.1.2:8188.
+    """
+    import asyncio as _asyncio
+    import uuid as _uuid
+    import random as _random
+
+    model_name: str = llm.get('name', '')
+    provider = ai_llm_provider(model_name)
+    if not provider:
+        raise ValueError(f'Неизвестный провайдер для LLM: {model_name}')
+
+    if provider == 'gx10':
+        return await _ai_llm_image_generate_gx10(prompt, size)
+
+    base_url = (config_get(provider.upper() + '_API_URL') or '').rstrip('/')
+    api_key = config_get(provider.upper() + '_API_KEY') or ''
+
+    # OpenAI images endpoint
+    url = base_url + '/images/generations'
+    headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+    body = {
+        'model': model_name[len(provider) + 1:],
+        'prompt': prompt,
+        'n': 1,
+        'size': size,
+        'quality': quality,
+        'response_format': 'b64_json',
+    }
+    if style:
+        body['style'] = style
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
+        resp = await client.post(url, headers=headers, json=body)
+
+    if resp.status_code != 200:
+        raise ValueError(f'Image API error {resp.status_code}: {resp.text[:300]}')
+
+    data = resp.json()
+    b64 = data['data'][0].get('b64_json') or ''
+    if not b64:
+        raise ValueError('Image API вернул пустой b64_json')
+
+    return base64.b64decode(b64)
+
+
+def _ai_llm_comfyui_workflow(prompt: str, seed: int, width: int, height: int) -> dict:
+    unet  = config_get('GX10_COMFYUI_UNET')  or 'flux1-dev-fp8.safetensors'
+    clip1 = config_get('GX10_COMFYUI_CLIP1') or 'clip_l.safetensors'
+    clip2 = config_get('GX10_COMFYUI_CLIP2') or 't5xxl_fp8_e4m3fn.safetensors'
+    vae   = config_get('GX10_COMFYUI_VAE')   or 'ae.safetensors'
+    return {
+        "1": {"class_type": "UNETLoader",        "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+        "2": {"class_type": "DualCLIPLoader",    "inputs": {"clip_name1": clip1, "clip_name2": clip2, "type": "flux"}},
+        "3": {"class_type": "VAELoader",         "inputs": {"vae_name": vae}},
+        "4": {"class_type": "CLIPTextEncode",    "inputs": {"text": prompt, "clip": ["2", 0]}},
+        "5": {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "6": {"class_type": "KSampler",          "inputs": {"seed": seed, "steps": 20, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0, "model": ["1", 0], "positive": ["4", 0], "negative": ["4", 0], "latent_image": ["5", 0]}},
+        "7": {"class_type": "VAEDecode",         "inputs": {"samples": ["6", 0], "vae": ["3", 0]}},
+        "8": {"class_type": "SaveImage",         "inputs": {"filename_prefix": "rhapsody_gen", "images": ["7", 0]}},
+    }
+
+
+async def _ai_llm_image_generate_gx10(prompt: str, size: str = '1024x1024', timeout: float = 300.0) -> bytes:
+    import random as _random, uuid as _uuid, asyncio as _asyncio
+    parts = size.split('x')
+    width  = int(parts[0]) if len(parts) == 2 else 1024
+    height = int(parts[1]) if len(parts) == 2 else 1024
+    seed = _random.randint(0, 2 ** 32 - 1)
+    client_id = str(_uuid.uuid4())
+    workflow = _ai_llm_comfyui_workflow(prompt, seed, width, height)
+
+    comfyui_base = (config_get('GX10_COMFYUI_URL') or 'http://192.168.1.2:8188').rstrip('/')
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15.0)) as client:
+        resp = await client.post(f"{comfyui_base}/prompt", json={"prompt": workflow, "client_id": client_id})
+        if resp.status_code != 200:
+            raise ValueError(f'ComfyUI /prompt error {resp.status_code}: {resp.text[:200]}')
+        prompt_id = resp.json()['prompt_id']
+
+        elapsed = 0.0
+        poll_interval = 2.0
+        while elapsed < timeout:
+            hist = await client.get(f"{comfyui_base}/history/{prompt_id}")
+            history = hist.json()
+            if prompt_id in history:
+                outputs = history[prompt_id].get('outputs', {})
+                images = outputs.get('8', {}).get('images', [])
+                if images:
+                    img = images[0]
+                    view = await client.get(f"{comfyui_base}/view", params={
+                        'filename': img['filename'],
+                        'subfolder': img.get('subfolder', ''),
+                        'type': img.get('type', 'output'),
+                    })
+                    return view.content
+                break
+            await _asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+    raise TimeoutError(f'ComfyUI генерация не завершилась за {timeout:.0f}с')
+
+
+def ai_llm_filter_by_type(
+        llm_list: list[dict],
+        input_type: str | None = None,
+        output_type: str | None = None,
+) -> list[dict]:
+    """Фильтрует список LLM по поддерживаемым типам входа/выхода."""
+    result = llm_list
+    if input_type:
+        result = [r for r in result if input_type in (r.get('input_type') or 'text').split(',')]
+    if output_type:
+        result = [r for r in result if output_type in (r.get('output_type') or 'text').split(',')]
+    return result
 
 
 async def ai_llm_node_id_default_get() -> int:
@@ -40,6 +187,17 @@ async def ai_llm_node_id_default_get() -> int:
         await db.execute("SELECT id FROM `node` WHERE is_catchall = 1 LIMIT 1")
         row = await db.fetchone()
         return row['id'] if row else None
+
+
+async def ai_llm_parallel_per_agent_max_get(node_id: int | None) -> int:
+    """llm_parallel_per_agent_max для ноды (1 если не задано)."""
+    effective_node_id = node_id or await ai_llm_node_id_default_get()
+    if not effective_node_id:
+        return 1
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT llm_parallel_per_agent_max FROM `node` WHERE id = %s", (effective_node_id,))
+        row = await db.fetchone()
+        return int(row['llm_parallel_per_agent_max']) if row and row.get('llm_parallel_per_agent_max') else 1
 
 
 CHUNK_SIZE_REFRESH_MINUTES = 15
@@ -121,7 +279,8 @@ async def ai_llm_speed_get(llm_id: int | None, target_seconds: int = CHUNK_SIZE_
         existing: dict = {}
         if llm_row and llm_row.get('chunk_size'):
             try:
-                existing = json.loads(llm_row['chunk_size']) if isinstance(llm_row['chunk_size'], str) else dict(llm_row['chunk_size'])
+                existing = json.loads(llm_row['chunk_size']) if isinstance(llm_row['chunk_size'], str) else dict(
+                    llm_row['chunk_size'])
             except Exception:
                 pass
         existing.update({
@@ -139,7 +298,8 @@ async def ai_llm_speed_get(llm_id: int | None, target_seconds: int = CHUNK_SIZE_
     except Exception as e:
         logger_info(f"⚠️ Не удалось обновить chunk_size кеш для llm_id={llm_id}: {e}")
 
-    logger_info(f'📐 chunk_size пересчитан: llm_id={llm_id}, target={target_seconds}s → {chunk_size} симв. (chars/ms={chars_per_ms:.3f}, avg_ms={avg_ms:.0f})')
+    logger_info(
+        f'📐 chunk_size пересчитан: llm_id={llm_id}, target={target_seconds}s → {chunk_size} симв. (chars/ms={chars_per_ms:.3f}, avg_ms={avg_ms:.0f})')
     return {'chars_per_ms': chars_per_ms, 'avg_ms': avg_ms, 'chunk_size': chunk_size, 'n': n}
 
 
@@ -155,6 +315,8 @@ async def ai_llm_request_log(
         status_code: int = 200, error: str | None = None,
         duration_ms: int | None = None,
         prompt_length: int | None = None,
+        tokens_input: int | None = None,
+        tokens_output: int | None = None,
 ):
     """Пишет запрос к LLM в журнал llm_request (метрики страницы /admin/llm).
 
@@ -171,10 +333,11 @@ async def ai_llm_request_log(
     try:
         async with mysql_get_db_async() as db:
             await db.execute(
-                "INSERT INTO llm_request (llm_id, user_id, node_id, status_code, duration_ms, prompt_length, error) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO llm_request (llm_id, user_id, node_id, status_code, duration_ms, prompt_length, error, tokens_input, tokens_output) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (llm_id, user_id or None, node_id or None, status_code, duration_ms,
-                 prompt_length or None, (error or None) and str(error)[:255])
+                 prompt_length or None, (error or None) and str(error)[:255],
+                 tokens_input or None, tokens_output or None)
             )
             await db.execute(
                 "DELETE FROM llm_request WHERE created_at < NOW() - INTERVAL %s DAY LIMIT 500",

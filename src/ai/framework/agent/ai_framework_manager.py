@@ -7,11 +7,12 @@ import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
-from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get
+from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_filter_by_type, ai_llm_image_generate
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
     ai_workflow_variables_global_get
-from src.ai.ai_workflow_trace import trace_run_start, trace_run_finish, trace_step, variables_diff
+from src.ai.ai_workflow_trace import (workflow_trace_run_start, workflow_trace_run_finish,
+                                      workflow_trace_step, workflow_trace_variables_diff)
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
 from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
@@ -68,6 +69,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.user_id = metadata.get('user_id', 0)
             framework_model.companion_id = metadata.get('companion_id', 0)
             framework_model.node_id = entity_agent.get('node_id') or await ai_llm_node_id_default_get()
+            framework_model.llm_parallel_per_agent_max = await ai_llm_parallel_per_agent_max_get(framework_model.node_id)
             framework_model.workflow_steps = metadata.get('workflow_steps', [])
             framework_model.workflow_variables = metadata.get('workflow_variables', {})
 
@@ -205,7 +207,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             # Журнал выполнения: запись запуска (сбой трейса не влияет на workflow)
             run_started = time.monotonic()
             run_uuid = str(uuid.uuid4())
-            trace_run_id = await trace_run_start(
+            trace_run_id = await workflow_trace_run_start(
                 run_uuid=run_uuid,
                 workflow_id=top_workflow_id,
                 agent_id=model.entity_agent.get('id'),
@@ -229,7 +231,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             except asyncio.CancelledError:
                 # Остановка кнопкой «Стоп»: закрываем журнал и отвечаем без ошибки
                 logger_info(f"⏹ Workflow остановлен пользователем (run {run_uuid})")
-                await trace_run_finish(
+                await workflow_trace_run_finish(
                     trace_run_id, 'stopped', error='Остановлен пользователем',
                     duration_ms=int((time.monotonic() - run_started) * 1000)
                 )
@@ -237,7 +239,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     loop.call_soon_threadsafe(future.set_result, '⏹ Workflow остановлен')
                 return
             except Exception as e:
-                await trace_run_finish(
+                await workflow_trace_run_finish(
                     trace_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
                     duration_ms=int((time.monotonic() - run_started) * 1000)
                 )
@@ -245,7 +247,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             finally:
                 workflow_runs_active.pop(run_uuid, None)
 
-            await trace_run_finish(
+            await workflow_trace_run_finish(
                 trace_run_id, 'success', result=result,
                 duration_ms=int((time.monotonic() - run_started) * 1000)
             )
@@ -301,17 +303,21 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             trace_transition = None
             trace_output = None
             trace_llm_id = None  # заполняется после LLM-шага
+            trace_tokens_input = None
+            trace_tokens_output = None
 
             # Запись текущего шага в журнал (замыкание видит состояние итерации)
             async def trace_current_step(status: str = 'success', error: str | None = None):
-                await trace_step(
+                await workflow_trace_step(
                     trace_run_id, trace_exec_index, current_step,
                     metadata_rendered=step_meta,
-                    variables_changed=variables_diff(trace_vars_before, variables),
+                    variables_changed=workflow_trace_variables_diff(trace_vars_before, variables),
                     output=trace_output, transition=trace_transition,
                     status=status, error=error,
                     duration_ms=int((time.monotonic() - trace_step_started) * 1000),
                     llm_id=trace_llm_id,
+                    tokens_input=trace_tokens_input,
+                    tokens_output=trace_tokens_output,
                 )
 
             logger_info(
@@ -384,13 +390,20 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         step_future.set_result(response_text.strip())
                     return False
 
+                def on_step_tokens(tokens_in: int | None, tokens_out: int | None) -> None:
+                    model.tokens_input = tokens_in
+                    model.tokens_output = tokens_out
+
                 model.on_complete = on_step_complete
+                model.on_tokens = on_step_tokens
 
                 # Меняем системный prompt на временный, чтобы LLM возвращала строго JSON
                 prompt_system = model.prompt_system
                 model.prompt_system = (
-                    'You are responsible for executing request. '
-                    'Return final response in JSON format.'
+                    'You are a JSON-only output machine. '
+                    'Your response MUST be a single valid JSON object and nothing else. '
+                    'No explanations, no prose, no markdown, no code fences, no praise. '
+                    'Start your response with { and end with }.'
                 )
 
                 queue_get('ai_framework_model').put(model)
@@ -437,10 +450,28 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 )
 
             if step_type == 'llm_to_json':
-                expect_variables = [x.get('variable') for x in step_meta.get('llm_to_json_variable', []) if
-                                    x.get('variable')]
+                _llm_to_json_vars = step_meta.get('llm_to_json_variable', [])
+                expect_variables = [x.get('variable') for x in _llm_to_json_vars if x.get('variable')]
+                optional_variables = {x['variable']: x.get('default', '') for x in _llm_to_json_vars if x.get('variable') and x.get('optional')}
 
                 model.is_transition = True
+                model.thinking_enable = bool(step_meta.get('thinking_enable', False))
+
+                # Per-step LLM type override: если шаг требует определённый тип модели (image, audio…)
+                _step_llm_input_type = step_meta.get('llm_input_type')
+                _step_llm_output_type = step_meta.get('llm_output_type')
+                _saved_entities_llm = None
+                _saved_entity_llm_current = None
+                if _step_llm_input_type or _step_llm_output_type:
+                    _filtered = ai_llm_filter_by_type(model.entities_llm, _step_llm_input_type, _step_llm_output_type)
+                    if _filtered:
+                        _saved_entities_llm = model.entities_llm
+                        _saved_entity_llm_current = model.entity_llm_current
+                        model.entities_llm = _filtered
+                        model.entity_llm_current = _filtered[0]
+                        logger_info(f"🎨 LLM тип {_step_llm_input_type}/{_step_llm_output_type}: {_filtered[0].get('name')}")
+                    else:
+                        logger_info(f"⚠️ LLM тип {_step_llm_input_type}/{_step_llm_output_type}: нет совпадений, используется текущая")
 
                 # MapReduce: если chunk_variable задана и текст большой — MAP-фаза сжимает
                 # контекст до приемлемого размера, REDUCE-фаза — финальный llm_to_json вызов
@@ -494,6 +525,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 response_from_llm = await execute_llm_step()
                 trace_output = response_from_llm
                 trace_llm_id = model.entity_llm_current.get('id')
+                trace_tokens_input = model.tokens_input
+                trace_tokens_output = model.tokens_output
 
                 try:
                     response_from_llm = self._json_str_clean(response_from_llm)
@@ -508,18 +541,31 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     if isinstance(response_json, list) and len(response_json) > 0:
                         response_json = response_json[0]
 
-                    # Проверяем, что ВСЕ ключи из expect_variables присутствуют в ответе LLM
+                    # Если LLM вернула скалярное значение вместо объекта (например, просто URL-строку)
+                    # и ожидается ровно одна переменная — оборачиваем в dict автоматически
+                    if not isinstance(response_json, dict) and len(expect_variables) == 1:
+                        response_json = {expect_variables[0].strip(): str(response_json)}
+
+                    # Проверяем, что все обязательные ключи присутствуют; optional-ключи пропускаются
                     # Очищаем имена ключей от пробелов (на случай CHAR-наследования в метаданных)
-                    missing_keys = [key for key in expect_variables if key.strip() not in response_json]
+                    missing_keys = [key for key in expect_variables if key.strip() not in response_json and key.strip() not in optional_variables]
 
                     if missing_keys:
                         raise KeyError(f"В ответе LLM отсутствуют обязательные ключи воркфлоу: {missing_keys}")
 
-                    # Если проверка пройдена — записываем пары ключ-значение в контекст переменных
+                    # Записываем пары ключ-значение; для optional-ключей используем default если не найдены
                     for var_name in expect_variables:
                         clean_key = var_name.strip()
-                        variables[clean_key] = response_json[clean_key]
-                        logger_info(f"🏷️ Переменная '%{clean_key}%' получила значение '{response_json[clean_key]}'")
+                        if clean_key in response_json:
+                            val = response_json[clean_key]
+                            # dict/list → JSON string, чтобы %variable% подстановка давала валидный JSON
+                            if isinstance(val, (dict, list)):
+                                val = json.dumps(val, ensure_ascii=False)
+                            variables[clean_key] = val
+                        else:
+                            variables[clean_key] = optional_variables[clean_key]
+                            logger_info(f"🏷️ Переменная '%{clean_key}%' (optional) не в ответе, используется дефолт")
+                        logger_info(f"🏷️ Переменная '%{clean_key}%' получила значение '{str(variables[clean_key])[:100]}'")
 
                 except Exception as e:
                     backtrace = traceback.format_exc()
@@ -538,6 +584,67 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     await trace_current_step(status='error', error=str(e))
                     raise e
+
+                # Восстановить LLM после per-step override
+                if _saved_entities_llm is not None:
+                    model.entities_llm = _saved_entities_llm
+                    model.entity_llm_current = _saved_entity_llm_current
+
+            # ОБРАБОТКА ШАГА: Генерация изображения через image-LLM
+            elif step_type == 'llm_to_image':
+                img_meta = step_meta.get('llm_to_image', {})
+                output_variable = img_meta.get('output_variable', 'image_b64')
+                img_size = img_meta.get('size', '1024x1024')
+                img_quality = img_meta.get('quality', 'auto')
+                img_style = img_meta.get('style', '')
+                img_skip_on_error = img_meta.get('skip_on_error', False)
+
+                # Выбор image-capable LLM — перебираем все подходящие, fallback на текущую
+                _img_filtered = ai_llm_filter_by_type(model.entities_llm, input_type='text', output_type='image')
+                if not _img_filtered:
+                    _img_filtered = [model.entity_llm_current]
+
+                prompt_img = ai_workflow_variables_render(step_meta.get('prompt_user', ''), variables)
+
+                import base64 as _b64
+                img_bytes = None
+                _last_img_err: Exception | None = None
+                _img_llm_used = None
+                for _img_llm in _img_filtered:
+                    try:
+                        logger_info(f"🎨 llm_to_image: модель={_img_llm.get('name')} prompt={prompt_img[:100]}")
+                        img_bytes = await ai_llm_image_generate(
+                            llm=_img_llm,
+                            prompt=prompt_img,
+                            size=img_size,
+                            quality=img_quality,
+                            style=img_style,
+                        )
+                        _img_llm_used = _img_llm
+                        break
+                    except Exception as e:
+                        logger_info(f"⚠️ llm_to_image модель {_img_llm.get('name')} ошибка: {e}, пробуем следующую")
+                        _last_img_err = e
+
+                if img_bytes is None:
+                    _err = _last_img_err or ValueError('Все image-LLM недоступны')
+                    logger_info(f"❌ Ошибка llm_to_image: {_err}")
+                    if img_skip_on_error:
+                        logger_info(f"⚠️ skip_on_error=true: пропускаем шаг, %{output_variable}% = ''")
+                        variables[output_variable] = ''
+                        await trace_current_step(status='success', error=str(_err))
+                        current_index += 1
+                        iteration += 1
+                        iteration_exception = 0
+                        continue
+                    await trace_current_step(status='error', error=str(_err))
+                    raise _err
+
+                variables[output_variable] = _b64.b64encode(img_bytes).decode('ascii')
+                logger_info(f"🖼 Изображение сгенерировано: {len(img_bytes)} байт → %{output_variable}%")
+                trace_output = f'image:{len(img_bytes)} bytes → {output_variable}'
+                if _img_llm_used:
+                    trace_llm_id = _img_llm_used.get('id')
 
             # ОБРАБОТКА ШАГА: Вызов инструмента/MCP-сервера
             elif step_type == 'tool_invoke':
@@ -563,7 +670,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 for argument_name, workflow_variable_name in inputs_map.items():
                     arg_key = argument_name.strip()
                     var_name = workflow_variable_name.strip()
-                    raw_args[arg_key] = variables.get(var_name, None)
+                    if var_name.startswith('_const_'):
+                        raw_args[arg_key] = var_name[len('_const_'):]
+                    else:
+                        raw_args[arg_key] = variables.get(var_name, None)
 
                 try:
                     # Вызов функции парсинга и кастинга аргументов
@@ -750,7 +860,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     # Журнал: дочерний запуск с привязкой к родителю и шагу-инициатору
                     child_run_started = time.monotonic()
-                    child_run_id = await trace_run_start(
+                    child_run_id = await workflow_trace_run_start(
                         run_uuid=str(uuid.uuid4()),
                         workflow_id=child_workflow_id,
                         agent_id=model.entity_agent.get('id'),
@@ -780,7 +890,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             trace_run_id=child_run_id
                         )
                     except Exception as e:
-                        await trace_run_finish(
+                        await workflow_trace_run_finish(
                             child_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
                             duration_ms=int((time.monotonic() - child_run_started) * 1000)
                         )
@@ -789,7 +899,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     finally:
                         model.session_uuid = parent_session_uuid
 
-                    await trace_run_finish(
+                    await workflow_trace_run_finish(
                         child_run_id, 'success', result=child_result,
                         duration_ms=int((time.monotonic() - child_run_started) * 1000)
                     )
@@ -845,6 +955,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 model.is_transition = depth > 0
                 response_from_llm = await execute_llm_step()
                 trace_llm_id = model.entity_llm_current.get('id')
+                trace_tokens_input = model.tokens_input
+                trace_tokens_output = model.tokens_output
 
                 trace_output = response_from_llm
                 await trace_current_step()
@@ -892,7 +1004,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             var_name: var_value
                             for var_name, var_value in {
                                 **model.workflow_variables_restored,
-                                **variables_diff(variables_run_start, variables),
+                                **workflow_trace_variables_diff(variables_run_start, variables),
                             }.items()
                             if var_name not in variables_protected
                         }
@@ -1045,15 +1157,20 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         if not json_str:
             return ""
 
+        # Убираем thinking-блоки <think>...</think> (Qwen3 и аналоги)
+        stripped = re.sub(r'<think>.*?</think>', '', json_str, flags=re.DOTALL | re.IGNORECASE).strip()
+        if not stripped:
+            stripped = json_str
+
         # Убираем markdown-блоки ```json ... ``` или ``` ... ```
-        stripped = re.sub(r'^```(?:json)?\s*', '', json_str.strip(), flags=re.IGNORECASE)
+        stripped = re.sub(r'^```(?:json)?\s*', '', stripped.strip(), flags=re.IGNORECASE)
         stripped = re.sub(r'\s*```$', '', stripped.strip())
 
         match = re.search(r"(\{.*})", stripped, re.DOTALL)
         if match:
             return match.group(1).strip()
 
-        return json_str.strip()
+        return stripped.strip()
 
     @staticmethod
     def _json_parse(json_str: str) -> dict:
@@ -1083,7 +1200,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         except Exception:
             pass
 
-        raise json.JSONDecodeError("Не удалось распарсить JSON ни одним из методов", json_str, 0)
+        # Fallback: вернуть сырой текст как строку — вызывающий код обернёт его в dict
+        # если ожидается ровно одна переменная (см. логику после вызова _json_parse)
+        return json_str.strip()
 
     @staticmethod
     async def _workflow_variables_protected() -> set:
