@@ -16,11 +16,23 @@
     /* 2. Сайдбар */
     .agents-sidebar {
         width: 260px;
+        min-width: 160px;
         background: #fafafa;
-        border-right: 1px solid #e0e0e0;
         display: flex;
         flex-direction: column;
+        flex-shrink: 0;
     }
+
+    /* Resizer */
+    .tool-resizer {
+        width: 2px;
+        background: #e0e0e0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background 0.15s;
+    }
+    .tool-resizer:hover,
+    .tool-resizer.dragging { background: #3498db; }
 
     .sidebar-header {
         padding: 20px;
@@ -288,6 +300,9 @@
         </div>
     </div>
 
+    <!-- Resizer -->
+    <div class="tool-resizer" id="toolResizer"></div>
+
     <!-- Зона детального просмотра инструмента -->
     <div class="editor-section">
         <div class="form-header">
@@ -355,6 +370,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/sidebar_resizer.js"></script>
 <script type="module">
     import {getData, postData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
@@ -737,6 +753,8 @@
 
     // Регистрация событий
     document.addEventListener('DOMContentLoaded', () => {
+        initSidebarResizer('toolResizer', 'tool_sidebar_width', document.querySelector('.agents-sidebar'));
+
         // 1. Первичная загрузка списка
         initToolsManager();
 

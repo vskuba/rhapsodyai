@@ -111,11 +111,35 @@
         color: #333;
     }
 
+    /* ── Resizer ── */
+    .seed-resizer {
+        width: 2px;
+        background: #e0e0e0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        position: relative;
+        transition: background 0.15s;
+    }
+    .seed-resizer:hover,
+    .seed-resizer.dragging { background: #3498db; }
+    .seed-resizer::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 1px;
+        height: 32px;
+        background: rgba(0,0,0,0.15);
+        border-radius: 1px;
+    }
+
     /* ── Right: file list ── */
     .seed-files {
         flex: 1;
         overflow: auto;
         padding: 16px 20px;
+        min-width: 0;
     }
 
     .seed-table {
@@ -239,6 +263,9 @@
             <div class="table-groups" id="tableGroups"></div>
         </div>
 
+        <!-- Resizer -->
+        <div class="seed-resizer" id="seedResizer"></div>
+
         <!-- Right: file list -->
         <div class="seed-files" id="seedFiles">
             <div class="seed-empty">
@@ -253,6 +280,7 @@
     </div>
 </div>
 
+<script src="/static/js/sidebar_resizer.js"></script>
 <script>
 async function init() {
     await loadTz();
@@ -418,6 +446,7 @@ function hideStatus() {
     document.getElementById('statusMsg').className = 'status-msg';
 }
 
+initSidebarResizer('seedResizer', 'seed_sidebar_width', document.querySelector('.seed-sidebar'));
 init();
 </script>
 {% endblock %}
