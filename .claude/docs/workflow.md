@@ -3,8 +3,15 @@
 > Составлено по результатам анализа кода: редактор (`data/uvicorn/template/admin/agent_workflow.html`,
 > `agent_workflow_variable.html`), API (`src/uvicorn/routers/workflow/*`), схема БД (`migrations/0001.sql`,
 > сиды `0002.sql`), движок выполнения (`src/ai/framework/agent/ai_framework_manager.py`, `src/ai/ai_workflow.py`),
-> журнал выполнения (`src/ai/ai_workflow_trace.py`, роутер `workflow_trace.py`, страница `admin/workflow_trace.html`,
-> план: `docs/workflow_trace_plan.md`).
+> журнал выполнения (`src/ai/ai_workflow_trace.py`, роутер `workflow_trace.py`, страница `admin/workflow_trace.html`).
+
+## Описания конкретных workflow
+
+Документы с разбором отдельных workflow хранятся в `.claude/docs/workflow/`:
+
+| Файл | Workflow |
+|------|----------|
+| `dating_talk.md` | `dating_talk` — чат с девушкой: 17 шагов, 3 LLM-вызова, механика тишины, subflow, Qdrant-поиск |
 
 ## 1. Назначение
 
@@ -70,6 +77,207 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 | `return_response_text` ↩T | Возвращает текст-шаблон (после рендера переменных). **Завершает текущий запрос**; при `continue_workflow=true` сохраняет индекс следующего шага в `session.metadata` — следующий запрос пользователя продолжит workflow с этого места (диалоговые сценарии-«визарды»). | `prompt_user`, `continue_workflow` |
 | `variable_conversion` ❴❵ | Переопределяет переменные значениями-шаблонами (рендер уже произошел). Используется для склейки JSON-строк, преобразования результатов инструментов. | `variable_conversion: [{variable, text}]` |
 | `workflow_invoke` 🔁 | Вызывает другой workflow как под-процесс в **изолированном scope**: только явные входы по `inputs_map` (родительская переменная → input ребенка) + default'ы переменных ребенка; input-контракт валидируется. Результат → `{child_name}_{step_id}_result_str` + копии по `outputs_map`. Лимит глубины `MAX_WORKFLOW_DEPTH=5`, детект циклов по стеку workflow-id. Внутри подавлены side-эффекты: system/user-prompt и response-final не пишутся в историю, `continue_workflow` игнорируется с warning. | `workflow_invoke: {workflow_id, inputs_map, outputs_map}` |
+
+## 4a. Тип шага `llm_to_json` — детально
+
+### Что делает движок
+
+1. **Заменяет system_prompt** на жёсткий JSON-only (`"You are a JSON-only output machine..."`).
+2. **Рендерит `prompt_user`** из metadata шага (подставляет `%переменные%`) и отправляет в LLM.
+3. **Парсит ответ** (`_json_str_clean`): убирает `<think>...</think>` (Qwen3), markdown-блоки ` ```json ``` `, затем regex `{.*}` вырезает первый JSON-объект.
+   Fallback цепочка: `json.loads` → `ast.literal_eval` → `json_repair`.
+4. **Проверяет наличие** всех ключей из `llm_to_json_variable`. Отсутствующий обязательный ключ → retry.
+5. **Кладёт значения в переменные**: `dict/list`-значения сериализуются в JSON-строку, скаляры — как есть.
+6. **Ретрай**: до 3 попыток **суммарно на весь запуск**, не на шаг — баг §8.8. При исчерпании бросает исключение и завершает workflow ошибкой.
+
+### Формат metadata
+
+```json
+{
+  "llm_to_json_variable": [
+    {"variable": "result_status", "text": "yes или no"},
+    {"variable": "result_score",  "text": "оценка 1-10"},
+    {"variable": "result_comment","text": "краткий комментарий (пустая строка если нет)"},
+    {"variable": "tag_list",      "text": "JSON-массив строк", "optional": true, "default": "[]"}
+  ],
+  "prompt_user": "... (см. ниже) ...",
+  "transitions_before": [],
+  "transitions_after": [
+    {"variable": "result_status", "operator": "==", "value": "yes", "step_id": "35"}
+  ]
+}
+```
+
+Поля:
+- **`variable`** — имя переменной, в которую попадёт значение из JSON-ответа.
+- **`text`** — описание для UI (редактор workflow). **НЕ добавляется в prompt автоматически.**
+- **`optional: true`** — ключ необязателен; если отсутствует, переменная получит `default`.
+- **`default`** — значение по умолчанию при `optional: true`.
+
+### Ключевое правило: `text` не попадает в prompt
+
+`text` — только UI-подсказка. Движок **не аппендит** его к `prompt_user` автоматически.
+Если в `prompt_user` нет описания структуры и примера — LLM угадывает формат сама, и часто ошибается.
+
+### Шаблон правильного `prompt_user`
+
+```
+{Контекст / задача / данные}
+
+Верни строго JSON с ключами:
+- "название_ключа": описание (тип, диапазон, формат)
+- "другой_ключ": описание
+
+Пример ответа:
+{
+  "название_ключа": конкретное_значение,
+  "другой_ключ": конкретное_значение
+}
+```
+
+**Без примера** LLM часто:
+- Добавляет объяснения рядом с JSON → парсинг сломается
+- Использует другие имена ключей → missing_keys → retry / ошибка
+- Возвращает вложенный объект вместо плоского → неожиданная структура
+
+### Примеры из проекта
+
+**Судья качества** (из `planning_design_system`, шаг 261):
+```
+prompt_user: |
+  === ДИЗАЙН-СИСТЕМА ===
+  %design_system_content%
+
+  Итерация %design_system_iteration%.
+
+  Проверь наличие ВСЕХ обязательных элементов:
+  1. Цветовая палитра: 11 токенов с #hex ...
+  2. Типографика ...
+
+  Верни JSON:
+  {"design_system_ok": "yes" или "no", "design_system_score": <0-10>, "design_system_quality_critique": "замечания или пусто"}
+```
+```json
+"llm_to_json_variable": [
+  {"variable": "design_system_ok",          "text": "yes если полная, иначе no"},
+  {"variable": "design_system_score",        "text": "оценка 1-10"},
+  {"variable": "design_system_quality_critique","text": "дефекты (пустая строка если yes)"}
+]
+```
+Переходы: `design_system_ok == "yes"` → шаг завершения; `design_system_iteration >= 3` → шаг завершения.
+
+---
+
+**Генератор задачи** (из `task_ai_generator`, шаг 354):
+```
+prompt_user: |
+  Структурируй задачу на основе описания:
+  %task_description%
+
+  Верни строго JSON объект (без markdown, без пояснений):
+  {"task_json": {"title": "краткое название 3-7 слов", "description": "развёрнутое описание 2-4 предложения", "goals": ["цель 1", "цель 2"]}}
+
+  Правила:
+  - title: 3-7 слов
+  - description: 2-4 предложения
+  - goals: 2-6 конкретных измеримых шагов
+  Верни ТОЛЬКО JSON, ключ task_json обязателен.
+```
+```json
+"llm_to_json_variable": [
+  {"variable": "task_json", "text": "JSON объект: {title, description, goals:[string]}"}
+]
+```
+
+---
+
+**Сообщение тестера** (из `workflow_shell_test`, шаг 67):
+```
+prompt_user: |
+  Ты тестировщик чат-агента: играешь роль собеседника...
+  
+  %if test_dialog%
+  === Диалог до этого момента ===
+  %test_dialog%
+  %endif%
+
+  Придумай СЛЕДУЮЩЕЕ сообщение собеседника...
+
+  === Important information about final response ===
+  Please return your response in JSON format. The JSON response must contain follow keys:
+  - "test_message": следующее сообщение собеседника
+
+  Example of JSON response:
+  {
+    "test_message": "Привет! Чем увлекаешься?"
+  }
+```
+
+---
+
+**Design Tokens** (из `design_tokens_generate`, шаг 356):
+```
+prompt_user: |
+  %prompt_user%
+
+  Верни строго JSON с ключом design_tokens_json.
+  Пример:
+  {
+    "design_tokens_json": {
+      "colors": {
+        "primary": "#2563EB",
+        "secondary": "#7C3AED",
+        "accent": "#0EA5E9",
+        "neutral": "#6B7280",
+        "background": "#F8FAFC",
+        "surface": "#FFFFFF",
+        "text": "#0F172A",
+        "textMuted": "#64748B",
+        "border": "#E2E8F0",
+        "error": "#DC2626",
+        "warning": "#D97706",
+        "success": "#16A34A"
+      },
+      "typography": {
+        "fontFamily": "Inter",
+        "fontSize": "16px"
+      },
+      "borderRadius": "8px"
+    }
+  }
+```
+
+### Типичные ошибки и лечение
+
+| Симптом в WorkflowTrace | Причина | Лечение |
+|---|---|---|
+| `В ответе LLM отсутствуют обязательные ключи: ['key']` | LLM использовала другое имя ключа | Добавить пример с точными именами ключей в `prompt_user` |
+| `Не удалось валидировать или распарсить JSON` | LLM вернула текст + JSON или обернула в markdown | Убедиться, что пример в `prompt_user` не в тройных кавычках; уточнить «без пояснений» |
+| `LLM вернула пустой ответ` | Reasoning-модель (Qwen3) кладёт всё в `<think>` | Добавить `"thinking_enable": false` в metadata шага; `_json_str_clean` убирает `<think>` автоматически |
+| Retry→error при одном шаге | 3 ретрая — суммарно на запуск | Если другой `llm_to_json` шаг раньше уже исчерпал квоту — придётся упростить `prompt_user` |
+| Вложенный объект вместо ожидаемой строки | LLM положила всё в `{"result": {...}}` | В примере показать плоскую структуру; или использовать вложение намеренно и парсить через `%var%`-подстановку |
+
+### Дополнительные возможности шага
+
+**`thinking_enable: false`** — для reasoning-моделей (Qwen3) отключает цепочку размышлений:
+```json
+{"llm_to_json_variable": [...], "prompt_user": "...", "thinking_enable": false}
+```
+
+**`llm_output_type` / `llm_input_type`** — переключиться на другой LLM-пул только для этого шага:
+```json
+{"llm_to_json_variable": [...], "prompt_user": "...", "llm_output_type": "text"}
+```
+
+**MapReduce** (`chunk_variable`) — автоматически разбивает длинный текст на чанки, суммаризирует каждый, затем финальный `llm_to_json` работает со сжатым контекстом:
+```json
+{
+  "llm_to_json_variable": [...],
+  "prompt_user": "=== ТЕКСТ ===\n%long_document%\n\nИзвлеки...",
+  "chunk_variable": "long_document",
+  "chunk_size": "auto"
+}
+```
 
 ## 5. Переходы (transitions)
 
