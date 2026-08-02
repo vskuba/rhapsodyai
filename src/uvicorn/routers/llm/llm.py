@@ -230,7 +230,8 @@ async def llm_usage_stats(node_id: int | None = None, days: int = 7,
         await db.execute(
             f"""
             SELECT u.id AS user_id, u.username, r.llm_id, l.name AS llm_name,
-                   COUNT(*) AS requests, SUM(r.status_code >= 400) AS errors
+                   COUNT(*) AS requests, SUM(r.status_code >= 400) AS errors,
+                   SUM(r.tokens_input) AS tokens_input, SUM(r.tokens_output) AS tokens_output
             FROM llm_request r
             JOIN llm l ON l.id = r.llm_id
             LEFT JOIN `user` u ON u.id = r.user_id
@@ -245,6 +246,8 @@ async def llm_usage_stats(node_id: int | None = None, days: int = 7,
         for row in rows:
             row['requests'] = int(row['requests'])
             row['errors'] = int(row['errors'] or 0)
+            row['tokens_input'] = int(row['tokens_input'] or 0)
+            row['tokens_output'] = int(row['tokens_output'] or 0)
 
     return {"result": {"days": days, "node_id": node_id, "rows": rows}}
 
