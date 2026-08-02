@@ -4,122 +4,207 @@ import {state} from './state.js';
 import {parseMetadata, graphLabelEscape} from './utils.js';
 import {showNotification} from '../notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
+import {getData} from '../api.js';
 
-/**
- * Инициализация режима графа: настройка mermaid и кнопка Graph.
- */
 export function initGraphMode() {
     if (window.mermaid) {
         window.mermaid.initialize({startOnLoad: false, securityLevel: 'strict', flowchart: {curve: 'basis'}});
     }
+}
 
-    const graphBtn = document.getElementById('graphBtn');
-    if (graphBtn) {
-        graphBtn.onclick = () => openWorkflowGraph();
+// Fetch steps for a sub-workflow by ID
+async function _fetchSubflowSteps(workflowId) {
+    try {
+        const data = await getData(`/workflow/${workflowId}/steps`);
+        return data.result || [];
+    } catch (e) {
+        console.warn(`Не удалось загрузить шаги workflow ${workflowId}:`, e);
+        return [];
     }
 }
 
-/**
- * Строит mermaid-описание графа шагов workflow.
- * Ребра: сплошные — последовательное выполнение, пунктирные — условные переходы
- * (before/after) и continue_workflow. Возвращает {definition, warnings}.
- */
-export function buildWorkflowGraphDefinition(steps) {
-    const warnings = [];
+// Collect workflow_invoke sub-workflow IDs referenced in steps
+function _collectSubflowIds(steps) {
+    const ids = new Set();
+    steps.forEach(step => {
+        const type = state.allWorkflowStepsType[step.type_id] || {};
+        if (type.name === 'workflow_invoke') {
+            const meta = parseMetadata(step.metadata);
+            const wfId = meta?.workflow_invoke?.workflow_id;
+            if (wfId) ids.add(String(wfId));
+        }
+    });
+    return ids;
+}
+
+// Recursively fetch all subflow steps (up to depth 4)
+async function _fetchAllSubflowSteps(steps, acc = {}, depth = 0) {
+    if (depth > 4) return acc;
+    const ids = _collectSubflowIds(steps);
+    const pending = [...ids].filter(id => !acc[id]);
+    if (!pending.length) return acc;
+    await Promise.all(pending.map(async id => {
+        const subSteps = await _fetchSubflowSteps(id);
+        acc[id] = subSteps;
+        await _fetchAllSubflowSteps(subSteps, acc, depth + 1);
+    }));
+    return acc;
+}
+
+// Build mermaid lines for a set of steps (recursive).
+// prefix     — string prefix for all node IDs to avoid conflicts across workflows
+// includeStart — emit START((▶)) node for top-level only
+// Returns lines array (no flowchart header, no classDef).
+function _buildInnerLines(steps, prefix, subflowStepsMap, warnings, includeStart) {
+    const lines = [];
     const stepsSorted = [...steps].sort((a, b) => (a.position || 0) - (b.position || 0));
     const stepIds = new Set(stepsSorted.map(s => String(s.id)));
-    const hasIncoming = new Set();
 
-    const lines = ['flowchart TD'];
-
-    // Узлы: форма по типу (терминальные — "стадион"), класс по типу шага
+    // ── 1. Node definitions ──────────────────────────────────────────────────
     stepsSorted.forEach((step, index) => {
         const type = state.allWorkflowStepsType[step.type_id] || {};
         const typeName = type.name || 'unknown';
         const label = graphLabelEscape(`${type.icon || ''} ${index + 1}. ${step.title || type.description || ''}`);
         const isTerminal = typeName === 'return_response_llm' || typeName === 'return_response_text';
         const shape = isTerminal ? `(["${label}"])` : `["${label}"]`;
-        lines.push(`S${step.id}${shape}:::type_${typeName}`);
+        const nodeId = `${prefix}S${step.id}`;
+        lines.push(`  ${nodeId}${shape}:::type_${typeName}`);
+
+        // Inline subgraph for workflow_invoke with known sub-workflow steps
+        if (typeName === 'workflow_invoke') {
+            const meta = parseMetadata(step.metadata);
+            const invoke = meta?.workflow_invoke || {};
+            const subWfId = invoke.workflow_id ? String(invoke.workflow_id) : null;
+            const subSteps = subWfId ? subflowStepsMap[subWfId] : null;
+            if (subSteps && subSteps.length > 0) {
+                const subWf = (state.allWorkflows || []).find(w => String(w.id) === subWfId);
+                const subTitle = graphLabelEscape(subWf ? (subWf.title || subWf.name) : `Workflow ${subWfId}`);
+                const sgId = `${prefix}SG${step.id}`;
+                const subPrefix = `${prefix}W${subWfId}_`;
+                lines.push(`  subgraph ${sgId}["${subTitle}"]`);
+                lines.push(..._buildInnerLines(subSteps, subPrefix, subflowStepsMap, warnings, false));
+                lines.push(`  end`);
+                lines.push(`  class ${sgId} subflow_group`);
+            }
+        }
     });
 
-    if (stepsSorted.length > 0) {
-        lines.push('START((▶)):::start_node');
-        lines.push(`START --> S${stepsSorted[0].id}`);
-        hasIncoming.add(String(stepsSorted[0].id));
+    // ── 2. START node (top-level only) ───────────────────────────────────────
+    if (includeStart && stepsSorted.length > 0) {
+        lines.push(`  ${prefix}START((▶)):::start_node`);
+        lines.push(`  ${prefix}START --> ${prefix}S${stepsSorted[0].id}`);
     }
 
-    // Ребра
+    // ── 3. Edges ─────────────────────────────────────────────────────────────
     stepsSorted.forEach((step, index) => {
-        const typeName = (state.allWorkflowStepsType[step.type_id] || {}).name || '';
-        const metadata = parseMetadata(step.metadata);
+        const type = state.allWorkflowStepsType[step.type_id] || {};
+        const typeName = type.name || 'unknown';
+        const meta = parseMetadata(step.metadata);
         const next = stepsSorted[index + 1];
+        const nodeId = `${prefix}S${step.id}`;
+        const isTerminal = typeName === 'return_response_llm' || typeName === 'return_response_text';
 
-        // Последовательный переход к следующему шагу по position
+        // Sequential → next step
         if (next) {
-            if (typeName === 'return_response_llm') {
-                // Терминальный шаг: workflow завершается, продолжения нет
-            } else if (typeName === 'return_response_text') {
-                if (metadata.continue_workflow) {
-                    lines.push(`S${step.id} -. "следующий запрос" .-> S${next.id}`);
-                    hasIncoming.add(String(next.id));
+            if (isTerminal) {
+                if (typeName === 'return_response_text' && meta.continue_workflow) {
+                    lines.push(`  ${nodeId} -. "следующий запрос" .-> ${prefix}S${next.id}`);
                 }
             } else {
-                lines.push(`S${step.id} --> S${next.id}`);
-                hasIncoming.add(String(next.id));
+                lines.push(`  ${nodeId} --> ${prefix}S${next.id}`);
             }
         }
 
-        // Условные переходы before/after
-        const isTerminal = typeName === 'return_response_llm' || typeName === 'return_response_text';
+        // workflow_invoke: entry edge → first sub-step; repeat loop inside subgraph
+        if (typeName === 'workflow_invoke') {
+            const invoke = meta?.workflow_invoke || {};
+            const subWfId = invoke.workflow_id ? String(invoke.workflow_id) : null;
+            const subSteps = subWfId ? subflowStepsMap[subWfId] : null;
+            if (subSteps && subSteps.length > 0) {
+                const subSorted = [...subSteps].sort((a, b) => (a.position || 0) - (b.position || 0));
+                const subPrefix = `${prefix}W${subWfId}_`;
+                // Entry: invoke node → first sub-workflow step
+                lines.push(`  ${nodeId} --> ${subPrefix}S${subSorted[0].id}`);
+                // Repeat loop: last sub-step ↩ first sub-step (condition from invoke metadata)
+                if (invoke.repeat?.until) {
+                    const {variable, operator = '==', value = ''} = invoke.repeat.until;
+                    const label = graphLabelEscape(`↩ until ${variable} ${operator} ${value}`);
+                    const lastId = `${subPrefix}S${subSorted[subSorted.length - 1].id}`;
+                    const firstId = `${subPrefix}S${subSorted[0].id}`;
+                    lines.push(`  ${lastId} -. "${label}" .-> ${firstId}`);
+                }
+            }
+        }
+
+        // transitions_before / transitions_after (conditional jumps)
         ['transitions_before', 'transitions_after'].forEach(key => {
             const suffix = key === 'transitions_before' ? 'before' : 'after';
-            const transitions = Array.isArray(metadata[key]) ? metadata[key] : [];
-
-            // Финальные шаги возвращают ответ сразу — их after-переходы движок не проверяет
+            const transitions = Array.isArray(meta[key]) ? meta[key] : [];
             const deadAfter = suffix === 'after' && isTerminal && transitions.length > 0;
             if (deadAfter) {
-                warnings.push(`Шаг "${step.title}" (id ${step.id}): transitions_after у финального шага никогда не сработают — workflow завершается до их проверки`);
+                warnings.push(`Шаг "${step.title}" (id ${step.id}): transitions_after у финального шага не сработают`);
             }
-
             transitions.forEach(tr => {
                 if (!tr || !tr.step_id) return;
-                const target = String(tr.step_id);
-                const cond = graphLabelEscape(`${deadAfter ? '⚠ ' : ''}${tr.variable} ${tr.operator || '=='} ${tr.value ?? ''} (${suffix})`);
-
-                if (!stepIds.has(target)) {
-                    warnings.push(`Шаг "${step.title}" (id ${step.id}): переход (${suffix}) на несуществующий шаг id ${target}`);
+                if (!stepIds.has(String(tr.step_id))) {
+                    warnings.push(`Шаг "${step.title}" (id ${step.id}): переход (${suffix}) на несуществующий шаг id ${tr.step_id}`);
                     return;
                 }
-                lines.push(`S${step.id} -. "${cond}" .-> S${target}`);
-                // Мертвое ребро не делает целевой шаг достижимым
-                if (!deadAfter) hasIncoming.add(target);
+                const cond = graphLabelEscape(`${deadAfter ? '⚠ ' : ''}${tr.variable} ${tr.operator || '=='} ${tr.value ?? ''} (${suffix})`);
+                lines.push(`  ${nodeId} -. "${cond}" .-> ${prefix}S${tr.step_id}`);
             });
         });
     });
 
-    // Недостижимые шаги: нет ни одного входящего ребра
+    // Unreachable steps: no incoming edges
+    const hasIncoming = new Set();
+    if (stepsSorted.length > 0) hasIncoming.add(String(stepsSorted[0].id));
+    stepsSorted.forEach((step, index) => {
+        const typeName = (state.allWorkflowStepsType[step.type_id] || {}).name || '';
+        const meta = parseMetadata(step.metadata);
+        const next = stepsSorted[index + 1];
+        if (next && typeName !== 'return_response_llm') hasIncoming.add(String(next.id));
+        ['transitions_before', 'transitions_after'].forEach(key => {
+            (Array.isArray(meta[key]) ? meta[key] : []).forEach(tr => {
+                if (tr?.step_id) hasIncoming.add(String(tr.step_id));
+            });
+        });
+    });
     stepsSorted.forEach(step => {
-        if (!hasIncoming.has(String(step.id))) {
-            warnings.push(`Шаг "${step.title}" (id ${step.id}) недостижим: нет входящих переходов`);
-            lines.push(`class S${step.id} unreachable`);
+        if (!hasIncoming.has(String(step.id)) && !includeStart) return; // only warn at top level
+        if (!hasIncoming.has(String(step.id)) && includeStart) {
+            warnings.push(`Шаг "${step.title}" (id ${step.id}) недостижим`);
+            lines.push(`  class ${prefix}S${step.id} unreachable`);
         }
     });
 
-    // Стили по типам шагов (в цветах редактора)
+    return lines;
+}
+
+/**
+ * Builds mermaid definition for the given steps + all referenced sub-workflows.
+ * subflowStepsMap: { workflowId: steps[] }
+ */
+export function buildWorkflowGraphDefinition(steps, subflowStepsMap = {}) {
+    const warnings = [];
+    const lines = ['flowchart TD'];
+    lines.push(..._buildInnerLines(steps, '', subflowStepsMap, warnings, true));
     lines.push('classDef start_node fill:#2c3e50,stroke:#2c3e50,color:#fff;');
     lines.push('classDef type_return_response_llm fill:#d4efdf,stroke:#27ae60,color:#1e6b3a;');
     lines.push('classDef type_return_response_text fill:#d4efdf,stroke:#27ae60,color:#1e6b3a;');
     lines.push('classDef type_llm_to_json fill:#e8daef,stroke:#8e44ad,color:#5b2c6f;');
+    lines.push('classDef type_llm_to_json_variable fill:#e8daef,stroke:#8e44ad,color:#5b2c6f;');
     lines.push('classDef type_tool_invoke fill:#fdebf3,stroke:#f488d5,color:#943b6d;');
     lines.push('classDef type_variable_conversion fill:#e3f0ff,stroke:#2974df,color:#1a4d8f;');
     lines.push('classDef type_workflow_invoke fill:#fff3e0,stroke:#f39c12,color:#9c640c;');
+    lines.push('classDef type_llm_to_image fill:#fef9c3,stroke:#d97706,color:#78350f;');
     lines.push('classDef unreachable fill:#fdecea,stroke:#e74c3c,color:#922b21,stroke-width:2px;');
-
+    lines.push('classDef subflow_group fill:#f0f9ff,stroke:#3b82f6,color:#1e40af,stroke-width:2px;');
     return {definition: lines.join('\n'), warnings};
 }
 
 /**
- * Открывает режим графа: скрывает настройки/шаги, строит и рендерит диаграмму.
+ * Opens graph mode: loads steps, fetches all sub-workflow steps recursively, renders diagram.
  */
 export async function openWorkflowGraph() {
     const workflowId = document.getElementById('workflowId').value;
@@ -137,11 +222,9 @@ export async function openWorkflowGraph() {
     container.innerHTML = '<div style="color:#999; padding:20px;">Построение графа...</div>';
     warningsBox.innerHTML = '';
 
-    // Из режима настроек шаги могли не загружаться (или лежат от другого workflow)
     if (!Array.isArray(state.allCurrentStepsData) || state.allCurrentStepsData.length === 0
-        || String(state.allCurrentStepsData[0].workflow_id) !== String(workflowId)) {
+        || String(state.allCurrentStepsData[0]?.workflow_id) !== String(workflowId)) {
         await loadWorkflowSteps(workflowId);
-        // loadWorkflowSteps показывает редактор шагов через selectStep — возвращаем граф
         document.getElementById('stepsEditorView').style.display = 'none';
         document.getElementById('stepsGraph').style.display = 'block';
     }
@@ -151,7 +234,10 @@ export async function openWorkflowGraph() {
         return;
     }
 
-    const {definition, warnings} = buildWorkflowGraphDefinition(state.allCurrentStepsData);
+    // Fetch all sub-workflow steps recursively
+    const subflowStepsMap = await _fetchAllSubflowSteps(state.allCurrentStepsData);
+
+    const {definition, warnings} = buildWorkflowGraphDefinition(state.allCurrentStepsData, subflowStepsMap);
 
     warnings.forEach(w => {
         const div = document.createElement('div');
@@ -160,7 +246,7 @@ export async function openWorkflowGraph() {
     });
 
     if (!window.mermaid) {
-        container.innerHTML = '<div style="color:#c0392b;">Библиотека mermaid не загружена (/static/js/vendor/mermaid.min.js)</div>';
+        container.innerHTML = '<div style="color:#c0392b;">Библиотека mermaid не загружена</div>';
         return;
     }
 
@@ -168,24 +254,126 @@ export async function openWorkflowGraph() {
         const renderId = 'wfGraphSvg' + Date.now();
         const {svg} = await window.mermaid.render(renderId, definition);
         container.innerHTML = svg;
+        // hint stays as last child — re-append after innerHTML reset
+        const hint = document.createElement('div');
+        hint.className = 'graph-hint';
+        hint.textContent = 'колёсико — масштаб · стик — перемещение';
+        container.appendChild(hint);
+        attachGraphPanZoom(container);
         attachGraphNodeHandlers(container);
     } catch (e) {
         console.error('Ошибка построения графа:', e, definition);
-        container.innerHTML = `<div style="color:#c0392b;">Не удалось построить граф: ${e.message}</div>`;
+        container.innerHTML = `<div style="color:#c0392b; margin-bottom:8px;">Не удалось построить граф: ${e.message}</div>`
+            + `<pre style="font-size:11px;color:#666;white-space:pre-wrap;">${definition}</pre>`;
     }
 }
 
+// Module-level cleanup for document-level pan listeners (prevents accumulation on re-render)
+let _panCleanup = null;
+
 /**
- * Навешивает интерактив на узлы графа: клик — переход в редактор шагов
- * с выбором шага; активный в редакторе шаг подсвечивается рамкой.
+ * Pan & zoom for the graph container.
+ * Wheel → zoom toward cursor. Middle mouse button drag → pan (document-level listeners).
+ */
+function attachGraphPanZoom(container) {
+    const svg = container.querySelector('svg');
+    if (!svg) return;
+
+    // Remove previous document-level pan listeners if graph was re-rendered
+    if (_panCleanup) { _panCleanup(); _panCleanup = null; }
+
+    // Viewport wrapper — transform applied here
+    const vp = document.createElement('div');
+    vp.style.cssText = 'position: absolute; top: 0; left: 0; transform-origin: 0 0;';
+    svg.parentNode.insertBefore(vp, svg);
+    vp.appendChild(svg);
+
+    let zoom = 1, tx = 0, ty = 0;
+
+    const apply = () => {
+        vp.style.transform = `translate(${tx}px, ${ty}px) scale(${zoom})`;
+    };
+    apply(); // identity — SVG visible at natural size while waiting for layout
+
+    // Fit after two animation frames so browser has fully laid out container and SVG
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        const cW = container.offsetWidth;
+        const cH = container.offsetHeight;
+        // getBoundingClientRect at scale(1) gives the SVG's natural pixel size
+        const svgRect = svg.getBoundingClientRect();
+        const svgW = svgRect.width  || 800;
+        const svgH = svgRect.height || 600;
+        if (!cW || !cH || !svgW || !svgH) return;
+        zoom = Math.min(cW / svgW, cH / svgH) * 0.95;
+        tx = (cW - svgW * zoom) / 2;
+        ty = (cH - svgH * zoom) / 2;
+        apply();
+    }));
+
+    // Wheel → zoom toward cursor
+    container.addEventListener('wheel', e => {
+        e.preventDefault();
+        const rect = container.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        const newZoom = Math.min(Math.max(zoom * factor, 0.05), 10);
+        const wx = (cx - tx) / zoom;
+        const wy = (cy - ty) / zoom;
+        zoom = newZoom;
+        tx = cx - wx * zoom;
+        ty = cy - wy * zoom;
+        apply();
+    }, {passive: false});
+
+    // Middle mouse button → pan via document-level listeners
+    let panning = false, panX0, panY0, tx0, ty0;
+
+    const onMouseDown = e => {
+        if (e.button !== 1) return;
+        e.preventDefault(); // block browser autoscroll
+        panning = true;
+        panX0 = e.clientX;
+        panY0 = e.clientY;
+        tx0 = tx;
+        ty0 = ty;
+        container.style.cursor = 'grabbing';
+    };
+
+    const onMouseMove = e => {
+        if (!panning) return;
+        tx = tx0 + (e.clientX - panX0);
+        ty = ty0 + (e.clientY - panY0);
+        apply();
+    };
+
+    const onMouseUp = e => {
+        if (!panning || e.button !== 1) return;
+        panning = false;
+        container.style.cursor = '';
+    };
+
+    container.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+
+    _panCleanup = () => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    };
+}
+
+/**
+ * Attaches click handlers to graph nodes — click navigates to step editor.
+ * Only parent-workflow steps (matching S{id} pattern) are interactive.
  */
 function attachGraphNodeHandlers(container) {
     const activeStepBlock = document.querySelector('.step-item-block.active');
     const activeId = activeStepBlock ? String(activeStepBlock.dataset.id) : null;
 
     container.querySelectorAll('.node').forEach(nodeEl => {
-        // id узла в DOM имеет вид "flowchart-S25-12"
-        const m = (nodeEl.id || '').match(/-S(\d+)-/);
+        // Top-level steps have DOM id: flowchart-S{id}-{n}  (not flowchart-W*_S{id}-{n})
+        const m = (nodeEl.id || '').match(/^flowchart-S(\d+)-/);
         if (!m) return;
         const stepId = m[1];
 
@@ -196,13 +384,14 @@ function attachGraphNodeHandlers(container) {
             });
         }
 
+        nodeEl.style.cursor = 'pointer';
         nodeEl.addEventListener('click', () => {
             const step = state.allCurrentStepsData.find(s => String(s.id) === stepId);
             if (!step) return;
-
-            // Возвращаемся в редактор шагов и выбираем кликнутый шаг
             document.getElementById('stepsGraph').style.display = 'none';
             document.getElementById('stepsEditorView').style.display = 'flex';
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tabSteps')?.classList.add('active');
             const stepBlock = document.querySelector(`.step-item-block[data-id="${stepId}"]`);
             if (stepBlock) selectStep(step, stepBlock);
         });

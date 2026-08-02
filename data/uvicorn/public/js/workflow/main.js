@@ -5,12 +5,47 @@ import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state} from './state.js';
 import {parseMetadata} from './utils.js';
-import {initGraphMode} from './graph.js';
+import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 
-// Инициализация режима Graph (mermaid + кнопка)
+// Инициализация режима Graph (mermaid)
 initGraphMode();
+
+// Переключение вкладок
+function activateTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    const tab = document.getElementById(tabId);
+    if (tab) tab.classList.add('active');
+}
+
+document.getElementById('tabSteps')?.addEventListener('click', async () => {
+    const workflowId = document.getElementById('workflowId')?.value;
+    if (!workflowId) return;
+    activateTab('tabSteps');
+    document.getElementById('workflowSettingsView').style.display = 'none';
+    document.getElementById('stepsEditorView').style.display = 'flex';
+    document.getElementById('stepsGraph').style.display = 'none';
+    document.getElementById('addStepToWorkflowBtn').style.display = 'block';
+    // Если шаги не загружены для этого workflow — загружаем
+    if (!state.allCurrentStepsData?.length
+        || String(state.allCurrentStepsData[0]?.workflow_id) !== String(workflowId)) {
+        await loadWorkflowSteps(workflowId);
+    }
+});
+
+document.getElementById('tabSettings')?.addEventListener('click', () => {
+    if (!document.getElementById('workflowId')?.value) return;
+    activateTab('tabSettings');
+    document.getElementById('workflowSettingsView').style.display = 'flex';
+    document.getElementById('stepsEditorView').style.display = 'none';
+    document.getElementById('stepsGraph').style.display = 'none';
+});
+
+document.getElementById('tabGraph')?.addEventListener('click', () => {
+    activateTab('tabGraph');
+    openWorkflowGraph();
+});
 
 const workflowListContainer = document.getElementById('workflowList');
 const workflowForm = document.getElementById('workflowForm');
@@ -48,18 +83,12 @@ async function initWorkflowManager() {
         const activeWorkflowLink = workflowListContainer.querySelector('.agent-item.active .workflow-name-link');
         let activeWorkflowLinkId = activeWorkflowLink ? activeWorkflowLink.id : null;
 
-        // Запоминаем текущий режим: если открыта форма настроек workflow,
-        // после перерисовки списка нужно остаться на ней, а не переключаться на шаги
-        const settingsViewEl = document.getElementById('workflowSettingsView');
-        let isSettingsViewOpen = !!activeWorkflowLinkId && settingsViewEl && settingsViewEl.style.display !== 'none';
-
         // Холодная перезагрузка страницы: DOM еще пуст (нет .agent-item.active) —
         // восстанавливаем выбор из sessionStorage, чтобы не улетать на первый пункт списка
         if (!activeWorkflowLinkId) {
             const savedWorkflowId = sessionStorage.getItem('workflow_selected_id');
             if (savedWorkflowId) {
                 activeWorkflowLinkId = 'workflow_link_' + savedWorkflowId;
-                isSettingsViewOpen = sessionStorage.getItem('workflow_selected_view') === 'settings';
             }
         }
 
@@ -72,18 +101,7 @@ async function initWorkflowManager() {
         if (!deepLinkApplied && deepLinkId && openWorkflowById(deepLinkId)) {
             deepLinkApplied = true;
         } else if (activeWorkflowLinkId && workflowListContainer.querySelector('#' + activeWorkflowLinkId)) {
-            const activeWorkflowLink = workflowListContainer.querySelector('#' + activeWorkflowLinkId);
-            if (isSettingsViewOpen) {
-                // Остаемся в форме редактирования: кликаем по иконке параметров
-                const editIcon = activeWorkflowLink.closest('.agent-item')?.querySelector('.edit-icon');
-                if (editIcon) {
-                    editIcon.click();
-                } else {
-                    activeWorkflowLink.click();
-                }
-            } else {
-                activeWorkflowLink.click();
-            }
+            workflowListContainer.querySelector('#' + activeWorkflowLinkId).click();
         } else {
             const firstWorkflowLink = workflowListContainer.querySelector('.agent-item .workflow-name-link');
             if (firstWorkflowLink) firstWorkflowLink.click();
@@ -194,30 +212,10 @@ function renderCarouselNode() {
         <span class="drag-handle" title="Перетащите для изменения позиции">⠿</span>
         <span class="workflow-name-link" id="workflow_link_${workflow.id}">${workflow.title}</span>
     </div>
-    <div class="workflow-actions">
-        <span class="edit-icon" title="Параметры задачи">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-            </svg>
-        </span>
-        <span class="duplicate-icon" title="Создать дубликат workflow">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-        </span>
-    </div>
 `;
 
         // Клик по названию — ШАГИ
         div.querySelector('.workflow-name-link').onclick = () => openWorkflowSteps(workflow, div);
-
-        // Клик по иконке — ПАРАМЕТРЫ
-        div.querySelector('.edit-icon').onclick = () => openWorkflowSettings(workflow, div);
-
-        // Клик по иконке — ДУБЛИКАТ
-        div.querySelector('.duplicate-icon').onclick = () => duplicateWorkflow(workflow);
 
         // Перетаскивание пункта — смена позиции внутри своей группы
         div.draggable = true;
@@ -316,19 +314,15 @@ async function duplicateWorkflow(workflow) {
 async function openWorkflowSteps(workflow, element) {
     setActiveItem(element);
     workflowSelectionSave(workflow, 'steps');
+    activateTab('tabSteps');
 
-    // 1. ПЕРЕКЛЮЧАЕМ ВИДИМОСТЬ (Явно скрываем настройки и показываем шаги)
     document.getElementById('workflowSettingsView').style.display = 'none';
     document.getElementById('stepsEditorView').style.display = 'flex';
     document.getElementById('stepsGraph').style.display = 'none';
     document.getElementById('addStepToWorkflowBtn').style.display = 'block';
 
-    // 2. ЗАПОЛНЯЕМ ДАННЫЕ
     await fillWorkflowForm(workflow);
     await loadWorkflowSteps(workflow.id);
-
-    // 3. ОБНОВЛЯЕМ ЗАГОЛОВОК
-    document.getElementById('formTitle').textContent = `Шаги workflow: ${workflow.title}`;
 }
 
 /**
@@ -337,12 +331,11 @@ async function openWorkflowSteps(workflow, element) {
 function openWorkflowSettings(workflow, element) {
     setActiveItem(element);
     workflowSelectionSave(workflow, 'settings');
+    activateTab('tabSettings');
 
-    // Переключаем видимость блоков
     document.getElementById('workflowSettingsView').style.display = 'flex';
     document.getElementById('stepsEditorView').style.display = 'none';
     document.getElementById('stepsGraph').style.display = 'none';
-    document.getElementById('formTitle').textContent = `Редактирование задачи: ${workflow.title}`;
 
     fillWorkflowForm(workflow);
 }
@@ -484,14 +477,13 @@ if (createNewWorkflowBtn) {
         document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
 
         if (workflowForm) workflowForm.reset();
+        activateTab('tabSettings');
 
         const workflowIdEl = document.getElementById('workflowId');
         const nameEl = document.getElementById('name');
-        const formTitleEl = document.getElementById('formTitle');
 
         if (workflowIdEl) workflowIdEl.value = '';
         if (nameEl) nameEl.value = '';
-        if (formTitleEl) formTitleEl.textContent = 'Новый workflow';
 
         // Очищаем список входящих переменных предыдущего workflow
         const inputVarsContainer = document.getElementById('inputVariablesContainer');

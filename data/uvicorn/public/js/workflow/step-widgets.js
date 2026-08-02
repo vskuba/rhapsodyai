@@ -844,6 +844,81 @@ export function renderCustomStepFields(step, metadata) {
             wfContainer.appendChild(repeatContainer);
             fieldWrapper.appendChild(wfContainer);
 
+        } else if (field.type === 'widget_llm_to_image') {
+            // --- Виджет настроек генерации изображения ---
+            const imgContainer = document.createElement('div');
+            imgContainer.id = `field_${field.key}`;
+            imgContainer.style = "display: flex; flex-direction: column; gap: 10px; background: #f8fafc; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px;";
+
+            // Парсим текущее сохранённое значение (объект или пустой объект)
+            let imgConfig = {};
+            if (currentValue && typeof currentValue === 'object') {
+                imgConfig = currentValue;
+            } else if (currentValue && typeof currentValue === 'string') {
+                try { imgConfig = JSON.parse(currentValue); } catch (e) {}
+            }
+
+            const collectImgData = () => {
+                saveChanges({
+                    output_variable: outVarSelect.value,
+                    size: sizeSelect.value,
+                    quality: qualitySelect.value,
+                });
+            };
+
+            // 1. Переменная для сохранения результата
+            const outVarLabel = document.createElement('label');
+            outVarLabel.style = "font-size: 11px; font-weight: 600; color: #4a5568; margin: 0;";
+            outVarLabel.textContent = 'Переменная результата (base64):';
+
+            const outVarSelect = document.createElement('select');
+            outVarSelect.className = 'form-control';
+            outVarSelect.style = "padding: 6px; font-size: 13px; height: 36px;";
+            fillVariablesSelectOptions(outVarSelect, imgConfig.output_variable || '', '-- Выберите переменную --');
+            outVarSelect.onchange = collectImgData;
+
+            // 2. Размер изображения
+            const sizeLabel = document.createElement('label');
+            sizeLabel.style = "font-size: 11px; font-weight: 600; color: #4a5568; margin: 0;";
+            sizeLabel.textContent = 'Размер:';
+
+            const sizeSelect = document.createElement('select');
+            sizeSelect.className = 'form-control';
+            sizeSelect.style = "padding: 6px; font-size: 13px; height: 36px;";
+            ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'].forEach(sz => {
+                const opt = document.createElement('option');
+                opt.value = sz;
+                opt.textContent = sz;
+                if (sz === (imgConfig.size || '1024x1024')) opt.selected = true;
+                sizeSelect.appendChild(opt);
+            });
+            sizeSelect.onchange = collectImgData;
+
+            // 3. Качество
+            const qualityLabel = document.createElement('label');
+            qualityLabel.style = "font-size: 11px; font-weight: 600; color: #4a5568; margin: 0;";
+            qualityLabel.textContent = 'Качество:';
+
+            const qualitySelect = document.createElement('select');
+            qualitySelect.className = 'form-control';
+            qualitySelect.style = "padding: 6px; font-size: 13px; height: 36px;";
+            ['auto', 'low', 'medium', 'high'].forEach(q => {
+                const opt = document.createElement('option');
+                opt.value = q;
+                opt.textContent = q;
+                if (q === (imgConfig.quality || 'auto')) opt.selected = true;
+                qualitySelect.appendChild(opt);
+            });
+            qualitySelect.onchange = collectImgData;
+
+            imgContainer.appendChild(outVarLabel);
+            imgContainer.appendChild(outVarSelect);
+            imgContainer.appendChild(sizeLabel);
+            imgContainer.appendChild(sizeSelect);
+            imgContainer.appendChild(qualityLabel);
+            imgContainer.appendChild(qualitySelect);
+            fieldWrapper.appendChild(imgContainer);
+
         } else if (field.type === 'variable_select') {
             // --- Селект переменной workflow ---
             inputElement = document.createElement('select');
