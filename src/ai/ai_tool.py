@@ -275,7 +275,8 @@ def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict) -> tupl
                     tool_args[argument_name] = bool(variable_value)
 
             # Безопасный парсинг сложных структур данных (dict и list) из JSON-строк
-            elif expected_type is dict or expected_type is list:
+            # Также обрабатываем generic aliases: list[dict], list[str] и т.д.
+            elif expected_type is dict or expected_type is list or get_origin(expected_type) in (dict, list):
                 if isinstance(variable_value, str):
                     try:
                         # Пытаемся распарсить строку в реальный объект
