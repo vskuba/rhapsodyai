@@ -16,7 +16,7 @@ from mysql_.mysql_ import mysql_get_db_async
 # строка рантаймовая. Локальные сессии никак не относятся к продовским -
 # переносить их между окружениями бессмысленно.
 _RUNTIME_EXCLUDED_TABLES = {
-    'agent_session', 'detective_case', 'agent_workflow_run', 'agent_workflow_run_step',
+    'agent_session', 'detective_case', 'agent_workflow_trace', 'agent_workflow_trace_step',
     'fact', 'llm_request', 'session',
     '_yoyo_migration', '_yoyo_log', '_yoyo_version', 'yoyo_lock',
 }
@@ -45,7 +45,7 @@ async def mysql_migration_prod_create(
        существующей колонки НЕ трогает - только сообщает в review_needed,
        такое требует ручного решения (может быть осознанным отличием прода).
     2. Данные: по каждой не-рантаймовой и не tool-sync таблице (кроме
-       agent_session, detective_case, agent_workflow_run*, fact, llm_request,
+       agent_session, detective_case, agent_workflow_trace*, fact, llm_request,
        служебных таблиц yoyo - это исключительно динамический рантайм, не
        seed; и кроме tool, tool_group - их наполняет ai_tool_sync() из кода на
        каждом окружении отдельно, переносить данные между средами не нужно):
