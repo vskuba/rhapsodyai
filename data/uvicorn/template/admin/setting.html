@@ -313,11 +313,13 @@
         input.className = 'cell-input' + (nodeId ? ' inherited' : '');
         input.value = value ?? '';
         input.dataset.saved = value ?? '';
+        input.title = value ?? '';
         if (nodeId) input.placeholder = inheritedValue || '';
 
+        input.oninput = () => { input.title = input.value; };
         input.onkeydown = e => {
             if (e.key === 'Enter') input.blur();
-            if (e.key === 'Escape') { input.value = input.dataset.saved; input.blur(); }
+            if (e.key === 'Escape') { input.value = input.dataset.saved; input.title = input.dataset.saved; input.blur(); }
         };
         input.onchange = () => saveCell(key, nodeId, input);
 
