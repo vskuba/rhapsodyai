@@ -24,9 +24,11 @@ from config.config import config_get
 from logging_.logging_ import logging_init, logger_info
 from mysql_.migration.mysql_migration_up import mysql_migration_up
 from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
+from src.mysql_.seed.mysql_seed_up import mysql_seed_up
 from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
+from src.ai.ai_workflow_trace import workflow_trace_runs_stale_close
 from src.event.event_handlers import event_handlers_register
 from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
@@ -54,12 +56,16 @@ from src.uvicorn.routers.user import user
 from src.uvicorn.routers.companion import companion
 from src.uvicorn.routers.role import role
 from src.uvicorn.routers.detective import detective
+from src.uvicorn.routers.seed import seed
+from src.uvicorn.routers.backup import backup
+from src.uvicorn.routers.design import design as design_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging_init()
     mysql_migration_up()
+    mysql_seed_up()
     await mysql_pool_get()
 
     print("Starting Uvicorn (Fast-Api) mode...")
@@ -68,6 +74,8 @@ async def lifespan(app: FastAPI):
 
     event_handlers_register()
     await telegram_notify_bot_setup()
+
+    await workflow_trace_runs_stale_close()
 
     queue_init([
         'chat',
@@ -100,10 +108,19 @@ async def lifespan(app: FastAPI):
     # переименованные/перемещенные инструменты в коде иначе никогда не
     # попадут в БД без ручного форс-синка (именно так тихо не подхватились
     # mysql_migration_prod_create и env_is_prod после деплоя на прод)
+    # ВАЖНО: planning_runner стартует ПОСЛЕ sync — ai_tool_sync(force=True)
+    # вызывает empty() и временно очищает таблицу tool; если runner стартует
+    # раньше и вызывает _tools_load() в этот момент — получает {} и падает
+    # с "инструмент не найден".
     if await env_is_prod():
         await ai_tool_sync(force=True)
     else:
         await ai_tool_sync()
+
+    # ======================== Planning runner ================
+
+    from src.cronjob.planning.planning_runner import planning_runner_start
+    asyncio.create_task(planning_runner_start())
 
     print("Background thread started.")
 
@@ -389,4 +406,7 @@ app.include_router(telegram_app_claude.router, include_in_schema=False)
 app.include_router(telegram_app_claude_session.router, include_in_schema=False)
 app.include_router(telegram_app_plan.router, include_in_schema=False)
 app.include_router(event_router.router, include_in_schema=False)
+app.include_router(seed.router, include_in_schema=False)
+app.include_router(backup.router, include_in_schema=False)
+app.include_router(design_router.router, include_in_schema=False)
 

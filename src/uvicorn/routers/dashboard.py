@@ -177,6 +177,38 @@ async def developing_page(request: Request, user: AuthSession = Depends(require_
     )
 
 
+@router.get("/admin/planning-phase-source", response_class=HTMLResponse)
+async def planning_phase_source_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/planning_phase_source.html",
+    )
+
+
+@router.get("/admin/planning-blocks", response_class=HTMLResponse)
+async def planning_blocks_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/planning_blocks.html",
+    )
+
+
+@router.get("/admin/task", response_class=HTMLResponse)
+async def task_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/task.html",
+    )
+
+
+@router.get("/admin/design", response_class=HTMLResponse)
+async def design_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/design.html",
+    )
+
+
 @router.get("/admin/tool", response_class=HTMLResponse)
 async def tool_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
@@ -190,6 +222,22 @@ async def role_page(request: Request, user: AuthSession = Depends(require_auth))
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/role.html"
+    )
+
+
+@router.get("/admin/seed", response_class=HTMLResponse)
+async def seed_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/seed.html"
+    )
+
+
+@router.get("/admin/backup", response_class=HTMLResponse)
+async def backup_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/backup.html"
     )
 
 

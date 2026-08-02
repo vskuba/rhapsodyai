@@ -25,10 +25,10 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.FACT_COLLECTION_VIEW,
     AuthPermission.PLAN_VIEW,
     AuthPermission.PLANNING_VIEW,
-    AuthPermission.DESIGN_VIEW,
     AuthPermission.SESSION_VIEW,
     AuthPermission.SETTING_VIEW,
     AuthPermission.QUEUE_VIEW,
+    AuthPermission.DESIGN_VIEW,
 }
 
 # Переопределения прав для конкретных ролей (админ получает все права в AuthChecker)

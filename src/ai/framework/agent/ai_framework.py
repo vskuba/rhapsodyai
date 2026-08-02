@@ -42,13 +42,15 @@ class AiFrameworkAgent(AbstractAiFramework):
             logger_info(f'🚀 Модель перед запуском агента: {framework_model.__dict__}')
             logger_info(f'Prompt user:  {framework_model.prompt_user}')
 
-            return await engine.run(
-                user_prompt=framework_model.prompt_user,
-                model_settings=ModelSettings(
-                    parallel_tool_calls=True,
-                    temperature=0.0,
+            try:
+                return await asyncio.wait_for(
+                    engine.run(
+                        user_prompt=framework_model.prompt_user
+                    ),
+                    timeout=180.0,
                 )
-            )
+            except asyncio.TimeoutError:
+                raise Exception('LLM request timed out after 180 seconds')
         except Exception as e:
             backtrace = traceback.format_exc()
             logger_info(
@@ -101,6 +103,16 @@ class AiFrameworkAgent(AbstractAiFramework):
                 _prompt_length = len(framework_model.prompt_system or '') + len(framework_model.prompt_user or '')
                 result = await self.engine_run(framework_model)
 
+                try:
+                    _usage = result.usage  # property, returns RunUsage
+                    logger_info(f'📊 LLM usage raw: {_usage!r} | input={getattr(_usage, "input_tokens", "?")} output={getattr(_usage, "output_tokens", "?")} requests={getattr(_usage, "requests", "?")}')
+                    _in = getattr(_usage, 'input_tokens', 0) or 0
+                    _out = getattr(_usage, 'output_tokens', 0) or 0
+                    framework_model.tokens_input = _in if _in > 0 else None
+                    framework_model.tokens_output = _out if _out > 0 else None
+                except Exception as _ue:
+                    logger_info(f'⚠️ usage extraction error: {_ue}')
+
                 # Журнал запросов к LLM: успешный вызов (метрики /admin/llm)
                 await ai_llm_request_log(
                     framework_model.entity_llm_current.get('id'),
@@ -109,6 +121,8 @@ class AiFrameworkAgent(AbstractAiFramework):
                     status_code=200,
                     duration_ms=int((time.monotonic() - run_started) * 1000),
                     prompt_length=_prompt_length or None,
+                    tokens_input=framework_model.tokens_input,
+                    tokens_output=framework_model.tokens_output,
                 )
 
                 response = await self.engine_result_handle(result, framework_model)
@@ -116,6 +130,8 @@ class AiFrameworkAgent(AbstractAiFramework):
                 await self.message_history_save(framework_model)
 
                 if response is not None:
+                    if getattr(framework_model, 'on_tokens', None):
+                        framework_model.on_tokens(framework_model.tokens_input, framework_model.tokens_output)
                     if framework_model.on_complete:
                         await framework_model.on_complete(response.text)
 
