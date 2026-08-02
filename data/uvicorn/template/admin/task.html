@@ -1,0 +1,1309 @@
+{% extends "base.html" %}
+
+{% block title %}Задачи{% endblock %}
+
+{% block head %}
+<style>
+    .task-page {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        overflow: hidden;
+    }
+
+    /* ── Project filter bar ── */
+    .task-filter-bar {
+        padding: 10px 20px;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        background: #fafafa;
+        flex-wrap: wrap;
+    }
+
+    .task-filter-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #64748b;
+        white-space: nowrap;
+    }
+
+    .task-project-select {
+        font-size: 13px;
+        font-weight: 600;
+        padding: 4px 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #fff;
+        color: #1e293b;
+        cursor: pointer;
+        outline: none;
+        max-width: 270px;
+    }
+    .task-project-select:focus { border-color: #6366f1; }
+
+    .td-project { width: 120px; font-size: 12px; color: #6366f1; font-weight: 500; }
+    .td-goals   { width: 260px; }
+
+    .inline-goals { display: flex; flex-direction: column; gap: 3px; }
+    .inline-goal-item {
+        display: flex; align-items: center; gap: 4px;
+        font-size: 12px; color: #374151; line-height: 1.3;
+    }
+    .inline-goal-item input[type=checkbox] { accent-color: #3aba1f; flex-shrink: 0; cursor: pointer; }
+    .inline-goal-done { text-decoration: line-through; color: #94a3b8 !important; }
+    .inline-goal-text { flex: 1; cursor: default; word-break: break-word; }
+    .inline-goal-input {
+        flex: 1; font-size: 12px; border: 1px solid #6366f1;
+        border-radius: 3px; padding: 1px 5px; outline: none; font-family: inherit;
+    }
+    .ig-btn {
+        background: none; border: none; cursor: pointer; padding: 1px 3px;
+        font-size: 11px; color: #cbd5e1; line-height: 1; flex-shrink: 0; border-radius: 3px;
+    }
+    .ig-btn:hover { color: #6366f1; background: #eef2ff; }
+    .ig-btn.del:hover { color: #ef4444; background: #fef2f2; }
+    .ig-btn.ok:hover  { color: #059669; background: #ecfdf5; }
+    .ig-add-btn {
+        margin-top: 3px; font-size: 11px; color: #6366f1; background: none;
+        border: 1px dashed #c7d2fe; border-radius: 4px; padding: 1px 7px;
+        cursor: pointer; font-weight: 600;
+    }
+    .ig-add-btn:hover { background: #eef2ff; }
+
+    /* ── Content header ── */
+    .task-content-header {
+        padding: 10px 20px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .task-content-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #1e293b;
+        flex: 1;
+    }
+
+    .btn-pane-add {
+        font-size: 12px;
+        padding: 4px 12px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .btn-pane-add:hover { background: #4f46e5; }
+
+    .btn-ai-gen {
+        font-size: 12px;
+        padding: 4px 12px;
+        background: linear-gradient(135deg, #7c3aed, #4f46e5);
+        color: #fff;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        transition: opacity .15s;
+    }
+    .btn-ai-gen:hover { opacity: .88; }
+    .btn-ai-gen:disabled { opacity: .55; cursor: not-allowed; }
+
+    .ai-gen-spinner {
+        width: 12px; height: 12px;
+        border: 2px solid rgba(255,255,255,.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin .6s linear infinite;
+        display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ai-gen-spinner.active { display: inline-block; }
+
+    /* ── Add form ── */
+    .task-add-form {
+        display: none;
+        padding: 14px 20px;
+        background: #f0f9ff;
+        border-bottom: 1px solid #bae6fd;
+        flex-direction: column;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+    .task-add-form.open { display: flex; }
+
+    .task-add-form-row {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .task-add-form-row .form-group { flex: 1; }
+    .task-add-form-row .form-group.narrow { flex: 0 0 160px; }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+    .form-group label {
+        font-size: 11px;
+        font-weight: 600;
+        color: #0369a1;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+        font-size: 13px;
+        padding: 6px 8px;
+        border: 1px solid #bae6fd;
+        border-radius: 5px;
+        outline: none;
+        font-family: inherit;
+        background: #fff;
+        resize: vertical;
+    }
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus { border-color: #6366f1; }
+    .form-group textarea { min-height: 56px; }
+
+    .task-add-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .btn-save {
+        font-size: 12px;
+        padding: 5px 14px;
+        border-radius: 5px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .btn-save:hover { background: #4f46e5; }
+
+    .btn-cancel {
+        font-size: 12px;
+        padding: 5px 10px;
+        border-radius: 5px;
+        background: #fff;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+        cursor: pointer;
+    }
+    .btn-cancel:hover { background: #f8fafc; }
+
+    /* ── Table ── */
+    .task-scroll {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
+    }
+
+    .task-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        table-layout: fixed;
+    }
+
+    .task-table th { position: relative; overflow: visible; border-right: none; }
+    .task-table td { border-right: none; }
+    .task-table th:last-child, .task-table td:last-child { border-right: none; }
+    .col-resizer {
+        position: absolute; right: -5px; top: 0; bottom: 0;
+        width: 10px; cursor: col-resize;
+        display: flex; align-items: stretch; justify-content: center;
+        z-index: 10;
+    }
+    .col-resizer::after {
+        content: ''; display: block;
+        width: 3px; background: #d6d3d1;
+        transition: background .15s;
+        border-radius: 2px;
+    }
+    .col-resizer:hover::after, .col-resizer.dragging::after { background: #f59e0b; }
+
+    .task-table thead th[draggable] { user-select: none; cursor: grab; }
+    .task-table thead th.col-dragging { opacity: .45; }
+    .task-table thead th.col-drag-over { background: #451a03 !important; box-shadow: inset 3px 0 0 #f59e0b; }
+
+    .task-table thead th {
+        position: sticky;
+        top: 0;
+        background: linear-gradient(135deg, #662f0a 0%, #34324a 100%);
+        padding: 10px 12px;
+        text-align: left;
+        font-size: 10px;
+        font-weight: 700;
+        color: #a8a29e;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        border-bottom: 2px solid #44403c;
+        white-space: nowrap;
+    }
+
+    .task-table tbody tr {
+        border-bottom: 1px solid #fde68a;
+        transition: background 0.12s;
+    }
+    .task-table tbody tr:nth-child(4n+1) { background: #fffbf7; }
+    .task-table tbody tr:nth-child(4n+3) { background: #fef9ee; }
+    .task-table tbody tr:hover { background: #fef3c7 !important; }
+    .task-table tbody tr.expanded { background: #fff7ed !important; }
+
+    .task-table td {
+        padding: 10px 12px;
+        vertical-align: top;
+    }
+
+    .td-id     { color: #d97706; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .td-status { width: 110px; }
+    .td-title  { font-weight: 600; color: #1c1917; }
+    .td-desc   { color: #57534e; }
+    .td-date   { white-space: nowrap; color: #b45309; font-size: 12px; }
+    .td-act    { text-align: right; white-space: nowrap; }
+
+    .btn-status-action {
+        font-size: 11px;
+        padding: 3px 9px;
+        border-radius: 5px;
+        background: #fafaf9;
+        border: 1px solid #d6d3d1;
+        cursor: pointer;
+        font-weight: 600;
+        color: #44403c;
+        transition: all .12s;
+    }
+    .btn-status-action.start  { color: #14532d; border-color: #86efac; background: #f0fdf4; }
+    .btn-status-action.start:hover { background: #dcfce7; border-color: #4ade80; }
+    .btn-status-action.queue  { color: #7c2d12; border-color: #fdba74; background: #fff7ed; }
+    .btn-status-action.queue:hover  { background: #ffedd5; border-color: #fb923c; }
+    .btn-status-action.stop   { color: #78350f; border-color: #fcd34d; background: #fffbeb; }
+    .btn-status-action.stop:hover  { background: #fef3c7; border-color: #f59e0b; }
+    .btn-status-action.finish { color: #1e3a5f; border-color: #93c5fd; background: #eff6ff; }
+    .btn-status-action.finish:hover { background: #dbeafe; border-color: #60a5fa; }
+
+    .btn-row-del {
+        font-size: 11px;
+        padding: 3px 7px;
+        border-radius: 5px;
+        background: #fff5f5;
+        color: #dc2626;
+        border: 1px solid #fca5a5;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all .12s;
+    }
+    .btn-row-del:hover { background: #fee2e2; border-color: #f87171; }
+
+    .task-status-badge {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 9px;
+        border-radius: 4px;
+        white-space: nowrap;
+        display: inline-block;
+        letter-spacing: 0.03em;
+    }
+    .status-pending   { background: #dbeafe; color: #1e3a5f; border: 1px solid #93c5fd; }
+    .status-queued    { background: #ffedd5; color: #7c2d12; border: 1px solid #fdba74; }
+    .status-active    { background: #dcfce7; color: #14532d; border: 1px solid #86efac; }
+    .status-done      { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .status-blocked   { background: #fee2e2; color: #7f1d1d; border: 1px solid #fca5a5; }
+    .status-cancelled { background: #fafaf9; color: #78716c; border: 1px solid #e7e5e4; }
+
+    .btn-row-edit {
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 5px;
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fcd34d;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all .12s;
+    }
+    .btn-row-edit:hover { background: #fde68a; border-color: #f59e0b; }
+
+    /* Expanded edit row */
+    .task-edit-row { display: none; }
+    .task-edit-row.open { display: table-row; }
+
+    .task-edit-cell {
+        padding: 16px 22px;
+        background: linear-gradient(135deg, #fff7ed 0%, #fffbeb 100%);
+        border-bottom: 2px solid #fcd34d;
+        border-top: 1px solid #fde68a;
+    }
+
+    .task-edit-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    .task-edit-grid .span2 { grid-column: 1 / -1; }
+
+    .task-edit-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+
+    .btn-del {
+        font-size: 12px;
+        padding: 5px 10px;
+        border-radius: 5px;
+        background: #fff;
+        color: #ef4444;
+        border: 1px solid #fca5a5;
+        cursor: pointer;
+    }
+    .btn-del:hover { background: #fef2f2; }
+
+    .task-placeholder {
+        padding: 60px 20px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 14px;
+    }
+
+    .task-mic-btn {
+        width: 30px; height: 30px;
+        border-radius: 50%;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        color: #64748b;
+        font-size: 15px;
+        padding: 0;
+        flex-shrink: 0;
+        transition: all 0.12s;
+    }
+    .task-mic-btn:hover { border-color: #6366f1; color: #6366f1; }
+    .task-mic-btn.recording {
+        background: #ef4444; border-color: #ef4444; color: #fff;
+        animation: task-mic-pulse 1s infinite;
+    }
+    @keyframes task-mic-pulse {
+        0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); }
+        50%      { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+    }
+    .task-voice-progress { font-size: 11px; color: #6366f1; display: none; }
+    .edit-desc-wrap { display: flex; flex-direction: row; gap: 8px; align-items: stretch; }
+    .edit-desc-wrap textarea { flex: 1; min-height: 56px; }
+    .edit-mic-btn { border-radius: 6px !important; width: 40px !important; height: auto !important; flex-shrink: 0; align-self: stretch; font-size: 18px !important; }
+
+    .task-desc-preview {
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.4;
+        max-width: 480px;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    /* Goals editor */
+    .task-goals-section {
+        grid-column: 1 / -1;
+        border: 1px solid #bae6fd;
+        border-radius: 6px;
+        background: #fff;
+        overflow: hidden;
+    }
+    .task-goals-header {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 12px;
+        padding: 6px 10px;
+        background: #e0f2fe;
+        border-bottom: 1px solid #bae6fd;
+        font-size: 11px;
+        font-weight: 700;
+        color: #0369a1;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+    .btn-add-goal {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .btn-add-goal:hover { background: #4f46e5; }
+    .task-goals-list { padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+    .task-goals-empty { padding: 10px; text-align: center; font-size: 12px; color: #94a3b8; }
+    .task-goal-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        background: #f8fafc;
+        border: 1px solid #f1f5f9;
+        transition: background .1s;
+    }
+    .task-goal-item:hover { background: #f0f9ff; border-color: #bae6fd; }
+    .task-goal-item input[type=checkbox] { cursor: pointer; accent-color: #6366f1; flex-shrink: 0; }
+    .task-goal-text { cursor: text; }
+    .task-goal-text:hover { text-decoration: underline dotted #94a3b8; }
+    .task-goal-text {
+        flex: 1;
+        font-size: 12px;
+        color: #1e293b;
+        line-height: 1.4;
+        cursor: default;
+        word-break: break-word;
+    }
+    .task-goal-text.done { text-decoration: line-through; color: #94a3b8; }
+    .task-goal-input {
+        flex: 1;
+        font-size: 12px;
+        border: 1px solid #6366f1;
+        border-radius: 3px;
+        padding: 2px 6px;
+        outline: none;
+        font-family: inherit;
+    }
+    .btn-goal-icon {
+        font-size: 11px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: #94a3b8;
+        line-height: 1;
+        flex-shrink: 0;
+    }
+    .btn-goal-icon:hover { color: #6366f1; background: #eef2ff; }
+    .btn-goal-icon.del:hover { color: #ef4444; background: #fef2f2; }
+    .btn-goal-icon.ok:hover  { color: #059669; background: #ecfdf5; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="task-page">
+
+    <!-- Project filter -->
+    <div class="task-filter-bar">
+        <span class="task-filter-label">Проект:</span>
+        <select class="task-project-select" id="taskProjectSelect" onchange="selectProjectById(+this.value, this.options[this.selectedIndex].text)">
+            <option value="">Загрузка...</option>
+        </select>
+    </div>
+
+    <!-- Content header with add button -->
+    <div class="task-content-header">
+        <button class="btn-pane-add" onclick="toggleAddForm()">+ Добавить</button>
+    </div>
+
+    <!-- Add form -->
+    <div class="task-add-form" id="taskAddForm">
+        <div class="task-add-form-row">
+            <div class="form-group">
+                <label>Название</label>
+                <input id="newTaskTitle" placeholder="Название задачи">
+            </div>
+            <div class="form-group narrow">
+                <label>Статус</label>
+                <select id="newTaskStatus"></select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Описание</label>
+            <textarea id="newTaskDesc" placeholder="Краткое описание (необязательно)"></textarea>
+        </div>
+        <div class="task-add-actions">
+            <div style="display:flex;align-items:center;gap:6px">
+                <button class="task-mic-btn" id="taskMicBtn" onclick="taskVoiceToggle()" title="Голосовой ввод">🎤</button>
+                <span class="task-voice-progress" id="taskVoiceProgress">Распознаю...</span>
+                <button class="btn-ai-gen" id="btnAiGen" onclick="aiGenerateTask()" title="Заполнить поля с помощью AI на основе описания">
+                    <span id="aiGenIcon">✨</span>
+                    <span id="aiGenSpinner" class="ai-gen-spinner"></span>
+                    ИИ помощник
+                </button>
+            </div>
+            <div style="display:flex;gap:8px">
+                <button class="btn-cancel" onclick="toggleAddForm()">Отмена</button>
+                <button class="btn-save" onclick="createTask()">Создать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="task-scroll">
+        <div id="taskTableWrap">
+            <div class="task-placeholder">Выберите проект выше</div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _taskProjectId = null;
+let _tasks = [];
+let _projectsMap = {};
+
+const STATUS_LABELS = {
+    active:    'В работе',
+    queued:    'В очереди',
+    pending:   'Ожидает',
+    blocked:   'Заблокировано',
+    cancelled: 'Отменено',
+    done:      'Готово',
+};
+const STATUS_ORDER = { active: 0, queued: 1, pending: 2, blocked: 3, cancelled: 4, done: 5 };
+
+async function taskFetch(url, opts = {}) {
+    const r = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+        ...opts,
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+}
+
+async function loadProjects() {
+    const sel = document.getElementById('taskProjectSelect');
+    try {
+        const data = await taskFetch('/planning/project/list');
+        const projects = data.projects || data.result || [];
+        _projectsMap = {};
+        projects.forEach(p => { _projectsMap[p.id] = p.title; });
+        if (!projects.length) {
+            sel.innerHTML = '<option value="">Нет проектов</option>';
+            return;
+        }
+        sel.innerHTML = '<option value="0">Все проекты</option>' + projects.map(p =>
+            `<option value="${p.id}">${esc(p.title)}</option>`
+        ).join('');
+        sel.selectedIndex = 0;
+        selectProjectById(0, 'Все проекты');
+    } catch(e) {
+        sel.innerHTML = '<option value="">Ошибка загрузки</option>';
+    }
+}
+
+function selectProjectById(id, title) {
+    _taskProjectId = id || 0;
+    document.getElementById('newTaskStatus').innerHTML = statusOptions('pending');
+    loadTasks();
+}
+
+async function loadTasks() {
+    document.getElementById('taskTableWrap').innerHTML = '<div class="task-placeholder">Загрузка...</div>';
+    try {
+        const url = _taskProjectId ? `/planning/tasks/${_taskProjectId}` : '/planning/tasks';
+        const data = await taskFetch(url);
+        _tasks = data.tasks || [];
+        renderTable();
+    } catch(e) {
+        document.getElementById('taskTableWrap').innerHTML = '<div class="task-placeholder" style="color:#ef4444">Ошибка загрузки</div>';
+    }
+}
+
+function renderTable() {
+    const wrap = document.getElementById('taskTableWrap');
+    if (!_tasks.length) {
+        wrap.innerHTML = '<div class="task-placeholder">Нет задач — нажмите «+ Добавить»</div>';
+        return;
+    }
+    _tasks.sort((a, b) => {
+        const oa = STATUS_ORDER[a.status] ?? 99;
+        const ob = STATUS_ORDER[b.status] ?? 99;
+        if (oa !== ob) return oa - ob;
+        return new Date(b.created_at) - new Date(a.created_at);
+    });
+    wrap.innerHTML = `
+        <table class="task-table">
+            <thead>
+                <tr>
+                    <th class="td-id" data-col="id">ID</th>
+                    <th class="td-status" data-col="status">Статус</th>
+                    <th class="td-title" data-col="title">Название</th>
+                    <th class="td-desc" data-col="desc">Описание</th>
+                    <th class="td-project" data-col="project">Проект</th>
+                    <th class="td-goals" data-col="goals">Цели</th>
+                    <th class="td-date" data-col="date">Создана</th>
+                    <th class="td-act" data-col="act"></th>
+                </tr>
+            </thead>
+            <tbody id="taskTbody">
+                ${_tasks.map(t => renderRow(t)).join('')}
+            </tbody>
+        </table>`;
+    colOrderApply(colOrderLoad());
+    colResizersInit();
+    colDragInit();
+}
+
+function rowStatusBtn(t) {
+    const s = t.status;
+    const hasActive = _tasks.some(x => x.id !== t.id && x.status === 'active');
+    if (s === 'pending' || s === 'blocked') {
+        const startBtn = hasActive
+            ? `<button class="btn-status-action start" onclick="event.stopPropagation();quickStatus(${t.id},'queued')" title="В очередь">🕐 В очередь</button>`
+            : `<button class="btn-status-action start" onclick="event.stopPropagation();quickStatus(${t.id},'active')" title="Запустить">▶ Запустить</button>`;
+        return startBtn;
+    }
+    if (s === 'queued') {
+        const startBtn = hasActive
+            ? ''
+            : `<button class="btn-status-action start" onclick="event.stopPropagation();quickStatus(${t.id},'active')" title="Запустить">▶ Запустить</button>`;
+        return startBtn +
+            ` <button class="btn-status-action stop" onclick="event.stopPropagation();quickStatus(${t.id},'pending')" title="Снять с очереди">✕ Очередь</button>`;
+    }
+    if (s === 'active')
+        return `<button class="btn-status-action stop" onclick="event.stopPropagation();quickStatus(${t.id},'pending')" title="Остановить">⏸ Стоп</button>` +
+               ` <button class="btn-status-action finish" onclick="event.stopPropagation();quickStatus(${t.id},'done')" title="Завершить">✓</button>`;
+    if (s === 'done')
+        return `<button class="btn-status-action start" onclick="event.stopPropagation();quickStatus(${t.id},'pending')" title="Вернуть">↩ Вернуть</button>`;
+    return '';
+}
+
+function renderInlineGoals(t) {
+    const goals = parseGoals(t.goals);
+    const items = goals.map((g, i) => `
+        <div class="inline-goal-item" id="ig-${t.id}-${i}">
+            <input type="checkbox" ${g.done ? 'checked' : ''} onclick="event.stopPropagation();inlineToggleGoal(${t.id},${i})">
+            <span class="inline-goal-text${g.done ? ' inline-goal-done' : ''}" id="igt-${t.id}-${i}">${esc(g.text)}</span>
+            <button class="ig-btn" onclick="event.stopPropagation();inlineEditGoal(${t.id},${i})" title="Редактировать">✏</button>
+            <button class="ig-btn del" onclick="event.stopPropagation();inlineDeleteGoal(${t.id},${i})" title="Удалить">✕</button>
+        </div>`).join('');
+    return `<div class="inline-goals">${items}</div>`;
+}
+
+function renderRow(t) {
+    const badge = `<span class="task-status-badge status-${t.status}">${STATUS_LABELS[t.status] || t.status}</span>`;
+    const dateStr = t.created_at ? t.created_at.substring(0, 10) : '';
+    const descPreview = t.description ? `<div class="task-desc-preview">${esc(t.description)}</div>` : '';
+    const projectName = esc(_projectsMap[t.project_id] || '');
+    return `
+        <tr id="tr-${t.id}" onclick="toggleEdit(${t.id})" style="cursor:pointer">
+            <td class="td-id" data-col="id">#${t.id}</td>
+            <td class="td-status" data-col="status">${badge}</td>
+            <td class="td-title" data-col="title">${esc(t.title)}</td>
+            <td class="td-desc" data-col="desc"><div class="task-desc-preview">${esc(t.description)}</div></td>
+            <td class="td-project" data-col="project">${projectName}</td>
+            <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${renderInlineGoals(t)}</td>
+            <td class="td-date" data-col="date">${dateStr}</td>
+            <td class="td-act" data-col="act">
+                ${rowStatusBtn(t)}
+                <button class="btn-row-del" onclick="event.stopPropagation();deleteTask(${t.id})" title="Удалить">✕</button>
+            </td>
+        </tr>
+        <tr class="task-edit-row" id="ter-${t.id}">
+            <td class="task-edit-cell" colspan="8">
+                <div class="task-edit-grid">
+                    <div class="form-group">
+                        <label>Название</label>
+                        <input id="tt-${t.id}" value="${esc(t.title)}">
+                    </div>
+                    <div class="form-group">
+                        <label>Статус</label>
+                        <select id="ts-${t.id}">${statusOptions(t.status)}</select>
+                    </div>
+                    <div class="form-group span2">
+                        <label>Описание</label>
+                        <div class="edit-desc-wrap">
+                            <button class="edit-mic-btn task-mic-btn" id="editMicBtn-${t.id}" onclick="event.stopPropagation();_voice.editToggle(${t.id})" title="Голосовой ввод">🎤</button>
+                            <textarea id="td-${t.id}">${esc(t.description)}</textarea>
+                        </div>
+                    </div>
+                    <div class="task-goals-section" style="grid-column:1/-1">
+                        <div class="task-goals-header">
+                            <span>Цели</span>
+                            <button class="btn-add-goal" onclick="addGoal(${t.id})">+ Добавить цель</button>
+                        </div>
+                        <div class="task-goals-list" id="goals-${t.id}"></div>
+                    </div>
+                    <div class="form-group span2">
+                        <label>Отчёт о выполненных работах</label>
+                        <textarea id="tr-${t.id}" style="min-height:80px">${esc(t.report)}</textarea>
+                    </div>
+                </div>
+                <div class="task-edit-actions">
+                    <button class="btn-del" onclick="deleteTask(${t.id})">Удалить</button>
+                    <button class="btn-cancel" onclick="toggleEdit(${t.id})">Отмена</button>
+                    <button class="btn-save" onclick="saveTask(${t.id})">Сохранить</button>
+                </div>
+            </td>
+        </tr>`;
+}
+
+function statusOptions(selected) {
+    return Object.entries(STATUS_LABELS).map(([v, l]) =>
+        `<option value="${v}"${v === selected ? ' selected' : ''}>${l}</option>`
+    ).join('');
+}
+
+function statusOptionsAll(selected) {
+    return Object.entries(STATUS_LABELS).map(([v, l]) =>
+        `<option value="${v}"${v === selected ? ' selected' : ''}>${l}</option>`
+    ).join('');
+}
+
+function toggleEdit(id) {
+    const row = document.getElementById(`ter-${id}`);
+    const tr  = document.getElementById(`tr-${id}`);
+    const isOpen = row.classList.contains('open');
+    document.querySelectorAll('.task-edit-row.open').forEach(r => r.classList.remove('open'));
+    document.querySelectorAll('.task-table tbody tr.expanded').forEach(r => r.classList.remove('expanded'));
+    if (!isOpen) {
+        row.classList.add('open');
+        tr.classList.add('expanded');
+        const task = _tasks.find(t => t.id === id);
+        if (task) { _goalsCache[id] = parseGoals(task.goals); renderGoals(id); }
+    }
+}
+
+function toggleAddForm() {
+    const form = document.getElementById('taskAddForm');
+    form.classList.toggle('open');
+    if (form.classList.contains('open')) {
+        document.getElementById('newTaskTitle').focus();
+    } else {
+        _aiPendingGoals = null;
+        const prev = document.getElementById('aiGoalsPreview');
+        if (prev) prev.remove();
+    }
+}
+
+async function createTask() {
+    if (!_taskProjectId) { alert('Выберите проект'); return; }
+    const title = document.getElementById('newTaskTitle').value.trim();
+    if (!title) { alert('Введите название'); return; }
+    try {
+        const data = await taskFetch(`/planning/tasks/${_taskProjectId}`, {
+            method: 'POST',
+            body: JSON.stringify({
+                title,
+                description: document.getElementById('newTaskDesc').value,
+                status: document.getElementById('newTaskStatus').value,
+            }),
+        });
+        // Apply AI-generated goals if any
+        if (_aiPendingGoals?.length) {
+            await taskFetch(`/planning/task/${data.task.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ goals: JSON.stringify(_aiPendingGoals) }),
+            });
+            data.task.goals = JSON.stringify(_aiPendingGoals);
+            _aiPendingGoals = null;
+        }
+        _tasks.push(data.task);
+        document.getElementById('newTaskTitle').value = '';
+        document.getElementById('newTaskDesc').value = '';
+        document.getElementById('newTaskStatus').value = 'pending';
+        const prev = document.getElementById('aiGoalsPreview');
+        if (prev) prev.remove();
+        document.getElementById('taskAddForm').classList.remove('open');
+        renderTable();
+    } catch(e) { alert('Ошибка создания'); }
+}
+
+async function saveTask(id) {
+    try {
+        const data = await taskFetch(`/planning/task/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                title:       document.getElementById(`tt-${id}`).value,
+                description: document.getElementById(`td-${id}`).value,
+                goals:       JSON.stringify(_goalsCache[id] || []),
+                status:      document.getElementById(`ts-${id}`).value,
+                report:      document.getElementById(`tr-${id}`).value,
+            }),
+        });
+        const idx = _tasks.findIndex(t => t.id === id);
+        if (idx !== -1) _tasks[idx] = data.task;
+        renderTable();
+    } catch(e) { alert('Ошибка сохранения'); }
+}
+
+async function quickStatus(id, status) {
+    try {
+        const data = await taskFetch(`/planning/task/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ status }),
+        });
+        const idx = _tasks.findIndex(t => t.id === id);
+        if (idx !== -1) _tasks[idx] = data.task;
+        renderTable();
+    } catch(e) { alert('Ошибка смены статуса'); }
+}
+
+async function deleteTask(id) {
+    if (!confirm('Удалить задачу?')) return;
+    try {
+        await taskFetch(`/planning/task/${id}`, { method: 'DELETE' });
+        _tasks = _tasks.filter(t => t.id !== id);
+        renderTable();
+    } catch(e) { alert('Ошибка удаления'); }
+}
+
+function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Goals ──
+const _goalsCache = {};
+
+function parseGoals(str) {
+    if (!str) return [];
+    try {
+        const v = JSON.parse(str);
+        if (Array.isArray(v)) return v.map(g => typeof g === 'string' ? {text: g, done: false} : g);
+        if (v && Array.isArray(v.goals)) return v.goals.map(g => typeof g === 'string' ? {text: g, done: false} : g);
+    } catch(e) {}
+    return [];
+}
+
+function renderGoals(taskId) {
+    const el = document.getElementById(`goals-${taskId}`);
+    if (!el) return;
+    const goals = _goalsCache[taskId] || [];
+    if (!goals.length) {
+        el.innerHTML = '<div class="task-goals-empty">Нет целей — нажмите «+ Добавить цель»</div>';
+        return;
+    }
+    el.innerHTML = goals.map((g, i) => `
+        <div class="task-goal-item" id="gi-${taskId}-${i}">
+            <input type="checkbox" ${g.done ? 'checked' : ''} onchange="toggleGoalDone(${taskId},${i})">
+            <span class="task-goal-text${g.done ? ' done' : ''}" id="gt-${taskId}-${i}" onclick="startEditGoal(${taskId},${i})">${esc(g.text)}</span>
+            <button class="btn-goal-icon del" onclick="deleteGoal(${taskId},${i})" title="Удалить">✕</button>
+        </div>`).join('');
+}
+
+function startEditGoal(taskId, idx) {
+    const item = document.getElementById(`gi-${taskId}-${idx}`);
+    if (!item) return;
+    if (item.querySelector('.task-goal-input')) return; // already editing
+    const g = (_goalsCache[taskId] || [])[idx];
+    if (!g) return;
+    const span = item.querySelector(`#gt-${taskId}-${idx}`);
+    span.outerHTML = `<input class="task-goal-input" id="gi-input-${taskId}-${idx}" value="${esc(g.text)}"
+        onkeydown="if(event.key==='Enter'){this.blur();}if(event.key==='Escape')renderGoals(${taskId})"
+        onblur="saveGoalText(${taskId},${idx})">`;
+    document.getElementById(`gi-input-${taskId}-${idx}`)?.focus();
+}
+
+function saveGoalText(taskId, idx) {
+    const inp = document.getElementById(`gi-input-${taskId}-${idx}`);
+    if (!inp) return;
+    const text = inp.value.trim();
+    if (!text) return;
+    if (_goalsCache[taskId]) _goalsCache[taskId][idx].text = text;
+    renderGoals(taskId);
+    saveGoals(taskId);
+}
+
+function toggleGoalDone(taskId, idx) {
+    const goals = _goalsCache[taskId];
+    if (!goals || !goals[idx]) return;
+    goals[idx].done = !goals[idx].done;
+    renderGoals(taskId);
+    saveGoals(taskId);
+}
+
+function deleteGoal(taskId, idx) {
+    if (!_goalsCache[taskId]) return;
+    _goalsCache[taskId].splice(idx, 1);
+    renderGoals(taskId);
+    saveGoals(taskId);
+}
+
+function addGoal(taskId) {
+    if (!_goalsCache[taskId]) _goalsCache[taskId] = [];
+    _goalsCache[taskId].push({ text: '', done: false });
+    renderGoals(taskId);
+    const lastIdx = _goalsCache[taskId].length - 1;
+    startEditGoal(taskId, lastIdx);
+}
+
+async function saveGoals(taskId) {
+    try {
+        const data = await taskFetch(`/planning/task/${taskId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ goals: JSON.stringify(_goalsCache[taskId] || []) }),
+        });
+        const idx = _tasks.findIndex(t => t.id === taskId);
+        if (idx !== -1) _tasks[idx].goals = data.task.goals;
+    } catch(e) { console.error('saveGoals', e); }
+}
+
+// ── AI Task Generator ──
+async function aiGenerateTask() {
+    const desc = document.getElementById('newTaskDesc').value.trim();
+    const title = document.getElementById('newTaskTitle').value.trim();
+    const input = desc || title;
+    if (!input) {
+        alert('Введите название или описание задачи, чтобы ИИ мог её структурировать');
+        document.getElementById('newTaskDesc').focus();
+        return;
+    }
+
+    const btn = document.getElementById('btnAiGen');
+    const icon = document.getElementById('aiGenIcon');
+    const spinner = document.getElementById('aiGenSpinner');
+    btn.disabled = true;
+    icon.style.display = 'none';
+    spinner.classList.add('active');
+
+    try {
+        const data = await taskFetch('/planning/task/ai-generate', {
+            method: 'POST',
+            body: JSON.stringify({ description: input }),
+        });
+        if (data.title) document.getElementById('newTaskTitle').value = data.title;
+        if (data.description) document.getElementById('newTaskDesc').value = data.description;
+        if (data.goals?.length) {
+            // store goals for the new task form (will be applied on createTask)
+            _aiPendingGoals = data.goals;
+            _showPendingGoalsPreview(data.goals);
+        }
+    } catch(e) {
+        alert('ИИ не смог сгенерировать задачу. Попробуйте ещё раз.');
+    } finally {
+        btn.disabled = false;
+        icon.style.display = '';
+        spinner.classList.remove('active');
+    }
+}
+
+let _aiPendingGoals = null;
+
+function _showPendingGoalsPreview(goals) {
+    let preview = document.getElementById('aiGoalsPreview');
+    if (!preview) {
+        preview = document.createElement('div');
+        preview.id = 'aiGoalsPreview';
+        preview.style.cssText = 'font-size:12px;color:#374151;background:#f0f9ff;border:1px solid #bae6fd;border-radius:5px;padding:8px 10px;margin-top:2px';
+        const desc = document.getElementById('newTaskDesc');
+        desc.parentNode.insertAdjacentElement('afterend', preview);
+    }
+    preview.innerHTML = '<div style="font-weight:700;color:#0369a1;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Цели (будут добавлены)</div>' +
+        goals.map(g => `<div style="display:flex;align-items:center;gap:5px;margin:2px 0">
+            <span style="color:#6366f1">◦</span><span>${esc(g.text)}</span></div>`).join('');
+}
+
+// ── Voice recorder ──
+const _voice = (() => {
+    let _mr = null, _chunks = [], _stream = null, _cancelled = false, _startedAt = 0;
+    const MIN_MS = 1000;
+
+    async function _start() {
+        if (!_stream) _stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        _mr = new MediaRecorder(_stream);
+        _chunks = [];
+        _mr.ondataavailable = e => _chunks.push(e.data);
+        _mr.onstop = _onStop;
+        _mr.start();
+        _startedAt = performance.now();
+        document.getElementById('taskMicBtn')?.classList.add('recording');
+    }
+
+    function _stop() {
+        if (_mr?.state === 'recording') _mr.stop();
+        document.getElementById('taskMicBtn')?.classList.remove('recording');
+    }
+
+    async function _onStop() {
+        const blob = new Blob(_chunks, { type: 'audio/wav' });
+        _chunks = [];
+        if (!blob.size || _cancelled || performance.now() - _startedAt < MIN_MS) return;
+        const prog = document.getElementById('taskVoiceProgress');
+        if (prog) prog.style.display = 'inline';
+        try {
+            const fd = new FormData();
+            fd.append('file', blob, 'voice.wav');
+            const r = await fetch('/chat/voice', { method: 'POST', body: fd });
+            const data = await r.json();
+            if (data.result) {
+                const el = document.getElementById('newTaskDesc');
+                if (el) el.value = (el.value ? el.value + '\n' : '') + data.result;
+            }
+        } catch(e) { console.error('voice', e); }
+        finally { if (prog) prog.style.display = 'none'; }
+    }
+
+    let _editTargetId = null;
+
+    async function _onStopEdit() {
+        const blob = new Blob(_chunks, { type: 'audio/wav' });
+        _chunks = [];
+        if (!blob.size || _cancelled || performance.now() - _startedAt < MIN_MS) return;
+        const btn = document.getElementById('editMicBtn-' + _editTargetId);
+        if (btn) btn.textContent = '⏳';
+        try {
+            const fd = new FormData();
+            fd.append('file', blob, 'voice.wav');
+            const r = await fetch('/chat/voice', { method: 'POST', body: fd });
+            const data = await r.json();
+            if (data.result) {
+                const el = document.getElementById('td-' + _editTargetId);
+                if (el) el.value = (el.value ? el.value + '\n' : '') + data.result;
+            }
+        } catch(e) { console.error('voice', e); }
+        finally {
+            const btn2 = document.getElementById('editMicBtn-' + _editTargetId);
+            if (btn2) { btn2.textContent = '🎤'; btn2.classList.remove('recording'); }
+        }
+    }
+
+    return {
+        toggle() {
+            if (!navigator.mediaDevices?.getUserMedia) { alert('Микрофон недоступен'); return; }
+            if (_mr?.state === 'recording') { _cancelled = false; _stop(); }
+            else { _cancelled = false; _start(); }
+        },
+        editToggle(taskId) {
+            if (!navigator.mediaDevices?.getUserMedia) { alert('Микрофон недоступен'); return; }
+            const btn = document.getElementById('editMicBtn-' + taskId);
+            if (_mr?.state === 'recording') {
+                _cancelled = false; _stop();
+                if (btn) btn.classList.remove('recording');
+                return;
+            }
+            _editTargetId = taskId;
+            _cancelled = false;
+            // override onstop for edit target
+            if (!_stream) navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+                _stream = s;
+                _mr = new MediaRecorder(_stream);
+                _chunks = [];
+                _mr.ondataavailable = e => _chunks.push(e.data);
+                _mr.onstop = _onStopEdit;
+                _mr.start();
+                _startedAt = performance.now();
+                if (btn) btn.classList.add('recording');
+            });
+            else {
+                _mr = new MediaRecorder(_stream);
+                _chunks = [];
+                _mr.ondataavailable = e => _chunks.push(e.data);
+                _mr.onstop = _onStopEdit;
+                _mr.start();
+                _startedAt = performance.now();
+                if (btn) btn.classList.add('recording');
+            }
+        }
+    };
+})();
+
+function taskVoiceToggle() { _voice.toggle(); }
+
+// ── Column order (drag-and-drop) ──
+const COL_ORDER_KEY = 'task_col_order_v1';
+let _dragCol = null;
+let _isResizing = false;
+
+function colOrderSave() {
+    const ths = Array.from(document.querySelectorAll('.task-table thead th'));
+    localStorage.setItem(COL_ORDER_KEY, JSON.stringify(ths.map(th => th.dataset.col)));
+}
+function colOrderLoad() {
+    try { return JSON.parse(localStorage.getItem(COL_ORDER_KEY)); } catch { return null; }
+}
+function colOrderApply(order) {
+    if (!order || !order.length) return;
+    const table = document.querySelector('.task-table');
+    if (!table) return;
+    const reorderRow = row => {
+        const cells = Array.from(row.children);
+        const map = {};
+        cells.forEach(c => { if (c.dataset.col) map[c.dataset.col] = c; });
+        order.forEach(col => { if (map[col]) row.appendChild(map[col]); });
+    };
+    reorderRow(table.querySelector('thead tr'));
+    table.querySelectorAll('tbody tr').forEach(row => {
+        if (row.querySelector('[data-col]')) reorderRow(row);
+    });
+}
+
+function colDragInit() {
+    const table = document.querySelector('.task-table');
+    if (!table) return;
+    const ths = Array.from(table.querySelectorAll('thead th'));
+
+    ths.forEach(th => {
+        th.setAttribute('draggable', 'true');
+
+        const rsz = th.querySelector('.col-resizer');
+        if (rsz) {
+            rsz.addEventListener('mousedown', () => {
+                _isResizing = true;
+                const up = () => { _isResizing = false; document.removeEventListener('mouseup', up); };
+                document.addEventListener('mouseup', up);
+            }, { capture: true });
+        }
+
+        th.addEventListener('dragstart', e => {
+            if (_isResizing) { e.preventDefault(); return; }
+            _dragCol = th.dataset.col;
+            th.classList.add('col-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', _dragCol);
+        });
+
+        th.addEventListener('dragend', () => {
+            th.classList.remove('col-dragging');
+            ths.forEach(t => t.classList.remove('col-drag-over'));
+            _dragCol = null;
+        });
+
+        th.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        });
+
+        th.addEventListener('dragenter', e => {
+            e.preventDefault();
+            if (th.dataset.col === _dragCol) return;
+            ths.forEach(t => t.classList.remove('col-drag-over'));
+            th.classList.add('col-drag-over');
+        });
+
+        th.addEventListener('dragleave', e => {
+            if (!th.contains(e.relatedTarget)) th.classList.remove('col-drag-over');
+        });
+
+        th.addEventListener('drop', e => {
+            e.preventDefault();
+            th.classList.remove('col-drag-over');
+            if (!_dragCol || _dragCol === th.dataset.col) return;
+
+            const thead = table.querySelector('thead tr');
+            const thsArr = Array.from(thead.querySelectorAll('th'));
+            const dragTh = thsArr.find(t => t.dataset.col === _dragCol);
+            if (!dragTh) return;
+            const dragIdx = thsArr.indexOf(dragTh);
+            const targetIdx = thsArr.indexOf(th);
+
+            const insertAfter = dragIdx < targetIdx;
+            if (insertAfter) thead.insertBefore(dragTh, th.nextSibling);
+            else             thead.insertBefore(dragTh, th);
+
+            table.querySelectorAll('tbody tr').forEach(row => {
+                const dragTd   = row.querySelector(`[data-col="${_dragCol}"]`);
+                const targetTd = row.querySelector(`[data-col="${th.dataset.col}"]`);
+                if (!dragTd || !targetTd) return;
+                if (insertAfter) row.insertBefore(dragTd, targetTd.nextSibling);
+                else             row.insertBefore(dragTd, targetTd);
+            });
+
+            colOrderSave();
+            colPctSave(Array.from(table.querySelectorAll('thead th')));
+            // re-attach resizers in new order
+            table.querySelectorAll('.col-resizer').forEach(r => r.remove());
+            colResizersInit();
+            colDragInit();
+        });
+    });
+}
+
+// ── Resizable columns (% based) ──
+const COL_KEY = 'task_col_pct_v1';
+const COL_DEFAULTS_PCT = [4, 7, 13, 13, 9, 19, 7, 28]; // % sum=100, 8 cols with ID
+
+function colPctLoad(count) {
+    try {
+        const saved = JSON.parse(localStorage.getItem(COL_KEY));
+        if (saved && saved.length === count) {
+            const total = saved.reduce((s, v) => s + v, 0);
+            if (total > 0) return saved.map(v => v * 100 / total);
+        }
+    } catch {}
+    const def = COL_DEFAULTS_PCT.slice(0, count);
+    const t = def.reduce((s, v) => s + v, 0);
+    return def.map(v => v * 100 / t);
+}
+function colPctSave(ths) {
+    const total = ths.reduce((s, th) => s + th.offsetWidth, 0);
+    if (!total) return;
+    localStorage.setItem(COL_KEY, JSON.stringify(ths.map(th => +(th.offsetWidth * 100 / total).toFixed(3))));
+}
+
+function colResizersInit() {
+    const table = document.querySelector('.task-table');
+    if (!table) return;
+    const ths = Array.from(table.querySelectorAll('thead th'));
+    const pcts = colPctLoad(ths.length);
+
+    // Apply as %, last col gets remainder to guarantee 100%
+    let used = 0;
+    ths.forEach((th, i) => {
+        const p = (i === ths.length - 1) ? +(100 - used).toFixed(3) : +pcts[i].toFixed(3);
+        th.style.width = p + '%';
+        used += p;
+    });
+
+    ths.forEach((th, i) => {
+        if (i === ths.length - 1) return;
+        const rsz = document.createElement('div');
+        rsz.className = 'col-resizer';
+        th.appendChild(rsz);
+
+        let startX, startPx, nextPx, nextTh, tableW;
+        rsz.addEventListener('mousedown', e => {
+            e.preventDefault();
+            tableW  = table.offsetWidth;
+            startX  = e.clientX;
+            startPx = th.offsetWidth;
+            nextTh  = ths[i + 1];
+            nextPx  = nextTh ? nextTh.offsetWidth : 0;
+            rsz.classList.add('dragging');
+
+            const onMove = e => {
+                const dx = e.clientX - startX;
+                const nw = Math.max(48, startPx + dx);
+                const nn = Math.max(48, nextPx  - dx);
+                th.style.width     = +(nw * 100 / tableW).toFixed(3) + '%';
+                if (nextTh) nextTh.style.width = +(nn * 100 / tableW).toFixed(3) + '%';
+            };
+            const onUp = () => {
+                rsz.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                colPctSave(ths);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    });
+}
+
+loadProjects();
+</script>
+{% endblock %}
