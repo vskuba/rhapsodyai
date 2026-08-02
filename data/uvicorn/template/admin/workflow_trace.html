@@ -294,6 +294,24 @@
         font-size: 11px;
     }
 
+    .step-head .step-duration.step-duration-slow {
+        background: #ece5e5;
+        color: #c93054;
+        font-weight: 700;
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 10px;
+    }
+
+    .step-head .step-tokens {
+        color: #6c757d;
+        font-size: 11px;
+        font-family: monospace;
+        background: #f0f4f8;
+        border-radius: 3px;
+        padding: 1px 5px;
+    }
+
     .step-head .step-transition-mark {
         color: #8e44ad;
         font-size: 11px;
@@ -604,6 +622,17 @@
         white-space: nowrap;
     }
 
+    .token-stat-item {
+        font-size: 11px;
+        font-weight: 600;
+        color: #065f46;
+        background: #d1fae5;
+        border: 1px solid #a7f3d0;
+        border-radius: 8px;
+        padding: 2px 9px;
+        white-space: nowrap;
+    }
+
     .btn-delete-run {
         background: transparent;
         color: #e74c3c;
@@ -659,6 +688,76 @@
         padding: 40px 0;
         font-size: 13px;
     }
+
+    /* Вкладки статусов */
+    .status-tabs {
+        display: flex;
+        border-bottom: 1px solid #e0e0e0;
+        background: #fafafa;
+    }
+
+    .status-tab {
+        flex: 1;
+        padding: 8px 4px;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        color: #7f8c8d;
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+        user-select: none;
+    }
+
+    .status-tab:hover {
+        color: #2c3e50;
+        background: #f0f0f0;
+    }
+
+    .status-tab.active {
+        color: #2c3e50;
+        border-bottom-color: #3498db;
+        background: #fff;
+    }
+
+    .status-tab.tab-running.active { border-bottom-color: #b7950b; color: #b7950b; }
+    .status-tab.tab-success.active { border-bottom-color: #1e8449; color: #1e8449; }
+    .status-tab.tab-error.active   { border-bottom-color: #c0392b; color: #c0392b; }
+    .status-tab.tab-stopped.active { border-bottom-color: #7f8c8d; color: #7f8c8d; }
+
+    /* Стоп-кнопка (красный квадрат) на карточке в списке */
+    .btn-stop-card {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        background: #e74c3c;
+        color: #fff;
+        border: none;
+        border-radius: 3px;
+        font-size: 9px;
+        cursor: pointer;
+        flex-shrink: 0;
+        line-height: 1;
+        padding: 0;
+        margin-left: 4px;
+    }
+
+    .btn-stop-card:hover { background: #c0392b; }
+    .btn-stop-card:disabled { opacity: 0.5; cursor: default; }
+
+    @keyframes running-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.55; }
+    }
+
+    .step-running-current {
+        border-color: #b7950b;
+        background: linear-gradient(90deg, #fffdf0, #fef9e7, #fffdf0);
+        background-size: 200% 100%;
+        animation: running-pulse 1.4s ease-in-out infinite;
+    }
 </style>
 {% endblock %}
 
@@ -667,10 +766,16 @@
 
     <div class="trace-body">
         <div class="runs-sidebar">
+            <!-- Вкладки статусов -->
+            <div class="status-tabs">
+                <div class="status-tab tab-running" data-status="running">▶ Running</div>
+                <div class="status-tab tab-success" data-status="success">✓ Success</div>
+                <div class="status-tab tab-error"   data-status="error">✕ Error</div>
+                <div class="status-tab tab-stopped" data-status="stopped">■ Stopped</div>
+            </div>
+
             <!-- Фильтры: изменение любого сразу перезагружает список -->
             <div class="trace-filters">
-                <div class="sidebar-label">Фильтры</div>
-
                 <label for="filterWorkflow" class="filter-label">Workflow</label>
                 <select id="filterWorkflow" class="form-control">
                     <option value="">Все workflow</option>
@@ -679,14 +784,6 @@
                 <label for="filterAgent" class="filter-label">Агент</label>
                 <select id="filterAgent" class="form-control">
                     <option value="">Все агенты</option>
-                </select>
-
-                <label for="filterStatus" class="filter-label">Статус</label>
-                <select id="filterStatus" class="form-control">
-                    <option value="">Любой статус</option>
-                    <option value="success">success</option>
-                    <option value="error">error</option>
-                    <option value="running">running</option>
                 </select>
             </div>
 
@@ -717,16 +814,57 @@
     const runsList = document.getElementById('runsList');
     const runDetail = document.getElementById('runDetail');
 
-    const state = {page: 1, totalPages: 1, activeRunUuid: null, stepTypeIcons: {}};
+    const state = {page: 1, totalPages: 1, activeRunUuid: null, stepTypeIcons: {}, activeTab: 'running'};
+
+    // Смещение часового пояса из настроек (минуты), применяется в fmtDate
+    let _tzOffsetMinutes = 0;
 
     function fmtDuration(ms) {
         if (ms === null || ms === undefined) return '';
-        return ms >= 1000 ? (ms / 1000).toFixed(1) + ' sec' : ms + ' ms';
+        if (ms <= 100) return ms + ' ms';
+        const sec = ms / 1000;
+        if (sec <= 100) return sec.toFixed(1) + ' s';
+        const min = Math.floor(sec / 60);
+        const remSec = Math.round(sec % 60);
+        if (min <= 100) return min + 'm ' + remSec + 's';
+        const hr = Math.floor(min / 60);
+        const remMin = min % 60;
+        return hr + 'h ' + remMin + 'm';
     }
 
     function fmtDate(value) {
         if (!value) return '';
-        return String(value).replace('T', ' ').slice(0, 19);
+        // DB datetime is UTC naive — force UTC parsing by appending Z, then apply offset
+        const raw = String(value).replace(' ', 'T');
+        const d = new Date(raw.endsWith('Z') ? raw : raw + 'Z');
+        if (isNaN(d.getTime())) return String(value).replace('T', ' ').slice(0, 19);
+        const local = new Date(d.getTime() + _tzOffsetMinutes * 60000);
+        return local.toISOString().replace('T', ' ').slice(0, 19);
+    }
+
+    // Возвращает { date: 'YYYY-MM-DD', hm: 'HH:MM' }
+    function fmtDateParts(value) {
+        const full = fmtDate(value);           // 'YYYY-MM-DD HH:MM:SS'
+        if (!full) return { date: '', hm: '' };
+        const [date, time] = full.split(' ');
+        return { date, hm: (time || '').slice(0, 5) };
+    }
+
+    function fmtTimeAgo(value) {
+        if (!value) return '';
+        const raw = String(value).replace(' ', 'T');
+        const d = new Date(raw.endsWith('Z') ? raw : raw + 'Z');
+        if (isNaN(d.getTime())) return '';
+        const diffMs = Date.now() - d.getTime();
+        const diffSec = Math.round(diffMs / 1000);
+        if (diffSec < 60) return `${diffSec} сек назад`;
+        const diffMin = Math.round(diffSec / 60);
+        if (diffMin < 60) return `${diffMin} мин назад`;
+        const diffHr = Math.floor(diffMin / 60);
+        const remMin = diffMin % 60;
+        if (diffHr < 24) return remMin ? `${diffHr} ч ${remMin} мин назад` : `${diffHr} ч назад`;
+        const diffDays = Math.floor(diffHr / 24);
+        return `${diffDays} дн назад`;
     }
 
     // Безопасный текстовый элемент
@@ -761,7 +899,16 @@
         try {
             return JSON.parse(raw);
         } catch {
-            return null;
+            // Fallback: экранируем реальные управляющие символы внутри JSON-строки
+            try {
+                return JSON.parse(
+                    raw.replace(/\n/g, '\\n')
+                       .replace(/\r/g, '\\r')
+                       .replace(/\t/g, '\\t')
+                );
+            } catch {
+                return null;
+            }
         }
     }
 
@@ -786,8 +933,14 @@
 
     // Metadata как список ключей с зебра-фоном: каждый ключ — отдельный pre-ряд
     function renderMetadataBlock(raw) {
+        // Truncated JSON from old DB rows: show notice instead of raw dump
+        const rawStr = typeof raw === 'string' ? raw : null;
         const data = parseJson(raw);
         if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+            if (rawStr && rawStr.includes('...[truncated]')) {
+                const note = el('pre', 'meta-kv', '⚠️ Метаданные обрезаны (запись слишком длинная). Запустите воркфлоу снова — новые записи хранятся корректно.');
+                return note;
+            }
             const text = prettyMetadata(raw);
             return text === null ? null : el('pre', null, text);
         }
@@ -797,6 +950,16 @@
 
         const wrap = el('div', 'meta-kv-list');
         entries.forEach(([key, value]) => {
+            // Массив {variable, text} (llm_to_json_variable) — разворачиваем в отдельные строки
+            if (Array.isArray(value) && value.length > 0 && value[0] != null && typeof value[0] === 'object' && 'variable' in value[0] && 'text' in value[0]) {
+                value.forEach(item => {
+                    const varName = item.variable || '';
+                    const varText = String(item.text || '');
+                    const text = varText.includes('\n') ? `${varName}:\n${varText}` : `${varName}: ${varText}`;
+                    wrap.appendChild(el('pre', 'meta-kv', text));
+                });
+                return;
+            }
             let text;
             if (typeof value === 'string') {
                 text = value.includes('\n') ? `${key}:\n${value}` : `${key}: ${value}`;
@@ -879,6 +1042,16 @@
     }
 
     async function init() {
+        // Загружаем часовой пояс из настроек (key = 'timezone', value = '+3' / '-2' / '0')
+        try {
+            const settingsRes = await getData('/setting/list');
+            const tzRow = (settingsRes.result || []).find(s => s.key === 'timezone' && !s.node_id);
+            if (tzRow) {
+                const match = String(tzRow.value || '').match(/([+-]?\d+)/);
+                if (match) _tzOffsetMinutes = parseInt(match[1], 10) * 60;
+            }
+        } catch { /* используем UTC если настройки недоступны */ }
+
         // Справочники для фильтров и иконок типов шагов
         try {
             const [workflowsRes, agentsRes, typesRes] = await Promise.all([
@@ -908,17 +1081,31 @@
             console.error('Ошибка загрузки справочников:', e);
         }
 
+        // Определяем начальную вкладку: Running если есть записи, иначе Success
+        try {
+            const probe = await getData('/workflow_trace/run/list?status=running&page=1&limit=1');
+            state.activeTab = (probe.pagination.total_records > 0) ? 'running' : 'success';
+        } catch {
+            state.activeTab = 'running';
+        }
+        setActiveTab(state.activeTab);
         await loadRuns();
+    }
+
+    function setActiveTab(tab) {
+        state.activeTab = tab;
+        document.querySelectorAll('.status-tab').forEach(tabEl => {
+            tabEl.classList.toggle('active', tabEl.dataset.status === tab);
+        });
     }
 
     async function loadRuns() {
         const params = new URLSearchParams({page: state.page, limit: 30});
         const wf = document.getElementById('filterWorkflow').value;
         const ag = document.getElementById('filterAgent').value;
-        const st = document.getElementById('filterStatus').value;
         if (wf) params.set('workflow_id', wf);
         if (ag) params.set('agent_id', ag);
-        if (st) params.set('status', st);
+        params.set('status', state.activeTab);
 
         try {
             const data = await getData(`/workflow_trace/run/list?${params}`);
@@ -951,12 +1138,39 @@
 
             const head = el('div', 'run-head');
             head.appendChild(el('span', 'run-title', run.workflow_title || `workflow ${run.workflow_id}`));
-            head.appendChild(el('span', `status-badge status-${run.status}`, run.status));
+
+            const statusBadge = el('span', `status-badge status-${run.status}`, run.status);
+            head.appendChild(statusBadge);
+
+            if (run.status === 'running') {
+                const stopBtn = document.createElement('button');
+                stopBtn.className = 'btn-stop-card';
+                stopBtn.title = 'Остановить';
+                stopBtn.textContent = '■';
+                stopBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    stopBtn.disabled = true;
+                    try {
+                        await postData(`/workflow_trace/run/${run.run_uuid}/stop`, {});
+                        showNotification('Остановлен', 'success');
+                        state.activeRunUuid = null;
+                        state.page = 1;
+                        await loadRuns();
+                    } catch (err) {
+                        showNotification(`Ошибка: ${err.message}`, 'error');
+                        stopBtn.disabled = false;
+                    }
+                };
+                head.appendChild(stopBtn);
+            }
+
             card.appendChild(head);
 
-            const meta = el('div', 'run-meta',
-                `${fmtDate(run.started_at)} · ${run.agent_title || ''} · ${fmtDuration(run.duration_ms)}` +
-                ` · шагов: ${run.steps_qty}` + (run.children_qty > 0 ? ` · subflow: ${run.children_qty}` : ''));
+            const meta = el('div', 'run-meta');
+            const { date, hm } = fmtDateParts(run.started_at);
+            const agentTxt = run.agent_title ? ` · ${run.agent_title}` : '';
+            const subflowTxt = run.children_qty > 0 ? ` · subflow: ${run.children_qty}` : '';
+            meta.innerHTML = `${date} <b style="color:#1e293b;font-size:13px;">${hm}</b>${agentTxt} · ${fmtDuration(run.duration_ms)} · шагов: ${run.steps_qty}${subflowTxt}`;
             card.appendChild(meta);
             card.appendChild(el('div', 'run-prompt', run.prompt_user || ''));
 
@@ -994,11 +1208,15 @@
         // Сводка запуска
         const summary = el('div', 'run-summary');
         const headRow = el('div', 'row');
-        headRow.appendChild(el('span', 'run-pre-title', `#${run.id} Workflow `));
+        headRow.appendChild(el('span', 'run-pre-title', `#${run.id} agent_workflow_trace `));
         headRow.appendChild(workflowLink(`${run.workflow_title || run.workflow_name || ''} `, run.workflow_id, 'run-title'));
         headRow.appendChild(el('span', 'run-name', `${run.workflow_name || ''} `));
         headRow.appendChild(el('span', `status-badge status-${run.status}`, run.status));
-        headRow.appendChild(el('span', 'run-meta', `  ${fmtDate(run.started_at)}`));
+        const dateSpan = el('span', 'run-meta');
+        const { date: rDate, hm: rHm } = fmtDateParts(run.started_at);
+        const ago = fmtTimeAgo(run.started_at);
+        dateSpan.innerHTML = `&nbsp;&nbsp;${rDate} <b style="color:#1e293b;">${rHm}</b>${ago ? ` <span style="color:#94a3b8;font-weight:normal;">(${ago})</span>` : ''}`;
+        headRow.appendChild(dateSpan);
         headRow.appendChild(el('span', 'run-meta-time', `  ${fmtDuration(run.duration_ms)}`))
 
         // Replay: повторный прогон workflow с сохраненным снапшотом переменных.
@@ -1072,19 +1290,27 @@
         summary.appendChild(promptRow);
 
         const resultRow = el('div', 'row');
-        resultRow.appendChild(el('div', 'label', run.status === 'error' ? 'Ошибка' : 'Ответ'));
-        resultRow.appendChild(el('pre', null, (run.status === 'error' ? run.error : run.result) || '—'));
+        const isErrorLike = run.status === 'error' || run.status === 'stopped';
+        resultRow.appendChild(el('div', 'label', run.status === 'error' ? 'Ошибка' : run.status === 'stopped' ? 'Остановлен' : 'Ответ'));
+        resultRow.appendChild(el('pre', null, (isErrorLike ? run.error : run.result) || '—'));
         summary.appendChild(resultRow);
 
         // LLM статистика: подсчёт вызовов по моделям из всех шагов (включая sub-workflow рекурсивно)
         const llmCounts = collectLlmStats(run);
-        if (Object.keys(llmCounts).length > 0) {
+        const { input: tokIn, output: tokOut } = collectTokenStats(run);
+        if (Object.keys(llmCounts).length > 0 || tokIn > 0 || tokOut > 0) {
             const statsRow = el('div', 'row');
             statsRow.appendChild(el('div', 'label', 'LLM вызовы'));
             const statsBlock = el('div', 'llm-stats');
             Object.entries(llmCounts).forEach(([name, count]) => {
                 statsBlock.appendChild(el('span', 'llm-stat-item', `${name} × ${count}`));
             });
+            if (tokIn > 0) statsBlock.appendChild(el('span', 'token-stat-item', `↑ ${Number(tokIn).toLocaleString()} in`));
+            if (tokOut > 0) statsBlock.appendChild(el('span', 'token-stat-item', `↓ ${Number(tokOut).toLocaleString()} out`));
+            if (tokOut > 0 && run.duration_ms > 0) {
+                const tps = (tokOut / (run.duration_ms / 1000)).toFixed(1);
+                statsBlock.appendChild(el('span', 'token-stat-item', `⚡ ${tps} tok/s`));
+            }
             statsRow.appendChild(statsBlock);
             summary.appendChild(statsRow);
         }
@@ -1106,6 +1332,20 @@
         };
         addSteps(run);
         return counts;
+    }
+
+    // Рекурсивно суммирует входящие/исходящие токены по всем шагам
+    function collectTokenStats(run) {
+        let input = 0, output = 0;
+        const addSteps = (r) => {
+            (r.steps || []).forEach(s => {
+                input += (s.tokens_input || 0);
+                output += (s.tokens_output || 0);
+            });
+            (r.children || []).forEach(addSteps);
+        };
+        addSteps(run);
+        return { input, output };
     }
 
     function renderRunTimeline(run) {
@@ -1133,17 +1373,38 @@
             }
         });
 
+        // Топ-3 самых долгих шага (по duration_ms > 0)
+        const slowStepIds = new Set(
+            [...(run.steps || [])]
+                .filter(s => s.duration_ms > 0)
+                .sort((a, b) => b.duration_ms - a.duration_ms)
+                .slice(0, 3)
+                .map(s => s.id)
+        );
+
         (run.steps || []).forEach(step => {
             const row = el('div', 'step-row');
             const head = el('div', 'step-head');
 
-            head.appendChild(el('span', 'step-index', `Шаг #${step.exec_index}`));
+            head.appendChild(el('span', 'step-index', `Шаг #${step.exec_index}${step.step_id ? ` (ID: ${step.step_id})` : ''}`));
             head.appendChild(el('span', 'step-icon', state.stepTypeIcons[step.step_type] || '·'));
             head.appendChild(el('span', 'step-name', step.step_title || step.step_type));
             if (step.llm_name) head.appendChild(el('span', 'step-llm-badge', step.llm_name));
+            if (step.tokens_input != null || step.tokens_output != null) {
+                const tin = step.tokens_input != null ? `↑${step.tokens_input}` : '';
+                const tout = step.tokens_output != null ? `↓${step.tokens_output}` : '';
+                head.appendChild(el('span', 'step-tokens', [tin, tout].filter(Boolean).join(' ')));
+            } else if (step.step_type === 'llm_to_image' && step.output) {
+                const m = (step.output || '').match(/^image:(\d+)\s*bytes/);
+                if (m) {
+                    const kb = parseInt(m[1]) / 1024;
+                    const sizeStr = kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.round(kb)} KB`;
+                    head.appendChild(el('span', 'step-tokens', `🖼 ${sizeStr}`));
+                }
+            }
             if (step.transition) head.appendChild(el('span', 'step-transition-mark', '🔀'));
             head.appendChild(el('span', `status-badge status-${step.status}`, step.status));
-            head.appendChild(el('span', 'step-duration', fmtDuration(step.duration_ms)));
+            head.appendChild(el('span', `step-duration${slowStepIds.has(step.id) ? ' step-duration-slow' : ''}`, fmtDuration(step.duration_ms)));
 
             head.onclick = () => row.classList.toggle('open');
             row.appendChild(head);
@@ -1220,6 +1481,19 @@
             });
         });
 
+        // Текущий выполняемый шаг (ещё не завершён, нет в DB) — показываем после всех завершённых
+        if (run.current_step) {
+            const cs = run.current_step;
+            const row = el('div', 'step-row step-running-current');
+            const head = el('div', 'step-head');
+            head.appendChild(el('span', 'step-index', '⏳'));
+            head.appendChild(el('span', 'step-icon', state.stepTypeIcons[cs.step_type] || '·'));
+            head.appendChild(el('span', 'step-name', cs.step_title || cs.step_type));
+            head.appendChild(el('span', 'status-badge status-running', 'running'));
+            row.appendChild(head);
+            container.appendChild(row);
+        }
+
         return container;
     }
 
@@ -1232,10 +1506,15 @@
         state.page = 1;
         loadRuns();
     };
-    document.getElementById('filterStatus').onchange = () => {
-        state.page = 1;
-        loadRuns();
-    };
+    document.querySelectorAll('.status-tab').forEach(tab => {
+        tab.onclick = () => {
+            if (tab.dataset.status === state.activeTab) return;
+            state.activeRunUuid = null;
+            state.page = 1;
+            setActiveTab(tab.dataset.status);
+            loadRuns();
+        };
+    });
     document.getElementById('pagePrev').onclick = () => {
         if (state.page > 1) {
             state.page--;
