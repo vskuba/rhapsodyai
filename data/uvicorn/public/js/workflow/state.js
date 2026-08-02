@@ -21,6 +21,11 @@ export const WORKFLOW_STEP_CONFIG = {
             label: 'MapReduce: переменная с большим текстом (необязательно)',
             type: 'variable_select',
             placeholder: '-- Не использовать MapReduce --'
+        },
+        {
+            key: 'thinking_enable',
+            label: 'Thinking enable',
+            type: 'checkbox',
         }
     ],
     'tool_invoke': [ // ID типа "Инструменты"
@@ -62,7 +67,19 @@ export const WORKFLOW_STEP_CONFIG = {
             key: 'workflow_invoke',
             type: 'widget_workflow_invoke',
         }
-    ]
+    ],
+    'llm_to_image': [ // Генерация изображения через LLM
+        {
+            key: 'prompt_user',
+            label: 'Промпт для генерации изображения',
+            type: 'textarea',
+            placeholder: 'Опишите изображение...',
+        },
+        {
+            key: 'llm_to_image',
+            type: 'widget_llm_to_image',
+        }
+    ],
 };
 
 export const state = {
