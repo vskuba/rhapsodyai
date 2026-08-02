@@ -14,11 +14,23 @@
 
     .agents-sidebar {
         width: 260px;
+        min-width: 160px;
         background: #fafafa;
-        border-right: 1px solid #e0e0e0;
         display: flex;
         flex-direction: column;
+        flex-shrink: 0;
     }
+
+    /* Resizer */
+    .workflow-resizer {
+        width: 2px;
+        background: #e0e0e0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background 0.15s;
+    }
+    .workflow-resizer:hover,
+    .workflow-resizer.dragging { background: #3498db; }
 
     .sidebar-header {
         padding: 20px;
@@ -963,6 +975,9 @@
         </div>
     </div>
 
+    <!-- Resizer -->
+    <div class="workflow-resizer" id="workflowResizer"></div>
+
     <!-- Секция формы -->
     <div class="editor-section">
         <form id="workflowForm" novalidate>
@@ -1158,5 +1173,9 @@
 
 {% block scripts %}
 <script src="/static/js/vendor/mermaid.min.js"></script>
+<script src="/static/js/sidebar_resizer.js"></script>
+<script>
+    initSidebarResizer('workflowResizer', 'workflow_sidebar_width', document.querySelector('.agents-sidebar'));
+</script>
 <script type="module" src="/static/js/workflow/main.js?v=9"></script>
 {% endblock %}

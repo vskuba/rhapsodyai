@@ -15,11 +15,23 @@
     /* 2. Сайдбар */
     .agents-sidebar {
         width: 260px;
+        min-width: 160px;
         background: #fafafa;
-        border-right: 1px solid #e0e0e0;
         display: flex;
         flex-direction: column;
+        flex-shrink: 0;
     }
+
+    /* Resizer */
+    .agent-resizer {
+        width: 2px;
+        background: #e0e0e0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background 0.15s;
+    }
+    .agent-resizer:hover,
+    .agent-resizer.dragging { background: #3498db; }
 
     .sidebar-header {
         padding: 20px;
@@ -306,6 +318,9 @@
         </div>
     </div>
 
+    <!-- Resizer -->
+    <div class="agent-resizer" id="agentResizer"></div>
+
     <!-- Форма -->
     <div class="editor-section">
         <div class="form-header">
@@ -395,6 +410,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/sidebar_resizer.js"></script>
 <script type="module">
     import {getData, putData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
@@ -747,6 +763,8 @@
     // ========================================================
     // ИНИЦИАЛИЗАЦИЯ И ОБРАБОТЧИКИ СОБЫТИЙ (БЕЗ DOMContentLoaded)
     // ========================================================
+
+    initSidebarResizer('agentResizer', 'agent_sidebar_width', document.querySelector('.agents-sidebar'));
 
     // 1. Первичный запуск менеджера при загрузке скрипта
     initAgentsManager();
