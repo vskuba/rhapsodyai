@@ -27,7 +27,7 @@ async def trace_run_start(run_uuid: str, workflow_id, agent_id, user_id,
         async with mysql_get_db_async() as db:
             await db.execute(
                 """
-                INSERT INTO agent_workflow_run
+                INSERT INTO agent_workflow_trace
                     (run_uuid, parent_run_id, parent_step_id, depth, workflow_id, agent_id,
                      user_id, session_uuid, request_uuid, prompt_user, variables_start)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -51,7 +51,7 @@ async def trace_run_finish(run_id: int | None, status: str,
         async with mysql_get_db_async() as db:
             await db.execute(
                 """
-                UPDATE agent_workflow_run
+                UPDATE agent_workflow_trace
                 SET status = %s, result = %s, error = %s,
                     finished_at = NOW(3), duration_ms = %s
                 WHERE id = %s
@@ -77,7 +77,7 @@ async def trace_step(run_id: int | None, exec_index: int, step: dict,
         async with mysql_get_db_async() as db:
             await db.execute(
                 """
-                INSERT INTO agent_workflow_run_step
+                INSERT INTO agent_workflow_trace_step
                     (run_id, exec_index, step_id, step_title, step_type, llm_id,
                      metadata_rendered, variables_changed, output, transition, status, error, duration_ms)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -91,6 +91,19 @@ async def trace_step(run_id: int | None, exec_index: int, step: dict,
             )
     except Exception as e:
         logger_info(f"⚠️ trace_step не записан: {e}")
+
+
+async def workflow_trace_runs_stale_close() -> None:
+    """На старте сервера закрывает зависшие трейсы (status='running') как 'stopped'."""
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "UPDATE agent_workflow_trace SET status = 'stopped', error = 'Server restart' "
+                "WHERE status = 'running'"
+            )
+            await db.connection.commit()
+    except Exception as e:
+        logger_info(f"⚠️ workflow_trace_runs_stale_close: {e}")
 
 
 def variables_diff(before: dict, after: dict) -> dict:
