@@ -11,6 +11,7 @@ fastembed
 groq
 httpx
 openai
+playwright
 pydantic
 pydantic-ai>=0.0.24
 PyGithub
