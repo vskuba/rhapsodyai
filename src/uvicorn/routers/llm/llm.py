@@ -252,6 +252,16 @@ async def llm_usage_stats(node_id: int | None = None, days: int = 7,
     return {"result": {"days": days, "node_id": node_id, "rows": rows}}
 
 
+@router.delete("/llm/usage/stats")
+async def llm_usage_stats_delete(user=Depends(AuthChecker([AuthPermission.LLM_DELETE]))):
+    """Очищает всю таблицу llm_request."""
+    async with mysql_get_db_async() as db:
+        await db.execute("DELETE FROM llm_request")
+        if hasattr(db, 'connection') and db.connection:
+            await db.connection.commit()
+    return {"result": "ok"}
+
+
 @router.post("/llm/ping/{llm_id}")
 async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
     """Пингует провайдера модели дешевым запросом GET /models (без токенов),
