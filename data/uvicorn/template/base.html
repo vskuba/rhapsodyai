@@ -72,9 +72,6 @@
             <div class="tabnav-panel" data-group="chat">
                 <span class="tabnav-sep"></span>
                 {% if request.session.get('role') == 'admin' %}
-                <a href="/admin/llm">🧠 LLM</a>
-                <a href="/admin/agent">🤖 Агенты</a>
-                <span class="tabnav-sep"></span>
                 <a href="/admin/fact_collection">🗃️ Коллекции</a>
                 {% endif %}
                 <a href="/admin/fact">📋 Факты</a>
