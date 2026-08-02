@@ -12,6 +12,50 @@
         flex-direction: column;
     }
 
+    /* ===================== Вкладки страницы ===================== */
+    .page-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 2px solid #e2e8f0;
+        padding: 0 25px;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .page-tab {
+        padding: 10px 20px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #718096;
+        cursor: pointer;
+        border: none;
+        background: none;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        transition: color 0.15s, border-color 0.15s;
+    }
+
+    .page-tab.active {
+        color: #2c3e50;
+        border-bottom-color: #3498db;
+    }
+
+    .page-tab:hover:not(.active) {
+        color: #4a5568;
+    }
+
+    .tab-panel {
+        display: none;
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+    }
+
+    .tab-panel.active {
+        display: flex;
+    }
+
+    /* ===================== Шапка / фильтры ===================== */
     .llm-header {
         display: flex;
         align-items: center;
@@ -55,7 +99,6 @@
         gap: 6px;
     }
 
-    /* Иконка немедленного сброса ошибок (время + код) */
     .btn-reset-errors {
         width: 32px;
         height: 32px;
@@ -83,7 +126,6 @@
         cursor: default;
     }
 
-    /* Селект интервала автообновления прижимает себя и кнопку "Ping всех" вправо */
     .auto-refresh-item {
         margin-left: auto;
     }
@@ -115,6 +157,7 @@
         padding: 15px 25px;
     }
 
+    /* ===================== Мониторинг-таблица ===================== */
     .llm-table {
         width: 100%;
         border-collapse: collapse;
@@ -148,7 +191,6 @@
         background: #fcfdfe;
     }
 
-    /* Подсветка строк очереди: активная — зеленым, с ошибкой — красным */
     .llm-table tbody tr.row-active {
         background: #eafaf1;
         border-left: 3px solid #27ae60;
@@ -190,6 +232,37 @@
         color: #2c3e50;
     }
 
+    .io-type-chips {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-left: 7px;
+        vertical-align: middle;
+    }
+
+    .io-chip {
+        display: inline-block;
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-size: 10px;
+        font-family: sans-serif;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        line-height: 1.5;
+    }
+
+    .io-chip.text    { background: #edf2f7; color: #718096; }
+    .io-chip.image   { background: #faf5ff; color: #805ad5; }
+    .io-chip.audio   { background: #fffaf0; color: #dd6b20; }
+    .io-chip.video   { background: #fff5f5; color: #c53030; }
+    .io-chip.embeddings { background: #ebf8ff; color: #2b6cb0; }
+
+    .io-arrow {
+        font-size: 10px;
+        color: #a0aec0;
+        margin: 0 1px;
+    }
+
     .active-mark {
         display: inline-block;
         margin-left: 8px;
@@ -219,7 +292,6 @@
         color: #922b21;
     }
 
-    /* Ошибка провайдера из node_llm: код + дата */
     .error-code-badge {
         display: inline-block;
         background: #fdecea;
@@ -238,7 +310,6 @@
         white-space: nowrap;
     }
 
-    /* Статус модели по последнему пингу */
     .llm-status {
         font-size: 11px;
         font-weight: 600;
@@ -296,7 +367,6 @@
         cursor: default;
     }
 
-    /* Счетчики запросов и спарклайн */
     .req-counts {
         font-family: 'SFMono-Regular', Consolas, monospace;
         font-size: 12px;
@@ -336,7 +406,6 @@
         padding: 40px 0;
     }
 
-    /* Drag-and-drop: перестановка строк меняет приоритет очереди */
     .llm-table tbody tr[draggable="true"] {
         cursor: grab;
     }
@@ -351,118 +420,501 @@
         cursor: grab;
         user-select: none;
     }
+
+    /* ===================== CRUD-вкладка ===================== */
+    .crud-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 20px 25px;
+    }
+
+    .crud-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .crud-toolbar h3 {
+        margin: 0;
+        font-size: 14px;
+        color: #2c3e50;
+        font-weight: 600;
+    }
+
+    .btn-add {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 16px;
+        background: #27ae60;
+        color: #fff;
+        border: none;
+        border-radius: 5px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+        margin-left: auto;
+    }
+
+    .btn-add:hover:not(:disabled) {
+        background: #219a52;
+    }
+
+    .btn-add:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .crud-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        font-size: 13px;
+        overflow: hidden;
+    }
+
+    .crud-table thead th {
+        background: #f8fafc;
+        color: #4a5568;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 2px solid #e2e8f0;
+    }
+
+    .crud-table tbody tr {
+        border-bottom: 1px solid #edf2f7;
+        transition: background 0.1s;
+    }
+
+    .crud-table tbody tr:last-child {
+        border-bottom: none;
+    }
+
+    .crud-table tbody tr:hover {
+        background: #f7fafc;
+    }
+
+    .crud-table td {
+        padding: 3px 14px;
+        vertical-align: middle;
+    }
+
+    .crud-table td.col-id {
+        width: 60px;
+        color: #a0aec0;
+        font-size: 12px;
+        font-family: monospace;
+    }
+
+    .crud-table td.col-name {
+        font-family: 'SFMono-Regular', Consolas, monospace;
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .crud-table td.col-actions {
+        width: 80px;
+        text-align: right;
+    }
+
+    .crud-table td.col-actions {
+        width: 130px;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .btn-edit {
+        background: #fff;
+        color: #3498db;
+        border: 1px solid #3498db;
+        border-radius: 4px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-right: 4px;
+    }
+
+    .btn-edit:hover:not(:disabled) {
+        background: #3498db;
+        color: #fff;
+    }
+
+    .btn-delete {
+        background: #fff;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        border-radius: 4px;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .btn-delete:hover:not(:disabled) {
+        background: #e74c3c;
+        color: #fff;
+    }
+
+    .btn-delete:disabled,
+    .btn-edit:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+
+    /* Инлайн-редактирование строки */
+    .crud-table tbody tr.editing td {
+        background: #f0f7ff;
+    }
+
+    .edit-row-form {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .edit-row-form input[type="text"] {
+        flex: 1;
+        padding: 5px 9px;
+        border: 1px solid #3498db;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: 'SFMono-Regular', Consolas, monospace;
+        box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
+        outline: none;
+    }
+
+    .btn-save-edit {
+        padding: 5px 14px;
+        background: #3498db;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 0.15s;
+    }
+
+    .btn-save-edit:hover:not(:disabled) {
+        background: #2980b9;
+    }
+
+    .btn-save-edit:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .btn-cancel-edit {
+        padding: 5px 10px;
+        background: #fff;
+        color: #718096;
+        border: 1px solid #cbd5e0;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .btn-cancel-edit:hover {
+        background: #f7fafc;
+    }
+
+    .crud-table tbody tr.add-row td {
+        padding: 8px 14px;
+        background: #f0faf5;
+        border-top: 2px dashed #27ae60;
+    }
+
+    .add-row-form {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .add-row-form input[type="text"] {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: 'SFMono-Regular', Consolas, monospace;
+    }
+
+    .add-row-form input[type="text"]:focus {
+        outline: none;
+        border-color: #27ae60;
+        box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.15);
+    }
+
+    .btn-save {
+        padding: 6px 16px;
+        background: #27ae60;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+        white-space: nowrap;
+    }
+
+    .btn-save:hover:not(:disabled) {
+        background: #219a52;
+    }
+
+    .btn-save:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .btn-cancel-add {
+        padding: 6px 12px;
+        background: #fff;
+        color: #718096;
+        border: 1px solid #cbd5e0;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+    }
+
+    .btn-cancel-add:hover {
+        background: #f7fafc;
+    }
+
+    .crud-empty {
+        text-align: center;
+        padding: 40px 0;
+        color: #a0aec0;
+        font-size: 13px;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="llm-layout">
 
-    <div class="llm-header">
-        <div class="filter-item">
-            <label class="filter-label" for="nodeSelect">Нода</label>
-            <select id="nodeSelect"></select>
-        </div>
-
-        <div class="filter-item">
-            <label class="filter-label" for="resetHoursSelect">Сброс ошибок старше</label>
-            <div class="reset-row">
-                <select id="resetHoursSelect">
-                    <option value="1" selected>1 час</option>
-                    <option value="6">6 часов</option>
-                    <option value="12">12 часов</option>
-                    <option value="24">24 часа</option>
-                    <option value="48">48 часов</option>
-                </select>
-                <button type="button" class="btn-reset-errors" id="resetErrorsBtn"
-                        title="Сбросить ошибки моделей ноды сейчас (очистить время и код ошибки)">↺
-                </button>
-            </div>
-        </div>
-
-        <div class="filter-item auto-refresh-item">
-            <label class="filter-label" for="autoRefreshSelect">Автообновление</label>
-            <select id="autoRefreshSelect">
-                <option value="1" selected>1 сек</option>
-                <option value="3">3 сек</option>
-                <option value="7">7 сек</option>
-            </select>
-        </div>
-
-        <button type="button" class="btn-ping-all" id="pingAllBtn">Ping всех</button>
+    <!-- Вкладки страницы -->
+    <div class="page-tabs">
+        <button class="page-tab active" data-tab="monitor">Мониторинг</button>
+        <button class="page-tab" data-tab="crud">Управление LLM</button>
     </div>
 
-    <div class="llm-body">
-        <table class="llm-table">
-            <thead>
-            <tr>
-                <th style="width: 5%;">#</th>
-                <th style="width: 22%;">Модель</th>
-                <th style="width: 8%;">Провайдер</th>
-                <th style="width: 14%;">Ошибка провайдера</th>
-                <th style="width: 11%;" title="Запросов за последние 1 / 5 / 10 минут">Запросы 1/5/10 мин</th>
-                <th style="width: 12%;" title="Запросы за последний час, корзины по 5 минут; красное — ошибки">За час</th>
-                <th style="width: 10%;">Статус пинга</th>
-                <th style="width: 13%;">Последний пинг</th>
-                <th style="width: 80px;"></th>
-            </tr>
-            </thead>
-            <tbody id="llmTableBody">
-            <tr>
-                <td colspan="9" class="empty-note">Загрузка...</td>
-            </tr>
-            </tbody>
-        </table>
+    <!-- ==================== Вкладка 1: мониторинг ==================== -->
+    <div class="tab-panel active" id="tab-monitor">
 
-        <div class="llm-header" style="margin-top: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+        <div class="llm-header">
             <div class="filter-item">
-                <label class="filter-label" for="usageStatsDays">Статистика использования за</label>
-                <select id="usageStatsDays">
-                    <option value="1">1 день</option>
-                    <option value="3">3 дня</option>
-                    <option value="7" selected>7 дней</option>
+                <label class="filter-label" for="nodeSelect">Нода</label>
+                <select id="nodeSelect"></select>
+            </div>
+
+            <div class="filter-item">
+                <label class="filter-label" for="resetMinutesSelect">Сброс ошибок старше</label>
+                <div class="reset-row">
+                    <select id="resetMinutesSelect">
+                        <option value="3" selected>3 мин</option>
+                        <option value="15">15 мин</option>
+                        <option value="60">1 час</option>
+                        <option value="360">6 часов</option>
+                        <option value="720">12 часов</option>
+                        <option value="1440">24 часа</option>
+                        <option value="2880">48 часов</option>
+                    </select>
+                    <button type="button" class="btn-reset-errors" id="resetErrorsBtn"
+                            title="Сбросить ошибки моделей ноды сейчас (очистить время и код ошибки)">↺
+                    </button>
+                </div>
+            </div>
+
+            <div class="filter-item auto-refresh-item">
+                <label class="filter-label" for="autoRefreshSelect">Автообновление</label>
+                <select id="autoRefreshSelect">
+                    <option value="1" selected>1 сек</option>
+                    <option value="3">3 сек</option>
+                    <option value="7">7 сек</option>
                 </select>
             </div>
+
+            <button type="button" class="btn-ping-all" id="pingAllBtn">Ping всех</button>
         </div>
-        <table class="llm-table" style="margin-top: 0;">
-            <thead>
-            <tr>
-                <th style="width: 30%;">Пользователь</th>
-                <th style="width: 40%;">Модель</th>
-                <th style="width: 15%;">Запросов</th>
-                <th style="width: 15%;">Ошибок</th>
-            </tr>
-            </thead>
-            <tbody id="usageStatsBody">
-            <tr>
-                <td colspan="4" class="empty-note">Загрузка...</td>
-            </tr>
-            </tbody>
-        </table>
-    </div>
+
+        <div class="llm-body">
+            <table class="llm-table">
+                <thead>
+                <tr>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 22%;">Модель</th>
+                    <th style="width: 8%;">Провайдер</th>
+                    <th style="width: 14%;">Ошибка провайдера</th>
+                    <th style="width: 11%;" title="Запросов за последние 1 / 5 / 10 минут">Запросы 1/5/10 мин</th>
+                    <th style="width: 12%;" title="Запросы за последний час, корзины по 5 минут; красное — ошибки">За час</th>
+                    <th style="width: 10%;">Статус пинга</th>
+                    <th style="width: 13%;">Последний пинг</th>
+                    <th style="width: 80px;"></th>
+                </tr>
+                </thead>
+                <tbody id="llmTableBody">
+                <tr>
+                    <td colspan="9" class="empty-note">Загрузка...</td>
+                </tr>
+                </tbody>
+            </table>
+
+            <div class="llm-header" style="margin-top: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <div class="filter-item">
+                    <label class="filter-label" for="usageStatsDays">Статистика использования за</label>
+                    <select id="usageStatsDays">
+                        <option value="1">1 день</option>
+                        <option value="3">3 дня</option>
+                        <option value="7" selected>7 дней</option>
+                    </select>
+                </div>
+                <button id="btnClearStats" class="btn-ping-all" title="Очистить всю статистику запросов"
+                        style="margin-left:auto; background:#ef4444;"
+                        onclick="clearUsageStats()">Очистить статистику</button>
+            </div>
+            <table class="llm-table" style="margin-top: 0;">
+                <thead>
+                <tr>
+                    <th style="width: 25%;">Пользователь</th>
+                    <th style="width: 30%;">Модель</th>
+                    <th style="width: 10%;">Запросов</th>
+                    <th style="width: 10%;">Ошибок</th>
+                    <th style="width: 12%;">↑ Вход</th>
+                    <th style="width: 13%;">↓ Выход</th>
+                </tr>
+                </thead>
+                <tbody id="usageStatsBody">
+                <tr>
+                    <td colspan="6" class="empty-note">Загрузка...</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div><!-- /tab-monitor -->
+
+    <!-- ==================== Вкладка 2: CRUD ==================== -->
+    <div class="tab-panel" id="tab-crud">
+        <div class="crud-body">
+            <div class="crud-toolbar">
+                <h3>Модели LLM</h3>
+                <button class="btn-add" id="btnShowAddRow">+ Добавить модель</button>
+            </div>
+            <table class="crud-table">
+                <thead>
+                <tr>
+                    <th style="width: 50px;">ID</th>
+                    <th>Имя модели</th>
+                    <th style="width: 130px;">Input</th>
+                    <th style="width: 130px;">Output</th>
+                    <th style="width: 140px;"></th>
+                </tr>
+                </thead>
+                <tbody id="crudTableBody">
+                <tr>
+                    <td colspan="5" class="crud-empty">Загрузка...</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div><!-- /tab-crud -->
 
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
-    import {getData, postData} from '/static/js/api.js';
+    import {getData, postData, putData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
 
-    const tableBody = document.getElementById('llmTableBody');
-    const pingAllBtn = document.getElementById('pingAllBtn');
-    const nodeSelect = document.getElementById('nodeSelect');
-    const resetHoursSelect = document.getElementById('resetHoursSelect');
-    const autoRefreshSelect = document.getElementById('autoRefreshSelect');
-    const usageStatsBody = document.getElementById('usageStatsBody');
-    const usageStatsDays = document.getElementById('usageStatsDays');
+    /* ===================== Tab switching ===================== */
+    document.querySelectorAll('.page-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+            if (tab.dataset.tab === 'crud') loadCrud();
+        });
+    });
 
-    let llmList = [];
-
+    /* ===================== Helpers ===================== */
     function el(tag, className, text) {
         const node = document.createElement(tag);
         if (className) node.className = className;
         if (text !== undefined && text !== null) node.textContent = text;
         return node;
+    }
+
+    /* ===================== IO type chips ===================== */
+    function buildIoChips(inputType, outputType) {
+        const wrap = document.createElement('span');
+        wrap.className = 'io-type-chips';
+
+        const inputs = (inputType || 'text').split(',').map(s => s.trim()).filter(Boolean);
+        const outputs = (outputType || 'text').split(',').map(s => s.trim()).filter(Boolean);
+
+        // Skip rendering if both are just 'text' (default, not interesting)
+        if (inputs.join(',') === 'text' && outputs.join(',') === 'text') return wrap;
+
+        inputs.forEach(t => {
+            const chip = document.createElement('span');
+            chip.className = `io-chip ${t}`;
+            chip.textContent = t;
+            wrap.appendChild(chip);
+        });
+
+        const arrow = document.createElement('span');
+        arrow.className = 'io-arrow';
+        arrow.textContent = '→';
+        wrap.appendChild(arrow);
+
+        outputs.forEach(t => {
+            const chip = document.createElement('span');
+            chip.className = `io-chip ${t}`;
+            chip.textContent = t;
+            wrap.appendChild(chip);
+        });
+
+        return wrap;
+    }
+
+    /* ===================== Monitor tab ===================== */
+    const tableBody = document.getElementById('llmTableBody');
+    const pingAllBtn = document.getElementById('pingAllBtn');
+    const nodeSelect = document.getElementById('nodeSelect');
+    const resetMinutesSelect = document.getElementById('resetMinutesSelect');
+    const autoRefreshSelect = document.getElementById('autoRefreshSelect');
+    const usageStatsBody = document.getElementById('usageStatsBody');
+    const usageStatsDays = document.getElementById('usageStatsDays');
+
+    let llmList = [];
+    let tzOffsetHours = 0; // UTC offset из настроек, обновляется при loadStatus
+
+    // Конвертирует строку "YYYY-MM-DD HH:MM:SS" (UTC) в локальное время по tzOffsetHours
+    function toLocalTime(utcStr) {
+        if (!utcStr) return '—';
+        // Парсим как UTC: добавляем 'Z' чтобы браузер не применял своё смещение
+        const normalized = utcStr.replace(' ', 'T') + 'Z';
+        const ms = Date.parse(normalized);
+        if (isNaN(ms)) return utcStr;
+        const local = new Date(ms + tzOffsetHours * 3600 * 1000);
+        const pad = n => String(n).padStart(2, '0');
+        return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())} `
+             + `${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}`;
     }
 
     function renderStatusCell(cell, ping) {
@@ -490,9 +942,9 @@
         const meta = el('span', 'ping-meta');
         if (ping.ms !== null && ping.ms !== undefined) {
             meta.appendChild(el('span', 'ping-ms', `${ping.ms} ms`));
-            meta.appendChild(document.createTextNode(` · ${ping.at || ''}`));
+            meta.appendChild(document.createTextNode(` · ${toLocalTime(ping.at)}`));
         } else {
-            meta.textContent = ping.at || '—';
+            meta.textContent = toLocalTime(ping.at);
         }
         cell.appendChild(meta);
     }
@@ -507,7 +959,7 @@
             cell.appendChild(el('span', 'error-code-badge', String(llm.code_error)));
         }
         if (llm.rate_limit_at) {
-            cell.appendChild(el('span', 'error-date', llm.rate_limit_at));
+            cell.appendChild(el('span', 'error-date', toLocalTime(llm.rate_limit_at)));
         }
     }
 
@@ -537,7 +989,6 @@
         }
     }
 
-    // Счетчики запросов: 1 / 5 / 10 минут, в тултипе — итог за 7 дней
     function renderRequestsCell(cell, requests) {
         cell.innerHTML = '';
         const r = requests || {};
@@ -548,14 +999,11 @@
         if (r.d7_errors) {
             cell.appendChild(el('span', 'req-errors-badge', `${r.d7_errors}`));
         }
-        // Среднее время успешного ответа провайдера за 7 дней
         if (r.avg_ms != null) {
             cell.appendChild(el('span', 'req-avg-ms', `⌀ ${r.avg_ms} ms`));
         }
     }
 
-    // Мини-график: последний час, 12 корзин по 5 минут (слева — старые, справа — свежие).
-    // Высота столбика — количество запросов, красная часть — ошибки
     function renderSparkline(requests) {
         const buckets = (requests && requests.sparkline && requests.sparkline.length)
             ? requests.sparkline
@@ -569,7 +1017,6 @@
         svg.setAttribute('height', H);
         svg.classList.add('req-sparkline');
 
-        // bucket 0 — самая свежая пятиминутка, рисуем её справа
         buckets.forEach((b, bucketIndex) => {
             const x = W - (bucketIndex + 1) * (bar + gap);
             const total = Math.round((b.qty / max) * (H - 2));
@@ -641,6 +1088,7 @@
             row.appendChild(posCell);
 
             const nameCell = el('td', 'llm-model-name', llm.name);
+            nameCell.appendChild(buildIoChips(llm.input_type, llm.output_type));
             if (llm.active) nameCell.appendChild(el('span', 'active-mark', 'активная'));
             row.appendChild(nameCell);
 
@@ -683,7 +1131,6 @@
         });
     }
 
-    // Drag-and-drop: новый порядок строк сохраняется как приоритет очереди (node_llm.position)
     let draggedRow = null;
 
     function onRowDragStart(e) {
@@ -706,7 +1153,6 @@
         draggedRow.classList.remove('dragging');
         draggedRow = null;
 
-        // Новый порядок по DOM -> позиции 1..N
         const positions = Array.from(tableBody.querySelectorAll('tr[data-id]')).map((row, index) => ({
             llm_id: parseInt(row.dataset.id),
             position: index + 1
@@ -718,20 +1164,18 @@
         } catch (e) {
             showNotification(`Ошибка сохранения порядка: ${e.message}`, 'error');
         }
-        // Перезагружаем в обоих случаях: обновляются бейджи позиций и активная модель
         await loadStatus({nodeId: nodeSelect.value});
     }
 
     async function loadStatus(params = {}) {
         const query = new URLSearchParams();
         if (params.nodeId) query.set('node_id', params.nodeId);
-        if (params.resetHours) query.set('reset_hours', params.resetHours);
+        if (params.resetMinutes) query.set('reset_minutes', params.resetMinutes);
 
         try {
             const data = await getData(`/llm/status?${query}`);
             const result = data.result;
 
-            // Селект нод (по умолчанию сервер выбирает первую)
             nodeSelect.innerHTML = '';
             (result.nodes || []).forEach(n => {
                 const opt = el('option', null, n.name);
@@ -740,7 +1184,11 @@
                 nodeSelect.appendChild(opt);
             });
 
-            resetHoursSelect.value = String(result.reset_hours);
+            resetMinutesSelect.value = String(result.reset_minutes);
+
+            // Парсим timezone "+3" / "-5" / "0" → число часов
+            const tzStr = String(result.timezone || '+0');
+            tzOffsetHours = parseFloat(tzStr) || 0;
 
             llmList = result.llms || [];
             renderTable(llmList);
@@ -766,7 +1214,7 @@
             if (!rows.length) {
                 const row = document.createElement('tr');
                 const cell = el('td', 'empty-note', 'Запросов за период не было');
-                cell.colSpan = 4;
+                cell.colSpan = 6;
                 row.appendChild(cell);
                 usageStatsBody.appendChild(row);
                 return;
@@ -781,6 +1229,8 @@
                 if (r.errors) errorsCell.appendChild(el('span', 'req-errors-badge', String(r.errors)));
                 else errorsCell.textContent = '—';
                 row.appendChild(errorsCell);
+                row.appendChild(el('td', null, r.tokens_input ? Number(r.tokens_input).toLocaleString() : '—'));
+                row.appendChild(el('td', null, r.tokens_output ? Number(r.tokens_output).toLocaleString() : '—'));
                 usageStatsBody.appendChild(row);
             });
         } catch (e) {
@@ -788,14 +1238,29 @@
         }
     }
 
+    window.clearUsageStats = async function clearUsageStats() {
+        if (!confirm('Очистить всю статистику запросов? Это удалит все записи из журнала.')) return;
+        const btn = document.getElementById('btnClearStats');
+        btn.disabled = true;
+        btn.textContent = 'Очищаю...';
+        try {
+            await fetch('/llm/usage/stats', {method: 'DELETE'});
+            await loadUsageStats(nodeSelect.value, usageStatsDays.value);
+        } catch(e) {
+            console.error('Ошибка очистки статистики:', e);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Очистить статистику';
+        }
+    };
+
     nodeSelect.onchange = () => {
-        loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
+        loadStatus({nodeId: nodeSelect.value, resetMinutes: resetMinutesSelect.value});
         loadUsageStats(nodeSelect.value, usageStatsDays.value);
     };
-    resetHoursSelect.onchange = () => loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
+    resetMinutesSelect.onchange = () => loadStatus({nodeId: nodeSelect.value, resetMinutes: resetMinutesSelect.value});
     usageStatsDays.onchange = () => loadUsageStats(nodeSelect.value, usageStatsDays.value);
 
-    // Немедленный сброс ошибок моделей выбранной ноды (время + код)
     const resetErrorsBtn = document.getElementById('resetErrorsBtn');
     resetErrorsBtn.onclick = async () => {
         resetErrorsBtn.disabled = true;
@@ -815,7 +1280,6 @@
         pingAllRunning = true;
         autoRefreshPaused = true;
         try {
-            // Последовательно, чтобы не бомбить провайдеров пачкой запросов
             for (const llm of llmList) {
                 const button = tableBody.querySelector(`tr[data-id="${llm.id}"] .btn-ping`);
                 if (button) await pingLlm(llm.id, button);
@@ -827,8 +1291,6 @@
         }
     };
 
-    // Автообновление страницы: перечитываем статус с выбранным интервалом.
-    // Пауза на время пинга и drag-and-drop, чтобы перерисовка не сбивала процесс
     let autoRefreshTimer = null;
     let autoRefreshPaused = false;
     let pingAllRunning = false;
@@ -837,7 +1299,7 @@
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         autoRefreshTimer = setInterval(() => {
             if (autoRefreshPaused || draggedRow) return;
-            loadStatus({nodeId: nodeSelect.value, resetHours: resetHoursSelect.value});
+            loadStatus({nodeId: nodeSelect.value, resetMinutes: resetMinutesSelect.value});
         }, parseInt(autoRefreshSelect.value) * 1000);
     }
 
@@ -845,5 +1307,311 @@
     autoRefreshStart();
 
     loadStatus().then(() => loadUsageStats(nodeSelect.value, usageStatsDays.value));
+
+    /* ===================== CRUD tab ===================== */
+    const crudBody = document.getElementById('crudTableBody');
+    const btnShowAddRow = document.getElementById('btnShowAddRow');
+    let crudLoaded = false;
+    let addRowVisible = false;
+
+    async function loadCrud() {
+        if (crudLoaded) return;
+        await renderCrud();
+    }
+
+    const IO_TYPES = ['text', 'image', 'audio', 'video', 'embeddings'];
+
+    function buildTypeSelect(id, currentValue) {
+        const sel = document.createElement('select');
+        sel.id = id;
+        sel.multiple = true;
+        sel.style.cssText = 'height:90px;font-size:12px;width:120px;';
+        const current = (currentValue || 'text').split(',').map(s => s.trim());
+        IO_TYPES.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t;
+            if (current.includes(t)) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        return sel;
+    }
+
+    function getSelectValues(sel) {
+        return Array.from(sel.selectedOptions).map(o => o.value).join(',') || 'text';
+    }
+
+    function typeBadge(types) {
+        if (!types || types === 'text') return '<span style="color:#718096;font-size:11px;">text</span>';
+        return types.split(',').map(t => {
+            const color = t === 'image' ? '#805ad5' : t === 'audio' ? '#dd6b20' : t === 'video' ? '#c53030' : t === 'embeddings' ? '#2b6cb0' : '#718096';
+            return `<span style="background:${color}1a;color:${color};border-radius:3px;padding:1px 5px;font-size:11px;margin-right:2px;">${t}</span>`;
+        }).join('');
+    }
+
+    async function renderCrud() {
+        crudBody.innerHTML = '<tr><td colspan="5" class="crud-empty">Загрузка...</td></tr>';
+        try {
+            const data = await getData('/llm/list');
+            const llms = data.result || [];
+            crudBody.innerHTML = '';
+
+            if (!llms.length && !addRowVisible) {
+                crudBody.innerHTML = '<tr><td colspan="5" class="crud-empty">Моделей пока нет. Нажмите «+ Добавить модель».</td></tr>';
+            } else {
+                llms.forEach(llm => {
+                    crudBody.appendChild(buildCrudRow(llm));
+                });
+            }
+
+            if (addRowVisible) {
+                crudBody.appendChild(buildAddRow());
+            }
+
+            crudLoaded = true;
+        } catch (e) {
+            crudBody.innerHTML = `<tr><td colspan="5" class="crud-empty">Ошибка загрузки: ${e.message}</td></tr>`;
+        }
+    }
+
+    function buildCrudRow(llm) {
+        const row = document.createElement('tr');
+        row.dataset.id = llm.id;
+
+        row.appendChild(el('td', 'col-id', String(llm.id)));
+        row.appendChild(el('td', 'col-name', llm.name));
+
+        const tdIn = document.createElement('td');
+        tdIn.className = 'col-input-type';
+        tdIn.innerHTML = typeBadge(llm.input_type);
+        row.appendChild(tdIn);
+
+        const tdOut = document.createElement('td');
+        tdOut.className = 'col-output-type';
+        tdOut.innerHTML = typeBadge(llm.output_type);
+        row.appendChild(tdOut);
+
+        const tdActions = document.createElement('td');
+        tdActions.className = 'col-actions';
+
+        const editBtn = el('button', 'btn-edit', 'Изменить');
+        editBtn.onclick = () => startEdit(row, llm);
+        tdActions.appendChild(editBtn);
+
+        const delBtn = el('button', 'btn-delete', 'Удалить');
+        delBtn.title = 'Удалить модель (node_llm и запросы удаляются каскадно)';
+        delBtn.onclick = () => deleteLlm(llm.id, llm.name, delBtn);
+        tdActions.appendChild(delBtn);
+
+        row.appendChild(tdActions);
+        return row;
+    }
+
+    function startEdit(row, llm) {
+        if (row.classList.contains('editing')) return;
+        row.classList.add('editing');
+
+        const nameCell = row.querySelector('.col-name');
+        const inCell = row.querySelector('.col-input-type');
+        const outCell = row.querySelector('.col-output-type');
+        const actionsCell = row.querySelector('.col-actions');
+        const originalName = nameCell.textContent;
+
+        nameCell.innerHTML = '';
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = originalName;
+        nameInput.maxLength = 50;
+        nameInput.style.cssText = 'width:100%;box-sizing:border-box;';
+        nameCell.appendChild(nameInput);
+
+        inCell.innerHTML = '';
+        const inSelect = buildTypeSelect('editInputType_' + llm.id, llm.input_type);
+        inCell.appendChild(inSelect);
+
+        outCell.innerHTML = '';
+        const outSelect = buildTypeSelect('editOutputType_' + llm.id, llm.output_type);
+        outCell.appendChild(outSelect);
+
+        actionsCell.innerHTML = '';
+        const saveBtn = el('button', 'btn-save-edit', 'Сохранить');
+        saveBtn.onclick = () => saveEdit(row, llm, nameInput, inSelect, outSelect, originalName);
+        actionsCell.appendChild(saveBtn);
+        const cancelBtn = el('button', 'btn-cancel-edit', 'Отмена');
+        cancelBtn.onclick = () => cancelEdit(row, llm, originalName);
+        actionsCell.appendChild(cancelBtn);
+
+        nameInput.focus();
+        nameInput.select();
+        nameInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') saveEdit(row, llm, nameInput, inSelect, outSelect, originalName);
+            if (e.key === 'Escape') cancelEdit(row, llm, originalName);
+        });
+    }
+
+    async function saveEdit(row, llm, nameInput, inSelect, outSelect, originalName) {
+        const name = nameInput.value.trim();
+        if (!name) { showNotification('Введите имя модели', 'warning'); return; }
+        const input_type = getSelectValues(inSelect);
+        const output_type = getSelectValues(outSelect);
+
+        const saveBtn = row.querySelector('.btn-save-edit');
+        if (saveBtn) saveBtn.disabled = true;
+
+        try {
+            const res = await putData(`/llm/${llm.id}`, {name, input_type, output_type});
+            showNotification(`Модель «${res.result.name}» обновлена`, 'success');
+            crudLoaded = false;
+            await renderCrud();
+        } catch (e) {
+            showNotification(`Ошибка: ${e.message}`, 'error');
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    function cancelEdit(row, llm, originalName) {
+        row.classList.remove('editing');
+        const nameCell = row.querySelector('.col-name');
+        nameCell.innerHTML = '';
+        nameCell.textContent = originalName;
+
+        const inCell = row.querySelector('.col-input-type');
+        if (inCell) inCell.innerHTML = typeBadge(llm.input_type);
+        const outCell = row.querySelector('.col-output-type');
+        if (outCell) outCell.innerHTML = typeBadge(llm.output_type);
+
+        const actionsCell = row.querySelector('.col-actions');
+        actionsCell.innerHTML = '';
+
+        const editBtn = el('button', 'btn-edit', 'Изменить');
+        editBtn.onclick = () => startEdit(row, llm);
+        actionsCell.appendChild(editBtn);
+
+        const delBtn = el('button', 'btn-delete', 'Удалить');
+        delBtn.title = 'Удалить модель (node_llm и запросы удаляются каскадно)';
+        delBtn.onclick = () => deleteLlm(llm.id, llm.name, delBtn);
+        actionsCell.appendChild(delBtn);
+    }
+
+    function buildAddRow() {
+        const row = document.createElement('tr');
+        row.className = 'add-row';
+        row.id = 'addRow';
+
+        const tdId = el('td', 'col-id', '');
+        row.appendChild(tdId);
+
+        const tdName = document.createElement('td');
+        tdName.className = 'col-name';
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.id = 'newLlmName';
+        nameInput.placeholder = 'Например: openai/dall-e-3 или claude/claude-sonnet-4-6';
+        nameInput.maxLength = 50;
+        nameInput.style.cssText = 'width:100%;box-sizing:border-box;';
+        tdName.appendChild(nameInput);
+        row.appendChild(tdName);
+
+        const tdIn = document.createElement('td');
+        tdIn.className = 'col-input-type';
+        const inSelect = buildTypeSelect('newInputType', 'text');
+        tdIn.appendChild(inSelect);
+        row.appendChild(tdIn);
+
+        const tdOut = document.createElement('td');
+        tdOut.className = 'col-output-type';
+        const outSelect = buildTypeSelect('newOutputType', 'text');
+        tdOut.appendChild(outSelect);
+        row.appendChild(tdOut);
+
+        const tdActions = document.createElement('td');
+        tdActions.className = 'col-actions';
+        const saveBtn = el('button', 'btn-save', 'Сохранить');
+        saveBtn.type = 'button';
+        saveBtn.onclick = saveLlm;
+        tdActions.appendChild(saveBtn);
+        const cancelBtn = el('button', 'btn-cancel-add', 'Отмена');
+        cancelBtn.type = 'button';
+        cancelBtn.onclick = hideAddRow;
+        tdActions.appendChild(cancelBtn);
+        row.appendChild(tdActions);
+
+        setTimeout(() => nameInput.focus(), 50);
+
+        nameInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') saveLlm();
+            if (e.key === 'Escape') hideAddRow();
+        });
+
+        return row;
+    }
+
+    function showAddRow() {
+        if (addRowVisible) return;
+        addRowVisible = true;
+        btnShowAddRow.disabled = true;
+
+        const emptyRow = crudBody.querySelector('td.crud-empty');
+        if (emptyRow) emptyRow.closest('tr').remove();
+
+        crudBody.appendChild(buildAddRow());
+    }
+
+    function hideAddRow() {
+        addRowVisible = false;
+        btnShowAddRow.disabled = false;
+        const row = document.getElementById('addRow');
+        if (row) row.remove();
+
+        if (!crudBody.querySelector('tr[data-id]')) {
+            crudBody.innerHTML = '<tr><td colspan="5" class="crud-empty">Моделей пока нет. Нажмите «+ Добавить модель».</td></tr>';
+        }
+    }
+
+    async function saveLlm() {
+        const nameInput = document.getElementById('newLlmName');
+        const name = (nameInput ? nameInput.value : '').trim();
+        if (!name) {
+            showNotification('Введите имя модели', 'warning');
+            return;
+        }
+        const inSelect = document.getElementById('newInputType');
+        const outSelect = document.getElementById('newOutputType');
+        const input_type = inSelect ? getSelectValues(inSelect) : 'text';
+        const output_type = outSelect ? getSelectValues(outSelect) : 'text';
+
+        const saveBtn = crudBody.querySelector('#addRow .btn-save');
+        if (saveBtn) saveBtn.disabled = true;
+
+        try {
+            const res = await postData('/llm', {name, input_type, output_type});
+            showNotification(`Модель «${res.result.name}» добавлена`, 'success');
+            addRowVisible = false;
+            btnShowAddRow.disabled = false;
+            crudLoaded = false;
+            await renderCrud();
+        } catch (e) {
+            showNotification(`Ошибка: ${e.message}`, 'error');
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    async function deleteLlm(id, name, btn) {
+        if (!confirm(`Удалить модель «${name}»?\n\nСвязанные записи в node_llm и истории запросов будут удалены каскадно.`)) return;
+
+        btn.disabled = true;
+        try {
+            await deleteData(`/llm/${id}`);
+            showNotification(`Модель «${name}» удалена`, 'success');
+            crudLoaded = false;
+            await renderCrud();
+        } catch (e) {
+            showNotification(`Ошибка удаления: ${e.message}`, 'error');
+            btn.disabled = false;
+        }
+    }
+
+    btnShowAddRow.onclick = showAddRow;
+
 </script>
 {% endblock %}
