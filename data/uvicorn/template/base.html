@@ -6,6 +6,7 @@
     <link rel="stylesheet" href="/static/css/common.css">
     <link rel="stylesheet" href="/static/css/menu_top.css">
     <link rel="stylesheet" href="/static/css/notification.css">
+    <script src="/static/js/tz.js"></script>
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -27,11 +28,21 @@
 
             <!-- Tab = link to its own page -->
             <a class="tabnav-group" data-group="chat" href="/">💬 Чат</a>
+
+            {% if request.session.get('role') == 'admin' %}
+            <a class="tabnav-group" data-group="llm" href="/admin/llm">🧠 LLM</a>
+            {% endif %}
+
+            {% if request.session.get('role') == 'admin' %}
+            <a class="tabnav-group" data-group="projects" href="/admin/planning">💼 Проекты</a>
+            <a class="tabnav-group" data-group="logs" href="/admin/workflow_trace">📊 Логи</a>
+            {% endif %}
+
             <a class="tabnav-group" data-group="nodes"
                href="{% if request.session.get('role') == 'admin' %}/admin/node{% else %}/admin/variable{% endif %}">🕸️ Ноды</a>
+
             {% if request.session.get('role') == 'admin' %}
             <a class="tabnav-group" data-group="people" href="/admin/user">👥 Пользователи</a>
-            <a class="tabnav-group" data-group="logs" href="/admin/workflow_trace">📊 Логи</a>
             <a class="tabnav-group" data-group="setting" href="/admin/setting">⚙️ Настройки</a>
             <a class="tabnav-group" data-group="tool" href="/admin/tool">🔧 Инструменты</a>
             {% endif %}
@@ -72,27 +83,34 @@
                 <span class="tabnav-sep"></span>
             </div>
 
+            {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="llm">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/agent">🤖 Агенты</a>
+                <a href="/admin/workflow">🔄 Workflow</a>
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
+
+            {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="projects">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/task">✅ Задачи</a>
+                <a href="/admin/planning-phase-source">📚 Документация</a>
+                <a href="/admin/planning">🗂️ Планирование</a>
+                <a href="/admin/design">🎨 Дизайн</a>
+                <a href="/admin/developing">💻 Разработка</a>
+
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
+
             <!-- nodes: /admin/node is the tab itself, so no Ноды link here -->
             <div class="tabnav-panel" data-group="nodes">
                 <span class="tabnav-sep"></span>
                 <a href="/admin/variable">📦 Переменные</a>
-                {% if request.session.get('role') == 'admin' %}
-                <a href="/admin/workflow">🔄 Workflow</a>
-                <span class="tabnav-sep"></span>
-                <a href="/admin/planning">🗂️ Планирование</a>
-                <a href="/admin/developing">💻 Разработка</a>
-                <span class="tabnav-sep"></span>
-                {% endif %}
-            </div>
-
-            <!-- people: /admin/user is the tab itself, so no Пользователи link here -->
-            {% if request.session.get('role') == 'admin' %}
-            <div class="tabnav-panel" data-group="people">
-                <span class="tabnav-sep"></span>
-                <a href="/admin/role">🛡️ Роли</a>
                 <span class="tabnav-sep"></span>
             </div>
-            {% endif %}
 
             {% if request.session.get('role') == 'admin' %}
             <div class="tabnav-panel" data-group="logs">
@@ -104,8 +122,20 @@
             </div>
             {% endif %}
 
+             <!-- people: /admin/user is the tab itself, so no Пользователи link here -->
+            {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="people">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/role">🛡️ Роли</a>
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
+
             {% if request.session.get('role') == 'admin' %}
             <div class="tabnav-panel" data-group="setting">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/seed">Seed SQL</a>
+                <a href="/admin/backup">Backup</a>
                 <span class="tabnav-sep"></span>
             </div>
             {% endif %}
@@ -188,21 +218,26 @@
         // Map URL → group
         const groupMap = {
             '/': 'chat',
-            '/admin/llm': 'chat',
-            '/admin/agent': 'chat',
+            '/admin/llm': 'llm',
+            '/admin/agent': 'llm',
             '/admin/fact_collection': 'chat',
             '/admin/fact': 'chat',
             '/admin/session': 'chat',
             '/admin/cabinet': 'chat',
             '/admin/node': 'nodes',
             '/admin/variable': 'nodes',
-            '/admin/workflow': 'nodes',
-            '/admin/planning': 'nodes',
-            '/admin/developing': 'nodes',
+            '/admin/workflow': 'llm',
+            '/admin/planning': 'projects',
+            '/admin/planning-phase-source': 'projects',
+            '/admin/task': 'projects',
+            '/admin/developing': 'projects',
+            '/admin/design': 'projects',
             '/admin/user': 'people',
             '/admin/role': 'people',
             '/admin/workflow_trace': 'logs',
             '/admin/setting': 'setting',
+            '/admin/backup': 'setting',
+            '/admin/seed': 'setting',
             '/admin/tool': 'tool',
             '/admin/queue': 'tool',
         };
