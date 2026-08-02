@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y \
     git \
     gcc \
     python3-dev \
+    fonts-dejavu-core \
+    default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Устанавливаем рабочую директорию
@@ -25,6 +27,9 @@ RUN pip install --no-cache-dir --default-timeout=1000 \
 # Копируем файл с зависимостями
 COPY docker/uvicorn/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Устанавливаем Playwright Chromium (headless-shell для headless-режима) + системные зависимости
+RUN playwright install chromium-headless-shell --with-deps
 
 ENV HF_HOME=/root/.cache/huggingface
 ENV FASTEMBED_CACHE_PATH=/root/.cache/fastembed
