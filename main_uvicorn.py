@@ -42,14 +42,12 @@ from src.uvicorn.routers.plan import plan
 from src.uvicorn.routers.project import (
     project as project_router,
     project_idea,
-    project_block,
     project_prototype as project_prototype_router,
     project_document,
     project_task,
     project_phase_source,
-    project_browser,
-    project_design,
 )
+from src.uvicorn.routers.project.design import design_block, design as design_router, design_browser
 from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
@@ -409,13 +407,13 @@ app.include_router(fact_collection.router, include_in_schema=False)
 app.include_router(plan.router, include_in_schema=False)
 app.include_router(project_router.router, include_in_schema=False)
 app.include_router(project_idea.router, include_in_schema=False)
-app.include_router(project_block.router, include_in_schema=False)
+app.include_router(design_block.router, include_in_schema=False)
 app.include_router(project_prototype_router.router, include_in_schema=False)
 app.include_router(project_document.router, include_in_schema=False)
 app.include_router(project_task.router, include_in_schema=False)
 app.include_router(project_phase_source.router, include_in_schema=False)
-app.include_router(project_browser.router, include_in_schema=False)
-app.include_router(project_design.router, include_in_schema=False)
+app.include_router(design_browser.router, include_in_schema=False)
+app.include_router(design_router.router, include_in_schema=False)
 app.include_router(companion.router, include_in_schema=False)
 app.include_router(telegram_app.router, include_in_schema=False)
 app.include_router(telegram_app_chat.router, include_in_schema=False)

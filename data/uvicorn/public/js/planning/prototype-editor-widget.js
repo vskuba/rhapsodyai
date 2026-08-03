@@ -1574,7 +1574,7 @@
         var targetX = _hscrollPendingX;
         _hscrollPendingX = null;
         _hscrollInFlight = true;
-        fetch('/planning/browser/click', {
+        fetch('/design/browser/click', {
             method: 'POST', credentials: 'include',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(Object.assign({action: 'scroll_to', scrollX: targetX, scrollY: -1}, viewDims())),
@@ -1611,7 +1611,7 @@
     async function _urlHistoryLoad() {
         if (_urlHistoryCache) return _urlHistoryCache;
         try {
-            var resp = await fetch('/planning/browser/history/' + projectId, { credentials: 'include' });
+            var resp = await fetch('/design/browser/history/' + projectId, { credentials: 'include' });
             var data = await resp.json();
             _urlHistoryCache = data.result || [];
         } catch(e) { _urlHistoryCache = []; }
@@ -1655,7 +1655,7 @@
         urlHistoryDrop.classList.remove('on');
         showLoader(true);
         try {
-            var resp = await fetch('/planning/browser/navigate', {
+            var resp = await fetch('/design/browser/navigate', {
                 method: 'POST', credentials: 'include',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(Object.assign({url: url, project_id: projectId}, viewDims())),
@@ -1684,7 +1684,7 @@
     browserBackBtn.addEventListener('click', async function() {
         showLoader(true);
         try {
-            var resp = await fetch('/planning/browser/click', {
+            var resp = await fetch('/design/browser/click', {
                 method: 'POST', credentials: 'include',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(Object.assign({action: 'back'}, viewDims())),
@@ -1782,7 +1782,7 @@
         _scrollPendingY = 0;
         _scrollInFlight = true;
         try {
-            var resp = await fetch('/planning/browser/click', {
+            var resp = await fetch('/design/browser/click', {
                 method: 'POST', credentials: 'include',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(Object.assign({action: 'scroll', deltaX: dx, deltaY: dy}, viewDims())),
@@ -1838,7 +1838,7 @@
             var cy = toImgY(drag.sy);
             showLoader(true);
             try {
-                var resp = await fetch('/planning/browser/click', {
+                var resp = await fetch('/design/browser/click', {
                     method: 'POST', credentials: 'include',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(Object.assign({x: cx, y: cy}, viewDims())),
@@ -1861,7 +1861,7 @@
 
         showLoader(true);
         try {
-            var resp2 = await fetch('/planning/browser/pick', {
+            var resp2 = await fetch('/design/browser/pick', {
                 method: 'POST', credentials: 'include',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({x: rx, y: ry, w: rw, h: rh}),

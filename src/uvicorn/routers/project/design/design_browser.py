@@ -13,6 +13,108 @@ _browser_lock = asyncio.Lock()
 _BROWSER_TTL = 300
 
 
+@router.get('/design/browser/history/{project_id}')
+async def planning_browser_history_get(request: Request, project_id: int,
+                                       user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT url FROM project_design_prototype_browser_history'
+            ' WHERE project_id = %s ORDER BY used_at DESC LIMIT 15',
+            (project_id,)
+        )
+        rows = await db.fetchall()
+    return {'result': [r['url'] for r in rows]}
+
+
+@router.post('/design/browser/navigate')
+async def planning_browser_navigate(request: Request, data: dict,
+                                    user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """Загружает URL в Playwright-браузере и возвращает скриншот."""
+    url = str(data.get('url') or '').strip()
+    if not url:
+        return {'error': 'url required'}
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+    project_id = int(data.get('project_id') or 0)
+
+    try:
+        page = await _browser_session_get(user.user_id)
+        await _maybe_resize_viewport(page, data)
+        await page.goto(url, wait_until='domcontentloaded', timeout=20000)
+        await page.wait_for_timeout(800)
+        screenshot = await _page_screenshot_b64(page)
+        scroll = await _page_scroll_info(page)
+        final_url = page.url
+        if project_id and final_url and final_url != 'about:blank':
+            asyncio.ensure_future(_browser_history_save(project_id, final_url))
+        return {'screenshot': screenshot, 'url': final_url, 'title': await page.title(), **scroll}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+@router.post('/design/browser/click')
+async def planning_browser_click(request: Request, data: dict,
+                                 user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """Кликает по координатам в браузере (навигация по ссылкам) и возвращает скриншот."""
+    action = data.get('action', '')
+    x, y = int(data.get('x', 0)), int(data.get('y', 0))
+    try:
+        page = await _browser_session_get(user.user_id)
+        await _maybe_resize_viewport(page, data)
+        if action == 'back':
+            await page.go_back(wait_until='domcontentloaded', timeout=8000)
+            await page.wait_for_timeout(400)
+        elif action == 'scroll':
+            delta_x = int(data.get('deltaX', 0))
+            delta_y = int(data.get('deltaY', 0))
+            await page.evaluate('([dx, dy]) => window.scrollBy(dx, dy)', [delta_x, delta_y])
+        elif action == 'scroll_to':
+            scroll_x = int(data.get('scrollX', 0))
+            scroll_y = int(data.get('scrollY', -1))
+            await page.evaluate(
+                '([x, y]) => window.scrollTo(x < 0 ? window.scrollX : x, y < 0 ? window.scrollY : y)',
+                [scroll_x, scroll_y]
+            )
+        else:
+            await page.mouse.click(x, y)
+            await page.wait_for_load_state('domcontentloaded', timeout=8000)
+            await page.wait_for_timeout(500)
+        screenshot = await _page_screenshot_b64(page)
+        scroll = await _page_scroll_info(page)
+        return {'screenshot': screenshot, 'url': page.url, 'title': await page.title(), **scroll}
+    except Exception as e:
+        try:
+            page = await _browser_session_get(user.user_id)
+            screenshot = await _page_screenshot_b64(page)
+            scroll = await _page_scroll_info(page)
+            return {'screenshot': screenshot, 'url': page.url, 'title': await page.title(), **scroll}
+        except Exception:
+            return {'error': str(e)}
+
+
+@router.post('/design/browser/pick')
+async def planning_browser_pick(request: Request, data: dict,
+                                user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """Извлекает HTML+CSS элемента по координатам выделения (в пикселях скриншота 1280×800)."""
+    x, y = int(data.get('x', 0)), int(data.get('y', 0))
+    w, h = max(int(data.get('w', 1)), 1), max(int(data.get('h', 1)), 1)
+    try:
+        page = await _browser_session_get(user.user_id)
+        result = await page.evaluate(_PICK_ELEMENT_JS, {'x': x, 'y': y, 'w': w, 'h': h})
+        if not result:
+            return {'error': 'Элемент не найден'}
+        return result
+    except Exception as e:
+        return {'error': str(e)}
+
+
+@router.post('/design/browser/close')
+async def planning_browser_close(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """Закрывает браузерную сессию пользователя."""
+    await _browser_session_close(user.user_id)
+    return {'result': 'ok'}
+
+
 async def _browser_session_get(user_id: int):
     from playwright.async_api import async_playwright
     import time
@@ -167,101 +269,3 @@ _PICK_ELEMENT_JS = """
     };
 }
 """
-
-
-@router.get('/planning/browser/history/{project_id}')
-async def planning_browser_history_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            'SELECT url FROM project_design_prototype_browser_history'
-            ' WHERE project_id = %s ORDER BY used_at DESC LIMIT 15',
-            (project_id,)
-        )
-        rows = await db.fetchall()
-    return {'result': [r['url'] for r in rows]}
-
-
-@router.post('/planning/browser/navigate')
-async def planning_browser_navigate(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    """Загружает URL в Playwright-браузере и возвращает скриншот."""
-    url = str(data.get('url') or '').strip()
-    if not url:
-        return {'error': 'url required'}
-    if not url.startswith(('http://', 'https://')):
-        url = 'https://' + url
-    project_id = int(data.get('project_id') or 0)
-
-    try:
-        page = await _browser_session_get(user.user_id)
-        await _maybe_resize_viewport(page, data)
-        await page.goto(url, wait_until='domcontentloaded', timeout=20000)
-        await page.wait_for_timeout(800)
-        screenshot = await _page_screenshot_b64(page)
-        scroll = await _page_scroll_info(page)
-        final_url = page.url
-        if project_id and final_url and final_url != 'about:blank':
-            asyncio.ensure_future(_browser_history_save(project_id, final_url))
-        return {'screenshot': screenshot, 'url': final_url, 'title': await page.title(), **scroll}
-    except Exception as e:
-        return {'error': str(e)}
-
-
-@router.post('/planning/browser/click')
-async def planning_browser_click(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    """Кликает по координатам в браузере (навигация по ссылкам) и возвращает скриншот."""
-    action = data.get('action', '')
-    x, y = int(data.get('x', 0)), int(data.get('y', 0))
-    try:
-        page = await _browser_session_get(user.user_id)
-        await _maybe_resize_viewport(page, data)
-        if action == 'back':
-            await page.go_back(wait_until='domcontentloaded', timeout=8000)
-            await page.wait_for_timeout(400)
-        elif action == 'scroll':
-            delta_x = int(data.get('deltaX', 0))
-            delta_y = int(data.get('deltaY', 0))
-            await page.evaluate('([dx, dy]) => window.scrollBy(dx, dy)', [delta_x, delta_y])
-        elif action == 'scroll_to':
-            scroll_x = int(data.get('scrollX', 0))
-            scroll_y = int(data.get('scrollY', -1))
-            await page.evaluate(
-                '([x, y]) => window.scrollTo(x < 0 ? window.scrollX : x, y < 0 ? window.scrollY : y)',
-                [scroll_x, scroll_y]
-            )
-        else:
-            await page.mouse.click(x, y)
-            await page.wait_for_load_state('domcontentloaded', timeout=8000)
-            await page.wait_for_timeout(500)
-        screenshot = await _page_screenshot_b64(page)
-        scroll = await _page_scroll_info(page)
-        return {'screenshot': screenshot, 'url': page.url, 'title': await page.title(), **scroll}
-    except Exception as e:
-        try:
-            page = await _browser_session_get(user.user_id)
-            screenshot = await _page_screenshot_b64(page)
-            scroll = await _page_scroll_info(page)
-            return {'screenshot': screenshot, 'url': page.url, 'title': await page.title(), **scroll}
-        except Exception:
-            return {'error': str(e)}
-
-
-@router.post('/planning/browser/pick')
-async def planning_browser_pick(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    """Извлекает HTML+CSS элемента по координатам выделения (в пикселях скриншота 1280×800)."""
-    x, y = int(data.get('x', 0)), int(data.get('y', 0))
-    w, h = max(int(data.get('w', 1)), 1), max(int(data.get('h', 1)), 1)
-    try:
-        page = await _browser_session_get(user.user_id)
-        result = await page.evaluate(_PICK_ELEMENT_JS, {'x': x, 'y': y, 'w': w, 'h': h})
-        if not result:
-            return {'error': 'Элемент не найден'}
-        return result
-    except Exception as e:
-        return {'error': str(e)}
-
-
-@router.post('/planning/browser/close')
-async def planning_browser_close(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    """Закрывает браузерную сессию пользователя."""
-    await _browser_session_close(user.user_id)
-    return {'result': 'ok'}

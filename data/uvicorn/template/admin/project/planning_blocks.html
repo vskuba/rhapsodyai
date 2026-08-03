@@ -569,8 +569,8 @@ async function loadAll() {
     document.getElementById('blockList').innerHTML = '<div style="padding:30px;text-align:center;color:#94a3b8">Загрузка…</div>';
 
     const [blocksData, pagesData] = await Promise.all([
-        apiFetch(`/planning/project/${pid}/blocks`),
-        apiFetch(`/planning/project/${pid}/wireframe-pages`),
+        apiFetch(`/design/${pid}/blocks`),
+        apiFetch(`/design/${pid}/wireframe-pages`),
     ]);
 
     _blocks = blocksData.result || [];
@@ -784,7 +784,7 @@ async function saveNewWidget() {
     const description = (document.getElementById('wdesc')?.value || '').trim() || null;
     const css = (document.getElementById('wcss')?.value || '').trim() || null;
 
-    const data = await apiFetch(`/planning/block/${_selectedBlockId}/widget`, {
+    const data = await apiFetch(`/design/block/${_selectedBlockId}/widget`, {
         method: 'POST',
         body: JSON.stringify({name, description, css}),
     });
@@ -810,7 +810,7 @@ async function saveWidgetEdit(widgetId, blockId) {
     const css = document.getElementById(`wecss-${widgetId}`)?.value.trim() || null;
     if (!name) { alert('Укажите название'); return; }
 
-    await apiFetch(`/planning/widget/${widgetId}`, {
+    await apiFetch(`/design/widget/${widgetId}`, {
         method: 'PUT',
         body: JSON.stringify({name, description, css}),
     });
@@ -826,7 +826,7 @@ async function saveWidgetEdit(widgetId, blockId) {
 
 async function deleteWidget(widgetId, blockId) {
     if (!confirm('Удалить виджет?')) return;
-    await apiFetch(`/planning/widget/${widgetId}`, {method: 'DELETE'});
+    await apiFetch(`/design/widget/${widgetId}`, {method: 'DELETE'});
 
     const block = _blocks.find(b => b.id === blockId);
     if (block) {
@@ -853,7 +853,7 @@ function updateBlockWidgetBadge(block) {
 
 /* ─── Approve / Regen ──────────────────────────────────── */
 async function toggleApprove(blockId, approved) {
-    await apiFetch(`/planning/block/${blockId}/approve`, {
+    await apiFetch(`/design/block/${blockId}/approve`, {
         method: 'POST',
         body: JSON.stringify({approved}),
     });
@@ -891,7 +891,7 @@ async function regenBlock(blockId) {
     const btn = document.querySelector(`[onclick="regenBlock(${blockId})"]`);
     if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
 
-    const data = await apiFetch(`/planning/block/${blockId}/regenerate`, {method: 'POST'});
+    const data = await apiFetch(`/design/block/${blockId}/regenerate`, {method: 'POST'});
     if (data.error) {
         alert('Ошибка: ' + data.error);
         if (btn) { btn.disabled = false; btn.textContent = '↺ AI'; }
@@ -907,7 +907,7 @@ async function editBlockDescription(blockId) {
     if (!block) return;
     const newDesc = prompt('Описание блока:', block.description || '');
     if (newDesc === null) return;
-    await apiFetch(`/planning/block/${blockId}`, {
+    await apiFetch(`/design/block/${blockId}`, {
         method: 'PUT',
         body: JSON.stringify({description: newDesc}),
     });

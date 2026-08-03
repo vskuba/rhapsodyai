@@ -3138,7 +3138,7 @@
             return;
         }
         listEl.innerHTML = '<div style="padding:20px;color:#94a3b8;font-size:13px">Загрузка…</div>';
-        const data = await planningFetch(`/planning/project/${pid}/blocks`);
+        const data = await planningFetch(`/design/${pid}/blocks`);
         _bwBlocks = (data.result || []).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
         renderBwBlockList();
         updateBwStats();
@@ -3582,7 +3582,7 @@ ${contentScript}</body></html>`;
             alert('Укажите название');
             return;
         }
-        await planningFetch(`/planning/widget/${widgetId}`, {
+        await planningFetch(`/design/widget/${widgetId}`, {
             method: 'PUT', body: JSON.stringify({name, description: desc}),
         });
         const block = _bwBlocks.find(b => b.id === _bwBlockId);
@@ -3632,7 +3632,7 @@ ${contentScript}</body></html>`;
             btn.textContent = 'Сохраняю...';
             btn.disabled = true;
         }
-        await planningFetch(`/planning/widget/${widgetId}`, {
+        await planningFetch(`/design/widget/${widgetId}`, {
             method: 'PUT', body: JSON.stringify({css}),
         });
         const block = _bwBlocks.find(b => b.id === _bwBlockId);
@@ -3659,7 +3659,7 @@ ${contentScript}</body></html>`;
             btn.textContent = 'Сохраняю...';
             btn.disabled = true;
         }
-        await planningFetch(`/planning/widget/${widgetId}`, {
+        await planningFetch(`/design/widget/${widgetId}`, {
             method: 'PUT', body: JSON.stringify({html}),
         });
         const block = _bwBlocks.find(b => b.id === _bwBlockId);
@@ -3679,7 +3679,7 @@ ${contentScript}</body></html>`;
 
     async function deleteBwWidget(widgetId) {
         if (!confirm('Удалить виджет?')) return;
-        await planningFetch(`/planning/widget/${widgetId}`, {method: 'DELETE'});
+        await planningFetch(`/design/widget/${widgetId}`, {method: 'DELETE'});
         const block = _bwBlocks.find(b => b.id === _bwBlockId);
         if (block) {
             block.widgets = (block.widgets || []).filter(w => w.id !== widgetId);
@@ -3706,7 +3706,7 @@ ${contentScript}</body></html>`;
         }
         const desc = (document.getElementById('bwfDesc')?.value || '').trim() || null;
         const css = (document.getElementById('bwfCss')?.value || '').trim() || null;
-        const data = await planningFetch(`/planning/block/${_bwBlockId}/widget`, {
+        const data = await planningFetch(`/design/block/${_bwBlockId}/widget`, {
             method: 'POST', body: JSON.stringify({name, description: desc, css}),
         });
         if (data.error) {
@@ -3745,7 +3745,7 @@ ${contentScript}</body></html>`;
         const commit = async () => {
             const newTitle = input.value.trim();
             if (newTitle && newTitle !== currentTitle) {
-                await planningFetch(`/planning/block/${blockId}/title`, {
+                await planningFetch(`/design/block/${blockId}/title`, {
                     method: 'PUT',
                     body: JSON.stringify({title: newTitle}),
                 });
@@ -3772,7 +3772,7 @@ ${contentScript}</body></html>`;
         const btn = document.getElementById('bwregen-' + blockId);
         if (btn) btn.classList.add('spinning');
         try {
-            const data = await planningFetch(`/planning/block/${blockId}/regenerate`, {method: 'POST'});
+            const data = await planningFetch(`/design/block/${blockId}/regenerate`, {method: 'POST'});
             if (data.error) {
                 alert(data.error);
                 return;
@@ -3792,7 +3792,7 @@ ${contentScript}</body></html>`;
 
     async function deleteBwBlock(blockId) {
         if (!confirm('Удалить блок со всеми виджетами?')) return;
-        await planningFetch(`/planning/block/${blockId}`, {method: 'DELETE'});
+        await planningFetch(`/design/block/${blockId}`, {method: 'DELETE'});
         _bwBlocks = _bwBlocks.filter(b => b.id !== blockId);
         if (_bwBlockId === blockId) {
             _bwBlockId = null;
@@ -3866,7 +3866,7 @@ ${contentScript}</body></html>`;
         }
 
         try {
-            const data = await planningFetch(`/planning/project/${_bwProjectId}/block/generate`, {
+            const data = await planningFetch(`/design/${_bwProjectId}/block/generate`, {
                 method: 'POST',
                 body: JSON.stringify({name, description: desc}),
             });
@@ -4156,8 +4156,8 @@ ${contentScript}</body></html>`;
         document.getElementById('blockLibrary').innerHTML = '<div class="no-blocks-msg" style="padding:20px;font-size:12px">Загрузка…</div>';
 
         const fetches = [
-            planningFetch(`/planning/project/${pid}/blocks`),
-            planningFetch(`/planning/project/${pid}/wireframe-pages`),
+            planningFetch(`/design/${pid}/blocks`),
+            planningFetch(`/design/${pid}/wireframe-pages`),
         ];
         if (!_defaultBlocks.length) fetches.push(planningFetch('/design/ui-blocks'));
         const [blocksData, pagesData, defaultData] = await Promise.all(fetches);
@@ -4697,7 +4697,7 @@ ${contentScript}</body></html>`;
             section: b.section || 0,
         }));
 
-        await planningFetch(`/planning/page/${_selectedPageId}/blocks`, {
+        await planningFetch(`/design/page/${_selectedPageId}/blocks`, {
             method: 'PUT',
             body: JSON.stringify({blocks: blocksPayload, grid_layout: _gridLayout}),
         });
