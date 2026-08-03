@@ -9,8 +9,9 @@ DROP TABLE IF EXISTS `project_design_prototype_page_block`;
 DROP TABLE IF EXISTS `project_design_prototype_widget`;
 DROP TABLE IF EXISTS `project_design_prototype_page`;
 DROP TABLE IF EXISTS `project_state`;
-DROP TABLE IF EXISTS `project_design_prototype_block`;
+-- project_design_prototype_block removed: merged into project_design_ui_block
 DROP TABLE IF EXISTS `project_design_prototype_browser_history`;
+DROP TABLE IF EXISTS `project_design_ui_block`;
 DROP TABLE IF EXISTS `project_design_ui_component`;
 DROP TABLE IF EXISTS `project_design_token`;
 DROP TABLE IF EXISTS `project_planning_document`;
@@ -620,24 +621,7 @@ CREATE TABLE `project_planning_document` (
 
 -- ─── Project Design ────────────────────────────────────────────────────────────
 
-CREATE TABLE `project_design_prototype_block` (
-    `id` INT NOT NULL AUTO_INCREMENT,
-    `project_id` INT NOT NULL,
-    `name` VARCHAR(255) NOT NULL DEFAULT '',
-    `title` VARCHAR(255) DEFAULT NULL,
-    `description` TEXT DEFAULT NULL,
-    `content` MEDIUMTEXT DEFAULT NULL,
-    `components` TEXT DEFAULT NULL,
-    `stateless` TINYINT(1) NOT NULL DEFAULT '0',
-    `approved` TINYINT(4) NOT NULL DEFAULT '1',
-    `created_by` ENUM('ai','manual') NOT NULL DEFAULT 'ai',
-    `order_index` INT NOT NULL DEFAULT '0',
-    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `default_section` VARCHAR(10) DEFAULT NULL,
-    PRIMARY KEY (`id`),
-    INDEX `idx_project` (`project_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- project_design_prototype_block removed: merged into project_design_ui_block (project_id column added there)
 
 CREATE TABLE `project_design_prototype_browser_history` (
     `id` INT NOT NULL AUTO_INCREMENT,
@@ -728,6 +712,30 @@ CREATE TABLE `project_design_ui_component` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_name` (`name`),
     INDEX `idx_tags` (`tags`(100))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_design_ui_block` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT DEFAULT NULL,
+    `name` VARCHAR(255) NOT NULL DEFAULT '',
+    `title` VARCHAR(255) DEFAULT NULL,
+    `description` TEXT DEFAULT NULL,
+    `stateless` TINYINT(1) NOT NULL DEFAULT 0,
+    `html` TEXT DEFAULT NULL,
+    `css` TEXT DEFAULT NULL,
+    `created_by` VARCHAR(20) NOT NULL DEFAULT 'ai',
+    `order_index` INT NOT NULL DEFAULT 0,
+    `default_section` VARCHAR(10) DEFAULT NULL,
+    `tags` VARCHAR(500) DEFAULT NULL,
+    `vars` TEXT DEFAULT NULL,
+    `slot` VARCHAR(100) DEFAULT NULL,
+    `slots` TEXT DEFAULT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_project_name` (`project_id`, `name`(191)),
+    KEY `idx_project_id` (`project_id`),
+    CONSTRAINT `fk_ui_block_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `project_design_token` (
