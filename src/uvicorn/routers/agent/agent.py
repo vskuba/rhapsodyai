@@ -146,6 +146,7 @@ async def agent_create(request: Request, data: dict, user=Depends(AuthChecker([A
         "prompt_system": data.get('prompt_system', ''),
         "workflow_id": data.get('workflow_id', None),
         "description": data.get('description', ''),
+        "group_name": data.get('group_name') or None,
         "workflow_variable": workflow_variable,
     })
 
@@ -178,6 +179,7 @@ async def agent_update(
         "name": data.get('name', current_agent.get('name')),
         "node_id": data.get('node_id', current_agent.get('node_id')),
         "title": data.get('title', current_agent.get('title')),
+        "group_name": data.get('group_name', current_agent.get('group_name')) or None,
         "workflow_id": data.get('workflow_id', current_agent.get('workflow_id')),
         "workflow_variable": data.get('workflow_variable', current_agent.get('workflow_variable')),
         "prompt_system": data.get('prompt_system', current_agent.get('prompt_system')),
@@ -197,6 +199,7 @@ async def agent_update(
                 name = %s,
                 node_id = %s,
                 title = %s,
+                group_name = %s,
                 workflow_id = %s,
                 workflow_variable = %s,
                 prompt_system = %s,
@@ -209,6 +212,7 @@ async def agent_update(
             merged_data['name'],
             merged_data['node_id'],
             merged_data['title'],
+            merged_data['group_name'],
             merged_data['workflow_id'],
             workflow_variable,
             merged_data['prompt_system'],
