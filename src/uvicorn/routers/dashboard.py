@@ -164,7 +164,7 @@ async def planning_page(request: Request, user: AuthSession = Depends(require_au
     tz_offset = await setting_get('timezone', '+0')
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/planning.html",
+        "admin/project/planning.html",
         {"tz_offset": str(tz_offset or '+0')},
     )
 
@@ -173,7 +173,7 @@ async def planning_page(request: Request, user: AuthSession = Depends(require_au
 async def developing_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/developing.html",
+        "admin/project/developing.html",
     )
 
 
@@ -181,7 +181,7 @@ async def developing_page(request: Request, user: AuthSession = Depends(require_
 async def planning_phase_source_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/planning_phase_source.html",
+        "admin/project/planning_phase_source.html",
     )
 
 
@@ -189,7 +189,7 @@ async def planning_phase_source_page(request: Request, user: AuthSession = Depen
 async def planning_blocks_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/planning_blocks.html",
+        "admin/project/planning_blocks.html",
     )
 
 
@@ -197,7 +197,7 @@ async def planning_blocks_page(request: Request, user: AuthSession = Depends(req
 async def task_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/task.html",
+        "admin/project/task.html",
     )
 
 
@@ -205,7 +205,7 @@ async def task_page(request: Request, user: AuthSession = Depends(require_auth))
 async def design_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/design.html",
+        "admin/project/design.html",
     )
 
 
