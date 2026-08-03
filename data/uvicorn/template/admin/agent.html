@@ -688,7 +688,7 @@
                 }
             }
 
-            document.getElementById('formTitle').textContent = `Редактирование: ${agent.name}`;
+            document.getElementById('formTitle').textContent = `Редактирование: #${agent.id} ${agent.name}`;
 
             if (saveBtn) saveBtn.disabled = false;
             if (deleteBtn) deleteBtn.style.display = 'block';
