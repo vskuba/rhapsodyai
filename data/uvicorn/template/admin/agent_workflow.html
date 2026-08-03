@@ -52,6 +52,22 @@
         letter-spacing: 1px;
     }
 
+    .group-folder-header {
+        padding: 3px 10px 3px 18px;
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        user-select: none;
+        transition: color 0.15s;
+    }
+    .group-folder-header:hover { color: #3498db; }
+    .group-folder-name { flex: 1; }
+    .folder-icon { flex-shrink: 0; }
+
     /* Карусель нод в сайдбаре */
     .node-carousel {
         display: flex;
@@ -113,7 +129,7 @@
         padding: 2px 10px;
         margin: 2px 10px;
         cursor: pointer;
-        font-size: 12px;
+        font-size: 14px;
         color: #2c3e50;
         border-radius: 6px;
         transition: all 0.2s;
@@ -360,37 +376,11 @@
         margin-right: auto;
     }
 
-    /* Пункт меню: название сверху, строка действий под ним */
-    .agent-item {
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        padding: 6px 12px; /* Чуть увеличим отступы для удобства */
-        position: relative;
-    }
-
-    /* Перетаскивание пунктов: порядок сохраняется в position (как на странице переменных) */
-    .agent-item.dragging {
-        opacity: 0.4;
-    }
-
     .workflow-title-row {
         display: flex;
         align-items: center;
         gap: 6px;
         min-width: 0;
-    }
-
-    .agent-item .drag-handle {
-        color: #c0c8ce;
-        cursor: grab;
-        font-size: 12px;
-        flex-shrink: 0;
-        user-select: none;
-    }
-
-    .agent-item:hover .drag-handle {
-        color: #7f8c8d;
     }
 
     /* Название workflow не налезает на иконки и обрезается многоточием */
@@ -1006,6 +996,10 @@
                     </div>
                     <div class="form-group"><label>Нода</label><select id="node_id"
                                                                        class="form-control"></select></div>
+                    <div class="form-group">
+                        <label>Группа</label>
+                        <input type="text" id="group_name" class="form-control" maxlength="50" placeholder="Необязательно">
+                    </div>
                     <div class="form-group">
                         <label>Описание</label>
                         <textarea id="description" class="form-control"

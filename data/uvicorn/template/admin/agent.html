@@ -52,7 +52,31 @@
         font-weight: bold;
         text-transform: uppercase;
         letter-spacing: 1px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        user-select: none;
+        transition: color 0.15s;
     }
+    .group-header:hover { color: #c47d22; }
+
+    .group-folder-name { flex: 1; }
+    .folder-icon { flex-shrink: 0; }
+
+    .group-folder-header {
+        padding: 3px 10px 3px 18px;
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        user-select: none;
+        transition: color 0.15s;
+    }
+    .group-folder-header:hover { color: #3498db; }
 
     .agent-item {
         padding: 2px 10px;
@@ -75,6 +99,22 @@
         color: #3498db;
         border-left-color: #3498db;
     }
+
+    .agent-item-title { cursor: pointer; }
+
+    .agent-wf-sep {
+        color: #cbd5e1;
+        font-size: 12px;
+    }
+
+    .agent-wf-link {
+        font-size: 12px;
+        color: #94a3b8;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .agent-wf-link:hover { color: #3498db; text-decoration: underline; }
 
     /* 3. Основная секция формы */
     .editor-section {
@@ -347,9 +387,15 @@
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label>Заголовок (В меню)</label>
-                        <input type="text" id="title" class="form-control" required>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Заголовок (В меню)</label>
+                            <input type="text" id="title" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Заголовок группы</label>
+                            <input type="text" id="group_name" class="form-control" maxlength="50" placeholder="Необязательно">
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -415,6 +461,7 @@
     import {getData, putData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
     import {langSwitcherCreate, nodeLanguagesGet, userLanguageGet} from '/static/js/lang_switcher.js';
+    import {buildGroupTree, renderGroupTree} from '/static/js/agent_group_tree.js';
 
     // Переключатель языков (переводимые поля — «Приветствие» и «System Prompt»);
     // языки берутся из настройки ноды, кнопка перевода действует на сфокусированное поле
@@ -431,6 +478,8 @@
     const saveBtn = document.getElementById('saveBtn');
     const agentForm = document.getElementById('agentForm');
     const deleteBtn = document.getElementById('deleteBtn');
+
+    let allWorkflows = [];
 
     /**
      * Инициализация менеджера: загрузка групп и списка агентов
@@ -450,6 +499,7 @@
             const nodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
             const agents = agentsRes.result;
             const workflows = workflowRes.result;
+            allWorkflows = workflows || [];
             const roles = roleRes.result;
 
             // 2. Заполняем Select групп (в отсортированном порядке)
@@ -516,47 +566,60 @@
 
     function renderNodeList(agents, nodes) {
         agentListContainer.innerHTML = '';
+        const currentAgentId = document.getElementById('agentId')?.value || '';
+        const byLabel = (a, b) => (a.title || a.name).localeCompare(b.title || b.name, 'ru');
 
-        // Получаем ID текущего редактируемого агента из скрытого поля формы
-        const currentAgentIdEl = document.getElementById('agentId');
-        const currentAgentId = currentAgentIdEl ? currentAgentIdEl.value : '';
+        const agentsByNode = {};
+        for (const agent of agents) {
+            const nid = agent.node_id || 'none';
+            if (!agentsByNode[nid]) agentsByNode[nid] = [];
+            agentsByNode[nid].push(agent);
+        }
 
-        // Группируем агентов по ID ноды
-        const agentsByNode = agents.reduce((acc, a) => {
-            const nid = a.node_id || 'none';
-            if (!acc[nid]) acc[nid] = [];
-            acc[nid].push(a);
-            return acc;
-        }, {});
-
-        // Функция для отрисовки блока группы
-        const createNodeSection = (nid, gName) => {
+        const createNodeSection = (nid, nodeName) => {
             const nodeAgents = agentsByNode[nid];
-            if (!nodeAgents) return; // Не рисуем пустые ноды
+            if (!nodeAgents) return;
 
             const header = document.createElement('div');
             header.className = 'group-header';
-            header.textContent = gName;
+            header.textContent = nodeName;
             agentListContainer.appendChild(header);
 
-            // Сортируем агентов внутри группы по названию
-            nodeAgents.sort((a, b) => (a.title || a.name).localeCompare(b.title || b.name));
-
-            nodeAgents.forEach(agent => {
+            const sorted = [...nodeAgents].sort(byLabel);
+            renderGroupTree(buildGroupTree(sorted), agentListContainer, 0, `agent_group_${nid}`, (agent, depth, indent) => {
                 const div = document.createElement('div');
                 div.className = 'agent-item';
-                if (currentAgentId && agent.id.toString() === currentAgentId.toString()) {
-                    div.classList.add('active');
+                if (depth > 0) div.style.paddingLeft = `${indent}px`;
+                if (agent.id.toString() === currentAgentId) div.classList.add('active');
+
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'agent-item-title';
+                titleSpan.textContent = (depth > 0 ? '· ' : '') + (agent.title || agent.name);
+                titleSpan.onclick = () => selectAgentForEdit(agent.id, div);
+                div.appendChild(titleSpan);
+
+                if (agent.workflow_id) {
+                    const wf = allWorkflows.find(w => String(w.id) === String(agent.workflow_id));
+                    if (wf) {
+                        const sep = document.createElement('span');
+                        sep.className = 'agent-wf-sep';
+                        sep.textContent = ' | ';
+                        div.appendChild(sep);
+
+                        const wfLink = document.createElement('a');
+                        wfLink.className = 'agent-wf-link';
+                        wfLink.textContent = wf.title;
+                        wfLink.href = `/admin/workflow?workflow_id=${wf.id}`;
+                        wfLink.onclick = e => e.stopPropagation();
+                        div.appendChild(wfLink);
+                    }
                 }
-                div.textContent = agent.title || agent.name;
-                div.onclick = () => selectAgentForEdit(agent.id, div);
-                agentListContainer.appendChild(div);
+
+                return div;
             });
         };
 
-        // Сначала рендерим агентов С ГРУППАМИ (в порядке position)
         nodes.forEach(g => createNodeSection(g.id, g.name));
-
         createNodeSection('none', 'Вне ноды');
     }
 
@@ -580,6 +643,7 @@
                 'name': agent.name,
                 'node_id': agent.node_id || '',
                 'title': agent.title || '',
+                'group_name': agent.group_name || '',
                 'description': agent.description || '',
                 'workflow_id': agent.workflow_id || ''
             };
@@ -689,6 +753,7 @@
             name: document.getElementById('name').value,
             node_id: document.getElementById('node_id').value || null,
             title: document.getElementById('title').value,
+            group_name: document.getElementById('group_name').value.trim() || null,
             workflow_id: document.getElementById('workflow_id').value || null,
             role_ids: currentRoleIds,
             prompt_system: langSwitcher.fieldSerialize(document.getElementById('prompt_system')),
