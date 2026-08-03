@@ -201,6 +201,7 @@ CREATE TABLE `agent_workflow` (
     `title` CHAR(50) NOT NULL,
     `description` CHAR(200) NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
+    `group_name` CHAR(50) NULL DEFAULT NULL,
     `subflow` INT NOT NULL DEFAULT 0,
     CONSTRAINT `workflow_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
     UNIQUE INDEX `u_w_workflow_name` (`name`)
@@ -307,6 +308,7 @@ CREATE TABLE `agent` (
     `prompt_system` LONGTEXT NOT NULL,
     `greeting` LONGTEXT NOT NULL,
     `position` INT NOT NULL DEFAULT 0,
+    `group_name` CHAR(50) NULL DEFAULT NULL,
     `dynamic` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 - создан во время игры (agent_create_or_update), не входит в seed-экспорт',
     UNIQUE INDEX `u_agent_name` (`name`),              -- name — системный идентификатор (document_id в Qdrant); отображаемое имя — title
     CONSTRAINT `ag_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL,
