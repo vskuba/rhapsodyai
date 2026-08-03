@@ -7,8 +7,8 @@ Covers:
 - Ideas endpoints (validation, bulk-create)
 - Cronicle schedule endpoint
 - Auth enforcement on all key endpoints
-- Tool functions: planning_score_save, project_load,
-  project_planning_phase_save, project_planning_document_save, planning_blueprint_load
+- Tool functions: planning_project_score_save, project_load,
+  planning_phase_save, planning_phase_document_save, planning_phase_blueprint_load
 """
 import asyncio
 import os
@@ -381,23 +381,24 @@ class TestPlanningTools:
         return result
 
     def test_project_load_returns_idea(self, project_id: int):
-        from src.tool.planning.planning_ import project_load
+        from src.tool.project.planning.planning_project import project_load
         result = self._run(project_load(project_id))
         assert result["idea"] == _TEST_IDEA
         assert result["phases_context"] == ""
 
     def test_project_load_nonexistent_returns_empty(self):
-        from src.tool.planning.planning_ import project_load
+        from src.tool.project.planning.planning_project import project_load
         result = self._run(project_load(999999))
         assert result["idea"] == ""
         assert result["phases_context"] == ""
 
     def test_phase_save_and_load(self, project_id: int):
-        from src.tool.planning.planning_ import project_planning_phase_save, project_load
+        from src.tool.project.planning.planning_project import project_load
+        from src.tool.project.planning.planning_phase import planning_phase_save
         phase_content = "## Test\n\nSome markdown content."
 
         async def _run():
-            saved = await project_planning_phase_save(project_id, "analyze", phase_content)
+            saved = await planning_phase_save(project_id, "analyze", phase_content)
             assert saved["saved"] == 1
             loaded = await project_load(project_id)
             assert "analyze" in loaded["phases_context"]
@@ -406,31 +407,31 @@ class TestPlanningTools:
         self._run(_run())
 
     def test_document_save_and_blueprint_load(self, project_id: int):
-        from src.tool.planning.planning_ import project_planning_document_save, planning_blueprint_load
+        from src.tool.project.planning.planning_phase import planning_phase_document_save, planning_phase_blueprint_load
         bp_content = "# Blueprint\n\nTest blueprint content."
 
         async def _run():
-            saved = await project_planning_document_save(project_id, "blueprint", "Blueprint", bp_content)
+            saved = await planning_phase_document_save(project_id, "blueprint", "Blueprint", bp_content)
             assert saved["saved"] == 1
             assert isinstance(saved["doc_id"], int)
-            loaded = await planning_blueprint_load(project_id)
+            loaded = await planning_phase_blueprint_load(project_id)
             assert loaded["blueprint_content"] == bp_content
             assert loaded["project_title"] == _TEST_TITLE
 
         self._run(_run())
 
     def test_blueprint_load_no_document_returns_empty(self, project_id: int):
-        from src.tool.planning.planning_ import planning_blueprint_load
-        result = self._run(planning_blueprint_load(project_id))
+        from src.tool.project.planning.planning_phase import planning_phase_blueprint_load
+        result = self._run(planning_phase_blueprint_load(project_id))
         assert result["blueprint_content"] == ""
         assert result["project_title"] == _TEST_TITLE
 
     def test_score_save_stores_values(self, project_id: int):
-        from src.tool.planning.planning_ import planning_score_save
+        from src.tool.project.planning.planning_project import planning_project_score_save
         from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
         async def _run():
-            saved = await planning_score_save(
+            saved = await planning_project_score_save(
                 project_id, 8, 7, 6, "go", "50K-200K", "6-9 months", "Strong market, execution risk."
             )
             assert saved["saved"] == 1
@@ -450,11 +451,11 @@ class TestPlanningTools:
         self._run(_run())
 
     def test_score_save_clamps_values(self, project_id: int):
-        from src.tool.planning.planning_ import planning_score_save
+        from src.tool.project.planning.planning_project import planning_project_score_save
         from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
         async def _run():
-            await planning_score_save(project_id, 15, -3, 11, "go", "", "", "")
+            await planning_project_score_save(project_id, 15, -3, 11, "go", "", "", "")
             async with mysql_get_db_async() as db:
                 await db.execute(
                     "SELECT score_market, score_feasibility, score_financial FROM project WHERE id = %s",
@@ -469,11 +470,11 @@ class TestPlanningTools:
         self._run(_run())
 
     def test_score_save_invalid_verdict_defaults_to_maybe(self, project_id: int):
-        from src.tool.planning.planning_ import planning_score_save
+        from src.tool.project.planning.planning_project import planning_project_score_save
         from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
         async def _run():
-            await planning_score_save(project_id, 5, 5, 5, "unknown_verdict", "", "", "")
+            await planning_project_score_save(project_id, 5, 5, 5, "unknown_verdict", "", "", "")
             async with mysql_get_db_async() as db:
                 await db.execute(
                     "SELECT score_verdict FROM project WHERE id = %s", (project_id,)
@@ -485,11 +486,12 @@ class TestPlanningTools:
         self._run(_run())
 
     def test_phases_context_multiple_phases(self, project_id: int):
-        from src.tool.planning.planning_ import project_planning_phase_save, project_load
+        from src.tool.project.planning.planning_project import project_load
+        from src.tool.project.planning.planning_phase import planning_phase_save
 
         async def _run():
-            await project_planning_phase_save(project_id, "analyze", "Analyze content")
-            await project_planning_phase_save(project_id, "market", "Market content")
+            await planning_phase_save(project_id, "analyze", "Analyze content")
+            await planning_phase_save(project_id, "market", "Market content")
             loaded = await project_load(project_id)
             ctx = loaded["phases_context"]
             assert "analyze" in ctx
