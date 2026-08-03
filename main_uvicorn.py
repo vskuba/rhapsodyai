@@ -39,7 +39,17 @@ from src.uvicorn.routers.auth import auth as auth_router
 from src.uvicorn.routers.cronjob import cronjob
 from src.uvicorn.routers.fact import fact, fact_collection
 from src.uvicorn.routers.plan import plan
-from src.uvicorn.routers.planning import planning
+from src.uvicorn.routers.project import (
+    project as project_router,
+    project_idea,
+    project_block,
+    project_prototype as project_prototype_router,
+    project_document,
+    project_task,
+    project_phase_source,
+    project_browser,
+    project_design,
+)
 from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
@@ -58,7 +68,6 @@ from src.uvicorn.routers.role import role
 from src.uvicorn.routers.detective import detective
 from src.uvicorn.routers.seed import seed
 from src.uvicorn.routers.backup import backup
-from src.uvicorn.routers.design import design as design_router
 
 
 @asynccontextmanager
@@ -398,7 +407,15 @@ app.include_router(workflow_trace.router, include_in_schema=False)
 app.include_router(tool.router, include_in_schema=False)
 app.include_router(fact_collection.router, include_in_schema=False)
 app.include_router(plan.router, include_in_schema=False)
-app.include_router(planning.router, include_in_schema=False)
+app.include_router(project_router.router, include_in_schema=False)
+app.include_router(project_idea.router, include_in_schema=False)
+app.include_router(project_block.router, include_in_schema=False)
+app.include_router(project_prototype_router.router, include_in_schema=False)
+app.include_router(project_document.router, include_in_schema=False)
+app.include_router(project_task.router, include_in_schema=False)
+app.include_router(project_phase_source.router, include_in_schema=False)
+app.include_router(project_browser.router, include_in_schema=False)
+app.include_router(project_design.router, include_in_schema=False)
 app.include_router(companion.router, include_in_schema=False)
 app.include_router(telegram_app.router, include_in_schema=False)
 app.include_router(telegram_app_chat.router, include_in_schema=False)
@@ -408,5 +425,4 @@ app.include_router(telegram_app_plan.router, include_in_schema=False)
 app.include_router(event_router.router, include_in_schema=False)
 app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)
-app.include_router(design_router.router, include_in_schema=False)
 

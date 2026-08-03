@@ -1,0 +1,1022 @@
+{% extends "base.html" %}
+
+{% block title %}Конструктор блоков{% endblock %}
+
+{% block head %}
+<style>
+    body { overflow: hidden; }
+
+    .page-layout {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    /* ── Top bar ─────────────────────────────────────── */
+    .top-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 20px;
+        background: #fff;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+    }
+
+    .top-bar h2 { margin: 0; font-size: 17px; color: #1e293b; }
+
+    .project-select {
+        padding: 6px 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-size: 13px;
+        background: #fff;
+        min-width: 280px;
+        color: #1e293b;
+    }
+
+    .stats-chips { display: flex; gap: 8px; margin-left: 8px; }
+
+    .stat-chip {
+        background: #f1f5f9;
+        border-radius: 20px;
+        padding: 3px 10px;
+        font-size: 12px;
+        color: #64748b;
+    }
+
+    .stat-chip b { color: #1e293b; }
+    .stat-chip.approved b { color: #16a34a; }
+
+    .btn-run-proto {
+        margin-left: auto;
+        padding: 7px 18px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .btn-run-proto:disabled { background: #c7d2fe; cursor: not-allowed; }
+    .btn-run-proto:not(:disabled):hover { background: #4f46e5; }
+
+    .readiness-msg { font-size: 12px; color: #dc2626; display: none; }
+
+    /* ── Main grid ───────────────────────────────────── */
+    .grid-layout {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+        user-select: none; /* prevent text sel during drag */
+    }
+
+    /* ── Left column: block list ─────────────────────── */
+    .col-left {
+        width: 70%;
+        min-width: 180px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #f8fafc;
+        border-right: none; /* splitter replaces */
+    }
+
+    .panel-header {
+        padding: 8px 14px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #94a3b8;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .block-list { flex: 1; overflow-y: auto; }
+
+    .block-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-bottom: 1px solid #f1f5f9;
+        cursor: pointer;
+        transition: background 0.1s;
+    }
+
+    .block-item:hover { background: #f0f4ff; }
+    .block-item.active { background: #ede9fe; }
+    .block-item.active .block-item-name { color: #6d28d9; font-weight: 600; }
+    .block-item.required-block { border-left: 3px solid #6366f1; }
+    .block-item.not-required { border-left: 3px solid transparent; opacity: 0.65; }
+
+    .block-approve-cb {
+        width: 15px; height: 15px;
+        accent-color: #16a34a;
+        cursor: pointer; flex-shrink: 0; margin: 0;
+    }
+
+    .block-item-name { font-size: 13px; color: #1e293b; flex: 1; line-height: 1.3; }
+
+    .block-item-meta { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+
+    .widget-count {
+        font-size: 10px; background: #ddd6fe; color: #6d28d9;
+        border-radius: 10px; padding: 1px 7px; font-weight: 600;
+    }
+
+    .approved-badge { font-size: 10px; color: #16a34a; font-weight: 700; }
+
+    /* ── Vertical splitter ───────────────────────────── */
+    .v-splitter {
+        width: 5px;
+        background: #e2e8f0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background 0.1s;
+        position: relative;
+        z-index: 10;
+    }
+
+    .v-splitter::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 1px;
+        height: 32px;
+        background: #cbd5e1;
+        border-radius: 2px;
+    }
+
+    .v-splitter:hover { background: #c7d2fe; }
+    .v-splitter.dragging { background: #6366f1; }
+
+    /* ── Right column: widget panel ──────────────────── */
+    .col-right {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 150px;
+        background: #fff;
+    }
+
+    /* Block info bar (top of right column) */
+    .block-info-bar {
+        padding: 10px 16px;
+        background: #fff;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+        min-height: 42px;
+    }
+
+    .block-info-placeholder {
+        color: #94a3b8; font-size: 13px;
+        display: flex; align-items: center; height: 22px;
+    }
+
+    .block-info-row {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+
+    .block-info-name {
+        font-size: 14px; font-weight: 700; color: #1e293b; flex: 1;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .block-info-desc {
+        font-size: 11px; color: #64748b; line-height: 1.4;
+        margin-top: 3px; cursor: pointer;
+    }
+
+    .block-approve-toggle {
+        display: flex; align-items: center; gap: 6px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        background: #f0fdf4; border: 1px solid #bbf7d0;
+        flex-shrink: 0;
+    }
+
+    .block-approve-toggle.not-approved { background: #fff7ed; border-color: #fed7aa; }
+
+    .approve-label { font-size: 12px; color: #166534; font-weight: 500; }
+    .approve-label.not-approved { color: #9a3412; }
+
+    .btn-approve {
+        background: #16a34a; color: #fff; border: none;
+        border-radius: 4px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-weight: 600;
+    }
+    .btn-approve:hover { background: #15803d; }
+
+    .btn-unapprove {
+        background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;
+        border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer;
+    }
+
+    /* Pages-used chips (collapsed by default) */
+    .pages-toggle {
+        font-size: 11px; color: #0284c7; cursor: pointer;
+        background: #e0f2fe; border-radius: 4px; padding: 2px 8px;
+        border: none; flex-shrink: 0;
+    }
+
+    .pages-toggle:hover { background: #bae6fd; }
+
+    .pages-popup {
+        display: none; margin-top: 6px;
+        background: #f0f9ff; border: 1px solid #bae6fd;
+        border-radius: 6px; padding: 8px 12px;
+    }
+
+    .pages-popup.open { display: block; }
+
+    .page-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+
+    .page-chip {
+        font-size: 11px; background: #e0f2fe; color: #075985;
+        border-radius: 4px; padding: 2px 7px;
+    }
+
+    .page-chip .widget-label { color: #7c3aed; font-weight: 600; }
+
+    /* ── Widget names pane (top right) ───────────────── */
+    .widget-names-pane {
+        height: 35%;
+        min-height: 70px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #fafafa;
+    }
+
+    .pane-header {
+        padding: 6px 14px;
+        font-size: 11px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.05em; color: #94a3b8;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+        display: flex; align-items: center; gap: 8px;
+        flex-shrink: 0;
+    }
+
+    .pane-header span { flex: 1; }
+
+    .btn-pane-add {
+        font-size: 11px; padding: 2px 8px;
+        background: #6366f1; color: #fff; border: none;
+        border-radius: 4px; cursor: pointer; font-weight: 600;
+    }
+
+    .btn-pane-add:hover { background: #4f46e5; }
+
+    .widget-names-list {
+        flex: 1; overflow-y: auto;
+        padding: 4px 0;
+    }
+
+    .widget-name-item {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 14px;
+        cursor: pointer;
+        border-bottom: 1px solid #f1f5f9;
+        transition: background 0.1s;
+    }
+
+    .widget-name-item:hover { background: #f0f4ff; }
+    .widget-name-item.active { background: #ede9fe; }
+    .widget-name-item.active .wni-name { color: #6d28d9; font-weight: 600; }
+
+    .wni-name { font-size: 13px; color: #1e293b; flex: 1; }
+    .wni-css-dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: #6366f1; flex-shrink: 0;
+    }
+
+    .widget-names-empty { padding: 16px 14px; font-size: 12px; color: #94a3b8; font-style: italic; }
+
+    /* Add widget inline form (in widget names pane) */
+    .add-widget-form {
+        display: none;
+        padding: 10px 14px;
+        background: #f0f9ff; border-top: 1px solid #bae6fd;
+        flex-shrink: 0;
+    }
+
+    .add-widget-form.open { display: block; }
+
+    .add-widget-form input,
+    .add-widget-form textarea {
+        width: 100%; box-sizing: border-box;
+        border: 1px solid #cbd5e1; border-radius: 5px;
+        padding: 5px 8px; font-size: 12px; margin-bottom: 5px;
+        font-family: inherit; resize: vertical;
+    }
+
+    .add-widget-form textarea { min-height: 48px; }
+    .add-widget-form textarea.mono { font-family: monospace; min-height: 60px; }
+
+    .form-row { display: flex; gap: 6px; }
+
+    .btn-primary {
+        background: #6366f1; color: #fff; border: none;
+        border-radius: 5px; padding: 4px 12px; font-size: 12px;
+        cursor: pointer; font-weight: 600;
+    }
+    .btn-primary:hover { background: #4f46e5; }
+
+    .btn-ghost {
+        background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;
+        border-radius: 5px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+    }
+
+    /* ── Horizontal splitter (inside right col) ──────── */
+    .h-splitter {
+        height: 5px;
+        background: #e2e8f0;
+        cursor: row-resize;
+        flex-shrink: 0;
+        transition: background 0.1s;
+        position: relative;
+        z-index: 10;
+    }
+
+    .h-splitter::after {
+        content: '';
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        height: 1px; width: 32px;
+        background: #cbd5e1; border-radius: 2px;
+    }
+
+    .h-splitter:hover { background: #c7d2fe; }
+    .h-splitter.dragging { background: #6366f1; }
+
+    /* ── Widget preview pane (bottom right) ──────────── */
+    .widget-preview-pane {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-height: 80px;
+    }
+
+    .widget-preview-content {
+        flex: 1; overflow-y: auto;
+        padding: 14px 16px;
+    }
+
+    .preview-placeholder {
+        color: #94a3b8; font-size: 13px; padding-top: 10px;
+    }
+
+    .preview-name { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
+
+    .preview-desc { font-size: 12px; color: #64748b; line-height: 1.5; margin-bottom: 12px; }
+
+    .preview-css-label {
+        font-size: 11px; font-weight: 600; text-transform: uppercase;
+        color: #94a3b8; margin-bottom: 6px;
+    }
+
+    .css-block {
+        background: #1e293b; color: #94a3b8;
+        border-radius: 6px; padding: 10px 12px;
+        font-size: 11px; font-family: monospace;
+        white-space: pre-wrap; word-break: break-all;
+        overflow-y: auto; max-height: 220px;
+        line-height: 1.5;
+    }
+
+    /* Simple CSS syntax tint */
+    .css-key { color: #7dd3fc; }
+    .css-val { color: #86efac; }
+    .css-sel { color: #fbbf24; }
+    .css-brace { color: #f8fafc; }
+
+    .preview-actions { display: flex; gap: 6px; margin-top: 12px; }
+
+    .btn-xs {
+        font-size: 11px; padding: 3px 10px; border-radius: 4px;
+        border: 1px solid #e2e8f0; background: #fff;
+        cursor: pointer; color: #374151;
+    }
+    .btn-xs:hover { background: #f3f4f6; }
+    .btn-xs-danger { border-color: #fca5a5; color: #dc2626; }
+    .btn-xs-danger:hover { background: #fff1f2; }
+
+    /* Edit form inside preview pane */
+    .widget-edit-form {
+        display: none;
+        margin-top: 12px; padding: 12px;
+        background: #f0f9ff; border: 1px solid #bae6fd;
+        border-radius: 6px;
+    }
+    .widget-edit-form.open { display: block; }
+    .widget-edit-form input,
+    .widget-edit-form textarea {
+        width: 100%; box-sizing: border-box;
+        border: 1px solid #cbd5e1; border-radius: 4px;
+        padding: 5px 8px; font-size: 12px; margin-bottom: 5px;
+        font-family: inherit; resize: vertical;
+    }
+    .widget-edit-form textarea { min-height: 50px; }
+    .widget-edit-form textarea.mono { font-family: monospace; min-height: 70px; }
+
+    .btn-regen {
+        font-size: 11px; background: #fff7ed; color: #c2410c;
+        border: 1px solid #fed7aa; border-radius: 5px;
+        padding: 3px 8px; cursor: pointer;
+    }
+    .btn-regen:hover { background: #ffedd5; }
+
+    /* Loading / empty states */
+    .no-blocks {
+        display: flex; align-items: center; justify-content: center;
+        height: 100%; color: #94a3b8; font-size: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-layout">
+    <div class="top-bar">
+        <h2>Блоки / Виджеты</h2>
+        <select id="projectSelect" class="project-select" onchange="onProjectChange()">
+            <option value="">— выберите проект —</option>
+        </select>
+        <div class="stats-chips">
+            <div class="stat-chip approved">Одобрено: <b id="statApproved">0</b>/<b id="statRequired">0</b></div>
+            <div class="stat-chip">Виджетов: <b id="statWidgets">0</b></div>
+        </div>
+        <span class="readiness-msg" id="readinessMsg"></span>
+        <button class="btn-run-proto" id="btnRunProto" disabled onclick="runPrototype()">▶ Запустить прототип</button>
+    </div>
+
+    <div class="grid-layout" id="gridLayout">
+
+        <!-- ── Left column: Block list ───────────────── -->
+        <div class="col-left" id="colLeft">
+            <div class="panel-header">Блоки проекта</div>
+            <div class="block-list" id="blockList">
+                <div style="padding:30px;text-align:center;color:#94a3b8;font-size:13px">Выберите проект</div>
+            </div>
+        </div>
+
+        <!-- ── Vertical splitter ─────────────────────── -->
+        <div class="v-splitter" id="vSplitter" title="Перетащите для изменения ширины колонок"></div>
+
+        <!-- ── Right column: Widgets ─────────────────── -->
+        <div class="col-right" id="colRight">
+
+            <!-- Block info bar -->
+            <div class="block-info-bar" id="blockInfoBar">
+                <div class="block-info-placeholder">Выберите блок из списка слева</div>
+            </div>
+
+            <!-- Widget names pane (top) -->
+            <div class="widget-names-pane" id="widgetNamesPane">
+                <div class="pane-header">
+                    <span id="widgetPaneTitle">Виджеты</span>
+                    <button class="btn-pane-add" id="btnAddWidget" onclick="toggleAddWidgetForm()" style="display:none">+ Добавить</button>
+                </div>
+                <div class="widget-names-list" id="widgetNamesList">
+                    <div class="widget-names-empty">Выберите блок</div>
+                </div>
+                <div class="add-widget-form" id="addWidgetForm">
+                    <input type="text" id="wname" placeholder="Название виджета (напр. «HeaderDark»)">
+                    <textarea id="wdesc" placeholder="Описание стиля (необязательно)"></textarea>
+                    <textarea class="mono" id="wcss" placeholder="CSS (необязательно)"></textarea>
+                    <div class="form-row">
+                        <button class="btn-primary" onclick="saveNewWidget()">Сохранить</button>
+                        <button class="btn-ghost" onclick="toggleAddWidgetForm()">Отмена</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Horizontal splitter -->
+            <div class="h-splitter" id="hSplitter" title="Перетащите для изменения высоты панелей"></div>
+
+            <!-- Widget preview pane (bottom) -->
+            <div class="widget-preview-pane" id="widgetPreviewPane">
+                <div class="pane-header">
+                    <span>Превью</span>
+                </div>
+                <div class="widget-preview-content" id="widgetPreviewContent">
+                    <div class="preview-placeholder">Выберите виджет</div>
+                </div>
+            </div>
+
+        </div><!-- /.col-right -->
+    </div><!-- /.grid-layout -->
+</div>
+
+<script>
+let _blocks = [];
+let _wireframePages = [];
+let _selectedBlockId = null;
+let _selectedWidgetId = null;
+
+async function apiFetch(url, opts = {}) {
+    const r = await fetch(url, {
+        credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json', ...(opts.headers || {})},
+        ...opts
+    });
+    return r.json();
+}
+
+/* ─── Project init ─────────────────────────────────────── */
+async function initProjects() {
+    const data = await apiFetch('/planning/project/list');
+    const projects = data.result || [];
+    const sel = document.getElementById('projectSelect');
+    projects.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `#${p.id} ${p.title || (p.idea || '').slice(0, 60)}`;
+        sel.appendChild(opt);
+    });
+    const pid = new URLSearchParams(location.search).get('project_id') || (projects[0] ? String(projects[0].id) : '');
+    if (pid) { sel.value = pid; await loadAll(); }
+}
+
+async function onProjectChange() {
+    const pid = document.getElementById('projectSelect').value;
+    history.replaceState({}, '', pid ? `?project_id=${pid}` : location.pathname);
+    _blocks = []; _wireframePages = [];
+    _selectedBlockId = null; _selectedWidgetId = null;
+    resetRightPanel();
+    if (pid) await loadAll();
+    else {
+        document.getElementById('blockList').innerHTML = '<div style="padding:30px;text-align:center;color:#94a3b8;font-size:13px">Выберите проект</div>';
+        updateStats();
+    }
+}
+
+async function loadAll() {
+    const pid = document.getElementById('projectSelect').value;
+    if (!pid) return;
+
+    document.getElementById('blockList').innerHTML = '<div style="padding:30px;text-align:center;color:#94a3b8">Загрузка…</div>';
+
+    const [blocksData, pagesData] = await Promise.all([
+        apiFetch(`/planning/project/${pid}/blocks`),
+        apiFetch(`/planning/project/${pid}/wireframe-pages`),
+    ]);
+
+    _blocks = blocksData.result || [];
+    _wireframePages = pagesData.result || [];
+
+    renderBlockList();
+    updateStats();
+    await checkReadiness();
+}
+
+function resetRightPanel() {
+    document.getElementById('blockInfoBar').innerHTML = '<div class="block-info-placeholder">Выберите блок из списка слева</div>';
+    document.getElementById('widgetPaneTitle').textContent = 'Виджеты';
+    document.getElementById('btnAddWidget').style.display = 'none';
+    document.getElementById('widgetNamesList').innerHTML = '<div class="widget-names-empty">Выберите блок</div>';
+    document.getElementById('widgetPreviewContent').innerHTML = '<div class="preview-placeholder">Выберите виджет</div>';
+    document.getElementById('addWidgetForm').classList.remove('open');
+}
+
+/* ─── Block list ───────────────────────────────────────── */
+function requiredBlockIds() {
+    const ids = new Set();
+    _wireframePages.forEach(p => (p.blocks || []).forEach(b => ids.add(b.block_id)));
+    return ids;
+}
+
+function pagesUsingBlock(blockId) {
+    return _wireframePages.filter(p => (p.blocks || []).some(b => b.block_id === blockId));
+}
+
+function renderBlockList() {
+    const required = requiredBlockIds();
+    const list = document.getElementById('blockList');
+
+    if (!_blocks.length) {
+        list.innerHTML = '<div class="no-blocks" style="padding:30px;text-align:center;color:#94a3b8;font-size:13px">Блоки не сгенерированы</div>';
+        return;
+    }
+
+    list.innerHTML = '';
+    _blocks.forEach(block => {
+        const isRequired = required.has(block.id);
+        const div = document.createElement('div');
+        div.className = `block-item${isRequired ? ' required-block' : ' not-required'}${_selectedBlockId === block.id ? ' active' : ''}`;
+        div.dataset.blockId = block.id;
+        div.onclick = () => selectBlock(block.id);
+
+        div.innerHTML = `
+            <input type="checkbox" class="block-approve-cb" ${block.approved ? 'checked' : ''}
+                   onclick="event.stopPropagation(); toggleApprove(${block.id}, this.checked)"
+                   title="${block.approved ? 'Снять одобрение' : 'Одобрить блок'}">
+            <span class="block-item-name">${esc(block.name)}</span>
+            <div class="block-item-meta">
+                ${(block.widgets || []).length ? `<span class="widget-count">${block.widgets.length}</span>` : ''}
+                ${block.approved ? `<span class="approved-badge">✓</span>` : ''}
+            </div>`;
+        list.appendChild(div);
+    });
+}
+
+/* ─── Block selection ──────────────────────────────────── */
+function selectBlock(blockId) {
+    _selectedBlockId = blockId;
+    _selectedWidgetId = null;
+
+    document.querySelectorAll('.block-item').forEach(el =>
+        el.classList.toggle('active', parseInt(el.dataset.blockId) === blockId)
+    );
+
+    const block = _blocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    renderBlockInfoBar(block);
+    renderWidgetNames(block);
+    document.getElementById('widgetPreviewContent').innerHTML = '<div class="preview-placeholder">Выберите виджет</div>';
+    document.getElementById('addWidgetForm').classList.remove('open');
+    document.getElementById('btnAddWidget').style.display = '';
+}
+
+/* ─── Block info bar ───────────────────────────────────── */
+function renderBlockInfoBar(block) {
+    const pages = pagesUsingBlock(block.id);
+    const approved = block.approved;
+
+    const pagesBtn = pages.length
+        ? `<button class="pages-toggle" onclick="togglePagesPopup(${block.id})">📄 ${pages.length} стр.</button>`
+        : '';
+
+    const chips = pages.map(p => {
+        const pb = (p.blocks || []).find(b => b.block_id === block.id);
+        const wname = pb?.widget_name ? ` <span class="widget-label">[${esc(pb.widget_name)}]</span>` : '';
+        return `<span class="page-chip">${esc(p.name)}${wname}</span>`;
+    }).join('');
+
+    document.getElementById('blockInfoBar').innerHTML = `
+        <div class="block-info-row">
+            <span class="block-info-name">${esc(block.name)}</span>
+            <div class="block-approve-toggle${approved ? '' : ' not-approved'}" id="approveToggle-${block.id}">
+                <span class="approve-label${approved ? '' : ' not-approved'}">${approved ? '✓ Одобрен' : '⚠ Не одобрен'}</span>
+                ${approved
+                    ? `<button class="btn-unapprove" onclick="toggleApprove(${block.id}, false)">Снять</button>`
+                    : `<button class="btn-approve" onclick="toggleApprove(${block.id}, true)">✓ Одобрить</button>`}
+            </div>
+            ${pagesBtn}
+            <button class="btn-regen" onclick="regenBlock(${block.id})">↺ AI</button>
+        </div>
+        ${block.description ? `<div class="block-info-desc" onclick="editBlockDescription(${block.id})" title="Редактировать">${esc(block.description)}</div>` : `<div class="block-info-desc" style="color:#cbd5e1;font-style:italic" onclick="editBlockDescription(${block.id})">Нет описания</div>`}
+        ${pages.length ? `<div class="pages-popup" id="pagesPopup-${block.id}"><div class="used-in-title" style="font-size:11px;font-weight:600;text-transform:uppercase;color:#0284c7;">Страницы</div><div class="page-chips">${chips}</div></div>` : ''}
+    `;
+}
+
+function togglePagesPopup(blockId) {
+    const el = document.getElementById(`pagesPopup-${blockId}`);
+    if (el) el.classList.toggle('open');
+}
+
+/* ─── Widget names list ────────────────────────────────── */
+function renderWidgetNames(block) {
+    const list = document.getElementById('widgetNamesList');
+    const title = document.getElementById('widgetPaneTitle');
+    const widgets = block.widgets || [];
+
+    title.textContent = `Виджеты (${widgets.length})`;
+
+    if (!widgets.length) {
+        list.innerHTML = '<div class="widget-names-empty">Виджеты не созданы — нажмите "+ Добавить"</div>';
+        return;
+    }
+
+    list.innerHTML = '';
+    widgets.forEach(w => {
+        const div = document.createElement('div');
+        div.className = `widget-name-item${_selectedWidgetId === w.id ? ' active' : ''}`;
+        div.dataset.widgetId = w.id;
+        div.onclick = () => selectWidget(w.id);
+        div.innerHTML = `
+            <span class="wni-name">${esc(w.name)}</span>
+            ${w.css ? '<span class="wni-css-dot" title="Есть CSS"></span>' : ''}`;
+        list.appendChild(div);
+    });
+}
+
+/* ─── Widget selection & preview ───────────────────────── */
+function selectWidget(widgetId) {
+    _selectedWidgetId = widgetId;
+
+    document.querySelectorAll('.widget-name-item').forEach(el =>
+        el.classList.toggle('active', parseInt(el.dataset.widgetId) === widgetId)
+    );
+
+    const block = _blocks.find(b => b.id === _selectedBlockId);
+    if (!block) return;
+    const widget = (block.widgets || []).find(w => w.id === widgetId);
+    if (!widget) return;
+
+    renderWidgetPreview(widget, block.id);
+}
+
+function renderWidgetPreview(w, blockId) {
+    const cssHtml = w.css
+        ? `<div class="preview-css-label">CSS</div><div class="css-block">${highlightCss(esc(w.css))}</div>`
+        : '<div style="font-size:12px;color:#94a3b8;font-style:italic;">CSS не задан</div>';
+
+    document.getElementById('widgetPreviewContent').innerHTML = `
+        <div class="preview-name">${esc(w.name)}</div>
+        ${w.description ? `<div class="preview-desc">${esc(w.description)}</div>` : ''}
+        ${cssHtml}
+        <div class="preview-actions">
+            <button class="btn-xs" onclick="openEditWidgetForm(${w.id})">✏️ Изменить</button>
+            <button class="btn-xs btn-xs-danger" onclick="deleteWidget(${w.id}, ${blockId})">✕ Удалить</button>
+        </div>
+        <div class="widget-edit-form" id="wedit-${w.id}">
+            <input type="text" id="wename-${w.id}" value="${esc(w.name)}" placeholder="Название">
+            <textarea id="wedesc-${w.id}" placeholder="Описание стиля">${esc(w.description || '')}</textarea>
+            <textarea class="mono" id="wecss-${w.id}" placeholder="CSS">${esc(w.css || '')}</textarea>
+            <div class="form-row">
+                <button class="btn-primary" onclick="saveWidgetEdit(${w.id}, ${blockId})">Сохранить</button>
+                <button class="btn-ghost" onclick="closeEditWidgetForm(${w.id})">Отмена</button>
+            </div>
+        </div>`;
+}
+
+function openEditWidgetForm(wid) {
+    document.getElementById(`wedit-${wid}`)?.classList.add('open');
+}
+
+function closeEditWidgetForm(wid) {
+    document.getElementById(`wedit-${wid}`)?.classList.remove('open');
+}
+
+/* Minimal CSS syntax highlight */
+function highlightCss(css) {
+    return css
+        .replace(/([.#]?[\w-]+)\s*\{/g, '<span class="css-sel">$1</span> <span class="css-brace">{</span>')
+        .replace(/\}/g, '<span class="css-brace">}</span>')
+        .replace(/([\w-]+)\s*:/g, '<span class="css-key">$1</span>:')
+        .replace(/:\s*([^;\n<]+)/g, ': <span class="css-val">$1</span>');
+}
+
+/* ─── Widget CRUD ──────────────────────────────────────── */
+function toggleAddWidgetForm() {
+    document.getElementById('addWidgetForm').classList.toggle('open');
+    if (document.getElementById('addWidgetForm').classList.contains('open')) {
+        document.getElementById('wname').focus();
+    }
+}
+
+async function saveNewWidget() {
+    const name = (document.getElementById('wname')?.value || '').trim();
+    if (!name) { alert('Укажите название виджета'); return; }
+    const description = (document.getElementById('wdesc')?.value || '').trim() || null;
+    const css = (document.getElementById('wcss')?.value || '').trim() || null;
+
+    const data = await apiFetch(`/planning/block/${_selectedBlockId}/widget`, {
+        method: 'POST',
+        body: JSON.stringify({name, description, css}),
+    });
+    if (data.error) { alert(data.error); return; }
+
+    const block = _blocks.find(b => b.id === _selectedBlockId);
+    if (block) {
+        block.widgets = block.widgets || [];
+        block.widgets.push(data.result);
+        renderWidgetNames(block);
+        updateBlockWidgetBadge(block);
+        updateStats();
+    }
+    document.getElementById('wname').value = '';
+    document.getElementById('wdesc').value = '';
+    document.getElementById('wcss').value = '';
+    document.getElementById('addWidgetForm').classList.remove('open');
+}
+
+async function saveWidgetEdit(widgetId, blockId) {
+    const name = document.getElementById(`wename-${widgetId}`)?.value.trim();
+    const description = document.getElementById(`wedesc-${widgetId}`)?.value.trim() || null;
+    const css = document.getElementById(`wecss-${widgetId}`)?.value.trim() || null;
+    if (!name) { alert('Укажите название'); return; }
+
+    await apiFetch(`/planning/widget/${widgetId}`, {
+        method: 'PUT',
+        body: JSON.stringify({name, description, css}),
+    });
+
+    const block = _blocks.find(b => b.id === blockId);
+    if (block) {
+        const w = (block.widgets || []).find(w => w.id === widgetId);
+        if (w) { w.name = name; w.description = description; w.css = css; }
+        renderWidgetNames(block);
+        renderWidgetPreview(w, blockId);
+    }
+}
+
+async function deleteWidget(widgetId, blockId) {
+    if (!confirm('Удалить виджет?')) return;
+    await apiFetch(`/planning/widget/${widgetId}`, {method: 'DELETE'});
+
+    const block = _blocks.find(b => b.id === blockId);
+    if (block) {
+        block.widgets = (block.widgets || []).filter(w => w.id !== widgetId);
+        renderWidgetNames(block);
+        updateBlockWidgetBadge(block);
+        updateStats();
+    }
+    document.getElementById('widgetPreviewContent').innerHTML = '<div class="preview-placeholder">Выберите виджет</div>';
+    _selectedWidgetId = null;
+}
+
+function updateBlockWidgetBadge(block) {
+    const item = document.querySelector(`.block-item[data-block-id="${block.id}"]`);
+    if (!item) return;
+    let badge = item.querySelector('.widget-count');
+    if (block.widgets.length) {
+        if (!badge) item.querySelector('.block-item-meta').insertAdjacentHTML('afterbegin', `<span class="widget-count">${block.widgets.length}</span>`);
+        else badge.textContent = block.widgets.length;
+    } else if (badge) {
+        badge.remove();
+    }
+}
+
+/* ─── Approve / Regen ──────────────────────────────────── */
+async function toggleApprove(blockId, approved) {
+    await apiFetch(`/planning/block/${blockId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({approved}),
+    });
+
+    const block = _blocks.find(b => b.id === blockId);
+    if (block) block.approved = approved;
+
+    const item = document.querySelector(`.block-item[data-block-id="${blockId}"]`);
+    if (item) {
+        const cb = item.querySelector('.block-approve-cb');
+        if (cb) cb.checked = approved;
+        const badge = item.querySelector('.approved-badge');
+        if (approved && !badge) item.querySelector('.block-item-meta').insertAdjacentHTML('beforeend', '<span class="approved-badge">✓</span>');
+        else if (!approved && badge) badge.remove();
+    }
+
+    const toggleEl = document.getElementById(`approveToggle-${blockId}`);
+    if (toggleEl) {
+        toggleEl.className = `block-approve-toggle${approved ? '' : ' not-approved'}`;
+        toggleEl.innerHTML = `
+            <span class="approve-label${approved ? '' : ' not-approved'}">${approved ? '✓ Одобрен' : '⚠ Не одобрен'}</span>
+            ${approved
+                ? `<button class="btn-unapprove" onclick="toggleApprove(${blockId}, false)">Снять</button>`
+                : `<button class="btn-approve" onclick="toggleApprove(${blockId}, true)">✓ Одобрить</button>`}`;
+    }
+
+    updateStats();
+    await checkReadiness();
+}
+
+async function regenBlock(blockId) {
+    const block = _blocks.find(b => b.id === blockId);
+    if (!confirm(`Пересоздать блок «${block?.name || blockId}» через AI?`)) return;
+
+    const btn = document.querySelector(`[onclick="regenBlock(${blockId})"]`);
+    if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+
+    const data = await apiFetch(`/planning/block/${blockId}/regenerate`, {method: 'POST'});
+    if (data.error) {
+        alert('Ошибка: ' + data.error);
+        if (btn) { btn.disabled = false; btn.textContent = '↺ AI'; }
+        return;
+    }
+
+    if (btn) btn.textContent = '✓';
+    setTimeout(() => loadAll(), 3000);
+}
+
+async function editBlockDescription(blockId) {
+    const block = _blocks.find(b => b.id === blockId);
+    if (!block) return;
+    const newDesc = prompt('Описание блока:', block.description || '');
+    if (newDesc === null) return;
+    await apiFetch(`/planning/block/${blockId}`, {
+        method: 'PUT',
+        body: JSON.stringify({description: newDesc}),
+    });
+    block.description = newDesc;
+    if (_selectedBlockId === blockId) renderBlockInfoBar(block);
+}
+
+/* ─── Stats / readiness ────────────────────────────────── */
+function updateStats() {
+    const required = requiredBlockIds();
+    const requiredBlocks = _blocks.filter(b => required.has(b.id));
+    const approvedCount = requiredBlocks.filter(b => b.approved).length;
+    const totalWidgets = _blocks.reduce((s, b) => s + (b.widgets?.length || 0), 0);
+    document.getElementById('statApproved').textContent = approvedCount;
+    document.getElementById('statRequired').textContent = requiredBlocks.length;
+    document.getElementById('statWidgets').textContent = totalWidgets;
+}
+
+async function checkReadiness() {
+    const pid = document.getElementById('projectSelect').value;
+    if (!pid) return;
+    const data = await apiFetch(`/planning/project/${pid}/prototype-readiness`);
+    const r = data.result || {};
+    const btn = document.getElementById('btnRunProto');
+    const msg = document.getElementById('readinessMsg');
+    btn.disabled = !r.ready;
+    if (r.ready) {
+        msg.style.display = 'none';
+    } else if (r.total_required === 0) {
+        msg.textContent = 'Нет блоков из вайрфреймов';
+        msg.style.display = '';
+    } else {
+        msg.textContent = `Не одобрено: ${(r.missing || []).map(b => b.name).slice(0, 3).join(', ')}${(r.missing||[]).length > 3 ? ` +${r.missing.length - 3}` : ''}`;
+        msg.style.display = '';
+    }
+}
+
+async function runPrototype() {
+    const pid = document.getElementById('projectSelect').value;
+    if (!pid) return;
+    if (!confirm('Все блоки одобрены. Запустить генерацию прототипа?')) return;
+    document.getElementById('btnRunProto').disabled = true;
+    document.getElementById('btnRunProto').textContent = '⏳ Запуск…';
+    await apiFetch(`/planning/project/${pid}/phase/prototype/approve`, {method: 'POST'});
+    window.location.href = `/admin/planning?project_id=${pid}`;
+}
+
+/* ─── Resizable splitters ──────────────────────────────── */
+(function initSplitters() {
+    const colLeft    = document.getElementById('colLeft');
+    const colRight   = document.getElementById('colRight');
+    const vSplitter  = document.getElementById('vSplitter');
+    const widgetNamesPane  = document.getElementById('widgetNamesPane');
+    const hSplitter  = document.getElementById('hSplitter');
+
+    /* Vertical splitter */
+    let vDragging = false;
+    vSplitter.addEventListener('mousedown', e => {
+        vDragging = true;
+        vSplitter.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+        if (!vDragging) return;
+        const grid = document.getElementById('gridLayout');
+        const rect = grid.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const pct = Math.max(20, Math.min(80, (x / rect.width) * 100));
+        colLeft.style.width = pct + '%';
+    });
+    document.addEventListener('mouseup', () => {
+        if (!vDragging) return;
+        vDragging = false;
+        vSplitter.classList.remove('dragging');
+        document.body.style.cursor = '';
+    });
+
+    /* Horizontal splitter (inside right column) */
+    let hDragging = false;
+    hSplitter.addEventListener('mousedown', e => {
+        hDragging = true;
+        hSplitter.classList.add('dragging');
+        document.body.style.cursor = 'row-resize';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+        if (!hDragging) return;
+        const infoBar = document.getElementById('blockInfoBar');
+        const rightRect = colRight.getBoundingClientRect();
+        const infoH = infoBar.offsetHeight;
+        const paneH = rightRect.height - infoH - 5; /* 5 = splitter */
+        const y = e.clientY - rightRect.top - infoH;
+        const pct = Math.max(15, Math.min(80, (y / paneH) * 100));
+        widgetNamesPane.style.height = pct + '%';
+    });
+    document.addEventListener('mouseup', () => {
+        if (!hDragging) return;
+        hDragging = false;
+        hSplitter.classList.remove('dragging');
+        document.body.style.cursor = '';
+    });
+})();
+
+/* ─── Utils ─────────────────────────────────────────────── */
+function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+initProjects();
+</script>
+{% endblock %}

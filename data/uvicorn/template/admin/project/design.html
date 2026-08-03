@@ -1,0 +1,5421 @@
+{% extends "base.html" %}
+
+{% block title %}Дизайн{% endblock %}
+
+{% block head %}
+<style>
+    .design-layout {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        flex-direction: column;
+    }
+
+    #globalProjectSel {
+        width: 290px;
+        min-width: 220px;
+    }
+
+    /* ── Вкладки ── */
+    .page-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 2px solid #e2e8f0;
+        padding: 0 25px;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .page-tab {
+        padding: 10px 20px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #718096;
+        cursor: pointer;
+        border: none;
+        background: none;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        transition: color 0.15s, border-color 0.15s;
+    }
+
+    .page-tab.active {
+        color: #2c3e50;
+        border-bottom-color: #3498db;
+    }
+
+    .page-tab:hover:not(.active) {
+        color: #4a5568;
+    }
+
+    .tab-panel {
+        display: none;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .tab-panel.active {
+        display: flex;
+    }
+
+    /* ── UI-компоненты: 2-колонки ── */
+    .ui-comp-layout {
+        display: flex;
+        width: 100%;
+        height: 100%;
+    }
+
+    /* Левая колонка — список */
+    .ui-comp-list-col {
+        width: 280px;
+        min-width: 180px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .ui-comp-v-splitter {
+        width: 5px;
+        background: #e2e8f0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background .1s;
+        z-index: 10;
+    }
+
+    .ui-comp-v-splitter:hover, .ui-comp-v-splitter.dragging {
+        background: #6366f1;
+    }
+
+    .ui-comp-list-header {
+        padding: 12px 14px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        background: #fafafa;
+    }
+
+    .ui-comp-list-header h3 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 700;
+        color: #2c3e50;
+        flex: 1;
+    }
+
+    .ui-comp-count {
+        font-size: 11px;
+        color: #999;
+        background: #f0f0f0;
+        padding: 2px 7px;
+        border-radius: 10px;
+    }
+
+    .ui-comp-search {
+        padding: 8px 12px;
+        border-bottom: 1px solid #f0f0f0;
+        flex-shrink: 0;
+    }
+
+    .ui-comp-search input {
+        width: 100%;
+        padding: 6px 10px;
+        font-size: 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 5px;
+        outline: none;
+        box-sizing: border-box;
+    }
+
+    .ui-comp-search input:focus {
+        border-color: #3498db;
+    }
+
+    .ui-comp-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 6px 0;
+    }
+
+    .ui-comp-item {
+        padding: 8px 14px;
+        font-size: 13px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #2c3e50;
+        border-left: 3px solid transparent;
+        transition: background 0.1s;
+    }
+
+    .ui-comp-item:hover {
+        background: #f8fafc;
+    }
+
+    .ui-comp-item.active {
+        background: #ebf5fb;
+        border-left-color: #3498db;
+        font-weight: 600;
+        color: #1a6fa8;
+    }
+
+    .ui-comp-item .comp-tags {
+        font-size: 10px;
+        color: #aaa;
+        margin-left: auto;
+    }
+
+    .btn-add-comp {
+        margin: 10px 12px;
+        padding: 7px 12px;
+        font-size: 12px;
+        background: #3498db;
+        color: #fff;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        width: calc(100% - 24px);
+        font-weight: 600;
+    }
+
+    .btn-add-comp:hover {
+        background: #2980b9;
+    }
+
+    /* Правая колонка — форма редактирования */
+    .ui-comp-form-col {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .ui-comp-form-header {
+        padding: 14px 24px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #fafafa;
+        flex-shrink: 0;
+    }
+
+    .ui-comp-form-header h3 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        color: #2c3e50;
+        flex: 1;
+    }
+
+    .ui-comp-form-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 24px;
+    }
+
+    .form-group {
+        margin-bottom: 16px;
+    }
+
+    .form-group label {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        color: #718096;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+        letter-spacing: 0.05em;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+        width: 100%;
+        padding: 8px 11px;
+        font-size: 13px;
+        border: 1px solid #e2e8f0;
+        border-radius: 5px;
+        outline: none;
+        box-sizing: border-box;
+        font-family: inherit;
+        color: #2c3e50;
+        background: #fff;
+        transition: border-color 0.15s;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+        border-color: #3498db;
+    }
+
+    .form-group textarea {
+        resize: vertical;
+        min-height: 70px;
+    }
+
+    .form-group textarea.tall {
+        min-height: 110px;
+    }
+
+    .form-group .hint {
+        font-size: 11px;
+        color: #aaa;
+        margin-top: 3px;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+
+    .ui-comp-form-footer {
+        padding: 12px 24px;
+        border-top: 1px solid #eee;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #fafafa;
+        flex-shrink: 0;
+    }
+
+    .btn-save {
+        padding: 8px 20px;
+        background: #27ae60;
+        color: #fff;
+        border: none;
+        border-radius: 5px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .btn-save:hover {
+        background: #219a52;
+    }
+
+    .btn-delete {
+        padding: 8px 16px;
+        background: #fff;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        border-radius: 5px;
+        font-size: 13px;
+        cursor: pointer;
+        margin-left: auto;
+    }
+
+    .btn-delete:hover {
+        background: #fdf0ef;
+    }
+
+    .status-msg {
+        font-size: 12px;
+        color: #27ae60;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+
+    .status-msg.visible {
+        opacity: 1;
+    }
+
+    .status-msg.error {
+        color: #e74c3c;
+    }
+
+    .empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #aaa;
+        gap: 8px;
+        font-size: 14px;
+    }
+
+    .empty-state .icon {
+        font-size: 40px;
+    }
+
+    /* ── Блоки / Виджеты общее ── */
+    .tab-content-wrap {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .tab-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 20px;
+        border-bottom: 1px solid #eee;
+        background: #fafafa;
+        flex-shrink: 0;
+    }
+
+    .tab-toolbar select {
+        padding: 6px 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 13px;
+        background: #fff;
+        min-width: 260px;
+    }
+
+    .tab-stats {
+        display: flex;
+        gap: 8px;
+    }
+
+    @keyframes proto-pulse {
+        0%, 100% {
+            opacity: 1
+        }
+        50% {
+            opacity: .35
+        }
+    }
+
+    .proto-pulse {
+        animation: proto-pulse 1.2s ease-in-out infinite;
+    }
+
+    .btn-primary, .proto-btn-stop {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
+    }
+
+    .btn-primary {
+        background: #3b82f6;
+        color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background: #2563eb;
+    }
+
+    .btn-primary:disabled {
+        background: #93c5fd;
+        cursor: not-allowed;
+    }
+
+    .proto-btn-stop {
+        background: #ef4444;
+        color: #fff;
+    }
+
+    .proto-btn-stop:hover {
+        background: #dc2626;
+    }
+
+    .proto-state-label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        cursor: pointer;
+        font-size: 12px;
+        color: #334155;
+        user-select: none;
+        white-space: nowrap;
+        padding: 2px 0;
+    }
+
+    .proto-state-label:hover {
+        color: #1e293b;
+    }
+
+    .proto-state-cb {
+        accent-color: #23ba5a;
+        width: 14px;
+        height: 14px;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .tab-stat {
+        background: #f0f4f8;
+        border-radius: 5px;
+        padding: 4px 10px;
+        font-size: 11px;
+        color: #5a6878;
+    }
+
+    .tab-stat b {
+        color: #2c3e50;
+    }
+
+    /* ── Блоки: grid ── */
+    .blocks-scroll {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 20px;
+    }
+
+    .blocks-grid-inner {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 14px;
+    }
+
+    .block-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
+    }
+
+    .block-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 5px;
+    }
+
+    .block-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .block-num {
+        font-size: 11px;
+        color: #94a3b8;
+        background: #f1f5f9;
+        border-radius: 4px;
+        padding: 1px 6px;
+    }
+
+    .block-desc {
+        font-size: 12px;
+        color: #64748b;
+        margin-bottom: 8px;
+        line-height: 1.4;
+    }
+
+    .mini-label {
+        font-size: 10px;
+        color: #94a3b8;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        margin-bottom: 4px;
+    }
+
+    .comp-chips {
+        margin-bottom: 8px;
+    }
+
+    .comp-chip {
+        display: inline-block;
+        background: #e0f2fe;
+        color: #0369a1;
+        border-radius: 3px;
+        padding: 1px 6px;
+        font-size: 10px;
+        margin: 1px 2px 1px 0;
+    }
+
+    .states-list {
+        border-top: 1px solid #f1f5f9;
+        padding-top: 8px;
+        margin-top: 6px;
+    }
+
+    .state-pill {
+        display: inline-block;
+        background: #fef3c7;
+        color: #92400e;
+        border-radius: 3px;
+        padding: 1px 6px;
+        font-size: 10px;
+        margin: 1px 2px 1px 0;
+        font-weight: 600;
+    }
+
+    /* ── Виджеты: 2-колонки ── */
+    .widgets-layout {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .widgets-sidebar {
+        width: 260px;
+        min-width: 200px;
+        flex-shrink: 0;
+        border-right: 1px solid #eee;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #fafafa;
+    }
+
+    .widgets-sidebar-header {
+        padding: 10px 14px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+
+    .widgets-sidebar-header h3 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 700;
+        color: #2c3e50;
+        flex: 1;
+    }
+
+    .widgets-block-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 0;
+    }
+
+    .block-list-item {
+        padding: 8px 14px;
+        font-size: 12px;
+        cursor: pointer;
+        color: #374151;
+        border-left: 3px solid transparent;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        transition: background .1s;
+    }
+
+    .block-list-item:hover {
+        background: #f1f5f9;
+    }
+
+    .block-list-item.active {
+        background: #ede9fe;
+        border-left-color: #7c3aed;
+        font-weight: 600;
+        color: #5b21b6;
+    }
+
+    .block-widget-count {
+        font-size: 10px;
+        background: #e2e8f0;
+        color: #64748b;
+        border-radius: 10px;
+        padding: 1px 6px;
+        flex-shrink: 0;
+    }
+
+    .block-list-item.active .block-widget-count {
+        background: #ddd6fe;
+        color: #6d28d9;
+    }
+
+    /* Правая панель виджетов */
+    .widgets-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .widgets-main-header {
+        padding: 12px 18px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+        background: #fafafa;
+    }
+
+    .widgets-main-header h3 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        color: #2c3e50;
+        flex: 1;
+    }
+
+    .btn-add-widget {
+        padding: 6px 14px;
+        background: #ede9fe;
+        color: #6d28d9;
+        border: 1px solid #ddd6fe;
+        border-radius: 5px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .btn-add-widget:hover {
+        background: #ddd6fe;
+    }
+
+    .widgets-scroll {
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .widget-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+    }
+
+    .widget-card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+    }
+
+    .widget-card-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #1e293b;
+        flex: 1;
+    }
+
+    .widget-card-desc {
+        font-size: 12px;
+        color: #64748b;
+        margin-bottom: 8px;
+        line-height: 1.4;
+    }
+
+    .widget-css-wrap {
+        margin-top: 6px;
+    }
+
+    .btn-toggle-css {
+        font-size: 11px;
+        color: #6366f1;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+        text-decoration: underline;
+    }
+
+    .css-code {
+        display: none;
+        margin-top: 6px;
+        background: #1e293b;
+        color: #94a3b8;
+        border-radius: 5px;
+        padding: 10px 12px;
+        font-size: 11px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .widget-card-actions {
+        display: flex;
+        gap: 6px;
+    }
+
+    .btn-icon {
+        font-size: 11px;
+        padding: 3px 9px;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        color: #374151;
+    }
+
+    .btn-icon:hover {
+        background: #f8fafc;
+    }
+
+    .btn-icon.danger {
+        border-color: #fca5a5;
+        color: #dc2626;
+    }
+
+    .btn-icon.danger:hover {
+        background: #fff1f2;
+    }
+
+    /* Форма нового виджета */
+    .widget-new-form {
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 8px;
+        padding: 14px;
+    }
+
+    .widget-new-form input,
+    .widget-new-form textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        padding: 6px 9px;
+        font-size: 12px;
+        margin-bottom: 8px;
+        font-family: inherit;
+        resize: vertical;
+    }
+
+    .widget-new-form textarea {
+        min-height: 60px;
+    }
+
+    .widget-new-form textarea.mono {
+        font-family: monospace;
+        min-height: 80px;
+    }
+
+    .widget-form-btns {
+        display: flex;
+        gap: 8px;
+    }
+
+    .btn-save-widget {
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .btn-save-widget:hover {
+        background: #4f46e5;
+    }
+
+    .btn-cancel-widget {
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .no-widgets-msg, .no-blocks-msg {
+        color: #94a3b8;
+        font-size: 13px;
+        text-align: center;
+        padding: 40px 20px;
+    }
+
+    /* ── Страницы: wireframe builder ── */
+    .pages-layout {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .pages-top-row {
+        display: flex;
+        height: 55%;
+        min-height: 160px;
+        flex-shrink: 0;
+        overflow: hidden;
+    }
+
+    .pages-h-splitter {
+        height: 2px;
+        background: #e2e8f0;
+        cursor: row-resize;
+        flex-shrink: 0;
+        transition: background .15s;
+        border-top: 1px solid #cbd5e1;
+        border-bottom: 1px solid #cbd5e1;
+    }
+
+    .pages-h-splitter:hover, .pages-h-splitter.active {
+        background: #818cf8;
+    }
+
+    .pages-preview-row {
+        flex: 1;
+        min-height: 80px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .pages-preview-header {
+        padding: 6px 14px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #94a3b8;
+        border-top: 1px solid #e2e8f0;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .pages-preview-body {
+        flex: 1;
+        overflow: hidden;
+        background: #f1f5f9;
+        position: relative;
+    }
+
+    .pages-preview-body iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
+        background: #fff;
+    }
+
+    .pages-preview-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #94a3b8;
+        font-size: 13px;
+    }
+
+    .pages-tree-col {
+        width: 280px;
+        min-width: 140px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        background: #f8fafc;
+    }
+
+    .pages-v-splitter {
+        width: 3px;
+        background: #e2e8f0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background .1s;
+        z-index: 10;
+    }
+
+    .pages-v-splitter:hover, .pages-v-splitter.dragging {
+        background: #6366f1;
+    }
+
+    .pages-tree-header {
+        padding: 10px 14px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #94a3b8;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .pages-tree-scroll {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .page-tree-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 14px;
+        cursor: pointer;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 12px;
+        color: #334155;
+        transition: background 0.1s;
+    }
+
+    .page-tree-item:hover {
+        background: #f0f4ff;
+    }
+
+    .page-tree-item.active {
+        background: #ede9fe;
+        color: #6d28d9;
+        font-weight: 600;
+    }
+
+    .page-tree-item.child {
+        padding-left: 28px;
+        color: #64748b;
+    }
+
+    .page-tree-item .ptype-badge {
+        font-size: 9px;
+        background: #e0f2fe;
+        color: #0284c7;
+        border-radius: 3px;
+        padding: 1px 5px;
+        margin-left: auto;
+        flex-shrink: 0;
+    }
+
+    .page-tree-item .block-cnt {
+        font-size: 10px;
+        background: #ddd6fe;
+        color: #6d28d9;
+        border-radius: 10px;
+        padding: 1px 6px;
+        flex-shrink: 0;
+    }
+
+    /* Wireframe editor (right panel) */
+    .pages-editor {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .pages-editor-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 20px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .pages-editor-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #1e293b;
+        flex: 1;
+    }
+
+
+    .wf-status {
+        font-size: 12px;
+        color: #16a34a;
+    }
+
+    .pages-editor-body {
+        flex: 1;
+        display: flex;
+        gap: 0;
+        overflow: hidden;
+    }
+
+    /* Block library (right sidebar) */
+    .block-library {
+        width: 220px;
+        min-width: 140px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        background: #f8fafc;
+    }
+
+    .block-library-header {
+        padding: 10px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #94a3b8;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+    }
+
+    .block-library-search {
+        padding: 8px 10px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .block-library-search input {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+
+    .block-library-list {
+        flex: 0 0 auto;
+        max-height: 260px;
+        overflow-y: auto;
+    }
+
+    .lib-block-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 12px;
+        font-size: 12px;
+        color: #334155;
+        border-bottom: 1px solid #f1f5f9;
+        cursor: grab;
+        user-select: none;
+        transition: background 0.1s;
+    }
+
+    .lib-block-item:hover {
+        background: #ede9fe;
+    }
+
+    .lib-block-item .drag-handle {
+        color: #c4b5fd;
+        font-size: 14px;
+    }
+
+    .lib-block-item.active {
+        background: #ede9fe;
+    }
+
+    .lib-block-item.active span {
+        color: #6d28d9;
+        font-weight: 600;
+    }
+
+    .lib-section-label {
+        padding: 5px 12px 4px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #94a3b8;
+        background: #f0f4ff;
+        border-bottom: 1px solid #e2e8f0;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .lib-block-preview {
+        flex: 1;
+        overflow-y: auto;
+        border-top: 2px solid #e2e8f0;
+        background: #fff;
+        min-height: 0;
+    }
+
+    .lib-block-item .approved-dot, .lib-block-item .not-approved-dot {
+        display: none;
+    }
+
+    /* Wireframe drop zone */
+    .wf-drop-zone {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+    }
+
+    .wf-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 200px;
+        border: 2px dashed #e2e8f0;
+        border-radius: 8px;
+        color: #94a3b8;
+        font-size: 13px;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    /* Dynamic level/section grid */
+    .wf-level {
+        margin-bottom: 6px;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .wf-level-bar {
+        display: flex;
+        align-items: center;
+        background: #f1f5f9;
+        padding: 4px 8px;
+        gap: 6px;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 11px;
+    }
+
+    .wf-level-label {
+        font-weight: 600;
+        color: #64748b;
+        flex: 1;
+    }
+
+    .wf-level-actions {
+        display: flex;
+        gap: 4px;
+    }
+
+    .wf-level-btn {
+        font-size: 10px;
+        padding: 2px 7px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        color: #475569;
+        white-space: nowrap;
+    }
+
+    .wf-level-btn:hover:not(:disabled) {
+        background: #e2e8f0;
+    }
+
+    .wf-level-btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+
+    .wf-level-btn-danger {
+        color: #dc2626;
+        border-color: #fca5a5;
+    }
+
+    .wf-level-btn-danger:hover:not(:disabled) {
+        background: #fff1f2;
+        border-color: #dc2626;
+    }
+
+    .wf-level-sections {
+        display: grid;
+        gap: 0;
+    }
+
+    .wf-section {
+        min-height: 70px;
+        border-right: 1px solid #e2e8f0;
+        padding: 7px;
+        background: #f8fafc;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        transition: background 0.15s;
+    }
+
+    .wf-section:last-child {
+        border-right: none;
+    }
+
+    .wf-section.drag-over-section {
+        background: #eef2ff;
+        outline: 2px solid #6366f1;
+        outline-offset: -2px;
+    }
+
+    .wf-section-label {
+        font-size: 9px;
+        color: #94a3b8;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        user-select: none;
+        margin-bottom: 2px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .wf-size-input {
+        width: 36px;
+        font-size: 9px;
+        border: 1px solid #cbd5e1;
+        border-radius: 3px;
+        padding: 1px 3px;
+        text-align: center;
+        color: #475569;
+        background: #fff;
+        font-weight: 400;
+    }
+
+    .wf-size-input:focus {
+        outline: 1px solid #6366f1;
+        border-color: #6366f1;
+    }
+
+    .wf-level-height {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        font-size: 9px;
+        color: #94a3b8;
+        margin-right: 4px;
+    }
+
+
+    .wf-block-row {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 5px;
+        padding: 5px 7px;
+        cursor: grab;
+        user-select: none;
+        transition: box-shadow 0.15s;
+        font-size: 11px;
+    }
+
+    .wf-block-row:hover {
+        box-shadow: 0 2px 6px rgba(0, 0, 0, .1);
+    }
+
+    .wf-block-row.dragging {
+        opacity: 0.4;
+        border-style: dashed;
+    }
+
+    .wf-drag-handle {
+        color: #94a3b8;
+        font-size: 14px;
+        cursor: grab;
+        flex-shrink: 0;
+    }
+
+    .wf-block-name {
+        font-weight: 600;
+        color: #1e293b;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .wf-widget-select {
+        font-size: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 2px 4px;
+        background: #fff;
+        color: #4338ca;
+        max-width: 120px;
+        flex-shrink: 0;
+    }
+
+    .btn-remove-wf-block {
+        font-size: 10px;
+        color: #dc2626;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 1px 4px;
+        flex-shrink: 0;
+    }
+
+    .btn-remove-wf-block:hover {
+        background: #fff1f2;
+        border-radius: 3px;
+    }
+
+    .wireframe-text {
+        font-size: 11px;
+        color: #94a3b8;
+        font-family: monospace;
+        padding: 8px 12px;
+        background: #f8fafc;
+        border-radius: 5px;
+        border: 1px solid #e2e8f0;
+        margin-top: 4px;
+        word-break: break-all;
+    }
+
+    /* ── Блоки/Виджеты: 3-pane ── */
+    .bw-grid {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+        user-select: none;
+    }
+
+    .bw-col-left {
+        width: 280px;
+        min-width: 140px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #f8fafc;
+    }
+
+    .bw-panel-header {
+        padding: 6px 14px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #94a3b8;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .bw-block-list {
+        flex: 0 0 auto;
+        max-height: 200px;
+        min-height: 40px;
+        overflow-y: auto;
+    }
+
+    .bw-default-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border-top: 2px solid #e2e8f0;
+    }
+
+    .bw-default-search {
+        padding: 5px 8px;
+        border-bottom: 1px solid #f1f5f9;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .bw-default-search input {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #e2e8f0;
+        border-radius: 5px;
+        padding: 4px 8px;
+        font-size: 12px;
+        outline: none;
+    }
+
+    .bw-default-search input:focus {
+        border-color: #818cf8;
+    }
+
+    .bw-default-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .bw-default-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px 5px 12px;
+        border-bottom: 1px solid #f1f5f9;
+        cursor: pointer;
+        transition: background .1s;
+    }
+
+    .bw-default-item:hover {
+        background: #f0f4ff;
+    }
+
+    .bw-default-item.active {
+        background: #ede9fe;
+    }
+
+    .bw-default-item.active .bw-default-item-name {
+        color: #6d28d9;
+        font-weight: 600;
+    }
+
+    .bw-default-item-name {
+        font-size: 12px;
+        color: #1e293b;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .bw-default-item-badge {
+        font-size: 10px;
+        color: #94a3b8;
+        background: #f1f5f9;
+        border-radius: 3px;
+        padding: 1px 4px;
+        flex-shrink: 0;
+    }
+
+    .bw-default-item-badge.is-container {
+        background: #fef3c7;
+        color: #b45309;
+    }
+
+    .bw-default-preview-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 8px;
+    }
+
+    .bw-default-preview-tag {
+        font-size: 10px;
+        background: #f1f5f9;
+        color: #64748b;
+        border-radius: 3px;
+        padding: 1px 5px;
+    }
+
+    .bw-block-item {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 8px 6px 12px;
+        border-bottom: 1px solid #f1f5f9;
+        cursor: pointer;
+        transition: background .1s;
+    }
+
+    .bw-block-item:hover {
+        background: #f0f4ff;
+    }
+
+    .bw-block-item.active {
+        background: #ede9fe;
+    }
+
+    .bw-block-item.active .bw-block-name {
+        color: #6d28d9;
+        font-weight: 600;
+    }
+
+    .bw-block-name {
+        font-size: 13px;
+        color: #1e293b;
+        flex: 1;
+        line-height: 1.3;
+    }
+
+    .bw-widget-badge {
+        font-size: 10px;
+        background: #ddd6fe;
+        color: #6d28d9;
+        border-radius: 10px;
+        padding: 1px 6px;
+        font-weight: 600;
+    }
+
+    .bw-block-actions {
+        display: flex;
+        gap: 3px;
+        opacity: 0;
+        transition: opacity .15s;
+        flex-shrink: 0;
+    }
+
+    .bw-block-item:hover .bw-block-actions {
+        opacity: 1;
+    }
+
+    .bw-block-item.active .bw-block-actions {
+        opacity: 1;
+    }
+
+    .bw-block-btn {
+        font-size: 11px;
+        padding: 2px 5px;
+        border-radius: 4px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        cursor: pointer;
+        color: #64748b;
+        line-height: 1;
+    }
+
+    .bw-block-btn:hover {
+        background: #f1f5f9;
+    }
+
+    .bw-block-btn.regen {
+        color: #6366f1;
+        border-color: #c7d2fe;
+    }
+
+    .bw-block-btn.regen:hover {
+        background: #eef2ff;
+    }
+
+    .bw-block-btn.regen.spinning {
+        animation: bw-spin .8s linear infinite;
+    }
+
+    .bw-block-btn.del-block {
+        color: #dc2626;
+        border-color: #fca5a5;
+    }
+
+    .bw-block-btn.del-block:hover {
+        background: #fff1f2;
+    }
+
+    @keyframes bw-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .bw-block-name {
+        cursor: pointer;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .bw-block-name-input {
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        border: 1px solid #818cf8;
+        border-radius: 4px;
+        padding: 1px 5px;
+        outline: none;
+        font-family: inherit;
+    }
+
+    .bw-gen-form {
+        padding: 10px 12px;
+        border-top: 1px solid #e2e8f0;
+        background: #f8fafc;
+        display: none;
+    }
+
+    .bw-gen-form.open {
+        display: block;
+    }
+
+    .bw-gen-form-row {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 6px;
+    }
+
+    .bw-gen-form textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-family: inherit;
+        resize: vertical;
+        min-height: 64px;
+    }
+
+    .bw-gen-form input[type=text] {
+        flex: 1;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 6px 9px;
+        font-size: 12px;
+    }
+
+    .bw-mic-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        cursor: pointer;
+        font-size: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: background .15s;
+    }
+
+    .bw-mic-btn.recording {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        animation: bw-pulse .8s ease-in-out infinite;
+    }
+
+    @keyframes bw-pulse {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, .4);
+        }
+        50% {
+            box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+        }
+    }
+
+    .bw-gen-form-btns {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+    }
+
+    .bw-block-list-footer {
+        padding: 8px 12px;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .bw-add-block-btn {
+        width: 100%;
+        font-size: 12px;
+        padding: 6px;
+        border: 1px dashed #c7d2fe;
+        border-radius: 6px;
+        background: #f5f3ff;
+        color: #6366f1;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .bw-add-block-btn:hover {
+        background: #ede9fe;
+    }
+
+    .bw-v-splitter {
+        width: 5px;
+        background: #e2e8f0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background .1s;
+        z-index: 10;
+    }
+
+    .bw-v-splitter:hover, .bw-v-splitter.dragging {
+        background: #6366f1;
+    }
+
+    .bw-col-right {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 120px;
+        background: #fff;
+    }
+
+    .bw-block-info {
+        padding: 7px 14px;
+        background: #fff;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+        min-height: 36px;
+        display: flex;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 7px;
+    }
+
+    .bw-placeholder {
+        color: #94a3b8;
+        font-size: 12px;
+        font-style: italic;
+    }
+
+    .bw-block-info-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #1e293b;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .bw-widget-names {
+        height: 20%;
+        min-height: 60px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #fafafa;
+    }
+
+    .bw-pane-header {
+        padding: 5px 12px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #94a3b8;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    .bw-pane-header span {
+        flex: 1;
+    }
+
+    .bw-btn-add {
+        font-size: 11px;
+        padding: 2px 8px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .bw-btn-add:hover {
+        background: #4f46e5;
+    }
+
+    .bw-names-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .bw-name-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-bottom: 1px solid #f1f5f9;
+        cursor: pointer;
+        transition: background .1s;
+        font-size: 13px;
+        color: #1e293b;
+    }
+
+    .bw-name-item:hover {
+        background: #f0f4ff;
+    }
+
+    .bw-name-item.active {
+        background: #ede9fe;
+        color: #6d28d9;
+        font-weight: 600;
+    }
+
+    .bw-css-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #6366f1;
+        flex-shrink: 0;
+    }
+
+    .bw-add-form {
+        padding: 8px 12px;
+        background: #f0f9ff;
+        border-top: 1px solid #bae6fd;
+        flex-shrink: 0;
+    }
+
+    .bw-add-form input, .bw-add-form textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        padding: 4px 7px;
+        font-size: 12px;
+        margin-bottom: 4px;
+        font-family: inherit;
+        resize: vertical;
+    }
+
+    .bw-add-form textarea {
+        min-height: 38px;
+    }
+
+    .bw-add-form-btns {
+        display: flex;
+        gap: 5px;
+    }
+
+    .bw-btn-save {
+        font-size: 11px;
+        padding: 3px 10px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .bw-btn-save:hover {
+        background: #4f46e5;
+    }
+
+    .bw-btn-cancel {
+        font-size: 11px;
+        padding: 3px 8px;
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .bw-h-splitter {
+        height: 5px;
+        background: #e2e8f0;
+        cursor: row-resize;
+        flex-shrink: 0;
+        transition: background .1s;
+        z-index: 10;
+    }
+
+    .bw-h-splitter:hover, .bw-h-splitter.dragging {
+        background: #6366f1;
+    }
+
+    .bw-widget-preview {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-height: 60px;
+    }
+
+    .bw-preview-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px 14px;
+    }
+
+    .bw-preview-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 4px;
+    }
+
+    .bw-preview-desc {
+        font-size: 12px;
+        color: #64748b;
+        line-height: 1.5;
+        margin-bottom: 10px;
+    }
+
+    .bw-preview-section-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #94a3b8;
+        margin-bottom: 5px;
+    }
+
+    .bw-iframe-wrap {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #fff;
+        margin-bottom: 4px;
+    }
+
+    .bw-preview-iframe {
+        width: 100%;
+        height: 200px;
+        min-height: calc(100vh - 380px);
+        border: none;
+        display: block;
+        transition: height 0.2s ease;
+    }
+
+    .bw-css-details {
+        margin-top: 8px;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .bw-css-summary {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #64748b;
+        padding: 5px 10px;
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: #f8fafc;
+    }
+
+    .bw-css-summary::marker, .bw-css-summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .bw-css-summary::before {
+        content: '▶';
+        font-size: 9px;
+        transition: transform 0.15s;
+        color: #94a3b8;
+    }
+
+    .bw-css-details[open] .bw-css-summary::before {
+        transform: rotate(90deg);
+    }
+
+    .bw-css-empty-mark {
+        font-size: 10px;
+        color: #cbd5e1;
+        font-weight: 400;
+        text-transform: none;
+    }
+
+    .bw-css-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        display: block;
+        background: #1e293b;
+        color: #94a3b8;
+        font-size: 11px;
+        font-family: monospace;
+        padding: 10px 12px;
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        resize: vertical;
+        min-height: 120px;
+        max-height: 300px;
+        line-height: 1.5;
+        outline: none;
+    }
+
+    .bw-css-textarea:focus {
+        color: #e2e8f0;
+    }
+
+    .bw-css-actions {
+        padding: 5px 10px;
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .bw-btn-save-css {
+        font-size: 11px;
+        padding: 3px 10px;
+        background: #0f172a;
+        color: #94a3b8;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .bw-btn-save-css:hover {
+        background: #1e293b;
+        color: #e2e8f0;
+    }
+
+    .bw-preview-actions {
+        display: flex;
+        gap: 5px;
+        margin-top: 10px;
+    }
+
+    .bw-btn-xs {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        cursor: pointer;
+        color: #374151;
+    }
+
+    .bw-btn-xs:hover {
+        background: #f3f4f6;
+    }
+
+    .bw-btn-del {
+        border-color: #fca5a5;
+        color: #dc2626;
+    }
+
+    .bw-btn-del:hover {
+        background: #fff1f2;
+    }
+
+    .bw-edit-form {
+        display: none;
+        margin-top: 10px;
+        padding: 10px;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 6px;
+    }
+
+    .bw-edit-form.open {
+        display: block;
+    }
+
+    .bw-edit-form input, .bw-edit-form textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        padding: 4px 7px;
+        font-size: 12px;
+        margin-bottom: 4px;
+        font-family: inherit;
+        resize: vertical;
+    }
+
+    .bw-edit-form textarea {
+        min-height: 50px;
+    }
+
+    .bw-edit-form-btns {
+        display: flex;
+        gap: 5px;
+    }
+
+    .bw-content-wrap {
+        margin-top: 6px;
+        width: 100%;
+    }
+
+    .bw-content-toggle {
+        font-size: 11px;
+        color: #7c3aed;
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .bw-content-toggle::marker, .bw-content-toggle::-webkit-details-marker {
+        display: none;
+    }
+
+    .bw-content-toggle::before {
+        content: '▶';
+        font-size: 9px;
+        transition: transform 0.15s;
+    }
+
+    details.bw-content-wrap[open] .bw-content-toggle::before {
+        transform: rotate(90deg);
+    }
+
+    .bw-content-count {
+        background: #ede9fe;
+        color: #6d28d9;
+        border-radius: 10px;
+        padding: 0 5px;
+        font-size: 10px;
+    }
+
+    .bw-content-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 5px;
+        font-size: 11px;
+    }
+
+    .bw-content-table td {
+        padding: 2px 6px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .bw-ct-key {
+        color: #7c3aed;
+        font-weight: 600;
+        white-space: nowrap;
+        width: 30%;
+    }
+
+    .bw-ct-val {
+        color: #374151;
+        word-break: break-word;
+    }
+
+    /* ── Prototype: header bar ── */
+    .proto-header-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 16px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .proto-header-bar label {
+        font-size: 12px;
+        color: #64748b;
+        white-space: nowrap;
+    }
+
+    .proto-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+        flex-shrink: 0;
+    }
+
+    #protoProtoStatus {
+        display: none;
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .proto-btn-icon {
+        vertical-align: -1px;
+        margin-right: 5px;
+    }
+
+    .proto-btn-secondary {
+        border: 1.5px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+        background: #fff;
+        color: #334155;
+        transition: background .15s, border-color .15s;
+    }
+
+    .proto-btn-secondary:hover:not(:disabled) {
+        background: #f1f5f9;
+        border-color: #94a3b8;
+    }
+
+    .proto-btn-secondary:disabled {
+        opacity: .45;
+        cursor: not-allowed;
+    }
+
+    .proto-btn-secondary.ui-blocks {
+        color: #7c3aed;
+        border-color: #c4b5fd;
+    }
+
+    .proto-btn-secondary.ui-blocks:hover:not(:disabled) {
+        background: #f5f3ff;
+        border-color: #7c3aed;
+    }
+
+    .proto-btn-secondary.pages {
+        color: #0369a1;
+        border-color: #bae6fd;
+    }
+
+    .proto-btn-secondary.pages:hover:not(:disabled) {
+        background: #f0f9ff;
+        border-color: #0369a1;
+    }
+
+    /* ── Prototype: toolbar chips ── */
+    .proto-toolbar {
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .proto-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 10px 3px 8px;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 20px;
+        font-size: 12px;
+        color: #94a3b8;
+        flex-shrink: 0;
+        transition: all .15s;
+    }
+
+    /* ── Prototype: config table ── */
+    .proto-table-wrap {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #protoConfigRow {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin: 0;
+        background: #fafafa;
+        overflow: hidden;
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+    }
+
+    .proto-col-divider {
+        width: 2px;
+    }
+
+    .proto-cell {
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .proto-cell-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+        flex-shrink: 0;
+    }
+
+    .proto-cell-header-title {
+        font-weight: 600;
+        font-size: 13px;
+        color: #334155;
+        white-space: nowrap;
+    }
+
+    #protoTokensCount {
+        font-size: 12px;
+        color: #94a3b8;
+        white-space: nowrap;
+    }
+
+    .proto-cell-header-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    #protoTokenName {
+        font-size: 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        padding: 4px 8px;
+        width: 130px;
+        outline: none;
+    }
+
+    #btnGenerateTokens {
+        font-size: 12px;
+        padding: 4px 10px;
+        white-space: nowrap;
+    }
+
+    .proto-cell-header-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: #64748b;
+    }
+
+    .proto-cell-body {
+        flex: 1;
+        overflow: hidden;
+        min-height: 0;
+    }
+
+    #protoTokensList {
+        width: 160px;
+        flex-shrink: 0;
+        border-right: 1px solid #e2e8f0;
+        overflow-y: auto;
+    }
+
+    #protoTokensPalette {
+        flex: 1;
+        padding: 18px 20px;
+        overflow-y: auto;
+        background: #fff;
+    }
+
+    .proto-cell-scroll {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 14px;
+    }
+
+    #protoStatesList {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    /* ── Prototype: split divider ── */
+    .proto-split-divider {
+        padding: 0;
+        background: #e2e8f0;
+        cursor: col-resize;
+        transition: background .15s;
+        position: relative;
+    }
+
+    .proto-split-divider:hover, .proto-split-divider.dragging {
+        background: #94a3b8;
+    }
+
+    .proto-divider-dots {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .proto-divider-dot {
+        width: 2px;
+        height: 2px;
+        border-radius: 50%;
+        background: #94a3b8;
+    }
+
+    /* ── Prototype: chips ── */
+    .proto-chips-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        padding: 8px 10px 4px;
+    }
+
+    .proto-chip-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 12px;
+        padding: 2px 7px 2px 9px;
+        font-size: 11px;
+        color: #1d4ed8;
+        max-width: 100%;
+    }
+
+    .proto-chip-tag span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 160px;
+    }
+
+    .proto-chip-tag button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #fd93e4;
+        font-size: 14px;
+        line-height: 1;
+        padding: 0 0 0 2px;
+        flex-shrink: 0;
+    }
+
+    .proto-chip-tag button:hover {
+        color: #da154a;
+    }
+
+    .proto-chip-add-row {
+        display: flex;
+        gap: 4px;
+        padding: 4px 10px 8px;
+    }
+
+    .proto-chip-add-header {
+        padding: 0;
+        margin-left: auto;
+    }
+
+    .proto-chip-add-row input {
+        flex: 1;
+        min-width: 0;
+        font-size: 11px;
+        border: 1px solid #e2e8f0;
+        border-radius: 5px;
+        padding: 3px 7px;
+        outline: none;
+        background: #fff;
+    }
+
+    .proto-chip-add-row input:focus {
+        border-color: #3b82f6;
+    }
+
+    .proto-chip-add-row button {
+        font-size: 11px;
+        line-height: 1;
+        padding: 4px 10px;
+        background: #3b82f6;
+        color: #fff;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+
+    .proto-chip-add-row button:hover {
+        background: #2563eb;
+    }
+
+    .proto-chips-empty {
+        font-size: 11px;
+        color: #cbd5e1;
+        padding: 8px 10px 4px;
+        font-style: italic;
+    }
+</style>
+<script src="/static/js/sidebar_resizer.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="design-layout">
+
+    <div class="proto-header-bar">
+        <label>Проект:</label>
+        <select id="globalProjectSel" onchange="onProjectChange()">
+            <option value="">— выберите проект —</option>
+        </select>
+        <div class="proto-header-actions">
+            <span id="protoProtoStatus"></span>
+            <button class="proto-btn-secondary ui-blocks" onclick="generateUiBlocks()" id="btnGenerateUiBlocks"
+                    disabled>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                    <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".7"/>
+                    <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor"/>
+                    <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor"/>
+                    <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".7"/>
+                </svg>
+                Сгенерировать UI-блоки
+            </button>
+            <button class="proto-btn-secondary pages" onclick="generatePages()" id="btnGeneratePages" disabled>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                    <rect x="2" y="1" width="12" height="14" rx="1.5" stroke="currentColor" stroke-width="1.5"
+                          fill="none"/>
+                    <line x1="5" y1="5" x2="11" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    <line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    <line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" stroke-width="1.5"
+                          stroke-linecap="round"/>
+                </svg>
+                Сгенерировать страницы
+            </button>
+            <button class="btn-primary" onclick="createPrototype()" id="btnCreateProto" disabled>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="proto-btn-icon">
+                    <path d="M3 2.5L13 8L3 13.5V2.5Z" fill="currentColor"/>
+                </svg>
+                Создать прototип
+            </button>
+        </div>
+    </div>
+
+    <div class="page-tabs">
+        <button class="page-tab" data-tab="prototype">Prototype</button>
+        <button class="page-tab active" data-tab="blocks-widgets">Блоки/Виджеты</button>
+        <button class="page-tab" data-tab="pages">Страницы</button>
+        <button class="page-tab" data-tab="ui-components">UI-компоненты</button>
+    </div>
+
+    <!-- Tab: Prototype -->
+    <div class="tab-panel" id="tab-prototype">
+        <div class="tab-content-wrap">
+            <!-- Toolbar: config chips -->
+            <div class="tab-toolbar proto-toolbar">
+                <div id="protoChipTokens" class="proto-chip">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                        <circle cx="4" cy="4" r="3" fill="#94a3b8"/>
+                        <circle cx="12" cy="4" r="3" fill="#94a3b8"/>
+                        <circle cx="4" cy="12" r="3" fill="#94a3b8"/>
+                        <circle cx="12" cy="12" r="3" fill="#94a3b8"/>
+                    </svg>
+                    <span id="protoChipTokensText">Токены</span>
+                </div>
+                <div id="protoChipStates" class="proto-chip">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                        <rect x="2" y="3" width="12" height="2" rx="1" fill="#94a3b8"/>
+                        <rect x="2" y="7" width="9" height="2" rx="1" fill="#94a3b8"/>
+                        <rect x="2" y="11" width="10" height="2" rx="1" fill="#94a3b8"/>
+                    </svg>
+                    <span id="protoChipStatesText">Стейты</span>
+                </div>
+            </div>
+
+            <!-- Design Tokens block: multi-pane split -->
+            <table id="protoConfigRow">
+                <colgroup>
+                    <col id="protoColLeft" style="width:50%">
+                    <col class="proto-col-divider">
+                    <col id="protoColState" style="width:18%">
+                    <col class="proto-col-divider">
+                    <col id="protoColFunctionality" style="width:16%">
+                    <col class="proto-col-divider">
+                    <col id="protoColEntities">
+                </colgroup>
+                <tbody>
+                <tr>
+                    <!-- Left cell: Design Tokens -->
+                    <td id="protoCellTokens" class="proto-cell">
+                        <div class="proto-cell-header">
+                            <span class="proto-cell-header-title">Design Tokens</span>
+                            <span id="protoTokensCount"></span>
+                            <div class="proto-cell-header-actions">
+                                <input id="protoTokenName" type="text" placeholder="Название набора">
+                                <button class="btn-outline" onclick="generateDesignTokens()" id="btnGenerateTokens">+
+                                </button>
+                            </div>
+                        </div>
+                        <div class="proto-cell-body">
+                            <div id="protoTokensList">
+                                <div style="padding:12px;font-size:12px;color:#94a3b8">Выберите проект</div>
+                            </div>
+                            <div id="protoTokensPalette">
+                                <div style="font-size:12px;color:#94a3b8">Выберите набор токенов для превью</div>
+                            </div>
+                        </div>
+                    </td>
+
+                    <!-- Divider -->
+                    <td id="protoSplitDivider" class="proto-split-divider" title="Перетащите для изменения размера">
+                        <div class="proto-divider-dots">
+                            <div class="proto-divider-dot"></div>
+                            <div class="proto-divider-dot"></div>
+                            <div class="proto-divider-dot"></div>
+                        </div>
+                    </td>
+
+                    <!-- States cell -->
+                    <td id="protoCellState" class="proto-cell">
+                        <div class="proto-cell-header">
+                            <span class="proto-cell-header-label">Стейты</span>
+                        </div>
+                        <div class="proto-cell-scroll">
+                            <div id="protoStatesList"></div>
+                        </div>
+                    </td>
+
+                    <!-- Divider 2 -->
+                    <td id="protoSplitDivider2" class="proto-split-divider" title="Перетащите для изменения размера">
+                        <div class="proto-divider-dots">
+                            <div class="proto-divider-dot"></div>
+                            <div class="proto-divider-dot"></div>
+                            <div class="proto-divider-dot"></div>
+                        </div>
+                    </td>
+
+                    <!-- Functionality chips cell -->
+                    <td id="protoCellFunctionality" class="proto-cell">
+                        <div class="proto-cell-header">
+                            <span class="proto-cell-header-label">Функциональность</span>
+                            <div class="proto-chip-add-row proto-chip-add-header">
+                                <input id="proto-chip-input-cloud_tags" type="text" placeholder="Добавить..."
+                                       onkeydown="if(event.key==='Enter') _addChip('cloud_tags')">
+                                <button onclick="_addChip('cloud_tags')">+</button>
+                            </div>
+                        </div>
+                        <div class="proto-cell-scroll" id="protoFunctionalityScroll"></div>
+                    </td>
+
+                    <!-- Divider 3 -->
+                    <td id="protoSplitDivider3" class="proto-split-divider" title="Перетащите для изменения размера">
+                        <div class="proto-divider-dots">
+                            <div class="proto-divider-dot"></div>
+                            <div class="proto-divider-dot"></div>
+                            <div class="proto-divider-dot"></div>
+                        </div>
+                    </td>
+
+                    <!-- Entities chips cell -->
+                    <td id="protoCellEntities" class="proto-cell">
+                        <div class="proto-cell-header">
+                            <span class="proto-cell-header-label">Сущности</span>
+                            <div class="proto-chip-add-row proto-chip-add-header">
+                                <input id="proto-chip-input-entities" type="text" placeholder="Добавить..."
+                                       onkeydown="if(event.key==='Enter') _addChip('entities')">
+                                <button onclick="_addChip('entities')">+</button>
+                            </div>
+                        </div>
+                        <div class="proto-cell-scroll" id="protoEntitiesScroll"></div>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab: UI-компоненты -->
+    <div class="tab-panel" id="tab-ui-components">
+        <div class="ui-comp-layout">
+
+            <!-- Левая колонка: список -->
+            <div class="ui-comp-list-col">
+                <div class="ui-comp-list-header">
+                    <h3>Компоненты</h3>
+                    <span class="ui-comp-count" id="compCount">0</span>
+                </div>
+                <div class="ui-comp-search">
+                    <input type="text" id="compSearch" placeholder="Поиск..." oninput="filterComponents()">
+                </div>
+                <div class="ui-comp-list" id="compList"></div>
+                <button class="btn-add-comp" onclick="createNew()">+ Добавить компонент</button>
+            </div>
+
+            <!-- Vertical splitter -->
+            <div class="ui-comp-v-splitter" id="uiCompVSplitter" title="Перетащите для изменения ширины"></div>
+
+            <!-- Правая колонка: форма -->
+            <div class="ui-comp-form-col">
+                <div class="ui-comp-form-header">
+                    <h3 id="formTitle">Выберите компонент</h3>
+                    <span class="status-msg" id="statusMsg"></span>
+                </div>
+
+                <div id="emptyPlaceholder" class="empty-state">
+                    <span class="icon">🧩</span>
+                    <span>Выберите компонент из списка или создайте новый</span>
+                </div>
+
+                <form id="compForm" style="display:none; flex-direction:column; flex:1; min-height:0;"
+                      onsubmit="saveComponent(event)">
+                    <div class="ui-comp-form-body">
+                        <input type="hidden" id="compId">
+
+                        <div class="form-group">
+                            <label>Название <span style="color:#e74c3c">*</span></label>
+                            <input type="text" id="compName" placeholder="Button, Card, Modal..." required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Описание</label>
+                            <textarea id="compDesc" class="tall"
+                                      placeholder="Что делает этот компонент, как используется..."></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Варианты</label>
+                                <input type="text" id="compVariants" placeholder="primary, secondary, ghost">
+                                <span class="hint">Через запятую</span>
+                            </div>
+                            <div class="form-group">
+                                <label>Размеры</label>
+                                <input type="text" id="compSizes" placeholder="sm, default, lg">
+                                <span class="hint">Через запятую</span>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Состояния</label>
+                                <input type="text" id="compStates" placeholder="default, hover, disabled">
+                                <span class="hint">Через запятую</span>
+                            </div>
+                            <div class="form-group">
+                                <label>Теги</label>
+                                <input type="text" id="compTags" placeholder="form, navigation, data-display">
+                                <span class="hint">Через запятую</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Tailwind-пример</label>
+                            <textarea id="compTailwind"
+                                      placeholder="flex items-center gap-3 px-4 py-2 rounded-md..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="ui-comp-form-footer">
+                        <button type="submit" class="btn-save">Сохранить</button>
+                        <button type="button" class="btn-delete" id="deleteBtn" onclick="deleteComponent()"
+                                style="display:none">Удалить
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Tab: Блоки/Виджеты -->
+    <div class="tab-panel active" id="tab-blocks-widgets">
+        <div class="tab-content-wrap">
+            <div class="bw-grid" id="bwGrid">
+                <!-- Left: block list -->
+                <div class="bw-col-left" id="bwColLeft">
+                    <div class="bw-panel-header">Блоки проекта</div>
+                    <div class="bw-block-list" id="bwBlockList">
+                        <div style="padding:20px;color:#94a3b8;font-size:13px">Выберите проект</div>
+                    </div>
+                    <div class="bw-block-list-footer" id="bwBlockFooter" style="display:none">
+                        <button class="bw-add-block-btn" onclick="toggleBwGenForm()">+ Новый блок по описанию</button>
+                        <div class="bw-gen-form" id="bwGenForm">
+                            <div class="bw-gen-form-row">
+                                <input type="text" id="bwgName" placeholder="Название блока (напр. HeroSection)">
+                            </div>
+                            <div style="position:relative">
+                                <textarea id="bwgDesc"
+                                          placeholder="Опишите блок — что он делает, стиль, элементы…"></textarea>
+                                <button class="bw-mic-btn" id="bwMicBtn" onclick="toggleBwMic()" title="Диктовать"
+                                        style="position:absolute;right:6px;bottom:6px">🎤
+                                </button>
+                            </div>
+                            <div class="bw-gen-form-btns" style="margin-top:6px">
+                                <button class="bw-btn-cancel" onclick="toggleBwGenForm()">Отмена</button>
+                                <button class="bw-btn-save" id="bwgSubmitBtn" onclick="generateBwBlock()">
+                                    Сгенерировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Default UI blocks section -->
+                    <div class="bw-default-section">
+                        <div class="bw-panel-header">Блоки по умолчанию</div>
+                        <div class="bw-default-search">
+                            <input type="text" id="bwDefaultSearch" placeholder="Поиск по названию или тегу…"
+                                   oninput="filterDefaultBlocks(this.value)">
+                        </div>
+                        <div class="bw-default-list" id="bwDefaultList">
+                            <div style="padding:12px;color:#94a3b8;font-size:12px">Загрузка…</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Vertical splitter -->
+                <div class="bw-v-splitter" id="bwVSplitter" title="Перетащите для изменения ширины"></div>
+                <!-- Right: widget panel -->
+                <div class="bw-col-right" id="bwColRight">
+                    <!-- Block info bar -->
+                    <!-- Widget names pane (top) -->
+                    <div class="bw-widget-names" id="bwWidgetNames">
+                        <div class="bw-pane-header">
+                            <span id="bwWidgetPaneTitle">Виджеты</span>
+                            <button class="bw-btn-add" id="bwBtnAdd" style="display:none" onclick="toggleBwAddForm()">+
+                                Добавить
+                            </button>
+                        </div>
+                        <div class="bw-names-list" id="bwNamesList">
+                            <div class="bw-placeholder" style="padding:12px 14px">Выберите блок</div>
+                        </div>
+                        <div class="bw-add-form" id="bwAddForm" style="display:none">
+                            <input type="text" id="bwfName" placeholder="Название виджета">
+                            <textarea id="bwfDesc" placeholder="Описание"></textarea>
+                            <textarea id="bwfCss" placeholder="CSS" style="font-family:monospace"></textarea>
+                            <div class="bw-add-form-btns">
+                                <button class="bw-btn-save" onclick="saveBwWidget()">Сохранить</button>
+                                <button class="bw-btn-cancel" onclick="toggleBwAddForm()">Отмена</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Horizontal splitter -->
+                    <div class="bw-h-splitter" id="bwHSplitter" title="Перетащите для изменения высоты"></div>
+                    <!-- Widget preview pane (bottom) -->
+                    <div class="bw-widget-preview" id="bwWidgetPreview">
+                        <div class="bw-pane-header"><span>Превью</span></div>
+                        <div class="bw-preview-content" id="bwPreviewContent">
+                            <span class="bw-placeholder">Выберите виджет</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab: Страницы (wireframe builder) -->
+    <div class="tab-panel" id="tab-pages">
+        <div class="tab-content-wrap">
+            <div class="pages-layout">
+                <!-- Top row: tree + editor + library -->
+                <div class="pages-top-row" id="pagesTopRow">
+                    <!-- Left: page tree -->
+                    <div class="pages-tree-col">
+                        <div class="pages-tree-header">Дерево страниц</div>
+                        <div class="pages-tree-scroll" id="pagesTree">
+                            <div class="no-blocks-msg">Выберите проект</div>
+                        </div>
+                    </div>
+
+                    <!-- Vertical splitter -->
+                    <div class="pages-v-splitter" id="pagesVSplitter" title="Перетащите для изменения ширины"></div>
+
+                    <!-- Center: wireframe editor -->
+                    <div class="pages-editor">
+                        <div class="pages-editor-body">
+                            <div class="wf-drop-zone" id="wfDropZone">
+                                <div class="wf-placeholder" id="wfPlaceholder">
+                                    <div style="font-size:32px">🗂️</div>
+                                    <div>Выберите страницу из дерева слева</div>
+                                    <div style="font-size:12px;color:#cbd5e1">Выберите блоки из библиотеки справа</div>
+                                </div>
+                            </div>
+
+                            <!-- Vertical splitter between editor and library -->
+                            <div class="pages-v-splitter" id="pagesEditorVSplitter"
+                                 title="Перетащите для изменения ширины"></div>
+
+                            <!-- Right: block library -->
+                            <div class="block-library" id="blockLibraryCol">
+                                <div class="pages-editor-header">
+                                    <button class="proto-btn-secondary wireframe" id="btnAutoWireframe"
+                                            style="display:none" onclick="autoWireframe()">
+                                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                                            <rect x="1" y="1" width="14" height="10" rx="1.5" stroke="currentColor"
+                                                  stroke-width="1.5"/>
+                                            <line x1="4" y1="14" x2="12" y2="14" stroke="currentColor"
+                                                  stroke-width="1.5" stroke-linecap="round"/>
+                                            <line x1="8" y1="11" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"
+                                                  stroke-linecap="round"/>
+                                        </svg>
+                                        Автоблоки
+                                    </button>
+                                    <button class="proto-btn-secondary wireframe" id="btnSaveWireframe"
+                                            style="display:none" onclick="saveWireframe()">
+                                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                                            <rect x="1" y="1" width="14" height="10" rx="1.5" stroke="currentColor"
+                                                  stroke-width="1.5"/>
+                                            <line x1="4" y1="14" x2="12" y2="14" stroke="currentColor"
+                                                  stroke-width="1.5" stroke-linecap="round"/>
+                                            <line x1="8" y1="11" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"
+                                                  stroke-linecap="round"/>
+                                        </svg>
+                                        Сохранить Wireframe
+                                    </button>
+                                    <span class="wf-status" id="wfSaveStatus" style="display:none">✓ Сохранено</span>
+                                </div>
+
+                                <div class="block-library-header">Библиотека блоков</div>
+                                <div class="block-library-search">
+                                    <input type="text" id="libSearch" placeholder="Поиск блока…"
+                                           oninput="filterLibBlocks()">
+                                </div>
+                                <div class="block-library-list" id="blockLibrary">
+                                    <div class="no-blocks-msg" style="padding:20px;font-size:12px">Загрузите проект
+                                    </div>
+                                </div>
+                                <div class="lib-block-preview" id="libBlockPreview">
+                                    <div style="padding:12px;color:#94a3b8;font-size:12px;font-style:italic">Выберите
+                                        блок для превью
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Horizontal splitter -->
+                <div class="pages-h-splitter" id="pagesHSplitter"></div>
+
+                <!-- Bottom row: page preview -->
+                <div class="pages-preview-row" id="pagesPreviewRow">
+                    <div class="pages-preview-header">Превью страницы</div>
+                    <div class="pages-preview-body" id="pagePreviewWrap">
+                        <div class="pages-preview-placeholder">Выберите страницу</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allComponents = [];
+    let activeId = null;
+
+    async function loadComponents() {
+        const res = await fetch('/design/ui-components');
+        const data = await res.json();
+        allComponents = data.result || [];
+        document.getElementById('compCount').textContent = allComponents.length;
+        renderList(allComponents);
+    }
+
+    function renderList(items) {
+        const el = document.getElementById('compList');
+        el.innerHTML = items.map(c => `
+        <div class="ui-comp-item ${c.id === activeId ? 'active' : ''}"
+             onclick="selectComponent(${c.id})">
+            <span>${c.name}</span>
+            <span class="comp-tags">${(c.tags || '').split(',').filter(Boolean).join(' ')}</span>
+        </div>
+    `).join('');
+    }
+
+    function filterComponents() {
+        const q = document.getElementById('compSearch').value.toLowerCase();
+        renderList(q ? allComponents.filter(c =>
+            c.name.toLowerCase().includes(q) ||
+            (c.tags || '').toLowerCase().includes(q) ||
+            (c.description || '').toLowerCase().includes(q)
+        ) : allComponents);
+    }
+
+    function selectComponent(id) {
+        activeId = id;
+        const comp = allComponents.find(c => c.id === id);
+        if (!comp) return;
+
+        document.getElementById('formTitle').textContent = comp.name;
+        document.getElementById('compId').value = comp.id;
+        document.getElementById('compName').value = comp.name || '';
+        document.getElementById('compDesc').value = comp.description || '';
+        document.getElementById('compVariants').value = comp.variants || '';
+        document.getElementById('compSizes').value = comp.sizes || '';
+        document.getElementById('compStates').value = comp.states || '';
+        document.getElementById('compTags').value = comp.tags || '';
+        document.getElementById('compTailwind').value = comp.tailwind_example || '';
+
+        document.getElementById('emptyPlaceholder').style.display = 'none';
+        document.getElementById('compForm').style.display = 'flex';
+        document.getElementById('deleteBtn').style.display = '';
+
+        renderList(allComponents.filter(c => {
+            const q = document.getElementById('compSearch').value.toLowerCase();
+            return !q || c.name.toLowerCase().includes(q) || (c.tags || '').toLowerCase().includes(q);
+        }));
+    }
+
+    function createNew() {
+        activeId = null;
+        document.getElementById('formTitle').textContent = 'Новый компонент';
+        document.getElementById('compId').value = '';
+        document.getElementById('compName').value = '';
+        document.getElementById('compDesc').value = '';
+        document.getElementById('compVariants').value = '';
+        document.getElementById('compSizes').value = '';
+        document.getElementById('compStates').value = '';
+        document.getElementById('compTags').value = '';
+        document.getElementById('compTailwind').value = '';
+
+        document.getElementById('emptyPlaceholder').style.display = 'none';
+        document.getElementById('compForm').style.display = 'flex';
+        document.getElementById('deleteBtn').style.display = 'none';
+
+        renderList(allComponents);
+        document.getElementById('compName').focus();
+    }
+
+    async function saveComponent(e) {
+        e.preventDefault();
+        const id = document.getElementById('compId').value;
+        const payload = {
+            name: document.getElementById('compName').value.trim(),
+            description: document.getElementById('compDesc').value.trim(),
+            variants: document.getElementById('compVariants').value.trim(),
+            sizes: document.getElementById('compSizes').value.trim(),
+            states: document.getElementById('compStates').value.trim(),
+            tags: document.getElementById('compTags').value.trim(),
+            tailwind_example: document.getElementById('compTailwind').value.trim(),
+        };
+
+        let res;
+        if (id) {
+            res = await fetch(`/design/ui-components/${id}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+        } else {
+            res = await fetch('/design/ui-components', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (data.result) {
+                document.getElementById('compId').value = data.result;
+                activeId = data.result;
+            }
+        }
+
+        showStatus('Сохранено', false);
+        await loadComponents();
+        if (activeId) selectComponent(activeId);
+    }
+
+    async function deleteComponent() {
+        const id = document.getElementById('compId').value;
+        if (!id || !confirm('Удалить компонент?')) return;
+        await fetch(`/design/ui-components/${id}`, {method: 'DELETE'});
+        activeId = null;
+        document.getElementById('emptyPlaceholder').style.display = '';
+        document.getElementById('compForm').style.display = 'none';
+        document.getElementById('formTitle').textContent = 'Выберите компонент';
+        await loadComponents();
+    }
+
+    function showStatus(msg, isError) {
+        const el = document.getElementById('statusMsg');
+        el.textContent = msg;
+        el.className = 'status-msg visible' + (isError ? ' error' : '');
+        setTimeout(() => el.className = 'status-msg', 2000);
+    }
+
+    // Переключение вкладок
+    document.querySelectorAll('.page-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+            localStorage.setItem('design_active_tab', tab.dataset.tab);
+            onProjectChange();
+        });
+    });
+
+    loadComponents();
+
+    // ═══════════════════════════════════════════════
+    // БЛОКИ / ВИДЖЕТЫ (объединённая вкладка)
+    // ═══════════════════════════════════════════════
+
+    let _allProjects = [];
+    let _bwBlocks = [];           // блоки текущего проекта
+    let _bwBlockId = null;        // выбранный блок
+    let _bwWidgetId = null;       // выбранный виджет
+    let _bwBlockWidgetMap = {};   // blockId → последний активный widgetId
+    let _bwProjectId = null;      // текущий проект
+
+    async function planningFetch(url, opts = {}) {
+        return fetch(url, {
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', ...(opts.headers || {})},
+            ...opts,
+        }).then(r => r.json());
+    }
+
+    function esc(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    async function loadBlocksWidgets() {
+        const pid = document.getElementById('globalProjectSel').value;
+        const listEl = document.getElementById('bwBlockList');
+        _bwBlockId = null;
+        _bwWidgetId = null;
+        _bwBlocks = [];
+        _bwBlockWidgetMap = {};
+        _bwProjectId = pid ? parseInt(pid) : null;
+        resetBwRight();
+        if (!pid) {
+            listEl.innerHTML = '<div style="padding:20px;color:#94a3b8;font-size:13px">Выберите проект</div>';
+            document.getElementById('bwStats').style.display = 'none';
+            const footer = document.getElementById('bwBlockFooter');
+            if (footer) footer.style.display = 'none';
+            return;
+        }
+        listEl.innerHTML = '<div style="padding:20px;color:#94a3b8;font-size:13px">Загрузка…</div>';
+        const data = await planningFetch(`/planning/project/${pid}/blocks`);
+        _bwBlocks = (data.result || []).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+        renderBwBlockList();
+        updateBwStats();
+    }
+
+    function renderBwBlockList() {
+        const listEl = document.getElementById('bwBlockList');
+        const footer = document.getElementById('bwBlockFooter');
+        if (!_bwBlocks.length) {
+            listEl.innerHTML = '<div style="padding:20px;color:#94a3b8;font-size:13px">Блоки не сгенерированы</div>';
+            if (footer) footer.style.display = 'none';
+            return;
+        }
+        listEl.innerHTML = _bwBlocks.map(b => {
+            const wc = (b.widgets || []).length;
+            const displayTitle = esc(b.title || b.name);
+            return `<div class="bw-block-item${_bwBlockId === b.id ? ' active' : ''}" data-bid="${b.id}" onclick="selectBwBlock(${b.id})">            <span class="bw-block-name">${displayTitle}</span>
+            ${wc ? `<span class="bw-widget-badge">${wc}</span>` : ''}            <div class="bw-block-actions">
+                <button class="bw-block-btn regen" id="bwregen-${b.id}" onclick="event.stopPropagation();regenBwBlock(${b.id})" title="Перегенерировать">↺</button>
+                <button class="bw-block-btn del-block" onclick="event.stopPropagation();deleteBwBlock(${b.id})" title="Удалить">✕</button>
+            </div>
+        </div>`;
+        }).join('');
+        if (footer) footer.style.display = '';
+    }
+
+    function updateBwStats() {
+        const total = _bwBlocks.length;
+        const widgets = _bwBlocks.reduce((s, b) => s + (b.widgets?.length || 0), 0);
+        document.getElementById('bwStatBlocks').textContent = total;
+        document.getElementById('bwStatWidgets').textContent = widgets;
+        document.getElementById('bwStats').style.display = total ? 'flex' : 'none';
+    }
+
+    function resetBwRight() {
+        document.getElementById('bwBlockInfo').innerHTML = '<span class="bw-placeholder">Выберите блок из списка</span>';
+        document.getElementById('bwWidgetPaneTitle').textContent = 'Виджеты';
+        document.getElementById('bwBtnAdd').style.display = 'none';
+        document.getElementById('bwNamesList').innerHTML = '<div class="bw-placeholder" style="padding:12px 14px">Выберите блок</div>';
+        document.getElementById('bwAddForm').style.display = 'none';
+        document.getElementById('bwPreviewContent').innerHTML = '<span class="bw-placeholder">Выберите виджет</span>';
+    }
+
+    function selectBwBlock(blockId) {
+        _bwBlockId = blockId;
+        document.querySelectorAll('.bw-block-item').forEach(el =>
+            el.classList.toggle('active', parseInt(el.dataset.bid) === blockId)
+        );
+        const block = _bwBlocks.find(b => b.id === blockId);
+        if (!block) return;
+
+        // Block info bar
+        const contentPreview = block.content ? _bwContentPreviewHtml(block.content) : '';
+        document.getElementById('bwBlockInfo').innerHTML = `
+        <span class="bw-block-info-name" id="bwInfoTitle-${blockId}">${esc(block.title || block.name)}</span>        <button onclick="startBwTitleEdit(${blockId})" title="Переименовать блок" style="background:none;border:none;cursor:pointer;padding:2px 4px;line-height:1;color:#64748b;display:inline-flex;align-items:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        ${contentPreview}`;
+
+        // Widget names
+        document.getElementById('bwBtnAdd').style.display = '';
+        document.getElementById('bwAddForm').style.display = 'none';
+
+        // Restore last active widget or auto-select first
+        const widgets = block.widgets || [];
+        const savedId = _bwBlockWidgetMap[blockId];
+        const targetWidget = widgets.find(w => w.id === savedId) || widgets[0] || null;
+        _bwWidgetId = targetWidget ? targetWidget.id : null;
+        renderBwWidgetNames(block);
+        if (targetWidget) {
+            renderBwPreview(targetWidget);
+        } else {
+            document.getElementById('bwPreviewContent').innerHTML = '<span class="bw-placeholder">Виджетов нет</span>';
+        }
+    }
+
+    function renderBwWidgetNames(block) {
+        const list = document.getElementById('bwNamesList');
+        const widgets = block.widgets || [];
+        document.getElementById('bwWidgetPaneTitle').textContent = `Виджеты (${widgets.length})`;
+        if (!widgets.length) {
+            list.innerHTML = '<div class="bw-placeholder" style="padding:12px 14px">Виджетов нет — нажмите «+ Добавить»</div>';
+            return;
+        }
+        list.innerHTML = widgets.map(w =>
+            `<div class="bw-name-item${_bwWidgetId === w.id ? ' active' : ''}" data-wid="${w.id}" onclick="selectBwWidget(${w.id})">
+            <span style="flex:1">${esc(w.name)}</span>
+            ${w.css ? '<span class="bw-css-dot" title="Есть CSS"></span>' : ''}
+        </div>`
+        ).join('');
+    }
+
+    function selectBwWidget(widgetId) {
+        _bwWidgetId = widgetId;
+        if (_bwBlockId) _bwBlockWidgetMap[_bwBlockId] = widgetId;
+        document.querySelectorAll('.bw-name-item').forEach(el =>
+            el.classList.toggle('active', parseInt(el.dataset.wid) === widgetId)
+        );
+        const block = _bwBlocks.find(b => b.id === _bwBlockId);
+        if (!block) return;
+        const w = (block.widgets || []).find(w => w.id === widgetId);
+        if (!w) return;
+        renderBwPreview(w);
+    }
+
+    function _bwContentPreviewHtml(contentStr) {
+        if (!contentStr) return '';
+        let obj;
+        try {
+            obj = JSON.parse(contentStr);
+        } catch {
+            return '';
+        }
+        if (typeof obj !== 'object' || !obj) return '';
+        const pairs = Object.entries(obj).filter(([, v]) => v !== null && v !== undefined && v !== '');
+        if (!pairs.length) return '';
+        const rows = pairs.map(([k, v]) => {
+            const val = Array.isArray(v) ? v.join(', ') : String(v);
+            return `<tr><td class="bw-ct-key">${esc(k)}</td><td class="bw-ct-val">${esc(val)}</td></tr>`;
+        }).join('');
+        return `<details class="bw-content-wrap"><summary class="bw-content-toggle">Content <span class="bw-content-count">${pairs.length}</span></summary><table class="bw-content-table">${rows}</table></details>`;
+    }
+
+    function bwPreviewIframeHtml(css, widgetHtml, content) {
+        let contentData = null;
+        if (content) {
+            try {
+                contentData = typeof content === 'string' ? JSON.parse(content) : content;
+            } catch {
+            }
+        }
+        const contentScript = contentData ? `
+<script>
+(function(c){
+    if(!c||typeof c!=='object') return;
+    const $=sel=>document.querySelector(sel);
+    const $$=sel=>document.querySelectorAll(sel);
+    const set=(sel,val)=>{ const el=$(sel); if(el&&val!=null) el.textContent=val; };
+    if(c.brand)     { ['.brand','.logo','.nav-brand','.navbar-brand','.site-logo','.footer-logo','.brand-name'].forEach(s=>{ const e=$(s); if(e){e.textContent=c.brand;} }); }
+    if(c.headline)  set('h1.title, h1.hero-title, h1.headline, .hero-title', c.headline);
+    if(c.title)     set('h1', c.title);
+    if(c.subtitle)  set('.subtitle, .hero-subtitle, .lead, .hero-text', c.subtitle);
+    if(c.description) set('.hero-subtitle, .subtitle, .description', c.description);
+    if(c.tagline)   set('.tagline, .footer-tagline', c.tagline);
+    if(c.cta||c.cta_primary)   set('.btn-primary, .hero-cta, .cta-btn', c.cta||c.cta_primary);
+    if(c.cta_secondary) set('.btn-secondary, .btn-outline', c.cta_secondary);
+    if(c.section_title) set('h2.section-title, h2.title', c.section_title);
+    if(c.copyright) set('.copyright, .footer-text', c.copyright);
+    if(c.nav_links&&Array.isArray(c.nav_links)){
+        $$('.nav-link').forEach((el,i)=>{ if(c.nav_links[i]) el.textContent=c.nav_links[i]; });
+    }
+    if(c.footer_links&&Array.isArray(c.footer_links)){
+        $$('.footer-link').forEach((el,i)=>{ if(c.footer_links[i]) el.textContent=c.footer_links[i]; });
+    }
+    const skip=new Set(['brand','headline','title','subtitle','description','tagline','cta','cta_primary','cta_secondary','section_title','copyright','nav_links','footer_links']);
+    for(const [k,v] of Object.entries(c)){
+        if(skip.has(k)||typeof v!=='string') continue;
+        const el=$('.'+k)||$('[data-content="'+k+'"]');
+        if(el) el.textContent=v;
+    }
+})(${JSON.stringify(contentData)});
+<\/script>` : '';
+        const bodyContent = widgetHtml || '';
+        return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*,*::before,*::after{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.5;background:#fff;color:#1e293b;}
+img{max-width:100%;}
+a{text-decoration:none;}
+button{cursor:pointer;}
+/* === WIDGET CSS === */
+${css || ''}
+</style>
+</head><body>${bodyContent}
+${contentScript}</body></html>`;
+    }
+
+    function renderBwPreview(w) {
+        const block = _bwBlocks.find(b => b.id === _bwBlockId);
+        const blockContent = block?.content || null;
+        const container = document.getElementById('bwPreviewContent');
+        container.innerHTML = `
+        <div class="bw-preview-name">${esc(w.name)}</div>
+        ${w.description ? `<div class="bw-preview-desc">${esc(w.description)}</div>` : ''}
+        <div class="bw-preview-section-label">Превью</div>
+        <div class="bw-iframe-wrap" id="bwiw-${w.id}"></div>
+        <details class="bw-css-details" id="bwced-${w.id}">
+            <summary class="bw-css-summary">CSS ${w.css ? '' : '<span class="bw-css-empty-mark">не задан</span>'}</summary>
+            <textarea class="bw-css-textarea" id="bwcss-${w.id}" placeholder="/* CSS для виджета */">${esc(w.css || '')}</textarea>
+            <div class="bw-css-actions">
+                <button class="bw-btn-save-css" onclick="saveBwCss(${w.id})">Сохранить CSS</button>
+            </div>
+        </details>
+        <details class="bw-css-details" id="bwhed-${w.id}">
+            <summary class="bw-css-summary">HTML ${w.html ? '' : '<span class="bw-css-empty-mark">не задан</span>'}</summary>
+            <textarea class="bw-css-textarea" id="bwhtml-${w.id}" placeholder="<!-- HTML виджета -->">${esc(w.html || '')}</textarea>
+            <div class="bw-css-actions">
+                <button class="bw-btn-save-css" onclick="saveBwHtml(${w.id})">Сохранить HTML</button>
+            </div>
+        </details>
+        <div class="bw-preview-actions">
+            <button class="bw-btn-xs" onclick="openBwEditForm(${w.id})">✏ Название / Описание</button>
+            <button class="bw-btn-xs bw-btn-del" onclick="deleteBwWidget(${w.id})">✕ Удалить</button>
+        </div>
+        <div class="bw-edit-form" id="bwef-${w.id}">
+            <input type="text" id="bwen-${w.id}" value="${esc(w.name)}" placeholder="Название">
+            <textarea id="bwed-${w.id}" placeholder="Описание">${esc(w.description || '')}</textarea>
+            <div class="bw-edit-form-btns">
+                <button class="bw-btn-save" onclick="saveBwEdit(${w.id})">Сохранить</button>
+                <button class="bw-btn-cancel" onclick="closeBwEditForm(${w.id})">Отмена</button>
+            </div>
+        </div>`;
+
+        if (w.css || w.html) {
+            document.getElementById(`bwiw-${w.id}`).appendChild(
+                _bwMakeIframe(bwPreviewIframeHtml(w.css, w.html, blockContent))
+            );
+        }
+    }
+
+    // ── Default UI blocks ─────────────────────────────────────────────────────────
+    let _defaultBlocks = [];
+    let _defaultBlockActive = null;
+
+    async function loadDefaultUiBlocks() {
+        try {
+            const data = await planningFetch('/design/ui-blocks');
+            _defaultBlocks = data.result || [];
+            _renderDefaultList(_defaultBlocks);
+        } catch (e) {
+            document.getElementById('bwDefaultList').innerHTML =
+                '<div style="padding:12px;color:#ef4444;font-size:12px">Ошибка загрузки</div>';
+        }
+    }
+
+    function _renderDefaultList(blocks) {
+        const el = document.getElementById('bwDefaultList');
+        if (!blocks.length) {
+            el.innerHTML = '<div style="padding:12px;color:#94a3b8;font-size:12px">Нет блоков</div>';
+            return;
+        }
+        el.innerHTML = blocks.map(b => {
+            const isContainer = b.slots && b.slots !== 'null';
+            return `<div class="bw-default-item${_defaultBlockActive === b.id ? ' active' : ''}"
+                     onclick="selectDefaultUiBlock(${b.id})">
+            <span class="bw-default-item-name" title="${esc(b.name)}">${esc(b.name)}</span>
+            <span class="bw-default-item-badge${isContainer ? ' is-container' : ''}">${isContainer ? 'cnt' : 'item'}</span>
+        </div>`;
+        }).join('');
+    }
+
+    function filterDefaultBlocks(q) {
+        q = q.toLowerCase().trim();
+        const filtered = q
+            ? _defaultBlocks.filter(b =>
+                b.name.toLowerCase().includes(q) ||
+                (b.tags && b.tags.toLowerCase().includes(q))
+            )
+            : _defaultBlocks;
+        _renderDefaultList(filtered);
+    }
+
+    async function selectDefaultUiBlock(id) {
+        _defaultBlockActive = id;
+        // Mark active in project list too — clear it
+        document.querySelectorAll('.bw-block-item.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.bw-default-item').forEach(el => {
+            el.classList.toggle('active', parseInt(el.getAttribute('onclick').match(/\d+/)[0]) === id);
+        });
+
+        const container = document.getElementById('bwPreviewContent');
+        container.innerHTML = '<div class="bw-placeholder" style="padding:12px">Загрузка…</div>';
+
+        try {
+            const data = await planningFetch(`/design/ui-blocks/${id}`);
+            const b = data.result;
+            _renderDefaultBlockPreview(b);
+        } catch (e) {
+            container.innerHTML = '<div style="padding:12px;color:#ef4444;font-size:12px">Ошибка загрузки блока</div>';
+        }
+    }
+
+    function _renderDefaultBlockPreview(b) {
+        const container = document.getElementById('bwPreviewContent');
+        const tags = (b.tags || '').split(',').filter(Boolean);
+        const tagsHtml = tags.map(t => `<span class="bw-default-preview-tag">${esc(t.trim())}</span>`).join('');
+
+        container.innerHTML = `
+        <div class="bw-preview-name">${esc(b.name)}</div>
+        ${b.description ? `<div class="bw-preview-desc">${esc(b.description)}</div>` : ''}
+        ${tagsHtml ? `<div class="bw-default-preview-tags">${tagsHtml}</div>` : ''}
+        <div class="bw-preview-section-label">Превью</div>
+        <div class="bw-iframe-wrap" id="bwdiw-${b.id}"></div>
+        ${b.vars && b.vars !== '{}' ? `
+        <details class="bw-css-details" style="margin-top:8px">
+            <summary class="bw-css-summary">Переменные (vars)</summary>
+            <textarea class="bw-css-textarea" readonly style="min-height:80px">${esc(JSON.stringify(JSON.parse(b.vars), null, 2))}</textarea>
+        </details>` : ''}`;
+
+        if (b.html) {
+            const rendered = _fillTestData(b.html, b.vars, b.slots);
+            // If still has unfilled slot placeholders — show vars table instead of blank iframe
+            if (rendered.includes('[[slot:')) {
+                const wrap = document.getElementById(`bwdiw-${b.id}`);
+                wrap.style.padding = '8px 0';
+                let varsObj = {};
+                try {
+                    varsObj = JSON.parse(b.vars || '{}');
+                } catch {
+                }
+                const keys = Object.keys(varsObj);
+                if (keys.length) {
+                    wrap.innerHTML = `<div style="font-size:11px;color:#64748b;margin-bottom:6px">Переменные блока:</div>` +
+                        keys.map(k => `<div style="display:flex;gap:6px;margin-bottom:3px;font-size:12px">
+                        <span style="color:#6366f1;font-weight:600;min-width:140px">${esc(k)}</span>
+                        <span style="color:#1e293b">${esc(String(varsObj[k]))}</span>
+                    </div>`).join('');
+                } else {
+                    wrap.innerHTML = `<div style="color:#94a3b8;font-size:12px;font-style:italic">Блок-контейнер (слоты без шаблона)</div>`;
+                }
+            } else {
+                document.getElementById(`bwdiw-${b.id}`).appendChild(_bwMakeIframe(_injectCdn(rendered)));
+            }
+        }
+    }
+
+    function _injectCdn(html) {
+        return html
+            .replace(
+                /<link[^>]+href=["']\/component\.css["'][^>]*>/gi,
+                '<script src="https://cdn.tailwindcss.com"><\/script>'
+            )
+            .replace(
+                /<script[^>]+src=["']\/component\.js["'][^>]*><\/script>/gi,
+                '<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"><\/script>'
+            );
+    }
+
+    function _fillVars(html, vars) {
+        if (!vars) return html;
+        return html.replace(/\[\[([\w]+)\]\]/g, (_, key) =>
+            vars[key] !== undefined ? String(vars[key]) : '[[' + key + ']]'
+        );
+    }
+
+    function _fillTestData(html, varsJson, slotsJson) {
+        let result = html;
+
+        // 1. Fill slot placeholders with N copies of child template
+        if (slotsJson) {
+            let slots;
+            try {
+                slots = JSON.parse(slotsJson);
+            } catch {
+                slots = [];
+            }
+            for (const slot of slots) {
+                const placeholder = '[[slot:' + slot.name + ']]';
+                if (!result.includes(placeholder)) continue;
+                const tpl = slot.template;
+                if (!tpl) continue;  // no template — leave placeholder visible
+                const childVars = slot.vars || {};
+                const count = Math.min(slot.max || 3, 3);
+                const children = Array.from({length: count}, (_, i) => {
+                    const indexed = {};
+                    for (const [k, v] of Object.entries(childVars)) {
+                        if (i === 0 || typeof v !== 'string') {
+                            indexed[k] = v;
+                        } else {
+                            indexed[k] = v.replace(/\d+(\.\d+)?/, match => {
+                                const n = parseFloat(match);
+                                const step = n < 10 ? 1 : n < 100 ? Math.round(n * 0.5) : Math.round(n * 0.3);
+                                return String(Math.round(n + i * step));
+                            });
+                        }
+                    }
+                    return _fillVars(tpl, indexed);
+                }).join('\n');
+                result = result.replace(placeholder, children);
+            }
+        }
+
+        // 2. Fill remaining var placeholders with defaults from vars
+        if (varsJson) {
+            let vars;
+            try {
+                vars = JSON.parse(varsJson);
+            } catch {
+                vars = {};
+            }
+            result = _fillVars(result, vars);
+        }
+
+        return result;
+    }
+
+    document.addEventListener('DOMContentLoaded', loadDefaultUiBlocks);
+
+    // ── Iframe helper ─────────────────────────────────────────────────────────────
+    function _bwMakeIframe(srcdoc) {
+        const iframe = document.createElement('iframe');
+        iframe.className = 'bw-preview-iframe';
+        iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
+        iframe.srcdoc = srcdoc;
+        const _resize = (doc) => {
+            try {
+                doc.querySelectorAll('*').forEach(el => {
+                    const pos = getComputedStyle(el).position;
+                    if (pos === 'fixed' || pos === 'sticky') el.style.position = 'relative';
+                });
+                const h = doc.documentElement.scrollHeight || doc.body?.scrollHeight || 0;
+                if (h > 50) iframe.style.height = h + 'px';
+            } catch {
+            }
+        };
+        iframe.addEventListener('load', () => {
+            try {
+                const doc = iframe.contentDocument || iframe.contentWindow?.document;
+                if (!doc) return;
+                _resize(doc);
+                // Re-measure after CDN scripts (Tailwind) apply styles asynchronously
+                setTimeout(() => _resize(doc), 600);
+                setTimeout(() => _resize(doc), 1500);
+            } catch {
+            }
+        });
+        return iframe;
+    }
+
+    function openBwEditForm(wid) {
+        document.getElementById(`bwef-${wid}`)?.classList.add('open');
+    }
+
+    function closeBwEditForm(wid) {
+        document.getElementById(`bwef-${wid}`)?.classList.remove('open');
+    }
+
+    async function saveBwEdit(widgetId) {
+        const name = document.getElementById(`bwen-${widgetId}`)?.value.trim();
+        const desc = document.getElementById(`bwed-${widgetId}`)?.value.trim() || null;
+        if (!name) {
+            alert('Укажите название');
+            return;
+        }
+        await planningFetch(`/planning/widget/${widgetId}`, {
+            method: 'PUT', body: JSON.stringify({name, description: desc}),
+        });
+        const block = _bwBlocks.find(b => b.id === _bwBlockId);
+        if (block) {
+            const w = (block.widgets || []).find(w => w.id === widgetId);
+            if (w) {
+                w.name = name;
+                w.description = desc;
+            }
+            renderBwWidgetNames(block);
+            renderBwPreview(w || {id: widgetId, name, description: desc, css: null});
+        }
+    }
+
+    function _bwRefreshIframe(widgetId) {
+        const block = _bwBlocks.find(b => b.id === _bwBlockId);
+        if (!block) return;
+        const w = (block.widgets || []).find(w => w.id === widgetId);
+        if (!w) return;
+        const iframeWrap = document.getElementById(`bwiw-${widgetId}`);
+        if (!iframeWrap) return;
+        iframeWrap.innerHTML = '';
+        if (w.css || w.html) {
+            iframeWrap.appendChild(_bwMakeIframe(bwPreviewIframeHtml(w.css, w.html, block.content || null)));
+        }
+    }
+
+    function _bwUpdateEmptyMark(detailsId, hasValue) {
+        const summary = document.querySelector(`#${detailsId} .bw-css-summary`);
+        if (!summary) return;
+        const mark = summary.querySelector('.bw-css-empty-mark');
+        if (hasValue && mark) mark.remove();
+        else if (!hasValue && !mark) {
+            const span = document.createElement('span');
+            span.className = 'bw-css-empty-mark';
+            span.textContent = 'не задан';
+            summary.appendChild(span);
+        }
+    }
+
+    async function saveBwCss(widgetId) {
+        const textarea = document.getElementById(`bwcss-${widgetId}`);
+        if (!textarea) return;
+        const css = textarea.value.trim() || null;
+        const btn = document.querySelector(`#bwced-${widgetId} .bw-btn-save-css`);
+        if (btn) {
+            btn.textContent = 'Сохраняю...';
+            btn.disabled = true;
+        }
+        await planningFetch(`/planning/widget/${widgetId}`, {
+            method: 'PUT', body: JSON.stringify({css}),
+        });
+        const block = _bwBlocks.find(b => b.id === _bwBlockId);
+        if (block) {
+            const w = (block.widgets || []).find(w => w.id === widgetId);
+            if (w) {
+                w.css = css;
+                _bwRefreshIframe(widgetId);
+                _bwUpdateEmptyMark(`bwced-${widgetId}`, !!css);
+            }
+        }
+        if (btn) {
+            btn.textContent = 'Сохранить CSS';
+            btn.disabled = false;
+        }
+    }
+
+    async function saveBwHtml(widgetId) {
+        const textarea = document.getElementById(`bwhtml-${widgetId}`);
+        if (!textarea) return;
+        const html = textarea.value.trim() || null;
+        const btn = document.querySelector(`#bwhed-${widgetId} .bw-btn-save-css`);
+        if (btn) {
+            btn.textContent = 'Сохраняю...';
+            btn.disabled = true;
+        }
+        await planningFetch(`/planning/widget/${widgetId}`, {
+            method: 'PUT', body: JSON.stringify({html}),
+        });
+        const block = _bwBlocks.find(b => b.id === _bwBlockId);
+        if (block) {
+            const w = (block.widgets || []).find(w => w.id === widgetId);
+            if (w) {
+                w.html = html;
+                _bwRefreshIframe(widgetId);
+                _bwUpdateEmptyMark(`bwhed-${widgetId}`, !!html);
+            }
+        }
+        if (btn) {
+            btn.textContent = 'Сохранить HTML';
+            btn.disabled = false;
+        }
+    }
+
+    async function deleteBwWidget(widgetId) {
+        if (!confirm('Удалить виджет?')) return;
+        await planningFetch(`/planning/widget/${widgetId}`, {method: 'DELETE'});
+        const block = _bwBlocks.find(b => b.id === _bwBlockId);
+        if (block) {
+            block.widgets = (block.widgets || []).filter(w => w.id !== widgetId);
+            renderBwWidgetNames(block);
+            updateBwStats();
+            renderBwBlockList();
+        }
+        _bwWidgetId = null;
+        document.getElementById('bwPreviewContent').innerHTML = '<span class="bw-placeholder">Выберите виджет</span>';
+    }
+
+    function toggleBwAddForm() {
+        const form = document.getElementById('bwAddForm');
+        const visible = form.style.display !== 'none';
+        form.style.display = visible ? 'none' : 'block';
+        if (!visible) document.getElementById('bwfName').focus();
+    }
+
+    async function saveBwWidget() {
+        const name = (document.getElementById('bwfName')?.value || '').trim();
+        if (!name) {
+            alert('Укажите название');
+            return;
+        }
+        const desc = (document.getElementById('bwfDesc')?.value || '').trim() || null;
+        const css = (document.getElementById('bwfCss')?.value || '').trim() || null;
+        const data = await planningFetch(`/planning/block/${_bwBlockId}/widget`, {
+            method: 'POST', body: JSON.stringify({name, description: desc, css}),
+        });
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+        const block = _bwBlocks.find(b => b.id === _bwBlockId);
+        if (block) {
+            block.widgets = block.widgets || [];
+            block.widgets.push(data.result);
+            renderBwWidgetNames(block);
+            renderBwBlockList();
+            updateBwStats();
+        }
+        document.getElementById('bwfName').value = '';
+        document.getElementById('bwfDesc').value = '';
+        document.getElementById('bwfCss').value = '';
+        document.getElementById('bwAddForm').style.display = 'none';
+    }
+
+    /* Block title inline edit */
+    function startBwTitleEdit(blockId) {
+        const span = document.getElementById('bwInfoTitle-' + blockId);
+        if (!span) return;
+        const block = _bwBlocks.find(b => b.id === blockId);
+        if (!block) return;
+        const currentTitle = block.title || block.name;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'bw-block-name-input';
+        input.style.cssText = 'flex:1;min-width:0;font-size:14px;font-weight:600;border:1px solid #818cf8;border-radius:4px;padding:2px 6px;outline:none;font-family:inherit;';
+        input.value = currentTitle;
+        span.replaceWith(input);
+        input.focus();
+        input.select();
+        const commit = async () => {
+            const newTitle = input.value.trim();
+            if (newTitle && newTitle !== currentTitle) {
+                await planningFetch(`/planning/block/${blockId}/title`, {
+                    method: 'PUT',
+                    body: JSON.stringify({title: newTitle}),
+                });
+                block.title = newTitle;
+            }
+            renderBwBlockList();
+            selectBwBlock(blockId);
+        };
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                input.blur();
+            }
+            if (e.key === 'Escape') {
+                renderBwBlockList();
+                selectBwBlock(blockId);
+            }
+        });
+    }
+
+    /* Block regeneration / delete / generate */
+    async function regenBwBlock(blockId) {
+        const btn = document.getElementById('bwregen-' + blockId);
+        if (btn) btn.classList.add('spinning');
+        try {
+            const data = await planningFetch(`/planning/block/${blockId}/regenerate`, {method: 'POST'});
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            const idx = _bwBlocks.findIndex(b => b.id === blockId);
+            if (idx !== -1) {
+                _bwBlocks[idx] = data.result;
+                renderBwBlockList();
+                updateBwStats();
+                if (_bwBlockId === blockId) selectBwBlock(blockId);
+            }
+        } finally {
+            const btn2 = document.getElementById('bwregen-' + blockId);
+            if (btn2) btn2.classList.remove('spinning');
+        }
+    }
+
+    async function deleteBwBlock(blockId) {
+        if (!confirm('Удалить блок со всеми виджетами?')) return;
+        await planningFetch(`/planning/block/${blockId}`, {method: 'DELETE'});
+        _bwBlocks = _bwBlocks.filter(b => b.id !== blockId);
+        if (_bwBlockId === blockId) {
+            _bwBlockId = null;
+            resetBwRight();
+        }
+        renderBwBlockList();
+        updateBwStats();
+    }
+
+    function toggleBwGenForm() {
+        const form = document.getElementById('bwGenForm');
+        const open = form.classList.toggle('open');
+        if (open) document.getElementById('bwgName').focus();
+    }
+
+    let _bwMicRecognition = null;
+    let _bwMicActive = false;
+
+    function toggleBwMic() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert('Ваш браузер не поддерживает распознавание речи');
+            return;
+        }
+        if (_bwMicActive) {
+            _bwMicRecognition && _bwMicRecognition.stop();
+            return;
+        }
+        _bwMicRecognition = new SpeechRecognition();
+        _bwMicRecognition.lang = 'ru-RU';
+        _bwMicRecognition.continuous = true;
+        _bwMicRecognition.interimResults = false;
+        _bwMicRecognition.onstart = () => {
+            _bwMicActive = true;
+            const btn = document.getElementById('bwMicBtn');
+            if (btn) btn.classList.add('recording');
+        };
+        _bwMicRecognition.onend = () => {
+            _bwMicActive = false;
+            const btn = document.getElementById('bwMicBtn');
+            if (btn) btn.classList.remove('recording');
+        };
+        _bwMicRecognition.onresult = (e) => {
+            const transcript = Array.from(e.results).map(r => r[0].transcript).join(' ');
+            const ta = document.getElementById('bwgDesc');
+            if (ta) ta.value = (ta.value ? ta.value + ' ' : '') + transcript;
+        };
+        _bwMicRecognition.start();
+    }
+
+    async function generateBwBlock() {
+        const name = (document.getElementById('bwgName')?.value || '').trim();
+        const desc = (document.getElementById('bwgDesc')?.value || '').trim();
+        if (!name) {
+            alert('Укажите название блока');
+            return;
+        }
+        if (!desc) {
+            alert('Опишите блок');
+            return;
+        }
+        if (!_bwProjectId) {
+            alert('Выберите проект');
+            return;
+        }
+
+        const btn = document.getElementById('bwgSubmitBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Генерация…';
+        }
+
+        try {
+            const data = await planningFetch(`/planning/project/${_bwProjectId}/block/generate`, {
+                method: 'POST',
+                body: JSON.stringify({name, description: desc}),
+            });
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            _bwBlocks.push(data.result);
+            renderBwBlockList();
+            updateBwStats();
+            // Close form and clear
+            document.getElementById('bwGenForm').classList.remove('open');
+            document.getElementById('bwgName').value = '';
+            document.getElementById('bwgDesc').value = '';
+            // Auto-select new block
+            selectBwBlock(data.result.id);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Сгенерировать';
+            }
+        }
+    }
+
+    /* Page preview */
+    function renderPagePreview() {
+        const wrap = document.getElementById('pagePreviewWrap');
+        if (!wrap) return;
+
+        if (!_selectedPageId || !_wfBlocks.length) {
+            wrap.innerHTML = '<div class="pages-preview-placeholder">' + (_selectedPageId ? 'Нет блоков на странице' : 'Выберите страницу') + '</div>';
+            return;
+        }
+
+        let allCss = '';
+        const levelDivs = _gridLayout.map((level, levelIdx) => {
+            const levelFlatStart = _gridLayout.slice(0, levelIdx).reduce((a, l) => a + l.w.length, 0);
+            const sectionDivs = level.w.map((width, col) => {
+                const flatIdx = levelFlatStart + col;
+                const blocksInSection = _wfBlocks
+                    .filter(b => (b.section || 0) === flatIdx)
+                    .sort((a, b2) => (a.order_index || 0) - (b2.order_index || 0));
+
+                let secHtml = '';
+                for (const item of blocksInSection) {
+                    // Check project blocks first, then default UI library blocks (from cache)
+                    const projBlock = _allBlocks.find(b => b.id === item.block_id);
+                    const uiBlock = !projBlock ? (_uiBlockCache[item.block_id] || _defaultBlocks.find(b => b.id === item.block_id)) : null;
+
+                    if (uiBlock) {
+                        // UI library block — render HTML directly (inject Tailwind CDN)
+                        if (uiBlock.html) {
+                            const rendered = _fillTestData(uiBlock.html, uiBlock.vars, uiBlock.slots);
+                            secHtml += `<div style="overflow:hidden">${_injectCdn(rendered)}</div>`;
+                        } else {
+                            secHtml += `<div style="padding:10px;border:1px dashed #e2e8f0;color:#94a3b8;font-size:11px;margin-bottom:4px">${esc(uiBlock.name)} (загрузка…)</div>`;
+                        }
+                        continue;
+                    }
+
+                    if (!projBlock) continue;
+                    const widget = (projBlock.widgets || []).find(w =>
+                        (item.widget_id && w.id === item.widget_id) || w.name === item.widget_name
+                    ) || (projBlock.widgets || [])[0];
+                    if (!widget) {
+                        secHtml += `<div style="padding:10px;border:1px dashed #e2e8f0;color:#94a3b8;font-size:11px;margin-bottom:4px">${esc(projBlock.title || projBlock.name)} (нет HTML)</div>`;
+                        continue;
+                    }
+                    if (widget.css) allCss += widget.css + '\n';
+                    secHtml += widget.html
+                        ? widget.html
+                        : `<div style="padding:10px;border:1px dashed #e2e8f0;color:#94a3b8;font-size:11px;margin-bottom:4px">${esc(projBlock.title || projBlock.name)}: ${esc(widget.name)}</div>`;
+                }
+                return `<div style="width:${width}%;box-sizing:border-box;overflow:hidden;flex-shrink:0">${secHtml}</div>`;
+            }).join('');
+
+            return `<div style="display:flex;width:100%;min-height:${level.h}px">${sectionDivs}</div>`;
+        }).join('');
+
+        const hasContent = allCss || levelDivs.replace(/<[^>]*>/g, '').trim();
+        if (!hasContent) {
+            wrap.innerHTML = '<div class="pages-preview-placeholder">Блоки без HTML/CSS — добавьте виджеты</div>';
+            return;
+        }
+
+        const srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif}${allCss}</style></head><body>${levelDivs}</body></html>`;
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
+        iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
+        iframe.srcdoc = srcdoc;
+        wrap.innerHTML = '';
+        wrap.appendChild(iframe);
+    }
+
+    /* Pages horizontal splitter */
+    (function initPagesHSplitter() {
+        function ready(fn) {
+            if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn);
+        }
+
+        ready(() => {
+            const splitter = document.getElementById('pagesHSplitter');
+            const topRow = document.getElementById('pagesTopRow');
+            if (!splitter || !topRow) return;
+
+            let dragging = false, startY = 0, startH = 0;
+
+            splitter.addEventListener('mousedown', e => {
+                dragging = true;
+                startY = e.clientY;
+                startH = topRow.offsetHeight;
+                splitter.classList.add('active');
+                document.body.style.cursor = 'row-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                const newH = Math.max(120, Math.min(startH + e.clientY - startY, window.innerHeight * 0.85));
+                topRow.style.height = newH + 'px';
+                topRow.style.flex = 'none';
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                dragging = false;
+                splitter.classList.remove('active');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            });
+        });
+    })();
+
+    /* Splitters */
+    document.addEventListener('DOMContentLoaded', function () {
+        initSidebarResizer('bwVSplitter', 'design_bw_left_w', document.getElementById('bwColLeft'), 140, 600);
+        initSidebarResizer('pagesVSplitter', 'design_pages_tree_w', document.querySelector('.pages-tree-col'), 140, 500);
+        initSidebarResizer('uiCompVSplitter', 'design_ui_comp_list_w', document.querySelector('.ui-comp-list-col'), 180, 600);
+
+        /* Right-side panel: dragging right shrinks, dragging left grows */
+        (function () {
+            const splitter = document.getElementById('pagesEditorVSplitter');
+            const panel = document.getElementById('blockLibraryCol');
+            if (!splitter || !panel) return;
+            const minW = 140, maxW = 500;
+            const saved = parseInt(localStorage.getItem('design_block_lib_w'), 10);
+            if (saved && saved >= minW && saved <= maxW) panel.style.width = saved + 'px';
+            splitter.addEventListener('mousedown', e => {
+                const startX = e.clientX, startW = panel.getBoundingClientRect().width;
+                splitter.classList.add('dragging');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+
+                function onMove(e) {
+                    const w = Math.min(maxW, Math.max(minW, startW - (e.clientX - startX)));
+                    panel.style.width = w + 'px';
+                }
+
+                function onUp() {
+                    splitter.classList.remove('dragging');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    localStorage.setItem('design_block_lib_w', parseInt(panel.style.width, 10));
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                }
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+                e.preventDefault();
+            });
+        })();
+
+        const hSplit = document.getElementById('bwHSplitter');
+        const namesPane = document.getElementById('bwWidgetNames');
+        const colRight = document.getElementById('bwColRight');
+        if (hSplit && namesPane && colRight) {
+            let hDrag = false;
+            hSplit.addEventListener('mousedown', e => {
+                hDrag = true;
+                hSplit.classList.add('dragging');
+                document.body.style.cursor = 'row-resize';
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', e => {
+                if (!hDrag) return;
+                const infoH = document.getElementById('bwBlockInfo').offsetHeight;
+                const rect = colRight.getBoundingClientRect();
+                const pct = Math.max(15, Math.min(80, ((e.clientY - rect.top - infoH) / (rect.height - infoH - 5)) * 100));
+                namesPane.style.height = pct + '%';
+            });
+            document.addEventListener('mouseup', () => {
+                if (!hDrag) return;
+                hDrag = false;
+                hSplit.classList.remove('dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            });
+        }
+    });
+
+    function onProjectChange() {
+        const currentTab = document.querySelector('.page-tab.active')?.dataset?.tab;
+        if (currentTab === 'prototype') {
+            loadPrototype();
+            loadDesignTokens();
+            loadDesignStates();
+            loadProjectChips();
+        } else if (currentTab === 'blocks-widgets') loadBlocksWidgets();
+        else if (currentTab === 'pages') loadPagesTab();
+    }
+
+    async function initProjectSelects() {
+        const data = await planningFetch('/planning/project/list');
+        _allProjects = data.result || [];
+        const sel = document.getElementById('globalProjectSel');
+        if (sel) {
+            _allProjects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `#${p.id} ${p.title || (p.idea || '').slice(0, 55)}`;
+                sel.appendChild(opt);
+            });
+        }
+
+        const params = new URLSearchParams(location.search);
+        const hash = location.hash.replace('#', '');
+        const pid = params.get('project_id') || (_allProjects[0] ? String(_allProjects[0].id) : '');
+
+        if (pid && sel) sel.value = pid;
+
+        // map old hash aliases
+        const hashMap = {blocks: 'blocks-widgets', widgets: 'blocks-widgets'};
+        const normalizedHash = hashMap[hash] || hash;
+        const validHashes = ['prototype', 'blocks-widgets', 'pages', 'ui-components'];
+        const savedTab = localStorage.getItem('design_active_tab');
+        const activeHash = validHashes.includes(normalizedHash) ? normalizedHash
+            : validHashes.includes(savedTab) ? savedTab
+                : null;
+        const activeTabEl = document.querySelector('.page-tab.active');
+        const currentTab = activeHash || activeTabEl?.dataset?.tab;
+
+        if (activeHash) {
+            document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            const tab = document.querySelector(`.page-tab[data-tab="${activeHash}"]`);
+            if (tab) tab.classList.add('active');
+            const panel = document.getElementById(`tab-${activeHash}`);
+            if (panel) panel.classList.add('active');
+        }
+
+        if (pid) {
+            if (currentTab === 'prototype') {
+                loadPrototype();
+                loadDesignTokens();
+                loadDesignStates();
+                loadProjectChips();
+            }
+            if (currentTab === 'blocks-widgets') loadBlocksWidgets();
+            if (currentTab === 'pages') loadPagesTab();
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // СТРАНИЦЫ — wireframe drag-and-drop builder
+    // ═══════════════════════════════════════════════
+
+    let _allBlocks = [];          // все блоки проекта с виджетами
+    let _allPagesFull = [];       // все страницы проекта с блоками
+    let _selectedPageId = null;
+    let _wfBlocks = [];           // текущие блоки в вайрфрейме выбранной страницы
+    // [{w:[%,...], h:px}, ...] — уровни с шириной секций и высотой
+    let _gridLayout = [{w: [33, 33, 34], h: 300}, {w: [33, 33, 34], h: 300}, {w: [33, 33, 34], h: 300}];
+    let _libActiveId = null;
+    let _libDefaultActiveId = null;
+
+    async function loadPagesTab() {
+        const pid = document.getElementById('globalProjectSel').value;
+        if (!pid) {
+            document.getElementById('pagesTree').innerHTML = '<div class="no-blocks-msg">Выберите проект</div>';
+            return;
+        }
+
+        document.getElementById('pagesTree').innerHTML = '<div class="no-blocks-msg">Загрузка…</div>';
+        document.getElementById('blockLibrary').innerHTML = '<div class="no-blocks-msg" style="padding:20px;font-size:12px">Загрузка…</div>';
+
+        const fetches = [
+            planningFetch(`/planning/project/${pid}/blocks`),
+            planningFetch(`/planning/project/${pid}/wireframe-pages`),
+        ];
+        if (!_defaultBlocks.length) fetches.push(planningFetch('/design/ui-blocks'));
+        const [blocksData, pagesData, defaultData] = await Promise.all(fetches);
+
+        _allBlocks = blocksData.result || [];
+        _allPagesFull = pagesData.result || [];
+        if (defaultData) _defaultBlocks = defaultData.result || [];
+        _selectedPageId = null;
+        _wfBlocks = [];
+        _gridLayout = [{w: [33, 33, 34], h: 300}, {w: [33, 33, 34], h: 300}, {w: [33, 33, 34], h: 300}];
+
+        renderPageTree();
+        renderBlockLibrary('');
+
+
+        // Reset editor
+        document.getElementById('wfPlaceholder').style.display = '';
+        document.getElementById('wfDropZone').innerHTML = `<div class="wf-placeholder" id="wfPlaceholder">
+        <div style="font-size:32px">🗂️</div>
+        <div>Выберите страницу из дерева слева</div>
+        <div style="font-size:12px;color:#cbd5e1">Перетаскивайте блоки из библиотеки справа</div>
+    </div>`;
+        document.getElementById('btnAutoWireframe').style.display = 'none';
+        document.getElementById('btnSaveWireframe').style.display = 'none';
+    }
+
+    function renderPageTree() {
+        const tree = document.getElementById('pagesTree');
+        if (!_allPagesFull.length) {
+            tree.innerHTML = '<div class="no-blocks-msg">Страницы не сгенерированы</div>';
+            return;
+        }
+
+        // Group into parent/child
+        const roots = _allPagesFull.filter(p => !p.parent_id);
+        const childrenOf = {};
+        _allPagesFull.filter(p => p.parent_id).forEach(p => {
+            (childrenOf[p.parent_id] = childrenOf[p.parent_id] || []).push(p);
+        });
+
+        tree.innerHTML = '';
+
+        function addPageItem(p, isChild) {
+            const blockCount = (p.blocks || []).length;
+            const div = document.createElement('div');
+            div.className = `page-tree-item${isChild ? ' child' : ''}${_selectedPageId === p.id ? ' active' : ''}`;
+            div.dataset.pageId = p.id;
+            div.onclick = () => selectWfPage(p.id);
+            div.innerHTML = `
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span>
+            ${blockCount ? `<span class="block-cnt">${blockCount}</span>` : ''}
+            <span class="ptype-badge">${esc(p.page_type || 'page')}</span>
+        `;
+            tree.appendChild(div);
+            (childrenOf[p.id] || []).forEach(c => addPageItem(c, true));
+        }
+
+        roots.forEach(p => addPageItem(p, false));
+    }
+
+    function renderBlockLibrary(filter) {
+        const lib = document.getElementById('blockLibrary');
+        const q = (filter || '').toLowerCase();
+
+        let html = '';
+
+        // Section 1: project blocks
+        const projectItems = q
+            ? _allBlocks.filter(b => b.name.toLowerCase().includes(q) || (b.description || '').toLowerCase().includes(q))
+            : _allBlocks;
+        if (projectItems.length) {
+            html += '<div class="lib-section-label">Блоки проекта</div>';
+            html += projectItems.map(b => `
+            <div class="lib-block-item${_libActiveId === b.id ? ' active' : ''}"
+                 draggable="true"
+                 ondragstart="onLibDragStart(event, ${b.id}, 'project')"
+                 onclick="selectLibBlock(${b.id})"
+                 title="${esc(b.description || b.name)}">
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${esc(b.name)}</span>
+            </div>`).join('');
+        }
+
+        // Section 2: default UI blocks
+        const defItems = q
+            ? _defaultBlocks.filter(b => b.name.toLowerCase().includes(q) || (b.tags || '').toLowerCase().includes(q))
+            : _defaultBlocks;
+        if (defItems.length) {
+            html += '<div class="lib-section-label">Блоки по умолчанию</div>';
+            html += defItems.map(b => {
+                const isContainer = !!b.slots;
+                return `<div class="lib-block-item${_libDefaultActiveId === b.id ? ' active' : ''}"
+                 draggable="true"
+                 ondragstart="onLibDragStart(event, ${b.id}, 'default')"
+                 onclick="selectLibDefaultBlock(${b.id})"
+                 title="${esc(b.name)}">
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${esc(b.name)}</span>
+                <span class="bw-default-item-badge${isContainer ? ' is-container' : ''}">${isContainer ? 'cnt' : 'item'}</span>
+            </div>`;
+            }).join('');
+        }
+
+        if (!html) {
+            lib.innerHTML = '<div class="no-blocks-msg" style="padding:20px;font-size:12px">Нет блоков</div>';
+        } else {
+            lib.innerHTML = html;
+        }
+    }
+
+    function filterLibBlocks() {
+        renderBlockLibrary(document.getElementById('libSearch').value);
+    }
+
+    function selectLibBlock(id) {
+        _libActiveId = id;
+        _libDefaultActiveId = null;
+        renderBlockLibrary(document.getElementById('libSearch').value);
+        const b = _allBlocks.find(b => b.id === id);
+        if (!b) return;
+        const wrap = document.getElementById('libBlockPreview');
+        wrap.innerHTML = '<div style="padding:12px">' +
+            '<div style="font-weight:700;font-size:13px;margin-bottom:4px">' + esc(b.name) + '</div>' +
+            (b.description ? '<div style="color:#64748b;font-size:12px;line-height:1.5">' + esc(b.description) + '</div>' : '') +
+            '</div>';
+    }
+
+    async function selectLibDefaultBlock(id) {
+        _libActiveId = null;
+        _libDefaultActiveId = id;
+        renderBlockLibrary(document.getElementById('libSearch').value);
+        const data = await planningFetch('/design/ui-blocks/' + id);
+        const b = data.result;
+        if (!b) return;
+        const wrap = document.getElementById('libBlockPreview');
+        const tags = (b.tags || '').split(',').filter(Boolean);
+        const tagsHtml = tags.map(t => '<span class="bw-default-preview-tag">' + esc(t.trim()) + '</span>').join('');
+        wrap.innerHTML = '<div style="padding:12px 14px">' +
+            '<div class="bw-preview-name">' + esc(b.name) + '</div>' +
+            (b.description ? '<div class="bw-preview-desc">' + esc(b.description) + '</div>' : '') +
+            (tagsHtml ? '<div class="bw-default-preview-tags">' + tagsHtml + '</div>' : '') +
+            '<div class="bw-preview-section-label">Превью</div>' +
+            '<div class="bw-iframe-wrap" id="libprev-' + b.id + '"></div>' +
+            '</div>';
+        if (b.html) {
+            const rendered = _fillTestData(b.html, b.vars, b.slots);
+            const prevWrap = document.getElementById('libprev-' + b.id);
+            if (!rendered.includes('[[slot:')) {
+                prevWrap.appendChild(_bwMakeIframe(_injectCdn(rendered)));
+            } else {
+                let varsObj = {};
+                try {
+                    varsObj = JSON.parse(b.vars || '{}');
+                } catch (e) {
+                }
+                const keys = Object.keys(varsObj);
+                prevWrap.style.padding = '8px 0';
+                if (keys.length) {
+                    prevWrap.innerHTML = '<div style="font-size:11px;color:#64748b;margin-bottom:6px">Переменные блока:</div>' +
+                        keys.map(k => '<div style="font-size:12px;margin-bottom:3px"><span style="color:#6366f1;font-weight:600;min-width:120px;display:inline-block">' + esc(k) + '</span> ' + esc(String(varsObj[k])) + '</div>').join('');
+                } else {
+                    prevWrap.innerHTML = '<div style="color:#94a3b8;font-size:12px;font-style:italic">Блок-контейнер (слоты без шаблона)</div>';
+                }
+            }
+        }
+    }
+
+    function selectWfPage(pageId) {
+        _selectedPageId = pageId;
+        _dragSrcBlockIdx = null;
+
+        // Update tree active state
+        document.querySelectorAll('.page-tree-item').forEach(el => {
+            el.classList.toggle('active', parseInt(el.dataset.pageId) === pageId);
+        });
+
+        const page = _allPagesFull.find(p => p.id === pageId);
+        if (!page) return;
+
+        _gridLayout = _normalizeGridLayout(page.grid_layout);
+
+        // Build current wireframe blocks
+        _wfBlocks = (page.blocks || [])
+            .sort((a, b) => (a.section || 0) - (b.section || 0) || a.order_index - b.order_index)
+            .map(pb => ({
+                block_id: pb.block_id,
+                block_name: pb.block_name,
+                widget_name: pb.widget_name || '',
+                widget_id: pb.widget_id || null,
+                section: pb.section || 0,
+                order_index: pb.order_index || 0,
+            }));
+
+        renderWireframeEditor();
+        document.getElementById('btnAutoWireframe').style.display = '';
+        document.getElementById('btnSaveWireframe').style.display = '';
+
+        // Prefetch full html/vars/slots for any UI library blocks not yet cached
+        const projIds = new Set((_allBlocks || []).map(b => b.id));
+        const uiBlockIds = [...new Set(_wfBlocks.map(b => b.block_id).filter(id => !projIds.has(id)))];
+        uiBlockIds.forEach(bid => {
+            if (!_uiBlockCache[bid]) {
+                planningFetch(`/design/ui-blocks/${bid}`).then(data => {
+                    if (data && data.result) {
+                        _uiBlockCache[bid] = data.result;
+                        renderPagePreview();
+                    }
+                });
+            }
+        });
+    }
+
+    let _dragSrcBlockIdx = null;
+    let _dragLibBlockId = null;
+    let _dragLibBlockType = null; // 'project' | 'default'
+    const _uiBlockCache = {}; // id → full block data with html/vars/slots
+
+    function onLibDragStart(event, id, type) {
+        _dragLibBlockId = id;
+        _dragLibBlockType = type;
+        _dragSrcBlockIdx = null;
+        event.dataTransfer.effectAllowed = 'copy';
+    }
+
+    function onBlockDragStart(event, idx) {
+        _dragSrcBlockIdx = idx;
+        _dragLibBlockId = null;
+        _dragLibBlockType = null;
+        event.dataTransfer.effectAllowed = 'move';
+        event.currentTarget.classList.add('dragging');
+    }
+
+    function onBlockDragEnd(event) {
+        event.currentTarget.classList.remove('dragging');
+    }
+
+    function onSectionDragOver(event) {
+        event.preventDefault();
+        event.currentTarget.classList.add('drag-over-section');
+    }
+
+    function onSectionDragLeave(event) {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+            event.currentTarget.classList.remove('drag-over-section');
+        }
+    }
+
+    function onSectionDrop(event, flatIdx) {
+        event.preventDefault();
+        event.currentTarget.classList.remove('drag-over-section');
+
+        if (_dragSrcBlockIdx !== null) {
+            const block = _wfBlocks[_dragSrcBlockIdx];
+            if (block) {
+                block.section = flatIdx;
+                const secBlocks = _wfBlocks.filter(b => (b.section || 0) === flatIdx && b !== block);
+                block.order_index = secBlocks.length;
+            }
+            _dragSrcBlockIdx = null;
+            renderWireframeEditor();
+        } else if (_dragLibBlockId !== null) {
+            const isDefault = _dragLibBlockType === 'default';
+            const pool = isDefault ? _defaultBlocks : _allBlocks;
+            const b = pool.find(b => b.id === _dragLibBlockId);
+            if (b) {
+                const secBlocks = _wfBlocks.filter(wb => (wb.section || 0) === flatIdx);
+                _wfBlocks.push({
+                    block_id: b.id,
+                    block_name: b.name,
+                    widget_name: '',
+                    widget_id: null,
+                    section: flatIdx,
+                    order_index: secBlocks.length,
+                });
+                renderWireframeEditor();
+                // Lazy-fetch full html/vars/slots for UI blocks
+                if (isDefault && !_uiBlockCache[b.id]) {
+                    planningFetch(`/design/ui-blocks/${b.id}`).then(data => {
+                        if (data && data.result) {
+                            _uiBlockCache[b.id] = data.result;
+                            renderPagePreview();
+                        }
+                    });
+                }
+            }
+            _dragLibBlockId = null;
+            _dragLibBlockType = null;
+        }
+    }
+
+    // ── Layout helpers ──────────────────────────────────────────────────────────
+    function _normalizeGridLayout(raw) {
+        const def = [{w: [33, 33, 34], h: 300}, {w: [33, 33, 34], h: 300}, {w: [33, 33, 34], h: 300}];
+        if (!Array.isArray(raw) || !raw.length) return def;
+        if (typeof raw[0] === 'number') {
+            // Old format [3, 3, 3]
+            return raw.map(cols => {
+                cols = Math.max(1, cols);
+                const each = Math.floor(100 / cols);
+                const ws = Array(cols).fill(each);
+                ws[0] += 100 - ws.reduce((a, b) => a + b, 0);
+                return {w: ws, h: 300};
+            });
+        }
+        return raw.map(lvl => ({
+            w: Array.isArray(lvl.w) && lvl.w.length ? lvl.w.map(Number) : [100],
+            h: parseInt(lvl.h) || 300,
+        }));
+    }
+
+    function _firstFlatIdxOfLevel(levelIdx) {
+        return _gridLayout.slice(0, levelIdx).reduce((a, lvl) => a + lvl.w.length, 0);
+    }
+
+    function _totalSections() {
+        return _gridLayout.reduce((a, lvl) => a + lvl.w.length, 0);
+    }
+
+    // ── Renderer ─────────────────────────────────────────────────────────────────
+    function renderWireframeEditor() {
+        const zone = document.getElementById('wfDropZone');
+        zone.innerHTML = '';
+
+        _gridLayout.forEach((level, levelIdx) => {
+            const levelCols = level.w.length;
+            const levelEl = document.createElement('div');
+            levelEl.className = 'wf-level';
+            levelEl.dataset.level = levelIdx;
+
+            // Level control bar
+            const bar = document.createElement('div');
+            bar.className = 'wf-level-bar';
+            bar.innerHTML = `
+            <span class="wf-level-label">Уровень ${levelIdx + 1}
+                <span style="font-weight:400;color:#94a3b8">(${levelCols} ${levelCols === 1 ? 'секция' : levelCols < 5 ? 'секции' : 'секций'})</span>
+            </span>
+            <span class="wf-level-height">
+                h: <input class="wf-size-input" type="number" min="40" max="2000" step="10"
+                    value="${level.h}" onchange="setLevelHeight(${levelIdx}, this.value)"
+                    onclick="event.stopPropagation()" title="Высота уровня (px)">px
+            </span>
+            <span class="wf-level-actions">
+                <button class="wf-level-btn" onclick="addSectionToLevel(${levelIdx})" title="Добавить секцию">+ Секция</button>
+                <button class="wf-level-btn wf-level-btn-danger" onclick="removeSectionFromLevel(${levelIdx})"
+                    title="Удалить последнюю секцию" ${levelCols <= 1 ? 'disabled' : ''}>− Секция</button>
+                <button class="wf-level-btn" onclick="addLevel(${levelIdx})" title="Добавить уровень ниже">+ Уровень ↓</button>
+                <button class="wf-level-btn wf-level-btn-danger" onclick="removeLevel(${levelIdx})"
+                    title="Удалить уровень" ${_gridLayout.length <= 1 ? 'disabled' : ''}>✕</button>
+            </span>
+        `;
+            levelEl.appendChild(bar);
+
+            // Sections row
+            const sectionsRow = document.createElement('div');
+            sectionsRow.className = 'wf-level-sections';
+            sectionsRow.style.gridTemplateColumns = level.w.map(w => w + '%').join(' ');
+
+            const levelFlatStart = _firstFlatIdxOfLevel(levelIdx);
+
+            for (let col = 0; col < levelCols; col++) {
+                const flatIdx = levelFlatStart + col;
+                const cell = document.createElement('div');
+                cell.className = 'wf-section';
+                cell.dataset.section = flatIdx;
+                cell.addEventListener('dragover', onSectionDragOver);
+                cell.addEventListener('dragleave', onSectionDragLeave);
+                cell.addEventListener('drop', e => onSectionDrop(e, flatIdx));
+
+                const secLabel = document.createElement('div');
+                secLabel.className = 'wf-section-label';
+                secLabel.innerHTML = `
+                <span>${levelIdx + 1}.${col + 1}</span>
+                <input class="wf-size-input" type="number" min="5" max="95" step="5"
+                    value="${level.w[col]}" onchange="setSectionWidth(${levelIdx}, ${col}, this.value)"
+                    onclick="event.stopPropagation()" title="Ширина секции (%)">%`;
+                cell.appendChild(secLabel);
+
+                // Render blocks in this section
+                _wfBlocks
+                    .map((b, i) => ({...b, _idx: i}))
+                    .filter(b => (b.section || 0) === flatIdx)
+                    .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+                    .forEach(item => {
+                        const block = _allBlocks.find(b => b.id === item.block_id);
+                        const widgets = block?.widgets || [];
+                        const widgetOpts = widgets.map(w =>
+                            `<option value="${esc(w.name)}" ${item.widget_name === w.name ? 'selected' : ''}>${esc(w.name)}</option>`
+                        ).join('');
+                        const row = document.createElement('div');
+                        row.className = 'wf-block-row';
+                        row.draggable = true;
+                        row.addEventListener('dragstart', e => onBlockDragStart(e, item._idx));
+                        row.addEventListener('dragend', onBlockDragEnd);
+                        row.innerHTML = `
+                        <span class="wf-drag-handle" title="Перетащить">⠿</span>
+                        <span class="wf-block-name">${esc(item.block_name)}</span>
+                        ${widgets.length
+                            ? `<select class="wf-widget-select" onchange="onWidgetChange(${item._idx}, this.value)">
+                                   <option value="">—</option>${widgetOpts}</select>`
+                            : `<input type="text" class="wf-widget-select" placeholder="виджет"
+                                      value="${esc(item.widget_name)}" oninput="onWidgetChange(${item._idx}, this.value)">`}                        <button class="btn-remove-wf-block" onclick="removeWfBlock(${item._idx})" title="Убрать">✕</button>
+                    `;
+                        cell.appendChild(row);
+                    });
+
+                sectionsRow.appendChild(cell);
+            }
+
+            levelEl.appendChild(sectionsRow);
+            zone.appendChild(levelEl);
+        });
+
+        // Wireframe text
+        const wfText = document.createElement('div');
+        wfText.className = 'wireframe-text';
+        wfText.id = 'wfText';
+        wfText.textContent = buildWireframeText();
+        zone.appendChild(wfText);
+
+        renderPagePreview();
+    }
+
+    // ── Level management ─────────────────────────────────────────────────────────
+    function _redistributeWidths(cols) {
+        const each = Math.floor(100 / cols);
+        const ws = Array(cols).fill(each);
+        ws[0] += 100 - ws.reduce((a, b) => a + b, 0);
+        return ws;
+    }
+
+    function addLevel(afterIdx) {
+        const insertAt = afterIdx !== undefined ? afterIdx + 1 : _gridLayout.length;
+        const insertFlat = _gridLayout.slice(0, insertAt).reduce((a, lvl) => a + lvl.w.length, 0);
+        _wfBlocks.forEach(b => {
+            if (b.section >= insertFlat) b.section++;
+        });
+        _gridLayout.splice(insertAt, 0, {w: [100], h: 300});
+        renderWireframeEditor();
+    }
+
+    function removeLevel(levelIdx) {
+        if (_gridLayout.length <= 1) return;
+        const flatStart = _firstFlatIdxOfLevel(levelIdx);
+        const levelCols = _gridLayout[levelIdx].w.length;
+        _wfBlocks.forEach(b => {
+            if (b.section >= flatStart && b.section < flatStart + levelCols) b.section = 0;
+            else if (b.section >= flatStart + levelCols) b.section -= levelCols;
+        });
+        _gridLayout.splice(levelIdx, 1);
+        _wfRenumberSection();
+        renderWireframeEditor();
+    }
+
+    function addSectionToLevel(levelIdx) {
+        const level = _gridLayout[levelIdx];
+        const afterFlat = _firstFlatIdxOfLevel(levelIdx) + level.w.length;
+        _wfBlocks.forEach(b => {
+            if (b.section >= afterFlat) b.section++;
+        });
+        level.w = _redistributeWidths(level.w.length + 1);
+        renderWireframeEditor();
+    }
+
+    function removeSectionFromLevel(levelIdx) {
+        const level = _gridLayout[levelIdx];
+        if (level.w.length <= 1) return;
+        const lastFlat = _firstFlatIdxOfLevel(levelIdx) + level.w.length - 1;
+        const prevFlat = lastFlat - 1;
+        _wfBlocks.forEach(b => {
+            if (b.section === lastFlat) b.section = prevFlat;
+            else if (b.section > lastFlat) b.section--;
+        });
+        level.w = _redistributeWidths(level.w.length - 1);
+        _wfRenumberSection();
+        renderWireframeEditor();
+    }
+
+    function setSectionWidth(levelIdx, colIdx, val) {
+        _gridLayout[levelIdx].w[colIdx] = Math.max(5, Math.min(95, parseInt(val) || 10));
+        const sectionsRow = document.querySelector(`.wf-level[data-level="${levelIdx}"] .wf-level-sections`);
+        if (sectionsRow) sectionsRow.style.gridTemplateColumns = _gridLayout[levelIdx].w.map(w => w + '%').join(' ');
+    }
+
+    function setLevelHeight(levelIdx, val) {
+        _gridLayout[levelIdx].h = Math.max(40, parseInt(val) || 100);
+        const sectionsRow = document.querySelector(`.wf-level[data-level="${levelIdx}"] .wf-level-sections`);
+        if (sectionsRow) sectionsRow.style.minHeight = _gridLayout[levelIdx].h + 'px';
+    }
+
+    function _wfRenumberSection() {
+        const total = Math.max(_totalSections(), 9);
+        for (let s = 0; s < total; s++) {
+            let pos = 0;
+            _wfBlocks.forEach(b => {
+                if ((b.section || 0) === s) b.order_index = pos++;
+            });
+        }
+    }
+
+    function _updateWfText() {
+        const el = document.getElementById('wfText');
+        if (el) el.textContent = buildWireframeText();
+    }
+
+    function buildWireframeText() {
+        if (!_wfBlocks.length) return '(пусто)';
+        return [..._wfBlocks]
+            .sort((a, b) => (a.section || 0) - (b.section || 0) || (a.order_index || 0) - (b.order_index || 0))
+            .map(b => `${b.block_name} [${b.widget_name || '?'}]`)
+            .join(' → ');
+    }
+
+    function onWidgetChange(idx, val) {
+        if (_wfBlocks[idx]) {
+            _wfBlocks[idx].widget_name = val;
+            _updateWfText();
+        }
+    }
+
+    function removeWfBlock(idx) {
+        _wfBlocks.splice(idx, 1);
+        _wfRenumberSection();
+        renderWireframeEditor();
+    }
+
+
+    async function saveWireframe() {
+        if (!_selectedPageId) return;
+        const btn = document.getElementById('btnSaveWireframe');
+        btn.disabled = true;
+        btn.textContent = 'Сохранение…';
+
+        // Save page blocks + grid layout
+        _wfRenumberSection();
+        const blocksPayload = _wfBlocks.map(b => ({
+            block_id: b.block_id,
+            widget_name: b.widget_name || '',
+            order_index: b.order_index || 0,
+            section: b.section || 0,
+        }));
+
+        await planningFetch(`/planning/page/${_selectedPageId}/blocks`, {
+            method: 'PUT',
+            body: JSON.stringify({blocks: blocksPayload, grid_layout: _gridLayout}),
+        });
+
+        // Update local cache
+        const page = _allPagesFull.find(p => p.id === _selectedPageId);
+        if (page) {
+            page.grid_layout = _gridLayout;
+            page.blocks = _wfBlocks.map(b => ({
+                block_id: b.block_id,
+                block_name: b.block_name,
+                widget_name: b.widget_name,
+                widget_id: b.widget_id,
+                order_index: b.order_index || 0,
+                section: b.section || 0,
+            }));
+        }
+
+        // Update tree block count
+        const treeItem = document.querySelector(`.page-tree-item[data-page-id="${_selectedPageId}"]`);
+        if (treeItem) {
+            let cnt = treeItem.querySelector('.block-cnt');
+            if (_wfBlocks.length) {
+                if (!cnt) {
+                    treeItem.querySelector('span:first-child').insertAdjacentHTML('afterend', `<span class="block-cnt">${_wfBlocks.length}</span>`);
+                } else {
+                    cnt.textContent = _wfBlocks.length;
+                }
+            }
+        }
+
+        btn.disabled = false;
+        btn.textContent = 'Сгенерировать Wireframe';
+        const status = document.getElementById('wfSaveStatus');
+        status.style.display = '';
+        setTimeout(() => status.style.display = 'none', 2000);
+
+        // Reload readiness
+    }
+
+
+    async function autoWireframe() {
+        const pid = document.getElementById('globalProjectSel').value;
+        if (!pid || !_selectedPageId) return;
+        const btn = document.getElementById('btnAutoWireframe');
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="spinning" width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="12 26"/></svg> Генерация…`;
+
+        try {
+            const data = await planningFetch(`/design/page/${_selectedPageId}/auto-blocks`, {
+                method: 'POST',
+                body: JSON.stringify({project_id: parseInt(pid)}),
+            });
+            _wfBlocks = (data.result || []).map(b => ({
+                block_id: b.block_id,
+                block_name: b.block_name,
+                widget_name: b.widget_name || '',
+                widget_id: b.widget_id || null,
+                section: b.section || 0,
+                order_index: b.order_index || 0,
+            }));
+            renderWireframeEditor();
+            renderPagePreview();
+            const status = document.getElementById('wfSaveStatus');
+            status.textContent = '✓ Автоблоки применены';
+            status.style.display = '';
+            setTimeout(() => { status.style.display = 'none'; }, 3000);
+        } catch (e) {
+            alert('Ошибка автоблоков: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/><line x1="4" y1="14" x2="12" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="11" x2="8" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Автоблоки`;
+        }
+    }
+
+
+    // ═══════════════════════════════════════════════
+    // PROTOTYPE — Design Tokens
+    // ═══════════════════════════════════════════════
+
+    let _protoSelectedTokenId = null;
+    let _protoSelectedTokenName = null;
+
+    function _updateProtoBtn() {
+        const pid = document.getElementById('globalProjectSel')?.value;
+        const btn = document.getElementById('btnCreateProto');
+        const btnUi = document.getElementById('btnGenerateUiBlocks');
+        if (btnUi) btnUi.disabled = !pid;
+        const btnPages = document.getElementById('btnGeneratePages');
+        if (btnPages) btnPages.disabled = !pid;
+        if (!btn) return;
+        if (btn.classList.contains('proto-btn-stop')) return; // running — don't reset
+        btn.disabled = !(pid && _protoSelectedTokenId);
+        if (!btn.innerHTML.includes('svg')) btn.innerHTML = `${_ICON_CREATE}Создать прototип`;
+        const chip = document.getElementById('protoChipTokens');
+        const chipText = document.getElementById('protoChipTokensText');
+        if (chip && chipText) {
+            if (_protoSelectedTokenName) {
+                chipText.textContent = `Токены: ${_protoSelectedTokenName}`;
+                chip.style.background = '#eff6ff';
+                chip.style.borderColor = '#bfdbfe';
+                chip.style.color = '#1d4ed8';
+                chip.querySelectorAll('circle,rect').forEach(el => el.setAttribute('fill', '#3b82f6'));
+            } else {
+                chipText.textContent = 'Токены';
+                chip.style.background = '#f1f5f9';
+                chip.style.borderColor = '#e2e8f0';
+                chip.style.color = '#94a3b8';
+                chip.querySelectorAll('circle,rect').forEach(el => el.setAttribute('fill', '#94a3b8'));
+            }
+        }
+        _updateStatesBadge();
+    }
+
+    let _allStates = [];
+
+    function _getSelectedStateIds() {
+        return _allStates
+            .map(s => document.getElementById(`proto-state-${s.id}`))
+            .filter(el => el && el.checked)
+            .map(el => parseInt(el.value));
+    }
+
+    function _updateStatesBadge() {
+        const chip = document.getElementById('protoChipStates');
+        const chipText = document.getElementById('protoChipStatesText');
+        if (!chip || !chipText) return;
+        const selected = _allStates.filter(s => {
+            const el = document.getElementById(`proto-state-${s.id}`);
+            return el && el.checked;
+        });
+        if (selected.length) {
+            chipText.textContent = `Стейты: ${selected.map(s => s.description || s.name).join(', ')}`;
+            chip.style.background = '#f0fdf4';
+            chip.style.borderColor = '#bbf7d0';
+            chip.style.color = '#15803d';
+            chip.querySelectorAll('rect').forEach(el => el.setAttribute('fill', '#22c55e'));
+        } else {
+            chipText.textContent = 'Стейты';
+            chip.style.background = '#f1f5f9';
+            chip.style.borderColor = '#e2e8f0';
+            chip.style.color = '#94a3b8';
+            chip.querySelectorAll('rect').forEach(el => el.setAttribute('fill', '#94a3b8'));
+        }
+    }
+
+    async function loadDesignStates() {
+        const container = document.getElementById('protoStatesList');
+        if (!container) return;
+        try {
+            const data = await planningFetch('/design/states');
+            _allStates = data.result || [];
+            container.innerHTML = '';
+            _allStates.forEach(st => {
+                const label = document.createElement('label');
+                label.className = 'proto-state-label';
+                label.innerHTML = `<input type="checkbox" class="proto-state-cb" id="proto-state-${st.id}" value="${st.id}" checked>
+                <span>${st.description || st.name}</span>`;
+                label.querySelector('input').addEventListener('change', _updateStatesBadge);
+                container.appendChild(label);
+            });
+            _updateStatesBadge();
+        } catch (e) {
+            if (container) container.innerHTML = '<span style="font-size:11px;color:#94a3b8">—</span>';
+        }
+    }
+
+    async function loadDesignTokens() {
+        const list = document.getElementById('protoTokensList');
+        const palette = document.getElementById('protoTokensPalette');
+        const counter = document.getElementById('protoTokensCount');
+        if (!list) return;
+        list.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#94a3b8">Загрузка...</div>';
+        try {
+            const data = await planningFetch('/design/tokens');
+            const tokens = data.result || [];
+            counter.textContent = tokens.length ? `(${tokens.length})` : '';
+            list.innerHTML = '';
+            if (!tokens.length) {
+                list.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#94a3b8">Нет наборов</div>';
+                palette.innerHTML = '<div style="font-size:12px;color:#94a3b8">Нет токенов</div>';
+                return;
+            }
+            tokens.forEach(t => {
+                const item = document.createElement('div');
+                item.style.cssText = 'padding:7px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:6px';
+                item.dataset.tokenId = t.id;
+                item.innerHTML = `<span style="flex:1;color:#334155;font-weight:500">${t.title || t.name}</span>
+                <button onclick="event.stopPropagation();deleteDesignToken(${t.id})" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:11px;padding:0 2px" title="Удалить">✕</button>`;
+                item.addEventListener('click', () => {
+                    list.querySelectorAll('[data-token-id]').forEach(el => el.style.background = '');
+                    item.style.background = '#eff6ff';
+                    _protoSelectedTokenId = t.id;
+                    _protoSelectedTokenName = t.title || t.name;
+                    renderTokenPalette(t.tokens || {});
+                    _updateProtoBtn();
+                });
+                if (_protoSelectedTokenId === t.id) {
+                    item.style.background = '#eff6ff';
+                    _protoSelectedTokenName = t.title || t.name;
+                    renderTokenPalette(t.tokens || {});
+                }
+                list.appendChild(item);
+            });
+            if (_protoSelectedTokenId === null && tokens.length) {
+                renderTokenPalette(tokens[0].tokens || {});
+                _protoSelectedTokenId = tokens[0].id;
+                _protoSelectedTokenName = tokens[0].title || tokens[0].name;
+                list.querySelector('[data-token-id]').style.background = '#eff6ff';
+            }
+            _updateProtoBtn();
+        } catch (e) {
+            list.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#ef4444">Ошибка загрузки</div>';
+        }
+    }
+
+    function renderTokenPalette(tokens) {
+        const palette = document.getElementById('protoTokensPalette');
+        if (!palette) return;
+
+        function v(x) {
+            return (x && typeof x === 'object' && x.value !== undefined) ? String(x.value) : String(x || '');
+        }
+
+        function lum(hex) {
+            if (!hex || !hex.startsWith('#') || hex.length < 7) return 0.5;
+            return (parseInt(hex.slice(1, 3), 16) * 0.299 + parseInt(hex.slice(3, 5), 16) * 0.587 + parseInt(hex.slice(5, 7), 16) * 0.114) / 255;
+        }
+
+        function on(hex) {
+            return lum(hex) > 0.55 ? '#1e293b' : '#ffffff';
+        }
+
+        const c = tokens.colors || {};
+        const P = v(c.primary) || '#3b82f6';
+        const SEC = v(c.secondary) || '#64748b';
+        const ACC = v(c.accent) || '';
+        const BG = v(c.background) || '#ffffff';
+        const SRF = v(c.surface) || '#f8fafc';
+        const TXT = v(c.text) || '#1e293b';
+        const MUT = v(c.textMuted || c.muted) || '#94a3b8';
+        const BRD = v(c.border) || '#e2e8f0';
+        const ERR = v(c.error) || '#ef4444';
+        const WRN = v(c.warning) || '#f59e0b';
+        const OK = v(c.success) || '#22c55e';
+        const ff = tokens.typography?.fontFamily ? v(tokens.typography.fontFamily) : null;
+        const ffs = ff ? `font-family:${ff};` : '';
+        const BR = v(tokens.borderRadius) || '6px';
+        const FS = v(tokens.typography?.fontSize) || '14px';
+        const FSn = parseFloat(FS) || 14;
+        const FSbody = `${Math.max(10, Math.round(FSn * 0.8))}px`;
+        const FSsm = `${Math.max(9, Math.round(FSn * 0.7))}px`;
+
+        if (ff) {
+            const fname = ff.replace(/['"]/g, '').split(',')[0].trim();
+            const webSafe = ['arial', 'helvetica', 'georgia', 'times new roman', 'courier', 'verdana', 'trebuchet ms', 'tahoma'];
+            if (!webSafe.includes(fname.toLowerCase())) {
+                const gfId = `gf-${fname.replace(/\s+/g, '-').toLowerCase()}`;
+                if (!document.getElementById(gfId)) {
+                    const lnk = document.createElement('link');
+                    lnk.id = gfId;
+                    lnk.rel = 'stylesheet';
+                    lnk.href = `https://fonts.googleapis.com/css2?family=${fname.replace(/\s+/g, '+')}:wght@400;600;700&display=swap`;
+                    document.head.appendChild(lnk);
+                }
+            }
+        }
+
+        // compact color strip
+        const chips = Object.entries(c).map(([k, val]) => {
+            const hex = v(val);
+            return `<div title="${k}: ${hex}" style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0">
+            <div style="width:24px;height:24px;border-radius:5px;background:${hex};border:1px solid rgba(0,0,0,.08)"></div>
+            <span style="font-size:8px;color:#94a3b8;max-width:30px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">${k}</span>
+        </div>`;
+        }).join('');
+
+        const btnBase = `border:none;border-radius:${BR};font-size:12px;cursor:default;padding:5px 12px;${ffs}`;
+        const accentBtn = ACC ? `<button style="${btnBase}background:${ACC};color:${on(ACC)}">Accent</button>` : '';
+
+        palette.innerHTML = `<div style="${ffs}color:${TXT};display:flex;flex-direction:column;gap:12px;font-size:${FS};background:${BG};padding:10px;border-radius:${BR};margin:-4px">
+
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start">${chips}</div>
+
+        <div style="border-top:1px solid ${BRD}"></div>
+
+        <div>
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:6px">Кнопки</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+                <button style="${btnBase}background:${P};color:${on(P)}">Primary</button>
+                <button style="${btnBase}background:${SEC};color:${on(SEC)}">Secondary</button>
+                ${accentBtn}
+                <button style="${btnBase}background:transparent;color:${P};border:1.5px solid ${P}">Outline</button>
+                <button style="${btnBase}background:transparent;color:${MUT};border:1px solid ${BRD}">Ghost</button>
+            </div>
+        </div>
+
+        <div>
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:6px">Карточка</div>
+            <div style="background:${SRF};border:1px solid ${BRD};border-radius:${BR};padding:10px 12px;max-width:360px">
+                <div style="font-size:${FS};font-weight:600;color:${TXT};margin-bottom:3px">Заголовок блока</div>
+                <div style="font-size:${FSbody};color:${MUT};line-height:1.5;margin-bottom:8px">Основной текст. <span style="color:${MUT}">Вспомогательный контент.</span></div>
+                <div style="border-top:1px solid ${BRD};margin-bottom:8px"></div>
+                <div style="display:flex;gap:6px">
+                    <button style="${btnBase}background:${P};color:${on(P)};font-size:${FSbody};padding:4px 10px">Действие</button>
+                    <button style="${btnBase}background:transparent;color:${MUT};border:1px solid ${BRD};font-size:${FSbody};padding:4px 10px">Отмена</button>
+                </div>
+            </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+            <span style="padding:2px 9px;background:${OK}22;color:${OK};border:1px solid ${OK}55;border-radius:20px;font-size:${FSsm};font-weight:600">● Успех</span>
+            <span style="padding:2px 9px;background:${WRN}22;color:${WRN};border:1px solid ${WRN}55;border-radius:20px;font-size:${FSsm};font-weight:600">● Предупреждение</span>
+            <span style="padding:2px 9px;background:${ERR}22;color:${ERR};border:1px solid ${ERR}55;border-radius:20px;font-size:${FSsm};font-weight:600">● Ошибка</span>
+        </div>
+
+        ${ff ? `<div style="border-top:1px solid ${BRD};padding-top:8px;font-size:${FSsm};color:${MUT}">
+            Шрифт: <span style="font-family:${ff};font-size:${FS};font-weight:600;color:${TXT}">${ff.replace(/'/g, '').split(',')[0]}</span>
+            <span style="font-family:${ff};font-size:${FS};color:${MUT}"> — Regular, </span>
+            <span style="font-family:${ff};font-size:${FS};font-weight:700;color:${TXT}">Bold</span>
+        </div>` : ''}
+    </div>`;
+    }
+
+    async function generateDesignTokens() {
+        const pid = document.getElementById('globalProjectSel').value;
+        const nameInput = document.getElementById('protoTokenName');
+        const btn = document.getElementById('btnGenerateTokens');
+        const name = (nameInput?.value || '').trim() || `tokens-${Date.now()}`;
+
+        const description = pid ? (document.getElementById('globalProjectSel')?.selectedOptions[0]?.textContent?.trim() || '') : '';
+
+        btn.disabled = true;
+        btn.textContent = 'Генерирую...';
+        try {
+            const data = await planningFetch('/design/tokens/generate', {
+                method: 'POST',
+                body: JSON.stringify({name, title: name, description}),
+            });
+            _protoSelectedTokenId = null;
+            _protoSelectedTokenName = null;
+            if (nameInput) nameInput.value = '';
+            await loadDesignTokens();
+        } catch (e) {
+            alert('Ошибка генерации: ' + (e.message || e));
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Сгенерировать';
+        }
+    }
+
+    async function deleteDesignToken(tokenId) {
+        if (_protoSelectedTokenId === tokenId) {
+            _protoSelectedTokenId = null;
+            _protoSelectedTokenName = null;
+        }
+        await planningFetch(`/design/tokens/${tokenId}`, {method: 'DELETE'});
+        await loadDesignTokens();
+    }
+
+    let _protoPollingTimer = null;
+
+    function _protoSetStatus(text, color, pulse) {
+        const el = document.getElementById('protoProtoStatus');
+        if (!el) return;
+        el.style.display = text ? '' : 'none';
+        el.innerHTML = text ? `<span class="${pulse ? 'proto-pulse' : ''}" style="color:${color}">● ${text}</span>` : '';
+    }
+
+    const _ICON_CREATE = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:5px"><path d="M3 2.5L13 8L3 13.5V2.5Z" fill="currentColor"/></svg>`;
+    const _ICON_STOP = `<svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:5px"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>`;
+
+    function _protoSetBtn(mode) {
+        const btn = document.getElementById('btnCreateProto');
+        if (!btn) return;
+        if (mode === 'run') {
+            btn.className = 'proto-btn-stop';
+            btn.innerHTML = `${_ICON_STOP}Стоп`;
+            btn.onclick = stopPrototype;
+            btn.disabled = false;
+        } else if (mode === 'loading') {
+            btn.className = 'btn-primary';
+            btn.innerHTML = 'Запускаю...';
+            btn.onclick = null;
+            btn.disabled = true;
+        } else {
+            btn.className = 'btn-primary';
+            btn.innerHTML = `${_ICON_CREATE}Создать прototип`;
+            btn.onclick = createPrototype;
+            btn.disabled = !(document.getElementById('globalProjectSel')?.value && _protoSelectedTokenId);
+        }
+    }
+
+    async function _protoPollStatus(pid) {
+        try {
+            const data = await planningFetch(`/planning/project/${pid}/phases`);
+            const phases = data.result || [];
+            const ph = phases.find(p => p.phase === 'prototype');
+            if (!ph) return;
+            const s = ph.status;
+            if (s === 'running' || s === 'pending') {
+                _protoSetStatus('Processing', '#f59e0b', true);
+            } else if (s === 'complete' || s === 'done') {
+                _protoSetStatus('Done', '#22c55e', false);
+                if (_protoPollingTimer) {
+                    clearInterval(_protoPollingTimer);
+                    _protoPollingTimer = null;
+                }
+                _protoSetBtn('idle');
+            } else if (s === 'error') {
+                const msg = ph.error ? `: ${ph.error.slice(0, 60)}` : '';
+                _protoSetStatus(`Error${msg}`, '#ef4444', false);
+                if (_protoPollingTimer) {
+                    clearInterval(_protoPollingTimer);
+                    _protoPollingTimer = null;
+                }
+                _protoSetBtn('idle');
+            }
+        } catch (e) { /* ignore poll errors */
+        }
+    }
+
+    function stopPrototype() {
+        if (_protoPollingTimer) {
+            clearInterval(_protoPollingTimer);
+            _protoPollingTimer = null;
+        }
+        _protoSetStatus('', '', false);
+        _protoSetBtn('idle');
+    }
+
+    async function createPrototype() {
+        const pid = document.getElementById('globalProjectSel').value;
+        if (!pid) {
+            alert('Выберите проект');
+            return;
+        }
+        if (!_protoSelectedTokenId) {
+            alert('Выберите набор токенов');
+            return;
+        }
+
+        if (_protoPollingTimer) {
+            clearInterval(_protoPollingTimer);
+            _protoPollingTimer = null;
+        }
+        _protoSetBtn('loading');
+        _protoSetStatus('Запускаю...', '#94a3b8', true);
+
+        try {
+            const data = await planningFetch(`/planning/project/${pid}/phase/prototype/approve`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    token_id: _protoSelectedTokenId,
+                    state_ids: _getSelectedStateIds(),
+                }),
+            });
+            if (data.error) {
+                _protoSetStatus(`Error: ${data.error}`, '#ef4444', false);
+                _protoSetBtn('idle');
+                return;
+            }
+            _protoSetStatus('Processing', '#f59e0b', true);
+            _protoSetBtn('run');
+            _protoPollingTimer = setInterval(() => _protoPollStatus(pid), 4000);
+        } catch (e) {
+            _protoSetStatus(`Error: ${e.message || 'неизвестная ошибка'}`, '#ef4444', false);
+            _protoSetBtn('idle');
+        }
+    }
+
+    // Split-pane drag handlers with localStorage persistence
+    (function () {
+        function _initProtoDivider(dividerId, leftColId, storageKey, minLeft, minRight) {
+            document.addEventListener('DOMContentLoaded', function () {
+                const divider = document.getElementById(dividerId);
+                const col = document.getElementById(leftColId);
+                if (!divider || !col) return;
+
+                // Restore saved position
+                const saved = parseInt(localStorage.getItem(storageKey), 10);
+                if (saved > minLeft) col.style.width = saved + 'px';
+
+                let dragging = false, startX = 0, startW = 0;
+
+                divider.addEventListener('mousedown', function (e) {
+                    dragging = true;
+                    startX = e.clientX;
+                    startW = divider.previousElementSibling
+                        ? divider.previousElementSibling.offsetWidth
+                        : parseInt(col.style.width || col.offsetWidth, 10);
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    divider.classList.add('dragging');
+                    e.preventDefault();
+                });
+
+                document.addEventListener('mousemove', function (e) {
+                    if (!dragging) return;
+                    const container = document.getElementById('protoConfigRow');
+                    const maxW = container.offsetWidth - minRight - divider.offsetWidth;
+                    const newW = Math.max(minLeft, Math.min(maxW, startW + e.clientX - startX));
+                    col.style.width = newW + 'px';
+                });
+
+                document.addEventListener('mouseup', function () {
+                    if (!dragging) return;
+                    dragging = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    divider.classList.remove('dragging');
+                    localStorage.setItem(storageKey, parseInt(col.style.width, 10));
+                });
+            });
+        }
+
+        _initProtoDivider('protoSplitDivider', 'protoColLeft', 'proto_col1_w', 180, 400);
+        _initProtoDivider('protoSplitDivider2', 'protoColState', 'proto_col3_w', 100, 300);
+        _initProtoDivider('protoSplitDivider3', 'protoColFunctionality', 'proto_col5_w', 100, 200);
+    })();
+
+    // ═══════════════════════════════════════════════
+    // PROTOTYPE — Project Chips (cloud_tags / entities)
+    // ═══════════════════════════════════════════════
+
+    let _protoChipsCloudTags = [];
+    let _protoChipsEntities = [];
+    let _protoChipsSaveTimer = null;
+
+    async function loadProjectChips() {
+        const pid = document.getElementById('globalProjectSel')?.value;
+        _renderChips('protoFunctionalityScroll', [], 'cloud_tags');
+        _renderChips('protoEntitiesScroll', [], 'entities');
+        if (!pid) return;
+        try {
+            const data = await planningFetch(`/design/project/${pid}/chips`);
+            _protoChipsCloudTags = data.cloud_tags || [];
+            _protoChipsEntities = data.entities || [];
+            _renderChips('protoFunctionalityScroll', _protoChipsCloudTags, 'cloud_tags');
+            _renderChips('protoEntitiesScroll', _protoChipsEntities, 'entities');
+        } catch (e) {
+            console.error('loadProjectChips', e);
+        }
+    }
+
+    function _renderChips(scrollId, chips, field) {
+        const scroll = document.getElementById(scrollId);
+        if (!scroll) return;
+        scroll.innerHTML = '';
+
+        const wrap = document.createElement('div');
+        wrap.className = 'proto-chips-wrap';
+
+        if (!chips.length) {
+            const empty = document.createElement('div');
+            empty.className = 'proto-chips-empty';
+            empty.textContent = 'Нет чипсов';
+            wrap.appendChild(empty);
+        } else {
+            chips.forEach((chip, i) => {
+                const tag = document.createElement('div');
+                tag.className = 'proto-chip-tag';
+                const label = document.createElement('span');
+                label.textContent = chip;
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '×';
+                delBtn.title = 'Удалить';
+                delBtn.onclick = () => _removeChip(field, i);
+                tag.appendChild(label);
+                tag.appendChild(delBtn);
+                wrap.appendChild(tag);
+            });
+        }
+
+        scroll.appendChild(wrap);
+    }
+
+    function _addChip(field) {
+        const input = document.getElementById(`proto-chip-input-${field}`);
+        if (!input) return;
+        const val = input.value.trim();
+        if (!val) return;
+        if (field === 'cloud_tags') {
+            if (!_protoChipsCloudTags.includes(val)) _protoChipsCloudTags.push(val);
+            _renderChips('protoFunctionalityScroll', _protoChipsCloudTags, 'cloud_tags');
+        } else {
+            if (!_protoChipsEntities.includes(val)) _protoChipsEntities.push(val);
+            _renderChips('protoEntitiesScroll', _protoChipsEntities, 'entities');
+        }
+        _saveChipsDebounced(field);
+    }
+
+    function _removeChip(field, index) {
+        if (field === 'cloud_tags') {
+            _protoChipsCloudTags.splice(index, 1);
+            _renderChips('protoFunctionalityScroll', _protoChipsCloudTags, 'cloud_tags');
+        } else {
+            _protoChipsEntities.splice(index, 1);
+            _renderChips('protoEntitiesScroll', _protoChipsEntities, 'entities');
+        }
+        _saveChipsDebounced(field);
+    }
+
+
+    function _saveChipsDebounced(field) {
+        if (_protoChipsSaveTimer) clearTimeout(_protoChipsSaveTimer);
+        _protoChipsSaveTimer = setTimeout(() => _saveChips(field), 600);
+    }
+
+    async function _saveChips(field) {
+        const pid = document.getElementById('globalProjectSel')?.value;
+        if (!pid) return;
+        const body = field === 'cloud_tags'
+            ? {cloud_tags: _protoChipsCloudTags}
+            : {entities: _protoChipsEntities};
+        try {
+            await planningFetch(`/design/project/${pid}/chips`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+        } catch (e) {
+            console.error('saveChips', e);
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // PROTOTYPE — Pages
+    // ═══════════════════════════════════════════════
+
+    async function loadPrototype() {
+        const pid = document.getElementById('globalProjectSel').value;
+        const list = document.getElementById('protoPageList');
+        const counter = document.getElementById('protoPageCount');
+        _updateProtoBtn();
+        if (!list) return;
+        if (!pid) {
+            list.innerHTML = '<div style="padding:16px 12px;font-size:13px;color:#94a3b8">Выберите проект</div>';
+            if (counter) counter.textContent = '';
+            return;
+        }
+        list.innerHTML = '<div style="padding:16px 12px;font-size:13px;color:#94a3b8">Загрузка...</div>';
+        const data = await planningFetch(`/design/prototype/pages/${pid}`);
+        const pages = data.pages || [];
+        if (counter) {
+            counter.textContent = `Страниц: ${pages.length}`;
+            counter.style.display = pages.length ? '' : 'none';
+        }
+        if (!pages.length) {
+            list.innerHTML = '<div style="padding:16px 12px;font-size:13px;color:#94a3b8">Нет страниц</div>';
+            return;
+        }
+        list.innerHTML = '';
+        pages.forEach(p => {
+            const item = document.createElement('div');
+            item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;transition:background 0.1s';
+            item.onmouseenter = () => item.style.background = '#f8fafc';
+            item.onmouseleave = () => {
+                if (!item.classList.contains('active')) item.style.background = '';
+            };
+            item.innerHTML = `<div style="font-weight:500;color:#334155">${p.name}</div>${p.page_type ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px">${p.page_type}</div>` : ''}`;
+            item.onclick = () => {
+                list.querySelectorAll('div').forEach(d => {
+                    d.classList.remove('active');
+                    d.style.background = '';
+                });
+                item.classList.add('active');
+                item.style.background = '#eff6ff';
+                loadProtoPage(p.id, p.name);
+            };
+            list.appendChild(item);
+        });
+    }
+
+    async function loadProtoPage(pageId, pageName) {
+        const frame = document.getElementById('protoFrame');
+        const placeholder = document.getElementById('protoFramePlaceholder');
+        const title = document.getElementById('protoFrameTitle');
+        placeholder.style.display = 'none';
+        frame.style.display = 'none';
+        title.textContent = pageName || 'Превью';
+        const data = await planningFetch(`/design/prototype/page/${pageId}/render`);
+        const blob = new Blob([data.html || ''], {type: 'text/html'});
+        frame.src = URL.createObjectURL(blob);
+        frame.style.display = '';
+    }
+
+    const _ICON_UI_BLOCKS = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".7"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".7"/></svg>`;
+    const _ICON_PAGES = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="1" width="12" height="14" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="5" y1="5" x2="11" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="5" y1="11" x2="9" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+
+    async function generateUiBlocks() {
+        const pid = document.getElementById('globalProjectSel')?.value;
+        if (!pid) return;
+        const btn = document.getElementById('btnGenerateUiBlocks');
+        btn.disabled = true;
+        btn.innerHTML = 'Генерация...';
+        try {
+            await planningFetch(`/design/project/${pid}/generate-ui-blocks`, {method: 'POST'});
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `${_ICON_UI_BLOCKS} Сгенерировать UI-блоки`;
+        }
+    }
+
+    async function generatePages() {
+        const pid = document.getElementById('globalProjectSel')?.value;
+        if (!pid) return;
+        const btn = document.getElementById('btnGeneratePages');
+        btn.disabled = true;
+        btn.innerHTML = 'Генерация...';
+        try {
+            await planningFetch(`/design/project/${pid}/generate-pages`, {method: 'POST'});
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `${_ICON_PAGES} Сгенерировать страницы`;
+        }
+    }
+
+    initProjectSelects();
+</script>
+{% endblock %}

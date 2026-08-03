@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Документация фаз{% endblock %}
+
+{% block head %}
+<style>
+    .page-wrap {
+        padding: 28px 36px;
+        max-width: 1100px;
+    }
+
+    .page-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .page-header h2 {
+        margin: 0;
+        font-size: 20px;
+        color: #2c3e50;
+    }
+
+    .btn-add {
+        background: #27ae60;
+        color: #fff;
+        border: none;
+        padding: 9px 20px;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .btn-add:hover { background: #219150; }
+
+    /* таблица */
+    .src-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .src-table th {
+        background: #f4f6f8;
+        color: #5a6878;
+        font-weight: 600;
+        text-align: left;
+        padding: 9px 12px;
+        border-bottom: 2px solid #e0e4e9;
+        white-space: nowrap;
+    }
+
+    .src-table td {
+        padding: 9px 12px;
+        border-bottom: 1px solid #eef0f3;
+        vertical-align: top;
+    }
+
+    .src-table tr:hover td { background: #f9fafb; }
+
+    .src-table td input, .src-table td select {
+        border: 1px solid #dde1e7;
+        border-radius: 4px;
+        padding: 5px 8px;
+        font-size: 13px;
+        width: 100%;
+        box-sizing: border-box;
+        background: #fff;
+    }
+
+    .src-table td input:focus, .src-table td select:focus {
+        border-color: #3498db;
+        outline: none;
+    }
+
+    .col-id    { width: 46px; color: #aaa; }
+    .col-key   { width: 170px; }
+    .col-title { width: 220px; }
+    .col-file  { width: 240px; }
+    .col-mode  { width: 140px; }
+    .col-acts  { width: 110px; white-space: nowrap; }
+
+    .file-cell { display: flex; align-items: center; gap: 6px; }
+    .file-cell input { flex: 1; min-width: 0; }
+    .btn-doc-link {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 26px; height: 26px; flex-shrink: 0;
+        border: 1px solid #c8d0da; border-radius: 4px;
+        background: #f4f6f8; color: #3498db;
+        text-decoration: none; font-size: 14px;
+        cursor: pointer; transition: background .15s;
+    }
+    .btn-doc-link:hover { background: #e8f4fd; border-color: #3498db; }
+    .btn-doc-link.disabled { color: #bbb; border-color: #e8eaed; background: #f9f9f9; pointer-events: none; font-size: 11px; }
+
+    .btn-save-row {
+        background: #3498db;
+        color: #fff;
+        border: none;
+        padding: 5px 14px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+    .btn-save-row:hover { background: #2179a8; }
+
+    .btn-del-row {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        margin-left: 4px;
+    }
+    .btn-del-row:hover { background: #e74c3c; color: #fff; }
+
+    .new-row td { background: #f0fff4; }
+
+    .empty-msg { padding: 20px; color: #999; font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+    <div class="page-header">
+        <h2>📚 Документация фаз (project_project_planning_phase_source)</h2>
+        <button class="btn-add" onclick="addNewRow()">+ Добавить</button>
+    </div>
+
+    <table class="src-table">
+        <thead>
+            <tr>
+                <th class="col-id">ID</th>
+                <th class="col-key">phase_key</th>
+                <th class="col-title">Название (title)</th>
+                <th class="col-file">Файл документации</th>
+                <th class="col-mode">Режим (header_mode)</th>
+                <th class="col-acts">Действия</th>
+            </tr>
+        </thead>
+        <tbody id="srcTableBody">
+            <tr><td colspan="6" class="empty-msg">Загрузка…</td></tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const tbody = document.getElementById('srcTableBody');
+
+    const MODES = ['## ', '### ', 'output_template'];
+
+    function modeSelect(val) {
+        return `<select class="mode-sel">${MODES.map(m =>
+            `<option value="${m}"${m === val ? ' selected' : ''}>${m}</option>`
+        ).join('')}</select>`;
+    }
+
+    function renderRows(rows) {
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">Нет записей</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(r => `
+        <tr data-id="${r.id}">
+            <td class="col-id">${r.id}</td>
+            <td class="col-key"><input class="f-key" value="${esc(r.phase_key)}"></td>
+            <td class="col-title"><input class="f-title" value="${esc(r.title)}"></td>
+            <td class="col-file"><div class="file-cell">
+                <input class="f-file" value="${esc(r.doc_file)}" oninput="updateDocLink(this)">
+                <a class="btn-doc-link${r.doc_file ? '' : ' disabled'}" href="${r.doc_file ? '/planning/phase-source/doc/' + esc(r.doc_file) : '#'}" target="_blank" title="Открыть файл документации">${r.doc_file ? '📄' : '—'}</a>
+            </div></td>
+            <td class="col-mode">${modeSelect(r.header_mode)}</td>
+            <td class="col-acts">
+                <button class="btn-save-row" onclick="saveRow(this)">Сохранить</button>
+                <button class="btn-del-row" onclick="delRow(this)">✕</button>
+            </td>
+        </tr>`).join('');
+    }
+
+    async function load() {
+        try {
+            const data = await getData('/planning/phase-source/list');
+            renderRows(data.result || []);
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-msg">Ошибка загрузки: ${e.message}</td></tr>`;
+        }
+    }
+
+    window.addNewRow = function() {
+        const tr = document.createElement('tr');
+        tr.className = 'new-row';
+        tr.innerHTML = `
+            <td class="col-id">—</td>
+            <td class="col-key"><input class="f-key" placeholder="phase_key"></td>
+            <td class="col-title"><input class="f-title" placeholder="Название"></td>
+            <td class="col-file"><div class="file-cell">
+                <input class="f-file" placeholder="planning_xxx.md" oninput="updateDocLink(this)">
+                <a class="btn-doc-link disabled" href="#" target="_blank" title="Открыть файл документации">—</a>
+            </div></td>
+            <td class="col-mode">${modeSelect('## ')}</td>
+            <td class="col-acts">
+                <button class="btn-save-row" onclick="saveRow(this)">Создать</button>
+                <button class="btn-del-row" onclick="this.closest('tr').remove()">✕</button>
+            </td>`;
+        tbody.insertBefore(tr, tbody.firstChild);
+        tr.querySelector('.f-key').focus();
+    };
+
+    window.saveRow = async function(btn) {
+        const tr = btn.closest('tr');
+        const id = tr.dataset.id;
+        const payload = {
+            phase_key:   tr.querySelector('.f-key').value.trim(),
+            title:       tr.querySelector('.f-title').value.trim(),
+            doc_file:    tr.querySelector('.f-file').value.trim(),
+            header_mode: tr.querySelector('.mode-sel').value,
+        };
+        if (!payload.phase_key) { showNotification('phase_key обязателен', 'error'); return; }
+        try {
+            if (id) {
+                await putData(`/planning/phase-source/${id}`, payload);
+                showNotification('Сохранено', 'success');
+            } else {
+                await postData('/planning/phase-source', payload);
+                showNotification('Создано', 'success');
+                await load();
+            }
+        } catch (e) {
+            showNotification(`Ошибка: ${e.message}`, 'error');
+        }
+    };
+
+    window.delRow = async function(btn) {
+        const tr = btn.closest('tr');
+        const id = tr.dataset.id;
+        if (!id) { tr.remove(); return; }
+        const key = tr.querySelector('.f-key')?.value || id;
+        if (!confirm(`Удалить запись «${key}»?`)) return;
+        try {
+            await deleteData(`/planning/phase-source/${id}`);
+            showNotification('Удалено', 'success');
+            tr.remove();
+        } catch (e) {
+            showNotification(`Ошибка: ${e.message}`, 'error');
+        }
+    };
+
+    function esc(s) {
+        return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    window.updateDocLink = function(input) {
+        const val = input.value.trim();
+        const link = input.closest('.file-cell')?.querySelector('.btn-doc-link');
+        if (!link) return;
+        if (val) {
+            link.href = `/planning/phase-source/doc/${encodeURIComponent(val)}`;
+            link.classList.remove('disabled');
+            link.textContent = '📄';
+        } else {
+            link.href = '#';
+            link.classList.add('disabled');
+            link.textContent = '—';
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}
