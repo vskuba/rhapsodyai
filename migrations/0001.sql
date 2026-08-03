@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS `project_design_prototype_page`;
 DROP TABLE IF EXISTS `project_state`;
 -- project_design_prototype_block removed: merged into project_design_ui_block
 DROP TABLE IF EXISTS `project_design_prototype_browser_history`;
+DROP TABLE IF EXISTS `project_design_ui_block_size`;
 DROP TABLE IF EXISTS `project_design_ui_block`;
 DROP TABLE IF EXISTS `project_design_ui_component`;
 DROP TABLE IF EXISTS `project_design_token`;
@@ -736,6 +737,19 @@ CREATE TABLE `project_design_ui_block` (
     UNIQUE KEY `uk_project_name` (`project_id`, `name`(191)),
     KEY `idx_project_id` (`project_id`),
     CONSTRAINT `fk_ui_block_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_design_ui_block_size` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `block_id` INT NOT NULL,
+    `viewport_width` INT NOT NULL,
+    `width_px` INT NOT NULL,
+    `height_px` INT NOT NULL,
+    `measured_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_block_viewport` (`block_id`, `viewport_width`),
+    KEY `idx_block_id` (`block_id`),
+    CONSTRAINT `fk_block_size_block` FOREIGN KEY (`block_id`) REFERENCES `project_design_ui_block` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `project_design_token` (

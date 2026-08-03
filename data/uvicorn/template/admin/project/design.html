@@ -2234,6 +2234,54 @@
         color: #94a3b8;
         flex-shrink: 0;
         transition: all .15s;
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+    }
+
+    .proto-chip-dropdown {
+        display: none;
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,.1);
+        z-index: 999;
+        min-width: 160px;
+        overflow: hidden;
+    }
+
+    .proto-chip-dropdown.open {
+        display: block;
+    }
+
+    .proto-chip-dropdown-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 12px;
+        font-size: 12px;
+        color: #334155;
+        cursor: pointer;
+        transition: background .1s;
+        gap: 8px;
+    }
+
+    .proto-chip-dropdown-item:hover {
+        background: #f1f5f9;
+    }
+
+    .proto-chip-dropdown-item.active {
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-weight: 600;
+    }
+
+    .proto-chip-dropdown-label {
+        font-size: 10px;
+        color: #94a3b8;
     }
 
     /* ── Prototype: config table ── */
@@ -2549,6 +2597,28 @@
                         <rect x="2" y="11" width="10" height="2" rx="1" fill="#94a3b8"/>
                     </svg>
                     <span id="protoChipStatesText">Стейты</span>
+                </div>
+                <div id="protoChipViewport" class="proto-chip" onclick="protoViewportChipToggle(event)">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                        <rect x="1" y="3" width="14" height="10" rx="1.5" stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+                        <line x1="5" y1="13" x2="11" y2="13" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/>
+                        <line x1="8" y1="13" x2="8" y2="15" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                    <span id="protoChipViewportText">1440px</span>
+                    <div id="protoViewportDropdown" class="proto-chip-dropdown">
+                        <div class="proto-chip-dropdown-item active" data-w="1440" onclick="protoViewportSelect(event,1440,'Desktop XL')">
+                            <span>1440px</span><span class="proto-chip-dropdown-label">Desktop XL</span>
+                        </div>
+                        <div class="proto-chip-dropdown-item" data-w="1200" onclick="protoViewportSelect(event,1200,'Desktop')">
+                            <span>1200px</span><span class="proto-chip-dropdown-label">Desktop</span>
+                        </div>
+                        <div class="proto-chip-dropdown-item" data-w="768" onclick="protoViewportSelect(event,768,'Tablet')">
+                            <span>768px</span><span class="proto-chip-dropdown-label">Tablet</span>
+                        </div>
+                        <div class="proto-chip-dropdown-item" data-w="375" onclick="protoViewportSelect(event,375,'Mobile')">
+                            <span>375px</span><span class="proto-chip-dropdown-label">Mobile</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -4737,6 +4807,41 @@ ${contentScript}</body></html>`;
             chip.querySelectorAll('rect').forEach(el => el.setAttribute('fill', '#94a3b8'));
         }
     }
+
+    let _protoViewportWidth = 1440;
+
+    function protoViewportChipToggle(e) {
+        e.stopPropagation();
+        const dd = document.getElementById('protoViewportDropdown');
+        if (!dd) return;
+        const isOpen = dd.classList.contains('open');
+        document.querySelectorAll('.proto-chip-dropdown.open').forEach(el => el.classList.remove('open'));
+        if (!isOpen) dd.classList.add('open');
+    }
+
+    function protoViewportSelect(e, width, label) {
+        e.stopPropagation();
+        _protoViewportWidth = width;
+        const chipText = document.getElementById('protoChipViewportText');
+        if (chipText) chipText.textContent = `${width}px`;
+        const chip = document.getElementById('protoChipViewport');
+        if (chip) {
+            chip.style.background = '#eff6ff';
+            chip.style.borderColor = '#bfdbfe';
+            chip.style.color = '#1d4ed8';
+            chip.querySelectorAll('rect,line').forEach(el => {
+                el.getAttribute('stroke') ? el.setAttribute('stroke', '#3b82f6') : el.setAttribute('fill', '#3b82f6');
+            });
+        }
+        document.querySelectorAll('#protoViewportDropdown .proto-chip-dropdown-item').forEach(el => {
+            el.classList.toggle('active', parseInt(el.dataset.w) === width);
+        });
+        document.getElementById('protoViewportDropdown')?.classList.remove('open');
+    }
+
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.proto-chip-dropdown.open').forEach(el => el.classList.remove('open'));
+    });
 
     async function loadDesignStates() {
         const container = document.getElementById('protoStatesList');
