@@ -625,7 +625,7 @@ function selectProjectById(id, title) {
 async function loadTasks() {
     document.getElementById('taskTableWrap').innerHTML = '<div class="task-placeholder">Загрузка...</div>';
     try {
-        const url = _taskProjectId ? `/planning/tasks/${_taskProjectId}` : '/planning/tasks';
+        const url = _taskProjectId ? `/tasks/${_taskProjectId}` : '/tasks';
         const data = await taskFetch(url);
         _tasks = data.tasks || [];
         renderTable();
@@ -806,7 +806,7 @@ async function createTask() {
     const title = document.getElementById('newTaskTitle').value.trim();
     if (!title) { alert('Введите название'); return; }
     try {
-        const data = await taskFetch(`/planning/tasks/${_taskProjectId}`, {
+        const data = await taskFetch(`/tasks/${_taskProjectId}`, {
             method: 'POST',
             body: JSON.stringify({
                 title,
@@ -816,7 +816,7 @@ async function createTask() {
         });
         // Apply AI-generated goals if any
         if (_aiPendingGoals?.length) {
-            await taskFetch(`/planning/task/${data.task.id}`, {
+            await taskFetch(`/task/${data.task.id}`, {
                 method: 'PUT',
                 body: JSON.stringify({ goals: JSON.stringify(_aiPendingGoals) }),
             });
@@ -836,7 +836,7 @@ async function createTask() {
 
 async function saveTask(id) {
     try {
-        const data = await taskFetch(`/planning/task/${id}`, {
+        const data = await taskFetch(`/task/${id}`, {
             method: 'PUT',
             body: JSON.stringify({
                 title:       document.getElementById(`tt-${id}`).value,
@@ -854,7 +854,7 @@ async function saveTask(id) {
 
 async function quickStatus(id, status) {
     try {
-        const data = await taskFetch(`/planning/task/${id}`, {
+        const data = await taskFetch(`/task/${id}`, {
             method: 'PUT',
             body: JSON.stringify({ status }),
         });
@@ -867,7 +867,7 @@ async function quickStatus(id, status) {
 async function deleteTask(id) {
     if (!confirm('Удалить задачу?')) return;
     try {
-        await taskFetch(`/planning/task/${id}`, { method: 'DELETE' });
+        await taskFetch(`/task/${id}`, { method: 'DELETE' });
         _tasks = _tasks.filter(t => t.id !== id);
         renderTable();
     } catch(e) { alert('Ошибка удаления'); }
@@ -954,7 +954,7 @@ function addGoal(taskId) {
 
 async function saveGoals(taskId) {
     try {
-        const data = await taskFetch(`/planning/task/${taskId}`, {
+        const data = await taskFetch(`/task/${taskId}`, {
             method: 'PUT',
             body: JSON.stringify({ goals: JSON.stringify(_goalsCache[taskId] || []) }),
         });
@@ -982,7 +982,7 @@ async function aiGenerateTask() {
     spinner.classList.add('active');
 
     try {
-        const data = await taskFetch('/planning/task/ai-generate', {
+        const data = await taskFetch('/task/ai-generate', {
             method: 'POST',
             body: JSON.stringify({ description: input }),
         });
