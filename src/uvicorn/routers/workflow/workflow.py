@@ -28,8 +28,8 @@ async def workflow_create(
 ):
     async with db:
         sql = """
-            INSERT INTO agent_workflow (name, title, node_id, description, position, subflow)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO agent_workflow (name, title, node_id, description, position, group_name, subflow)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             data.get('name'),
@@ -37,6 +37,7 @@ async def workflow_create(
             data.get('node_id') or None,
             data.get('description', ''),
             int(data.get('position', 0)),
+            data.get('group_name') or None,
             int(data.get('subflow', 0))
         )
         await db.execute(sql, values)
@@ -358,6 +359,36 @@ async def workflow_step_delete(
 ):
     repo = AgentWorkflowStepRepository()
     return {"result": await repo.delete(workflow_step_id)}
+
+
+@router.get("/workflow/{workflow_id}/parents")
+async def workflow_parents(
+        request: Request,
+        workflow_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
+):
+    """Workflows that call this subflow via workflow_invoke step."""
+    wid = str(workflow_id)
+    # Cover both compact and spaced JSON: "workflow_id":36, / "workflow_id": 36,
+    id_patterns = [
+        f'%"workflow_id":{wid},%',
+        f'%"workflow_id":{wid}}}%',
+        f'%"workflow_id": {wid},%',
+        f'%"workflow_id": {wid}}}%',
+    ]
+    async with mysql_get_db_async() as db:
+        placeholders = " OR ".join(
+            ["(s.metadata LIKE %s AND s.metadata LIKE '%%workflow_invoke%%')"] * len(id_patterns)
+        )
+        await db.execute(
+            f"SELECT DISTINCT w.id, w.name, w.title "
+            f"FROM agent_workflow_step s "
+            f"JOIN agent_workflow w ON w.id = s.workflow_id "
+            f"WHERE {placeholders}",
+            id_patterns
+        )
+        rows = await db.fetchall()
+    return {"result": [dict(r) for r in rows]}
 
 
 @router.delete("/workflow/{workflow_id}/variable/{workflow_variable_id}")
