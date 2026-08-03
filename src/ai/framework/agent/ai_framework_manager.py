@@ -7,7 +7,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
-from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_filter_by_type, ai_llm_image_generate
+from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_filter_by_type, ai_llm_image_generate, ai_llm_request_log
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
     ai_workflow_variables_global_get
@@ -607,23 +607,43 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 prompt_img = ai_workflow_variables_render(step_meta.get('prompt_user', ''), variables)
 
                 import base64 as _b64
+                import time as _time
                 img_bytes = None
                 _last_img_err: Exception | None = None
                 _img_llm_used = None
                 for _img_llm in _img_filtered:
                     try:
                         logger_info(f"🎨 llm_to_image: модель={_img_llm.get('name')} prompt={prompt_img[:100]}")
-                        img_bytes = await ai_llm_image_generate(
+                        _img_t0 = _time.monotonic()
+                        img_bytes, _img_usage = await ai_llm_image_generate(
                             llm=_img_llm,
                             prompt=prompt_img,
                             size=img_size,
                             quality=img_quality,
                             style=img_style,
                         )
+                        _img_duration_ms = int((_time.monotonic() - _img_t0) * 1000)
                         _img_llm_used = _img_llm
+                        await ai_llm_request_log(
+                            llm_id=_img_llm.get('id'),
+                            user_id=model.user_id,
+                            node_id=model.node_id,
+                            status_code=200,
+                            duration_ms=_img_duration_ms,
+                            prompt_length=len(prompt_img),
+                            tokens_input=_img_usage.get('tokens_input'),
+                            tokens_output=_img_usage.get('tokens_output'),
+                        )
                         break
                     except Exception as e:
                         logger_info(f"⚠️ llm_to_image модель {_img_llm.get('name')} ошибка: {e}, пробуем следующую")
+                        await ai_llm_request_log(
+                            llm_id=_img_llm.get('id'),
+                            user_id=model.user_id,
+                            node_id=model.node_id,
+                            status_code=500,
+                            error=str(e)[:255],
+                        )
                         _last_img_err = e
 
                 if img_bytes is None:
