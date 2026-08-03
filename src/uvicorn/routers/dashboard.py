@@ -185,14 +185,6 @@ async def planning_phase_source_page(request: Request, user: AuthSession = Depen
     )
 
 
-@router.get("/admin/planning-blocks", response_class=HTMLResponse)
-async def planning_blocks_page(request: Request, user: AuthSession = Depends(require_auth)):
-    return request.app.state.jinja2_template.TemplateResponse(
-        request,
-        "admin/project/planning_blocks.html",
-    )
-
-
 @router.get("/admin/task", response_class=HTMLResponse)
 async def task_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(

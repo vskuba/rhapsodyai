@@ -77,16 +77,6 @@ async function deleteProject(id) {
     loadProjects(false);
 }
 
-async function deletePrototypeVersion(projectId, version) {
-    if (!confirm(`Удалить прототип v${version}?`)) return;
-    try {
-        await fetch(`/planning/project/${projectId}/prototype/${version}`, {method: 'DELETE'});
-        selectProject(projectId);
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
-}
-
 function closeModal(id) {
     document.getElementById(id).classList.remove('visible');
 }

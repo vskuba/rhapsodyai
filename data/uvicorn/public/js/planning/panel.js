@@ -52,22 +52,18 @@ const PHASE_REQUIRES = {
 const PHASE_CHILDREN_MAP = {};
 
 // Фазы запускаемые вручную по запросу (не автоматически) — показывать "по запросу" вместо "ожидает"
-const PHASE_ON_DEMAND = new Set(['prototype', 'refine']);
+const PHASE_ON_DEMAND = new Set(['refine']);
 
 // Зависимости дочерних фаз (ключ: phase → список phase, которые должны быть complete)
 const PHASE_CHILD_REQUIRES = {
     design_wireframe: ['design'],
-    prototype:        ['design_wireframe'],
-    sitemap_check:    ['prototype'],
-    refine:           ['sitemap_check'],
+    refine:           ['design_wireframe'],
 };
 
 // Переопределения меток для дочерних фаз
 const PHASE_CHILD_LABELS = {
     design_pages:     'Карта страниц',
     design_wireframe: 'Вайрфреймы',
-    prototype:        'Прототип',
-    sitemap_check:    'Проверка карты',
     refine:           'Доработка',
 };
 
@@ -149,7 +145,7 @@ function buildPhaseRows(proj, phases, docs) {
     const docsByPhase = {};
     docs.forEach(d => {
         let phase = d.doc_type;
-        if (phase === 'prototype' || phase === 'design_tokens' || phase === 'design_ui_components' || phase === 'design_wireframes' || phase === 'design_sitemap' || phase === 'design_specs') phase = 'design';
+        if (phase === 'design_tokens' || phase === 'design_ui_components' || phase === 'design_wireframes' || phase === 'design_sitemap' || phase === 'design_specs') phase = 'design';
         else if (!ALL_PHASES.includes(phase)) phase = 'supplement';
         if (!docsByPhase[phase]) docsByPhase[phase] = [];
         docsByPhase[phase].push(d);
@@ -167,9 +163,6 @@ function buildPhaseRows(proj, phases, docs) {
         return extra + (docsByPhase[phaseKey] || []).map(d => {
             const fileSlug = projSlug + (d.doc_type ? '_' + d.doc_type : '');
             const docLabel = escHtml(d.title || d.doc_type);
-            if (d.doc_type === 'prototype') {
-                return '';
-            }
             return `<div><button class="btn-view" onclick="showDocumentContent('${escAttr(d.title || d.doc_type)}', ${d.id})">${docLabel}</button>`
                 + `<a class="btn-download" href="/planning/document/${d.id}/download" download="${escAttr(fileSlug)}.md" title="Скачать .md">.md</a></div>`;
         }).join('');
@@ -275,7 +268,7 @@ function buildPhaseRows(proj, phases, docs) {
             }).join('');
         }
 
-        // Рендер дочерних фаз (prototype, sitemap_check для design)
+        // Рендер дочерних фаз (design)
         if (childKeys.length) {
             subRows += childKeys.map(childKey => {
                 const sub = phaseByKey[childKey];
@@ -341,18 +334,6 @@ function _infoBlueprintHtml(docs) {
         : '—';
 }
 
-function _infoPrototypeHtml(docs) {
-    const prototypes = docs.filter(doc => doc.doc_type === 'prototype').sort((a, b) => (b.version || 0) - (a.version || 0));
-    if (!prototypes.length) return '—';
-    return prototypes.map(d => {
-        const vLabel = d.version ? `v${d.version}` : 'v1';
-        return `<span style="display:inline-flex;align-items:center;gap:4px;margin:1px 0">` +
-            `<a class="btn-retry-phase" href="/planning/document/${d.id}/view" target="_blank" style="text-decoration:none;background:#ede9fe;color:#7c3aed;border-color:#ddd6fe;font-size:11px;padding:2px 8px">${vLabel}</a>` +
-            `<button class="btn-delete" style="font-size:10px;padding:1px 6px;line-height:1.4" onclick="deletePrototypeVersion(currentProjectId,${d.version || 1})" title="Удалить ${vLabel}">✕</button>` +
-            `</span>`;
-    }).join('');
-}
-
 // Точечное обновление динамических элементов без перерисовки всей панели.
 // Возвращает false если панель ещё не отрисована (нет #projStatusBadge).
 function patchPanelDynamic(proj, phases, docs) {
@@ -376,9 +357,6 @@ function patchPanelDynamic(proj, phases, docs) {
 
     const blueprintEl = document.getElementById('projInfoBlueprint');
     if (blueprintEl) blueprintEl.innerHTML = _infoBlueprintHtml(docs);
-
-    const protoEl = document.getElementById('projInfoPrototype');
-    if (protoEl) protoEl.innerHTML = _infoPrototypeHtml(docs);
 
     const tbody = document.getElementById('phasesTableBody');
     if (tbody) { tbody.innerHTML = buildPhaseRows(proj, phases, docs); applyPhaseCollapseState(); }
@@ -410,7 +388,6 @@ function renderPanel(proj, phases, docs) {
                 <div class="info-card"><label>Создан</label><div class="info-value">${tzFmt(proj.created_at)}</div></div>
                 <div class="info-card"><label>Обновлён</label><div class="info-value" id="projUpdatedAt">${tzFmt(proj.updated_at)}</div></div>
                 <div class="info-card"><label>Blueprint</label><div class="info-value" id="projInfoBlueprint">${_infoBlueprintHtml(docs)}</div></div>
-                <div class="info-card"><label>Прототип</label><div class="info-value" id="projInfoPrototype">${_infoPrototypeHtml(docs)}</div></div>
             </div>
             <div class="section-title">Идея</div>
             <textarea class="idea-block" id="ideaInput" rows="4" data-proj-id="${proj.id}" data-orig="${escHtml(proj.idea || '')}">${escHtml(proj.idea || '')}</textarea>
