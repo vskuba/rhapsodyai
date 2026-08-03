@@ -60,10 +60,10 @@ async def ai_llm_image_generate(
         size: str = '1024x1024',
         quality: str = 'auto',
         style: str = '',
-) -> bytes:
+) -> tuple[bytes, dict]:
     """Генерирует изображение через LLM-провайдера.
 
-    Возвращает PNG в виде bytes.
+    Возвращает (PNG bytes, usage dict) где usage содержит tokens_input/tokens_output если API их вернул.
     Провайдеры: openai, openrouter — OpenAI Images API.
                 gx10 — ComfyUI (Flux.1 Dev) на 192.168.1.2:8188.
     """
@@ -77,7 +77,8 @@ async def ai_llm_image_generate(
         raise ValueError(f'Неизвестный провайдер для LLM: {model_name}')
 
     if provider == 'gx10':
-        return await _ai_llm_image_generate_gx10(prompt, size)
+        img_bytes = await _ai_llm_image_generate_gx10(prompt, size)
+        return img_bytes, {}
 
     base_url = (config_get(provider.upper() + '_API_URL') or '').rstrip('/')
     api_key = config_get(provider.upper() + '_API_KEY') or ''
@@ -107,7 +108,13 @@ async def ai_llm_image_generate(
     if not b64:
         raise ValueError('Image API вернул пустой b64_json')
 
-    return base64.b64decode(b64)
+    usage_raw = data.get('usage') or {}
+    usage = {
+        'tokens_input': usage_raw.get('input_tokens') or usage_raw.get('prompt_tokens'),
+        'tokens_output': usage_raw.get('output_tokens') or usage_raw.get('completion_tokens'),
+    }
+
+    return base64.b64decode(b64), usage
 
 
 def _ai_llm_comfyui_workflow(prompt: str, seed: int, width: int, height: int) -> dict:
