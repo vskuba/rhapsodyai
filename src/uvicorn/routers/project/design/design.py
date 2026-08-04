@@ -391,7 +391,7 @@ async def design_ui_blocks_list(
 ):
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, name, description, stateless, tags, slot, slots "
+            "SELECT id, name, description, stateless, tags, slot, slots, section "
             "FROM project_design_ui_block ORDER BY name ASC"
         )
         rows = await db.fetchall()
@@ -405,7 +405,7 @@ async def design_ui_block_get(
 ):
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, name, description, stateless, tags, slot, slots, html, css, vars "
+            "SELECT id, name, description, stateless, tags, slot, slots, html, css, vars, section "
             "FROM project_design_ui_block WHERE id = %s LIMIT 1",
             (block_id,)
         )

@@ -25,6 +25,7 @@ async def planning_blocks_get(request: Request, project_id: int, user=Depends(Au
     async with mysql_get_db_async() as db:
         await db.execute(
             """SELECT b.id, b.name, b.title, b.description, b.created_by, b.order_index,
+                      b.section,
                       w.id AS w_id, w.name AS w_name, w.description AS w_desc,
                       w.css AS w_css, w.html AS w_html, w.order_index AS w_order
                FROM project_design_ui_block b
@@ -46,6 +47,7 @@ async def planning_blocks_get(request: Request, project_id: int, user=Depends(Au
                 'description': r['description'],
                 'created_by': r['created_by'],
                 'order_index': r['order_index'],
+                'section': r.get('section'),
                 'widgets': [],
             }
         if r['w_id']:
@@ -314,7 +316,7 @@ async def planning_block_regenerate(request: Request, block_id: int, user=Depend
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, name, title, description, created_by, order_index FROM project_design_ui_block WHERE id = %s",
+            "SELECT id, name, title, description, created_by, order_index, section FROM project_design_ui_block WHERE id = %s",
             (block_id,)
         )
         block = await db.fetchone()
@@ -339,6 +341,14 @@ async def planning_block_update(request: Request, block_id: int, data: dict, use
         fields['name'] = str(data['name'])[:255]
     if 'description' in data:
         fields['description'] = str(data['description']) or None
+    if 'tags' in data:
+        fields['tags'] = str(data['tags'])[:500] if data['tags'] else None
+    if 'section' in data:
+        val = data['section']
+        if isinstance(val, list):
+            fields['section'] = json.dumps(val, ensure_ascii=False)[:500] if val else None
+        else:
+            fields['section'] = str(val)[:500] if val else None
     if not fields:
         return {'result': None}
     set_clause = ', '.join(f'`{k}` = %s' for k in fields)
@@ -346,7 +356,7 @@ async def planning_block_update(request: Request, block_id: int, data: dict, use
     async with mysql_get_db_async() as db:
         await db.execute(f"UPDATE project_design_ui_block SET {set_clause} WHERE id = %s", values)
         await db.execute(
-            "SELECT id, name, title, description, created_by, order_index FROM project_design_ui_block WHERE id = %s",
+            "SELECT id, name, title, description, created_by, order_index, section FROM project_design_ui_block WHERE id = %s",
             (block_id,)
         )
         block = await db.fetchone()
@@ -449,7 +459,7 @@ async def planning_block_generate(request: Request, project_id: int, data: dict,
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, name, title, description, created_by, order_index FROM project_design_ui_block WHERE id = %s",
+            "SELECT id, name, title, description, created_by, order_index, section FROM project_design_ui_block WHERE id = %s",
             (block_id,)
         )
         block = await db.fetchone()
