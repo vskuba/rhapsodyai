@@ -1,10 +1,13 @@
 import asyncio
 import json
-import os
+import httpx
 import uuid
+from http.client import HTTPException
 
 from fastapi import APIRouter, Request, Depends
 
+from ai.ai_llm import ai_llm_provider
+from config.config import config_get
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -464,3 +467,135 @@ async def planning_block_generate(request: Request, project_id: int, data: dict,
         result['title'] = result.get('name', '')
     result['widgets'] = [dict(w) for w in (widgets or [])]
     return {'result': result}
+
+
+@router.post("/design/page/{page_id}/auto-blocks")
+async def design_page_auto_blocks(
+    page_id: int,
+    data: dict = None,
+    user=Depends(AuthChecker([AuthPermission.DESIGN_CREATE])),
+):
+    """LLM назначает блоки проекта по секциям страницы. Не меняет wireframe-текст и grid_layout."""
+    project_id = int((data or {}).get('project_id') or 0)
+    if not project_id:
+        raise HTTPException(status_code=400, detail="project_id required")
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT grid_layout FROM project_design_prototype_page WHERE id = %s AND project_id = %s",
+            (page_id, project_id)
+        )
+        page_row = await db.fetchone()
+        if not page_row:
+            raise HTTPException(status_code=404, detail="Page not found")
+
+        raw_gl = page_row.get('grid_layout')
+        try:
+            grid_layout = json.loads(raw_gl) if isinstance(raw_gl, str) else (raw_gl or [])
+        except Exception:
+            grid_layout = []
+        if not grid_layout:
+            grid_layout = [{'w': [100], 'h': 400}]
+
+        await db.execute(
+            "SELECT id, name, description FROM project_design_ui_block "
+            "WHERE project_id = %s ORDER BY order_index",
+            (project_id,)
+        )
+        block_rows = await db.fetchall()
+
+    if not block_rows:
+        return {'result': []}
+
+    # Build section labels from grid
+    sections = []
+    for li, level in enumerate(grid_layout):
+        for ci in range(len(level.get('w') or [100])):
+            sections.append(f"{li + 1}.{ci + 1}")
+
+    blocks_info = '\n'.join(
+        f"{b['id']}: {b['name']}" + (f" — {(b.get('description') or '')[:80]}" if b.get('description') else '')
+        for b in block_rows
+    )
+
+    prompt = (
+        f"Distribute these UI blocks across wireframe sections.\n\n"
+        f"Sections: {', '.join(sections)}\n\n"
+        f"Blocks:\n{blocks_info}\n\n"
+        f"Rules:\n"
+        f"- Every block must appear exactly once.\n"
+        f"- Fill all sections roughly equally.\n"
+        f"- order_index starts at 0 within each section.\n\n"
+        f"Respond with ONLY a JSON array, no markdown:\n"
+        f'[{{"block_id": 1, "section": "1.1", "order_index": 0}}, ...]'
+    )
+
+    entities_llm = await ai_llm_node_get(None, output_type='text')
+    if not entities_llm:
+        raise HTTPException(status_code=503, detail="No LLM configured")
+
+    llm = entities_llm[0]
+    provider = ai_llm_provider(llm['name'])
+    base_url = (config_get(provider.upper() + '_API_URL') or '').rstrip('/')
+    api_key = config_get(provider.upper() + '_API_KEY') or ''
+    model_name = llm['name'][len(provider) + 1:]
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": "Output only valid JSON, no prose."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.3,
+            }
+        )
+        resp.raise_for_status()
+        raw = resp.json()['choices'][0]['message']['content'].strip()
+
+    if raw.startswith('```'):
+        raw = raw.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
+
+    try:
+        assignments = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="LLM returned invalid JSON")
+
+    def _sec_to_flat(label: str) -> int:
+        try:
+            parts = label.split('.')
+            lv = min(int(parts[0]) - 1, len(grid_layout) - 1)
+            co = min(int(parts[1]) - 1, len(grid_layout[lv].get('w') or [100]) - 1)
+            return sum(len(grid_layout[l].get('w') or [100]) for l in range(lv)) + co
+        except Exception:
+            return 0
+
+    block_name_map = {b['id']: b['name'] for b in block_rows}
+
+    async with mysql_get_db_async() as db:
+        await db.execute("DELETE FROM project_design_prototype_page_block WHERE page_id = %s", (page_id,))
+        result_blocks = []
+        for item in (assignments if isinstance(assignments, list) else []):
+            bid = int(item.get('block_id') or 0)
+            if bid not in block_name_map:
+                continue
+            flat = _sec_to_flat(str(item.get('section') or '1.1'))
+            order_idx = int(item.get('order_index') or 0)
+            await db.execute(
+                "INSERT INTO project_design_prototype_page_block (page_id, block_id, order_index, section) "
+                "VALUES (%s, %s, %s, %s)",
+                (page_id, bid, order_idx, flat)
+            )
+            result_blocks.append({
+                'block_id': bid,
+                'block_name': block_name_map[bid],
+                'widget_name': '',
+                'widget_id': None,
+                'order_index': order_idx,
+                'section': flat,
+            })
+
+    return {'result': result_blocks}
