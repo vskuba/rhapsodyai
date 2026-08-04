@@ -24,39 +24,24 @@ router = APIRouter()
 async def planning_blocks_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     async with mysql_get_db_async() as db:
         await db.execute(
-            """SELECT b.id, b.name, b.title, b.description, b.created_by, b.order_index,
-                      b.section,
-                      w.id AS w_id, w.name AS w_name, w.description AS w_desc,
-                      w.css AS w_css, w.html AS w_html, w.order_index AS w_order
+            """SELECT b.id, b.name, b.title, b.description, b.created_by, b.order_index, b.section
                FROM project_design_ui_block b
-               LEFT JOIN project_design_prototype_widget w ON w.block_id = b.id
-               WHERE b.project_id = %s
-               ORDER BY b.name, w.order_index""",
-            (project_id,)
+               ORDER BY b.name"""
         )
         rows = await db.fetchall()
 
-    blocks: dict = {}
-    for r in (rows or []):
-        bid = r['id']
-        if bid not in blocks:
-            blocks[bid] = {
-                'id': bid,
-                'name': r['name'],
-                'title': r.get('title') or r['name'],
-                'description': r['description'],
-                'created_by': r['created_by'],
-                'order_index': r['order_index'],
-                'section': r.get('section'),
-                'widgets': [],
-            }
-        if r['w_id']:
-            blocks[bid]['widgets'].append({
-                'id': r['w_id'], 'name': r['w_name'], 'description': r['w_desc'],
-                'css': r['w_css'], 'html': r['w_html'], 'order_index': r['w_order'],
-            })
-
-    return {'result': list(blocks.values())}
+    return {'result': [
+        {
+            'id': r['id'],
+            'name': r['name'],
+            'title': r.get('title') or r['name'],
+            'description': r['description'],
+            'created_by': r['created_by'],
+            'order_index': r['order_index'],
+            'section': r.get('section'),
+        }
+        for r in (rows or [])
+    ]}
 
 
 @router.put('/design/block/{block_id}/title')
@@ -261,14 +246,11 @@ async def planning_page_blocks_update(request: Request, page_id: int, data: dict
 async def planning_block_regenerate(request: Request, block_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Запустить AI-перегенерацию блока: новое описание + виджеты с CSS."""
     async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT project_id FROM project_design_ui_block WHERE id = %s", (block_id,)
-        )
+        await db.execute("SELECT id FROM project_design_ui_block WHERE id = %s", (block_id,))
         row = await db.fetchone()
     if not row:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail='Block not found')
-    project_id = row['project_id']
 
     agent_repo = AgentRepository()
     agent = await agent_repo.find_one_by({'name': 'planning_block_regenerator'})
@@ -289,7 +271,6 @@ async def planning_block_regenerate(request: Request, block_id: int, user=Depend
             session_uuid=session_uuid,
             workflow_id=agent['workflow_id'],
         ),
-        'planning_project_id': str(project_id),
         'block_id': str(block_id),
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
@@ -320,16 +301,10 @@ async def planning_block_regenerate(request: Request, block_id: int, user=Depend
             (block_id,)
         )
         block = await db.fetchone()
-        await db.execute(
-            "SELECT id, name, description, css, html, order_index FROM project_design_prototype_widget WHERE block_id = %s ORDER BY order_index",
-            (block_id,)
-        )
-        widgets = await db.fetchall()
 
     result = dict(block) if block else {'id': block_id}
     if result.get('title') is None:
         result['title'] = result.get('name', '')
-    result['widgets'] = [dict(w) for w in (widgets or [])]
     return {'result': result}
 
 
@@ -349,6 +324,12 @@ async def planning_block_update(request: Request, block_id: int, data: dict, use
             fields['section'] = json.dumps(val, ensure_ascii=False)[:500] if val else None
         else:
             fields['section'] = str(val)[:500] if val else None
+    if 'width_min' in data:
+        fields['width_min'] = int(data['width_min']) if data['width_min'] else None
+    if 'height_min' in data:
+        fields['height_min'] = int(data['height_min']) if data['height_min'] else None
+    if 'type_id' in data:
+        fields['type_id'] = int(data['type_id']) if data['type_id'] else None
     if not fields:
         return {'result': None}
     set_clause = ', '.join(f'`{k}` = %s' for k in fields)
@@ -383,16 +364,16 @@ async def planning_block_create(request: Request, project_id: int, data: dict, u
         return {'error': 'name is required'}
     description = str(data.get('description') or '').strip() or None
     async with mysql_get_db_async() as db:
-        await db.execute("SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM project_design_ui_block WHERE project_id = %s", (project_id,))
+        await db.execute("SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM project_design_ui_block")
         row = await db.fetchone()
         order_index = int(row['next']) if row else 0
         await db.execute(
-            "INSERT INTO project_design_ui_block (project_id, name, description, created_by, order_index) VALUES (%s, %s, %s, 'user', %s)",
-            (project_id, name, description, order_index)
+            "INSERT INTO project_design_ui_block (name, description, created_by, order_index) VALUES (%s, %s, 'user', %s)",
+            (name, description, order_index)
         )
         new_id = db.lastrowid
         await db.connection.commit()
-    return {'result': {'id': new_id, 'name': name, 'description': description, 'created_by': 'user', 'order_index': order_index, 'widgets': []}}
+    return {'result': {'id': new_id, 'name': name, 'description': description, 'created_by': 'user', 'order_index': order_index}}
 
 
 @router.post('/design/{project_id}/block/generate')
@@ -404,12 +385,12 @@ async def planning_block_generate(request: Request, project_id: int, data: dict,
         return {'error': 'name is required'}
 
     async with mysql_get_db_async() as db:
-        await db.execute("SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM project_design_ui_block WHERE project_id = %s", (project_id,))
+        await db.execute("SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM project_design_ui_block")
         row = await db.fetchone()
         order_index = int(row['next']) if row else 0
         await db.execute(
-            "INSERT INTO project_design_ui_block (project_id, name, description, created_by, order_index) VALUES (%s, %s, %s, 'user', %s)",
-            (project_id, name, description, order_index)
+            "INSERT INTO project_design_ui_block (name, description, created_by, order_index) VALUES (%s, %s, 'user', %s)",
+            (name, description, order_index)
         )
         block_id = db.lastrowid
         await db.connection.commit()
@@ -432,7 +413,6 @@ async def planning_block_generate(request: Request, project_id: int, data: dict,
             session_uuid=session_uuid,
             workflow_id=agent['workflow_id'],
         ),
-        'planning_project_id': str(project_id),
         'block_id': str(block_id),
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
@@ -463,14 +443,8 @@ async def planning_block_generate(request: Request, project_id: int, data: dict,
             (block_id,)
         )
         block = await db.fetchone()
-        await db.execute(
-            "SELECT id, name, description, css, html, order_index FROM project_design_prototype_widget WHERE block_id = %s ORDER BY order_index",
-            (block_id,)
-        )
-        widgets = await db.fetchall()
 
     result = dict(block) if block else {'id': block_id, 'name': name}
     if result.get('title') is None:
         result['title'] = result.get('name', '')
-    result['widgets'] = [dict(w) for w in (widgets or [])]
     return {'result': result}

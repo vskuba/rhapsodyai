@@ -385,14 +385,29 @@ async def design_wireframe_compose(
     return {"result": "ok", "project_id": project_id}
 
 
+@router.get("/design/ui-block-types")
+async def design_ui_block_types_list(
+    user=Depends(AuthChecker([AuthPermission.DESIGN_VIEW])),
+):
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id, name, title, description FROM project_design_ui_block_type ORDER BY title ASC"
+        )
+        rows = await db.fetchall()
+    return {"result": rows}
+
+
 @router.get("/design/ui-blocks")
 async def design_ui_blocks_list(
     user=Depends(AuthChecker([AuthPermission.DESIGN_VIEW])),
 ):
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, name, description, stateless, tags, slot, slots, section "
-            "FROM project_design_ui_block ORDER BY name ASC"
+            "SELECT b.id, b.name, b.description, b.stateless, b.tags, b.slot, b.slots, b.section, "
+            "       b.width_min, b.height_min, b.type_id, t.name AS type_name "
+            "FROM project_design_ui_block b "
+            "LEFT JOIN project_design_ui_block_type t ON t.id = b.type_id "
+            "ORDER BY b.name ASC"
         )
         rows = await db.fetchall()
     return {"result": rows}
@@ -405,8 +420,11 @@ async def design_ui_block_get(
 ):
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, name, description, stateless, tags, slot, slots, html, css, vars, section "
-            "FROM project_design_ui_block WHERE id = %s LIMIT 1",
+            "SELECT b.id, b.name, b.description, b.stateless, b.tags, b.slot, b.slots, b.html, b.css, b.vars, "
+            "       b.section, b.width_min, b.height_min, b.type_id, t.name AS type_name "
+            "FROM project_design_ui_block b "
+            "LEFT JOIN project_design_ui_block_type t ON t.id = b.type_id "
+            "WHERE b.id = %s LIMIT 1",
             (block_id,)
         )
         row = await db.fetchone()
@@ -422,7 +440,7 @@ async def design_ui_block_delete(
 ):
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id FROM project_design_ui_block WHERE id = %s AND project_id IS NULL LIMIT 1",
+            "SELECT id FROM project_design_ui_block WHERE id = %s LIMIT 1",
             (block_id,)
         )
         row = await db.fetchone()
