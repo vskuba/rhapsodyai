@@ -1032,8 +1032,60 @@
     .pages-editor-body {
         flex: 1;
         display: flex;
+        flex-direction: column;
         gap: 0;
         overflow: hidden;
+    }
+
+    .pages-viewport-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fafafa;
+        flex-shrink: 0;
+    }
+
+    .pages-prop-input {
+        border: 1px solid #e2e8f0;
+        border-radius: 5px;
+        padding: 3px 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1e293b;
+        background: #fff;
+        outline: none;
+        min-width: 160px;
+        flex: 1;
+        max-width: 280px;
+    }
+    .pages-prop-input:focus { border-color: #93c5fd; }
+
+    .pages-prop-select {
+        border: 1px solid #e2e8f0;
+        border-radius: 5px;
+        padding: 3px 6px;
+        font-size: 12px;
+        color: #64748b;
+        background: #fff;
+        outline: none;
+        cursor: pointer;
+    }
+    .pages-prop-select:focus { border-color: #93c5fd; }
+
+    .pages-prop-sep {
+        width: 1px;
+        height: 18px;
+        background: #e2e8f0;
+        flex-shrink: 0;
+    }
+
+    .pages-editor-row {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+        min-height: 0;
     }
 
     /* Block library (right sidebar) */
@@ -2288,7 +2340,7 @@
         background: #fff;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,.1);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
         z-index: 999;
         min-width: 160px;
         overflow: hidden;
@@ -2641,22 +2693,28 @@
                 </div>
                 <div id="protoChipViewport" class="proto-chip" onclick="protoViewportChipToggle(event)">
                     <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                        <rect x="1" y="3" width="14" height="10" rx="1.5" stroke="#94a3b8" stroke-width="1.5" fill="none"/>
-                        <line x1="5" y1="13" x2="11" y2="13" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/>
+                        <rect x="1" y="3" width="14" height="10" rx="1.5" stroke="#94a3b8" stroke-width="1.5"
+                              fill="none"/>
+                        <line x1="5" y1="13" x2="11" y2="13" stroke="#94a3b8" stroke-width="1.5"
+                              stroke-linecap="round"/>
                         <line x1="8" y1="13" x2="8" y2="15" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/>
                     </svg>
                     <span id="protoChipViewportText">1440px</span>
                     <div id="protoViewportDropdown" class="proto-chip-dropdown">
-                        <div class="proto-chip-dropdown-item active" data-w="1440" onclick="protoViewportSelect(event,1440,'Desktop XL')">
+                        <div class="proto-chip-dropdown-item active" data-w="1440"
+                             onclick="protoViewportSelect(event,1440,'Desktop XL')">
                             <span>1440px</span><span class="proto-chip-dropdown-label">Desktop XL</span>
                         </div>
-                        <div class="proto-chip-dropdown-item" data-w="1200" onclick="protoViewportSelect(event,1200,'Desktop')">
+                        <div class="proto-chip-dropdown-item" data-w="1200"
+                             onclick="protoViewportSelect(event,1200,'Desktop')">
                             <span>1200px</span><span class="proto-chip-dropdown-label">Desktop</span>
                         </div>
-                        <div class="proto-chip-dropdown-item" data-w="768" onclick="protoViewportSelect(event,768,'Tablet')">
+                        <div class="proto-chip-dropdown-item" data-w="768"
+                             onclick="protoViewportSelect(event,768,'Tablet')">
                             <span>768px</span><span class="proto-chip-dropdown-label">Tablet</span>
                         </div>
-                        <div class="proto-chip-dropdown-item" data-w="375" onclick="protoViewportSelect(event,375,'Mobile')">
+                        <div class="proto-chip-dropdown-item" data-w="375"
+                             onclick="protoViewportSelect(event,375,'Mobile')">
                             <span>375px</span><span class="proto-chip-dropdown-label">Mobile</span>
                         </div>
                     </div>
@@ -2960,6 +3018,46 @@
                     <!-- Center: wireframe editor -->
                     <div class="pages-editor">
                         <div class="pages-editor-body">
+                            <div class="pages-viewport-bar">
+                                <input id="pageNameInput" class="pages-prop-input" type="text"
+                                       placeholder="Название страницы" style="display:none">
+                                <select id="pageTypeSelect" class="pages-prop-select" style="display:none">
+                                    <option value="feature">feature</option>
+                                    <option value="auth">auth</option>
+                                    <option value="technical">technical</option>
+                                </select>
+                                <div class="pages-prop-sep" style="display:none"></div>
+                                <div id="pagesChipViewport" class="proto-chip" onclick="pagesViewportChipToggle(event)">
+                                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                                        <rect x="1" y="3" width="14" height="10" rx="1.5" stroke="#94a3b8"
+                                              stroke-width="1.5" fill="none"/>
+                                        <line x1="5" y1="13" x2="11" y2="13" stroke="#94a3b8" stroke-width="1.5"
+                                              stroke-linecap="round"/>
+                                        <line x1="8" y1="13" x2="8" y2="15" stroke="#94a3b8" stroke-width="1.5"
+                                              stroke-linecap="round"/>
+                                    </svg>
+                                    <span id="pagesChipViewportText">1440px</span>
+                                    <div id="pagesViewportDropdown" class="proto-chip-dropdown">
+                                        <div class="proto-chip-dropdown-item active" data-w="1440"
+                                             onclick="pagesViewportSelect(event,1440,'Desktop XL')">
+                                            <span>1440px</span><span class="proto-chip-dropdown-label">Desktop XL</span>
+                                        </div>
+                                        <div class="proto-chip-dropdown-item" data-w="1200"
+                                             onclick="pagesViewportSelect(event,1200,'Desktop')">
+                                            <span>1200px</span><span class="proto-chip-dropdown-label">Desktop</span>
+                                        </div>
+                                        <div class="proto-chip-dropdown-item" data-w="768"
+                                             onclick="pagesViewportSelect(event,768,'Tablet')">
+                                            <span>768px</span><span class="proto-chip-dropdown-label">Tablet</span>
+                                        </div>
+                                        <div class="proto-chip-dropdown-item" data-w="375"
+                                             onclick="pagesViewportSelect(event,375,'Mobile')">
+                                            <span>375px</span><span class="proto-chip-dropdown-label">Mobile</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="pages-editor-row">
                             <div class="wf-drop-zone" id="wfDropZone">
                                 <div class="wf-placeholder" id="wfPlaceholder">
                                     <div style="font-size:32px">🗂️</div>
@@ -2975,6 +3073,16 @@
                             <!-- Right: block library -->
                             <div class="block-library" id="blockLibraryCol">
                                 <div class="pages-editor-header">
+                                    <button class="proto-btn-secondary wireframe" id="btnSavePage"
+                                            style="display:none" onclick="savePage()">
+                                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                                            <path d="M2 2h9l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V3a1 1 0 011-1z"
+                                                  stroke="currentColor" stroke-width="1.5"/>
+                                            <path d="M4 2v4h7V2M4 9h8" stroke="currentColor" stroke-width="1.5"
+                                                  stroke-linecap="round"/>
+                                        </svg>
+                                        Сохранить страницу
+                                    </button>
                                     <button class="proto-btn-secondary wireframe" id="btnAutoWireframe"
                                             style="display:none" onclick="autoWireframe()">
                                         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -3017,6 +3125,7 @@
                                     </div>
                                 </div>
                             </div>
+                            </div><!-- /.pages-editor-row -->
                         </div>
                     </div>
                 </div>
@@ -4374,6 +4483,15 @@ ${contentScript}</body></html>`;
         renderWireframeEditor();
         document.getElementById('btnAutoWireframe').style.display = '';
         document.getElementById('btnSaveWireframe').style.display = '';
+        document.getElementById('btnSavePage').style.display = '';
+
+        // Fill page property fields
+        const nameInput = document.getElementById('pageNameInput');
+        const typeSelect = document.getElementById('pageTypeSelect');
+        const sep = document.querySelector('.pages-prop-sep');
+        if (nameInput) { nameInput.value = page.name || ''; nameInput.style.display = ''; }
+        if (typeSelect) { typeSelect.value = page.page_type || 'feature'; typeSelect.style.display = ''; }
+        if (sep) sep.style.display = '';
 
         // Prefetch full html/vars/slots for any UI library blocks not yet cached
         const projIds = new Set((_allBlocks || []).map(b => b.id));
@@ -4704,6 +4822,46 @@ ${contentScript}</body></html>`;
     }
 
 
+    async function savePage() {
+        if (!_selectedPageId) return;
+        const btn = document.getElementById('btnSavePage');
+        btn.disabled = true;
+        btn.textContent = 'Сохранение…';
+
+        const name = (document.getElementById('pageNameInput')?.value || '').trim();
+        const page_type = document.getElementById('pageTypeSelect')?.value || 'feature';
+
+        try {
+            const res = await planningFetch(`/design/prototype/page/${_selectedPageId}`, {
+                method: 'PUT',
+                body: JSON.stringify({name, page_type}),
+            });
+            // Update local cache
+            const page = _allPagesFull.find(p => p.id === _selectedPageId);
+            if (page && res?.result) {
+                page.name = res.result.name;
+                page.page_type = res.result.page_type;
+            }
+            // Update tree item label
+            const treeItem = document.querySelector(`.page-tree-item[data-page-id="${_selectedPageId}"]`);
+            if (treeItem && name) {
+                const nameSpan = treeItem.querySelector('.pname');
+                if (nameSpan) nameSpan.textContent = name;
+            }
+            const status = document.getElementById('wfSaveStatus');
+            status.style.display = '';
+            setTimeout(() => status.style.display = 'none', 2000);
+        } catch (e) {
+            alert('Ошибка сохранения: ' + e.message);
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M2 2h9l3 3v9a1 1 0 01-1 1H2a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M4 2v4h7V2M4 9h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg> Сохранить страницу`;
+    }
+
     async function saveWireframe() {
         if (!_selectedPageId) return;
         const btn = document.getElementById('btnSaveWireframe');
@@ -4769,7 +4927,7 @@ ${contentScript}</body></html>`;
         btn.innerHTML = `<svg class="spinning" width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="12 26"/></svg> Генерация…`;
 
         try {
-            const data = await planningFetch(`/design/page/${_selectedPageId}/auto-blocks`, {
+            const data = await planningFetch(`/design/prototype/page/${_selectedPageId}/auto-blocks`, {
                 method: 'POST',
                 body: JSON.stringify({project_id: parseInt(pid)}),
             });
@@ -4786,7 +4944,9 @@ ${contentScript}</body></html>`;
             const status = document.getElementById('wfSaveStatus');
             status.textContent = '✓ Автоблоки применены';
             status.style.display = '';
-            setTimeout(() => { status.style.display = 'none'; }, 3000);
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
         } catch (e) {
             alert('Ошибка автоблоков: ' + e.message);
         } finally {
@@ -4864,6 +5024,37 @@ ${contentScript}</body></html>`;
             chip.style.color = '#94a3b8';
             chip.querySelectorAll('rect').forEach(el => el.setAttribute('fill', '#94a3b8'));
         }
+    }
+
+    let _pagesViewportWidth = 1440;
+
+    function pagesViewportChipToggle(e) {
+        e.stopPropagation();
+        const dd = document.getElementById('pagesViewportDropdown');
+        if (!dd) return;
+        const isOpen = dd.classList.contains('open');
+        document.querySelectorAll('.proto-chip-dropdown.open').forEach(el => el.classList.remove('open'));
+        if (!isOpen) dd.classList.add('open');
+    }
+
+    function pagesViewportSelect(e, width, label) {
+        e.stopPropagation();
+        _pagesViewportWidth = width;
+        const chipText = document.getElementById('pagesChipViewportText');
+        if (chipText) chipText.textContent = `${width}px`;
+        const chip = document.getElementById('pagesChipViewport');
+        if (chip) {
+            chip.style.background = '#eff6ff';
+            chip.style.borderColor = '#bfdbfe';
+            chip.style.color = '#1d4ed8';
+            chip.querySelectorAll('rect,line').forEach(el => {
+                el.getAttribute('stroke') ? el.setAttribute('stroke', '#3b82f6') : el.setAttribute('fill', '#3b82f6');
+            });
+        }
+        document.querySelectorAll('#pagesViewportDropdown .proto-chip-dropdown-item').forEach(el => {
+            el.classList.toggle('active', parseInt(el.dataset.w) === width);
+        });
+        document.getElementById('pagesViewportDropdown')?.classList.remove('open');
     }
 
     let _protoViewportWidth = 1440;

@@ -47,7 +47,7 @@ from src.uvicorn.routers.project import (
     project_task,
     project_phase_source,
 )
-from src.uvicorn.routers.project.design import design_block, design as design_router, design_browser
+from src.uvicorn.routers.project.design import design_block, design as design_router, design_browser, design_prototype as design_prototype_router
 from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
@@ -414,6 +414,7 @@ app.include_router(project_task.router, include_in_schema=False)
 app.include_router(project_phase_source.router, include_in_schema=False)
 app.include_router(design_browser.router, include_in_schema=False)
 app.include_router(design_router.router, include_in_schema=False)
+app.include_router(design_prototype_router.router, include_in_schema=False)
 app.include_router(companion.router, include_in_schema=False)
 app.include_router(telegram_app.router, include_in_schema=False)
 app.include_router(telegram_app_chat.router, include_in_schema=False)

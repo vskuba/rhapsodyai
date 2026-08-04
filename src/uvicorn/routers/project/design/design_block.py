@@ -16,8 +16,6 @@ from src.uvicorn.routers.project.project_common import _tools_load
 _BLOCK_REGEN_WORKFLOW_ID  = 50
 _BLOCK_REGEN_AGENT_ID     = 83
 _BLOCK_REGEN_TIMEOUT      = 240.0
-_AUTO_BLOCKS_AGENT_NAME   = 'planning_wireframe_composer'
-_AUTO_BLOCKS_TIMEOUT      = 120.0
 
 router = APIRouter()
 
@@ -466,80 +464,3 @@ async def planning_block_generate(request: Request, project_id: int, data: dict,
         result['title'] = result.get('name', '')
     result['widgets'] = [dict(w) for w in (widgets or [])]
     return {'result': result}
-
-
-@router.post("/design/page/{page_id}/auto-blocks")
-async def design_page_auto_blocks(
-    request: Request,
-    page_id: int,
-    data: dict = None,
-    user=Depends(AuthChecker([AuthPermission.DESIGN_CREATE])),
-):
-    """Агент planning_wireframe_composer назначает блоки проекта по секциям страницы."""
-    from fastapi import HTTPException
-    project_id = int((data or {}).get('project_id') or 0)
-    if not project_id:
-        raise HTTPException(status_code=400, detail="project_id required")
-
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT id FROM project_design_prototype_page WHERE id = %s AND project_id = %s",
-            (page_id, project_id)
-        )
-        if not await db.fetchone():
-            raise HTTPException(status_code=404, detail="Page not found")
-
-    agent = await AgentRepository().find_one_by({'name': _AUTO_BLOCKS_AGENT_NAME})
-    if not agent:
-        return {'error': f'Agent {_AUTO_BLOCKS_AGENT_NAME!r} not found'}
-
-    entities_llm = await ai_llm_node_get(agent['node_id'])
-    if not entities_llm:
-        return {'error': 'LLM не настроены для агента'}
-
-    workflow_data = await ai_workflow_load(agent['workflow_id'])
-    session_uuid = str(uuid.uuid4())
-    wf_vars = {
-        **ai_workflow_variables_base(
-            prompt_user='',
-            user_id=user.user_id,
-            entity_agent=agent,
-            session_uuid=session_uuid,
-            workflow_id=agent['workflow_id'],
-        ),
-        'page_id': str(page_id),
-        'project_id': str(project_id),
-    }
-    ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
-
-    loop = asyncio.get_running_loop()
-    future = loop.create_future()
-    agent_manager = request.app.state.agent_manager
-    framework_model = await agent_manager.framework_model_create({
-        'entity_agent': agent,
-        'entities_llm': entities_llm,
-        'workflow_steps': workflow_data['steps'],
-        'workflow_variables': wf_vars,
-        'prompt_user': '',
-        'user_id': user.user_id,
-        'companion_id': None,
-        'session_uuid': session_uuid,
-        'tools': await _tools_load(),
-    })
-    agent_manager.framework_workflow_run(framework_model, future, loop)
-    try:
-        await asyncio.wait_for(future, timeout=_AUTO_BLOCKS_TIMEOUT)
-    except asyncio.TimeoutError:
-        pass
-
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT pb.block_id, b.name AS block_name, pb.order_index, pb.section "
-            "FROM project_design_prototype_page_block pb "
-            "JOIN project_design_ui_block b ON b.id = pb.block_id "
-            "WHERE pb.page_id = %s ORDER BY pb.section, pb.order_index",
-            (page_id,)
-        )
-        rows = await db.fetchall()
-
-    return {'result': [dict(r) for r in (rows or [])]}
