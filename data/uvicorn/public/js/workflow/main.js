@@ -312,6 +312,8 @@ function setActiveItem(el) {
 
 async function fillWorkflowForm(workflow) {
     document.getElementById('workflowId').value = workflow.id;
+    const wfIdEl = document.querySelector('.workflow-id');
+    if (wfIdEl) wfIdEl.textContent = workflow.id ? `Workflow: #${workflow.id} ${workflow.name || ''}` : 'Workflow: #';
     document.getElementById('name').value = workflow.name || '';
     document.getElementById('title').value = workflow.title || '';
     document.getElementById('node_id').value = workflow.node_id || '';

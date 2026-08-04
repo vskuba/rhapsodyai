@@ -32,6 +32,14 @@
     .workflow-resizer:hover,
     .workflow-resizer.dragging { background: #3498db; }
 
+    .workflow-id {
+        font-size: 14px;
+        color: #30353a;
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-weight: bold;
+    }
+
     .sidebar-header {
         padding: 20px;
         background: #fff;
@@ -223,7 +231,7 @@
 
     .editor-section {
         flex: 1;
-        padding: 20px 20px;
+        padding: 10px 20px 20px;
         overflow-y: auto;
     }
 
@@ -232,9 +240,21 @@
         border-bottom: 2px solid #e2e8f0;
         padding-bottom: 0;
         display: flex;
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .form-header-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-bottom: 6px;
+    }
+
+    .form-header-bottom {
+        display: flex;
         justify-content: space-between;
         align-items: flex-end;
-        width: 100%;
     }
 
     .form-header .btn-save {
@@ -1046,13 +1066,18 @@
     <div class="editor-section">
         <form id="workflowForm" novalidate>
             <div class="form-header">
-                <span id="formTitle" style="display:none;"></span>
-                <div class="workflow-tabs" id="workflowTabs">
-                    <button type="button" class="tab-btn active" id="tabSteps">Шаги</button>
-                    <button type="button" class="tab-btn" id="tabSettings">Настройки</button>
-                    <button type="button" class="tab-btn" id="tabGraph">Graph</button>
+                <div class="form-header-top">
+                    <span id="formTitle" style="display:none;"></span>
+                    <div class="workflow-id">Workflow: #</div>
                 </div>
-                <button type="submit" class="btn-save">Сохранить workflow</button>
+                <div class="form-header-bottom">
+                    <div class="workflow-tabs" id="workflowTabs">
+                        <button type="button" class="tab-btn active" id="tabSteps">Шаги</button>
+                        <button type="button" class="tab-btn" id="tabSettings">Настройки</button>
+                        <button type="button" class="tab-btn" id="tabGraph">Graph</button>
+                    </div>
+                    <button type="submit" class="btn-save">Сохранить workflow</button>
+                </div>
             </div>
 
             <input type="hidden" id="workflowId">
