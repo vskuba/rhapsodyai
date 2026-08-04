@@ -2230,6 +2230,13 @@
     }
     .bw-token-chip:hover { background: #dcfce7; border-color: #86efac; }
     .bw-token-chip.active { background: #16a34a; color: #fff; border-color: #16a34a; }
+    .bw-save-size-chip {
+        font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 10px;
+        border: 1px solid #bfdbfe; background: #eff6ff; color: #2563eb;
+        cursor: pointer; line-height: 16px; margin-left: 4px; flex-shrink: 0;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .bw-save-size-chip:hover { background: #dbeafe; border-color: #93c5fd; }
 
     .bw-iframe-wrap {
         border: 1px solid #e2e8f0;
@@ -2286,6 +2293,10 @@
         border: none;
         display: block;
         transition: height 0.2s ease;
+    }
+
+    .bw-resize-shell .bw-preview-iframe {
+        min-height: 0;
     }
 
     .bw-css-details {
@@ -3961,7 +3972,7 @@ ${contentScript}</body></html>`;
         const container = document.getElementById('bwPreviewContent');
         container.innerHTML = `
         <div class="bw-preview-name">${esc(w.name)}</div>
-        ${_bwPreviewSectionLabelHtml()}
+        ${_bwPreviewSectionLabelHtml(_bwBlockId)}
         <div class="bw-iframe-wrap" id="bwiw-${w.id}"></div>
         <details class="bw-css-details" id="bwced-${w.id}">
             <summary class="bw-css-summary">CSS ${w.css ? '' : '<span class="bw-css-empty-mark">не задан</span>'}</summary>
@@ -3992,7 +4003,7 @@ ${contentScript}</body></html>`;
 
         if (w.css || w.html) {
             document.getElementById(`bwiw-${w.id}`).appendChild(
-                _bwMakeIframe(bwPreviewIframeHtml(w.css, w.html, blockContent))
+                _bwMakeIframe(bwPreviewIframeHtml(w.css, w.html, blockContent), _bwBlockId)
             );
         }
     }
@@ -4085,7 +4096,7 @@ ${contentScript}</body></html>`;
             ${_bwTagsBarHtml(b.id, b.tags)}
             ${_bwSectionsBarHtml(b.id, b.section)}
         </div>
-        ${_bwPreviewSectionLabelHtml()}
+        ${_bwPreviewSectionLabelHtml(b.id)}
         <div class="bw-iframe-wrap" id="bwdiw-${b.id}"></div>
         ${b.vars && b.vars !== '{}' ? `
         <details class="bw-css-details" style="margin-top:8px">
@@ -4115,7 +4126,7 @@ ${contentScript}</body></html>`;
                     wrap.innerHTML = `<div style="color:#94a3b8;font-size:12px;font-style:italic">Блок-контейнер (слоты без шаблона)</div>`;
                 }
             } else {
-                document.getElementById(`bwdiw-${b.id}`).appendChild(_bwMakeIframe(_injectCdn(rendered)));
+                document.getElementById(`bwdiw-${b.id}`).appendChild(_bwMakeIframe(_injectCdn(rendered), b.id));
             }
         }
     }
@@ -4266,15 +4277,40 @@ ${contentScript}</body></html>`;
         document.querySelectorAll('.bw-bp-btn').forEach(btn => btn.classList.toggle('active', parseInt(btn.dataset.w) === w));
     }
 
-    function _bwPreviewSectionLabelHtml() {
+    function _bwPreviewSectionLabelHtml(blockId = null) {
         const bpBtns = [375, 768, 1280, 1920].map(w =>
             `<button class="bw-bp-btn" data-w="${w}" onclick="_bwSetPreviewWidth(${w})">${w}</button>`
         ).join('');
-        return `<div class="bw-preview-section-label">Превью${_bwTokenChipsHtml()}<span class="bw-bp-pills">${bpBtns}</span></div>`;
+        const saveChip = blockId
+            ? `<button class="bw-save-size-chip" onclick="_bwSaveCurrentSize(${blockId})" title="Сохранить текущий размер как минимальный">Save min w&h</button>`
+            : '';
+        return `<div class="bw-preview-section-label">Превью${_bwTokenChipsHtml()}<span class="bw-bp-pills">${bpBtns}</span>${saveChip}</div>`;
     }
 
     // ── Iframe helper ─────────────────────────────────────────────────────────────
-    function _bwMakeIframe(srcdoc) {
+    async function _bwSaveCurrentSize(blockId) {
+        if (!_bwActiveShell) return;
+        const iframe = _bwActiveShell.querySelector('.bw-preview-iframe');
+        const w = _bwActiveShell.offsetWidth;
+        const h = iframe ? iframe.offsetHeight : 0;
+        const chip = document.querySelector('.bw-save-size-chip');
+        try {
+            await planningFetch(`/design/block/${blockId}`, {
+                method: 'PUT',
+                body: JSON.stringify({width_min: w, height_min: h}),
+            });
+            if (chip) {
+                const orig = chip.textContent;
+                chip.textContent = '✓ Сохранено';
+                chip.style.background = '#16a34a';
+                chip.style.color = '#fff';
+                chip.style.borderColor = '#16a34a';
+                setTimeout(() => { chip.textContent = orig; chip.style.background = ''; chip.style.color = ''; chip.style.borderColor = ''; }, 1400);
+            }
+        } catch (e) {}
+    }
+
+    function _bwMakeIframe(srcdoc, blockId = null) {
         const shell = document.createElement('div');
         shell.className = 'bw-resize-shell';
         shell.style.width = '1280px';
@@ -4326,6 +4362,8 @@ ${contentScript}</body></html>`;
 
         dragE.addEventListener('mousedown', e => {
             e.preventDefault();
+            iframe.style.pointerEvents = 'none';
+            document.body.style.userSelect = 'none';
             const startX = e.clientX, startW = shell.offsetWidth;
             const onMove = ev => {
                 const w = Math.max(200, startW + ev.clientX - startX);
@@ -4333,26 +4371,40 @@ ${contentScript}</body></html>`;
                 badge.textContent = w + ' × ' + iframe.offsetHeight;
                 _bwUpdateBpButtons(w);
             };
-            const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+            const onUp = () => {
+                iframe.style.pointerEvents = '';
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
         });
 
         dragS.addEventListener('mousedown', e => {
             e.preventDefault();
+            iframe.style.pointerEvents = 'none';
+            document.body.style.userSelect = 'none';
             const startY = e.clientY, startH = iframe.offsetHeight;
             const onMove = ev => {
                 const h = Math.max(40, startH + ev.clientY - startY);
                 iframe.style.height = h + 'px';
                 badge.textContent = shell.offsetWidth + ' × ' + h;
             };
-            const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+            const onUp = () => {
+                iframe.style.pointerEvents = '';
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
         });
 
         dragSE.addEventListener('mousedown', e => {
             e.preventDefault();
+            iframe.style.pointerEvents = 'none';
+            document.body.style.userSelect = 'none';
             const startX = e.clientX, startY = e.clientY, startW = shell.offsetWidth, startH = iframe.offsetHeight;
             const onMove = ev => {
                 const w = Math.max(200, startW + ev.clientX - startX);
@@ -4362,7 +4414,12 @@ ${contentScript}</body></html>`;
                 badge.textContent = w + ' × ' + h;
                 _bwUpdateBpButtons(w);
             };
-            const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+            const onUp = () => {
+                iframe.style.pointerEvents = '';
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
         });
@@ -4409,7 +4466,7 @@ ${contentScript}</body></html>`;
         if (!iframeWrap) return;
         iframeWrap.innerHTML = '';
         if (w.css || w.html) {
-            iframeWrap.appendChild(_bwMakeIframe(bwPreviewIframeHtml(w.css, w.html, block.content || null)));
+            iframeWrap.appendChild(_bwMakeIframe(bwPreviewIframeHtml(w.css, w.html, block.content || null), _bwBlockId));
         }
     }
 
@@ -5052,14 +5109,14 @@ ${contentScript}</body></html>`;
             _bwTagsBarHtml(b.id, b.tags) +
             _bwSectionsBarHtml(b.id, b.section) +
             '</div>' +
-            _bwPreviewSectionLabelHtml() +
+            _bwPreviewSectionLabelHtml(b.id) +
             '<div class="bw-iframe-wrap" id="libprev-' + b.id + '"></div>' +
             '</div>';
         if (b.html) {
             const rendered = _fillTestData(b.html, b.vars, b.slots);
             const prevWrap = document.getElementById('libprev-' + b.id);
             if (!rendered.includes('[[slot:')) {
-                prevWrap.appendChild(_bwMakeIframe(_injectCdn(rendered)));
+                prevWrap.appendChild(_bwMakeIframe(_injectCdn(rendered), b.id));
             } else {
                 let varsObj = {};
                 try {
