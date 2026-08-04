@@ -417,7 +417,7 @@
     }
 
     function _injectCdn(html) {
-        return html
+        let result = html
             .replace(
                 /<link[^>]+href=["']\/component\.css["'][^>]*>/gi,
                 '<script src="https://cdn.tailwindcss.com"><\/script>'
@@ -425,7 +425,15 @@
             .replace(
                 /<script[^>]+src=["']\/component\.js["'][^>]*><\/script>/gi,
                 '<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"><\/script>'
+            )
+            .replace(
+                /<script[^>]+src=["']https?:\/\/[^"']*chart[^"']*["'][^>]*><\/script>/gi,
+                '<script src="/static/js/chart.umd.min.js"><\/script>'
             );
+        if (/new Chart\s*\(/.test(result) && !result.includes('chart.umd.min.js')) {
+            result = '<script src="/static/js/chart.umd.min.js"><\/script>\n' + result;
+        }
+        return result;
     }
 
     function _fillVars(html, vars) {

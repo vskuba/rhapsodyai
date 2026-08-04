@@ -1,4 +1,5 @@
 import traceback
+import urllib.parse
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
@@ -50,7 +51,11 @@ async def require_auth(request: Request) -> AuthSession:
         # Only redirect on 401 (not authenticated)
         # Let 403 (forbidden) and other errors propagate
         if e.status_code == 401:
-            raise HTTPException(status_code=302, detail="Not authenticated", headers={"Location": "/login"})
+            next_path = request.url.path
+            if request.url.query:
+                next_path += '?' + request.url.query
+            next_param = urllib.parse.quote(next_path, safe='')
+            raise HTTPException(status_code=302, detail="Not authenticated", headers={"Location": f"/login?next={next_param}"})
         raise
 
 
