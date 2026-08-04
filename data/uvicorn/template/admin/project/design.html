@@ -1436,13 +1436,6 @@
         align-items: center;
     }
 
-    .bw-block-list {
-        flex: 0 0 auto;
-        max-height: 200px;
-        min-height: 40px;
-        overflow-y: auto;
-    }
-
     .bw-default-section {
         flex: 1;
         display: flex;
@@ -1673,123 +1666,6 @@
 
     .bwps-add-btn:hover { background: #ddd6fe; }
 
-    .bw-block-item {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        padding: 6px 8px 6px 12px;
-        border-bottom: 1px solid #f1f5f9;
-        cursor: pointer;
-        transition: background .1s;
-    }
-
-    .bw-block-item:hover {
-        background: #f0f4ff;
-    }
-
-    .bw-block-item.active {
-        background: #ede9fe;
-    }
-
-    .bw-block-item.active .bw-block-name {
-        color: #6d28d9;
-        font-weight: 600;
-    }
-
-    .bw-block-id {
-        font-size: 10px;
-        color: #94a3b8;
-        font-variant-numeric: tabular-nums;
-        flex-shrink: 0;
-        min-width: 28px;
-    }
-
-    .bw-block-name {
-        font-size: 13px;
-        color: #1e293b;
-        flex: 1;
-        line-height: 1.3;
-    }
-
-
-    .bw-block-actions {
-        display: flex;
-        gap: 3px;
-        opacity: 0;
-        transition: opacity .15s;
-        flex-shrink: 0;
-    }
-
-    .bw-block-item:hover .bw-block-actions {
-        opacity: 1;
-    }
-
-    .bw-block-item.active .bw-block-actions {
-        opacity: 1;
-    }
-
-    .bw-block-btn {
-        font-size: 11px;
-        padding: 2px 5px;
-        border-radius: 4px;
-        border: 1px solid #e2e8f0;
-        background: #fff;
-        cursor: pointer;
-        color: #64748b;
-        line-height: 1;
-    }
-
-    .bw-block-btn:hover {
-        background: #f1f5f9;
-    }
-
-    .bw-block-btn.regen {
-        color: #6366f1;
-        border-color: #c7d2fe;
-    }
-
-    .bw-block-btn.regen:hover {
-        background: #eef2ff;
-    }
-
-    .bw-block-btn.regen.spinning {
-        animation: bw-spin .8s linear infinite;
-    }
-
-    .bw-block-btn.del-block {
-        color: #dc2626;
-        border-color: #fca5a5;
-    }
-
-    .bw-block-btn.del-block:hover {
-        background: #fff1f2;
-    }
-
-    @keyframes bw-spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    .bw-block-name {
-        cursor: pointer;
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .bw-block-name-input {
-        flex: 1;
-        min-width: 0;
-        font-size: 12px;
-        border: 1px solid #818cf8;
-        border-radius: 4px;
-        padding: 1px 5px;
-        outline: none;
-        font-family: inherit;
-    }
 
     .bw-section-badge {
         font-size: 10px;
@@ -2818,10 +2694,6 @@
             <div class="bw-grid" id="bwGrid">
                 <!-- Left: block list -->
                 <div class="bw-col-left" id="bwColLeft">
-                    <div class="bw-panel-header">Блоки проекта</div>
-                    <div class="bw-block-list" id="bwBlockList">
-                        <div style="padding:20px;color:#94a3b8;font-size:13px">Выберите проект</div>
-                    </div>
                     <!-- Default UI blocks section -->
                     <div class="bw-default-section">
                         <div class="bw-panel-header">Блоки по умолчанию
@@ -3170,8 +3042,6 @@
     // ═══════════════════════════════════════════════
 
     let _allProjects = [];
-    let _bwBlocks = [];
-    let _bwBlockId = null;
     let _bwProjectId = null;
 
     async function planningFetch(url, opts = {}) {
@@ -3188,48 +3058,9 @@
 
     async function loadBlocksWidgets() {
         const pid = document.getElementById('globalProjectSel').value;
-        const listEl = document.getElementById('bwBlockList');
-        _bwBlockId = null;
-        _bwBlocks = [];
         _bwProjectId = pid ? parseInt(pid) : null;
-        resetBwRight();
-        if (!pid) {
-            listEl.innerHTML = '<div style="padding:20px;color:#94a3b8;font-size:13px">Выберите проект</div>';
-            const footer = document.getElementById('bwBlockFooter');
-            if (footer) footer.style.display = 'none';
-            return;
-        }
-        listEl.innerHTML = '<div style="padding:20px;color:#94a3b8;font-size:13px">Загрузка…</div>';
-        const data = await planningFetch(`/design/${pid}/blocks`);
-        _bwBlocks = (data.result || []).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-        renderBwBlockList();
-        if (_bwBlocks.length) {
-            const savedId = parseInt(localStorage.getItem('bw_active_block_id_' + pid), 10);
-            const target = (savedId && _bwBlocks.find(b => b.id === savedId)) ? savedId : _bwBlocks[0].id;
-            selectBwBlock(target);
-        }
-    }
-
-    function renderBwBlockList() {
-        const listEl = document.getElementById('bwBlockList');
         const footer = document.getElementById('bwBlockFooter');
-        if (!_bwBlocks.length) {
-            listEl.innerHTML = '<div style="padding:20px;color:#94a3b8;font-size:13px">Блоки не сгенерированы</div>';
-            if (footer) footer.style.display = 'none';
-            return;
-        }
-        listEl.innerHTML = _bwBlocks.map(b => {
-            const displayTitle = esc(b.title || b.name);
-            return `<div class="bw-block-item${_bwBlockId === b.id ? ' active' : ''}" data-bid="${b.id}" onclick="selectBwBlock(${b.id})">
-            <span class="bw-block-id">#${b.id}</span><span class="bw-block-name">${displayTitle}</span>
-            ${_bwParseSections(b.section).map(z => `<span class="bw-section-badge">${esc(z)}</span>`).join('')}
-            <div class="bw-block-actions">
-                <button class="bw-block-btn regen" id="bwregen-${b.id}" onclick="event.stopPropagation();regenBwBlock(${b.id})" title="Перегенерировать">↺</button>
-                <button class="bw-block-btn del-block" onclick="event.stopPropagation();deleteBwBlock(${b.id})" title="Удалить">✕</button>
-            </div>
-        </div>`;
-        }).join('');
-        if (footer) footer.style.display = '';
+        if (footer) footer.style.display = pid ? '' : 'none';
     }
 
     function resetBwRight() {
@@ -3263,7 +3094,7 @@
         const inp = document.getElementById(`bwpt-inp-${blockId}`);
         const tag = inp ? inp.value.trim() : '';
         if (!tag) return;
-        const block = _bwBlocks.find(b => b.id === blockId) || _defaultBlocks.find(b => b.id === blockId);
+        const block = _defaultBlocks.find(b => b.id === blockId);
         const tags = _bwParseTags(block ? block.tags : null);
         if (tags.includes(tag)) { inp.value = ''; return; }
         tags.push(tag);
@@ -3274,7 +3105,7 @@
     }
 
     async function bwTagRemove(blockId, tag) {
-        const block = _bwBlocks.find(b => b.id === blockId) || _defaultBlocks.find(b => b.id === blockId);
+        const block = _defaultBlocks.find(b => b.id === blockId);
         const tags = _bwParseTags(block ? block.tags : null).filter(t => t !== tag);
         const tagsStr = tags.join(', ') || null;
         await planningFetch(`/design/block/${blockId}`, {method: 'PUT', body: JSON.stringify({tags: tagsStr})});
@@ -3322,7 +3153,7 @@
         const sel = document.getElementById(`bwps-sel-${blockId}`);
         const zone = sel ? sel.value : '';
         if (!zone) return;
-        const block = _bwBlocks.find(b => b.id === blockId) || _defaultBlocks.find(b => b.id === blockId);
+        const block = _defaultBlocks.find(b => b.id === blockId);
         const zones = _bwParseSections(block ? block.section : null);
         if (zones.includes(zone)) return;
         zones.push(zone);
@@ -3330,17 +3161,15 @@
         await planningFetch(`/design/block/${blockId}`, {method: 'PUT', body: JSON.stringify({section})});
         if (block) block.section = section;
         _bwSectionsBarRerender(blockId, zones);
-        renderBwBlockList();
     }
 
     async function bwpsRemove(blockId, zone) {
-        const block = _bwBlocks.find(b => b.id === blockId) || _defaultBlocks.find(b => b.id === blockId);
+        const block = _defaultBlocks.find(b => b.id === blockId);
         const zones = _bwParseSections(block ? block.section : null).filter(z => z !== zone);
         const section = zones.length ? JSON.stringify(zones) : null;
         await planningFetch(`/design/block/${blockId}`, {method: 'PUT', body: JSON.stringify({section})});
         if (block) block.section = section;
         _bwSectionsBarRerender(blockId, zones);
-        renderBwBlockList();
     }
 
     function _bwParseSections(raw) {
@@ -3351,23 +3180,7 @@
     }
 
     async function selectBwBlock(blockId) {
-        _bwBlockId = blockId;
-        if (_bwProjectId) localStorage.setItem('bw_active_block_id_' + _bwProjectId, blockId);
-        document.querySelectorAll('.bw-block-item').forEach(el =>
-            el.classList.toggle('active', parseInt(el.dataset.bid) === blockId)
-        );
-        const container = document.getElementById('bwPreviewContent');
-        container.innerHTML = '<div class="bw-placeholder" style="padding:12px">Загрузка…</div>';
-        try {
-            const data = await planningFetch(`/design/ui-blocks/${blockId}`);
-            const b = data.result;
-            // Keep in-memory block list in sync
-            const local = _bwBlocks.find(x => x.id === blockId);
-            if (local && b) { local.tags = b.tags; local.section = b.section; }
-            _renderDefaultBlockPreview(b);
-        } catch (e) {
-            container.innerHTML = '<div style="padding:12px;color:#ef4444;font-size:12px">Ошибка загрузки</div>';
-        }
+        selectDefaultUiBlock(blockId);
     }
 
     // ── Default UI blocks ─────────────────────────────────────────────────────────
@@ -3436,8 +3249,6 @@
     async function selectDefaultUiBlock(id) {
         _defaultBlockActive = id;
         localStorage.setItem('bw_active_default_block_id', id);
-        // Mark active in project list too — clear it
-        document.querySelectorAll('.bw-block-item.active').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.bw-default-item').forEach(el => {
             el.classList.toggle('active', parseInt(el.getAttribute('onclick').match(/\d+/)[0]) === id);
         });
@@ -3894,39 +3705,6 @@
         return shell;
     }
 
-    /* Block regeneration / delete / generate */
-    async function regenBwBlock(blockId) {
-        const btn = document.getElementById('bwregen-' + blockId);
-        if (btn) btn.classList.add('spinning');
-        try {
-            const data = await planningFetch(`/design/block/${blockId}/regenerate`, {method: 'POST'});
-            if (data.error) {
-                alert(data.error);
-                return;
-            }
-            const idx = _bwBlocks.findIndex(b => b.id === blockId);
-            if (idx !== -1) {
-                _bwBlocks[idx] = data.result;
-                renderBwBlockList();
-                if (_bwBlockId === blockId) selectBwBlock(blockId);
-            }
-        } finally {
-            const btn2 = document.getElementById('bwregen-' + blockId);
-            if (btn2) btn2.classList.remove('spinning');
-        }
-    }
-
-    async function deleteBwBlock(blockId) {
-        if (!confirm('Удалить блок со всеми виджетами?')) return;
-        await planningFetch(`/design/block/${blockId}`, {method: 'DELETE'});
-        _bwBlocks = _bwBlocks.filter(b => b.id !== blockId);
-        if (_bwBlockId === blockId) {
-            _bwBlockId = null;
-            resetBwRight();
-        }
-        renderBwBlockList();
-    }
-
     function toggleBwGenForm() {
         const form = document.getElementById('bwGenForm');
         const open = form.classList.toggle('open');
@@ -3999,14 +3777,13 @@
                 alert(data.error);
                 return;
             }
-            _bwBlocks.push(data.result);
-            renderBwBlockList();
+            _defaultBlocks.push(data.result);
+            _renderDefaultList(_defaultBlocks);
             // Close form and clear
             document.getElementById('bwGenForm').classList.remove('open');
             document.getElementById('bwgName').value = '';
             document.getElementById('bwgDesc').value = '';
-            // Auto-select new block
-            selectBwBlock(data.result.id);
+            selectDefaultUiBlock(data.result.id);
         } finally {
             if (btn) {
                 btn.disabled = false;
