@@ -2206,14 +2206,77 @@
         text-transform: uppercase;
         color: #94a3b8;
         margin-bottom: 5px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
+
+    .bw-bp-pills { display: flex; gap: 4px; margin-left: auto; flex-shrink: 0; }
+    .bw-bp-btn {
+        font-size: 10px; font-weight: 600; padding: 1px 6px;
+        background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0;
+        border-radius: 4px; cursor: pointer; line-height: 16px;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .bw-bp-btn:hover { background: #ede9fe; color: #6366f1; border-color: #c7d2fe; }
+    .bw-bp-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+    .bw-token-pills { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; flex-wrap: nowrap; }
+    .bw-token-chip {
+        font-size: 10px; font-weight: 600; padding: 1px 8px;
+        border-radius: 10px; border: 1px solid #d1fae5;
+        background: #f0fdf4; color: #16a34a; cursor: pointer; line-height: 16px;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .bw-token-chip:hover { background: #dcfce7; border-color: #86efac; }
+    .bw-token-chip.active { background: #16a34a; color: #fff; border-color: #16a34a; }
 
     .bw-iframe-wrap {
         border: 1px solid #e2e8f0;
         border-radius: 6px;
-        overflow: hidden;
+        overflow: visible;
         background: #fff;
         margin-bottom: 4px;
+    }
+
+    .bw-resize-shell { position: relative; max-width: 100%; }
+
+    .bw-drag-e {
+        position: absolute; top: 0; right: -6px;
+        width: 14px; height: 100%; cursor: col-resize; z-index: 10;
+    }
+    .bw-drag-e::after {
+        content: ''; position: absolute; left: 5px; top: 50%;
+        transform: translateY(-50%); width: 4px; height: 32px;
+        background: #cbd5e1; border-radius: 2px; transition: background .15s;
+    }
+    .bw-drag-e:hover::after { background: #6366f1; }
+
+    .bw-drag-s {
+        position: absolute; bottom: -6px; left: 0;
+        width: 100%; height: 14px; cursor: row-resize; z-index: 10;
+    }
+    .bw-drag-s::after {
+        content: ''; position: absolute; top: 5px; left: 50%;
+        transform: translateX(-50%); height: 4px; width: 32px;
+        background: #cbd5e1; border-radius: 2px; transition: background .15s;
+    }
+    .bw-drag-s:hover::after { background: #6366f1; }
+
+    .bw-drag-se {
+        position: absolute; bottom: -6px; right: -6px;
+        width: 18px; height: 18px; cursor: nwse-resize; z-index: 11;
+        background: radial-gradient(circle at center, #94a3b8 2px, transparent 2px);
+        background-size: 5px 5px; background-repeat: repeat;
+        opacity: .6; transition: opacity .15s; border-radius: 2px;
+    }
+    .bw-drag-se:hover { opacity: 1; }
+
+    .bw-size-badge {
+        position: absolute; bottom: 4px; left: 6px;
+        background: rgba(255,255,255,.9); padding: 0 4px;
+        border-radius: 3px; pointer-events: none; z-index: 5;
+        font-size: 10px; color: #64748b; font-variant-numeric: tabular-nums;
     }
 
     .bw-preview-iframe {
@@ -3898,7 +3961,7 @@ ${contentScript}</body></html>`;
         const container = document.getElementById('bwPreviewContent');
         container.innerHTML = `
         <div class="bw-preview-name">${esc(w.name)}</div>
-        <div class="bw-preview-section-label">Превью</div>
+        ${_bwPreviewSectionLabelHtml()}
         <div class="bw-iframe-wrap" id="bwiw-${w.id}"></div>
         <details class="bw-css-details" id="bwced-${w.id}">
             <summary class="bw-css-summary">CSS ${w.css ? '' : '<span class="bw-css-empty-mark">не задан</span>'}</summary>
@@ -4022,7 +4085,7 @@ ${contentScript}</body></html>`;
             ${_bwTagsBarHtml(b.id, b.tags)}
             ${_bwSectionsBarHtml(b.id, b.section)}
         </div>
-        <div class="bw-preview-section-label">Превью</div>
+        ${_bwPreviewSectionLabelHtml()}
         <div class="bw-iframe-wrap" id="bwdiw-${b.id}"></div>
         ${b.vars && b.vars !== '{}' ? `
         <details class="bw-css-details" style="margin-top:8px">
@@ -4129,12 +4192,99 @@ ${contentScript}</body></html>`;
 
     document.addEventListener('DOMContentLoaded', loadDefaultUiBlocks);
 
+    // ── Design tokens ─────────────────────────────────────────────────────────────
+    let _bwDesignTokens = [];
+    let _activeTokenId = null;
+    let _bwActiveShell = null;
+
+    async function _bwLoadTokens() {
+        try {
+            const data = await planningFetch('/design/tokens');
+            _bwDesignTokens = data.result || [];
+            if (_bwDesignTokens.length && _activeTokenId === null) _activeTokenId = _bwDesignTokens[0].id;
+            document.querySelectorAll('.bw-preview-iframe').forEach(iframe => _bwApplyTokenToIframe(iframe));
+        } catch (e) {}
+    }
+
+    function _bwFlattenTokens(obj, prefix) {
+        const result = {};
+        for (const [k, v] of Object.entries(obj || {})) {
+            const key = prefix ? prefix + '-' + k : k;
+            if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(result, _bwFlattenTokens(v, key));
+            else result[key] = v;
+        }
+        return result;
+    }
+
+    function _bwApplyTokenToIframe(iframe) {
+        const token = _bwDesignTokens.find(t => t.id === _activeTokenId);
+        try {
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (!doc) return;
+            let el = doc.getElementById('_bw-token');
+            if (!el) {
+                el = doc.createElement('style');
+                el.id = '_bw-token';
+                (doc.head || doc.body || doc.documentElement).appendChild(el);
+            }
+            if (token) {
+                const flat = _bwFlattenTokens(token.tokens || {});
+                el.textContent = ':root{' + Object.entries(flat).map(([k, v]) => `--bw-${k}:${v}`).join(';') + '}';
+            } else {
+                el.textContent = '';
+            }
+        } catch (e) {}
+    }
+
+    function _bwTokenChipsHtml() {
+        if (!_bwDesignTokens.length) return '';
+        return '<span class="bw-token-pills">' +
+            _bwDesignTokens.map(t =>
+                `<button class="bw-token-chip${_activeTokenId === t.id ? ' active' : ''}" onclick="_bwTokenToggle(${t.id})">${esc(t.title || t.name)}</button>`
+            ).join('') + '</span>';
+    }
+
+    function _bwTokenToggle(tokenId) {
+        _activeTokenId = _activeTokenId === tokenId ? null : tokenId;
+        document.querySelectorAll('.bw-token-chip').forEach(el => {
+            const id = parseInt(el.getAttribute('onclick').match(/\d+/)?.[0]);
+            el.classList.toggle('active', id === _activeTokenId);
+        });
+        document.querySelectorAll('.bw-preview-iframe').forEach(iframe => _bwApplyTokenToIframe(iframe));
+    }
+
+    function _bwSetPreviewWidth(w) {
+        if (!_bwActiveShell) return;
+        _bwActiveShell.style.width = w + 'px';
+        const badge = _bwActiveShell.querySelector('.bw-size-badge');
+        const iframe = _bwActiveShell.querySelector('.bw-preview-iframe');
+        if (badge) badge.textContent = w + ' × ' + (iframe?.offsetHeight || 0);
+        _bwUpdateBpButtons(w);
+    }
+
+    function _bwUpdateBpButtons(w) {
+        document.querySelectorAll('.bw-bp-btn').forEach(btn => btn.classList.toggle('active', parseInt(btn.dataset.w) === w));
+    }
+
+    function _bwPreviewSectionLabelHtml() {
+        const bpBtns = [375, 768, 1280, 1920].map(w =>
+            `<button class="bw-bp-btn" data-w="${w}" onclick="_bwSetPreviewWidth(${w})">${w}</button>`
+        ).join('');
+        return `<div class="bw-preview-section-label">Превью${_bwTokenChipsHtml()}<span class="bw-bp-pills">${bpBtns}</span></div>`;
+    }
+
     // ── Iframe helper ─────────────────────────────────────────────────────────────
     function _bwMakeIframe(srcdoc) {
+        const shell = document.createElement('div');
+        shell.className = 'bw-resize-shell';
+        shell.style.width = '1280px';
+        shell.style.maxWidth = '100%';
+
         const iframe = document.createElement('iframe');
         iframe.className = 'bw-preview-iframe';
         iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
         iframe.srcdoc = srcdoc;
+
         const _resize = (doc) => {
             try {
                 doc.querySelectorAll('*').forEach(el => {
@@ -4143,21 +4293,81 @@ ${contentScript}</body></html>`;
                 });
                 const h = doc.documentElement.scrollHeight || doc.body?.scrollHeight || 0;
                 if (h > 50) iframe.style.height = h + 'px';
-            } catch {
-            }
+            } catch {}
         };
+
         iframe.addEventListener('load', () => {
             try {
                 const doc = iframe.contentDocument || iframe.contentWindow?.document;
                 if (!doc) return;
                 _resize(doc);
-                // Re-measure after CDN scripts (Tailwind) apply styles asynchronously
-                setTimeout(() => _resize(doc), 600);
-                setTimeout(() => _resize(doc), 1500);
-            } catch {
-            }
+                _bwApplyTokenToIframe(iframe);
+                const badge = shell.querySelector('.bw-size-badge');
+                if (badge) badge.textContent = shell.offsetWidth + ' × ' + iframe.offsetHeight;
+                setTimeout(() => { _resize(doc); if (badge) badge.textContent = shell.offsetWidth + ' × ' + iframe.offsetHeight; }, 600);
+                setTimeout(() => { _resize(doc); if (badge) badge.textContent = shell.offsetWidth + ' × ' + iframe.offsetHeight; }, 1500);
+            } catch {}
         });
-        return iframe;
+
+        const dragE = document.createElement('div');
+        dragE.className = 'bw-drag-e';
+        const dragS = document.createElement('div');
+        dragS.className = 'bw-drag-s';
+        const dragSE = document.createElement('div');
+        dragSE.className = 'bw-drag-se';
+
+        const badge = document.createElement('span');
+        badge.className = 'bw-size-badge';
+        badge.textContent = '1280 × …';
+
+        shell.append(iframe, dragE, dragS, dragSE, badge);
+        _bwActiveShell = shell;
+        _bwUpdateBpButtons(1280);
+
+        dragE.addEventListener('mousedown', e => {
+            e.preventDefault();
+            const startX = e.clientX, startW = shell.offsetWidth;
+            const onMove = ev => {
+                const w = Math.max(200, startW + ev.clientX - startX);
+                shell.style.width = w + 'px';
+                badge.textContent = w + ' × ' + iframe.offsetHeight;
+                _bwUpdateBpButtons(w);
+            };
+            const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+
+        dragS.addEventListener('mousedown', e => {
+            e.preventDefault();
+            const startY = e.clientY, startH = iframe.offsetHeight;
+            const onMove = ev => {
+                const h = Math.max(40, startH + ev.clientY - startY);
+                iframe.style.height = h + 'px';
+                badge.textContent = shell.offsetWidth + ' × ' + h;
+            };
+            const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+
+        dragSE.addEventListener('mousedown', e => {
+            e.preventDefault();
+            const startX = e.clientX, startY = e.clientY, startW = shell.offsetWidth, startH = iframe.offsetHeight;
+            const onMove = ev => {
+                const w = Math.max(200, startW + ev.clientX - startX);
+                const h = Math.max(40, startH + ev.clientY - startY);
+                shell.style.width = w + 'px';
+                iframe.style.height = h + 'px';
+                badge.textContent = w + ' × ' + h;
+                _bwUpdateBpButtons(w);
+            };
+            const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+
+        return shell;
     }
 
     function openBwEditForm(wid) {
@@ -4842,7 +5052,7 @@ ${contentScript}</body></html>`;
             _bwTagsBarHtml(b.id, b.tags) +
             _bwSectionsBarHtml(b.id, b.section) +
             '</div>' +
-            '<div class="bw-preview-section-label">Превью</div>' +
+            _bwPreviewSectionLabelHtml() +
             '<div class="bw-iframe-wrap" id="libprev-' + b.id + '"></div>' +
             '</div>';
         if (b.html) {
@@ -6017,6 +6227,7 @@ ${contentScript}</body></html>`;
         }
     }
 
+    _bwLoadTokens();
     initProjectSelects();
 </script>
 {% endblock %}
