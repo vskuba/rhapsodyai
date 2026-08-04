@@ -1521,13 +1521,7 @@
         color: #b45309;
     }
 
-    .bw-default-item-id {
-        font-size: 10px;
-        color: #94a3b8;
-        font-variant-numeric: tabular-nums;
-        flex-shrink: 0;
-        min-width: 28px;
-    }
+
 
     .bw-default-item-del {
         flex-shrink: 0;
@@ -3643,6 +3637,11 @@
         const data = await planningFetch(`/design/${pid}/blocks`);
         _bwBlocks = (data.result || []).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
         renderBwBlockList();
+        if (_bwBlocks.length) {
+            const savedId = parseInt(localStorage.getItem('bw_active_block_id_' + pid), 10);
+            const target = (savedId && _bwBlocks.find(b => b.id === savedId)) ? savedId : _bwBlocks[0].id;
+            selectBwBlock(target);
+        }
     }
 
     function renderBwBlockList() {
@@ -3852,6 +3851,7 @@
 
     function selectBwBlock(blockId) {
         _bwBlockId = blockId;
+        if (_bwProjectId) localStorage.setItem('bw_active_block_id_' + _bwProjectId, blockId);
         document.querySelectorAll('.bw-block-item').forEach(el =>
             el.classList.toggle('active', parseInt(el.dataset.bid) === blockId)
         );
@@ -4017,6 +4017,11 @@ ${contentScript}</body></html>`;
             const data = await planningFetch('/design/ui-blocks');
             _defaultBlocks = data.result || [];
             _renderDefaultList(_defaultBlocks);
+            if (_defaultBlocks.length) {
+                const savedId = parseInt(localStorage.getItem('bw_active_default_block_id'), 10);
+                const target = (savedId && _defaultBlocks.find(b => b.id === savedId)) ? savedId : _defaultBlocks[0].id;
+                selectDefaultUiBlock(target);
+            }
         } catch (e) {
             document.getElementById('bwDefaultList').innerHTML =
                 '<div style="padding:12px;color:#ef4444;font-size:12px">Ошибка загрузки</div>';
@@ -4033,7 +4038,6 @@ ${contentScript}</body></html>`;
             const isContainer = b.slots && b.slots !== 'null';
             return `<div class="bw-default-item${_defaultBlockActive === b.id ? ' active' : ''}"
                      onclick="selectDefaultUiBlock(${b.id})">
-            <span class="bw-default-item-id">#${b.id}</span>
             <span class="bw-default-item-name" title="${esc(b.name)}">${esc(b.name)}</span>
             <span class="bw-default-item-badge${isContainer ? ' is-container' : ''}">${isContainer ? 'cnt' : 'item'}</span>
             <button class="bw-default-item-del" onclick="event.stopPropagation();deleteDefaultUiBlock(${b.id})" title="Удалить">✕</button>
@@ -4069,6 +4073,7 @@ ${contentScript}</body></html>`;
 
     async function selectDefaultUiBlock(id) {
         _defaultBlockActive = id;
+        localStorage.setItem('bw_active_default_block_id', id);
         // Mark active in project list too — clear it
         document.querySelectorAll('.bw-block-item.active').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.bw-default-item').forEach(el => {
@@ -4213,6 +4218,13 @@ ${contentScript}</body></html>`;
             const data = await planningFetch('/design/tokens');
             _bwDesignTokens = data.result || [];
             if (_bwDesignTokens.length && _activeTokenId === null) _activeTokenId = _bwDesignTokens[0].id;
+            // Replace token pills in any already-rendered section label
+            const chipsHtml = _bwTokenChipsHtml();
+            document.querySelectorAll('.bw-token-pills').forEach(container => {
+                const tpl = document.createElement('template');
+                tpl.innerHTML = chipsHtml;
+                container.replaceWith(tpl.content.firstElementChild);
+            });
             document.querySelectorAll('.bw-preview-iframe').forEach(iframe => _bwApplyTokenToIframe(iframe));
         } catch (e) {}
     }
@@ -4221,28 +4233,109 @@ ${contentScript}</body></html>`;
         const result = {};
         for (const [k, v] of Object.entries(obj || {})) {
             const key = prefix ? prefix + '-' + k : k;
-            if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(result, _bwFlattenTokens(v, key));
-            else result[key] = v;
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+                // nested token format: {value: "#hex", description: "..."} → use value directly
+                if ('value' in v) result[key] = v.value;
+                else Object.assign(result, _bwFlattenTokens(v, key));
+            } else {
+                result[key] = v;
+            }
         }
         return result;
     }
 
     function _bwApplyTokenToIframe(iframe) {
         const token = _bwDesignTokens.find(t => t.id === _activeTokenId);
+        if (!token) return;
         try {
             const doc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (!doc) return;
-            let el = doc.getElementById('_bw-token');
-            if (!el) {
-                el = doc.createElement('style');
-                el.id = '_bw-token';
-                (doc.head || doc.body || doc.documentElement).appendChild(el);
+            if (!doc || !doc.body) return;
+
+            const flat = _bwFlattenTokens(token.tokens || {});
+            const t = token.tokens || {};
+            const c = t.colors || {};
+            const typo = t.typography || {};
+            const primary    = c.primary    || '';
+            const secondary  = c.secondary  || primary;
+            const background = c.background || '';
+            const surface    = c.surface    || c.background || '';
+            const textColor  = c.text       || '';
+            const textMuted  = c.textMuted  || c.neutral    || '';
+            const borderColor = c.border    || '';
+            const accent     = c.accent     || primary;
+            const errorColor = c.error      || '';
+            const successColor = c.success  || '';
+            const warningColor = c.warning  || '';
+            const fontFamily = typo.fontFamily || flat['typography-fontFamily'] || '';
+            const fontSize   = typo.fontSize   || flat['typography-fontSize']   || '';
+            const borderRadius = t.borderRadius || flat['borderRadius'] || '';
+
+            // CSS variables for project blocks that use --bw-*
+            const cssVars = ':root{' + Object.entries(flat).map(([k, v]) => `--bw-${k}:${v}`).join(';') + '}';
+
+            // Tailwind override rules — map token semantic colors onto Tailwind utility classes
+            const rules = [];
+
+            if (background) rules.push(`body{background-color:${background}!important;}`);
+            if (textColor)  rules.push(`body{color:${textColor}!important;}`);
+            if (fontFamily) rules.push(`body{font-family:'${fontFamily}',system-ui,sans-serif!important;}`);
+            if (fontSize)   rules.push(`body{font-size:${fontSize}!important;}`);
+
+            // Surface: white backgrounds
+            if (surface)    rules.push(`[class*="bg-white"]{background-color:${surface}!important;}`);
+
+            // Primary action colors (Tailwind blue/indigo are default action palette)
+            if (primary) {
+                rules.push(
+                    `[class*="bg-blue-5"],[class*="bg-blue-6"],[class*="bg-indigo-5"],[class*="bg-indigo-6"],[class*="bg-violet-6"],[class*="bg-purple-6"]{background-color:${primary}!important;}`,
+                    `[class*="text-blue-5"],[class*="text-blue-6"],[class*="text-indigo-5"],[class*="text-indigo-6"]{color:${primary}!important;}`,
+                    `[class*="ring-blue-"],[class*="ring-indigo-"]{--tw-ring-color:${primary}!important;}`,
+                    `a:not([class]){color:${primary}!important;}`
+                );
             }
-            if (token) {
-                const flat = _bwFlattenTokens(token.tokens || {});
-                el.textContent = ':root{' + Object.entries(flat).map(([k, v]) => `--bw-${k}:${v}`).join(';') + '}';
-            } else {
-                el.textContent = '';
+            if (secondary) {
+                rules.push(`[class*="bg-blue-7"],[class*="bg-indigo-7"],[class*="bg-violet-7"]{background-color:${secondary}!important;}`);
+            }
+
+            // Border tokens
+            if (borderColor) {
+                rules.push(`[class*="border-gray-1"],[class*="border-gray-2"],[class*="divide-gray-2"]{border-color:${borderColor}!important;}`);
+            }
+
+            // Muted text
+            if (textMuted) {
+                rules.push(`[class*="text-gray-4"],[class*="text-gray-5"],[class*="text-gray-6"]{color:${textMuted}!important;}`);
+            }
+
+            // Status colors
+            if (errorColor)   rules.push(`[class*="bg-red-5"],[class*="bg-red-6"]{background-color:${errorColor}!important;}[class*="text-red-"]{color:${errorColor}!important;}`);
+            if (successColor) rules.push(`[class*="bg-green-5"],[class*="bg-green-6"]{background-color:${successColor}!important;}[class*="text-green-"]{color:${successColor}!important;}`);
+            if (warningColor) rules.push(`[class*="bg-yellow-4"],[class*="bg-amber-4"],[class*="bg-yellow-5"],[class*="bg-amber-5"]{background-color:${warningColor}!important;}[class*="text-yellow-"],[class*="text-amber-"]{color:${warningColor}!important;}`);
+
+            // Border radius
+            if (borderRadius) {
+                rules.push(`.rounded,.rounded-sm,.rounded-md,.rounded-lg{border-radius:${borderRadius}!important;}`);
+            }
+
+            let styleEl = doc.getElementById('_bw-token');
+            if (!styleEl) {
+                styleEl = doc.createElement('style');
+                styleEl.id = '_bw-token';
+                (doc.head || doc.documentElement).appendChild(styleEl);
+            }
+            styleEl.textContent = cssVars + rules.join('');
+
+            // Google Font
+            if (fontFamily) {
+                const fontHref = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(fontFamily) + ':wght@400;500;600;700&display=swap';
+                let linkEl = doc.getElementById('_bw-font');
+                if (!linkEl) {
+                    linkEl = doc.createElement('link');
+                    linkEl.id = '_bw-font';
+                    linkEl.rel = 'stylesheet';
+                    (doc.head || doc.documentElement).appendChild(linkEl);
+                }
+                if (linkEl.href !== fontHref) linkEl.href = fontHref;
             }
         } catch (e) {}
     }
@@ -4256,7 +4349,8 @@ ${contentScript}</body></html>`;
     }
 
     function _bwTokenToggle(tokenId) {
-        _activeTokenId = _activeTokenId === tokenId ? null : tokenId;
+        if (_activeTokenId === tokenId) return;
+        _activeTokenId = tokenId;
         document.querySelectorAll('.bw-token-chip').forEach(el => {
             const id = parseInt(el.getAttribute('onclick').match(/\d+/)?.[0]);
             el.classList.toggle('active', id === _activeTokenId);
@@ -4337,9 +4431,20 @@ ${contentScript}</body></html>`;
                 const doc = iframe.contentDocument || iframe.contentWindow?.document;
                 if (!doc) return;
                 _resize(doc);
-                _bwApplyTokenToIframe(iframe);
                 const badge = shell.querySelector('.bw-size-badge');
                 if (badge) badge.textContent = shell.offsetWidth + ' × ' + iframe.offsetHeight;
+
+                // Apply tokens — if not loaded yet, retry until they appear (max ~3s)
+                let tokenTries = 0;
+                const applyOrRetry = () => {
+                    if (_bwDesignTokens.length) {
+                        _bwApplyTokenToIframe(iframe);
+                    } else if (tokenTries++ < 6) {
+                        setTimeout(applyOrRetry, 500);
+                    }
+                };
+                applyOrRetry();
+
                 setTimeout(() => { _resize(doc); if (badge) badge.textContent = shell.offsetWidth + ' × ' + iframe.offsetHeight; }, 600);
                 setTimeout(() => { _resize(doc); if (badge) badge.textContent = shell.offsetWidth + ' × ' + iframe.offsetHeight; }, 1500);
             } catch {}
