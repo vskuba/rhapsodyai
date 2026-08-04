@@ -481,6 +481,24 @@ async def design_ui_block_get(
     return {"result": row}
 
 
+@router.delete("/design/ui-blocks/{block_id}")
+async def design_ui_block_delete(
+    block_id: int,
+    user=Depends(AuthChecker([AuthPermission.DESIGN_DELETE])),
+):
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id FROM project_design_ui_block WHERE id = %s AND project_id IS NULL LIMIT 1",
+            (block_id,)
+        )
+        row = await db.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Блок не найден")
+        await db.execute("DELETE FROM project_design_ui_block WHERE id = %s", (block_id,))
+        await db.connection.commit()
+    return {"result": True}
+
+
 @router.post("/design/page/{page_id}/auto-blocks")
 async def design_page_auto_blocks(
     page_id: int,

@@ -1468,6 +1468,39 @@
         color: #b45309;
     }
 
+    .bw-default-item-id {
+        font-size: 10px;
+        color: #94a3b8;
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
+        min-width: 28px;
+    }
+
+    .bw-default-item-del {
+        flex-shrink: 0;
+        font-size: 11px;
+        line-height: 1;
+        padding: 2px 5px;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity .15s, background .1s, color .1s;
+    }
+
+    .bw-default-item:hover .bw-default-item-del,
+    .bw-default-item.active .bw-default-item-del {
+        opacity: 1;
+    }
+
+    .bw-default-item-del:hover {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        color: #dc2626;
+    }
+
     .bw-default-preview-tags {
         display: flex;
         flex-wrap: wrap;
@@ -1504,6 +1537,14 @@
     .bw-block-item.active .bw-block-name {
         color: #6d28d9;
         font-weight: 600;
+    }
+
+    .bw-block-id {
+        font-size: 10px;
+        color: #94a3b8;
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
+        min-width: 28px;
     }
 
     .bw-block-name {
@@ -3200,7 +3241,7 @@
         listEl.innerHTML = _bwBlocks.map(b => {
             const wc = (b.widgets || []).length;
             const displayTitle = esc(b.title || b.name);
-            return `<div class="bw-block-item${_bwBlockId === b.id ? ' active' : ''}" data-bid="${b.id}" onclick="selectBwBlock(${b.id})">            <span class="bw-block-name">${displayTitle}</span>
+            return `<div class="bw-block-item${_bwBlockId === b.id ? ' active' : ''}" data-bid="${b.id}" onclick="selectBwBlock(${b.id})">            <span class="bw-block-id">#${b.id}</span><span class="bw-block-name">${displayTitle}</span>
             ${wc ? `<span class="bw-widget-badge">${wc}</span>` : ''}            <div class="bw-block-actions">
                 <button class="bw-block-btn regen" id="bwregen-${b.id}" onclick="event.stopPropagation();regenBwBlock(${b.id})" title="Перегенерировать">↺</button>
                 <button class="bw-block-btn del-block" onclick="event.stopPropagation();deleteBwBlock(${b.id})" title="Удалить">✕</button>
@@ -3395,10 +3436,27 @@ ${contentScript}</body></html>`;
             const isContainer = b.slots && b.slots !== 'null';
             return `<div class="bw-default-item${_defaultBlockActive === b.id ? ' active' : ''}"
                      onclick="selectDefaultUiBlock(${b.id})">
+            <span class="bw-default-item-id">#${b.id}</span>
             <span class="bw-default-item-name" title="${esc(b.name)}">${esc(b.name)}</span>
             <span class="bw-default-item-badge${isContainer ? ' is-container' : ''}">${isContainer ? 'cnt' : 'item'}</span>
+            <button class="bw-default-item-del" onclick="event.stopPropagation();deleteDefaultUiBlock(${b.id})" title="Удалить">✕</button>
         </div>`;
         }).join('');
+    }
+
+    async function deleteDefaultUiBlock(id) {
+        if (!confirm('Удалить блок из библиотеки?')) return;
+        try {
+            await planningFetch(`/design/ui-blocks/${id}`, {method: 'DELETE'});
+            _defaultBlocks = _defaultBlocks.filter(b => b.id !== id);
+            _renderDefaultList(_defaultBlocks);
+            if (_defaultBlockActive === id) {
+                _defaultBlockActive = null;
+                document.getElementById('bwPreviewContent').innerHTML = '<span class="bw-placeholder">Выберите виджет</span>';
+            }
+        } catch (e) {
+            alert('Ошибка удаления: ' + (e.message || e));
+        }
     }
 
     function filterDefaultBlocks(q) {
