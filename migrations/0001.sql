@@ -726,7 +726,7 @@ CREATE TABLE `project_design_ui_block` (
     `css` TEXT DEFAULT NULL,
     `created_by` VARCHAR(20) NOT NULL DEFAULT 'ai',
     `order_index` INT NOT NULL DEFAULT 0,
-    `default_section` VARCHAR(10) DEFAULT NULL,
+    `section` VARCHAR(500) DEFAULT NULL,
     `tags` VARCHAR(500) DEFAULT NULL,
     `vars` TEXT DEFAULT NULL,
     `slot` VARCHAR(100) DEFAULT NULL,
