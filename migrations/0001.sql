@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS `project_state`;
 DROP TABLE IF EXISTS `project_design_prototype_browser_history`;
 DROP TABLE IF EXISTS `project_design_ui_block_size`;
 DROP TABLE IF EXISTS `project_design_ui_block`;
+DROP TABLE IF EXISTS `project_design_ui_block_type`;
 DROP TABLE IF EXISTS `project_design_ui_component`;
 DROP TABLE IF EXISTS `project_design_token`;
 DROP TABLE IF EXISTS `project_planning_document`;
@@ -715,9 +716,19 @@ CREATE TABLE `project_design_ui_component` (
     INDEX `idx_tags` (`tags`(100))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `project_design_ui_block_type` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL,
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `description` TEXT DEFAULT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_type_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `project_design_ui_block` (
     `id` INT NOT NULL AUTO_INCREMENT,
-    `project_id` INT DEFAULT NULL,
+    `type_id` INT DEFAULT NULL,
     `name` VARCHAR(255) NOT NULL DEFAULT '',
     `title` VARCHAR(255) DEFAULT NULL,
     `description` TEXT DEFAULT NULL,
@@ -731,15 +742,17 @@ CREATE TABLE `project_design_ui_block` (
     `vars` TEXT DEFAULT NULL,
     `slot` VARCHAR(100) DEFAULT NULL,
     `slots` TEXT DEFAULT NULL,
+    `width_min` INT DEFAULT NULL COMMENT 'minimum preview width px',
+    `height_min` INT DEFAULT NULL COMMENT 'minimum preview height px',
     `expand_direction` ENUM('none','vertical','horizontal','both') NOT NULL DEFAULT 'none',
     `expand_factor_height` FLOAT DEFAULT NULL COMMENT 'px per item vertically',
     `expand_factor_width` FLOAT DEFAULT NULL COMMENT 'px per item horizontally',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_project_name` (`project_id`, `name`(191)),
-    KEY `idx_project_id` (`project_id`),
-    CONSTRAINT `fk_ui_block_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE SET NULL
+    UNIQUE KEY `uk_block_name` (`name`(191)),
+    KEY `idx_type_id` (`type_id`),
+    CONSTRAINT `fk_ui_block_type` FOREIGN KEY (`type_id`) REFERENCES `project_design_ui_block_type` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `project_design_ui_block_size` (
