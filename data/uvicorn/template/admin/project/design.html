@@ -1432,6 +1432,8 @@
         border-bottom: 1px solid #e2e8f0;
         background: #fff;
         flex-shrink: 0;
+        display: flex;
+        align-items: center;
     }
 
     .bw-block-list {
@@ -1709,14 +1711,6 @@
         line-height: 1.3;
     }
 
-    .bw-widget-badge {
-        font-size: 10px;
-        background: #ddd6fe;
-        color: #6d28d9;
-        border-radius: 10px;
-        padding: 1px 6px;
-        font-weight: 600;
-    }
 
     .bw-block-actions {
         display: flex;
@@ -1808,109 +1802,18 @@
         white-space: nowrap;
     }
 
-    .bw-section-row {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 5px;
-        padding: 7px 12px;
-        border-bottom: 1px solid #f1f5f9;
-        font-size: 12px;
-        color: #64748b;
-    }
-
-    .bw-section-row label {
-        flex-shrink: 0;
-        margin-right: 2px;
-    }
-
-    .bw-section-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 11px;
-        background: #fef3c7;
-        color: #92400e;
-        border: 1px solid #fcd34d;
-        border-radius: 10px;
-        padding: 2px 8px 2px 8px;
-        white-space: nowrap;
-    }
-
-    .bw-section-chip-del {
-        font-size: 10px;
-        cursor: pointer;
-        color: #b45309;
-        line-height: 1;
-        padding: 0 1px;
-    }
-
-    .bw-section-chip-del:hover {
-        color: #dc2626;
-    }
-
-    .bw-section-add {
-        display: inline-flex;
-        align-items: center;
-        font-size: 11px;
-        background: none;
-        border: 1px dashed #cbd5e1;
-        border-radius: 10px;
-        padding: 2px 8px;
-        color: #94a3b8;
-        cursor: pointer;
-        white-space: nowrap;
-        position: relative;
-    }
-
-    .bw-section-add:hover {
-        border-color: #818cf8;
-        color: #6366f1;
-        background: #f5f3ff;
-    }
-
-    .bw-section-dropdown {
+    .bw-gen-form {
         display: none;
         position: absolute;
         top: calc(100% + 4px);
-        left: 0;
+        right: 0;
+        width: 300px;
+        z-index: 50;
+        padding: 10px 12px;
         background: #fff;
         border: 1px solid #e2e8f0;
-        border-radius: 7px;
-        box-shadow: 0 4px 12px rgba(0,0,0,.1);
-        z-index: 200;
-        min-width: 130px;
-        padding: 4px 0;
-    }
-
-    .bw-section-dropdown.open {
-        display: block;
-    }
-
-    .bw-section-dropdown-item {
-        padding: 5px 12px;
-        font-size: 12px;
-        color: #374151;
-        cursor: pointer;
-        white-space: nowrap;
-    }
-
-    .bw-section-dropdown-item:hover {
-        background: #f0f4ff;
-        color: #4f46e5;
-    }
-
-    .bw-section-dropdown-item.disabled {
-        color: #cbd5e1;
-        cursor: default;
-        pointer-events: none;
-    }
-
-    .bw-gen-form {
-        padding: 10px 12px;
-        border-top: 1px solid #e2e8f0;
-        background: #f8fafc;
-        display: none;
+        border-radius: 8px;
+        box-shadow: 0 6px 20px rgba(0,0,0,.1);
     }
 
     .bw-gen-form.open {
@@ -1979,25 +1882,104 @@
         justify-content: flex-end;
     }
 
-    .bw-block-list-footer {
-        padding: 8px 12px;
-        border-top: 1px solid #e2e8f0;
-    }
-
-    .bw-add-block-btn {
-        width: 100%;
-        font-size: 12px;
-        padding: 6px;
-        border: 1px dashed #c7d2fe;
-        border-radius: 6px;
-        background: #f5f3ff;
-        color: #6366f1;
+    .bw-btn-save {
+        font-size: 11px;
+        padding: 3px 10px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
         cursor: pointer;
         font-weight: 600;
     }
 
+    .bw-btn-save:hover { background: #4f46e5; }
+
+    .bw-btn-cancel {
+        font-size: 11px;
+        padding: 3px 8px;
+        background: #f1f5f9;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .bw-css-details {
+        margin-top: 8px;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .bw-css-summary {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #64748b;
+        padding: 5px 10px;
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: #f8fafc;
+    }
+
+    .bw-css-summary::marker, .bw-css-summary::-webkit-details-marker { display: none; }
+
+    .bw-css-summary::before {
+        content: '▶';
+        font-size: 9px;
+        transition: transform 0.15s;
+        color: #94a3b8;
+    }
+
+    .bw-css-details[open] .bw-css-summary::before { transform: rotate(90deg); }
+
+    .bw-css-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        display: block;
+        background: #1e293b;
+        color: #94a3b8;
+        font-size: 11px;
+        font-family: monospace;
+        padding: 10px 12px;
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        resize: vertical;
+        min-height: 120px;
+        max-height: 300px;
+        line-height: 1.5;
+        outline: none;
+    }
+
+    .bw-css-textarea:focus { color: #e2e8f0; }
+
+    .bw-block-list-footer {
+        display: flex;
+        align-items: center;
+    }
+
+    .bw-add-block-btn {
+        font-size: 10px;
+        padding: 2px 8px;
+        border: 1px dashed #c7d2fe;
+        border-radius: 10px;
+        background: #f5f3ff;
+        color: #6366f1;
+        cursor: pointer;
+        font-weight: 600;
+        white-space: nowrap;
+        text-transform: none;
+        letter-spacing: 0;
+    }
+
     .bw-add-block-btn:hover {
         background: #ede9fe;
+        border-color: #818cf8;
     }
 
     .bw-v-splitter {
@@ -2026,158 +2008,6 @@
         color: #94a3b8;
         font-size: 12px;
         font-style: italic;
-    }
-
-    .bw-widget-names {
-        height: 20%;
-        min-height: 60px;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        background: #fafafa;
-    }
-
-    .bw-pane-header {
-        padding: 5px 12px;
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: .04em;
-        color: #94a3b8;
-        border-bottom: 1px solid #e2e8f0;
-        background: #fff;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-shrink: 0;
-    }
-
-    .bw-pane-header span {
-        flex: 1;
-    }
-
-    .bw-btn-add {
-        font-size: 11px;
-        padding: 2px 8px;
-        background: #6366f1;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 600;
-    }
-
-    .bw-btn-add:hover {
-        background: #4f46e5;
-    }
-
-    .bw-names-list {
-        flex: 1;
-        overflow-y: auto;
-    }
-
-    .bw-name-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 5px 12px;
-        border-bottom: 1px solid #f1f5f9;
-        cursor: pointer;
-        transition: background .1s;
-        font-size: 13px;
-        color: #1e293b;
-    }
-
-    .bw-name-item:hover {
-        background: #f0f4ff;
-    }
-
-    .bw-name-item.active {
-        background: #ede9fe;
-        color: #6d28d9;
-        font-weight: 600;
-    }
-
-    .bw-css-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: #6366f1;
-        flex-shrink: 0;
-    }
-
-    .bw-add-form {
-        padding: 8px 12px;
-        background: #f0f9ff;
-        border-top: 1px solid #bae6fd;
-        flex-shrink: 0;
-    }
-
-    .bw-add-form input, .bw-add-form textarea {
-        width: 100%;
-        box-sizing: border-box;
-        border: 1px solid #cbd5e1;
-        border-radius: 4px;
-        padding: 4px 7px;
-        font-size: 12px;
-        margin-bottom: 4px;
-        font-family: inherit;
-        resize: vertical;
-    }
-
-    .bw-add-form textarea {
-        min-height: 38px;
-    }
-
-    .bw-add-form-btns {
-        display: flex;
-        gap: 5px;
-    }
-
-    .bw-btn-save {
-        font-size: 11px;
-        padding: 3px 10px;
-        background: #6366f1;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 600;
-    }
-
-    .bw-btn-save:hover {
-        background: #4f46e5;
-    }
-
-    .bw-btn-cancel {
-        font-size: 11px;
-        padding: 3px 8px;
-        background: #f1f5f9;
-        color: #64748b;
-        border: 1px solid #e2e8f0;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-
-    .bw-h-splitter {
-        height: 5px;
-        background: #e2e8f0;
-        cursor: row-resize;
-        flex-shrink: 0;
-        transition: background .1s;
-        z-index: 10;
-    }
-
-    .bw-h-splitter:hover, .bw-h-splitter.dragging {
-        background: #6366f1;
-    }
-
-    .bw-widget-preview {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        min-height: 60px;
     }
 
     .bw-preview-content {
@@ -2291,220 +2121,6 @@
 
     .bw-resize-shell .bw-preview-iframe {
         min-height: 0;
-    }
-
-    .bw-css-details {
-        margin-top: 8px;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        overflow: hidden;
-    }
-
-    .bw-css-summary {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        color: #64748b;
-        padding: 5px 10px;
-        cursor: pointer;
-        user-select: none;
-        list-style: none;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        background: #f8fafc;
-    }
-
-    .bw-css-summary::marker, .bw-css-summary::-webkit-details-marker {
-        display: none;
-    }
-
-    .bw-css-summary::before {
-        content: '▶';
-        font-size: 9px;
-        transition: transform 0.15s;
-        color: #94a3b8;
-    }
-
-    .bw-css-details[open] .bw-css-summary::before {
-        transform: rotate(90deg);
-    }
-
-    .bw-css-empty-mark {
-        font-size: 10px;
-        color: #cbd5e1;
-        font-weight: 400;
-        text-transform: none;
-    }
-
-    .bw-css-textarea {
-        width: 100%;
-        box-sizing: border-box;
-        display: block;
-        background: #1e293b;
-        color: #94a3b8;
-        font-size: 11px;
-        font-family: monospace;
-        padding: 10px 12px;
-        border: none;
-        border-top: 1px solid #e2e8f0;
-        resize: vertical;
-        min-height: 120px;
-        max-height: 300px;
-        line-height: 1.5;
-        outline: none;
-    }
-
-    .bw-css-textarea:focus {
-        color: #e2e8f0;
-    }
-
-    .bw-css-actions {
-        padding: 5px 10px;
-        background: #f8fafc;
-        border-top: 1px solid #e2e8f0;
-        display: flex;
-        justify-content: flex-end;
-    }
-
-    .bw-btn-save-css {
-        font-size: 11px;
-        padding: 3px 10px;
-        background: #0f172a;
-        color: #94a3b8;
-        border: 1px solid #334155;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 600;
-    }
-
-    .bw-btn-save-css:hover {
-        background: #1e293b;
-        color: #e2e8f0;
-    }
-
-    .bw-preview-actions {
-        display: flex;
-        gap: 5px;
-        margin-top: 10px;
-    }
-
-    .bw-btn-xs {
-        font-size: 11px;
-        padding: 2px 8px;
-        border-radius: 4px;
-        border: 1px solid #e2e8f0;
-        background: #fff;
-        cursor: pointer;
-        color: #374151;
-    }
-
-    .bw-btn-xs:hover {
-        background: #f3f4f6;
-    }
-
-    .bw-btn-del {
-        border-color: #fca5a5;
-        color: #dc2626;
-    }
-
-    .bw-btn-del:hover {
-        background: #fff1f2;
-    }
-
-    .bw-edit-form {
-        display: none;
-        margin-top: 10px;
-        padding: 10px;
-        background: #f0f9ff;
-        border: 1px solid #bae6fd;
-        border-radius: 6px;
-    }
-
-    .bw-edit-form.open {
-        display: block;
-    }
-
-    .bw-edit-form input, .bw-edit-form textarea {
-        width: 100%;
-        box-sizing: border-box;
-        border: 1px solid #cbd5e1;
-        border-radius: 4px;
-        padding: 4px 7px;
-        font-size: 12px;
-        margin-bottom: 4px;
-        font-family: inherit;
-        resize: vertical;
-    }
-
-    .bw-edit-form textarea {
-        min-height: 50px;
-    }
-
-    .bw-edit-form-btns {
-        display: flex;
-        gap: 5px;
-    }
-
-    .bw-content-wrap {
-        margin-top: 6px;
-        width: 100%;
-    }
-
-    .bw-content-toggle {
-        font-size: 11px;
-        color: #7c3aed;
-        cursor: pointer;
-        list-style: none;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-    }
-
-    .bw-content-toggle::marker, .bw-content-toggle::-webkit-details-marker {
-        display: none;
-    }
-
-    .bw-content-toggle::before {
-        content: '▶';
-        font-size: 9px;
-        transition: transform 0.15s;
-    }
-
-    details.bw-content-wrap[open] .bw-content-toggle::before {
-        transform: rotate(90deg);
-    }
-
-    .bw-content-count {
-        background: #ede9fe;
-        color: #6d28d9;
-        border-radius: 10px;
-        padding: 0 5px;
-        font-size: 10px;
-    }
-
-    .bw-content-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 5px;
-        font-size: 11px;
-    }
-
-    .bw-content-table td {
-        padding: 2px 6px;
-        border-bottom: 1px solid #f1f5f9;
-    }
-
-    .bw-ct-key {
-        color: #7c3aed;
-        font-weight: 600;
-        white-space: nowrap;
-        width: 30%;
-    }
-
-    .bw-ct-val {
-        color: #374151;
-        word-break: break-word;
     }
 
     /* ── Prototype: header bar ── */
@@ -3206,30 +2822,31 @@
                     <div class="bw-block-list" id="bwBlockList">
                         <div style="padding:20px;color:#94a3b8;font-size:13px">Выберите проект</div>
                     </div>
-                    <div class="bw-block-list-footer" id="bwBlockFooter" style="display:none">
-                        <button class="bw-add-block-btn" onclick="toggleBwGenForm()">+ Новый блок по описанию</button>
-                        <div class="bw-gen-form" id="bwGenForm">
-                            <div class="bw-gen-form-row">
-                                <input type="text" id="bwgName" placeholder="Название блока (напр. HeroSection)">
-                            </div>
-                            <div style="position:relative">
-                                <textarea id="bwgDesc"
-                                          placeholder="Опишите блок — что он делает, стиль, элементы…"></textarea>
-                                <button class="bw-mic-btn" id="bwMicBtn" onclick="toggleBwMic()" title="Диктовать"
-                                        style="position:absolute;right:6px;bottom:6px">🎤
-                                </button>
-                            </div>
-                            <div class="bw-gen-form-btns" style="margin-top:6px">
-                                <button class="bw-btn-cancel" onclick="toggleBwGenForm()">Отмена</button>
-                                <button class="bw-btn-save" id="bwgSubmitBtn" onclick="generateBwBlock()">
-                                    Сгенерировать
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                     <!-- Default UI blocks section -->
                     <div class="bw-default-section">
-                        <div class="bw-panel-header">Блоки по умолчанию</div>
+                        <div class="bw-panel-header">Блоки по умолчанию
+                            <div class="bw-block-list-footer" id="bwBlockFooter" style="display:none; margin-left:auto; position:relative">
+                                <button class="bw-add-block-btn" onclick="toggleBwGenForm()">+ Новый блок</button>
+                                <div class="bw-gen-form" id="bwGenForm">
+                                    <div class="bw-gen-form-row">
+                                        <input type="text" id="bwgName" placeholder="Название блока (напр. HeroSection)">
+                                    </div>
+                                    <div style="position:relative">
+                                        <textarea id="bwgDesc"
+                                                  placeholder="Опишите блок — что он делает, стиль, элементы…"></textarea>
+                                        <button class="bw-mic-btn" id="bwMicBtn" onclick="toggleBwMic()" title="Диктовать"
+                                                style="position:absolute;right:6px;bottom:6px">🎤
+                                        </button>
+                                    </div>
+                                    <div class="bw-gen-form-btns" style="margin-top:6px">
+                                        <button class="bw-btn-cancel" onclick="toggleBwGenForm()">Отмена</button>
+                                        <button class="bw-btn-save" id="bwgSubmitBtn" onclick="generateBwBlock()">
+                                            Сгенерировать
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="bw-default-search">
                             <input type="text" id="bwDefaultSearch" placeholder="Поиск по названию или тегу…"
                                    oninput="filterDefaultBlocks(this.value)">
@@ -3243,55 +2860,8 @@
                 <div class="bw-v-splitter" id="bwVSplitter" title="Перетащите для изменения ширины"></div>
                 <!-- Right: widget panel -->
                 <div class="bw-col-right" id="bwColRight">
-                    <!-- Widget names pane (top) -->
-                    <div class="bw-widget-names" id="bwWidgetNames">
-                        <div class="bw-pane-header">
-                            <span id="bwWidgetPaneTitle">Виджеты</span>
-                            <button class="bw-btn-add" id="bwBtnAdd" style="display:none" onclick="toggleBwAddForm()">+
-                                Добавить
-                            </button>
-                        </div>
-                        <div class="bw-section-row" id="bwSectionRow" style="display:none">
-                            <label>Зоны:</label>
-                            <span id="bwSectionChips"></span>
-                            <button class="bw-section-add" id="bwSectionAddBtn" onclick="bwSectionDropdownToggle(event)">
-                                + зона
-                                <div class="bw-section-dropdown" id="bwSectionDropdown">
-                                    <div class="bw-section-dropdown-item" data-zone="header" onclick="bwSectionAdd(event,'header')">header</div>
-                                    <div class="bw-section-dropdown-item" data-zone="hero" onclick="bwSectionAdd(event,'hero')">hero</div>
-                                    <div class="bw-section-dropdown-item" data-zone="section" onclick="bwSectionAdd(event,'section')">section</div>
-                                    <div class="bw-section-dropdown-item" data-zone="sidebar" onclick="bwSectionAdd(event,'sidebar')">sidebar</div>
-                                    <div class="bw-section-dropdown-item" data-zone="card" onclick="bwSectionAdd(event,'card')">card</div>
-                                    <div class="bw-section-dropdown-item" data-zone="form" onclick="bwSectionAdd(event,'form')">form</div>
-                                    <div class="bw-section-dropdown-item" data-zone="cta" onclick="bwSectionAdd(event,'cta')">cta</div>
-                                    <div class="bw-section-dropdown-item" data-zone="media" onclick="bwSectionAdd(event,'media')">media</div>
-                                    <div class="bw-section-dropdown-item" data-zone="footer" onclick="bwSectionAdd(event,'footer')">footer</div>
-                                    <div class="bw-section-dropdown-item" data-zone="overlay" onclick="bwSectionAdd(event,'overlay')">overlay</div>
-                                    <div class="bw-section-dropdown-item" data-zone="utility" onclick="bwSectionAdd(event,'utility')">utility</div>
-                                </div>
-                            </button>
-                        </div>
-                        <div class="bw-names-list" id="bwNamesList">
-                            <div class="bw-placeholder" style="padding:12px 14px">Выберите блок</div>
-                        </div>
-                        <div class="bw-add-form" id="bwAddForm" style="display:none">
-                            <input type="text" id="bwfName" placeholder="Название виджета">
-                            <textarea id="bwfDesc" placeholder="Описание"></textarea>
-                            <textarea id="bwfCss" placeholder="CSS" style="font-family:monospace"></textarea>
-                            <div class="bw-add-form-btns">
-                                <button class="bw-btn-save" onclick="saveBwWidget()">Сохранить</button>
-                                <button class="bw-btn-cancel" onclick="toggleBwAddForm()">Отмена</button>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Horizontal splitter -->
-                    <div class="bw-h-splitter" id="bwHSplitter" title="Перетащите для изменения высоты"></div>
-                    <!-- Widget preview pane (bottom) -->
-                    <div class="bw-widget-preview" id="bwWidgetPreview">
-                        <div class="bw-pane-header"><span>Превью</span></div>
-                        <div class="bw-preview-content" id="bwPreviewContent">
-                            <span class="bw-placeholder">Выберите виджет</span>
-                        </div>
+                    <div class="bw-preview-content" id="bwPreviewContent">
+                        <span class="bw-placeholder">Выберите блок</span>
                     </div>
                 </div>
             </div>
@@ -3600,11 +3170,9 @@
     // ═══════════════════════════════════════════════
 
     let _allProjects = [];
-    let _bwBlocks = [];           // блоки текущего проекта
-    let _bwBlockId = null;        // выбранный блок
-    let _bwWidgetId = null;       // выбранный виджет
-    let _bwBlockWidgetMap = {};   // blockId → последний активный widgetId
-    let _bwProjectId = null;      // текущий проект
+    let _bwBlocks = [];
+    let _bwBlockId = null;
+    let _bwProjectId = null;
 
     async function planningFetch(url, opts = {}) {
         return fetch(url, {
@@ -3622,9 +3190,7 @@
         const pid = document.getElementById('globalProjectSel').value;
         const listEl = document.getElementById('bwBlockList');
         _bwBlockId = null;
-        _bwWidgetId = null;
         _bwBlocks = [];
-        _bwBlockWidgetMap = {};
         _bwProjectId = pid ? parseInt(pid) : null;
         resetBwRight();
         if (!pid) {
@@ -3653,12 +3219,10 @@
             return;
         }
         listEl.innerHTML = _bwBlocks.map(b => {
-            const wc = (b.widgets || []).length;
             const displayTitle = esc(b.title || b.name);
             return `<div class="bw-block-item${_bwBlockId === b.id ? ' active' : ''}" data-bid="${b.id}" onclick="selectBwBlock(${b.id})">
             <span class="bw-block-id">#${b.id}</span><span class="bw-block-name">${displayTitle}</span>
             ${_bwParseSections(b.section).map(z => `<span class="bw-section-badge">${esc(z)}</span>`).join('')}
-            ${wc ? `<span class="bw-widget-badge">${wc}</span>` : ''}
             <div class="bw-block-actions">
                 <button class="bw-block-btn regen" id="bwregen-${b.id}" onclick="event.stopPropagation();regenBwBlock(${b.id})" title="Перегенерировать">↺</button>
                 <button class="bw-block-btn del-block" onclick="event.stopPropagation();deleteBwBlock(${b.id})" title="Удалить">✕</button>
@@ -3669,13 +3233,7 @@
     }
 
     function resetBwRight() {
-        document.getElementById('bwWidgetPaneTitle').textContent = 'Виджеты';
-        document.getElementById('bwBtnAdd').style.display = 'none';
-        document.getElementById('bwNamesList').innerHTML = '<div class="bw-placeholder" style="padding:12px 14px">Выберите блок</div>';
-        document.getElementById('bwAddForm').style.display = 'none';
-        document.getElementById('bwPreviewContent').innerHTML = '<span class="bw-placeholder">Выберите виджет</span>';
-        const sectionRow = document.getElementById('bwSectionRow');
-        if (sectionRow) sectionRow.style.display = 'none';
+        document.getElementById('bwPreviewContent').innerHTML = '<span class="bw-placeholder">Выберите блок</span>';
     }
 
     const _BW_ALL_ZONES = ['header','hero','section','sidebar','card','form','cta','media','footer','overlay','utility'];
@@ -3773,9 +3331,6 @@
         if (block) block.section = section;
         _bwSectionsBarRerender(blockId, zones);
         renderBwBlockList();
-        const sectionRow = document.getElementById('bwSectionRow');
-        if (sectionRow && sectionRow.style.display !== 'none' && _bwBlockId === blockId)
-            renderBwSectionChips(zones);
     }
 
     async function bwpsRemove(blockId, zone) {
@@ -3786,7 +3341,6 @@
         if (block) block.section = section;
         _bwSectionsBarRerender(blockId, zones);
         renderBwBlockList();
-        if (_bwBlockId === blockId) renderBwSectionChips(zones);
     }
 
     function _bwParseSections(raw) {
@@ -3796,215 +3350,23 @@
         return raw ? [raw] : [];
     }
 
-    function renderBwSectionChips(sections) {
-        const container = document.getElementById('bwSectionChips');
-        if (!container) return;
-        container.innerHTML = sections.map(z =>
-            `<span class="bw-section-chip">${esc(z)}<span class="bw-section-chip-del" onclick="bwSectionRemove('${z}')">×</span></span>`
-        ).join('');
-        // disable already-added zones in dropdown
-        document.querySelectorAll('#bwSectionDropdown .bw-section-dropdown-item').forEach(el => {
-            el.classList.toggle('disabled', sections.includes(el.dataset.zone));
-        });
-    }
-
-    function bwSectionDropdownToggle(e) {
-        e.stopPropagation();
-        document.getElementById('bwSectionDropdown').classList.toggle('open');
-    }
-
-    document.addEventListener('click', () => {
-        const dd = document.getElementById('bwSectionDropdown');
-        if (dd) dd.classList.remove('open');
-    });
-
-    async function bwSectionAdd(e, zone) {
-        e.stopPropagation();
-        document.getElementById('bwSectionDropdown').classList.remove('open');
-        if (!_bwBlockId) return;
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (!block) return;
-        const sections = _bwParseSections(block.section);
-        if (sections.includes(zone)) return;
-        sections.push(zone);
-        await _bwSectionSave(block, sections);
-    }
-
-    async function bwSectionRemove(zone) {
-        if (!_bwBlockId) return;
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (!block) return;
-        const sections = _bwParseSections(block.section).filter(z => z !== zone);
-        await _bwSectionSave(block, sections);
-    }
-
-    async function _bwSectionSave(block, sections) {
-        const section = sections.length ? JSON.stringify(sections) : null;
-        await planningFetch(`/design/block/${block.id}`, {
-            method: 'PUT',
-            body: JSON.stringify({section}),
-        });
-        block.section = section;
-        renderBwSectionChips(sections);
-        renderBwBlockList();
-    }
-
-    function selectBwBlock(blockId) {
+    async function selectBwBlock(blockId) {
         _bwBlockId = blockId;
         if (_bwProjectId) localStorage.setItem('bw_active_block_id_' + _bwProjectId, blockId);
         document.querySelectorAll('.bw-block-item').forEach(el =>
             el.classList.toggle('active', parseInt(el.dataset.bid) === blockId)
         );
-        const block = _bwBlocks.find(b => b.id === blockId);
-        if (!block) return;
-
-        // Section chips
-        const sectionRow = document.getElementById('bwSectionRow');
-        if (sectionRow) {
-            sectionRow.style.display = '';
-            renderBwSectionChips(_bwParseSections(block.section));
-        }
-
-        // Widget names
-        document.getElementById('bwBtnAdd').style.display = '';
-        document.getElementById('bwAddForm').style.display = 'none';
-
-        // Restore last active widget or auto-select first
-        const widgets = block.widgets || [];
-        const savedId = _bwBlockWidgetMap[blockId];
-        const targetWidget = widgets.find(w => w.id === savedId) || widgets[0] || null;
-        _bwWidgetId = targetWidget ? targetWidget.id : null;
-        renderBwWidgetNames(block);
-        if (targetWidget) {
-            renderBwPreview(targetWidget);
-        } else {
-            document.getElementById('bwPreviewContent').innerHTML = '<span class="bw-placeholder">Виджетов нет</span>';
-        }
-    }
-
-    function renderBwWidgetNames(block) {
-        const list = document.getElementById('bwNamesList');
-        const widgets = block.widgets || [];
-        document.getElementById('bwWidgetPaneTitle').textContent = `Виджеты (${widgets.length})`;
-        if (!widgets.length) {
-            list.innerHTML = '<div class="bw-placeholder" style="padding:12px 14px">Виджетов нет — нажмите «+ Добавить»</div>';
-            return;
-        }
-        list.innerHTML = widgets.map(w =>
-            `<div class="bw-name-item${_bwWidgetId === w.id ? ' active' : ''}" data-wid="${w.id}" onclick="selectBwWidget(${w.id})">
-            <span style="flex:1">${esc(w.name)}</span>
-            ${w.css ? '<span class="bw-css-dot" title="Есть CSS"></span>' : ''}
-        </div>`
-        ).join('');
-    }
-
-    function selectBwWidget(widgetId) {
-        _bwWidgetId = widgetId;
-        if (_bwBlockId) _bwBlockWidgetMap[_bwBlockId] = widgetId;
-        document.querySelectorAll('.bw-name-item').forEach(el =>
-            el.classList.toggle('active', parseInt(el.dataset.wid) === widgetId)
-        );
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (!block) return;
-        const w = (block.widgets || []).find(w => w.id === widgetId);
-        if (!w) return;
-        renderBwPreview(w);
-    }
-
-    function bwPreviewIframeHtml(css, widgetHtml, content) {
-        let contentData = null;
-        if (content) {
-            try {
-                contentData = typeof content === 'string' ? JSON.parse(content) : content;
-            } catch {
-            }
-        }
-        const contentScript = contentData ? `
-<script>
-(function(c){
-    if(!c||typeof c!=='object') return;
-    const $=sel=>document.querySelector(sel);
-    const $$=sel=>document.querySelectorAll(sel);
-    const set=(sel,val)=>{ const el=$(sel); if(el&&val!=null) el.textContent=val; };
-    if(c.brand)     { ['.brand','.logo','.nav-brand','.navbar-brand','.site-logo','.footer-logo','.brand-name'].forEach(s=>{ const e=$(s); if(e){e.textContent=c.brand;} }); }
-    if(c.headline)  set('h1.title, h1.hero-title, h1.headline, .hero-title', c.headline);
-    if(c.title)     set('h1', c.title);
-    if(c.subtitle)  set('.subtitle, .hero-subtitle, .lead, .hero-text', c.subtitle);
-    if(c.description) set('.hero-subtitle, .subtitle, .description', c.description);
-    if(c.tagline)   set('.tagline, .footer-tagline', c.tagline);
-    if(c.cta||c.cta_primary)   set('.btn-primary, .hero-cta, .cta-btn', c.cta||c.cta_primary);
-    if(c.cta_secondary) set('.btn-secondary, .btn-outline', c.cta_secondary);
-    if(c.section_title) set('h2.section-title, h2.title', c.section_title);
-    if(c.copyright) set('.copyright, .footer-text', c.copyright);
-    if(c.nav_links&&Array.isArray(c.nav_links)){
-        $$('.nav-link').forEach((el,i)=>{ if(c.nav_links[i]) el.textContent=c.nav_links[i]; });
-    }
-    if(c.footer_links&&Array.isArray(c.footer_links)){
-        $$('.footer-link').forEach((el,i)=>{ if(c.footer_links[i]) el.textContent=c.footer_links[i]; });
-    }
-    const skip=new Set(['brand','headline','title','subtitle','description','tagline','cta','cta_primary','cta_secondary','section_title','copyright','nav_links','footer_links']);
-    for(const [k,v] of Object.entries(c)){
-        if(skip.has(k)||typeof v!=='string') continue;
-        const el=$('.'+k)||$('[data-content="'+k+'"]');
-        if(el) el.textContent=v;
-    }
-})(${JSON.stringify(contentData)});
-<\/script>` : '';
-        const bodyContent = widgetHtml || '';
-        return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*,*::before,*::after{box-sizing:border-box;}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.5;background:#fff;color:#1e293b;}
-img{max-width:100%;}
-a{text-decoration:none;}
-button{cursor:pointer;}
-/* === WIDGET CSS === */
-${css || ''}
-</style>
-</head><body>${bodyContent}
-${contentScript}</body></html>`;
-    }
-
-    function renderBwPreview(w) {
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        const blockContent = block?.content || null;
         const container = document.getElementById('bwPreviewContent');
-        container.innerHTML = `
-        <div class="bw-preview-name">${esc(w.name)}</div>
-        ${_bwPreviewSectionLabelHtml(_bwBlockId)}
-        <div class="bw-iframe-wrap" id="bwiw-${w.id}"></div>
-        <details class="bw-css-details" id="bwced-${w.id}">
-            <summary class="bw-css-summary">CSS ${w.css ? '' : '<span class="bw-css-empty-mark">не задан</span>'}</summary>
-            <textarea class="bw-css-textarea" id="bwcss-${w.id}" placeholder="/* CSS для виджета */">${esc(w.css || '')}</textarea>
-            <div class="bw-css-actions">
-                <button class="bw-btn-save-css" onclick="saveBwCss(${w.id})">Сохранить CSS</button>
-            </div>
-        </details>
-        <details class="bw-css-details" id="bwhed-${w.id}">
-            <summary class="bw-css-summary">HTML ${w.html ? '' : '<span class="bw-css-empty-mark">не задан</span>'}</summary>
-            <textarea class="bw-css-textarea" id="bwhtml-${w.id}" placeholder="<!-- HTML виджета -->">${esc(w.html || '')}</textarea>
-            <div class="bw-css-actions">
-                <button class="bw-btn-save-css" onclick="saveBwHtml(${w.id})">Сохранить HTML</button>
-            </div>
-        </details>
-        <div class="bw-preview-actions">
-            <button class="bw-btn-xs" onclick="openBwEditForm(${w.id})">✏ Название / Описание</button>
-            <button class="bw-btn-xs bw-btn-del" onclick="deleteBwWidget(${w.id})">✕ Удалить</button>
-        </div>
-        <div class="bw-edit-form" id="bwef-${w.id}">
-            <input type="text" id="bwen-${w.id}" value="${esc(w.name)}" placeholder="Название">
-            <textarea id="bwed-${w.id}" placeholder="Описание">${esc(w.description || '')}</textarea>
-            <div class="bw-edit-form-btns">
-                <button class="bw-btn-save" onclick="saveBwEdit(${w.id})">Сохранить</button>
-                <button class="bw-btn-cancel" onclick="closeBwEditForm(${w.id})">Отмена</button>
-            </div>
-        </div>`;
-
-        if (w.css || w.html) {
-            document.getElementById(`bwiw-${w.id}`).appendChild(
-                _bwMakeIframe(bwPreviewIframeHtml(w.css, w.html, blockContent), _bwBlockId)
-            );
+        container.innerHTML = '<div class="bw-placeholder" style="padding:12px">Загрузка…</div>';
+        try {
+            const data = await planningFetch(`/design/ui-blocks/${blockId}`);
+            const b = data.result;
+            // Keep in-memory block list in sync
+            const local = _bwBlocks.find(x => x.id === blockId);
+            if (local && b) { local.tags = b.tags; local.section = b.section; }
+            _renderDefaultBlockPreview(b);
+        } catch (e) {
+            container.innerHTML = '<div style="padding:12px;color:#ef4444;font-size:12px">Ошибка загрузки</div>';
         }
     }
 
@@ -4532,164 +3894,6 @@ ${contentScript}</body></html>`;
         return shell;
     }
 
-    function openBwEditForm(wid) {
-        document.getElementById(`bwef-${wid}`)?.classList.add('open');
-    }
-
-    function closeBwEditForm(wid) {
-        document.getElementById(`bwef-${wid}`)?.classList.remove('open');
-    }
-
-    async function saveBwEdit(widgetId) {
-        const name = document.getElementById(`bwen-${widgetId}`)?.value.trim();
-        const desc = document.getElementById(`bwed-${widgetId}`)?.value.trim() || null;
-        if (!name) {
-            alert('Укажите название');
-            return;
-        }
-        await planningFetch(`/design/widget/${widgetId}`, {
-            method: 'PUT', body: JSON.stringify({name, description: desc}),
-        });
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (block) {
-            const w = (block.widgets || []).find(w => w.id === widgetId);
-            if (w) {
-                w.name = name;
-                w.description = desc;
-            }
-            renderBwWidgetNames(block);
-            renderBwPreview(w || {id: widgetId, name, description: desc, css: null});
-        }
-    }
-
-    function _bwRefreshIframe(widgetId) {
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (!block) return;
-        const w = (block.widgets || []).find(w => w.id === widgetId);
-        if (!w) return;
-        const iframeWrap = document.getElementById(`bwiw-${widgetId}`);
-        if (!iframeWrap) return;
-        iframeWrap.innerHTML = '';
-        if (w.css || w.html) {
-            iframeWrap.appendChild(_bwMakeIframe(bwPreviewIframeHtml(w.css, w.html, block.content || null), _bwBlockId));
-        }
-    }
-
-    function _bwUpdateEmptyMark(detailsId, hasValue) {
-        const summary = document.querySelector(`#${detailsId} .bw-css-summary`);
-        if (!summary) return;
-        const mark = summary.querySelector('.bw-css-empty-mark');
-        if (hasValue && mark) mark.remove();
-        else if (!hasValue && !mark) {
-            const span = document.createElement('span');
-            span.className = 'bw-css-empty-mark';
-            span.textContent = 'не задан';
-            summary.appendChild(span);
-        }
-    }
-
-    async function saveBwCss(widgetId) {
-        const textarea = document.getElementById(`bwcss-${widgetId}`);
-        if (!textarea) return;
-        const css = textarea.value.trim() || null;
-        const btn = document.querySelector(`#bwced-${widgetId} .bw-btn-save-css`);
-        if (btn) {
-            btn.textContent = 'Сохраняю...';
-            btn.disabled = true;
-        }
-        await planningFetch(`/design/widget/${widgetId}`, {
-            method: 'PUT', body: JSON.stringify({css}),
-        });
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (block) {
-            const w = (block.widgets || []).find(w => w.id === widgetId);
-            if (w) {
-                w.css = css;
-                _bwRefreshIframe(widgetId);
-                _bwUpdateEmptyMark(`bwced-${widgetId}`, !!css);
-            }
-        }
-        if (btn) {
-            btn.textContent = 'Сохранить CSS';
-            btn.disabled = false;
-        }
-    }
-
-    async function saveBwHtml(widgetId) {
-        const textarea = document.getElementById(`bwhtml-${widgetId}`);
-        if (!textarea) return;
-        const html = textarea.value.trim() || null;
-        const btn = document.querySelector(`#bwhed-${widgetId} .bw-btn-save-css`);
-        if (btn) {
-            btn.textContent = 'Сохраняю...';
-            btn.disabled = true;
-        }
-        await planningFetch(`/design/widget/${widgetId}`, {
-            method: 'PUT', body: JSON.stringify({html}),
-        });
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (block) {
-            const w = (block.widgets || []).find(w => w.id === widgetId);
-            if (w) {
-                w.html = html;
-                _bwRefreshIframe(widgetId);
-                _bwUpdateEmptyMark(`bwhed-${widgetId}`, !!html);
-            }
-        }
-        if (btn) {
-            btn.textContent = 'Сохранить HTML';
-            btn.disabled = false;
-        }
-    }
-
-    async function deleteBwWidget(widgetId) {
-        if (!confirm('Удалить виджет?')) return;
-        await planningFetch(`/design/widget/${widgetId}`, {method: 'DELETE'});
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (block) {
-            block.widgets = (block.widgets || []).filter(w => w.id !== widgetId);
-            renderBwWidgetNames(block);
-            renderBwBlockList();
-        }
-        _bwWidgetId = null;
-        document.getElementById('bwPreviewContent').innerHTML = '<span class="bw-placeholder">Выберите виджет</span>';
-    }
-
-    function toggleBwAddForm() {
-        const form = document.getElementById('bwAddForm');
-        const visible = form.style.display !== 'none';
-        form.style.display = visible ? 'none' : 'block';
-        if (!visible) document.getElementById('bwfName').focus();
-    }
-
-    async function saveBwWidget() {
-        const name = (document.getElementById('bwfName')?.value || '').trim();
-        if (!name) {
-            alert('Укажите название');
-            return;
-        }
-        const desc = (document.getElementById('bwfDesc')?.value || '').trim() || null;
-        const css = (document.getElementById('bwfCss')?.value || '').trim() || null;
-        const data = await planningFetch(`/design/block/${_bwBlockId}/widget`, {
-            method: 'POST', body: JSON.stringify({name, description: desc, css}),
-        });
-        if (data.error) {
-            alert(data.error);
-            return;
-        }
-        const block = _bwBlocks.find(b => b.id === _bwBlockId);
-        if (block) {
-            block.widgets = block.widgets || [];
-            block.widgets.push(data.result);
-            renderBwWidgetNames(block);
-            renderBwBlockList();
-        }
-        document.getElementById('bwfName').value = '';
-        document.getElementById('bwfDesc').value = '';
-        document.getElementById('bwfCss').value = '';
-        document.getElementById('bwAddForm').style.display = 'none';
-    }
-
     /* Block regeneration / delete / generate */
     async function regenBwBlock(blockId) {
         const btn = document.getElementById('bwregen-' + blockId);
@@ -4961,32 +4165,6 @@ ${contentScript}</body></html>`;
             });
         })();
 
-        const hSplit = document.getElementById('bwHSplitter');
-        const namesPane = document.getElementById('bwWidgetNames');
-        const colRight = document.getElementById('bwColRight');
-        if (hSplit && namesPane && colRight) {
-            let hDrag = false;
-            hSplit.addEventListener('mousedown', e => {
-                hDrag = true;
-                hSplit.classList.add('dragging');
-                document.body.style.cursor = 'row-resize';
-                document.body.style.userSelect = 'none';
-                e.preventDefault();
-            });
-            document.addEventListener('mousemove', e => {
-                if (!hDrag) return;
-                const rect = colRight.getBoundingClientRect();
-                const pct = Math.max(15, Math.min(80, ((e.clientY - rect.top) / (rect.height - 5)) * 100));
-                namesPane.style.height = pct + '%';
-            });
-            document.addEventListener('mouseup', () => {
-                if (!hDrag) return;
-                hDrag = false;
-                hSplit.classList.remove('dragging');
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            });
-        }
     });
 
     function onProjectChange() {
