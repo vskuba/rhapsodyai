@@ -324,6 +324,7 @@ async function fillWorkflowForm(workflow) {
     }
 
     await renderParentWorkflows(workflow);
+    await renderParentAgents(workflow);
 
     deleteBtn.style.display = 'block';
 }
@@ -356,6 +357,37 @@ async function renderParentWorkflows(workflow) {
         ).join('');
     } catch (e) {
         el.querySelector('.parent-workflow-list').textContent = 'Ошибка загрузки';
+    }
+}
+
+async function renderParentAgents(workflow) {
+    const el = document.querySelector('.parent-agent');
+    if (!el) return;
+
+    if (!workflow.id) {
+        el.style.display = 'none';
+        return;
+    }
+
+    el.style.display = 'flex';
+    el.innerHTML = '<div class="parent-agent-label">Агент:</div><div class="parent-agent-list">Загрузка...</div>';
+
+    try {
+        const data = await getData(`/workflow/${workflow.id}/agents`);
+        const agents = data.result || [];
+        const list = el.querySelector('.parent-agent-list');
+        if (!agents.length) {
+            el.style.display = 'none';
+            return;
+        }
+        list.innerHTML = agents.map(a =>
+            `<a class="parent-agent-chip" href="/admin/agent?agent_id=${a.id}" title="${a.name}">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                ${a.title || a.name}
+            </a>`
+        ).join('');
+    } catch (e) {
+        el.querySelector('.parent-agent-list').textContent = 'Ошибка загрузки';
     }
 }
 

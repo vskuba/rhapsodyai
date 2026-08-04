@@ -1,13 +1,10 @@
 import asyncio
 import json
-import httpx
 import uuid
 from http.client import HTTPException
 
 from fastapi import APIRouter, Request, Depends
 
-from ai.ai_llm import ai_llm_provider
-from config.config import config_get
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -16,9 +13,11 @@ from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.uvicorn.routers.project.project_common import _tools_load
 
-_BLOCK_REGEN_WORKFLOW_ID = 50
-_BLOCK_REGEN_AGENT_ID    = 83
-_BLOCK_REGEN_TIMEOUT     = 240.0
+_BLOCK_REGEN_WORKFLOW_ID  = 50
+_BLOCK_REGEN_AGENT_ID     = 83
+_BLOCK_REGEN_TIMEOUT      = 240.0
+_AUTO_BLOCKS_AGENT_NAME   = 'planning_wireframe_composer'
+_AUTO_BLOCKS_TIMEOUT      = 120.0
 
 router = APIRouter()
 
@@ -471,131 +470,76 @@ async def planning_block_generate(request: Request, project_id: int, data: dict,
 
 @router.post("/design/page/{page_id}/auto-blocks")
 async def design_page_auto_blocks(
+    request: Request,
     page_id: int,
     data: dict = None,
     user=Depends(AuthChecker([AuthPermission.DESIGN_CREATE])),
 ):
-    """LLM назначает блоки проекта по секциям страницы. Не меняет wireframe-текст и grid_layout."""
+    """Агент planning_wireframe_composer назначает блоки проекта по секциям страницы."""
+    from fastapi import HTTPException
     project_id = int((data or {}).get('project_id') or 0)
     if not project_id:
         raise HTTPException(status_code=400, detail="project_id required")
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT grid_layout FROM project_design_prototype_page WHERE id = %s AND project_id = %s",
+            "SELECT id FROM project_design_prototype_page WHERE id = %s AND project_id = %s",
             (page_id, project_id)
         )
-        page_row = await db.fetchone()
-        if not page_row:
+        if not await db.fetchone():
             raise HTTPException(status_code=404, detail="Page not found")
 
-        raw_gl = page_row.get('grid_layout')
-        try:
-            grid_layout = json.loads(raw_gl) if isinstance(raw_gl, str) else (raw_gl or [])
-        except Exception:
-            grid_layout = []
-        if not grid_layout:
-            grid_layout = [{'w': [100], 'h': 400}]
+    agent = await AgentRepository().find_one_by({'name': _AUTO_BLOCKS_AGENT_NAME})
+    if not agent:
+        return {'error': f'Agent {_AUTO_BLOCKS_AGENT_NAME!r} not found'}
 
-        await db.execute(
-            "SELECT id, name, description FROM project_design_ui_block "
-            "WHERE project_id = %s ORDER BY order_index",
-            (project_id,)
-        )
-        block_rows = await db.fetchall()
-
-    if not block_rows:
-        return {'result': []}
-
-    # Build section labels from grid
-    sections = []
-    for li, level in enumerate(grid_layout):
-        for ci in range(len(level.get('w') or [100])):
-            sections.append(f"{li + 1}.{ci + 1}")
-
-    blocks_info = '\n'.join(
-        f"{b['id']}: {b['name']}" + (f" — {(b.get('description') or '')[:80]}" if b.get('description') else '')
-        for b in block_rows
-    )
-
-    prompt = (
-        f"Distribute these UI blocks across wireframe sections.\n\n"
-        f"Sections: {', '.join(sections)}\n\n"
-        f"Blocks:\n{blocks_info}\n\n"
-        f"Rules:\n"
-        f"- Every block must appear exactly once.\n"
-        f"- Fill all sections roughly equally.\n"
-        f"- order_index starts at 0 within each section.\n\n"
-        f"Respond with ONLY a JSON array, no markdown:\n"
-        f'[{{"block_id": 1, "section": "1.1", "order_index": 0}}, ...]'
-    )
-
-    entities_llm = await ai_llm_node_get(None, output_type='text')
+    entities_llm = await ai_llm_node_get(agent['node_id'])
     if not entities_llm:
-        raise HTTPException(status_code=503, detail="No LLM configured")
+        return {'error': 'LLM не настроены для агента'}
 
-    llm = entities_llm[0]
-    provider = ai_llm_provider(llm['name'])
-    base_url = (config_get(provider.upper() + '_API_URL') or '').rstrip('/')
-    api_key = config_get(provider.upper() + '_API_KEY') or ''
-    model_name = llm['name'][len(provider) + 1:]
+    workflow_data = await ai_workflow_load(agent['workflow_id'])
+    session_uuid = str(uuid.uuid4())
+    wf_vars = {
+        **ai_workflow_variables_base(
+            prompt_user='',
+            user_id=user.user_id,
+            entity_agent=agent,
+            session_uuid=session_uuid,
+            workflow_id=agent['workflow_id'],
+        ),
+        'page_id': str(page_id),
+        'project_id': str(project_id),
+    }
+    ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": model_name,
-                "messages": [
-                    {"role": "system", "content": "Output only valid JSON, no prose."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.3,
-            }
-        )
-        resp.raise_for_status()
-        raw = resp.json()['choices'][0]['message']['content'].strip()
-
-    if raw.startswith('```'):
-        raw = raw.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
-
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    agent_manager = request.app.state.agent_manager
+    framework_model = await agent_manager.framework_model_create({
+        'entity_agent': agent,
+        'entities_llm': entities_llm,
+        'workflow_steps': workflow_data['steps'],
+        'workflow_variables': wf_vars,
+        'prompt_user': '',
+        'user_id': user.user_id,
+        'companion_id': None,
+        'session_uuid': session_uuid,
+        'tools': await _tools_load(),
+    })
+    agent_manager.framework_workflow_run(framework_model, future, loop)
     try:
-        assignments = json.loads(raw)
-    except Exception:
-        raise HTTPException(status_code=500, detail="LLM returned invalid JSON")
-
-    def _sec_to_flat(label: str) -> int:
-        try:
-            parts = label.split('.')
-            lv = min(int(parts[0]) - 1, len(grid_layout) - 1)
-            co = min(int(parts[1]) - 1, len(grid_layout[lv].get('w') or [100]) - 1)
-            return sum(len(grid_layout[l].get('w') or [100]) for l in range(lv)) + co
-        except Exception:
-            return 0
-
-    block_name_map = {b['id']: b['name'] for b in block_rows}
+        await asyncio.wait_for(future, timeout=_AUTO_BLOCKS_TIMEOUT)
+    except asyncio.TimeoutError:
+        pass
 
     async with mysql_get_db_async() as db:
-        await db.execute("DELETE FROM project_design_prototype_page_block WHERE page_id = %s", (page_id,))
-        result_blocks = []
-        for item in (assignments if isinstance(assignments, list) else []):
-            bid = int(item.get('block_id') or 0)
-            if bid not in block_name_map:
-                continue
-            flat = _sec_to_flat(str(item.get('section') or '1.1'))
-            order_idx = int(item.get('order_index') or 0)
-            await db.execute(
-                "INSERT INTO project_design_prototype_page_block (page_id, block_id, order_index, section) "
-                "VALUES (%s, %s, %s, %s)",
-                (page_id, bid, order_idx, flat)
-            )
-            result_blocks.append({
-                'block_id': bid,
-                'block_name': block_name_map[bid],
-                'widget_name': '',
-                'widget_id': None,
-                'order_index': order_idx,
-                'section': flat,
-            })
+        await db.execute(
+            "SELECT pb.block_id, b.name AS block_name, pb.order_index, pb.section "
+            "FROM project_design_prototype_page_block pb "
+            "JOIN project_design_ui_block b ON b.id = pb.block_id "
+            "WHERE pb.page_id = %s ORDER BY pb.section, pb.order_index",
+            (page_id,)
+        )
+        rows = await db.fetchall()
 
-    return {'result': result_blocks}
+    return {'result': [dict(r) for r in (rows or [])]}

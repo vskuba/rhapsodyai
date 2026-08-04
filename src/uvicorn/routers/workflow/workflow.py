@@ -391,6 +391,22 @@ async def workflow_parents(
     return {"result": [dict(r) for r in rows]}
 
 
+@router.get("/workflow/{workflow_id}/agents")
+async def workflow_agents(
+        request: Request,
+        workflow_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
+):
+    """Agents that use this workflow."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id, name, title FROM agent WHERE workflow_id = %s ORDER BY title",
+            (workflow_id,)
+        )
+        rows = await db.fetchall()
+    return {"result": [dict(r) for r in rows]}
+
+
 @router.delete("/workflow/{workflow_id}/variable/{workflow_variable_id}")
 async def workflow_variable_delete(
         request: Request,

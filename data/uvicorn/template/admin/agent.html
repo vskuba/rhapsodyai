@@ -102,19 +102,38 @@
 
     .agent-item-title { cursor: pointer; }
 
-    .agent-wf-sep {
-        color: #cbd5e1;
+    .child-workflow {
+        display: none;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 10px;
+        padding: 6px 12px;
+        background: #f9fcff;
+        border: 1px solid #bae6fd;
+        border-radius: 6px;
         font-size: 12px;
+        color: #0369a1;
     }
-
-    .agent-wf-link {
-        font-size: 12px;
-        color: #94a3b8;
-        text-decoration: none;
+    .child-workflow-label {
+        font-weight: 600;
+        color: #0c4a6e;
+        flex-shrink: 0;
         white-space: nowrap;
     }
-
-    .agent-wf-link:hover { color: #3498db; text-decoration: underline; }
+    .child-workflow-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: #fff;
+        border: 1px solid #7dd3fc;
+        border-radius: 10px;
+        padding: 2px 10px;
+        font-size: 11px;
+        color: #0369a1;
+        text-decoration: none;
+    }
+    .child-workflow-chip:hover { background: #e0f2fe; }
 
     /* 3. Основная секция формы */
     .editor-section {
@@ -363,10 +382,13 @@
 
     <!-- Форма -->
     <div class="editor-section">
+
         <div class="form-header">
             <h2 id="formTitle">Выберите агента</h2>
             <div id="langSwitcherContainer"></div>
         </div>
+
+        <div class="child-workflow"></div>
 
         <form id="agentForm">
             <input type="hidden" id="agentId">
@@ -589,6 +611,7 @@
             renderGroupTree(buildGroupTree(sorted), agentListContainer, 0, `agent_group_${nid}`, (agent, depth, indent) => {
                 const div = document.createElement('div');
                 div.className = 'agent-item';
+                div.dataset.agentId = agent.id;
                 if (depth > 0) div.style.paddingLeft = `${indent}px`;
                 if (agent.id.toString() === currentAgentId) div.classList.add('active');
 
@@ -597,23 +620,6 @@
                 titleSpan.textContent = (depth > 0 ? '· ' : '') + (agent.title || agent.name);
                 titleSpan.onclick = () => selectAgentForEdit(agent.id, div);
                 div.appendChild(titleSpan);
-
-                if (agent.workflow_id) {
-                    const wf = allWorkflows.find(w => String(w.id) === String(agent.workflow_id));
-                    if (wf) {
-                        const sep = document.createElement('span');
-                        sep.className = 'agent-wf-sep';
-                        sep.textContent = ' | ';
-                        div.appendChild(sep);
-
-                        const wfLink = document.createElement('a');
-                        wfLink.className = 'agent-wf-link';
-                        wfLink.textContent = wf.title;
-                        wfLink.href = `/admin/workflow?workflow_id=${wf.id}`;
-                        wfLink.onclick = e => e.stopPropagation();
-                        div.appendChild(wfLink);
-                    }
-                }
 
                 return div;
             });
@@ -689,6 +695,21 @@
             }
 
             document.getElementById('formTitle').textContent = `Редактирование: #${agent.id} ${agent.name}`;
+
+            const cwEl = document.querySelector('.child-workflow');
+            if (cwEl) {
+                const wf = agent.workflow_id ? allWorkflows.find(w => String(w.id) === String(agent.workflow_id)) : null;
+                if (wf) {
+                    cwEl.style.display = 'flex';
+                    cwEl.innerHTML = `<span class="child-workflow-label">Workflow:</span>
+                        <a class="child-workflow-chip" href="/admin/workflow?workflow_id=${wf.id}" title="${wf.name}">
+                            <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M8 2L14 8L8 14M14 8H2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            ${wf.title || wf.name}
+                        </a>`;
+                } else {
+                    cwEl.style.display = 'none';
+                }
+            }
 
             if (saveBtn) saveBtn.disabled = false;
             if (deleteBtn) deleteBtn.style.display = 'block';
@@ -832,7 +853,15 @@
     initSidebarResizer('agentResizer', 'agent_sidebar_width', document.querySelector('.agents-sidebar'));
 
     // 1. Первичный запуск менеджера при загрузке скрипта
-    initAgentsManager();
+    const _deepLinkAgentId = new URLSearchParams(window.location.search).get('agent_id');
+    await initAgentsManager();
+    if (_deepLinkAgentId) {
+        const el = document.querySelector(`.agent-item[data-agent-id="${_deepLinkAgentId}"]`);
+        if (el) {
+            el.scrollIntoView({block: 'nearest'});
+            await selectAgentForEdit(parseInt(_deepLinkAgentId), el);
+        }
+    }
 
     // 2. Обработка кнопки "Создать агента"
     const createBtn = document.getElementById('createNewAgent');
