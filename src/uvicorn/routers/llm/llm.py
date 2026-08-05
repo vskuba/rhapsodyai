@@ -262,6 +262,41 @@ async def llm_usage_stats_delete(user=Depends(AuthChecker([AuthPermission.LLM_DE
     return {"result": "ok"}
 
 
+@router.put("/llm/{llm_id}")
+async def llm_update(llm_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
+    """Обновляет поля LLM-модели. Обновляются только переданные поля:
+    name, input_type, output_type, chunk_size (JSON), chunk_size_refresh_at."""
+    allowed_keys = ("name", "input_type", "output_type", "chunk_size", "chunk_size_refresh_at")
+    update_data = {key: data[key] for key in allowed_keys if key in data}
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Нет полей для обновления")
+
+    async with mysql_get_db_async() as db:
+        # Проверим что LLM существует и получим текущее имя (для логирования провайдера)
+        await db.execute("SELECT id, name FROM llm WHERE id = %s", (llm_id,))
+        llm = await db.fetchone()
+    if not llm:
+        raise HTTPException(status_code=404, detail="LLM не найдена")
+
+    async with mysql_get_db_async() as db:
+        set_clauses, params = [], []
+        for key, value in update_data.items():
+            set_clauses.append(f"`{key}` = %s")
+            # JSON-кодируем chunk_size, даты оставляем как есть
+            if key == 'chunk_size' and value is not None:
+                params.append(json.dumps(value, ensure_ascii=False))
+            else:
+                params.append(value)
+        params.append(llm_id)
+        await db.execute(
+            f"UPDATE llm SET {', '.join(set_clauses)} WHERE id = %s",
+            params,
+        )
+
+    return {"result": "success"}
+
+
 @router.post("/llm/ping/{llm_id}")
 async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
     """Пингует провайдера модели дешевым запросом GET /models (без токенов),
@@ -281,7 +316,14 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
     }
 
     provider = ai_llm_provider(llm['name'])
-    base_url = config_get(provider.upper() + '_API_URL') if provider else ''
+
+    if provider == 'gx10':
+        model_name = llm['name'].split('/')[-1]
+        last_char = model_name[-1]
+        base_url = config_get(provider.upper() + f'_{last_char}_API_URL') if provider else ''
+    else:
+        base_url = config_get(provider.upper() + '_API_URL') if provider else ''
+
     api_key = config_get(provider.upper() + '_API_KEY') if provider else ''
 
     if not provider:
