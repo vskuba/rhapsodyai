@@ -552,6 +552,8 @@ def main():
     _session_info_print(session_uuid, mini_app_session_url)
 
     if args.gx10:
+        if PROJECT_ROOT not in sys.path:
+            sys.path.insert(0, PROJECT_ROOT)
         from claude_code_shell.litellm.litellm_manager import litellm_ensure_running
         port = litellm_ensure_running()
         os.environ["ANTHROPIC_BASE_URL"] = f"http://localhost:{port}"

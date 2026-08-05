@@ -3,11 +3,16 @@ import subprocess
 import sys
 import time
 
-LITELLM_DIR = os.path.dirname(os.path.abspath(__file__))
-PID_FILE    = os.path.join(LITELLM_DIR, "litellm.pid")
-LOG_FILE    = os.path.join(LITELLM_DIR, "litellm.log")
-CONFIG_FILE = os.path.join(LITELLM_DIR, "litellm_config.yaml")
-PORT        = 4000
+LITELLM_DIR  = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(LITELLM_DIR))
+PID_FILE     = os.path.join(LITELLM_DIR, "litellm.pid")
+LOG_FILE     = os.path.join(LITELLM_DIR, "litellm.log")
+CONFIG_FILE  = os.path.join(LITELLM_DIR, "litellm_config.yaml")
+PORT         = 4000
+
+# Предпочитаем venv-python, где гарантированно установлен litellm
+_VENV_PYTHON = os.path.join(PROJECT_ROOT, ".venv", "bin", "python3")
+PYTHON       = _VENV_PYTHON if os.path.isfile(_VENV_PYTHON) else sys.executable
 
 
 def litellm_is_running() -> bool:
@@ -31,7 +36,7 @@ def litellm_start() -> None:
 
     log = open(LOG_FILE, "a")
     proc = subprocess.Popen(
-        [sys.executable, "-c",
+        [PYTHON, "-c",
          "from litellm.proxy.proxy_cli import run_server; import sys; "
          f"sys.argv=['litellm','--config','{CONFIG_FILE}','--port','{PORT}']; run_server()"],
         stdout=log,
