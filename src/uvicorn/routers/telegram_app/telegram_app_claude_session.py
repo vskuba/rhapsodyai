@@ -64,6 +64,9 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
 
     role = str(data.get("role") or "developer").strip()
     project_label = str(data.get("project_label") or "").strip()
+    server_llm = str(data.get("server_llm") or "anthropic").strip()
+    if server_llm not in ("anthropic", "gx10"):
+        server_llm = "anthropic"
     if not project_label:
         raise HTTPException(status_code=400, detail="project_label required")
 
@@ -74,6 +77,7 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
         "role": role,
         "project_label": project_label,
         "status": "active",
+        "server_llm": server_llm,
         "last_seen_at": datetime.now(),
     })
 

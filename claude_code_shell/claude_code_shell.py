@@ -540,7 +540,8 @@ def main():
             result = _api_call_retry("POST", "/telegram-app/claude/session/register",
                                      secret, base_url,
                                      body={"role": "developer",
-                                           "project_label": project_label})
+                                           "project_label": project_label,
+                                           "server_llm": "gx10" if args.gx10 else "anthropic"})
             session_uuid = result["result"]["session_uuid"]
             _save_session_uuid(session_uuid)
             _log(f"registered session {session_uuid}")

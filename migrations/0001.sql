@@ -418,6 +418,7 @@ CREATE TABLE `ai_claude_session_registry` (
     `role` VARCHAR(50) NOT NULL DEFAULT 'developer',
     `project_label` VARCHAR(255) NOT NULL,
     `status` ENUM('active','closing','inactive') NOT NULL DEFAULT 'active',
+    `server_llm` ENUM('anthropic','gx10') NOT NULL DEFAULT 'anthropic',
     `summary` VARCHAR(500) NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     `last_seen_at` DATETIME NULL,
