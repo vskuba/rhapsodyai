@@ -487,6 +487,8 @@ def main():
     parser.add_argument("--session-uuid", default=None)
     parser.add_argument("--register", action="store_true", help="Force new session")
     parser.add_argument("--project-label", default=None)
+    parser.add_argument("--gx10", action="store_true",
+                        help="Запустить LiteLLM proxy (gx10) и использовать как бэкенд Claude")
     parser.add_argument("claude_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
@@ -548,6 +550,13 @@ def main():
 
     mini_app_session_url = base_url + "/telegram-app"
     _session_info_print(session_uuid, mini_app_session_url)
+
+    if args.gx10:
+        from claude_code_shell.litellm.litellm_manager import litellm_ensure_running
+        port = litellm_ensure_running()
+        os.environ["ANTHROPIC_BASE_URL"] = f"http://localhost:{port}"
+        os.environ["ANTHROPIC_API_KEY"] = "litellm-proxy"
+        _log(f"gx10: LiteLLM proxy ready on port {port}")
 
     shell = ClaudeShell(session_uuid, secret, base_url, claude_args, log)
     shell.run()
