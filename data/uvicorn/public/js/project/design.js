@@ -928,12 +928,11 @@
 
                 let secHtml = '';
                 for (const item of blocksInSection) {
-                    // Check project blocks first, then default UI library blocks (from cache)
-                    const projBlock = _allBlocks.find(b => b.id === item.block_id);
-                    const uiBlock = !projBlock ? (_uiBlockCache[item.block_id] || _defaultBlocks.find(b => b.id === item.block_id)) : null;
+                    // All blocks live in project_design_ui_block and have html directly.
+                    // Check cache first (full data), then _defaultBlocks (metadata only, triggers loading…).
+                    const uiBlock = _uiBlockCache[item.block_id] || _defaultBlocks.find(b => b.id === item.block_id);
 
                     if (uiBlock) {
-                        // UI library block — render HTML directly (inject Tailwind CDN)
                         if (uiBlock.html) {
                             const rendered = _fillTestData(uiBlock.html, uiBlock.vars, uiBlock.slots);
                             secHtml += `<div style="overflow:hidden">${_injectCdn(rendered)}</div>`;
@@ -943,6 +942,8 @@
                         continue;
                     }
 
+                    // Fallback: legacy project blocks with widgets
+                    const projBlock = _allBlocks.find(b => b.id === item.block_id);
                     if (!projBlock) continue;
                     const widget = (projBlock.widgets || []).find(w =>
                         (item.widget_id && w.id === item.widget_id) || w.name === item.widget_name
@@ -1349,9 +1350,8 @@
         if (typeSelect) { typeSelect.value = page.page_type || 'feature'; typeSelect.style.display = ''; }
         if (sep) sep.style.display = '';
 
-        // Prefetch full html/vars/slots for any UI library blocks not yet cached
-        const projIds = new Set((_allBlocks || []).map(b => b.id));
-        const uiBlockIds = [...new Set(_wfBlocks.map(b => b.block_id).filter(id => !projIds.has(id)))];
+        // Prefetch full html/vars/slots for all blocks not yet cached
+        const uiBlockIds = [...new Set(_wfBlocks.map(b => b.block_id))];
         uiBlockIds.forEach(bid => {
             if (!_uiBlockCache[bid]) {
                 planningFetch(`/design/ui-blocks/${bid}`).then(data => {
@@ -1427,8 +1427,7 @@
                     order_index: secBlocks.length,
                 });
                 renderWireframeEditor();
-                // Lazy-fetch full html/vars/slots for UI blocks
-                if (isDefault && !_uiBlockCache[b.id]) {
+                if (!_uiBlockCache[b.id]) {
                     planningFetch(`/design/ui-blocks/${b.id}`).then(data => {
                         if (data && data.result) {
                             _uiBlockCache[b.id] = data.result;
@@ -1883,6 +1882,7 @@
     }
 
     let _pagesViewportWidth = 1440;
+    let _pagesViewportHeight = 900;
 
     function pagesViewportChipToggle(e) {
         e.stopPropagation();
@@ -1893,11 +1893,12 @@
         if (!isOpen) dd.classList.add('open');
     }
 
-    function pagesViewportSelect(e, width, label) {
+    function pagesViewportSelect(e, width, height, label) {
         e.stopPropagation();
         _pagesViewportWidth = width;
+        _pagesViewportHeight = height;
         const chipText = document.getElementById('pagesChipViewportText');
-        if (chipText) chipText.textContent = `${width}px`;
+        if (chipText) chipText.textContent = `${width}×${height}`;
         const chip = document.getElementById('pagesChipViewport');
         if (chip) {
             chip.style.background = '#eff6ff';
@@ -1914,6 +1915,7 @@
     }
 
     let _protoViewportWidth = 1440;
+    let _protoViewportHeight = 900;
 
     function protoViewportChipToggle(e) {
         e.stopPropagation();
@@ -1924,11 +1926,12 @@
         if (!isOpen) dd.classList.add('open');
     }
 
-    function protoViewportSelect(e, width, label) {
+    function protoViewportSelect(e, width, height, label) {
         e.stopPropagation();
         _protoViewportWidth = width;
+        _protoViewportHeight = height;
         const chipText = document.getElementById('protoChipViewportText');
-        if (chipText) chipText.textContent = `${width}px`;
+        if (chipText) chipText.textContent = `${width}×${height}`;
         const chip = document.getElementById('protoChipViewport');
         if (chip) {
             chip.style.background = '#eff6ff';
