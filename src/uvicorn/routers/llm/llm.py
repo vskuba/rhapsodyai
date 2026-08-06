@@ -319,8 +319,8 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
 
     if provider == 'gx10':
         model_name = llm['name'].split('/')[-1]
-        last_char = model_name[-1]
-        base_url = config_get(provider.upper() + f'_{last_char}_API_URL') if provider else ''
+        model_size = model_name.split('-')[-1].upper()
+        base_url = config_get(provider.upper() + f'_{model_size}_API_URL') if provider else ''
     else:
         base_url = config_get(provider.upper() + '_API_URL') if provider else ''
 
