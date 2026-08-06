@@ -101,6 +101,7 @@ asyncio.run(telegram_send_owner('your message'))
 | File | Contents |
 |------|---------|
 | `.claude/docs/architecture.md` | Modules, dependencies, Docker services, env vars, queue names |
+| `.claude/docs/architecture_rules.md` | **Правила кода:** префикс функций = namespace файла, дробление файлов |
 | `.claude/docs/database.md` | Schema, migrations, FK table order |
 | `.claude/docs/dashboard_frontend.md` | Admin page patterns, JS, CSS, API contracts |
 | `.claude/docs/auth.md` | Auth system, field-level policies, code examples |
@@ -115,3 +116,4 @@ asyncio.run(telegram_send_owner('your message'))
 | `.claude/docs/seed.md` | Seed SQL: API, генерация, какие таблицы включать, автозапуск |
 | `.claude/docs/backup.md` | Backup: mysqldump/python-fallback, gzip, restore, отличие от seed |
 | `.claude/docs/project_design.md` | Design модуль: вкладки, API, таблицы, AI-токены, конфигуратор прototипа |
+| `.claude/docs/project_task.md` | Task: страница `/admin/task`, конвейер агентов, правила для Manager/Developer/QA |
