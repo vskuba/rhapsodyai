@@ -26,7 +26,7 @@ from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WRAPPER_PID_FILE = os.path.join(PROJECT_ROOT, "claude_code_shell", "wrapper.pid")
+WRAPPER_PID_FILE = os.path.join(PROJECT_ROOT, "claude_shell", "wrapper.pid")
 
 
 def is_wrapper_running() -> bool:

@@ -16,15 +16,15 @@ import time
 
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(HOOK_DIR))
-CLAUDE_SHELL_DIR = os.path.join(PROJECT_ROOT, "claude_code_shell")
+CLAUDE_SHELL_DIR = os.path.join(PROJECT_ROOT, "claude_shell")
 sys.path.insert(0, CLAUDE_SHELL_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
-from claude_code_shell.session_client import api_call_retry
-from claude_code_shell.session_tool import load_config
+from claude_shell.session_client import api_call_retry
+from claude_shell.session_tool import load_config
 
-INBOX_PENDING_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "inbox_pending.json")
-LOG_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "logs", "session_stop.log")
+INBOX_PENDING_PATH = os.path.join(PROJECT_ROOT, "claude_shell", "inbox_pending.json")
+LOG_PATH = os.path.join(PROJECT_ROOT, "claude_shell", "logs", "session_stop.log")
 
 
 def _log(msg: str):

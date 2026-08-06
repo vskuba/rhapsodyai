@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-claude_cli_shell.py — оболочка для запуска Claude Code с инъекцией сообщений
+claude_shell.py — оболочка для запуска Claude Code с инъекцией сообщений
 из inbox Mini App.
 
 Запускает `claude` как дочерний процесс в PTY. Фоновый поток поллит inbox и
@@ -8,9 +8,9 @@ claude_cli_shell.py — оболочка для запуска Claude Code с и
 дочерний процесс при получении маркера RESTART.
 
 Запуск:
-  python3 ai_cli_shell.py
-  python3 ai_cli_shell.py --register
-  python3 ai_cli_shell.py --session-uuid UUID -- --resume
+  python3 claude_shell/claude_shell.py
+  python3 claude_shell/claude_shell.py --register
+  python3 claude_shell/claude_shell.py --session-uuid UUID -- --resume
 """
 
 import argparse
@@ -503,7 +503,7 @@ def main():
     project_label = args.project_label or os.path.basename(os.path.normpath(PROJECT_ROOT))
     logs_dir = os.path.join(SHELL_DIR, "logs")
     os.makedirs(logs_dir, exist_ok=True)
-    log_path = os.path.join(logs_dir, f"claude_code_shell_{project_label}.log")
+    log_path = os.path.join(logs_dir, f"claude_shell_{project_label}.log")
     log = open(log_path, "a")
 
     def _log(msg):
@@ -555,7 +555,7 @@ def main():
     if args.gx10:
         if PROJECT_ROOT not in sys.path:
             sys.path.insert(0, PROJECT_ROOT)
-        from claude_code_shell.litellm.litellm_manager import litellm_ensure_running
+        from claude_shell.litellm.litellm_manager import litellm_ensure_running
         port = litellm_ensure_running()
         os.environ["ANTHROPIC_BASE_URL"] = f"http://localhost:{port}"
         os.environ["ANTHROPIC_API_KEY"] = "litellm-proxy"

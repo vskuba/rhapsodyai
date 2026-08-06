@@ -10,7 +10,7 @@ CLI-обертка над эндпоинтами реестра сессий Cla
   session_client.py finalize --session-uuid UUID [--summary TEXT]
   session_client.py status --session-uuid UUID
 
-Инъекция сообщений из inbox в PTY обрабатывается claude_code_shell.py.
+Инъекция сообщений из inbox в PTY обрабатывается claude_shell.py.
 """
 
 import argparse
@@ -22,7 +22,7 @@ import urllib.error
 
 from session_tool import PROJECT_ROOT, api_call, load_config
 
-SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, "claude_code_shell", "session_uuid")
+SESSION_UUID_PATH = os.path.join(PROJECT_ROOT, "claude_shell", "session_uuid")
 
 
 def api_call_retry(method, path, secret, base_url, params=None, body=None, retries=12, delay=5):
