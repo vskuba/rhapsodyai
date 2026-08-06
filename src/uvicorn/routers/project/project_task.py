@@ -10,6 +10,8 @@ from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.project.task.task_plan import task_plan_parse, task_plan_serialize
+from src.project.task.task_tree import task_tree_parent_check, task_tree_position_next
 
 _TASK_AI_AGENT_NAME = 'task_ai_generator'
 _TASK_AI_TIMEOUT    = 60.0
@@ -20,18 +22,21 @@ router = APIRouter()
 @router.get('/tasks')
 async def project_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     async with mysql_get_db_async() as db:
-        await db.execute("SELECT * FROM task ORDER BY position, id")
+        await db.execute("SELECT * FROM project_task ORDER BY position, id")
         rows = await db.fetchall()
     return {'tasks': [dict(r) for r in rows]}
 
 
 @router.get('/tasks/{project_id}')
 async def project_tasks_list(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    # project_id = 0 — это «Без проекта» в селекте. Колонка допускает и NULL, и 0
+    # (0 приходит из формы, NULL остаётся у задач, заведённых мимо неё), поэтому
+    # без второго условия часть задач просто не показалась бы ни под одним пунктом.
+    where = "project_id = 0 OR project_id IS NULL" if project_id == 0 else "project_id = %s"
+    params = () if project_id == 0 else (project_id,)
+
     async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT * FROM task WHERE project_id = %s ORDER BY position, id",
-            (project_id,)
-        )
+        await db.execute(f"SELECT * FROM project_task WHERE {where} ORDER BY position, id", params)
         rows = await db.fetchall()
     return {'tasks': [dict(r) for r in rows]}
 
@@ -43,22 +48,23 @@ async def project_task_create(project_id: int, data: dict, user=Depends(AuthChec
         raise HTTPException(status_code=400, detail='title required')
 
     async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM task WHERE project_id = %s",
-            (project_id,)
-        )
-        row = await db.fetchone()
-        next_pos = row['pos'] if row else 0
+        try:
+            parent_id = await task_tree_parent_check(db, None, data.get('parent_id'))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        next_pos = await task_tree_position_next(db, project_id, parent_id)
 
         await db.execute(
-            "INSERT INTO task (project_id, title, description, goals, status, report, position) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (project_id, title, str(data.get('description') or ''), str(data.get('goals') or ''),
+            "INSERT INTO project_task (project_id, parent_id, title, description, goals, status, report, position) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (project_id, parent_id, title, str(data.get('description') or ''), str(data.get('goals') or ''),
              str(data.get('status') or 'pending'), str(data.get('report') or ''), next_pos)
         )
         await db.connection.commit()
         task_id = db.lastrowid
 
-        await db.execute("SELECT * FROM task WHERE id = %s", (task_id,))
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
         task = await db.fetchone()
 
     return {'task': dict(task)}
@@ -68,16 +74,36 @@ async def project_task_create(project_id: int, data: dict, user=Depends(AuthChec
 async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     allowed = {'title', 'description', 'goals', 'status', 'report'}
     updates = {k: v for k, v in data.items() if k in allowed}
-    if not updates:
-        raise HTTPException(status_code=400, detail='nothing to update')
-
-    set_clause = ', '.join(f'`{k}` = %s' for k in updates)
-    values = list(updates.values()) + [task_id]
 
     async with mysql_get_db_async() as db:
-        await db.execute(f"UPDATE task SET {set_clause} WHERE id = %s", values)
+        # Перенос по дереву: FK ловит только несуществующего родителя, а цикл и
+        # переезд задачи внутрь собственной ветки — нет, это на нас.
+        if 'parent_id' in data:
+            try:
+                updates['parent_id'] = await task_tree_parent_check(db, task_id, data.get('parent_id'))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+        # План правится как текст, а в колонке лежит JSON {plan_text, subtasks} —
+        # подзадачи менеджера сохраняем, иначе ручная правка их снесёт.
+        if 'plan_text' in data:
+            await db.execute("SELECT pipeline_plan FROM project_task WHERE id = %s", (task_id,))
+            row = await db.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail='task not found')
+            _, subtasks = task_plan_parse(row['pipeline_plan'] or '')
+            plan_text = str(data.get('plan_text') or '').strip()
+            updates['pipeline_plan'] = task_plan_serialize(plan_text, subtasks) if plan_text else ''
+
+        if not updates:
+            raise HTTPException(status_code=400, detail='nothing to update')
+
+        set_clause = ', '.join(f'`{k}` = %s' for k in updates)
+        values = list(updates.values()) + [task_id]
+
+        await db.execute(f"UPDATE project_task SET {set_clause} WHERE id = %s", values)
         await db.connection.commit()
-        await db.execute("SELECT * FROM task WHERE id = %s", (task_id,))
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
         task = await db.fetchone()
 
     if not task:
@@ -88,7 +114,7 @@ async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker
 @router.delete('/task/{task_id}')
 async def project_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     async with mysql_get_db_async() as db:
-        await db.execute("DELETE FROM task WHERE id = %s", (task_id,))
+        await db.execute("DELETE FROM project_task WHERE id = %s", (task_id,))
         await db.connection.commit()
     return {'ok': True}
 

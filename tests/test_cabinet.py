@@ -35,7 +35,8 @@ class TestCabinetFlow:
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False) as client:
             response = await client.get("/admin/cabinet")
             assert response.status_code == 307
-            assert response.headers.get("location") == "/login"
+            # `?next=` дописывает dashboard.py — сверяем путь, а не строку целиком
+            assert response.headers.get("location", "").split("?")[0] == "/login"
 
     async def test_cabinet_page_accessible_with_auth(self, client: httpx.AsyncClient):
         """Test that the cabinet HTML page is accessible when authenticated."""

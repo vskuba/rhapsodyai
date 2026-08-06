@@ -2,7 +2,7 @@ from fastapi import HTTPException, Request, status, Depends
 
 from logging_.logging_ import logger_info
 from src.auth.auth_permission import AuthPermission
-from src.auth.auth_role import AUTH_ROLE_PERMISSIONS, AUTH_PERMISSIONS_DEFAULT
+from src.auth.auth_role import auth_role_permissions
 from src.auth.auth_session import AuthSession
 
 
@@ -15,10 +15,7 @@ class AuthChecker:
 
         logger_info('🔒 Текущий пользователь: ' + str(current_user))
 
-        if current_user.role == "admin":
-            return current_user
-
-        user_permissions = AUTH_ROLE_PERMISSIONS.get(current_user.role, AUTH_PERMISSIONS_DEFAULT)
+        user_permissions = auth_role_permissions(current_user.role)
 
         # 2. Проверяем, есть ли у пользователя ВСЕ необходимые для эндпоинта права
         for perm in self.required_permissions:

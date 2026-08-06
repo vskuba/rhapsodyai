@@ -63,9 +63,7 @@ class AuthChecker:
 
     async def __call__(self, request: Request) -> AuthSession:
         current_user = await get_current_user(request)
-        if current_user.role == "admin":
-            return current_user
-        user_permissions = AUTH_ROLE_PERMISSIONS.get(current_user.role, [])
+        user_permissions = auth_role_permissions(current_user.role)   # admin -> все права
         for perm in self.required_permissions:
             if perm not in user_permissions:
                 raise HTTPException(status_code=403, detail="Недостаточно прав")
@@ -102,13 +100,26 @@ async def me(request: Request):
 
 ## Roles & Permissions
 
-`AuthRole`: `admin`, `user`
+Роли динамические (таблица `role`); в коде захардкожен только `admin` (`AuthRole.ROLE_ADMIN`).
 
-`AUTH_ROLE_PERMISSIONS` maps roles to permission sets. Admin gets all permissions implicitly (no check in AuthChecker). User role gets view-only permissions by default.
+`auth_role.py`:
+- `AUTH_PERMISSIONS_DEFAULT` — view-набор, достаётся любой роли без переопределения
+- `AUTH_ROLE_PERMISSIONS` — переопределения по имени роли
+- `auth_role_permissions(role)` → набор прав роли (`admin` → все права)
+- `auth_role_is_full(role)` → роль с полным набором прав
+
+**`qa`** (`vova.tkachenko`, логин/пароль в `.env`: `QA_USERNAME` / `QA_PASSWORD`) — учётка автотестов
+и ручных проверок, права полные: сюита создаёт и удаляет пользователей, роли, агентов, workflow.
+Отделена от `admin`, чтобы её сессии и действия были видны в логах отдельно от владельца.
+
+⚠️ Не проверять роль по имени (`if user.role == 'admin'`) — такие проверки отсекают `qa` и любую
+другую полноправную роль. Использовать `auth_role_is_full(role)`; так сделано в `agent.py`,
+`session.py`, `fact.py`, `workflow_variable.py`, `auth_field_policy.py`, `event_handlers.py`
+(последний ещё и глушит Telegram-уведомление о логине — иначе каждый тест слал бы пуш владельцу).
 
 Adding a permission:
 1. Add to `AuthPermission` enum in `auth_permission.py`
-2. Add to user's set in `AUTH_ROLE_PERMISSIONS` in `auth_role.py`
+2. Add to the role's set in `AUTH_ROLE_PERMISSIONS` in `auth_role.py`
 3. Use `Depends(AuthChecker([AuthPermission.NEW_PERM]))` in the router
 
 ## Field-Level Access Policy (`src/auth/auth_field_policy.py`)
@@ -131,7 +142,7 @@ AUTH_FIELD_POLICY = {
 }
 ```
 
-Key: `'*'` is the fallback for any non-admin role; a specific role name overrides it. `admin` is never described in the policy — always gets `ALL_FIELDS`.
+Key: `'*'` is the fallback for any restricted role; a specific role name overrides it. Полноправные роли (`auth_role_is_full` — `admin`, `qa`) в политике не описываются — всегда `ALL_FIELDS`.
 
 **Functions:**
 - `auth_fields_allowed(entity, action, role)` → `ALL_FIELDS` or `set` of allowed fields

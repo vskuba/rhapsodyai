@@ -46,7 +46,9 @@ class TestWorkflowCRUD:
     async def test_workflow_list_sorted_by_title(self, client: httpx.AsyncClient):
         workflows = (await client.get("/workflow/list")).json()["result"]
         titles = [w["title"] for w in workflows]
-        assert titles == sorted(titles)
+        # MySQL сортирует по utf8mb4_unicode_ci — регистр не учитывается, поэтому
+        # `sorted()` по кодпоинтам расходился бы на именах вида `planning_*` и `Task: ...`
+        assert titles == sorted(titles, key=str.casefold)
 
     # --- create ---
 

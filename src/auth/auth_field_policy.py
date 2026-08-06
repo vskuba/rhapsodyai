@@ -1,9 +1,11 @@
+from src.auth.auth_role import auth_role_is_full
+
 # '*' = все поля
 ALL_FIELDS = '*'
 
 # Политика полей: entity -> action ('write'|'read') -> role -> набор полей.
-# Роли динамические (таблица `role`), поэтому '*' — fallback для любой не-админской роли.
-# admin проверять не нужно — он всегда получает ALL_FIELDS в auth_allowed_fields.
+# Роли динамические (таблица `role`), поэтому '*' — fallback для любой урезанной роли.
+# Полноправные роли (`admin`, `qa`) сюда не попадают — им ALL_FIELDS в auth_fields_allowed.
 AUTH_FIELD_POLICY = {
     'agent_workflow_variable_public': {
         'fields': {'name', 'title', 'description', 'default', 'node_id', 'position', 'type', 'role_ids', 'workflow_ids'},
@@ -21,7 +23,7 @@ AUTH_FIELD_POLICY = {
 
 def auth_fields_allowed(entity: str, action: str, role: str):
     """Вернёт ALL_FIELDS или set разрешённых для роли полей."""
-    if role == 'admin':
+    if auth_role_is_full(role):
         return ALL_FIELDS
     policy = AUTH_FIELD_POLICY.get(entity, {}).get(action, {})
     return policy.get(role, policy.get('*', set()))

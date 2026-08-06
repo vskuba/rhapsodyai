@@ -4,6 +4,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_field_policy import ALL_FIELDS, auth_fields_filter_for_update, auth_fields_allowed
 from src.auth.auth_permission import AuthPermission
+from src.auth.auth_role import auth_role_is_full
 
 router = APIRouter()
 
@@ -26,7 +27,7 @@ async def variable_list(
     """
     params = []
 
-    if user.role != "admin":
+    if not auth_role_is_full(user.role):
         # Только переменные в нодах текущего пользователя
         sql += " AND v.node_id IN (SELECT node_id FROM user_node WHERE user_id = %s)"
         params.append(user.user_id)

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from src.auth.auth_role import auth_role_is_full
 
 router = APIRouter()
 
@@ -51,7 +52,7 @@ async def session_list(
             sql += " AND companion_id = %s"
             params.append(json_request.companion_id)
 
-        if user.role != 'admin':
+        if not auth_role_is_full(user.role):
             sql += f" AND {_agent_role_condition()}"
             params.append(user.role)
 
@@ -69,7 +70,7 @@ async def session_kind_types_list(
 ):
     sql = "SELECT DISTINCT kind_type FROM agent_session"
     params = []
-    if user.role != 'admin':
+    if not auth_role_is_full(user.role):
         sql += f" WHERE {_agent_role_condition()}"
         params.append(user.role)
     sql += " ORDER BY kind_type ASC"
@@ -111,7 +112,7 @@ async def session_last(
             sql += " AND companion_id = %s"
             params.append(json_request.companion_id)
 
-        if user.role != 'admin':
+        if not auth_role_is_full(user.role):
             sql += f" AND {_agent_role_condition()}"
             params.append(user.role)
 
@@ -145,7 +146,7 @@ async def session_last_uuid(
             sql += " AND companion_id = %s"
             params.append(json_request.companion_id)
 
-        if user.role != 'admin':
+        if not auth_role_is_full(user.role):
             sql += f" AND {_agent_role_condition()}"
             params.append(user.role)
 
@@ -175,7 +176,7 @@ async def session_messages(
         """
         params = [json_request.session_uuid]
 
-        if user.role != 'admin':
+        if not auth_role_is_full(user.role):
             sql += f" AND {_agent_role_condition('s')}"
             params.append(user.role)
 
@@ -216,7 +217,7 @@ async def session_delete(
         sql = "DELETE FROM agent_session WHERE session_uuid = %s"
         params = [session_uuid]
 
-        if user.role != 'admin':
+        if not auth_role_is_full(user.role):
             sql += f" AND {_agent_role_condition()}"
             params.append(user.role)
 

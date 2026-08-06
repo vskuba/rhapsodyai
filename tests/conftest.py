@@ -5,7 +5,7 @@ import httpx
 import uuid
 from typing import AsyncGenerator
 
-from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH
+from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH, TEST_AUTH_ROLE
 
 
 @pytest.fixture(scope="session")
@@ -110,16 +110,26 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
 
 @pytest.fixture(scope="session", autouse=True)
 def create_test_user():
-    """Create a dedicated test user (TEST_USERNAME / TEST_PASSWORD from .env) with admin role.
-    Deletes the user after the test session ends."""
+    """
+    Убедиться, что QA-учётка из `TEST_AUTH` существует, и починить ей пароль.
+
+    Пользователя (`vova.tkachenko`, роль `qa`) заводит человек, а не тесты, поэтому
+    после прогона он **не удаляется** — снести чужую учётку сюита не вправе. Раньше
+    фикстура создавала `test_runner` и удаляла его в конце; вдобавок его сносил
+    `_cleanup_test_users()` по префиксу `test_`, и следующий прогон падал на 401.
+
+    Пароль перезаписываем: он живёт в `.env`, и расхождение с БД — единственная
+    причина, по которой вся сюита валится на логине, а выглядит это как
+    «сломалась авторизация».
+    """
     import os
     from dotenv import load_dotenv
     load_dotenv()
     os.environ['MYSQL_HOST'] = 'localhost'
     os.environ['MYSQL_PORT'] = '3302'
 
-    test_username = os.environ.get('TEST_USERNAME', '')
-    test_password = os.environ.get('TEST_PASSWORD', '')
+    test_username = TEST_AUTH['username']
+    test_password = TEST_AUTH['password']
     if not test_username or not test_password:
         yield
         return
@@ -129,33 +139,31 @@ def create_test_user():
 
     password_hash = bcrypt.hashpw(test_password.encode(), bcrypt.gensalt()).decode()
 
-    async def _create():
+    async def _ensure():
         async with mysql_get_db_async() as db:
             await db.execute("SELECT id FROM `user` WHERE username = %s", (test_username,))
             row = await db.fetchone()
-            if not row:
+            if row:
                 await db.execute(
-                    "INSERT INTO `user` (username, email, password_hash, role_id, dynamic) VALUES (%s, %s, %s, 1, 1)",
-                    (test_username, f"{test_username}@test.local", password_hash)
+                    "UPDATE `user` SET password_hash = %s WHERE id = %s", (password_hash, row['id']))
+            else:
+                # Роль ищем по имени: id роли `qa` на разных инсталляциях разный.
+                await db.execute("SELECT id FROM `role` WHERE name = %s", (TEST_AUTH_ROLE,))
+                role = await db.fetchone()
+                await db.execute(
+                    "INSERT INTO `user` (username, email, password_hash, role_id, dynamic) "
+                    "VALUES (%s, %s, %s, %s, 0)",
+                    (test_username, f"{test_username}@test.local", password_hash,
+                     role['id'] if role else None)
                 )
-                await db.connection.commit()
-
-    async def _delete():
-        async with mysql_get_db_async() as db:
-            await db.execute("DELETE FROM `user` WHERE username = %s", (test_username,))
             await db.connection.commit()
-        await mysql_pool_close()
 
     loop = asyncio.new_event_loop()
-    loop.run_until_complete(_create())
+    loop.run_until_complete(_ensure())
     loop.run_until_complete(mysql_pool_close())
     loop.close()
 
     yield
-
-    loop2 = asyncio.new_event_loop()
-    loop2.run_until_complete(_delete())
-    loop2.close()
 
 
 @pytest.fixture(scope="session", autouse=True)

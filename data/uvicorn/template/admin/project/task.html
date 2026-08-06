@@ -298,28 +298,91 @@
 
     .td-id     { color: #94a3b8; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .td-title  { font-weight: 600; color: #0f172a; line-height: 1.4; }
+
+    /* ── Дерево задач (task.parent_id) ──
+       Вложенность живёт внутри колонки «Название», а не отдельной колонкой:
+       порядок и ширины колонок сохранены в localStorage по их количеству,
+       и девятая колонка обнулила бы всем сохранённую раскладку. */
+    .tree-title { display: flex; align-items: flex-start; gap: 2px; min-width: 0; }
+    .tree-name  { min-width: 0; overflow-wrap: anywhere; }
+
+    /* Строка бывает высокой (длинное описание, список целей), поэтому линии
+       рисуются с запасом и обрезаются самой ячейкой — иначе вертикали висели бы
+       короткими штрихами и дерево рассыпалось. */
+    /* Место под «＋» держим всегда, а не только на hover: иначе строка при
+       наведении перевёрстывалась бы и таблица дёргалась. */
+    .task-table td.td-title { overflow: hidden; position: relative; padding-right: 22px; }
+    .tree-rail, .tree-elbow { position: relative; width: 16px; flex: none; align-self: stretch; }
+    .tree-rail::before {
+        content: ''; position: absolute; left: 7px; top: -400px; bottom: -400px;
+        border-left: 1px solid #d8e0ea;
+    }
+    .tree-rail-blank::before { display: none; }
+    /* Локоть: вертикаль сверху до середины первой строки названия + горизонталь
+       к тексту. У последнего в ветке вертикаль обрывается, у остальных идёт дальше. */
+    .tree-elbow::before {
+        content: ''; position: absolute; left: 7px; top: -400px; height: 409px;
+        border-left: 1px solid #d8e0ea;
+    }
+    .tree-elbow:not(.tree-elbow-last)::before { bottom: -400px; height: auto; }
+    .tree-elbow::after {
+        content: ''; position: absolute; left: 7px; top: 8px; width: 8px;
+        border-top: 1px solid #d8e0ea;
+    }
+
+    .tree-caret {
+        flex: none;
+        width: 16px; height: 18px;
+        padding: 0;
+        border: 0; background: none; cursor: pointer;
+        color: #94a3b8; font-size: 10px; line-height: 18px;
+        transition: transform .12s, color .12s;
+    }
+    .tree-caret:hover { color: #4f46e5; }
+    .tree-caret.collapsed { transform: rotate(-90deg); color: #6366f1; }
+    .tree-caret-gap { flex: none; width: 16px; }
+
+    /* Пилюля и «＋» лежат внутри .tree-name, а не рядом с ним: как flex-соседи
+       они улетали к правому краю колонки, отрываясь от названия. */
+    .tree-kids {
+        display: inline-block;
+        margin-left: 6px;
+        vertical-align: 1px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: #eef2ff; color: #4f46e5;
+        font-size: 10px; font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    .tree-kids-done { background: #dcfce7; color: #15803d; }
+
+    .task-table tbody tr.tree-child > td:first-child { box-shadow: inset 3px 0 0 var(--row-accent, transparent); }
+    .tree-child .td-id    { opacity: .75; }
+    .tree-child .tree-name { font-weight: 500; }
+    /* Предок, показанный только как контекст для найденной подзадачи. */
+    .tree-ghost > td { opacity: .5; }
+    .tree-ghost:hover > td { opacity: 1; }
+
+    /* ── Баннер «подзадача к …» в форме добавления ── */
+    .add-parent-banner {
+        display: flex; align-items: center; gap: 8px;
+        margin-bottom: 12px; padding: 7px 10px;
+        background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 7px;
+        font-size: 12px;
+    }
+    .ap-label { color: #6366f1; font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: .05em; }
+    .ap-task  { font-weight: 600; color: #312e81; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ap-clear {
+        margin-left: auto; border: 0; background: none; cursor: pointer;
+        color: #6366f1; font-size: 13px; line-height: 1; padding: 2px 4px;
+    }
+    .ap-clear:hover { color: #ef4444; }
     .td-desc   { color: #64748b; }
     .td-date   { white-space: nowrap; color: #94a3b8; font-size: 12px; font-variant-numeric: tabular-nums; }
     /* Buttons wrap onto a new line instead of overflowing a narrow column */
     .td-act    { text-align: right; white-space: normal; }
     .td-act > button { white-space: nowrap; margin: 0 0 4px 4px; }
-    .td-project { font-size: 12px; }
-
-    .task-project-tag {
-        display: block;
-        max-width: 100%;
-        font-size: 11px;
-        font-weight: 600;
-        color: #4f46e5;
-        background: #eef2ff;
-        border-radius: 5px;
-        padding: 2px 7px;
-        line-height: 1.6;
-        box-sizing: border-box;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
 
     /* ── Status badge ── */
     .task-status-badge {
@@ -379,6 +442,23 @@
         transition: all .12s;
     }
     .btn-row-del:hover { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
+
+    /* «Добавить подзадачу» живёт в колонке названия, а не среди действий:
+       четвёртая кнопка не влезала в узкую колонку и переносила её на две строки,
+       раздувая высоту каждой строки таблицы. */
+    .btn-row-sub {
+        position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+        width: 18px; height: 18px;
+        padding: 0;
+        border: 1px solid #e2e8f0; border-radius: 5px;
+        background: #fff; color: #94a3b8;
+        font-size: 12px; font-weight: 700; line-height: 18px;
+        cursor: pointer;
+        opacity: 0; transition: opacity .12s, color .12s, background .12s;
+    }
+    .task-row:hover .btn-row-sub { opacity: 1; }
+    .btn-row-sub:hover { background: #eef2ff; color: #4f46e5; }
+    .btn-row-sub:focus-visible { opacity: 1; outline: 2px solid #c7d2fe; }
 
     /* ── Inline goals (list column) ── */
     .inline-goals { display: flex; flex-direction: column; gap: 2px; }
@@ -448,7 +528,6 @@
         grid-template-columns: 1fr 1fr;
         gap: 12px;
         margin-bottom: 12px;
-        max-width: 1100px;
     }
     .task-edit-grid .span2 { grid-column: 1 / -1; }
 
@@ -517,6 +596,15 @@
         display: -webkit-box;
         -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
+    }
+
+    /* ── Plan (expanded row, между описанием и целями) ── */
+    .plan-hint { font-weight: 400; text-transform: none; color: #94a3b8; letter-spacing: 0; }
+    .task-plan-input {
+        min-height: 92px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.55;
     }
 
     /* ── Goals editor (expanded row) ── */
@@ -596,6 +684,115 @@
     }
     .task-goal-item:hover .btn-goal-icon { color: #94a3b8; }
     .btn-goal-icon.del:hover { color: #dc2626; background: #fee2e2; }
+
+    /* ── Конвейер агентов ── */
+    /* Ортогонально `status`: тот — человеческий kanban, этот — стадия автоматики. */
+    .pipe-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 5px;
+        margin-top: 4px;
+        white-space: nowrap;
+        letter-spacing: .02em;
+        border: 1px solid transparent;
+    }
+    .pipe-chip::before { content: '⚙'; font-size: 9px; opacity: .7; }
+    .pipe-new              { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+    .pipe-planning         { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+    .pipe-pending_approval { background: #fef3c7; color: #a16207; border-color: #fde68a; }
+    .pipe-approved         { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+    .pipe-split            { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+    .pipe-done             { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+    .pipe-failed           { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+    .pipe-planning::before, .pipe-split::before { animation: spin 2.4s linear infinite; }
+
+    .task-pipeline-section {
+        grid-column: 1 / -1;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #fff;
+        overflow: hidden;
+    }
+    .task-pipeline-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 12px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 10px;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+    .task-pipeline-body { padding: 10px 12px; font-size: 12px; color: #334155; }
+    .task-pipeline-muted { color: #94a3b8; font-style: italic; }
+
+    .btn-pipe {
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #475569;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all .12s;
+    }
+    .btn-pipe:hover { background: #f8fafc; border-color: #cbd5e1; }
+    .btn-pipe.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+    .btn-pipe.primary:hover { background: #4338ca; border-color: #4338ca; }
+    .btn-pipe.ok { color: #15803d; border-color: #86efac; background: #f0fdf4; }
+    .btn-pipe.ok:hover { background: #dcfce7; }
+    .btn-pipe.no { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+    .btn-pipe.no:hover { background: #fee2e2; }
+
+    .pipe-plan-text {
+        white-space: pre-wrap;
+        background: #f8fafc;
+        border: 1px solid #f1f5f9;
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 10px;
+        line-height: 1.5;
+        color: #334155;
+    }
+    .pipe-subtask {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 5px 6px;
+        border-radius: 6px;
+        line-height: 1.45;
+    }
+    .pipe-subtask:hover { background: #f8fafc; }
+    .pipe-subtask-pos { color: #cbd5e1; font-variant-numeric: tabular-nums; font-size: 11px; flex-shrink: 0; }
+    .pipe-subtask-title { flex: 1; word-break: break-word; }
+    .pipe-sub-state {
+        font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+        white-space: nowrap; flex-shrink: 0;
+    }
+    .pipe-sub-planned    { background: #f1f5f9; color: #64748b; }
+    .pipe-sub-developing { background: #ede9fe; color: #6d28d9; }
+    .pipe-sub-qa_pending { background: #fef3c7; color: #a16207; }
+    .pipe-sub-failed_qa  { background: #ffedd5; color: #c2410c; }
+    .pipe-sub-done       { background: #dcfce7; color: #15803d; }
+    .pipe-sub-blocked    { background: #fee2e2; color: #b91c1c; }
+    .pipe-attempts { font-size: 10px; color: #94a3b8; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+    .pipe-error {
+        color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca;
+        border-radius: 6px; padding: 6px 9px; margin-top: 8px; line-height: 1.45;
+    }
+    .pipe-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
+                    letter-spacing: .04em; margin: 10px 0 4px; }
+    .pipe-goal { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px; line-height: 1.45; }
+    .pipe-goal-mark { color: #16a34a; flex-shrink: 0; }
+    .pipe-goal-text { flex: 1; word-break: break-word; }
 </style>
 {% endblock %}
 
@@ -622,6 +819,7 @@
 
     <!-- Add form -->
     <div class="task-add-form" id="taskAddForm">
+        <div class="add-parent-banner" id="addParentBanner" style="display:none"></div>
         <div class="task-add-form-row">
             <div class="form-group">
                 <label>Название</label>
@@ -685,9 +883,21 @@ async function taskFetch(url, opts = {}) {
         headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
         ...opts,
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) {
+        // Причина отказа лежит в detail (например, «нельзя перенести задачу
+        // внутрь её собственной подзадачи») — без неё пользователь видит
+        // бесполезное «HTTP 400» и не понимает, что именно не так.
+        let detail = '';
+        try { detail = (await r.json())?.detail || ''; } catch(e) {}
+        throw new Error(detail || `HTTP ${r.status}`);
+    }
     return r.json();
 }
+
+// Выбранный проект помнится между перезагрузками: страница задач — рабочее место
+// внутри одного проекта, а не список всего сразу, и каждый раз возвращаться
+// к «Без проекта» после F5 бессмысленно.
+const PROJECT_KEY = 'task_project_id';
 
 async function loadProjects() {
     const sel = document.getElementById('taskProjectSelect');
@@ -700,11 +910,16 @@ async function loadProjects() {
             sel.innerHTML = '<option value="">Нет проектов</option>';
             return;
         }
-        sel.innerHTML = '<option value="0">Все проекты</option>' + projects.map(p =>
+        // «Без проекта» вместо «Все проекты»: колонки с названием проекта больше
+        // нет, и вперемешку задачи разных проектов стали неразличимы.
+        sel.innerHTML = '<option value="0">Без проекта</option>' + projects.map(p =>
             `<option value="${p.id}">${esc(p.title)}</option>`
         ).join('');
-        sel.selectedIndex = 0;
-        selectProjectById(0, 'Все проекты');
+        // Проект из прошлой сессии мог быть удалён — сверяем со списком опций
+        // и в этом случае молча откатываемся на «Без проекта».
+        const saved = localStorage.getItem(PROJECT_KEY);
+        sel.value = [...sel.options].some(o => o.value === saved) ? saved : '0';
+        selectProjectById(+sel.value, sel.options[sel.selectedIndex].text);
     } catch(e) {
         sel.innerHTML = '<option value="">Ошибка загрузки</option>';
     }
@@ -712,6 +927,7 @@ async function loadProjects() {
 
 function selectProjectById(id, title) {
     _taskProjectId = id || 0;
+    localStorage.setItem(PROJECT_KEY, String(_taskProjectId));
     document.getElementById('newTaskStatus').innerHTML = statusOptions('pending');
     loadTasks();
 }
@@ -719,8 +935,7 @@ function selectProjectById(id, title) {
 async function loadTasks() {
     document.getElementById('taskTableWrap').innerHTML = '<div class="task-placeholder">Загрузка...</div>';
     try {
-        const url = _taskProjectId ? `/tasks/${_taskProjectId}` : '/tasks';
-        const data = await taskFetch(url);
+        const data = await taskFetch(`/tasks/${_taskProjectId}`);
         _tasks = data.tasks || [];
         renderTable();
     } catch(e) {
@@ -729,15 +944,107 @@ async function loadTasks() {
     }
 }
 
-// Tasks left after the search box and the status chip are applied.
-function visibleTasks() {
+// ── Дерево задач ───────────────────────────────────────────────────────────────
+// task.parent_id — человеческая декомпозиция «эпик → подзадачи» любой глубины.
+// Не путать с подзадачами конвейера (project_task_subtask) в блоке «Конвейер агентов»:
+// те принадлежат плану менеджера и живут внутри одной задачи.
+const TREE_KEY = 'taskTreeCollapsed';
+let _collapsed = new Set();
+let _newTaskParentId = null;
+
+function treeCollapsedLoad() {
+    try { _collapsed = new Set(JSON.parse(localStorage.getItem(TREE_KEY)) || []); }
+    catch(e) { _collapsed = new Set(); }
+}
+
+function toggleCollapse(id) {
+    if (_collapsed.has(id)) _collapsed.delete(id); else _collapsed.add(id);
+    localStorage.setItem(TREE_KEY, JSON.stringify([..._collapsed]));
+    renderTable();
+}
+
+// Подошла ли задача под поиск и фильтр статуса.
+function taskMatches(t) {
+    if (_statusFilter && t.status !== _statusFilter) return false;
     const q = (document.getElementById('taskSearch')?.value || '').trim().toLowerCase();
-    return _tasks.filter(t => {
-        if (_statusFilter && t.status !== _statusFilter) return false;
-        if (!q) return true;
-        return [t.title, t.description, t.report, _projectsMap[t.project_id]]
-            .some(v => String(v || '').toLowerCase().includes(q));
+    if (!q) return true;
+    return [t.title, t.description, t.report]
+        .some(v => String(v || '').toLowerCase().includes(q));
+}
+
+function taskCompare(a, b) {
+    const oa = STATUS_ORDER[a.status] ?? 99;
+    const ob = STATUS_ORDER[b.status] ?? 99;
+    if (oa !== ob) return oa - ob;
+    return new Date(b.created_at) - new Date(a.created_at);
+}
+
+// Все потомки задачи. Нужны и для удаления (БД каскадит), и чтобы не дать
+// перенести задачу внутрь собственной ветки.
+function treeDescendants(id) {
+    const out = new Set();
+    const stack = [id];
+    while (stack.length) {
+        const cur = stack.pop();
+        _tasks.forEach(x => {
+            if (x.parent_id === cur && !out.has(x.id)) { out.add(x.id); stack.push(x.id); }
+        });
+    }
+    return out;
+}
+
+// Порядок отрисовки: родитель, сразу за ним его ветка, и так вниз.
+// Возвращает [{t, depth, hasKids, kidsTotal, kidsDone, ghost, isLast, rails}].
+function treeRows() {
+    const ids      = new Set(_tasks.map(t => t.id));
+    const byParent = new Map();
+    const parentOf = new Map();
+
+    _tasks.forEach(t => {
+        // Родитель мог не попасть в выборку (другой проект) — тогда показываем
+        // ветку как корневую, иначе задача исчезла бы из таблицы совсем.
+        const p = (t.parent_id && ids.has(t.parent_id)) ? t.parent_id : null;
+        parentOf.set(t.id, p);
+        if (!byParent.has(p)) byParent.set(p, []);
+        byParent.get(p).push(t);
     });
+
+    // Подошедшие задачи тянут за собой предков: иначе ветка повисла бы без
+    // родителя и было бы непонятно, к чему она относится.
+    const hit  = new Set(_tasks.filter(taskMatches).map(t => t.id));
+    const show = new Set();
+    hit.forEach(id => {
+        let cur = id;
+        while (cur != null && !show.has(cur)) { show.add(cur); cur = parentOf.get(cur); }
+    });
+
+    const filtering = !!_statusFilter || !!(document.getElementById('taskSearch')?.value || '').trim();
+    const out = [];
+
+    const walk = (parentId, depth, rails) => {
+        const list = (byParent.get(parentId) || []).filter(t => show.has(t.id)).sort(taskCompare);
+        list.forEach((t, i) => {
+            const kidsAll = byParent.get(t.id) || [];
+            const isLast  = i === list.length - 1;
+            out.push({
+                t, depth, rails, isLast,
+                hasKids:   kidsAll.length > 0,
+                // Пока идёт фильтр, сворачивать нечего: ветка и так показана не
+                // целиком, а каретка обещала бы действие, которого не будет.
+                expandable: !filtering && kidsAll.length > 0,
+                kidsTotal: kidsAll.length,
+                kidsDone:  kidsAll.filter(k => k.status === 'done').length,
+                ghost:     !hit.has(t.id),
+            });
+            // При активном фильтре свёрнутость игнорируем — иначе найденное
+            // спряталось бы внутри свёрнутого родителя и поиск бы врал.
+            const collapsed = !filtering && _collapsed.has(t.id);
+            if (!collapsed && kidsAll.some(k => show.has(k.id))) walk(t.id, depth + 1, rails.concat(isLast));
+        });
+    };
+    walk(null, 0, []);
+
+    return out;
 }
 
 function renderChips() {
@@ -760,8 +1067,10 @@ function renderTable() {
     const wrap = document.getElementById('taskTableWrap');
     renderChips();
 
-    const rows = visibleTasks();
-    document.getElementById('taskCountBadge').textContent = rows.length;
+    const rows = treeRows();
+    // В счётчике только реально подошедшие: предки-контейнеры показаны как
+    // контекст и раздували бы число найденного.
+    document.getElementById('taskCountBadge').textContent = rows.filter(r => !r.ghost).length;
 
     if (!_tasks.length) {
         wrap.innerHTML = '<div class="task-placeholder"><span class="task-placeholder-icon">✅</span>Нет задач — нажмите «+ Добавить»</div>';
@@ -772,12 +1081,6 @@ function renderTable() {
         return;
     }
 
-    rows.sort((a, b) => {
-        const oa = STATUS_ORDER[a.status] ?? 99;
-        const ob = STATUS_ORDER[b.status] ?? 99;
-        if (oa !== ob) return oa - ob;
-        return new Date(b.created_at) - new Date(a.created_at);
-    });
     wrap.innerHTML = `
         <table class="task-table">
             <thead>
@@ -786,14 +1089,13 @@ function renderTable() {
                     <th data-col="status">Статус</th>
                     <th data-col="title">Название</th>
                     <th data-col="desc">Описание</th>
-                    <th data-col="project">Проект</th>
                     <th data-col="goals">Цели</th>
                     <th data-col="date">Создана</th>
                     <th data-col="act" style="text-align:right">Действия</th>
                 </tr>
             </thead>
             <tbody id="taskTbody">
-                ${rows.map(t => renderRow(t)).join('')}
+                ${rows.map(r => renderRow(r)).join('')}
             </tbody>
         </table>`;
     colOrderApply(colOrderLoad());
@@ -845,18 +1147,49 @@ function renderInlineGoals(t) {
     return `<div class="inline-goals">${progress}${items}</div>`;
 }
 
-function renderRow(t) {
+// Отступ ветки: направляющие предков плюс «локоть» самой строки. У предка,
+// который ещё не последний среди своих, линия продолжается вниз — иначе ветка
+// выглядит оборванной.
+// Отступ строки: слоты 0..depth-2 — вертикальные линии предков, слот depth-1 —
+// уголок к родителю. В слоте j идёт линия предка глубины j+1 (его собственный
+// уголок стоит в слоте j), поэтому срез начинается с единицы, а не с нуля:
+// rails[0] описывает корневого предка, чья линия ниже уже не рисуется.
+function treeIndent(row) {
+    if (!row.depth) return '';
+    const rails = row.rails.slice(1, row.depth)
+        .map(wasLast => `<span class="tree-rail${wasLast ? ' tree-rail-blank' : ''}"></span>`).join('');
+    return `${rails}<span class="tree-elbow${row.isLast ? ' tree-elbow-last' : ''}"></span>`;
+}
+
+// Каретка сворачивания. У бездетных на её месте распорка, иначе названия
+// «прыгали» бы по горизонтали от строки к строке.
+function treeCaret(row) {
+    if (!row.expandable) return '<span class="tree-caret-gap"></span>';
+    const isCollapsed = _collapsed.has(row.t.id);
+    return `<button class="tree-caret${isCollapsed ? ' collapsed' : ''}"
+                    onclick="event.stopPropagation();toggleCollapse(${row.t.id})"
+                    title="${isCollapsed ? 'Развернуть' : 'Свернуть'} подзадачи">▾</button>`;
+}
+
+function renderRow(row) {
+    const t = row.t;
     const badge = `<span class="task-status-badge status-${t.status}">${STATUS_LABELS[t.status] || t.status}</span>`;
     const dateStr = t.created_at ? t.created_at.substring(0, 10) : '';
-    const projectName = esc(_projectsMap[t.project_id] || '');
-    const projectTag = projectName ? `<span class="task-project-tag" title="${projectName}">${projectName}</span>` : '';
+    const kidsPill = row.hasKids
+        ? `<span class="tree-kids${row.kidsDone === row.kidsTotal ? ' tree-kids-done' : ''}"
+                 title="Выполнено подзадач">${row.kidsDone}/${row.kidsTotal}</span>`
+        : '';
+    const cls = ['task-row'];
+    if (row.depth) cls.push('tree-child');
+    if (row.ghost) cls.push('tree-ghost');
     return `
-        <tr class="task-row" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
+        <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
             <td class="td-id" data-col="id">#${t.id}</td>
-            <td class="td-status" data-col="status">${badge}</td>
-            <td class="td-title" data-col="title">${esc(t.title)}</td>
+            <td class="td-status" data-col="status">${badge}${renderPipeChip(t)}</td>
+            <td class="td-title" data-col="title">
+                <div class="tree-title">${treeIndent(row)}${treeCaret(row)}<span class="tree-name">${esc(t.title)}${kidsPill}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
+            </td>
             <td class="td-desc" data-col="desc"><div class="task-desc-preview">${esc(t.description)}</div></td>
-            <td class="td-project" data-col="project">${projectTag}</td>
             <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${renderInlineGoals(t)}</td>
             <td class="td-date" data-col="date">${dateStr}</td>
             <td class="td-act" data-col="act">
@@ -865,7 +1198,7 @@ function renderRow(t) {
             </td>
         </tr>
         <tr class="task-edit-row" id="ter-${t.id}">
-            <td class="task-edit-cell" colspan="8">
+            <td class="task-edit-cell" colspan="7">
                 <div class="task-edit-grid">
                     <div class="form-group">
                         <label>Название</label>
@@ -876,11 +1209,19 @@ function renderRow(t) {
                         <select id="ts-${t.id}">${statusOptions(t.status)}</select>
                     </div>
                     <div class="form-group span2">
+                        <label>Родительская задача <span class="plan-hint">— перенос по дереву</span></label>
+                        <select id="tp-${t.id}">${parentOptions(t)}</select>
+                    </div>
+                    <div class="form-group span2">
                         <label>Описание</label>
                         <div class="edit-desc-wrap">
                             <button class="edit-mic-btn task-mic-btn" id="editMicBtn-${t.id}" onclick="event.stopPropagation();_voice.editToggle(${t.id})" title="Голосовой ввод">🎤</button>
                             <textarea id="td-${t.id}">${esc(t.description)}</textarea>
                         </div>
+                    </div>
+                    <div class="form-group span2">
+                        <label>План <span class="plan-hint">— его пишет менеджер по описанию задачи</span></label>
+                        <textarea id="tplan-${t.id}" class="task-plan-input" placeholder="Плана пока нет — менеджер составит его на ближайшем тике конвейера">${esc(parsePlanText(t.pipeline_plan))}</textarea>
                     </div>
                     <div class="task-goals-section">
                         <div class="task-goals-header">
@@ -888,6 +1229,15 @@ function renderRow(t) {
                             <button class="btn-add-goal" onclick="addGoal(${t.id})">+ Добавить цель</button>
                         </div>
                         <div class="task-goals-list" id="goals-${t.id}"></div>
+                    </div>
+                    <div class="task-pipeline-section">
+                        <div class="task-pipeline-header">
+                            <span>Конвейер агентов</span>
+                            <span id="pipe-actions-${t.id}" style="display:flex;gap:6px"></span>
+                        </div>
+                        <div class="task-pipeline-body" id="pipe-body-${t.id}">
+                            <span class="task-pipeline-muted">Загрузка...</span>
+                        </div>
                     </div>
                     <div class="form-group span2">
                         <label>Отчёт о выполненных работах</label>
@@ -918,6 +1268,31 @@ function statusOptions(selected) {
     ).join('');
 }
 
+// Кого можно назначить родителем. Себя и свою же ветку исключаем — сервер такой
+// перенос всё равно отвергнет, но показывать заведомо нерабочий вариант незачем.
+// Кандидаты в родители. Плоский список из полусотни строк выбирать неудобно,
+// поэтому идём в том же порядке, что и таблица, с отступом по глубине.
+// Сама задача и её ветка исключены — иначе получился бы цикл, и сервер всё
+// равно ответил бы отказом.
+function parentOptions(t) {
+    const banned = treeDescendants(t.id);
+    banned.add(t.id);
+    const opts = [`<option value=""${t.parent_id ? '' : ' selected'}>— корневая задача —</option>`];
+    const walk = (parentId, depth) => {
+        _tasks
+            .filter(x => (x.parent_id || null) === parentId && x.project_id === t.project_id)
+            .sort(taskCompare)
+            .forEach(x => {
+                if (banned.has(x.id)) return;  // ветку целиком, вместе с потомками
+                opts.push(`<option value="${x.id}"${x.id === t.parent_id ? ' selected' : ''}>`
+                    + `${'  '.repeat(depth)}${depth ? '└ ' : ''}#${x.id} ${esc(x.title)}</option>`);
+                walk(x.id, depth + 1);
+            });
+    };
+    walk(null, 0);
+    return opts.join('');
+}
+
 function toggleEdit(id) {
     const row = document.getElementById(`ter-${id}`);
     const tr  = document.getElementById(`tr-${id}`);
@@ -929,6 +1304,7 @@ function toggleEdit(id) {
         tr.classList.add('expanded');
         const task = _tasks.find(t => t.id === id);
         if (task) { _goalsCache[id] = parseGoals(task.goals); renderGoals(id); }
+        pipelineLoad(id);
     }
 }
 
@@ -939,9 +1315,37 @@ function toggleAddForm() {
         document.getElementById('newTaskTitle').focus();
     } else {
         _aiPendingGoals = null;
+        _newTaskParentId = null;
+        addParentBannerRender();
         const prev = document.getElementById('aiGoalsPreview');
         if (prev) prev.remove();
     }
+}
+
+// «＋» в строке открывает ту же форму добавления, только с привязкой к родителю:
+// так подзадача получает и голосовой ввод, и ИИ-помощника, без второй формы.
+function subtaskAdd(parentId) {
+    _newTaskParentId = parentId;
+    document.getElementById('taskAddForm').classList.add('open');
+    addParentBannerRender();
+    document.getElementById('newTaskTitle').focus();
+}
+
+function subtaskAddCancel() {
+    _newTaskParentId = null;
+    addParentBannerRender();
+}
+
+function addParentBannerRender() {
+    const el = document.getElementById('addParentBanner');
+    if (!el) return;
+    const parent = _tasks.find(t => t.id === _newTaskParentId);
+    if (!parent) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'flex';
+    el.innerHTML = `
+        <span class="ap-label">Подзадача к</span>
+        <span class="ap-task" title="${esc(parent.title)}">#${parent.id} ${esc(parent.title)}</span>
+        <button class="ap-clear" onclick="subtaskAddCancel()" title="Создать как обычную задачу">✕</button>`;
 }
 
 async function createTask() {
@@ -955,8 +1359,13 @@ async function createTask() {
                 title,
                 description: document.getElementById('newTaskDesc').value,
                 status: document.getElementById('newTaskStatus').value,
+                parent_id: _newTaskParentId,
             }),
         });
+        // Родитель мог быть свёрнут — иначе новая подзадача «не появилась бы».
+        if (_newTaskParentId) _collapsed.delete(_newTaskParentId);
+        _newTaskParentId = null;
+        addParentBannerRender();
         // Apply AI-generated goals if any
         if (_aiPendingGoals?.length) {
             await taskFetch(`/task/${data.task.id}`, {
@@ -984,15 +1393,17 @@ async function saveTask(id) {
             body: JSON.stringify({
                 title:       document.getElementById(`tt-${id}`).value,
                 description: document.getElementById(`td-${id}`).value,
+                plan_text:   document.getElementById(`tplan-${id}`).value,
                 goals:       JSON.stringify(_goalsCache[id] || []),
                 status:      document.getElementById(`ts-${id}`).value,
                 report:      document.getElementById(`trep-${id}`).value,
+                parent_id:   document.getElementById(`tp-${id}`).value || null,
             }),
         });
         const idx = _tasks.findIndex(t => t.id === id);
         if (idx !== -1) _tasks[idx] = data.task;
         renderTable();
-    } catch(e) { alert('Ошибка сохранения'); }
+    } catch(e) { alert(e.message || 'Ошибка сохранения'); }
 }
 
 async function quickStatus(id, status) {
@@ -1008,16 +1419,32 @@ async function quickStatus(id, status) {
 }
 
 async function deleteTask(id) {
-    if (!confirm('Удалить задачу?')) return;
+    // В БД у parent_id стоит ON DELETE CASCADE — вся ветка уйдёт вместе с
+    // родителем. Молча такое делать нельзя, поэтому считаем потомков заранее.
+    const kids = treeDescendants(id);
+    const msg = kids.size
+        ? `Удалить задачу вместе с подзадачами? Будет удалено ещё ${kids.size} шт. Это необратимо.`
+        : 'Удалить задачу?';
+    if (!confirm(msg)) return;
     try {
         await taskFetch(`/task/${id}`, { method: 'DELETE' });
-        _tasks = _tasks.filter(t => t.id !== id);
+        _tasks = _tasks.filter(t => t.id !== id && !kids.has(t.id));
         renderTable();
     } catch(e) { alert('Ошибка удаления'); }
 }
 
 function esc(s) {
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── План ──
+// В task.pipeline_plan лежит JSON {plan_text, subtasks}; форме нужен только текст.
+function parsePlanText(raw) {
+    if (!raw) return '';
+    try {
+        const v = JSON.parse(raw);
+        return v && typeof v === 'object' ? String(v.plan_text || '') : '';
+    } catch(e) { return ''; }
 }
 
 // ── Goals ──
@@ -1162,6 +1589,120 @@ function _refreshInlineGoals(taskId) {
     const task = _tasks.find(t => t.id === taskId);
     const cell = document.querySelector(`#tr-${taskId} [data-col="goals"]`);
     if (task && cell) cell.innerHTML = renderInlineGoals(task);
+}
+
+// ── Конвейер агентов ──
+// Отдельная ось от `status`: та — ручной kanban, эта — стадия автоматики.
+const PIPELINE_LABELS = {
+    new:              'Ожидает плана',
+    planning:         'Планирование',
+    pending_approval: 'На утверждении',
+    approved:         'Утверждён',
+    split:            'Выполняется',
+    done:             'Завершён',
+    failed:           'Сбой',
+};
+
+const SUBTASK_LABELS = {
+    planned:    'Запланирована',
+    developing: 'Разработка',
+    qa_pending: 'На проверке',
+    failed_qa:  'Не прошла QA',
+    done:       'Готово',
+    blocked:    'Заблокирована',
+};
+
+function renderPipeChip(t) {
+    if (!t.pipeline_state) return '';
+    const label = PIPELINE_LABELS[t.pipeline_state] || t.pipeline_state;
+    return `<div><span class="pipe-chip pipe-${t.pipeline_state}">${label}</span></div>`;
+}
+
+async function pipelineLoad(taskId) {
+    const body    = document.getElementById(`pipe-body-${taskId}`);
+    const actions = document.getElementById(`pipe-actions-${taskId}`);
+    if (!body) return;
+    try {
+        const data = await taskFetch(`/task/${taskId}/pipeline`);
+        _pipelineRender(taskId, data, body, actions);
+    } catch(e) {
+        body.innerHTML = '<span class="task-pipeline-muted">Не удалось загрузить состояние конвейера</span>';
+    }
+}
+
+async function pipelineAction(taskId, action) {
+    const body = document.getElementById(`pipe-body-${taskId}`);
+    if (body) body.innerHTML = '<span class="task-pipeline-muted">Применяю...</span>';
+    try {
+        await taskFetch(`/task/${taskId}/pipeline/${action}`, { method: 'POST' });
+    } catch(e) {
+        alert('Не удалось выполнить действие — возможно, состояние уже изменилось');
+    }
+    // Состояние задачи изменилось на сервере: перечитываем список, чтобы чип в строке не врал.
+    await loadTasks();
+    const row = document.getElementById(`ter-${taskId}`);
+    if (row?.classList.contains('open')) pipelineLoad(taskId);
+}
+
+function _pipelineRender(taskId, data, body, actions) {
+    const state = data.pipeline_state;
+
+    // План мог появиться уже после отрисовки строки — подставим, пока поле не трогали.
+    const planEl = document.getElementById(`tplan-${taskId}`);
+    if (planEl && !planEl.value.trim() && data.plan_text) planEl.value = data.plan_text;
+
+    if (actions) {
+        if (!state) {
+            actions.innerHTML = `<button class="btn-pipe primary" onclick="pipelineAction(${taskId},'start')">▶ В конвейер</button>`;
+        } else if (state === 'pending_approval') {
+            actions.innerHTML =
+                `<button class="btn-pipe ok" onclick="pipelineAction(${taskId},'approve')">✓ Утвердить</button>` +
+                `<button class="btn-pipe no" onclick="pipelineAction(${taskId},'reject')">✕ Отклонить</button>`;
+        } else {
+            actions.innerHTML = `<span class="pipe-chip pipe-${state}">${PIPELINE_LABELS[state] || state}</span>`;
+        }
+    }
+
+    if (!state) {
+        body.innerHTML = '<span class="task-pipeline-muted">Задача вне конвейера — агенты её не трогают.</span>';
+        return;
+    }
+
+    // Текст плана не дублируем — он редактируется в поле «План» выше.
+    let html = '';
+
+    // Цели менеджера показываем только для чтения: править их нужно в колонке
+    // «Цели», куда они уже записаны, а здесь видно, что именно предложил агент.
+    const goals = data.goals || [];
+    if (goals.length) {
+        html += '<div class="pipe-section">Цели из плана</div>' +
+            goals.map(g => `<div class="pipe-goal">
+                                <span class="pipe-goal-mark">◇</span>
+                                <span class="pipe-goal-text">${esc(g.text)}</span>
+                            </div>`).join('') +
+            '<div class="pipe-section">Подзадачи</div>';
+    }
+
+    const subtasks = data.subtasks || [];
+    if (subtasks.length) {
+        html += subtasks.map((s, i) => {
+            const attempts = s.attempt_count ? `<span class="pipe-attempts">попыток: ${s.attempt_count}</span>` : '';
+            const err = s.last_error ? `<div class="pipe-error">${esc(s.last_error)}</div>` : '';
+            return `<div class="pipe-subtask">
+                        <span class="pipe-subtask-pos">${i + 1}.</span>
+                        <span class="pipe-subtask-title">${esc(s.title)}${err}</span>
+                        ${attempts}
+                        <span class="pipe-sub-state pipe-sub-${s.state}">${SUBTASK_LABELS[s.state] || s.state}</span>
+                    </div>`;
+        }).join('');
+    } else if (state === 'pending_approval') {
+        html += '<span class="task-pipeline-muted">План ждёт утверждения — подзадачи появятся после «Утвердить».</span>';
+    } else if (!data.plan_text) {
+        html += '<span class="task-pipeline-muted">Оркестратор ещё не дошёл до этой задачи.</span>';
+    }
+
+    if (data.error) html += `<div class="pipe-error">${esc(data.error)}</div>`;
+    body.innerHTML = html;
 }
 
 // ── AI Task Generator ──
@@ -1435,8 +1976,8 @@ function colDragInit() {
 }
 
 // ── Resizable columns (% based) ──
-const COL_KEY = 'task_col_pct_v2';
-const COL_DEFAULTS_PCT = [4, 9, 17, 21, 10, 21, 7, 11]; // % sum=100, 8 cols with ID
+const COL_KEY = 'task_col_pct_v3';
+const COL_DEFAULTS_PCT = [4, 9, 24, 24, 21, 7, 11]; // % sum=100, 7 колонок
 
 function colPctLoad(count) {
     try {
@@ -1505,6 +2046,7 @@ function colResizersInit() {
     });
 }
 
+treeCollapsedLoad();
 loadProjects();
 </script>
 {% endblock %}

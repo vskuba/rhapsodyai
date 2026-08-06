@@ -50,7 +50,8 @@ class TestLlm:
         assert "result" in data
         result = data["result"]
         assert "nodes" in result
-        assert "reset_hours" in result
+        # Интервал сброса ошибок теперь в секундах (`reset_seconds`, было `reset_hours`)
+        assert "reset_seconds" in result
         assert "llms" in result
         assert isinstance(result["nodes"], list)
         assert isinstance(result["llms"], list)
@@ -68,14 +69,20 @@ class TestLlm:
             assert resp.status_code == 200
             assert resp.json()["result"]["node_id"] == node_id
 
-    async def test_llm_status_invalid_reset_hours_rejected(self, client: httpx.AsyncClient):
-        resp = await client.get("/llm/status?reset_hours=999")
+    async def test_llm_status_invalid_reset_seconds_rejected(self, client: httpx.AsyncClient):
+        resp = await client.get("/llm/status?reset_seconds=999")
         assert resp.status_code == 400
 
-    async def test_llm_status_valid_reset_hours(self, client: httpx.AsyncClient):
-        resp = await client.get("/llm/status?reset_hours=6")
-        assert resp.status_code == 200
-        assert resp.json()["result"]["reset_hours"] == 6
+    async def test_llm_status_valid_reset_seconds(self, client: httpx.AsyncClient):
+        # Значение должно быть из LLM_ERROR_RESET_SECONDS, иначе роутер отвечает 400.
+        # Параметр сохраняется как настройка системы, поэтому исходное возвращаем.
+        before = (await client.get("/llm/status")).json()["result"]["reset_seconds"]
+        try:
+            resp = await client.get("/llm/status?reset_seconds=45")
+            assert resp.status_code == 200
+            assert resp.json()["result"]["reset_seconds"] == 45
+        finally:
+            await client.get(f"/llm/status?reset_seconds={before}")
 
     async def test_llm_status_llm_fields(self, client: httpx.AsyncClient):
         llms = (await client.get("/llm/status")).json()["result"]["llms"]

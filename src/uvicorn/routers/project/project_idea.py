@@ -9,7 +9,7 @@ from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
-from src.cronjob.planning.planning_runner import planning_runner_enqueue
+from src.project.planning.planning_runner import planning_runner_enqueue
 
 router = APIRouter()
 

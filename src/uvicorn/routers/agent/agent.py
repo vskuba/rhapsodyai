@@ -8,6 +8,7 @@ from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.user_repository import UserRepository
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from src.auth.auth_role import auth_role_is_full
 
 router = APIRouter()
 
@@ -74,10 +75,13 @@ async def agent_list_get(
         except ValueError:
             requested_user_id = None
 
-    if user.role.lower() != 'admin':
+    # Роль сверяем по объёму прав, а не по имени `admin`: служебная роль `qa` тоже
+    # полноправная, и по имени она проваливалась в ветку «свои агенты» — список
+    # приходил пустым, а фильтр `user_id` молча игнорировался.
+    if not auth_role_is_full(user.role.lower()):
         return {"result": await _agent_list_for_user(repo, user.user_id, find_by)}
 
-    # Администратор без явного user_id видит всех агентов; с user_id — превью списка "как видит этот пользователь"
+    # Полноправная роль без явного user_id видит всех агентов; с user_id — превью списка "как видит этот пользователь"
     if requested_user_id is not None:
         return {"result": await _agent_list_for_user(repo, requested_user_id, find_by)}
 
@@ -306,7 +310,7 @@ async def _agent_list_for_user(repo: AgentRepository, user_id: int, find_by: dic
         role_row = await db.fetchone()
         role_name = role_row['name'] if role_row else None
 
-        if role_name == 'admin':
+        if auth_role_is_full(role_name or ''):
             return await repo.find_by(find_by, order_by='position ASC')
 
         # Получаем node_ids пользователя из промежуточной таблицы

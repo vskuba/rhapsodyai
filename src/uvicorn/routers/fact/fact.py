@@ -7,6 +7,7 @@ from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from src.auth.auth_role import auth_role_is_full
 
 router = APIRouter()
 
@@ -79,7 +80,7 @@ async def fact_collection_resync(
 async def fact_collection_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.FACT_COLLECTION_VIEW]))):
     join_condition = "fc.id = f.collection_id"
     params = []
-    if user.role != 'admin':
+    if not auth_role_is_full(user.role):
         join_condition += f" AND {FACT_OWNER_CONDITION}"
         params.append(user.user_id)
 
@@ -102,7 +103,7 @@ async def fact_collection_documents(
 ):
     role_condition = ""
     params = [collection_name]
-    if user.role != 'admin':
+    if not auth_role_is_full(user.role):
         role_condition = f" AND {FACT_OWNER_CONDITION}"
         params.append(user.user_id)
 
@@ -156,7 +157,7 @@ async def fact_list(
     elif status == '0':
         search_condition += " AND f.`qdrant_synced` = 0"
 
-    if user.role != 'admin':
+    if not auth_role_is_full(user.role):
         search_condition += f" AND {FACT_OWNER_CONDITION}"
         params.append(user.user_id)
 

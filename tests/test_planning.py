@@ -18,13 +18,15 @@ from typing import AsyncGenerator
 
 from dotenv import load_dotenv
 
+from tests.constants import TEST_AUTH
+
 load_dotenv()
 
 BASE_URL = "http://localhost:8011"
 _TEST_IDEA = "__pytest_planning_test_idea__"
 _TEST_TITLE = "__pytest_planning_test__"
-_TEST_USERNAME = os.environ.get("TEST_USERNAME", "test_runner")
-_TEST_PASSWORD = os.environ.get("TEST_PASSWORD", "")
+_TEST_USERNAME = TEST_AUTH["username"]
+_TEST_PASSWORD = TEST_AUTH["password"]
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -126,8 +128,12 @@ class TestPlanningProjectCRUD:
         resp = await client.post(f"/planning/project/{project_id}/retry")
         assert resp.status_code == 200
         proj = (await client.get(f"/planning/project/{project_id}")).json()["result"]
-        assert proj["status"] == "pending"
-        assert proj["phase_current"] == ""
+        # `retry` ставит `pending` и тут же кладёт проект в очередь, поэтому живой
+        # воркер успевает перевести его в `processing` раньше, чем мы прочитаем статус.
+        # Проверяем суть сброса: из `error` вышли и скоринг прошлого прогона стёрт.
+        assert proj["status"] in ("pending", "processing")
+        assert proj["score_total"] is None
+        assert proj["score_verdict"] in (None, "")
 
 
 # ─── Auth enforcement ─────────────────────────────────────────────────────────
@@ -381,19 +387,19 @@ class TestPlanningTools:
         return result
 
     def test_project_load_returns_idea(self, project_id: int):
-        from src.tool.project.planning.planning_project import project_load
+        from src.tool.project.project import project_load
         result = self._run(project_load(project_id))
         assert result["idea"] == _TEST_IDEA
         assert result["phases_context"] == ""
 
     def test_project_load_nonexistent_returns_empty(self):
-        from src.tool.project.planning.planning_project import project_load
+        from src.tool.project.project import project_load
         result = self._run(project_load(999999))
         assert result["idea"] == ""
         assert result["phases_context"] == ""
 
     def test_phase_save_and_load(self, project_id: int):
-        from src.tool.project.planning.planning_project import project_load
+        from src.tool.project.project import project_load
         from src.tool.project.planning.planning_phase import planning_phase_save
         phase_content = "## Test\n\nSome markdown content."
 
@@ -486,7 +492,7 @@ class TestPlanningTools:
         self._run(_run())
 
     def test_phases_context_multiple_phases(self, project_id: int):
-        from src.tool.project.planning.planning_project import project_load
+        from src.tool.project.project import project_load
         from src.tool.project.planning.planning_phase import planning_phase_save
 
         async def _run():

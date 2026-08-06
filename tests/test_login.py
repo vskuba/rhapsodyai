@@ -13,7 +13,7 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
-from tests.constants import TEST_AUTH
+from tests.constants import TEST_AUTH, TEST_AUTH_ROLE
 
 BASE_URL = "http://localhost:8011"
 
@@ -31,13 +31,15 @@ class TestLoginFlow:
         """Test that accessing admin routes without auth redirects to login."""
         response = await client.get("/admin/agent")
         assert response.status_code == 307
-        assert response.headers.get("location") == "/login"
+        # `?next=` дописывает dashboard.py — после логина пользователя возвращают
+        # на запрошенную страницу, поэтому сверяем путь, а не строку целиком.
+        assert response.headers.get("location", "").split("?")[0] == "/login"
 
     async def test_root_redirects_to_login(self, client: httpx.AsyncClient):
         """Test that accessing root without auth redirects to login."""
         response = await client.get("/")
         assert response.status_code == 307
-        assert response.headers.get("location") == "/login"
+        assert response.headers.get("location", "").split("?")[0] == "/login"
 
     async def test_login_page_accessible(self, client: httpx.AsyncClient):
         """Test that login page is accessible without authentication."""
@@ -56,7 +58,7 @@ class TestLoginFlow:
         data = response.json()
         assert data["message"] == "Успешный вход! Сессия создана."
         assert data["user"]["username"] == TEST_AUTH["username"]
-        assert data["user"]["role"] == "admin"
+        assert data["user"]["role"] == TEST_AUTH_ROLE
 
         # Verify session cookie is set
         assert "uvicorn_session" in response.cookies
@@ -111,7 +113,7 @@ class TestLoginFlow:
         assert response.status_code == 200
         data = response.json()
         assert data["user"]["username"] == TEST_AUTH["username"]
-        assert data["user"]["role"] == "admin"
+        assert data["user"]["role"] == TEST_AUTH_ROLE
 
     async def test_auth_me_without_session(self, client: httpx.AsyncClient):
         """Test /auth/me returns 401 without session."""
@@ -154,7 +156,7 @@ class TestLoginFlow:
         # Try to access protected route
         response = await client.get("/admin/agent")
         assert response.status_code == 307
-        assert response.headers.get("location") == "/login"
+        assert response.headers.get("location", "").split("?")[0] == "/login"
 
     async def test_static_files_accessible(self, client: httpx.AsyncClient):
         """Test that static files are accessible without authentication."""

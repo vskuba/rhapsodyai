@@ -74,7 +74,7 @@ async def project_create(title: str, idea: str) -> dict:
         await db.connection.commit()
         project_id = int(db.lastrowid)
 
-    from src.cronjob.planning.planning_runner import planning_runner_enqueue
+    from src.project.planning.planning_runner import planning_runner_enqueue
     await planning_runner_enqueue(project_id)
 
     return {'project_id': project_id, 'title': title}

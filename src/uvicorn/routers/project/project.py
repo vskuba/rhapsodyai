@@ -10,7 +10,7 @@ from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.project.project_repository import PlanningProjectRepository
 from mysql_.mysql_ import mysql_get_db_async
 from py_modules.setting_.setting_ import setting_get
-from src.cronjob.planning.planning_runner import planning_runner_enqueue
+from src.project.planning.planning_runner import planning_runner_enqueue
 from src.uvicorn.routers.project.project_common import _CRONICLE_SCHEDULE_FILE
 
 router = APIRouter()

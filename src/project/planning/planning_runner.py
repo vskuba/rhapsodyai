@@ -1,41 +1,25 @@
 """
 Planning Runner — фоновый asyncio-таск внутри uvicorn.
-Запускает фазы планирования последовательно сразу после завершения предыдущей,
-без ожидания Cronicle. После blueprint запускает score + supplements параллельно.
+Запускает фазы планирования сразу после завершения предыдущей, не дожидаясь Cronicle.
+После blueprint запускает score + supplements параллельно.
+
+Это основной путь обработки; пакетный `planning_batch` из Cronicle — подстраховка.
+Цепочка фаз общая для обоих, описана в `planning_chain`.
 """
 import asyncio
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
-from src.cronjob.planning.phase_base import project_planning_phase_run, project_planning_phase_parent_complete
-
-# Каждый элемент — волна фаз, запускаемых параллельно.
-# Следующая волна стартует только после завершения всех фаз текущей.
-# requires указывает, какие фазы должны быть complete (для _pending_projects_get).
-PHASE_GROUPS = [
-    [('analyze',   [])],
-    [('market',    ['analyze'])],
-    [('product',   ['market', 'analyze'])],
-    [                                              # tech и gtm не зависят друг от друга
-        ('tech', ['product']),
-        ('gtm',  ['market', 'product']),
-    ],
-    [('financial', ['tech', 'gtm', 'market', 'product'])],
-    [('blueprint', ['analyze', 'market', 'product', 'tech', 'gtm', 'financial'])],
-]
-
-PHASE_AGENTS = {
-    'analyze':   'planning_analyzer',
-    'market':    'planning_market_researcher',
-    'product':   'planning_product_planner',
-    'tech':      'planning_tech_architect',
-    'gtm':       'planning_gtm_strategist',
-    'financial': 'planning_financial_modeler',
-    'blueprint': 'planning_blueprint_composer',
-    'score':     'planning_scorer',
-}
-
-SUPPLEMENT_TYPES = ['market', 'product', 'tech', 'gtm', 'financial', 'launch']
+from src.project.planning.planning_chain import (
+    PLANNING_CHAIN,
+    PLANNING_SCORE_AGENT,
+    PLANNING_SCORE_REQUIRES,
+    PLANNING_SUPPLEMENT_AGENT,
+    PLANNING_SUPPLEMENT_REQUIRES,
+    PLANNING_SUPPLEMENT_TYPES,
+)
+from src.project.planning.planning_phase import planning_phase_run
+from src.project.planning.planning_phase_query import planning_phase_query_status
 
 _queue: asyncio.Queue = asyncio.Queue()
 _active: set[int] = set()
@@ -71,45 +55,46 @@ async def planning_runner_start() -> None:
 
 async def _run_project_chain(project_id: int) -> None:
     """
-    Выполняет фазы проекта по волнам из PHASE_GROUPS.
+    Выполняет фазы проекта по волнам из PLANNING_CHAIN.
     Фазы внутри волны запускаются параллельно (asyncio.gather).
     Следующая волна стартует только после завершения всех фаз текущей.
     После blueprint: score + все supplements параллельно.
     """
     logger_info(f'planning_runner: project {project_id} — цепочка запущена')
     try:
-        for group in PHASE_GROUPS:
+        for wave in PLANNING_CHAIN:
             # Фильтруем уже завершённые, останавливаемся на failed
             pending = []
-            for phase, requires in group:
-                status = await _phase_status_get(project_id, phase)
+            for phase, agent_name, requires in wave:
+                status = await planning_phase_query_status(project_id, phase)
                 if status == 'complete':
                     logger_info(f'planning_runner: project {project_id} [{phase}] — уже complete, пропуск')
                     continue
                 if status == 'failed':
                     logger_info(f'planning_runner: project {project_id} [{phase}] — failed, цепочка остановлена')
                     return
-                pending.append((phase, requires))
+                pending.append((phase, agent_name, requires))
 
             if not pending:
                 continue
 
             if len(pending) == 1:
-                phase, requires = pending[0]
+                phase, agent_name, requires = pending[0]
                 logger_info(f'planning_runner: project {project_id} [{phase}] — запуск')
-                stats = await _run_phase(project_id, phase, requires)
+                stats = await _run_phase(project_id, phase, agent_name, requires)
                 if stats.get('errors', 0):
                     logger_info(f'planning_runner: project {project_id} [{phase}] — ошибка, цепочка остановлена')
                     return
                 logger_info(f'planning_runner: project {project_id} [{phase}] — complete ✓')
             else:
-                names = '+'.join(p for p, _ in pending)
+                names = '+'.join(p for p, _, _ in pending)
                 logger_info(f'planning_runner: project {project_id} [{names}] — параллельный запуск')
                 results = await asyncio.gather(
-                    *[_run_phase(project_id, phase, requires) for phase, requires in pending],
+                    *[_run_phase(project_id, phase, agent_name, requires)
+                      for phase, agent_name, requires in pending],
                     return_exceptions=True,
                 )
-                for (phase, _), result in zip(pending, results):
+                for (phase, _, _), result in zip(pending, results):
                     if isinstance(result, Exception):
                         logger_info(f'planning_runner: project {project_id} [{phase}] — исключение: {result}')
                         return
@@ -121,7 +106,8 @@ async def _run_project_chain(project_id: int) -> None:
         # После blueprint: score параллельно с supplements, supplements — строго последовательно.
         # Supplements используют одного агента (planning_supplement_writer), параллельный запуск
         # приводит к "занят" (TTL-дроп) и превышению TPM-лимита провайдера.
-        logger_info(f'planning_runner: project {project_id} — запуск score + {len(SUPPLEMENT_TYPES)} supplements (последовательно)')
+        logger_info(f'planning_runner: project {project_id} — запуск score '
+                    f'+ {len(PLANNING_SUPPLEMENT_TYPES)} supplements (последовательно)')
         await asyncio.gather(
             _run_score(project_id),
             _run_supplements_sequential(project_id),
@@ -134,9 +120,9 @@ async def _run_project_chain(project_id: int) -> None:
         _active.discard(project_id)
 
 
-async def _run_phase(project_id: int, phase: str, requires: list[str]) -> dict:
-    return await project_planning_phase_run(
-        agent_name=PHASE_AGENTS[phase],
+async def _run_phase(project_id: int, phase: str, agent_name: str, requires: list[str]) -> dict:
+    return await planning_phase_run(
+        agent_name=agent_name,
         phase=phase,
         requires_phases=requires,
         project_statuses=['pending', 'processing'],
@@ -147,7 +133,7 @@ async def _run_phase(project_id: int, phase: str, requires: list[str]) -> dict:
 
 async def _run_supplements_sequential(project_id: int) -> None:
     """Запускает supplements по одному — агент один, параллельный запуск даёт ошибки busy/TPM."""
-    for stype in SUPPLEMENT_TYPES:
+    for stype in PLANNING_SUPPLEMENT_TYPES:
         try:
             await _run_supplement(project_id, stype)
         except Exception as e:
@@ -155,10 +141,10 @@ async def _run_supplements_sequential(project_id: int) -> None:
 
 
 async def _run_score(project_id: int) -> None:
-    await project_planning_phase_run(
-        agent_name='planning_scorer',
+    await planning_phase_run(
+        agent_name=PLANNING_SCORE_AGENT,
         phase='score',
-        requires_phases=['blueprint'],
+        requires_phases=PLANNING_SCORE_REQUIRES,
         project_statuses=['pending', 'processing', 'complete'],
         restore_project_status='complete',
         skip_init=True,
@@ -167,10 +153,10 @@ async def _run_score(project_id: int) -> None:
 
 
 async def _run_supplement(project_id: int, supplement_type: str) -> None:
-    await project_planning_phase_run(
-        agent_name='planning_supplement_writer',
+    await planning_phase_run(
+        agent_name=PLANNING_SUPPLEMENT_AGENT,
         phase=f'supplement_{supplement_type}',
-        requires_phases=['analyze', 'market', 'product', 'tech', 'gtm', 'financial', 'blueprint'],
+        requires_phases=PLANNING_SUPPLEMENT_REQUIRES,
         extra_variables={'planning_supplement_type': supplement_type},
         # 'error' включён: если предыдущий supplement упал и перевёл проект в error,
         # следующие supplements всё равно должны запуститься.
@@ -178,16 +164,6 @@ async def _run_supplement(project_id: int, supplement_type: str) -> None:
         skip_init=True,
         project_id_filter=project_id,
     )
-
-
-async def _phase_status_get(project_id: int, phase: str) -> str | None:
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT status FROM project_planning_phase WHERE project_id = %s AND phase = %s",
-            (project_id, phase)
-        )
-        row = await db.fetchone()
-    return (row or {}).get('status')
 
 
 async def _startup_reset() -> None:
@@ -218,7 +194,8 @@ async def _startup_reset() -> None:
         await db.connection.commit()
 
     if count:
-        logger_info(f'planning_runner: {count} running-фаз → pending при старте, перезапустятся автоматически (проектов: {len(project_ids)})')
+        logger_info(f'planning_runner: {count} running-фаз → pending при старте, '
+                    f'перезапустятся автоматически (проектов: {len(project_ids)})')
 
 
 async def _recover_pending() -> None:

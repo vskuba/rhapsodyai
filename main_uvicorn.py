@@ -45,6 +45,7 @@ from src.uvicorn.routers.project import (
     project_prototype as project_prototype_router,
     project_document,
     project_task,
+    project_task_pipeline,
     project_phase_source,
 )
 from src.uvicorn.routers.project.design import design_block, design as design_router, design_browser, design_prototype as design_prototype_router
@@ -126,7 +127,7 @@ async def lifespan(app: FastAPI):
 
     # ======================== Planning runner ================
 
-    from src.cronjob.planning.planning_runner import planning_runner_start
+    from src.project.planning.planning_runner import planning_runner_start
     asyncio.create_task(planning_runner_start())
 
     print("Background thread started.")
@@ -416,6 +417,7 @@ app.include_router(design_block.router, include_in_schema=False)
 app.include_router(project_prototype_router.router, include_in_schema=False)
 app.include_router(project_document.router, include_in_schema=False)
 app.include_router(project_task.router, include_in_schema=False)
+app.include_router(project_task_pipeline.router, include_in_schema=False)
 app.include_router(project_phase_source.router, include_in_schema=False)
 app.include_router(design_browser.router, include_in_schema=False)
 app.include_router(design_router.router, include_in_schema=False)
