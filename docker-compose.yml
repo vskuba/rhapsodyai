@@ -181,7 +181,7 @@ services:
       context: .
       dockerfile: docker/uvicorn/dockerfile
     container_name: worker
-    command: rq worker --url redis://redis:6379 default google_ping # слушает очередь default и google_ping
+    command: rq worker --url redis://redis:6379 default # слушает очередь default
     volumes:
       - ./:/app
     env_file:
