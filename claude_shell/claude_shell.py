@@ -489,12 +489,17 @@ def main():
     parser.add_argument("--project-label", default=None)
     parser.add_argument("--gx10", action="store_true",
                         help="Запустить LiteLLM proxy (gx10) и использовать как бэкенд Claude")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Запустить Claude Code с флагом --verbose")
     parser.add_argument("claude_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
     claude_args = list(args.claude_args)
     if claude_args and claude_args[0] == "--":
         claude_args = claude_args[1:]
+
+    if args.verbose and "--verbose" not in claude_args:
+        claude_args = ["--verbose"] + claude_args
 
     secret, base_url = _load_config()
     if not secret:

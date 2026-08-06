@@ -17,17 +17,47 @@ PYTHON       = _VENV_PYTHON if os.path.isfile(_VENV_PYTHON) else sys.executable
 
 def litellm_is_running() -> bool:
     import socket
-    # Проверяем и PID, и реальный сокет на порту
+    import subprocess
+
+    # Пытаемся прочитать PID из файла
+    file_pid = None
     try:
         with open(PID_FILE) as f:
-            pid = int(f.read().strip())
-        os.kill(pid, 0)
+            file_pid = int(f.read().strip())
+        os.kill(file_pid, 0)
     except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
-        return False
-    # PID жив — проверяем что он слушает нужный порт
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1)
-        return s.connect_ex(("127.0.0.1", PORT)) == 0
+        file_pid = None
+
+    # Ищем реальный PID процесса на порту
+    try:
+        result = subprocess.run(["ss", "-tlnp", "sport = :4000"],
+                                capture_output=True, text=True, timeout=5)
+        port_pid = None
+        for line in result.stdout.splitlines():
+            if ":4000" in line and "users:" in line:
+                # Формат: pid=1234,cmd="..."
+                for part in line.split("users:"):
+                    for u in part.split("("):
+                        if "pid=" in u:
+                            port_pid = int(u.split("pid=")[1].split(",")[0])
+    except Exception:
+        port_pid = None
+
+    # Если порт занят — обновляем PID-файл реальным PID и проверяем коннект
+    if port_pid is not None:
+        with open(PID_FILE, "w") as f:
+            f.write(str(port_pid))
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            return s.connect_ex(("127.0.0.1", PORT)) == 0
+
+    # Порт пуст, но PID в файале жив — проверяем коннект
+    if file_pid is not None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            return s.connect_ex(("127.0.0.1", PORT)) == 0
+
+    return False
 
 
 def litellm_start() -> None:
