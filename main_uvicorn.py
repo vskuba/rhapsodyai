@@ -240,10 +240,15 @@ async def auth_middleware(request: Request, call_next):
                 or request.headers.get("X-Claude-Secret")):
             return await call_next(request)
 
-        # For HTML routes, redirect to login
+        # For HTML routes, redirect to login with ?next= for post-login return
         if path.startswith('/admin') or path == '/':
+            import urllib.parse
             from starlette.responses import RedirectResponse
-            return RedirectResponse(url='/login')
+            next_path = path
+            if request.url.query:
+                next_path += '?' + request.url.query
+            next_param = urllib.parse.quote(next_path, safe='')
+            return RedirectResponse(url=f'/login?next={next_param}')
         # For API routes, return 401
         from starlette.responses import JSONResponse
         return JSONResponse(
