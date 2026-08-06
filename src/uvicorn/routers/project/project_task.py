@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.get('/tasks')
-async def planning_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     async with mysql_get_db_async() as db:
         await db.execute("SELECT * FROM task ORDER BY position, id")
         rows = await db.fetchall()
@@ -26,7 +26,7 @@ async def planning_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_V
 
 
 @router.get('/tasks/{project_id}')
-async def planning_tasks_list(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_tasks_list(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT * FROM task WHERE project_id = %s ORDER BY position, id",
@@ -37,7 +37,7 @@ async def planning_tasks_list(project_id: int, user=Depends(AuthChecker([AuthPer
 
 
 @router.post('/tasks/{project_id}')
-async def planning_task_create(project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def project_task_create(project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     title = str(data.get('title') or '').strip()
     if not title:
         raise HTTPException(status_code=400, detail='title required')
@@ -65,7 +65,7 @@ async def planning_task_create(project_id: int, data: dict, user=Depends(AuthChe
 
 
 @router.put('/task/{task_id}')
-async def planning_task_update(task_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     allowed = {'title', 'description', 'goals', 'status', 'report'}
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
@@ -86,7 +86,7 @@ async def planning_task_update(task_id: int, data: dict, user=Depends(AuthChecke
 
 
 @router.delete('/task/{task_id}')
-async def planning_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def project_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     async with mysql_get_db_async() as db:
         await db.execute("DELETE FROM task WHERE id = %s", (task_id,))
         await db.connection.commit()
@@ -94,7 +94,7 @@ async def planning_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermi
 
 
 @router.post('/task/ai-generate')
-async def planning_task_ai_generate(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def project_task_ai_generate(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     description = str(data.get('description') or '').strip()
     if not description:
         raise HTTPException(status_code=400, detail='description required')
