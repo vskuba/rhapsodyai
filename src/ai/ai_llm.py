@@ -143,7 +143,7 @@ async def _ai_llm_image_generate_gx10(prompt: str, size: str = '1024x1024', time
     client_id = str(_uuid.uuid4())
     workflow = _ai_llm_comfyui_workflow(prompt, seed, width, height)
 
-    comfyui_base = (config_get('GX10_COMFYUI_URL') or 'http://192.168.1.2:8188').rstrip('/')
+    comfyui_base = (config_get('GX10_COMFYUI_API_URL') or 'http://192.168.1.2:8188').rstrip('/')
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15.0)) as client:
         resp = await client.post(f"{comfyui_base}/prompt", json={"prompt": workflow, "client_id": client_id})
