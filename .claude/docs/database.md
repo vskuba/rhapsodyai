@@ -74,7 +74,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 - `project_planning_document` — generated documents per project (was `planning_document`)
 
 ### Tasks / Developing
-- `task` — task list linked to project
+- `project_task` — task list linked to project
 - `developing_project` — dev-cycle project (links to planning project)
 - `developing_task` — dev tasks with role/priority/status
 
@@ -103,7 +103,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 9. `ai_claude_session` → `ai_claude_session_registry`
 10. `agent_workflow_trace` → `agent_workflow_trace_step`
 11. `event_log`
-12. `task` → `developing_project` → `developing_task`
+12. `project_task` → `developing_project` → `developing_task`
 13. `project` → `project_planning_phase_source` → `project_planning_phase` → `project_planning_document`
 14. `project_design_prototype_browser_history`
 15. `project_state` → `project_design_prototype_page` → `project_design_prototype_widget` → `project_design_prototype_page_block`

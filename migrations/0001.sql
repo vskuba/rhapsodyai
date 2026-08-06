@@ -19,11 +19,13 @@ DROP TABLE IF EXISTS `project_design_token`;
 DROP TABLE IF EXISTS `project_planning_document`;
 DROP TABLE IF EXISTS `project_planning_phase`;
 DROP TABLE IF EXISTS `project_planning_phase_source`;
+DROP TABLE IF EXISTS `project_task_attempt`;
+DROP TABLE IF EXISTS `project_task_subtask`;
+DROP TABLE IF EXISTS `project_task`;
 DROP TABLE IF EXISTS `project`;
--- developing / task / detective
+-- developing / detective
 DROP TABLE IF EXISTS `developing_task`;
 DROP TABLE IF EXISTS `developing_project`;
-DROP TABLE IF EXISTS `task`;
 -- agent workflow trace
 DROP TABLE IF EXISTS `agent_workflow_trace_step`;
 DROP TABLE IF EXISTS `agent_workflow_trace`;
@@ -490,23 +492,76 @@ CREATE TABLE `event_log` (
     INDEX `idx_event_log_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ─── Task ──────────────────────────────────────────────────────────────────────
+-- ─── Project Task ──────────────────────────────────────────────────────────────
 
-CREATE TABLE `task` (
+CREATE TABLE `project_task` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `project_id` INT DEFAULT NULL,
+    -- Дерево задач: NULL = корневая, иначе подзадача своего родителя. Глубина не
+    -- ограничена схемой. Не путать с `project_task_subtask` — та принадлежит
+    -- конвейеру и живёт отдельно; здесь человеческая декомпозиция «эпик → подзадачи».
+    `parent_id` INT DEFAULT NULL,
     `title` VARCHAR(255) NOT NULL DEFAULT '',
     `description` TEXT NOT NULL,
     `goals` TEXT NOT NULL,
     `status` ENUM('pending','queued','active','done','blocked','cancelled') NOT NULL DEFAULT 'pending',
     `report` TEXT NOT NULL,
     `position` INT NOT NULL DEFAULT '0',
+    -- Конвейер агентов. NULL = обычная ручная задача, конвейера не касается (opt-in).
+    -- Ортогонально `status`, который остаётся человеческим kanban-статусом.
+    `pipeline_state` ENUM('new','planning','pending_approval','approved','split','done','failed') DEFAULT NULL,
+    `pipeline_plan` MEDIUMTEXT NOT NULL,
+    `pipeline_error` TEXT NOT NULL,
+    `pipeline_locked_at` DATETIME DEFAULT NULL,
+    `pipeline_locked_by` VARCHAR(64) NOT NULL DEFAULT '',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     INDEX `idx_pt_project` (`project_id`),
     INDEX `idx_pt_status` (`status`),
-    INDEX `idx_pt_position` (`project_id`, `position`)
+    INDEX `idx_pt_position` (`project_id`, `position`),
+    INDEX `idx_pt_pipeline` (`pipeline_state`),
+    INDEX `idx_pt_parent` (`parent_id`, `position`),
+    -- Удаление родителя уносит всю ветку: подзадача без родителя смысла не имеет.
+    CONSTRAINT `fk_pt_parent` FOREIGN KEY (`parent_id`) REFERENCES `project_task` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Единица работы конвейера: Manager раскладывает утверждённый план на подзадачи,
+-- дальше по каждой идёт цикл Developer → QA.
+CREATE TABLE `project_task_subtask` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `task_id` INT NOT NULL,
+    `position` INT NOT NULL DEFAULT '0',
+    `title` VARCHAR(255) NOT NULL DEFAULT '',
+    `description` TEXT NOT NULL,
+    `state` ENUM('planned','developing','qa_pending','failed_qa','done','blocked') NOT NULL DEFAULT 'planned',
+    `attempt_count` INT NOT NULL DEFAULT '0',
+    `last_error` TEXT NOT NULL,
+    `locked_at` DATETIME DEFAULT NULL,
+    `locked_by` VARCHAR(64) NOT NULL DEFAULT '',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_pts_task` (`task_id`, `position`),
+    INDEX `idx_pts_state` (`state`),
+    CONSTRAINT `fk_pts_task` FOREIGN KEY (`task_id`) REFERENCES `project_task` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- История попыток: нужна, чтобы вернуть ошибку QA обратно разработчику
+-- и чтобы Developer с QA не пинг-понговали бесконечно (см. MAX_ATTEMPTS).
+CREATE TABLE `project_task_attempt` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `subtask_id` INT NOT NULL,
+    `attempt_no` INT NOT NULL DEFAULT '0',
+    `role` ENUM('manager','developer','qa') NOT NULL,
+    `status` ENUM('ok','error') NOT NULL,
+    `output` MEDIUMTEXT NOT NULL,
+    `error` TEXT NOT NULL,
+    `duration_ms` INT NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_pta_subtask` (`subtask_id`, `attempt_no`),
+    CONSTRAINT `fk_pta_subtask` FOREIGN KEY (`subtask_id`) REFERENCES `project_task_subtask` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── Developing ────────────────────────────────────────────────────────────────
