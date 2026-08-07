@@ -246,31 +246,13 @@
 
     .task-table th { position: relative; overflow: visible; border-right: none; }
     .task-table td { border-right: none; }
-    .col-resizer {
-        position: absolute; right: -5px; top: 0; bottom: 0;
-        width: 10px; cursor: col-resize;
-        display: flex; align-items: stretch; justify-content: center;
-        z-index: 10;
-    }
-    .col-resizer::after {
-        content: ''; display: block;
-        width: 2px; background: transparent;
-        transition: background .15s;
-        border-radius: 2px;
-        margin: 7px 0;
-    }
-    .col-resizer:hover::after, .col-resizer.dragging::after { background: #818cf8; }
-
-    .task-table thead th[draggable] { user-select: none; cursor: grab; }
-    .task-table thead th.col-dragging { opacity: .4; }
-    .task-table thead th.col-drag-over { box-shadow: inset 2px 0 0 #6366f1; background: #eef2ff !important; }
 
     .task-table thead th {
         position: sticky;
         top: 0;
         z-index: 5;
         background: #f8fafc;
-        padding: 9px 14px;
+        padding: 9px 7px;
         text-align: left;
         font-size: 10px;
         font-weight: 700;
@@ -295,12 +277,12 @@
     .task-table tbody tr.task-row.expanded { background: #dbe2ff; }
 
     .task-table td {
-        padding: 9px 14px;
+        padding: 9px 7px;
         vertical-align: top;
     }
 
     /* Status accent stripe on the leading cell of each row */
-    .task-row > td:first-child { box-shadow: inset 3px 0 0 var(--row-accent, transparent); }
+    .task-row > td.td-goals { box-shadow: inset 3px 0 0 var(--row-accent, transparent); }
 
     .td-id     { color: #94a3b8; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .td-title  { font-weight: 600; color: #0f172a; line-height: 1.4; }
@@ -379,7 +361,7 @@
     }
     .tree-kids-done { background: #dcfce7; color: #15803d; }
 
-    .task-table tbody tr.tree-child > td:first-child { box-shadow: inset 3px 0 0 var(--row-accent, transparent); }
+    .task-table tbody tr.tree-child > td.td-goals { box-shadow: inset 3px 0 0 var(--row-accent, transparent); }
     .tree-child .td-id    { opacity: .75; }
     .tree-child .tree-name { font-weight: 500; }
     /* Предок, показанный только как контекст для найденной подзадачи. */
@@ -401,7 +383,7 @@
     }
     .ap-clear:hover { color: #ef4444; }
     .td-desc   { color: #64748b; }
-    .td-date   { white-space: nowrap; color: #94a3b8; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .td-date   { width: 84px; min-width: 84px; max-width: 84px; white-space: nowrap; color: #94a3b8; font-size: 12px; font-variant-numeric: tabular-nums; }
     /* Buttons wrap onto a new line instead of overflowing a narrow column */
     .td-act    { text-align: right; white-space: normal; }
     .td-act > button { white-space: nowrap; margin: 0 0 4px 4px; }
@@ -483,7 +465,7 @@
     .btn-row-sub:focus-visible { opacity: 1; outline: 2px solid #c7d2fe; }
 
     /* ── Sort (reorder) buttons ── */
-    .td-sort { width: 44px; text-align: center; white-space: nowrap; }
+    .td-sort { width: 44px; min-width: 44px; max-width: 44px; text-align: center; white-space: nowrap; }
     .sort-btns { display: none; gap: 2px; justify-content: center; }
     .task-row:hover .sort-btns, .task-edit-row .sort-btns { display: flex; }
     .sort-btn {
@@ -532,7 +514,7 @@
     }
     .inline-goal-item:hover { background: #f1f5f9; }
     .inline-goal-item input[type=checkbox] {
-        accent-color: #22c55e; flex-shrink: 0; cursor: pointer; margin-top: 2px;
+        accent-color: #2db15e; flex-shrink: 0; cursor: pointer; margin-top: 2px;
     }
     .inline-goal-done { text-decoration: line-through; color: #94a3b8 !important; }
     .inline-goal-text { flex: 1; cursor: default; word-break: break-word; }
@@ -1386,22 +1368,18 @@ function renderTable() {
             <thead>
                 <tr>
                     <th data-col="sort" class="td-sort">⬆️⬇️</th>
-                    <th data-col="id">ID</th>
-                    ${hasParent ? '' : '<th data-col="status">Статус</th>'}
-                    <th data-col="title">Название</th>
-                    <th data-col="desc">Описание</th>
-                    <th data-col="goals">${hasParent ? 'Прогресс' : 'Цели'}</th>
-                    <th data-col="date">Создана</th>
-                    <th data-col="act" style="text-align:right">Действия</th>
+                    <th data-col="id" >ID</th>
+                    <th data-col="goals" style="width:28%">Прогресс</th>
+                    <th data-col="title" style="width:24%">Название</th>
+                    <th data-col="desc" style="width:26%">Описание</th>
+                    <th data-col="date" style="width:60px">Создана</th>
+                    <th data-col="act" style="width:100px;text-align:right">Действия</th>
                 </tr>
             </thead>
             <tbody id="taskTbody">
                 ${rows.map((r, i) => renderRow(r, i, hasParent)).join('')}
             </tbody>
         </table>`;
-    colOrderApply(colOrderLoad());
-    colResizersInit();
-    colDragInit();
 }
 
 function rowStatusBtn(t) {
@@ -1546,16 +1524,21 @@ function renderRow(row, index, hasParent) {
     if (row.ghost) cls.push('tree-ghost');
     // Соседи для кнопок up/down
     const sortBtns = _sortBtns(t.id, t.position);
+
+    // Содержимое колонки «Прогресс» — статус задачи + подзадачи/goals
+    const progressContent = row.hasKids
+        ? badge + renderSubtaskSummary(row)
+        : badge + renderInlineGoals(t, undefined, false);
+
     return `
         <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'};--row-bg:${rowBg(row, index)}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
             <td class="td-sort" data-col="sort">${sortBtns}</td>
             <td class="td-id" data-col="id">#${t.id}</td>
-            ${hasParent ? '' : `<td class="td-status" data-col="status">${badge}${renderPipeChip(t, row)}</td>`}
+            <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${progressContent}</td>
             <td class="td-title" data-col="title">
                 <div class="tree-title">${treeIndent(row)}${treeCaret(row)}<span class="tree-num">${row.num}</span><span class="tree-name">${esc(t.title)}${kidsPill}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
             </td>
             <td class="td-desc" data-col="desc"><div class="task-desc-preview">${esc(t.description)}</div></td>
-            <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${row.hasKids ? renderSubtaskSummary(row) : renderInlineGoals(t, undefined, false)}</td>
             <td class="td-date" data-col="date">${dateStr}</td>
             <td class="td-act" data-col="act">
                 ${rowStatusBtn(t)}
@@ -1563,7 +1546,7 @@ function renderRow(row, index, hasParent) {
             </td>
         </tr>
         <tr class="task-edit-row" id="ter-${t.id}">
-            <td class="task-edit-cell" colspan="${hasParent ? 7 : 8}">
+            <td class="task-edit-cell" colspan="7">
                 <div class="task-edit-grid">
                     <div class="form-group">
                         <label>Название</label>
@@ -2429,191 +2412,6 @@ const _voice = (() => {
 function taskVoiceToggle() { _voice.toggle(); }
 
 // ── Column order (drag-and-drop) ──
-const COL_ORDER_KEY = 'task_col_order_v1';
-let _dragCol = null;
-let _isResizing = false;
-
-function colOrderSave() {
-    const ths = Array.from(document.querySelectorAll('.task-table thead th'));
-    localStorage.setItem(COL_ORDER_KEY, JSON.stringify(ths.map(th => th.dataset.col)));
-}
-function colOrderLoad() {
-    try { return JSON.parse(localStorage.getItem(COL_ORDER_KEY)); } catch { return null; }
-}
-function colOrderApply(order) {
-    if (!order || !order.length) return;
-    const table = document.querySelector('.task-table');
-    if (!table) return;
-    const reorderRow = row => {
-        const cells = Array.from(row.children);
-        const map = {};
-        cells.forEach(c => { if (c.dataset.col) map[c.dataset.col] = c; });
-        // Сортировка всегда первая — фиксируем
-        if (map['sort']) row.insertBefore(map['sort'], row.firstChild);
-        order.forEach(col => { if (map[col] && col !== 'sort') row.appendChild(map[col]); });
-        // Новые колонки, которых нет в сохранённом порядке — добавляем перед sort
-        cells.forEach(c => {
-            if (c.dataset.col && !order.includes(c.dataset.col) && c.dataset.col !== 'sort') row.appendChild(c);
-        });
-    };
-    reorderRow(table.querySelector('thead tr'));
-    table.querySelectorAll('tbody tr').forEach(row => {
-        if (row.querySelector('[data-col]')) reorderRow(row);
-    });
-}
-
-function colDragInit() {
-    const table = document.querySelector('.task-table');
-    if (!table) return;
-    const ths = Array.from(table.querySelectorAll('thead th'));
-
-    ths.forEach(th => {
-        th.setAttribute('draggable', 'true');
-
-        const rsz = th.querySelector('.col-resizer');
-        if (rsz) {
-            rsz.addEventListener('mousedown', () => {
-                _isResizing = true;
-                const up = () => { _isResizing = false; document.removeEventListener('mouseup', up); };
-                document.addEventListener('mouseup', up);
-            }, { capture: true });
-        }
-
-        th.addEventListener('dragstart', e => {
-            if (_isResizing) { e.preventDefault(); return; }
-            _dragCol = th.dataset.col;
-            th.classList.add('col-dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', _dragCol);
-        });
-
-        th.addEventListener('dragend', () => {
-            th.classList.remove('col-dragging');
-            ths.forEach(t => t.classList.remove('col-drag-over'));
-            _dragCol = null;
-        });
-
-        th.addEventListener('dragover', e => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-        });
-
-        th.addEventListener('dragenter', e => {
-            e.preventDefault();
-            if (th.dataset.col === _dragCol) return;
-            ths.forEach(t => t.classList.remove('col-drag-over'));
-            th.classList.add('col-drag-over');
-        });
-
-        th.addEventListener('dragleave', e => {
-            if (!th.contains(e.relatedTarget)) th.classList.remove('col-drag-over');
-        });
-
-        th.addEventListener('drop', e => {
-            e.preventDefault();
-            th.classList.remove('col-drag-over');
-            if (!_dragCol || _dragCol === th.dataset.col) return;
-
-            const thead = table.querySelector('thead tr');
-            const thsArr = Array.from(thead.querySelectorAll('th'));
-            const dragTh = thsArr.find(t => t.dataset.col === _dragCol);
-            if (!dragTh) return;
-            const dragIdx = thsArr.indexOf(dragTh);
-            const targetIdx = thsArr.indexOf(th);
-
-            const insertAfter = dragIdx < targetIdx;
-            if (insertAfter) thead.insertBefore(dragTh, th.nextSibling);
-            else             thead.insertBefore(dragTh, th);
-
-            table.querySelectorAll('tbody tr').forEach(row => {
-                const dragTd   = row.querySelector(`[data-col="${_dragCol}"]`);
-                const targetTd = row.querySelector(`[data-col="${th.dataset.col}"]`);
-                if (!dragTd || !targetTd) return;
-                if (insertAfter) row.insertBefore(dragTd, targetTd.nextSibling);
-                else             row.insertBefore(dragTd, targetTd);
-            });
-
-            colOrderSave();
-            colPctSave(Array.from(table.querySelectorAll('thead th')));
-            // re-attach resizers in new order
-            table.querySelectorAll('.col-resizer').forEach(r => r.remove());
-            colResizersInit();
-            colDragInit();
-        });
-    });
-}
-
-// ── Resizable columns (% based) ──
-const COL_KEY = 'task_col_pct_v3';
-const COL_DEFAULTS_PCT = [4, 9, 24, 24, 21, 7, 11]; // % sum=100, 7 колонок
-
-function colPctLoad(count) {
-    try {
-        const saved = JSON.parse(localStorage.getItem(COL_KEY));
-        if (saved && saved.length === count) {
-            const total = saved.reduce((s, v) => s + v, 0);
-            if (total > 0) return saved.map(v => v * 100 / total);
-        }
-    } catch {}
-    const def = COL_DEFAULTS_PCT.slice(0, count);
-    const t = def.reduce((s, v) => s + v, 0);
-    return def.map(v => v * 100 / t);
-}
-function colPctSave(ths) {
-    const total = ths.reduce((s, th) => s + th.offsetWidth, 0);
-    if (!total) return;
-    localStorage.setItem(COL_KEY, JSON.stringify(ths.map(th => +(th.offsetWidth * 100 / total).toFixed(3))));
-}
-
-function colResizersInit() {
-    const table = document.querySelector('.task-table');
-    if (!table) return;
-    const ths = Array.from(table.querySelectorAll('thead th'));
-    const pcts = colPctLoad(ths.length);
-
-    // Apply as %, last col gets remainder to guarantee 100%
-    let used = 0;
-    ths.forEach((th, i) => {
-        const p = (i === ths.length - 1) ? +(100 - used).toFixed(3) : +pcts[i].toFixed(3);
-        th.style.width = p + '%';
-        used += p;
-    });
-
-    ths.forEach((th, i) => {
-        if (i === ths.length - 1) return;
-        const rsz = document.createElement('div');
-        rsz.className = 'col-resizer';
-        th.appendChild(rsz);
-
-        let startX, startPx, nextPx, nextTh, tableW;
-        rsz.addEventListener('mousedown', e => {
-            e.preventDefault();
-            tableW  = table.offsetWidth;
-            startX  = e.clientX;
-            startPx = th.offsetWidth;
-            nextTh  = ths[i + 1];
-            nextPx  = nextTh ? nextTh.offsetWidth : 0;
-            rsz.classList.add('dragging');
-
-            const onMove = e => {
-                const dx = e.clientX - startX;
-                const nw = Math.max(48, startPx + dx);
-                const nn = Math.max(48, nextPx  - dx);
-                th.style.width     = +(nw * 100 / tableW).toFixed(3) + '%';
-                if (nextTh) nextTh.style.width = +(nn * 100 / tableW).toFixed(3) + '%';
-            };
-            const onUp = () => {
-                rsz.classList.remove('dragging');
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-                colPctSave(ths);
-            };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        });
-    });
-}
-
 // ─── Help modal ───────────────────────────────────────
 function showHelpModal() {
     document.getElementById('helpModal').classList.add('visible');
