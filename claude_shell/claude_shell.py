@@ -518,6 +518,7 @@ def main():
     _log(f"wrapper started pid={os.getpid()}")
 
     session_uuid = args.session_uuid
+    server_llm = "gx10" if args.gx10 else "anthropic"
 
     if not session_uuid and not args.register:
         if os.path.isfile(SESSION_UUID_PATH):
@@ -526,7 +527,8 @@ def main():
             try:
                 _api_call_retry("POST", "/telegram-app/claude/session/resume",
                                 secret, base_url,
-                                body={"session_uuid": session_uuid})
+                                body={"session_uuid": session_uuid,
+                                      "server_llm": server_llm})
                 _log(f"resumed session {session_uuid}")
             except urllib.error.HTTPError as e:
                 if e.code == 404:

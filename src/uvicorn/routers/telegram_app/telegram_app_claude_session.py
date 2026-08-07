@@ -88,7 +88,7 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
 async def telegram_app_claude_session_resume(request: Request, data: dict):
     """
     Резюмирует существующую сессию - помечает active, обновляет heartbeat,
-    возвращает историю переписки.
+    возвращает историю переписки. Обновляет server_llm если передан.
     """
     _require_claude_secret(request)
 
@@ -96,14 +96,20 @@ async def telegram_app_claude_session_resume(request: Request, data: dict):
     if not session_uuid:
         raise HTTPException(status_code=400, detail="session_uuid required")
 
+    server_llm = str(data.get("server_llm") or "").strip()
+    if server_llm not in ("anthropic", "gx10"):
+        server_llm = None
+
     repo = AiClaudeSessionRegistryRepository()
     row = await repo.find_one_by({"session_uuid": session_uuid})
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    row["status"] = "active"
-    row["last_seen_at"] = datetime.now()
-    await repo.update(row["id"], {"status": row["status"], "last_seen_at": row["last_seen_at"]})
+    now = datetime.now()
+    update_data = {"status": "active", "last_seen_at": now}
+    if server_llm:
+        update_data["server_llm"] = server_llm
+    await repo.update(row["id"], update_data)
 
     async with mysql_get_db_async() as db:
         await db.execute(
