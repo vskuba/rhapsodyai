@@ -125,22 +125,53 @@ docker-compose exec rhapsodyai-mysql-1 mysql -u developer -ppassword -e "DROP DA
 docker-compose restart uvicorn
 ```
 
-### Prod schema updates
+## Connecting to Prod MySQL
 
-On prod, `0001.sql` won't re-apply automatically (yoyo tracks it as already applied). Changes to existing tables must be applied manually via `ALTER TABLE` / `RENAME TABLE` / `CREATE TABLE`.
+Prod MySQL runs in the `rhapsodyai-mysql-1` container on the Oracle A1 host, published as `0.0.0.0:3302 -> 3306`. There is **no `mysql` client on the local host** — every route below ends up inside a container.
 
-Connect to prod MySQL:
+Credentials are the same names as locally (`MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` in `.env`; on prod they come from the `ENV_FILE` GitHub secret). Never paste the literal password into a doc, a commit, or a shell transcript — read it from `.env` at call time.
+
+### Route A — one-shot command over SSH (default for schema deltas)
+
 ```bash
-ssh -o ExitOnForwardFailure=no rhapsody-prod \
-  "docker exec rhapsodyai-mysql-1 mysql -u developer -ppassword --default-character-set=utf8mb4 project"
-```
+PW=$(grep '^MYSQL_PASSWORD=' .env | cut -d= -f2-)
 
-Or pipe a SQL file:
-```bash
-ssh -o ExitOnForwardFailure=no rhapsody-prod \
-  "docker exec -i rhapsodyai-mysql-1 mysql -u developer -ppassword --default-character-set=utf8mb4 project" \
+ssh -o ClearAllForwardings=yes rhapsody-prod \
+  "docker exec -i rhapsodyai-mysql-1 mysql -u developer -p$PW --default-character-set=utf8mb4 project" \
   < delta.sql
 ```
+
+`-o ClearAllForwardings=yes` is not optional in practice. The `rhapsody-prod` alias carries `LocalForward` for 9634 / 5601 / 3012 / 9181 / 6333 with `ExitOnForwardFailure yes`, and while the local docker-compose stack is up those ports are taken — the session dies with `bind [::1]:9634: Cannot assign requested address` before the remote command ever runs. Clearing the forwards keeps the alias usable without stopping the local stack.
+
+`--default-character-set=utf8mb4` is also not optional: without it the client renders Cyrillic as `??????` even though the stored data is fine.
+
+Drop `-i` and the redirect for an interactive shell; add `-e "SELECT ..."` for a single read-only query.
+
+### Route B — tunnel via `rhapsody-prod-db` (when you need prod and local at once)
+
+For schema diffing, data comparison or any tool that speaks the MySQL protocol, use the dedicated alias:
+
+```bash
+ssh -f -N rhapsody-prod-db     # LocalForward 0.0.0.0:3307 -> prod localhost:3302
+```
+
+It exists precisely because `rhapsody-prod` cannot coexist with the local stack. It forwards one port, 3307, which nothing local uses, so it can stay up indefinitely alongside `docker-compose`. It binds `0.0.0.0` (not `127.0.0.1`) on purpose — otherwise containers can't reach it through `host.docker.internal`. `AddressFamily inet` avoids the IPv6 bind failure that breaks the other alias.
+
+Through the tunnel, from the local MySQL container:
+```bash
+docker exec -i $(docker ps --format '{{.Names}}' | grep mysql) \
+  mysql -h host.docker.internal -P 3307 -u developer -p"$PW" \
+        --default-character-set=utf8mb4 project -e "SHOW TABLES;"
+```
+
+Kill it when done: `pkill -f 'ssh.*rhapsody-prod-db'`.
+
+### Cautions
+
+- **Never pipe `0001.sql` at prod.** It starts with `USE \`project\`` plus `DROP TABLE IF EXISTS` — it self-selects the live database and wipes it regardless of which host or DB name you thought you were targeting.
+- **`0001.sql` never re-applies on prod** (yoyo already marked it applied). Schema changes reach prod only as hand-written `ALTER TABLE` / `RENAME TABLE` / `CREATE TABLE`, applied through Route A. Keep the same change in `0001.sql` so a fresh install still matches.
+- **Don't run ad-hoc `mysql_pool_get()` scripts against prod** without a guaranteed pool close — leaked connections accumulate on the server.
+- Data (not schema) goes through the Seed UI `/admin/seed`; a full dump is `/admin/backup`.
 
 ## 0001.sql Conventions
 
