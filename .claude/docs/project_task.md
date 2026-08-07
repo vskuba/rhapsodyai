@@ -476,25 +476,33 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
   за этим эндпоинтом стоит джоб, меняющий состояние задач
 - `project_task.project_id` без FK и без NOT NULL — «Без проекта» приходится матчить как
   `project_id = 0 OR project_id IS NULL`
-- **Прод: ни `parent_id`, ни переименование таблиц не приедут сами.**
-  `migrations/0001.sql` там уже применён, а yoyo повторно его не гоняет. Код после
-  переименования обращается к `project_task*`, которых на проде нет, — до деплоя
-  нужно вручную выполнить:
+- **Прод: изменения схемы не приедут сами.** `migrations/0001.sql` там помечен
+  применённым (19.07.2026), yoyo повторно его не гоняет — всё, что дописано в файл
+  после этой даты, доезжает только руками. Как подключаться — `.claude/docs/database.md`,
+  раздел «Connecting to Prod MySQL».
+
+  **07.08.2026 применено:** `task` (0 строк, без входящих FK) заменена на
+  `project_task` + `project_task_subtask` + `project_task_attempt` по DDL из `0001.sql`;
+  заодно доехали 4 колонки в `llm` (`input_type`, `output_type`, `chunk_size`,
+  `chunk_size_refresh_at`) — без них `src/ai/ai_llm.py:231` падал с ошибкой 1054.
+  Вариант с `RENAME TABLE` не годился: `task_subtask`/`task_attempt` на проде не
+  существовало вовсе.
+
+  Расхождения, оставленные сознательно: `node.migration_file` и таблица
+  `detective_case` — наследие удалённых фич, в `0001.sql` их нет; `tinyint(4)` против
+  `tinyint` — MySQL 8.0.19+ просто не хранит display width, это не дрейф.
+
+  **Ещё не на проде** (появилось в `0001.sql` после 07.08): значение `review` в ENUM
+  `pipeline_state` и таблица `project_task_plan_revision`. Перед следующим деплоем:
 
   ```sql
-  RENAME TABLE `task` TO `project_task`,
-               `task_subtask` TO `project_task_subtask`,
-               `task_attempt` TO `project_task_attempt`;
-  ALTER TABLE `project_task` ADD `parent_id` INT DEFAULT NULL,
-    ADD INDEX `idx_pt_parent` (`parent_id`, `position`),
-    ADD CONSTRAINT `fk_pt_parent` FOREIGN KEY (`parent_id`)
-        REFERENCES `project_task` (`id`) ON DELETE CASCADE;
+  ALTER TABLE `project_task` MODIFY `pipeline_state`
+      ENUM('new','planning','pending_approval','review','approved','split','done','failed') DEFAULT NULL;
+  -- + CREATE TABLE `project_task_plan_revision` (DDL см. в migrations/0001.sql)
   ```
 
-  Имена индексов и FK у переименованных таблиц `RENAME TABLE` не меняет — при желании
-  привести к схеме из `0001.sql` их надо переименовать отдельно (`idx_ts_*` → `idx_pts_*`,
-  `fk_ts_task` → `fk_pts_task`, `idx_ta_*` → `idx_pta_*`, `fk_ta_subtask` → `fk_pta_subtask`).
-  Плюс поправить значение `seed_table_config` в `setting`, где таблица перечислена по имени
+  При переименовании таблиц не забыть значение `seed_table_config` в `setting` —
+  таблицы там перечислены по имени
 - Порядок задач внутри уровня — по статусу и дате (`taskCompare`), а не по `position`:
   колонка есть, но drag-and-drop строк пока нет
 - Порядок шагов в тике breadth-first: Developer разбирает все `planned`, прежде чем дойдёт
