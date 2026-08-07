@@ -370,6 +370,20 @@ jinja2_template_path = os.path.join(current_dir, config_get('DATA_DIR'), config_
 app.state.agent_manager = AiFrameworkAgentManager()
 app.state.jinja2_template = Jinja2Templates(directory=jinja2_template_path)
 
+# Ссылки на админ-инструменты в шапке открываются в браузере админа, поэтому ведут на его
+# `localhost`: до прод-сервисов он ходит через SSH-туннель, до локальных — напрямую. Порт
+# совпадает у обоих, и на машине разработчика туннель занимает 3012 первым — локальный
+# Cronicle пришлось увести на 3013. Дефолт здесь прод-овый, чтобы новую переменную не
+# заводить в ENV_FILE: расходится ровно одна инсталляция, она же и переопределяет.
+# Порт 6333 на хосте занимает SSH-туннель на прода (LocalForward 6333),
+# поэтому локальный Qdrant перенесён на 6335 (docker-compose.override.yml).
+# Порт 3012 — аналогично, занят SSH-туннелем на Cronicle прода.
+# Дефолт прод-овый: расходится одна инсталляция, она и переопределяет.
+app.state.jinja2_template.env.globals['QDRANT_PORT'] = config_get('QDRANT_PORT', '6333')
+app.state.jinja2_template.env.globals['CRONICLE_PORT'] = config_get('CRONICLE_PORT', '3012')
+app.state.jinja2_template.env.globals['OPENSEARCH_DASHBOARDS_PORT'] = config_get('OPENSEARCH_DASHBOARDS_PORT', '5601')
+app.state.jinja2_template.env.globals['RQ_DASHBOARD_PORT'] = config_get('RQ_DASHBOARD_PORT', '9181')
+
 class NoCacheStaticFiles(StaticFiles):
     """Статика без heuristic-кэша браузера: no-cache заставляет ревалидировать
     файл (304 по ETag/Last-Modified, если не менялся) — правки js/css видны
