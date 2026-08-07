@@ -554,12 +554,12 @@
         font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
         white-space: nowrap;
     }
-    .stt-done      { background: #dcfce7; color: #15803d; }
-    .stt-active    { background: #dcfce7; color: #166534; }
+    .stt-done      { background: #e0f2fe; color: #0369a1; }
+    .stt-active    { background: #dcfce7; color: #15803d; }
     .stt-queued    { background: #fef3c7; color: #a16207; }
     .stt-pending   { background: #f1f5f9; color: #475569; }
     .stt-blocked   { background: #fee2e2; color: #b91c1c; }
-    .stt-cancelled { background: #f1f5f9; color: #94a3b8; }
+    .stt-cancelled { background: #f1f5f9; color: #64748b; }
     .stt-more      { background: #f1f5f9; color: #64748b; }
     .subtask-count { font-size: 10px; color: #94a3b8; font-variant-numeric: tabular-nums; }
     .subtask-item  { margin: 4px 0; padding: 4px 8px; border-left: 2px solid #e2e8f0; background: #fafbfc; border-radius: 2px; }
@@ -672,6 +672,23 @@
        и собственная горизонтальная полоса внутри строки осталась бы недосягаемой. */
     .task-rev-chips { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
     .task-rev-chip { padding: 2px 8px; font-size: 10px; line-height: 1.6; }
+    .task-rev-x {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 14px; height: 14px; font-size: 12px; line-height: 1;
+        padding: 0; border-radius: 3px; border: none;
+        background: transparent; color: #94a3b8; cursor: pointer;
+        transition: background .12s, color .12s;
+    }
+    .task-rev-x:hover { background: #fee2e2; color: #dc2626; }
+
+    /* ── Кнопка сохранения плана (chip-стиль, как Save min w&h) ── */
+    .plan-save-btn {
+        font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 10px;
+        border: 1px solid #bfdbfe; background: #eff6ff; color: #2563eb;
+        cursor: pointer; line-height: 16px; margin-left: 4px; flex-shrink: 0;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .plan-save-btn:hover { background: #dbeafe; border-color: #93c5fd; }
     .task-rev-preview {
         display: flex; align-items: center; gap: 10px;
         margin-top: 6px; padding: 6px 10px;
@@ -1560,6 +1577,7 @@ function renderRow(row, index, hasParent) {
                         <div class="task-plan-header">
                             <label>План <span class="plan-hint">— его пишет менеджер по описанию задачи</span></label>
                             <div class="task-rev-chips" id="revs-${t.id}"></div>
+                            <button class="plan-save-btn" id="psave-${t.id}" onclick="planSave(${t.id})" title="Сохранить план">Сохранить</button>
                         </div>
                         <textarea id="tplan-${t.id}" class="task-plan-input" placeholder="Плана пока нет — менеджер составит его на ближайшем тике конвейера">${esc(parsePlanText(t.pipeline_plan))}</textarea>
                         <div class="task-rev-preview" id="revprev-${t.id}" style="display:none"></div>
@@ -1754,6 +1772,31 @@ async function saveTask(id) {
         // чипс появился сразу, а не после ручного раскрытия.
         if (wasOpen) toggleEdit(id);
     } catch(e) { alert(e.message || 'Ошибка сохранения'); }
+}
+
+async function planSave(id) {
+    const btn = document.getElementById(`psave-${id}`);
+    const orig = btn.textContent;
+    try {
+        const data = await taskFetch(`/task/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                plan_text: document.getElementById(`tplan-${id}`).value,
+            }),
+        });
+        const idx = _tasks.findIndex(t => t.id === id);
+        if (idx !== -1) _tasks[idx] = data.task;
+        btn.textContent = '✓ Сохранено';
+        btn.style.background = '#16a34a';
+        btn.style.color = '#fff';
+        btn.style.borderColor = '#16a34a';
+        const wasOpen = document.getElementById(`ter-${id}`)?.classList.contains('open');
+        renderTable();
+        if (wasOpen) toggleEdit(id);
+        setTimeout(() => { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }, 1400);
+    } catch(e) {
+        alert(e.message || 'Ошибка сохранения плана');
+    }
 }
 
 async function quickStatus(id, status) {
@@ -1960,6 +2003,7 @@ function _refreshInlineGoals(taskId) {
 const _revisionsCache = {};   // taskId -> {revisions, total}
 const _revPreview     = {};   // taskId -> номер просматриваемой ревизии либо null
 const _revPlanStash   = {};   // taskId -> текст плана, вытесненный просмотром
+function _planInputHandler(_id) { /* placeholder — план сохранение всегда активно */ }
 
 async function revisionsLoad(taskId, limit) {
     const el = document.getElementById(`revs-${taskId}`);
@@ -2008,6 +2052,18 @@ async function revisionRestore(taskId, n) {
     toggleEdit(taskId);
 }
 
+async function revisionDelete(taskId, n) {
+    if (!confirm(`Удалить ревизию ${n}? Это действие необратимо.`)) return;
+    try {
+        await taskFetch(`/task/${taskId}/plan/revision/${n}`, { method: 'DELETE' });
+        _revPreview[taskId] = null;
+        _revPlanStash[taskId] = null;
+        revisionsLoad(taskId);
+    } catch(e) {
+        alert(e.message || 'Не удалось удалить ревизию');
+    }
+}
+
 function _revisionsRender(taskId) {
     const el = document.getElementById(`revs-${taskId}`);
     if (!el) return;
@@ -2021,7 +2077,8 @@ function _revisionsRender(taskId) {
     html += revs.slice(1).map(r =>
         `<button class="task-chip task-rev-chip${cur === r.n ? ' active' : ''}"`
         + ` title="${esc(_revisionTitle(r))}" onclick="revisionShow(${taskId},${r.n})">`
-        + `Ревизия ${r.n} · ${esc(_revisionTime(r))}</button>`).join('');
+        + `Ревизия ${r.n} · ${esc(_revisionTime(r))}</button>`
+        + `<button class="task-rev-x" onclick="event.stopPropagation();revisionDelete(${taskId},${r.n})" title="Удалить ревизию ${r.n}">×</button>`).join('');
 
     const rest = (data.total || 0) - revs.length;
     if (rest > 0) {
@@ -2055,6 +2112,9 @@ function _revPreviewSet(taskId, rev) {
     }
     if (addBtn)  addBtn.disabled  = !!rev;
     if (saveBtn) saveBtn.disabled = !!rev;
+    // План save-кнопка тоже блокируется в режиме просмотра ревизии
+    const psave = document.getElementById(`psave-${taskId}`);
+    if (psave) psave.disabled = !!rev;
 }
 
 function _revisionAuthor(rev) {
