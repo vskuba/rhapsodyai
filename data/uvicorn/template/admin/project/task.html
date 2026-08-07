@@ -304,6 +304,7 @@
 
     .td-id     { color: #94a3b8; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .td-title  { font-weight: 600; color: #0f172a; line-height: 1.4; }
+    .td-sort   { width: 44px; }
 
     /* ── Дерево задач (task.parent_id) ──
        Вложенность живёт внутри колонки «Название», а не отдельной колонкой:
@@ -480,6 +481,22 @@
     .task-row:hover .btn-row-sub { opacity: 1; }
     .btn-row-sub:hover { background: #eef2ff; color: #4f46e5; }
     .btn-row-sub:focus-visible { opacity: 1; outline: 2px solid #c7d2fe; }
+
+    /* ── Sort (reorder) buttons ── */
+    .td-sort { width: 44px; text-align: center; white-space: nowrap; }
+    .sort-btns { display: none; gap: 2px; justify-content: center; }
+    .task-row:hover .sort-btns, .task-edit-row .sort-btns { display: flex; }
+    .sort-btn {
+        width: 20px; height: 16px;
+        padding: 0;
+        border: 1px solid #e2e8f0; border-radius: 3px;
+        background: #fff; color: #94a3b8;
+        font-size: 10px; line-height: 16px;
+        cursor: pointer; transition: all .12s;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .sort-btn:hover { background: #f8fafc; color: #4f46e5; border-color: #c7d2fe; }
+    .sort-btn:disabled { opacity: .25; cursor: default; pointer-events: none; }
 
     /* ── Inline goals (list column) ── */
     .inline-goals { display: flex; flex-direction: column; gap: 2px; }
@@ -1209,10 +1226,38 @@ function taskMatches(t) {
 }
 
 function taskCompare(a, b) {
-    const oa = STATUS_ORDER[a.status] ?? 99;
-    const ob = STATUS_ORDER[b.status] ?? 99;
-    if (oa !== ob) return oa - ob;
+    // Position — основной ключ сортировки, потом порядок создания
+    const pa = parseInt(a.position, 10) || 0;
+    const pb = parseInt(b.position, 10) || 0;
+    if (pa !== pb) return pa - pb;
     return new Date(b.created_at) - new Date(a.created_at);
+}
+
+// Рендер кнопок сортировки: ↑ и ↓ с disabled по наличию соседей.
+function _sortBtns(taskId, position) {
+    return `<div class="sort-btns">
+        <button class="sort-btn" onclick="event.stopPropagation();moveTask(${taskId},'up')" title="Вверх" id="sort-up-${taskId}">▲</button>
+        <button class="sort-btn" onclick="event.stopPropagation();moveTask(${taskId},'down')" title="Вниз" id="sort-down-${taskId}">▼</button>
+    </div>`;
+}
+
+async function moveTask(taskId, direction) {
+    try {
+        const resp = await fetch(`/task/${taskId}/move`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({direction}),
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.moved) {
+            // Перечитаем задачи и перерисуем таблицу
+            await loadTasks();
+            renderTable();
+        }
+    } catch (e) {
+        console.error('moveTask error:', e);
+    }
 }
 
 // Все потомки задачи. Нужны и для удаления (БД каскадит), и чтобы не дать
@@ -1347,6 +1392,7 @@ function renderTable() {
                     <th data-col="goals">${hasParent ? 'Прогресс' : 'Цели'}</th>
                     <th data-col="date">Создана</th>
                     <th data-col="act" style="text-align:right">Действия</th>
+                    <th data-col="sort" class="td-sort">⬆️⬇️</th>
                 </tr>
             </thead>
             <tbody id="taskTbody">
@@ -1498,6 +1544,8 @@ function renderRow(row, index, hasParent) {
     const cls = ['task-row'];
     if (row.depth) cls.push('tree-child');
     if (row.ghost) cls.push('tree-ghost');
+    // Соседи для кнопок up/down
+    const sortBtns = _sortBtns(t.id, t.position);
     return `
         <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'};--row-bg:${rowBg(row, index)}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
             <td class="td-id" data-col="id">#${t.id}</td>
@@ -1512,9 +1560,10 @@ function renderRow(row, index, hasParent) {
                 ${rowStatusBtn(t)}
                 <button class="btn-row-del" onclick="event.stopPropagation();deleteTask(${t.id})" title="Удалить">✕</button>
             </td>
+            <td class="td-sort" data-col="sort">${sortBtns}</td>
         </tr>
         <tr class="task-edit-row" id="ter-${t.id}">
-            <td class="task-edit-cell" colspan="7">
+            <td class="task-edit-cell" colspan="${hasParent ? 7 : 8}">
                 <div class="task-edit-grid">
                     <div class="form-group">
                         <label>Название</label>
@@ -2400,6 +2449,10 @@ function colOrderApply(order) {
         const map = {};
         cells.forEach(c => { if (c.dataset.col) map[c.dataset.col] = c; });
         order.forEach(col => { if (map[col]) row.appendChild(map[col]); });
+        // Новые колонки, которых нет в сохранённом порядке — добавляем в конец
+        cells.forEach(c => {
+            if (c.dataset.col && !order.includes(c.dataset.col)) row.appendChild(c);
+        });
     };
     reorderRow(table.querySelector('thead tr'));
     table.querySelectorAll('tbody tr').forEach(row => {

@@ -143,6 +143,48 @@ async def project_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermis
     return {'ok': True}
 
 
+@router.post('/task/{task_id}/move')
+async def project_task_move(task_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+    """Поменять местами задачу с соседом по уровню (up / down)."""
+    direction = str(data.get('direction') or '').strip()
+    if direction not in ('up', 'down'):
+        raise HTTPException(status_code=400, detail='direction must be up or down')
+
+    async with mysql_get_db_async() as db:
+        # Текущая задача: parent_id и position
+        await db.execute("SELECT parent_id, position FROM project_task WHERE id = %s", (task_id,))
+        task = await db.fetchone()
+        if not task:
+            raise HTTPException(status_code=404, detail='task not found')
+
+        parent_clause = "parent_id IS NULL" if task['parent_id'] is None else f"parent_id = {task['parent_id']}"
+        if direction == 'up':
+            # Найти соседа слева: та же parent_id, position меньше, самый большой position
+            await db.execute(
+                f"SELECT id, position FROM project_task WHERE {parent_clause} AND position < %s "
+                f"ORDER BY position DESC LIMIT 1", (task['position'],))
+        else:
+            # Найти соседа справа: та же parent_id, position больше, самый маленький position
+            await db.execute(
+                f"SELECT id, position FROM project_task WHERE {parent_clause} AND position > %s "
+                f"ORDER BY position ASC LIMIT 1", (task['position'],))
+
+        sibling = await db.fetchone()
+        if not sibling:
+            return {'ok': True, 'moved': False, 'reason': f'cannot move {direction}'}
+
+        # Меняем positions местами
+        await db.execute(
+            "UPDATE project_task SET position = %s WHERE id = %s",
+            (sibling['position'], task_id))
+        await db.execute(
+            "UPDATE project_task SET position = %s WHERE id = %s",
+            (task['position'], sibling['id']))
+        await db.connection.commit()
+
+    return {'ok': True, 'moved': True}
+
+
 @router.post('/task/ai-generate')
 async def project_task_ai_generate(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     description = str(data.get('description') or '').strip()
