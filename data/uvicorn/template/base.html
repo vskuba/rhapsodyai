@@ -112,7 +112,7 @@
             {% if request.session.get('role') == 'admin' %}
             <div class="tabnav-panel" data-group="logs">
                 <span class="tabnav-sep"></span>
-                <a href="http://localhost:5601/app/data-explorer/discover#?_a=(discover:(columns:!(message),isDirty:!f,sort:!()),metadata:(indexPattern:'9d4339a0-3761-11f1-82cd-c50d8f73f9fd',view:discover))&_g=(filters:!(),refreshInterval:(pause:!t,value:0),time:(from:now-15m,to:now))&_q=(filters:!(),query:(language:kuery,query:''))"
+                <a href="http://localhost:{{ OPENSEARCH_DASHBOARDS_PORT }}/app/data-explorer/discover"
                    target="_blank">🔎 Opensearch</a>
                 <a href="http://localhost:8090" target="_blank">💚 Gatus</a>
                 <span class="tabnav-sep"></span>
@@ -141,10 +141,10 @@
             <div class="tabnav-panel" data-group="tool">
                 <span class="tabnav-sep"></span>
                 <a href="http://localhost:9634" target="_blank">🗄️ Phpmyadmin</a>
-                <a href="http://localhost:6333/dashboard" target="_blank">📐 Qdrant</a>
+                <a href="http://localhost:{{ QDRANT_PORT }}/dashboard" target="_blank">📐 Qdrant</a>
                 <span class="tabnav-sep"></span>
                 <a href="/admin/queue" target="_blank">📬 Local queue</a>
-                <a href="http://localhost:9181/" target="_blank">📮 Redis queues</a>
+                <a href="http://localhost:{{ RQ_DASHBOARD_PORT }}/" target="_blank">📮 Redis queues</a>
                 <span class="tabnav-sep"></span>
                 <a href="http://localhost:{{ CRONICLE_PORT }}" target="_blank">⏰ Cronicle</a>
                 <span class="tabnav-sep"></span>
