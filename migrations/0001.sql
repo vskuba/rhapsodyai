@@ -509,7 +509,10 @@ CREATE TABLE `project_task` (
     `position` INT NOT NULL DEFAULT '0',
     -- Конвейер агентов. NULL = обычная ручная задача, конвейера не касается (opt-in).
     -- Ортогонально `status`, который остаётся человеческим kanban-статусом.
-    `pipeline_state` ENUM('new','planning','pending_approval','approved','split','done','failed') DEFAULT NULL,
+    -- `review` — человек нажал «Обновить план»: план есть, но его надо пересмотреть.
+    -- Отдельное значение обязательно: отбор в конвейер идёт по «в плане нет подзадач»
+    -- (`task_claim_task_unplanned`), и задачу с готовым планом иначе никто не подберёт.
+    `pipeline_state` ENUM('new','planning','pending_approval','review','approved','split','done','failed') DEFAULT NULL,
     `pipeline_plan` MEDIUMTEXT NOT NULL,
     `pipeline_error` TEXT NOT NULL,
     `pipeline_locked_at` DATETIME DEFAULT NULL,
@@ -562,6 +565,36 @@ CREATE TABLE `project_task_attempt` (
     PRIMARY KEY (`id`),
     INDEX `idx_pta_subtask` (`subtask_id`, `attempt_no`),
     CONSTRAINT `fk_pta_subtask` FOREIGN KEY (`subtask_id`) REFERENCES `project_task_subtask` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- История версий плана. План перезаписывается на месте, и без снапшота предыдущая
+-- версия исчезала вместе с ответом на вопрос «кто и на что её поменял» — а именно он
+-- и нужен, когда разбираешь, почему конвейер сделал не то.
+--
+-- Append-only: каждая запись плана добавляет строку, самая свежая ревизия — это то,
+-- что прямо сейчас лежит в `project_task.pipeline_plan`. Снимок именно новой версии,
+-- а не вытесняемой: тогда автор и время у строки честные («эту версию написал
+-- такой-то тогда-то»), а не «момент, когда её заменили».
+CREATE TABLE `project_task_plan_revision` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `task_id` INT NOT NULL,
+    -- Нумерация внутри задачи, считается на вставке. AUTO_INCREMENT не годится —
+    -- он общий на все задачи, и «Ревизия 417» в интерфейсе ничего не значит.
+    `revision_no` INT NOT NULL DEFAULT '0',
+    `plan_text` MEDIUMTEXT NOT NULL,
+    -- Цели и подзадачи снимаются вместе с планом: чипс ревизии подменяет и то, и то,
+    -- а восстановление без подзадач дало бы план, который нечем раскладывать.
+    `goals` TEXT NOT NULL,
+    `subtasks` MEDIUMTEXT NOT NULL,
+    `author_kind` ENUM('manager','user') NOT NULL DEFAULT 'manager',
+    `author_id` INT DEFAULT NULL,
+    `author_name` VARCHAR(64) NOT NULL DEFAULT '',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- Настоящая защита от гонки человека и воркера: номер считается запросом, и без
+    -- уникальности две одновременные записи получили бы один и тот же `revision_no`.
+    UNIQUE KEY `uk_ptpr_task_rev` (`task_id`, `revision_no`),
+    CONSTRAINT `fk_ptpr_task` FOREIGN KEY (`task_id`) REFERENCES `project_task` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── Developing ────────────────────────────────────────────────────────────────

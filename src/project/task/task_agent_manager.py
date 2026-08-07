@@ -19,7 +19,7 @@ from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
-from src.project.task.task_plan import task_plan_goals_normalize
+from src.project.task.task_plan import task_plan_goals_normalize, task_plan_parse
 
 TASK_MANAGER_AGENT_NAME = 'task_plan_manager'
 
@@ -31,9 +31,16 @@ MANAGER_TIMEOUT = 720.0
 MANAGER_USER_ID = 1  # только для атрибуции session/log
 
 
-async def task_agent_manager_plan(task: dict) -> dict:
+async def task_agent_manager_plan(task: dict, revise: bool = False) -> dict:
     """
     Разложить глобальную задачу на план, подзадачи и цели.
+
+    Args:
+        revise: пересмотр существующего плана вместо написания с нуля. Тогда
+            текущий план уходит в `task_plan_current`, и промпт первого шага
+            раскрывает ветку «сверь с целями и поправь, а не пиши заново».
+            Цели отдельной переменной не требуют: `task_goals` и так везёт
+            актуальный список задачи вместе с правками человека.
 
     Returns:
         plan_text: человекочитаемый план для утверждения человеком.
@@ -60,6 +67,10 @@ async def task_agent_manager_plan(task: dict) -> dict:
         'task_title':       str(task.get('title') or ''),
         'task_description': str(task.get('description') or ''),
         'task_goals':       _goals_text(task.get('goals')),
+        # Пустая строка при обычном планировании — не «нет значения», а осознанная
+        # ложь для `%if task_plan_current%`: `ai_workflow_variable_truthy` считает
+        # пустую строку ложной, и блок пересмотра в промпте просто не раскроется.
+        'task_plan_current': task_plan_parse(task.get('pipeline_plan') or '')[0] if revise else '',
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
 

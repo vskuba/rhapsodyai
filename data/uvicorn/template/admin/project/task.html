@@ -281,12 +281,18 @@
         white-space: nowrap;
     }
 
+    /* Фон строки приходит из JS переменной `--row-bg` (см. ROW_BG): тон задаёт
+       глубина вложенности, чередование — соседство. Строки бывают высокими
+       (описание, список целей), и без зебры таблица читается сплошным полотном. */
     .task-table tbody tr.task-row {
-        border-bottom: 1px solid #f1f5f9;
+        background: var(--row-bg, #fff);
+        border-bottom: 1px solid #ece7dc;
         transition: background 0.1s;
     }
-    .task-table tbody tr.task-row:hover { background: #f8fafc; }
-    .task-table tbody tr.task-row.expanded { background: #eef2ff; }
+    /* Подсветки по наведению нет намеренно: зебра уже разделяет строки, а второй
+       слой реакции на мышь только мельтешил. Раскрытая строка перебивает любой
+       оттенок зебры, поэтому взята заметно насыщеннее самой тёмной ступени. */
+    .task-table tbody tr.task-row.expanded { background: #dbe2ff; }
 
     .task-table td {
         padding: 9px 14px;
@@ -315,19 +321,19 @@
     .tree-rail, .tree-elbow { position: relative; width: 16px; flex: none; align-self: stretch; }
     .tree-rail::before {
         content: ''; position: absolute; left: 7px; top: -400px; bottom: -400px;
-        border-left: 1px solid #d8e0ea;
+        border-left: 1px solid #cdc4b2;
     }
     .tree-rail-blank::before { display: none; }
     /* Локоть: вертикаль сверху до середины первой строки названия + горизонталь
        к тексту. У последнего в ветке вертикаль обрывается, у остальных идёт дальше. */
     .tree-elbow::before {
         content: ''; position: absolute; left: 7px; top: -400px; height: 409px;
-        border-left: 1px solid #d8e0ea;
+        border-left: 1px solid #cdc4b2;
     }
     .tree-elbow:not(.tree-elbow-last)::before { bottom: -400px; height: auto; }
     .tree-elbow::after {
         content: ''; position: absolute; left: 7px; top: 8px; width: 8px;
-        border-top: 1px solid #d8e0ea;
+        border-top: 1px solid #cdc4b2;
     }
 
     .tree-caret {
@@ -342,6 +348,19 @@
     .tree-caret.collapsed { transform: rotate(-90deg); color: #6366f1; }
     .tree-caret-gap { flex: none; width: 16px; }
 
+    /* Сквозная нумерация ветки: 2, затем 2.1, 2.1.1. Это позиция в текущей
+       сортировке, а не идентификатор — постоянная ссылка на задачу это «#id»
+       в первой колонке. */
+    .tree-num {
+        flex: none;
+        margin-right: 6px;
+        color: #a1866a;
+        font-size: 11px; font-weight: 700;
+        line-height: 18px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
     /* Пилюля и «＋» лежат внутри .tree-name, а не рядом с ним: как flex-соседи
        они улетали к правому краю колонки, отрываясь от названия. */
     .tree-kids {
@@ -350,7 +369,9 @@
         vertical-align: 1px;
         padding: 1px 6px;
         border-radius: 999px;
-        background: #eef2ff; color: #4f46e5;
+        /* Индиго на песочном фоне ступеней (ROW_BG) — контрастный акцент;
+           бежевая пилюля на бежевой строке терялась бы. */
+        background: #dfe6ff; color: #4338ca;
         font-size: 10px; font-weight: 700;
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
@@ -502,6 +523,8 @@
         flex: 1; font-size: 12px; border: 1px solid #818cf8;
         border-radius: 4px; padding: 1px 5px; outline: none; font-family: inherit;
     }
+    .ig-goals-wrapper { display: flex; flex-direction: column; gap: 2px; }
+    .ig-goals-wrapper > .subtask-status-tag { align-self: flex-start; margin-bottom: 1px; }
     .ig-btn {
         background: none; border: none; cursor: pointer; padding: 1px 3px;
         font-size: 11px; color: #cbd5e1; line-height: 1.4; flex-shrink: 0; border-radius: 4px;
@@ -511,6 +534,37 @@
     .ig-btn:hover { color: #4f46e5; background: #e0e7ff; }
     .ig-btn.del:hover { color: #dc2626; background: #fee2e2; }
     .ig-goals-empty { font-size: 11px; color: #cbd5e1; font-style: italic; }
+
+    /* ── Subtask progress (for parent tasks — merged status+goals column) ── */
+    .subtask-summary { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .subtask-progress-row {
+        display: flex; align-items: center; gap: 6px; font-size: 11px;
+        font-weight: 600; color: #64748b; white-space: nowrap;
+    }
+    .subtask-progress-bar {
+        flex: 1; max-width: 80px; height: 4px;
+        background: #f1f5f9; border-radius: 2px; overflow: hidden;
+    }
+    .subtask-progress-bar > i {
+        display: block; height: 100%; background: #22c55e; border-radius: 2px; transition: width .2s;
+    }
+    .subtask-status-row {
+        display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
+    }
+    .subtask-status-tag {
+        font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+        white-space: nowrap;
+    }
+    .stt-done      { background: #dcfce7; color: #15803d; }
+    .stt-active    { background: #dcfce7; color: #166534; }
+    .stt-queued    { background: #fef3c7; color: #a16207; }
+    .stt-pending   { background: #f1f5f9; color: #475569; }
+    .stt-blocked   { background: #fee2e2; color: #b91c1c; }
+    .stt-cancelled { background: #f1f5f9; color: #94a3b8; }
+    .stt-more      { background: #f1f5f9; color: #64748b; }
+    .subtask-count { font-size: 10px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+    .subtask-item  { margin: 4px 0; padding: 4px 8px; border-left: 2px solid #e2e8f0; background: #fafbfc; border-radius: 2px; }
+    .subtask-item + .subtask-item { border-top: 1px dashed #edf2f7; }
 
     /* ── Expanded edit row ── */
     .task-edit-row { display: none; }
@@ -561,6 +615,10 @@
     }
     .task-placeholder-icon { font-size: 34px; display: block; margin-bottom: 10px; opacity: .5; }
 
+    .task-plan-input {
+        min-height: 170px !important;
+    }
+
     .task-mic-btn {
         width: 32px; height: 32px;
         border-radius: 8px;
@@ -606,6 +664,26 @@
         font-size: 12px;
         line-height: 1.55;
     }
+    .task-plan-input[readonly] { background: #f8fafc; color: #64748b; }
+
+    /* ── Ревизии плана ── */
+    .task-plan-header { display: flex; align-items: center; gap: 8px; }
+    .task-plan-header label { margin: 0; }
+    /* Чипсы переносятся, а не скроллятся: у `.task-scroll` стоит overflow-x: hidden,
+       и собственная горизонтальная полоса внутри строки осталась бы недосягаемой. */
+    .task-rev-chips { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+    .task-rev-chip { padding: 2px 8px; font-size: 10px; line-height: 1.6; }
+    .task-rev-preview {
+        display: flex; align-items: center; gap: 10px;
+        margin-top: 6px; padding: 6px 10px;
+        border: 1px solid #fde68a; border-radius: 6px; background: #fffbeb;
+        font-size: 11px; color: #a16207;
+    }
+    .task-rev-preview span { flex: 1; }
+    .pipe-btn-wrap { display: inline-flex; }
+    .btn-pipe:disabled, .btn-save:disabled, .btn-add-goal:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-pipe:disabled:hover { background: #fff; border-color: #e2e8f0; }
+    .btn-save:disabled:hover { background: #4f46e5; }
 
     /* ── Goals editor (expanded row) ── */
     .task-goals-section {
@@ -703,12 +781,23 @@
     .pipe-chip::before { content: '⚙'; font-size: 9px; opacity: .7; }
     .pipe-new              { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
     .pipe-planning         { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+    .pipe-review           { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
     .pipe-pending_approval { background: #fef3c7; color: #a16207; border-color: #fde68a; }
     .pipe-approved         { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
     .pipe-split            { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
     .pipe-done             { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
     .pipe-failed           { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
-    .pipe-planning::before, .pipe-split::before { animation: spin 2.4s linear infinite; }
+    .pipe-planning::before, .pipe-split::before, .pipe-review::before { animation: spin 2.4s linear infinite; }
+    /* Не стадия конвейера, а объяснение её отсутствия: задачу с подзадачами конвейер
+       не планирует намеренно (план пишется только листьям). Оттого приглушённая и без
+       шестерёнки — иначе читалась бы как «что-то выполняется». */
+    .pipe-decomposed          { background: transparent; color: #a1866a; border-color: #ded4c0; font-weight: 600; }
+    /* Стрелка-ветвь вместо шестерёнки: та же метафора, что у дерева слева. Редкие
+       символы вроде «⑂» здесь пробовать нельзя — шрифтового покрытия у них нет, и
+       вместо иконки выходит случайная буква. */
+    /* `line-height: 1` обязателен: у стрелки собственная высота строки больше, чем у
+       шестерёнки, и чип вырастал на 4px — в одной ячейке со статусными это заметно. */
+    .pipe-decomposed::before  { content: '↳'; font-size: 10px; line-height: 1; }
 
     .task-pipeline-section {
         grid-column: 1 / -1;
@@ -790,9 +879,6 @@
     }
     .pipe-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
                     letter-spacing: .04em; margin: 10px 0 4px; }
-    .pipe-goal { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px; line-height: 1.45; }
-    .pipe-goal-mark { color: #16a34a; flex-shrink: 0; }
-    .pipe-goal-text { flex: 1; word-break: break-word; }
 </style>
 {% endblock %}
 
@@ -994,7 +1080,7 @@ function treeDescendants(id) {
 }
 
 // Порядок отрисовки: родитель, сразу за ним его ветка, и так вниз.
-// Возвращает [{t, depth, hasKids, kidsTotal, kidsDone, ghost, isLast, rails}].
+// Возвращает [{t, num, depth, hasKids, kidsTotal, kidsDone, ghost, isLast, rails}].
 function treeRows() {
     const ids      = new Set(_tasks.map(t => t.id));
     const byParent = new Map();
@@ -1021,28 +1107,45 @@ function treeRows() {
     const filtering = !!_statusFilter || !!(document.getElementById('taskSearch')?.value || '').trim();
     const out = [];
 
-    const walk = (parentId, depth, rails) => {
-        const list = (byParent.get(parentId) || []).filter(t => show.has(t.id)).sort(taskCompare);
+    // Сводка подзадач: для каждой родительской задачи — собираем детей с полными полями.
+    const kidsFull = new Map();
+    _tasks.forEach(t => {
+        if (!t.parent_id) return;
+        const p = t.parent_id;
+        if (!kidsFull.has(p)) kidsFull.set(p, []);
+        kidsFull.get(p).push(t);
+    });
+
+    const walk = (parentId, depth, rails, prefix) => {
+        // Нумеруем по полному списку соседей, а показываем отфильтрованный: иначе
+        // под фильтром «2.5» превратилась бы в «2.1» и назвать задачу номером
+        // в разговоре было бы нельзя — он зависел бы от того, что набрано в поиске.
+        const siblings = (byParent.get(parentId) || []).slice().sort(taskCompare);
+        const numOf    = new Map(siblings.map((x, idx) => [x.id, idx + 1]));
+        const list     = siblings.filter(t => show.has(t.id));
         list.forEach((t, i) => {
             const kidsAll = byParent.get(t.id) || [];
             const isLast  = i === list.length - 1;
+            const num     = prefix + numOf.get(t.id);
+            const kidsObj = kidsFull.has(t.id) ? kidsFull.get(t.id) : [];
             out.push({
-                t, depth, rails, isLast,
+                t, num, depth, rails, isLast,
                 hasKids:   kidsAll.length > 0,
                 // Пока идёт фильтр, сворачивать нечего: ветка и так показана не
                 // целиком, а каретка обещала бы действие, которого не будет.
                 expandable: !filtering && kidsAll.length > 0,
                 kidsTotal: kidsAll.length,
                 kidsDone:  kidsAll.filter(k => k.status === 'done').length,
+                kidsFull:  kidsObj,
                 ghost:     !hit.has(t.id),
             });
             // При активном фильтре свёрнутость игнорируем — иначе найденное
             // спряталось бы внутри свёрнутого родителя и поиск бы врал.
             const collapsed = !filtering && _collapsed.has(t.id);
-            if (!collapsed && kidsAll.some(k => show.has(k.id))) walk(t.id, depth + 1, rails.concat(isLast));
+            if (!collapsed && kidsAll.some(k => show.has(k.id))) walk(t.id, depth + 1, rails.concat(isLast), num + '.');
         });
     };
-    walk(null, 0, []);
+    walk(null, 0, [], '');
 
     return out;
 }
@@ -1081,21 +1184,23 @@ function renderTable() {
         return;
     }
 
+    // Есть ли родительские задачи среди отфильтрованных (не ghost).
+    const hasParent = rows.some(r => r.hasKids && !r.ghost);
     wrap.innerHTML = `
         <table class="task-table">
             <thead>
                 <tr>
                     <th data-col="id">ID</th>
-                    <th data-col="status">Статус</th>
+                    ${hasParent ? '' : '<th data-col="status">Статус</th>'}
                     <th data-col="title">Название</th>
                     <th data-col="desc">Описание</th>
-                    <th data-col="goals">Цели</th>
+                    <th data-col="goals">${hasParent ? 'Прогресс' : 'Цели'}</th>
                     <th data-col="date">Создана</th>
                     <th data-col="act" style="text-align:right">Действия</th>
                 </tr>
             </thead>
             <tbody id="taskTbody">
-                ${rows.map(r => renderRow(r)).join('')}
+                ${rows.map((r, i) => renderRow(r, i, hasParent)).join('')}
             </tbody>
         </table>`;
     colOrderApply(colOrderLoad());
@@ -1127,16 +1232,31 @@ function rowStatusBtn(t) {
     return '';
 }
 
-function renderInlineGoals(t) {
+function renderInlineGoals(t, statusOverride, hasKids) {
+    const status = statusOverride || t.status;
+    const label = STATUS_LABELS[status] || status;
+    const tagCls = (
+        status === 'active' ? 'stt-active' :
+        status === 'queued' ? 'stt-queued' :
+        status === 'pending' ? 'stt-pending' :
+        status === 'blocked' ? 'stt-blocked' :
+        status === 'cancelled' ? 'stt-cancelled' :
+        status === 'done' ? 'stt-done' : 'stt-more'
+    );
+    const isLeaf = !hasKids; // root task without children
     const goals = parseGoals(t.goals);
-    if (!goals.length) return '<span class="ig-goals-empty">—</span>';
-    const done = goals.filter(g => g.done).length;
-    const pct = Math.round(done * 100 / goals.length);
-    const progress = `
-        <div class="inline-goals-progress">
-            <span>${done}/${goals.length}</span>
-            <span class="inline-goals-bar"><i style="width:${pct}%"></i></span>
-        </div>`;
+    if (!goals.length) return `<div class="ig-goals-wrapper"><span class="subtask-status-tag ${tagCls}" title="${label}">${label}</span><span class="ig-goals-empty">—</span></div>`;
+    let html = `<div class="ig-goals-wrapper"><span class="subtask-status-tag ${tagCls}" title="${label}">${label}</span>`;
+    if (!isLeaf) {
+        // root task with children — show goals progress bar
+        const done = goals.filter(g => g.done).length;
+        const pct = Math.round(done * 100 / goals.length);
+        html += `
+            <div class="inline-goals-progress">
+                <span>${done}/${goals.length}</span>
+                <span class="inline-goals-bar"><i style="width:${pct}%"></i></span>
+            </div>`;
+    }
     const items = goals.map((g, i) => `
         <div class="inline-goal-item" id="ig-${t.id}-${i}">
             <input type="checkbox" ${g.done ? 'checked' : ''} onclick="event.stopPropagation();inlineToggleGoal(${t.id},${i})">
@@ -1144,7 +1264,38 @@ function renderInlineGoals(t) {
             <button class="ig-btn" onclick="event.stopPropagation();inlineEditGoal(${t.id},${i})" title="Редактировать">✏</button>
             <button class="ig-btn del" onclick="event.stopPropagation();inlineDeleteGoal(${t.id},${i})" title="Удалить">✕</button>
         </div>`).join('');
-    return `<div class="inline-goals">${progress}${items}</div>`;
+    return html + items + '</div>';
+}
+
+// Сводка подзадач для родительской задачи: прогресс-бар + счётчик по статусам.
+function renderSubtaskSummary(row) {
+    const kids = row.kidsFull || [];
+    if (!kids.length) {
+        return '<span class="ig-goals-empty">Нет подзадач</span>';
+    }
+    const done = kids.filter(s => s.status === 'done').length;
+    const pct = Math.round(done * 100 / kids.length);
+
+    // Прогресс-бар.
+    let html = `
+        <div class="subtask-progress-row">
+            <span>${done}/${row.kidsTotal}</span>
+            <span class="subtask-progress-bar"><i style="width:${pct}%"></i></span>
+        </div>`;
+
+    // Счётчик по статусам.
+    const counts = {};
+    kids.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1; });
+    const clsMap = { active: 'stt-active', queued: 'stt-queued', pending: 'stt-pending', blocked: 'stt-blocked', cancelled: 'stt-cancelled', done: 'stt-done' };
+    const statusTags = Object.entries(counts)
+        .sort((a, b) => (STATUS_ORDER[b[0]] ?? 99) - (STATUS_ORDER[a[0]] ?? 99))
+        .map(([status, count]) => {
+            const tagCls = clsMap[status] || 'stt-more';
+            return `<span class="subtask-status-tag ${tagCls}" title="${STATUS_LABELS[status] || status}">${STATUS_LABELS[status] || status}: ${count}</span>`;
+        }).join('');
+
+    html += `<div class="subtask-status-row">${statusTags}</div>`;
+    return html;
 }
 
 // Отступ ветки: направляющие предков плюс «локоть» самой строки. У предка,
@@ -1171,7 +1322,22 @@ function treeCaret(row) {
                     title="${isCollapsed ? 'Развернуть' : 'Свернуть'} подзадачи">▾</button>`;
 }
 
-function renderRow(row) {
+// Фон строки: столбец — глубина вложенности, строка — чётность в списке.
+// Подзадачи уходят в тёплый песочный, поэтому ветка видна как блок даже когда
+// линии дерева обрезаны, а чередование внутри ступени не даёт слиться двум
+// соседям подряд. Тон намеренно тёплый: синий спорил бы с индиговой подсветкой
+// раскрытой строки и с цветными бейджами статусов.
+const ROW_BG = [
+    ['#ffffff', '#fbf9f5'],   // корневые задачи
+    ['#f7f3ea', '#f2ede1'],   // подзадачи
+    ['#ece5d6', '#e7dfcd'],   // третий уровень и глубже
+];
+
+function rowBg(row, index) {
+    return ROW_BG[Math.min(row.depth, ROW_BG.length - 1)][index % 2];
+}
+
+function renderRow(row, index, hasParent) {
     const t = row.t;
     const badge = `<span class="task-status-badge status-${t.status}">${STATUS_LABELS[t.status] || t.status}</span>`;
     const dateStr = t.created_at ? t.created_at.substring(0, 10) : '';
@@ -1183,14 +1349,14 @@ function renderRow(row) {
     if (row.depth) cls.push('tree-child');
     if (row.ghost) cls.push('tree-ghost');
     return `
-        <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
+        <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'};--row-bg:${rowBg(row, index)}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
             <td class="td-id" data-col="id">#${t.id}</td>
-            <td class="td-status" data-col="status">${badge}${renderPipeChip(t)}</td>
+            ${hasParent ? '' : `<td class="td-status" data-col="status">${badge}${renderPipeChip(t, row)}</td>`}
             <td class="td-title" data-col="title">
-                <div class="tree-title">${treeIndent(row)}${treeCaret(row)}<span class="tree-name">${esc(t.title)}${kidsPill}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
+                <div class="tree-title">${treeIndent(row)}${treeCaret(row)}<span class="tree-num">${row.num}</span><span class="tree-name">${esc(t.title)}${kidsPill}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
             </td>
             <td class="td-desc" data-col="desc"><div class="task-desc-preview">${esc(t.description)}</div></td>
-            <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${renderInlineGoals(t)}</td>
+            <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${row.hasKids ? renderSubtaskSummary(row) : renderInlineGoals(t, undefined, false)}</td>
             <td class="td-date" data-col="date">${dateStr}</td>
             <td class="td-act" data-col="act">
                 ${rowStatusBtn(t)}
@@ -1219,11 +1385,15 @@ function renderRow(row) {
                             <textarea id="td-${t.id}">${esc(t.description)}</textarea>
                         </div>
                     </div>
-                    <div class="form-group span2">
-                        <label>План <span class="plan-hint">— его пишет менеджер по описанию задачи</span></label>
+                    <div class="form-group span2" style="${row.hasKids ? 'display:none' : ''}">
+                        <div class="task-plan-header">
+                            <label>План <span class="plan-hint">— его пишет менеджер по описанию задачи</span></label>
+                            <div class="task-rev-chips" id="revs-${t.id}"></div>
+                        </div>
                         <textarea id="tplan-${t.id}" class="task-plan-input" placeholder="Плана пока нет — менеджер составит его на ближайшем тике конвейера">${esc(parsePlanText(t.pipeline_plan))}</textarea>
+                        <div class="task-rev-preview" id="revprev-${t.id}" style="display:none"></div>
                     </div>
-                    <div class="task-goals-section">
+                    <div class="task-goals-section" style="${row.hasKids ? 'display:none' : ''}">
                         <div class="task-goals-header">
                             <span>Цели</span>
                             <button class="btn-add-goal" onclick="addGoal(${t.id})">+ Добавить цель</button>
@@ -1304,7 +1474,12 @@ function toggleEdit(id) {
         tr.classList.add('expanded');
         const task = _tasks.find(t => t.id === id);
         if (task) { _goalsCache[id] = parseGoals(task.goals); renderGoals(id); }
+        // Строка перерисовывается с нуля, а вместе с ней и поля плана — просмотр
+        // ревизии из прошлого раскрытия сбрасываем, иначе он останется только в стейте.
+        _revPreview[id] = null;
+        _revPlanStash[id] = null;
         pipelineLoad(id);
+        revisionsLoad(id);
     }
 }
 
@@ -1402,7 +1577,11 @@ async function saveTask(id) {
         });
         const idx = _tasks.findIndex(t => t.id === id);
         if (idx !== -1) _tasks[idx] = data.task;
+        const wasOpen = document.getElementById(`ter-${id}`)?.classList.contains('open');
         renderTable();
+        // Правка плана могла добавить ревизию — строку открываем заново, чтобы новый
+        // чипс появился сразу, а не после ручного раскрытия.
+        if (wasOpen) toggleEdit(id);
     } catch(e) { alert(e.message || 'Ошибка сохранения'); }
 }
 
@@ -1460,15 +1639,27 @@ function parseGoals(str) {
     return [];
 }
 
-function renderGoals(taskId) {
+// `goals` передаётся только при просмотре ревизии: рисуем чужой список, не трогая
+// `_goalsCache` — иначе заглянуть в историю значило бы потерять несохранённые правки целей.
+function renderGoals(taskId, goals = null, readonly = false) {
     const el = document.getElementById(`goals-${taskId}`);
     if (!el) return;
-    const goals = _goalsCache[taskId] || [];
-    if (!goals.length) {
-        el.innerHTML = '<div class="task-goals-empty">Нет целей — нажмите «+ Добавить цель»</div>';
+    const list = goals !== null ? goals : (_goalsCache[taskId] || []);
+    if (!list.length) {
+        el.innerHTML = readonly
+            ? '<div class="task-goals-empty">В этой ревизии целей не было</div>'
+            : '<div class="task-goals-empty">Нет целей — нажмите «+ Добавить цель»</div>';
         return;
     }
-    el.innerHTML = goals.map((g, i) => `
+    if (readonly) {
+        el.innerHTML = list.map(g => `
+            <div class="task-goal-item">
+                <input type="checkbox" ${g.done ? 'checked' : ''} disabled>
+                <span class="task-goal-text${g.done ? ' done' : ''}">${esc(g.text)}</span>
+            </div>`).join('');
+        return;
+    }
+    el.innerHTML = list.map((g, i) => `
         <div class="task-goal-item" id="gi-${taskId}-${i}">
             <input type="checkbox" ${g.done ? 'checked' : ''} onchange="toggleGoalDone(${taskId},${i})">
             <span class="task-goal-text${g.done ? ' done' : ''}" id="gt-${taskId}-${i}" onclick="startEditGoal(${taskId},${i})">${esc(g.text)}</span>
@@ -1591,12 +1782,133 @@ function _refreshInlineGoals(taskId) {
     if (task && cell) cell.innerHTML = renderInlineGoals(task);
 }
 
+// ── Ревизии плана ──
+// План перезаписывается на месте, поэтому каждая его запись — менеджером или человеком —
+// оставляет строку в истории. Самая свежая ревизия и есть текущий план: отдельного чипса
+// под неё не рисуем, иначе верхняя версия показалась бы дважды.
+const _revisionsCache = {};   // taskId -> {revisions, total}
+const _revPreview     = {};   // taskId -> номер просматриваемой ревизии либо null
+const _revPlanStash   = {};   // taskId -> текст плана, вытесненный просмотром
+
+async function revisionsLoad(taskId, limit) {
+    const el = document.getElementById(`revs-${taskId}`);
+    if (!el) return;
+    try {
+        _revisionsCache[taskId] = await taskFetch(`/task/${taskId}/plan/revisions${limit ? `?limit=${limit}` : ''}`);
+    } catch(e) {
+        el.innerHTML = '';
+        return;
+    }
+    _revisionsRender(taskId);
+}
+
+function revisionShow(taskId, n) {
+    const rev = (_revisionsCache[taskId]?.revisions || []).find(r => r.n === n);
+    if (!rev) return;
+    const planEl = document.getElementById(`tplan-${taskId}`);
+    // Живой текст прячем при входе в просмотр, а не при выходе: иначе несохранённая
+    // правка плана исчезла бы вместе с первым же кликом по чипсу.
+    if (_revPreview[taskId] == null && planEl) _revPlanStash[taskId] = planEl.value;
+    _revPreview[taskId] = n;
+    _revPreviewSet(taskId, rev);
+    _revisionsRender(taskId);
+}
+
+function revisionCurrent(taskId) {
+    if (_revPreview[taskId] == null) return;
+    _revPreview[taskId] = null;
+    _revPreviewSet(taskId, null);
+    _revisionsRender(taskId);
+}
+
+async function revisionRestore(taskId, n) {
+    if (!confirm(`Восстановить план из ревизии ${n}? Текущая версия останется в истории.`)) return;
+    try {
+        await taskFetch(`/task/${taskId}/plan/revision/${n}/restore`, { method: 'POST' });
+    } catch(e) {
+        alert(e.message || 'Не удалось восстановить ревизию');
+        return;
+    }
+    _revPreview[taskId] = null;
+    _revPlanStash[taskId] = null;
+    // `loadTasks` пересобирает таблицу и закрывает строку — открываем заново, чтобы
+    // человек увидел восстановленный план там же, где нажал кнопку.
+    await loadTasks();
+    toggleEdit(taskId);
+}
+
+function _revisionsRender(taskId) {
+    const el = document.getElementById(`revs-${taskId}`);
+    if (!el) return;
+    const data = _revisionsCache[taskId] || { revisions: [], total: 0 };
+    const revs = data.revisions || [];
+    if (!revs.length) { el.innerHTML = ''; return; }
+
+    const cur = _revPreview[taskId] ?? null;
+    let html = `<button class="task-chip task-rev-chip${cur === null ? ' active' : ''}"`
+             + ` title="${esc(_revisionTitle(revs[0]))}" onclick="revisionCurrent(${taskId})">Текущая</button>`;
+    html += revs.slice(1).map(r =>
+        `<button class="task-chip task-rev-chip${cur === r.n ? ' active' : ''}"`
+        + ` title="${esc(_revisionTitle(r))}" onclick="revisionShow(${taskId},${r.n})">`
+        + `Ревизия ${r.n} · ${esc(_revisionTime(r))}</button>`).join('');
+
+    const rest = (data.total || 0) - revs.length;
+    if (rest > 0) {
+        html += `<button class="task-chip task-rev-chip" onclick="revisionsLoad(${taskId},500)"`
+              + ` title="Показать историю целиком">…ещё ${rest}</button>`;
+    }
+    el.innerHTML = html;
+}
+
+// `rev === null` — возврат к живым данным: план из стеша, цели из `_goalsCache`, где
+// несохранённые правки человека всё это время и лежали.
+function _revPreviewSet(taskId, rev) {
+    const planEl = document.getElementById(`tplan-${taskId}`);
+    const badge  = document.getElementById(`revprev-${taskId}`);
+    const addBtn = document.querySelector(`#ter-${taskId} .btn-add-goal`);
+    const saveBtn = document.querySelector(`#ter-${taskId} .btn-save`);
+
+    if (planEl) {
+        planEl.value = rev ? rev.plan_text : (_revPlanStash[taskId] ?? planEl.value);
+        planEl.readOnly = !!rev;
+    }
+    renderGoals(taskId, rev ? rev.goals : null, !!rev);
+
+    if (badge) {
+        badge.style.display = rev ? 'flex' : 'none';
+        badge.innerHTML = rev
+            ? `<span>Просмотр ревизии ${rev.n} — ${esc(_revisionAuthor(rev))}, ${esc(window.fmtTz(rev.created_at))}.`
+              + ` Поля только для чтения.</span>`
+              + `<button class="btn-pipe primary" onclick="revisionRestore(${taskId},${rev.n})">Восстановить</button>`
+            : '';
+    }
+    if (addBtn)  addBtn.disabled  = !!rev;
+    if (saveBtn) saveBtn.disabled = !!rev;
+}
+
+function _revisionAuthor(rev) {
+    return rev.author_kind === 'manager' ? 'менеджер' : (rev.author_name || 'пользователь');
+}
+
+function _revisionTitle(rev) {
+    return `Ревизия ${rev.n} · ${_revisionAuthor(rev)} · ${window.fmtTz(rev.created_at)}`;
+}
+
+// В чипсе только время, если ревизия сегодняшняя: полная дата в узкой строке заголовка
+// съедает место, а точное значение всё равно есть в подсказке.
+function _revisionTime(rev) {
+    const s = window.fmtTz(rev.created_at);
+    const today = window.fmtTz(new Date().toISOString());
+    return s.slice(0, 10) === today.slice(0, 10) ? s.slice(11) : s.slice(5, 10).replace('-', '.');
+}
+
 // ── Конвейер агентов ──
 // Отдельная ось от `status`: та — ручной kanban, эта — стадия автоматики.
 const PIPELINE_LABELS = {
     new:              'Ожидает плана',
     planning:         'Планирование',
     pending_approval: 'На утверждении',
+    review:           'На пересмотре',
     approved:         'Утверждён',
     split:            'Выполняется',
     done:             'Завершён',
@@ -1612,8 +1924,14 @@ const SUBTASK_LABELS = {
     blocked:    'Заблокирована',
 };
 
-function renderPipeChip(t) {
-    if (!t.pipeline_state) return '';
+function renderPipeChip(t, row) {
+    if (!t.pipeline_state) {
+        // План пишется только листьям: задача с подзадачами уже разложена ими, второй
+        // раз её декомпозировать нечем. Без этой пометки ячейка у родителя пустая, и
+        // намеренный пропуск выглядит как несработавший конвейер.
+        if (!row || !row.hasKids) return '';
+        return `<div><span class="pipe-chip pipe-decomposed" title="План составляется только для задач без подзадач — эта уже разложена на ${row.kidsTotal} ${_taskPluralSub(row.kidsTotal)}">Разложена</span></div>`;
+    }
     const label = PIPELINE_LABELS[t.pipeline_state] || t.pipeline_state;
     return `<div><span class="pipe-chip pipe-${t.pipeline_state}">${label}</span></div>`;
 }
@@ -1632,60 +1950,73 @@ async function pipelineLoad(taskId) {
 
 async function pipelineAction(taskId, action) {
     const body = document.getElementById(`pipe-body-${taskId}`);
+    const wasOpen = document.getElementById(`ter-${taskId}`)?.classList.contains('open');
     if (body) body.innerHTML = '<span class="task-pipeline-muted">Применяю...</span>';
     try {
         await taskFetch(`/task/${taskId}/pipeline/${action}`, { method: 'POST' });
     } catch(e) {
-        alert('Не удалось выполнить действие — возможно, состояние уже изменилось');
+        // Отказ приходит с внятной причиной («план занят конвейером», «выполняются
+        // подзадачи») — показываем её, а не общее «что-то пошло не так».
+        alert(e.message || 'Не удалось выполнить действие — возможно, состояние уже изменилось');
     }
     // Состояние задачи изменилось на сервере: перечитываем список, чтобы чип в строке не врал.
     await loadTasks();
-    const row = document.getElementById(`ter-${taskId}`);
-    if (row?.classList.contains('open')) pipelineLoad(taskId);
+    // `renderTable` пересобирает таблицу и закрывает раскрытую строку — открываем её
+    // заново, иначе панель конвейера исчезает прямо из-под курсора.
+    if (wasOpen) toggleEdit(taskId);
+}
+
+async function planReview(taskId) {
+    if (!confirm('Отправить план менеджеру на пересмотр?\n\n'
+               + 'Менеджер сверит его с целями задачи и перепишет расхождения. Подзадачи '
+               + 'текущего плана будут удалены, сам план останется в истории ревизий.')) return;
+    await pipelineAction(taskId, 'review');
 }
 
 function _pipelineRender(taskId, data, body, actions) {
     const state = data.pipeline_state;
+    // Родителя конвейер не берёт (см. task_claim_task_unplanned): его план — это его
+    // же подзадачи. Кнопку «В конвейер» тут прятать обязательно, а не просто пояснять:
+    // она проставила бы `new`, воркер задачу не подобрал бы, и она зависла бы в этом
+    // состоянии навсегда.
+    const kids = _tasks.filter(x => x.parent_id === taskId).length;
 
     // План мог появиться уже после отрисовки строки — подставим, пока поле не трогали.
     const planEl = document.getElementById(`tplan-${taskId}`);
     if (planEl && !planEl.value.trim() && data.plan_text) planEl.value = data.plan_text;
 
     if (actions) {
+        let html;
         if (!state) {
-            actions.innerHTML = `<button class="btn-pipe primary" onclick="pipelineAction(${taskId},'start')">▶ В конвейер</button>`;
+            html = kids
+                ? ''
+                : `<button class="btn-pipe primary" onclick="pipelineAction(${taskId},'start')">▶ В конвейер</button>`;
         } else if (state === 'pending_approval') {
-            actions.innerHTML =
+            html =
                 `<button class="btn-pipe ok" onclick="pipelineAction(${taskId},'approve')">✓ Утвердить</button>` +
                 `<button class="btn-pipe no" onclick="pipelineAction(${taskId},'reject')">✕ Отклонить</button>`;
         } else {
-            actions.innerHTML = `<span class="pipe-chip pipe-${state}">${PIPELINE_LABELS[state] || state}</span>`;
+            html = `<span class="pipe-chip pipe-${state}">${PIPELINE_LABELS[state] || state}</span>`;
         }
+        actions.innerHTML = html + _planReviewButton(taskId, state, data);
     }
 
     if (!state) {
-        body.innerHTML = '<span class="task-pipeline-muted">Задача вне конвейера — агенты её не трогают.</span>';
+        body.innerHTML = kids
+            ? `<span class="task-pipeline-muted">Задача разложена на ${kids} ${_taskPluralSub(kids)} — план ей не пишется. Планы и агентов получают только задачи нижнего уровня; откройте подзадачу.</span>`
+            : '<span class="task-pipeline-muted">Задача вне конвейера — агенты её не трогают.</span>';
         return;
     }
 
     // Текст плана не дублируем — он редактируется в поле «План» выше.
     let html = '';
 
-    // Цели менеджера показываем только для чтения: править их нужно в колонке
-    // «Цели», куда они уже записаны, а здесь видно, что именно предложил агент.
-    const goals = data.goals || [];
-    if (goals.length) {
-        html += '<div class="pipe-section">Цели из плана</div>' +
-            goals.map(g => `<div class="pipe-goal">
-                                <span class="pipe-goal-mark">◇</span>
-                                <span class="pipe-goal-text">${esc(g.text)}</span>
-                            </div>`).join('') +
-            '<div class="pipe-section">Подзадачи</div>';
-    }
-
+    // Цели тут не повторяем: агент пишет их в те же самые цели задачи, которые блоком
+    // выше уже показаны с чекбоксами. Дубль был полным — только удлинял раскрытую
+    // строку и оставлял вопрос, какой из двух списков главный.
     const subtasks = data.subtasks || [];
     if (subtasks.length) {
-        html += subtasks.map((s, i) => {
+        html += '<div class="pipe-section">Подзадачи</div>' + subtasks.map((s, i) => {
             const attempts = s.attempt_count ? `<span class="pipe-attempts">попыток: ${s.attempt_count}</span>` : '';
             const err = s.last_error ? `<div class="pipe-error">${esc(s.last_error)}</div>` : '';
             return `<div class="pipe-subtask">
@@ -1703,6 +2034,38 @@ function _pipelineRender(taskId, data, body, actions) {
 
     if (data.error) html += `<div class="pipe-error">${esc(data.error)}</div>`;
     body.innerHTML = html;
+}
+
+// Почему кнопка заблокирована — по состояниям, в которых сервер откажет.
+const PLAN_REVIEW_BLOCKED = {
+    new:      'Задача ждёт первого планирования — пересматривать пока нечего',
+    planning: 'Менеджер уже работает над планом',
+    review:   'План уже отправлен на пересмотр — менеджер его ещё не взял',
+    approved: 'План разложен на подзадачи и выполняется — пересмотр заблокирован',
+    split:    'План разложен на подзадачи и выполняется — пересмотр заблокирован',
+};
+
+function _planReviewButton(taskId, state, data) {
+    // Плана нет — первый пишется кнопкой «В конвейер», пересматривать нечего.
+    if (!data.plan_text) return '';
+    const blocked = PLAN_REVIEW_BLOCKED[state];
+    if (!blocked) {
+        return `<button class="btn-pipe" onclick="planReview(${taskId})"`
+             + ` title="Отправить план менеджеру на пересмотр по текущим целям">↻ Обновить план</button>`;
+    }
+    // Подсказка висит на обёртке, а не на кнопке: у disabled-кнопки браузер `title`
+    // не показывает, и объяснение блокировки было бы недоступно именно там, где нужно.
+    return `<span class="pipe-btn-wrap" title="${esc(blocked)}">`
+         + `<button class="btn-pipe" disabled>↻ Обновить план</button></span>`;
+}
+
+function _taskPluralSub(n) {
+    // «1 подзадачу, 2 подзадачи, 5 подзадач» — писать «подзадач(и)» в интерфейсе,
+    // который в остальном говорит по-человечески, не хочется.
+    const d = n % 10, dd = n % 100;
+    if (d === 1 && dd !== 11) return 'подзадачу';
+    if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return 'подзадачи';
+    return 'подзадач';
 }
 
 // ── AI Task Generator ──
@@ -2047,6 +2410,8 @@ function colResizersInit() {
 }
 
 treeCollapsedLoad();
-loadProjects();
+// Смещение часового пояса тянем до первой отрисовки: без loadTz() глобальный fmtTz
+// молча показывает UTC, и времена ревизий разъезжаются с остальной админкой.
+(window.loadTz ? window.loadTz() : Promise.resolve()).then(loadProjects);
 </script>
 {% endblock %}

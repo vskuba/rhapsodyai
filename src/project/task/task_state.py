@@ -19,7 +19,12 @@ async def task_state_task_get(task_id: int) -> dict:
 
 async def task_state_plan_save(task_id: int, plan_json: str, goals_json: str | None = None) -> None:
     """
-    planning -> pending_approval. Подзадачи не создаём: сначала утверждение человеком.
+    planning | review -> pending_approval. Подзадачи не создаём: сначала утверждение
+    человеком.
+
+    `review` — пересмотр плана по кнопке «Обновить план»; на выходе у него ровно то же
+    самое, что у первого планирования, поэтому и запись одна. Без него в условии
+    результат пересмотра молча не сохранялся бы.
 
     Цели, наоборот, пишем тем же UPDATE — это чек-лист, а не работа для агентов,
     и утверждать его отдельно нечего. Одним запросом, чтобы не осталось задачи с
@@ -36,7 +41,7 @@ async def task_state_plan_save(task_id: int, plan_json: str, goals_json: str | N
     async with mysql_get_db_async() as db:
         await db.execute(
             f"UPDATE project_task SET {', '.join(sets)} "
-            "WHERE id = %s AND pipeline_state = 'planning'",
+            "WHERE id = %s AND pipeline_state IN ('planning', 'review')",
             params,
         )
         await db.connection.commit()

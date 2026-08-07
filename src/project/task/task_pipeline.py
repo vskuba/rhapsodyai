@@ -7,9 +7,14 @@
 
     task.pipeline_state:
         (нет плана) -> planning -> pending_approval -> (человек) -> approved -> split -> done|failed
+                       review --^                      (человек: «Обновить план»)
 
     Вход в конвейер — отсутствие плана, а не явная отправка: задачу без
     `pipeline_plan` Manager подхватывает при любом человеческом `status`.
+
+    Второй вход — `review`: у задачи план есть, но человек отправил его на пересмотр.
+    По отсутствию плана такую задачу не отобрать, поэтому у неё своё состояние и свой
+    шаг; результат тот же — `pending_approval`.
 
     project_task_subtask.state:
         planned -> developing -> qa_pending -> done
@@ -30,10 +35,17 @@ from src.project.task.task_claim import (
     task_claim_subtask,
     task_claim_subtask_developable,
     task_claim_task,
+    task_claim_task_review,
     task_claim_task_unplanned,
     task_claim_worker_id,
 )
-from src.project.task.task_plan import task_plan_goals_merge, task_plan_parse, task_plan_serialize
+from src.project.task.task_plan import (
+    task_plan_goals_merge,
+    task_plan_goals_normalize,
+    task_plan_parse,
+    task_plan_serialize,
+)
+from src.project.task.task_revision import task_revision_add
 from src.project.task.task_state import (
     task_state_attempt_log,
     task_state_plan_save,
@@ -75,6 +87,9 @@ async def task_pipeline_run(max_actions: int = 1) -> dict:
 async def _action_next(worker: str) -> str | None:
     """Выполнить первое подошедшее действие. None — работы нет."""
     for handler in (
+        # Пересмотр — первым: на другом конце этого шага человек, который нажал
+        # «Обновить план» и ждёт результата, а плановое планирование подождёт тик.
+        _step_manager_review,
         _step_manager_plan,
         _step_plan_split,
         _step_developer_run,
@@ -87,40 +102,36 @@ async def _action_next(worker: str) -> str | None:
     return None
 
 
+async def _step_manager_review(worker: str) -> str | None:
+    """
+    review -> pending_approval: человек нажал «Обновить план», Manager пересматривает
+    существующий план и сверяет его с целями.
+
+    Отдельный шаг, а не ветка `_step_manager_plan`: тот отбирает задачи по отсутствию
+    плана, а здесь план как раз есть и именно он идёт на вход менеджеру.
+    """
+    task = await task_claim_task_review(worker)
+    if not task:
+        return None
+    return await _manager_plan_write(task, revise=True)
+
+
 async def _step_manager_plan(worker: str) -> str | None:
     """
     Задача без плана -> planning -> pending_approval: Manager читает описание и
     пишет план. Отбор идёт по отсутствию плана, а не по человеческому `status`.
+
+    Если план уже есть, а целей нет — менеджер запускается с revise=True,
+    чтобы пересмотреть существующий план и дописать цели, не удаляя subtasks.
     """
     task = await task_claim_task_unplanned(worker)
     if not task:
         return None
-
-    try:
-        result = await task_agent_manager_plan(task)
-    except Exception as e:
-        await task_state_task_fail(task['id'], f'Manager: {e}')
-        return f"task#{task['id']} manager -> failed"
-
-    subtasks = result.get('subtasks') or []
-    if not subtasks:
-        await task_state_task_fail(task['id'], 'Manager не вернул ни одной подзадачи')
-        return f"task#{task['id']} manager -> failed (пустой план)"
-
-    # Цели пишем сразу в задачу, не дожидаясь утверждения плана: подзадачи без
-    # утверждения ломали бы конвейер, а цели — просто чек-лист в колонке «Цели»,
-    # и человеку они нужны как раз в момент разбора плана.
-    goals = result.get('goals') or []
-    await task_state_plan_save(
-        task['id'],
-        task_plan_serialize(str(result.get('plan_text') or ''), subtasks, goals),
-        goals_json=task_plan_goals_merge(task.get('goals'), goals),
-    )
-    logger_info(
-        f'[task] task#{task["id"]} -> pending_approval '
-        f'({len(subtasks)} подзадач, {len(goals)} целей)'
-    )
-    return f"task#{task['id']} manager -> pending_approval"
+    # Если план уже есть (есть subtasks), но goals пуст — пересматриваем,
+    # а не пишем заново: менеджер удалит subtasks при write-from-scratch.
+    _, existing_subtasks = task_plan_parse(task.get('pipeline_plan') or '')
+    revise = len(existing_subtasks) > 0
+    return await _manager_plan_write(task, revise=revise)
 
 
 async def _step_plan_split(worker: str) -> str | None:
@@ -199,3 +210,47 @@ async def _step_task_finalize(worker: str) -> str | None:
         return None
     task_id, final = finalized
     return f"task#{task_id} -> {final}"
+
+
+async def _manager_plan_write(task: dict, revise: bool) -> str:
+    """
+    Общий хвост планирования и пересмотра: сходить к менеджеру и записать результат.
+
+    Задача уже захвачена вызывающим шагом — различаются они только тем, откуда её
+    взяли и передаётся ли менеджеру старый план.
+    """
+    label = 'review' if revise else 'manager'
+    try:
+        result = await task_agent_manager_plan(task, revise=revise)
+    except Exception as e:
+        await task_state_task_fail(task['id'], f'Manager: {e}')
+        return f"task#{task['id']} {label} -> failed"
+
+    subtasks = result.get('subtasks') or []
+    if not subtasks:
+        await task_state_task_fail(task['id'], 'Manager не вернул ни одной подзадачи')
+        return f"task#{task['id']} {label} -> failed (пустой план)"
+
+    # Цели пишем сразу в задачу, не дожидаясь утверждения плана: подзадачи без
+    # утверждения ломали бы конвейер, а цели — просто чек-лист в колонке «Цели»,
+    # и человеку они нужны как раз в момент разбора плана.
+    goals     = result.get('goals') or []
+    plan_text = str(result.get('plan_text') or '')
+    goals_json = task_plan_goals_merge(task.get('goals'), goals)
+    await task_state_plan_save(
+        task['id'],
+        task_plan_serialize(plan_text, subtasks, goals),
+        goals_json=goals_json,
+    )
+    # Ревизию пишем здесь, а не внутри `task_state_plan_save`: там один UPDATE без
+    # побочных таблиц, и спрятанная в нём запись истории читалась бы как сюрприз.
+    # В ревизию идут те же слитые цели, что легли в задачу, — иначе восстановление
+    # вернуло бы только предложенное агентом, потеряв цели человека.
+    await task_revision_add(task['id'], plan_text, task_plan_goals_normalize(goals_json),
+                            subtasks, author_kind='manager')
+
+    logger_info(
+        f'[task] task#{task["id"]} -> pending_approval '
+        f'({len(subtasks)} подзадач, {len(goals)} целей)'
+    )
+    return f"task#{task['id']} {label} -> pending_approval"

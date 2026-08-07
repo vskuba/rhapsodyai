@@ -16,8 +16,12 @@ from src.project.task.task_state import task_state_subtask_set
 LOCK_TIMEOUT_SEC = 900
 
 # Переходные состояния и то, куда их возвращать при протухшей блокировке.
-# Для qa_pending состояние то же — снимается только сама блокировка.
-_TASK_STATE_RECLAIM = {'planning': 'new'}
+# Для qa_pending и review состояние то же — снимается только сама блокировка.
+#
+# `review` нельзя возвращать в `new`, как `planning`: план у такой задачи есть, и
+# `task_claim_task_unplanned` её не подберёт — задача залипла бы навсегда. Оставляем
+# ждать пересмотра, за ней придёт следующий тик.
+_TASK_STATE_RECLAIM = {'planning': 'new', 'review': 'review'}
 _SUBTASK_STATE_RECLAIM = {'developing': 'planned', 'qa_pending': 'qa_pending'}
 
 
@@ -38,16 +42,14 @@ async def task_claim_task_unplanned(worker: str) -> dict | None:
     """
     Захватить задачу без плана и увести её в `planning`.
 
-    Человеческий `status` при отборе не смотрим: единственный критерий — плана
-    нет. Задача может и не быть заведена в конвейер явно (`pipeline_state IS
+    Человеческий `status` при отборе не смотрим: критерий — плана нет ИЛИ
+    целей нет. Задача может и не быть заведена в конвейер явно (`pipeline_state IS
     NULL`) — план менеджер пишет всё равно.
 
-    «Плана нет» — это ноль подзадач, а не пустая строка в колонке: сид и старые
-    записи держат заглушку `{"plan_text": "", "subtasks": []}`, и по сравнению с
-    `''` такая задача навсегда выпадала из конвейера, хотя планировать её как раз
-    и надо. Битый JSON приравниваем к пустому плану (через `JSON_VALID`, иначе
-    `JSON_EXTRACT` уронит весь запрос) — переписать его всё равно правильнее, чем
-    оставить задачу висеть.
+    «Плана нет» — это ноль подзадач в `pipeline_plan`. Битый JSON приравниваем
+    к пустому плану (через `JSON_VALID`). «Целей нет» — пустой массив в колонке
+    `goals`. Если план есть, а целей нет — задача тоже попадает к менеджеру,
+    чтобы дописать цели.
 
     `failed` сюда не попадает намеренно: у сорвавшегося менеджера план так и
     остался пустым, и без этого фильтра тик подбирал бы такую задачу вечно.
@@ -58,13 +60,38 @@ async def task_claim_task_unplanned(worker: str) -> dict | None:
     Подзапрос обёрнут в производную таблицу — MySQL не даёт читать в UPDATE ту же
     таблицу, которую пишет (ошибка 1093).
     """
+    # Родительские задачи (их не берёт ни один шаг).
+    # Обёртка в derived table — MySQL 1093 запрещает читать из UPDATE ту же таблицу.
+    subparents = (
+        "(SELECT pid FROM ("
+        "    SELECT DISTINCT parent_id AS pid FROM project_task "
+        "    WHERE parent_id IS NOT NULL"
+        ") AS _t)"
+    )
     return await _task_claim(
-        "COALESCE(JSON_LENGTH(JSON_EXTRACT("
+        # (Нет подзадач в pipeline_plan ИЛИ goals пустой/битый)
+        # pipeline_state новый или NULL, не родитель
+        f"(COALESCE(JSON_LENGTH(JSON_EXTRACT("
         "    IF(JSON_VALID(pipeline_plan), pipeline_plan, '{}'), '$.subtasks')), 0) = 0 "
+        " OR JSON_LENGTH(COALESCE("
+        "    IF(JSON_VALID(goals), goals, '[]'), '$')) = 0) "
         " AND (pipeline_state IS NULL OR pipeline_state = 'new') "
-        " AND id NOT IN (SELECT parent_id FROM (SELECT DISTINCT parent_id FROM project_task "
-        "                                        WHERE parent_id IS NOT NULL) AS parents)",
+        f" AND id NOT IN ({subparents} )",
         [], 'planning', worker)
+
+
+async def task_claim_task_review(worker: str) -> dict | None:
+    """
+    Захватить задачу, отправленную человеком на пересмотр плана.
+
+    Состояние не меняется — `review` остаётся `review`, ставится только блокировка
+    (так же устроен захват `qa_pending`). Из-за этого условие на свободную блокировку
+    обязано быть в самом `where`: в `_task_claim` от второго воркера защищает переход
+    состояния, а здесь перехода нет, и без проверки задачу взяли бы двое.
+    """
+    return await _task_claim(
+        "pipeline_state = 'review' AND (pipeline_locked_at IS NULL OR pipeline_locked_by = '')",
+        [], 'review', worker)
 
 
 async def task_claim_subtask(state_from: str, state_to: str, worker: str) -> dict | None:

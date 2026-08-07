@@ -31,6 +31,12 @@
   и без этого фильтра тик подбирал бы такую задачу вечно;
 - **задача с подзадачами** — планируются только листья, см. §2.1.
 
+**Второй вход — пересмотр.** Кнопка «Обновить план» ставит `pipeline_state = 'review'`,
+и задачу забирает отдельный шаг. Отдельное состояние нужно именно потому, что обычный
+отбор идёт по **отсутствию** плана (`JSON_LENGTH($.subtasks) = 0`): у задачи с уже
+написанным планом это условие не выполнится никогда, и без `review` она осталась бы
+для конвейера невидимой.
+
 `project_task.status`: `pending` · `queued` · `active` · `done` · `blocked` · `cancelled`
 
 ---
@@ -141,8 +147,55 @@ JSON-массив `[{text, done}]` в колонке `project_task.goals`. Ре�
 описанию задачи, человек может править руками. В колонке лежит JSON
 `{plan_text, subtasks, goals}`, в форме — только `plan_text`: клиент достаёт его
 `parsePlanText()`, а `PUT /task/{id}` принимает ключ `plan_text` и вклеивает его в
-JSON, **сохраняя `subtasks`** — иначе ручная правка сносила бы разбивку менеджера.
-Текст плана в блоке «Конвейер» намеренно не дублируется.
+JSON, **сохраняя `subtasks` и `goals`** — иначе ручная правка сносила бы разбивку
+менеджера и цели из плана. Текст плана в блоке «Конвейер» намеренно не дублируется.
+
+### 2.2 Ревизии плана
+
+В одну строку с заголовком «План» справа висят чипсы ревизий по убыванию
+(`#revs-{id}`, контейнер `.task-rev-chips`). Первый — **«Текущая»**, дальше
+«Ревизия N · HH:MM» по остальным (`revs.slice(1)`), в конце — «…ещё N», если история
+длиннее отданного окна.
+
+> Отдельного чипса под текущий план нет: снимок пишется в момент **создания** версии,
+> поэтому самая свежая ревизия и **есть** текущий план — рисуя её дважды, мы бы
+> показали одну версию под двумя именами.
+
+Чипсы **переносятся по строкам**, а не скроллятся: у `.task-scroll` стоит
+`overflow-x: hidden`, и собственная горизонтальная полоса внутри строки заголовка
+осталась бы недосягаемой.
+
+**Клик по чипсу — только просмотр.** `revisionShow()` подставляет в textarea план из
+ревизии, ставит `readonly`, рисует цели той версии, отключает «+ Добавить цель» и
+«Сохранить», а над полем показывает бейдж «Просмотр ревизии N» с кнопкой
+«Восстановить». Возврат — чипс «Текущая» (`revisionCurrent()`).
+
+Живой, несохранённый текст плана при входе в просмотр уезжает в `_revPlanStash[taskId]`
+и возвращается на выходе, а цели ревизии рисуются мимо `_goalsCache` — иначе заглянуть
+в историю значило бы потерять свои правки.
+
+**Кнопка «Обновить план»** живёт в `#pipe-actions-{id}` рядом с «Утвердить»/«Отклонить»
+(там уже известен `pipeline_state`). Её нет вовсе, пока плана нет — за первый план
+отвечает «В конвейер». Активна только при
+`pipeline_state ∈ {NULL, pending_approval, done, failed}`; в остальных состояниях
+`disabled` с объяснением в `title` (`PLAN_REVIEW_BLOCKED`).
+
+> Подсказка висит на обёртке `<span class="pipe-btn-wrap" title="…">`, а не на самой
+> кнопке: у `disabled`-кнопки браузер `title` не показывает, и причина блокировки была
+> бы недоступна ровно там, где нужна.
+
+Данные ревизий грузятся **лениво**, при раскрытии строки (`revisionsLoad` рядом с
+`pipelineLoad` в `toggleEdit`) — тянуть их в `loadTasks` значило бы +N запросов на
+страницу, где раскрыта одна строка.
+
+> `renderTable()` пересобирает `wrap.innerHTML` и закрывает раскрытую строку. Всё, что
+> перезагружает таблицу (`saveTask`, `pipelineAction`, `revisionRestore`), обязано
+> запомнить `wasOpen` и открыть строку заново через `toggleEdit(id)`, иначе панель
+> исчезает прямо из-под курсора.
+
+Времена ревизий форматирует глобальный `window.fmtTz` из `tz.js`; инициализация
+страницы ждёт `window.loadTz()` перед первой отрисовкой — без него `fmtTz` молча
+показывает UTC.
 
 > Поле отчёта имеет id `trep-{id}`, **не** `tr-{id}` — последний занят самим `<tr>`
 > строки, и `getElementById` возвращал бы элемент таблицы вместо textarea.
@@ -167,6 +220,8 @@ project_task.pipeline_state:
                                       NULL                         approved
                                                                        |
                                                                      split --> done | failed
+
+  NULL | pending_approval | done | failed  --(«Обновить план»)--> review --> pending_approval
 
 project_task_subtask.state:
 
@@ -232,6 +287,20 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 повторяется в `UPDATE` — иначе два тика утащили бы одну задачу. Общий код —
 `task_claim._task_claim()`, отбор без плана — `task_claim_task_unplanned()`.
 
+**Захват на пересмотр** — `task_claim_task_review()`, `state_to='review'`: состояние не
+меняется, задача берётся **только блокировкой**. Прецедент уже есть у
+`task_claim_subtask('qa_pending', 'qa_pending', ...)`. Раз перехода нет, единственной
+защитой от второго воркера остаётся сама блокировка, поэтому
+`pipeline_locked_at IS NULL OR pipeline_locked_by = ''` обязательна прямо в `WHERE`.
+
+В `_TASK_STATE_RECLAIM` для `review` стоит `review`, а не `new`: протухшая блокировка
+просто снимается и задача снова ждёт пересмотра. Увести её в `new`, как `planning`,
+нельзя — план у неё есть, `task_claim_task_unplanned` её не подберёт, и она залипнет
+навсегда.
+
+`_step_manager_review` стоит в `_action_next` **первым**, до `_step_manager_plan`: на
+другом конце этого шага живой человек, который нажал кнопку и ждёт.
+
 Если воркер умрёт посреди перехода, строка залипнет в переходном состоянии
 (`planning` / `developing`). `task_claim_locks_reclaim()` в начале каждого тика
 возвращает такие строки в работу по `locked_at < NOW() - INTERVAL LOCK_TIMEOUT_SEC SECOND`.
@@ -252,7 +321,7 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 | `report` | отчёт о выполненных работах |
 | `position` | порядок **внутри родителя** (у корневых — внутри проекта) |
 | `pipeline_state` | стадия конвейера, `NULL` = вне его |
-| `pipeline_plan` | JSON `{plan_text, subtasks}` от Manager |
+| `pipeline_plan` | JSON `{plan_text, subtasks, goals}` от Manager |
 | `pipeline_error` | причина `failed` |
 | `pipeline_locked_at` / `pipeline_locked_by` | оптимистичная блокировка |
 
@@ -262,7 +331,22 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 `project_task_attempt` — история попыток: `attempt_no`, `role`, `status`, `output`, `error`,
 `duration_ms`, FK на `project_task_subtask` с `ON DELETE CASCADE`.
 
-Обе новые таблицы — runtime-данные, **в seed не добавлять**. Схема живёт только в
+`project_task_plan_revision` — история версий плана, append-only: `revision_no`,
+`plan_text`, `goals`, `subtasks`, `author_kind` (`manager`|`user`), `author_id`,
+`author_name`, `created_at`; FK на `project_task` с `ON DELETE CASCADE`.
+
+- **Снимок нового состояния, а не предыдущего.** Так у каждой строки честные автор и
+  время («эту версию написал такой-то тогда-то»); при архивации-перед-перезаписью время
+  означало бы момент вытеснения. Следствие: самая свежая ревизия **и есть** текущий план.
+- Цели и подзадачи снимаются вместе с планом: чипс подменяет и то, и то, а
+  восстановление без подзадач дало бы план, который нечем разложить.
+- `revision_no` считается на вставке (`INSERT ... SELECT COALESCE(MAX(revision_no),0)+1`
+  из той же таблицы — MySQL это разрешает, запрет 1093 касается `UPDATE`/`DELETE`).
+  `AUTO_INCREMENT` не годится: он общий на все задачи. Настоящая защита от гонки
+  человека и воркера — `UNIQUE (task_id, revision_no)`, при её срабатывании вставка
+  повторяется ровно один раз.
+
+Все таблицы конвейера — runtime-данные, **в seed не добавлять**. Схема живёт только в
 `migrations/0001.sql`.
 
 ---
@@ -281,10 +365,34 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 | `POST` | `/task/{id}/pipeline/start` | `PLANNING_UPDATE` | `NULL` → `new` (вернуть отклонённую задачу в работу) |
 | `POST` | `/task/{id}/pipeline/approve` | `PLANNING_UPDATE` | `pending_approval` → `approved` |
 | `POST` | `/task/{id}/pipeline/reject` | `PLANNING_UPDATE` | `pending_approval` → `NULL` |
+| `POST` | `/task/{id}/pipeline/review` | `PLANNING_UPDATE` | «Обновить план»: `NULL`/`pending_approval`/`done`/`failed` → `review` |
+| `GET` | `/task/{id}/plan/revisions` | `PLANNING_VIEW` | `{revisions: [...], total}` по убыванию; `?limit=` (по умолчанию `TASK_REVISION_LIMIT = 20`, потолок 500) |
+| `GET` | `/task/{id}/plan/revision/{n}` | `PLANNING_VIEW` | одна ревизия целиком |
+| `POST` | `/task/{id}/plan/revision/{n}/restore` | `PLANNING_UPDATE` | вернуть план из ревизии |
 
 CRUD — `project_task.py`, конвейер — `project_task_pipeline.py`. Каждый переход сверяет
 текущее состояние прямо в `UPDATE`; несовпадение → `409`, чтобы двойной клик не
 проскочил гонку.
+
+`review` и `restore` проходят общую проверку `_plan_editable_task()`: `404` — задачи нет;
+`409` — состояние не из `_PLAN_EDITABLE_STATES` либо по плану ещё выполняются подзадачи;
+`400` — плана нет вовсе (это работа кнопки «В конвейер»). Второе `409` — страховка от
+рассинхрона: состояние задачи и состояния её подзадач ведут разные шаги конвейера, и
+подменить план под работающими подзадачами хуже, чем лишний раз отказать. Тексты причин
+русские и доезжают до пользователя: `taskFetch` вынимает `detail` в `e.message`, а UI
+показывает его в `alert`.
+
+`review` **удаляет подзадачи старого плана** — и делает это после захвата состояния, а не
+до: проиграв гонку двойному клику, мы бы уже снесли чужую работу. Удаление обязательно,
+потому что `_step_plan_split` только добавляет строки, и новый план лёг бы поверх старого.
+
+`restore` пишет `plan_text` + `subtasks` ревизии в `pipeline_plan`, цели **вливает**
+(`task_plan_goals_merge`, а не перезаписью — человек мог отметить сделанные цели уже
+после той ревизии), создаёт новую ревизию с автором-пользователем и **не трогает**
+`pipeline_state`: восстановление — правка плана, а не переход конвейера. В append-only
+журнале «отменить» значит «дописать», поэтому откат виден в истории, а не подменяет её.
+Ревизия ищется парой `(task_id, revision_no)` — иначе ссылка на чужую ревизию подменила
+бы план не той задачи.
 
 ---
 
@@ -296,7 +404,7 @@ Manager — в `src/project/task/task_agent_manager.py`, Developer и QA — з�
 настоящего исполнителя не требует правок машины состояний.
 
 ```python
-async def task_agent_manager_plan(task) -> {'plan_text': str, 'subtasks': [{'title','description'}], 'goals': [{'text','done'}]}
+async def task_agent_manager_plan(task, revise: bool = False) -> {'plan_text': str, 'subtasks': [{'title','description'}], 'goals': [{'text','done'}]}
 async def task_agent_developer_run(task, subtask, last_error='') -> {'ok': bool, 'output': str, 'error': str}
 async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error': str}
 ```
@@ -366,10 +474,25 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
 кладёт в переменную уже сериализованный JSON. `_plan_parse` понимает и плоскую форму —
 так отвечал workflow до появления судей.
 
-**Данные workflow живут только в БД** (`data/seeds` в `.gitignore`), поэтому на прод
-шаги и переменные едут отдельно — через `/admin/seed`, а не с коммитом.
+**Режим пересмотра — тот же workflow, без второй копии.** При `revise=True`
+`task_agent_manager_plan` кладёт текущий план в переменную `task_plan_current`, а в
+`prompt_user` шага 358 (перед блоком `%if plan_critique%`) стоит ветка
+`%if task_plan_current% … %endif%`: «пересмотри существующий план, а не пиши с нуля;
+что соответствует целям — сохрани дословно, правь расхождения».
 
-#### 7.2 Цели
+Регистрировать переменную в `agent_workflow_variable` не нужно — `task_title`/`task_goals`
+тоже передаются только в рантайме. При обычном планировании там пустая строка, а
+`ai_workflow_variable_truthy` считает `''` ложью, так что блок просто не раскрывается.
+
+Шаг 383 «Составить цели» править не пришлось: он и так получает `%task_goals%` —
+актуальные цели вместе с правками человека — и обязан их сохранять по смыслу.
+
+**Данные workflow живут только в БД** (`data/seeds` в `.gitignore`), поэтому на прод
+шаги и переменные едут отдельно — через `/admin/seed`, а не с коммитом. Ветка
+`%if task_plan_current%` — как раз такой случай: без перегенерации seed режим пересмотра
+до прода не доедет.
+
+#### 7.2 Цели и ревизии
 
 Цели пишутся в `project_task.goals` **сразу** вместе с планом, не дожидаясь утверждения:
 подзадачи без утверждения сломали бы конвейер, а цели — просто чек-лист, и человеку
@@ -383,8 +506,34 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
 
 Копия целей остаётся и в самом плане (`{plan_text, subtasks, goals}`) — в `task.goals`
 человек их правит, а в плане видно, что предложил агент; без второй копии расхождение
-было бы нечем разбирать. Панель «Конвейер» показывает именно версию из плана, только
-на чтение (`GET /task/{id}/pipeline` → ключ `goals`).
+было бы нечем разбирать. `GET /task/{id}/pipeline` отдаёт версию из плана в ключе
+`goals`; на странице она больше не дублируется отдельным списком — её показывает режим
+просмотра ревизии (§2.2).
+
+**Ревизия = снимок плана.** Строку в `project_task_plan_revision` создаёт только запись
+плана; правка одних целей — ни чекбоксом в таблице, ни через `saveGoals` — ревизию **не**
+создаёт. Цели живут своей жизнью в `task.goals`, и версионировать каждую поставленную
+галочку значило бы утопить историю плана в шуме.
+
+Точки записи ревизий:
+
+| Кто | Где | `author_kind` |
+|-----|-----|---------------|
+| Manager | `_step_manager_plan` и `_step_manager_review` — сразу после `task_state_plan_save` | `manager` |
+| Человек | ветка `if 'plan_text' in data` в `PUT /task/{id}` | `user` + `author_id`/`author_name` |
+| Откат | `POST /plan/revision/{n}/restore` | `user` |
+
+Запись идёт **в шагах конвейера, а не внутри `task_state_plan_save`**: там один `UPDATE`
+без побочных таблиц, и подмешивать туда историю значило бы прятать её от читателя машины
+состояний.
+
+`task_revision_add` молчком **не пишет** в двух случаях: плана нет и подзадач нет
+(версионировать нечего); `plan_text` + `goals` совпадают с самой свежей ревизией. Второе
+обязательно, потому что форма отправляет `plan_text` при каждом «Сохранить» — без этой
+проверки нажатие без правок плодило бы чипсы.
+
+`task_state_plan_save` пишет при `pipeline_state IN ('planning','review')` — иначе
+результат пересмотра молча не сохранился бы.
 
 ### Developer
 
@@ -433,12 +582,13 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
 | `src/project/task/task_claim.py` | захват работы, реклейм блокировок |
 | `src/project/task/task_state.py` | запись состояний и истории попыток |
 | `src/project/task/task_plan.py` | формат плана Manager |
+| `src/project/task/task_revision.py` | история версий плана (`add` / `list` / `get`) |
 | `src/project/task/task_agent_manager.py` | Manager на LLM (агент `task_plan_manager`) |
 | `src/project/task/task_agent.py` | **шов**: заглушки Developer / QA |
 | `src/project/task/task_tree.py` | правила дерева: родитель, цикл, глубина, позиция |
 | `tests/test_task_pipeline.py` | тесты переходов и гонки |
 | `tests/test_task_tree.py` | тесты дерева задач |
-| `migrations/0001.sql` | `project_task`, `project_task_subtask`, `project_task_attempt` |
+| `migrations/0001.sql` | `project_task`, `project_task_subtask`, `project_task_attempt`, `project_task_plan_revision` |
 
 ---
 
@@ -456,9 +606,21 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
 подзадач, конфликт повторного старта, план без подзадач до утверждения, отклонение,
 полный проход до `done`, параллельные тики (задачу забирает ровно один воркер).
 
-> Прогон занимает ~1.5 минуты: Manager настоящий и на каждый план реально ходит в LLM.
+`TestTaskPlanRevision` — ревизии и пересмотр: ручная правка даёт ревизию с
+`author_kind='user'`; повторное «Сохранить» без изменений второй не даёт; правка плана не
+вытирает `goals`; `review` при `approved` → `409`, при `pending_approval` → `200`;
+двойной `review` → `409`; полный прогон пересмотра переписывает план, обнуляет подзадачи
+и добавляет ревизию менеджера; `restore` возвращает текст и создаёт новую ревизию; чужая
+ревизия → `404`.
+
+> Прогон занимает ~2–3 минуты: Manager настоящий и на каждый план реально ходит в LLM.
 > Содержимое плана тесты не проверяют — только что он непустой и подзадачи появились;
 > утверждать что-то о формулировках LLM было бы флаки-тестом.
+
+> Тик с реальным менеджером не укладывается в дефолтный таймаут `/cronjob`: в тестах
+> стоит `TICK_TIMEOUT = 300` и `CLIENT_TIMEOUT = TICK_TIMEOUT + 30`. Со старыми 60 с
+> LLM-зависимые тесты падали с `Timeout exceeded (60 sec)` независимо от правок —
+> холостой тик при этом отрабатывает за ~4 с.
 
 > База общая, а тик теперь берёт **любую** задачу без плана — значит, один вызов
 > `/cronjob` может уйти на чужую строку. Поэтому тесты ждут своё состояние через
@@ -503,6 +665,10 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
 
   При переименовании таблиц не забыть значение `seed_table_config` в `setting` —
   таблицы там перечислены по имени
+- **Пересмотр плана теряет историю попыток.** `POST /pipeline/review` удаляет подзадачи
+  старого плана, а `project_task_attempt` уезжает за ними по `ON DELETE CASCADE`. Осознанно:
+  подзадачи и попытки принадлежали плану, которого больше нет, а Developer/QA пока
+  заглушки, и терять там нечего. Сам план и его подзадачи сохранены в ревизии
 - Порядок задач внутри уровня — по статусу и дате (`taskCompare`), а не по `position`:
   колонка есть, но drag-and-drop строк пока нет
 - Порядок шагов в тике breadth-first: Developer разбирает все `planned`, прежде чем дойдёт

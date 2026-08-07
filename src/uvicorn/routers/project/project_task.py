@@ -10,7 +10,13 @@ from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.agent_repository import AgentRepository
-from src.project.task.task_plan import task_plan_parse, task_plan_serialize
+from src.project.task.task_plan import (
+    task_plan_goals_get,
+    task_plan_goals_normalize,
+    task_plan_parse,
+    task_plan_serialize,
+)
+from src.project.task.task_revision import task_revision_add
 from src.project.task.task_tree import task_tree_parent_check, task_tree_position_next
 
 _TASK_AI_AGENT_NAME = 'task_ai_generator'
@@ -84,16 +90,26 @@ async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
-        # План правится как текст, а в колонке лежит JSON {plan_text, subtasks} —
-        # подзадачи менеджера сохраняем, иначе ручная правка их снесёт.
+        # План правится как текст, а в колонке лежит JSON {plan_text, subtasks, goals} —
+        # подзадачи и цели менеджера сохраняем, иначе ручная правка их снесёт.
+        revision: dict | None = None
         if 'plan_text' in data:
-            await db.execute("SELECT pipeline_plan FROM project_task WHERE id = %s", (task_id,))
+            await db.execute("SELECT pipeline_plan, goals FROM project_task WHERE id = %s", (task_id,))
             row = await db.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail='task not found')
             _, subtasks = task_plan_parse(row['pipeline_plan'] or '')
-            plan_text = str(data.get('plan_text') or '').strip()
-            updates['pipeline_plan'] = task_plan_serialize(plan_text, subtasks) if plan_text else ''
+            goals_plan  = task_plan_goals_get(row['pipeline_plan'] or '')
+            plan_text   = str(data.get('plan_text') or '').strip()
+            updates['pipeline_plan'] = task_plan_serialize(plan_text, subtasks, goals_plan) if plan_text else ''
+            # В ревизию идут живые цели задачи, а не копия из плана: чипс ревизии
+            # подменяет на странице именно тот список с чекбоксами, который человек
+            # видит и правит.
+            revision = {
+                'plan_text': plan_text,
+                'goals':     task_plan_goals_normalize(updates.get('goals', row['goals'])),
+                'subtasks':  subtasks,
+            }
 
         if not updates:
             raise HTTPException(status_code=400, detail='nothing to update')
@@ -108,6 +124,14 @@ async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker
 
     if not task:
         raise HTTPException(status_code=404, detail='task not found')
+
+    # Ревизия — снимок плана, поэтому правка одних целей её не создаёт. Дублей не
+    # будет и здесь: страница шлёт `plan_text` при каждом «Сохранить», но
+    # `task_revision_add` отбрасывает запись, совпавшую с последней.
+    if revision:
+        await task_revision_add(task_id, revision['plan_text'], revision['goals'], revision['subtasks'],
+                                author_kind='user', author_id=user.user_id, author_name=user.username)
+
     return {'task': dict(task)}
 
 
