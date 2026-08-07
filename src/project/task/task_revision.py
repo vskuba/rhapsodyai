@@ -119,6 +119,22 @@ async def task_revision_get(task_id: int, revision_no: int) -> dict | None:
     return _task_revision_row(row) if row else None
 
 
+async def task_revision_delete(task_id: int, revision_no: int) -> bool:
+    """
+    Удалить одну ревизию.
+
+    После удаления номера не пересчитываются — это упрощает каскад и сохраняет
+    ссылки. Просто удаляем строку, остальные номера не трогаем.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "DELETE FROM project_task_plan_revision WHERE task_id = %s AND revision_no = %s",
+            (task_id, int(revision_no)),
+        )
+        await db.connection.commit()
+    return True
+
+
 def _task_revision_row(row) -> dict:
     """Строка ревизии для API: JSON-колонки разворачиваем, цели приводим к [{text, done}]."""
     return {
