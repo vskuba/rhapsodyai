@@ -1407,25 +1407,14 @@ function rowStatusBtn(t) {
 }
 
 function renderInlineGoals(t, statusOverride, hasKids) {
-    const status = statusOverride || t.status;
-    const label = STATUS_LABELS[status] || status;
-    const tagCls = (
-        status === 'active' ? 'stt-active' :
-        status === 'queued' ? 'stt-queued' :
-        status === 'pending' ? 'stt-pending' :
-        status === 'blocked' ? 'stt-blocked' :
-        status === 'cancelled' ? 'stt-cancelled' :
-        status === 'done' ? 'stt-done' : 'stt-more'
-    );
-    const isLeaf = !hasKids; // root task without children
+    const isLeaf = !hasKids;
     const goals = parseGoals(t.goals);
-    if (!goals.length) return `<div class="ig-goals-wrapper"><span class="subtask-status-tag ${tagCls}" title="${label}">${label}</span><span class="ig-goals-empty">—</span></div>`;
-    let html = `<div class="ig-goals-wrapper"><span class="subtask-status-tag ${tagCls}" title="${label}">${label}</span>`;
+    if (!goals.length) return '<span class="ig-goals-empty">—</span>';
     if (!isLeaf) {
         // root task with children — show goals progress bar
         const done = goals.filter(g => g.done).length;
         const pct = Math.round(done * 100 / goals.length);
-        html += `
+        return `
             <div class="inline-goals-progress">
                 <span>${done}/${goals.length}</span>
                 <span class="inline-goals-bar"><i style="width:${pct}%"></i></span>
@@ -1438,7 +1427,7 @@ function renderInlineGoals(t, statusOverride, hasKids) {
             <button class="ig-btn" onclick="event.stopPropagation();inlineEditGoal(${t.id},${i})" title="Редактировать">✏</button>
             <button class="ig-btn del" onclick="event.stopPropagation();inlineDeleteGoal(${t.id},${i})" title="Удалить">✕</button>
         </div>`).join('');
-    return html + items + '</div>';
+    return `<div class="ig-goals-wrapper">${items}</div>`;
 }
 
 // Сводка подзадач для родительской задачи: прогресс-бар + счётчик по статусам.
