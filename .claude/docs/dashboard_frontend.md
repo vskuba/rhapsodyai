@@ -1,341 +1,202 @@
-# Frontend / Dashboard Architecture (Admin Panel)
+# Админка: фронтенд
 
-The web dashboard is a **server-side rendered Jinja2** application served by FastAPI/Uvicorn. All admin pages are under `/admin/*` routes.
+Server-side rendering на Jinja2 из FastAPI, без сборки и без фреймворка. Страницы —
+`/admin/*`, разметка + стили + скрипты чаще всего лежат в одном `.html`.
 
-## Template Structure
+**Правка `.html` не требует рестарта uvicorn** — шаблоны читаются с диска на каждый
+запрос. Рестарт нужен только после `.py`.
 
-**Location:** `data/uvicorn/template/`
+## Страницы и роуты
 
-```
-template/
-├── base.html                          # Base layout with top navigation
-├── login.html                         # Login page (standalone, does NOT extend base.html)
-├── admin/
-│   ├── chat.html                      # Chat interface with agent/user selectors
-│   ├── agent.html                     # Agent CRUD + variable editor
-│   ├── workflow.html                  # Workflow + Step editor (complex drag-drop)
-│   ├── node.html                      # Node management
-│   ├── user.html                      # User management
-│   ├── tool.html                      # Tool/ToolGroup management
-│   ├── fact.html                      # Fact CRUD
-│   ├── fact_collection.html           # Fact Collection management
-│   ├── session.html                   # Agent session viewer
-│   └── queue.html                     # Queue monitor (in-memory)
-```
+HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по одному короткому
+хендлеру на страницу. API-роутеры лежат отдельно, в `src/uvicorn/routers/<entity>/`.
 
-## Base Layout (`base.html`)
+| Роут | Шаблон | Что это |
+|------|--------|---------|
+| `/` | `admin/chat.html` | Чат с агентом |
+| `/login` | `login.html` | Логин; **не** наследует `base.html` |
+| `/admin/agent` | `admin/agent.html` | Агенты |
+| `/admin/workflow` | `admin/agent_workflow.html` | Редактор workflow и шагов |
+| `/admin/workflow_trace` | `admin/workflow_trace.html` | Трейсы прогонов, токены |
+| `/admin/variable` | `admin/agent_workflow_variable_public.html` | Публичные переменные (роль-зависимый шаблон) |
+| `/admin/llm` | `admin/llm.html` | LLM и статистика запросов |
+| `/admin/node` | `admin/node.html` | Ноды |
+| `/admin/tool` | `admin/tool.html` | Инструменты + тест-раннер |
+| `/admin/fact`, `/admin/fact_collection` | `admin/fact*.html` | Факты и коллекции |
+| `/admin/session` | `admin/session.html` | Просмотр сессий |
+| `/admin/user`, `/admin/role` | `admin/user.html`, `admin/role.html` | Пользователи и роли |
+| `/admin/cabinet` | `admin/cabinet.html` | Личный кабинет, access-токены |
+| `/admin/setting` | `admin/setting.html` | Настройки |
+| `/admin/seed`, `/admin/backup` | `admin/seed.html`, `admin/backup.html` | Seed SQL и бэкапы |
+| `/admin/queue` | `admin/queue.html` | Мониторинг очередей |
+| `/admin/plan` | `admin/plan.html` | Планы |
+| `/admin/task` | `admin/project/task.html` | Задачи + конвейер агентов |
+| `/admin/planning` | `admin/project/planning.html` | Планирование проектов |
+| `/admin/planning-phase-source` | `admin/project/planning_phase_source.html` | Источники для фаз |
+| `/admin/design` | `admin/project/design.html` | Дизайн-модуль, прототип |
+| `/admin/developing` | `admin/project/developing.html` | Разработка |
 
-- **Top Navigation Bar** with dropdown menus for:
-  - 💬 Chat (→ `/`, `/admin/session`, `/admin/user`)
-  - ⛓ Nodes (→ `/admin/node`, `/admin/tool`, `/admin/workflow`, `/admin/agent`)
-  - 🔄 Collections (→ `/admin/fact_collection`, `/admin/fact`)
-  - 📜 Logs (→ OpenSearch Dashboard)
-  - 📊 Queues (→ `/admin/queue`, Redis RQ Dashboard)
-  - 🗄️ Databases (→ PhpMyAdmin, Qdrant)
-  - ⏰ Scheduler (→ Cronicle)
-- **Notification Container** (`#event-notification`) for toast messages
-- **Content Block** (`{% block content %}`) for page-specific HTML
+Вне админки: `telegram_app.html` (Mini App, см. `telegram_mini_app.md`) и
+`custom/dating/agent_workflow_variable_public.html` — кастомный шаблон под роль,
+подменяется через `template_role_mapping` в `dashboard.py:16`.
 
-## Common Page Pattern (Sidebar + Editor)
+## `base.html`
 
-All admin pages follow a **Master-Detail** pattern:
+Блоки: `{% block title %}`, `{% block head %}` (стили страницы), `{% block content %}`,
+`{% block scripts %}` (модульные скрипты страницы). Все админ-шаблоны — `{% extends "base.html" %}`.
+
+Подключает глобально: `common.css`, `menu_top.css`, `notification.css` и `tz.js`.
+
+**Меню двухуровневое.** Верхний ряд — `.tabnav-group` (Чат, LLM, Проекты, Логи, Ноды,
+Пользователи, Настройки, Инструменты), под ним — `.tabnav-panel` со ссылками своей
+группы. Активная группа вычисляется инлайн-скриптом внизу `base.html` по карте
+`groupMap` (URL → группа): **добавил страницу — допиши её в `groupMap`**, иначе меню не
+подсветится. Часть пунктов ведёт наружу (Phpmyadmin, Qdrant, Cronicle, Redis, Grafana,
+Gatus, OpenSearch) — это `localhost:PORT`, работающие при поднятом ssh-туннеле
+`rhapsody-prod`.
+
+Там же модульный скрипт: `/auth/me` → ссылка на Mini App с access-токеном, и logout.
+
+## Общие скрипты (`data/uvicorn/public/js/`)
+
+| Модуль | Экспорт | Назначение |
+|--------|---------|-----------|
+| `api.js` | `getData`, `postData`, `putData`, `deleteData` | fetch-обёртки, `credentials: 'include'`, `FormData` определяется автоматически |
+| `notification.js` | `showNotification(msg, type)` | Тосты `success`/`error`/`warning`/`info` |
+| `setting.js` | `SettingGet(key, userId)`, `SettingSet(key, value, userId)` | Пользовательские настройки в БД |
+| `agent_group_tree.js` | `buildGroupTree`, `renderGroupTree` | Дерево групп с раскрытием в localStorage |
+| `lang_switcher.js` | `i18nTextResolve`, `userLanguageGet`, `nodeLanguagesGet`, `langSwitcherCreate` | Мультиязычные поля |
+| `user_access_token.js` | `loadUserTokens`, `deleteToken`, `initTokenGeneration` | Access-токены (кабинет, пользователи) |
+| `tz.js` | `window.loadTz()`, `window.fmtTz(value, withSeconds)` | Не модуль, а глобали; подключён в `base.html` |
+| `sidebar_resizer.js` | `initSidebarResizer(...)` (глобальная) | Тянущаяся ширина сайдбара, ширина в localStorage |
+
+`api.js` вытягивает текст ошибки из тела ответа (`detail`, затем `message`), а при
+не-JSON теле оставляет HTTP-статус — поэтому `err.message` в `catch` уже пригоден для
+`showNotification`.
+
+**`tz.js` — частая ловушка.** Скрипт подключён везде, но `fmtTz` отдаёт UTC, пока не
+вызван `loadTz()`. Его зовут `backup.html`, `seed.html`, `session.html`; страницы, где
+времена выглядят «сдвинутыми», просто забыли этот вызов при инициализации.
+
+Многостраничные модули:
+
+- `js/workflow/` — редактор `/admin/workflow`: `main.js` (вход), `state.js` (общий стейт,
+  поля не переприсваивать), `steps.js` (шаги, переходы, DnD), `step-widgets.js`
+  (динамические поля по типу шага), `variables.js`, `graph.js` (mermaid), `utils.js`
+- `js/project/` — страница планирования: `main.js`, `projects.js`, `panel.js`,
+  `actions.js`, `ideas.js`, `compare.js`, `markdown.js`, `cronicle.js`, `design.js`,
+  `prototype-editor-widget.js`, `utils.js`
+- `js/telegram_app/` — Mini App, см. `telegram_mini_app.md`
+- `js/vendor/mermaid.min.js`, `js/chart.umd.min.js` — вендорные, локально, без CDN
+
+## CSS
+
+| Файл | Область |
+|------|---------|
+| `common.css` (79 строк) | Только `body`, `.page-content`, `.main-wrapper`, `.sidebar`, `.sidebar-label` и базовый вид `input/select/textarea/button` |
+| `menu_top.css` | Верхнее меню: `.topbar`, `.nav-shell`, `.tabnav-group`, `.tabnav-panel`, `.topbar-user*` |
+| `notification.css` | Тосты |
+| `design.css` (2386 строк) | Дизайн-модуль; подключает только `project/design.html` |
+| `telegram_app.css`, `user_access_token.css`, `code_mirror_*.css` | По названию |
+
+**Общей библиотеки классов нет.** `.editor-container`, `.agents-sidebar`, `.form-control`,
+`.btn-save` и прочее описано инлайном в `{% block head %}` каждой страницы, которая их
+использует. Меняя такой класс, чините одну страницу, а не все — и наоборот, общий вид
+надо повторять руками.
+
+## Два макета
+
+### Master-Detail (старый)
+
+`agent.html`, `agent_workflow.html`, `node.html`, `tool.html`, `user.html`, `role.html`,
+`plan.html`, `fact_collection.html`, `workflow_trace.html`, `project/planning.html`,
+`agent_workflow_variable_public.html`, `queue.html`.
 
 ```html
 <div class="editor-container">
-  <!-- LEFT: Sidebar (260px) -->
   <div class="agents-sidebar">
-    <div class="sidebar-header">
-      <button class="btn-create">+ Create</button>
-    </div>
+    <div class="sidebar-header"><button class="btn-create">+ Создать</button></div>
     <div class="agent-list" id="entityList">
-      <!-- Grouped by Node: -->
-      <div class="group-header">NODE NAME</div>
-      <div class="agent-item active">Entity Title</div>
+      <div class="group-header">НОДА</div>
+      <div class="agent-item active">Название</div>
     </div>
   </div>
-
-  <!-- RIGHT: Editor Form -->
   <div class="editor-section">
-    <div class="form-header"><h2 id="formTitle">Select entity</h2></div>
     <form id="entityForm">
       <input type="hidden" id="entityId">
-      <div class="form-layout-grid">
-        <div class="settings-column">
-          <!-- Fields in 2-col grid -->
-          <div class="form-grid">
-            <div class="form-group"><label>Field</label><input class="form-control"></div>
-          </div>
-        </div>
-        <div class="prompt-column">
-          <!-- Large textareas (System Prompt, etc.) -->
-        </div>
-        <div class="variable-column">
-          <!-- Dynamic key-value editor -->
-        </div>
+      <div class="form-layout-grid">   <!-- настройки | промпты | переменные -->
+        <div class="form-grid"><div class="form-group">
+          <label>Поле</label><input class="form-control">
+        </div></div>
       </div>
       <div class="editor-footer">
-        <button class="btn-save">Save</button>
-        <button class="btn-delete">Delete</button>
+        <button class="btn-save">Сохранить</button><button class="btn-delete">Удалить</button>
       </div>
     </form>
   </div>
 </div>
 ```
 
-## Shared JS Modules (`data/uvicorn/public/js/`)
+Скелет скрипта: `initManager()` тянет сущности и справочники через `Promise.all` →
+`renderList()` группирует по `node_id` и сортирует по `position` → `selectForEdit(id, el)`
+заполняет форму → `saveConfig()` выбирает PUT или POST по скрытому `id` →
+`deleteEntity()`. Вызовы вешаются внизу скрипта без `DOMContentLoaded`: `type="module"`
+и так откладывается до разбора DOM.
 
-| Module | Exports | Purpose |
-|--------|---------|---------|
-| `api.js` | `getData`, `postData`, `putData`, `deleteData` | Fetch wrappers with error handling, auto-detects `FormData` |
-| `notification.js` | `showNotification(msg, type)` | Toast system (success/error/warning/info) with auto-dismiss |
-| `setting.js` | `SettingGet(key, user_id)` | User preference persistence |
+### Собственный макет (новые страницы)
 
-```javascript
-import {getData, putData, postData, deleteData} from '/static/js/api.js';
-import {showNotification} from '/static/js/notification.js';
-```
+`project/task.html` (`.task-page`), `project/design.html` (`.design-layout`),
+`project/developing.html` (`.dev-layout`), `seed.html` (`.seed-layout`),
+`backup.html` (`.backup-layout`), `llm.html` (`.llm-layout` + `.page-tabs`),
+`setting.html` (`.setting-layout`).
 
-## Universal Page Initialization Pattern
+Здесь нет сайдбара со списком и формы справа: это таблицы, деревья и раскрывающиеся
+строки-редакторы. Копировать master-detail в новую страницу такого рода не надо — он
+описан выше как то, что уже есть, а не как обязательный образец.
 
-Every admin page follows this structure:
+## Контракты API
 
-```javascript
-// 1. DOM References (cached at top)
-const listContainer = document.getElementById('entityList');
-const form = document.getElementById('entityForm');
-const saveBtn = document.getElementById('saveBtn');
-const createBtn = document.getElementById('createNewEntity');
-const deleteBtn = document.getElementById('deleteBtn');
+Уживаются два поколения, и это видно прямо в ответах:
 
-// 2. initManager() - Load all reference data + render list
-async function initManager(activeId = null) {
-    try {
-        const [entitiesRes, refsRes] = await Promise.all([
-            getData('/entity/list'),
-            getData('/reference/list') // nodes, llms, workflows, etc.
-        ]);
-        renderList(entitiesRes.result, refsRes.result);
-        if (activeId) selectById(activeId);
-        else selectFirst();
-    } catch (e) { console.error(e); }
-}
+- **Старое** — `{"result": ...}` для списка и для одной сущности; при явном исходе
+  добавляется `{"status": "success" | "error", "message": "..."}`.
+  Так отвечают `/agent/*`, `/workflow/*`, `/node/*`, `/tool/*`, `/llm/*`, `/user/*`,
+  `/fact/*`, `/project/*`
+- **Новое** — ключ по имени сущности: `{"tasks": [...]}`, `{"task": {...}}`,
+  `{"revisions": [...], "total": n}`. Так отвечают `project_task*`, дизайн-роутеры
+- **Ошибки** — всегда `{"detail": "текст"}` (`HTTPException`), `api.js` его и показывает
 
-// 3. renderList(items, refs) - Group by node_id, sort by position
-function renderList(entities, nodes) {
-    listContainer.innerHTML = '';
-    const byNode = entities.reduce((acc, e) => {
-        const nid = e.node_id || 'none';
-        (acc[nid] ||= []).push(e);
-        return acc;
-    }, {});
-    nodes.sort((a, b) => (a.position||0) - (b.position||0));
-    nodes.forEach(n => renderSection(n.id, n.name));
-    renderSection('none', 'Без ноды');
-}
+Отдельные формы, которые легко забыть:
 
-function renderSection(nid, title) {
-    if (!byNode[nid]) return;
-    const header = document.createElement('div');
-    header.className = 'group-header';
-    header.textContent = title;
-    listContainer.appendChild(header);
-    byNode[nid].sort((a,b) => (a.title||a.name).localeCompare(b.title||b.name))
-        .forEach(e => {
-            const div = document.createElement('div');
-            div.className = 'entity-item';
-            div.textContent = e.title || e.name;
-            div.onclick = () => selectForEdit(e.id, div);
-            listContainer.appendChild(div);
-        });
-}
+- `/workflow/{id}/steps` → `{"result": [{id, type_id, title, position, metadata, icon}]}` —
+  колонка называется `title`, не `name`
+- `/workflow/{id}/steps/reorder` — `PUT` с `{positions: [{id, position}]}`
+- `/workflow/{id}/variables` → `{"result": [{id, name, default}]}`
 
-// 4. selectForEdit(id, element) - Load single entity, populate form
-async function selectForEdit(id, el) {
-    document.querySelectorAll('.entity-item').forEach(e => e.classList.remove('active'));
-    el.classList.add('active');
-    const data = await getData(`/entity/${id}`);
-    const entity = data.result;
-    document.getElementById('entityId').value = entity.id;
-    document.getElementById('name').value = entity.name;
-    document.getElementById('formTitle').textContent = `Editing: ${entity.name}`;
-    saveBtn.disabled = false;
-    deleteBtn.style.display = 'block';
-}
+## Грабли
 
-// 5. resetFormForCreate() - Clear form for new entity
-function resetFormForCreate() {
-    document.querySelectorAll('.entity-item').forEach(e => e.classList.remove('active'));
-    form.reset();
-    document.getElementById('entityId').value = '';
-    document.getElementById('formTitle').textContent = 'New Entity';
-    saveBtn.disabled = false;
-    deleteBtn.style.display = 'none';
-}
+1. **`groupMap` в `base.html`** — новая страница без записи там останется без подсветки меню
+2. **`loadTz()`** — без вызова все времена на странице показываются в UTC
+3. **Jinja2 против JS-шаблонов** — `{{ }}` в JS экранировать как `{{ '{{' }}` либо выносить
+   скрипт в `.js`
+4. **`workflow_variable`** — перед отправкой всегда `JSON.stringify()`
+5. **`metadata` шагов** — приходит строкой с сырыми переводами строк; парсить через
+   `parseMetadata()` с фолбэком на экранирование `\n`
+6. **Редкие глифы** — символы без покрытия шрифтом рендерятся случайной буквой (наступали
+   на `⑂`); нестандартным иконкам нужен `line-height: 1`, иначе чип выше соседей
+7. **`FormData`** — `postData` сам не ставит `Content-Type`, если передан `FormData`
+   (голосовые в Mini App)
 
-// 6. saveConfig() - PUT or POST based on hidden ID
-async function saveConfig(e) {
-    e.preventDefault();
-    const id = document.getElementById('entityId').value;
-    const payload = collectFormData();
-    saveBtn.disabled = true;
-    try {
-        if (id) {
-            await putData(`/entity/${id}`, payload);
-            showNotification(`Updated: ${payload.name}`, 'success');
-        } else {
-            await postData('/entity', payload);
-            showNotification(`Created: ${payload.name}`, 'success');
-        }
-        await initManager(id);
-        if (!id) resetFormForCreate();
-    } catch (err) {
-        showNotification(`Error: ${err.message}`, 'error');
-    } finally {
-        saveBtn.disabled = false;
-    }
-}
+## Новая страница: чек-лист
 
-// 7. deleteEntity()
-async function deleteEntity() {
-    const id = document.getElementById('entityId').value;
-    const name = document.getElementById('name').value;
-    if (!confirm(`Delete "${name}"?`)) return;
-    try {
-        await deleteData(`/entity/${id}`);
-        showNotification(`Deleted: ${name}`, 'success');
-        resetFormForCreate();
-        await initManager();
-    } catch (err) {
-        showNotification(`Error: ${err.message}`, 'error');
-    }
-}
+1. Шаблон `data/uvicorn/template/admin/<entity>.html`, `{% extends "base.html" %}`
+2. HTML-роут в `src/uvicorn/routers/dashboard.py`
+3. API-роутер `src/uvicorn/routers/<entity>/<entity>.py`, зарегистрировать в `main_uvicorn.py`
+4. Ссылка в меню `base.html` **и** запись в `groupMap`
+5. Права — `AuthPermission` + роль (`.claude/docs/auth.md`)
+6. Стили — инлайном в `{% block head %}`; общего файла для них нет
 
-// 8. Event Listeners (at bottom, NO DOMContentLoaded — modules defer automatically)
-initManager();
-form.addEventListener('submit', saveConfig);
-createBtn.addEventListener('click', resetFormForCreate);
-deleteBtn.addEventListener('click', deleteEntity);
-```
-
-## Page Types
-
-### A. Master-Detail CRUD (agent.html, node.html, user.html, fact_collection.html)
-- Sidebar list grouped by `node_id`, sorted by `position`
-- Right panel: 3-col grid (settings | prompt | variables)
-- `workflow_variable` edited as dynamic key-value rows → `JSON.stringify()` on save
-- Selects (Node, LLM, Workflow) populated in `initManager()` via `Promise.all`
-
-### B. Complex Editor with Sub-Resources (workflow.html)
-- **Two modes**: Settings View ↔ Steps View (toggled via sidebar clicks)
-- **Steps**: Drag-drop reorder (native HTML5 DnD) → `PUT /workflow/{id}/steps/reorder`
-- **Step Types** (`agent_workflow_step_type`): Each has dynamic fields via `WORKFLOW_STEP_CONFIG`
-  - `widget_json_variable` — Variable array with "Prompt Updater" button
-  - `widget_tool_invoke` — Tool selector + Input/Output mapping to workflow variables
-  - `widget_variable_conversion` — Key-value mapping
-- **Transitions**: Before/After conditions (variable, operator, value, target_step_id)
-- **Variables**: Separate CRUD via `/workflow/{id}/variables`
-
-### C. Read-Only Detail + Test Runner (tool.html)
-- **Sidebar**: Collapsible groups (accordion) by `tool_group`
-- **Detail View**: Read-only display of `args.input`, `args.output`, `description`
-- **Test Runner**: Dynamic form from `args.input` schema → `POST /tool/test/{id}`
-
-### D. Table + Pagination + Filters (fact.html)
-- **State object**: `{currentPage, limit, query, collectionId, status}`
-- **Debounced search** (500ms): `state.query = input; state.currentPage=1; loadFacts()`
-- `/fact/collection/{name}?page&limit&query`
-- **Markdown Editor**: CodeMirror integration for fact content
-
-### E. Session Browser (session.html)
-- Read-only audit view: filters (Agent, User, Date) + sidebar (sessions) + detail (messages)
-- No edit/delete
-
-## CSS Architecture
-
-**Shared styles** (`data/uvicorn/public/css/`):
-| File | Scope |
-|------|-------|
-| `common.css` | Global: body, `.page-content`, `.main-wrapper`, inputs, buttons |
-| `menu_top.css` | Top navigation bar (`.top-nav`, `.nav-item`, `.submenu`) |
-| `notification.css` | Toast animations (`.notification`, `.fade-out`) |
-| `code_mirror_*.css` | CodeMirror editor theming |
-
-Page-specific styles are inlined in `{% block head %}` of each template. Key classes:
-
-| Purpose | Class | Used In |
-|---------|-------|---------|
-| Layout | `.editor-container`, `.agents-sidebar`, `.editor-section` | All CRUD pages |
-| List Group | `.group-header` (gold, uppercase), `.agent-item`/`.user-item`/`.node-item` | All sidebars |
-| Active Item | `.active` (blue left border, bg `#eef6fc`) | All lists |
-| Form Grid | `.form-layout-grid` (3-col), `.form-grid` (2-col), `.form-group` | All forms |
-| Inputs | `.form-control` (unified input/select/textarea) | All forms |
-| Buttons | `.btn-create` (green), `.btn-save` (blue), `.btn-delete` (red outline) | All footers |
-| Variables | `.variable-row` (key + value + delete btn) | agent, workflow |
-| Tables | `.fact-table` (sticky header, fixed col widths) | fact.html |
-| Badges | `.status-badge.synced/.pending`, `.tag-chip` | fact, tool |
-| Accordion | `.group-header.collapsed`, `.group-wrapper.collapsed` | tool.html |
-
-## API Response Contract
-
-All list endpoints: `{ "result": [...] }`
-Single item: `{ "result": {...} }`
-Errors: `{ "detail": "message" }` or `{ "status": "error", "message": "..." }`
-
-| Page | List | Get One | Create | Update | Delete | Special |
-|------|------|---------|--------|--------|--------|---------|
-| Agent | `GET /agent/list` | `GET /agent/{id}` | `POST /agent` | `PUT /agent/{id}` | - | `POST /agent/list` (filter) |
-| Workflow | `GET /workflow/list` | `GET /workflow/{id}` | `POST /workflow` | `PUT /workflow/{id}` | `DELETE /workflow/{id}` | `/workflow/{id}/steps`, `/workflow/{id}/variables` |
-| Node | `GET /node/list` | - | - | - | - | - |
-| User | `GET /user/list` | `GET /user/{id}` | `POST /user` | `PUT /user/{id}` | `DELETE /user/{id}` | - |
-| Tool | `GET /tool/list` | - | - | - | - | - |
-| LLM | `GET /llm/list` | - | - | - | - | - |
-| Fact | `GET /fact/list` | - | - | - | `/fact/collection/{name}?page&limit&query` | - |
-
-Special responses:
-- `/workflow/{id}/steps` → `{ "result": [{id, type_id, title, position, metadata, icon}, ...] }`
-- `/workflow/{id}/variables` → `{ "result": [{id, name, default, id}, ...] }`
-
-## Common Gotchas
-
-1. **Jinja2 vs JS templating conflict:** Use `{{ '{{' }}` or move complex JS to separate `.js` files
-2. **FormData vs JSON:** `api.js` auto-detects `FormData` for file uploads (voice)
-3. **Module scripts:** No `DOMContentLoaded` needed — modules defer automatically
-4. **Async init:** Call `initManager()` at bottom of script, not in event listener
-5. **Variable editor:** Always `JSON.stringify()` before sending `workflow_variable`
-6. **Drag-Drop:** Update positions via `PUT /workflow/{id}/steps/reorder` with `{positions: [{id, position}, ...]}`
-
-## Common Utilities
-
-```javascript
-// Debounce (fact.html)
-function debounce(fn, ms=300) {
-    let t; return (...a) => { clearTimeout(t); t=setTimeout(()=>fn(...a), ms); };
-}
-
-// Escape HTML
-function escapeHtml(t) {
-    return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-// Parse metadata JSON with newline fix (workflow.html)
-function parseMetadata(v) {
-    if (!v) return {};
-    if (typeof v !== 'string') return v;
-    try { return JSON.parse(v); }
-    catch { return JSON.parse(v.replace(/\n/g,'\\n').replace(/\r/g,'\\r').replace(/\t/g,'\\t')); }
-}
-```
-
-## Adding a New Admin Page (Checklist)
-
-1. **Template:** `data/uvicorn/template/admin/new_entity.html` extends `base.html`
-2. **Route:** Add to `src/uvicorn/routers/html.py`
-3. **API Router:** `src/uvicorn/routers/new_entity/new_entity.py` with CRUD endpoints
-4. **Register:** Import router in `main_uvicorn.py`
-5. **Follow pattern:** Copy structure from `agent.html` or `user.html`
-6. **Static refs:** `/static/js/api.js`, `/static/js/notification.js`, `/static/css/common.css`
-
-Static files served via:
+Статика раздаётся так:
 ```python
 app.mount("/static", StaticFiles(directory="data/uvicorn/public"), name="static")
 ```
