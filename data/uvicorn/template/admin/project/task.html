@@ -1236,8 +1236,8 @@ function taskCompare(a, b) {
 // Рендер кнопок сортировки: ↑ и ↓ с disabled по наличию соседей.
 function _sortBtns(taskId, position) {
     return `<div class="sort-btns">
-        <button class="sort-btn" onclick="event.stopPropagation();moveTask(${taskId},'up')" title="Вверх" id="sort-up-${taskId}">▲</button>
-        <button class="sort-btn" onclick="event.stopPropagation();moveTask(${taskId},'down')" title="Вниз" id="sort-down-${taskId}">▼</button>
+        <button class="sort-btn" onclick="event.stopPropagation();moveTask(${taskId},'up')" title="Вверх" id="sort-up-${taskId}">⬆</button>
+        <button class="sort-btn" onclick="event.stopPropagation();moveTask(${taskId},'down')" title="Вниз" id="sort-down-${taskId}">⬇</button>
     </div>`;
 }
 
@@ -1385,6 +1385,7 @@ function renderTable() {
         <table class="task-table">
             <thead>
                 <tr>
+                    <th data-col="sort" class="td-sort">⬆️⬇️</th>
                     <th data-col="id">ID</th>
                     ${hasParent ? '' : '<th data-col="status">Статус</th>'}
                     <th data-col="title">Название</th>
@@ -1392,7 +1393,6 @@ function renderTable() {
                     <th data-col="goals">${hasParent ? 'Прогресс' : 'Цели'}</th>
                     <th data-col="date">Создана</th>
                     <th data-col="act" style="text-align:right">Действия</th>
-                    <th data-col="sort" class="td-sort">⬆️⬇️</th>
                 </tr>
             </thead>
             <tbody id="taskTbody">
@@ -1548,6 +1548,7 @@ function renderRow(row, index, hasParent) {
     const sortBtns = _sortBtns(t.id, t.position);
     return `
         <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'};--row-bg:${rowBg(row, index)}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
+            <td class="td-sort" data-col="sort">${sortBtns}</td>
             <td class="td-id" data-col="id">#${t.id}</td>
             ${hasParent ? '' : `<td class="td-status" data-col="status">${badge}${renderPipeChip(t, row)}</td>`}
             <td class="td-title" data-col="title">
@@ -1560,7 +1561,6 @@ function renderRow(row, index, hasParent) {
                 ${rowStatusBtn(t)}
                 <button class="btn-row-del" onclick="event.stopPropagation();deleteTask(${t.id})" title="Удалить">✕</button>
             </td>
-            <td class="td-sort" data-col="sort">${sortBtns}</td>
         </tr>
         <tr class="task-edit-row" id="ter-${t.id}">
             <td class="task-edit-cell" colspan="${hasParent ? 7 : 8}">
@@ -2448,10 +2448,12 @@ function colOrderApply(order) {
         const cells = Array.from(row.children);
         const map = {};
         cells.forEach(c => { if (c.dataset.col) map[c.dataset.col] = c; });
-        order.forEach(col => { if (map[col]) row.appendChild(map[col]); });
-        // Новые колонки, которых нет в сохранённом порядке — добавляем в конец
+        // Сортировка всегда первая — фиксируем
+        if (map['sort']) row.insertBefore(map['sort'], row.firstChild);
+        order.forEach(col => { if (map[col] && col !== 'sort') row.appendChild(map[col]); });
+        // Новые колонки, которых нет в сохранённом порядке — добавляем перед sort
         cells.forEach(c => {
-            if (c.dataset.col && !order.includes(c.dataset.col)) row.appendChild(c);
+            if (c.dataset.col && !order.includes(c.dataset.col) && c.dataset.col !== 'sort') row.appendChild(c);
         });
     };
     reorderRow(table.querySelector('thead tr'));
