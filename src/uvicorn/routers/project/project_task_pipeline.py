@@ -4,6 +4,8 @@
 Сам конвейер крутится в `src/project/task/`; здесь только точки, где в него
 вмешивается пользователь. CRUD задач — в `project_task.py`.
 """
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
@@ -18,6 +20,7 @@ from src.project.task.task_plan import (
 from src.project.task.task_revision import (
     TASK_REVISION_LIMIT,
     task_revision_add,
+    task_revision_delete,
     task_revision_get,
     task_revision_list,
 )
@@ -169,6 +172,35 @@ async def project_task_plan_revision_restore(task_id: int, revision_no: int,
         author_kind='user', author_id=user.user_id, author_name=user.username)
 
     return {'ok': True, 'revision_no': created or revision_no}
+
+
+@router.delete('/task/{task_id}/plan/revision/{revision_no}')
+async def project_task_plan_revision_delete(task_id: int, revision_no: int,
+                                            user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Удалить одну ревизию плана.
+
+    Номера не пересчитываются — удаляем строку, остальные номера остаются на месте.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT plan_text, goals FROM project_task WHERE id = %s", (task_id,))
+        row = await db.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail='task not found')
+
+    plan_text = ''
+    goals = ''
+    try:
+        plan_data = json.loads(row['pipeline_plan'] or '')
+        plan_text = str(plan_data.get('plan_text', '') or '')
+        goals = plan_data.get('goals', '')
+    except (ValueError, TypeError, AttributeError):
+        plan_text = str(row['pipeline_plan'] or '')
+        goals = str(row['goals'] or '')
+
+    await task_revision_delete(task_id, revision_no)
+    return {'ok': True}
 
 
 async def _plan_editable_task(task_id: int) -> dict:
