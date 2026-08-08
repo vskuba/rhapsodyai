@@ -689,6 +689,13 @@
         transition: background .15s, color .15s, border-color .15s;
     }
     .plan-save-btn:hover { background: #dbeafe; border-color: #93c5fd; }
+    .plan-reset-btn {
+        font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 10px;
+        border: 1px solid #fca5a5; background: #fef2f2; color: #dc2626;
+        cursor: pointer; line-height: 16px; margin-left: 4px; flex-shrink: 0;
+        transition: background .15s, color .15s, border-color .15s;
+    }
+    .plan-reset-btn:hover { background: #fee2e2; border-color: #f87171; }
     .task-rev-preview {
         display: flex; align-items: center; gap: 10px;
         margin-top: 6px; padding: 6px 10px;
@@ -1578,6 +1585,7 @@ function renderRow(row, index, hasParent) {
                             <label>План <span class="plan-hint">— его пишет менеджер по описанию задачи</span></label>
                             <div class="task-rev-chips" id="revs-${t.id}"></div>
                             <button class="plan-save-btn" id="psave-${t.id}" onclick="planSave(${t.id})" title="Сохранить план">Сохранить</button>
+                            <button class="plan-reset-btn" id="preset-${t.id}" onclick="planReset(${t.id})" title="Очистить план и цели">Сбросить план</button>
                         </div>
                         <textarea id="tplan-${t.id}" class="task-plan-input" placeholder="Плана пока нет — менеджер составит его на ближайшем тике конвейера">${esc(parsePlanText(t.pipeline_plan))}</textarea>
                         <div class="task-rev-preview" id="revprev-${t.id}" style="display:none"></div>
@@ -1790,13 +1798,32 @@ async function planSave(id) {
         btn.style.background = '#16a34a';
         btn.style.color = '#fff';
         btn.style.borderColor = '#16a34a';
-        const wasOpen = document.getElementById(`ter-${id}`)?.classList.contains('open');
-        renderTable();
-        if (wasOpen) toggleEdit(id);
         setTimeout(() => { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }, 1400);
     } catch(e) {
         alert(e.message || 'Ошибка сохранения плана');
     }
+}
+
+async function planReset(id) {
+    const btn = document.getElementById(`preset-${id}`);
+    const orig = btn.textContent;
+    try {
+        await taskFetch(`/task/${id}/plan/reset`, { method: 'DELETE' });
+        const idx = _tasks.findIndex(t => t.id === id);
+        if (idx !== -1) { _tasks[idx].pipeline_plan = ''; _tasks[idx].goals = '[]'; _tasks[idx].pipeline_state = ''; }
+        // Обновить inline без renderTable — форма не закроется
+        const ta = document.getElementById(`tplan-${id}`);
+        if (ta) ta.value = '';
+        const goalsSection = document.getElementById(`goals-${id}`);
+        if (goalsSection) goalsSection.innerHTML = '';
+        const hint = document.getElementById(`ter-${id}`)?.querySelector('.task-plan-header .plan-hint');
+        if (hint) hint.textContent = '— менеджер составит его на ближайшем тике конвейера';
+        btn.textContent = '✓ Сброшено';
+        btn.style.background = '#16a34a';
+        btn.style.color = '#fff';
+        btn.style.borderColor = '#16a34a';
+        setTimeout(() => { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }, 1400);
+    } catch(e) { alert(e.message || 'Ошибка сброса плана'); }
 }
 
 async function quickStatus(id, status) {
