@@ -1,0 +1,597 @@
+{% extends "base.html" %}
+
+{% block title %}Проекты{% endblock %}
+
+{% block head %}
+<style>
+    .editor-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
+
+    /* Сайдбар проектов */
+    .projects-sidebar {
+        width: 280px;
+        background: #fafafa;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+    }
+
+    .project-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .project-item {
+        padding: 10px 15px;
+        margin: 2px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #2c3e50;
+        border-radius: 6px;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .project-item:hover {
+        background: #f1f4f6;
+        color: #3498db;
+    }
+
+    .project-item.active {
+        background: #eef6fc;
+        color: #3498db;
+        border-left-color: #3498db;
+        font-weight: 600;
+    }
+
+    .project-item .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .status-complete {
+        background: #27ae60;
+    }
+
+    .status-processing {
+        background: #f39c12;
+    }
+
+    .status-pending {
+        background: #95a5a6;
+    }
+
+    .status-error {
+        background: #e74c3c;
+    }
+
+    /* Основная секция */
+    .editor-section {
+        flex: 1;
+        padding: 20px 40px;
+        overflow-y: auto;
+    }
+
+    .form-header {
+        margin-bottom: 20px;
+        border-bottom: 2px solid #f4f4f9;
+        padding-bottom: 15px;
+    }
+
+    .form-header h2 {
+        margin: 0;
+        color: #2c3e50;
+        font-size: 20px;
+    }
+
+    .detail-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+
+    .detail-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .detail-field.full-width {
+        grid-column: 1 / -1;
+    }
+
+    .detail-field label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .detail-field .value {
+        font-size: 14px;
+        color: #2c3e50;
+        padding: 8px 12px;
+        background: #f8f9fa;
+        border-radius: 5px;
+        border: 1px solid #e9ecef;
+        min-height: 36px;
+        word-break: break-all;
+    }
+
+    .detail-field textarea.value {
+        min-height: 80px;
+        resize: vertical;
+        font-family: inherit;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .detail-field .value.editable {
+        background: #fff;
+        border-color: #3498db;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: end;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        color: #7f8c8d;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .form-control {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 14px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .form-control:focus {
+        border-color: #3498db;
+        outline: none;
+        box-shadow: 0 0 5px rgba(52, 152, 219, 0.2);
+    }
+
+    .editor-footer {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .btn-save {
+        background: #3498db;
+        color: white;
+        border: none;
+        padding: 12px 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-save:hover {
+        background: #2980b9;
+    }
+
+    .btn-create {
+        background: #27ae60;
+        width: 100%;
+        padding: 10px;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .btn-get-context {
+        color: white;
+        border: none;
+        padding: 2px 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 12px;
+        transition: all 0.2s;
+        height: 20px;
+    }
+
+    .btn-get-context:hover:not(:disabled) {
+        background: #229954;
+    }
+
+    .btn-get-context:disabled {
+        background: #bdc3c7;
+        cursor: not-allowed;
+    }
+
+    .btn-delete {
+        background: transparent;
+        color: #e74c3c;
+        border: 1px solid #e74c3c;
+        padding: 11px 25px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.2s;
+        margin-right: auto;
+    }
+
+    .btn-delete:hover {
+        background: #e74c3c;
+        color: white;
+    }
+
+    #statusLabel {
+        font-size: 13px;
+        color: #27ae60;
+    }
+
+    .empty-state {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #999;
+        font-size: 16px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-container">
+
+    <!-- Список проектов (Сайдбар) -->
+    <div class="projects-sidebar">
+        <div class="sidebar-header">
+            <button class="btn-create" id="createNewProject">+ Создать проект</button>
+        </div>
+        <div class="project-list" id="projectList">
+        </div>
+    </div>
+
+    <!-- Детали проекта -->
+    <div class="editor-section">
+        <div class="form-header">
+            <h2 id="formTitle">Выберите проект</h2>
+        </div>
+
+        <div id="emptyState" class="empty-state">
+            Выберите проект из списка или создайте новый
+        </div>
+
+        <form id="projectForm" style="display:none;">
+            <input type="hidden" id="projectId">
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Название</label>
+                    <input type="text" id="title" class="form-control" required placeholder="Название проекта">
+                </div>
+                <div class="form-group">
+                    <label>Путь к директории</label>
+                    <input type="text" id="path" class="form-control" placeholder="/absolute/path/to/project">
+                </div>
+            </div>
+
+            <div style="margin-top: 15px;">
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea id="description" class="form-control" rows="3"
+                              placeholder="Краткое описание проекта"></textarea>
+                </div>
+            </div>
+
+            <div style="margin-top: 15px;">
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label>Контекст</label>
+                        <button type="button" class="btn-get-context" id="updateContextBtn">Обновить контекст</button>
+                    </div>
+                    <textarea id="context" class="form-control" rows="6" placeholder="Контекст проекта"></textarea>
+                </div>
+            </div>
+
+            <div class="editor-footer">
+                <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">
+                    Удалить проект
+                </button>
+                <button type="submit" class="btn-save" id="saveBtn">Сохранить проект</button>
+            </div>
+        </form>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData, postData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const projectListContainer = document.getElementById('projectList');
+    const saveBtn = document.getElementById('saveBtn');
+    const projectForm = document.getElementById('projectForm');
+    const createNewProjectBtn = document.getElementById('createNewProject');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const updateContextBtn = document.getElementById('updateContextBtn');
+    const emptyState = document.getElementById('emptyState');
+    const formTitle = document.getElementById('formTitle');
+
+    /**
+     * Получить CSS-класс для статуса
+     */
+    function statusClass(status) {
+        return 'status-' + (status || 'pending');
+    }
+
+    /**
+     * Инициализация: загрузка списка проектов
+     */
+    async function init() {
+        if (!projectListContainer) return;
+
+        try {
+            const res = await getData('/project/list');
+            const projects = res.result || [];
+            renderProjectList(projects);
+        } catch (e) {
+            console.error('Ошибка инициализации:', e);
+        }
+    }
+
+    /**
+     * Отрисовка списка в левой колонке
+     */
+    function renderProjectList(projects) {
+        projectListContainer.innerHTML = '';
+
+        if (projects.length === 0) {
+            projectListContainer.innerHTML = '<div style="padding:20px; color:#999; font-size:13px;">Нет проектов</div>';
+            return;
+        }
+
+        projects.forEach(project => {
+            const div = document.createElement('div');
+            div.className = 'project-item';
+            div.dataset.id = project.id;
+
+            const title = project.title || 'Без названия';
+            const statusDot = `<span class="status-dot ${statusClass(project.status)}" title="${project.status || 'pending'}"></span>`;
+
+            div.innerHTML = `<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</span>${statusDot}`;
+
+            div.onclick = () => selectProject(project.id, div);
+            projectListContainer.appendChild(div);
+        });
+
+        // Автоматически выбираем первый проект
+        const firstProject = projects[0];
+        const firstElement = projectListContainer.querySelector('.project-item');
+        if (firstProject && firstElement) {
+            selectProject(firstProject.id, firstElement);
+        }
+    }
+
+    /**
+     * Загрузка деталей проекта
+     */
+    async function selectProject(projectId, element) {
+        document.querySelectorAll('.project-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        sessionStorage.setItem('project_page_selected_id', String(projectId));
+
+        try {
+            const data = await getData(`/project/${projectId}`);
+            const project = data.result;
+
+            if (!project) return;
+
+            emptyState.style.display = 'none';
+            projectForm.style.display = 'block';
+
+            document.getElementById('projectId').value = project.id;
+            document.getElementById('title').value = project.title || '';
+            document.getElementById('path').value = project.path || '';
+            document.getElementById('description').value = project.description || '';
+            document.getElementById('context').value = project.context || '';
+
+            checkPathForContext();
+
+            formTitle.textContent = `Проект: ${project.title || 'Без названия'}`;
+            if (saveBtn) saveBtn.disabled = false;
+            if (deleteBtn) deleteBtn.style.display = 'block';
+        } catch (e) {
+            console.error('Ошибка загрузки проекта:', e);
+            showNotification('Не удалось загрузить проект', 'error');
+        }
+    }
+
+    /**
+     * Очистка формы для нового проекта
+     */
+    function resetFormForCreate() {
+        document.querySelectorAll('.project-item').forEach(el => el.classList.remove('active'));
+        projectForm.reset();
+        document.getElementById('projectId').value = '';
+        formTitle.textContent = 'Создание нового проекта';
+
+        if (saveBtn) saveBtn.disabled = false;
+        if (deleteBtn) deleteBtn.style.display = 'none';
+
+        emptyState.style.display = 'none';
+        projectForm.style.display = 'block';
+        sessionStorage.removeItem('project_page_selected_id');
+    }
+
+    /**
+     * Сохранение (создание или обновление)
+     */
+    async function saveProject(e) {
+        if (e) e.preventDefault();
+
+        const id = document.getElementById('projectId').value;
+        const payload = {
+            title: document.getElementById('title').value.trim(),
+            path: document.getElementById('path').value.trim(),
+            description: document.getElementById('description').value.trim(),
+            context: document.getElementById('context').value.trim(),
+        };
+
+        if (!payload.title) {
+            showNotification('Название обязательно', 'error');
+            return;
+        }
+
+        if (saveBtn) saveBtn.disabled = true;
+
+        try {
+            if (id) {
+                await putData(`/project/${id}`, payload);
+                showNotification(`Проект "${payload.title}" обновлён`, 'success');
+            } else {
+                await postData('/project', payload);
+                showNotification(`Проект "${payload.title}" создан`, 'success');
+            }
+
+            await init();
+
+            if (!id) resetFormForCreate();
+        } catch (e) {
+            console.error('Ошибка сохранения:', e);
+            showNotification(`Ошибка: ${e.message}`, 'error');
+        } finally {
+            if (saveBtn) saveBtn.disabled = false;
+        }
+    }
+
+    /**
+     * Удаление проекта
+     */
+    async function deleteProject() {
+        const id = document.getElementById('projectId').value;
+        const title = document.getElementById('title').value;
+
+        if (!id) return;
+
+        if (confirm(`Вы уверены, что хотите удалить проект "${title}"?`)) {
+            try {
+                await deleteData(`/project/${id}`);
+                showNotification(`Проект "${title}" удалён`, 'success');
+
+                resetFormForCreate();
+                await init();
+            } catch (e) {
+                console.error('Ошибка удаления:', e);
+                showNotification(`Ошибка при удалении: ${e.message}`, 'error');
+            }
+        }
+    }
+
+    /**
+     * Проверка поля пути — включить/выключить кнопку "Обновить контекст"
+     */
+    function checkPathForContext() {
+        const pathVal = document.getElementById('path').value.trim();
+        if (updateContextBtn) {
+            updateContextBtn.disabled = pathVal === '';
+        }
+    }
+
+    /**
+     * Обновление контекста проекта через API
+     */
+    async function updateContext() {
+        const pathVal = document.getElementById('path').value.trim();
+        if (!pathVal) {
+            showNotification('Укажите путь к директории проекта', 'error');
+            return;
+        }
+
+        if (updateContextBtn) {
+            updateContextBtn.disabled = true;
+            updateContextBtn.textContent = '⏳ Загрузка...';
+        }
+
+        try {
+            const titleVal = document.getElementById('title').value.trim();
+            const res = await postData('/project/context-generate', {path: pathVal, title: titleVal});
+            if (res.error) {
+                showNotification('Ошибка: ' + res.error, 'error');
+                return;
+            }
+            const ctx = res.result || {};
+            document.getElementById('context').value = ctx.context || '';
+            showNotification('Контекст обновлён', 'success');
+        } catch (e) {
+            console.error('Ошибка обновления контекста:', e);
+            showNotification('Не удалось обновить контекст: ' + e.message, 'error');
+        } finally {
+            if (updateContextBtn) {
+                updateContextBtn.textContent = 'Обновить контекст';
+                updateContextBtn.disabled = false;
+                checkPathForContext();
+            }
+        }
+    }
+
+    // Слушатели событий
+    document.addEventListener('DOMContentLoaded', () => {
+        init();
+
+        if (projectForm) {
+            projectForm.addEventListener('submit', saveProject);
+        }
+
+        if (createNewProjectBtn) {
+            createNewProjectBtn.addEventListener('click', resetFormForCreate);
+        }
+
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', deleteProject);
+        }
+
+        if (updateContextBtn) {
+            updateContextBtn.addEventListener('click', updateContext);
+        }
+
+        const pathInput = document.getElementById('path');
+        if (pathInput) {
+            pathInput.addEventListener('input', checkPathForContext);
+        }
+    });
+</script>
+{% endblock %}
