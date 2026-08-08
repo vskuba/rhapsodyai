@@ -176,7 +176,11 @@ async function sendClaudeMessage({ textarea, progress }) {
 
         progress.classList.add('active');
         try {
-            await postData('/telegram-app/claude/ask', { message, session_uuid: state.claude.sessionUuid });
+            const askRes = await postData('/telegram-app/claude/ask', { message, session_uuid: state.claude.sessionUuid });
+            // Помечаем ID вопроса, чтобы loadClaudeMessages не дублировал пузырёк в DOM
+            if (askRes && askRes.result && askRes.result.id) {
+                state.claude.renderedUserIds.add(askRes.result.id);
+            }
             updateClaudePolling();
         } catch (err) {
             state.claude.typingBubble?.remove();

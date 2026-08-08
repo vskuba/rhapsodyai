@@ -20,8 +20,8 @@ async def telegram_app_claude_ask(request: Request, data: dict):
     if not session_uuid or not message:
         raise HTTPException(status_code=400, detail="session_uuid and message required")
 
-    await claude_message_user(prompt_user=message, session_uuid=session_uuid)
-    return {"result": "...", "session_uuid": session_uuid}
+    result = await claude_message_user(prompt_user=message, session_uuid=session_uuid)
+    return {"result": {"id": result["id"]}, "session_uuid": session_uuid}
 
 
 @router.get("/telegram-app/claude/messages")

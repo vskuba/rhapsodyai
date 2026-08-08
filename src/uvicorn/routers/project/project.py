@@ -1,72 +1,61 @@
-import json
-import os
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Depends, Request
 
-from src.mysql_.repository.project.planning.planning_document_repository import PlanningDocumentRepository
-from src.mysql_.repository.project.planning.planning_phase_repository import PlanningPhaseRepository
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.mysql_.repository.project.project_repository import PlanningProjectRepository
 from mysql_.mysql_ import mysql_get_db_async
-from py_modules.setting_.setting_ import setting_get
-from src.project.planning.planning_runner import planning_runner_enqueue
-from src.uvicorn.routers.project.project_common import _CRONICLE_SCHEDULE_FILE
+from src.mysql_.repository.project.project_repository import PlanningProjectRepository
 
 router = APIRouter()
 
 
-@router.get('/planning/project/list')
-async def project_list(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+@router.get('/project/list')
+async def project_admin_list(user=Depends(AuthChecker([AuthPermission.PROJECT_VIEW]))):
+    """Список всех проектов."""
     repo = PlanningProjectRepository()
-    return {'result': await repo.find_by({}, 'position ASC, id DESC')}
+    return {'result': await repo.find_by({}, 'id ASC')}
 
 
-@router.get('/planning/project/{project_id}')
-async def project_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+@router.get('/project/{project_id}')
+async def project_admin_get(project_id: int, user=Depends(AuthChecker([AuthPermission.PROJECT_VIEW]))):
+    """Детальная информация по проекту."""
     repo = PlanningProjectRepository()
     return {'result': await repo.find(project_id)}
 
 
-@router.post('/planning/project')
-async def project_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+@router.post('/project')
+async def project_admin_create(data: dict, user=Depends(AuthChecker([AuthPermission.PROJECT_CREATE]))):
+    """Создание нового проекта."""
     repo = PlanningProjectRepository()
     title = str(data.get('title') or '').strip()
     idea = str(data.get('idea') or '').strip()
-    if not idea:
-        return {'error': 'idea is required'}
+    path = str(data.get('path') or '').strip()
     if not title:
-        title = idea[:80]
+        return {'error': 'title is required'}
+    if not idea:
+        idea = title[:200]
+    if not path:
+        path = idea[:200]
     async with mysql_get_db_async() as db:
-        await db.execute('SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM project')
+        await db.execute('SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM project')
         row = await db.fetchone()
-        next_pos = int(row['next_pos']) if row else 0
+        next_id = int(row['next_id']) if row else 1
     project_id = await repo.add({
         'node_id': 6,
-        'user_id': user.user_id,
+        'user_id': 0,
         'title': title,
         'idea': idea,
-        'status': 'pending',
-        'phase_current': '',
-        'position': next_pos,
+        'path': path,
+        'status': 'complete',
+        'phase_current': 'complete',
+        'position': 0,
     })
-    await planning_runner_enqueue(project_id)
     return {'result': project_id}
 
 
-@router.put('/planning/project/reorder')
-async def project_reorder(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
-    ids = data.get('ids') or []
-    if not ids or not isinstance(ids, list):
-        return {'error': 'ids required'}
-    async with mysql_get_db_async() as db:
-        for pos, project_id in enumerate(ids):
-            await db.execute('UPDATE project SET position = %s WHERE id = %s', (pos, int(project_id)))
-    return {'result': 'ok'}
-
-
-@router.put('/planning/project/{project_id}')
-async def project_update(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+@router.put('/project/{project_id}')
+async def project_admin_update(project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PROJECT_UPDATE]))):
+    """Обновление проекта."""
     repo = PlanningProjectRepository()
     update = {}
     if 'title' in data:
@@ -75,150 +64,54 @@ async def project_update(request: Request, project_id: int, data: dict, user=Dep
         update['idea'] = str(data['idea'])
     if 'status' in data:
         update['status'] = str(data['status'])
+    if 'path' in data:
+        update['path'] = str(data['path'])
+    if 'phase_current' in data:
+        update['phase_current'] = str(data['phase_current'])
+    if 'description' in data:
+        update['description'] = str(data['description'])
+    if 'context' in data:
+        update['context'] = str(data['context'])
     if update:
         await repo.update(project_id, update)
     return {'result': project_id}
 
 
-@router.post('/planning/project/{project_id}/retry')
-async def project_retry(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
-    """Полный сброс: удаляет все фазы и документы проекта, запускает с нуля."""
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            """UPDATE project
-               SET status = 'pending', phase_current = '',
-                   score_market = NULL, score_feasibility = NULL, score_financial = NULL,
-                   score_total = NULL, score_verdict = NULL, score_investment = NULL,
-                   score_time_to_market = NULL, score_summary = NULL
-             WHERE id = %s""",
-            (project_id,)
-        )
-        await db.execute(
-            "DELETE FROM project_planning_phase WHERE project_id = %s",
-            (project_id,)
-        )
-        await db.execute(
-            "DELETE FROM project_planning_document WHERE project_id = %s",
-            (project_id,)
-        )
-        await db.connection.commit()
-    await planning_runner_enqueue(project_id)
+@router.delete('/project/{project_id}')
+async def project_admin_delete(project_id: int, user=Depends(AuthChecker([AuthPermission.PROJECT_DELETE]))):
+    """Удаление проекта."""
+    repo = PlanningProjectRepository()
+    await repo.delete(project_id)
     return {'result': project_id}
-
-
-@router.post('/planning/project/{project_id}/phase/{phase}/retry')
-async def project_phase_retry(
-    request: Request, project_id: int, phase: str,
-    user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))
-):
-    """Сброс одной фазы: удаляет её запись и документы, возвращает проект в pending."""
-    valid_phases = {'analyze', 'market', 'product', 'tech', 'gtm', 'financial', 'blueprint', 'score', 'supplement', 'design', 'prototype', 'sitemap_check', 'design_pages', 'design_wireframe'}
-    is_supplement_sub = phase.startswith('supplement_')
-    if phase not in valid_phases and not is_supplement_sub:
-        raise HTTPException(status_code=400, detail=f'Unknown phase: {phase}')
-
-    async with mysql_get_db_async() as db:
-        if is_supplement_sub:
-            await db.execute("DELETE FROM project_planning_phase WHERE project_id = %s AND phase = %s", (project_id, phase))
-            await db.execute("DELETE FROM project_planning_document WHERE project_id = %s AND doc_type = %s", (project_id, phase))
-        elif phase == 'supplement':
-            await db.execute("DELETE FROM project_planning_phase WHERE project_id = %s AND phase LIKE 'supplement_%%'", (project_id,))
-            await db.execute("DELETE FROM project_planning_document WHERE project_id = %s AND doc_type LIKE 'supplement_%%'", (project_id,))
-        elif phase == 'design':
-            # Удаляем design и все её дочерние фазы (prototype, sitemap_check)
-            await db.execute(
-                "DELETE FROM project_planning_phase WHERE project_id = %s AND (phase = 'design' OR parent_phase = 'design')",
-                (project_id,)
-            )
-            await db.execute(
-                "DELETE FROM project_planning_document WHERE project_id = %s AND doc_type IN ('design','design_tokens','design_ui_components','design_wireframes','design_sitemap','design_specs','prototype','sitemap_check')",
-                (project_id,)
-            )
-        else:
-            await db.execute("DELETE FROM project_planning_phase WHERE project_id = %s AND phase = %s", (project_id, phase))
-            await db.execute("DELETE FROM project_planning_document WHERE project_id = %s AND doc_type = %s", (project_id, phase))
-
-        if phase == 'score':
-            await db.execute(
-                """UPDATE project SET
-                   score_market = NULL, score_feasibility = NULL, score_financial = NULL,
-                   score_total = NULL, score_verdict = NULL, score_investment = NULL,
-                   score_time_to_market = NULL, score_summary = NULL
-                 WHERE id = %s""",
-                (project_id,)
-            )
-
-        await db.execute(
-            "UPDATE project SET status = 'pending' WHERE id = %s AND status NOT IN ('running')",
-            (project_id,)
-        )
-        await db.connection.commit()
-
-    await planning_runner_enqueue(project_id)
-    return {'result': project_id}
-
-
-@router.delete('/planning/project/{project_id}')
-async def project_delete(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_DELETE]))):
-    import shutil
-    async with mysql_get_db_async() as db:
-        await db.execute("DELETE FROM project_planning_phase    WHERE project_id = %s", (project_id,))
-        await db.execute("DELETE FROM project_planning_document WHERE project_id = %s", (project_id,))
-        await db.execute("DELETE FROM project  WHERE id = %s",         (project_id,))
-        await db.connection.commit()
-    project_dir = f'/app/data/planning/{project_id}'
-    if os.path.isdir(project_dir):
-        shutil.rmtree(project_dir, ignore_errors=True)
-    return {'result': project_id}
-
-
-@router.get('/planning/cronicle/schedule')
-async def planning_cronicle_schedule(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    """Возвращает минуты запуска каждой planning-фазы из файла расписания Cronicle."""
-    try:
-        with open(_CRONICLE_SCHEDULE_FILE) as f:
-            data = json.load(f)
-    except Exception:
-        return {'result': {}}
-    schedule = {}
-    for item in data.get('items', []):
-        title = item.get('title', '')
-        if not title.startswith('planning_'):
-            continue
-        phase = title.replace('planning_', '')
-        timing = item.get('timing', {})
-        minutes = timing.get('minutes', [])
-        hours = timing.get('hours', [])
-        if minutes:
-            schedule[phase] = {'minutes': sorted(minutes), 'hours': sorted(hours)}
-    return {'result': schedule}
-
-
-@router.get('/planning/project/{project_id}/phases')
-async def project_planning_phases_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    repo = PlanningPhaseRepository()
-    phases = await repo.find_by({'project_id': project_id}, 'id ASC')
-    for ph in (phases or []):
-        phase_key = str(ph.get('phase') or '')
-        ph['cronicle_last_run'] = str(await setting_get(f'planning_cronicle_{phase_key}') or '')
-    return {'result': phases}
-
-
-@router.get('/planning/project/{project_id}/documents')
-async def project_planning_documents_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    repo = PlanningDocumentRepository()
-    return {'result': await repo.find_by({'project_id': project_id}, 'id ASC')}
 
 
 @router.post('/project/context-generate')
-async def project_context_generate_endpoint(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PROJECT_UPDATE]))):
+async def project_context_generate_endpoint(request: Request, data: dict,
+                                            user=Depends(AuthChecker([AuthPermission.PROJECT_UPDATE]))):
     """Сгенерировать контекст проекта через LLM: обзор, функционал, страницы."""
     path = str(data.get('path') or '').strip()
     title = str(data.get('title') or '').strip()
+    project_id = int(data.get('project_id') or 0)
     if not path:
         return {'error': 'path is required'}
+    if not project_id:
+        return {'error': 'project_id is required'}
 
     from src.project.project import project_context_generate
 
     context_text = await project_context_generate(path=path, title=title, user_id=user.user_id)
+
+    repo = PlanningProjectRepository()
+    await repo.update(project_id, {'context': context_text})
     return {'result': {'context': context_text}}
+
+
+@router.post('/project/get_context')
+async def project_admin_get_context(data: dict, user=Depends(AuthChecker([AuthPermission.PROJECT_VIEW]))):
+    """Вернуть контекст проекта из базы данных."""
+    project_id = int(data.get('project_id') or 0)
+    if not project_id:
+        return {'error': 'project_id is required'}
+    repo = PlanningProjectRepository()
+    project = await repo.find(project_id)
+    return {'result': {'context': project.get('context', '') if project else ''}}
