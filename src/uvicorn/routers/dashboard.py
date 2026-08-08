@@ -174,6 +174,14 @@ async def planning_page(request: Request, user: AuthSession = Depends(require_au
     )
 
 
+@router.get("/admin/project", response_class=HTMLResponse)
+async def project_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/project.html",
+    )
+
+
 @router.get("/admin/developing", response_class=HTMLResponse)
 async def developing_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(

@@ -30,6 +30,7 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.SETTING_VIEW,
     AuthPermission.QUEUE_VIEW,
     AuthPermission.DESIGN_VIEW,
+    AuthPermission.PROJECT_VIEW,
 }
 
 # Переопределения прав для конкретных ролей (админ получает все права в AuthChecker)
