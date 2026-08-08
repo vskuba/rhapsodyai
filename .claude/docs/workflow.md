@@ -73,7 +73,7 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 |---|---|---|
 | `return_response_llm` ↩L | Отправляет контекст в LLM, результат — финальный ответ пользователю. **Завершает workflow.** | `prompt_user` |
 | `llm_to_json` 🧠 | Запрос к LLM с требованием JSON; парсит ответ (`_json_str_clean` вырезает JSON из текста), проверяет наличие всех ожидаемых ключей, кладет их в переменные. До 3 повторов при ошибке парсинга. | `llm_to_json_variable: [{variable, text}]`, `prompt_user` |
-| `tool_invoke` ⚙️ | Вызывает python-инструмент. Аргументы собираются из переменных по `inputs_map` (arg → имя переменной). Результат-dict раскладывается в переменные `{tool_name}_{step_id}_result_{key}`; скаляр — `{tool_name}_{step_id}_result_{typename}` (str/int/bool/list/float). ID шага в имени делает переменную уникальной: повторные вызовы одного инструмента не перезаписывают друг друга. Пишет tool-call в `agent_session`. | `tool_invoke: {tool_name, inputs_map}` |
+| `tool_invoke` ⚙️ | Вызывает python-инструмент. Аргументы собираются из переменных по `inputs_map` (arg → **имя workflow-переменной**). Результат-dict раскладывается в переменные `{tool_name}_{step_id}_result_{key}`; скаляр — `{tool_name}_{step_id}_result_{typename}` (str/int/bool/list/float). ID шага в имени делает переменную уникальной: повторные вызовы одного инструмента не перезаписывают друг друга. Пишет tool-call в `agent_session`. | `tool_invoke: {tool_name, inputs_map}` |
 | `return_response_text` ↩T | Возвращает текст-шаблон (после рендера переменных). **Завершает текущий запрос**; при `continue_workflow=true` сохраняет индекс следующего шага в `session.metadata` — следующий запрос пользователя продолжит workflow с этого места (диалоговые сценарии-«визарды»). | `prompt_user`, `continue_workflow` |
 | `variable_conversion` ❴❵ | Переопределяет переменные значениями-шаблонами (рендер уже произошел). Используется для склейки JSON-строк, преобразования результатов инструментов. | `variable_conversion: [{variable, text}]` |
 | `workflow_invoke` 🔁 | Вызывает другой workflow как под-процесс в **изолированном scope**: только явные входы по `inputs_map` (родительская переменная → input ребенка) + default'ы переменных ребенка; input-контракт валидируется. Результат → `{child_name}_{step_id}_result_str` + копии по `outputs_map`. Лимит глубины `MAX_WORKFLOW_DEPTH=5`, детект циклов по стеку workflow-id. Внутри подавлены side-эффекты: system/user-prompt и response-final не пишутся в историю, `continue_workflow` игнорируется с warning. | `workflow_invoke: {workflow_id, inputs_map, outputs_map}` |
@@ -279,6 +279,69 @@ prompt_user: |
 }
 ```
 
+## 4b. Тип шага `tool_invoke` — best practices и частые ошибки
+
+### Ключевое правило: `inputs_map` — имена переменных, НЕ текст
+
+В `inputs_map` значение — **имя workflow-переменной**, которая резолвится движком через `variables.get(var_name)`.
+
+**Правильно:**
+```json
+{
+  "tool_invoke": {
+    "tool_name": "claude_shell_call",
+    "inputs_map": { "prompt": "questions" }
+  }
+}
+```
+→ Движок берёт `variables["questions"]` → передаёт в `claude_shell_call(prompt=<значение>)`
+
+**Ошибка:**
+```json
+{
+  "tool_invoke": {
+    "tool_name": "claude_shell_call",
+    "inputs_map": { "prompt": "Уточняющие вопросы по задаче:\n%questions%\n..." }
+  }
+}
+```
+→ Движок ищет `variables["Уточняющие вопросы по задаче:\n%questions%\n..."]` — такого ключа нет → `None` → инструмент получает пустой аргумент → ошибка (напр. `claude_shell_call` падает с 400 "Missing 'prompt' field")
+
+### Как резолвятся значения
+
+Движок (`ai_framework_manager.py:689-696`) обрабатывает `inputs_map` так:
+
+1. **Переменные:** любое другое значение → `variables.get(var_name, None)` — поиск по ключу.
+   ```json
+   "inputs_map": { "prompt": "questions" }
+   → claude_shell_call(prompt=variables["questions"])  ← значение переменной
+   ```
+
+2. **Константы `_const_`:** если значение начинается с `_const_`, берётся текст после префикса как literal.
+   ```json
+   "inputs_map": { "table_name": "_const_users" }
+   → claude_shell_call(table_name="users")  ← literal "users"
+   ```
+
+3. **Ошибка (литеральный текст):** если в `inputs_map` записан не короткой имени переменной, а длинный текст (напр. промпт), движок не найдёт его в `variables` → `None` → инструмент получит пустой аргумент.
+   ```json
+   "inputs_map": { "prompt": "Уточняющие вопросы по задаче:\n%questions%\n..." }
+   → variables["Уточняющие вопросы..."] → None
+   → claude_shell_call(prompt=None) → 400 "Missing 'prompt' field"
+   ```
+
+### Частые ошибки
+
+| Симптом | Причина | Лечение |
+|---|---|---|
+| Инструмент падает с пустым аргументом (400, TypeError) | В `inputs_map` записан literal текст с `%переменные%` вместо имени переменной | Заменить текст на имя workflow-переменной |
+| Инструмент получает `None` | Имя переменной в `inputs_map` не совпадает с реальным именем, или переменная не объявлена | Проверить регистр и имя в реестре переменных workflow |
+| Неочевидная логическая ошибка | `inputs_map` указывает на переменную с пустым значением | Проверить WorkflowTrace: входной metadata покажет пустую переменную |
+
+### Правило проверки перед сохранением
+
+Перед сохранением шага `tool_invoke` проверь: каждое значение в `inputs_map` должно быть **коротким именем переменной** (без пробелов, без `%`, без спецсимволов). Если значение длиннее ~50 символов — почти наверняка вставлен случайный текст, а не имя переменной.
+
 ## 5. Переходы (transitions)
 
 В metadata каждого шага: `transitions_before` (проверяются ДО выполнения шага) и `transitions_after`
@@ -375,6 +438,13 @@ continue_workflow, если не были возвращены пользова�
     селекта workflow агентов); движок флаг не проверяет — `workflow_invoke` может вызвать и «основной» workflow.
 14. Переменные с одинаковыми именами: `inputs_map` в `tool_invoke` хранится и как `metadata.tool_invoke.inputs_map`
     (движок) — фронтовые обработчики должны учитывать вложенность.
+15. **[НОВАЯ] Literal текст в `inputs_map` tool_invoke шага** — если в `inputs_map` вместо имени
+    переменной вписать длинный текст (напр. промпт с `%переменные%`), движок не найдёт его в
+    `variables` → `None` → инструмент получит пустой аргумент. Пример:
+    `inputs_map: {"prompt": "Уточняющие вопросы:\n%questions%\nОтветь..."}` → `claude_shell_call(prompt=None)` → 400.
+    **Правило:** значения `inputs_map` должны быть короткими именами переменных (без пробелов, без `%`).
+    Если значение длиннее ~50 символов — проверяй, не случайный ли это текст.
+    ([§4b — полное описание](#тип-шага-tool_invoke--best-practices-и-частые-ошибки))
 
 > Удалено из списка: дубликат `input_values_set()` в task-фреймворке — файл
 > `py_modules/ai/framework/task/ai_framework_manager.py` больше не существует.
@@ -382,7 +452,7 @@ continue_workflow, если не были возвращены пользова�
 ## 9. Пути оптимизации и улучшения
 
 ### 9.1 Ближние (устранение рисков)
-- Исправить актуальные баги §8 (3-11) — прежде всего защиту индекса continue_workflow (§8.6),
+- Исправить актуальные баги §8 (3-15) — прежде всего защиту индекса continue_workflow (§8.6),
   переходы на несуществующие шаги (§8.7) и отмену фоновой задачи по таймауту (§8.9).
 - ✅ Добавлены операторы переходов: `>=`, `<=`, `exists`, `empty`, `not_contains`, `regex`
   (движок `_transition_condition_check` + селекты в редакторе переходов).
