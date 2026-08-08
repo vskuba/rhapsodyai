@@ -40,14 +40,14 @@ from src.uvicorn.routers.cronjob import cronjob
 from src.uvicorn.routers.fact import fact, fact_collection
 from src.uvicorn.routers.plan import plan
 from src.uvicorn.routers.project import (
-    project as project_router,
+    project_planning as project_router,
     project_idea,
     project_prototype as project_prototype_router,
     project_document,
     project_task,
     project_task_pipeline,
     project_phase_source,
-    project_admin,
+    project as project_admin,
 )
 from src.uvicorn.routers.project.design import design_block, design as design_router, design_browser, design_prototype as design_prototype_router
 from src.uvicorn.routers.llm import llm
