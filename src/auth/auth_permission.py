@@ -97,3 +97,9 @@ class AuthPermission(str, Enum):
     DESIGN_CREATE = "design:create"
     DESIGN_UPDATE = "design:update"
     DESIGN_DELETE = "design:delete"
+
+    # Project permissions
+    PROJECT_VIEW = "project:view"
+    PROJECT_CREATE = "project:create"
+    PROJECT_UPDATE = "project:update"
+    PROJECT_DELETE = "project:delete"
