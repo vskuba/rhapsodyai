@@ -783,7 +783,9 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     for item in variable_conversion:
                         variable_name = item.get('variable')
                         if variable_name:
-                            value = item.get('text', '')
+                            raw_text = item.get('text', '')
+                            # Подстановка %var% из контекста (иначе — literal текст)
+                            value = ai_workflow_variables_render(raw_text, variables)
                             variables[variable_name] = value
                             logger_info(
                                 f"🏷️ Переменная '%{variable_name}%' получила значение '{value}'")

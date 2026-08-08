@@ -174,6 +174,30 @@ async def project_task_plan_revision_restore(task_id: int, revision_no: int,
     return {'ok': True, 'revision_no': created or revision_no}
 
 
+@router.delete('/task/{task_id}/plan/reset')
+async def project_task_plan_reset(task_id: int,
+                                  user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Очистить план и цели, вернуть задачу в начало конвейера.
+
+    pipeline_plan = '', goals = '', pipeline_state = NULL — задача снова
+    попадётся оркестратору и получит план от менеджера.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id FROM project_task WHERE id = %s", (task_id,))
+        if not await db.fetchone():
+            raise HTTPException(status_code=404, detail='task not found')
+
+        await db.execute(
+            "UPDATE project_task SET pipeline_plan = '', goals = '', "
+            "pipeline_state = NULL, pipeline_locked_at = NULL, pipeline_locked_by = '' "
+            "WHERE id = %s", (task_id,))
+        await db.connection.commit()
+
+    return {'ok': True}
+
+
 @router.delete('/task/{task_id}/plan/revision/{revision_no}')
 async def project_task_plan_revision_delete(task_id: int, revision_no: int,
                                             user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
@@ -184,7 +208,7 @@ async def project_task_plan_revision_delete(task_id: int, revision_no: int,
     """
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT plan_text, goals FROM project_task WHERE id = %s", (task_id,))
+            "SELECT pipeline_plan, goals FROM project_task WHERE id = %s", (task_id,))
         row = await db.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail='task not found')
