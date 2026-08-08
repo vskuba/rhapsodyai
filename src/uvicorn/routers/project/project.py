@@ -208,3 +208,17 @@ async def project_planning_phases_get(request: Request, project_id: int, user=De
 async def project_planning_documents_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     repo = PlanningDocumentRepository()
     return {'result': await repo.find_by({'project_id': project_id}, 'id ASC')}
+
+
+@router.post('/project/context-generate')
+async def project_context_generate_endpoint(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PROJECT_UPDATE]))):
+    """Сгенерировать контекст проекта через LLM: обзор, функционал, страницы."""
+    path = str(data.get('path') or '').strip()
+    title = str(data.get('title') or '').strip()
+    if not path:
+        return {'error': 'path is required'}
+
+    from src.project.project import project_context_generate
+
+    context_text = await project_context_generate(path=path, title=title, user_id=user.user_id)
+    return {'result': {'context': context_text}}
