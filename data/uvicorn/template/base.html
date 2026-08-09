@@ -92,6 +92,7 @@
             {% if request.session.get('role') == 'admin' %}
             <div class="tabnav-panel" data-group="projects">
                 <span class="tabnav-sep"></span>
+                <a href="/admin/team">🧑‍💻 Команда</a>
                 <a href="/admin/task">✅ Задачи</a>
                 <a href="/admin/planning-phase-source">📚 Документация</a>
                 <a href="/admin/planning">🗂️ Планирование</a>
@@ -226,6 +227,8 @@
             '/admin/node': 'nodes',
             '/admin/variable': 'nodes',
             '/admin/workflow': 'llm',
+            '/admin/team': 'projects',
+            '/admin/project': 'projects',
             '/admin/planning': 'projects',
             '/admin/planning-phase-source': 'projects',
             '/admin/task': 'projects',
