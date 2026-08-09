@@ -68,6 +68,7 @@ from src.uvicorn.routers.role import role
 from src.uvicorn.routers.detective import detective
 from src.uvicorn.routers.seed import seed
 from src.uvicorn.routers.backup import backup
+from src.uvicorn.routers.team import team as team_router
 
 
 @asynccontextmanager
@@ -447,4 +448,5 @@ app.include_router(telegram_app_plan.router, include_in_schema=False)
 app.include_router(event_router.router, include_in_schema=False)
 app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)
+app.include_router(team_router.router, include_in_schema=False)
 
