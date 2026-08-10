@@ -1,5 +1,9 @@
 # LLM — архитектура, мониторинг, вызов моделей
 
+> Как запрос доходит до модели: `node_llm` задаёт набор и приоритет LLM для ноды,
+> `ai_thread` разбирает очередь и выдаёт слоты, `AiFrameworkAgent` вызывает провайдера и
+> при ошибке переключается на следующую LLM. Журнал вызовов — страница `/admin/llm`.
+
 ## Ключевые файлы
 
 | Файл | Роль |
@@ -14,8 +18,6 @@
 | `data/uvicorn/template/admin/llm.html` | Фронт мониторинга LLM |
 | `py_modules/queue_/queue_.py` | `queue_get(name)` — простая in-memory `queue.Queue` |
 | `migrations/0001.sql` | Схема таблиц `llm`, `node_llm`, `llm_request`, `node` (включая `llm_parallel_per_agent_max`) |
-
----
 
 ## Схема таблиц
 
@@ -47,8 +49,6 @@ llm_parallel_per_agent_max  -- 1–5, DEFAULT 1
 id, llm_id, user_id, node_id, status_code, duration_ms, prompt_length, error, created_at
 ```
 Используется для метрик на странице /admin/llm и пересчёта `chunk_size`.
-
----
 
 ## Цепочка вызова LLM
 
@@ -84,8 +84,6 @@ AiFrameworkAgent.framework_run()  ← src/ai/framework/agent/ai_framework.py
   - continue (повторный цикл с новой LLM)
 ```
 
----
-
 ## Текущая параллельность
 
 `async_task_running: dict[str, list[tuple[asyncio.Task, int]]]`  
@@ -98,8 +96,6 @@ AiFrameworkAgent.framework_run()  ← src/ai/framework/agent/ai_framework.py
 По завершении задачи (`_async_task_done_callback`): убирает конкретный `task` по идентичности (`t is not task`).
 
 **LLM внутри одного слота:** строго последовательно, фоллбэк при 429/503.
-
----
 
 ## Выбор LLM (приоритет)
 
@@ -118,8 +114,6 @@ ORDER BY nl.rate_limit_at ASC, nl.position ASC
 `ai_llm_node_get(node_id, output_type='text')` — возвращает только LLM, у которых `output_type` содержит нужный тип (поле `llm.output_type`, значения через запятую: `text`, `image`).
 
 `ai_llm_filter_by_type(entities_llm, output_type='image')` — аналогичная фильтрация уже загруженного списка.
-
----
 
 ## Провайдеры LLM
 
@@ -147,8 +141,6 @@ HTTP-клиент: `httpx.AsyncClient(timeout=60s, connect=10s)` с хуками
 
 `gx10` поддерживает режим "thinking" через `extra_body`. Флаг `framework_model.thinking_enable: bool = False` (поле `AiFrameworkModel`) передаётся в `ModelSettings`. Включается при создании `AiFrameworkModel` если агент поддерживает thinking.
 
----
-
 ## Генерация изображений — `ai_llm_image_generate()`
 
 **Файл:** `src/ai/ai_llm.py`
@@ -156,8 +148,6 @@ HTTP-клиент: `httpx.AsyncClient(timeout=60s, connect=10s)` с хуками
 Два пути:
 - `gx10/...` → **ComfyUI** (`GX10_COMFYUI_URL`, по умолчанию `http://192.168.1.2:8188`). Использует Flux.1 Dev через workflow. Параметры модели: `GX10_COMFYUI_UNET`, `GX10_COMFYUI_CLIP1`, `GX10_COMFYUI_CLIP2`, `GX10_COMFYUI_VAE`.
 - Остальные провайдеры (`openai/`, `openrouter/`) → OpenAI Images API (`/v1/images/generations`), параметр `size`.
-
----
 
 ## Параллельность LLM (`llm_parallel_per_agent_max`)
 
@@ -177,8 +167,6 @@ HTTP-клиент: `httpx.AsyncClient(timeout=60s, connect=10s)` с хуками
 3. Если все слоты заняты → requeue (TTL=60с → дроп с `on_complete('')`)
 
 По завершении: `_async_task_done_callback` удаляет `task` из списка по идентичности объекта.
-
----
 
 ## Мониторинг (страница /admin/llm)
 

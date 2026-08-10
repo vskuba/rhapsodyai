@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, HTTPException
 
+from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
 from src.telegram_.telegram_notify import telegram_send_owner
@@ -62,11 +63,15 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
     """
     _require_claude_secret(request)
 
-    role = str(data.get("role") or "developer").strip()
+    # Колонки role в ai_claude_session_registry и project_team — NOT NULL
+    # DEFAULT 'developer' (migrations/0001.sql), поэтому None вставлять нельзя.
+    role_given = str(data.get("role") or "").strip()
+    role = role_given or "developer"
     project_label = str(data.get("project_label") or "").strip()
     server_llm = str(data.get("server_llm") or "anthropic").strip()
     if server_llm not in ("anthropic", "gx10"):
         server_llm = "anthropic"
+    work_dir = str(data.get("work_dir") or "").strip()
     if not project_label:
         raise HTTPException(status_code=400, detail="project_label required")
 
@@ -80,6 +85,18 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
         "server_llm": server_llm,
         "last_seen_at": datetime.now(),
     })
+
+    # work_dir пишем в project_team только когда роль и путь пришли непустыми:
+    # пустая строка затирала бы уже сохранённый путь на карточке /admin/team.
+    if role_given and work_dir:
+        try:
+            async with mysql_get_db_async() as db:
+                await db.execute(
+                    "UPDATE project_team SET work_dir = %s WHERE role = %s",
+                    (work_dir, role_given)
+                )
+        except Exception as error:
+            logger_info(f"claude_session_register: work_dir update failed: {error}")
 
     return {"result": {"session_uuid": session_uuid}}
 
@@ -335,7 +352,7 @@ async def telegram_app_claude_session_restart_processes(request: Request, data: 
             f"Сессия: {row.get('project_label')} / {row.get('role')}\n"
             f"watch alive: {'да' if status['watch_alive'] else 'нет'}"
         )
-    except Exception:
-        pass
+    except Exception as error:
+        logger_info(f"claude_session_restart: telegram notify failed: {error}")
 
     return {"result": status}

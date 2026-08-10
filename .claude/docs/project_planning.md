@@ -1,4 +1,4 @@
-# Planning: функционал планирования продуктов
+# Planning — планирование продуктов
 
 > Нода `Planning` (node_id=9) — AI-ассистированная система для превращения сырой идеи
 > в полный пакет документов: анализ → рынок → продукт → техника → GTM → финансы → Blueprint.
@@ -45,8 +45,6 @@ Fallback цепочка: openrouter/gpt-oss-120b → cerebras/gpt-oss-120b → .
 |------|---------|
 | `workload` | Фаза workload — запускается вручную после blueprint |
 
----
-
 ## 2. Таблицы БД
 
 | Таблица | Назначение |
@@ -54,18 +52,16 @@ Fallback цепочка: openrouter/gpt-oss-120b → cerebras/gpt-oss-120b → .
 | `planning_project` | Проект: idea, status, phase_current, **position** (порядок в sidebar) |
 | `planning_phase` | Результаты фаз: project_id, phase, result (LONGTEXT), status |
 | `planning_document` | Финальные документы: Blueprint + Supplements |
-| `planning_design_prototype_browser_history` | История URL браузера: project_id, url, used_at; max 15 уникальных на проект |
+| `project_design_prototype_browser_history` | История URL браузера: project_id, url, used_at; max 15 уникальных на проект |
 
 Статусы проекта: `pending → processing → complete | error`.  
 Статусы фазы: `pending → running → complete | failed`.
 
-`planning_design_prototype_browser_history` — UNIQUE KEY `(project_id, url(512))`, обновляется через `ON DUPLICATE KEY UPDATE used_at = NOW()`, лишние записи после 15 удаляются автоматически.
-
----
+`project_design_prototype_browser_history` — UNIQUE KEY `(project_id, url(512))`, обновляется через `ON DUPLICATE KEY UPDATE used_at = NOW()`, лишние записи после 15 удаляются автоматически.
 
 ## 3. Поток выполнения
 
-### planning_runner (внутренний asyncio-runner, `src/cronjob/planning/planning_runner.py`)
+### planning_runner (внутренний asyncio-runner, `src/project/planning/planning_runner.py`)
 
 Запускается из `main_uvicorn.py` через `asyncio.create_task(planning_runner_start())` **после** завершения `ai_tool_sync()`. ВАЖНО: порядок критичен — `ai_tool_sync(force=True)` очищает таблицу `tool` перед ресканом; runner, стартовавший раньше, получит пустой `tools` dict и упадёт с "инструмент не найден".
 
@@ -110,8 +106,6 @@ planning_runner_enqueue(project_id) → _run_project_chain()
            → tool_invoke(planning_phase_save / planning_document_save)
       → _phase_mark_complete(project_id, phase)
 ```
-
----
 
 ## 4. research_loop sub-workflow (id=28)
 
@@ -174,8 +168,6 @@ Step D: llm_to_json(синтез) prompt = "%phases_context%\n\nНайденны
 Step E: tool_invoke(planning_phase_save)
 ```
 
----
-
 ## 5. Структура workflow-шагов по фазам
 
 ### Workflows с internet-поиском (market 20, product 21, tech 22, gtm 23, financial 24)
@@ -225,8 +217,6 @@ pos 4: tool_invoke(planning_document_save)
 Переменная `%planning_supplement_type%` (market/product/tech/gtm/financial/launch) инжектируется
 из `extra_variables` при запуске через `phase_supplement.py`.
 
----
-
 ## 6. Плейбуки (docs/planning/)
 
 Методологические справочники для каждой фазы. **Не встроены в промпты напрямую** —
@@ -250,10 +240,10 @@ pos 4: tool_invoke(planning_document_save)
 |------|-----------|
 | `planning_experiments.md` | A/B тесты — запускается вручную после появления реальных пользователей |
 | `planning_workload.md` | Почасовой список работ — запускается вручную после blueprint |
+| `planning_design.md` | Дизайн продукта по реальным примерам — вручную после workload |
+| `planning_index.md` | Оглавление плейбуков и общий принцип: искать данные, а не отвечать из знаний |
 
----
-
-## 7. Инструменты (src/tool/planning/)
+## 7. Инструменты (src/tool/project/planning/)
 
 | Функция | Назначение |
 |---------|-----------|
@@ -263,8 +253,6 @@ pos 4: tool_invoke(planning_document_save)
 | `planning_project_create(title, idea)` | Создать проект |
 | `planning_bot_action(action, ...)` | Диспетчер для planning_bot chat |
 | `planning_projects_list()` | Список проектов для чат-бота |
-
----
 
 ## 8. Переменные workflow агентов
 
@@ -286,8 +274,6 @@ Supplement-агент передаёт тип через `extra_variables` в `p
 {"planning_supplement_type": "market"}
 ```
 
----
-
 ## 9. Таймаут фаз
 
 `planning_phase_run()` вычисляет таймаут динамически по формуле:
@@ -303,8 +289,6 @@ clamp([PHASE_TIMEOUT_MIN=900s, PHASE_TIMEOUT_MAX=3600s])
 - Фаза никогда не будет ждать меньше **15 минут** и больше **1 часа**
 
 Если модель новая и данных об avg_ms ещё нет — применяется минимальный таймаут 900s.
-
----
 
 ## 10. Retry
 
@@ -330,8 +314,6 @@ clamp([PHASE_TIMEOUT_MIN=900s, PHASE_TIMEOUT_MAX=3600s])
 
 В UI: кнопка ↻ в строке фазы (кроме статуса `running`).
 
----
-
 ## 11. Структура router'а (`src/uvicorn/routers/planning/`)
 
 Planning router разбит на подфайлы (аналогично `src/uvicorn/routers/telegram_app/`):
@@ -346,8 +328,6 @@ Planning router разбит на подфайлы (аналогично `src/uv
 | `planning_browser.py` | Сессия Playwright-браузера + история URL |
 
 `main_uvicorn.py` регистрирует только `planning.py` — подфайлы подключаются внутри него.
-
----
 
 ## 12. API Endpoints
 
@@ -407,8 +387,6 @@ Planning router разбит на подфайлы (аналогично `src/uv
 
 **История URL** сохраняется при успешном `navigate` через `asyncio.ensure_future(_browser_history_save(...))` — не блокирует ответ. Trim до 15 записей выполняется в той же транзакции.
 
----
-
 ## 13. Качество промптов: почему структура идёт в prompt_user
 
 ### Проблема: LLM игнорирует структуру в var_text
@@ -457,8 +435,6 @@ LLM воспринимает это как мягкую рекомендацию
 **Sanity Check** (financial): LTV/CAC > 10 требует ⚠️ WARNING; Year 1 Revenue сравнивается с реальным конкурентом; break-even с учётом рампы.
 
 **Devil's Advocate** (analyze): 3 причины провала + что закрывает потребность бесплатно + 3 условия для успеха.
-
----
 
 ## 14. Известные ограничения
 

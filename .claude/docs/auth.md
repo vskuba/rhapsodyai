@@ -1,6 +1,8 @@
-# Authentication & Authorization System
+# Auth — аутентификация и права доступа
 
-Session-based authentication with role-based access control (RBAC) and optional field-level policies.
+> Session-based authentication with role-based access control (RBAC) and optional
+> field-level policies. Сессия хранится в cookie, права проверяются зависимостью
+> `AuthChecker`, публичные пути перечислены в middleware `main_uvicorn.py`.
 
 ## File Structure
 

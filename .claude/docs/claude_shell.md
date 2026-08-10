@@ -1,4 +1,4 @@
-# Claude Shell (claude_shell)
+# Claude Shell — оболочка вокруг Claude Code CLI
 
 > Обёртка вокруг Claude Code CLI — PTY-сессия для интерактивного использования + HTTP-сервер для headless-вызова из Docker-контейнера.
 
@@ -148,9 +148,16 @@ python3 claude_shell/session_client.py status --session-uuid <uuid>
 
 ### 3.3 Хуки SessionStart / SessionEnd
 
-Регистрируются в `.claude/settings.json`:
-- **SessionStart** — хук `.claude/hooks/session_start.py`: проверяет сохранённый UUID → `resume` (автоматически) или `register` (через `AskUserQuestion`).
-- **SessionEnd** — хук `.claude/hooks/session_end.py`: останавливает `watch` при осознанном выходе (`exit`/`/exit`).
+Хуки и `session_client.py` живут **не в этом репозитории**, а в установке `claude-shell` —
+пути ниже относительны её каталогу, в RhapsodyAi их нет (`ls -a .claude/` → только
+`docs`, `settings.local.json`, `skills`, `worktrees`).
+
+Регистрируются в `settings.json` установки:
+
+- **SessionStart** — хук `hooks/session_start.py`: проверяет сохранённый UUID → `resume`
+  (автоматически) или `register` (через `AskUserQuestion`).
+- **SessionEnd** — хук `hooks/session_end.py`: останавливает `watch` при осознанном выходе
+  (`exit` / `/exit`).
 
 ## 4. Inbox-механизм
 

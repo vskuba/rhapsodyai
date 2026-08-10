@@ -68,7 +68,7 @@ from src.uvicorn.routers.role import role
 from src.uvicorn.routers.detective import detective
 from src.uvicorn.routers.seed import seed
 from src.uvicorn.routers.backup import backup
-from src.uvicorn.routers.team import team as team_router
+from src.uvicorn.routers.project.team import team as team_router
 
 
 @asynccontextmanager
@@ -212,13 +212,17 @@ async def auth_middleware(request: Request, call_next):
                 '/static',
                 '/play',
                 '/user',
-                '/telegram-app'
+                '/telegram-app',
             ],
         },
         "exact": {
             'GET': ['/openapi.json', '/events'],
             'DELETE': ['/events'],
-            'POST': ['/agent/list', '/event-log']
+            # /api/team/{ping,activate,deactivate} — heartbeat внешней claude-shell,
+            # у неё нет сессионной cookie. Читающие GET /api/team и /api/team/types
+            # публичными быть не должны: они отдают work_dir, pid и session_uuid.
+            'POST': ['/agent/list', '/event-log',
+                     '/api/team/ping', '/api/team/activate', '/api/team/deactivate']
         }
     }
 

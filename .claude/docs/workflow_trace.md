@@ -1,9 +1,8 @@
 # Workflow Trace — журнал выполнения workflow
 
-Полная наблюдаемость запусков workflow: по каждому шагу — вход, выход, длительность,
-токены, модель, ошибки, переходы. По запуску целиком — маршрут с деревом sub-workflow.
-
----
+> Полная наблюдаемость запусков workflow: по каждому шагу — вход, выход, длительность,
+> токены, модель, ошибки, переходы. По запуску целиком — маршрут с деревом sub-workflow.
+> Страница — `/admin/workflow_trace`.
 
 ## Ключевые файлы
 
@@ -15,8 +14,6 @@
 | `data/uvicorn/template/admin/workflow_trace.html` | Страница `/admin/workflow_trace` |
 | `src/auth/auth_permission.py` | `WORKFLOW_TRACE_VIEW/DELETE/REPLAY/STOP` |
 | `migrations/0001.sql` | DDL: `agent_workflow_run`, `agent_workflow_run_step` |
-
----
 
 ## Схема данных
 
@@ -58,8 +55,6 @@ duration_ms INT NULL
 tokens_input INT NULL            -- входящие токены LLM-шага (pydantic-ai usage.request_tokens)
 tokens_output INT NULL           -- исходящие токены LLM-шага (pydantic-ai usage.response_tokens)
 ```
-
----
 
 ## Запись из движка
 
@@ -124,8 +119,6 @@ framework_model.tokens_output = _usage.response_tokens  # исходящие
 ```
 Поля `tokens_input/output` добавлены в `AiFrameworkModel`. Менеджер читает их после `await execute_llm_step()`.
 
----
-
 ## REST API
 
 Все эндпоинты в `src/uvicorn/routers/workflow/workflow_trace.py`. Роутер подключён в `main_uvicorn.py`.
@@ -166,8 +159,6 @@ framework_model.tokens_output = _usage.response_tokens  # исходящие
 - Если задачи нет (зависший `running` после рестарта) — помечает запись напрямую.
 - Дочерние `running`-запуски закрывает здесь же (уровень за уровнем).
 
----
-
 ## Права доступа
 
 ```python
@@ -179,8 +170,6 @@ WORKFLOW_TRACE_STOP   = "workflow_trace:stop"
 ```
 
 В роли `user` выдано только `WORKFLOW_TRACE_VIEW`. Остальные права — у `admin`.
-
----
 
 ## Страница `/admin/workflow_trace`
 
@@ -216,8 +205,6 @@ WORKFLOW_TRACE_STOP   = "workflow_trace:stop"
 - **Replay** — POST `/replay`, открывает результат в той же панели.
 - **Stop** — POST `/stop`, доступно для `status=running` запусков.
 - **Delete** — DELETE, с подтверждением.
-
----
 
 ## Обслуживание
 

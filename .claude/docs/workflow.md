@@ -1,8 +1,8 @@
-# Workflow: описание функционала, нюансы, пути развития
+# Workflow — редактор, движок, переменные
 
 > Составлено по результатам анализа кода: редактор (`data/uvicorn/template/admin/agent_workflow.html`,
-> `agent_workflow_variable.html`), API (`src/uvicorn/routers/workflow/*`), схема БД (`migrations/0001.sql`,
-> сиды `0002.sql`), движок выполнения (`src/ai/framework/agent/ai_framework_manager.py`, `src/ai/ai_workflow.py`),
+> `agent_workflow_variable_public.html`), API (`src/uvicorn/routers/workflow/*`), схема БД
+> (`migrations/0001.sql` — единственная миграция), движок выполнения (`src/ai/framework/agent/ai_framework_manager.py`, `src/ai/ai_workflow.py`),
 > журнал выполнения (`src/ai/ai_workflow_trace.py`, роутер `workflow_trace.py`, страница `admin/workflow_trace.html`).
 
 ## Описания конкретных workflow
@@ -166,8 +166,6 @@ prompt_user: |
 ```
 Переходы: `design_system_ok == "yes"` → шаг завершения; `design_system_iteration >= 3` → шаг завершения.
 
----
-
 **Генератор задачи** (из `task_ai_generator`, шаг 354):
 ```
 prompt_user: |
@@ -188,8 +186,6 @@ prompt_user: |
   {"variable": "task_json", "text": "JSON объект: {title, description, goals:[string]}"}
 ]
 ```
-
----
 
 **Сообщение тестера** (из `workflow_shell_test`, шаг 67):
 ```
@@ -212,8 +208,6 @@ prompt_user: |
     "test_message": "Привет! Чем увлекаешься?"
   }
 ```
-
----
 
 **Design Tokens** (из `design_tokens_generate`, шаг 356):
 ```
@@ -456,7 +450,7 @@ continue_workflow, если не были возвращены пользова�
   переходы на несуществующие шаги (§8.7) и отмену фоновой задачи по таймауту (§8.9).
 - ✅ Добавлены операторы переходов: `>=`, `<=`, `exists`, `empty`, `not_contains`, `regex`
   (движок `_transition_condition_check` + селекты в редакторе переходов).
-- ✅ **Журнал выполнения (execution trace)** — реализован по плану `docs/workflow_trace_plan.md`:
+- ✅ **Журнал выполнения (execution trace)** — реализован, описание — `workflow_trace.md`:
   - таблицы `agent_workflow_run` / `agent_workflow_run_step` (0001.sql): снапшот переменных в шапке
     запуска + диффы по шагам, значения >20 КБ обрезаются с пометкой `...[truncated]`;
   - модуль `src/ai/ai_workflow_trace.py` — сбой записи не роняет workflow, выключатель
@@ -573,59 +567,21 @@ UI и БД тоже готовы: тип шага id=6 (сиды), виджет 
 8. **Результат** — что получает пользователь/родительский workflow (будущий контракт выхода).
 9. **Тест-сценарий** — 2-3 примера входа и ожидаемого поведения (включая ветку ошибки).
 
-## 11. Правила создания инструментов (src/tool/)
+## 11. Создание инструментов (src/tool/)
 
-**Папка = область инструмента.** Каждый инструмент лежит в папке, название которой отвечает
-за его предметную область, и ВСЕ инструменты этой области живут в одной папке:
+Правила разработки инструментов, auto-discovery, формат docstring `Returns:`, нюанс
+`force` при синхронизации и приведение типов аргументов — **`workflow_tool.md`**.
 
-| Область | Папка | Примеры инструментов |
-|---|---|---|
-| MySQL (экспорт, поиск таблиц, любые операции с БД) | `src/tool/mysql/` | `mysql_tables_find`, `mysql_export_to_migration` |
-| Qdrant | `src/tool/qdrant/` | `qdrant_fact_search`, `qdrant_fact_remove` |
-| Git | `src/tool/git/` | будущие git-инструменты |
-| Факты | `src/tool/fact/` | `fact_collection_add`, `fact_collection_output_format` |
-| Сессии | `src/tool/session/` | `session_messages` |
-| Окружение (прод/локаль) | `src/tool/env/` | `env_is_prod` |
+Коротко, что важно помнить при проектировании workflow:
 
-Правила:
-1. **Имя функции начинается с области**: `mysql_*`, `qdrant_*`, `git_*` — по имени сразу видно,
-   к какой папке и подсистеме относится инструмент.
-2. **Инструменты делаются узкими и составными**: вместо одного «умного» инструмента — цепочка
-   простых, соединяемых через переменные workflow. Пример: `mysql_tables_find(pattern)` находит
-   таблицы по вхождению → его `tables_str` подается на вход `mysql_export_to_migration(tables,
-   migration_file)`. Каждый переиспользуем отдельно.
-3. **Аргументы — простые типы** (str/int/bool): значения приходят из workflow-переменных;
-   списки передаются строкой через запятую, сложные структуры — JSON-строкой.
-4. **Возврат — dict с говорящими ключами** (`{"tables_qty": ..., "report_str": ...}`): каждый
-   ключ станет переменной `{tool}_{step_id}_result_{key}` в workflow.
-5. **Регистрация автоматическая, но с нюансом force**: `ai_tool_sync()` сканирует `src/tool/` и
-   пересобирает таблицу `tool` (группа — по имени папки), НО пропускает синк молча, если в `tool`
-   уже есть хоть одна запись, а `force=True` не передан (`src/ai/ai_tool.py:26-29`) — а после первого
-   же деплоя запись там есть всегда. `main_uvicorn.py` (лайфспан, вокруг строки 89) вызывает синк
-   по-разному в зависимости от окружения: `ai_tool_sync(force=True)` на проде (`env_is_prod()`),
-   `ai_tool_sync()` (без force) локально. Значит на ПРОДЕ новый/переименованный/перемещенный
-   инструмент подхватится автоматически при каждом рестарте uvicorn; ЛОКАЛЬНО простой рестарт
-   недостаточен — нужен ручной `ai_tool_sync(force=True)` (или очистка таблицы `tool`). Дважды
-   наступали на эти грабли: `mysql_migration_prod_create` и `env_is_prod` тихо не появлялись в
-   `tool` после деплоя, пока не был сделан форс-синк вручную.
-6. **Безопасность**: все, что попадает в SQL/shell/пути из аргументов, валидируется
-   (см. проверку имен таблиц в `mysql_export_to_migration`).
-7. **Инструмент возвращает dict — ключи ОБЯЗАТЕЛЬНО описываются в docstring** (секция
-   `Returns:`): описания попадают в БД через `ai_tool_sync` и показываются в UI
-   (детали инструмента, Output Mapping). Формат:
-
-   ```python
-   async def github_user_info(random: int = 2) -> dict:
-       """
-       This function returns the full name of the repository.
-       It identifies the repository based on its most recent active commits.
-       Returns:
-           A dictionary containing the user's GitHub login, name, and email.
-           login (str): The GitHub username of the authenticated user.
-           name (str): The full name of the authenticated user.
-           email (str): The email address associated with the authenticated user's GitHub account.
-       """
-   ```
+- папка = предметная область, имя функции начинается с префикса-имени файла
+  (`src/tool/mysql/mysql_.py` → `mysql_tables_find`);
+- инструменты узкие и составные — соединяются через переменные, а не одним «умным» вызовом;
+- возврат — `dict` с говорящими ключами, каждый ключ становится переменной
+  `{tool}_{step_id}_result_{key}`;
+- ключи ОБЯЗАТЕЛЬНО описаны в docstring (`Returns:`), иначе Output Mapping в UI пустой;
+- локально новый инструмент не появляется в БД сам по себе — нужен ручной sync
+  (кнопка на `/admin/tool`). На проде синк с `force=True` идёт при каждом рестарте.
 
 ## 12. Workflow-оболочка для тестирования (`workflow_shell_test`, id 9)
 

@@ -1,4 +1,8 @@
-# Database Schema & Migrations
+# Database — репозитории, схема, миграции
+
+> Список репозиториев `src/mysql_/repository/`, группы таблиц, порядок создания с учётом
+> FK и правила правки схемы. Схема живёт в единственном файле `migrations/0001.sql`;
+> механика прогона и сидов — `migration.md`.
 
 ## Repositories (`src/mysql_/repository/`)
 
@@ -33,7 +37,7 @@ Migrations apply automatically on Uvicorn startup via `mysql_migration_up()`. Fi
 |------|---------|
 | `0001.sql` | DDL schema — CREATE TABLE, FK, indexes for ALL tables; includes DROP TABLE IF EXISTS at the top for clean recreation |
 
-Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is managed through the **Seed UI** at `/admin/seed`, not via SQL files. See `.claude/docs/seed.md`.
+Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is managed through the **Seed UI** at `/admin/seed`, not via SQL files. See `seed.md`.
 
 ### Dynamic Data — Never in Migrations
 

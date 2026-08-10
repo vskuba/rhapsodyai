@@ -226,7 +226,7 @@ async def tool_page(request: Request, user: AuthSession = Depends(require_auth))
 async def team_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/team.html"
+        "admin/project/team.html"
     )
 
 

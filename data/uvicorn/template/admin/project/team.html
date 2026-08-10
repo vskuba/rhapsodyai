@@ -1,0 +1,633 @@
+{% extends "base.html" %}
+
+{% block title %}Команда{% endblock %}
+
+{% block head %}
+<style>
+    .team-container {
+        max-width: 100%;
+        margin: 0 auto;
+        padding: 16px;
+        overflow-x: hidden;
+    }
+
+    @media (min-width: 768px) {
+        .team-container {
+            padding: 24px;
+        }
+    }
+
+    .team-header {
+        margin-bottom: 32px;
+    }
+
+    .team-header h1 {
+        font-size: 28px;
+        font-weight: 600;
+        color: #1a1a1a;
+        margin: 0 0 8px 0;
+    }
+
+    .team-header p {
+        color: #666;
+        margin: 0;
+        font-size: 14px;
+    }
+
+    .team-grid {
+        display: flex;
+        flex-direction: row;
+        gap: 24px;
+        width: 100%;
+    }
+
+    .team-grid .team-card {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .team-card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        padding: 20px;
+        transition: box-shadow 0.2s, transform 0.2s;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    @media (min-width: 768px) {
+        .team-card {
+            padding: 24px;
+        }
+    }
+
+    .team-card:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+        transform: translateY(-2px);
+    }
+
+    .team-card-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid #eee;
+        flex-wrap: wrap;
+    }
+
+    @media (min-width: 768px) {
+        .team-card-header {
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+    }
+
+    .team-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        font-weight: 600;
+        color: #fff;
+        flex-shrink: 0;
+    }
+
+    @media (min-width: 768px) {
+        .team-avatar {
+            width: 56px;
+            height: 56px;
+            font-size: 24px;
+        }
+    }
+
+    .team-avatar.manager { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .team-avatar.developer { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .team-avatar.qa { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+
+    .team-info h2 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1a1a1a;
+        margin: 0 0 4px 0;
+        line-height: 1.3;
+    }
+
+    .team-role {
+        font-size: 12px;
+        color: #666;
+        text-transform: capitalize;
+    }
+
+    @media (min-width: 768px) {
+        .team-info h2 {
+            font-size: 18px;
+        }
+
+        .team-role {
+            font-size: 13px;
+        }
+    }
+
+    .team-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .status-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+    }
+
+    .status-indicator.active {
+        background: #10b981;
+        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+    }
+
+    .status-indicator.inactive {
+        background: #9ca3af;
+        animation: none;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    .status-text {
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .status-text.active { color: #10b981; }
+    .status-text.inactive { color: #6b7280; }
+
+    .team-command {
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        overflow: hidden;
+    }
+
+    @media (min-width: 768px) {
+        .team-command {
+            margin-bottom: 20px;
+        }
+    }
+
+    .team-command-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        background: #f0f1f3;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .team-command-label {
+        font-size: 12px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin: 0;
+    }
+
+    .copy-btn {
+        font-size: 16px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px;
+        transition: transform 0.15s;
+    }
+
+    .copy-btn:hover {
+        transform: scale(1.15);
+    }
+
+    .copy-btn.copied {
+        transform: scale(1.2);
+    }
+
+    .team-command-code {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 12px;
+        color: #333;
+        overflow: hidden;
+    }
+
+    @media (min-width: 768px) {
+        .team-command-code {
+            gap: 12px;
+            padding: 12px 16px;
+            font-size: 13px;
+        }
+    }
+
+    .team-command-code code {
+        flex: 1;
+        word-break: break-all;
+    }
+
+    .copy-btn {
+        background: #667eea;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.2s;
+        flex-shrink: 0;
+    }
+
+    .copy-btn:hover {
+        background: #5a67d8;
+    }
+
+    .copy-btn.copied {
+        background: #10b981;
+    }
+
+    .team-meta {
+        display: grid;
+        gap: 12px;
+        padding-top: 16px;
+        border-top: 1px solid #eee;
+        overflow: hidden;
+    }
+
+    @media (max-width: 480px) {
+        .team-meta {
+            gap: 8px;
+        }
+
+        .meta-item {
+            font-size: 12px;
+        }
+
+        .meta-label, .meta-value {
+            font-size: 12px;
+        }
+    }
+
+    .meta-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+    }
+
+    .meta-label {
+        color: #666;
+    }
+
+    .meta-value {
+        font-weight: 500;
+        color: #1a1a1a;
+    }
+
+    .meta-value.empty {
+        color: #9ca3af;
+        font-style: italic;
+    }
+
+    .last-ping {
+        font-size: 12px;
+        color: #9ca3af;
+        text-align: center;
+        margin-top: 16px;
+        padding: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        overflow: hidden;
+    }
+
+    @media (max-width: 480px) {
+        .last-ping {
+            font-size: 11px;
+            margin-top: 12px;
+            padding: 6px;
+        }
+    }
+
+    .refresh-btn {
+        position: fixed;
+        bottom: 16px;
+        right: 16px;
+        background: #667eea;
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        transition: transform 0.2s, background 0.2s;
+        z-index: 100;
+    }
+
+    @media (min-width: 768px) {
+        .refresh-btn {
+            bottom: 24px;
+            right: 24px;
+            width: 56px;
+            height: 56px;
+        }
+    }
+
+    .refresh-btn:hover {
+        transform: scale(1.1);
+        background: #5a67d8;
+    }
+
+    .refresh-btn svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    .refresh-btn.rotating svg {
+        animation: rotate 1s linear infinite;
+    }
+
+    @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="team-container">
+    <div class="team-header">
+        <h1>Команда</h1>
+        <p>Мониторинг активных сессий и статус членов команды</p>
+    </div>
+
+    <div class="team-grid" id="teamGrid">
+        <!-- Карточки будут загружены динамически -->
+    </div>
+
+    <button class="refresh-btn" id="refreshBtn" title="Обновить статус">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+    </button>
+</div>
+
+<script>
+let teamMembers = [];
+let pingInterval = null;
+
+// Оболочка claude-shell пингует раз в 30 секунд. Порог должен быть заметно
+// больше интервала, иначе карточка мигает «активен/не активен» на каждом
+// чуть задержавшемся пинге.
+const PING_STALE_SECONDS = 60;
+
+const ROLE_COLORS = {
+    manager: '#667eea',
+    developer: '#f5576c',
+    qa: '#4facfe'
+};
+
+const ROLE_ICONS = {
+    manager: '👔',
+    developer: '💻',
+    qa: '🔍'
+};
+
+async function loadTeamMembers() {
+    try {
+        const response = await fetch('/api/team');
+        teamMembers = await response.json();
+        renderTeamGrid();
+    } catch (error) {
+        console.error('Error loading team members:', error);
+    }
+}
+
+async function updateStatusOnly() {
+    try {
+        const response = await fetch('/api/team');
+        const updatedMembers = await response.json();
+
+        // Обновляем только статус и пинг для каждого члена команды
+        teamMembers.forEach(member => {
+            const updated = updatedMembers.find(m => m.id === member.id);
+            if (!updated) return;
+
+            const secondsAgo = updated.last_ping_at ? getSecondsAgo(updated.last_ping_at) : null;
+            const isActive = secondsAgo !== null && secondsAgo < PING_STALE_SECONDS;
+
+            // Обновляем статус карточки
+            const card = document.querySelector(`[data-member-id="${member.id}"]`);
+            if (card) {
+                const statusIndicator = card.querySelector('.status-indicator');
+                const statusText = card.querySelector('.status-text');
+                const pingTime = card.querySelector('.ping-time');
+
+                if (statusIndicator) {
+                    statusIndicator.className = `status-indicator ${isActive ? 'active' : 'inactive'}`;
+                }
+                if (statusText) {
+                    statusText.className = `status-text ${isActive ? 'active' : 'inactive'}`;
+                    statusText.textContent = isActive ? 'Активен' : 'Не активен';
+                }
+                if (pingTime && updated.last_ping_at) {
+                    pingTime.textContent = `${formatDateTime(updated.last_ping_at)} (${formatTimeAgo(secondsAgo)})`;
+                }
+            }
+
+            // Обновляем данные в массиве
+            Object.assign(member, updated);
+        });
+    } catch (error) {
+        console.error('Error updating status:', error);
+    }
+}
+
+function renderTeamGrid() {
+    const grid = document.getElementById('teamGrid');
+    grid.innerHTML = '';
+
+    teamMembers.forEach(member => {
+        const secondsAgo = member.last_ping_at ? getSecondsAgo(member.last_ping_at) : null;
+        const isActive = secondsAgo !== null && secondsAgo < PING_STALE_SECONDS;
+
+        const card = document.createElement('div');
+        card.className = 'team-card';
+        card.setAttribute('data-member-id', member.id);
+        card.innerHTML = `
+            <div class="team-card-header">
+                <div class="team-avatar ${member.role}">
+                    ${ROLE_ICONS[member.role] || '👤'}
+                </div>
+                <div class="team-info">
+                    <h2>${member.name}</h2>
+                    <div class="team-role">${translateRole(member.role)}</div>
+                    <div class="team-status">
+                        <span class="status-indicator ${isActive ? 'active' : 'inactive'}"></span>
+                        <span class="status-text ${isActive ? 'active' : 'inactive'}">
+                            ${isActive ? 'Активен' : 'Не активен'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="team-command">
+                <div class="team-command-header">
+                    <span class="team-command-label">Команда запуска</span>
+                    <button class="copy-btn" onclick="copyCommand(this)" title="Копировать">
+                        📋
+                    </button>
+                </div>
+                <div class="team-command-code">
+                    <code>${escapeHtml(member.command)}</code>
+                </div>
+            </div>
+
+            ${member.work_dir ? `<div class="team-command"><div class="team-command-label">Рабочая директория</div><div class="team-command-code"><code style="word-break: break-all;">${escapeHtml(member.work_dir)}</code></div></div>` : ''}
+
+            <div class="team-meta">
+                <div class="meta-item">
+                    <span class="meta-label">Session UUID</span>
+                    <span class="meta-value ${!member.session_uuid ? 'empty' : ''}">
+                        ${member.session_uuid || '—'}
+                    </span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">PID процесса</span>
+                    <span class="meta-value ${!member.pid ? 'empty' : ''}">
+                        ${member.pid || '—'}
+                    </span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Последний пинг</span>
+                    <span class="meta-value ${!member.last_ping_at ? 'empty' : ''} ping-time">
+                        ${member.last_ping_at ? `${formatDateTime(member.last_ping_at)} (${formatTimeAgo(secondsAgo)})` : '—'}
+                    </span>
+                </div>
+            </div>
+
+        `;
+
+        // Команду кладём в data-атрибут через dataset: так её не нужно
+        // экранировать под inline-обработчик (кавычки и апострофы безопасны).
+        const copyBtn = card.querySelector('.copy-btn');
+        if (copyBtn) {
+            copyBtn.dataset.command = member.command || '';
+        }
+
+        grid.appendChild(card);
+    });
+}
+
+function translateRole(role) {
+    const translations = {
+        manager: 'Менеджер задач',
+        developer: 'Разработчик',
+        qa: 'Тестировщик'
+    };
+    return translations[role] || role;
+}
+
+function getSecondsAgo(datetimeStr) {
+    // Добавляем Z чтобы интерпретировать как UTC, затем вычисляем разницу в секундах
+    const then = new Date(datetimeStr + 'Z');
+    const now = new Date();
+    const diffMs = now - then;
+    return Math.floor(diffMs / 1000); // возвращаем секунды
+}
+
+function formatDateTime(datetimeStr) {
+    // Добавляем Z чтобы интерпретировать как UTC
+    const date = new Date(datetimeStr + 'Z');
+    return date.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatTimeAgo(seconds) {
+    if (seconds < 60) {
+        return `${seconds} сек назад`;
+    } else if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60);
+        return `${minutes} мин назад`;
+    } else if (seconds < 86400) {
+        const hours = Math.floor(seconds / 3600);
+        return `${hours} час${hours === 1 ? '' : 'а'} назад`;
+    } else {
+        const days = Math.floor(seconds / 86400);
+        return `${days} дн${days === 1 ? 'ь' : 'ей'} назад`;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Команда берётся из data-атрибута, а не из аргумента onclick: escapeHtml не
+// экранирует апостроф, и команда с ним ломала бы inline-обработчик.
+function copyCommand(btn) {
+    navigator.clipboard.writeText(btn.dataset.command || '').then(() => {
+        btn.textContent = '✅';
+        btn.classList.add('copied');
+        setTimeout(() => {
+            btn.textContent = '📋';
+            btn.classList.remove('copied');
+        }, 2000);
+    });
+}
+
+function refreshStatus() {
+    const btn = document.getElementById('refreshBtn');
+    btn.classList.add('rotating');
+    updateStatusOnly().finally(() => {
+        btn.classList.remove('rotating');
+    });
+}
+
+// Инициализация
+document.addEventListener('DOMContentLoaded', () => {
+    loadTeamMembers();
+
+    // Автообновление каждые 5 секунд
+    pingInterval = setInterval(refreshStatus, 5000);
+
+    // Кнопка обновления
+    document.getElementById('refreshBtn').addEventListener('click', refreshStatus);
+});
+
+// Очистка при разгрузке
+window.addEventListener('beforeunload', () => {
+    if (pingInterval) clearInterval(pingInterval);
+});
+</script>
+{% endblock %}

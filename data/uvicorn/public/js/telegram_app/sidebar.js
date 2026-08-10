@@ -1,8 +1,7 @@
 import { state } from './state.js';
+import { loadConfig } from './config.js';
 
 const PAGE_TITLES = { events: 'События', claude: 'Claude', chat: 'Чат', plans: 'Планы' };
-const SITE_LOGIN_REMOTE_URL = 'https://92.5.17.195.sslip.io/login';
-const SITE_LOGIN_LOCAL_URL = 'http://93.175.229.252:44152/login';
 
 const tg = window.Telegram?.WebApp;
 
@@ -31,13 +30,17 @@ export function initSidebar({ inputBars, onTabChange, onGoHome }) {
     document.getElementById('homeIconBtn').addEventListener('click', _onGoHome);
     document.getElementById('pageBackIconBtn').addEventListener('click', () => setSidebarPageMode(false));
 
-    document.getElementById('dasboardRemote').addEventListener('click', () => {
-        if (tg?.openLink) tg.openLink(SITE_LOGIN_REMOTE_URL);
-        else window.open(SITE_LOGIN_REMOTE_URL, '_blank');
+    document.getElementById('dasboardRemote').addEventListener('click', async () => {
+        const config = await loadConfig();
+        const url = config.SITE_LOGIN_REMOTE_URL || 'https://92.5.17.195.sslip.io/login';
+        if (tg?.openLink) tg.openLink(url);
+        else window.open(url, '_blank');
     });
-    document.getElementById('dasboardLocal').addEventListener('click', () => {
-        if (tg?.openLink) tg.openLink(SITE_LOGIN_LOCAL_URL);
-        else window.open(SITE_LOGIN_LOCAL_URL, '_blank');
+    document.getElementById('dasboardLocal').addEventListener('click', async () => {
+        const config = await loadConfig();
+        const url = config.SITE_LOGIN_LOCAL_URL || 'http://93.175.229.252:44152/login';
+        if (tg?.openLink) tg.openLink(url);
+        else window.open(url, '_blank');
     });
 }
 

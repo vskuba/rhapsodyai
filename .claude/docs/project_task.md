@@ -1,13 +1,12 @@
 # Task — страница задач и конвейер агентов
 
-Модуль задач: админ-страница `/admin/task`, REST API и конвейер, в котором задачу
-последовательно ведут Manager → человек → Developer → QA.
+> Модуль задач: админ-страница `/admin/task`, REST API и конвейер, в котором задачу
+> последовательно ведут Manager → человек → Developer → QA. У задачи два независимых
+> состояния (`status` и `pipeline_state`), конвейер крутит транзакционный воркер.
 
 **Текущий статус конвейера: Manager настоящий, Developer и QA — заглушки.** Manager
 ходит в LLM и пишет реальный план. Developer и QA код пока не меняют — у них работает
 и проверяется только механика состояний. Шов для настоящих исполнителей — §7.
-
----
 
 ## 1. Две независимые оси состояния
 
@@ -38,8 +37,6 @@
 для конвейера невидимой.
 
 `project_task.status`: `pending` · `queued` · `active` · `done` · `blocked` · `cancelled`
-
----
 
 ## 2. Страница `/admin/task`
 
@@ -206,8 +203,6 @@ JSON, **сохраняя `subtasks` и `goals`** — иначе ручная п�
 - «ИИ помощник» → `POST /task/ai-generate`: из описания получаются название,
   развёрнутое описание и список целей (цели применяются после создания задачи)
 
----
-
 ## 3. Машина состояний конвейера
 
 ```
@@ -233,8 +228,6 @@ project_task_subtask.state:
 ```
 
 Задача уходит в `done`, когда все подзадачи терминальны; если хоть одна `blocked` — в `failed`.
-
----
 
 ## 4. Транзакционный воркер
 
@@ -307,8 +300,6 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 
 Константы: `MAX_ATTEMPTS = 3` (`task_pipeline.py`), `LOCK_TIMEOUT_SEC = 900` (`task_claim.py`).
 
----
-
 ## 5. Схема БД
 
 `project_task` — глобальная задача:
@@ -348,8 +339,6 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 
 Все таблицы конвейера — runtime-данные, **в seed не добавлять**. Схема живёт только в
 `migrations/0001.sql`.
-
----
 
 ## 6. API
 
@@ -393,8 +382,6 @@ CRUD — `project_task.py`, конвейер — `project_task_pipeline.py`. К�
 журнале «отменить» значит «дописать», поэтому откат виден в истории, а не подменяет её.
 Ревизия ищется парой `(task_id, revision_no)` — иначе ссылка на чужую ревизию подменила
 бы план не той задачи.
-
----
 
 ## 7. Правила для ролей
 
@@ -567,8 +554,6 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
 - На проде QA **строго наблюдательный**: не правит код, не перезапускает сервисы, не
   трогает состояние — только пишет отчёты и заводит задачи
 
----
-
 ## 8. Файлы
 
 | Файл | Роль |
@@ -589,8 +574,6 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
 | `tests/test_task_pipeline.py` | тесты переходов и гонки |
 | `tests/test_task_tree.py` | тесты дерева задач |
 | `migrations/0001.sql` | `project_task`, `project_task_subtask`, `project_task_attempt`, `project_task_plan_revision` |
-
----
 
 ## 9. Проверка
 
@@ -629,8 +612,6 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
 Ручной прогон по шагам — дёргать `/cronjob` (§4) и смотреть, как состояние двигается
 на один шаг за вызов.
 
----
-
 ## 10. Известные ограничения
 
 - **`POST /cronjob` без авторизации** (`src/uvicorn/routers/cronjob/cronjob.py`): любой,
@@ -640,7 +621,7 @@ async def task_agent_qa_run(task, subtask) -> {'ok': bool, 'output': str, 'error
   `project_id = 0 OR project_id IS NULL`
 - **Прод: изменения схемы не приедут сами.** `migrations/0001.sql` там помечен
   применённым (19.07.2026), yoyo повторно его не гоняет — всё, что дописано в файл
-  после этой даты, доезжает только руками. Как подключаться — `.claude/docs/database.md`,
+  после этой даты, доезжает только руками. Как подключаться — `database.md`,
   раздел «Connecting to Prod MySQL».
 
   **07.08.2026 применено:** `task` (0 строк, без входящих FK) заменена на

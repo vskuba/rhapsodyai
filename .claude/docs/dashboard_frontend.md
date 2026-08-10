@@ -1,7 +1,7 @@
-# Админка: фронтенд
+# Dashboard Frontend — админка, шаблоны, скрипты
 
-Server-side rendering на Jinja2 из FastAPI, без сборки и без фреймворка. Страницы —
-`/admin/*`, разметка + стили + скрипты чаще всего лежат в одном `.html`.
+> Server-side rendering на Jinja2 из FastAPI, без сборки и без фреймворка. Страницы —
+> `/admin/*`, разметка + стили + скрипты чаще всего лежат в одном `.html`.
 
 **Правка `.html` не требует рестарта uvicorn** — шаблоны читаются с диска на каждый
 запрос. Рестарт нужен только после `.py`.
@@ -193,7 +193,7 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
 2. HTML-роут в `src/uvicorn/routers/dashboard.py`
 3. API-роутер `src/uvicorn/routers/<entity>/<entity>.py`, зарегистрировать в `main_uvicorn.py`
 4. Ссылка в меню `base.html` **и** запись в `groupMap`
-5. Права — `AuthPermission` + роль (`.claude/docs/auth.md`)
+5. Права — `AuthPermission` + роль (`auth.md`)
 6. Стили — инлайном в `{% block head %}`; общего файла для них нет
 
 Статика раздаётся так:

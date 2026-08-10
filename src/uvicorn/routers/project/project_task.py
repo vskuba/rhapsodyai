@@ -61,11 +61,12 @@ async def project_task_create(project_id: int, data: dict, user=Depends(AuthChec
 
         next_pos = await task_tree_position_next(db, project_id, parent_id)
 
+        task_type_id = data.get('task_type_id')
         await db.execute(
-            "INSERT INTO project_task (project_id, parent_id, title, description, goals, status, report, position) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO project_task (project_id, parent_id, title, description, goals, status, report, position, task_type_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (project_id, parent_id, title, str(data.get('description') or ''), str(data.get('goals') or ''),
-             str(data.get('status') or 'pending'), str(data.get('report') or ''), next_pos)
+             str(data.get('status') or 'pending'), str(data.get('report') or ''), next_pos, task_type_id)
         )
         await db.connection.commit()
         task_id = db.lastrowid
@@ -78,7 +79,7 @@ async def project_task_create(project_id: int, data: dict, user=Depends(AuthChec
 
 @router.put('/task/{task_id}')
 async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
-    allowed = {'title', 'description', 'goals', 'status', 'report'}
+    allowed = {'title', 'description', 'goals', 'status', 'report', 'task_type_id'}
     updates = {k: v for k, v in data.items() if k in allowed}
 
     async with mysql_get_db_async() as db:

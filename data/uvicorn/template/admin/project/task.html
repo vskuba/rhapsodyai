@@ -3,6 +3,7 @@
 {% block title %}Задачи{% endblock %}
 
 {% block head %}
+<link rel="stylesheet" href="/static/css/design.css">
 <style>
     .task-page {
         display: flex;
@@ -48,22 +49,6 @@
     }
 
     .task-toolbar-spacer { flex: 1; }
-
-    .task-project-select {
-        font-size: 13px;
-        font-weight: 500;
-        padding: 6px 10px;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        background: #fff;
-        color: #1e293b;
-        cursor: pointer;
-        outline: none;
-        max-width: 240px;
-        transition: border-color .12s, box-shadow .12s;
-    }
-    .task-project-select:hover { border-color: #cbd5e1; }
-    .task-project-select:focus { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
 
     .task-search {
         font-size: 13px;
@@ -285,6 +270,21 @@
     .task-row > td.td-goals { box-shadow: inset 3px 0 0 var(--row-accent, transparent); }
 
     .td-id     { color: #94a3b8; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .td-task-type { color: #64748b; font-size: 11px; font-weight: 500; }
+    .task-type-select {
+        font-size: 11px;
+        padding: 4px 6px;
+        border: 1px solid #e2e8f0;
+        border-radius: 5px;
+        background: #fff;
+        color: #64748b;
+        cursor: pointer;
+        outline: none;
+        max-width: 120px;
+        transition: border-color .12s, box-shadow .12s;
+    }
+    .task-type-select:hover { border-color: #cbd5e1; }
+    .task-type-select:focus { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
     .td-title  { font-weight: 600; color: #0f172a; line-height: 1.4; }
     .td-sort   { width: 44px; }
 
@@ -1057,14 +1057,25 @@
 {% block content %}
 <div class="task-page">
 
+    <!-- Header: Project selector -->
+    <div class="proto-header-bar">
+        <label>Проект:</label>
+        <select id="taskProjectSelect" onchange="selectProjectById(+this.value, this.options[this.selectedIndex].text)">
+            <option value="">— выберите проект —</option>
+        </select>
+    </div>
+
+    <!-- Page Tabs: Phase filter -->
+    <div class="page-tabs" id="phaseTabs">
+        <button class="page-tab active" data-tab="planning">Планирование</button>
+        <button class="page-tab" data-tab="development">Разработка</button>
+        <button class="page-tab" data-tab="testing">Тестирование/Баги</button>
+    </div>
+
     <!-- Toolbar: title, filters, add -->
     <div class="task-toolbar">
         <span class="task-toolbar-title">Задачи</span>
         <span class="task-count-badge" id="taskCountBadge">0</span>
-
-        <select class="task-project-select" id="taskProjectSelect" onchange="selectProjectById(+this.value, this.options[this.selectedIndex].text)">
-            <option value="">Загрузка...</option>
-        </select>
 
         <input class="task-search" id="taskSearch" placeholder="Поиск..." oninput="renderTable()">
 
@@ -1087,6 +1098,10 @@
             <div class="form-group narrow">
                 <label>Статус</label>
                 <select id="newTaskStatus"></select>
+            </div>
+            <div class="form-group narrow">
+                <label>Тип</label>
+                <select id="newTaskType"></select>
             </div>
         </div>
         <div class="form-group">
@@ -1126,6 +1141,15 @@ let _taskProjectId = null;
 let _tasks = [];
 let _projectsMap = {};
 let _statusFilter = '';
+let _taskTypes = [];
+
+// Mapping фазы к именам типов задач (из project_task_type.name)
+// Реальные данные: dev=1, bug=2, test=3, research=4, plan=5
+const PHASE_TYPE_NAMES = {
+    planning: ['research', 'plan'],      // 4, 5
+    development: ['dev'],                 // 1
+    testing: ['bug', 'test']              // 2, 3
+};
 
 const STATUS_LABELS = {
     active:    'В работе',
@@ -1191,6 +1215,27 @@ function selectProjectById(id, title) {
     loadTasks();
 }
 
+async function loadTaskTypes() {
+    try {
+        const raw = await taskFetch('/api/team/types');
+        // API возвращает массив словарей с полями id, name, title
+        if (Array.isArray(raw)) {
+            _taskTypes = raw.map(t => ({
+                id: t.id || t.task_type_id,
+                name: t.name || '',
+                title: t.title || t.label || t.name || ''
+            }));
+        } else {
+            _taskTypes = [];
+        }
+        const sel = document.getElementById('newTaskType');
+        if (sel) sel.innerHTML = taskTypeOptions('');
+    } catch(e) {
+        console.error('Failed to load task types:', e);
+        _taskTypes = [];
+    }
+}
+
 async function loadTasks() {
     document.getElementById('taskTableWrap').innerHTML = '<div class="task-placeholder">Загрузка...</div>';
     try {
@@ -1222,9 +1267,22 @@ function toggleCollapse(id) {
     renderTable();
 }
 
+// Получить имя типа задачи по ID (из загруженных _taskTypes)
+function getTaskTypeNameById(typeId) {
+    if (!typeId) return null;
+    const t = _taskTypes.find(t => t.id === typeId);
+    return t ? t.name : null;
+}
+
 // Подошла ли задача под поиск и фильтр статуса.
 function taskMatches(t) {
     if (_statusFilter && t.status !== _statusFilter) return false;
+    // Фильтр по фазе — задачи без task_type_id считаются типом "dev" (development)
+    const typeName = getTaskTypeNameById(t.task_type_id) || 'dev'; // NULL → dev по умолчанию
+    if (_phaseFilter) {
+        const typeNamesForPhase = PHASE_TYPE_NAMES[_phaseFilter] || [];
+        if (!typeNamesForPhase.includes(typeName)) return false;
+    }
     const q = (document.getElementById('taskSearch')?.value || '').trim().toLowerCase();
     if (!q) return true;
     return [t.title, t.description, t.report]
@@ -1367,6 +1425,33 @@ function setStatusFilter(status) {
     renderTable();
 }
 
+// Phase tabs handling
+let _phaseFilter = 'development'; // По умолчанию активна вкладка "Разработка"
+
+function selectPhase(btn, phase) {
+    _phaseFilter = phase; // Всегда выбирать вкладку, не отключать
+    // Update tab buttons
+    document.querySelectorAll('#phaseTabs .page-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.tab === _phaseFilter);
+    });
+    renderTable();
+}
+
+// Add click handler for phase tabs
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('#phaseTabs .page-tab').forEach(tab => {
+        tab.addEventListener('click', () => selectPhase(tab, tab.dataset.tab));
+    });
+    // Set initial active tab based on _phaseFilter (default: development)
+    document.querySelectorAll('#phaseTabs .page-tab').forEach(tab => {
+        if (tab.dataset.tab === _phaseFilter) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+});
+
 function renderTable() {
     const wrap = document.getElementById('taskTableWrap');
     renderChips();
@@ -1393,6 +1478,7 @@ function renderTable() {
                 <tr>
                     <th data-col="sort" class="td-sort">⬆️⬇️</th>
                     <th data-col="id" >ID</th>
+                    <th data-col="task_type" style="width:100px">Тип</th>
                     <th data-col="goals" style="width:28%">Прогресс</th>
                     <th data-col="title" style="width:24%">Название</th>
                     <th data-col="desc" style="width:26%">Описание</th>
@@ -1524,6 +1610,17 @@ function rowBg(row, index) {
     return ROW_BG[Math.min(row.depth, ROW_BG.length - 1)][index % 2];
 }
 
+function taskTypeSelect(taskId, currentTypeId) {
+    const typeOptions = _taskTypes.map(t =>
+        `<option value="${t.id}" ${t.id === currentTypeId ? 'selected' : ''}>${esc(t.title)}</option>`
+    ).join('');
+    const placeholder = '<option value="">— не указан —</option>';
+    return `
+        <select class="task-type-select" onchange="updateTaskType(${taskId}, this.value ? +this.value : null)" title="Изменить тип задачи">
+            ${placeholder}${typeOptions}
+        </select>`;
+}
+
 function renderRow(row, index, hasParent) {
     const t = row.t;
     const badge = `<span class="task-status-badge status-${t.status}">${STATUS_LABELS[t.status] || t.status}</span>`;
@@ -1547,6 +1644,7 @@ function renderRow(row, index, hasParent) {
         <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'};--row-bg:${rowBg(row, index)}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
             <td class="td-sort" data-col="sort">${sortBtns}</td>
             <td class="td-id" data-col="id">#${t.id}</td>
+            <td class="td-task-type" data-col="task_type">${taskTypeSelect(t.id, t.task_type_id)}</td>
             <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${progressContent}</td>
             <td class="td-title" data-col="title">
                 <div class="tree-title">${treeIndent(row)}${treeCaret(row)}<span class="tree-num">${row.num}</span><span class="tree-name">${esc(t.title)}${kidsPill}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
@@ -1568,6 +1666,10 @@ function renderRow(row, index, hasParent) {
                     <div class="form-group">
                         <label>Статус</label>
                         <select id="ts-${t.id}">${statusOptions(t.status)}</select>
+                    </div>
+                    <div class="form-group">
+                        <label>Тип</label>
+                        <select id="ttt-${t.id}">${taskTypeOptions(t.task_type_id)}</select>
                     </div>
                     <div class="form-group span2">
                         <label>Родительская задача <span class="plan-hint">— перенос по дереву</span></label>
@@ -1633,6 +1735,14 @@ function statusOptions(selected) {
     return Object.entries(STATUS_LABELS).map(([v, l]) =>
         `<option value="${v}"${v === selected ? ' selected' : ''}>${l}</option>`
     ).join('');
+}
+
+function taskTypeOptions(selected) {
+    const opts = ['<option value="">Не указан</option>'];
+    _taskTypes.forEach(t => {
+        opts.push(`<option value="${t.id}"${t.id === (selected || '') ? ' selected' : ''}>${esc(t.title)}</option>`);
+    });
+    return opts.join('');
 }
 
 // Кого можно назначить родителем. Себя и свою же ветку исключаем — сервер такой
@@ -1731,6 +1841,7 @@ async function createTask() {
                 title,
                 description: document.getElementById('newTaskDesc').value,
                 status: document.getElementById('newTaskStatus').value,
+                task_type_id: document.getElementById('newTaskType')?.value || null,
                 parent_id: _newTaskParentId,
             }),
         });
@@ -1768,6 +1879,7 @@ async function saveTask(id) {
                 plan_text:   document.getElementById(`tplan-${id}`).value,
                 goals:       JSON.stringify(_goalsCache[id] || []),
                 status:      document.getElementById(`ts-${id}`).value,
+                task_type_id: document.getElementById(`ttt-${id}`).value || null,
                 report:      document.getElementById(`trep-${id}`).value,
                 parent_id:   document.getElementById(`tp-${id}`).value || null,
             }),
@@ -1836,6 +1948,18 @@ async function quickStatus(id, status) {
         if (idx !== -1) _tasks[idx] = data.task;
         renderTable();
     } catch(e) { alert('Ошибка смены статуса'); }
+}
+
+async function updateTaskType(id, typeId) {
+    try {
+        const data = await taskFetch(`/task/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ task_type_id: typeId }),
+        });
+        const idx = _tasks.findIndex(t => t.id === id);
+        if (idx !== -1) _tasks[idx] = data.task;
+        renderTable();
+    } catch(e) { alert('Ошибка смены типа задачи'); }
 }
 
 async function deleteTask(id) {
@@ -2500,7 +2624,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHelpMod
 treeCollapsedLoad();
 // Смещение часового пояса тянем до первой отрисовки: без loadTz() глобальный fmtTz
 // молча показывает UTC, и времена ревизий разъезжаются с остальной админкой.
-(window.loadTz ? window.loadTz() : Promise.resolve()).then(loadProjects);
+(async () => {
+    await loadTaskTypes();
+    (window.loadTz ? window.loadTz() : Promise.resolve()).then(loadProjects);
+})();
 </script>
 
 <!-- ─── Help modal ─────────────────────────────────────── -->

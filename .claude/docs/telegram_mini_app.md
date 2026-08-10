@@ -1,6 +1,8 @@
-# Telegram Mini App
+# Telegram Mini App — SPA внутри Telegram
 
-Встроенное веб-приложение (SPA), открывающееся внутри Telegram через кнопку Menu Button бота. Доступно только владельцу бота (`TELEGRAM_OWNER_CHAT_ID`).
+> Встроенное веб-приложение (SPA), открывающееся внутри Telegram через Menu Button бота.
+> Доступно только владельцу бота (`TELEGRAM_OWNER_CHAT_ID`). Вкладки: Events, Claude,
+> Chat, Plans; есть голосовой ввод.
 
 ## Файловая структура
 

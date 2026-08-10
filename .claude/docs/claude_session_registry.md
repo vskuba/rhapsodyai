@@ -1,18 +1,18 @@
-# Реестр сессий Claude Code для Telegram Mini App
+# Claude Session Registry — реестр сессий для Telegram Mini App
 
 > Цель: в Mini App, на вкладке Cloud, видеть все активные терминальные сессии Claude Code
 > (по одной иконке на сессию), заходить в чат конкретной сессии с полной историей. Сессия
 > видна ровно пока открыт терминал (staleness по heartbeat, см. §4/§5) — управлять паузой из
 > Telegram не нужно.
 > Множественные сессии независимы друг от друга, могут относиться к одному или разным проектам,
-> закреплены за ролью (пока только `developer`, дальше — `qa` и др., см. `workflow_dev_qa_agents.md`).
+> закреплены за ролью (пока только `developer`, дальше — `qa` и др.; роли членов команды — `project_team.md`).
 
 ## 1. Что уже есть и переиспользуется
 
 `ai_claude_session` (`migrations/0001.sql`) — это **очередь сообщений**, не реестр: каждая строка —
 одно сообщение, ключуется по `session_uuid` (`content`/`response`/`handled`). Уже поддерживает
 сколько угодно параллельных `session_uuid` — сейчас используется только один (статичный агент
-"Claude", id 34 в `agent_workflow`/`agent`, `migrations/0005.sql`).
+"Claude", id 34 в `agent_workflow`/`agent`; вся схема — `migrations/0001.sql`).
 
 - `claude_message_user(prompt_user, session_uuid)` (`src/tool/claude_/claude_.py`) — кладёт
   сообщение пользователя в очередь.
@@ -53,7 +53,12 @@ CREATE TABLE ai_claude_session_registry (
 сам решает её использовать). Для "при каждом старте терминала — автоматическая регистрация" это не
 подходит — нужен **хук `SessionStart`**: харнесс сам, без чьего-либо решения, исполняет команду при
 старте новой сессии Claude Code в директории проекта (получает `session_id`/`cwd` на stdin,
-конфигурируется в `.claude/settings.json`, тип `command` или `http`).
+конфигурируется в `settings.json`, тип `command` или `http`).
+
+**Где лежат файлы:** хуки (`session_start.py`, `session_end.py`), `session_client.py` и
+`settings.json` — часть внешней установки `claude-shell` (`claude_shell.md`), а не этого
+репозитория. Пути вида `.claude/hooks/...` ниже относятся к ней; в RhapsodyAi каталог
+`.claude/` содержит только `docs`, `settings.local.json`, `skills`, `worktrees`.
 
 **Разделение ответственности (важное отличие от первой версии дизайна):** вся механика "оживления"
 сессии — сохранить `session_uuid` в файл, поднять фоновый `watch` — инкапсулирована в коде
