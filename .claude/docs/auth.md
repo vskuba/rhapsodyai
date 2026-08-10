@@ -110,7 +110,7 @@ async def me(request: Request):
 - `auth_role_permissions(role)` → набор прав роли (`admin` → все права)
 - `auth_role_is_full(role)` → роль с полным набором прав
 
-**`qa`** (`vova.tkachenko`, логин/пароль в `.env`: `QA_USERNAME` / `QA_PASSWORD`) — учётка автотестов
+**`qa`** (`vova.tkachenko`, логин/пароль в `.env.local`: `QA_USERNAME` / `QA_PASSWORD`) — учётка автотестов
 и ручных проверок, права полные: сюита создаёт и удаляет пользователей, роли, агентов, workflow.
 Отделена от `admin`, чтобы её сессии и действия были видны в логах отдельно от владельца.
 
