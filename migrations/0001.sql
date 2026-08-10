@@ -505,6 +505,7 @@ CREATE TABLE `project_task` (
     `description` TEXT NOT NULL,
     `goals` TEXT NOT NULL,
     `status` ENUM('pending','queued','active','done','blocked','cancelled') NOT NULL DEFAULT 'pending',
+    `task_type_id` INT DEFAULT NULL COMMENT 'Тип задачи (dev, bug, test, research, plan)',
     `report` TEXT NOT NULL,
     `position` INT NOT NULL DEFAULT '0',
     -- Конвейер агентов. NULL = обычная ручная задача, конвейера не касается (opt-in).
@@ -525,8 +526,10 @@ CREATE TABLE `project_task` (
     INDEX `idx_pt_position` (`project_id`, `position`),
     INDEX `idx_pt_pipeline` (`pipeline_state`),
     INDEX `idx_pt_parent` (`parent_id`, `position`),
+    INDEX `idx_pt_task_type` (`task_type_id`),
     -- Удаление родителя уносит всю ветку: подзадача без родителя смысла не имеет.
-    CONSTRAINT `fk_pt_parent` FOREIGN KEY (`parent_id`) REFERENCES `project_task` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_pt_parent` FOREIGN KEY (`parent_id`) REFERENCES `project_task` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pt_task_type` FOREIGN KEY (`task_type_id`) REFERENCES `project_task_type` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Единица работы конвейера: Manager раскладывает утверждённый план на подзадачи,
@@ -735,10 +738,6 @@ CREATE TABLE `project_state` (
     UNIQUE KEY `uk_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `project_state` (`id`, `name`, `description`) VALUES
-    (1, 'anon', 'Анонимный пользователь'),
-    (2, 'auth', 'Авторизованный пользователь');
-
 CREATE TABLE `project_design_prototype_page` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `project_id` INT NOT NULL,
@@ -870,4 +869,32 @@ CREATE TABLE `project_design_token` (
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Project Team ──────────────────────────────────────────────────────────────
+
+CREATE TABLE `project_task_type` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(50) NOT NULL COMMENT 'dev, bug, test, research, plan',
+    `title` VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Отображаемое название',
+    `description` TEXT DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_task_type_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `project_team` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Имя члена команды',
+    `role` VARCHAR(50) NOT NULL DEFAULT 'developer' COMMENT 'manager, developer, qa',
+    `command` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'Команда для запуска (например: claude-shell --gx10 --manager)',
+    `work_dir` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'Рабочая директория проекта',
+    `status` ENUM('active','inactive') NOT NULL DEFAULT 'inactive' COMMENT 'Статус: активен/не активен',
+    `last_ping_at` DATETIME DEFAULT NULL COMMENT 'Последний пинг от терминала',
+    `pid` INT DEFAULT NULL COMMENT 'PID процесса терминала',
+    `session_uuid` CHAR(36) DEFAULT NULL COMMENT 'UUID сессии Claude Code',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_team_name` (`name`),
+    INDEX `idx_team_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
