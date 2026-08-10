@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from pydantic import BaseModel
+import os
 
 from mysql_.mysql_ import mysql_get_db_async
 from py_modules.setting_.setting_ import setting_get, setting_set, setting_delete
@@ -74,3 +75,14 @@ async def setting_set_route(request: Request, key: str, user_id: int, data: dict
         return {"result": False, "error": "Missing 'value' in request body"}
 
     return {"result": await setting_set(key, value, user_id)}
+
+
+@router.get("/setting/config")
+async def setting_config_route(request: Request, user=Depends(AuthChecker([AuthPermission.SETTING_VIEW]))):
+    """Получение конфигурационных переменных для frontend."""
+    return {
+        "result": {
+            "SITE_LOGIN_REMOTE_URL": os.getenv("TELEGRAM_SITE_LOGIN_REMOTE_URL", ""),
+            "SITE_LOGIN_LOCAL_URL": os.getenv("TELEGRAM_SITE_LOGIN_LOCAL_URL", ""),
+        }
+    }
