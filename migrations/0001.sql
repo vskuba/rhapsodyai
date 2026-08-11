@@ -518,6 +518,7 @@ CREATE TABLE `project_task` (
     `pipeline_error` TEXT NOT NULL,
     `pipeline_locked_at` DATETIME DEFAULT NULL,
     `pipeline_locked_by` VARCHAR(64) NOT NULL DEFAULT '',
+    `trace_meta` JSON NULL COMMENT 'Мета-данные интеграций: [{domain, ...}]',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),

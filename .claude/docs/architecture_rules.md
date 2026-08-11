@@ -4,6 +4,70 @@
 > namespace файла, файлы дробятся по ответственности, `src/cronjob/` — только точки входа.
 > Применяются и к новым файлам, и к правкам существующих.
 
+## 0. Перед созданием нового файла — проверь паттерн
+
+**Перед тем как создать новый файл, всегда посмотри на уже существующие файлы в целевой
+папке и используй тот же шаблон именования.**
+
+Правило применяется перед `Write` и перед `Edit` при создании нового файла.
+
+```
+src/project/task/
+    task_agent.py
+    task_claim.py
+    task_pipeline.py
+    task_plan.py
+    task_revision.py
+    task_state.py
+    task_tree.py
+```
+
+Шаблоны:
+- `task_<domain>_<action>.py` → функции `task_<domain>_<action>_...`
+- `task_<domain>.py`          → функции `task_<domain>_...`
+- `tool_<feature>_`           → функции `tool_<feature>_...`
+
+Ошибочный паттерн (обратный порядок слов):
+- `bug_task_create.py` ❌ — нарушает существующий `task_*` шаблон модуля
+
+Правильный паттерн:
+- `task_bug_create.py` ✅ — продолжает `task_*` шаблон
+
+```bash
+# Посмотри, какие файлы уже есть в папке, прежде чем создавать новый:
+ls src/project/task/*.py
+
+# Посмотри префиксы функций в существующих файлах:
+grep -oP '^async def \K[a-z_0-9]+' src/project/task/*.py | sort -u
+```
+
+## 0.5 Константы: UPPER_CASE с префиксом namespace
+
+Публичные константы (UPPER_CASE) в файлах — тоже с префиксом namespace.
+Namespace = путь от `src/` до файла, разделители `/` → `_`.
+
+```
+src/project/task/task_pipeline.py      → namespace: project_task
+src/ai/ai_llm.py                       → namespace: ai
+src/uvicorn/routers/project/project_task.py → namespace: project_task_project_task
+```
+
+Правило:
+```python
+# ❌ — без префикса (может конфликтовать с другими модулями)
+MAX_ATTEMPTS = 3
+BUG_TASK_SCAN_ENABLED = True
+
+# ✅ — с префиксом namespace
+PROJECT_TASK_BUG_SCAN_ENABLED = True  # из task_pipeline.py
+AI_LLM_TIMEOUT = 120.0                # из ai_llm.py
+```
+
+Разбор: `PROJECT_TASK` = namespace модуля, `BUG_SCAN` = подсистема, `ENABLED` = тип переключателя.
+
+Константы, используемые только внутри файла (локальные утилиты), допускаются без префикса.
+Но при сомнениях — всегда добавляй префикс: безопаснее избыточный, чем конфликт имён.
+
 ## 1. Имена функций соответствуют namespace файла
 
 Все публичные функции внутри файла начинаются с префикса, равного пути «папка + имя
