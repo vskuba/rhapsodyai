@@ -66,7 +66,7 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
     # Колонки role в ai_claude_session_registry и project_team — NOT NULL
     # DEFAULT 'developer' (migrations/0001.sql), поэтому None вставлять нельзя.
     role_given = str(data.get("role") or "").strip()
-    role = role_given or "developer"
+    role = role_given or ""
     project_label = str(data.get("project_label") or "").strip()
     server_llm = str(data.get("server_llm") or "anthropic").strip()
     if server_llm not in ("anthropic", "gx10"):
