@@ -94,7 +94,7 @@ function renderClaudeSessionList(sessions) {
 
 export async function openClaudeSession(sessionUuid, role, projectLabel) {
     state.claude.sessionUuid = sessionUuid;
-    state.claude.sessionLabel = `${role} — ${projectLabel}`;
+    state.claude.sessionLabel = role ? `${projectLabel} - ${role}` : String(projectLabel || '');
     state.claude.sessionUnreachable = false;
     state.claude.renderedUserIds = new Set();
     state.claude.renderedResponses = new Map();
