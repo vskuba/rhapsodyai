@@ -88,6 +88,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `workflow_tool.md` | Создание инструментов, auto-discovery, best practices |
 | `workflow_trace.md` | Журнал выполнения: схема, токены, `/admin/workflow_trace` |
 | `workflow/dating_talk.md` | Пример workflow: 17 шагов, 3 LLM |
+| `detective.md` | Игра-детектив: PWA `/play/detective`, guest-сессии, динамические агенты, workflow 12/13/14 |
 
 **Project-модули**
 
