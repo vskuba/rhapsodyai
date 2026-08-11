@@ -1,14 +1,14 @@
 from fastapi import HTTPException
 
 
-async def project_context_generate(path: str, title: str = '', user_id: int = 0) -> str:
+async def project_context_generate(work_dir: str, title: str = '', user_id: int = 0) -> str:
     """Сгенерировать контекст проекта через claude_shell: краткий обзор, основной функционал, страницы.
 
     Передаёт путь к проекту в Claude Code — он сам просканирует файлы.
     Возвращает готовый текст для поля ``context``.
     """
     prompt = (
-        f"Проанализируй проект '{title}' по пути '{path}'.\n\n"
+        f"Проанализируй проект '{title}' по пути '{work_dir}'.\n\n"
         f"На основе содержимого файлов сформируй краткий обзор проекта в формате:\n"
         f"1. Обзор проекта — что делает, основная цель\n"
         f"2. Основной функционал — ключевые возможности (списком)\n"

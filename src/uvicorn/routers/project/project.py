@@ -29,13 +29,13 @@ async def project_admin_create(data: dict, user=Depends(AuthChecker([AuthPermiss
     repo = PlanningProjectRepository()
     title = str(data.get('title') or '').strip()
     idea = str(data.get('idea') or '').strip()
-    path = str(data.get('path') or '').strip()
+    work_dir = str(data.get('work_dir') or '').strip()
     if not title:
         return {'error': 'title is required'}
     if not idea:
         idea = title[:200]
-    if not path:
-        path = idea[:200]
+    if not work_dir:
+        work_dir = idea[:200]
     async with mysql_get_db_async() as db:
         await db.execute('SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM project')
         row = await db.fetchone()
@@ -45,7 +45,7 @@ async def project_admin_create(data: dict, user=Depends(AuthChecker([AuthPermiss
         'user_id': 0,
         'title': title,
         'idea': idea,
-        'path': path,
+        'work_dir': work_dir,
         'status': 'complete',
         'phase_current': 'complete',
         'position': 0,
@@ -64,8 +64,8 @@ async def project_admin_update(project_id: int, data: dict, user=Depends(AuthChe
         update['idea'] = str(data['idea'])
     if 'status' in data:
         update['status'] = str(data['status'])
-    if 'path' in data:
-        update['path'] = str(data['path'])
+    if 'work_dir' in data:
+        update['work_dir'] = str(data['work_dir'])
     if 'phase_current' in data:
         update['phase_current'] = str(data['phase_current'])
     if 'description' in data:
@@ -89,17 +89,17 @@ async def project_admin_delete(project_id: int, user=Depends(AuthChecker([AuthPe
 async def project_context_generate_endpoint(request: Request, data: dict,
                                             user=Depends(AuthChecker([AuthPermission.PROJECT_UPDATE]))):
     """Сгенерировать контекст проекта через LLM: обзор, функционал, страницы."""
-    path = str(data.get('path') or '').strip()
+    work_dir = str(data.get('work_dir') or '').strip()
     title = str(data.get('title') or '').strip()
     project_id = int(data.get('project_id') or 0)
-    if not path:
-        return {'error': 'path is required'}
+    if not work_dir:
+        return {'error': 'work_dir is required'}
     if not project_id:
         return {'error': 'project_id is required'}
 
     from src.project.project import project_context_generate
 
-    context_text = await project_context_generate(path=path, title=title, user_id=user.user_id)
+    context_text = await project_context_generate(work_dir=work_dir, title=title, user_id=user.user_id)
 
     repo = PlanningProjectRepository()
     await repo.update(project_id, {'context': context_text})
