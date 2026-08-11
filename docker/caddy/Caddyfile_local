@@ -1,0 +1,44 @@
+# HTTPS для локальной машины разработчика: Telegram принимает Web App только по
+# HTTPS (setChatMenuButton отвечает 400 "Only HTTPS links are allowed" на любой
+# http://). sslip.io резолвит 93.175.229.252.sslip.io в сам IP, поэтому
+# Let's Encrypt выдает обычный сертификат без собственного домена.
+#
+# Проброс на роутере:
+#   80    -> этот хост:80     (ACME-челлендж)
+#   44152 -> этот хост:44153  (трафик Mini App; 44152 на хосте занят Apache,
+#                              внутри контейнера Caddy все равно слушает 44152)
+{
+	# Челлендж приходит только на 80: TLS-ALPN-01 требует внешний 443, который
+	# наружу не проброшен
+	http_port 80
+}
+
+https://93.175.229.252.sslip.io:44152 {
+	# Без этого Caddy сначала пробует TLS-ALPN-01 на 443 и упирается в таймаут
+	tls {
+		issuer acme {
+			disable_tlsalpn_challenge
+		}
+	}
+
+	# /cronjob не имеет авторизации и предназначен только для Cronicle
+	# внутри docker-сети — снаружи не публикуем
+	@cronjob path /cronjob /cronjob/*
+	respond @cronjob 403
+
+	# PWA подпроектов (apps/<name>/): статика раздается Caddy напрямую,
+	# отдельно от uvicorn/FastAPI - изоляция фронтенда подпроекта от админки.
+	handle_path /play/detective/* {
+		root * /srv/apps/detective
+		try_files {path} /index.html
+		file_server
+	}
+
+	reverse_proxy uvicorn:8000
+}
+
+# Порт 80 держим поднятым постоянно: на нем Caddy обслуживает ACME-челлендж
+# при первичной выдаче и при каждом продлении сертификата
+http://93.175.229.252.sslip.io {
+	redir https://93.175.229.252.sslip.io:44152{uri} permanent
+}
