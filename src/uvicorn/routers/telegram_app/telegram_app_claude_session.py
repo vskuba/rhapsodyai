@@ -1,8 +1,9 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Request, HTTPException
 
+from datetime_.datetime_ import datetime_now
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
@@ -76,14 +77,18 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
         raise HTTPException(status_code=400, detail="project_label required")
 
     session_uuid = str(uuid.uuid4())
+    now = await datetime_now()
     repo = AiClaudeSessionRegistryRepository()
+    # created_at пишем явно: DEFAULT CURRENT_TIMESTAMP взял бы часовой пояс MySQL,
+    # и в одной строке created_at и last_seen_at оказались бы в разных поясах
     await repo.add({
         "session_uuid": session_uuid,
         "role": role,
         "project_label": project_label,
         "status": "active",
         "server_llm": server_llm,
-        "last_seen_at": datetime.now(),
+        "created_at": now,
+        "last_seen_at": now,
     })
 
     # work_dir пишем в project_team только когда роль и путь пришли непустыми:
@@ -122,7 +127,7 @@ async def telegram_app_claude_session_resume(request: Request, data: dict):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    now = datetime.now()
+    now = await datetime_now()
     update_data = {"status": "active", "last_seen_at": now}
     if server_llm:
         update_data["server_llm"] = server_llm
@@ -159,7 +164,7 @@ async def telegram_app_claude_session_heartbeat(request: Request, data: dict):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    await repo.update(row["id"], {"last_seen_at": datetime.now()})
+    await repo.update(row["id"], {"last_seen_at": await datetime_now()})
 
     return {"result": {"status": row["status"]}}
 
@@ -181,7 +186,7 @@ async def telegram_app_claude_session_finalize(request: Request, data: dict):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    update_data = {"status": "inactive", "closed_at": datetime.now()}
+    update_data = {"status": "inactive", "closed_at": await datetime_now()}
     if summary:
         update_data["summary"] = str(summary)[:500]
     await repo.update(row["id"], update_data)
@@ -286,12 +291,13 @@ async def telegram_app_claude_quota_check(request: Request, data: dict):
     return {"result": {"ok": True, "message_id": result["id"]}}
 
 
-def _compute_process_status(row: dict) -> dict:
+def _compute_process_status(row: dict, now: datetime) -> dict:
+    """`now` приходит из datetime_now(): last_seen_at записан в том же поясе."""
     last_seen_at = row.get("last_seen_at")
     seconds_ago = None
     watch_alive = False
     if last_seen_at:
-        delta = (datetime.now() - last_seen_at).total_seconds()
+        delta = (now - last_seen_at).total_seconds()
         seconds_ago = int(delta)
         watch_alive = delta <= 15
     return {
@@ -318,7 +324,7 @@ async def telegram_app_claude_session_process_status(request: Request, session_u
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    return {"result": _compute_process_status(row)}
+    return {"result": _compute_process_status(row, await datetime_now())}
 
 
 @router.post("/telegram-app/claude/session/restart-processes")
@@ -340,7 +346,7 @@ async def telegram_app_claude_session_restart_processes(request: Request, data: 
 
     await claude_message_user(RESTART_WATCH_MARKER, session_uuid, dynamic=1)
 
-    status = _compute_process_status(row)
+    status = _compute_process_status(row, await datetime_now())
     status["restart_sent"] = True
 
     # Telegram-уведомление как fallback-канал на случай если watch мёртв

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime_.datetime_ import datetime_utc_now
 
 from src.mysql_.repository.project.team_repository import ProjectTeamRepository
 from src.mysql_.repository.project.task_type_repository import ProjectTaskTypeRepository
@@ -33,9 +33,14 @@ class TeamService:
             member_id: ID члена команды.
             session:   Данные запущенной оболочки — pid, session_uuid, work_dir.
                        Пишутся только те ключи, которые пришли непустыми.
+
+        Время — UTC, а не пояс из настройки Setting: `/admin/team` читает
+        last_ping_at как UTC (`new Date(str + 'Z')`), сам переводит в пояс браузера
+        и там же считает свежесть пинга. Сдвинутое значение дало бы и неверное время
+        на карточке, и вечно «активного» члена команды.
         """
         repo = ProjectTeamRepository()
-        data = {'status': 'active', 'last_ping_at': datetime.now()}
+        data = {'status': 'active', 'last_ping_at': datetime_utc_now()}
         data.update(self._session_data(session))
         await repo.update(member_id, data)
 
@@ -47,7 +52,7 @@ class TeamService:
     async def team_activate(self, member_id: int, session: dict = None):
         """Активировать члена команды (взять на работу)."""
         repo = ProjectTeamRepository()
-        data = {'status': 'active', 'last_ping_at': datetime.now()}
+        data = {'status': 'active', 'last_ping_at': datetime_utc_now()}
         data.update(self._session_data(session))
         await repo.update(member_id, data)
 
