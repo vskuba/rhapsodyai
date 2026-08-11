@@ -87,6 +87,7 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
         "project_label": project_label,
         "status": "active",
         "server_llm": server_llm,
+        "work_dir": work_dir,
         "created_at": now,
         "last_seen_at": now,
     })
