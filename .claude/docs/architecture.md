@@ -9,18 +9,24 @@
 | Module | Purpose |
 |--------|---------|
 | `ai/` | AI framework core — agents, tasks, MCP, tools, sessions |
+| `async_/` | Event-loop helpers: `async_loop_init`, `async_waiting_*`, отмена задач |
 | `config/` | Configuration via `.env` |
+| `event_/` | Локальная шина событий: `event_subscribe` / `event_emit` |
 | `flux_schnell/` | Image generation (SDXL-Turbo/Flux) |
+| `i18n_/` | `i18n_text_resolve` / `i18n_languages_parse` — мультиязычные строки |
+| `json_/` | `json_from_string` — устойчивый парсинг JSON из ответа LLM |
 | `logging_/` | Structured logging |
+| `mcp_/` | Model Context Protocol client |
 | `microphone/` | Speech recognition |
 | `mysql_/` | MySQL connection pooling & repositories |
+| `qdrant_/` | Vector database client |
 | `queue_/` | In-memory async queue system |
 | `redis_/` & `redis_queue/` | Redis connection & RQ queue |
-| `qdrant_/` | Vector database client |
 | `setting_/` | Settings persistence |
 | `sqllite3/` | SQLite for LLM short-term memory |
 | `state/` | Global state management |
-| `mcp_/` | Model Context Protocol client |
+| `thread_/` | `thread_with_callback` — запуск блокирующего кода в потоке |
+| `translator/` | `translate_text` — перевод текста |
 
 ## Application Code (`src/`)
 
@@ -28,12 +34,18 @@
 |------|---------|
 | `ai/` | AI workflow, tools, fact collection |
 | `auth/` | Authentication (session, role, permission, field policy) |
-| `cronjob/` | Scheduled jobs |
+| `cronjob/` | Scheduled jobs — только точки входа (см. `architecture_rules.md`) |
+| `event/` | `event_handlers.py` — подписки на шину `py_modules/event_` (event_log, Telegram-уведомления) |
 | `faster_whisper/` | Speech-to-text |
 | `mysql_/repository/` | Database repositories for all entities |
 | `parser/` | Data parsers (HTML→JSON, MD→Qdrant, MD→Fact) |
-| `tool/` | Tool implementations (weather, github, qdrant, session, text, agent, dating) |
+| `project/` | Project-модули: `planning/`, `task/`, `team/` (см. `project_*.md`) |
+| `telegram_/` | `telegram_notify.py` — отправка сообщений через Bot API |
+| `tool/` | Tool implementations — по категориям, auto-discovery (`workflow_tool.md`) |
+| `translator/` | `translator_md.py` — перевод markdown-документов |
 | `uvicorn/routers/` | FastAPI route handlers |
+| `telegram_bot.py` | Telegram bot handler (точка входа — `main_telegram.py`) |
+| `filesystem.py`, `os_.py`, `voice.py` | Утилиты: открыть файл в редакторе, статус сервисов/env, TTS |
 
 ## Key Dependencies
 
@@ -50,17 +62,26 @@ Install: `pip install -r docker/uvicorn/requirements.txt` / `docker/telegram/req
 
 ## Docker Services
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| `uvicorn` | 8011 | Main FastAPI application |
-| `mysql` | 3302 | Primary database |
-| `redis` | 6379 | Queue & caching |
-| `qdrant` | 6333/6334 | Vector database |
-| `opensearch` | 9200 | Log search |
-| `opensearch-dashboards` | 5601 | Log visualization |
-| `cronicle` | 3012 | Job scheduler |
-| `rq-dashboard` | 9181 | Redis queue monitoring |
-| `phpmyadmin` | 9634 | MySQL admin |
+| Service | Port (host→container) | Profile | Purpose |
+|---------|------|---------|---------|
+| `uvicorn` | 8011→8000 | — | Main FastAPI application (blue-слот) |
+| `uvicorn_green` | 8012→8000 | `green` | Green-слот для Blue-Green деплоя (`deploy.md`) |
+| `worker` | — | — | `rq worker --url redis://redis:6379 default` |
+| `mysql` | 3302→3306 | — | Primary database |
+| `redis` | внутренний 6379 | — | Queue & caching (порт наружу не публикуется) |
+| `qdrant` | 6333/6334 | — | Vector database (API+UI / gRPC) |
+| `opensearch` | 9200, 9600 | — | Log search |
+| `opensearch-dashboards` | 5601 | — | Log visualization |
+| `logstash` | — | — | Доставка логов в OpenSearch |
+| `cronicle` | 3012 | — | Job scheduler |
+| `rq-dashboard` | 9181 | — | Redis queue monitoring |
+| `phpmyadmin` | 9634→80 | — | MySQL admin |
+| `gatus` | 8090→8080 | — | Health-мониторинг эндпоинтов |
+| `telegram` | — | `on_prod_only` | Telegram-бот, образ `ghcr.io/vskuba/marina-ai:latest` |
+| `caddy` | 80, 443 | `on_prod_only` | Reverse proxy + TLS; `/play/detective/*` отдаёт статику напрямую |
+
+Сервисы с профилем не поднимаются обычным `docker compose up` — нужен
+`--profile green` / `--profile on_prod_only`.
 
 ## Environment Variables (`.env`)
 
