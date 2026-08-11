@@ -57,6 +57,15 @@ from src.project.task.task_state import (
     task_state_task_get,
 )
 
+# ── Автосоздание баг-задач из workflow trace ───────────────────────────────────
+from src.project.task.task_bug_scan import task_bug_scan_trace
+from src.project.task.task_bug_create import (
+    task_bug_create as _task_bug_create_impl,
+)
+from src.project.task.task_bug_dedup import task_bug_dedup_check
+
+BUG_TASK_SCAN_ENABLED = True  # env: BUG_TASK_SCAN_ENABLED=1
+
 MAX_ATTEMPTS = 3  # сколько кругов Developer/QA допустимо по одной подзадаче
 
 
@@ -87,6 +96,9 @@ async def task_pipeline_run(max_actions: int = 1) -> dict:
 async def _action_next(worker: str) -> str | None:
     """Выполнить первое подошедшее действие. None — работы нет."""
     for handler in (
+        # Автосоздание багов из workflow trace — первым: ошибки нужно обрабатывать
+        # сразу после завершения run'а, не дожидаясь обработки pipeline задач.
+        _step_bug_from_trace,
         # Пересмотр — первым: на другом конце этого шага человек, который нажал
         # «Обновить план» и ждёт результата, а плановое планирование подождёт тик.
         _step_manager_review,
@@ -100,6 +112,43 @@ async def _action_next(worker: str) -> str | None:
         if step:
             return step
     return None
+
+
+async def _step_bug_from_trace(worker: str) -> str | None:
+    """
+    run/step-level ошибка → баг-задача через Task Orchestrator.
+
+    Flow:
+        1. task_bug_scan_trace() — ищет первую unprocessed run или step ошибку
+        2. task_bug_dedup_check(hash) — проверяет, не создана ли уже задача
+        3. task_bug_create() — INSERT project_task с task_type_id=2 ('bug')
+
+    Возвращает: 'task#{id} bug from trace #{run_id}' или None (не нашёл / пропустим).
+    """
+    if not BUG_TASK_SCAN_ENABLED:
+        return None
+
+    # 1. Сканируем trace на ошибки
+    error_data = await task_bug_scan_trace()
+    if not error_data:
+        return None
+
+    error_hash = error_data.get('_error_hash')
+    if not error_hash:
+        return None
+
+    # 2. Дедуп
+    is_dup = await task_bug_dedup_check('workflow_trace', error_hash)
+    if is_dup:
+        return None
+
+    # 3. Создаём задачу
+    task_id = await _task_bug_create_impl(error_data)
+    if task_id is None:
+        return None
+
+    trace_id = error_data.get('id', 0)
+    return f'task#{task_id} bug from trace #{trace_id}'
 
 
 async def _step_manager_review(worker: str) -> str | None:

@@ -160,12 +160,19 @@ async def telegram_app_claude_session_heartbeat(request: Request, data: dict):
     if not session_uuid:
         raise HTTPException(status_code=400, detail="session_uuid required")
 
+    work_dir = str(data.get("work_dir") or "").strip()
+
     repo = AiClaudeSessionRegistryRepository()
     row = await repo.find_one_by({"session_uuid": session_uuid})
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    await repo.update(row["id"], {"last_seen_at": await datetime_now()})
+    update_data = {"last_seen_at": await datetime_now()}
+    # По work_dir карточки на /admin/team привязываются к проекту. Сессии,
+    # зарегистрированные до появления колонки, дозаполняют её на первом же пинге.
+    if work_dir and not row.get("work_dir"):
+        update_data["work_dir"] = work_dir
+    await repo.update(row["id"], update_data)
 
     return {"result": {"status": row["status"]}}
 
