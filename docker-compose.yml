@@ -288,6 +288,30 @@ services:
     # No depends_on uvicorn: Blue-Green manages which uvicorn slot is active.
     # Caddy handles upstream unavailability gracefully via lb_try_duration.
 
+  # HTTPS на машине разработчика: Telegram принимает Web App URL только по HTTPS.
+  # Отдельный сервис, а не профиль у caddy — Caddyfile и порты разные,
+  # а на проде этот контейнер занял бы 80-й порт у боевого caddy.
+  caddy_local:
+    image: caddy:2
+    container_name: caddy_local
+    profiles: ["on_local_only"]
+    restart: always
+    ports:
+      # 80 нужен только для ACME-челленджа (внешний 443 не проброшен).
+      # Наружу Mini App отдается на 44152, но локальный 44152 занят системным
+      # Apache, поэтому на хосте берем 44153: роутер пробрасывает
+      # внешний 44152 -> 44153, внутри контейнера Caddy слушает 44152,
+      # чтобы адрес сайта совпадал с портом в URL.
+      - "80:80"
+      - "44153:44152"
+    volumes:
+      - ./docker/caddy/Caddyfile_local:/etc/caddy/Caddyfile:ro
+      - ./apps:/srv/apps:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - os-net
+
 volumes:
   opensearch-data:
   cronicle-data:
