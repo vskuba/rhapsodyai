@@ -19,6 +19,17 @@ from src.uvicorn.routers.telegram_app.telegram_app_common import (
 
 router = APIRouter()
 
+# Готовность агента приходит с heartbeat оболочки: 'ready' — сообщение будет
+# вставлено в дочерний процесс сразу, 'busy' — встанет в очередь на неизвестное
+# время. Свежий пинг сам по себе означает только «оболочка жива», поэтому
+# оркестратор задач опирается именно на это поле. Значение вне списка считаем
+# 'unknown' — колонка ENUM иначе даст ошибку вставки на опечатке в оболочке.
+TELEGRAM_CLAUDE_AGENT_STATUS_ALLOWED = ('unknown', 'ready', 'busy')
+TELEGRAM_CLAUDE_AGENT_STATUS_DEFAULT = 'unknown'
+
+# Причина занятости — только для диагностики, длина по колонке VARCHAR(32).
+TELEGRAM_CLAUDE_AGENT_STATUS_REASON_MAX = 32
+
 
 @router.get("/telegram-app/claude/session/inbox")
 async def telegram_app_claude_session_inbox(request: Request, session_uuid: str):
@@ -152,7 +163,7 @@ async def telegram_app_claude_session_resume(request: Request, data: dict):
 @router.post("/telegram-app/claude/session/heartbeat")
 async def telegram_app_claude_session_heartbeat(request: Request, data: dict):
     """
-    Вызывается /loop на каждой итерации - обновляет last_seen_at.
+    Вызывается /loop на каждой итерации - обновляет last_seen_at и готовность агента.
     """
     _require_claude_secret(request)
 
@@ -167,14 +178,16 @@ async def telegram_app_claude_session_heartbeat(request: Request, data: dict):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    update_data = {"last_seen_at": await datetime_now()}
+    update_data = {"last_seen_at": await datetime_now(),
+                   **_agent_status_parse(data)}
     # По work_dir карточки на /admin/team привязываются к проекту. Сессии,
     # зарегистрированные до появления колонки, дозаполняют её на первом же пинге.
     if work_dir and not row.get("work_dir"):
         update_data["work_dir"] = work_dir
     await repo.update(row["id"], update_data)
 
-    return {"result": {"status": row["status"]}}
+    return {"result": {"status": row["status"],
+                       "agent_status": update_data["agent_status"]}}
 
 
 @router.post("/telegram-app/claude/session/finalize")
@@ -370,3 +383,20 @@ async def telegram_app_claude_session_restart_processes(request: Request, data: 
         logger_info(f"claude_session_restart: telegram notify failed: {error}")
 
     return {"result": status}
+
+
+def _agent_status_parse(data: dict) -> dict:
+    """Готовность агента из тела heartbeat, приведённая к колонкам реестра.
+
+    Оболочка старой версии этих полей не шлёт вовсе — тогда пишем 'unknown', а
+    не оставляем прошлое значение: иначе однажды выставленный 'ready' навсегда
+    останется в реестре и оркестратор будет считать агента свободным.
+    """
+    agent_status = str(data.get("agent_status") or "").strip().lower()
+    if agent_status not in TELEGRAM_CLAUDE_AGENT_STATUS_ALLOWED:
+        agent_status = TELEGRAM_CLAUDE_AGENT_STATUS_DEFAULT
+
+    reason = str(data.get("agent_status_reason") or "").strip()
+
+    return {"agent_status": agent_status,
+            "agent_status_reason": reason[:TELEGRAM_CLAUDE_AGENT_STATUS_REASON_MAX]}

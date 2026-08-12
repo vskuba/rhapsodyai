@@ -192,6 +192,30 @@
         100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
 
+    /* Готовность агента: свежий пинг ещё не значит, что оболочка возьмёт
+       сообщение прямо сейчас — 'busy' говорит, что оно встанет в очередь. */
+    .agent-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1;
+        padding: 3px 6px;
+        border-radius: 4px;
+        margin-bottom: 8px;
+        background: #f3f4f6;
+        color: #6b7280;
+    }
+
+    .agent-badge.ready {
+        background: rgba(16, 185, 129, 0.12);
+        color: #059669;
+    }
+
+    .agent-badge.busy {
+        background: rgba(245, 158, 11, 0.15);
+        color: #b45309;
+    }
+
     .team-card-meta {
         font-size: 10px;
         color: #9ca3af;
@@ -305,6 +329,13 @@
     const ROLE_ICONS = { manager: '👔', developer: '💻', qa: '🔍' };
     const ROLE_KNOWN = ['manager', 'developer', 'qa'];
 
+    // Подписи готовности агента; причина занятости уходит в title бейджа.
+    const AGENT_STATUS_TITLE = {
+        ready: '🟢 свободен',
+        busy: '🟡 занят',
+        unknown: '⚪ статус неизвестен',
+    };
+
     let refreshTimer = null;
 
     async function loadTeamProjects(showSpinner = false) {
@@ -379,6 +410,16 @@
             ? `<div class="team-summary">${escapeHtml(card.summary)}</div>`
             : '';
 
+        // Бейдж только у активных карточек: сервер отдаёт agent_status пустым,
+        // когда пинг протух, — прошлое значение там уже ничего не значит.
+        const agentLabel = AGENT_STATUS_TITLE[card.agent_status] || card.agent_status;
+        const agentClass = card.agent_status === 'ready' || card.agent_status === 'busy'
+            ? card.agent_status
+            : '';
+        const agent = card.agent_status
+            ? `<div class="agent-badge ${agentClass}" title="${escapeHtml(card.agent_status_reason || '')}">${escapeHtml(agentLabel)}</div>`
+            : '';
+
         return `
             <div class="team-card ${card.active ? 'active' : ''} ${roleClass}">
                 <div class="team-card-top">
@@ -392,6 +433,7 @@
                     <span class="status-indicator"></span>
                     <span>${escapeHtml(statusText)}</span>
                 </div>
+                ${agent}
                 <div class="team-card-meta">
                     ${uuid}
                     ${llm}

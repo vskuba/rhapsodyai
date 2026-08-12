@@ -1,16 +1,19 @@
 # Team — члены команды и heartbeat
 
 > Три постоянные записи в `project_team` (Manager / Developer / QA) описывают роли, под
-> которыми запускаются оболочки `claude-shell`. Оболочка раз в 30 с шлёт `POST /api/team/ping`,
-> страница `/admin/team` раз в 5 с перечитывает список и считает «живость» по свежести
-> `last_ping_at`. Здесь же лежит справочник `project_task_type` — типы задач для `/admin/task`.
+> которыми запускаются оболочки `claude-shell`. Страница `/admin/team` раз в 15 с перечитывает
+> блоки проектов и считает «живость» по свежести пинга в реестре сессий
+> (`ai_claude_session_registry.last_seen_at`), а не по `project_team.last_ping_at`.
+> Здесь же лежит справочник `project_task_type` — типы задач для `/admin/task`.
 
 ## Ключевые файлы
 
 | Файл | Назначение |
 |------|-----------|
-| `src/uvicorn/routers/project/team/team.py` | REST API `/api/team/*`, `TeamPingRequest`, `TeamStatusResponse` |
-| `src/project/team/team_service.py` | `TeamService`: список, поиск по id/роли, ping, activate/deactivate, типы задач |
+| `src/uvicorn/routers/project/project_team.py` | REST API `/api/team/*`, `TeamPingRequest`, `TeamStatusResponse` |
+| `src/project/team/team_member.py` | Записи `project_team`: список, поиск по id/роли, ping, activate/deactivate |
+| `src/project/team/team_project.py` | Блоки `/admin/team`: карточки ролей по проектам, живость и готовность |
+| `src/project/team/team_task_type.py` | Справочник `project_task_type` |
 | `src/mysql_/repository/project/team_repository.py` | Репозиторий `project_team` |
 | `src/mysql_/repository/project/task_type_repository.py` | Репозиторий `project_task_type` |
 | `data/uvicorn/template/admin/project/team.html` | Страница `/admin/team` — карточки, авто-обновление |
@@ -141,19 +144,28 @@ curl -s http://localhost:8011/api/team | python3 -m json.tool
 
 ## Страница `/admin/team`
 
-Карточка на каждого члена команды: иконка роли (👔 manager, 💻 developer, 🔍 qa),
-переведённое название роли, индикатор статуса, команда запуска с кнопкой копирования,
-`work_dir` (если задан), метаданные — Session UUID, PID процесса, Последний пинг.
+Страница строится блоками: один блок — один проект, внутри карточки ролей. Карточка —
+иконка роли (👔 manager, 💻 developer, 🔍 qa), переведённое название, индикатор статуса,
+бейдж готовности агента, метаданные (Session UUID, последний пинг); у серых карточек ещё и
+команда запуска с кнопкой копирования. Данные даёт `GET /api/team/projects` →
+`team_project_blocks_get()`.
 
 Ключевое поведение:
 
-- **Живость считается по `last_ping_at`, а не по колонке `status`.** Порог —
-  `PING_STALE_SECONDS = 60` в шаблоне: оболочка пингует раз в 30 с, порог заметно больше
-  интервала, иначе карточка мигает. Колонка `status` остаётся `active` навсегда, если
-  процесс убили через `kill -9` — деактивацию он отправить не успевает.
-- Авто-обновление `setInterval(refreshStatus, 5000)`; `updateStatusOnly()` перерисовывает
-  только индикатор, текст статуса и время пинга, не всю сетку. Плюс плавающая кнопка
-  ручного обновления.
+- **Живость считается по свежести пинга, а не по колонке `status`.** Порог —
+  `TEAM_PROJECT_PING_STALE_SECONDS = 30` в `team_project.py`: оболочка пингует реестр раз в
+  несколько секунд, так что 30 с — это много пропущенных пингов подряд, а не один
+  задержавшийся. Колонка `status` остаётся `active` навсегда, если процесс убили через
+  `kill -9` — деактивацию он отправить не успевает.
+- **Протухшая карточка роли исчезает, если у роли есть живая.** Закрытая и заново открытая
+  оболочка оставляет в реестре две строки, и старая иначе занимала бы слот роли в ряду
+  (`_cards_stale_drop`). Единственную протухшую карточку роли оставляем — на ней команда
+  запуска, и она показывает, что роль когда-то работала.
+- **Готовность агента** (`agent_status`) приходит с heartbeat оболочки и показывается
+  бейджем только у активных карточек: `ready` — сообщение уйдёт в дочерний процесс сразу,
+  `busy` — встанет в очередь. Свежий пинг сам по себе этого не гарантирует; подробности —
+  `claude_session_registry.md` §4.1.
+- Авто-обновление `setInterval(loadTeamProjects, 15000)` плюс кнопка ручного обновления.
 - **Кнопок ping/activate/deactivate на карточке нет.** Страница только читает
   `GET /api/team`; все три POST-а вызывает внешняя оболочка (и тесты). Мёртвый код кнопок
   (`sendPing`, `getPingColor`, CSS `.ping-indicator`, `.team-actions`, `.action-btn*`)

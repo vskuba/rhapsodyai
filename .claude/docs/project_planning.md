@@ -61,16 +61,16 @@ Fallback цепочка: openrouter/gpt-oss-120b → cerebras/gpt-oss-120b → .
 
 ## 3. Поток выполнения
 
-### planning_runner (внутренний asyncio-runner, `src/project/planning/planning_runner.py`)
+### planning_worker (внутренний asyncio-runner, `src/worker/project/planning_worker.py`)
 
-Запускается из `main_uvicorn.py` через `asyncio.create_task(planning_runner_start())` **после** завершения `ai_tool_sync()`. ВАЖНО: порядок критичен — `ai_tool_sync(force=True)` очищает таблицу `tool` перед ресканом; runner, стартовавший раньше, получит пустой `tools` dict и упадёт с "инструмент не найден".
+Запускается из `main_uvicorn.py` через `asyncio.create_task(planning_worker_start())` **после** завершения `ai_tool_sync()`. ВАЖНО: порядок критичен — `ai_tool_sync(force=True)` очищает таблицу `tool` перед ресканом; runner, стартовавший раньше, получит пустой `tools` dict и упадёт с "инструмент не найден".
 
 ```
 uvicorn startup:
   ai_tool_sync(force=True)              # сначала синхронизируем инструменты
-  asyncio.create_task(planning_runner_start())   # только потом стартуем runner
+  asyncio.create_task(planning_worker_start())   # только потом стартуем runner
 
-planning_runner_start():
+planning_worker_start():
   _startup_reset()   # running → pending для прерванных фаз
   _recover_pending() # ставим в очередь pending/processing проекты
   
@@ -98,7 +98,7 @@ _run_project_chain(project_id):
 ```
 planning_bot (чат) → planning_project_create() → planning_project.status=pending
                                                          ↓
-planning_runner_enqueue(project_id) → _run_project_chain()
+planning_worker_enqueue(project_id) → _run_project_chain()
   → planning_phase_run(agent_name, phase, requires, project_id_filter=project_id)
       → AiFrameworkAgentManager.framework_workflow_run()   # прямой asyncio.Task, без TTL-очереди
            → tool_invoke(planning_project_load) → idea, phases_context
@@ -442,7 +442,7 @@ LLM воспринимает это как мягкую рекомендацию
    При синтезе проверить, укладывается ли в контекст LLM.
 2. **Зависимость фаз** — если одна фаза упала (status=failed), все последующие не запустятся.
    Механизм retry реализован (см. §10).
-3. **Старт runner'а после tool_sync** — race condition: если `planning_runner_start()` стартует
+3. **Старт runner'а после tool_sync** — race condition: если `planning_worker_start()` стартует
    до завершения `ai_tool_sync(force=True)`, runner получит пустой `tools` dict во время
    очистки таблицы `tool`. Исправлено в `main_uvicorn.py` — runner создаётся строго после sync.
 4. ~~**phases_context растёт с каждой фазой**~~ — **Исправлено** в `planning_project_load`:

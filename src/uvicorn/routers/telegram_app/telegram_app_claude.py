@@ -6,7 +6,11 @@ from datetime_.datetime_ import datetime_now
 from mysql_.mysql_ import mysql_get_db_async
 from setting_.setting_ import setting_get
 from src.telegram_.telegram_notify import telegram_send_owner
-from src.tool.claude_.claude_ import claude_message_cloud, claude_message_user
+from src.tool.claude_.claude_ import (
+    CLAUDE_MESSAGE_STATUS_DELIVERED,
+    claude_message_cloud,
+    claude_message_user,
+)
 from src.uvicorn.routers.telegram_app.telegram_app_common import (
     _require_telegram_owner,
     _require_claude_secret,
@@ -35,7 +39,7 @@ async def telegram_app_claude_messages(request: Request, session_uuid: str):
     async with mysql_get_db_async() as db:
         await db.execute(
             """
-            SELECT id, content, response, handled, created_at, responded_at, dynamic
+            SELECT id, content, response, handled, created_at, responded_at, dynamic, status
             FROM ai_claude_session
             WHERE session_uuid = %s
             ORDER BY id ASC
@@ -58,16 +62,21 @@ async def telegram_app_claude_respond(request: Request, data: dict):
     inbox_id = data.get("inbox_id")
     session_uuid = str(data.get("session_uuid") or "").strip()
     response = str(data.get("response") or "").strip()
-    if not session_uuid or not response:
+    status = str(data.get("status") or "").strip().lower()
+    # Отметка о доставке — единственный случай без текста: оболочка сообщает,
+    # что передала сообщение агенту, а ответа ещё нет.
+    delivered = status == CLAUDE_MESSAGE_STATUS_DELIVERED and inbox_id
+    if not session_uuid or (not response and not delivered):
         raise HTTPException(status_code=400, detail="session_uuid, response required")
 
     await claude_message_cloud(
         session_uuid=session_uuid,
         response=response,
         inbox_id=int(inbox_id) if inbox_id else None,
+        status=status or None,
     )
 
-    if data.get("notify", True):
+    if response and data.get("notify", True):
         await telegram_send_owner(response)
 
     return {"result": {"ok": True}}

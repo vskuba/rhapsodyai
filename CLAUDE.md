@@ -24,6 +24,7 @@ See `.claude/docs/database.md` and `.claude/docs/migration.md` for database sche
 See the documentation files in `.claude/docs/` for detailed patterns:
 
 - **New Tool** → `.claude/docs/workflow_tool.md`
+- **New Worker / фоновая обработка** → `.claude/docs/worker.md`
 - **New Admin Page** → `.claude/docs/dashboard_frontend.md`
 - **New Protected Endpoint** → `.claude/docs/auth.md`
 - **Workflow** → `.claude/docs/workflow.md`
@@ -56,6 +57,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `src/telegram_bot.py` | Telegram bot handler |
 | `src/auth/auth.py` | `AuthChecker`, `get_current_user` |
 | `src/cronjob/` | Cron job entry points |
+| `src/worker/` | Все воркеры: `project/task_worker.py` (rq), `project/planning_worker.py` (asyncio) |
 | `migrations/0001.sql` | Единственный источник схемы БД |
 
 ## Docs Reference
@@ -91,6 +93,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `quickstart.md` | Запуск через Docker, порты, тесты, переменные `.env` |
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
+| `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
 | `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда |
 | `dashboard_frontend.md` | Паттерны админ-страниц: JS, CSS, контракты API |

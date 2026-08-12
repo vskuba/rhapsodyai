@@ -405,6 +405,7 @@ CREATE TABLE `ai_claude_session` (
     `response` LONGTEXT NULL,
     `responded_at` DATETIME NULL,
     `dynamic` TINYINT(1) NOT NULL DEFAULT 0,
+    `status` ENUM('queued','delivered','answered','failed') NOT NULL DEFAULT 'queued' COMMENT 'Фаза обработки строки очереди: queued - лежит в инбоксе, delivered - оболочка ввела текст в Claude Code, answered - пришёл ответ, failed - оболочка сдалась',
     INDEX `idx_claude_session_handled` (`handled`, `created_at`),
     INDEX `idx_claude_session_uuid` (`session_uuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -423,6 +424,8 @@ CREATE TABLE `ai_claude_session_registry` (
     `server_llm` ENUM('anthropic','gx10') NOT NULL DEFAULT 'anthropic',
     `summary` VARCHAR(500) NULL,
     `work_dir` VARCHAR(500) NULL COMMENT 'Абсолютный путь, в котором запущена shell-оболочка',
+    `agent_status` ENUM('unknown','ready','busy') NOT NULL DEFAULT 'unknown' COMMENT 'Готов ли агент принять сообщение прямо сейчас; приходит с heartbeat оболочки',
+    `agent_status_reason` VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'Причина занятости: permission / turn / queue / ... — только для диагностики',
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     `last_seen_at` DATETIME NULL,
     `closed_at` DATETIME NULL,
