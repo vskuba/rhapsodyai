@@ -155,6 +155,11 @@
             </div>
             {% endif %}
 
+            <!-- Фиксер: включает выбор элемента на странице (см. /static/js/fixer.js).
+                 Стоит в правом краю строки и не зависит от активной вкладки: замечание
+                 к вёрстке возникает на любой странице. -->
+            <button type="button" id="fixerBtn" class="fixer-btn" title="Фиксер: указать элемент и описать правку (правая кнопка — выйти)">🛠️</button>
+
         </div><!-- /tabnav-items -->
     </div><!-- /nav-right -->
 </header><!-- /nav-shell -->
@@ -209,6 +214,8 @@
 
     loadCurrentUser();
 </script>
+
+<script type="module" src="/static/js/fixer.js"></script>
 
 {% block scripts %}{% endblock %}
 
