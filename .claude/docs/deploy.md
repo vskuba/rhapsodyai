@@ -86,7 +86,7 @@ HTTP_CODE=$(curl ... "http://127.0.0.1:$NEW_PORT/health" ...)
 ## Сервисы, НЕ затрагиваемые Blue-Green
 
 - `telegram` — перезапускается через `--force-recreate` (обновление образа из GHCR)
-- `worker` — перезапускается с новым образом (downtime допустим, обрабатывает Redis-очередь)
+- `worker_task` — перезапускается с новым образом (downtime допустим, обрабатывает Redis-очередь)
 - `caddy`, `redis`, `qdrant`, `mysql` — только `up -d` (запускаются если упали)
 
 ## Откат
