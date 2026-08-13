@@ -1,7 +1,8 @@
 # Team — члены команды и heartbeat
 
-> Три постоянные записи в `project_team` (Manager / Developer / QA) описывают роли, под
-> которыми запускаются оболочки `claude-shell`. Страница `/admin/team` раз в 15 с перечитывает
+> Карточки в `project_team` (Manager / Developer / QA) описывают роли, под
+> которыми запускаются оболочки `claude-shell`. Набор ролей **свой у каждого проекта**:
+> карточка принадлежит проекту через `project_id`. Страница `/admin/team` раз в 15 с перечитывает
 > блоки проектов и считает «живость» по свежести пинга в реестре сессий
 > (`ai_claude_session_registry.last_seen_at`), а не по `project_team.last_ping_at`.
 > Здесь же лежит справочник `project_task_type` — типы задач для `/admin/task`.
@@ -13,6 +14,9 @@
 | `src/uvicorn/routers/project/project_team.py` | REST API `/api/team/*`, `TeamPingRequest`, `TeamStatusResponse` |
 | `src/project/team/team_member.py` | Записи `project_team`: список, поиск по id/роли, ping, activate/deactivate |
 | `src/project/team/team_project.py` | Блоки `/admin/team`: карточки ролей по проектам, живость и готовность |
+| `src/project/team/team_queue.py` | Очередь роли для карточки: кто чего ждёт и что делает сейчас |
+| `src/project/team/team_agent.py` | Агент движка и его workflow для карточки роли |
+| `src/project/team/team_session.py` | Действия над живой оболочкой: перезапуск агента по сессии и по роли |
 | `src/project/team/team_task_type.py` | Справочник `project_task_type` |
 | `src/mysql_/repository/project/team_repository.py` | Репозиторий `project_team` |
 | `src/mysql_/repository/project/task_type_repository.py` | Репозиторий `project_task_type` |
@@ -27,17 +31,37 @@
 
 ## Роли и записи
 
-Записей ровно три, они создаются вручную и не входят в seed (`data/seeds/*.sql` их не
-содержит) — на новой базе их нужно добавить самому:
+У каждого проекта свой комплект из трёх карточек — три роли, у каждой своя команда
+запуска и свой рабочий каталог:
 
-| id | name | role | command |
-|----|------|------|---------|
-| 1 | Manager | `manager` | `claude-shell --gx10 --manager` |
-| 2 | Developer | `developer` | `claude-shell --gx10 --developer` |
-| 3 | QA | `qa` | `claude-shell --gx10 --qa` |
+| project_id | name | role | command |
+|------------|------|------|---------|
+| N | Manager | `manager` | `claude-shell --gx10 --manager` |
+| N | Developer | `developer` | `claude-shell --gx10 --developer` |
+| N | QA | `qa` | `claude-shell --gx10 --qa` |
+
+Заготовка комплекта — константа `TEAM_MEMBER_ROLE_CARD` в `team_member.py`; заводит его
+`team_member_cards_ensure(project_id)` — идемпотентно, создаёт только недостающие роли и
+подставляет `work_dir` проекта. Её вызывают оба пути создания проекта:
+`POST /planning/project` (`project_planning.py`) и инструмент `project_create`
+(`src/tool/project/project.py`), поэтому новый проект сразу встречает человека готовыми
+карточками, а не пустым блоком.
+
+`project_id IS NULL` — карточка вне проектов; такие строки питают блок «Без проекта» на
+`/admin/team` (в питон-словарях этот ключ — `0`, константа `TEAM_PROJECT_NO_PROJECT`).
 
 `claude-shell --gx10` без флага роли — «безролевая» оболочка: она регистрируется только
 в `ai_claude_session_registry` и `project_team` не трогает (`claude_session_registry.md`).
+
+### Какому проекту принадлежит пинг
+
+Оболочка знает свою роль (`--manager/--developer/--qa`), но не знает `project_id`, а роль
+теперь не уникальна. Проект вычисляется из каталога запуска:
+`team_project_id_by_work_dir(work_dir)` сравнивает нормализованный путь (без хвостового
+слэша) с `project.work_dir` — тем же правилом, каким `_project_sessions_select` разносит
+сессии по блокам, так что карточка и её оболочка всегда попадают в один проект.
+Если проект не определился, `team_member_get_by_role(role, project_id=None)` откатывается
+на первую строку с этой ролью — внешняя оболочка не должна получать 404 на `/ping`.
 
 ## Схема БД
 
@@ -48,7 +72,8 @@
 | Колонка | Тип | Назначение |
 |---------|-----|-----------|
 | `id` | INT PK | |
-| `name` | VARCHAR(100) UNIQUE | Имя члена команды |
+| `project_id` | INT NULL → `project.id` | Проект карточки; `NULL` — карточка вне проектов. FK `ON DELETE CASCADE` |
+| `name` | VARCHAR(100) | Имя члена команды; уникально в паре `uk_team_project_name (project_id, name)` |
 | `role` | VARCHAR(50) | `manager` / `developer` / `qa` |
 | `command` | VARCHAR(255) | Команда запуска оболочки (показывается на карточке) |
 | `work_dir` | VARCHAR(255) | Рабочая директория проекта |
@@ -98,6 +123,27 @@ per-method ключ в `startswith` полностью перекрыл бы о�
 | POST | `/api/team/activate` | то же | То же, что ping — явная активация из UI/скрипта |
 | POST | `/api/team/deactivate` | то же | `status='inactive'`, сброс `pid` и `session_uuid` |
 | GET | `/api/team/types` | — | Справочник `project_task_type` |
+| POST | `/api/team/session/restart` | `session_uuid` | Перезапуск агента в оболочке; закрыт `PLANNING_UPDATE` |
+
+### Перезапуск агента — `team_session.py`
+
+Действия над конкретной живой оболочкой вынесены в `src/project/team/team_session.py`
+(состав карточек — в `team_project.py`). Перезапуск просят двумя способами, механизм один:
+в очередь `ai_claude_session` кладётся маркер `__RESTART_WATCH__` с `dynamic=1`, оболочка
+подтверждает его через `inbox-ack` и поднимает дочерний Claude Code заново — контекст при
+этом обнуляется.
+
+- `team_session_restart(session_uuid)` — кнопка 🔄 в углу активной карточки на `/admin/team`
+  (и та же механика в Telegram Mini App). Ответа не ждёт: новый heartbeat придёт секундами
+  позже, страница увидит его следующим опросом `/api/team/projects`.
+- `team_session_restart_role(role)` — перед тем как роль возьмёт в работу новую задачу.
+  Ждёт подтверждения маркера и возвращения агента в `ready`, чтобы первый промпт не ушёл в
+  умирающий процесс. Ничего не бросает, отдаёт `reason`: `no_session` / `no_ack` /
+  `not_ready`. Таймауты и порядок ожидания — `claude_shell.md` §4.1, применение в конвейере —
+  `project_task.md`.
+
+Если watch мёртв, маркер из очереди никто не прочитает — на этот случай кнопка шлёт
+уведомление владельцу в Telegram: плагин в терминале разбудит агента, и watch поднимут руками.
 
 ### Идентификация: `member_id` или `role`
 
@@ -146,9 +192,9 @@ curl -s http://localhost:8011/api/team | python3 -m json.tool
 
 Страница строится блоками: один блок — один проект, внутри карточки ролей. Карточка —
 иконка роли (👔 manager, 💻 developer, 🔍 qa), переведённое название, индикатор статуса,
-бейдж готовности агента, метаданные (Session UUID, последний пинг); у серых карточек ещё и
-команда запуска с кнопкой копирования. Данные даёт `GET /api/team/projects` →
-`team_project_blocks_get()`.
+бейдж готовности агента, метаданные (Session UUID, последний пинг, LLM, агент и workflow);
+у серых карточек ещё и команда запуска с кнопкой копирования. Данные даёт
+`GET /api/team/projects` → `team_project_blocks_get()`.
 
 Ключевое поведение:
 
@@ -165,6 +211,42 @@ curl -s http://localhost:8011/api/team | python3 -m json.tool
   бейджем только у активных карточек: `ready` — сообщение уйдёт в дочерний процесс сразу,
   `busy` — встанет в очередь. Свежий пинг сам по себе этого не гарантирует; подробности —
   `claude_session_registry.md` §4.1.
+- **Агент и workflow роли** (`team_agent.py`): строки «Агент» и «Workflow» в мета-блоке
+  карточки — ссылки на `/admin/agent?agent_id=N` и `/admin/workflow?workflow_id=N`
+  (открываются в новой вкладке, чтобы не терять живую страницу команды). Карта
+  `TEAM_AGENT_BY_ROLE` связывает роль с именем агента, а не с id: id зависит от установки.
+  Сейчас в ней `manager` → `task_plan_manager` и `developer` → `task_dev_developer`;
+  QA — заглушка (`task_agent.py`), агента у неё нет, и строки не рисуются. Агент
+  принадлежит роли, а не
+  проекту: карточки менеджеров всех проектов показывают один и тот же агент, различаясь
+  только оболочкой, в которую он ходит.
+- **Очередь роли на карточке** (`team_queue.py`): строка «в очереди N», под ней задача в
+  работе (первая, с маркером ▶) и первые `TEAM_QUEUE_PREVIEW_LIMIT = 3` ожидающих, а если
+  ждущих больше — хвост «и ещё N». Корневые задачи стоят в очереди у той роли, которая их
+  планирует (тип задачи → роль, `task_role.py`: `plan`/`research` и задачи без типа —
+  менеджер, `dev` — разработчик, `bug`/`test` — QA), подзадачи — всегда у Developer и QA.
+  Подзадача — строка того же `project_task` с непустым `parent_id`; подсказка на строке
+  показывает родительскую задачу. Поэтому у карточек Developer и QA список смешанный:
+  свои корневые задачи на планирование плюс подзадачи чужих планов.
+- **Что считается очередью, определяет SQL захвата, а не колонка `status`.** Условия
+  скопированы из `task_claim.py`: планировщик ждёт задачи своих типов без плана либо без
+  целей и задачи в `review`; разработчик — подзадачи в `planned`/`failed_qa` с
+  непотраченными попытками (`attempt_count < MAX_ATTEMPTS`); QA — подзадачи в
+  `qa_pending`. Живой оболочки очередь, в отличие от захвата, не требует: карточка для
+  того и показывает список, чтобы было видно, что ждёт погашенную роль. Порядок в списке
+  совпадает с порядком захвата, поэтому первый ожидающий — следующий кандидат в работу.
+  «В работе» от «в очереди» отличает блокировка (`locked_by` / `pipeline_locked_by`):
+  у `review` и `qa_pending` состояние при захвате не меняется, меняется только она.
+- **Очередь считается в разрезе проекта — и конвейер тоже.** Карточки сгруппированы
+  блоками проектов, поэтому цифра отвечает на вопрос «сколько задач этого проекта ждут
+  роль», и захват конвейера отбирает ровно их: `task_role_shell_live_by_project()`
+  раскладывает живые оболочки по проектам (проект — по `work_dir` реестра сессий, роль
+  обязана иметь карточку `(project_id, role)`), а `task_role_project_type_sql()` требует
+  совпадения `project_id` задачи. Менеджер соседнего проекта чужую задачу забрать не
+  может. Исключение — задачи без проекта (`project_id` NULL или 0): они ничьи, и их берёт
+  любая живая роль подходящего типа, иначе заведённые мимо проекта задачи не выполнил бы
+  никто. Адресация прогона — тоже пара «роль + каталог проекта» (`claude_shell_call(...,
+  work_dir=…)`), подробности — `project_task.md` §«Кто планирует».
 - Авто-обновление `setInterval(loadTeamProjects, 15000)` плюс кнопка ручного обновления.
 - **Кнопок ping/activate/deactivate на карточке нет.** Страница только читает
   `GET /api/team`; все три POST-а вызывает внешняя оболочка (и тесты). Мёртвый код кнопок
@@ -181,9 +263,11 @@ curl -s http://localhost:8011/api/team | python3 -m json.tool
 
 `POST /telegram-app/claude/session/register`
 (`src/uvicorn/routers/telegram_app/telegram_app_claude_session.py`) принимает необязательный
-`role`. Если он передан — после регистрации сессии выполняется
-`UPDATE project_team SET work_dir = %s WHERE role = %s` (ошибки глушатся, регистрация из-за
-них не падает). Без `role` `project_team` не затрагивается. Подробности — `claude_session_registry.md`.
+`role`. Если он передан вместе с непустым `work_dir` — после регистрации сессии на карточке
+обновляется `work_dir`. Карточка ищется парой «роль + проект» (проект — из того же
+`work_dir` через `team_project_id_by_work_dir`), иначе запись ушла бы в первую попавшуюся
+строку с этой ролью. Ошибки глушатся, регистрация из-за них не падает. Без `role` или с
+пустым `work_dir` `project_team` не затрагивается. Подробности — `claude_session_registry.md`.
 
 ## Типы задач на `/admin/task`
 
@@ -232,7 +316,9 @@ API-запросы идут через `page.request` / `context.request` — о
 - `command` ограничен 255 символами.
 - Истории пингов нет — хранится только последнее время.
 - Уведомления о потере активности нет.
-- Ни `project_team`, ни `project_task_type` не попадают в дампы `data/seeds/*.sql`: после
-  сброса БД обе таблицы нужно наполнить заново (через `/admin/seed`, `seed.md` — схему в
-  `0001.sql` для этого править не нужно). Пустой `project_task_type` = селект типов на
-  `/admin/task` состоит из одной опции «Не указан».
+- `project_team` и `project_task_type` наполняются только из дампа `data/seeds/*.sql`; в
+  `0001.sql` их данных нет (там только схема). Если карточек в дампе не оказалось, после
+  сброса БД таблицы нужно наполнить заново через `/admin/seed` (`seed.md`). Пустой
+  `project_task_type` = селект типов на `/admin/task` состоит из одной опции «Не указан».
+- Карточки в дампе идут после `project`: у `project_team.project_id` внешний ключ на
+  `project.id`, порядок INSERT-ов ломать нельзя.
