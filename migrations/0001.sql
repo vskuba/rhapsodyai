@@ -525,14 +525,17 @@ CREATE TABLE `project_task` (
     --
     -- Один ENUM на две ветки конвейера, потому что таблица одна:
     --   родитель: new -> planning -> plan_approval -> approved -> processing -> done|failed
-    --             reviewing --^ (человек нажал «Обновить план»)
+    --             reviewing --^ (человек нажал «Обновить план»)      '-> testing --^
     --   ребёнок:  planned -> developing -> qa_pending -> done
     --                            ^            '-> failed_qa -> повтор до MAX_ATTEMPTS
     --                            '-----------------'      '-> blocked (лимит исчерпан)
+    -- `testing` — та же работа, что и `processing`, но после пометки «в тестирование»:
+    -- разработка по всем подзадачам закончена, идёт проверка. Закрывается оттуда же,
+    -- откуда и `processing` (`task_state_task_finalize`).
     -- Пересечений нет: детские состояния родителю не выставляет никто, и наоборот, —
     -- ветку задаёт `parent_id`, а не значение колонки.
     `pipeline_state` ENUM('new','planning','plan_approval','reviewing','approved','processing',
-                          'planned','developing','qa_pending','failed_qa','blocked',
+                          'testing','planned','developing','qa_pending','failed_qa','blocked',
                           'done','failed') DEFAULT NULL,
     `pipeline_plan` MEDIUMTEXT NOT NULL,
     `pipeline_error` TEXT NOT NULL,
