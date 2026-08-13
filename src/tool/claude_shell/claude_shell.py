@@ -18,6 +18,12 @@ from datetime import timedelta
 from datetime_.datetime_ import datetime_now
 from mysql_.mysql_ import mysql_get_db_async
 
+from src.project.task.task_setting_timeout import (
+    TASK_SETTING_TIMEOUT_SHELL_ACK,
+    TASK_SETTING_TIMEOUT_SHELL_BUSY,
+    TASK_SETTING_TIMEOUT_SHELL_CALL,
+    TASK_SETTING_TIMEOUT_SHELL_STALE,
+    task_setting_timeout_get)
 from src.tool.claude_.claude_ import (
     CLAUDE_MESSAGE_STATUS_ANSWERED,
     CLAUDE_MESSAGE_STATUS_DELIVERED,
@@ -27,24 +33,13 @@ from src.tool.claude_.claude_ import (
 
 CLAUDE_SHELL_ROLE_DEFAULT = 'manager'
 
-# Полный лимит ожидания ответа: агент читает задачу, ходит по коду и отвечает.
-CLAUDE_SHELL_TIMEOUT = 300
-# Лимит на подтверждение доставки. Оболочка вводит текст, только когда терминал
-# свободен, поэтому запас больше обычного цикла опроса очереди (5с).
-CLAUDE_SHELL_ACK_TIMEOUT = 120
+# Сами лимиты ожидания живут в настройках и правятся на `/admin/team` — см.
+# `task_setting_timeout`: полный лимит ответа (`timeout_shell_call`), подтверждение
+# доставки (`timeout_shell_ack`), ожидание занятого агента (`timeout_shell_busy`)
+# и свежесть пинга реестра (`timeout_shell_stale`). Здесь остаётся только шаг
+# опроса: он не настройка, а частота обращений к базе внутри ожидания.
 CLAUDE_SHELL_POLL_SECONDS = 2
 
-# Лимит ожидания освобождения агента. Шаги workflow бьют в одну оболочку подряд,
-# и на следующем шаге агент почти всегда ещё дописывает предыдущий ход — это
-# секунды. Отказ без ожидания терял бы шаги судьи и целей.
-# 300с, а не 180: если предыдущий шаг отвалился по своему таймауту, ход агента
-# при этом продолжается, и следующий шаг обязан его дождаться, иначе конвейер
-# ловит `busy` на живом агенте и выбрасывает уже готовый результат.
-CLAUDE_SHELL_BUSY_TIMEOUT = 300
-
-# Свежесть пинга реестра: столько же, сколько на карточках `/admin/team`.
-# Оболочка пингует раз в несколько секунд, 30с — это уже закрытый терминал.
-CLAUDE_SHELL_STALE_SECONDS = 30
 CLAUDE_SHELL_SESSION_STATUS_SHOWN = ('active', 'closing')
 
 # Готовность агента из реестра. 'busy' означает, что сообщение встанет в очередь
@@ -69,7 +64,7 @@ CLAUDE_SHELL_STATUS_FAILED = 'failed'
 
 
 async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
-                            timeout: int = CLAUDE_SHELL_TIMEOUT,
+                            timeout: int = 0,
                             work_dir: str = '') -> dict:
     """
     Отправляет сообщение агенту claude-shell с указанной ролью и ждёт ответа.
@@ -83,7 +78,7 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
         prompt:  Текст задания агенту. Если нужен машинно-читаемый ответ, прямо
                  в тексте просите ответить одним JSON-объектом.
         role:    Роль агента в команде проекта: manager, developer, qa.
-        timeout: Сколько секунд ждать ответ.
+        timeout: Сколько секунд ждать ответ. 0 - взять значение из настроек.
         work_dir: Каталог проекта. Роли в командах разных проектов одинаковые,
                  поэтому одной роли мало: без каталога сообщение уйдёт в любую
                  живую оболочку с этой ролью, в том числе чужого проекта.
@@ -111,13 +106,17 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     started = time.monotonic()
     prompt = str(prompt or '').strip()
     role = str(role or CLAUDE_SHELL_ROLE_DEFAULT).strip() or CLAUDE_SHELL_ROLE_DEFAULT
-    timeout = int(timeout or CLAUDE_SHELL_TIMEOUT)
+    # Шаг workflow своё значение обычно задаёт сам; ноль означает «взять общее»,
+    # и тогда читаем настройку — потолок правится без перезапуска контейнеров.
+    timeout = int(timeout or await task_setting_timeout_get(TASK_SETTING_TIMEOUT_SHELL_CALL))
+    ack_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_SHELL_ACK)
+    busy_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_SHELL_BUSY)
     work_dir = _path_normalize(work_dir)
     if not prompt:
         return _result_build(CLAUDE_SHELL_STATUS_FAILED, error='prompt пустой', elapsed=0)
 
     session, problem = await _session_ready_wait(
-        role, min(CLAUDE_SHELL_BUSY_TIMEOUT, timeout), work_dir)
+        role, min(busy_timeout, timeout), work_dir)
     if problem == CLAUDE_SHELL_STATUS_NO_SESSION:
         return _result_build(
             CLAUDE_SHELL_STATUS_NO_SESSION,
@@ -144,11 +143,11 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     row = await _row_wait(inbox_id, (CLAUDE_MESSAGE_STATUS_DELIVERED,
                                      CLAUDE_MESSAGE_STATUS_ANSWERED,
                                      CLAUDE_MESSAGE_STATUS_FAILED),
-                          min(CLAUDE_SHELL_ACK_TIMEOUT, timeout - _elapsed(started)))
+                          min(ack_timeout, timeout - _elapsed(started)))
     if row is None:
         return _result_build(
             CLAUDE_SHELL_STATUS_ACK_TIMEOUT,
-            error=f'Оболочка {role} не подтвердила доставку за {CLAUDE_SHELL_ACK_TIMEOUT}с',
+            error=f'Оболочка {role} не подтвердила доставку за {ack_timeout}с',
             session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started))
 
     # Фаза 2: ответ агента.
@@ -252,7 +251,8 @@ async def _session_find(role: str, work_dir: str = '') -> dict | None:
     настройки timezone, а NOW() отдал бы пояс MySQL — сессия оказалась бы либо
     вечно живой, либо мгновенно мёртвой.
     """
-    stale_before = await datetime_now() - timedelta(seconds=CLAUDE_SHELL_STALE_SECONDS)
+    stale_seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_SHELL_STALE)
+    stale_before = await datetime_now() - timedelta(seconds=stale_seconds)
     placeholders = ','.join(['%s'] * len(CLAUDE_SHELL_SESSION_STATUS_SHOWN))
     work_dir_sql, work_dir_params = '', []
     if work_dir:
@@ -299,8 +299,9 @@ def _payload_parse(response: str) -> dict | list:
     """JSON из ответа агента.
 
     Claude Code почти всегда оборачивает JSON в ```-блок или дописывает пару слов
-    вокруг, поэтому кроме прямого разбора пробуем вырезать первый объект по
-    границам скобок. Не разобрали — не беда, текст ответа остаётся на месте.
+    вокруг («Готово, бла-бла. {…}»), поэтому кроме прямого разбора ищем первое
+    самостоятельное значение внутри текста. Не разобрали — не беда, текст ответа
+    остаётся на месте.
     """
     text = str(response or '').strip()
     if not text:
@@ -318,13 +319,19 @@ def _payload_parse(response: str) -> dict | list:
     if payload:
         return _payload_unwrap(payload)
 
-    for opening, closing in (('{', '}'), ('[', ']')):
+    # Оборванный ответ разбираем раньше поиска первого значения: у обрыва целое
+    # снаружи не читается, и поиск подхватил бы вложенный объект, потеряв
+    # соседние ключи. Здесь же хвост достраивается (`_json_balance`) целиком.
+    for opening in ('{', '['):
         start = text.find(opening)
-        end = text.rfind(closing)
-        if 0 <= start < end:
-            payload = _json_loads(text[start:end + 1])
+        if start >= 0:
+            payload = _json_loads(text[start:])
             if payload:
                 return _payload_unwrap(payload)
+
+    payload = _json_first_value(text)
+    if payload:
+        return _payload_unwrap(payload)
 
     return {}
 
@@ -366,6 +373,30 @@ def _json_loads_strict(text: str) -> dict | list:
         return {}
 
     return value if isinstance(value, (dict, list)) else {}
+
+
+def _json_first_value(text: str) -> dict | list:
+    """Первое полноценное JSON-значение внутри текста, остальное отбрасываем.
+
+    Агент отвечает и текстом, и JSON-ом: «Готово, бла-бла. {…}», а следом ещё
+    дописывает пояснение. Резать по первой '{' и последней '}' на таком ответе
+    нельзя — фигурная скобка попадается и в прозе, и в примерах кода, и границы
+    уезжают. `raw_decode` разбирает значение от указанной позиции и молча
+    игнорирует хвост, поэтому идём по всем кандидатам-скобкам слева направо и
+    берём первую, от которой значение разобралось целиком.
+    """
+    decoder = json.JSONDecoder()
+    for position, char in enumerate(text):
+        if char not in '{[':
+            continue
+        try:
+            value, _ = decoder.raw_decode(text, position)
+        except ValueError:
+            continue
+        if isinstance(value, (dict, list)):
+            return value
+
+    return {}
 
 
 def _json_balance(text: str) -> str:

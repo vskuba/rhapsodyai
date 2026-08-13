@@ -176,12 +176,44 @@ services:
       - os-net
     restart: always
 
-  worker:
+  worker_task:
     build:
       context: .
       dockerfile: docker/uvicorn/dockerfile
-    container_name: worker
-    command: rq worker --url redis://redis:6379 default # слушает очередь default
+    container_name: worker_task
+    # Пул, а не одиночный `rq worker`: шаг конвейера ждёт живой Claude Code до часа,
+    # и на одном процессе очередь стоит всё это время — Manager одной задачи держит
+    # Developer'а другой. Три процесса = три роли конвейера одновременно.
+    command: rq worker-pool --url redis://redis:6379 -n 3 default
+    volumes:
+      - ./:/app
+    env_file:
+      - .env
+    environment:
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+      - HF_HOME=/root/.cache/huggingface
+      - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
+    depends_on:
+      - redis
+      - uvicorn
+    networks:
+      - os-net
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Отдельный контейнер, а не ещё пара процессов в `worker_task`: у планирования другой
+  # профиль нагрузки — цепочка фаз идёт до 13 часов против часа у шага конвейера.
+  # В общей очереди один запланированный проект занял бы исполнителя на весь день,
+  # и конвейер задач встал бы вместе с ним.
+  worker_planning:
+    build:
+      context: .
+      dockerfile: docker/uvicorn/dockerfile
+    container_name: worker_planning
+    command: rq worker-pool --url redis://redis:6379 -n 2 planning
     volumes:
       - ./:/app
     env_file:
