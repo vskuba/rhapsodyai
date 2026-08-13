@@ -7,6 +7,9 @@ from datetime_.datetime_ import datetime_now
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
+from src.mysql_.repository.project.team_repository import ProjectTeamRepository
+from src.project.team.team_member import team_member_get_by_role
+from src.project.team.team_project import team_project_id_by_work_dir
 from src.telegram_.telegram_notify import telegram_send_owner
 from src.tool.claude_.claude_ import claude_message_user
 from src.uvicorn.routers.telegram_app.telegram_app_common import (
@@ -105,13 +108,14 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
 
     # work_dir пишем в project_team только когда роль и путь пришли непустыми:
     # пустая строка затирала бы уже сохранённый путь на карточке /admin/team.
+    # Карточка ищется парой «роль + проект»: карточки заведены на проект, и без
+    # проекта запись ушла бы в первую попавшуюся строку с этой ролью.
     if role_given and work_dir:
         try:
-            async with mysql_get_db_async() as db:
-                await db.execute(
-                    "UPDATE project_team SET work_dir = %s WHERE role = %s",
-                    (work_dir, role_given)
-                )
+            project_id = await team_project_id_by_work_dir(work_dir)
+            member = await team_member_get_by_role(role_given, project_id)
+            if member:
+                await ProjectTeamRepository().update(member['id'], {'work_dir': work_dir})
         except Exception as error:
             logger_info(f"claude_session_register: work_dir update failed: {error}")
 
