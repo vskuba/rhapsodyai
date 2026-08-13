@@ -107,11 +107,11 @@ jobs:
             chmod +x ./bluegreen.sh
             ./bluegreen.sh
 
-            # --- Обновляем worker с новым образом (downtime допустим — очередь) ---
+            # --- Обновляем воркеры с новым образом (downtime допустим — очередь) ---
             # --no-deps: не запускать зависимости (uvicorn/qdrant), bluegreen.sh уже
             # управляет active slot; без флага compose поднял бы uvicorn, сломав Blue-Green
-            echo "Перезапускаем worker с новым образом..."
-            docker compose up -d --build --force-recreate --no-deps worker
+            echo "Перезапускаем worker и worker_planning с новым образом..."
+            docker compose up -d --build --force-recreate --no-deps worker worker_planning
 
             # --- Очистка ---
             echo "Очистка..."
