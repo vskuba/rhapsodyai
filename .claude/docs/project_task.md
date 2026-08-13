@@ -32,10 +32,10 @@ Developer тем же способом, но через свою оболочк�
   и без этого фильтра тик подбирал бы такую задачу вечно;
 - **задача с подзадачами** — планируются только листья, см. §2.1.
 
-**Второй вход — пересмотр.** Кнопка «Обновить план» ставит `pipeline_state = 'review'`,
+**Второй вход — пересмотр.** Кнопка «Обновить план» ставит `pipeline_state = 'reviewing'`,
 и задачу забирает отдельный шаг. Отдельное состояние нужно именно потому, что обычный
 отбор идёт по **отсутствию** плана (`JSON_LENGTH($.subtasks) = 0`): у задачи с уже
-написанным планом это условие не выполнится никогда, и без `review` она осталась бы
+написанным планом это условие не выполнится никогда, и без `reviewing` она осталась бы
 для конвейера невидимой.
 
 `project_task.status`: `pending` · `queued` · `active` · `done` · `blocked` · `cancelled`
@@ -178,7 +178,7 @@ JSON, **сохраняя `subtasks` и `goals`** — иначе ручная п�
 **Кнопка «Обновить план»** живёт в `#pipe-actions-{id}` рядом с «Утвердить»/«Отклонить»
 (там уже известен `pipeline_state`). Её нет вовсе, пока плана нет — за первый план
 отвечает «В конвейер». Активна только при
-`pipeline_state ∈ {NULL, pending_approval, done, failed}`; в остальных состояниях
+`pipeline_state ∈ {NULL, plan_approval, done, failed}`; в остальных состояниях
 `disabled` с объяснением в `title` (`PLAN_REVIEW_BLOCKED`).
 
 > Подсказка висит на обёртке `<span class="pipe-btn-wrap" title="…">`, а не на самой
@@ -212,17 +212,17 @@ JSON, **сохраняя `subtasks` и `goals`** — иначе ручная п�
 ```
 задача (project_task, parent_id = NULL) — pipeline_state:
 
-  NULL | new  --(нет плана)--> planning --> pending_approval
-                                                       |
-                                 («Отклонить») <-------+-------> («Утвердить»)
-                                        |                              |
-                                      NULL                         approved
-                                                                       |
-                                                                     split --> done | failed
+  NULL | new  --(нет плана)--> planning --> plan_approval
+                                                    |
+                              («Отклонить») <-------+-------> («Утвердить»)
+                                     |                              |
+                                   NULL                         approved
+                                                                    |
+                                                               processing --> done | failed
 
-  NULL | pending_approval | done | failed  --(«Обновить план»)--> review --> pending_approval
+  NULL | plan_approval | done | failed  --(«Обновить план»)--> reviewing --> plan_approval
 
-  pending_approval + флажок «в разработку» --> approved (тип задачи: plan --> dev)
+  plan_approval + флажок «в разработку» --> approved (тип задачи: plan --> dev)
 
 подзадача (тот же project_task, parent_id != NULL) — pipeline_state:
 
@@ -237,9 +237,9 @@ JSON, **сохраняя `subtasks` и `goals`** — иначе ручная п�
 
 **Флажок «в разработку»** (колонка «Прогресс» на вкладке «Планирование») — согласие,
 данное заранее: человек говорит, что план утверждать не потребуется. Как только менеджер
-дописал план и задача встала в `pending_approval`, `task_state_plan_to_development()`
+дописал план и задача встала в `plan_approval`, `task_state_plan_to_development()`
 одним UPDATE меняет тип с `plan` на `dev`, переводит состояние в `approved` и снимает
-пометку — шаг «Утвердить» пропускается, дальше идёт обычный `split`. Пометка
+пометку — шаг «Утвердить» пропускается, дальше идёт обычный `processing`. Пометка
 одноразовая: флажок рисуется только на вкладке «Планирование», а задача с этого шага
 уходит на «Разработку», и снять его было бы уже нечем. Тип, отличный от `plan`, и любое
 другое состояние функция не трогает.
@@ -301,7 +301,7 @@ curl -s -X POST localhost:8011/cronjob -H 'Content-Type: application/json' \
 ### Дубликаты
 
 У действий с захватом дубликатов не бывает по построению: строка уже уведена в переходное
-состояние (`planning`, `review`, `developing`, `qa_pending`), и следующий тик её не увидит.
+состояние (`planning`, `reviewing`, `developing`, `qa_pending`), и следующий тик её не увидит.
 Умер воркер — блокировку вернёт `task_claim_locks_reclaim()` по таймауту.
 
 У двух действий захватывать нечего — они ищут работу уже внутри воркера: скан багов и
@@ -425,13 +425,13 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 повторяется в `UPDATE` — иначе два тика утащили бы одну задачу. Общий код —
 `task_claim._task_claim()`, отбор без плана — `task_claim_task_unplanned()`.
 
-**Захват на пересмотр** — `task_claim_task_review()`, `state_to='review'`: состояние не
+**Захват на пересмотр** — `task_claim_task_review()`, `state_to='reviewing'`: состояние не
 меняется, задача берётся **только блокировкой**. Прецедент уже есть у
 `task_claim_subtask('qa_pending', 'qa_pending', ...)`. Раз перехода нет, единственной
 защитой от второго воркера остаётся сама блокировка, поэтому
 `pipeline_locked_at IS NULL OR pipeline_locked_by = ''` обязательна прямо в `WHERE`.
 
-В `_TASK_STATE_RECLAIM` для `review` стоит `review`, а не `new`: протухшая блокировка
+В `_TASK_STATE_RECLAIM` для `reviewing` стоит `reviewing`, а не `new`: протухшая блокировка
 просто снимается и задача снова ждёт пересмотра. Увести её в `new`, как `planning`,
 нельзя — план у неё есть, `task_claim_task_unplanned` её не подберёт, и она залипнет
 навсегда.
@@ -500,7 +500,7 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 
 | Ключ | Кто пишет | Значение |
 |------|-----------|----------|
-| `to_development` | страница `/admin/task`, флажок «в разработку»; снимает `task_state_plan_to_development` | `true` — план утверждать не надо: в `pending_approval` задача сама сменит тип `plan` → `dev` и уйдёт в `approved`. Ключа нет = выключено (отдельное `false` не требуется) |
+| `to_development` | страница `/admin/task`, флажок «в разработку»; снимает `task_state_plan_to_development` | `true` — план утверждать не надо: в `plan_approval` задача сама сменит тип `plan` → `dev` и уйдёт в `approved`. Ключа нет = выключено (отдельное `false` не требуется) |
 
 Единица работы Developer/QA — строка этой же таблицы с непустым `parent_id`: отдельной
 таблицы подзадач у конвейера нет, `pipeline_state` там принимает детские значения
@@ -540,9 +540,9 @@ UPDATE project_task SET pipeline_state = 'planning', pipeline_locked_at = NOW(),
 | `POST` | `/task/ai-generate` | `PLANNING_CREATE` | сгенерировать название/описание/цели |
 | `GET` | `/task/{id}/pipeline` | `PLANNING_VIEW` | состояние + цели из плана + подзадачи + попытки |
 | `POST` | `/task/{id}/pipeline/start` | `PLANNING_UPDATE` | `NULL` → `new` (вернуть отклонённую задачу в работу) |
-| `POST` | `/task/{id}/pipeline/approve` | `PLANNING_UPDATE` | `pending_approval` → `approved` |
-| `POST` | `/task/{id}/pipeline/reject` | `PLANNING_UPDATE` | `pending_approval` → `NULL` |
-| `POST` | `/task/{id}/pipeline/review` | `PLANNING_UPDATE` | «Обновить план»: `NULL`/`pending_approval`/`done`/`failed` → `review` |
+| `POST` | `/task/{id}/pipeline/approve` | `PLANNING_UPDATE` | `plan_approval` → `approved` |
+| `POST` | `/task/{id}/pipeline/reject` | `PLANNING_UPDATE` | `plan_approval` → `NULL` |
+| `POST` | `/task/{id}/pipeline/review` | `PLANNING_UPDATE` | «Обновить план»: `NULL`/`plan_approval`/`done`/`failed` → `reviewing` |
 | `GET` | `/task/{id}/plan/revisions` | `PLANNING_VIEW` | `{revisions: [...], total}` по убыванию; `?limit=` (по умолчанию `TASK_REVISION_LIMIT = 20`, потолок 500) |
 | `GET` | `/task/{id}/plan/revision/{n}` | `PLANNING_VIEW` | одна ревизия целиком |
 | `POST` | `/task/{id}/plan/revision/{n}/restore` | `PLANNING_UPDATE` | вернуть план из ревизии |
@@ -652,6 +652,14 @@ Claude Code — тот, что разработчик держит открыт�
   только по детям, и задача без единой подзадачи просто не поехала бы дальше
 - Подзадача должна быть достаточно мелкой, чтобы Developer закрыл её за один заход, и
   достаточно самостоятельной, чтобы QA мог проверить её отдельно
+- **У каждой подзадачи свои план и цели.** Шаг разбиения возвращает объекты
+  `{title, description, plan, goals}`, и `task_state_subtasks_create` кладёт `plan` в
+  `pipeline_plan` подзадачи (тем же `task_plan_serialize`, с пустым списком детей), а
+  `goals` — в её `goals`. Родительский план на трёх разных подзадачах ничего не говорит
+  исполнителю, поэтому судья разбиения считает пустой или одинаковый у соседей `plan`
+  критической ошибкой. Пустые поля родительскими **не** подставляются: пусто — видимый
+  сигнал, что разбиение недоработано, а копия плана родителя выглядела бы как настоящий
+  план подзадачи
 - **Не материализует подзадачи сам** — только после утверждения человеком
 
 #### 7.1 Workflow #55: разведка → план → судья → цели → судья → разбиение → судья
@@ -679,10 +687,10 @@ Claude Code — тот, что разработчик держит открыт�
 | 14 | 416 | Промпт: судья целей | `variable_conversion` | задание на разбор целей |
 | 15 | 417 | Менеджер: судья целей | `tool_invoke` | `goals_ok`, `goals_critique_new`; принято → шаг 424 |
 | 16 | 418 | Цели на доработку | `variable_conversion` | критика + прыжок назад на 412 |
-| 17 | 424 | Промпт: разбиение | `variable_conversion` | задание разбить план и цели на подзадачи — или обосновать, что делить нечего |
+| 17 | 424 | Промпт: разбиение | `variable_conversion` | задание разбить план и цели на подзадачи — или обосновать, что делить нечего; у каждой подзадачи требует свои `plan` и `goals` |
 | 18 | 425 | Менеджер: разбиение | `tool_invoke` | `task_subtasks_json` |
 | 19–20 | 426, 427 | Счётчик итераций разбиения | `tool_invoke` + `variable_conversion` | `split_iteration` |
-| 21 | 428 | Промпт: судья разбиения | `variable_conversion` | задание на разбор подзадач |
+| 21 | 428 | Промпт: судья разбиения | `variable_conversion` | задание на разбор подзадач; пустые или продублированные `plan`/`goals` — критическая ошибка |
 | 22 | 429 | Менеджер: судья разбиения | `tool_invoke` | `split_ok`, `split_critique_new`; принято → шаг 419 |
 | 23 | 430 | Разбиение на доработку | `variable_conversion` | критика + прыжок назад на 424 |
 | 24 | 419 | Вернуть результат | `return_response_text` | `json:{"plan": %task_plan_json%, "subtasks": %task_subtasks_json%, "goals": %task_goals_json%}` |
@@ -777,7 +785,7 @@ API и фронтенде), паттерны (что переиспользуе�
 Шаг 413 раньше уходил туда же, в 420, и это было ошибкой: план к этому моменту уже
 построен и отсуждён — терять его из-за того, что не доехали цели, нельзя. Поэтому у
 провала целей своя ветка 421: она нормализует `task_goals_json` в `[]` и уходит на
-обычный выход 419. Задача доезжает до `pending_approval` с планом и без целей — человек
+обычный выход 419. Задача доезжает до `plan_approval` с планом и без целей — человек
 видит план и решает сам, вместо `failed` с пустым конвертом.
 
 По той же причине у разбиения своя ветка 431, а не 420: к шагу 425 план и цели уже
@@ -851,7 +859,7 @@ API и фронтенде), паттерны (что переиспользуе�
 обязательно, потому что форма отправляет `plan_text` при каждом «Сохранить» — без этой
 проверки нажатие без правок плодило бы чипсы.
 
-`task_state_plan_save` пишет при `pipeline_state IN ('planning','review')` — иначе
+`task_state_plan_save` пишет при `pipeline_state IN ('planning','reviewing')` — иначе
 результат пересмотра молча не сохранился бы.
 
 ### Developer — живой Claude Code в своей оболочке
@@ -872,9 +880,26 @@ Developer», группа `Проекты/Task`), workflow **#56** — 12 шаг
 `task_shell_role` и `task_shell_work_dir`; пустой каталог (задача без проекта) — не
 ошибка, адресация деградирует до одной роли.
 
-Прогон начинается с `team_session_restart_role(role, work_dir)` — ровно один раз и до
-первого шага, теми же соображениями, что у менеджера: шаги #56 продолжают один разговор,
-и перезапуск между ними снёс бы разбор, на который опирается реализация.
+**Оболочка перезапускается на смене задачи, а не на каждой подзадаче.** У менеджера
+`team_session_restart_role(role, work_dir)` стоит безусловно, у разработчика — под
+условием: подзадачи одной задачи идут по одному плану и по одному коду, и контекст
+предыдущего круга разработчику нужен — иначе каждая подзадача начинается с повторного
+изучения тех же файлов. Новая задача — обратный случай: чужой контекст мешает, и оболочку
+поднимаем с нуля.
+
+Какой была прошлая задача, `_shell_task_id_last(role, project_id)` смотрит в журнале
+попыток: последняя строка `project_task_attempt` с этой ролью → `parent_id` её подзадачи.
+Отдельной колонки «последняя задача сессии» нет намеренно — журнал пишется на каждый круг
+(`task_state_attempt_log`), а отдельное поле пришлось бы держать с ним в согласии руками, и
+разошлось бы оно на первом же сбое посреди прогона. Выборка ограничена проектом
+(`p.project_id <=> %s`, NULL-безопасно): оболочка `developer` у каждого проекта своя, а
+задачи без проекта живут в одной общей. Ноль (попыток ещё не было) считается сменой задачи —
+чистый контекст в сомнительном случае безопаснее чужого.
+
+Если перезапускаем — то ровно один раз и до первого шага, теми же соображениями, что у
+менеджера: шаги #56 продолжают один разговор, и перезапуск между ними снёс бы разбор, на
+который опирается реализация. QA перезапускается безусловно: он проверяет чужую работу, и
+контекст прошлой проверки ему только мешает.
 
 `DEVELOPER_TIMEOUT = 3600s` — потолок на весь прогон, а не сумма шагов. Шаговые таймауты
 600 + 1800 + 600 дают 3000s на один круг, но круг доработки (`max_dev_iterations` > 1)
@@ -894,6 +919,10 @@ Developer», группа `Проекты/Task`), workflow **#56** — 12 шаг
 - Получает **весь** контекст родителя (`task_title`, `task_description`, `task_goals`,
   `task_plan_current`), а не одну строку плана: без соседних шагов не видно, где кончается
   своя работа и начинается чужая
+- Получает **свои** план и цели подзадачи (`subtask_plan`, `subtask_goals` — из
+  `pipeline_plan` и `goals` самой подзадачи). План родителя остаётся контекстом, а сдавать
+  разработчик будет вот это. У подзадач, разложенных до этого правила, поля пусты — промпт
+  по `%if%` такие блоки просто не раскроет
 - **Коммит только в feature-ветку и PR.** Пуш в `main` и самостоятельный merge запрещены —
   это решение, а не рекомендация по умолчанию
 - Работает над одной подзадачей за раз; `attempt_count` растёт по кругам Developer→QA,
@@ -958,6 +987,9 @@ Developer», группа `Проекты/Task`), workflow **#56** — 12 шаг
 - Возвращает `ok=False` с внятным `error` — он попадёт в `subtask.last_error` и дальше в
   `last_error` следующего вызова Developer. Полный вывод кладётся в `output` и оседает
   в `project_task_attempt`
+- Принимает работу **по целям подзадачи** (`subtask_goals`), а не по целям задачи целиком:
+  цели родителя проверяются на финале, круг QA закрывает только то, что обещала эта
+  подзадача. План подзадачи приходит той же парой переменных (`subtask_plan`)
 - На проде QA **строго наблюдательный**: не правит код, не перезапускает сервисы, не
   трогает состояние — только пишет отчёты и заводит задачи
 
@@ -1002,7 +1034,7 @@ Developer», группа `Проекты/Task`), workflow **#56** — 12 шаг
 
 `TestTaskPlanRevision` — ревизии и пересмотр: ручная правка даёт ревизию с
 `author_kind='user'`; повторное «Сохранить» без изменений второй не даёт; правка плана не
-вытирает `goals`; `review` при `approved` → `409`, при `pending_approval` → `200`;
+вытирает `goals`; `review` при `approved` → `409`, при `plan_approval` → `200`;
 двойной `review` → `409`; полный прогон пересмотра переписывает план, обнуляет подзадачи
 и добавляет ревизию менеджера; `restore` возвращает текст и создаёт новую ревизию; чужая
 ревизия → `404`.
@@ -1050,13 +1082,31 @@ Developer», группа `Проекты/Task`), workflow **#56** — 12 шаг
   `detective_case` — наследие удалённых фич, в `0001.sql` их нет; `tinyint(4)` против
   `tinyint` — MySQL 8.0.19+ просто не хранит display width, это не дрейф.
 
-  **Ещё не на проде** (появилось в `0001.sql` после 07.08): значение `review` в ENUM
-  `pipeline_state`, таблица `project_task_plan_revision`, слияние `project_task_subtask`
-  в `project_task` и колонка `metadata`. Перед следующим деплоем:
+  **Ещё не на проде** (появилось в `0001.sql` после 07.08): переименованные значения
+  ENUM `pipeline_state` (`pending_approval` → `plan_approval`, `review` → `reviewing`,
+  `split` → `processing`), таблица `project_task_plan_revision`, слияние
+  `project_task_subtask` в `project_task` и колонка `metadata`.
+
+  Переименование значений ENUM одним `MODIFY` не сделать: старые строки в снятых
+  значениях превратились бы в `''`. На проде — сначала ENUM с обоими наборами,
+  потом `UPDATE` строк, и только потом ENUM ниже:
 
   ```sql
   ALTER TABLE `project_task`
-      MODIFY `pipeline_state` ENUM('new','planning','pending_approval','review','approved','split',
+      MODIFY `pipeline_state` ENUM('new','planning','pending_approval','plan_approval',
+                                   'review','reviewing','approved','split','processing',
+                                   'planned','developing','qa_pending','failed_qa',
+                                   'blocked','done','failed') DEFAULT NULL;
+  UPDATE `project_task` SET `pipeline_state` = 'plan_approval' WHERE `pipeline_state` = 'pending_approval';
+  UPDATE `project_task` SET `pipeline_state` = 'reviewing'     WHERE `pipeline_state` = 'review';
+  UPDATE `project_task` SET `pipeline_state` = 'processing'    WHERE `pipeline_state` = 'split';
+  ```
+
+  Остальное — перед следующим деплоем:
+
+  ```sql
+  ALTER TABLE `project_task`
+      MODIFY `pipeline_state` ENUM('new','planning','plan_approval','reviewing','approved','processing',
                                    'planned','developing','qa_pending','failed_qa','blocked',
                                    'done','failed') DEFAULT NULL,
       ADD COLUMN `pipeline_attempt_count` INT NOT NULL DEFAULT '0',
