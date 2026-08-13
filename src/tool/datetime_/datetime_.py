@@ -86,3 +86,28 @@ def _time_of_day_describe(hour: int) -> str:
     if hour < 23:
         return "поздний вечер"
     return "ночь"
+
+
+def _utc_now_str(timezone_offset: str = "+0") -> str:
+    """
+    Возвращает текущее время в UTC+offset в формате 'YYYY-MM-DD HH:MM:SSZ'.
+
+    Args:
+        timezone_offset: Смещение относительно UTC. Поддерживаются форматы: '+0', '+3', '-5', '+05:30'. Default '+0'.
+    """
+    try:
+        # Парсим часы из смещения
+        match = re.search(r'([+-]?\d+)', str(timezone_offset))
+        if match:
+            hours_offset = int(match.group(1))
+        else:
+            hours_offset = 0
+
+        # Текущее время UTC, смещённое на заданный часовой пояс
+        utc_now = datetime.now(py_timezone.utc)
+        local_now = utc_now + timedelta(hours=hours_offset)
+
+        return local_now.strftime("%Y-%m-%d %H:%M:%S") + "Z"
+    except Exception:
+        # Fallback: простой UTC
+        return datetime.now(py_timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "Z"
