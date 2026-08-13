@@ -381,13 +381,13 @@
             ${_bwTagsBarHtml(b.id, b.tags)}
             ${_bwSectionsBarHtml(b.id, b.section)}
         </div>
-        ${_bwPreviewSectionLabelHtml(b.id)}
-        <div class="bw-iframe-wrap" id="bwdiw-${b.id}"></div>
         ${b.vars && b.vars !== '{}' ? `
         <details class="bw-css-details" style="margin-top:8px">
             <summary class="bw-css-summary">Переменные (vars)</summary>
             <textarea class="bw-css-textarea" readonly style="min-height:80px">${esc(JSON.stringify(JSON.parse(b.vars), null, 2))}</textarea>
-        </details>` : ''}`;
+        </details>` : ''}
+        ${_bwPreviewSectionLabelHtml(b.id)}
+        <div class="bw-iframe-wrap" id="bwdiw-${b.id}"></div>`;
 
         if (b.html) {
             const rendered = _fillTestData(b.html, b.vars, b.slots);
