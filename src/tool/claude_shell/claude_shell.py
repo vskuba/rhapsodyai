@@ -69,7 +69,8 @@ CLAUDE_SHELL_STATUS_FAILED = 'failed'
 
 
 async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
-                            timeout: int = CLAUDE_SHELL_TIMEOUT) -> dict:
+                            timeout: int = CLAUDE_SHELL_TIMEOUT,
+                            work_dir: str = '') -> dict:
     """
     Отправляет сообщение агенту claude-shell с указанной ролью и ждёт ответа.
 
@@ -83,6 +84,10 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
                  в тексте просите ответить одним JSON-объектом.
         role:    Роль агента в команде проекта: manager, developer, qa.
         timeout: Сколько секунд ждать ответ.
+        work_dir: Каталог проекта. Роли в командах разных проектов одинаковые,
+                 поэтому одной роли мало: без каталога сообщение уйдёт в любую
+                 живую оболочку с этой ролью, в том числе чужого проекта.
+                 Пустая строка - адресация только по роли.
 
     Returns:
         dict:
@@ -107,14 +112,17 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     prompt = str(prompt or '').strip()
     role = str(role or CLAUDE_SHELL_ROLE_DEFAULT).strip() or CLAUDE_SHELL_ROLE_DEFAULT
     timeout = int(timeout or CLAUDE_SHELL_TIMEOUT)
+    work_dir = _path_normalize(work_dir)
     if not prompt:
         return _result_build(CLAUDE_SHELL_STATUS_FAILED, error='prompt пустой', elapsed=0)
 
-    session, problem = await _session_ready_wait(role, min(CLAUDE_SHELL_BUSY_TIMEOUT, timeout))
+    session, problem = await _session_ready_wait(
+        role, min(CLAUDE_SHELL_BUSY_TIMEOUT, timeout), work_dir)
     if problem == CLAUDE_SHELL_STATUS_NO_SESSION:
         return _result_build(
             CLAUDE_SHELL_STATUS_NO_SESSION,
-            error=f'Нет живой shell-оболочки с ролью {role}: агент не запущен',
+            error=f'Нет живой shell-оболочки с ролью {role}'
+                  f'{f" в каталоге {work_dir}" if work_dir else ""}: агент не запущен',
             elapsed=_elapsed(started))
     if problem == CLAUDE_SHELL_STATUS_BUSY:
         return _result_build(
@@ -168,7 +176,8 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
         session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started))
 
 
-async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT) -> dict:
+async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT,
+                                      work_dir: str = '') -> dict:
     """
     Готов ли агент claude-shell с указанной ролью принять сообщение.
 
@@ -177,6 +186,7 @@ async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT) -> 
 
     Args:
         role: Роль агента в команде проекта: manager, developer, qa.
+        work_dir: Каталог проекта; пустая строка - любая оболочка с этой ролью.
 
     Returns:
         dict:
@@ -186,7 +196,8 @@ async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT) -> 
             session_uuid (str): сессия агента, пустая строка если сессии нет.
             seconds_ago (int): сколько секунд назад был пинг, -1 если сессии нет.
     """
-    session = await _session_find(str(role or CLAUDE_SHELL_ROLE_DEFAULT).strip())
+    session = await _session_find(str(role or CLAUDE_SHELL_ROLE_DEFAULT).strip(),
+                                  _path_normalize(work_dir))
     if not session:
         return {'ready': 0, 'agent_status': '', 'agent_status_reason': '',
                 'session_uuid': '', 'seconds_ago': -1}
@@ -204,7 +215,8 @@ async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT) -> 
     }
 
 
-async def _session_ready_wait(role: str, timeout: float) -> tuple[dict | None, str]:
+async def _session_ready_wait(role: str, timeout: float,
+                              work_dir: str = '') -> tuple[dict | None, str]:
     """Живая сессия с ролью, готовая принять сообщение.
 
     Возвращает (сессия, проблема). Проблема пустая — можно слать; no_session —
@@ -217,7 +229,7 @@ async def _session_ready_wait(role: str, timeout: float) -> tuple[dict | None, s
     """
     deadline = time.monotonic() + max(float(timeout), 0.0)
     while True:
-        session = await _session_find(role)
+        session = await _session_find(role, work_dir)
         if not session:
             return None, CLAUDE_SHELL_STATUS_NO_SESSION
         if str(session.get('agent_status') or '') != CLAUDE_SHELL_AGENT_STATUS_BUSY:
@@ -228,8 +240,13 @@ async def _session_ready_wait(role: str, timeout: float) -> tuple[dict | None, s
         await asyncio.sleep(CLAUDE_SHELL_POLL_SECONDS)
 
 
-async def _session_find(role: str) -> dict | None:
+async def _session_find(role: str, work_dir: str = '') -> dict | None:
     """Живая сессия реестра с нужной ролью — самая свежая по пингу.
+
+    Каталог сужает поиск до одного проекта: роли в командах разных проектов
+    называются одинаково, и без каталога «самая свежая по пингу» отдала бы
+    менеджера соседнего проекта. Хвостовой слеш у обеих сторон снимаем —
+    '/srv/app' и '/srv/app/' это один каталог.
 
     Порог свежести считаем через datetime_now(): last_seen_at пишется в поясе из
     настройки timezone, а NOW() отдал бы пояс MySQL — сессия оказалась бы либо
@@ -237,16 +254,21 @@ async def _session_find(role: str) -> dict | None:
     """
     stale_before = await datetime_now() - timedelta(seconds=CLAUDE_SHELL_STALE_SECONDS)
     placeholders = ','.join(['%s'] * len(CLAUDE_SHELL_SESSION_STATUS_SHOWN))
+    work_dir_sql, work_dir_params = '', []
+    if work_dir:
+        work_dir_sql = "AND TRIM(TRAILING '/' FROM work_dir) = %s "
+        work_dir_params = [work_dir]
 
     async with mysql_get_db_async() as db:
         await db.execute(
             f"""
             SELECT * FROM `ai_claude_session_registry`
             WHERE role = %s AND status IN ({placeholders}) AND last_seen_at >= %s
+            {work_dir_sql}
             ORDER BY last_seen_at DESC
             LIMIT 1
             """,
-            (role, *CLAUDE_SHELL_SESSION_STATUS_SHOWN, stale_before)
+            (role, *CLAUDE_SHELL_SESSION_STATUS_SHOWN, stale_before, *work_dir_params)
         )
         rows = await db.fetchall()
 
@@ -431,3 +453,16 @@ def _error_no_payload(response: str) -> str:
 def _elapsed(started: float) -> int:
     """Секунды с начала вызова — их видно в трейсе workflow."""
     return int(time.monotonic() - started)
+
+
+def _path_normalize(path) -> str:
+    """Путь без хвостового слеша — '/srv/app' и '/srv/app/' это один каталог.
+
+    Каталог приходит и из настройки проекта, и из реестра сессий, где его пишет
+    оболочка, — записаны они бывают по-разному, а сравнение должно совпасть.
+    """
+    value = str(path or '').strip()
+    if len(value) > 1:
+        value = value.rstrip('/')
+
+    return value
