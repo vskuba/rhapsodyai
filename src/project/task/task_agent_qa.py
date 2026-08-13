@@ -27,6 +27,9 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_plan import task_plan_parse
 from src.project.team.team_session import team_session_restart_role
+from src.project.task.task_setting_timeout import (
+    TASK_SETTING_TIMEOUT_QA_RUN,
+    task_setting_timeout_get)
 
 TASK_QA_AGENT_NAME = 'task_qa_tester'
 TASK_QA_ROLE = 'qa'
@@ -35,10 +38,10 @@ TASK_QA_ROLE = 'qa'
 # разбор изменений, 1800s на прогон проверок, 600s на вердикт: в один круг это
 # 3000s, но второй круг проверок (`max_qa_iterations` > 1) сумму превышает, и
 # обрывать прогон должен именно этот потолок.
-# Граница та же, что у разработчика: QA_TIMEOUT < TASK_WORKER_JOB_TIMEOUT (3900)
-# < task_claim.LOCK_TIMEOUT_SEC (4200). Прогон обязан сорваться раньше, чем
-# блокировку сочтут протухшей и подзадачу подберёт второй воркер.
-QA_TIMEOUT = 3600.0
+# Граница та же, что у разработчика: `timeout_qa_run` < `timeout_worker_job` <
+# `timeout_task_lock`. Прогон обязан сорваться раньше, чем блокировку сочтут
+# протухшей и подзадачу подберёт второй воркер. Значения правятся на `/admin/team`
+# — см. `task_setting_timeout`.
 QA_USER_ID = 1  # только для атрибуции session/log
 
 
@@ -139,11 +142,12 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
     })
     agent_manager.framework_workflow_run(framework_model, future, loop)
 
+    timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_QA_RUN)
     try:
-        result_text = await asyncio.wait_for(future, timeout=QA_TIMEOUT)
+        result_text = await asyncio.wait_for(future, timeout=timeout)
     except asyncio.TimeoutError:
         future.cancel()
-        raise RuntimeError(f'QA не уложился в {QA_TIMEOUT:.0f}s')
+        raise RuntimeError(f'QA не уложился в {timeout}s')
 
     return _result_parse(result_text)
 
@@ -220,11 +224,14 @@ def _result_parse(result_text) -> dict:
     Разбор терпимый к мусору: отчёт пишет живой Claude Code, и сорванный JSON
     (обрыв строки в тексте замечания, лишний markdown) не должен ронять воркер
     исключением — такой ответ уходит в `error` как есть, а подзадача получает
-    ещё одну попытку из отведённых `MAX_ATTEMPTS`.
+    ещё одну попытку из отведённых `timeout_attempt_max`.
     """
     raw    = str(result_text or '').removeprefix('json:').strip()
     parsed = json_from_string(raw)
-    if not isinstance(parsed, dict):
+    # `json_from_string` не бросает и не возвращает не-словарь: сорванный разбор,
+    # массив вместо объекта и пустой ответ — всё это приходит пустым словарём.
+    # Поэтому «не JSON» ловится по пустоте, а не по типу.
+    if not parsed:
         return {'ok': False, 'output': raw[:2000],
                 'error': f'QA вернул не JSON: {raw[:200]}'}
 

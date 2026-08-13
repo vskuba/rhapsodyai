@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,13 +11,21 @@ from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_DEV,
+    TASK_METADATA_KEY_TEST,
+    task_metadata_row_apply,
+    task_metadata_update,
+)
 from src.project.task.task_plan import (
     task_plan_goals_get,
     task_plan_goals_normalize,
     task_plan_parse,
     task_plan_serialize,
 )
+from src.project.task.task_report import task_report_write
 from src.project.task.task_revision import task_revision_add
+from src.project.task.task_state import task_state_dev_to_testing, task_state_plan_to_development
 from src.project.task.task_tree import task_tree_parent_check, task_tree_position_next
 
 _TASK_AI_AGENT_NAME = 'task_ai_generator'
@@ -30,21 +39,23 @@ async def project_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_VI
     async with mysql_get_db_async() as db:
         await db.execute("SELECT * FROM project_task ORDER BY position, id")
         rows = await db.fetchall()
-    return {'tasks': [dict(r) for r in rows]}
+    return {'tasks': [task_metadata_row_apply(r) for r in rows]}
 
 
 @router.get('/tasks/{project_id}')
 async def project_tasks_list(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
-    # project_id = 0 — это «Без проекта» в селекте. Колонка допускает и NULL, и 0
-    # (0 приходит из формы, NULL остаётся у задач, заведённых мимо неё), поэтому
-    # без второго условия часть задач просто не показалась бы ни под одним пунктом.
+    # project_id = 0 — это «Без проекта» в селекте. В колонке «без проекта» — всегда
+    # NULL: ноль означал бы проект №0, которого не бывает. Чтение остаётся терпимым к
+    # нулю ради установок, где старые строки ещё не переведены скриптом
+    # `data/migration_manual/2026-08-13_task_project_id_null.sql`: иначе такая задача
+    # не показалась бы ни под одним пунктом селекта.
     where = "project_id = 0 OR project_id IS NULL" if project_id == 0 else "project_id = %s"
     params = () if project_id == 0 else (project_id,)
 
     async with mysql_get_db_async() as db:
         await db.execute(f"SELECT * FROM project_task WHERE {where} ORDER BY position, id", params)
         rows = await db.fetchall()
-    return {'tasks': [dict(r) for r in rows]}
+    return {'tasks': [task_metadata_row_apply(r) for r in rows]}
 
 
 @router.post('/tasks/{project_id}')
@@ -52,6 +63,11 @@ async def project_task_create(project_id: int, data: dict, user=Depends(AuthChec
     title = str(data.get('title') or '').strip()
     if not title:
         raise HTTPException(status_code=400, detail='title required')
+
+    # «Без проекта» приходит в пути нулём — в колонку кладём NULL. Иначе «никакого
+    # проекта» пишется двумя способами сразу, и каждый запрос вида «проект задачи =
+    # проект оболочки» приходится писать с оговоркой на оба.
+    project_id = project_id or None
 
     async with mysql_get_db_async() as db:
         try:
@@ -62,11 +78,16 @@ async def project_task_create(project_id: int, data: dict, user=Depends(AuthChec
         next_pos = await task_tree_position_next(db, project_id, parent_id)
 
         task_type_id = data.get('task_type_id')
+        metadata = data.get('metadata')
+        if metadata is not None and not isinstance(metadata, dict):
+            raise HTTPException(status_code=400, detail='metadata must be an object')
+
         await db.execute(
-            "INSERT INTO project_task (project_id, parent_id, title, description, goals, status, report, position, task_type_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO project_task (project_id, parent_id, title, description, goals, status, report, position, task_type_id, metadata) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (project_id, parent_id, title, str(data.get('description') or ''), str(data.get('goals') or ''),
-             str(data.get('status') or 'pending'), str(data.get('report') or ''), next_pos, task_type_id)
+             str(data.get('status') or 'pending'), str(data.get('report') or ''), next_pos, task_type_id,
+             json.dumps(metadata, ensure_ascii=False) if metadata else None)
         )
         await db.connection.commit()
         task_id = db.lastrowid
@@ -74,13 +95,22 @@ async def project_task_create(project_id: int, data: dict, user=Depends(AuthChec
         await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
         task = await db.fetchone()
 
-    return {'task': dict(task)}
+    return {'task': task_metadata_row_apply(task)}
 
 
 @router.put('/task/{task_id}')
 async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     allowed = {'title', 'description', 'goals', 'status', 'report', 'task_type_id'}
     updates = {k: v for k, v in data.items() if k in allowed}
+
+    # metadata приходит объектом, а в колонке лежит JSON-строка. Здесь именно замена
+    # целиком: страница присылает то, что человек видел в форме. Точечная правка
+    # одного ключа — `task_metadata_update`, он не трогает чужие ключи.
+    if 'metadata' in data:
+        meta = data.get('metadata')
+        if meta is not None and not isinstance(meta, dict):
+            raise HTTPException(status_code=400, detail='metadata must be an object')
+        updates['metadata'] = json.dumps(meta, ensure_ascii=False) if meta else None
 
     async with mysql_get_db_async() as db:
         # Перенос по дереву: FK ловит только несуществующего родителя, а цикл и
@@ -133,7 +163,60 @@ async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker
         await task_revision_add(task_id, revision['plan_text'], revision['goals'], revision['subtasks'],
                                 author_kind='user', author_id=user.user_id, author_name=user.username)
 
-    return {'task': dict(task)}
+    return {'task': task_metadata_row_apply(task)}
+
+
+@router.post('/task/{task_id}/metadata')
+async def project_task_metadata_patch(task_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+    """
+    Точечно поправить `metadata` задачи: свои ключи перезаписать, чужие оставить.
+
+    Отдельно от `PUT /task/{id}`, который заменяет мешок целиком: там страница
+    присылает то, что человек видел в форме, а здесь — одну пометку из строки
+    таблицы. Заменять целиком ради одного флажка нельзя — над задачей одновременно
+    работают оркестратор и воркеры, и их ключи ушли бы вместе с заменой.
+
+    Значение `null` в патче удаляет ключ (так работает JSON_MERGE_PATCH), поэтому
+    отдельной ручки «убрать пометку» нет.
+
+    Две пометки имеют немедленное следствие — «в разработку» и «в тестирование».
+    Обычно их ставят заранее, и срабатывают они внутри конвейера, но человек вправе
+    поставить пометку и задаче, которая нужного рубежа уже достигла: план написан и
+    ждёт утверждения, разработка по всем подзадачам закончена. Смысл флажка ровно тот
+    же — «решения от меня не ждать», — а следующий шаг конвейера такой задаче самой не
+    полагается, и без вызова отсюда она стояла бы, пока человек не нажмёт «Утвердить»
+    или не дождётся конца проверки. Все проверки (тип, состояние, сама пометка) —
+    внутри `task_state_*`, поэтому вызовы безвредны и когда рубеж ещё не пройден.
+
+    Пометку «в тестирование» ловим по `is not False`, а не по `is True`: включённое
+    состояние там — это отсутствие ключа, и человек, вернувший флажок галкой, шлёт
+    `null` (удаление), а не `true`.
+    """
+    patch = data.get('patch')
+    if not isinstance(patch, dict) or not patch:
+        raise HTTPException(status_code=400, detail='patch must be a non-empty object')
+
+    await task_metadata_update(task_id, patch)
+    if patch.get(TASK_METADATA_KEY_DEV) is True and await task_state_plan_to_development(task_id):
+        await task_report_write(
+            task_id,
+            f'{user.username} пометил задачу «в разработку»: план утверждён, '
+            'тип сменён на «Разработка»')
+    if TASK_METADATA_KEY_TEST in patch and patch[TASK_METADATA_KEY_TEST] is not False \
+            and await task_state_dev_to_testing(task_id):
+        await task_report_write(
+            task_id,
+            f'{user.username} пометил задачу «в тестирование»: разработка закончена, '
+            'тип сменён на «Тестирование»')
+
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
+        task = await db.fetchone()
+
+    if not task:
+        raise HTTPException(status_code=404, detail='task not found')
+
+    return {'task': task_metadata_row_apply(task)}
 
 
 @router.delete('/task/{task_id}')
@@ -239,7 +322,7 @@ async def project_task_ai_generate(request: Request, data: dict, user=Depends(Au
 
     raw = str(result_text).removeprefix('json:').strip()
     parsed = json_from_string(raw)
-    if not parsed or not isinstance(parsed, dict):
+    if not parsed:
         raise HTTPException(status_code=502, detail='AI вернул некорректный ответ')
 
     title       = str(parsed.get('title') or '').strip()

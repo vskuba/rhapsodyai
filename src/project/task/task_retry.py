@@ -8,8 +8,8 @@
 это круг не за что, повторять нужно тот же самый вход.
 
 Отсюда два независимых счётчика. `pipeline_attempt_count` (`task_state_subtask_fail`,
-потолок `MAX_ATTEMPTS`) считает круги работы. Этот модуль считает сорвавшиеся прогоны
-(`metadata.retry`, потолок `TASK_RETRY_MAX`). Подзадача может трижды сорваться по
+потолок `timeout_attempt_max`) считает круги работы. Этот модуль считает сорвавшиеся
+прогоны (`metadata.retry`, потолок `timeout_retry_max`). Подзадача может трижды сорваться по
 таймауту и всё ещё иметь впереди все свои круги QA.
 
 Внутри счётчика тоже двое. `count` — серия подряд, обнуляется первым же состоявшимся
@@ -29,12 +29,14 @@ MySQL внутри одного UPDATE, без чтения в Python: над с
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_metadata import TASK_METADATA_KEY_RETRY
+from src.project.task.task_setting_timeout import (
+    TASK_SETTING_TIMEOUT_RETRY_MAX,
+    task_setting_timeout_get)
 
-# Сколько раз повторяем сорвавшийся прогон, прежде чем признать шаг проваленным.
-# Повтор недёшев: у каждого свой таймаут агента (по часу) плюс перезапуск оболочки,
-# так что бесконечно долбиться в мёртвого агента смысла нет — после третьего раза
-# задача уходит человеку.
-TASK_RETRY_MAX = 3
+# Сколько раз повторяем сорвавшийся прогон, прежде чем признать шаг проваленным —
+# настройка `timeout_retry_max` с `/admin/team` (см. `task_setting_timeout`). Повтор
+# недёшев: у каждого свой таймаут агента (по часу) плюс перезапуск оболочки, так что
+# бесконечно долбиться в мёртвого агента смысла нет — задача уходит человеку.
 
 # Причину срыва режем: в мешок пишется текст ошибки агента, а он бывает с целым
 # трейсбеком внутри. Для страницы задач хватает первой строки смысла.
@@ -51,12 +53,14 @@ async def task_retry_take(task_id: int, role: str, error: str) -> dict:
         error: причина срыва как есть, для страницы задач.
 
     Returns:
-        `{'allowed': bool, 'count': int, 'total': int}` — `allowed` значит, что повтор
-        в пределах лимита и строку можно возвращать в работу; `count` — какой это
-        повтор подряд (1 — первый); `total` — сколько прогонов сорвалось за всё время.
+        `{'allowed': bool, 'count': int, 'total': int, 'max': int}` — `allowed` значит,
+        что повтор в пределах лимита и строку можно возвращать в работу; `count` — какой
+        это повтор подряд (1 — первый); `total` — сколько прогонов сорвалось за всё время;
+        `max` — действующий потолок, его же вызывающий показывает человеку в отчёте.
     """
+    retry_max = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_RETRY_MAX)
     if not task_id:
-        return {'allowed': False, 'count': 0, 'total': 0}
+        return {'allowed': False, 'count': 0, 'total': 0, 'max': retry_max}
 
     # CAST в UNSIGNED обязателен: арифметика над JSON даёт DOUBLE, и в мешок легло бы
     # `"count": 4.0` — ровно в таком виде цифра и уехала бы на страницу задач.
@@ -84,10 +88,10 @@ async def task_retry_take(task_id: int, role: str, error: str) -> dict:
 
     count = int(row['cnt'] or 0) if row else 0
     total = int(row['total'] or 0) if row else 0
-    allowed = 0 < count <= TASK_RETRY_MAX
-    logger_info(f'task_retry: task#{task_id} {role} срыв #{count}/{TASK_RETRY_MAX} '
+    allowed = 0 < count <= retry_max
+    logger_info(f'task_retry: task#{task_id} {role} срыв #{count}/{retry_max} '
                 f'(всего {total}), повтор={"да" if allowed else "нет"}: {error}')
-    return {'allowed': allowed, 'count': count, 'total': total}
+    return {'allowed': allowed, 'count': count, 'total': total, 'max': retry_max}
 
 
 async def task_retry_clear(task_id: int) -> None:

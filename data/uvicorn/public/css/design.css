@@ -1828,6 +1828,37 @@
 
     .bw-css-textarea:focus { color: #e2e8f0; }
 
+    .bw-vars-panel {
+        flex-shrink: 0;
+        max-height: 120px;
+        overflow-y: auto;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fafafa;
+    }
+
+    .bw-vars-details {
+        margin-top: 0;
+        border: none;
+        border-radius: 4px;
+    }
+
+    .bw-vars-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        display: block;
+        background: #1e293b;
+        color: #94a3b8;
+        font-size: 11px;
+        font-family: monospace;
+        padding: 8px 10px;
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        resize: vertical;
+        max-height: 80px;
+        line-height: 1.5;
+        outline: none;
+    }
+
     .bw-block-list-footer {
         display: flex;
         align-items: center;

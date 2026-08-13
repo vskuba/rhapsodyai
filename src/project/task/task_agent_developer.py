@@ -21,6 +21,9 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_plan import task_plan_parse
 from src.project.team.team_session import team_session_restart_role
+from src.project.task.task_setting_timeout import (
+    TASK_SETTING_TIMEOUT_DEVELOPER_RUN,
+    task_setting_timeout_get)
 
 TASK_DEVELOPER_AGENT_NAME = 'task_dev_developer'
 TASK_DEVELOPER_ROLE = 'developer'
@@ -29,10 +32,10 @@ TASK_DEVELOPER_ROLE = 'developer'
 # разбор, 1800s на реализацию, 600s на самопроверку: в один круг это 3000s, но
 # круг доработки (`max_dev_iterations` > 1) сумму превышает, и обрывать прогон
 # должен этот потолок.
-# Граница привязана к лестнице таймаутов: DEVELOPER_TIMEOUT < TASK_WORKER_JOB_TIMEOUT
-# (3900) < task_claim.LOCK_TIMEOUT_SEC (4200). Прогон обязан сорваться раньше,
-# чем блокировку сочтут протухшей и подзадачу подберёт второй воркер.
-DEVELOPER_TIMEOUT = 3600.0
+# Граница привязана к лестнице таймаутов: `timeout_developer_run` < `timeout_worker_job`
+# < `timeout_task_lock`. Прогон обязан сорваться раньше, чем блокировку сочтут
+# протухшей и подзадачу подберёт второй воркер. Значения правятся на `/admin/team`
+# — см. `task_setting_timeout`.
 DEVELOPER_USER_ID = 1  # только для атрибуции session/log
 
 # Имя ветки подзадачи. Шаблон один на всех, потому что имя должны одинаково собирать
@@ -152,11 +155,12 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
     })
     agent_manager.framework_workflow_run(framework_model, future, loop)
 
+    timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN)
     try:
-        result_text = await asyncio.wait_for(future, timeout=DEVELOPER_TIMEOUT)
+        result_text = await asyncio.wait_for(future, timeout=timeout)
     except asyncio.TimeoutError:
         future.cancel()
-        raise RuntimeError(f'разработчик не уложился в {DEVELOPER_TIMEOUT:.0f}s')
+        raise RuntimeError(f'разработчик не уложился в {timeout}s')
 
     return _result_parse(result_text)
 
@@ -255,11 +259,14 @@ def _result_parse(result_text) -> dict:
     Разбор терпимый к мусору: отчёт пишет живой Claude Code, и сорванный JSON
     (обрыв строки в тексте ошибки, лишний markdown) не должен ронять воркер
     исключением — такой ответ уходит в `error` как есть, а подзадача получает
-    ещё одну попытку из отведённых `MAX_ATTEMPTS`.
+    ещё одну попытку из отведённых `timeout_attempt_max`.
     """
     raw    = str(result_text or '').removeprefix('json:').strip()
     parsed = json_from_string(raw)
-    if not isinstance(parsed, dict):
+    # `json_from_string` не бросает и не возвращает не-словарь: сорванный разбор,
+    # массив вместо объекта и пустой ответ — всё это приходит пустым словарём.
+    # Поэтому «не JSON» ловится по пустоте, а не по типу.
+    if not parsed:
         return {'ok': False, 'output': raw[:2000],
                 'error': f'разработчик вернул не JSON: {raw[:200]}'}
 

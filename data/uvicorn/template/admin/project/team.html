@@ -47,8 +47,52 @@
         word-break: break-all;
     }
 
-    .project-block-count {
+    /* Предел одновременных прогонов агента у проекта. Стоит перед счётчиком
+       активных, у того margin-left:auto — селект остаётся у названия слева. */
+    .project-block-parallel {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #6b7280;
+        white-space: nowrap;
         margin-left: auto;
+    }
+
+    .project-block-parallel select {
+        padding: 2px 4px;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        background: #fff;
+        color: #4b5563;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 11px;
+        cursor: pointer;
+    }
+
+    .project-block-parallel select:focus {
+        outline: none;
+        border-color: #6366f1;
+    }
+
+    /* Значение, отличающееся от заводского, — видно, что его правили руками. */
+    .project-block-parallel select.custom {
+        border-color: #c7d2fe;
+        color: #4338ca;
+        font-weight: 600;
+    }
+
+    .project-block-parallel select.saved {
+        border-color: #10b981;
+        background: rgba(16, 185, 129, 0.08);
+    }
+
+    .project-block-parallel select.failed {
+        border-color: #ef4444;
+        background: rgba(239, 68, 68, 0.08);
+    }
+
+    .project-block-count {
         font-size: 12px;
         color: #6b7280;
         white-space: nowrap;
@@ -135,6 +179,39 @@
 
     .team-card-name {
         min-width: 0;
+    }
+
+    /* Перезапуск watch-процесса оболочки. Только у активных карточек, поэтому
+       прижимается вправо через auto-margin, а не абсолютным позиционированием. */
+    .team-card-restart {
+        margin-left: auto;
+        flex: 0 0 24px;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: #9ca3af;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .team-card-restart:hover {
+        background: #f3f4f6;
+        color: #4f46e5;
+    }
+
+    .team-card-restart:disabled {
+        cursor: default;
+        color: #4f46e5;
+    }
+
+    .team-card-restart.loading svg {
+        animation: rotate 1s linear infinite;
     }
 
     .team-card-name .name {
@@ -234,6 +311,18 @@
         color: #6b7280;
     }
 
+    /* Ссылки на агента и workflow: в мелком мета-блоке подчёркивание всех строк
+       сразу зашумляет карточку, поэтому оно появляется только под курсором. */
+    .team-card-meta .row a {
+        color: #6b7280;
+        text-decoration: none;
+    }
+
+    .team-card-meta .row a:hover {
+        color: #2563eb;
+        text-decoration: underline;
+    }
+
     .team-card-copy {
         width: 100%;
         margin-top: 10px;
@@ -259,6 +348,177 @@
         line-height: 1.4;
         max-height: 44px;
         overflow: hidden;
+    }
+
+    /* Очередь роли: сколько задач ждёт эту карточку и что она делает сейчас.
+       Список короткий (первые несколько) — карточка не должна расти в колонку. */
+    .team-queue {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #f3f4f6;
+        font-size: 11px;
+        color: #6b7280;
+    }
+
+    .team-queue-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 6px;
+        margin-bottom: 4px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #9ca3af;
+    }
+
+    .team-queue-head b {
+        color: #4b5563;
+    }
+
+    .team-queue-item {
+        display: flex;
+        align-items: baseline;
+        gap: 5px;
+        line-height: 1.4;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .team-queue-item .num {
+        flex: 0 0 auto;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 10px;
+        color: #9ca3af;
+    }
+
+    .team-queue-item .text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Первая строка — та, что в работе прямо сейчас: её видно без чтения списка. */
+    .team-queue-item.current {
+        color: #b45309;
+        font-weight: 500;
+    }
+
+    .team-queue-item.current .num {
+        color: #d97706;
+    }
+
+    .team-queue-empty {
+        color: #9ca3af;
+    }
+
+    /* Таймауты роли: значения общие на всю установку (лежат в `setting`), но
+       смотрят на них здесь — на карточке той роли, чью работу они обрывают.
+       Свёрнуты по умолчанию: в развёрнутом виде это самая высокая часть карточки,
+       а нужна она редко. */
+    .team-timeouts {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #f3f4f6;
+        font-size: 11px;
+        color: #6b7280;
+    }
+
+    .team-timeouts > summary {
+        cursor: pointer;
+        list-style: none;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #9ca3af;
+        user-select: none;
+    }
+
+    .team-timeouts > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .team-timeouts > summary:hover {
+        color: #4b5563;
+    }
+
+    .team-timeouts[open] > summary {
+        margin-bottom: 6px;
+        color: #4b5563;
+    }
+
+    .team-timeout-group {
+        margin-top: 6px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #c4c9d4;
+    }
+
+    .team-timeout-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        line-height: 1.8;
+    }
+
+    .team-timeout-row .label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .team-timeout-row .unit {
+        flex: 0 0 auto;
+        color: #c4c9d4;
+        font-size: 10px;
+    }
+
+    .team-timeout-row input {
+        flex: 0 0 62px;
+        width: 62px;
+        padding: 2px 4px;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        background: #fff;
+        color: #4b5563;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 11px;
+        text-align: right;
+    }
+
+    .team-timeout-row input:focus {
+        outline: none;
+        border-color: #6366f1;
+    }
+
+    /* Значение, отличающееся от заводского, — видно, что его правили руками. */
+    .team-timeout-row input.custom {
+        border-color: #c7d2fe;
+        color: #4338ca;
+        font-weight: 600;
+    }
+
+    .team-timeout-row input.saved {
+        border-color: #10b981;
+        background: rgba(16, 185, 129, 0.08);
+    }
+
+    .team-timeout-row input.failed {
+        border-color: #ef4444;
+        background: rgba(239, 68, 68, 0.08);
+    }
+
+    /* Нарушенная лестница таймаутов: прогон агента обязан срываться раньше job'а,
+       job — раньше возврата блокировки. Это предупреждение, а не запрет: поднять
+       три значения разом одним запросом нельзя. */
+    .team-timeout-problem {
+        margin-top: 6px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        background: rgba(245, 158, 11, 0.12);
+        color: #b45309;
+        line-height: 1.4;
     }
 
     .team-empty {
@@ -338,13 +598,43 @@
 
     let refreshTimer = null;
 
+    // Пока идёт перезапуск оболочки, автообновление не трогает DOM: renderProjects
+    // пересобирает карточки целиком и стёр бы и спиннер, и отметку об отправке.
+    let restartBusy = false;
+
+    // Таймауты общие на всю установку, поэтому грузятся один раз на страницу и
+    // раздаются всем карточкам: значение `timeout_worker_job` одно и то же на
+    // карточке менеджера и на карточке QA.
+    let timeoutItems = [];
+    let timeoutProblem = '';
+
+    // Раскрытые блоки таймаутов, ключ `project_id:role`. Пока хоть один открыт,
+    // автообновление молчит: перерисовка карточек схлопнула бы блок под руками —
+    // и вместе с ним поле, в которое человек сейчас печатает.
+    const timeoutOpen = new Set();
+
+    // Варианты «Parallel LLM» приходят вместе с блоками, значение по умолчанию —
+    // первый из них: список задан на сервере (`task_setting_parallel`).
+    let parallelOptions = [1];
+    const PARALLEL_DEFAULT = 1;
+
+    // Проекты, чей предел сейчас записывается. Как и раскрытые таймауты,
+    // останавливают автообновление: селект под руками заменять нельзя.
+    const parallelBusy = new Set();
+
     async function loadTeamProjects(showSpinner = false) {
+        if (restartBusy || timeoutOpen.size || parallelBusy.size) return;
+        // Открытый список селекта из JS не виден, но фокус на нём — да: пока
+        // человек выбирает значение, блок не перерисовываем.
+        const active = document.activeElement;
+        if (active && active.closest && active.closest('.project-block-parallel')) return;
         const btn = document.getElementById('refreshBtn');
         if (showSpinner) btn.classList.add('loading');
         try {
             const response = await fetch('/api/team/projects');
             if (!response.ok) throw new Error('HTTP ' + response.status);
             const data = await response.json();
+            parallelOptions = (data.result && data.result.parallel_options) || parallelOptions;
             renderProjects((data.result && data.result.blocks) || []);
         } catch (e) {
             console.error('Ошибка загрузки команды:', e);
@@ -374,18 +664,68 @@
                 <div class="project-block-head">
                     <span class="project-block-title">${escapeHtml(block.title)}</span>
                     ${dir}
+                    ${renderParallel(block)}
                     <span class="project-block-count${activeCount ? '' : ' empty'}">
                         активных <b>${activeCount}</b> из ${cards.length}
                     </span>
                 </div>
                 <div class="project-cards">
-                    ${cards.map(renderCard).join('')}
+                    ${cards.map(card => renderCard(card, block)).join('')}
                 </div>
             </div>
         `;
     }
 
-    function renderCard(card) {
+    // Предел одновременных прогонов агента у проекта: пока он выбран, лишние
+    // задачи проекта ждут очереди, а не перебивают друг друга в одной оболочке.
+    function renderParallel(block) {
+        const value = Number(block.parallel || PARALLEL_DEFAULT);
+        const options = parallelOptions.map(option =>
+            `<option value="${option}"${option === value ? ' selected' : ''}>${option}</option>`).join('');
+
+        return `
+            <span class="project-block-parallel">
+                Parallel LLM
+                <select data-project="${Number(block.project_id || 0)}"
+                        data-value="${value}"
+                        class="${value === PARALLEL_DEFAULT ? '' : 'custom'}"
+                        onchange="saveParallel(this)">${options}</select>
+            </span>
+        `;
+    }
+
+    async function saveParallel(select) {
+        const projectId = Number(select.dataset.project || 0);
+        const value = Number(select.value);
+        // Пока запрос в полёте, автообновление молчит: перерисовка блоков заменила
+        // бы селект новым, и откатывать при ошибке было бы уже нечего.
+        parallelBusy.add(projectId);
+        select.classList.remove('saved', 'failed');
+        try {
+            const response = await fetch('/api/team/parallel', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({project_id: projectId, value: value}),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || ('HTTP ' + response.status));
+
+            select.dataset.value = String(data.result.value);
+            select.value = String(data.result.value);
+            select.classList.toggle('custom', data.result.value !== PARALLEL_DEFAULT);
+            select.classList.add('saved');
+            setTimeout(() => select.classList.remove('saved'), 1500);
+        } catch (e) {
+            select.value = select.dataset.value;
+            select.classList.add('failed');
+            select.title = String(e.message || e);
+            setTimeout(() => select.classList.remove('failed'), 2500);
+        } finally {
+            parallelBusy.delete(projectId);
+        }
+    }
+
+    function renderCard(card, block) {
         // Класс роли только для известных ролей — иначе в CSS попадёт мусор из БД.
         const roleClass = ROLE_KNOWN.includes(card.role) ? 'role-' + card.role : '';
         const icon = ROLE_ICONS[card.role] || '🧩';
@@ -406,6 +746,20 @@
         const llm = card.server_llm
             ? `<div class="row"><span>llm</span><span>${escapeHtml(card.server_llm)}</span></div>`
             : '';
+
+        // Агент и его workflow — то, чем роль на самом деле работает. Ролям без
+        // агента (Developer и QA пока заглушки) сервер отдаёт нули, и строк нет.
+        // Ссылки в новой вкладке: страница команды живёт пингами раз в 30 секунд,
+        // и уходить с неё ради промпта агента не стоит.
+        const agentLink = card.agent_id
+            ? `<div class="row"><span>Агент</span><span><a href="/admin/agent?agent_id=${card.agent_id}"
+                   target="_blank" rel="noopener">${escapeHtml(card.agent_title)}</a></span></div>`
+            : '';
+        const workflowLink = card.workflow_id
+            ? `<div class="row"><span>Workflow</span><span><a href="/admin/workflow?workflow_id=${card.workflow_id}"
+                   target="_blank" rel="noopener">${escapeHtml(card.workflow_title)}</a></span></div>`
+            : '';
+
         const summary = card.summary
             ? `<div class="team-summary">${escapeHtml(card.summary)}</div>`
             : '';
@@ -420,6 +774,18 @@
             ? `<div class="agent-badge ${agentClass}" title="${escapeHtml(card.agent_status_reason || '')}">${escapeHtml(agentLabel)}</div>`
             : '';
 
+        // Перезапуск есть только у активной карточки: маркер кладётся в inbox
+        // оболочки, а мёртвая оболочка его не прочитает.
+        const restart = card.active && card.session_uuid
+            ? `<button class="team-card-restart" data-session="${escapeHtml(card.session_uuid)}"
+                       onclick="restartSession(this)" title="Перезагрузить процессы оболочки">
+                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                       <path d="M23 4v6h-6M1 20v-6h6"/>
+                       <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                   </svg>
+               </button>`
+            : '';
+
         return `
             <div class="team-card ${card.active ? 'active' : ''} ${roleClass}">
                 <div class="team-card-top">
@@ -428,20 +794,196 @@
                         <div class="name">${escapeHtml(card.name)}</div>
                         <div class="role">${escapeHtml(card.role_title)}</div>
                     </div>
+                    ${restart}
                 </div>
                 <div class="team-status">
                     <span class="status-indicator"></span>
                     <span>${escapeHtml(statusText)}</span>
                 </div>
                 ${agent}
+                ${renderQueue(card)}
+                ${renderTimeouts(card, block)}
                 <div class="team-card-meta">
                     ${uuid}
                     ${llm}
+                    ${agentLink}
+                    ${workflowLink}
                 </div>
                 ${summary}
                 ${copy}
             </div>
         `;
+    }
+
+    // Очередь роли по этому проекту. Первой строкой — задача в работе: у занятой
+    // карточки главный вопрос «что она сейчас делает», а не «сколько ждёт».
+    function renderQueue(card) {
+        const waiting = card.queue || [];
+        const current = card.queue_current || null;
+        const count = card.queue_count || 0;
+        if (!current && !count) return '';
+
+        const rows = [];
+        if (current) rows.push(renderQueueItem(current, '▶', 'current'));
+        waiting.forEach((item, index) => rows.push(renderQueueItem(item, (index + 1) + '.', '')));
+
+        const more = count > waiting.length
+            ? `<div class="team-queue-empty">и ещё ${count - waiting.length}</div>`
+            : '';
+
+        return `
+            <div class="team-queue">
+                <div class="team-queue-head">
+                    <span>${current ? 'в работе' : (card.active ? 'свободна' : 'не запущена')}</span>
+                    ${count ? `<span>в очереди <b>${count}</b></span>` : ''}
+                </div>
+                ${rows.join('')}
+                ${more}
+            </div>
+        `;
+    }
+
+    function renderQueueItem(item, marker, cls) {
+        // Подсказка — родительская задача: в списке видно только название подзадачи,
+        // а по нему одному не понять, к чему она относится.
+        const hint = item.subtask_id && item.task_title
+            ? `${item.task_title} · #${item.task_id}`
+            : `#${item.task_id}`;
+
+        return `
+            <div class="team-queue-item ${cls}" title="${escapeHtml(hint)}">
+                <span class="num">${escapeHtml(marker)}</span>
+                <span class="text">${escapeHtml(item.title)}</span>
+            </div>
+        `;
+    }
+
+    // Таймауты на карточке: сначала свои, роли (потолок на прогон агента), затем
+    // общие — оболочка, перезапуск, конвейер, повторы. Общие показываем на каждой
+    // карточке, а не отдельным блоком на странице: вопрос «почему эта роль
+    // сорвалась» решается тем, что все её сроки видны в одном месте.
+    function renderTimeouts(card, block) {
+        if (!timeoutItems.length) return '';
+
+        const mine = timeoutItems.filter(item => item.role && item.role === card.role);
+        const common = timeoutItems.filter(item => !item.role);
+        if (!mine.length && !common.length) return '';
+
+        const key = `${(block && block.project_id) || 0}:${card.role}`;
+        const rows = mine.map(renderTimeoutRow);
+
+        let group = '';
+        common.forEach(item => {
+            if (item.group && item.group !== group) {
+                group = item.group;
+                rows.push(`<div class="team-timeout-group">${escapeHtml(group)}</div>`);
+            }
+            rows.push(renderTimeoutRow(item));
+        });
+
+        const problem = timeoutProblem
+            ? `<div class="team-timeout-problem">⚠ ${escapeHtml(timeoutProblem)}</div>`
+            : '';
+
+        return `
+            <details class="team-timeouts" data-card="${escapeHtml(key)}"
+                     ${timeoutOpen.has(key) ? 'open' : ''} ontoggle="toggleTimeouts(this)">
+                <summary>⏱ Таймауты</summary>
+                ${problem}
+                ${rows.join('')}
+            </details>
+        `;
+    }
+
+    function renderTimeoutRow(item) {
+        // В подсказке — заводское значение и границы: поле узкое, а понять, что
+        // именно правишь и куда можно уйти, надо до отправки, а не по ошибке 422.
+        const hint = `${item.hint || item.title}\nпо умолчанию ${item.default} ${item.unit}`
+            + `, допустимо ${item.min}–${item.max}`;
+
+        return `
+            <div class="team-timeout-row">
+                <span class="label" title="${escapeHtml(hint)}">${escapeHtml(item.title)}</span>
+                <input type="number" class="${item.custom ? 'custom' : ''}"
+                       value="${item.value}" min="${item.min}" max="${item.max}" step="1"
+                       data-key="${escapeHtml(item.key)}" title="${escapeHtml(hint)}"
+                       onchange="saveTimeout(this)">
+                <span class="unit">${escapeHtml(item.unit)}</span>
+            </div>
+        `;
+    }
+
+    function toggleTimeouts(details) {
+        const key = details.dataset.card || '';
+        if (details.open) timeoutOpen.add(key);
+        else timeoutOpen.delete(key);
+    }
+
+    async function loadTimeouts() {
+        try {
+            const response = await fetch('/api/team/timeout');
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const data = await response.json();
+            timeoutItems = (data.result && data.result.items) || [];
+            timeoutProblem = (data.result && data.result.problem) || '';
+        } catch (e) {
+            console.error('Ошибка загрузки таймаутов:', e);
+        }
+    }
+
+    // Значение общее, а полей с ним на странице столько, сколько карточек, —
+    // поэтому после записи обновляем их все, а не только то, в котором печатали.
+    async function saveTimeout(input) {
+        const key = input.dataset.key || '';
+        const item = timeoutItems.find(row => row.key === key);
+        if (!key || !item) return;
+
+        input.classList.remove('saved', 'failed');
+        try {
+            const response = await fetch('/api/team/timeout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: key, value: Number(input.value) }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || ('HTTP ' + response.status));
+
+            Object.assign(item, data.result.item);
+            timeoutProblem = data.result.problem || '';
+            timeoutsSync(key);
+            input.classList.add('saved');
+            setTimeout(() => input.classList.remove('saved'), 1500);
+        } catch (e) {
+            console.error('Ошибка записи таймаута:', e);
+            // Возвращаем прежнее значение: отказ сервера не должен оставлять на
+            // экране число, которого в настройке нет.
+            input.value = item.value;
+            input.classList.add('failed');
+            input.title = String(e.message || e);
+            setTimeout(() => input.classList.remove('failed'), 2500);
+        }
+    }
+
+    function timeoutsSync(key) {
+        const item = timeoutItems.find(row => row.key === key);
+        document.querySelectorAll(`.team-timeout-row input[data-key="${CSS.escape(key)}"]`)
+            .forEach(field => {
+                field.value = item.value;
+                field.classList.toggle('custom', !!item.custom);
+            });
+
+        document.querySelectorAll('.team-timeouts').forEach(details => {
+            const problem = details.querySelector('.team-timeout-problem');
+            if (problem) {
+                problem.textContent = timeoutProblem ? '⚠ ' + timeoutProblem : '';
+                problem.style.display = timeoutProblem ? '' : 'none';
+            } else if (timeoutProblem) {
+                const node = document.createElement('div');
+                node.className = 'team-timeout-problem';
+                node.textContent = '⚠ ' + timeoutProblem;
+                details.querySelector('summary').after(node);
+            }
+        });
     }
 
     function formatTimeAgo(seconds) {
@@ -451,6 +993,34 @@
         if (seconds < 3600) return Math.floor(seconds / 60) + ' мин назад';
         if (seconds < 86400) return Math.floor(seconds / 3600) + ' ч назад';
         return Math.floor(seconds / 86400) + ' дн назад';
+    }
+
+    async function restartSession(btn) {
+        const sessionUuid = btn.dataset.session || '';
+        if (!sessionUuid || restartBusy) return;
+
+        restartBusy = true;
+        btn.disabled = true;
+        btn.classList.add('loading');
+        try {
+            const response = await fetch('/api/team/session/restart', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_uuid: sessionUuid }),
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            btn.textContent = '✅';
+            btn.title = 'Команда перезапуска отправлена';
+        } catch (e) {
+            console.error('Ошибка перезапуска сессии:', e);
+            btn.textContent = '⚠️';
+            btn.title = 'Не удалось отправить команду перезапуска';
+        } finally {
+            btn.classList.remove('loading');
+            // Отметку видно две секунды, потом карточка перерисовывается заново:
+            // новый heartbeat всё равно придёт позже, ждать его тут нечего.
+            setTimeout(() => { restartBusy = false; loadTeamProjects(); }, 2000);
+        }
     }
 
     function copyCommand(btn) {
@@ -467,7 +1037,10 @@
         return div.innerHTML;
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+        // Сначала таймауты: карточки рисуются один раз, и блок сроков должен
+        // попасть в первую же отрисовку, а не появиться через 15 секунд.
+        await loadTimeouts();
         loadTeamProjects();
         refreshTimer = setInterval(loadTeamProjects, TEAM_REFRESH_MS);
     });

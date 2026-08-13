@@ -125,8 +125,8 @@ class TestTaskTree:
         parent = await self._create(client, created, "plan_parent")
         child  = await self._create(client, created, "plan_child", parent_id=parent)
 
-        data = await _tick_until(client, child, ("pending_approval", "failed"))
-        assert data["pipeline_state"] == "pending_approval", data
+        data = await _tick_until(client, child, ("plan_approval", "failed"))
+        assert data["pipeline_state"] == "plan_approval", data
 
         parent_state = await _pipeline(client, parent)
         assert parent_state["pipeline_state"] is None, "родителя планировать не должны"

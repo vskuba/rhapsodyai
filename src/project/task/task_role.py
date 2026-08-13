@@ -23,6 +23,9 @@ Developer, а проверяет QA. План уже разложен, спор�
 """
 from datetime_.datetime_ import datetime_now
 from mysql_.mysql_ import mysql_get_db_async
+from src.project.task.task_setting_timeout import (
+    TASK_SETTING_TIMEOUT_PING_STALE,
+    task_setting_timeout_get)
 
 # Роль по умолчанию: ей достаются задачи без типа и с типом, которого нет в карте.
 TASK_ROLE_DEFAULT = 'manager'
@@ -43,11 +46,8 @@ TASK_ROLE_TITLE = {
     'qa':        'QA',
 }
 
-# Оболочка пингует реестр раз в несколько секунд; порог тот же, что у карточки на
-# `/admin/team` (`TEAM_PROJECT_PING_STALE_SECONDS`). Своей константой, а не импортом:
-# `team_project` тянет за собой очередь и конвейер, и вышел бы круг импортов.
-TASK_ROLE_SHELL_STALE_SECONDS = 30
-
+# Оболочка пингует реестр раз в несколько секунд; порог свежести тот же, что у
+# карточки на `/admin/team`, — настройка `timeout_ping_stale` (см. `task_setting_timeout`).
 # Ключ «вне проектов»: задача без проекта и оболочка из каталога, который ни одному
 # проекту не принадлежит. То же значение, что у блока «Без проекта» в `team_queue`.
 TASK_ROLE_PROJECT_NONE = 0
@@ -228,13 +228,14 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
                    str(card.get('role') or '').strip()) for card in (cards or [])}
 
     now = await datetime_now()
+    stale_seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_PING_STALE)
     live: dict[int, list[str]] = {}
     for row in (rows or []):
         role = str(row.get('role') or '').strip()
         last_seen_at = row.get('last_seen_at')
         if not role or not last_seen_at:
             continue
-        if (now - last_seen_at).total_seconds() >= TASK_ROLE_SHELL_STALE_SECONDS:
+        if (now - last_seen_at).total_seconds() >= stale_seconds:
             continue
         project_id = project_by_dir.get(_path_normalize(row.get('work_dir')), TASK_ROLE_PROJECT_NONE)
         if project_id and (project_id, role) not in card_roles:

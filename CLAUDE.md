@@ -57,7 +57,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `src/telegram_bot.py` | Telegram bot handler |
 | `src/auth/auth.py` | `AuthChecker`, `get_current_user` |
 | `src/cronjob/` | Cron job entry points |
-| `src/worker/` | Все воркеры (Redis/rq, очередь `default`): `project/task_worker.py`, `project/planning_worker.py` |
+| `src/worker/` | Все воркеры (Redis/rq): `project/task_worker.py` — очередь `default`, `project/planning_worker.py` — очередь `planning` |
 | `migrations/0001.sql` | Единственный источник схемы БД |
 
 ## Docs Reference

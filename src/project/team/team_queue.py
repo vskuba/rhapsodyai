@@ -19,7 +19,9 @@ Developer/QA — это самосоединение: ребёнок даёт р
 «сколько задач этого проекта ждут роль», а не «сколько всего работы у роли».
 """
 from mysql_.mysql_ import mysql_get_db_async
-from src.project.task.task_pipeline import MAX_ATTEMPTS
+from src.project.task.task_setting_timeout import (
+    TASK_SETTING_TIMEOUT_ATTEMPT_MAX,
+    task_setting_timeout_get)
 from src.project.task.task_role import TASK_ROLE_TYPES, task_role_type_sql
 
 # Сколько задач очереди показываем на карточке — списком, а не только числом.
@@ -121,7 +123,7 @@ async def _developer_rows() -> list[dict]:
         " ORDER BY claim_order, s.parent_id, s.position, s.id"
     )
 
-    return await _rows_fetch(sql, (MAX_ATTEMPTS,))
+    return await _rows_fetch(sql, (await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX),))
 
 
 async def _qa_rows() -> list[dict]:

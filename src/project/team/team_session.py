@@ -24,6 +24,11 @@ from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
+from src.project.task.task_setting_timeout import (
+    TASK_SETTING_TIMEOUT_RESTART_ACK,
+    TASK_SETTING_TIMEOUT_RESTART_READY,
+    TASK_SETTING_TIMEOUT_RESTART_SETTLE,
+    task_setting_timeout_get)
 from src.telegram_.telegram_notify import telegram_send_owner
 from src.tool.claude_.claude_ import claude_message_user
 from src.tool.claude_shell.claude_shell import (CLAUDE_SHELL_AGENT_STATUS_READY,
@@ -34,23 +39,16 @@ from src.tool.claude_shell.claude_shell import (CLAUDE_SHELL_AGENT_STATUS_READY,
 TEAM_SESSION_RESTART_MARKER = '__RESTART_WATCH__'
 
 # Живым watch считаем пинг не старше 15 секунд — это 3× интервал heartbeat.
-# Порог свежести карточки (`TEAM_PROJECT_PING_STALE_SECONDS`) больше: там речь
+# Порог свежести карточки (настройка `timeout_ping_stale`) больше: там речь
 # про «оболочка вообще работает», а тут — про «ответит ли она прямо сейчас».
 TEAM_SESSION_WATCH_ALIVE_SECONDS = 15
 
 TEAM_SESSION_RESTART_POLL_SECONDS = 2
-# Оболочка помечает маркер `handled=1` сразу, как прочитала его из inbox: цикл
-# опроса — 2–5 секунд, минуты здесь взяться неоткуда. Не дождались за минуту —
-# watch не читает очередь, и ждать готовности бессмысленно.
-TEAM_SESSION_RESTART_ACK_TIMEOUT = 60
-# Пауза между подтверждением и опросом готовности. Пока старый дочерний процесс
-# не убит, heartbeat продолжает отдавать `ready` — без паузы мы бы приняли этот
-# ответ уходящего процесса за готовность нового. Убийство и повторный запуск
-# занимают у оболочки около двух секунд, берём с запасом.
-TEAM_SESSION_RESTART_SETTLE_SECONDS = 10
-# Сколько ждём, пока поднявшийся Claude Code дочитает свой запуск и освободится.
-# Холодный старт с большим CLAUDE.md — это десятки секунд, изредка больше минуты.
-TEAM_SESSION_RESTART_READY_TIMEOUT = 180
+# Три ожидания перезапуска — приём маркера (`timeout_restart_ack`), пауза перед
+# опросом готовности (`timeout_restart_settle`) и сама готовность
+# (`timeout_restart_ready`) — живут в настройках и правятся на `/admin/team`,
+# см. `task_setting_timeout`. Здесь остаётся только шаг опроса: это частота обращений
+# к базе внутри ожидания, а не подбираемая величина.
 
 # Причины, по которым перезапуск не состоялся — уходят в лог и в результат.
 TEAM_SESSION_RESTART_NO_SESSION = 'no_session'
@@ -119,14 +117,15 @@ async def team_session_restart_role(role: str, work_dir: str = '') -> dict:
         logger_info(f'[team] restart {role}: живой оболочки нет, перезапуск пропущен')
         return _restart_result(role, '', False, False, TEAM_SESSION_RESTART_NO_SESSION, started)
 
+    ack_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_RESTART_ACK)
     inbox = await claude_message_user(TEAM_SESSION_RESTART_MARKER, session_uuid, dynamic=1)
-    if not await _inbox_handled_wait(int(inbox['id']), TEAM_SESSION_RESTART_ACK_TIMEOUT):
-        logger_info(f'[team] restart {role}: оболочка не подтвердила маркер за '
-                    f'{TEAM_SESSION_RESTART_ACK_TIMEOUT}s')
+    if not await _inbox_handled_wait(int(inbox['id']), ack_timeout):
+        logger_info(f'[team] restart {role}: оболочка не подтвердила маркер за {ack_timeout}s')
         return _restart_result(role, session_uuid, False, False, TEAM_SESSION_RESTART_NO_ACK, started)
 
-    await asyncio.sleep(TEAM_SESSION_RESTART_SETTLE_SECONDS)
-    ready = await _agent_ready_wait(role, TEAM_SESSION_RESTART_READY_TIMEOUT, work_dir)
+    await asyncio.sleep(await task_setting_timeout_get(TASK_SETTING_TIMEOUT_RESTART_SETTLE))
+    ready = await _agent_ready_wait(role, await task_setting_timeout_get(TASK_SETTING_TIMEOUT_RESTART_READY),
+                                    work_dir)
 
     result = _restart_result(role, session_uuid, True, ready,
                              '' if ready else TEAM_SESSION_RESTART_NOT_READY, started)

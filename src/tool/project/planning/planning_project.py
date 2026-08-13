@@ -1,9 +1,62 @@
-import json
 import re
 
 from mysql_.mysql_ import mysql_get_db_async
 
 _TOTAL_PHASES = 7  # analyze, market, product, tech, gtm, financial, blueprint
+
+# Контекст фаз растёт линейно: к blueprint это шесть полных документов и переполненное окно.
+# Свежие фазы нужны агенту дословно, ранние — только как факты, поэтому усекаем хвост.
+_PLANNING_PROJECT_CONTEXT_FULL_PHASES = 2
+_PLANNING_PROJECT_CONTEXT_TRUNCATE = 1500
+
+
+async def planning_project_load(project_id: int) -> dict:
+    """
+    Загружает идею проекта и все завершённые фазы анализа для передачи в LLM-воркфлоу.
+     - project_id: ID проекта из таблицы project
+    Returns:
+        dict: Контекст проекта, содержащий:
+            idea (str): текст исходной идеи продукта.
+            phases_context (str): завершённые фазы в формате Markdown (пустая строка если фаз нет);
+                последние две фазы — полным текстом, более ранние усечены.
+            project_title (str): название проекта.
+    """
+    project_id = int(project_id)
+
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT title, idea FROM project WHERE id = %s', (project_id,))
+        proj = await db.fetchone()
+
+        await db.execute(
+            """
+            SELECT phase, result
+            FROM project_planning_phase
+            WHERE project_id = %s AND status = 'complete' AND phase NOT LIKE 'supplement_%%'
+            ORDER BY id ASC
+            """,
+            (project_id,)
+        )
+        phases = await db.fetchall()
+
+    idea = str((proj or {}).get('idea') or '')
+    project_title = str((proj or {}).get('title') or '')
+
+    rows = [r for r in (phases or []) if str(r.get('result') or '')]
+    tail_from = max(0, len(rows) - _PLANNING_PROJECT_CONTEXT_FULL_PHASES)
+
+    parts = []
+    for i, row in enumerate(rows):
+        phase_name = str(row.get('phase') or '')
+        result = str(row.get('result') or '')
+        if i < tail_from and len(result) > _PLANNING_PROJECT_CONTEXT_TRUNCATE:
+            result = result[:_PLANNING_PROJECT_CONTEXT_TRUNCATE] + '\n\n…(сокращено)'
+        parts.append(f'## Phase: {phase_name}\n\n{result}')
+
+    return {
+        'idea':           idea,
+        'phases_context': '\n\n---\n\n'.join(parts),
+        'project_title':  project_title,
+    }
 
 
 async def planning_project_list(limit: int = 15) -> dict:

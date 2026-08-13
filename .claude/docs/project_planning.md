@@ -63,7 +63,7 @@ Fallback цепочка: openrouter/gpt-oss-120b → cerebras/gpt-oss-120b → .
 
 ### planning_worker (job в Redis-очереди, `src/worker/project/planning_worker.py`)
 
-Цепочку фаз выполняет контейнер `worker` (`rq worker … default`). Кто ставит проект в очередь — тот его не планирует: инструмент, роутер и восстановление в lifespan только зовут `planning_worker_enqueue(project_id)`. Общие правила воркеров — `worker.md`.
+Цепочку фаз выполняет контейнер `worker_planning` (`rq worker-pool … planning`) — очередь своя, не общая с конвейером задач: цепочка идёт до 13 часов и в общей очереди держала бы исполнителя весь день. Кто ставит проект в очередь — тот его не планирует: инструмент, роутер и восстановление в lifespan только зовут `planning_worker_enqueue(project_id)`. Общие правила воркеров — `worker.md`.
 
 `main_uvicorn.py` зовёт `planning_worker_recover()` **после** `ai_tool_sync()`. ВАЖНО: порядок критичен — `ai_tool_sync(force=True)` очищает таблицу `tool` перед ресканом; job, стартовавший раньше, получит пустой `tools` dict и упадёт с "инструмент не найден".
 
@@ -97,7 +97,7 @@ _run_project_chain(project_id):
   )
 ```
 
-**Параллельность проектов:** каждый проект — отдельный job в очереди, поэтому проекты планируются одновременно ровно настолько, насколько хватает воркеров: одна цепочка занимает один воркер целиком (до 13 часов). Больше параллельных проектов — больше контейнеров `worker`.
+**Параллельность проектов:** каждый проект — отдельный job в очереди, поэтому проекты планируются одновременно ровно настолько, насколько хватает воркеров: одна цепочка занимает один воркер целиком (до 13 часов). Больше параллельных проектов — больше контейнеров `worker_task`.
 
 **Дубликаты:** ключ Redis `planning_worker:flight:<project_id>` берётся при постановке в очередь и снимается в `finally` job'а. Планирование зовут из трёх мест, захвата строки у фазы нет — без ключа один проект спланировался бы дважды.
 
@@ -253,12 +253,16 @@ pos 4: tool_invoke(planning_document_save)
 
 | Функция | Назначение |
 |---------|-----------|
-| `planning_project_load(project_id)` | → `{idea, phases_context}` — идея + markdown завершённых фаз. **Tiered:** последние 2 фазы — полный текст; более ранние усечены до 1500 символов (~60K → ~25K для financial) |
-| `planning_phase_save(project_id, phase, result)` | Сохранить результат фазы в `planning_phase` |
-| `planning_document_save(project_id, doc_type, title, content)` | Сохранить Blueprint / Supplement в `planning_document` |
-| `planning_project_create(title, idea)` | Создать проект |
-| `planning_bot_action(action, ...)` | Диспетчер для planning_bot chat |
-| `planning_projects_list()` | Список проектов для чат-бота |
+| `planning_project_load(project_id)` | → `{idea, phases_context, project_title}` — идея + markdown завершённых фаз (`supplement_*` исключены). **Tiered:** последние 2 фазы — полный текст; более ранние усечены до 1500 символов (~60K → ~25K для financial) |
+| `planning_phase_save(project_id, phase, result)` | Сохранить результат фазы в `project_planning_phase` |
+| `planning_phase_blueprint_load(project_id)` | Blueprint-документ для агента оценки |
+| `planning_phase_supplement_context_load(project_id, supplement_type)` | Blueprint + одна релевантная фаза для supplement-агента |
+| `planning_phase_design_context_load(project_id)` | Blueprint + product + market для дизайн-агента |
+| `planning_phase_document_save(project_id, doc_type, title, content)` | Сохранить Blueprint / Supplement в `project_planning_document` |
+| `planning_project_status_get(project_id)` | Статус проекта, фазы и документы |
+| `planning_project_score_save(project_id, …)` | Оценки проекта после blueprint |
+| `planning_project_list(limit)` | Список проектов чипами с прогрессом |
+| `planning_project_bot_action(action, …)` | Диспетчер для planning_bot chat |
 
 ## 8. Переменные workflow агентов
 

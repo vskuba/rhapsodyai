@@ -2,8 +2,9 @@
 Формат плана Manager.
 
 План живёт в `task.pipeline_plan` как JSON `{plan_text, subtasks, goals}`: первое
-идёт человеку на утверждение, второе после утверждения материализуется в
-`project_task_subtask`, третье попадает в `project_task.goals` (колонка «Цели»).
+идёт человеку на утверждение, второе после утверждения материализуется в детей той
+же `project_task` (`pipeline_from_plan = 1`), третье попадает в `project_task.goals`
+(колонка «Цели»).
 
 Цели держим и здесь тоже, хотя они уже записаны в задачу: в `task.goals` человек
 их правит, а в плане остаётся то, что предложил менеджер, — иначе разбирать
@@ -75,6 +76,24 @@ def task_plan_goals_merge(goals_current_raw, goals_new: list) -> str:
             continue
         seen.add(goal['text'].lower())
         goals.append(goal)
+    return json.dumps(goals, ensure_ascii=False)
+
+
+def task_plan_goals_close(goals_raw) -> str | None:
+    """
+    Отметить все цели выполненными. Returns: JSON для `project_task.goals` или None,
+    если отмечать нечего.
+
+    Зовётся в тот момент, когда работа принята: цели — это и есть список того, что
+    проверялось, и оставлять их пустыми чекбоксами у готовой задачи значит показывать
+    человеку «ничего не сделано». None вместо JSON — чтобы не гонять UPDATE вхолостую
+    у задач без целей и у тех, где всё уже отмечено.
+    """
+    goals = task_plan_goals_normalize(goals_raw)
+    if not goals or all(g['done'] for g in goals):
+        return None
+    for goal in goals:
+        goal['done'] = True
     return json.dumps(goals, ensure_ascii=False)
 
 

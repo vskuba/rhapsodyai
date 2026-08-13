@@ -102,7 +102,8 @@ async def lifespan(app: FastAPI):
     ])
 
     redis_queue_init([
-        'default',
+        'default',   # конвейер задач — контейнер worker
+        'planning',  # цепочки фаз планирования — контейнер worker_planning
     ])
 
     # ======================== Chat ===========================
@@ -118,19 +119,22 @@ async def lifespan(app: FastAPI):
     # переименованные/перемещенные инструменты в коде иначе никогда не
     # попадут в БД без ручного форс-синка (именно так тихо не подхватились
     # mysql_migration_prod_create и env_is_prod после деплоя на прод)
-    # ВАЖНО: planning_runner стартует ПОСЛЕ sync — ai_tool_sync(force=True)
-    # вызывает empty() и временно очищает таблицу tool; если runner стартует
-    # раньше и вызывает _tools_load() в этот момент — получает {} и падает
-    # с "инструмент не найден".
+    # ВАЖНО: восстановление планирования идёт ПОСЛЕ sync — ai_tool_sync(force=True)
+    # вызывает empty() и временно очищает таблицу tool; если проект встанет в
+    # очередь раньше и воркер вызовет _tools_load() в этот момент — получит {}
+    # и упадёт с "инструмент не найден".
     if await env_is_prod():
         await ai_tool_sync(force=True)
     else:
         await ai_tool_sync()
 
-    # ======================== Planning runner ================
+    # ======================== Planning worker ================
 
-    from src.project.planning.planning_runner import planning_runner_start
-    asyncio.create_task(planning_runner_start())
+    # Не запуск воркера, а восстановление: цепочки фаз выполняет контейнер
+    # `worker_task` из Redis-очереди. Здесь только чиним фазы, брошенные смертью
+    # воркера, и доставляем недоделанные проекты в очередь заново.
+    from src.worker.project.planning_worker import planning_worker_recover
+    await planning_worker_recover()
 
     print("Background thread started.")
 
@@ -285,7 +289,9 @@ async def logging_middleware(request: Request, call_next):
 
     # Copy headers to redact sensitive information
     headers = dict(request.headers)
-    for sensitive_header in ['authorization', 'cookie', 'x-api-key']:
+    # x-claude-secret — такой же ключ доступа, как x-api-key: в логи он попадал
+    # открытым текстом, хотя пускает к тем же роутерам claude-shell.
+    for sensitive_header in ['authorization', 'cookie', 'x-api-key', 'x-claude-secret']:
         if sensitive_header in headers:
             headers[sensitive_header] = '***'
         # Also check uppercase
@@ -377,18 +383,27 @@ app.state.agent_manager = AiFrameworkAgentManager()
 app.state.jinja2_template = Jinja2Templates(directory=jinja2_template_path)
 
 # Ссылки на админ-инструменты в шапке открываются в браузере админа, поэтому ведут на его
-# `localhost`: до прод-сервисов он ходит через SSH-туннель, до локальных — напрямую. Порт
-# совпадает у обоих, и на машине разработчика туннель занимает 3012 первым — локальный
-# Cronicle пришлось увести на 3013. Дефолт здесь прод-овый, чтобы новую переменную не
-# заводить в ENV_FILE: расходится ровно одна инсталляция, она же и переопределяет.
-# Порт 6333 на хосте занимает SSH-туннель на прода (LocalForward 6333),
-# поэтому локальный Qdrant перенесён на 6335 (docker-compose.override.yml).
-# Порт 3012 — аналогично, занят SSH-туннелем на Cronicle прода.
-# Дефолт прод-овый: расходится одна инсталляция, она и переопределяет.
-app.state.jinja2_template.env.globals['QDRANT_PORT'] = config_get('QDRANT_PORT', '6333')
-app.state.jinja2_template.env.globals['CRONICLE_PORT'] = config_get('CRONICLE_PORT', '3012')
-app.state.jinja2_template.env.globals['OPENSEARCH_DASHBOARDS_PORT'] = config_get('OPENSEARCH_DASHBOARDS_PORT', '5601')
-app.state.jinja2_template.env.globals['RQ_DASHBOARD_PORT'] = config_get('RQ_DASHBOARD_PORT', '9181')
+# `localhost`: до прод-сервисов он ходит через SSH-туннель (`LocalForward` в
+# `~/.ssh/config`), до локальных — напрямую. На сервис одна переменная `<NAME>_PORT` и
+# одна ссылка: страница прода даёт прод-порт (туннель), страница локальной установки —
+# локальный. Порт у сервиса с обеих сторон одинаковый, но на машине разработчика туннель
+# забирает его первым, поэтому локальные контейнеры уведены на соседние
+# (`docker-compose.override.yml`), а расхождение записано в `.env.local` этой машины.
+# Номеров здесь нет вовсе — все значения из `.env` (список ключей — в `.env.dist`).
+UVICORN_TOOL_NAMES = (
+    'QDRANT',
+    'CRONICLE',
+    'OPENSEARCH_DASHBOARDS',
+    'RQ_DASHBOARD',
+    'PHPMYADMIN',
+    'GATUS',
+)
+for tool_name in UVICORN_TOOL_NAMES:
+    tool_key = f'{tool_name}_PORT'
+    app.state.jinja2_template.env.globals[tool_key] = config_get(tool_key)
+
+# Grafana живёт вне docker-compose, на отдельной машине — не порт, а целый адрес.
+app.state.jinja2_template.env.globals['GRAFANA_URL'] = config_get('GRAFANA_URL')
 
 class NoCacheStaticFiles(StaticFiles):
     """Статика без heuristic-кэша браузера: no-cache заставляет ревалидировать

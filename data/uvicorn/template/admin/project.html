@@ -57,6 +57,24 @@
         font-weight: 600;
     }
 
+    .project-item.dragging {
+        opacity: 0.4;
+    }
+
+    /* Ручка перетаскивания для drag-and-drop сортировки */
+    .project-item .drag-handle {
+        color: #c0c8ce;
+        cursor: grab;
+        font-size: 12px;
+        flex-shrink: 0;
+        user-select: none;
+        margin-right: 8px;
+    }
+
+    .project-item:hover .drag-handle {
+        color: #7f8c8d;
+    }
+
     .project-item .status-dot {
         width: 8px;
         height: 8px;
@@ -354,22 +372,74 @@
         projects.forEach(project => {
             const div = document.createElement('div');
             div.className = 'project-item';
+            div.draggable = true;
             div.dataset.id = project.id;
 
             const title = project.title || 'Без названия';
             const statusDot = `<span class="status-dot ${statusClass(project.status)}" title="${project.status || 'pending'}"></span>`;
 
-            div.innerHTML = `<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</span>${statusDot}`;
+            div.innerHTML = `<span class="drag-handle" title="Перетащите для изменения порядка">⠿</span>`
+                + `<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</span>${statusDot}`;
 
             div.onclick = () => selectProject(project.id, div);
+            div.addEventListener('dragstart', onDragStart);
+            div.addEventListener('dragover', onDragOver);
+            div.addEventListener('dragend', onDragEnd);
             projectListContainer.appendChild(div);
         });
 
-        // Автоматически выбираем первый проект
+        // Восстанавливаем ранее выбранный проект из sessionStorage (переживает обновление
+        // страницы), иначе - первый пункт списка
+        const savedProjectId = sessionStorage.getItem('project_page_selected_id');
+        const savedElement = savedProjectId
+            ? Array.from(projectListContainer.querySelectorAll('.project-item')).find(el => el.dataset.id === savedProjectId)
+            : null;
+
+        if (savedElement) {
+            selectProject(savedProjectId, savedElement);
+            return;
+        }
+
         const firstProject = projects[0];
         const firstElement = projectListContainer.querySelector('.project-item');
         if (firstProject && firstElement) {
             selectProject(firstProject.id, firstElement);
+        }
+    }
+
+    // Drag-and-drop: перестановка проектов, порядок сохраняется в position
+    let draggedItem = null;
+
+    function onDragStart(e) {
+        draggedItem = e.currentTarget;
+        draggedItem.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function onDragOver(e) {
+        const target = e.currentTarget;
+        if (!draggedItem || draggedItem === target) return;
+        e.preventDefault();
+        const rect = target.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        projectListContainer.insertBefore(draggedItem, after ? target.nextSibling : target);
+    }
+
+    async function onDragEnd() {
+        if (!draggedItem) return;
+        draggedItem.classList.remove('dragging');
+        draggedItem = null;
+
+        // Новый порядок по DOM -> сохраняем индексы в position
+        const items = Array.from(projectListContainer.querySelectorAll('.project-item'));
+        try {
+            await Promise.all(items.map((el, index) =>
+                putData(`/project/${el.dataset.id}`, {position: index})
+            ));
+            showNotification('Порядок проектов сохранён', 'success');
+        } catch (e) {
+            console.error('Ошибка сохранения порядка:', e);
+            showNotification(`Ошибка сохранения порядка: ${e.message}`, 'error');
         }
     }
 

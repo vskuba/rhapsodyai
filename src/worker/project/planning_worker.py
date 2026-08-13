@@ -3,9 +3,12 @@
 
 Инструмент, роутер и восстановление при старте только кладут сообщение в Redis-очередь
 и сразу возвращаются. Всю цепочку фаз (analyze → … → blueprint, затем score и
-supplements) прогоняет `rq worker` из docker-compose — тот же контейнер, что разбирает
-конвейер задач. Воркеров может быть много: очередь одна, а от гонок защищает
-single-flight по проекту.
+supplements) прогоняет пул `rq worker-pool` из контейнера `worker_planning`.
+
+Очередь своя (`planning`), не общая с конвейером задач. Причина в длине работы: цепочка
+фаз идёт до 13 часов, шаг конвейера — до часа. В одной очереди запланированный проект
+занимал бы исполнителя на весь день, и задачи стояли бы за ним. Исполнителей в пуле
+несколько, от гонок по одному проекту защищает single-flight.
 
 Дубликаты. У фаз нет захвата строки, как у задач, поэтому вся защита — ключ Redis
 `planning_worker:flight:<project_id>`: пока цепочка проекта не закончилась, второе
@@ -15,12 +18,13 @@ single-flight по проекту.
 Переживает рестарт: задание лежит в Redis, а не в памяти uvicorn. Поэтому
 `planning_worker_recover()` при старте сбрасывает в `pending` только те `running`-фазы,
 чей проект НЕ держит flight-ключ: остальные прямо сейчас планируются в контейнере
-`worker`, и трогать их нельзя.
+`worker_task`, и трогать их нельзя.
 
 Это основной путь обработки; пакетный `planning_batch` из Cronicle — подстраховка.
 Цепочка фаз общая для обоих, описана в `planning_chain`.
 
-Соседи по `src/worker/`: `task_worker` — воркер конвейера задач.
+Соседи по `src/worker/`: `task_worker` — воркер конвейера задач (очередь `default`,
+контейнер `worker_task`).
 Общие правила обоих — `.claude/docs/worker.md`.
 """
 import asyncio
@@ -43,7 +47,7 @@ from src.project.planning.planning_chain import (
 from src.project.planning.planning_phase import planning_phase_run
 from src.project.planning.planning_phase_query import planning_phase_query_status
 
-PLANNING_WORKER_QUEUE_NAME = 'default'
+PLANNING_WORKER_QUEUE_NAME = 'planning'
 
 # Один job = вся цепочка проекта. Последовательных фаз двенадцать: шесть волн
 # (analyze, market, product, tech+gtm, financial, blueprint) плюс шесть supplements,
@@ -64,7 +68,7 @@ def planning_worker_enqueue(project_id: int) -> str | None:
     если проект уже планируется (single-flight занят).
 
     Безопасно вызывать из инструментов и роутеров: постановка занимает миллисекунды,
-    цепочку фаз выполняет контейнер `worker`.
+    цепочку фаз выполняет контейнер `worker_task`.
     """
     project_id = int(project_id)
     if not planning_worker_flight_acquire(project_id):
@@ -272,7 +276,7 @@ async def _startup_reset() -> None:
     цепочки заново.
 
     Проекты с живым flight-ключом пропускаются: задание в Redis переживает рестарт
-    uvicorn, и такие фазы прямо сейчас выполняются в контейнере `worker`.
+    uvicorn, и такие фазы прямо сейчас выполняются в контейнере `worker_task`.
     """
     async with mysql_get_db_async() as db:
         await db.execute(

@@ -37,16 +37,15 @@
         margin-right: 2px;
     }
 
-    .task-count-badge {
-        font-size: 11px;
+    /* Счётчик задач живёт в самой вкладке: сколько задач на каждой фазе, видно не
+       заходя на неё. Отдельного бейджа в тулбаре больше нет. */
+    .page-tab-n {
         font-weight: 700;
-        color: #4f46e5;
-        background: #eef2ff;
-        border: 1px solid #e0e7ff;
-        border-radius: 999px;
-        padding: 2px 9px;
+        color: #94a3b8;
         font-variant-numeric: tabular-nums;
     }
+
+    .page-tab.active .page-tab-n { color: inherit; opacity: .75; }
 
     .task-toolbar-spacer { flex: 1; }
 
@@ -136,7 +135,7 @@
         flex-shrink: 0;
     }
     .task-add-form.open { display: flex; }
-    .task-add-form > * { max-width: 1100px; }
+    .task-add-form > * { width: 100%; }
 
     .task-add-form-row {
         display: flex;
@@ -145,7 +144,6 @@
     }
 
     .task-add-form-row .form-group { flex: 1; }
-    .task-add-form-row .form-group.narrow { flex: 0 0 170px; }
 
     .form-group {
         display: flex;
@@ -269,7 +267,6 @@
     /* Status accent stripe on the leading cell of each row */
     .task-row > td.td-goals { box-shadow: inset 3px 0 0 var(--row-accent, transparent); }
 
-    .td-id     { color: #94a3b8; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .td-task-type { color: #64748b; font-size: 11px; font-weight: 500; }
     .task-type-select {
         font-size: 11px;
@@ -324,7 +321,7 @@
         width: 16px; height: 18px;
         padding: 0;
         border: 0; background: none; cursor: pointer;
-        color: #94a3b8; font-size: 10px; line-height: 18px;
+        color: #94a3b8; font-size: 16px; line-height: 18px;
         transition: transform .12s, color .12s;
     }
     .tree-caret:hover { color: #4f46e5; }
@@ -344,12 +341,13 @@
         white-space: nowrap;
     }
 
-    /* Пилюля и «＋» лежат внутри .tree-name, а не рядом с ним: как flex-соседи
-       они улетали к правому краю колонки, отрываясь от названия. */
+    /* Счётчик подзадач стоит перед кареткой — в начале строки, где взгляд ищет
+       структуру ветки, а не в конце названия. `flex: none` обязателен: как flex-сосед
+       без него пилюля тянется и разъезжается вслед за длиной названия.
+       «＋» по-прежнему внутри .tree-name — иначе улетает к правому краю колонки. */
     .tree-kids {
-        display: inline-block;
-        margin-left: 6px;
-        vertical-align: 1px;
+        flex: none;
+        margin-right: 4px;
         padding: 1px 6px;
         border-radius: 999px;
         /* Индиго на песочном фоне ступеней (ROW_BG) — контрастный акцент;
@@ -362,7 +360,6 @@
     .tree-kids-done { background: #dcfce7; color: #15803d; }
 
     .task-table tbody tr.tree-child > td.td-goals { box-shadow: inset 3px 0 0 var(--row-accent, transparent); }
-    .tree-child .td-id    { opacity: .75; }
     .tree-child .tree-name { font-weight: 500; }
     /* Предок, показанный только как контекст для найденной подзадачи. */
     .tree-ghost > td { opacity: .5; }
@@ -415,24 +412,25 @@
     .status-active::before { animation: status-pulse 1.6s ease-in-out infinite; }
     @keyframes status-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 
-    /* ── Row action buttons ── */
-    .btn-status-action {
+    /* ── Флажки фазы («в разработку», «в тестирование») ── */
+    /* Стоят в одну строку со статусным бейджем, поэтому inline-flex и выравнивание
+       по середине: у бейджа своя высота из-за точки-индикатора, и по базовой линии
+       флажок съезжал бы вниз. Подпись приглушённая — это пометка, а не второй статус. */
+    .task-flag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 6px;
         font-size: 11px;
-        padding: 4px 9px;
-        border-radius: 6px;
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        color: #64748b;
+        white-space: nowrap;
         cursor: pointer;
-        font-weight: 600;
-        color: #475569;
-        transition: all .12s;
+        user-select: none;
     }
-    .btn-status-action:hover { border-color: #cbd5e1; background: #f8fafc; }
-    .btn-status-action.start:hover  { color: #15803d; border-color: #86efac; background: #f0fdf4; }
-    .btn-status-action.queue:hover  { color: #a16207; border-color: #fcd34d; background: #fffbeb; }
-    .btn-status-action.stop:hover   { color: #b45309; border-color: #fdba74; background: #fff7ed; }
-    .btn-status-action.finish:hover { color: #0369a1; border-color: #7dd3fc; background: #f0f9ff; }
+    .task-flag input { margin: 0; cursor: pointer; }
+    .task-flag:hover { color: #334155; }
 
+    /* ── Row action buttons ── */
     .btn-row-del {
         font-size: 12px;
         padding: 4px 8px;
@@ -535,21 +533,30 @@
     .ig-goals-empty { font-size: 11px; color: #cbd5e1; font-style: italic; }
 
     /* ── Subtask progress (for parent tasks — merged status+goals column) ── */
-    .subtask-summary { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    /* Счёт с полоской и разбивка по статусам — об одном и том же: сколько подзадач
+       и в каком они состоянии. Держим их в одну строку, разделяя чертой, чтобы
+       колонка «Прогресс» не занимала две высоты там, где хватает одной. */
+    .subtask-summary { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .subtask-progress-row {
         display: flex; align-items: center; gap: 6px; font-size: 11px;
         font-weight: 600; color: #64748b; white-space: nowrap;
+        flex: none;   /* иначе счёт растягивается и полоска уезжает от числа */
     }
     .subtask-progress-bar {
-        flex: 1; max-width: 80px; height: 4px;
+        flex: none; width: 80px; height: 4px;
         background: #f1f5f9; border-radius: 2px; overflow: hidden;
     }
     .subtask-progress-bar > i {
         display: block; height: 100%; background: #22c55e; border-radius: 2px; transition: width .2s;
     }
+    /* Делимитр — левая граница правого блока: отдельный элемент не нужен, а при
+       пустой разбивке черта и не появится. */
     .subtask-status-row {
         display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
+        min-width: 0;
+        padding-left: 8px; border-left: 1px solid #e2e8f0;
     }
+    .subtask-status-row:empty { display: none; }
     .subtask-status-tag {
         font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
         white-space: nowrap;
@@ -561,9 +568,6 @@
     .stt-blocked   { background: #fee2e2; color: #b91c1c; }
     .stt-cancelled { background: #f1f5f9; color: #64748b; }
     .stt-more      { background: #f1f5f9; color: #64748b; }
-    .subtask-count { font-size: 10px; color: #94a3b8; font-variant-numeric: tabular-nums; }
-    .subtask-item  { margin: 4px 0; padding: 4px 8px; border-left: 2px solid #e2e8f0; background: #fafbfc; border-radius: 2px; }
-    .subtask-item + .subtask-item { border-top: 1px dashed #edf2f7; }
 
     /* ── Expanded edit row ── */
     .task-edit-row { display: none; }
@@ -588,7 +592,7 @@
         display: flex;
         gap: 8px;
         justify-content: flex-end;
-        max-width: 1100px;
+        width: 100%;
     }
 
     .btn-del {
@@ -804,13 +808,29 @@
     .pipe-chip::before { content: '⚙'; font-size: 9px; opacity: .7; }
     .pipe-new              { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
     .pipe-planning         { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
-    .pipe-review           { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
-    .pipe-pending_approval { background: #fef3c7; color: #a16207; border-color: #fde68a; }
+    .pipe-reviewing        { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+    .pipe-plan_approval    { background: #fef3c7; color: #a16207; border-color: #fde68a; }
     .pipe-approved         { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
-    .pipe-split            { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+    .pipe-processing       { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+    /* Та же работа, что и `processing`, но после пометки «в тестирование»: разработка
+       кончилась, идёт проверка. Свой цвет, а не фиолетовый: обе стадии рабочие, и по
+       одинаковым чипсам вкладку «Разработка» было бы не отличить от «Тестирования». */
+    .pipe-testing          { background: #ccfbf1; color: #0f766e; border-color: #99f6e4; }
     .pipe-done             { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
     .pipe-failed           { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
-    .pipe-planning::before, .pipe-split::before, .pipe-review::before { animation: spin 2.4s linear infinite; }
+    /* Состояния подзадач: они живут в той же колонке — и у самих подзадач, и у
+       родителя, которому чипс показывает самую отстающую из них. Цвета взяты по
+       смыслу от состояний задачи: ожидание — серый, работа — фиолетовый,
+       проверка — жёлтый, сбой — красный. */
+    .pipe-planned          { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+    .pipe-developing       { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+    .pipe-qa_pending       { background: #fef3c7; color: #a16207; border-color: #fde68a; }
+    .pipe-failed_qa        { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+    .pipe-blocked          { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+    /* Шестерёнка крутится там, где прямо сейчас кто-то работает. `qa_pending` сюда не
+       входит: разработчик закончил, а QA ещё не начал — это очередь, а не работа. */
+    .pipe-planning::before, .pipe-processing::before, .pipe-reviewing::before,
+    .pipe-testing::before, .pipe-developing::before { animation: spin 2.4s linear infinite; }
     /* Не стадия конвейера, а объяснение её отсутствия: задачу с подзадачами конвейер
        не планирует намеренно (план пишется только листьям). Оттого приглушённая и без
        шестерёнки — иначе читалась бы как «что-то выполняется». */
@@ -821,6 +841,71 @@
     /* `line-height: 1` обязателен: у стрелки собственная высота строки больше, чем у
        шестерёнки, и чип вырастал на 4px — в одной ячейке со статусными это заметно. */
     .pipe-decomposed::before  { content: '↳'; font-size: 10px; line-height: 1; }
+    /* Тоже не стадия, а её отсутствие — задача просто не запущена в конвейер. Тише
+       любого рабочего состояния и без шестерёнки: с ней «(нет плана)» читалось бы как
+       идущая работа, а это ровно противоположное. */
+    .pipe-none                { background: transparent; color: #94a3b8; border-color: #e2e8f0; font-weight: 600; }
+    .pipe-none::before        { content: '·'; font-size: 12px; line-height: 1; }
+    /* Кнопка возврата из `failed` — стоит вплотную к чипсу, потому что относится
+       именно к нему, а не к строке. Цвет чипса и повторяет: рядом с красным «failed»
+       нейтральная серая кнопка читалась бы как часть колонки, а не как выход из сбоя. */
+    .pipe-retry {
+        margin-left: 4px;
+        padding: 1px 5px;
+        font-size: 11px;
+        line-height: 1.2;
+        cursor: pointer;
+        color: #b91c1c;
+        background: #fff;
+        border: 1px solid #fecaca;
+        border-radius: 5px;
+        vertical-align: middle;
+    }
+    .pipe-retry:hover { background: #fee2e2; border-color: #fca5a5; }
+    /* Ссылка на merge request подзадачи — в одной строке с чипсом состояния: состояние
+       отвечает «где работа», ссылка — «где её смотреть», и разносить их по строкам
+       значит рвать одну мысль. Отсюда же `inline-flex` и общая с чипсом высота. */
+    .pipe-mr {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-left: 4px;
+        padding: 2px 6px;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        text-decoration: none;
+        color: #1d4ed8;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 5px;
+        vertical-align: middle;
+    }
+    .pipe-mr::before { content: '⎇'; font-size: 10px; opacity: .7; }
+    .pipe-mr:hover { background: #dbeafe; border-color: #93c5fd; }
+    /* Счётчик сорвавшихся прогонов (`metadata.retry`): агент не ответил, оболочку
+       перезапустили, вход отдали заново. Стоит рядом с чипсом, потому что говорит о том
+       же — почему строка столько времени в одном состоянии. Приглушённый янтарь: это
+       не сбой (сбой красный и уводит в `failed`), а цена, которую строка платит за путь. */
+    .pipe-retries {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-left: 4px;
+        padding: 2px 6px;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        color: #a16207;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 5px;
+        vertical-align: middle;
+        cursor: help;
+    }
+    .pipe-retries::before { content: '↻'; font-size: 10px; opacity: .7; }
 
     .task-pipeline-section {
         grid-column: 1 / -1;
@@ -864,16 +949,6 @@
     .btn-pipe.no { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
     .btn-pipe.no:hover { background: #fee2e2; }
 
-    .pipe-plan-text {
-        white-space: pre-wrap;
-        background: #f8fafc;
-        border: 1px solid #f1f5f9;
-        border-radius: 6px;
-        padding: 8px 10px;
-        margin-bottom: 10px;
-        line-height: 1.5;
-        color: #334155;
-    }
     .pipe-subtask {
         display: flex;
         align-items: baseline;
@@ -930,27 +1005,48 @@
     .modal-body .help-section h4 {
         margin: 0 0 8px; font-size: 13px; color: #1e293b; font-weight: 700;
     }
-    .modal-body .help-state-list {
-        list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px;
+    /* Таблица «статус → состояния конвейера»: две оси задачи независимы, но конвейер
+       сам выставляет статус, и таблица показывает именно это соответствие. */
+    .modal-body .help-table-wrap { overflow-x: auto; }
+    .modal-body .help-table {
+        width: 100%; border-collapse: collapse; font-size: 13px; color: #334155; line-height: 1.5;
     }
-    .modal-body .help-state-item {
-        display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: #334155; line-height: 1.5;
+    .modal-body .help-table th {
+        text-align: left; font-size: 11px; font-weight: 700; color: #94a3b8;
+        text-transform: uppercase; letter-spacing: .04em;
+        padding: 0 10px 6px 0; border-bottom: 1px solid #e2e8f0;
     }
+    .modal-body .help-table td {
+        vertical-align: top; padding: 9px 10px 9px 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .modal-body .help-table tr:last-child td { border-bottom: none; }
+    .modal-body .help-status-cell { width: 34%; min-width: 190px; }
+    .modal-body .help-status-name { display: flex; align-items: baseline; gap: 6px; }
+    .modal-body .help-status-desc { display: block; color: #64748b; font-size: 12px; margin-top: 2px; }
+    .modal-body .help-pipe-item {
+        display: flex; align-items: flex-start; gap: 6px; margin-bottom: 5px;
+    }
+    .modal-body .help-pipe-item:last-child { margin-bottom: 0; }
+    .modal-body .help-pipe-none { color: #94a3b8; font-size: 12px; }
     .modal-body .help-dot {
         flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; margin-top: 5px;
     }
-    .modal-body .help-flow {
-        font-size: 13px; color: #334155; line-height: 1.8;
+    /* Ветка состояния: одна ENUM обслуживает и родителя, и подзадачу — различает их
+       не значение, а `parent_id`, поэтому ветку приходится подписывать явно.
+       Метка идёт сразу за именем состояния: `planning [задача]`. */
+    .modal-body .help-branch {
+        white-space: nowrap; font-size: 11px; font-weight: 700;
+        border-radius: 4px; padding: 0 4px;
     }
-    .modal-body .help-flow code {
+    .modal-body .help-branch-parent { background: #eef2ff; color: #4338ca; }
+    .modal-body .help-branch-sub    { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+    .modal-body .help-branch-both   { background: #ecfdf5; color: #047857; }
+    .modal-body .help-note {
+        font-size: 12px; color: #64748b; line-height: 1.5; margin: 8px 0 0;
+    }
+    .modal-body code {
         background: #f1f5f9; border-radius: 3px; padding: 1px 5px;
         font-family: monospace; font-size: 12px; color: #6366f1;
-    }
-    .modal-body .help-flow .arrow {
-        color: #94a3b8; margin: 0 2px; font-weight: 700;
-    }
-    .modal-body .help-flow .branch {
-        display: block; padding-left: 16px; color: #64748b;
     }
     /* ─── Pipeline diagram (HTML/CSS) ───────────────────────── */
     .pipeline-diagram { display: flex; flex-direction: column; gap: 3px; }
@@ -958,22 +1054,38 @@
         font-size: 14px; font-weight: 700; color: #64748b; margin: 0;
         border-bottom: 1px solid #e2e8f0; padding-bottom: 1px;
     }
-    .pipeline-row {
-        display: flex; align-items: center; gap: 0; flex-wrap: nowrap;
-        overflow-x: auto; padding: 1px 0;
+    /* Вертикальная схема: ствол — линия слева, ветка — уголок от ствола.
+       Горизонтальный ряд в ширину модалки не влезал и уезжал в скролл, а развилки
+       приходилось дописывать сбоку отдельными строками. */
+    .vflow { display: flex; flex-direction: column; align-items: flex-start; }
+    .vrow { display: flex; align-items: center; gap: 6px; min-height: 28px; flex-wrap: wrap; }
+    .vlink { width: 0; height: 16px; margin-left: 16px; border-left: 1.5px solid #cbd5e1; }
+    .vfork { display: flex; flex-direction: column; align-self: stretch; }
+    /* Отступ сверху разводит ветки между собой и отбивает первую от ствола;
+       уголок ниже на ту же величину, иначе он придёт не в середину ряда. */
+    .vfork-item { position: relative; padding-left: 30px; padding-top: 8px; }
+    /* Уголок доводит ствол до середины ряда: отступ + половина `min-height` у `.vrow`. */
+    .vfork-item::before {
+        content: ''; position: absolute; left: 16px; top: 0; width: 12px; height: 22px;
+        border-left: 1.5px solid #cbd5e1; border-bottom: 1.5px solid #cbd5e1;
+        border-bottom-left-radius: 4px;
     }
+    /* Хвост ствола под веткой. У последней ветки его нет — там ствол и кончается;
+       `vside` — ветка, после которой ствол идёт дальше. */
+    .vfork-item:not(:last-child)::after,
+    .vfork-item.vside::after {
+        content: ''; position: absolute; left: 16px; top: 22px; bottom: 0;
+        border-left: 1.5px solid #cbd5e1;
+    }
+    /* Схемы шли встык и читались как одна длинная ветка — отбиваем заголовком. */
+    .pipeline-diagram .vflow + .pipeline-section-title { margin-top: 20px; }
+    .pipeline-diagram .pipeline-section-title + .vflow { margin-top: 6px; }
     .pn {
         /* pipeline node */
         padding: 2px 8px; border-radius: 6px; font-family: monospace;
         font-size: 13px; font-weight: 600; text-align: center;
         white-space: nowrap; min-width: 0; line-height: 1.3;
     }
-    .pa {
-        /* pipeline arrow */
-        font-size: 13px; font-weight: 700; color: #94a3b8;
-        padding: 0 1px; white-space: nowrap;
-    }
-    .pa-loop { color: #ea580c; font-size: 13px; }
     /* Node colors */
     .pn-gray    { background:#f8fafc; border:1.5px solid #94a3b8; color:#475569; }
     .pn-blue   { background:#eef2ff; border:1.5px solid #a5b4fc; color:#3730a3; }
@@ -981,6 +1093,7 @@
     .pn-yellow { background:#fefce8; border:1.5px solid #fcd34d; color:#854d0e; }
     .pn-indigo { background:#eff6ff; border:1.5px solid #93c5fd; color:#1e40af; }
     .pn-cyan   { background:#ecfeff; border:1.5px solid #67e8f9; color:#155e75; }
+    .pn-teal   { background:#f0fdfa; border:1.5px solid #5eead4; color:#0f766e; }
     .pn-green  { background:#f0fdf4; border:1.5px solid #86efac; color:#166534; }
     .pn-red    { background:#fef2f2; border:1.5px solid #fca5a5; color:#991b1b; }
     .pn-sub    { background:#f8fafc; border:1.5px solid #e2e8f0; color:#475569; }
@@ -995,48 +1108,9 @@
     .note-green  { color: #16a34a; }
     .note-orange { color: #ea580c; }
     .note-red    { color: #dc2626; }
-    /* Branch layout */
-    .pipeline-branch {
-        display: flex; align-items: flex-start; gap: 0; margin: 0;
-    }
-    .pb-connector {
-        /* vertical dashed line from qa_pending downward */
-        width: 12px; flex-shrink: 0;
-        border-left: 1.5px solid #94a3b8;
-    }
-    .pb-connector.dashed { border-left-style: dashed; }
-    .pb-branch { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-    .pb-row {
-        display: flex; align-items: center; gap: 0;
-    }
-    .pb-dot {
-        /* small connector dot */
-        width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
-        margin-left: 6px; margin-right: 2px;
-    }
-    .pb-dot.green  { background: #16a34a; }
-    .pb-dot.orange { background: #ea580c; }
-    .pb-dot.red    { background: #dc2626; }
-    /* Loop arrows (curved dashed) */
-    .pipeline-loops {
-        position: relative; height: 36px; margin-top: -2px;
-    }
-    .loop-arrow {
-        position: absolute; border: none; border-top: 1.5px dashed #ea580c;
-        border-radius: 0 50% 0 0; height: 18px;
-    }
-    .loop-arrow::after {
-        /* arrowhead */
-        content: ''; position: absolute; left: -5px; top: -4px;
-        width: 0; height: 0;
-        border-left: 5px solid #ea580c;
-        border-top: 4px solid transparent;
-        border-bottom: 4px solid transparent;
-        transform: rotate(180deg);
-    }
     /* Legend */
     .pipeline-legend {
-        margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 4px;
+        margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 8px;
     }
     .pipeline-legend-title {
         font-size: 14px; font-weight: 700; color: #64748b; margin: 0 0 4px 0;
@@ -1051,6 +1125,52 @@
     .legend-swatch {
         width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
     }
+
+    #taskProjectSelect {
+        width: 270px;
+    }
+
+    /* Мини-карточки команды проекта — тот же ряд, что и селектор проекта.
+       Полные карточки живут на /admin/team; здесь нужен только ответ на вопрос
+       «кто из ролей сейчас жив и что держит», поэтому карточка — одна строка. */
+    .team-mini-row {
+        display: flex; align-items: center; gap: 6px;
+        flex-wrap: nowrap; overflow-x: auto; min-width: 0;
+        font-family: system-ui, sans-serif;
+    }
+    .team-mini {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 8px; border-radius: 12px; white-space: nowrap;
+        font-size: 12px; border: 1px solid #e2e8f0;
+        background: #f8fafc; color: #94a3b8;
+    }
+    .team-mini-on {
+        border-color: #86efac; background: #f0fdf4; color: #166534;
+    }
+    .team-mini-dot {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: #cbd5e1; flex-shrink: 0;
+    }
+    .team-mini-on .team-mini-dot { background: #22c55e; }
+    /* Живая карточка, за которой закреплена задача, дышит: «активен» и «сейчас
+       работает» — разные вещи, а по статичному ряду это было не отличить.
+       Пульсация — расходящееся кольцо со сменой фона: предыдущий вариант менял
+       только тень на 3px и в ряду мелких плашек был незаметен. */
+    .team-mini-busy { animation: team-mini-pulse 1.4s ease-in-out infinite; }
+    @keyframes team-mini-pulse {
+        0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, .5); border-color: #22c55e; background: #dcfce7; }
+        70%  { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); border-color: #16a34a; background: #bbf7d0; }
+        100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); border-color: #22c55e; background: #dcfce7; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .team-mini-busy { animation: none; }
+    }
+    .team-mini-name { font-weight: 600; }
+    /* Номер задачи в работе — ссылка-якорь: строка задачи есть в таблице ниже. */
+    .team-mini-task {
+        padding: 0 5px; border-radius: 8px; cursor: pointer;
+        background: #dbeafe; color: #1e40af; font-weight: 700;
+    }
 </style>
 {% endblock %}
 
@@ -1063,19 +1183,19 @@
         <select id="taskProjectSelect" onchange="selectProjectById(+this.value, this.options[this.selectedIndex].text)">
             <option value="">— выберите проект —</option>
         </select>
+        <div class="team-mini-row" id="taskTeamRow"></div>
     </div>
 
     <!-- Page Tabs: Phase filter -->
     <div class="page-tabs" id="phaseTabs">
-        <button class="page-tab active" data-tab="planning">Планирование</button>
-        <button class="page-tab" data-tab="development">Разработка</button>
-        <button class="page-tab" data-tab="testing">Тестирование/Баги</button>
+        <button class="page-tab active" data-tab="planning">Планирование <span class="page-tab-n" id="tabCount-planning"></span></button>
+        <button class="page-tab" data-tab="development">Разработка <span class="page-tab-n" id="tabCount-development"></span></button>
+        <button class="page-tab" data-tab="testing">Тестирование/Баги <span class="page-tab-n" id="tabCount-testing"></span></button>
     </div>
 
     <!-- Toolbar: title, filters, add -->
     <div class="task-toolbar">
         <span class="task-toolbar-title">Задачи</span>
-        <span class="task-count-badge" id="taskCountBadge">0</span>
 
         <input class="task-search" id="taskSearch" placeholder="Поиск..." oninput="renderTable()">
 
@@ -1094,14 +1214,6 @@
             <div class="form-group">
                 <label>Название</label>
                 <input id="newTaskTitle" placeholder="Название задачи">
-            </div>
-            <div class="form-group narrow">
-                <label>Статус</label>
-                <select id="newTaskStatus"></select>
-            </div>
-            <div class="form-group narrow">
-                <label>Тип</label>
-                <select id="newTaskType"></select>
             </div>
         </div>
         <div class="form-group">
@@ -1149,6 +1261,16 @@ const PHASE_TYPE_NAMES = {
     planning: ['research', 'plan'],      // 4, 5
     development: ['dev'],                 // 1
     testing: ['bug', 'test']              // 2, 3
+};
+
+// Тип новой задачи — по вкладке, на которой её заводят: полей «Статус» и «Тип» в форме
+// больше нет, а тип решает, чья карточка возьмёт задачу в работу (см. `task_role.py`).
+// Вкладка перечисляет несколько типов, для новой задачи нужен один — основной для фазы:
+// «Планирование» → plan (не research), «Тестирование/Баги» → test (не bug).
+const PHASE_NEW_TYPE_NAME = {
+    planning: 'plan',
+    development: 'dev',
+    testing: 'test',
 };
 
 const STATUS_LABELS = {
@@ -1211,8 +1333,64 @@ async function loadProjects() {
 function selectProjectById(id, title) {
     _taskProjectId = id || 0;
     localStorage.setItem(PROJECT_KEY, String(_taskProjectId));
-    document.getElementById('newTaskStatus').innerHTML = statusOptions('pending');
     loadTasks();
+    loadTeamRow();
+}
+
+// ── Мини-карточки команды ──────────────────────────────────────────────────────
+// Тот же источник, что и у /admin/team: активность роли считается на сервере по
+// свежести пинга оболочки, браузеру её не вычислить. Здесь от карточки нужны три
+// вещи — жива ли роль, как зовут и что держит в работе прямо сейчас.
+const TEAM_ROW_REFRESH_MS = 15000;
+
+async function loadTeamRow() {
+    const row = document.getElementById('taskTeamRow');
+    if (!row) return;
+    try {
+        const data = await taskFetch('/api/team/projects');
+        const blocks = data.result?.blocks || [];
+        const block = blocks.find(b => (b.project_id || 0) === _taskProjectId);
+        row.innerHTML = (block?.cards || []).map(teamMiniCardHtml).join('');
+    } catch(e) {
+        row.innerHTML = '';
+    }
+}
+
+function teamMiniCardHtml(card) {
+    // В работе — только то, что держит сама оболочка роли: сервер уже вернул
+    // задачу в очередь, если карточка погасла или агент свободен.
+    const cur = card.queue_current;
+    // Кликаем и подсвечиваем подзадачу — именно её строка есть в таблице; номер
+    // родителя показываем рядом, иначе «#386» ни о чём не говорит.
+    const taskId = cur ? (cur.subtask_id || cur.task_id) : 0;
+    const label = cur && cur.subtask_id && cur.task_id && cur.subtask_id !== cur.task_id
+        ? `#${cur.task_id}/#${cur.subtask_id}`
+        : `#${taskId}`;
+    const task = taskId
+        ? `<span class="team-mini-task" onclick="scrollToTask(${taskId})" title="${esc(cur.title)}">${label}</span>`
+        : '';
+    // Пульсирует только карточка, которая и жива, и держит задачу: погасшая
+    // оболочка с остатком в очереди ничего не выполняет и мигать не должна.
+    const busy  = card.active && taskId ? ' team-mini-busy' : '';
+    const title = `${esc(card.role_title)} · ${card.active ? 'активен' : 'не активен'}`
+        + (busy ? ` · в работе ${label}` : '');
+
+    return `<div class="team-mini${card.active ? ' team-mini-on' : ''}${busy}" title="${title}">
+        <span class="team-mini-dot"></span>
+        <span class="team-mini-name">${esc(card.name)}</span>${task}
+    </div>`;
+}
+
+// Строки может не быть: подзадача разработчика живёт на вкладке «Разработка», а
+// открыта может быть другая. Молча ничего не делаем — переключать вкладку и
+// сбрасывать фильтры под один клик значит терять то, что пользователь настроил.
+function scrollToTask(taskId) {
+    const el = document.getElementById(`tr-${taskId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.transition = 'background .3s';
+    el.style.background = '#fef9c3';
+    setTimeout(() => { el.style.background = ''; }, 1500);
 }
 
 async function loadTaskTypes() {
@@ -1228,8 +1406,6 @@ async function loadTaskTypes() {
         } else {
             _taskTypes = [];
         }
-        const sel = document.getElementById('newTaskType');
-        if (sel) sel.innerHTML = taskTypeOptions('');
     } catch(e) {
         console.error('Failed to load task types:', e);
         _taskTypes = [];
@@ -1249,9 +1425,9 @@ async function loadTasks() {
 }
 
 // ── Дерево задач ───────────────────────────────────────────────────────────────
-// task.parent_id — человеческая декомпозиция «эпик → подзадачи» любой глубины.
-// Не путать с подзадачами конвейера (project_task_subtask) в блоке «Конвейер агентов»:
-// те принадлежат плану менеджера и живут внутри одной задачи.
+// task.parent_id — декомпозиция «эпик → подзадачи» любой глубины. Дерево одно на всех:
+// подзадачи из плана менеджера (блок «Конвейер агентов») — такие же дети, помеченные
+// pipeline_from_plan, и в дереве они видны наравне с заведёнными руками.
 const TREE_KEY = 'taskTreeCollapsed';
 let _collapsed = new Set();
 let _newTaskParentId = null;
@@ -1267,6 +1443,15 @@ function toggleCollapse(id) {
     renderTable();
 }
 
+// Тип для новой задачи — по активной вкладке. Пусто (null), если такого типа нет в
+// `project_task_type`: задача без типа достаётся менеджеру (`TASK_ROLE_DEFAULT`), это
+// рабочий вариант, а выдумывать чужой id хуже, чем не указать тип вовсе.
+function taskTypeIdOfPhase() {
+    const name = PHASE_NEW_TYPE_NAME[_phaseFilter] || '';
+    const type = _taskTypes.find(t => t.name === name);
+    return type ? type.id : null;
+}
+
 // Получить имя типа задачи по ID (из загруженных _taskTypes)
 function getTaskTypeNameById(typeId) {
     if (!typeId) return null;
@@ -1274,19 +1459,34 @@ function getTaskTypeNameById(typeId) {
     return t ? t.name : null;
 }
 
-// Подошла ли задача под поиск и фильтр статуса.
-function taskMatches(t) {
-    if (_statusFilter && t.status !== _statusFilter) return false;
-    // Фильтр по фазе — задачи без task_type_id считаются типом "dev" (development)
+// Своя ли задача для вкладки — по типу, без поиска и статуса. Отдельная функция,
+// потому что по фазе решается не только «показать строку»: задача чужой фазы не
+// тянется в таблицу и как предок (см. `treeRows`), иначе задача в тестировании
+// висела бы ещё и на «Разработке» — на двух вкладках сразу.
+function taskMatchesPhase(t) {
+    // Задачи без task_type_id считаются типом "dev" (development)
     const typeName = getTaskTypeNameById(t.task_type_id) || 'dev'; // NULL → dev по умолчанию
-    if (_phaseFilter) {
-        const typeNamesForPhase = PHASE_TYPE_NAMES[_phaseFilter] || [];
-        if (!typeNamesForPhase.includes(typeName)) return false;
-    }
+    if (!_phaseFilter) return true;
+    return (PHASE_TYPE_NAMES[_phaseFilter] || []).includes(typeName);
+}
+
+// Видна ли задача на текущей вкладке и подходит ли под поиск — всё, кроме фильтра
+// статуса. Отдельно от `taskMatches`, потому что по этому же набору считаются числа
+// на чипсах: чипс должен обещать ровно то, что покажет таблица, если по нему кликнуть,
+// а собственный статус чипса при подсчёте учитывать нельзя — иначе у каждого вышло бы
+// либо своё число, либо ноль.
+function taskMatchesScope(t) {
+    if (!taskMatchesPhase(t)) return false;
     const q = (document.getElementById('taskSearch')?.value || '').trim().toLowerCase();
     if (!q) return true;
     return [t.title, t.description, t.report]
         .some(v => String(v || '').toLowerCase().includes(q));
+}
+
+// Подошла ли задача под вкладку, поиск и фильтр статуса.
+function taskMatches(t) {
+    if (_statusFilter && t.status !== _statusFilter) return false;
+    return taskMatchesScope(t);
 }
 
 function taskCompare(a, b) {
@@ -1345,14 +1545,21 @@ function treeRows() {
     const byParent = new Map();
     const parentOf = new Map();
 
+    // Чужая фаза рвёт связь: подзадача разработки под задачей тестирования на
+    // вкладке «Разработка» встаёт корневой, а сам родитель туда не попадает —
+    // он живёт на «Тестировании» и на двух вкладках сразу висеть не должен.
+    const phaseOk = new Map(_tasks.map(t => [t.id, taskMatchesPhase(t)]));
+
     _tasks.forEach(t => {
         // Родитель мог не попасть в выборку (другой проект) — тогда показываем
         // ветку как корневую, иначе задача исчезла бы из таблицы совсем.
-        const p = (t.parent_id && ids.has(t.parent_id)) ? t.parent_id : null;
+        const p = (t.parent_id && ids.has(t.parent_id) && phaseOk.get(t.parent_id)) ? t.parent_id : null;
         parentOf.set(t.id, p);
         if (!byParent.has(p)) byParent.set(p, []);
         byParent.get(p).push(t);
     });
+
+    const filtering = !!_statusFilter || !!(document.getElementById('taskSearch')?.value || '').trim();
 
     // Подошедшие задачи тянут за собой предков: иначе ветка повисла бы без
     // родителя и было бы непонятно, к чему она относится.
@@ -1363,7 +1570,20 @@ function treeRows() {
         while (cur != null && !show.has(cur)) { show.add(cur); cur = parentOf.get(cur); }
     });
 
-    const filtering = !!_statusFilter || !!(document.getElementById('taskSearch')?.value || '').trim();
+    // Ветка принадлежит родителю целиком: подзадачи разработки — своя вкладка, но
+    // внутри раскрытой задачи тестирования их надо видеть. Без этого каретка
+    // переключалась, а под ней было пусто. Под активным фильтром не добавляем:
+    // там показываем только то, что реально подошло.
+    if (!filtering) {
+        const kin = id => (byParent.get(id) || []).forEach(k => {
+            if (show.has(k.id)) return;
+            show.add(k.id);
+            hit.add(k.id);   // не «призрак»: подзадача — часть найденной ветки, а не контекст
+            kin(k.id);
+        });
+        Array.from(hit).forEach(kin);
+    }
+
     const out = [];
 
     // Сводка подзадач: для каждой родительской задачи — собираем детей с полными полями.
@@ -1410,13 +1630,20 @@ function treeRows() {
 }
 
 function renderChips() {
+    // Считаем по тому же срезу, что видит таблица: вкладка фазы + поиск. Раньше здесь
+    // был весь `_tasks`, поэтому на вкладке «Разработка» чипсы показывали ещё и задачи
+    // планирования с тестированием, и числа не сходились ни с таблицей, ни со счётчиком.
+    const scope  = _tasks.filter(taskMatchesScope);
     const counts = {};
-    _tasks.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1; });
-    const chips = [`<button class="task-chip${_statusFilter ? '' : ' active'}" onclick="setStatusFilter('')">Все <span class="chip-n">${_tasks.length}</span></button>`];
+    scope.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1; });
+
+    const chips = [`<button class="task-chip${_statusFilter ? '' : ' active'}" onclick="setStatusFilter('')">Все <span class="chip-n">${scope.length}</span></button>`];
     Object.keys(STATUS_ORDER)
-        .filter(s => counts[s])
+        // Пустые статусы скрываем, но выбранный оставляем даже с нулём: иначе активный
+        // фильтр исчезал бы с глаз, а таблица молча показывала бы «Ничего не найдено».
+        .filter(s => counts[s] || _statusFilter === s)
         .forEach(s => chips.push(
-            `<button class="task-chip${_statusFilter === s ? ' active' : ''}" onclick="setStatusFilter('${s}')">${STATUS_LABELS[s]} <span class="chip-n">${counts[s]}</span></button>`));
+            `<button class="task-chip${_statusFilter === s ? ' active' : ''}" onclick="setStatusFilter('${s}')">${STATUS_LABELS[s]} <span class="chip-n">${counts[s] || 0}</span></button>`));
     document.getElementById('taskChips').innerHTML = chips.join('');
 }
 
@@ -1426,40 +1653,58 @@ function setStatusFilter(status) {
 }
 
 // Phase tabs handling
-let _phaseFilter = 'development'; // По умолчанию активна вкладка "Разработка"
+// Вкладку помним между заходами — рядом с выбранным проектом (PROJECT_KEY) и свёрнутыми
+// ветками (TREE_KEY): страница задач вообще открывается там, где её оставили.
+const PHASE_KEY = 'task_phase';
+// Вкладка из прошлой сессии могла исчезнуть при правке PHASE_TYPE_NAMES — сверяем
+// с текущим списком, иначе таблица молча осталась бы пустой на несуществующей фазе.
+let _phaseFilter = PHASE_TYPE_NAMES[localStorage.getItem(PHASE_KEY)]
+    ? localStorage.getItem(PHASE_KEY) : 'development';
 
 function selectPhase(btn, phase) {
     _phaseFilter = phase; // Всегда выбирать вкладку, не отключать
-    // Update tab buttons
-    document.querySelectorAll('#phaseTabs .page-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.tab === _phaseFilter);
-    });
+    localStorage.setItem(PHASE_KEY, phase);
+    phaseTabsSync();
     renderTable();
 }
 
-// Add click handler for phase tabs
-document.addEventListener('DOMContentLoaded', () => {
+function phaseTabsSync() {
     document.querySelectorAll('#phaseTabs .page-tab').forEach(tab => {
-        tab.addEventListener('click', () => selectPhase(tab, tab.dataset.tab));
+        tab.classList.toggle('active', tab.dataset.tab === _phaseFilter);
     });
-    // Set initial active tab based on _phaseFilter (default: development)
-    document.querySelectorAll('#phaseTabs .page-tab').forEach(tab => {
-        if (tab.dataset.tab === _phaseFilter) {
-            tab.classList.add('active');
-        } else {
-            tab.classList.remove('active');
-        }
+}
+
+// Число в самой вкладке: сколько задач этой фазы есть у проекта. Поиск и фильтр
+// статуса тут намеренно не учитываем — иначе, набрав что-то в поиске, нельзя было
+// бы понять, сколько работы лежит на соседних вкладках. Сколько строк подошло под
+// фильтр, показывает чипс «Все».
+function phaseTabsCount() {
+    const counts = {};
+    _tasks.forEach(t => {
+        const typeName = getTaskTypeNameById(t.task_type_id) || 'dev';
+        Object.keys(PHASE_TYPE_NAMES).forEach(phase => {
+            if (PHASE_TYPE_NAMES[phase].includes(typeName)) counts[phase] = (counts[phase] || 0) + 1;
+        });
     });
+    Object.keys(PHASE_TYPE_NAMES).forEach(phase => {
+        const el = document.getElementById(`tabCount-${phase}`);
+        if (el) el.textContent = `(${counts[phase] || 0})`;
+    });
+}
+
+// Разметка вкладок стоит выше этого скрипта, поэтому вешаем обработчики сразу,
+// не дожидаясь DOMContentLoaded: до первой отрисовки таблицы подсветка уже верная.
+document.querySelectorAll('#phaseTabs .page-tab').forEach(tab => {
+    tab.addEventListener('click', () => selectPhase(tab, tab.dataset.tab));
 });
+phaseTabsSync();
 
 function renderTable() {
     const wrap = document.getElementById('taskTableWrap');
     renderChips();
 
     const rows = treeRows();
-    // В счётчике только реально подошедшие: предки-контейнеры показаны как
-    // контекст и раздували бы число найденного.
-    document.getElementById('taskCountBadge').textContent = rows.filter(r => !r.ghost).length;
+    phaseTabsCount();
 
     if (!_tasks.length) {
         wrap.innerHTML = '<div class="task-placeholder"><span class="task-placeholder-icon">✅</span>Нет задач — нажмите «+ Добавить»</div>';
@@ -1477,7 +1722,6 @@ function renderTable() {
             <thead>
                 <tr>
                     <th data-col="sort" class="td-sort">⬆️⬇️</th>
-                    <th data-col="id" >ID</th>
                     <th data-col="task_type" style="width:100px">Тип</th>
                     <th data-col="goals" style="width:28%">Прогресс</th>
                     <th data-col="title" style="width:24%">Название</th>
@@ -1492,29 +1736,13 @@ function renderTable() {
         </table>`;
 }
 
-function rowStatusBtn(t) {
-    const s = t.status;
-    const hasActive = _tasks.some(x => x.id !== t.id && x.status === 'active');
-    if (s === 'pending' || s === 'blocked') {
-        const startBtn = hasActive
-            ? `<button class="btn-status-action queue" onclick="event.stopPropagation();quickStatus(${t.id},'queued')" title="В очередь">🕐 В очередь</button>`
-            : `<button class="btn-status-action start" onclick="event.stopPropagation();quickStatus(${t.id},'active')" title="Запустить">▶ Запустить</button>`;
-        return startBtn;
-    }
-    if (s === 'queued') {
-        const startBtn = hasActive
-            ? ''
-            : `<button class="btn-status-action start" onclick="event.stopPropagation();quickStatus(${t.id},'active')" title="Запустить">▶ Запустить</button>`;
-        return startBtn +
-            ` <button class="btn-status-action stop" onclick="event.stopPropagation();quickStatus(${t.id},'pending')" title="Снять с очереди">✕ Очередь</button>`;
-    }
-    if (s === 'active')
-        return `<button class="btn-status-action stop" onclick="event.stopPropagation();quickStatus(${t.id},'pending')" title="Остановить">⏸ Стоп</button>` +
-               ` <button class="btn-status-action finish" onclick="event.stopPropagation();quickStatus(${t.id},'done')" title="Завершить">✓</button>`;
-    if (s === 'done')
-        return `<button class="btn-status-action start" onclick="event.stopPropagation();quickStatus(${t.id},'pending')" title="Вернуть">↩ Вернуть</button>`;
-    return '';
-}
+// Быстрых кнопок смены `status` в строке больше нет — весь набор («Запустить», «В очередь»,
+// «Стоп», «✓», «Вернуть») был четырьмя видами одного действия: PUT /task/{id} с новым
+// человеческим статусом. На автоматику он не влияет — конвейер `status` не читает
+// (см. task_claim_task_unplanned), — а рядом с чипсом конвейера читался как управление
+// агентами. «В очередь» вдобавок ставила состояние, из которого единственным выходом была
+// соседняя «✕ Очередь»: замкнутая пара, менявшая только подпись, цвет и порядок сортировки.
+// Статус остался редактируемым в селекте раскрытой строки, где он ничего не обещает.
 
 function renderInlineGoals(t, statusOverride, hasKids) {
     const isLeaf = !hasKids;
@@ -1550,7 +1778,7 @@ function renderSubtaskSummary(row) {
     const pct = Math.round(done * 100 / kids.length);
 
     // Прогресс-бар.
-    let html = `
+    const progress = `
         <div class="subtask-progress-row">
             <span>${done}/${row.kidsTotal}</span>
             <span class="subtask-progress-bar"><i style="width:${pct}%"></i></span>
@@ -1567,8 +1795,10 @@ function renderSubtaskSummary(row) {
             return `<span class="subtask-status-tag ${tagCls}" title="${STATUS_LABELS[status] || status}">${STATUS_LABELS[status] || status}: ${count}</span>`;
         }).join('');
 
-    html += `<div class="subtask-status-row">${statusTags}</div>`;
-    return html;
+    // Обёртка обязательна: в одну строку счёт и разбивку сводит именно
+    // `flex` на `.subtask-summary`, без неё оба блока — просто соседние
+    // `div` в ячейке и встают друг под другом.
+    return `<div class="subtask-summary">${progress}<div class="subtask-status-row">${statusTags}</div></div>`;
 }
 
 // Отступ ветки: направляющие предков плюс «локоть» самой строки. У предка,
@@ -1623,7 +1853,9 @@ function taskTypeSelect(taskId, currentTypeId) {
 
 function renderRow(row, index, hasParent) {
     const t = row.t;
-    const badge = `<span class="task-status-badge status-${t.status}">${STATUS_LABELS[t.status] || t.status}</span>`;
+    const hint  = esc(taskReportHint(t, row));
+    const status = taskRowStatus(row);
+    const badge = `<span class="task-status-badge status-${status}" title="${hint}">${STATUS_LABELS[status] || status}</span>`;
     const dateStr = t.created_at ? t.created_at.substring(0, 10) : '';
     const kidsPill = row.hasKids
         ? `<span class="tree-kids${row.kidsDone === row.kidsTotal ? ' tree-kids-done' : ''}"
@@ -1635,45 +1867,35 @@ function renderRow(row, index, hasParent) {
     // Соседи для кнопок up/down
     const sortBtns = _sortBtns(t.id, t.position);
 
-    // Содержимое колонки «Прогресс» — статус задачи + подзадачи/goals
-    const progressContent = row.hasKids
-        ? badge + renderSubtaskSummary(row)
-        : badge + renderInlineGoals(t, undefined, false);
+    // Содержимое колонки «Прогресс» — статус задачи + состояние конвейера + подзадачи/goals.
+    // Оси две и они независимы: `status` — ручной kanban, `pipeline_state` — стадия
+    // автоматики. Без второго чипса задача с ручным «Ожидает» и сорвавшимся конвейером
+    // выглядит на странице спокойно ждущей очереди, хотя оркестратор её больше не возьмёт.
+    const pipeChip = renderPipeChip(t, row);
+    const progressContent = badge + renderDevFlag(t) + renderTestFlag(t) + pipeChip + (row.hasKids
+        ? renderSubtaskSummary(row)
+        : renderInlineGoals(t, undefined, false));
 
     return `
-        <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[t.status] || 'transparent'};--row-bg:${rowBg(row, index)}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
+        <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[status] || 'transparent'};--row-bg:${rowBg(row, index)}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
             <td class="td-sort" data-col="sort">${sortBtns}</td>
-            <td class="td-id" data-col="id">#${t.id}</td>
             <td class="td-task-type" data-col="task_type">${taskTypeSelect(t.id, t.task_type_id)}</td>
             <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${progressContent}</td>
             <td class="td-title" data-col="title">
-                <div class="tree-title">${treeIndent(row)}${treeCaret(row)}<span class="tree-num">${row.num}</span><span class="tree-name">${esc(t.title)}${kidsPill}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
+                <div class="tree-title">${treeIndent(row)}${kidsPill}${treeCaret(row)}<span class="tree-num">#${t.id} </span><span class="tree-name">${esc(t.title)}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
             </td>
             <td class="td-desc" data-col="desc"><div class="task-desc-preview">${esc(t.description)}</div></td>
             <td class="td-date" data-col="date">${dateStr}</td>
             <td class="td-act" data-col="act">
-                ${rowStatusBtn(t)}
                 <button class="btn-row-del" onclick="event.stopPropagation();deleteTask(${t.id})" title="Удалить">✕</button>
             </td>
         </tr>
         <tr class="task-edit-row" id="ter-${t.id}">
             <td class="task-edit-cell" colspan="7">
                 <div class="task-edit-grid">
-                    <div class="form-group">
+                    <div class="form-group span2">
                         <label>Название</label>
                         <input id="tt-${t.id}" value="${esc(t.title)}">
-                    </div>
-                    <div class="form-group">
-                        <label>Статус</label>
-                        <select id="ts-${t.id}">${statusOptions(t.status)}</select>
-                    </div>
-                    <div class="form-group">
-                        <label>Тип</label>
-                        <select id="ttt-${t.id}">${taskTypeOptions(t.task_type_id)}</select>
-                    </div>
-                    <div class="form-group span2">
-                        <label>Родительская задача <span class="plan-hint">— перенос по дереву</span></label>
-                        <select id="tp-${t.id}">${parentOptions(t)}</select>
                     </div>
                     <div class="form-group span2">
                         <label>Описание</label>
@@ -1709,8 +1931,13 @@ function renderRow(row, index, hasParent) {
                         </div>
                     </div>
                     <div class="form-group span2">
-                        <label>Отчёт о выполненных работах</label>
-                        <textarea id="trep-${t.id}" style="min-height:80px">${esc(t.report)}</textarea>
+                        <label>Отчёт оркестратора</label>
+                        <!-- Только чтение: поле ведёт конвейер (src/project/task/task_report.py),
+                             новая запись встаёт первой строкой. Правка руками была бы ловушкой —
+                             следующий же переход конвейера затёр бы написанное. Тот же текст
+                             висит подсказкой на статусных чипсах строки. -->
+                        <textarea id="trep-${t.id}" readonly style="min-height:80px;background:#f8fafc;color:#475569"
+                                  placeholder="Пусто — конвейер эту задачу ещё не брал">${esc(t.report)}</textarea>
                     </div>
                 </div>
                 <div class="task-edit-actions">
@@ -1730,45 +1957,6 @@ const STATUS_ACCENT = {
     cancelled: '#e2e8f0',
     done:      '#38bdf8',
 };
-
-function statusOptions(selected) {
-    return Object.entries(STATUS_LABELS).map(([v, l]) =>
-        `<option value="${v}"${v === selected ? ' selected' : ''}>${l}</option>`
-    ).join('');
-}
-
-function taskTypeOptions(selected) {
-    const opts = ['<option value="">Не указан</option>'];
-    _taskTypes.forEach(t => {
-        opts.push(`<option value="${t.id}"${t.id === (selected || '') ? ' selected' : ''}>${esc(t.title)}</option>`);
-    });
-    return opts.join('');
-}
-
-// Кого можно назначить родителем. Себя и свою же ветку исключаем — сервер такой
-// перенос всё равно отвергнет, но показывать заведомо нерабочий вариант незачем.
-// Кандидаты в родители. Плоский список из полусотни строк выбирать неудобно,
-// поэтому идём в том же порядке, что и таблица, с отступом по глубине.
-// Сама задача и её ветка исключены — иначе получился бы цикл, и сервер всё
-// равно ответил бы отказом.
-function parentOptions(t) {
-    const banned = treeDescendants(t.id);
-    banned.add(t.id);
-    const opts = [`<option value=""${t.parent_id ? '' : ' selected'}>— корневая задача —</option>`];
-    const walk = (parentId, depth) => {
-        _tasks
-            .filter(x => (x.parent_id || null) === parentId && x.project_id === t.project_id)
-            .sort(taskCompare)
-            .forEach(x => {
-                if (banned.has(x.id)) return;  // ветку целиком, вместе с потомками
-                opts.push(`<option value="${x.id}"${x.id === t.parent_id ? ' selected' : ''}>`
-                    + `${'  '.repeat(depth)}${depth ? '└ ' : ''}#${x.id} ${esc(x.title)}</option>`);
-                walk(x.id, depth + 1);
-            });
-    };
-    walk(null, 0);
-    return opts.join('');
-}
 
 function toggleEdit(id) {
     const row = document.getElementById(`ter-${id}`);
@@ -1840,8 +2028,7 @@ async function createTask() {
             body: JSON.stringify({
                 title,
                 description: document.getElementById('newTaskDesc').value,
-                status: document.getElementById('newTaskStatus').value,
-                task_type_id: document.getElementById('newTaskType')?.value || null,
+                task_type_id: taskTypeIdOfPhase(),
                 parent_id: _newTaskParentId,
             }),
         });
@@ -1861,7 +2048,6 @@ async function createTask() {
         _tasks.push(data.task);
         document.getElementById('newTaskTitle').value = '';
         document.getElementById('newTaskDesc').value = '';
-        document.getElementById('newTaskStatus').value = 'pending';
         const prev = document.getElementById('aiGoalsPreview');
         if (prev) prev.remove();
         document.getElementById('taskAddForm').classList.remove('open');
@@ -1878,10 +2064,11 @@ async function saveTask(id) {
                 description: document.getElementById(`td-${id}`).value,
                 plan_text:   document.getElementById(`tplan-${id}`).value,
                 goals:       JSON.stringify(_goalsCache[id] || []),
-                status:      document.getElementById(`ts-${id}`).value,
-                task_type_id: document.getElementById(`ttt-${id}`).value || null,
-                report:      document.getElementById(`trep-${id}`).value,
-                parent_id:   document.getElementById(`tp-${id}`).value || null,
+                // `status`, `task_type_id` и `parent_id` не отправляем: их полей в форме
+                // больше нет. Тип правится селектом прямо в строке таблицы, статус ведёт
+                // конвейер. PUT обновляет только присланные ключи — остальные не тронет.
+                // `report` не отправляем по той же причине, что и раньше: его ведёт
+                // конвейер, а форма держит снимок, сделанный при отрисовке строки.
             }),
         });
         const idx = _tasks.findIndex(t => t.id === id);
@@ -1917,37 +2104,31 @@ async function planSave(id) {
 }
 
 async function planReset(id) {
-    const btn = document.getElementById(`preset-${id}`);
-    const orig = btn.textContent;
+    const orig = document.getElementById(`preset-${id}`)?.textContent || 'Сбросить план';
     try {
-        await taskFetch(`/task/${id}/plan/reset`, { method: 'DELETE' });
+        const data = await taskFetch(`/task/${id}/plan/reset`, { method: 'DELETE' });
+        // Строку берём с сервера целиком и перерисовываем таблицу, как это делает
+        // `saveTask`. Точечная правка полей здесь была ловушкой: сброс двигает и
+        // `goals`, и человеческий `status`, а `_goalsCache` с чипсом статуса
+        // оставались прежними — «Сохранить» отправлял старые цели и статус обратно
+        // в базу, и сброс выглядел откатившимся.
         const idx = _tasks.findIndex(t => t.id === id);
-        if (idx !== -1) { _tasks[idx].pipeline_plan = ''; _tasks[idx].goals = '[]'; _tasks[idx].pipeline_state = ''; }
-        // Обновить inline без renderTable — форма не закроется
-        const ta = document.getElementById(`tplan-${id}`);
-        if (ta) ta.value = '';
-        const goalsSection = document.getElementById(`goals-${id}`);
-        if (goalsSection) goalsSection.innerHTML = '';
-        const hint = document.getElementById(`ter-${id}`)?.querySelector('.task-plan-header .plan-hint');
-        if (hint) hint.textContent = '— менеджер составит его на ближайшем тике конвейера';
+        if (idx !== -1) _tasks[idx] = data.task;
+        delete _goalsCache[id];
+
+        const wasOpen = document.getElementById(`ter-${id}`)?.classList.contains('open');
+        renderTable();
+        if (wasOpen) toggleEdit(id);
+
+        // Кнопку ищем заново: прежний узел ушёл вместе со старой разметкой строки.
+        const btn = document.getElementById(`preset-${id}`);
+        if (!btn) return;
         btn.textContent = '✓ Сброшено';
         btn.style.background = '#16a34a';
         btn.style.color = '#fff';
         btn.style.borderColor = '#16a34a';
         setTimeout(() => { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }, 1400);
     } catch(e) { alert(e.message || 'Ошибка сброса плана'); }
-}
-
-async function quickStatus(id, status) {
-    try {
-        const data = await taskFetch(`/task/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify({ status }),
-        });
-        const idx = _tasks.findIndex(t => t.id === id);
-        if (idx !== -1) _tasks[idx] = data.task;
-        renderTable();
-    } catch(e) { alert('Ошибка смены статуса'); }
 }
 
 async function updateTaskType(id, typeId) {
@@ -2154,7 +2335,6 @@ function _refreshInlineGoals(taskId) {
 const _revisionsCache = {};   // taskId -> {revisions, total}
 const _revPreview     = {};   // taskId -> номер просматриваемой ревизии либо null
 const _revPlanStash   = {};   // taskId -> текст плана, вытесненный просмотром
-function _planInputHandler(_id) { /* placeholder — план сохранение всегда активно */ }
 
 async function revisionsLoad(taskId, limit) {
     const el = document.getElementById(`revs-${taskId}`);
@@ -2285,37 +2465,220 @@ function _revisionTime(rev) {
 }
 
 // ── Конвейер агентов ──
-// Отдельная ось от `status`: та — ручной kanban, эта — стадия автоматики.
-const PIPELINE_LABELS = {
-    new:              'Ожидает плана',
-    planning:         'Планирование',
-    pending_approval: 'На утверждении',
-    review:           'На пересмотре',
-    approved:         'Утверждён',
-    split:            'Выполняется',
-    done:             'Завершён',
-    failed:           'Сбой',
-};
+// Отдельная ось от `status`: та — ручной kanban (её значения и переводим), эта —
+// стадия автоматики, и её состояния показываем собственными именами — теми же, что
+// лежат в `project_task.pipeline_state`, приходят в API и пишутся в логи. Перевод
+// тут вредил: «Сбой» не встречается ни в БД, ни в ответе API, ни в документации, и
+// человек, увидевший его на странице, не мог связать чипс с `failed` из
+// `task_claim_task_unplanned`, который эту задачу больше не берёт. Что состояние
+// значит, объясняет подсказка — отчёт оркестратора.
+const PIPELINE_LABEL_NONE = '(нет плана)';
 
-const SUBTASK_LABELS = {
-    planned:    'Запланирована',
-    developing: 'Разработка',
-    qa_pending: 'На проверке',
-    failed_qa:  'Не прошла QA',
-    done:       'Готово',
-    blocked:    'Заблокирована',
-};
+// Ключ пометки в `project_task.metadata`. Колонка — свободный мешок «ключ -> значение»
+// (см. src/project/task/task_metadata.py), схема о составе не знает, контракт держит
+// тот, кто ключ пишет, — то есть этот файл.
+const TASK_META_KEY_DEV = 'to_development';
+const TASK_META_KEY_TEST = 'to_testing';
+
+// Флажок «в разработку» рядом со статусом — согласие человека, данное заранее: план
+// утверждать не потребуется. Как только менеджер его допишет, задача сама сменит тип на
+// «Разработка» и уйдёт в `approved` (src/project/task/task_state.py,
+// `task_state_plan_to_development`), а пометка снимется — она одноразовая.
+//
+// Только на вкладке «Планирование»: на остальных фазах она уже ничего не решает и лишь
+// загромождала бы колонку.
+//
+// Ключа в metadata у большинства задач нет — это и есть выключенное состояние, отдельного
+// значения `false` для «по умолчанию выключен» не нужно.
+function renderDevFlag(t) {
+    if (_phaseFilter !== 'planning') return '';
+    const on = !!(t.metadata || {})[TASK_META_KEY_DEV];
+    return _taskFlagHtml(t.id, 'в разработку', on, 'toggleDevFlag',
+        'Утверждать план не потребуется: как только он будет готов, задача сменит тип на «Разработка» и уйдёт в работу');
+}
+
+// Флажок «в тестирование» на вкладке «Разработка» — тот же приём, но с обратным
+// умолчанием: по умолчанию он **включён**, потому что сделанная работа должна попадать
+// на проверку сама, а исключение — это как раз отказ от неё.
+//
+// Отсюда и хранение наизнанку: включено — это отсутствие ключа, выключенное состояние
+// пишется явным `false`. Читатель обязан отличать «ключа нет» (умолчание, включено) от
+// `false` (человек снял), поэтому здесь `!== false`, а не `!!`.
+//
+// Только у корневой задачи (`parent_id` пуст). Подзадача — часть плана, а не
+// самостоятельная единица работы: на проверку уходит задача целиком, когда закрыты все
+// её дети, и отдельная пометка у ребёнка обещала бы решение, которого у него нет.
+//
+// Срабатывает пометка тогда, когда разработчик закончил по всем веткам плана — то есть
+// когда чипс родителя показывает `qa_pending`: тип меняется на «Тестирование»,
+// состояние — на `testing` (`task_state_dev_to_testing`), и задача переезжает на
+// соседнюю вкладку. Работа при этом та же самая: круг QA по подзадачам идёт дальше,
+// человеческий статус остаётся «в работе».
+function renderTestFlag(t) {
+    if (_phaseFilter !== 'development' || t.parent_id) return '';
+    const on = (t.metadata || {})[TASK_META_KEY_TEST] !== false;
+    return _taskFlagHtml(t.id, 'в тестирование', on, 'toggleTestFlag',
+        'Готовую работу отдать на проверку: задача уйдёт в тестирование без отдельного решения человека');
+}
+
+async function toggleDevFlag(id, checked) {
+    // Снятая галка стирает ключ (`null` в JSON_MERGE_PATCH), а не пишет `false`:
+    // выключено — это и есть отсутствие пометки, и в мешке не копится мусор от
+    // каждой задачи, которую когда-то отметили и передумали.
+    await _taskFlagSave(id, TASK_META_KEY_DEV, checked ? true : null);
+}
+
+async function toggleTestFlag(id, checked) {
+    // Зеркально `toggleDevFlag`: умолчание здесь «включено», поэтому ключ стирает
+    // как раз возврат к включённому состоянию, а хранится отклонение от умолчания.
+    await _taskFlagSave(id, TASK_META_KEY_TEST, checked ? null : false);
+}
+
+function _taskFlagHtml(id, label, on, handler, title) {
+    return `<label class="task-flag" onclick="event.stopPropagation()" title="${esc(title)}">
+                <input type="checkbox" ${on ? 'checked' : ''}
+                       onchange="${handler}(${id}, this.checked)">${label}</label>`;
+}
+
+async function _taskFlagSave(id, key, value) {
+    // Патчем, а не заменой всего metadata: над задачей одновременно работают
+    // оркестратор и воркеры, и их ключи ушли бы вместе с заменой.
+    try {
+        const data = await taskFetch(`/task/${id}/metadata`, {
+            method: 'POST',
+            body: JSON.stringify({ patch: { [key]: value } }),
+        });
+        const idx = _tasks.findIndex(t => t.id === id);
+        if (idx === -1) return;
+        // Пометка «в разработку» у задачи с готовым планом срабатывает сразу: сервер
+        // меняет тип на `dev` и уводит задачу в `approved`. Тип решает вкладку, поэтому
+        // строка обязана уехать на «Разработку» тут же — иначе человек видит её здесь,
+        // с уже неверными чипсом и флажком, и до перезагрузки не понимает, сработало ли.
+        const moved = _tasks[idx].task_type_id !== data.task.task_type_id;
+        _tasks[idx] = data.task;
+        if (moved) renderTable();
+    } catch(e) {
+        alert('Ошибка сохранения пометки');
+        renderTable();   // вернуть флажок к тому, что реально лежит в базе
+    }
+}
 
 function renderPipeChip(t, row) {
     if (!t.pipeline_state) {
-        // План пишется только листьям: задача с подзадачами уже разложена ими, второй
-        // раз её декомпозировать нечем. Без этой пометки ячейка у родителя пустая, и
-        // намеренный пропуск выглядит как несработавший конвейер.
-        if (!row || !row.hasKids) return '';
-        return `<div><span class="pipe-chip pipe-decomposed" title="План составляется только для задач без подзадач — эта уже разложена на ${row.kidsTotal} ${_taskPluralSub(row.kidsTotal)}">Разложена</span></div>`;
+        // Состояние одно, но причин у него две, и они требуют разных действий:
+        // родителя конвейер не возьмёт никогда (план пишется только листьям), а лист
+        // просто ещё не запускали. Отсюда разные подсказка и оформление при общем ярлыке.
+        const decomposed = !!(row && row.hasKids);
+        const title = decomposed
+            ? `План составляется только для задач без подзадач — эта уже разложена на ${row.kidsTotal} ${_taskPluralSub(row.kidsTotal)}`
+            : 'Задача вне конвейера — агенты её не трогают. Кнопка «В конвейер» в раскрытой строке';
+        return `<div><span class="pipe-chip ${decomposed ? 'pipe-decomposed' : 'pipe-none'}" `
+             + `title="${esc(title)}">${PIPELINE_LABEL_NONE}</span></div>`;
     }
-    const label = PIPELINE_LABELS[t.pipeline_state] || t.pipeline_state;
-    return `<div><span class="pipe-chip pipe-${t.pipeline_state}">${label}</span></div>`;
+    // `failed` — тупик: сорвавшуюся задачу не берёт ни один шаг конвейера (см.
+    // task_claim_task_unplanned), и сама она оттуда не выйдет. Кнопку держим у самого
+    // чипса, а не только в раскрытой панели: увидев состояние, человек ищет выход
+    // здесь же. Куда вернуть задачу, решает сервер — это зависит от того, что её уронило.
+    const retry = t.pipeline_state !== 'failed' ? '' :
+        `<button class="pipe-retry" onclick="event.stopPropagation();pipelineAction(${t.id},'retry')" `
+      + `title="Перезапустить конвейер — агенты продолжат с сорвавшегося шага, план и цели останутся">↻</button>`;
+    // `processing` — бухгалтерия конвейера, а не ход работы: родитель остаётся в нём с
+    // момента разбора плана и до закрытия последней подзадачи, и всё это время чипс
+    // показывал одно и то же, пока работа шла у детей. Показываем вместо него
+    // состояние подзадач; в БД у родителя по-прежнему `processing` — финализация ищет
+    // родителей именно по нему (`task_state_task_finalize`), — и он виден в подсказке.
+    const kidTask = t.pipeline_state === 'processing' ? _pipeKidsTask(row) : null;
+    const state   = kidTask ? kidTask.pipeline_state : t.pipeline_state;
+    const hint    = kidTask
+        ? `Задача разложена на подзадачи (processing), показана самая отстающая из них\n\n${taskReportHint(t, row)}`
+        : taskReportHint(t, row);
+    return `<div><span class="pipe-chip pipe-${state}" `
+         + `title="${esc(hint)}">${esc(state)}</span>${retry}${renderPipeRetries(t)}${renderPipeMr(t)}</div>`;
+}
+
+// Статистика технических повторов строки (`metadata.retry`, пишет `task_retry.py`).
+// Показываем `total` — сколько прогонов сорвалось за всё время; серия подряд (`count`)
+// обнуляется первым же дошедшим ответом и в чипсе жила бы полминуты.
+//
+// Ни одного срыва — ни значка: у здоровой строки показывать нечего, а «↻0» в каждой
+// строке таблицы отнимает место у того, что действительно случилось.
+function renderPipeRetries(t) {
+    const r = t.metadata?.retry || {};
+    const total = Number(r.total || 0);
+    if (!(total > 0)) return '';
+    const parts = [`Прогонов сорвалось за всё время: ${total}`,
+                   `Подряд сейчас: ${Number(r.count || 0)}`];
+    if (r.role)  parts.push(`Последний срыв: ${r.role}`);
+    if (r.at)    parts.push(`Когда: ${r.at}`);
+    if (r.error) parts.push(`Причина: ${r.error}`);
+    return `<span class="pipe-retries" title="${esc(parts.join('\n'))}">${total}</span>`;
+}
+
+// Ссылка на merge request — только у подзадачи и только у неё одной. Ветку заводят
+// под конкретную работу, а родитель — это план: своего кода и своей ветки у него нет,
+// и ссылка там показывала бы чужую работу.
+//
+// Показываем, когда разработчик отдал ссылку в отчёте (`task_pipeline._subtask_branch_save`).
+// Нет ссылки — нет и элемента: заглушка «MR не создан» в каждой строке шумит, а
+// сказать ей нечего.
+function renderPipeMr(t) {
+    if (!t.parent_id) return '';
+    // Ссылку пишет живой Claude Code, то есть в поле может оказаться что угодно.
+    // Пускаем только http(s): `javascript:` в href исполнится по клику, а экранирование
+    // кавычек от этого не спасает.
+    const url = String(t.metadata?.mr_url || '').trim();
+    if (!/^https?:\/\//i.test(url)) return '';
+    const branch = String(t.metadata?.branch || `feature/task_${t.id}`).trim();
+    return `<a class="pipe-mr" href="${esc(url)}" target="_blank" rel="noopener"`
+         + ` onclick="event.stopPropagation()" title="Merge request подзадачи #${t.id}, ветка ${esc(branch)}">`
+         + `MR #${t.id}</a>`;
+}
+
+// Состояния подзадачи от «ещё не начата» к «готова». Порядок нужен, чтобы выбрать
+// самую отстающую: задача продвинулась ровно настолько, насколько продвинулся её
+// самый медленный ребёнок. `failed_qa` стоит сразу после `planned` — это работа,
+// которую предстоит делать заново, то есть откат назад, а не продвижение.
+const SUBTASK_STATE_ORDER = ['planned', 'failed_qa', 'developing', 'qa_pending', 'done'];
+
+// Человеческий статус строки. У родителя в `processing` он свой — `active`, — но работа
+// идёт не у него, а у подзадач, и рядом с чипсом подзадачи «В работе» противоречит
+// её же `qa_pending` («Ожидает»). Берём статус у той самой подзадачи, что показывает
+// чипс: обе оси в строке говорят тогда об одном и том же исполнителе.
+function taskRowStatus(row) {
+    if (row?.t?.pipeline_state !== 'processing') return row?.t?.status;
+    return _pipeKidsTask(row)?.status || row.t.status;
+}
+
+// Одна подзадача на всю россыпь детей родителя — та, по которой судят о ходе работы.
+// `null` — показывать нечего (детей нет либо конвейер их ещё не касался), и строка
+// остаётся при собственных `processing` и статусе.
+function _pipeKidsTask(row) {
+    const kids = (row?.kidsFull || []).filter(k => k.pipeline_state);
+    if (!kids.length) return null;
+    // Сорвавшийся или заблокированный ребёнок решает судьбу всей задачи: дальше она
+    // не пойдёт, пока человек не вмешается, и прятать это за состоянием соседей —
+    // врать о ходе работы. Поэтому проблема перебивает любое продвижение.
+    for (const bad of ['blocked', 'failed']) {
+        const hit = kids.find(k => k.pipeline_state === bad);
+        if (hit) return hit;
+    }
+    const rank = k => Math.max(SUBTASK_STATE_ORDER.indexOf(k.pipeline_state), 0);
+    return kids.reduce((slowest, k) => rank(k) < rank(slowest) ? k : slowest);
+}
+
+// Подсказка статусных чипсов: отчёт оркестратора — почему задача там, где она есть.
+// Сам отчёт пишет конвейер (src/project/task/task_report.py) и он же следит, чтобы
+// поле не пустовало. Фоллбэки ниже — для задач, которых конвейер ещё не касался,
+// и для строк, заведённых до появления отчёта: пустой `title` в браузере даёт
+// подсказку-призрак, и человек решил бы, что она не работает.
+function taskReportHint(t, row) {
+    const report = String(t.report || '').trim();
+    if (report) return report;
+    const error = String(t.pipeline_error || '').trim();
+    if (error) return `Сбой конвейера: ${error}`;
+    if (t.pipeline_state) return `Задача в конвейере, состояние: ${t.pipeline_state}`;
+    if (row && row.hasKids) return 'Задача разложена на подзадачи — план ей не пишется, отчёт ведут дети';
+    return 'Отчёта нет — конвейер эту задачу ещё не брал';
 }
 
 async function pipelineLoad(taskId) {
@@ -2373,12 +2736,21 @@ function _pipelineRender(taskId, data, body, actions) {
             html = kids
                 ? ''
                 : `<button class="btn-pipe primary" onclick="pipelineAction(${taskId},'start')">▶ В конвейер</button>`;
-        } else if (state === 'pending_approval') {
+        } else if (state === 'plan_approval') {
             html =
                 `<button class="btn-pipe ok" onclick="pipelineAction(${taskId},'approve')">✓ Утвердить</button>` +
                 `<button class="btn-pipe no" onclick="pipelineAction(${taskId},'reject')">✕ Отклонить</button>`;
         } else {
-            html = `<span class="pipe-chip pipe-${state}">${PIPELINE_LABELS[state] || state}</span>`;
+            html = `<span class="pipe-chip pipe-${state}">${esc(state)}</span>`;
+            // `failed` — тупик: сорвавшуюся задачу не берёт ни один шаг конвейера
+            // (см. task_claim_task_unplanned), и без этой кнопки единственным выходом
+            // остаётся «Сбросить план», который заодно стирает план и цели. Куда
+            // вернуть задачу, решает сервер — это зависит от того, что её уронило.
+            if (state === 'failed') {
+                html += `<button class="btn-pipe primary" onclick="pipelineAction(${taskId},'retry')" `
+                      + `title="Вернуть задачу в конвейер — агенты продолжат с сорвавшегося шага, `
+                      + `план и цели останутся на месте">↻ Перезапустить</button>`;
+            }
         }
         actions.innerHTML = html + _planReviewButton(taskId, state, data);
     }
@@ -2405,10 +2777,10 @@ function _pipelineRender(taskId, data, body, actions) {
                         <span class="pipe-subtask-pos">${i + 1}.</span>
                         <span class="pipe-subtask-title">${esc(s.title)}${err}</span>
                         ${attempts}
-                        <span class="pipe-sub-state pipe-sub-${s.state}">${SUBTASK_LABELS[s.state] || s.state}</span>
+                        <span class="pipe-sub-state pipe-sub-${s.state}">${esc(s.state)}</span>
                     </div>`;
         }).join('');
-    } else if (state === 'pending_approval') {
+    } else if (state === 'plan_approval') {
         html += '<span class="task-pipeline-muted">План ждёт утверждения — подзадачи появятся после «Утвердить».</span>';
     } else if (!data.plan_text) {
         html += '<span class="task-pipeline-muted">Оркестратор ещё не дошёл до этой задачи.</span>';
@@ -2422,9 +2794,9 @@ function _pipelineRender(taskId, data, body, actions) {
 const PLAN_REVIEW_BLOCKED = {
     new:      'Задача ждёт первого планирования — пересматривать пока нечего',
     planning: 'Менеджер уже работает над планом',
-    review:   'План уже отправлен на пересмотр — менеджер его ещё не взял',
+    reviewing: 'План уже отправлен на пересмотр — менеджер его ещё не взял',
     approved: 'План разложен на подзадачи и выполняется — пересмотр заблокирован',
-    split:    'План разложен на подзадачи и выполняется — пересмотр заблокирован',
+    processing: 'План разложен на подзадачи и выполняется — пересмотр заблокирован',
 };
 
 function _planReviewButton(taskId, state, data) {
@@ -2628,6 +3000,9 @@ treeCollapsedLoad();
     await loadTaskTypes();
     (window.loadTz ? window.loadTz() : Promise.resolve()).then(loadProjects);
 })();
+// Активность роли протухает через 30 секунд без пинга — без обновления ряд
+// показывал бы «активен» у оболочки, закрытой полчаса назад.
+setInterval(loadTeamRow, TEAM_ROW_REFRESH_MS);
 </script>
 
 <!-- ─── Help modal ─────────────────────────────────────── -->
@@ -2640,160 +3015,231 @@ treeCollapsedLoad();
         <div class="modal-body">
 
             <div class="help-section">
-                <h4>Статусы задач (человеческое управление)</h4>
-                <ul class="help-state-list">
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#16a34a"></span>
-                        <span><strong>В работе <code>(active)</code></strong> — задача выполняется прямо сейчас.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#d97706"></span>
-                        <span><strong>В очереди <code>(queued)</code></strong> — задача поставлена в очередь, начнётся позже.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#94a3b8"></span>
-                        <span><strong>Ожидает <code>(pending)</code></strong> — ждёт внешнего события (ручного действия, результата другого процесса).</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#dc2626"></span>
-                        <span><strong>Заблокировано <code>(blocked)</code></strong> — не может двигаться из-за зависимости или проблемы.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#cbd5e1"></span>
-                        <span><strong>Отменено <code>(cancelled)</code></strong> — задача отменена вручную.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#15803d"></span>
-                        <span><strong>Готово <code>(done)</code></strong> — задача завершена успешно.</span>
-                    </li>
-                </ul>
-            </div>
-
-            <div class="help-section">
-                <h4>Конвейер (pipeline) — автоматические состояния</h4>
-                <ul class="help-state-list">
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#475569"></span>
-                        <span><strong><code>(нет плана)</code></strong> — задача создана, но план ещё не сгенерирован.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#6366f1"></span>
-                        <span><strong><code>planning</code></strong> — Manager (LLM) генерирует план: подзадачи и цели.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#8b5cf6"></span>
-                        <span><strong><code>review</code></strong> — план отправлен на пересмотр (кнопка «Обновить план»).</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#d97706"></span>
-                        <span><strong><code>pending_approval</code></strong> — план готов и ждёт утверждения человеком.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#2563eb"></span>
-                        <span><strong><code>approved</code></strong> — план утверждён человеком.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#0891b2"></span>
-                        <span><strong><code>split</code></strong> — подзадачи материализованы (встроены в задачу), обходят пайплайн.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#16a34a"></span>
-                        <span><strong><code>planned</code></strong> — подзадача создана и ждёт разработчика.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#ca8a04"></span>
-                        <span><strong><code>developing</code></strong> — Developer (LLM) работает над подзадачей.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#0ea5e9"></span>
-                        <span><strong><code>qa_pending</code></strong> — подзадача на проверке у QA (LLM).</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#15803d"></span>
-                        <span><strong><code>done</code></strong> — QA проверил, всё OK. Подзадача завершена.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#ea580c"></span>
-                        <span><strong><code>failed_qa</code></strong> — QA не прошёл. Цикл повторяется: <code>planned</code> → <code>developing</code> → <code>qa_pending</code> (до 3 попыток).</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#dc2626"></span>
-                        <span><strong><code>blocked</code></strong> — лимит попыток QA исчерпан. Подзадача остановлена, нужен человек.</span>
-                    </li>
-                    <li class="help-state-item">
-                        <span class="help-dot" style="background:#475569"></span>
-                        <span><strong><code>failed</code></strong> — задача провалилась: либо Manager не создал план, либо все подзадачи заблокированы.</span>
-                    </li>
-                </ul>
+                <h4>Статусы задач и состояния конвейера</h4>
+                <div class="help-table-wrap">
+                <table class="help-table">
+                    <thead>
+                        <tr>
+                            <th class="help-status-cell">Статус (человек) — все 6</th>
+                            <th>Состояния конвейера, которые его выставляют — все 14</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="help-status-cell">
+                                <span class="help-status-name">
+                                    <span class="help-dot" style="background:#94a3b8"></span>
+                                    <strong>Ожидает</strong> <code>pending</code>
+                                </span>
+                                <span class="help-status-desc">Статус по умолчанию у новой задачи: ждёт внешнего события — ручного действия или результата другого процесса.</span>
+                            </td>
+                            <td>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#475569"></span>
+                                    <span><code>new</code> <span class="help-branch help-branch-parent">[задача]</span> — задача заведена в конвейер, план ещё не запускался.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#d97706"></span>
+                                    <span><code>plan_approval</code> <span class="help-branch help-branch-parent">[задача]</span> — план готов и ждёт утверждения человеком.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#0ea5e9"></span>
+                                    <span><code>qa_pending</code> <span class="help-branch help-branch-sub">[подзадача]</span> — разработчик своё сделал, подзадача ждёт очереди к QA (LLM).</span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="help-status-cell">
+                                <span class="help-status-name">
+                                    <span class="help-dot" style="background:#d97706"></span>
+                                    <strong>В очереди</strong> <code>queued</code>
+                                </span>
+                                <span class="help-status-desc">Работа определена, исполнитель ещё не взял её в руки.</span>
+                            </td>
+                            <td>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#2563eb"></span>
+                                    <span><code>approved</code> <span class="help-branch help-branch-parent">[задача]</span> — план утверждён человеком, ждёт разбивки на подзадачи.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#16a34a"></span>
+                                    <span><code>planned</code> <span class="help-branch help-branch-sub">[подзадача]</span> — подзадача создана и ждёт разработчика.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#ea580c"></span>
+                                    <span><code>failed_qa</code> <span class="help-branch help-branch-sub">[подзадача]</span> — QA не принял работу, идёт новый заход: <code>planned</code> → <code>developing</code> → <code>qa_pending</code> (до 3 попыток).</span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="help-status-cell">
+                                <span class="help-status-name">
+                                    <span class="help-dot" style="background:#16a34a"></span>
+                                    <strong>В работе</strong> <code>active</code>
+                                </span>
+                                <span class="help-status-desc">Кто-то занят задачей прямо сейчас — агент или человек.</span>
+                            </td>
+                            <td>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#6366f1"></span>
+                                    <span><code>planning</code> <span class="help-branch help-branch-parent">[задача]</span> — Manager (LLM) генерирует план: подзадачи и цели.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#8b5cf6"></span>
+                                    <span><code>reviewing</code> <span class="help-branch help-branch-parent">[задача]</span> — план отправлен на пересмотр (кнопка «Обновить план»).</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#0891b2"></span>
+                                    <span><code>processing</code> <span class="help-branch help-branch-parent">[задача]</span> — подзадачи созданы, родитель ждёт, пока они дойдут до конца.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#0f766e"></span>
+                                    <span><code>testing</code> <span class="help-branch help-branch-parent">[задача]</span> — та же работа, что и <code>processing</code>, но разработка по всем подзадачам закончена: по пометке «в тестирование» задача сменила тип на «Тестирование» и идёт проверка.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#ca8a04"></span>
+                                    <span><code>developing</code> <span class="help-branch help-branch-sub">[подзадача]</span> — Developer (LLM) работает над подзадачей.</span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="help-status-cell">
+                                <span class="help-status-name">
+                                    <span class="help-dot" style="background:#15803d"></span>
+                                    <strong>Готово</strong> <code>done</code>
+                                </span>
+                                <span class="help-status-desc">Задача завершена успешно.</span>
+                            </td>
+                            <td>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#15803d"></span>
+                                    <span><code>done</code> <span class="help-branch help-branch-both">[задача/подзадача]</span> — у подзадачи QA принял работу, у родителя все подзадачи дошли до конца.</span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="help-status-cell">
+                                <span class="help-status-name">
+                                    <span class="help-dot" style="background:#dc2626"></span>
+                                    <strong>Заблокировано</strong> <code>blocked</code>
+                                </span>
+                                <span class="help-status-desc">Сама по себе задача дальше не пойдёт — нужен человек.</span>
+                            </td>
+                            <td>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#dc2626"></span>
+                                    <span><code>blocked</code> <span class="help-branch help-branch-sub">[подзадача]</span> — лимит попыток QA исчерпан, подзадача остановлена.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#475569"></span>
+                                    <span><code>failed</code> <span class="help-branch help-branch-parent">[задача]</span> — Manager не создал план либо все подзадачи заблокированы.</span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="help-status-cell">
+                                <span class="help-status-name">
+                                    <span class="help-dot" style="background:#cbd5e1"></span>
+                                    <strong>Отменено</strong> <code>cancelled</code>
+                                </span>
+                                <span class="help-status-desc">Задача снята человеком.</span>
+                            </td>
+                            <td>
+                                <span class="help-pipe-none">Конвейер этот статус не выставляет и не перезаписывает — отменённая задача остаётся отменённой, в каком бы состоянии ни был конвейер.</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
+                <p class="help-note">
+                    Оси две и они независимы: слева — <code>project_task.status</code> (ручной kanban),
+                    справа — <code>project_task.pipeline_state</code> (стадия автоматики). Строка таблицы
+                    читается как «конвейер в таком состоянии — значит, статус будет такой».
+                    Метка в скобках — ветка: <span class="help-branch help-branch-parent">[задача]</span>
+                    у родительской, <span class="help-branch help-branch-sub">[подзадача]</span> у дочерней.
+                    Задаёт её не значение, а <code>parent_id</code>: одна и та же ENUM обслуживает
+                    обе ветки. Пустое состояние (<code>NULL</code>, в карточке
+                    «нет плана») — задача заведена руками, в конвейере не участвует, и статус у неё
+                    только тот, что поставил человек.
+                </p>
             </div>
 
             <div class="help-section">
                 <h4>Схемы переходов</h4>
                 <div class="pipeline-diagram">
 
-                    <!-- ── Parent row ── -->
+                    <!-- ── Родительская ветка: ствол сверху вниз, развилки уголками ── -->
                     <p class="pipeline-section-title">Родительская задача</p>
-                    <div class="pipeline-row">
-                        <span class="pn pn-gray">(нет плана)</span>
-                        <span class="pa">→</span>
-                        <span class="pn pn-blue">planning</span>
-                        <span class="pa">→</span>
-                        <span class="pn pn-purple">review</span>
-                        <span class="pa">→</span>
-                        <span class="pn pn-yellow">pending_approval</span>
-                        <span class="pa">→</span>
-                        <span class="pn pn-indigo">approved</span>
-                        <span class="pa">→</span>
-                        <span class="pn pn-cyan">split</span>
-                        <span class="pa">→</span>
-                        <span class="pn pn-green">done</span>
-                        <span class="pa">/</span>
-                        <span class="pn pn-red">failed</span>
-                    </div>
-                    <!-- review ↩ planning loop & review → pending_approval -->
-                    <div style="display:flex; gap:16px; margin:-2px 0 4px 0;">
-                        <span style="font-size:11px; color:#ea580c; font-weight:700;" title="review → planning">↩ planning</span>
-                        <span style="font-size:11px; color:#94a3b8; font-weight:600;" title="review → pending_approval">→ pending_approval</span>
-                    </div>
-
-                    <!-- ── Subtask row ── -->
-                    <p class="pipeline-section-title">Подзадача (в цикле)</p>
-                    <div class="pipeline-row">
-                        <span class="pn pn-sub">planned</span>
-                        <span class="pa">→</span>
-                        <span class="pn pn-sub">developing</span>
-                        <span class="pa">→</span>
-                        <span class="pn pn-qa">qa_pending</span>
-                    </div>
-
-                    <!-- ── Branching ── -->
-                    <div class="pipeline-row" style="flex-wrap:wrap; gap:4px;">
-                        <span style="display:flex; align-items:center; gap:2px; flex-shrink:0;">
-                            <span style="width:4px;height:4px;border-radius:50%;background:#16a34a;display:inline-block;"></span>
-                            <span class="pn pn-qaok" style="font-size:11px;padding:2px 6px;">done</span>
-                            <span class="note note-green">✓ QA прошёл</span>
-                        </span>
-                        <span style="display:flex; align-items:center; gap:2px;">
-                            <span style="width:4px;height:4px;border-radius:50%;background:#ea580c;display:inline-block;"></span>
-                            <span class="pn pn-fqa" style="font-size:11px;padding:2px 6px;">failed_qa</span>
-                            <span class="note" style="font-weight:600;">×3</span>
-                            <span class="note">↩ planned</span>
-                        </span>
-                        <span style="display:flex; align-items:center; gap:2px;">
-                            <span style="width:4px;height:4px;border-radius:50%;background:#dc2626;display:inline-block;"></span>
-                            <span class="pn pn-block" style="font-size:11px;padding:2px 6px;">blocked</span>
-                            <span class="note note-red">✕</span>
-                        </span>
+                    <div class="vflow">
+                        <div class="vrow"><span class="pn pn-gray">new</span><span class="note">заведена в конвейер, план ещё не запускался</span></div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-blue">planning</span><span class="note">Manager (LLM) пишет план и цели</span></div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-yellow">plan_approval</span><span class="note">план готов, ждёт человека</span></div>
+                        <!-- «Отклонить» — боковая ветка: ствол под ней идёт дальше, к approved -->
+                        <div class="vfork">
+                            <div class="vfork-item vside">
+                                <div class="vrow"><span class="pn pn-gray">(нет плана)</span><span class="note">«Отклонить» — задача выходит из конвейера</span></div>
+                            </div>
+                        </div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-indigo">approved</span><span class="note">«Утвердить» — план принят человеком</span></div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-cyan">processing</span><span class="note">подзадачи созданы, родитель ждёт их</span></div>
+                        <!-- «в тестирование» — боковая ветка: та же работа, только вкладка другая,
+                             и ствол под ней идёт к тем же done/failed -->
+                        <div class="vfork">
+                            <div class="vfork-item vside">
+                                <div class="vrow"><span class="pn pn-teal">testing</span><span class="note">разработка закончена по всем подзадачам, пометка «в тестирование» — тип сменён на «Тестирование», идёт проверка</span></div>
+                            </div>
+                        </div>
+                        <div class="vlink"></div>
+                        <div class="vfork">
+                            <div class="vfork-item">
+                                <div class="vrow"><span class="pn pn-green">done</span><span class="note note-green">все подзадачи дошли до конца</span></div>
+                            </div>
+                            <div class="vfork-item">
+                                <div class="vrow"><span class="pn pn-red">failed</span><span class="note note-red">план не создан либо хоть одна подзадача blocked</span></div>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- ── Final outcome ── -->
-                    <p class="pipeline-section-title" style="margin-top:6px;">Когда все подзадачи терминальны →</p>
-                    <div class="pipeline-row">
-                        <span class="pn pn-green">done</span>
-                        <span class="pa">/</span>
-                        <span class="pn pn-red">failed</span>
+                    <!-- ── Пересмотр: отдельный ствол, входов в него несколько ── -->
+                    <p class="pipeline-section-title">Пересмотр плана — кнопка «Обновить план»</p>
+                    <div class="vflow">
+                        <div class="vrow">
+                            <span class="pn pn-gray">(нет плана)</span>
+                            <span class="pn pn-yellow">plan_approval</span>
+                            <span class="pn pn-green">done</span>
+                            <span class="pn pn-red">failed</span>
+                            <span class="note">— из любого из них</span>
+                        </div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-purple">reviewing</span><span class="note">Manager переписывает план заново</span></div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-yellow">plan_approval</span><span class="note">снова ждёт утверждения</span></div>
                     </div>
-                    <span class="note" style="margin-left:0;">— split → все подзадачи терминальны</span>
+
+                    <!-- ── Подзадача: круг Developer → QA ── -->
+                    <p class="pipeline-section-title">Подзадача</p>
+                    <div class="vflow">
+                        <div class="vrow"><span class="pn pn-sub">planned</span><span class="note">ждёт разработчика</span></div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-sub">developing</span><span class="note">Developer (LLM) делает работу</span></div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-qa">qa_pending</span><span class="note">работа сделана, ждёт проверки QA (LLM)</span></div>
+                        <div class="vfork">
+                            <div class="vfork-item">
+                                <div class="vrow"><span class="pn pn-qaok">done</span><span class="note note-green">QA принял работу</span></div>
+                            </div>
+                            <div class="vfork-item">
+                                <div class="vrow"><span class="pn pn-fqa">failed_qa</span><span class="note note-orange">↩ planned — новый круг, до 3 попыток</span></div>
+                            </div>
+                            <div class="vfork-item">
+                                <div class="vrow"><span class="pn pn-block">blocked</span><span class="note note-red">попытки исчерпаны, нужен человек</span></div>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- ── Legend ── -->
                     <div class="pipeline-legend">
@@ -2801,7 +3247,7 @@ treeCollapsedLoad();
                         <div class="pipeline-legend-grid">
                             <div class="legend-item">
                                 <span class="legend-swatch" style="background:#eef2ff; border:1.5px solid #a5b4fc;"></span>
-                                planning / review — планирование (Manager)
+                                planning / reviewing — планирование (Manager)
                             </div>
                             <div class="legend-item">
                                 <span class="legend-swatch" style="background:#fefce8; border:1.5px solid #fcd34d;"></span>
@@ -2814,6 +3260,10 @@ treeCollapsedLoad();
                             <div class="legend-item">
                                 <span class="legend-swatch" style="background:#eef8ff; border:1.5px solid #7dd3fc;"></span>
                                 qa — проверка (QA)
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-swatch" style="background:#f0fdfa; border:1.5px solid #5eead4;"></span>
+                                testing — задача целиком на проверке
                             </div>
                         </div>
                     </div>

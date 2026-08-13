@@ -1,4 +1,5 @@
 """Pytest configuration for RhapsodyAi tests."""
+import os
 import pytest
 import asyncio
 import httpx
@@ -6,6 +7,27 @@ import uuid
 from typing import AsyncGenerator
 
 from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH, TEST_AUTH_ROLE
+
+# Тесты идут с хоста, а `MYSQL_HOST=mysql` — имя сервиса внутри compose-сети.
+#
+# Правкой одного `os.environ` тут не обойтись: `mysql_.mysql_` читает адрес
+# один раз, на импорте модуля, а `config.config` вдобавок накатывает `.env.local`
+# с `override=True` — то есть любое значение, выставленное до импорта, вернётся
+# обратно в `mysql`. Поэтому переопределяем и окружение (для всего, что читает
+# конфиг позже), и уже связанные атрибуты модуля.
+#
+# Делается на импорте conftest — раньше, чем pytest импортирует модули тестов, и
+# значит раньше любого их `from mysql_.mysql_ import ...`.
+MYSQL_TEST_HOST = 'localhost'
+MYSQL_TEST_PORT = '3302'
+
+os.environ['MYSQL_HOST'] = MYSQL_TEST_HOST
+os.environ['MYSQL_PORT'] = MYSQL_TEST_PORT
+
+import mysql_.mysql_ as _mysql_module  # noqa: E402  импорт после правки окружения — намеренно
+
+_mysql_module.host = MYSQL_TEST_HOST
+_mysql_module.port = int(MYSQL_TEST_PORT)
 
 
 @pytest.fixture(scope="session")
@@ -122,12 +144,6 @@ def create_test_user():
     причина, по которой вся сюита валится на логине, а выглядит это как
     «сломалась авторизация».
     """
-    import os
-    from dotenv import load_dotenv
-    load_dotenv()
-    os.environ['MYSQL_HOST'] = 'localhost'
-    os.environ['MYSQL_PORT'] = '3302'
-
     test_username = TEST_AUTH['username']
     test_password = TEST_AUTH['password']
     if not test_username or not test_password:
@@ -169,13 +185,6 @@ def create_test_user():
 @pytest.fixture(scope="session", autouse=True)
 def seed_test_session():
     """Seed a known agent_session row used by session tests, clean up after."""
-    import os
-    from dotenv import load_dotenv
-    load_dotenv()
-    # Tests run from host; override Docker service name with localhost port
-    os.environ['MYSQL_HOST'] = 'localhost'
-    os.environ['MYSQL_PORT'] = '3302'
-
     from src.ai.ai_session import ai_session_message_add
     from mysql_.mysql_ import mysql_get_db_async
 

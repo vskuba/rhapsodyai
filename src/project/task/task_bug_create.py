@@ -67,8 +67,9 @@ async def task_bug_create(error_data: dict) -> int | None:
         )
         trace_meta = json.dumps(_build_step_meta(error_data), ensure_ascii=False)
 
-    # 2. Определяем project_id
-    project_id = task_bug_project_for_workflow(workflow_id)
+    # 2. Определяем project_id. Ноль из конфигурации значит «без проекта» — в колонку
+    # он идёт как NULL, иначе строка ссылалась бы на несуществующий проект №0.
+    project_id = task_bug_project_for_workflow(workflow_id) or None
 
     # 3. Вставляем задачу
     return await _task_bug_insert(
@@ -123,13 +124,13 @@ def _task_bug_error_hash(error: str) -> str:
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
 
-async def _task_bug_insert(project_id: int, title: str, description: str,
+async def _task_bug_insert(project_id: int | None, title: str, description: str,
                            trace_meta: str) -> int | None:
     """
     Вставляет новую баг-задачу в project_task.
 
     Args:
-        project_id: ID проекта.
+        project_id: ID проекта или None — задача заводится без проекта.
         title: Заголовок задачи.
         description: Описание задачи.
         trace_meta: JSON-строка trace_meta.
