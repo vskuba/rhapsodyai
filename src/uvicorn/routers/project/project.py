@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -70,8 +70,6 @@ async def project_admin_update(project_id: int, data: dict, user=Depends(AuthChe
         update['phase_current'] = str(data['phase_current'])
     if 'description' in data:
         update['description'] = str(data['description'])
-    if 'context' in data:
-        update['context'] = str(data['context'])
     if update:
         await repo.update(project_id, update)
     return {'result': project_id}
@@ -83,35 +81,3 @@ async def project_admin_delete(project_id: int, user=Depends(AuthChecker([AuthPe
     repo = PlanningProjectRepository()
     await repo.delete(project_id)
     return {'result': project_id}
-
-
-@router.post('/project/context-generate')
-async def project_context_generate_endpoint(request: Request, data: dict,
-                                            user=Depends(AuthChecker([AuthPermission.PROJECT_UPDATE]))):
-    """Сгенерировать контекст проекта через LLM: обзор, функционал, страницы."""
-    work_dir = str(data.get('work_dir') or '').strip()
-    title = str(data.get('title') or '').strip()
-    project_id = int(data.get('project_id') or 0)
-    if not work_dir:
-        return {'error': 'work_dir is required'}
-    if not project_id:
-        return {'error': 'project_id is required'}
-
-    from src.project.project import project_context_generate
-
-    context_text = await project_context_generate(work_dir=work_dir, title=title, user_id=user.user_id)
-
-    repo = PlanningProjectRepository()
-    await repo.update(project_id, {'context': context_text})
-    return {'result': {'context': context_text}}
-
-
-@router.post('/project/get_context')
-async def project_admin_get_context(data: dict, user=Depends(AuthChecker([AuthPermission.PROJECT_VIEW]))):
-    """Вернуть контекст проекта из базы данных."""
-    project_id = int(data.get('project_id') or 0)
-    if not project_id:
-        return {'error': 'project_id is required'}
-    repo = PlanningProjectRepository()
-    project = await repo.find(project_id)
-    return {'result': {'context': project.get('context', '') if project else ''}}
