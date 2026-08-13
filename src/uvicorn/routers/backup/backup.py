@@ -42,7 +42,7 @@ async def backup_create(request: Request, user_=Depends(AuthChecker([AuthPermiss
     try:
         _backup_via_mysqldump(filepath)
     except FileNotFoundError:
-        _backup_via_python(filepath, tz_offset)
+        _backup_via_python(filepath, ts)
     except Exception as e:
         if os.path.exists(filepath):
             os.remove(filepath)
@@ -140,12 +140,12 @@ def _backup_via_mysqldump(filepath: str):
         gz.write(result.stdout)
 
 
-def _backup_via_python(filepath: str, tz_offset: str = "+0"):
+def _backup_via_python(filepath: str, ts: str = ""):
     conn = mysql_conn_get()
     try:
         buf = io.StringIO()
         buf.write(f"-- Backup (pymysql fallback)\n")
-        buf.write(f"-- Generated: {_utc_now_str(tz_offset)}\n")
+        buf.write(f"-- Generated: {ts}\n")
         buf.write(f"-- Database: {db}\n\n")
         buf.write("SET NAMES utf8mb4;\n")
         buf.write("SET FOREIGN_KEY_CHECKS = 0;\n\n")

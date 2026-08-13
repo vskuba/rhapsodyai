@@ -96,10 +96,13 @@ def _utc_now_str(timezone_offset: str = "+0") -> str:
         timezone_offset: Смещение относительно UTC. Поддерживаются форматы: '+0', '+3', '-5', '+05:30'. Default '+0'.
     """
     try:
-        # Парсим часы из смещения
-        match = re.search(r'([+-]?\d+)', str(timezone_offset))
+        # Парсим знак, часы и опциональные минуты: '+0', '+3', '+05:30', '-05:30'
+        match = re.search(r'([+-])(\d+):?(\d+)?', str(timezone_offset))
         if match:
-            hours_offset = int(match.group(1))
+            sign = 1 if match.group(1) == '+' else -1
+            hours = int(match.group(2))
+            minutes = int(match.group(3)) if match.group(3) else 0
+            hours_offset = sign * (hours + minutes / 60)
         else:
             hours_offset = 0
 

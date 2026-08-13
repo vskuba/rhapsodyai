@@ -59,7 +59,7 @@ async def seed_generate(request: Request, data: dict, user_=Depends(AuthChecker(
     try:
         header = (
             f"-- Seed SQL\n"
-            f"-- Generated: {_utc_now_str(tz_offset)}\n"
+            f"-- Generated: {ts}\n"
             f"-- Tables: {', '.join(sorted(selected))}\n\n"
             f"SET NAMES utf8mb4;\n"
             f"SET FOREIGN_KEY_CHECKS = 0;\n"
