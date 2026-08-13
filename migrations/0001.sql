@@ -519,19 +519,19 @@ CREATE TABLE `project_task` (
     `position` INT NOT NULL DEFAULT '0',
     -- Конвейер агентов. NULL = обычная ручная задача, конвейера не касается (opt-in).
     -- Ортогонально `status`, который остаётся человеческим kanban-статусом.
-    -- `review` — человек нажал «Обновить план»: план есть, но его надо пересмотреть.
+    -- `reviewing` — человек нажал «Обновить план»: план есть, но его надо пересмотреть.
     -- Отдельное значение обязательно: отбор в конвейер идёт по «в плане нет подзадач»
     -- (`task_claim_task_unplanned`), и задачу с готовым планом иначе никто не подберёт.
     --
     -- Один ENUM на две ветки конвейера, потому что таблица одна:
-    --   родитель: new -> planning -> pending_approval -> approved -> split -> done|failed
-    --             review --^ (человек нажал «Обновить план»)
+    --   родитель: new -> planning -> plan_approval -> approved -> processing -> done|failed
+    --             reviewing --^ (человек нажал «Обновить план»)
     --   ребёнок:  planned -> developing -> qa_pending -> done
     --                            ^            '-> failed_qa -> повтор до MAX_ATTEMPTS
     --                            '-----------------'      '-> blocked (лимит исчерпан)
     -- Пересечений нет: детские состояния родителю не выставляет никто, и наоборот, —
     -- ветку задаёт `parent_id`, а не значение колонки.
-    `pipeline_state` ENUM('new','planning','pending_approval','review','approved','split',
+    `pipeline_state` ENUM('new','planning','plan_approval','reviewing','approved','processing',
                           'planned','developing','qa_pending','failed_qa','blocked',
                           'done','failed') DEFAULT NULL,
     `pipeline_plan` MEDIUMTEXT NOT NULL,
@@ -665,7 +665,6 @@ CREATE TABLE `project` (
     `idea` LONGTEXT NOT NULL,
     `work_dir` VARCHAR(500) NULL,
     `description` TEXT NULL,
-    `context` TEXT NULL,
     `status` ENUM('pending','processing','complete','error') NOT NULL DEFAULT 'pending',
     `phase_current` VARCHAR(100) NOT NULL DEFAULT '',
     `position` INT NOT NULL DEFAULT '0',
