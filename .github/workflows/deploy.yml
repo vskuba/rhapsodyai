@@ -111,7 +111,7 @@ jobs:
             # --no-deps: не запускать зависимости (uvicorn/qdrant), bluegreen.sh уже
             # управляет active slot; без флага compose поднял бы uvicorn, сломав Blue-Green
             echo "Перезапускаем worker и worker_planning с новым образом..."
-            docker compose up -d --build --force-recreate --no-deps worker worker_planning
+            docker compose up -d --build --force-recreate --no-deps worker_task worker_planning
 
             # --- Очистка ---
             echo "Очистка..."
