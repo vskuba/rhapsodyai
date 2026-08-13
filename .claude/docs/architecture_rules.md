@@ -13,7 +13,9 @@
 
 ```
 src/project/task/
-    task_agent.py
+    task_agent_developer.py
+    task_agent_manager.py
+    task_agent_qa.py
     task_claim.py
     task_pipeline.py
     task_plan.py
@@ -172,7 +174,9 @@ src/tool/project/design/
 | `task_claim.py`     | захват работы, реклейм блокировок |
 | `task_state.py`     | запись состояний и истории в БД   |
 | `task_plan.py`      | формат плана (сериализация)       |
-| `task_agent.py`     | роли Manager / Developer / QA     |
+| `task_agent_manager.py`   | роль Manager: план, разбиение     |
+| `task_agent_developer.py` | роль Developer: реализация        |
+| `task_agent_qa.py`        | роль QA: приёмка по целям         |
 
 Каждый файл после деления получает **свой префикс функций** по правилу 1:
 `task_claim_worker_id()`, `task_state_subtask_set()`, `task_plan_parse()`.

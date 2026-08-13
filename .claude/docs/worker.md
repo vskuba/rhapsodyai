@@ -32,7 +32,7 @@ Cronicle-тик и HTTP-эндпоинт обязаны возвращаться
 захватывают строки и ставят сообщения — и всё.
 
 ```
-Cronicle (60s body timeout)          Redis queue `default`        контейнер worker
+Cronicle (60s body timeout)          Redis queue `default`     контейнер worker_task
   task_orchestrator.py                                             rq worker
     task_pipeline_tick()      ──enqueue──▶  [action, action]  ──▶  task_worker_job_run()
       reclaim + claim + enqueue                                      task_pipeline_action_run()
@@ -53,7 +53,7 @@ grep -n "task_agent_manager_plan\|task_agent_developer_run" src/cronjob/task_orc
 
 | | `task_worker` | `planning_worker` |
 |---|---|---|
-| Очередь / контейнер | `default` / `worker` | `planning` / `worker_planning` |
+| Очередь / контейнер | `default` / `worker_task` | `planning` / `worker_planning` |
 | Кто ставит | тик Cronicle (`task_pipeline_tick`) | инструмент, роутер, восстановление в lifespan |
 | Что в сообщении | одно действие конвейера | id проекта — job прогоняет всю цепочку фаз |
 | Длина работы | до часа (живой Claude Code в shell-оболочке) | до 13 часов (12 фаз по часу) |
@@ -69,7 +69,7 @@ job давно поставлен. Это и есть критерий заво�
 Оба контейнера поднимают **пул**, а не одиночный процесс:
 
 ```yaml
-worker:           rq worker-pool --url redis://redis:6379 -n 3 default
+worker_task:      rq worker-pool --url redis://redis:6379 -n 3 default
 worker_planning:  rq worker-pool --url redis://redis:6379 -n 2 planning
 ```
 
@@ -79,7 +79,7 @@ worker_planning:  rq worker-pool --url redis://redis:6379 -n 2 planning
 свою shell-оболочку.
 
 Новая очередь — это ещё и строка в `redis_queue_init([...])` в `main_uvicorn.py`
-и сервис в `deploy.yml` (`docker compose up -d … worker worker_planning`).
+и сервис в `deploy.yml` (`docker compose up -d … worker_task worker_planning`).
 
 Правило выбора для нового воркера: **очередь всегда Redis**. `asyncio.Queue` внутри
 uvicorn не переживает рестарт и не масштабируется — один воркер на процесс, а планирование
@@ -143,14 +143,18 @@ TTL ключа равен потолку job'а: умерший воркер н�
 Конвейер задач:
 
 ```
-claude_shell_call 300s (WF#55 передаёт 600s)   одно обращение к менеджеру
-  < MANAGER_TIMEOUT           3600s            весь прогон планирования (до 13 обращений)
-    < TASK_WORKER_JOB_TIMEOUT 3900s            потолок job'а в rq (дефолт rq — 180s!)
-      < LOCK_TIMEOUT_SEC      4200s            когда блокировку сочтут протухшей
+timeout_shell_call   300s (WF#55 передаёт 600s)  одно обращение к менеджеру
+  < timeout_manager_run     3600s               весь прогон планирования (до 13 обращений)
+    < timeout_worker_job    3900s               потолок job'а в rq (дефолт rq — 180s!)
+      < timeout_task_lock   4200s               когда блокировку сочтут протухшей
 ```
 
+Все четыре — настройки, а не константы: правятся блоком «⏱ Таймауты» на карточках
+`/admin/team` и читаются в момент ожидания (`src/setting/setting_timeout.py`, см.
+`setting.md`). Нарушенный порядок страница показывает предупреждением, но не запрещает.
+
 Разработчик — та же лестница со своим верхом: WF#56 передаёт 600s на разбор, 1800s на
-реализацию и 600s на самопроверку, `DEVELOPER_TIMEOUT` тоже 3600s, дальше те же 3900 и
+реализацию и 600s на самопроверку, `timeout_developer_run` тоже 3600s, дальше те же 3900 и
 4200. Потолок прогона меньше суммы шагов не случайно: круг доработки её превышает, и
 рвать прогон должен именно он, а не молчаливое переползание за блокировку.
 
@@ -184,8 +188,8 @@ PHASE_TIMEOUT_MAX             3600s            потолок одной фаз�
    копию кода в памяти.
 
 ```bash
-docker restart uvicorn worker worker_planning
-docker logs --tail 30 worker
+docker restart uvicorn worker_task worker_planning
+docker logs --tail 30 worker_task
 ```
 
 ## 8. Чек-лист: переезд/переименование модуля воркера
@@ -196,7 +200,7 @@ rq хранит функцию job'а строкой — переименова�
    `docker exec redis redis-cli llen rq:queue:default` и `… rq:queue:planning` → `0`.
 2. Переименовать модуль, обновить импорты (`grep -rn "<старое_имя>" --include=*.py .` → пусто).
 3. Обновить документацию: `grep -rn "<старое_имя>" .claude/docs/` → пусто.
-4. `docker restart uvicorn worker worker_planning`.
+4. `docker restart uvicorn worker_task worker_planning`.
 
 ## Грабли
 
@@ -208,7 +212,7 @@ rq хранит функцию job'а строкой — переименова�
 3. **Пул MySQL не закрыт в `finally`** — соединения текут по одному на job, и через сутки
    воркер упирается в лимит соединений.
 4. **`docker restart uvicorn` без воркеров** — самая частая причина «код правильный, а
-   поведение старое»: `worker` и `worker_planning` держат собственную импортированную
+   поведение старое»: `worker_task` и `worker_planning` держат собственную импортированную
    копию модулей.
 5. **Переименовали модуль воркера при непустой очереди** — rq не найдёт функцию по старому
    пути, задания уйдут в failed registry молча. Сначала §8, потом переименование.
