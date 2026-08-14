@@ -374,6 +374,8 @@
 
     function _renderDefaultBlockPreview(b) {
         const container = document.getElementById('bwPreviewContent');
+        const varsCollapsed = localStorage.getItem('bw_vars_collapsed_' + b.id);
+        const varsOpen = (b.vars && b.vars !== '{}') && (varsCollapsed === null || varsCollapsed !== '1');
 
         container.innerHTML = `
         <div class="bw-preview-name">project_design_ui_block #${b.id} ${esc(b.name)}</div>
@@ -384,7 +386,7 @@
         ${_bwPreviewSectionLabelHtml(b.id)}
         <div class="bw-iframe-wrap" id="bwdiw-${b.id}"></div>
         ${b.vars && b.vars !== '{}' ? `
-        <details class="bw-css-details" style="margin-top:8px">
+        <details class="bw-css-details" style="margin-top:8px" ${varsOpen ? 'open' : ''} ontoggle="localStorage.setItem('bw_vars_collapsed_${b.id}', this.open ? '1' : '0')">
             <summary class="bw-css-summary">Переменные (vars)</summary>
             <textarea class="bw-css-textarea" readonly style="min-height:80px">${esc(JSON.stringify(JSON.parse(b.vars), null, 2))}</textarea>
         </details>` : ''}`;
@@ -1279,12 +1281,20 @@
         const b = data.result;
         if (!b) return;
         const wrap = document.getElementById('libBlockPreview');
+        const libVarsCollapsed = localStorage.getItem('lib_vars_collapsed_' + b.id);
+        const libVarsOpen = (b.vars && b.vars !== '{}') && (libVarsCollapsed === null || libVarsCollapsed !== '1');
+        const libVarsHtml = b.vars && b.vars !== '{}' ?
+            '<details class="bw-css-details" style="margin-top:8px" ' + (libVarsOpen ? 'open' : '') + ' ontoggle="localStorage.setItem(\'lib_vars_collapsed_' + b.id + '\', this.open ? \'1\' : \'0\')">' +
+            '<summary class="bw-css-summary">Переменные (vars)</summary>' +
+            '<textarea class="bw-css-textarea" readonly style="min-height:80px">' + esc(JSON.stringify(JSON.parse(b.vars), null, 2)) + '</textarea>' +
+            '</details>' : '';
         wrap.innerHTML = '<div style="padding:12px 14px">' +
             '<div class="bw-preview-name">project_design_ui_block #' + b.id + ' ' + esc(b.name) + '</div>' +
             '<div class="bw-preview-meta-row">' +
             _bwTagsBarHtml(b.id, b.tags) +
             _bwSectionsBarHtml(b.id, b.section) +
             '</div>' +
+            libVarsHtml +
             _bwPreviewSectionLabelHtml(b.id) +
             '<div class="bw-iframe-wrap" id="libprev-' + b.id + '"></div>' +
             '</div>';
