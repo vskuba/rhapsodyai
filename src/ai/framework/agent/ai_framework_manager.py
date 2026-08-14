@@ -82,9 +82,17 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             )
             raise
 
-    def framework_workflow_run(self, framework_model: AiFrameworkAgentModel, future: asyncio.Future, loop):
+    def framework_workflow_run(self, framework_model: AiFrameworkAgentModel, future: asyncio.Future,
+                               loop) -> asyncio.Task:
+        """Запускает workflow отдельной задачей и возвращает её.
+
+        Задачу нужно вернуть, а не забыть: ждущий обычно висит на `future` со своим
+        таймаутом, и отмена одного лишь `future` прогон не останавливает — он идёт
+        дальше и продолжает слать сообщения агенту, которого ждущий уже похоронил.
+        Кто ставит таймаут, тот и отменяет задачу; `_framework_workflow_run` умеет
+        принять отмену — закрывает журнал как `stopped` и отпускает `future`."""
         logger_info('Запуск воркфлоу агента в отдельной асинхронной задаче...')
-        asyncio.create_task(self._framework_workflow_run(framework_model, future, loop))
+        return asyncio.create_task(self._framework_workflow_run(framework_model, future, loop))
 
     async def prompt_system_create(self, metadata: dict) -> str:
         entity_agent = metadata.get('entity_agent', {})
@@ -229,10 +237,12 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     trace_run_id=trace_run_id
                 )
             except asyncio.CancelledError:
-                # Остановка кнопкой «Стоп»: закрываем журнал и отвечаем без ошибки
-                logger_info(f"⏹ Workflow остановлен пользователем (run {run_uuid})")
+                # Отмена: кнопка «Стоп» либо таймаут ожидающего прогон (конвейер задач
+                # отменяет задачу, не дождавшись ответа). Закрываем журнал и отвечаем
+                # без ошибки — ждущий свою причину назовёт сам.
+                logger_info(f"⏹ Workflow остановлен (run {run_uuid})")
                 await workflow_trace_run_finish(
-                    trace_run_id, 'stopped', error='Остановлен пользователем',
+                    trace_run_id, 'stopped', error='Прогон отменён: «Стоп» или таймаут ожидающего',
                     duration_ms=int((time.monotonic() - run_started) * 1000)
                 )
                 if not future.done():
