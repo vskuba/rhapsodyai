@@ -412,33 +412,6 @@
     .status-active::before { animation: status-pulse 1.6s ease-in-out infinite; }
     @keyframes status-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 
-    /* ── Остановка работы (◼ / ▶) ── */
-    /* Вплотную к статусному бейджу и в одну с ним строку: кнопка говорит ровно о том,
-       что бейдж показывает, — «идёт работа, прекратить». Через `vertical-align`, как
-       флажки фазы: у бейджа своя высота из-за точки-индикатора.
-
-       Оформление приглушённое, без красного: остановка не ломает задачу и не теряет
-       сделанного — строка возвращается туда, откуда её взяли, — а красным на странице
-       помечен настоящий сбой (`failed`, `.pipe-retry`). ▶ зелёный: это уже продолжение. */
-    .task-stop {
-        display: inline-flex;
-        align-items: center;
-        margin-left: 6px;
-        padding: 2px 6px;
-        font-size: 10px;
-        line-height: 1.2;
-        cursor: pointer;
-        color: #475569;
-        background: #f8fafc;
-        border: 1px solid #cbd5e1;
-        border-radius: 5px;
-        vertical-align: middle;
-    }
-    .task-stop:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
-    .task-stop:disabled { opacity: .5; cursor: progress; }
-    .task-stop-resume { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
-    .task-stop-resume:hover:not(:disabled) { background: #dcfce7; border-color: #86efac; }
-
     /* ── Флажки фазы («в разработку», «в тестирование») ── */
     /* Стоят в одну строку со статусным бейджем, поэтому inline-flex и выравнивание
        по середине: у бейджа своя высота из-за точки-индикатора, и по базовой линии
@@ -455,6 +428,11 @@
         user-select: none;
     }
     .task-flag input { margin: 0; cursor: pointer; }
+    /* Флажок «в разработку» на вкладке «Разработка» ждёт ответа сервера: за ним стоит
+       перезапуск оболочек, ответ идёт секундами. Пока ждём — флажок выключен, иначе
+       второй щелчок ушёл бы уже в обратное действие. */
+    .task-flag input:disabled { cursor: progress; }
+    .task-flag.task-flag-busy { opacity: .5; }
     .task-flag:hover { color: #334155; }
 
     /* ── Row action buttons ── */
@@ -912,6 +890,29 @@
     }
     .pipe-mr::before { content: '⎇'; font-size: 10px; opacity: .7; }
     .pipe-mr:hover { background: #dbeafe; border-color: #93c5fd; }
+    /* Разница локальных веток (`/admin/task/diff`) — соседка ссылки на MR и её замена
+       там, где MR врёт: он сравнивает ветку с `origin/master`, а конвейер режет её от
+       локального. Оформлена скромнее ссылки на MR — это внутренний просмотр, а не
+       место, где идёт ревью. */
+    .pipe-diff {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-left: 4px;
+        padding: 2px 6px;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        text-decoration: none;
+        color: #4b5563;
+        background: #f3f4f6;
+        border: 1px solid #d1d5db;
+        border-radius: 5px;
+        vertical-align: middle;
+    }
+    .pipe-diff::before { content: '±'; font-size: 10px; opacity: .7; }
+    .pipe-diff:hover { background: #e5e7eb; border-color: #9ca3af; }
     /* «Влить в главную и снять каталог» — стоит вплотную к ссылке MR, потому что это
        её следующий шаг: посмотрел работу — принял. Зелёный, но приглушённый: действие
        завершающее, а не опасное, и рвать им взгляд по всей таблице незачем. Пока идёт
@@ -1970,7 +1971,7 @@ function renderProgressCell(row) {
     const hint = esc(taskReportHint(t, row));
     const badge = `<span class="task-status-badge status-${status}" title="${hint}">${STATUS_LABELS[status] || status}</span>`;
 
-    return badge + renderStopBtn(t, status) + renderPlanFlag(t) + renderDevFlag(t) + renderTestFlag(t)
+    return badge + renderRunFlag(t, status) + renderPlanFlag(t) + renderDevFlag(t) + renderTestFlag(t)
         + renderPipeChip(t, row) + (row.hasKids
         ? renderSubtaskSummary(row)
         : renderInlineGoals(t, false));
@@ -2679,10 +2680,12 @@ async function toggleTestFlag(id, checked) {
     await _taskFlagSave(id, TASK_META_KEY_TEST, checked ? null : false);
 }
 
+// Третьим аргументом — сам `input`: он нужен «в разработку», чтобы погасить флажок на
+// время запроса. Пометкам в `metadata` он не нужен и ими просто не читается.
 function _taskFlagHtml(id, label, on, handler, title) {
     return `<label class="task-flag" onclick="event.stopPropagation()" title="${esc(title)}">
                 <input type="checkbox" ${on ? 'checked' : ''}
-                       onchange="${handler}(${id}, this.checked)">${label}</label>`;
+                       onchange="${handler}(${id}, this.checked, this)">${label}</label>`;
 }
 
 async function _taskFlagSave(id, key, value) {
@@ -2712,40 +2715,47 @@ async function _taskFlagSave(id, key, value) {
 // задачу целиком: подзадачи плана гасит она же, через проверку родителя в захвате.
 const TASK_META_KEY_STOP = 'stopped';
 
-// Кнопка ◼ «Остановить» в одну строку со статусом — и ▶ «Продолжить» на её месте, когда
-// задача уже остановлена. Один слот на оба состояния: это одна мысль («работа идёт —
-// работа стоит»), и разносить её по двум кнопкам значит показывать человеку выбор,
-// которого у него нет.
+// Флажок «в разработку» на вкладке «Разработка» — выключатель работы над строкой.
+// Смысл его прямой: стоит галка — задача в конвейере, снята — работа прекращена.
 //
-// ◼ только у «В работе»: останавливать нечего, пока никто не работает. У остановленной
-// строки статус уже «Ожидает» — ветка `stopped` идёт первой и оставляет ▶.
+// Флажком, а не кнопкой ◼/▶: кнопка показывает действие, а человеку тут важно
+// состояние — идёт работа или нет. Оно же и объясняет, почему галка стоит у всех трёх
+// статусов «в работе», «в очереди» и «ожидает»: во всех трёх задача из конвейера не
+// вышла, и разница между ними — только в том, дошла ли до строки очередь.
 //
-// ▶ нужен не только ради симметрии: продолжают задачу обычно возвратом флажка фазы, но
-// флажок есть не у всякой строки — у подзадач его нет вовсе, и без этой кнопки их
+// Прочие статусы (`done`, `cancelled`, `blocked`) флажка не получают: включать там
+// нечего, работа кончилась или упёрлась в человека.
+//
+// Показываем и у подзадач: у них нет флажков фазы, и без этого выключателя их
 // остановка была бы дорогой в один конец.
-function renderStopBtn(t, status) {
-    const stopped = (t.metadata || {})[TASK_META_KEY_STOP] === true;
-    if (!stopped && status !== 'active') return '';
-    const title = stopped
-        ? 'Продолжить: задачу снова видно отбору, работу отдаст ближайший тик оркестратора'
-        : 'Остановить работу: агента погасить, строку вернуть в очередь, задачу — в «Ожидает».'
-          + ' Сделанное не пропадёт, продолжить можно этой же кнопкой или флажком фазы';
-    return `<button class="task-stop${stopped ? ' task-stop-resume' : ''}"`
-         + ` onclick="event.stopPropagation();taskStopToggle(${t.id},${stopped},this)"`
-         + ` title="${esc(title)}">${stopped ? '▶' : '◼'}</button>`;
+//
+// Хранится, как и раньше, отклонение от умолчания: `stopped: true` пишет остановка,
+// снятая остановка ключ стирает. Отсюда `!== true` — «ключа нет» значит «работаем».
+const TASK_RUN_FLAG_STATUS = ['active', 'queued', 'pending'];
+
+function renderRunFlag(t, status) {
+    if (_phaseFilter !== 'development' || !TASK_RUN_FLAG_STATUS.includes(status)) return '';
+    const on = (t.metadata || {})[TASK_META_KEY_STOP] !== true;
+    const title = on
+        ? 'Задача в конвейере. Снять — работа прекратится: агента погасим, строку вернём в очередь,'
+          + ' задачу — в «Ожидает». Сделанное не пропадёт'
+        : 'Работа остановлена. Вернуть галку — задачу снова видно отбору, работу отдаст'
+          + ' ближайший тик оркестратора с того же места';
+    return _taskFlagHtml(t.id, 'в разработку', on, 'toggleRunFlag', title);
 }
 
-// Гасим кнопку на время запроса: за ним стоит перезапуск оболочек, ответ идёт секундами,
-// и повторный клик ушёл бы уже во второе действие. Список перечитываем в любом исходе —
+// Гасим флажок на время запроса: за ним стоит перезапуск оболочек, ответ идёт секундами,
+// и повторный щелчок ушёл бы уже в обратное действие. Список перечитываем в любом исходе —
 // остановка могла пройти частично (строки вернули, оболочку погасить не удалось).
-async function taskStopToggle(taskId, stopped, btn) {
-    if (btn) btn.disabled = true;
+async function toggleRunFlag(taskId, checked, el) {
+    const label = el && el.closest('.task-flag');
+    if (el) el.disabled = true;
+    if (label) label.classList.add('task-flag-busy');
     try {
-        await taskFetch(`/task/${taskId}/pipeline/${stopped ? 'resume' : 'stop'}`, { method: 'POST' });
+        await taskFetch(`/task/${taskId}/pipeline/${checked ? 'resume' : 'stop'}`, { method: 'POST' });
     } catch(e) {
-        alert(e.message || (stopped ? 'Не удалось продолжить задачу' : 'Не удалось остановить задачу'));
+        alert(e.message || (checked ? 'Не удалось продолжить задачу' : 'Не удалось остановить задачу'));
     }
-    if (btn) btn.disabled = false;
     await loadTasks();
 }
 
@@ -2780,7 +2790,7 @@ function renderPipeChip(t, row) {
         : taskReportHint(t, row);
     return `<div><span class="pipe-chip pipe-${state}" `
          + `title="${esc(hint)}">${esc(state)}</span>${retry}${renderPipeRetries(t)}`
-         + `${renderPipeMr(t)}${renderPipeMerge(t)}</div>`;
+         + `${renderPipeMr(t)}${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
 }
 
 // Статистика технических повторов строки (`metadata.retry`, пишет `task_retry.py`).
@@ -2819,6 +2829,26 @@ function renderPipeMr(t) {
     return `<a class="pipe-mr" href="${esc(url)}" target="_blank" rel="noopener"`
          + ` onclick="event.stopPropagation()" title="Merge request подзадачи #${t.id}, ветка ${esc(branch)}">`
          + `MR #${t.id}</a>`;
+}
+
+// Разница главной ветки и ветки подзадачи — обе локальные.
+//
+// Отдельно от ссылки на merge request, потому что показывают они разное: MR на сервере
+// сравнивает ветку с `origin/master`, а конвейер режет её от локальной главной, которая
+// бывает на десятки коммитов впереди. Вся эта чужая работа попадает в MR как изменения
+// задачи — на двух строках правки выходило 113 файлов. Здесь сравнение честное.
+//
+// Только у подзадачи и только начиная с `developing`: до этого ветки ещё нет, и ссылка
+// вела бы на страницу с одним сообщением «разработчик не оставил коммитов».
+const TASK_DIFF_STATES = ['developing', 'qa_pending', 'testing', 'failed_qa', 'done'];
+
+function renderPipeDiff(t) {
+    if (!t.parent_id || !TASK_DIFF_STATES.includes(t.pipeline_state)) return '';
+    const branch = String(t.metadata?.branch || `feature/task_${t.id}`).trim();
+    return `<a class="pipe-diff" href="/admin/task/diff?task=${t.id}" target="_blank" rel="noopener"`
+         + ` onclick="event.stopPropagation()"`
+         + ` title="Разница ${esc(branch)} и локальной главной ветки — без чужих коммитов,`
+         + ` которые показывает merge request">diff</a>`;
 }
 
 // «Влить в главную ветку и снять каталог» — ручное завершение работы над подзадачей.
