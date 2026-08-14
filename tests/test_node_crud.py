@@ -1,10 +1,11 @@
+import os
 from tests.constants import TEST_AUTH
 """Node CRUD tests — /node endpoints."""
 import pytest
 import httpx
 from typing import AsyncGenerator
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_NODE_PREFIX = "test_node_"
 
 

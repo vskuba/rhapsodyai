@@ -9,13 +9,14 @@ Tests cover:
 - Logout functionality
 - Accessing protected routes after logout
 """
+import os
 import pytest
 import httpx
 from typing import AsyncGenerator
 
 from tests.constants import TEST_AUTH, TEST_AUTH_ROLE
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 
 class TestLoginFlow:

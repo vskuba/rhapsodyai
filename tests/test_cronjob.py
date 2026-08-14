@@ -6,11 +6,12 @@ Tests cover:
 - Handling non-existent cronjob files
 - Restricting execution to allowed cronjob directories
 """
+import os
 import pytest
 import httpx
 from typing import AsyncGenerator
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 
 class TestCronjobFlow:

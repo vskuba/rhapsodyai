@@ -98,6 +98,37 @@ def task_plan_goals_merge(goals_current_raw, goals_new: list) -> str:
     return json.dumps(goals, ensure_ascii=False)
 
 
+def task_plan_goals_text(goals_raw) -> str:
+    """
+    Цели нумерованным списком — в таком виде их видит агент в промпте.
+
+    Номера считаем с единицы и по сырому списку, не схлопывая похожие: те же
+    номера выдаёт QA инструмент `task_goal_pick`, и вердикт «цель 3 закрыта»
+    должен относиться к той же строке, что человек видит в колонке «Цели».
+
+    Отметку `done` показываем: на повторном круге закрытые цели перепроверять
+    незачем, а без пометки агент проходит их заново.
+
+    Пустая строка на выходе ложна для `%if task_goals%` — блок целей в промпте
+    тогда не раскроется, и агент увидит «не заданы» вместо пустого заголовка.
+    """
+    try:
+        goals = json.loads(str(goals_raw or '') or '[]') if isinstance(goals_raw, str) else goals_raw
+    except (ValueError, TypeError):
+        return ''
+    if not isinstance(goals, list):
+        return ''
+
+    lines = []
+    for i, goal in enumerate(goals, 1):
+        text = str((goal.get('text') if isinstance(goal, dict) else goal) or '').strip()
+        if not text:
+            continue
+        mark = ' [закрыта]' if isinstance(goal, dict) and goal.get('done') else ''
+        lines.append(f'{i}.{mark} {text}')
+    return '\n'.join(lines)
+
+
 def _task_plan_goal_key(text: str) -> str:
     """
     Формулировка без регистра, знаков и лишних пробелов — по ней сверяем цели.

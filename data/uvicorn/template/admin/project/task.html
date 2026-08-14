@@ -868,32 +868,9 @@
         vertical-align: middle;
     }
     .pipe-retry:hover { background: #fee2e2; border-color: #fca5a5; }
-    /* Ссылка на merge request подзадачи — в одной строке с чипсом состояния: состояние
-       отвечает «где работа», ссылка — «где её смотреть», и разносить их по строкам
-       значит рвать одну мысль. Отсюда же `inline-flex` и общая с чипсом высота. */
-    .pipe-mr {
-        display: inline-flex;
-        align-items: center;
-        gap: 3px;
-        margin-left: 4px;
-        padding: 2px 6px;
-        font-size: 10px;
-        font-weight: 700;
-        line-height: 1.2;
-        white-space: nowrap;
-        text-decoration: none;
-        color: #1d4ed8;
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        border-radius: 5px;
-        vertical-align: middle;
-    }
-    .pipe-mr::before { content: '⎇'; font-size: 10px; opacity: .7; }
-    .pipe-mr:hover { background: #dbeafe; border-color: #93c5fd; }
-    /* Разница локальных веток (`/admin/task/diff`) — соседка ссылки на MR и её замена
-       там, где MR врёт: он сравнивает ветку с `origin/master`, а конвейер режет её от
-       локального. Оформлена скромнее ссылки на MR — это внутренний просмотр, а не
-       место, где идёт ревью. */
+    /* Разница локальных веток (`/admin/task/diff`) — в одной строке с чипсом состояния:
+       состояние отвечает «где работа», ссылка — «где её смотреть», и разносить их по
+       строкам значит рвать одну мысль. Отсюда `inline-flex` и общая с чипсом высота. */
     .pipe-diff {
         display: inline-flex;
         align-items: center;
@@ -1231,6 +1208,15 @@
     }
     /* Последняя минута — прогон вот-вот оборвут по таймауту. */
     .team-mini-left.is-low { color: #b91c1c; font-weight: 700; }
+    /* Доля пройденных шагов прогона. Оценка, а не измерение (знаменатель — медиана
+       прошлых прогонов), поэтому вид скромный: цифра рядом с таймером, без полосы
+       загрузки, которая обещала бы точность. Ширина фиксирована — три знака вместе
+       с процентом, чтобы ряд карточек не дёргался на переходе с 9 % на 10 %. */
+    .team-mini-pct {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; color: #0f766e; font-variant-numeric: tabular-nums;
+        min-width: 30px; text-align: right;
+    }
 </style>
 {% endblock %}
 
@@ -1438,12 +1424,22 @@ function teamMiniCardHtml(card) {
     const left = busy && cur && cur.left_seconds !== null && cur.left_seconds !== undefined
         ? `<span class="team-mini-left" data-until="${Date.now() + cur.left_seconds * 1000}">${teamMiniLeftText(cur.left_seconds)}</span>`
         : '';
+    // Доля пройденных шагов прогона. Считает сервер по трейсу; здесь её только
+    // показывают — и только когда сервер её прислал: у прогона, начатого до
+    // появления номера задачи в переменных, шага не найти, и молчание честнее нуля.
+    const pct = busy && cur && cur.percent !== null && cur.percent !== undefined
+        ? `<span class="team-mini-pct">${cur.percent}%</span>`
+        : '';
+    const step = pct && cur.step_index
+        ? ` · шаг ${cur.step_index} из ~${cur.step_total}`
+          + (cur.step_title ? `: ${cur.step_title}` : '')
+        : '';
     const title = `${esc(card.role_title)} · ${card.active ? 'активен' : 'не активен'}`
-        + (busy ? ` · в работе ${label}` : '');
+        + (busy ? ` · в работе ${label}` : '') + esc(step);
 
     return `<div class="team-mini${card.active ? ' team-mini-on' : ''}${busy}" title="${title}">
         <span class="team-mini-dot"></span>
-        <span class="team-mini-name">${esc(card.name)}</span>${task}${left}
+        <span class="team-mini-name">${esc(card.name)}</span>${task}${pct}${left}
     </div>`;
 }
 
@@ -1548,14 +1544,28 @@ function getTaskTypeNameById(typeId) {
     return t ? t.name : null;
 }
 
+// Законченная работа — та, у которой закрыта хоть одна из двух осей. Человеческий
+// «Готово» ставят руками, конвейерный `done` — сам конвейер, и совпадают они не
+// всегда: строку закрывают в кабинете, не дожидаясь конвейера, и наоборот.
+function taskIsDone(t) {
+    return t?.status === 'done' || t?.pipeline_state === 'done';
+}
+
 // Своя ли задача для вкладки — по типу, без поиска и статуса. Отдельная функция,
 // потому что по фазе решается не только «показать строку»: задача чужой фазы не
 // тянется в таблицу и как предок (см. `treeRows`), иначе задача в тестировании
 // висела бы ещё и на «Разработке» — на двух вкладках сразу.
+//
+// Готовая работа уходит с вкладки своего типа на «Тестирование» — оно последняя
+// инстанция и единственное место, где закрытую задачу принимают: смотрят разницу
+// веток и вливают её в главную. Иначе одна и та же готовая задача висела бы сразу
+// на двух вкладках — своей по типу и на тестировании, — а принимать её было бы
+// негде: у разработки таких кнопок нет.
 function taskMatchesPhase(t) {
     // Задачи без task_type_id считаются типом "dev" (development)
     const typeName = getTaskTypeNameById(t.task_type_id) || 'dev'; // NULL → dev по умолчанию
     if (!_phaseFilter) return true;
+    if (taskIsDone(t)) return _phaseFilter === 'testing';
     return (PHASE_TYPE_NAMES[_phaseFilter] || []).includes(typeName);
 }
 
@@ -1781,7 +1791,11 @@ function phaseTabsCount() {
     _tasks.forEach(t => {
         const typeName = getTaskTypeNameById(t.task_type_id) || 'dev';
         Object.keys(PHASE_TYPE_NAMES).forEach(phase => {
-            if (PHASE_TYPE_NAMES[phase].includes(typeName)) counts[phase] = (counts[phase] || 0) + 1;
+            // Тот же разбор, что в `taskMatchesPhase`, и другим он быть не может:
+            // число во вкладке обещает, сколько строк там лежит, и разойдись оно с
+            // отбором — вкладка звала бы на пустое место.
+            const ok = taskIsDone(t) ? phase === 'testing' : PHASE_TYPE_NAMES[phase].includes(typeName);
+            if (ok) counts[phase] = (counts[phase] || 0) + 1;
         });
     });
     Object.keys(PHASE_TYPE_NAMES).forEach(phase => {
@@ -1971,7 +1985,11 @@ function renderProgressCell(row) {
     const hint = esc(taskReportHint(t, row));
     const badge = `<span class="task-status-badge status-${status}" title="${hint}">${STATUS_LABELS[status] || status}</span>`;
 
-    return badge + renderRunFlag(t, status) + renderPlanFlag(t) + renderDevFlag(t) + renderTestFlag(t)
+    // Порядок в ряду один и тот же на всех вкладках: сперва выключатель этой фазы
+    // («в планирование» / «в разработку» / «в тестирование»), за ним — разрешение на
+    // следующую. Каждая пара сама решает, показываться ли ей на текущей вкладке.
+    return badge + renderRunFlag(t, status) + renderQaFlag(t, status)
+        + renderPlanFlag(t) + renderDevFlag(t) + renderTestFlag(t)
         + renderPipeChip(t, row) + (row.hasKids
         ? renderSubtaskSummary(row)
         : renderInlineGoals(t, false));
@@ -2601,6 +2619,22 @@ const TASK_META_KEY_PLAN = 'to_planning';
 const TASK_META_KEY_DEV = 'to_development';
 const TASK_META_KEY_TEST = 'to_testing';
 
+// На каждой вкладке два флажка, и роли у них разные.
+//
+// Первый — выключатель самой фазы: «в планирование» на планировании, «в разработку» на
+// разработке, «в тестирование» на тестировании. Стоит — работа этой фазы идёт или
+// начнётся ближайшим тиком; снят — не только «дальше не начинать», но и остановка того,
+// что уже идёт (`_taskPhaseSwitch`).
+//
+// Второй — согласие на следующую фазу, данное заранее: «в разработку» на планировании,
+// «в тестирование» на разработке. Он ничего не останавливает и ничего не запускает
+// сейчас, он лишь избавляет от отдельного нажатия потом. На тестировании второго нет:
+// после проверки задача идёт к человеку, а не к следующему агенту.
+//
+// Всё это — только у главной задачи. Подзадача — строка плана: и план, и остановка, и
+// переход к следующей фазе решаются для задачи целиком, а флажок в каждой строке плана
+// обещал бы решения, которых у подзадачи нет.
+
 // Флажок «в планирование» — первый в ряду, потому что первым идёт и сам шаг: пока он
 // стоит, задачу заберёт ближайший тик и менеджер напишет ей план. Снятый флажок —
 // «завёл, но плана пока не прошу»: захват такую задачу не видит
@@ -2609,14 +2643,13 @@ const TASK_META_KEY_TEST = 'to_testing';
 //
 // Умолчание «включено», поэтому хранение наизнанку, как у «в тестирование»: ключа нет —
 // планируем, снятый флажок пишется явным `false`. Отсюда `!== false`, а не `!!`.
-//
-// Только на вкладке «Планирование» и только у задач без родителя: план пишется задаче
-// целиком, у подзадачи он уже есть — это строка родительского плана.
 function renderPlanFlag(t) {
     if (_phaseFilter !== 'planning' || t.parent_id) return '';
     const on = (t.metadata || {})[TASK_META_KEY_PLAN] !== false;
-    return _taskFlagHtml(t.id, 'в планирование', on, 'togglePlanFlag',
-        'Отдать задачу менеджеру за планом. Снять — задача останется в списке, но плана для неё писать не будут');
+    return _taskFlagHtml(t.id, 'в планирование', on, 'togglePlanFlag', on
+        ? 'Задача у менеджера. Снять — планирование прекратится: агента погасим, задачу'
+          + ' вернём в «Ожидает», и плана для неё писать не будут'
+        : 'Отдать задачу менеджеру за планом — работу отдаст ближайший тик оркестратора');
 }
 
 // Флажок «в разработку» рядом со статусом — согласие человека, данное заранее: план
@@ -2629,8 +2662,10 @@ function renderPlanFlag(t) {
 //
 // Ключа в metadata у большинства задач нет — это и есть выключенное состояние, отдельного
 // значения `false` для «по умолчанию выключен» не нужно.
+// Только у главной задачи: тип, вкладку и переход к следующей фазе задача меняет
+// целиком, у подзадачи своего типа нет — она едет вместе с родителем.
 function renderDevFlag(t) {
-    if (_phaseFilter !== 'planning') return '';
+    if (_phaseFilter !== 'planning' || t.parent_id) return '';
     const on = !!(t.metadata || {})[TASK_META_KEY_DEV];
     return _taskFlagHtml(t.id, 'в разработку', on, 'toggleDevFlag',
         'Утверждать план не потребуется: как только он будет готов, задача сменит тип на «Разработка» и уйдёт в работу');
@@ -2660,11 +2695,11 @@ function renderTestFlag(t) {
         'Готовую работу отдать на проверку: задача уйдёт в тестирование без отдельного решения человека');
 }
 
-async function togglePlanFlag(id, checked) {
-    // Как у «в тестирование»: хранится отклонение от умолчания, а возврат к нему ключ
-    // стирает. Ничего не запускаем отдельно — задача просто снова попадает в отбор
-    // ближайшего тика оркестратора.
-    await _taskFlagSave(id, TASK_META_KEY_PLAN, checked ? null : false);
+async function togglePlanFlag(id, checked, el) {
+    // Выключатель фазы, поэтому не только пометка: снятая галка гасит и тот прогон
+    // менеджера, что идёт прямо сейчас. Иначе она обещала бы остановку, а агент ещё
+    // десяток минут говорил бы с оболочкой и в конце положил задаче план.
+    await _taskPhaseSwitch(id, TASK_META_KEY_PLAN, checked, el);
 }
 
 async function toggleDevFlag(id, checked) {
@@ -2711,6 +2746,39 @@ async function _taskFlagSave(id, key, value) {
     }
 }
 
+// Общий выключатель фазы — за ним стоят и «в планирование», и «в разработку», и
+// «в тестирование», по одному на вкладку. Действий два, и порядок между ними не
+// случаен: сперва снимаем разрешение, потом гасим прогон. В обратном порядке тик
+// оркестратора успел бы подобрать задачу в тот же миг, когда её остановили, и галка
+// вернулась бы сама.
+//
+// `key` пустой у вкладки «Разработка»: своего ключа разрешения у неё нет — его роль
+// играет одноразовая пометка «в разработку» с вкладки планирования, и здесь остаётся
+// только сам пуск-останов.
+//
+// Флажок гасим на время запроса: за остановкой стоит перезапуск оболочек, ответ идёт
+// секундами, и повторный щелчок ушёл бы уже в обратное действие. Список перечитываем
+// в любом исходе — остановка могла пройти частично (строки вернули, оболочку нет).
+async function _taskPhaseSwitch(id, key, checked, el) {
+    const label = el && el.closest('.task-flag');
+    if (el) el.disabled = true;
+    if (label) label.classList.add('task-flag-busy');
+    try {
+        if (key) {
+            // Хранится отклонение от умолчания: умолчание у обоих ключей «включено»,
+            // поэтому возврат к нему ключ стирает (`null` в JSON_MERGE_PATCH).
+            await taskFetch(`/task/${id}/metadata`, {
+                method: 'POST',
+                body: JSON.stringify({ patch: { [key]: checked ? null : false } }),
+            });
+        }
+        await taskFetch(`/task/${id}/pipeline/${checked ? 'resume' : 'stop'}`, { method: 'POST' });
+    } catch(e) {
+        alert(e.message || (checked ? 'Не удалось продолжить задачу' : 'Не удалось остановить задачу'));
+    }
+    await loadTasks();
+}
+
 // Ключ остановки в `metadata` — пишет `src/project/task/task_stop.py`. Пометка одна на
 // задачу целиком: подзадачи плана гасит она же, через проверку родителя в захвате.
 const TASK_META_KEY_STOP = 'stopped';
@@ -2726,14 +2794,17 @@ const TASK_META_KEY_STOP = 'stopped';
 // Прочие статусы (`done`, `cancelled`, `blocked`) флажка не получают: включать там
 // нечего, работа кончилась или упёрлась в человека.
 //
-// Показываем и у подзадач: у них нет флажков фазы, и без этого выключателя их
-// остановка была бы дорогой в один конец.
+// Только у главной задачи: остановка и так одна на задачу целиком — `task_stop`
+// гасит подзадачи плана через проверку родителя. Флажок у каждой подзадачи повторял
+// бы тот же выключатель столько раз, сколько строк в плане, и создавал ложное
+// впечатление, что их можно остановить порознь.
 //
 // Хранится, как и раньше, отклонение от умолчания: `stopped: true` пишет остановка,
 // снятая остановка ключ стирает. Отсюда `!== true` — «ключа нет» значит «работаем».
 const TASK_RUN_FLAG_STATUS = ['active', 'queued', 'pending'];
 
 function renderRunFlag(t, status) {
+    if (t.parent_id) return '';
     if (_phaseFilter !== 'development' || !TASK_RUN_FLAG_STATUS.includes(status)) return '';
     const on = (t.metadata || {})[TASK_META_KEY_STOP] !== true;
     const title = on
@@ -2744,19 +2815,36 @@ function renderRunFlag(t, status) {
     return _taskFlagHtml(t.id, 'в разработку', on, 'toggleRunFlag', title);
 }
 
-// Гасим флажок на время запроса: за ним стоит перезапуск оболочек, ответ идёт секундами,
-// и повторный щелчок ушёл бы уже в обратное действие. Список перечитываем в любом исходе —
-// остановка могла пройти частично (строки вернули, оболочку погасить не удалось).
 async function toggleRunFlag(taskId, checked, el) {
-    const label = el && el.closest('.task-flag');
-    if (el) el.disabled = true;
-    if (label) label.classList.add('task-flag-busy');
-    try {
-        await taskFetch(`/task/${taskId}/pipeline/${checked ? 'resume' : 'stop'}`, { method: 'POST' });
-    } catch(e) {
-        alert(e.message || (checked ? 'Не удалось продолжить задачу' : 'Не удалось остановить задачу'));
-    }
-    await loadTasks();
+    // Без ключа разрешения: на этой вкладке его роль уже сыграла одноразовая пометка
+    // «в разработку» с планирования — задача сюда переехала, значит разрешение дано.
+    await _taskPhaseSwitch(taskId, null, checked, el);
+}
+
+// Флажок «в тестирование» на вкладке «Тестирование» — тот же выключатель фазы, что
+// «в разработку» на разработке, только фаза другая: стоит галка — QA берёт подзадачи
+// на проверку, снята — проверка прекращается, а начатый прогон гасится.
+//
+// Ключ тот же самый, `to_testing`, что и у пометки на вкладке разработки, и это не
+// совпадение: там он разрешает переход сюда, здесь — саму работу QA (захват читает его
+// у родителя). Один ключ на оба состояния честнее двух: человек снимает «в тестирование»
+// с одной мыслью — «проверять не нужно», и на какой вкладке он это сделал, роли не играет.
+//
+// Второго флажка у вкладки нет: после проверки задача уходит к человеку, а не следующему
+// агенту, и разрешать заранее нечего.
+function renderQaFlag(t, status) {
+    if (t.parent_id) return '';
+    if (_phaseFilter !== 'testing' || !TASK_RUN_FLAG_STATUS.includes(status)) return '';
+    const on = (t.metadata || {})[TASK_META_KEY_TEST] !== false;
+    const title = on
+        ? 'Задача на проверке у QA. Снять — проверка прекратится: агента погасим, подзадачи'
+          + ' вернём в очередь, задачу — в «Ожидает»'
+        : 'Работа QA остановлена. Вернуть галку — проверка продолжится с того же места';
+    return _taskFlagHtml(t.id, 'в тестирование', on, 'toggleQaFlag', title);
+}
+
+async function toggleQaFlag(taskId, checked, el) {
+    await _taskPhaseSwitch(taskId, TASK_META_KEY_TEST, checked, el);
 }
 
 function renderPipeChip(t, row) {
@@ -2790,7 +2878,7 @@ function renderPipeChip(t, row) {
         : taskReportHint(t, row);
     return `<div><span class="pipe-chip pipe-${state}" `
          + `title="${esc(hint)}">${esc(state)}</span>${retry}${renderPipeRetries(t)}`
-         + `${renderPipeMr(t)}${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
+         + `${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
 }
 
 // Статистика технических повторов строки (`metadata.retry`, пишет `task_retry.py`).
@@ -2811,25 +2899,11 @@ function renderPipeRetries(t) {
     return `<span class="pipe-retries" title="${esc(parts.join('\n'))}">${total}</span>`;
 }
 
-// Ссылка на merge request — только у подзадачи и только у неё одной. Ветку заводят
-// под конкретную работу, а родитель — это план: своего кода и своей ветки у него нет,
-// и ссылка там показывала бы чужую работу.
-//
-// Показываем, когда разработчик отдал ссылку в отчёте (`task_pipeline._subtask_branch_save`).
-// Нет ссылки — нет и элемента: заглушка «MR не создан» в каждой строке шумит, а
-// сказать ей нечего.
-function renderPipeMr(t) {
-    if (!t.parent_id) return '';
-    // Ссылку пишет живой Claude Code, то есть в поле может оказаться что угодно.
-    // Пускаем только http(s): `javascript:` в href исполнится по клику, а экранирование
-    // кавычек от этого не спасает.
-    const url = String(t.metadata?.mr_url || '').trim();
-    if (!/^https?:\/\//i.test(url)) return '';
-    const branch = String(t.metadata?.branch || `feature/task_${t.id}`).trim();
-    return `<a class="pipe-mr" href="${esc(url)}" target="_blank" rel="noopener"`
-         + ` onclick="event.stopPropagation()" title="Merge request подзадачи #${t.id}, ветка ${esc(branch)}">`
-         + `MR #${t.id}</a>`;
-}
+// Ссылки на merge request в строке нет намеренно. MR на сервере сравнивает ветку с
+// `origin/master`, а конвейер режет её от локальной главной — MR показывает чужую
+// работу как изменения задачи (на двух строках правки выходило 113 файлов), и смотреть
+// по ней нечего. Ревью идёт по ссылке «diff», слияние — кнопкой на той же странице.
+// Сам `metadata.mr_url` разработчик по-прежнему пишет: он нужен отчёту, а не списку.
 
 // Разница главной ветки и ветки подзадачи — обе локальные.
 //
@@ -2838,34 +2912,40 @@ function renderPipeMr(t) {
 // бывает на десятки коммитов впереди. Вся эта чужая работа попадает в MR как изменения
 // задачи — на двух строках правки выходило 113 файлов. Здесь сравнение честное.
 //
-// Только у подзадачи и только начиная с `developing`: до этого ветки ещё нет, и ссылка
-// вела бы на страницу с одним сообщением «разработчик не оставил коммитов».
-const TASK_DIFF_STATES = ['developing', 'qa_pending', 'testing', 'failed_qa', 'done'];
-
+// Только у главной задачи и только у готовой. Ветки заводятся под подзадачи, но
+// смотреть по одной незачем: человеку нужен ответ на один вопрос — что задача изменила
+// в проекте, — и страница собирает его из веток всего плана сама. Пока работа идёт,
+// сравнивать нечего: половина плана ещё без коммитов.
 function renderPipeDiff(t) {
-    if (!t.parent_id || !TASK_DIFF_STATES.includes(t.pipeline_state)) return '';
-    const branch = String(t.metadata?.branch || `feature/task_${t.id}`).trim();
+    if (t.parent_id || t.pipeline_state !== 'done') return '';
     return `<a class="pipe-diff" href="/admin/task/diff?task=${t.id}" target="_blank" rel="noopener"`
          + ` onclick="event.stopPropagation()"`
-         + ` title="Разница ${esc(branch)} и локальной главной ветки — без чужих коммитов,`
+         + ` title="Разница веток задачи и локальной главной ветки — без чужих коммитов,`
          + ` которые показывает merge request">diff</a>`;
 }
 
-// «Влить в главную ветку и снять каталог» — ручное завершение работы над подзадачей.
-// Не автоматом после `done`: закрытая подзадача — это «QA не нашёл замечаний», а не
-// «работа принята»; merge request может ещё ждать ревью, и каталог нужен, чтобы
+// «Влить в главную ветку и снять каталог» — ручное завершение работы над задачей.
+// Не автоматом после `done`: закрытая задача — это «QA не нашёл замечаний», а не
+// «работа принята»; merge request может ещё ждать ревью, и каталоги нужны, чтобы
 // посмотреть, что получилось. Момент выбирает человек.
 //
-// Только у подзадачи (`parent_id`) и только у готовой: своей ветки у родителя нет, а
-// вливать незаконченную работу — то же, что закрывать её за агента. Каталога у
-// подзадачи может уже не быть (сняли руками) — сервер ответит понятной ошибкой,
-// прятать кнопку из-за этого не за чем: состояние каталогов странице не известно.
+// Рядом с «diff» и на тех же условиях — только у главной задачи и только у готовой.
+// Ветки заводятся под подзадачи, но принимают работу не по одной: человек смотрит
+// разницу задачи целиком и следом вливает её целиком, а `worktree/merge` по номеру
+// задачи обходит ветки её плана по порядку. Кнопка у каждой подзадачи звала бы
+// вливать половину просмотренного.
+//
+// Готовая задача видна только на «Тестировании» (см. `taskMatchesPhase`), поэтому
+// обе кнопки живут там же — на вкладке, где работу и принимают.
+//
+// Каталога подзадачи может уже не быть (сняли руками) — сервер ответит понятной
+// ошибкой, прятать кнопку из-за этого не за чем: состояние каталогов странице не
+// известно.
 function renderPipeMerge(t) {
-    if (!t.parent_id || t.pipeline_state !== 'done') return '';
-    const branch = String(t.metadata?.branch || `feature/task_${t.id}`).trim();
+    if (t.parent_id || t.pipeline_state !== 'done') return '';
     return `<button class="pipe-merge" onclick="event.stopPropagation();worktreeMerge(${t.id},this)"`
-         + ` title="Влить ${esc(branch)} в главную ветку проекта (локально, без push) и снять`
-         + ` рабочий каталог подзадачи">mr2master&amp;rm_worktree</button>`;
+         + ` title="Влить ветки подзадач этой задачи в главную ветку проекта`
+         + ` (локально, без push) и снять их рабочие каталоги">mr2master&amp;rm_worktree</button>`;
 }
 
 // Состояния подзадачи от «ещё не начата» к «готова». Порядок нужен, чтобы выбрать
@@ -2953,7 +3033,8 @@ async function pipelineAction(taskId, action) {
 // поднимает подмодули, ответ идёт секундами, и за это время кликают повторно.
 // Список перечитываем в любом исходе: слияние могло пройти, а снятие нет.
 async function worktreeMerge(taskId, btn) {
-    if (!confirm(`Влить ветку подзадачи #${taskId} в главную ветку проекта и снять её рабочий каталог?\n\n`
+    if (!confirm(`Влить ветки задачи #${taskId} в главную ветку проекта и снять их рабочие каталоги?\n\n`
+               + 'Ветки заводятся под подзадачи — вливаются все по порядку, первый отказ останавливает остальные.\n'
                + 'Слияние локальное, без push — отправлять в общий репозиторий вам.\n'
                + 'Каталог снимается только чистым: несохранённые правки остановят действие.')) return;
     if (btn) btn.disabled = true;

@@ -13,11 +13,12 @@ Tests cover:
 - POST /telegram-app/claude/ask              (bad input validation)
 - Unauthorized access (no session → 403)
 """
+import os
 import pytest
 import httpx
 from typing import AsyncGenerator
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 # Seeded access token for admin user (user_id=1) — inserted in migration 0002.sql
 ADMIN_ACCESS_TOKEN = "a0000000-1111-4444-bbbb-000000000001"

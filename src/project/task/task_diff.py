@@ -16,7 +16,9 @@ merge request на сервере показать не может.
 показались бы как чужая работа — только с обратным знаком.
 
 Чего здесь нет: записи. Модуль только читает репозиторий — ни слияния, ни коммитов,
-ни push. Слияние живёт в `task_worktree.py` и делается отдельной кнопкой.
+ни push. Слияние живёт в `task_worktree.py` и делается кнопкой на этой же странице;
+отсюда зовётся только его проверка (`task_worktree_merge_check`), чтобы человек видел
+отказ до нажатия, а не после.
 """
 import os
 
@@ -24,6 +26,7 @@ from src.project.task.task_worktree import (
     task_worktree_base_branch,
     task_worktree_branch,
     task_worktree_git,
+    task_worktree_merge_check,
     task_worktree_path,
 )
 
@@ -52,15 +55,17 @@ async def task_diff_build(repo_dir: str, subtask_id) -> dict:
 
     Returns:
         `{'ok', 'error', 'base', 'branch', 'commits', 'files', 'diff', 'truncated',
-          'stat', 'behind_remote', 'dirty'}`.
+          'stat', 'behind_remote', 'dirty', 'merge'}`.
 
         `behind_remote` — на сколько коммитов локальная главная ветка обогнала
         `origin/<base>`; ровно столько чужой работы и показал бы merge request.
         `dirty` — файлы, которые в каталоге подзадачи правлены, но не закоммичены:
         в diff их нет, и без предупреждения это выглядит как «агент ничего не сделал».
+        `merge` — ответ `task_worktree_merge_check`: пройдёт ли слияние этой ветки.
     """
     result = {'ok': False, 'error': '', 'base': '', 'branch': '', 'commits': [], 'files': [],
-              'diff': '', 'truncated': False, 'stat': '', 'behind_remote': 0, 'dirty': []}
+              'diff': '', 'truncated': False, 'stat': '', 'behind_remote': 0, 'dirty': [],
+              'merge': {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': []}}
 
     repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
     branch = task_worktree_branch(subtask_id)
@@ -99,7 +104,80 @@ async def task_diff_build(repo_dir: str, subtask_id) -> dict:
 
     result['behind_remote'] = await _behind_remote(repo_dir, base)
     result['dirty'] = await _dirty(repo_dir, subtask_id)
+    result['merge'] = await task_worktree_merge_check(repo_dir, subtask_id)
     result['ok'] = True
+
+    return result
+
+
+async def task_diff_build_task(repo_dir: str, subtask_ids: list) -> dict:
+    """
+    Разница задачи целиком: ветки всех её подзадач одним ответом.
+
+    Ветка у задачи не одна — план режут на подзадачи, и своя ветка есть у каждой.
+    Человеку же нужен ответ на один вопрос: что задача изменила в проекте. Поэтому
+    склеиваем разницы подзадач в том же порядке, в каком их предстоит вливать.
+
+    Склейка честная, но не слияние: если две подзадачи трогали один файл, он попадёт
+    в список дважды — с правками каждой ветки. Свести их может только сам git, и это
+    делает кнопка «Merge», а не страница.
+
+    Args:
+        repo_dir: каталог основного чекаута проекта.
+        subtask_ids: номера подзадач по порядку.
+
+    Returns:
+        То же, что `task_diff_build`, плюс `subtasks` — по строке на подзадачу
+        (`{'id', 'branch', 'ok', 'error'}`). `ok` общий: хотя бы одна ветка собралась.
+    """
+    result = {'ok': False, 'error': '', 'base': '', 'branch': '', 'commits': [], 'files': [],
+              'diff': '', 'truncated': False, 'stat': '', 'behind_remote': 0, 'dirty': [],
+              'merge': {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': []},
+              'subtasks': []}
+    if not subtask_ids:
+        result['error'] = 'у задачи нет подзадач — ветки заводятся под них, сравнивать нечего'
+        return result
+
+    parts, stats, errors, merge_errors = [], [], [], []
+    can_merge = True
+    for subtask_id in subtask_ids:
+        one = await task_diff_build(repo_dir, subtask_id)
+        merge = one.get('merge') or {}
+        result['subtasks'].append({'id': subtask_id, 'branch': one['branch'],
+                                   'ok': one['ok'], 'error': one['error']})
+        if not one['ok']:
+            errors.append(f'#{subtask_id}: {one["error"]}')
+            can_merge = False
+            continue
+
+        result['ok'] = True
+        result['base'] = result['base'] or one['base']
+        result['commits'] += [dict(item, branch=one['branch']) for item in one['commits']]
+        result['files'] += [dict(item, branch=one['branch']) for item in one['files']]
+        result['dirty'] += [f'{one["branch"]}: {line}' for line in one['dirty']]
+        result['truncated'] = result['truncated'] or one['truncated']
+        result['behind_remote'] = max(result['behind_remote'], one['behind_remote'])
+        if one['stat'].strip():
+            stats.append(f'{one["branch"]}: {one["stat"].strip()}')
+        if one['diff']:
+            parts.append(one['diff'])
+        if not merge.get('can_merge'):
+            can_merge = False
+            if merge.get('error'):
+                merge_errors.append(merge['error'])
+        result['merge']['conflicts'] += merge.get('conflicts') or []
+
+    result['branch'] = ', '.join(item['branch'] for item in result['subtasks'])
+    result['stat'] = '; '.join(stats)
+    result['diff'] = '\n'.join(parts)
+    # Предел на ветку уже применён, но веток несколько — режем ещё раз по общей длине.
+    if len(result['diff']) > TASK_DIFF_MAX_CHARS:
+        result['diff'] = result['diff'][:TASK_DIFF_MAX_CHARS]
+        result['truncated'] = True
+    result['error'] = '; '.join(errors)
+    result['merge'].update({'can_merge': result['ok'] and can_merge,
+                            'branch': result['branch'], 'base': result['base'],
+                            'error': '; '.join(merge_errors or errors)})
 
     return result
 

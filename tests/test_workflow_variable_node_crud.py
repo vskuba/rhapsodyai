@@ -1,9 +1,10 @@
+import os
 from tests.constants import TEST_AUTH
 import pytest
 from httpx import AsyncClient
 
 # Замените URL на ваш адрес сервера для тестирования
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 @pytest.mark.asyncio
 async def test_variable_crud():

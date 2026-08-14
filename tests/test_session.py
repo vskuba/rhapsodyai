@@ -8,13 +8,14 @@ Tests cover:
 - POST /session/messages (requires authentication)
 - Unauthorized access handling
 """
+import os
 import pytest
 import httpx
 from typing import AsyncGenerator
 
 from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 
 class TestSessionFlow:

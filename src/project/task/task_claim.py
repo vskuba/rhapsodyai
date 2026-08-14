@@ -12,7 +12,11 @@ import socket
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
-from src.project.task.task_metadata import task_metadata_plan_free_sql, task_metadata_stop_free_sql
+from src.project.task.task_metadata import (
+    task_metadata_plan_free_sql,
+    task_metadata_stop_free_sql,
+    task_metadata_test_free_sql,
+)
 from src.project.task.task_role import task_role_project_sql, task_role_project_type_sql
 from src.project.task.task_state import task_state_kanban_sql, task_state_subtask_set
 from src.project.task.task_setting_timeout import (
@@ -49,8 +53,8 @@ TASK_CLAIM_LOCK_TOUCH_SEC = 45
 #
 # Карты разделены по ветке дерева: `testing` бывает и у корневой задачи, но там это
 # фаза «задача на проверке», а не захваченная работа, и возвращать её в `qa_pending`
-# нельзя. Кто отменяет работу на ходу (реклейм, кнопка ◼ «Стоп» — `task_stop`), берёт
-# карту по наличию `parent_id`.
+# нельзя. Кто отменяет работу на ходу (реклейм, снятый флажок «в разработку» —
+# `task_stop`), берёт карту по наличию `parent_id`.
 TASK_CLAIM_STATE_RECLAIM = {'planning': 'new', 'reviewing': 'reviewing'}
 TASK_CLAIM_SUBTASK_STATE_RECLAIM = {'developing': 'planned', 'testing': 'qa_pending'}
 
@@ -217,6 +221,10 @@ async def task_claim_subtask_testable(worker: str, roles_by_project) -> dict | N
     оболочка, которая код не писала, иначе самопроверка разработчика и проверка QA
     сходятся в один контекст.
 
+    Второй фильтр — флажок «в тестирование» родителя (`task_metadata_test_free_sql`):
+    снятый флажок запрещает проверку, и подзадача ждёт в `qa_pending`, пока человек
+    не вернёт галку.
+
     Захват меняет состояние: `qa_pending` -> `testing`. Разница между «ждёт очереди
     к QA» и «QA проверяет прямо сейчас» видна человеку только по состоянию —
     блокировку страница задач не показывает, и подзадача под живой проверкой
@@ -224,7 +232,8 @@ async def task_claim_subtask_testable(worker: str, roles_by_project) -> dict | N
     второго воркера самим переходом, как у разработчика.
     """
     role_sql, role_params = task_role_project_sql(roles_by_project, 'qa')
-    return await task_claim_subtask('qa_pending', 'testing', worker, role_sql, role_params)
+    where = ' AND '.join(part for part in (role_sql, task_metadata_test_free_sql()) if part)
+    return await task_claim_subtask('qa_pending', 'testing', worker, where, role_params)
 
 
 async def task_claim_locks_reclaim() -> int:

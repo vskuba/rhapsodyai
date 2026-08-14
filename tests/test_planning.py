@@ -22,7 +22,7 @@ from tests.constants import TEST_AUTH
 
 load_dotenv()
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 _TEST_IDEA = "__pytest_planning_test_idea__"
 _TEST_TITLE = "__pytest_planning_test__"
 _TEST_USERNAME = TEST_AUTH["username"]

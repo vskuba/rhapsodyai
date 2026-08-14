@@ -55,7 +55,8 @@ async def require_auth(request: Request) -> AuthSession:
             if request.url.query:
                 next_path += '?' + request.url.query
             next_param = urllib.parse.quote(next_path, safe='')
-            raise HTTPException(status_code=302, detail="Not authenticated", headers={"Location": f"/login?next={next_param}"})
+            raise HTTPException(status_code=302, detail="Not authenticated",
+                                headers={"Location": f"/login?next={next_param}"})
         raise
 
 
@@ -104,6 +105,14 @@ async def user_page(request: Request, user: AuthSession = Depends(require_auth))
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/user.html"
+    )
+
+
+@router.get("/admin/dating", response_class=HTMLResponse)
+async def user_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/dating.html"
     )
 
 
@@ -203,6 +212,15 @@ async def task_page(request: Request, user: AuthSession = Depends(require_auth))
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/project/task.html",
+    )
+
+
+@router.get("/admin/task/diff", response_class=HTMLResponse)
+async def task_diff_page(request: Request, user: AuthSession = Depends(require_auth)):
+    """Разница главной ветки и ветки подзадачи. Номер подзадачи — в `?task=<id>`."""
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/project/task_diff.html",
     )
 
 

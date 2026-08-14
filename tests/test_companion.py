@@ -1,3 +1,4 @@
+import os
 from tests.constants import TEST_AUTH
 import pytest
 import httpx
@@ -5,7 +6,7 @@ import uuid
 import subprocess
 from typing import AsyncGenerator
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 
 @pytest.fixture(autouse=True, scope="module")

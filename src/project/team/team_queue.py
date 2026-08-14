@@ -26,6 +26,7 @@ from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_QA_RUN,
     task_setting_timeout_get)
 from src.project.task.task_role import TASK_ROLE_TYPES, task_role_type_sql
+from src.project.team.team_progress import team_progress_running
 
 # Сколько задач очереди показываем на карточке — списком, а не только числом.
 TEAM_QUEUE_PREVIEW_LIMIT = 3
@@ -52,6 +53,8 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
     # роли — это прогон менеджерского агента (`task_agent_manager`), и ждут его
     # столько, сколько указано в «Ответ менеджера».
     plan_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_MANAGER_RUN)
+    # Один запрос на всю выдачу: работающих прогонов единицы, а строк очереди сотни.
+    progress = await team_progress_running()
     for role, rows, timeout in (
         [(role, await _planner_rows(role), plan_timeout) for role in TASK_ROLE_TYPES] + [
             ('developer', await _developer_rows(),
@@ -62,7 +65,7 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
     ):
         for row in rows:
             slot = _slot_get(queues, row.get('project_id'), role)
-            item = _item_build(row, timeout)
+            item = _item_build(row, timeout, progress)
             if int(row.get('busy') or 0):
                 # Воркеров может быть несколько, но карточка роли одна: показываем
                 # первую по порядку захвата — остальные видны в списке задач.
@@ -170,24 +173,37 @@ def _slot_get(queues: dict, project_id, role: str) -> dict:
         role, {'waiting_count': 0, 'waiting': [], 'current': None})
 
 
-def _item_build(row: dict, timeout: int) -> dict:
+def _item_build(row: dict, timeout: int, progress: dict) -> dict:
     """Строка очереди для карточки: у менеджера это задача, у Developer/QA — подзадача.
 
     `left_seconds` — остаток до таймаута агента, и он есть только у работающей
     строки: у ожидающей отсчёт ещё не начинался. None вместо нуля потому, что
     «времени не осталось» и «время не считается» — разные вещи, и карточка их
     показывает по-разному.
+
+    `percent`, `step_index`, `step_total`, `step_title` — из трейса работающего
+    прогона (`team_progress_running`). Их нет ни у ожидающей строки, ни у прогона,
+    начатого до появления номера задачи в переменных: карточка тогда просто молчит
+    про долю, а не показывает ноль.
     """
     run_seconds = row.get('run_seconds')
     left_seconds = None
     if int(row.get('busy') or 0) and run_seconds is not None:
         left_seconds = max(0, int(timeout) - int(run_seconds))
 
+    subtask_id = int(row['subtask_id']) if row.get('subtask_id') else None
+    task_id    = int(row.get('task_id') or 0)
+    step = progress.get(('subtask', subtask_id) if subtask_id else ('task', task_id), {})
+
     return {
-        'task_id': int(row.get('task_id') or 0),
-        'subtask_id': int(row['subtask_id']) if row.get('subtask_id') else None,
+        'task_id': task_id,
+        'subtask_id': subtask_id,
         'title': str(row.get('title') or '').strip() or f"Задача #{row.get('task_id')}",
         'task_title': str(row.get('task_title') or '').strip(),
         'state': str(row.get('state') or ''),
         'left_seconds': left_seconds,
+        'percent': step.get('percent'),
+        'step_index': step.get('step_index'),
+        'step_total': step.get('step_total'),
+        'step_title': step.get('step_title', ''),
     }

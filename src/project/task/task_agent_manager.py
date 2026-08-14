@@ -20,7 +20,8 @@ from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
-from src.project.task.task_plan import task_plan_goals_normalize, task_plan_parse
+from src.project.task.task_plan import (task_plan_goals_normalize, task_plan_goals_text,
+                                        task_plan_parse)
 from src.project.task.task_role import TASK_ROLE_DEFAULT
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_timeout import (
@@ -88,9 +89,13 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
             session_uuid=session_uuid,
             workflow_id=workflow_id,
         ),
+        # Номер задачи промпту не нужен, но по нему карточка команды находит этот
+        # прогон в трейсе и показывает, какой шаг идёт (`team_progress`). Времени
+        # захвата для поиска не хватает: у роли столько прогонов, сколько проектов.
+        'task_id':          str(task.get('id') or ''),
         'task_title':       str(task.get('title') or ''),
         'task_description': str(task.get('description') or ''),
-        'task_goals':       _goals_text(task.get('goals')),
+        'task_goals':       task_plan_goals_text(task.get('goals')),
         # Тип задачи задаёт направление вопросов на шаге разведки: у разработки,
         # багфикса и исследования разные полезные вопросы. Имя (`dev`, `bug`, …)
         # — ключ таблицы направлений в промпте, заголовок — текст для агента.
@@ -183,19 +188,6 @@ async def _task_type_get(task_type_id) -> dict:
         await db.execute('SELECT name, title FROM project_task_type WHERE id = %s', (task_type_id,))
         row = await db.fetchone()
     return row or {}
-
-
-def _goals_text(goals_raw) -> str:
-    """Цели лежат в task.goals как JSON [{text, done}] — LLM нужен плоский список."""
-    goals = json_from_string(goals_raw or '') or []
-    if not isinstance(goals, list):
-        return ''
-    lines = []
-    for g in goals:
-        text = str(g.get('text') if isinstance(g, dict) else g or '').strip()
-        if text:
-            lines.append(f'- {text}')
-    return '\n'.join(lines)
 
 
 def _plan_parse(result_text) -> dict:

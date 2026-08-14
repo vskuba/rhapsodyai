@@ -49,7 +49,8 @@ from src.uvicorn.routers.project import (
     project_phase_source,
     project as project_admin,
 )
-from src.uvicorn.routers.project.design import design_block, design as design_router, design_browser, design_prototype as design_prototype_router
+from src.uvicorn.routers.project.design import design_block, design as design_router, design_browser, \
+    design_prototype as design_prototype_router
 from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
@@ -69,6 +70,7 @@ from src.uvicorn.routers.detective import detective
 from src.uvicorn.routers.seed import seed
 from src.uvicorn.routers.backup import backup
 from src.uvicorn.routers.project import project_team as project_team_router
+from src.uvicorn.routers.dating import dating
 
 
 @asynccontextmanager
@@ -102,7 +104,7 @@ async def lifespan(app: FastAPI):
     ])
 
     redis_queue_init([
-        'default',   # конвейер задач — контейнер worker
+        'default',  # конвейер задач — контейнер worker
         'planning',  # цепочки фаз планирования — контейнер worker_planning
     ])
 
@@ -405,6 +407,7 @@ for tool_name in UVICORN_TOOL_NAMES:
 # Grafana живёт вне docker-compose, на отдельной машине — не порт, а целый адрес.
 app.state.jinja2_template.env.globals['GRAFANA_URL'] = config_get('GRAFANA_URL')
 
+
 class NoCacheStaticFiles(StaticFiles):
     """Статика без heuristic-кэша браузера: no-cache заставляет ревалидировать
     файл (304 по ETag/Last-Modified, если не менялся) — правки js/css видны
@@ -468,4 +471,4 @@ app.include_router(event_router.router, include_in_schema=False)
 app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)
 app.include_router(project_team_router.router, include_in_schema=False)
-
+app.include_router(dating.router, include_in_schema=False)

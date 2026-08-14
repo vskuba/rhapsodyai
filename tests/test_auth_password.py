@@ -1,10 +1,11 @@
+import os
 from tests.constants import TEST_AUTH
 """Auth profile and password change tests — PUT /auth/me, PUT /auth/me/password, GET /auth/me/languages."""
 import pytest
 import httpx
 from typing import AsyncGenerator
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_USER_PREFIX = "test_pwdchg_"
 
 

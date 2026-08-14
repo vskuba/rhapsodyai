@@ -1,4 +1,5 @@
 """Дерево задач — task.parent_id: вложенность, защита от циклов, каскад."""
+import os
 from typing import AsyncGenerator
 
 import httpx
@@ -8,7 +9,7 @@ from src.project.task.task_tree import MAX_DEPTH
 from tests.constants import TEST_AUTH
 from tests.test_task_pipeline import _pipeline, _tick_until
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_TITLE = "__pytest_tree__"
 
 

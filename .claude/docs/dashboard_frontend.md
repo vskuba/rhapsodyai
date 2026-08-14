@@ -31,6 +31,7 @@ HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по о
 | `/admin/queue` | `admin/queue.html` | Мониторинг очередей |
 | `/admin/plan` | `admin/plan.html` | Планы |
 | `/admin/task` | `admin/project/task.html` | Задачи + конвейер агентов |
+| `/admin/task/diff` | `admin/project/task_diff.html` | Разница главной ветки и веток задачи или подзадачи (`?task=<id>`) + кнопка «Merge» с проверкой конфликтов |
 | `/admin/planning` | `admin/project/planning.html` | Планирование проектов |
 | `/admin/planning-phase-source` | `admin/project/planning_phase_source.html` | Источники для фаз |
 | `/admin/design` | `admin/project/design.html` | Дизайн-модуль, прототип |

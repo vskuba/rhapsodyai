@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from src.project.task.task_diff import task_diff_build, task_diff_build_task
 from src.project.task.task_metadata import (
     TASK_METADATA_KEY_PLAN,
     task_metadata_row_apply,
@@ -23,7 +24,7 @@ from src.project.task.task_plan import (
 from src.project.task.task_pipeline import task_pipeline_shells_restart
 from src.project.task.task_report import task_report_write
 from src.project.task.task_role import TASK_ROLE_TITLE, task_role_project_work_dir
-from src.project.task.task_state import task_state_kanban_sql
+from src.project.task.task_state import task_state_kanban_sql, task_state_type_to_dev
 from src.project.task.task_stop import task_stop_apply, task_stop_clear
 from src.project.task.task_revision import (
     TASK_REVISION_LIMIT,
@@ -111,9 +112,21 @@ async def project_task_pipeline_start(task_id: int, user=Depends(AuthChecker([Au
 
 @router.post('/task/{task_id}/pipeline/approve')
 async def project_task_pipeline_approve(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
-    """Человек утвердил план — оркестратор разложит его на подзадачи."""
-    return await _pipeline_state_set(task_id, expected='plan_approval', new_state='approved',
-                                     report=f'{user.username} утвердил план — ждёт разложения на подзадачи')
+    """
+    Человек утвердил план — оркестратор разложит его на подзадачи.
+
+    Вместе с состоянием меняем тип: `plan` -> `dev`, задача переезжает на вкладку
+    «Разработка» (`task_state_type_to_dev`). Утверждение плана — это и есть конец
+    планирования, и по пометке «в разработку» тип менялся именно здесь; у нажатия
+    кнопки смысл тот же. Порядок обязателен: сначала переход состояния со сверкой
+    гонки, тип — только удавшемуся нажатию.
+    """
+    result = await _pipeline_state_set(
+        task_id, expected='plan_approval', new_state='approved',
+        report=f'{user.username} утвердил план — ждёт разложения на подзадачи')
+    if await task_state_type_to_dev(task_id):
+        await task_report_write(task_id, 'Планирование закончено — тип сменён на «Разработка»')
+    return result
 
 
 @router.post('/task/{task_id}/pipeline/reject')
@@ -234,11 +247,12 @@ async def project_task_pipeline_retry(task_id: int, user=Depends(AuthChecker([Au
 @router.post('/task/{task_id}/pipeline/stop')
 async def project_task_pipeline_stop(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """
-    Остановить работу над задачей — кнопка ◼ рядом со статусом.
+    Остановить работу над задачей — снятый флажок «в разработку» рядом со статусом.
 
     В отличие от «Отклонить», задачу из конвейера не выводим и состояние не теряем:
     строка возвращается туда, откуда её взяли, и ждёт человека. Продолжение — возврат
-    флажка фазы или кнопка ▶ (`/pipeline/resume`), и задача идёт дальше с того же места.
+    того же флажка (`/pipeline/resume`) или флажка фазы, и задача идёт дальше с того
+    же места.
 
     Подробности — в `task_stop`: там же объяснено, почему запрет живёт в `metadata`,
     а не в человеческом `status`.
@@ -275,37 +289,64 @@ async def project_task_worktree_merge(task_id: int, user=Depends(AuthChecker([Au
     merge request может ждать ревью, а каталог нужен, чтобы посмотреть, что там
     вышло. Решение остаётся за человеком.
 
-    Только у подзадачи: ветку заводят под конкретную работу, у родителя своей нет.
+    Номером можно дать и задачу целиком: ветки заводят под подзадачи, поэтому её
+    вливаем всеми ветками подряд, в порядке подзадач. Первый же отказ останавливает
+    остальные — сливать дальше поверх несведённого значит множить разбор.
 
     Слияние локальное, без `push` — отправку в общий репозиторий человек делает сам.
     Отказ (грязный каталог, конфликт, нет ветки) отдаём как 400 с текстом от git:
     разбирать такое всё равно человеку, и общая формулировка ему не поможет.
     """
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT s.id, s.parent_id, p.project_id "
-            "  FROM project_task s LEFT JOIN project_task p ON p.id = s.parent_id "
-            " WHERE s.id = %s",
-            (task_id,)
-        )
-        subtask = await db.fetchone()
-    if not subtask:
-        raise HTTPException(status_code=404, detail='task not found')
-    if not subtask['parent_id']:
-        raise HTTPException(status_code=400, detail='ветка заводится под подзадачу — у задачи её нет')
+    work_dir, subtask_ids, _ = await _diff_target(task_id)
 
-    work_dir = await task_role_project_work_dir(subtask['project_id'])
-    if not work_dir:
-        raise HTTPException(status_code=400, detail='у проекта не задан рабочий каталог (карточка проекта)')
+    merged: list[str] = []
+    base, removed = '', True
+    for subtask_id in subtask_ids:
+        result = await task_worktree_merge(work_dir, subtask_id)
+        if not result['ok']:
+            done = f' (влито до отказа: {", ".join(merged)})' if merged else ''
+            raise HTTPException(status_code=400, detail=result['error'] + done)
 
-    result = await task_worktree_merge(work_dir, task_id)
-    if not result['ok']:
-        raise HTTPException(status_code=400, detail=result['error'])
+        merged.append(result['branch'])
+        base = result['base']
+        # `removed` собираем по всем веткам, а не берём у последней: не снявшийся
+        # каталог одной подзадачи — повод сходить в лог, даже если остальные снялись.
+        removed = removed and bool(result['removed'])
+        await task_report_write(
+            subtask_id, f'{user.username} влил ветку {result["branch"]} в {result["base"]}'
+                        + ('' if result['removed'] else ' (рабочий каталог снять не удалось — смотрите лог)'))
 
-    await task_report_write(
-        task_id, f'{user.username} влил ветку {result["branch"]} в {result["base"]}'
-                 + ('' if result['removed'] else ' (рабочий каталог снять не удалось — смотрите лог)'))
+    return {'ok': True, 'merged': merged, 'branch': ', '.join(merged),
+            'base': base, 'removed': removed}
 
+
+@router.get('/task/{task_id}/diff')
+async def project_task_diff(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """
+    Разница главной ветки проекта и ветки подзадачи — чем занят `task_diff.py`.
+
+    Нужен потому, что merge request на сервере эту разницу показать не может: ветка
+    режется от локальной главной ветки, а MR сравнивает её с `origin/master`, и
+    коммиты, которых на сервере ещё нет, приезжают в MR как работа подзадачи.
+    Читает страница `/admin/task/diff`.
+
+    Номером берём и задачу целиком, и отдельную подзадачу. Обычно спрашивают задачу:
+    человеку нужно, что она изменила в проекте, а не что сделала каждая ветка плана.
+
+    Только чтение: ни слияния, ни коммитов здесь нет — для этого отдельная кнопка
+    и отдельные права (`PLANNING_UPDATE`). Проверка «пройдёт ли слияние» в ответе
+    есть (`merge`) — она репозиторий не меняет.
+    """
+    work_dir, subtask_ids, task = await _diff_target(task_id)
+
+    # Одна ветка — это либо подзадача, либо задача, которую не раскладывали на план.
+    result = (await task_diff_build(work_dir, task_id) if subtask_ids == [task_id]
+              else await task_diff_build_task(work_dir, subtask_ids))
+    result['task'] = {'id': task['id'], 'title': task['title'],
+                      'parent_id': task['parent_id']}
+
+    # Пустой ответ — не ошибка HTTP: «ветки ещё нет» и «в ветке ничего нет» страница
+    # показывает сама и текстом понятнее, чем красная плашка от 400.
     return result
 
 
@@ -433,6 +474,45 @@ async def _task_row(task_id: int) -> dict | None:
         task = await db.fetchone()
 
     return task_metadata_row_apply(task) if task else None
+
+
+async def _diff_target(task_id: int) -> tuple[str, list, dict]:
+    """
+    Каталог проекта и подзадачи, по веткам которых считать разницу или слияние.
+
+    Один помощник на страницу разницы и на кнопку слияния: они обязаны понимать номер
+    одинаково, иначе кнопка вольёт не то, что человек посмотрел.
+
+    Номер подзадачи — это она сама, одна ветка. Номер разложенной задачи — все её
+    подзадачи по порядку: своей ветки у неё нет, вся работа лежит в ветках плана.
+    Задача без подзадач — снова одна ветка, своя: конвейер отдаёт разработку листу,
+    а лист бывает и верхнего уровня.
+
+    Returns: `(рабочий каталог, номера подзадач, строка задачи)`. Отказ — HTTP.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT s.id, s.title, s.parent_id, COALESCE(s.project_id, p.project_id) AS project_id "
+            "  FROM project_task s LEFT JOIN project_task p ON p.id = s.parent_id "
+            " WHERE s.id = %s",
+            (task_id,)
+        )
+        task = await db.fetchone()
+        if not task:
+            raise HTTPException(status_code=404, detail='task not found')
+
+        subtask_ids = [task_id]
+        if not task['parent_id']:
+            await db.execute(
+                "SELECT id FROM project_task WHERE parent_id = %s ORDER BY position, id", (task_id,))
+            # Пустой список — не отказ: у нераспланированной задачи ветка своя.
+            subtask_ids = [row['id'] for row in (await db.fetchall() or [])] or [task_id]
+
+    work_dir = await task_role_project_work_dir(task['project_id'])
+    if not work_dir:
+        raise HTTPException(status_code=400, detail='у проекта не задан рабочий каталог (карточка проекта)')
+
+    return work_dir, subtask_ids, task
 
 
 async def _plan_editable_task(task_id: int) -> dict:

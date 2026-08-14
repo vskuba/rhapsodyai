@@ -49,7 +49,19 @@ def pytest_configure(config):
     )
 
 
-BASE_URL = "http://localhost:8011"
+# Адрес сервера, который проверяет сюита.
+#
+# По умолчанию это основной `uvicorn` установки — так сюиту запускает человек.
+# Но QA конвейера проверяет не его, а сервер ветки подзадачи (`uvicorn_task`,
+# свой порт): на общем `:8011` работает код основного чекаута, и сюита там
+# зелёная независимо от того, что сделал разработчик.
+#
+# Поэтому адрес можно подменить окружением на один прогон:
+#   BASE_URL=http://localhost:8013 .venv/bin/python3 -m pytest tests/
+#
+# Имя переменной то же, что уже читают `test_team_task_pages.py` и
+# `manual_test_team_task.py`, — одна команда должна переключать всю сюиту.
+BASE_URL = os.getenv('BASE_URL', '').strip().rstrip('/') or "http://localhost:8011"
 TEST_USER_PREFIX = "test_"
 TEST_AGENT_PREFIX = "test_agent_"
 

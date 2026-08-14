@@ -1,3 +1,4 @@
+import os
 from tests.constants import TEST_AUTH
 """
 Collection CRUD tests.
@@ -14,7 +15,7 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_COLL_PREFIX = "test_coll_"
 
 

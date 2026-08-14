@@ -19,7 +19,8 @@
 файлы. Подмодуль `py_modules` окажется пустым, а `.env`, `.env.local`, `.venv` и
 рабочие каталоги `data/` — в `.gitignore`, и без них ни приложение, ни тесты не
 поднимутся. Поэтому создание — это не одна команда, а `add` + инициализация
-подмодулей + ссылки на общие файлы; см. `task_worktree_ensure`.
+подмодулей + выравнивание их на то, что выкачено у человека + ссылки на общие
+файлы; см. `task_worktree_ensure`.
 
 Каталоги лежат в `.claude/worktrees/` — он уже в `.gitignore`, иначе главный
 чекаут увидел бы вложенную папку с `.git` внутри и при `git add -A` записал бы
@@ -27,6 +28,7 @@
 """
 import asyncio
 import os
+import subprocess
 
 from logging_.logging_ import logger_info
 
@@ -106,10 +108,10 @@ async def task_worktree_ensure(repo_dir: str, subtask_id) -> str:
     `add` делается только когда каталога нет, и ветка переиспользуется, если уже
     была (`-B` вместо `-b` не годится: он сбросил бы уже сделанные коммиты).
 
-    После `add` — две обязательные добивки, без которых каталог нерабочий:
-    подмодуль `py_modules` (иначе пустая папка и ImportError) и ссылки на
-    `.env`/`.venv`/рабочие каталоги `data` (иначе не стартует ни приложение, ни
-    тесты).
+    После `add` — обязательные добивки, без которых каталог нерабочий: подмодуль
+    `py_modules` (иначе пустая папка и ImportError), выравнивание подмодулей на то,
+    что выкачено у человека (`_submodule_align`), и ссылки на `.env`/`.venv`/рабочие
+    каталоги `data` (иначе не стартует ни приложение, ни тесты).
 
     Args:
         repo_dir: каталог основного чекаута проекта.
@@ -131,20 +133,21 @@ async def task_worktree_ensure(repo_dir: str, subtask_id) -> str:
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     branch = task_worktree_branch(subtask_id)
-    base = await _base_branch(repo_dir)
+    base = await task_worktree_base_branch(repo_dir)
 
     # Ветка могла остаться от прошлого прогона (каталог сняли, ветку нет) —
     # тогда подключаем её, а не пересоздаём: в ней уже есть коммиты подзадачи.
     if await _branch_exists(repo_dir, branch):
-        code, out = await _git(repo_dir, 'worktree', 'add', path, branch)
+        code, out = await task_worktree_git(repo_dir, 'worktree', 'add', path, branch)
     else:
-        code, out = await _git(repo_dir, 'worktree', 'add', '-b', branch, path, base)
+        code, out = await task_worktree_git(repo_dir, 'worktree', 'add', '-b', branch, path, base)
     if code:
         raise RuntimeError(f'git worktree add для #{subtask_id} не удался: {out}')
 
-    code, out = await _git(path, 'submodule', 'update', '--init', '--recursive')
+    code, out = await task_worktree_git(path, 'submodule', 'update', '--init', '--recursive')
     if code:
         logger_info(f'task_worktree: подмодули в {path} не поднялись: {out}')
+    await _submodule_align(repo_dir, path)
     await _shared_link(repo_dir, path)
     logger_info(f'task_worktree: создан {path} (ветка {branch} от {base})')
 
@@ -171,13 +174,13 @@ async def task_worktree_remove(repo_dir: str, subtask_id, force: bool = False) -
     if not force:
         # `-uall` — по файлу на строку, а не свёрнутый каталог: свёрнутая папка
         # из одних наших ссылок выглядела бы как чужая неучтённая работа.
-        _, status = await _git(path, 'status', '--porcelain', '-uall')
+        _, status = await task_worktree_git(path, 'status', '--porcelain', '-uall', '--ignore-submodules=all')
         dirty = _dirty_lines(path, status)
         if dirty:
             logger_info(f'task_worktree: {path} не снят — есть несохранённые правки: {dirty}')
             return False
 
-    code, out = await _git(repo_dir, 'worktree', 'remove', '--force', path)
+    code, out = await task_worktree_git(repo_dir, 'worktree', 'remove', '--force', path)
     if code:
         logger_info(f'task_worktree: снять {path} не вышло: {out}')
         return False
@@ -229,34 +232,34 @@ async def task_worktree_merge(repo_dir: str, subtask_id) -> dict:
 
     path = task_worktree_path(repo_dir, subtask_id)
     if os.path.isdir(path):
-        _, status = await _git(path, 'status', '--porcelain', '-uall')
+        _, status = await task_worktree_git(path, 'status', '--porcelain', '-uall', '--ignore-submodules=all')
         dirty = _dirty_lines(path, status)
         if dirty:
             result['error'] = (f'в каталоге подзадачи есть несохранённые правки — они не '
                                f'в ветке и пропадут при снятии: {"; ".join(dirty[:5])}')
             return result
 
-    base = await _base_branch(repo_dir)
+    base = await task_worktree_base_branch(repo_dir)
     result['base'] = base
     host, temporary, error = await _merge_host(repo_dir, base)
     if error:
         result['error'] = error
         return result
 
-    code, out = await _git(host, *await _identity(host), 'merge', '--no-ff', branch,
-                           '-m', f'Merge {branch} into {base}')
+    code, out = await task_worktree_git(host, *await _identity(host), 'merge', '--no-ff', branch,
+                                        '-m', f'Merge {branch} into {base}')
     result['output'] = out
     if code:
         # Конфликт оставляет каталог в недоделанном слиянии; для временного это
         # неважно (снимем), а для каталога человека — важно очень.
-        await _git(host, 'merge', '--abort')
+        await task_worktree_git(host, 'merge', '--abort')
         if temporary:
-            await _git(repo_dir, 'worktree', 'remove', '--force', host)
+            await task_worktree_git(repo_dir, 'worktree', 'remove', '--force', host)
         result['error'] = f'слияние {branch} в {base} не прошло: {out}'
         return result
 
     if temporary:
-        await _git(repo_dir, 'worktree', 'remove', '--force', host)
+        await task_worktree_git(repo_dir, 'worktree', 'remove', '--force', host)
 
     result['ok'] = True
     result['removed'] = await task_worktree_remove(repo_dir, subtask_id)
@@ -265,9 +268,77 @@ async def task_worktree_merge(repo_dir: str, subtask_id) -> dict:
     return result
 
 
+async def task_worktree_merge_check(repo_dir: str, subtask_id) -> dict:
+    """
+    Пройдёт ли слияние ветки подзадачи в главную — до самого слияния.
+
+    Нужна кнопке «Merge» на странице разницы: отказ человек должен видеть до нажатия,
+    а не после. Поэтому проверяем то же и в том же порядке, что `task_worktree_merge`,
+    и теми же словами — иначе страница обещала бы одно, а кнопка отвечала другое.
+
+    Конфликты считает `git merge-tree`: слияние в памяти, без рабочего каталога и без
+    переключения веток. Объекты в базу оно всё же пишет — дерево результата, на которое
+    никто не ссылается; такие подбирает `git gc`. Ни веток, ни коммитов, ни правок в
+    чьём-либо каталоге проверка не делает.
+
+    Args:
+        repo_dir: каталог основного чекаута проекта.
+        subtask_id: номер подзадачи — из него имя ветки.
+
+    Returns:
+        `{'can_merge', 'error', 'branch', 'base', 'conflicts'}`. `conflicts` — файлы,
+        которые git не свёл сам; они непусты ровно тогда, когда `error` про конфликт.
+    """
+    result = {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': []}
+    branch = task_worktree_branch(subtask_id)
+    repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
+    result['branch'] = branch
+    if not repo_dir or not branch:
+        result['error'] = 'не хватает адреса: нет каталога проекта или номера подзадачи'
+        return result
+    if not os.path.isdir(repo_dir):
+        result['error'] = (f'каталог проекта {repo_dir} не виден — проверьте монтирования '
+                           f'(docker-compose.override.yml)')
+        return result
+    if not await _branch_exists(repo_dir, branch):
+        result['error'] = f'ветки {branch} нет — разработчик не оставил коммитов'
+        return result
+
+    path = task_worktree_path(repo_dir, subtask_id)
+    if os.path.isdir(path):
+        _, status = await task_worktree_git(path, 'status', '--porcelain', '-uall', '--ignore-submodules=all')
+        dirty = _dirty_lines(path, status)
+        if dirty:
+            result['error'] = (f'в каталоге подзадачи есть несохранённые правки — они не '
+                               f'в ветке и пропадут при снятии: {"; ".join(dirty[:5])}')
+            return result
+
+    base = await task_worktree_base_branch(repo_dir)
+    result['base'] = base
+    _, error = await _base_checkout(repo_dir, base)
+    if error:
+        result['error'] = error
+        return result
+
+    conflicts, error = await _merge_conflicts(repo_dir, base, branch)
+    result['conflicts'] = conflicts
+    if error:
+        result['error'] = error
+        return result
+    if conflicts:
+        more = f' и ещё {len(conflicts) - 5}' if len(conflicts) > 5 else ''
+        result['error'] = (f'слияние {branch} в {base} встанет на конфликте — git не сведёт '
+                           f'сам: {"; ".join(conflicts[:5])}{more}')
+        return result
+
+    result['can_merge'] = True
+
+    return result
+
+
 async def task_worktree_list(repo_dir: str) -> list[dict]:
     """Каталоги репозитория: `[{'path', 'branch', 'head'}]`, включая основной."""
-    code, out = await _git(repo_dir, 'worktree', 'list', '--porcelain')
+    code, out = await task_worktree_git(repo_dir, 'worktree', 'list', '--porcelain')
     if code:
         return []
 
@@ -291,20 +362,62 @@ async def task_worktree_list(repo_dir: str) -> list[dict]:
     return items
 
 
-async def _git(cwd: str, *args) -> tuple[int, str]:
-    """git в каталоге: возвращает код и слитый вывод — вызывающему нужен текст ошибки."""
-    process = await asyncio.create_subprocess_exec(
-        'git', *args, cwd=cwd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        **_owner_run_as(cwd))
-    try:
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=TASK_WORKTREE_GIT_TIMEOUT)
-    except asyncio.TimeoutError:
-        process.kill()
-        return 1, f'git {" ".join(args)}: превышено ожидание {TASK_WORKTREE_GIT_TIMEOUT}s'
+async def task_worktree_git(cwd: str, *args) -> tuple[int, str]:
+    """
+    git в каталоге: возвращает код и слитый вывод — вызывающему нужен текст ошибки.
 
-    return int(process.returncode or 0), (stdout or b'').decode(errors='replace').strip()
+    Публичная не для широкого пользования, а потому что каталогами подзадач
+    интересуется не только этот модуль: `task_diff.py` показывает человеку разницу
+    между главной веткой и веткой подзадачи и зовёт git по тем же правилам —
+    от владельца репозитория (`_owner_run_as`) и с тем же таймаутом. Своя копия
+    этих правил в соседнем модуле разъехалась бы с этой на первой же правке.
+
+    Запускаем через обычный `subprocess` в отдельном потоке, а не через
+    `asyncio.create_subprocess_exec`. Причина в `user`/`group`: воркер крутится на
+    стандартном цикле asyncio и эти аргументы принимает, а uvicorn — на uvloop, и
+    тот отвечает `ValueError: unexpected kwargs: user, group`. Один и тот же вызов
+    работал у агента и падал на странице разницы. `subprocess` понимает их всегда,
+    поток же нужен, чтобы ожидание git не держало цикл.
+    """
+    def run() -> tuple[int, str]:
+        try:
+            done = subprocess.run(
+                ['git', *args], cwd=cwd,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=TASK_WORKTREE_GIT_TIMEOUT, **_owner_run_as(cwd))
+        except subprocess.TimeoutExpired:
+            return 1, f'git {" ".join(args)}: превышено ожидание {TASK_WORKTREE_GIT_TIMEOUT}s'
+
+        return int(done.returncode or 0), (done.stdout or b'').decode(errors='replace').strip()
+
+    return await asyncio.to_thread(run)
+
+
+async def task_worktree_base_branch(repo_dir: str) -> str:
+    """
+    Имя главной ветки репозитория — локальное, без `origin/`.
+
+    Спрашиваем у самого репозитория: у проектов на машине оно разное. Ответ даёт
+    `origin/HEAD`; у клона, где эта ссылка не настроена, пробуем известные имена и
+    берём то, которое в репозитории есть.
+
+    Без `origin/` — и на резке ветки (`task_worktree_ensure`), и на слиянии
+    (`task_worktree_merge`), и на показе разницы (`task_diff.py`). На слиянии иначе
+    нельзя: удалённая ветка read-only, её двигает `push`. На резке — потому что от
+    `origin/` каталог агента получается не тем репозиторием, который агент
+    планировал: менеджер читает главный чекаут, а там локальная ветка, и она бывает
+    на десятки коммитов впереди сервера. Разработчик тогда не находит файлов, про
+    которые ему пишут в плане. База и цель слияния должны быть одной веткой.
+    """
+    code, out = await task_worktree_git(repo_dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
+    branch = (out or '').strip().split('\n')[-1].removeprefix('origin/').strip() if not code else ''
+    if not branch:
+        for name in TASK_WORKTREE_BASE_REF_FALLBACK:
+            if await _branch_exists(repo_dir, name):
+                branch = name
+                break
+
+    return branch or TASK_WORKTREE_BASE_REF_FALLBACK[0]
 
 
 def _owner_run_as(cwd: str) -> dict:
@@ -341,6 +454,11 @@ def _dirty_lines(path: str, status: str) -> list[str]:
     ссылка — всегда симлинк, чего про настоящую работу не скажешь. В свежем каталоге
     они вдобавок неотслеживаемые: `.gitignore` там выкачен из главной ветки и про
     часть из них ещё не знает.
+
+    Подмодули сюда не доходят вовсе — вызывающие спрашивают статус с
+    `--ignore-submodules=all`. Их коммит выставили мы сами (`_submodule_align`), и
+    сдвиг указателя — не работа агента; без этого флага ни один каталог подзадачи
+    не снимался бы и ни одно слияние не проходило.
     """
     dirty = []
     for line in (status or '').splitlines():
@@ -353,31 +471,42 @@ def _dirty_lines(path: str, status: str) -> list[str]:
     return dirty
 
 
-async def _base_branch(repo_dir: str) -> str:
+async def _submodule_align(repo_dir: str, path: str) -> None:
     """
-    Имя главной ветки репозитория — локальное, без `origin/`.
+    Подмодули каталога подзадачи — на тех же коммитах, что выкачены у человека.
 
-    Спрашиваем у самого репозитория: у проектов на машине оно разное. Ответ даёт
-    `origin/HEAD`; у клона, где эта ссылка не настроена, пробуем известные имена и
-    берём то, которое в репозитории есть.
+    `submodule update --init` берёт коммит, записанный в ветке, и это не то, с чем
+    работает проект: указатель подмодуля в главном чекауте бывает сдвинут вперёд и
+    не закоммичен неделями (`M py_modules` в `git status`). Код главной ветки тогда
+    зовёт то, чего в записанном коммите ещё нет, — в этой установке так вышло с
+    `py_modules/datetime_`: у агента импорт падал, сервер задачи не поднимался, и
+    проверить свою же правку он не мог.
 
-    Без `origin/` — и на резке ветки (`task_worktree_ensure`), и на слиянии
-    (`task_worktree_merge`). На слиянии иначе нельзя: удалённая ветка read-only,
-    её двигает `push`. На резке — потому что от `origin/` каталог агента
-    получается не тем репозиторием, который агент планировал: менеджер читает
-    главный чекаут, а там локальная ветка, и она бывает на десятки коммитов
-    впереди сервера. Разработчик тогда не находит файлов, про которые ему пишут
-    в плане. База и цель слияния должны быть одной веткой.
+    Правило то же, что у базовой ветки: каталог агента — копия того репозитория,
+    который видел планировщик, а не того, что записан в git. Двигаем только
+    подмодули со сдвигом (`+` в `submodule status`); нетронутые уже верны.
+
+    Объекты общие с главным чекаутом, сети для этого не нужно. Молчаливая неудача
+    здесь допустима: каталог рабочий и без выравнивания — просто со старым кодом,
+    и это ровно то, что было до правки.
     """
-    code, out = await _git(repo_dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
-    branch = (out or '').strip().split('\n')[-1].removeprefix('origin/').strip() if not code else ''
-    if not branch:
-        for name in TASK_WORKTREE_BASE_REF_FALLBACK:
-            if await _branch_exists(repo_dir, name):
-                branch = name
-                break
+    code, out = await task_worktree_git(repo_dir, 'submodule', 'status', '--recursive')
+    if code:
+        logger_info(f'task_worktree: состояние подмодулей не получено: {out}')
+        return
 
-    return branch or TASK_WORKTREE_BASE_REF_FALLBACK[0]
+    for line in (out or '').splitlines():
+        if not line.startswith('+'):
+            continue
+        parts = line[1:].split()
+        if len(parts) < 2:
+            continue
+        commit, name = parts[0], parts[1]
+        code, out = await task_worktree_git(os.path.join(path, name), 'checkout', '--detach', commit)
+        if code:
+            logger_info(f'task_worktree: подмодуль {name} в {path} не выровнен на {commit}: {out}')
+        else:
+            logger_info(f'task_worktree: подмодуль {name} в {path} выровнен на {commit[:8]}')
 
 
 async def _merge_host(repo_dir: str, base: str) -> tuple[str, bool, str]:
@@ -395,28 +524,74 @@ async def _merge_host(repo_dir: str, base: str) -> tuple[str, bool, str]:
     выкачена нигде — заводим свой каталог и снимаем его следом, чтобы
     `.claude/worktrees` не зарастал.
     """
-    for item in await task_worktree_list(repo_dir):
-        if item.get('branch') != base:
-            continue
-        _, status = await _git(item['path'], 'status', '--porcelain', '-uno')
-        dirty = _dirty_lines(item['path'], status)
-        if dirty:
-            return '', False, (f'ветка {base} выкачена в {item["path"]}, а там несохранённые '
-                               f'правки — слияние туда затронуло бы чужую работу')
-        return item['path'], False, ''
+    host, error = await _base_checkout(repo_dir, base)
+    if error:
+        return '', False, error
+    if host:
+        return host, False, ''
 
     path = os.path.join(repo_dir, TASK_WORKTREE_BASE_DIR, TASK_WORKTREE_MERGE_DIR)
     # Каталог мог остаться от слияния, которое оборвали на полпути (перезапуск,
     # kill): git тогда откажется его создавать. Снимаем молча — своего в нём нет.
     if os.path.exists(path):
-        await _git(repo_dir, 'worktree', 'remove', '--force', path)
+        await task_worktree_git(repo_dir, 'worktree', 'remove', '--force', path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
-    code, out = await _git(repo_dir, 'worktree', 'add', path, base)
+    code, out = await task_worktree_git(repo_dir, 'worktree', 'add', path, base)
     if code:
         return '', True, f'каталог для слияния не создан: {out}'
 
     return path, True, ''
+
+
+async def _base_checkout(repo_dir: str, base: str) -> tuple[str, str]:
+    """
+    Каталог, где выкачена главная ветка, и причина, по которой сливать туда нельзя.
+
+    Returns: `(путь, ошибка)`. Пустой путь без ошибки — ветка не выкачена нигде, и
+    слияние заведёт себе временный каталог.
+
+    Отдельно от `_merge_host` ради проверки: та обязана отвечать на вопрос «пройдёт
+    ли», ничего в репозитории не создавая, — а `_merge_host` каталог как раз заводит.
+    """
+    for item in await task_worktree_list(repo_dir):
+        if item.get('branch') != base:
+            continue
+        _, status = await task_worktree_git(item['path'], 'status', '--porcelain', '-uno', '--ignore-submodules=all')
+        dirty = _dirty_lines(item['path'], status)
+        if dirty:
+            return '', (f'ветка {base} выкачена в {item["path"]}, а там несохранённые '
+                        f'правки — слияние туда затронуло бы чужую работу')
+        return item['path'], ''
+
+    return '', ''
+
+
+async def _merge_conflicts(repo_dir: str, base: str, branch: str) -> tuple[list[str], str]:
+    """
+    Файлы, на которых слияние встанет: `git merge-tree` считает его без рабочего каталога.
+
+    Вывод разбираем по строкам: первая — дерево результата, дальше до пустой строки
+    имена конфликтных файлов (`--name-only`), а за ней уже пояснения git-а. Код 1 —
+    «свёл не всё», прочие ненулевые — что-то другое (нет ветки, git старше 2.38), и
+    это ошибка проверки, а не приговор слиянию.
+
+    Returns: `(файлы, ошибка)` — заполнено всегда не больше одного.
+    """
+    code, out = await task_worktree_git(repo_dir, 'merge-tree', '--write-tree', '--name-only', base, branch)
+    if not code:
+        return [], ''
+
+    names = []
+    for line in (out or '').splitlines()[1:]:
+        if not line.strip():
+            break
+        names.append(line.strip())
+
+    if code != 1 or not names:
+        return [], f'проверить слияние не вышло: {(out or "").strip()[:300] or f"git вернул {code}"}'
+
+    return names, ''
 
 
 async def _identity(cwd: str) -> tuple[str, ...]:
@@ -426,7 +601,7 @@ async def _identity(cwd: str) -> tuple[str, ...]:
     Настроенного автора не трогаем: подписывать чужой коммит своим именем — врать об
     авторстве. Пустой ответ `git config` и означает «не настроен».
     """
-    code, out = await _git(cwd, 'config', '--get', 'user.email')
+    code, out = await task_worktree_git(cwd, 'config', '--get', 'user.email')
     if not code and (out or '').strip():
         return ()
 
@@ -436,7 +611,7 @@ async def _identity(cwd: str) -> tuple[str, ...]:
 
 
 async def _branch_exists(repo_dir: str, branch: str) -> bool:
-    code, _ = await _git(repo_dir, 'rev-parse', '--verify', f'refs/heads/{branch}')
+    code, _ = await task_worktree_git(repo_dir, 'rev-parse', '--verify', f'refs/heads/{branch}')
 
     return not code
 
@@ -492,7 +667,7 @@ async def _shared_names(repo_dir: str) -> list[str]:
     """
     # `-z` вместо переводов строк: имя файла с пробелом или кириллицей git иначе
     # закавычивает и экранирует, и разбирать пришлось бы уже не путь.
-    code, out = await _git(repo_dir, 'status', '--porcelain', '-z', '--ignored=traditional')
+    code, out = await task_worktree_git(repo_dir, 'status', '--porcelain', '-z', '--ignored=traditional')
     if code:
         logger_info(f'task_worktree: список игнорируемого не получен: {out}')
         return []

@@ -1,4 +1,5 @@
 """Task pipeline tests — конвейер агентов: переходы состояний и захват работы."""
+import os
 import asyncio
 import json
 import time
@@ -9,7 +10,7 @@ import pytest
 
 from tests.constants import TEST_AUTH
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_TASK_TITLE = "__pytest_pipeline_task__"
 CRONJOB_PATH = "src/cronjob/task_orchestrator.py"
 # Тик — триггер: сбросил протухшие блокировки, поставил сообщения в Redis-очередь и вышел.

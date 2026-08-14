@@ -27,6 +27,16 @@
     .btn-back { color: #3498db; font-size: 12.5px; text-decoration: none; }
     .btn-back:hover { text-decoration: underline; }
 
+    /* Кнопка слияния тут же, где diff: решение «влить» принимают, посмотрев на правки,
+       а не по названию ветки в списке задач. Выключенной она остаётся ровно тогда,
+       когда предварительная проверка сказала, что слияние не пройдёт. */
+    .btn-merge {
+        background: #1a7f37; color: #fff; border: none; padding: 6px 14px;
+        border-radius: 4px; cursor: pointer; font-size: 12.5px;
+    }
+    .btn-merge:hover:not(:disabled) { background: #14682c; }
+    .btn-merge:disabled { background: #b9c2cb; cursor: not-allowed; }
+
     .note {
         border-radius: 5px; padding: 9px 13px; font-size: 12.5px;
         margin-bottom: 10px; line-height: 1.5;
@@ -117,6 +127,8 @@
         <span class="range" id="diffRange">…</span>
         <span class="subtitle" id="diffStat"></span>
         <button class="btn-reload" id="btnReload" onclick="loadDiff()">Обновить</button>
+        <button class="btn-merge" id="btnMerge" onclick="mergeBranch()" disabled
+                title="Проверяем, пройдёт ли слияние…">Merge</button>
         <a class="btn-back" href="/admin/task">← к задачам</a>
     </div>
 
@@ -143,10 +155,11 @@
 
 {% block scripts %}
 <script type="module">
-    import {getData} from '/static/js/api.js';
+    import {getData, postData} from '/static/js/api.js';
 
-    // Номер подзадачи — в адресе: страница открывается ссылкой из строки задачи и
+    // Номер задачи — в адресе: страница открывается ссылкой из строки задачи и
     // ничего своего не помнит. Так её можно оставить в закладке и перезагрузить.
+    // Номер годится и задачи целиком, и отдельной подзадачи — сервер разбирается сам.
     const taskId = Number(new URLSearchParams(location.search).get('task') || 0);
 
     function esc(s) {
@@ -223,7 +236,7 @@
             notes.push(`<div class="note note-warn">Локальная ветка <b>${esc(d.base)}</b> обогнала `
                      + `<b>origin/${esc(d.base)}</b> на <b>${d.behind_remote}</b> коммитов. `
                      + `Merge request на сервере сравнивает с удалённой копией и покажет их как `
-                     + `изменения этой подзадачи — здесь их нет.</div>`);
+                     + `изменения этой задачи — здесь их нет.</div>`);
         }
         if (d.dirty?.length) {
             notes.push(`<div class="note note-info">В рабочем каталоге подзадачи есть незакоммиченные `
@@ -234,14 +247,53 @@
             notes.push(`<div class="note note-warn">Показана только начальная часть diff — он слишком `
                      + `велик для страницы. Полностью: <code>git diff ${esc(d.base)}...${esc(d.branch)}</code></div>`);
         }
+        const merge = d.merge || {};
+        // Про конфликты говорим отдельной плашкой и с перечнем файлов: «кнопка серая»
+        // человеку ничего не объясняет, а разбирать конфликт всё равно ему.
+        if (merge.conflicts?.length) {
+            notes.push(`<div class="note note-error">Слияние не пройдёт: git не сведёт сам `
+                     + `<b>${merge.conflicts.length}</b> файлов — `
+                     + `<code>${esc(merge.conflicts.slice(0, 10).join('; '))}</code>. `
+                     + `Влейте <b>${esc(d.base)}</b> в ветку и разберите конфликт в каталоге подзадачи.</div>`);
+        } else if (d.ok && !merge.can_merge && merge.error) {
+            notes.push(`<div class="note note-warn">Слияние сейчас недоступно: ${esc(merge.error)}</div>`);
+        }
         return notes.join('');
     }
+
+    // Кнопка включается только по ответу проверки: она повторяет условия самого
+    // слияния (`task_worktree_merge_check`), поэтому «зелёная» здесь значит «пройдёт».
+    function renderMerge(d) {
+        const btn = document.getElementById('btnMerge');
+        const merge = d.merge || {};
+        const branch = merge.branch || d.branch || '';
+        btn.disabled = !merge.can_merge;
+        btn.title = merge.can_merge
+            ? `Влить ${branch} в ${d.base} (локально, без push) и снять рабочие каталоги подзадач`
+            : (merge.error || 'Слияние недоступно');
+    }
+
+    window.mergeBranch = async function() {
+        const btn = document.getElementById('btnMerge');
+        const range = document.getElementById('diffRange').textContent;
+        if (!confirm(`Влить ${range} локально, без push? Рабочие каталоги подзадач будут сняты.`)) return;
+
+        btn.disabled = true;
+        try {
+            const r = await postData(`/task/${taskId}/worktree/merge`, {});
+            alert(`Влито: ${(r.merged || [r.branch]).join(', ')} → ${r.base}`
+                  + (r.removed ? '' : '\nРабочий каталог снять не удалось — смотрите лог.'));
+        } catch (e) {
+            alert(e.message || 'Слияние не прошло');
+        }
+        await loadDiff();
+    };
 
     window.loadDiff = async function() {
         const btn = document.getElementById('btnReload');
         const wrap = document.getElementById('diffWrap');
         if (!taskId) {
-            wrap.innerHTML = '<div class="note note-error">В адресе нет номера подзадачи: '
+            wrap.innerHTML = '<div class="note note-error">В адресе нет номера задачи: '
                            + 'откройте страницу ссылкой «diff» из строки задачи.</div>';
             return;
         }
@@ -250,11 +302,13 @@
             const d = await getData(`/task/${taskId}/diff`);
 
             document.getElementById('diffTitle').textContent =
-                `Diff подзадачи #${taskId}` + (d.task?.title ? ` — ${d.task.title}` : '');
+                `Diff ${d.task?.parent_id ? 'подзадачи' : 'задачи'} #${taskId}`
+                + (d.task?.title ? ` — ${d.task.title}` : '');
             document.getElementById('diffRange').textContent =
                 d.base && d.branch ? `${d.base}...${d.branch}` : '—';
             document.getElementById('diffStat').textContent = d.stat || '';
             document.getElementById('diffNotes').innerHTML = renderNotes(d);
+            renderMerge(d);
 
             if (!d.ok) {
                 wrap.innerHTML = `<div class="note note-error">${esc(d.error)}</div>`;
@@ -276,12 +330,15 @@
 
             document.getElementById('commitList').innerHTML = (d.commits || []).length
                 ? d.commits.map(c => `<div class="commit-item"><div class="csubj">${esc(c.subject)}</div>`
-                    + `<div class="cmeta">${esc(c.hash)} · ${esc(c.author)} · ${esc(c.date)}</div></div>`).join('')
+                    + `<div class="cmeta">${esc(c.hash)} · ${esc(c.author)} · ${esc(c.date)}`
+                    + (c.branch ? ` · ${esc(c.branch)}` : '') + `</div></div>`).join('')
                 : '<div class="empty-msg">Коммитов нет</div>';
 
             wrap.innerHTML = renderDiff(d.diff, stats);
         } catch (e) {
             wrap.innerHTML = `<div class="note note-error">Ошибка загрузки: ${esc(e.message)}</div>`;
+            // Ответа нет — состояние слияния неизвестно, и кнопка обязана молчать.
+            renderMerge({merge: {error: 'разница не загрузилась'}});
         } finally {
             btn.disabled = false;
         }

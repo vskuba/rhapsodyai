@@ -1,9 +1,10 @@
 """
-Остановка задачи человеком — кнопка ◼ рядом со статусом на странице задач.
+Остановка задачи человеком — снятый флажок «в разработку» рядом со статусом на
+странице задач.
 
 Человек видит «В работе» и хочет, чтобы работа прекратилась: агент замолчал, строка
 вернулась в «Ожидает» и сама собой в работу больше не пошла. Снимает остановку он же —
-возвратом флажка «в разработку»/«в тестирование» или кнопкой ▶.
+возвратом того же флажка или флажка фазы «в разработку»/«в тестирование».
 
 Почему запрет живёт в `metadata`, а не в человеческом `status`: отбор работы
 (`task_claim`) на `status` не смотрит вовсе, он ходит по `pipeline_state`, и
@@ -159,7 +160,7 @@ async def _task_stop_inflight_get(task_id: int) -> list[dict]:
     """Строки задачи и её подзадач, за которыми прямо сейчас думает агент."""
     placeholders = ', '.join(['%s'] * len(TASK_CLAIM_INFLIGHT_STATES))
     async with mysql_get_db_async() as db:
-        await db.execute(f'SELECT id, parent_id, task_type_id, pipeline_state '
+        await db.execute(f'SELECT id, parent_id, pipeline_from_plan, task_type_id, pipeline_state '
                          f'  FROM project_task '
                          f' WHERE (id = %s OR parent_id = %s) AND pipeline_state IN ({placeholders})',
                          (task_id, task_id, *TASK_CLAIM_INFLIGHT_STATES))
@@ -175,11 +176,21 @@ async def _task_stop_release(rows: list[dict]) -> list[dict]:
 
     `status` правим прямой строкой, а не `task_state_kanban_sql`: тот у остановленной
     строки статус как раз не трогает — на то и заведён.
+
+    Карту возврата выбирает `pipeline_from_plan`, а не наличие родителя. Дочерняя строка
+    бывает двух разных пород: строка плана (её и берут Developer/QA) и обычная задача
+    дерева, у которой родитель есть, а к плану она отношения не имеет. Вторая живёт по
+    состояниям задачи (`planning`, `reviewing`), и по родителю ей досталась бы карта
+    подзадач, где таких ключей нет: строка молча пропускалась и оставалась захваченной
+    до протухания блокировки — с обещанной остановкой, которой не произошло.
+    Слить карты в одну нельзя: `testing` у задачи — фаза «на проверке», а у строки
+    плана — захваченная работа, и возвращать их надо в разное.
     """
     released = []
     async with mysql_get_db_async() as db:
         for row in rows:
-            state_map = TASK_CLAIM_SUBTASK_STATE_RECLAIM if row['parent_id'] else TASK_CLAIM_STATE_RECLAIM
+            state_map = (TASK_CLAIM_SUBTASK_STATE_RECLAIM if row.get('pipeline_from_plan')
+                         else TASK_CLAIM_STATE_RECLAIM)
             state_to = state_map.get(row['pipeline_state'])
             if not state_to:
                 continue

@@ -1,10 +1,11 @@
+import os
 from tests.constants import TEST_AUTH
 """Permission boundary tests — non-admin users must get 403 on write operations."""
 import pytest
 import httpx
 from typing import AsyncGenerator
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_PERM_PREFIX = "test_perm_"
 
 

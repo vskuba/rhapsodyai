@@ -7,13 +7,14 @@ Tests cover:
 - Updating the current user's email and LLM model (PUT /auth/me)
 - Validation checks for updating user details
 """
+import os
 import pytest
 import httpx
 from typing import AsyncGenerator
 
 from tests.constants import TEST_AUTH
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 
 class TestCabinetFlow:

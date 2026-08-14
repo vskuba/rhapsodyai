@@ -25,7 +25,7 @@ from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
-from src.project.task.task_plan import task_plan_parse
+from src.project.task.task_plan import task_plan_goals_text, task_plan_parse
 from src.project.task.task_role import task_role_project_server_url
 from src.project.task.task_worktree import task_worktree_branch
 from src.project.team.team_session import team_session_restart_role
@@ -98,9 +98,13 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
             session_uuid=session_uuid,
             workflow_id=workflow_id,
         ),
+        # Номер задачи промпту не нужен, но по нему карточка команды находит этот
+        # прогон в трейсе и показывает, какой шаг идёт (`team_progress`). Времени
+        # захвата для поиска не хватает: у роли столько прогонов, сколько проектов.
+        'task_id':          str(task.get('id') or ''),
         'task_title':       str(task.get('title') or ''),
         'task_description': str(task.get('description') or ''),
-        'task_goals':       _goals_text(task.get('goals')),
+        'task_goals':       task_plan_goals_text(task.get('goals')),
         # План родительской задачи целиком: подзадача — строка из него, и без
         # соседних строк не видно, где кончается своя работа и начинается чужая.
         'task_plan_current': task_plan_parse(task.get('pipeline_plan') or '')[0],
@@ -111,7 +115,7 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         # выше проверяются целиком только на финале задачи, здесь же QA обязан
         # смотреть на то, что обещала именно эта подзадача.
         'subtask_plan':      task_plan_parse(subtask.get('pipeline_plan') or '')[0],
-        'subtask_goals':     _goals_text(subtask.get('goals')),
+        'subtask_goals':     task_plan_goals_text(subtask.get('goals')),
         # Отчёт разработчика с последней удачной попытки: что он менял, в каких
         # файлах и в какой ветке. Без него QA начинает проверку с поиска самих
         # изменений, а это лишний круг обращений к оболочке.
@@ -218,19 +222,6 @@ async def _developer_report(subtask_id: int) -> str:
         row = await db.fetchone()
 
     return str((row or {}).get('output') or '').strip()
-
-
-def _goals_text(goals_raw) -> str:
-    """Цели лежат в task.goals как JSON [{text, done}] — LLM нужен плоский список."""
-    goals = json_from_string(goals_raw or '') or []
-    if not isinstance(goals, list):
-        return ''
-    lines = []
-    for g in goals:
-        text = str(g.get('text') if isinstance(g, dict) else g or '').strip()
-        if text:
-            lines.append(f'- {text}')
-    return '\n'.join(lines)
 
 
 def _result_parse(result_text) -> dict:

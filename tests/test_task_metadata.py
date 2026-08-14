@@ -6,6 +6,7 @@
 живёт в сессионных фикстурах `conftest.py`. Импорт на уровне модуля случился бы
 раньше них — и тесты пошли бы к хосту `mysql`, которого с машины разработчика нет.
 """
+import os
 from typing import AsyncGenerator
 
 import httpx
@@ -13,7 +14,7 @@ import pytest
 
 from tests.constants import TEST_AUTH
 
-BASE_URL = "http://localhost:8011"
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_TITLE = "__pytest_metadata__"
 
 
