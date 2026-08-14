@@ -437,6 +437,25 @@ CREATE TABLE `ai_claude_session_registry` (
     INDEX `idx_claude_registry_project` (`project_label`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Дело игры-детектива: жертва, преступление и разгадка одной партии. Разгадку держим
+-- на сервере (`guilty_suspect_name`, `solution_reveal`): агенты-подозреваемые её не
+-- знают, иначе первый же вопрос игрока вскрыл бы финал. Партия привязана к сессии, а
+-- не к пользователю: в `/play/detective` играют без входа, `user_id` заполняется только
+-- у вошедших - см. .claude/docs/detective.md
+CREATE TABLE `detective_case` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_uuid` CHAR(36) NOT NULL,
+    `user_id` INT NULL,
+    `victim_name` CHAR(100) NOT NULL,
+    `crime_description` TEXT NOT NULL,
+    `guilty_suspect_name` CHAR(100) NOT NULL,
+    `solution_reveal` TEXT NOT NULL,
+    `solved` TINYINT NOT NULL DEFAULT 0,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_detective_case_session` (`session_uuid`),
+    CONSTRAINT `fk_detective_case_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Журнал выполнения workflow: один запуск (включая вложенные sub-workflow через parent_run_id)
 CREATE TABLE `agent_workflow_trace` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,

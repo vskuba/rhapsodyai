@@ -61,11 +61,13 @@ async def task_diff_build(repo_dir: str, subtask_id) -> dict:
         `origin/<base>`; ровно столько чужой работы и показал бы merge request.
         `dirty` — файлы, которые в каталоге подзадачи правлены, но не закоммичены:
         в diff их нет, и без предупреждения это выглядит как «агент ничего не сделал».
-        `merge` — ответ `task_worktree_merge_check`: пройдёт ли слияние этой ветки.
+        `merge` — ответ `task_worktree_merge_check`: пройдёт ли слияние этой ветки
+        (и не влита ли она уже — `merge['merged']`).
     """
     result = {'ok': False, 'error': '', 'base': '', 'branch': '', 'commits': [], 'files': [],
               'diff': '', 'truncated': False, 'stat': '', 'behind_remote': 0, 'dirty': [],
-              'merge': {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': []}}
+              'merge': {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': [],
+                        'merged': False}}
 
     repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
     branch = task_worktree_branch(subtask_id)
@@ -132,7 +134,8 @@ async def task_diff_build_task(repo_dir: str, subtask_ids: list) -> dict:
     """
     result = {'ok': False, 'error': '', 'base': '', 'branch': '', 'commits': [], 'files': [],
               'diff': '', 'truncated': False, 'stat': '', 'behind_remote': 0, 'dirty': [],
-              'merge': {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': []},
+              'merge': {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': [],
+                        'merged': False},
               'subtasks': []}
     if not subtask_ids:
         result['error'] = 'у задачи нет подзадач — ветки заводятся под них, сравнивать нечего'
@@ -140,6 +143,9 @@ async def task_diff_build_task(repo_dir: str, subtask_ids: list) -> dict:
 
     parts, stats, errors, merge_errors = [], [], [], []
     can_merge = True
+    # Задача влита, только когда влиты все её ветки: одна невлитая — работа не принята,
+    # и кнопка обязана оставаться живой.
+    all_merged = True
     for subtask_id in subtask_ids:
         one = await task_diff_build(repo_dir, subtask_id)
         merge = one.get('merge') or {}
@@ -148,6 +154,7 @@ async def task_diff_build_task(repo_dir: str, subtask_ids: list) -> dict:
         if not one['ok']:
             errors.append(f'#{subtask_id}: {one["error"]}')
             can_merge = False
+            all_merged = False
             continue
 
         result['ok'] = True
@@ -161,6 +168,7 @@ async def task_diff_build_task(repo_dir: str, subtask_ids: list) -> dict:
             stats.append(f'{one["branch"]}: {one["stat"].strip()}')
         if one['diff']:
             parts.append(one['diff'])
+        all_merged = all_merged and bool(merge.get('merged'))
         if not merge.get('can_merge'):
             can_merge = False
             if merge.get('error'):
@@ -176,6 +184,7 @@ async def task_diff_build_task(repo_dir: str, subtask_ids: list) -> dict:
         result['truncated'] = True
     result['error'] = '; '.join(errors)
     result['merge'].update({'can_merge': result['ok'] and can_merge,
+                            'merged': result['ok'] and all_merged,
                             'branch': result['branch'], 'base': result['base'],
                             'error': '; '.join(merge_errors or errors)})
 

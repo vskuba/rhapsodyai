@@ -286,10 +286,12 @@ async def task_worktree_merge_check(repo_dir: str, subtask_id) -> dict:
         subtask_id: номер подзадачи — из него имя ветки.
 
     Returns:
-        `{'can_merge', 'error', 'branch', 'base', 'conflicts'}`. `conflicts` — файлы,
-        которые git не свёл сам; они непусты ровно тогда, когда `error` про конфликт.
+        `{'can_merge', 'error', 'branch', 'base', 'conflicts', 'merged'}`. `conflicts` —
+        файлы, которые git не свёл сам; они непусты ровно тогда, когда `error` про
+        конфликт. `merged` — ветка уже целиком в главной, вливать нечего.
     """
-    result = {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': []}
+    result = {'can_merge': False, 'error': '', 'branch': '', 'base': '', 'conflicts': [],
+              'merged': False}
     branch = task_worktree_branch(subtask_id)
     repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
     result['branch'] = branch
@@ -304,6 +306,25 @@ async def task_worktree_merge_check(repo_dir: str, subtask_id) -> dict:
         result['error'] = f'ветки {branch} нет — разработчик не оставил коммитов'
         return result
 
+    base = await task_worktree_base_branch(repo_dir)
+    result['base'] = base
+
+    # Ветка уже целиком в главной — второй раз её не вливают. Само слияние на этом не
+    # спотыкается («Already up to date»), поэтому без явной проверки страница показала
+    # бы живую кнопку, а нажатие сделало бы пустой ход и сняло каталог. Проверка
+    # заодно ловит ветку без единого коммита: она тоже вся в главной, и вливать в ней
+    # тоже нечего.
+    #
+    # Стоит выше остальных отказов сознательно: «уже влито» — не помеха, которую можно
+    # устранить, а конец истории. Оставшийся после слияния каталог с мусором дал бы
+    # жалобу на несохранённые правки, и страница показала бы устранимое препятствие
+    # там, где вливать давно нечего.
+    code, _ = await task_worktree_git(repo_dir, 'merge-base', '--is-ancestor', branch, base)
+    if code == 0:
+        result['merged'] = True
+        result['error'] = f'ветка {branch} уже в {base} — вливать нечего'
+        return result
+
     path = task_worktree_path(repo_dir, subtask_id)
     if os.path.isdir(path):
         _, status = await task_worktree_git(path, 'status', '--porcelain', '-uall', '--ignore-submodules=all')
@@ -313,8 +334,6 @@ async def task_worktree_merge_check(repo_dir: str, subtask_id) -> dict:
                                f'в ветке и пропадут при снятии: {"; ".join(dirty[:5])}')
             return result
 
-    base = await task_worktree_base_branch(repo_dir)
-    result['base'] = base
     _, error = await _base_checkout(repo_dir, base)
     if error:
         result['error'] = error

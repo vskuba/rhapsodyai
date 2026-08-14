@@ -36,6 +36,11 @@
     }
     .btn-merge:hover:not(:disabled) { background: #14682c; }
     .btn-merge:disabled { background: #b9c2cb; cursor: not-allowed; }
+    /* Работа уже влита: кнопка не «временно недоступна», а закончила своё дело —
+       поэтому спокойный серый и обычный курсор, без запрещающего знака. */
+    .btn-merge.merged, .btn-merge.merged:disabled {
+        background: #eef1f4; color: #57606a; border: 1px solid #d0d7de; cursor: default;
+    }
 
     .note {
         border-radius: 5px; padding: 9px 13px; font-size: 12.5px;
@@ -263,10 +268,27 @@
 
     // Кнопка включается только по ответу проверки: она повторяет условия самого
     // слияния (`task_worktree_merge_check`), поэтому «зелёная» здесь значит «пройдёт».
+    //
+    // Отметку «уже влито» проверка дать не может: git влитую ветку от невлитой не
+    // отличает и на повтор отвечает «уже актуально». Поэтому её везёт сервер отдельным
+    // полем (`merged`), и она перебивает проверку — слитая задача закрыта навсегда.
     function renderMerge(d) {
         const btn = document.getElementById('btnMerge');
         const merge = d.merge || {};
         const branch = merge.branch || d.branch || '';
+        const merged = d.merged;
+
+        btn.classList.toggle('merged', !!merged);
+        if (merged) {
+            btn.disabled = true;
+            btn.textContent = 'Влито';
+            btn.title = `Работа влита в ${merged.base || 'главную ветку'}`
+                      + (merged.by ? ` — ${merged.by}` : '') + (merged.at ? `, ${merged.at}` : '')
+                      + '. Рабочие каталоги подзадач сняты';
+            return;
+        }
+
+        btn.textContent = 'Merge';
         btn.disabled = !merge.can_merge;
         btn.title = merge.can_merge
             ? `Влить ${branch} в ${d.base} (локально, без push) и снять рабочие каталоги подзадач`

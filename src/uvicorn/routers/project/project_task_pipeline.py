@@ -4,6 +4,8 @@
 Сам конвейер крутится в `src/project/task/`; здесь только точки, где в него
 вмешивается пользователь. CRUD задач — в `project_task.py`.
 """
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
@@ -11,7 +13,9 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.project.task.task_diff import task_diff_build, task_diff_build_task
 from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_MERGED,
     TASK_METADATA_KEY_PLAN,
+    task_metadata_parse,
     task_metadata_row_apply,
     task_metadata_update,
 )
@@ -296,8 +300,20 @@ async def project_task_worktree_merge(task_id: int, user=Depends(AuthChecker([Au
     Слияние локальное, без `push` — отправку в общий репозиторий человек делает сам.
     Отказ (грязный каталог, конфликт, нет ветки) отдаём как 400 с текстом от git:
     разбирать такое всё равно человеку, и общая формулировка ему не поможет.
+
+    Удавшееся слияние помечается в задаче (`TASK_METADATA_KEY_MERGED`), и повторное
+    нажатие эндпоинт уже не пускает: ветки влиты, каталоги сняты, второй раз вливать
+    нечего. Отказ здесь — 409, а не 400: это не поломка, а «уже сделано».
     """
-    work_dir, subtask_ids, _ = await _diff_target(task_id)
+    work_dir, subtask_ids, task = await _diff_target(task_id)
+
+    merged_before = task_metadata_parse(task.get('metadata')).get(TASK_METADATA_KEY_MERGED)
+    if merged_before:
+        at = merged_before.get('at') if isinstance(merged_before, dict) else ''
+        by = merged_before.get('by') if isinstance(merged_before, dict) else ''
+        raise HTTPException(status_code=409,
+                            detail='работа задачи уже влита в главную ветку'
+                                   + (f' — {by}' if by else '') + (f', {at}' if at else ''))
 
     merged: list[str] = []
     base, removed = '', True
@@ -316,8 +332,15 @@ async def project_task_worktree_merge(task_id: int, user=Depends(AuthChecker([Au
             subtask_id, f'{user.username} влил ветку {result["branch"]} в {result["base"]}'
                         + ('' if result['removed'] else ' (рабочий каталог снять не удалось — смотрите лог)'))
 
+    # Отметка ставится одна на задачу и только после всех веток: слияние половины
+    # плана — это не «влито», и серая кнопка на нём соврала бы. Первый же отказ выше
+    # уходит исключением, до сюда не доходя.
+    merged_meta = {'at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'by': user.username,
+                   'base': base, 'branches': merged}
+    await task_metadata_update(task_id, {TASK_METADATA_KEY_MERGED: merged_meta})
+
     return {'ok': True, 'merged': merged, 'branch': ', '.join(merged),
-            'base': base, 'removed': removed}
+            'base': base, 'removed': removed, 'merged_meta': merged_meta}
 
 
 @router.get('/task/{task_id}/diff')
@@ -344,6 +367,14 @@ async def project_task_diff(task_id: int, user=Depends(AuthChecker([AuthPermissi
               else await task_diff_build_task(work_dir, subtask_ids))
     result['task'] = {'id': task['id'], 'title': task['title'],
                       'parent_id': task['parent_id']}
+    # Отметка о состоявшемся слиянии — по ней страница гасит кнопку «Merge». Основная
+    # — своя, из `metadata`: в ней есть кто и когда принял работу. Запасная — от git
+    # (`merge['merged']`): она без имён, зато находит и то, что влили до появления
+    # отметки или руками в консоли.
+    merged = task_metadata_parse(task.get('metadata')).get(TASK_METADATA_KEY_MERGED)
+    if not merged and (result.get('merge') or {}).get('merged'):
+        merged = {'base': result['merge'].get('base') or result.get('base') or ''}
+    result['merged'] = merged or None
 
     # Пустой ответ — не ошибка HTTP: «ветки ещё нет» и «в ветке ничего нет» страница
     # показывает сама и текстом понятнее, чем красная плашка от 400.
@@ -492,7 +523,8 @@ async def _diff_target(task_id: int) -> tuple[str, list, dict]:
     """
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT s.id, s.title, s.parent_id, COALESCE(s.project_id, p.project_id) AS project_id "
+            "SELECT s.id, s.title, s.parent_id, s.metadata, "
+            "       COALESCE(s.project_id, p.project_id) AS project_id "
             "  FROM project_task s LEFT JOIN project_task p ON p.id = s.parent_id "
             " WHERE s.id = %s",
             (task_id,)

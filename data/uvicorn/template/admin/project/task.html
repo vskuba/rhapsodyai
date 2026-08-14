@@ -912,6 +912,17 @@
     }
     .pipe-merge:hover:not(:disabled) { background: #dcfce7; border-color: #86efac; }
     .pipe-merge:disabled { opacity: .5; cursor: progress; }
+    /* Работа уже влита (`metadata.merged`): кнопка остаётся на месте, но серая и
+       мёртвая. Убирать её нельзя — исчезнувшая кнопка читается как сбой отрисовки, а
+       серая прямо говорит «сделано»; кто и когда принял, лежит в подсказке. Курсор не
+       `progress`, как у занятой кнопки: тут ничего не происходит и не произойдёт. */
+    .pipe-merge.merged, .pipe-merge.merged:disabled {
+        color: #6b7280;
+        background: #f3f4f6;
+        border-color: #d1d5db;
+        opacity: 1;
+        cursor: default;
+    }
     /* Счётчик сорвавшихся прогонов (`metadata.retry`): агент не ответил, оболочку
        перезапустили, вход отдали заново. Стоит рядом с чипсом, потому что говорит о том
        же — почему строка столько времени в одном состоянии. Приглушённый янтарь: это
@@ -2617,6 +2628,9 @@ const PIPELINE_LABEL_NONE = '(нет плана)';
 const TASK_META_KEY_PLAN = 'to_planning';
 const TASK_META_KEY_DEV = 'to_development';
 const TASK_META_KEY_TEST = 'to_testing';
+// Этот ключ пишет не страница, а сервер — эндпоинт слияния (`worktree/merge`).
+// Странице он нужен только на чтение: по нему кнопка «mr2master&rm_worktree» гаснет.
+const TASK_META_KEY_MERGED = 'merged';
 
 // На каждой вкладке два флажка, и роли у них разные.
 //
@@ -2940,8 +2954,22 @@ function renderPipeDiff(t) {
 // Каталога подзадачи может уже не быть (сняли руками) — сервер ответит понятной
 // ошибкой, прятать кнопку из-за этого не за чем: состояние каталогов странице не
 // известно.
+// Влитую задачу показываем той же кнопкой, только серой и мёртвой: второго слияния
+// не бывает — ветки в главной, каталоги сняты, и нажатие вернуло бы ошибку про
+// пропавшую ветку. Отметку ставит сервер (`metadata.merged`), а не страница: git
+// влитую ветку от невлитой не отличает и на повтор отвечает «уже актуально».
 function renderPipeMerge(t) {
     if (t.parent_id || t.pipeline_state !== 'done') return '';
+
+    const merged = (t.metadata || {})[TASK_META_KEY_MERGED];
+    if (merged) {
+        const at = merged.at ? `, ${merged.at}` : '';
+        const by = merged.by ? ` — ${merged.by}` : '';
+        return `<button class="pipe-merge merged" disabled onclick="event.stopPropagation()"`
+             + ` title="Работа влита в ${esc(merged.base || 'главную ветку')}${esc(by)}${esc(at)}.`
+             + ` Рабочие каталоги подзадач сняты">mr2master&amp;rm_worktree</button>`;
+    }
+
     return `<button class="pipe-merge" onclick="event.stopPropagation();worktreeMerge(${t.id},this)"`
          + ` title="Влить ветки подзадач этой задачи в главную ветку проекта`
          + ` (локально, без push) и снять их рабочие каталоги">mr2master&amp;rm_worktree</button>`;
