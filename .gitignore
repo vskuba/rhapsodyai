@@ -1,5 +1,7 @@
 # Виртуальное окружение (самое важное)
-.venv/
+# Без слэша на конце: в рабочем каталоге подзадачи `.venv` — символьная ссылка
+# на общее окружение, а шаблон со слэшем ссылку не ловит и она попадает в `git add`.
+.venv
 venv/
 /env/
 ssh/
@@ -38,7 +40,6 @@ docker-compose.override.yml
 
 .claude-shell
 .claude/worktrees
-.claude/settings.local.json
 
 .memsearch
 

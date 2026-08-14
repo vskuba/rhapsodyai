@@ -4,19 +4,27 @@
 Сам конвейер крутится в `src/project/task/`; здесь только точки, где в него
 вмешивается пользователь. CRUD задач — в `project_task.py`.
 """
-import json
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_PLAN,
+    task_metadata_row_apply,
+    task_metadata_update,
+)
 from src.project.task.task_plan import (
     task_plan_goals_get,
     task_plan_goals_merge,
     task_plan_parse,
     task_plan_serialize,
 )
+from src.project.task.task_pipeline import task_pipeline_shells_restart
+from src.project.task.task_report import task_report_write
+from src.project.task.task_role import TASK_ROLE_TITLE, task_role_project_work_dir
+from src.project.task.task_state import task_state_kanban_sql
+from src.project.task.task_stop import task_stop_apply, task_stop_clear
 from src.project.task.task_revision import (
     TASK_REVISION_LIMIT,
     task_revision_add,
@@ -24,12 +32,18 @@ from src.project.task.task_revision import (
     task_revision_get,
     task_revision_list,
 )
+from src.project.task.task_worktree import task_worktree_merge
 
 # Состояния, в которых план можно трогать: конвейер над ним не работает и подзадач
-# по нему ещё (или уже) нет. `approved`/`split` сюда не входят намеренно — план там
+# по нему ещё (или уже) нет. `approved`/`processing` сюда не входят намеренно — план там
 # либо раскладывается, либо выполняется, и подмена его на ходу рассинхронизировала бы
 # подзадачи с планом, из которого они выросли.
-_PLAN_EDITABLE_STATES: list[str | None] = [None, 'pending_approval', 'done', 'failed']
+_PLAN_EDITABLE_STATES: list[str | None] = [None, 'plan_approval', 'done', 'failed']
+
+# Удаление подзадач плана. `pipeline_from_plan` здесь обязателен: дерево общее, и
+# «дети задачи» — это ещё и человеческая декомпозиция, которую сброс плана трогать
+# не должен. Удаляем строго то, что конвейер сам и создал.
+_SUBTASKS_DELETE_SQL = "DELETE FROM project_task WHERE parent_id = %s AND pipeline_from_plan = 1"
 
 router = APIRouter()
 
@@ -45,17 +59,23 @@ async def project_task_pipeline_get(task_id: int, user=Depends(AuthChecker([Auth
         if not task:
             raise HTTPException(status_code=404, detail='task not found')
 
+        # Подзадачи конвейера — дети этой же таблицы, разложенные из плана. Имена полей
+        # оставлены прежними (`state`, `attempt_count`, `last_error`): панель плана
+        # читает подзадачу, а не задачу, и колонки конвейера ей не нужны.
         await db.execute(
-            "SELECT id, position, title, description, state, attempt_count, last_error "
-            "  FROM project_task_subtask WHERE task_id = %s ORDER BY position, id",
+            "SELECT id, position, title, description, pipeline_state AS state, "
+            "       pipeline_attempt_count AS attempt_count, pipeline_error AS last_error "
+            "  FROM project_task WHERE parent_id = %s AND pipeline_from_plan = 1 "
+            " ORDER BY position, id",
             (task_id,)
         )
         subtasks = await db.fetchall()
 
         await db.execute(
-            "SELECT a.id, a.subtask_id, a.attempt_no, a.role, a.status, a.output, a.error, a.created_at "
-            "  FROM project_task_attempt a JOIN project_task_subtask s ON s.id = a.subtask_id "
-            " WHERE s.task_id = %s ORDER BY a.id",
+            "SELECT a.id, a.task_id AS subtask_id, a.attempt_no, a.role, a.status, "
+            "       a.output, a.error, a.created_at "
+            "  FROM project_task_attempt a JOIN project_task s ON s.id = a.task_id "
+            " WHERE s.parent_id = %s AND s.pipeline_from_plan = 1 ORDER BY a.id",
             (task_id,)
         )
         attempts = await db.fetchall()
@@ -75,20 +95,33 @@ async def project_task_pipeline_get(task_id: int, user=Depends(AuthChecker([Auth
 
 @router.post('/task/{task_id}/pipeline/start')
 async def project_task_pipeline_start(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
-    """Отправить задачу в конвейер. Вход только явный — обычные задачи агенты не трогают."""
-    return await _pipeline_state_set(task_id, expected=None, new_state='new')
+    """
+    Отправить задачу в конвейер. Вход только явный — обычные задачи агенты не трогают.
+
+    Снятый флажок «в планирование» кнопка снимает: нажатие — это и есть просьба о плане
+    прямо сейчас, а с пометкой задача ушла бы в `new` и там же осталась — захват её не
+    видит (`task_metadata_plan_free_sql`). Ключ стираем (`None`), а не пишем `true`:
+    умолчание там «включено».
+    """
+    await task_stop_clear(task_id, user.username)
+    await task_metadata_update(task_id, {TASK_METADATA_KEY_PLAN: None})
+    return await _pipeline_state_set(task_id, expected=None, new_state='new',
+                                     report=f'{user.username} отправил задачу в конвейер — ждёт плана от менеджера')
 
 
 @router.post('/task/{task_id}/pipeline/approve')
 async def project_task_pipeline_approve(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Человек утвердил план — оркестратор разложит его на подзадачи."""
-    return await _pipeline_state_set(task_id, expected='pending_approval', new_state='approved')
+    return await _pipeline_state_set(task_id, expected='plan_approval', new_state='approved',
+                                     report=f'{user.username} утвердил план — ждёт разложения на подзадачи')
 
 
 @router.post('/task/{task_id}/pipeline/reject')
 async def project_task_pipeline_reject(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Отклонить план и вывести задачу из конвейера. План сохраняется для разбора."""
-    return await _pipeline_state_set(task_id, expected='pending_approval', new_state=None)
+    return await _pipeline_state_set(
+        task_id, expected='plan_approval', new_state=None, ok=False,
+        report=f'{user.username} отклонил план — задача выведена из конвейера, агенты её не берут')
 
 
 @router.post('/task/{task_id}/pipeline/review')
@@ -97,12 +130,14 @@ async def project_task_pipeline_review(task_id: int, user=Depends(AuthChecker([A
     Отправить существующий план менеджеру на пересмотр («Обновить план»).
 
     Второй вход в конвейер: обычный отбор идёт по отсутствию плана, а тут план как раз
-    есть — поэтому отдельное состояние `review`, из которого задачу заберёт
+    есть — поэтому отдельное состояние `reviewing`, из которого задачу заберёт
     `_step_manager_review`.
     """
     await _plan_editable_task(task_id)
 
-    result = await _pipeline_state_set(task_id, expected=_PLAN_EDITABLE_STATES, new_state='review')
+    result = await _pipeline_state_set(
+        task_id, expected=_PLAN_EDITABLE_STATES, new_state='reviewing',
+        report=f'{user.username} отправил план на пересмотр — прежние подзадачи удалены')
 
     # Подзадачи удаляем после захвата состояния, а не до: проиграв гонку двойному
     # клику, мы бы уже снесли чужую работу. Они принадлежали старому плану, а
@@ -110,8 +145,166 @@ async def project_task_pipeline_review(task_id: int, user=Depends(AuthChecker([A
     # поверх старого. Список подзадач сохранён в ревизии; попытки
     # (`project_task_attempt`) уезжают по CASCADE — это осознанная потеря.
     async with mysql_get_db_async() as db:
-        await db.execute("DELETE FROM project_task_subtask WHERE task_id = %s", (task_id,))
+        await db.execute(_SUBTASKS_DELETE_SQL, (task_id,))
         await db.connection.commit()
+
+    return result
+
+
+@router.post('/task/{task_id}/pipeline/retry')
+async def project_task_pipeline_retry(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Повторить сорвавшийся шаг конвейера.
+
+    Возвращаем не в одно фиксированное состояние: `failed` — общий исход трёх разных
+    шагов, и вернуть задачу нужно к тому, который её уронил. Иначе она зависнет —
+    отбор у каждого шага свой, и `new` у задачи с готовым планом и целями не подберёт
+    никто (`task_claim_task_unplanned` берёт только беcплановые).
+
+    * есть подзадачи      -> `processing`: план уже материализован, менеджер не нужен;
+    * план есть, подзадач нет -> `approved`: сорвалось разложение, повторяем его;
+    * плана нет           -> `new`: за планом к менеджеру.
+
+    Вместе с состоянием перезапускаем и агентов в оболочках
+    (`task_pipeline_shells_restart`): срыв по таймауту оставляет дочерний Claude
+    Code с брошенным ходом, и новый прогон ушёл бы в занятую оболочку.
+
+    Остановку снимаем заодно: «Перезапустить» — это и есть «продолжаем», и оставленный
+    запрет обернул бы нажатие сменой состояния без единого прогона следом.
+    """
+    await task_stop_clear(task_id, user.username)
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id, project_id, pipeline_state, pipeline_plan FROM project_task WHERE id = %s",
+            (task_id,))
+        task = await db.fetchone()
+        if not task:
+            raise HTTPException(status_code=404, detail='task not found')
+        if task['pipeline_state'] != 'failed':
+            raise HTTPException(
+                status_code=409,
+                detail=f'Перезапускать нечего: задача не в состоянии failed '
+                       f'(сейчас: {task["pipeline_state"] or "—"})')
+
+        await db.execute(
+            "SELECT COUNT(*) AS total, SUM(pipeline_state = 'blocked') AS blocked "
+            "  FROM project_task WHERE parent_id = %s AND pipeline_from_plan = 1", (task_id,))
+        counts = await db.fetchone()
+
+    total   = int(counts['total'] or 0)
+    blocked = int(counts['blocked'] or 0)
+
+    if total:
+        # Снимаем блок до перехода состояния, а не после: `task_state_task_finalize`
+        # забирает задачи в `processing`, у которых все подзадачи терминальны, и успела бы
+        # уронить её обратно в `failed` в зазоре между двумя запросами.
+        # Счётчик попыток обнуляем — иначе `task_claim_subtask_developable` захватит
+        # подзадачу и тут же вернёт её в `blocked` по исчерпанному лимиту.
+        kanban_sql, kanban_params = task_state_kanban_sql('planned')
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                f"UPDATE project_task SET pipeline_state = 'planned', {kanban_sql + ', ' if kanban_sql else ''}"
+                "       pipeline_attempt_count = 0, pipeline_error = '', "
+                "       pipeline_locked_at = NULL, pipeline_locked_by = '' "
+                " WHERE parent_id = %s AND pipeline_from_plan = 1 AND pipeline_state = 'blocked'",
+                kanban_params + [task_id])
+            await db.connection.commit()
+        new_state = 'processing'
+        note = (f'снят блок с подзадач: {blocked}' if blocked
+                else 'подзадачи вернулись в работу')
+    elif task_plan_parse(task['pipeline_plan'] or '')[1]:
+        new_state = 'approved'
+        note = 'план уже есть — ждёт разложения на подзадачи'
+    else:
+        new_state = 'new'
+        note = 'ждёт плана от менеджера'
+
+    # Перезапуск до смены состояния: иначе тик успел бы забрать задачу и отправить
+    # прогон в оболочку ровно в тот момент, когда мы её гасим.
+    roles = await task_pipeline_shells_restart(task)
+    if roles:
+        titles = ', '.join(TASK_ROLE_TITLE.get(role, role) for role in roles)
+        note += f'; перезапущены оболочки: {titles}'
+
+    return await _pipeline_state_set(task_id, expected='failed', new_state=new_state,
+                                     report=f'{user.username} перезапустил конвейер — {note}')
+
+
+@router.post('/task/{task_id}/pipeline/stop')
+async def project_task_pipeline_stop(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Остановить работу над задачей — кнопка ◼ рядом со статусом.
+
+    В отличие от «Отклонить», задачу из конвейера не выводим и состояние не теряем:
+    строка возвращается туда, откуда её взяли, и ждёт человека. Продолжение — возврат
+    флажка фазы или кнопка ▶ (`/pipeline/resume`), и задача идёт дальше с того же места.
+
+    Подробности — в `task_stop`: там же объяснено, почему запрет живёт в `metadata`,
+    а не в человеческом `status`.
+    """
+    result = await task_stop_apply(task_id, user.username)
+    if not result:
+        raise HTTPException(status_code=404, detail='task not found')
+
+    return {'ok': True, **result, 'task': await _task_row(task_id)}
+
+
+@router.post('/task/{task_id}/pipeline/resume')
+async def project_task_pipeline_resume(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Снять остановку — задачу снова видно отбору.
+
+    Ничего не запускает руками: работу отдаст ближайший тик оркестратора по тому же
+    `pipeline_state`, в который её вернула остановка. Повторное нажатие безвредно.
+    """
+    if not await _task_row(task_id):
+        raise HTTPException(status_code=404, detail='task not found')
+
+    resumed = await task_stop_clear(task_id, user.username)
+    return {'ok': True, 'resumed': resumed, 'task': await _task_row(task_id)}
+
+
+@router.post('/task/{task_id}/worktree/merge')
+async def project_task_worktree_merge(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Влить ветку подзадачи в главную ветку проекта и снять её рабочий каталог.
+
+    Кнопка «mr2master&rm_worktree» в колонке прогресса. Делается по кнопке, а не
+    автоматом после `done`: закрытая подзадача ещё не значит принятая работа —
+    merge request может ждать ревью, а каталог нужен, чтобы посмотреть, что там
+    вышло. Решение остаётся за человеком.
+
+    Только у подзадачи: ветку заводят под конкретную работу, у родителя своей нет.
+
+    Слияние локальное, без `push` — отправку в общий репозиторий человек делает сам.
+    Отказ (грязный каталог, конфликт, нет ветки) отдаём как 400 с текстом от git:
+    разбирать такое всё равно человеку, и общая формулировка ему не поможет.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT s.id, s.parent_id, p.project_id "
+            "  FROM project_task s LEFT JOIN project_task p ON p.id = s.parent_id "
+            " WHERE s.id = %s",
+            (task_id,)
+        )
+        subtask = await db.fetchone()
+    if not subtask:
+        raise HTTPException(status_code=404, detail='task not found')
+    if not subtask['parent_id']:
+        raise HTTPException(status_code=400, detail='ветка заводится под подзадачу — у задачи её нет')
+
+    work_dir = await task_role_project_work_dir(subtask['project_id'])
+    if not work_dir:
+        raise HTTPException(status_code=400, detail='у проекта не задан рабочий каталог (карточка проекта)')
+
+    result = await task_worktree_merge(work_dir, task_id)
+    if not result['ok']:
+        raise HTTPException(status_code=400, detail=result['error'])
+
+    await task_report_write(
+        task_id, f'{user.username} влил ветку {result["branch"]} в {result["base"]}'
+                 + ('' if result['removed'] else ' (рабочий каталог снять не удалось — смотрите лог)'))
 
     return result
 
@@ -182,6 +375,10 @@ async def project_task_plan_reset(task_id: int,
 
     pipeline_plan = '', goals = '', pipeline_state = NULL — задача снова
     попадётся оркестратору и получит план от менеджера.
+
+    Возвращаем строку задачи целиком: сброс двигает не одно поле, а обе оси сразу
+    (`goals` и человеческий `status`), и странице нужен свежий снимок — иначе форма
+    останется с прежними целями и следующим «Сохранить» вернёт их в базу.
     """
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -189,13 +386,26 @@ async def project_task_plan_reset(task_id: int,
         if not await db.fetchone():
             raise HTTPException(status_code=404, detail='task not found')
 
+        # Человеческий статус возвращаем в `pending` вручную: `pipeline_state = NULL`
+        # таблице соответствия неизвестен, а «вернулась в начало» на обеих осях
+        # выглядит одинаково — задача снова ждёт менеджера.
+        kanban_sql, kanban_params = task_state_kanban_sql('new')
         await db.execute(
-            "UPDATE project_task SET pipeline_plan = '', goals = '', "
-            "pipeline_state = NULL, pipeline_locked_at = NULL, pipeline_locked_by = '' "
-            "WHERE id = %s", (task_id,))
+            f"UPDATE project_task SET pipeline_plan = '', goals = '', {kanban_sql + ', ' if kanban_sql else ''}"
+            "pipeline_state = NULL, pipeline_error = '', "
+            "pipeline_locked_at = NULL, pipeline_locked_by = '' "
+            "WHERE id = %s", kanban_params + [task_id])
+        # Подзадачи принадлежали снесённому плану, а `_step_plan_split` только
+        # добавляет строки: без удаления новый план лёг бы поверх старого. Тот же
+        # порядок, что и у «Обновить план»; список остаётся в ревизиях.
+        await db.execute(_SUBTASKS_DELETE_SQL, (task_id,))
         await db.connection.commit()
 
-    return {'ok': True}
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
+        task = await db.fetchone()
+
+    await task_report_write(task_id, f'{user.username} сбросил план и цели — задача вернулась в начало конвейера')
+    return {'ok': True, 'task': task_metadata_row_apply(task)}
 
 
 @router.delete('/task/{task_id}/plan/revision/{revision_no}')
@@ -207,24 +417,22 @@ async def project_task_plan_revision_delete(task_id: int, revision_no: int,
     Номера не пересчитываются — удаляем строку, остальные номера остаются на месте.
     """
     async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT pipeline_plan, goals FROM project_task WHERE id = %s", (task_id,))
+        await db.execute("SELECT id FROM project_task WHERE id = %s", (task_id,))
         row = await db.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail='task not found')
 
-    plan_text = ''
-    goals = ''
-    try:
-        plan_data = json.loads(row['pipeline_plan'] or '')
-        plan_text = str(plan_data.get('plan_text', '') or '')
-        goals = plan_data.get('goals', '')
-    except (ValueError, TypeError, AttributeError):
-        plan_text = str(row['pipeline_plan'] or '')
-        goals = str(row['goals'] or '')
-
     await task_revision_delete(task_id, revision_no)
     return {'ok': True}
+
+
+async def _task_row(task_id: int) -> dict | None:
+    """Строка задачи для ответа — с разобранным `metadata`. Нет задачи — None."""
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
+        task = await db.fetchone()
+
+    return task_metadata_row_apply(task) if task else None
 
 
 async def _plan_editable_task(task_id: int) -> dict:
@@ -243,8 +451,9 @@ async def _plan_editable_task(task_id: int) -> dict:
             raise HTTPException(status_code=404, detail='task not found')
 
         await db.execute(
-            "SELECT COUNT(*) AS cnt FROM project_task_subtask "
-            " WHERE task_id = %s AND state NOT IN ('done', 'blocked')",
+            "SELECT COUNT(*) AS cnt FROM project_task "
+            " WHERE parent_id = %s AND pipeline_from_plan = 1 "
+            "   AND pipeline_state NOT IN ('done', 'blocked')",
             (task_id,),
         )
         busy = await db.fetchone()
@@ -265,21 +474,27 @@ async def _plan_editable_task(task_id: int) -> dict:
     return dict(task)
 
 
-async def _pipeline_state_set(task_id: int, expected: str | None | list, new_state: str | None) -> dict:
+async def _pipeline_state_set(task_id: int, expected: str | None | list, new_state: str | None,
+                              report: str = '', ok: bool | None = True) -> dict:
     """
     Условный перевод состояния. Сверка с `expected` идёт прямо в UPDATE, иначе
     двойной клик в UI проскочит гонку и утвердит план дважды.
 
     `expected` — одно состояние либо список допустимых; `None` внутри означает «вне
     конвейера» (`pipeline_state IS NULL`).
+
+    `report` пишется только после удавшегося перехода: проигравший гонку клик состояние
+    не менял, и строка в журнале от него означала бы событие, которого не было.
     """
     states = list(expected) if isinstance(expected, (list, tuple)) else [expected]
     where_state = ' OR '.join('pipeline_state IS NULL' if s is None else 'pipeline_state = %s' for s in states)
-    params: list = [new_state] + [s for s in states if s is not None] + [task_id]
+    kanban_sql, kanban_params = task_state_kanban_sql(new_state)
+    params: list = [new_state] + kanban_params + [s for s in states if s is not None] + [task_id]
 
     async with mysql_get_db_async() as db:
         await db.execute(
-            f"UPDATE project_task SET pipeline_state = %s, pipeline_error = '', "
+            f"UPDATE project_task SET pipeline_state = %s, {kanban_sql + ', ' if kanban_sql else ''}"
+            f"pipeline_error = '', "
             f"pipeline_locked_at = NULL, pipeline_locked_by = '' "
             f"WHERE ({where_state}) AND id = %s",
             params
@@ -299,6 +514,9 @@ async def _pipeline_state_set(task_id: int, expected: str | None | list, new_sta
             status_code=409,
             detail=f'Задача не в состоянии {_states_label(states)} (сейчас: {row["pipeline_state"] or "—"})'
         )
+
+    if report:
+        await task_report_write(task_id, report, ok=ok)
 
     return {'ok': True, 'pipeline_state': new_state}
 

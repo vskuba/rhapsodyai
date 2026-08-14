@@ -116,7 +116,7 @@
                 <span class="tabnav-sep"></span>
                 <a href="http://localhost:{{ OPENSEARCH_DASHBOARDS_PORT }}/app/data-explorer/discover"
                    target="_blank">🔎 Opensearch</a>
-                <a href="http://localhost:8090" target="_blank">💚 Gatus</a>
+                <a href="http://localhost:{{ GATUS_PORT }}" target="_blank">💚 Gatus</a>
                 <span class="tabnav-sep"></span>
             </div>
             {% endif %}
@@ -142,7 +142,7 @@
             {% if request.session.get('role') == 'admin' %}
             <div class="tabnav-panel" data-group="tool">
                 <span class="tabnav-sep"></span>
-                <a href="http://localhost:9634" target="_blank">🗄️ Phpmyadmin</a>
+                <a href="http://localhost:{{ PHPMYADMIN_PORT }}" target="_blank">🗄️ Phpmyadmin</a>
                 <a href="http://localhost:{{ QDRANT_PORT }}/dashboard" target="_blank">📐 Qdrant</a>
                 <span class="tabnav-sep"></span>
                 <a href="/admin/queue" target="_blank">📬 Local queue</a>
@@ -150,10 +150,15 @@
                 <span class="tabnav-sep"></span>
                 <a href="http://localhost:{{ CRONICLE_PORT }}" target="_blank">⏰ Cronicle</a>
                 <span class="tabnav-sep"></span>
-                <a href="http://192.168.1.2:3000/d/ad2w6ww/gx10?orgId=1&from=now-30m&to=now&timezone=browser&refresh=5s" target="_blank">📈 Grafana</a>
+                <a href="{{ GRAFANA_URL }}" target="_blank">📈 Grafana</a>
                 <span class="tabnav-sep"></span>
             </div>
             {% endif %}
+
+            <!-- Фиксер: включает выбор элемента на странице (см. /static/js/fixer.js).
+                 Стоит в правом краю строки и не зависит от активной вкладки: замечание
+                 к вёрстке возникает на любой странице. -->
+            <button type="button" id="fixerBtn" class="fixer-btn" title="Фиксер: указать элемент и описать правку (правая кнопка — выйти)">🛠️</button>
 
         </div><!-- /tabnav-items -->
     </div><!-- /nav-right -->
@@ -209,6 +214,8 @@
 
     loadCurrentUser();
 </script>
+
+<script type="module" src="/static/js/fixer.js"></script>
 
 {% block scripts %}{% endblock %}
 

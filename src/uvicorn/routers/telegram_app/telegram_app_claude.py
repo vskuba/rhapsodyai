@@ -1,8 +1,16 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, Request, HTTPException
 
+from datetime_.datetime_ import datetime_now
 from mysql_.mysql_ import mysql_get_db_async
+from setting_.setting_ import setting_get
 from src.telegram_.telegram_notify import telegram_send_owner
-from src.tool.claude_.claude_ import claude_message_cloud, claude_message_user
+from src.tool.claude_.claude_ import (
+    CLAUDE_MESSAGE_STATUS_DELIVERED,
+    claude_message_cloud,
+    claude_message_user,
+)
 from src.uvicorn.routers.telegram_app.telegram_app_common import (
     _require_telegram_owner,
     _require_claude_secret,
@@ -31,7 +39,7 @@ async def telegram_app_claude_messages(request: Request, session_uuid: str):
     async with mysql_get_db_async() as db:
         await db.execute(
             """
-            SELECT id, content, response, handled, created_at, responded_at, dynamic
+            SELECT id, content, response, handled, created_at, responded_at, dynamic, status
             FROM ai_claude_session
             WHERE session_uuid = %s
             ORDER BY id ASC
@@ -54,16 +62,21 @@ async def telegram_app_claude_respond(request: Request, data: dict):
     inbox_id = data.get("inbox_id")
     session_uuid = str(data.get("session_uuid") or "").strip()
     response = str(data.get("response") or "").strip()
-    if not session_uuid or not response:
+    status = str(data.get("status") or "").strip().lower()
+    # Отметка о доставке — единственный случай без текста: оболочка сообщает,
+    # что передала сообщение агенту, а ответа ещё нет.
+    delivered = status == CLAUDE_MESSAGE_STATUS_DELIVERED and inbox_id
+    if not session_uuid or (not response and not delivered):
         raise HTTPException(status_code=400, detail="session_uuid, response required")
 
     await claude_message_cloud(
         session_uuid=session_uuid,
         response=response,
         inbox_id=int(inbox_id) if inbox_id else None,
+        status=status or None,
     )
 
-    if data.get("notify", True):
+    if response and data.get("notify", True):
         await telegram_send_owner(response)
 
     return {"result": {"ok": True}}
@@ -91,14 +104,7 @@ async def telegram_app_claude_session_delete_message(request: Request, data: dic
 async def telegram_app_claude_timezone(request: Request):
     _require_claude_secret(request)
 
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT value FROM setting WHERE `key` = 'timezone' AND user_id IS NULL AND node_id IS NULL LIMIT 1"
-        )
-        row = await db.fetchone()
-
-    timezone = row["value"] if row else "+0"
-    return {"result": {"timezone": timezone}}
+    return {"result": {"timezone": await setting_get('timezone', '+0')}}
 
 
 @router.get("/telegram-app/claude/sessions/active")
@@ -106,8 +112,14 @@ async def telegram_app_claude_sessions_active(request: Request):
     """
     Сессии для иконок во вкладке Cloud Mini App - видимость решает только
     staleness heartbeat: 60с без пинга = терминал закрылся.
+
+    Порог считаем в Python через datetime_now(): NOW() дал бы время часового пояса
+    MySQL, а last_seen_at пишется в поясе из настройки timezone — при расхождении
+    поясов сессии либо не пропадают никогда, либо исчезают сразу.
     """
     _require_telegram_owner(request)
+
+    stale_before = await datetime_now() - timedelta(seconds=60)
 
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -118,9 +130,10 @@ async def telegram_app_claude_sessions_active(request: Request):
                     WHERE cs.session_uuid = r.session_uuid AND cs.dynamic = 0
                     ORDER BY cs.id DESC LIMIT 1) AS last_message
             FROM `ai_claude_session_registry` r
-            WHERE r.last_seen_at >= (NOW() - INTERVAL 60 SECOND)
+            WHERE r.last_seen_at >= %s
             ORDER BY r.last_seen_at DESC
-            """
+            """,
+            (stale_before,)
         )
         rows = await db.fetchall()
 

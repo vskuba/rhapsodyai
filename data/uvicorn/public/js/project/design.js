@@ -374,6 +374,8 @@
 
     function _renderDefaultBlockPreview(b) {
         const container = document.getElementById('bwPreviewContent');
+        const varsCollapsed = localStorage.getItem('bw_vars_collapsed_' + b.id);
+        const varsOpen = (b.vars && b.vars !== '{}') && (varsCollapsed === null || varsCollapsed !== '1');
 
         container.innerHTML = `
         <div class="bw-preview-name">project_design_ui_block #${b.id} ${esc(b.name)}</div>
@@ -381,13 +383,15 @@
             ${_bwTagsBarHtml(b.id, b.tags)}
             ${_bwSectionsBarHtml(b.id, b.section)}
         </div>
-        ${_bwPreviewSectionLabelHtml(b.id)}
-        <div class="bw-iframe-wrap" id="bwdiw-${b.id}"></div>
         ${b.vars && b.vars !== '{}' ? `
-        <details class="bw-css-details" style="margin-top:8px">
-            <summary class="bw-css-summary">Переменные (vars)</summary>
-            <textarea class="bw-css-textarea" readonly style="min-height:80px">${esc(JSON.stringify(JSON.parse(b.vars), null, 2))}</textarea>
-        </details>` : ''}`;
+        <div class="bw-vars-panel">
+            <details class="bw-vars-details" data-block-id="${b.id}" ${varsOpen ? 'open' : ''}>
+                <summary class="bw-css-summary">Переменные (vars)</summary>
+                <textarea class="bw-vars-textarea" readonly>${esc(JSON.stringify(JSON.parse(b.vars), null, 2))}</textarea>
+            </details>
+        </div>` : ''}
+        ${_bwPreviewSectionLabelHtml(b.id)}
+        <div class="bw-iframe-wrap" id="bwdiw-${b.id}"></div>`;
 
         if (b.html) {
             const rendered = _fillTestData(b.html, b.vars, b.slots);
@@ -1058,6 +1062,34 @@
             });
         })();
 
+        /* Vars panel collapse/expand — delegated capture handler */
+        (function () {
+            document.addEventListener('click', function (e) {
+                if (!e.target.classList.contains('bw-css-summary')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                var details = e.target.closest('.bw-vars-details');
+                if (!details) return;
+                var wasOpen = details.hasAttribute('open');
+                if (wasOpen) {
+                    details.removeAttribute('open');
+                } else {
+                    details.setAttribute('open', '');
+                }
+                var blockId = details.getAttribute('data-block-id') || '';
+                // Determine key prefix from ancestor
+                var wrap = e.target.closest('.bw-preview-content, .lib-block-preview');
+                var prefix = 'bw';
+                if (wrap && wrap.id === 'libBlockPreview') {
+                    prefix = 'lib';
+                }
+                if (blockId) {
+                    var key = prefix + '_vars_collapsed_' + blockId;
+                    localStorage.setItem(key, wasOpen ? '1' : '0');
+                }
+            }, true);
+        })();
+
     });
 
     function onProjectChange() {
@@ -1279,12 +1311,21 @@
         const b = data.result;
         if (!b) return;
         const wrap = document.getElementById('libBlockPreview');
+        const libVarsCollapsed = localStorage.getItem('lib_vars_collapsed_' + b.id);
+        const libVarsOpen = (b.vars && b.vars !== '{}') && (libVarsCollapsed === null || libVarsCollapsed !== '1');
+        const libVarsHtml = b.vars && b.vars !== '{}' ?
+            '<div class="bw-vars-panel">' +
+            '<details class="bw-vars-details" data-block-id="' + b.id + '" ' + (libVarsOpen ? 'open' : '') + '>' +
+            '<summary class="bw-css-summary">Переменные (vars)</summary>' +
+            '<textarea class="bw-vars-textarea" readonly>' + esc(JSON.stringify(JSON.parse(b.vars), null, 2)) + '</textarea>' +
+            '</details></div>' : '';
         wrap.innerHTML = '<div style="padding:12px 14px">' +
             '<div class="bw-preview-name">project_design_ui_block #' + b.id + ' ' + esc(b.name) + '</div>' +
             '<div class="bw-preview-meta-row">' +
             _bwTagsBarHtml(b.id, b.tags) +
             _bwSectionsBarHtml(b.id, b.section) +
             '</div>' +
+            libVarsHtml +
             _bwPreviewSectionLabelHtml(b.id) +
             '<div class="bw-iframe-wrap" id="libprev-' + b.id + '"></div>' +
             '</div>';

@@ -1,6 +1,8 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+
+from src.tool.datetime_.datetime_ import _utc_now_str
 
 import pymysql
 import pymysql.converters
@@ -46,15 +48,18 @@ async def seed_generate(request: Request, data: dict, user_=Depends(AuthChecker(
 
     os.makedirs(SEEDS_DIR, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"seed_{ts}.sql"
+    tz_offset = await setting_get('timezone', '+0')
+    ts = _utc_now_str(tz_offset)
+    # 'YYYY-MM-DD HH:MM:SSZ' → 'YYYY-MM-DD_HH-MM-SS'
+    ts_clean = ts.rstrip('Z').replace(' ', '_').replace(':', '-')
+    filename = f"seed_{ts_clean}.sql"
     filepath = os.path.join(SEEDS_DIR, filename)
 
     conn = mysql_conn_get()
     try:
         header = (
             f"-- Seed SQL\n"
-            f"-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"-- Generated: {ts}\n"
             f"-- Tables: {', '.join(sorted(selected))}\n\n"
             f"SET NAMES utf8mb4;\n"
             f"SET FOREIGN_KEY_CHECKS = 0;\n"
@@ -74,7 +79,7 @@ async def seed_generate(request: Request, data: dict, user_=Depends(AuthChecker(
         return {"result": {
             "name": filename,
             "size": stat.st_size,
-            "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "Z",
         }}
     finally:
         conn.close()
@@ -164,7 +169,7 @@ def _seed_files() -> list:
         files.append({
             "name": name,
             "size": stat.st_size,
-            "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "Z",
         })
     return files
 

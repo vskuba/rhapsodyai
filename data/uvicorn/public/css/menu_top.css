@@ -50,6 +50,9 @@
     flex-direction: column;
     flex: 1;
     min-width: 0;
+    /* Точка отсчёта для кнопки фиксера: она прижата к правому краю строки, а сама
+       .tabnav-items шириной только по своему содержимому (margin-right: auto). */
+    position: relative;
 }
 
 /* ── Row 1: topbar ────────────────────────────────────────── */
@@ -207,6 +210,32 @@
     background: #f4f4f9;
     font-weight: 600;
     /*box-shadow: inset 0 -1px 0 #11b2ec;*/
+}
+
+/* ── Фиксер: кнопка в правом краю второй строки ───────────── */
+.fixer-btn {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    height: 36px;
+    padding: 0 12px;
+    border: none;
+    background: none;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.fixer-btn:hover {
+    background: #bcbcbc;
+}
+
+/* Режим выбора включён — кнопка светится: иначе непонятно, почему страница вдруг
+   перестала отзываться на клики. */
+.fixer-btn.active {
+    background: #4f46e5;
+    box-shadow: inset 0 -2px 0 #312e81;
 }
 
 .tabnav-sep {

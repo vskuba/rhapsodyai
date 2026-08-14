@@ -10,7 +10,8 @@ from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.project.project_repository import PlanningProjectRepository
 from mysql_.mysql_ import mysql_get_db_async
 from py_modules.setting_.setting_ import setting_get
-from src.project.planning.planning_runner import planning_runner_enqueue
+from src.project.team.team_member import team_member_cards_ensure
+from src.worker.project.planning_worker import planning_worker_enqueue
 from src.uvicorn.routers.project.project_common import _CRONICLE_SCHEDULE_FILE
 
 router = APIRouter()
@@ -50,7 +51,8 @@ async def project_create(request: Request, data: dict, user=Depends(AuthChecker(
         'phase_current': '',
         'position': next_pos,
     })
-    await planning_runner_enqueue(project_id)
+    await team_member_cards_ensure(project_id)
+    planning_worker_enqueue(project_id)
     return {'result': project_id}
 
 
@@ -102,7 +104,7 @@ async def project_retry(request: Request, project_id: int, user=Depends(AuthChec
             (project_id,)
         )
         await db.connection.commit()
-    await planning_runner_enqueue(project_id)
+    planning_worker_enqueue(project_id)
     return {'result': project_id}
 
 
@@ -154,7 +156,7 @@ async def project_phase_retry(
         )
         await db.connection.commit()
 
-    await planning_runner_enqueue(project_id)
+    planning_worker_enqueue(project_id)
     return {'result': project_id}
 
 

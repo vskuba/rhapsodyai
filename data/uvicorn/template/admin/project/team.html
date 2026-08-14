@@ -5,369 +5,554 @@
 {% block head %}
 <style>
     .team-container {
-        max-width: 100%;
-        margin: 0 auto;
+        width: 100%;
         padding: 16px;
         overflow-x: hidden;
     }
 
-    @media (min-width: 768px) {
-        .team-container {
-            padding: 24px;
-        }
-    }
+    /* ---------- Блок проекта ---------- */
 
-    .team-header {
-        margin-bottom: 32px;
-    }
-
-    .team-header h1 {
-        font-size: 28px;
-        font-weight: 600;
-        color: #1a1a1a;
-        margin: 0 0 8px 0;
-    }
-
-    .team-header p {
-        color: #666;
-        margin: 0;
-        font-size: 14px;
-    }
-
-    .team-grid {
-        display: flex;
-        flex-direction: row;
-        gap: 24px;
+    /* Блок занимает всю ширину: карточки внутри задают свою ширину сами,
+       поэтому ряд из трёх не должен растягивать их на весь блок. */
+    .project-block {
         width: 100%;
+        box-sizing: border-box;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px 16px 16px;
+        margin-bottom: 16px;
     }
 
-    .team-grid .team-card {
-        flex: 1;
-        min-width: 0;
+    .project-block-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #f3f4f6;
+    }
+
+    .project-block-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #111827;
+    }
+
+    .project-block-dir {
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 11px;
+        color: #9ca3af;
+        word-break: break-all;
+    }
+
+    /* Предел одновременных прогонов агента у проекта. Стоит перед счётчиком
+       активных, у того margin-left:auto — селект остаётся у названия слева. */
+    .project-block-parallel {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #6b7280;
+        white-space: nowrap;
+        margin-left: auto;
+    }
+
+    .project-block-parallel select {
+        padding: 2px 4px;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        background: #fff;
+        color: #4b5563;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 11px;
+        cursor: pointer;
+    }
+
+    .project-block-parallel select:focus {
+        outline: none;
+        border-color: #6366f1;
+    }
+
+    /* Значение, отличающееся от заводского, — видно, что его правили руками. */
+    .project-block-parallel select.custom {
+        border-color: #c7d2fe;
+        color: #4338ca;
+        font-weight: 600;
+    }
+
+    .project-block-parallel select.saved {
+        border-color: #10b981;
+        background: rgba(16, 185, 129, 0.08);
+    }
+
+    .project-block-parallel select.failed {
+        border-color: #ef4444;
+        background: rgba(239, 68, 68, 0.08);
+    }
+
+    .project-block-count {
+        font-size: 12px;
+        color: #6b7280;
+        white-space: nowrap;
+    }
+
+    .project-block-count b {
+        color: #10b981;
+    }
+
+    .project-block-count.empty b {
+        color: #9ca3af;
+    }
+
+    /* Карточки в один ряд: базис под шесть штук, узкий экран переносит остаток. */
+    .project-cards {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
     }
 
     .team-card {
-        background: #fff;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-        padding: 20px;
-        transition: box-shadow 0.2s, transform 0.2s;
-        width: 100%;
+        flex: 0 1 calc((100% - 60px) / 6);
+        min-width: 168px;
         box-sizing: border-box;
-    }
-
-    @media (min-width: 768px) {
-        .team-card {
-            padding: 24px;
-        }
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-left: 3px solid #d1d5db;
+        border-radius: 10px;
+        padding: 12px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
 
     .team-card:hover {
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
         transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
-    .team-card-header {
+    /* Неактивная карточка — серая гамма, активная получает цвет роли ниже. */
+    .team-card.active {
+        background: #fff;
+    }
+
+    .team-card.active.role-manager { border-left-color: #667eea; }
+    .team-card.active.role-developer { border-left-color: #f5576c; }
+    .team-card.active.role-qa { border-left-color: #4facfe; }
+
+    .team-card-top {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 16px;
-        padding-bottom: 16px;
-        border-bottom: 1px solid #eee;
-        flex-wrap: wrap;
-    }
-
-    @media (min-width: 768px) {
-        .team-card-header {
-            gap: 16px;
-            margin-bottom: 20px;
-        }
+        gap: 8px;
+        margin-bottom: 8px;
     }
 
     .team-avatar {
-        width: 48px;
-        height: 48px;
+        width: 32px;
+        height: 32px;
+        flex: 0 0 32px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 20px;
+        font-size: 15px;
+        background: #e5e7eb;
+        filter: grayscale(1);
+        opacity: 0.7;
+    }
+
+    .team-card.active .team-avatar {
+        filter: none;
+        opacity: 1;
+    }
+
+    .team-card.active .team-avatar.role-manager {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .team-card.active .team-avatar.role-developer {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .team-card.active .team-avatar.role-qa {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+
+    .team-card-name {
+        min-width: 0;
+    }
+
+    /* Перезапуск watch-процесса оболочки. Только у активных карточек, поэтому
+       прижимается вправо через auto-margin, а не абсолютным позиционированием. */
+    .team-card-restart {
+        margin-left: auto;
+        flex: 0 0 24px;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: #9ca3af;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .team-card-restart:hover {
+        background: #f3f4f6;
+        color: #4f46e5;
+    }
+
+    .team-card-restart:disabled {
+        cursor: default;
+        color: #4f46e5;
+    }
+
+    .team-card-restart.loading svg {
+        animation: rotate 1s linear infinite;
+    }
+
+    .team-card-name .name {
+        font-size: 13px;
         font-weight: 600;
-        color: #fff;
-        flex-shrink: 0;
+        color: #6b7280;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
-    @media (min-width: 768px) {
-        .team-avatar {
-            width: 56px;
-            height: 56px;
-            font-size: 24px;
-        }
+    .team-card.active .team-card-name .name {
+        color: #1f2937;
     }
 
-    .team-avatar.manager { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-    .team-avatar.developer { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-    .team-avatar.qa { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-
-    .team-info h2 {
-        font-size: 16px;
-        font-weight: 600;
-        color: #1a1a1a;
-        margin: 0 0 4px 0;
-        line-height: 1.3;
-    }
-
-    .team-role {
-        font-size: 12px;
-        color: #666;
-        text-transform: capitalize;
-    }
-
-    @media (min-width: 768px) {
-        .team-info h2 {
-            font-size: 18px;
-        }
-
-        .team-role {
-            font-size: 13px;
-        }
+    .team-card-name .role {
+        font-size: 11px;
+        color: #9ca3af;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .team-status {
         display: flex;
         align-items: center;
-        gap: 8px;
-        margin-top: 8px;
+        gap: 6px;
+        font-size: 11px;
+        color: #6b7280;
+        margin-bottom: 8px;
     }
 
     .status-indicator {
-        width: 10px;
-        height: 10px;
+        width: 8px;
+        height: 8px;
+        flex: 0 0 8px;
         border-radius: 50%;
+        background: #9ca3af;
+    }
+
+    .team-card.active .status-indicator {
+        background: #10b981;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
         animation: pulse 2s infinite;
     }
 
-    .status-indicator.active {
-        background: #10b981;
-        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
-    }
-
-    .status-indicator.inactive {
-        background: #9ca3af;
-        animation: none;
+    .team-card.active .team-status {
+        color: #10b981;
+        font-weight: 500;
     }
 
     @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
+        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+        70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
 
-    .status-text {
-        font-size: 13px;
-        font-weight: 500;
+    /* Готовность агента: свежий пинг ещё не значит, что оболочка возьмёт
+       сообщение прямо сейчас — 'busy' говорит, что оно встанет в очередь. */
+    .agent-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1;
+        padding: 3px 6px;
+        border-radius: 4px;
+        margin-bottom: 8px;
+        background: #f3f4f6;
+        color: #6b7280;
     }
 
-    .status-text.active { color: #10b981; }
-    .status-text.inactive { color: #6b7280; }
-
-    .team-command {
-        background: #f8f9fa;
-        border-radius: 8px;
-        margin-bottom: 16px;
-        overflow: hidden;
+    .agent-badge.ready {
+        background: rgba(16, 185, 129, 0.12);
+        color: #059669;
     }
 
-    @media (min-width: 768px) {
-        .team-command {
-            margin-bottom: 20px;
-        }
+    .agent-badge.busy {
+        background: rgba(245, 158, 11, 0.15);
+        color: #b45309;
     }
 
-    .team-command-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 12px;
-        background: #f0f1f3;
-        border-bottom: 1px solid #e5e7eb;
-    }
-
-    .team-command-label {
-        font-size: 12px;
-        color: #666;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin: 0;
-    }
-
-    .copy-btn {
-        font-size: 16px;
-        background: none;
-        border: none;
-        cursor: pointer;
-        padding: 4px;
-        transition: transform 0.15s;
-    }
-
-    .copy-btn:hover {
-        transform: scale(1.15);
-    }
-
-    .copy-btn.copied {
-        transform: scale(1.2);
-    }
-
-    .team-command-code {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 6px;
-        padding: 10px 12px;
-        font-family: 'Monaco', 'Consolas', monospace;
-        font-size: 12px;
-        color: #333;
-        overflow: hidden;
-    }
-
-    @media (min-width: 768px) {
-        .team-command-code {
-            gap: 12px;
-            padding: 12px 16px;
-            font-size: 13px;
-        }
-    }
-
-    .team-command-code code {
-        flex: 1;
+    .team-card-meta {
+        font-size: 10px;
+        color: #9ca3af;
+        line-height: 1.5;
         word-break: break-all;
     }
 
-    .copy-btn {
-        background: #667eea;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        font-size: 12px;
-        cursor: pointer;
-        transition: background 0.2s;
-        flex-shrink: 0;
-    }
-
-    .copy-btn:hover {
-        background: #5a67d8;
-    }
-
-    .copy-btn.copied {
-        background: #10b981;
-    }
-
-    .team-meta {
-        display: grid;
-        gap: 12px;
-        padding-top: 16px;
-        border-top: 1px solid #eee;
-        overflow: hidden;
-    }
-
-    @media (max-width: 480px) {
-        .team-meta {
-            gap: 8px;
-        }
-
-        .meta-item {
-            font-size: 12px;
-        }
-
-        .meta-label, .meta-value {
-            font-size: 12px;
-        }
-    }
-
-    .meta-item {
+    .team-card-meta .row {
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        font-size: 13px;
-    }
-
-    .meta-label {
-        color: #666;
-    }
-
-    .meta-value {
-        font-weight: 500;
-        color: #1a1a1a;
-    }
-
-    .meta-value.empty {
-        color: #9ca3af;
-        font-style: italic;
-    }
-
-    .last-ping {
-        font-size: 12px;
-        color: #9ca3af;
-        text-align: center;
-        margin-top: 16px;
-        padding: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         gap: 6px;
-        flex-wrap: wrap;
+    }
+
+    .team-card-meta .row span:last-child {
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        color: #6b7280;
+    }
+
+    /* Ссылки на агента и workflow: в мелком мета-блоке подчёркивание всех строк
+       сразу зашумляет карточку, поэтому оно появляется только под курсором. */
+    .team-card-meta .row a {
+        color: #6b7280;
+        text-decoration: none;
+    }
+
+    .team-card-meta .row a:hover {
+        color: #2563eb;
+        text-decoration: underline;
+    }
+
+    .team-card-copy {
+        width: 100%;
+        margin-top: 10px;
+        padding: 5px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        background: #fff;
+        color: #6b7280;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .team-card-copy:hover {
+        background: #f3f4f6;
+        color: #374151;
+    }
+
+    .team-summary {
+        margin-top: 8px;
+        font-size: 11px;
+        color: #6b7280;
+        line-height: 1.4;
+        max-height: 44px;
         overflow: hidden;
     }
 
-    @media (max-width: 480px) {
-        .last-ping {
-            font-size: 11px;
-            margin-top: 12px;
-            padding: 6px;
-        }
+    /* Очередь роли: сколько задач ждёт эту карточку и что она делает сейчас.
+       Список короткий (первые несколько) — карточка не должна расти в колонку. */
+    .team-queue {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #f3f4f6;
+        font-size: 11px;
+        color: #6b7280;
+    }
+
+    .team-queue-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 6px;
+        margin-bottom: 4px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #9ca3af;
+    }
+
+    .team-queue-head b {
+        color: #4b5563;
+    }
+
+    .team-queue-item {
+        display: flex;
+        align-items: baseline;
+        gap: 5px;
+        line-height: 1.4;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .team-queue-item .num {
+        flex: 0 0 auto;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 10px;
+        color: #9ca3af;
+    }
+
+    .team-queue-item .text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Первая строка — та, что в работе прямо сейчас: её видно без чтения списка. */
+    .team-queue-item.current {
+        color: #b45309;
+        font-weight: 500;
+    }
+
+    .team-queue-item.current .num {
+        color: #d97706;
+    }
+
+    .team-queue-empty {
+        color: #9ca3af;
+    }
+
+    /* Таймауты роли: значения общие на всю установку (лежат в `setting`), но
+       смотрят на них здесь — на карточке той роли, чью работу они обрывают.
+       Свёрнуты по умолчанию: в развёрнутом виде это самая высокая часть карточки,
+       а нужна она редко. */
+    .team-timeouts {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #f3f4f6;
+        font-size: 11px;
+        color: #6b7280;
+    }
+
+    .team-timeouts > summary {
+        cursor: pointer;
+        list-style: none;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #9ca3af;
+        user-select: none;
+    }
+
+    .team-timeouts > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .team-timeouts > summary:hover {
+        color: #4b5563;
+    }
+
+    .team-timeouts[open] > summary {
+        margin-bottom: 6px;
+        color: #4b5563;
+    }
+
+    .team-timeout-group {
+        margin-top: 6px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #c4c9d4;
+    }
+
+    .team-timeout-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        line-height: 1.8;
+    }
+
+    .team-timeout-row .label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .team-timeout-row .unit {
+        flex: 0 0 auto;
+        color: #c4c9d4;
+        font-size: 10px;
+    }
+
+    .team-timeout-row input {
+        flex: 0 0 62px;
+        width: 62px;
+        padding: 2px 4px;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        background: #fff;
+        color: #4b5563;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 11px;
+        text-align: right;
+    }
+
+    .team-timeout-row input:focus {
+        outline: none;
+        border-color: #6366f1;
+    }
+
+    /* Значение, отличающееся от заводского, — видно, что его правили руками. */
+    .team-timeout-row input.custom {
+        border-color: #c7d2fe;
+        color: #4338ca;
+        font-weight: 600;
+    }
+
+    .team-timeout-row input.saved {
+        border-color: #10b981;
+        background: rgba(16, 185, 129, 0.08);
+    }
+
+    .team-timeout-row input.failed {
+        border-color: #ef4444;
+        background: rgba(239, 68, 68, 0.08);
+    }
+
+    /* Нарушенная лестница таймаутов: прогон агента обязан срываться раньше job'а,
+       job — раньше возврата блокировки. Это предупреждение, а не запрет: поднять
+       три значения разом одним запросом нельзя. */
+    .team-timeout-problem {
+        margin-top: 6px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        background: rgba(245, 158, 11, 0.12);
+        color: #b45309;
+        line-height: 1.4;
+    }
+
+    .team-empty {
+        background: #fff;
+        border: 1px dashed #d1d5db;
+        border-radius: 12px;
+        padding: 32px;
+        text-align: center;
+        color: #9ca3af;
+        font-size: 14px;
     }
 
     .refresh-btn {
         position: fixed;
-        bottom: 16px;
-        right: 16px;
-        background: #667eea;
-        color: #fff;
-        border: none;
-        border-radius: 50%;
+        bottom: 24px;
+        right: 24px;
         width: 48px;
         height: 48px;
+        border-radius: 50%;
+        border: none;
+        background: #4f46e5;
+        color: #fff;
+        cursor: pointer;
+        box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
         display: flex;
         align-items: center;
         justify-content: center;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        transition: transform 0.2s, background 0.2s;
-        z-index: 100;
-    }
-
-    @media (min-width: 768px) {
-        .refresh-btn {
-            bottom: 24px;
-            right: 24px;
-            width: 56px;
-            height: 56px;
-        }
     }
 
     .refresh-btn:hover {
-        transform: scale(1.1);
-        background: #5a67d8;
+        background: #4338ca;
     }
 
-    .refresh-btn svg {
-        width: 24px;
-        height: 24px;
-    }
-
-    .refresh-btn.rotating svg {
+    .refresh-btn.loading svg {
         animation: rotate 1s linear infinite;
     }
 
@@ -375,259 +560,493 @@
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
     }
+
+    @media (max-width: 900px) {
+        .team-card {
+            flex: 1 1 calc((100% - 12px) / 2);
+        }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="team-container">
-    <div class="team-header">
-        <h1>Команда</h1>
-        <p>Мониторинг активных сессий и статус членов команды</p>
-    </div>
-
-    <div class="team-grid" id="teamGrid">
-        <!-- Карточки будут загружены динамически -->
-    </div>
-
-    <button class="refresh-btn" id="refreshBtn" title="Обновить статус">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-    </button>
+    <div id="teamProjects"></div>
 </div>
 
+<button class="refresh-btn" id="refreshBtn" onclick="loadTeamProjects(true)" title="Обновить">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M23 4v6h-6M1 20v-6h6"/>
+        <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+    </svg>
+</button>
+
 <script>
-let teamMembers = [];
-let pingInterval = null;
+    // Оболочка пингует раз в 30 секунд, поэтому опрашиваем чаще порога свежести:
+    // иначе карточка успеет позеленеть и погаснуть между двумя запросами.
+    const TEAM_REFRESH_MS = 15000;
 
-// Оболочка claude-shell пингует раз в 30 секунд. Порог должен быть заметно
-// больше интервала, иначе карточка мигает «активен/не активен» на каждом
-// чуть задержавшемся пинге.
-const PING_STALE_SECONDS = 60;
+    const ROLE_ICONS = { manager: '👔', developer: '💻', qa: '🔍' };
+    const ROLE_KNOWN = ['manager', 'developer', 'qa'];
 
-const ROLE_COLORS = {
-    manager: '#667eea',
-    developer: '#f5576c',
-    qa: '#4facfe'
-};
-
-const ROLE_ICONS = {
-    manager: '👔',
-    developer: '💻',
-    qa: '🔍'
-};
-
-async function loadTeamMembers() {
-    try {
-        const response = await fetch('/api/team');
-        teamMembers = await response.json();
-        renderTeamGrid();
-    } catch (error) {
-        console.error('Error loading team members:', error);
-    }
-}
-
-async function updateStatusOnly() {
-    try {
-        const response = await fetch('/api/team');
-        const updatedMembers = await response.json();
-
-        // Обновляем только статус и пинг для каждого члена команды
-        teamMembers.forEach(member => {
-            const updated = updatedMembers.find(m => m.id === member.id);
-            if (!updated) return;
-
-            const secondsAgo = updated.last_ping_at ? getSecondsAgo(updated.last_ping_at) : null;
-            const isActive = secondsAgo !== null && secondsAgo < PING_STALE_SECONDS;
-
-            // Обновляем статус карточки
-            const card = document.querySelector(`[data-member-id="${member.id}"]`);
-            if (card) {
-                const statusIndicator = card.querySelector('.status-indicator');
-                const statusText = card.querySelector('.status-text');
-                const pingTime = card.querySelector('.ping-time');
-
-                if (statusIndicator) {
-                    statusIndicator.className = `status-indicator ${isActive ? 'active' : 'inactive'}`;
-                }
-                if (statusText) {
-                    statusText.className = `status-text ${isActive ? 'active' : 'inactive'}`;
-                    statusText.textContent = isActive ? 'Активен' : 'Не активен';
-                }
-                if (pingTime && updated.last_ping_at) {
-                    pingTime.textContent = `${formatDateTime(updated.last_ping_at)} (${formatTimeAgo(secondsAgo)})`;
-                }
-            }
-
-            // Обновляем данные в массиве
-            Object.assign(member, updated);
-        });
-    } catch (error) {
-        console.error('Error updating status:', error);
-    }
-}
-
-function renderTeamGrid() {
-    const grid = document.getElementById('teamGrid');
-    grid.innerHTML = '';
-
-    teamMembers.forEach(member => {
-        const secondsAgo = member.last_ping_at ? getSecondsAgo(member.last_ping_at) : null;
-        const isActive = secondsAgo !== null && secondsAgo < PING_STALE_SECONDS;
-
-        const card = document.createElement('div');
-        card.className = 'team-card';
-        card.setAttribute('data-member-id', member.id);
-        card.innerHTML = `
-            <div class="team-card-header">
-                <div class="team-avatar ${member.role}">
-                    ${ROLE_ICONS[member.role] || '👤'}
-                </div>
-                <div class="team-info">
-                    <h2>${member.name}</h2>
-                    <div class="team-role">${translateRole(member.role)}</div>
-                    <div class="team-status">
-                        <span class="status-indicator ${isActive ? 'active' : 'inactive'}"></span>
-                        <span class="status-text ${isActive ? 'active' : 'inactive'}">
-                            ${isActive ? 'Активен' : 'Не активен'}
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="team-command">
-                <div class="team-command-header">
-                    <span class="team-command-label">Команда запуска</span>
-                    <button class="copy-btn" onclick="copyCommand(this)" title="Копировать">
-                        📋
-                    </button>
-                </div>
-                <div class="team-command-code">
-                    <code>${escapeHtml(member.command)}</code>
-                </div>
-            </div>
-
-            ${member.work_dir ? `<div class="team-command"><div class="team-command-label">Рабочая директория</div><div class="team-command-code"><code style="word-break: break-all;">${escapeHtml(member.work_dir)}</code></div></div>` : ''}
-
-            <div class="team-meta">
-                <div class="meta-item">
-                    <span class="meta-label">Session UUID</span>
-                    <span class="meta-value ${!member.session_uuid ? 'empty' : ''}">
-                        ${member.session_uuid || '—'}
-                    </span>
-                </div>
-                <div class="meta-item">
-                    <span class="meta-label">PID процесса</span>
-                    <span class="meta-value ${!member.pid ? 'empty' : ''}">
-                        ${member.pid || '—'}
-                    </span>
-                </div>
-                <div class="meta-item">
-                    <span class="meta-label">Последний пинг</span>
-                    <span class="meta-value ${!member.last_ping_at ? 'empty' : ''} ping-time">
-                        ${member.last_ping_at ? `${formatDateTime(member.last_ping_at)} (${formatTimeAgo(secondsAgo)})` : '—'}
-                    </span>
-                </div>
-            </div>
-
-        `;
-
-        // Команду кладём в data-атрибут через dataset: так её не нужно
-        // экранировать под inline-обработчик (кавычки и апострофы безопасны).
-        const copyBtn = card.querySelector('.copy-btn');
-        if (copyBtn) {
-            copyBtn.dataset.command = member.command || '';
-        }
-
-        grid.appendChild(card);
-    });
-}
-
-function translateRole(role) {
-    const translations = {
-        manager: 'Менеджер задач',
-        developer: 'Разработчик',
-        qa: 'Тестировщик'
+    // Подписи готовности агента; причина занятости уходит в title бейджа.
+    const AGENT_STATUS_TITLE = {
+        ready: '🟢 свободен',
+        busy: '🟡 занят',
+        unknown: '⚪ статус неизвестен',
     };
-    return translations[role] || role;
-}
 
-function getSecondsAgo(datetimeStr) {
-    // Добавляем Z чтобы интерпретировать как UTC, затем вычисляем разницу в секундах
-    const then = new Date(datetimeStr + 'Z');
-    const now = new Date();
-    const diffMs = now - then;
-    return Math.floor(diffMs / 1000); // возвращаем секунды
-}
+    let refreshTimer = null;
 
-function formatDateTime(datetimeStr) {
-    // Добавляем Z чтобы интерпретировать как UTC
-    const date = new Date(datetimeStr + 'Z');
-    return date.toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
+    // Пока идёт перезапуск оболочки, автообновление не трогает DOM: renderProjects
+    // пересобирает карточки целиком и стёр бы и спиннер, и отметку об отправке.
+    let restartBusy = false;
 
-function formatTimeAgo(seconds) {
-    if (seconds < 60) {
-        return `${seconds} сек назад`;
-    } else if (seconds < 3600) {
-        const minutes = Math.floor(seconds / 60);
-        return `${minutes} мин назад`;
-    } else if (seconds < 86400) {
-        const hours = Math.floor(seconds / 3600);
-        return `${hours} час${hours === 1 ? '' : 'а'} назад`;
-    } else {
-        const days = Math.floor(seconds / 86400);
-        return `${days} дн${days === 1 ? 'ь' : 'ей'} назад`;
+    // Таймауты общие на всю установку, поэтому грузятся один раз на страницу и
+    // раздаются всем карточкам: значение `timeout_worker_job` одно и то же на
+    // карточке менеджера и на карточке QA.
+    let timeoutItems = [];
+    let timeoutProblem = '';
+
+    // Раскрытые блоки таймаутов, ключ `project_id:role`. Пока хоть один открыт,
+    // автообновление молчит: перерисовка карточек схлопнула бы блок под руками —
+    // и вместе с ним поле, в которое человек сейчас печатает.
+    const timeoutOpen = new Set();
+
+    // Варианты «Parallel LLM» приходят вместе с блоками, значение по умолчанию —
+    // первый из них: список задан на сервере (`task_setting_parallel`).
+    let parallelOptions = [1];
+    const PARALLEL_DEFAULT = 1;
+
+    // Проекты, чей предел сейчас записывается. Как и раскрытые таймауты,
+    // останавливают автообновление: селект под руками заменять нельзя.
+    const parallelBusy = new Set();
+
+    async function loadTeamProjects(showSpinner = false) {
+        if (restartBusy || timeoutOpen.size || parallelBusy.size) return;
+        // Открытый список селекта из JS не виден, но фокус на нём — да: пока
+        // человек выбирает значение, блок не перерисовываем.
+        const active = document.activeElement;
+        if (active && active.closest && active.closest('.project-block-parallel')) return;
+        const btn = document.getElementById('refreshBtn');
+        if (showSpinner) btn.classList.add('loading');
+        try {
+            const response = await fetch('/api/team/projects');
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const data = await response.json();
+            parallelOptions = (data.result && data.result.parallel_options) || parallelOptions;
+            renderProjects((data.result && data.result.blocks) || []);
+        } catch (e) {
+            console.error('Ошибка загрузки команды:', e);
+        } finally {
+            btn.classList.remove('loading');
+        }
     }
-}
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+    function renderProjects(blocks) {
+        const root = document.getElementById('teamProjects');
+        if (!blocks.length) {
+            root.innerHTML = '<div class="team-empty">Проектов нет</div>';
+            return;
+        }
+        root.innerHTML = blocks.map(renderBlock).join('');
+    }
 
-// Команда берётся из data-атрибута, а не из аргумента onclick: escapeHtml не
-// экранирует апостроф, и команда с ним ломала бы inline-обработчик.
-function copyCommand(btn) {
-    navigator.clipboard.writeText(btn.dataset.command || '').then(() => {
-        btn.textContent = '✅';
-        btn.classList.add('copied');
-        setTimeout(() => {
-            btn.textContent = '📋';
-            btn.classList.remove('copied');
-        }, 2000);
+    function renderBlock(block) {
+        const cards = block.cards || [];
+        const activeCount = cards.filter(card => card.active).length;
+        const dir = block.work_dir
+            ? `<span class="project-block-dir">${escapeHtml(block.work_dir)}</span>`
+            : '';
+
+        return `
+            <div class="project-block">
+                <div class="project-block-head">
+                    <span class="project-block-title">${escapeHtml(block.title)}</span>
+                    ${dir}
+                    ${renderParallel(block)}
+                    <span class="project-block-count${activeCount ? '' : ' empty'}">
+                        активных <b>${activeCount}</b> из ${cards.length}
+                    </span>
+                </div>
+                <div class="project-cards">
+                    ${cards.map(card => renderCard(card, block)).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Предел одновременных прогонов агента у проекта: пока он выбран, лишние
+    // задачи проекта ждут очереди, а не перебивают друг друга в одной оболочке.
+    function renderParallel(block) {
+        const value = Number(block.parallel || PARALLEL_DEFAULT);
+        const options = parallelOptions.map(option =>
+            `<option value="${option}"${option === value ? ' selected' : ''}>${option}</option>`).join('');
+
+        return `
+            <span class="project-block-parallel">
+                Parallel LLM
+                <select data-project="${Number(block.project_id || 0)}"
+                        data-value="${value}"
+                        class="${value === PARALLEL_DEFAULT ? '' : 'custom'}"
+                        onchange="saveParallel(this)">${options}</select>
+            </span>
+        `;
+    }
+
+    async function saveParallel(select) {
+        const projectId = Number(select.dataset.project || 0);
+        const value = Number(select.value);
+        // Пока запрос в полёте, автообновление молчит: перерисовка блоков заменила
+        // бы селект новым, и откатывать при ошибке было бы уже нечего.
+        parallelBusy.add(projectId);
+        select.classList.remove('saved', 'failed');
+        try {
+            const response = await fetch('/api/team/parallel', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({project_id: projectId, value: value}),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || ('HTTP ' + response.status));
+
+            select.dataset.value = String(data.result.value);
+            select.value = String(data.result.value);
+            select.classList.toggle('custom', data.result.value !== PARALLEL_DEFAULT);
+            select.classList.add('saved');
+            setTimeout(() => select.classList.remove('saved'), 1500);
+        } catch (e) {
+            select.value = select.dataset.value;
+            select.classList.add('failed');
+            select.title = String(e.message || e);
+            setTimeout(() => select.classList.remove('failed'), 2500);
+        } finally {
+            parallelBusy.delete(projectId);
+        }
+    }
+
+    function renderCard(card, block) {
+        // Класс роли только для известных ролей — иначе в CSS попадёт мусор из БД.
+        const roleClass = ROLE_KNOWN.includes(card.role) ? 'role-' + card.role : '';
+        const icon = ROLE_ICONS[card.role] || '🧩';
+        const statusText = card.active
+            ? `активна · ${formatTimeAgo(card.seconds_ago)}`
+            : (card.session_uuid ? `нет пинга${card.seconds_ago !== null ? ' · ' + formatTimeAgo(card.seconds_ago) : ''}` : 'сессия не запущена');
+
+        // Команда запуска нужна только серым карточкам: активную оболочку запускать
+        // повторно не надо. Передаём через dataset — escapeHtml не экранирует
+        // кавычки для inline-обработчика.
+        const copy = card.command && !card.active
+            ? `<button class="team-card-copy" data-command="${escapeHtml(card.command)}" onclick="copyCommand(this)">📋 Команда запуска</button>`
+            : '';
+
+        const uuid = card.session_uuid
+            ? `<div class="row"><span>сессия</span><span>${escapeHtml(String(card.session_uuid).slice(0, 8))}</span></div>`
+            : '';
+        const llm = card.server_llm
+            ? `<div class="row"><span>llm</span><span>${escapeHtml(card.server_llm)}</span></div>`
+            : '';
+
+        // Агент и его workflow — то, чем роль на самом деле работает. Ролям без
+        // агента (Developer и QA пока заглушки) сервер отдаёт нули, и строк нет.
+        // Ссылки в новой вкладке: страница команды живёт пингами раз в 30 секунд,
+        // и уходить с неё ради промпта агента не стоит.
+        const agentLink = card.agent_id
+            ? `<div class="row"><span>Агент</span><span><a href="/admin/agent?agent_id=${card.agent_id}"
+                   target="_blank" rel="noopener">${escapeHtml(card.agent_title)}</a></span></div>`
+            : '';
+        const workflowLink = card.workflow_id
+            ? `<div class="row"><span>Workflow</span><span><a href="/admin/workflow?workflow_id=${card.workflow_id}"
+                   target="_blank" rel="noopener">${escapeHtml(card.workflow_title)}</a></span></div>`
+            : '';
+
+        const summary = card.summary
+            ? `<div class="team-summary">${escapeHtml(card.summary)}</div>`
+            : '';
+
+        // Бейдж только у активных карточек: сервер отдаёт agent_status пустым,
+        // когда пинг протух, — прошлое значение там уже ничего не значит.
+        const agentLabel = AGENT_STATUS_TITLE[card.agent_status] || card.agent_status;
+        const agentClass = card.agent_status === 'ready' || card.agent_status === 'busy'
+            ? card.agent_status
+            : '';
+        const agent = card.agent_status
+            ? `<div class="agent-badge ${agentClass}" title="${escapeHtml(card.agent_status_reason || '')}">${escapeHtml(agentLabel)}</div>`
+            : '';
+
+        // Перезапуск есть только у активной карточки: маркер кладётся в inbox
+        // оболочки, а мёртвая оболочка его не прочитает.
+        const restart = card.active && card.session_uuid
+            ? `<button class="team-card-restart" data-session="${escapeHtml(card.session_uuid)}"
+                       onclick="restartSession(this)" title="Перезагрузить процессы оболочки">
+                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                       <path d="M23 4v6h-6M1 20v-6h6"/>
+                       <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                   </svg>
+               </button>`
+            : '';
+
+        return `
+            <div class="team-card ${card.active ? 'active' : ''} ${roleClass}">
+                <div class="team-card-top">
+                    <div class="team-avatar ${roleClass}">${icon}</div>
+                    <div class="team-card-name">
+                        <div class="name">${escapeHtml(card.name)}</div>
+                        <div class="role">${escapeHtml(card.role_title)}</div>
+                    </div>
+                    ${restart}
+                </div>
+                <div class="team-status">
+                    <span class="status-indicator"></span>
+                    <span>${escapeHtml(statusText)}</span>
+                </div>
+                ${agent}
+                ${renderQueue(card)}
+                ${renderTimeouts(card, block)}
+                <div class="team-card-meta">
+                    ${uuid}
+                    ${llm}
+                    ${agentLink}
+                    ${workflowLink}
+                </div>
+                ${summary}
+                ${copy}
+            </div>
+        `;
+    }
+
+    // Очередь роли по этому проекту. Первой строкой — задача в работе: у занятой
+    // карточки главный вопрос «что она сейчас делает», а не «сколько ждёт».
+    function renderQueue(card) {
+        const waiting = card.queue || [];
+        const current = card.queue_current || null;
+        const count = card.queue_count || 0;
+        if (!current && !count) return '';
+
+        const rows = [];
+        if (current) rows.push(renderQueueItem(current, '▶', 'current'));
+        waiting.forEach((item, index) => rows.push(renderQueueItem(item, (index + 1) + '.', '')));
+
+        const more = count > waiting.length
+            ? `<div class="team-queue-empty">и ещё ${count - waiting.length}</div>`
+            : '';
+
+        return `
+            <div class="team-queue">
+                <div class="team-queue-head">
+                    <span>${current ? 'в работе' : (card.active ? 'свободна' : 'не запущена')}</span>
+                    ${count ? `<span>в очереди <b>${count}</b></span>` : ''}
+                </div>
+                ${rows.join('')}
+                ${more}
+            </div>
+        `;
+    }
+
+    function renderQueueItem(item, marker, cls) {
+        // Подсказка — родительская задача: в списке видно только название подзадачи,
+        // а по нему одному не понять, к чему она относится.
+        const hint = item.subtask_id && item.task_title
+            ? `${item.task_title} · #${item.task_id}`
+            : `#${item.task_id}`;
+
+        return `
+            <div class="team-queue-item ${cls}" title="${escapeHtml(hint)}">
+                <span class="num">${escapeHtml(marker)}</span>
+                <span class="text">${escapeHtml(item.title)}</span>
+            </div>
+        `;
+    }
+
+    // Таймауты на карточке: сначала свои, роли (потолок на прогон агента), затем
+    // общие — оболочка, перезапуск, конвейер, повторы. Общие показываем на каждой
+    // карточке, а не отдельным блоком на странице: вопрос «почему эта роль
+    // сорвалась» решается тем, что все её сроки видны в одном месте.
+    function renderTimeouts(card, block) {
+        if (!timeoutItems.length) return '';
+
+        const mine = timeoutItems.filter(item => item.role && item.role === card.role);
+        const common = timeoutItems.filter(item => !item.role);
+        if (!mine.length && !common.length) return '';
+
+        const key = `${(block && block.project_id) || 0}:${card.role}`;
+        const rows = mine.map(renderTimeoutRow);
+
+        let group = '';
+        common.forEach(item => {
+            if (item.group && item.group !== group) {
+                group = item.group;
+                rows.push(`<div class="team-timeout-group">${escapeHtml(group)}</div>`);
+            }
+            rows.push(renderTimeoutRow(item));
+        });
+
+        const problem = timeoutProblem
+            ? `<div class="team-timeout-problem">⚠ ${escapeHtml(timeoutProblem)}</div>`
+            : '';
+
+        return `
+            <details class="team-timeouts" data-card="${escapeHtml(key)}"
+                     ${timeoutOpen.has(key) ? 'open' : ''} ontoggle="toggleTimeouts(this)">
+                <summary>⏱ Таймауты</summary>
+                ${problem}
+                ${rows.join('')}
+            </details>
+        `;
+    }
+
+    function renderTimeoutRow(item) {
+        // В подсказке — заводское значение и границы: поле узкое, а понять, что
+        // именно правишь и куда можно уйти, надо до отправки, а не по ошибке 422.
+        const hint = `${item.hint || item.title}\nпо умолчанию ${item.default} ${item.unit}`
+            + `, допустимо ${item.min}–${item.max}`;
+
+        return `
+            <div class="team-timeout-row">
+                <span class="label" title="${escapeHtml(hint)}">${escapeHtml(item.title)}</span>
+                <input type="number" class="${item.custom ? 'custom' : ''}"
+                       value="${item.value}" min="${item.min}" max="${item.max}" step="1"
+                       data-key="${escapeHtml(item.key)}" title="${escapeHtml(hint)}"
+                       onchange="saveTimeout(this)">
+                <span class="unit">${escapeHtml(item.unit)}</span>
+            </div>
+        `;
+    }
+
+    function toggleTimeouts(details) {
+        const key = details.dataset.card || '';
+        if (details.open) timeoutOpen.add(key);
+        else timeoutOpen.delete(key);
+    }
+
+    async function loadTimeouts() {
+        try {
+            const response = await fetch('/api/team/timeout');
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const data = await response.json();
+            timeoutItems = (data.result && data.result.items) || [];
+            timeoutProblem = (data.result && data.result.problem) || '';
+        } catch (e) {
+            console.error('Ошибка загрузки таймаутов:', e);
+        }
+    }
+
+    // Значение общее, а полей с ним на странице столько, сколько карточек, —
+    // поэтому после записи обновляем их все, а не только то, в котором печатали.
+    async function saveTimeout(input) {
+        const key = input.dataset.key || '';
+        const item = timeoutItems.find(row => row.key === key);
+        if (!key || !item) return;
+
+        input.classList.remove('saved', 'failed');
+        try {
+            const response = await fetch('/api/team/timeout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: key, value: Number(input.value) }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || ('HTTP ' + response.status));
+
+            Object.assign(item, data.result.item);
+            timeoutProblem = data.result.problem || '';
+            timeoutsSync(key);
+            input.classList.add('saved');
+            setTimeout(() => input.classList.remove('saved'), 1500);
+        } catch (e) {
+            console.error('Ошибка записи таймаута:', e);
+            // Возвращаем прежнее значение: отказ сервера не должен оставлять на
+            // экране число, которого в настройке нет.
+            input.value = item.value;
+            input.classList.add('failed');
+            input.title = String(e.message || e);
+            setTimeout(() => input.classList.remove('failed'), 2500);
+        }
+    }
+
+    function timeoutsSync(key) {
+        const item = timeoutItems.find(row => row.key === key);
+        document.querySelectorAll(`.team-timeout-row input[data-key="${CSS.escape(key)}"]`)
+            .forEach(field => {
+                field.value = item.value;
+                field.classList.toggle('custom', !!item.custom);
+            });
+
+        document.querySelectorAll('.team-timeouts').forEach(details => {
+            const problem = details.querySelector('.team-timeout-problem');
+            if (problem) {
+                problem.textContent = timeoutProblem ? '⚠ ' + timeoutProblem : '';
+                problem.style.display = timeoutProblem ? '' : 'none';
+            } else if (timeoutProblem) {
+                const node = document.createElement('div');
+                node.className = 'team-timeout-problem';
+                node.textContent = '⚠ ' + timeoutProblem;
+                details.querySelector('summary').after(node);
+            }
+        });
+    }
+
+    function formatTimeAgo(seconds) {
+        if (seconds === null || seconds === undefined) return 'нет данных';
+        if (seconds < 0) return 'только что';
+        if (seconds < 60) return seconds + ' сек назад';
+        if (seconds < 3600) return Math.floor(seconds / 60) + ' мин назад';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + ' ч назад';
+        return Math.floor(seconds / 86400) + ' дн назад';
+    }
+
+    async function restartSession(btn) {
+        const sessionUuid = btn.dataset.session || '';
+        if (!sessionUuid || restartBusy) return;
+
+        restartBusy = true;
+        btn.disabled = true;
+        btn.classList.add('loading');
+        try {
+            const response = await fetch('/api/team/session/restart', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_uuid: sessionUuid }),
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            btn.textContent = '✅';
+            btn.title = 'Команда перезапуска отправлена';
+        } catch (e) {
+            console.error('Ошибка перезапуска сессии:', e);
+            btn.textContent = '⚠️';
+            btn.title = 'Не удалось отправить команду перезапуска';
+        } finally {
+            btn.classList.remove('loading');
+            // Отметку видно две секунды, потом карточка перерисовывается заново:
+            // новый heartbeat всё равно придёт позже, ждать его тут нечего.
+            setTimeout(() => { restartBusy = false; loadTeamProjects(); }, 2000);
+        }
+    }
+
+    function copyCommand(btn) {
+        navigator.clipboard.writeText(btn.dataset.command || '').then(() => {
+            const original = btn.textContent;
+            btn.textContent = '✅ Скопировано';
+            setTimeout(() => { btn.textContent = original; }, 1500);
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text === null || text === undefined ? '' : String(text);
+        return div.innerHTML;
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        // Сначала таймауты: карточки рисуются один раз, и блок сроков должен
+        // попасть в первую же отрисовку, а не появиться через 15 секунд.
+        await loadTimeouts();
+        loadTeamProjects();
+        refreshTimer = setInterval(loadTeamProjects, TEAM_REFRESH_MS);
     });
-}
 
-function refreshStatus() {
-    const btn = document.getElementById('refreshBtn');
-    btn.classList.add('rotating');
-    updateStatusOnly().finally(() => {
-        btn.classList.remove('rotating');
+    window.addEventListener('beforeunload', () => {
+        if (refreshTimer) clearInterval(refreshTimer);
     });
-}
-
-// Инициализация
-document.addEventListener('DOMContentLoaded', () => {
-    loadTeamMembers();
-
-    // Автообновление каждые 5 секунд
-    pingInterval = setInterval(refreshStatus, 5000);
-
-    // Кнопка обновления
-    document.getElementById('refreshBtn').addEventListener('click', refreshStatus);
-});
-
-// Очистка при разгрузке
-window.addEventListener('beforeunload', () => {
-    if (pingInterval) clearInterval(pingInterval);
-});
 </script>
 {% endblock %}

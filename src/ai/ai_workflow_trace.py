@@ -10,6 +10,12 @@ TRACE_VALUE_MAX_LEN = 500_000
 # Максимальная длина отдельного строкового значения внутри dict-метаданных
 TRACE_STR_VALUE_MAX_LEN = 100_000
 
+# Через сколько секунд молчания прогон считается брошенным (`workflow_trace_runs_stale_close`).
+# Порог обязан быть больше самого долгого шага: у конвейера задач шаг «реализация»
+# ждёт живого разработчика до 1800с и всё это время в журнал ничего не пишет.
+# Меньший порог гасил бы работающие прогоны — см. комментарий у самой функции.
+TRACE_RUN_STALE_SECONDS = 3600
+
 
 def workflow_trace_enabled() -> bool:
     return str(config_get('WORKFLOW_TRACE_ENABLED', '1')).lower() not in ('0', 'false', 'off')
@@ -100,19 +106,39 @@ async def workflow_trace_step(run_id: int | None, exec_index: int, step: dict,
 
 
 async def workflow_trace_runs_stale_close() -> int:
-    """На старте сервера закрывает все записи, застрявшие в статусе 'running' —
+    """На старте сервера закрывает записи, застрявшие в статусе 'running' —
     они остались после предыдущего рестарта (SIGKILL/crash), когда workflow_trace_run_finish
-    не успел выполниться. Возвращает кол-во закрытых записей."""
+    не успел выполниться. Возвращает кол-во закрытых записей.
+
+    Закрываем не все running-записи, а только замолчавшие. Прогоны идут не только
+    в uvicorn: воркеры конвейера задач (`src/worker/project/`) — отдельные контейнеры,
+    их прогоны переживают рестарт сервера. А рестарт этот случается посреди чужой
+    работы регулярно: промпт разработчика прямо велит ему перезапустить uvicorn после
+    правки .py. Раньше такой рестарт штамповал живым прогонам 'Прерван рестартом
+    сервера', журнал показывал остановку, а прогон продолжал идти и слать сообщения
+    агенту — в логах пусто, а работа кипит.
+
+    Признак брошенного — молчание: ни одного шага дольше `TRACE_RUN_STALE_SECONDS`
+    (у прогона без шагов считаем от старта). Работающий прогон свои шаги пишет.
+    """
     try:
         async with mysql_get_db_async() as db:
             await db.execute(
                 """
-                UPDATE agent_workflow_trace
-                SET status = 'stopped',
-                    error = 'Прерван рестартом сервера',
-                    finished_at = NOW(3)
-                WHERE status = 'running'
-                """
+                UPDATE agent_workflow_trace r
+                LEFT JOIN (
+                    SELECT run_id, MAX(created_at) AS last_step_at
+                      FROM agent_workflow_trace_step
+                     GROUP BY run_id
+                ) s ON s.run_id = r.id
+                SET r.status = 'stopped',
+                    r.error = 'Прерван рестартом сервера',
+                    r.finished_at = NOW(3)
+                WHERE r.status = 'running'
+                  AND GREATEST(r.started_at, COALESCE(s.last_step_at, r.started_at))
+                      < NOW(3) - INTERVAL %s SECOND
+                """,
+                (TRACE_RUN_STALE_SECONDS,)
             )
             count = db.rowcount
         if count:

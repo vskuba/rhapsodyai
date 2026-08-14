@@ -1,274 +1,288 @@
-# Claude Shell — оболочка вокруг Claude Code CLI
+# Claude Shell — задание живому Claude Code
 
-> Обёртка вокруг Claude Code CLI — PTY-сессия для интерактивного использования + HTTP-сервер для headless-вызова из Docker-контейнера.
+> Как RhapsodyAi отдаёт работу настоящему Claude Code, открытому в терминале разработчика:
+> инструмент `claude_shell_call` кладёт сообщение в очередь `ai_claude_session`, оболочка
+> вставляет его в дочерний процесс `claude` и возвращает ответ.
 
-## 1. Структура
+## 1. Границы ответственности
 
-```
-claude_shell/
-  claude_shell.py          # Основная оболочка: PTY-обёртка + workflow-tool HTTP-сервер
-  session_client.py        # CLI управления сессиями (register/resume/heartbeat/inbox/respond/finalize/status)
-  session_tool.py          # Общие утилиты + CLI для API-вызовов, event-log, quota
-  litellm/
-    litellm_manager.py     # LiteLLM proxy-менеджер (gx10) — запуск/статус/порт 4000
-    litellm_config.yaml    # Конфиг прокси LiteLLM
-    litellm.pid            # PID-файл прокси
-    litellm.log            # Лог прокси
-  wrapper.pid              # PID-файл PTY-обёртки (создаётся при запуске)
-  session_uuid             # Сохранённый UUID текущей сессии
-  inbox_pending.json       # Очередь отложенной инъекции (session_uuid + inbox_id)
-  logs/
-    claude_shell_*.log     # Логи PTY-сессий
-    workflow.log           # Лог workflow-tool HTTP-сервера
-```
-
-**PROJECT_ROOT** = `claude_shell/` + `..` (родительская директория, обычно RhapsodyAi).
-**SHELL_DIR** = абсолютный путь до `claude_shell/`.
-
-## 2. Режимы запуска
-
-### 2.1 PTY-режим (по умолчанию, для интерактивного использования)
-
-Запускает `claude` как дочерний процесс в PTY. Фоновый поток опрашивает inbox Mini App и вставляет сообщения напрямую в PTY. Умеет перезапускать дочерний процесс при получении маркера `RESTART_WATCH_MARKER`.
-
-```bash
-# Обычный запуск — подхватывает сохранённую сессию или создаёт новую
-python3 claude_shell/claude_shell.py
-
-# С флагом gx10 — использовать LiteLLM proxy как LLM-бэкенд
-python3 claude_shell/claude_shell.py --gx10
-
-# Форс-новая сессия
-python3 claude_shell/claude_shell.py --register
-
-# Продолжить конкретную сессию
-python3 claude_shell/claude_shell.py --session-uuid <uuid>
-```
-
-**Доступные флаги:**
-
-| Флаг | Описание |
-|------|----------|
-| `--session-uuid UUID` | Продолжить существующую сессию |
-| `--register` | Создать новую сессию (игнорирует сохранённый UUID) |
-| `--project-label LABEL` | Метка проекта для реестра (по умолчанию basename cwd) |
-| `--gx10` | Запустить LiteLLM proxy (порт 4000) и использовать как бэкенд Claude |
-| `--verbose` | Передать `--verbose` в Claude Code |
-| `--workflow-tool` | Запустить HTTP-сервер вместо PTY (§2.2) |
-| `claude_args ...` | Дополнительные аргументы передаются в `claude` |
-
-### 2.2 Workflow-tool режим (`--workflow-tool`)
-
-**Назначение:** HTTP-сервер, принимающий запросы из Docker-контейнера (uvicorn), запускающий Claude Code в headless режиме (`-p`) и возвращающий результат. Используется DB-инструментами для запроса контекста проекта (страницы, блоки, wireframes, токены) от Manager-агента.
-
-```bash
-# Запуск
-python3 claude_shell/claude_shell.py --workflow-tool
-
-# Работает в фоне:
-nohup python3 claude_shell/claude_shell.py --workflow-tool >> claude_shell/logs/workflow.log 2>&1 &
-```
-
-**Эндпоинты:**
-
-| Метод | Путь | Описание |
-|-------|------|----------|
-| `GET` | `/health` | Health-check: `{"status":"ok","pid":<pid>}` |
-| `POST` | `/run` | Headless вызов Claude: промпт → `claude -p` → результат |
-
-**POST /run** — тело:
-
-```json
-{
-  "prompt": "Опиши структуру страниц проекта #{id}",
-  "use_gx10": true
-}
-```
-
-Заголовки:
-- `X-Claude-Secret: claude-shell-workflow`
-- `Content-Type: application/json`
-
-**Ответ:**
-
-```json
-{
-  "status": "ok",
-  "message": "<ответ Claude, очищенный от ANSI>",
-  "raw": "<полный ответ Claude с ANSI-кодами>"
-}
-```
-
-При ошибке — `"status": "error"`, `"message": "<описание>"`.
-
-**Параметры:**
-- Порт: **8999**
-- Привязка: **0.0.0.0:8999** (доступен из Docker-контейнеров)
-- Таймаут: 720 секунд (12 минут, как у Manager)
-- Секрет: `claude-shell-workflow` (header `X-Claude-Secret`)
-- Рабочая директория: `PROJECT_ROOT`
-- LiteLLM proxy: поднимается автоматически при `use_gx10: true` (port 4000)
-
-## 3. Управление сессиями (PTY-режим)
-
-### 3.1 Регистр сессий
-
-Сессии хранятся в `ai_claude_session_registry` (MySQL). Каждая запись: `session_uuid`, `role` (по default `developer`), `project_label`, `status` (active/closing/inactive), `summary`.
-
-### 3.2 CLI: session_client.py
-
-```bash
-# Регистрация новой сессии
-python3 claude_shell/session_client.py register --role developer --project-label RhapsodyAi
-
-# Возобновление сессии (из текущего контекста или по UUID)
-python3 claude_shell/session_client.py resume --session-uuid <uuid>
-
-# Heartbeat (каждые 5с, для staleness detection)
-python3 claude_shell/session_client.py heartbeat --session-uuid <uuid>
-
-# Проверка inbox (непрочитанные сообщения)
-python3 claude_shell/session_client.py inbox --session-uuid <uuid>
-
-# Ответ на сообщение из inbox
-python3 claude_shell/session_client.py respond --session-uuid <uuid> --response "текст ответа"
-
-# Завершение сессии (записать summary)
-python3 claude_shell/session_client.py finalize --session-uuid <uuid> --summary "краткое содержание"
-
-# Статус сессии (проверить: watch жив, сервер отвечает, файл session_uuid на месте)
-python3 claude_shell/session_client.py status --session-uuid <uuid>
-```
-
-**Механизм:**
-- `session_uuid` сохраняется в `claude_shell/session_uuid` — при следующем запуске подхватывается автоматически.
-- Фоновый `watch`-процесс гонит heartbeat каждые 5 секунд.
-- Сессия считается видимой, если `last_seen_at` не старше **60 секунд** (12× интервал).
-- `start_new_session=True` — `watch` полностью отвязан от процесса Claude Code (переживает перезапуск/краш).
-
-### 3.3 Хуки SessionStart / SessionEnd
-
-Хуки и `session_client.py` живут **не в этом репозитории**, а в установке `claude-shell` —
-пути ниже относительны её каталогу, в RhapsodyAi их нет (`ls -a .claude/` → только
-`docs`, `settings.local.json`, `skills`, `worktrees`).
-
-Регистрируются в `settings.json` установки:
-
-- **SessionStart** — хук `hooks/session_start.py`: проверяет сохранённый UUID → `resume`
-  (автоматически) или `register` (через `AskUserQuestion`).
-- **SessionEnd** — хук `hooks/session_end.py`: останавливает `watch` при осознанном выходе
-  (`exit` / `/exit`).
-
-## 4. Inbox-механизм
-
-Сообщения от Mini App (через `POST /claude_message_user` или из чата Mini App) попадают в таблицу `ai_claude_session`. PTY-обёртка поллит inbox каждые 5 секунд и вставляет сообщения в PTY Claude.
-
-**Полный цикл:**
-1. Пользователь отправляет сообщение → `ai_claude_session` (`content`, `handled=0`).
-2. `watch` (или PTY `ClaudeShell._inbox_loop`) забирает через `GET /telegram-app/claude/session/inbox?session_uuid=...`.
-3. Новые строки (`id > _last_id`) обрабатываются `_process_rows()`:
-   - Маркеры (`CLEANUP_MARKER`, `RESTART_WATCH_MARKER`, `QUOTA_CHECK_MARKER`) обрабатываются отдельно.
-   - Обычные сообщения: `POST /respond` (подтверждение "Принял") → текст + `\r` в PTY.
-4. Claude обрабатывает сообщение → PTY выводит ответ → ответ дублируется в Mini App через `POST /telegram-app/claude/respond` (с `notify: false` для промежуточных шагов, `notify: true` для финального ответа).
-
-**Маркеры:**
-
-| Маркер | Обработка |
-|--------|-----------|
-| `__SESSION_CLEANUP__` | Очистка `ai_claude_session` для сессии, удаление `session_uuid`, остановка |
-| `__RESTART_WATCH__` | Перезапуск дочернего `claude` процесса |
-| `__QUOTA_CHECK__` | Запуск `session_tool.py quota`, ответ возвращается через `/respond` |
-
-## 5. LiteLLM Proxy (gx10)
-
-Мост между Claude Code CLI и локальным LLM-прокси LiteLLM.
-
-**Файлы:**
-- Конфиг: `claude_shell/litellm/litellm_config.yaml`
-- PID: `claude_shell/litellm/litellm.pid`
-- Лог: `claude_shell/litellm/litellm.log`
-- Порт: **4000**
-
-**API:**
-- `litellm_is_running()` → `bool` (проверяет порт 4000 + PID-файл)
-- `litellm_start()` → запускает `litellm --config ... --port 4000` в фоне
-- `litellm_ensure_running()` → поднимает если не запущен, возвращает порт
-
-**Настройка окружения Claude:**
-```python
-os.environ["ANTHROPIC_BASE_URL"] = f"http://localhost:4000"
-os.environ["ANTHROPIC_API_KEY"] = "litellm-proxy"
-```
-
-## 6. container → laptop архитектура (workflow-tool)
+Здесь описана **сторона RhapsodyAi**: инструмент workflow, очередь сообщений и проверка
+готовности агента. Сама оболочка — отдельный репозиторий `claude-shell` (рядом с этим
+проектом, `../claude-shell`) со своей документацией в `.claude/docs/`: `architecture.md`
+(режимы, жизненный цикл, PTY), `api.md` (team API, Python API `shell.py`, session client),
+`cli.md` (флаги, заголовок окна, systemd), `litellm.md` (gx10-прокси), `team_ping.md`
+(пинг команды с обеих сторон).
 
 ```
-┌──────────────────────┐     HTTP POST     ┌──────────────────────────┐
-│  Docker-контейнер     │ ───────────────▶  │  Ноутбук (host.docker.   │
-│                       │  POST /run        │   internal:8999/run)     │
-│  src/tool/claude_shell/│  {prompt, use_   │                          │
-│  claude_shell.py      │  gx10:true}       │  claude_shell.py         │
-│                       │                   │  --workflow-tool         │
-│  claude_shell_call()  │                   │                          │
-│                       │                   │  subprocess.run([        │
-│  HTTP → host.docker.  │                   │    claude, -p, prompt])  │
-│   internal:8999       │                   │  + gx10 env vars         │
-└──────────────────────┘                   └──────────────────────────┘
+┌─ Docker: uvicorn / worker ─────────┐        ┌─ Ноутбук: claude-shell ───────────┐
+│ workflow #55/#56, шаг tool_invoke  │        │ PTY-обёртка + дочерний `claude`   │
+│                                    │        │                                   │
+│ claude_shell_call(prompt, role)    │        │ опрос inbox раз в ~5с             │
+│   1. живая сессия с ролью?         │        │   1. видит строку `[[agent]]`      │
+│   2. INSERT ai_claude_session ─────┼──────▶ │   2. ждёт тишины в терминале       │
+│   3. ждёт status='delivered' ◀─────┼────────┤   3. ввод текста в PTY + status    │
+│   4. ждёт status='answered'  ◀─────┼────────┤   4. ответ агента + status         │
+│   5. парсит JSON из ответа         │        │                                   │
+└────────────────────────────────────┘        └───────────────────────────────────┘
 ```
 
-**Инструмент в контейнере** (`src/tool/claude_shell/claude_shell.py`):
-- `claude_shell_call(prompt, use_gx10=True)` — POST на ноутбук, запускает `claude -p`, возвращает ответ.
-- `claude_shell_is_available()` — проверка health-эндпоинта.
-- Автоматически обнаруживается через `rglob` в `src/ai/ai_tool.py`.
+Обмен идёт **через базу и HTTP-эндпоинты Mini App**, а не через прямой вызов оболочки:
+контейнеру не нужно видеть ноутбук, оболочка сама стучится в API.
 
-**Сетевая настройка:**
-- Docker Compose: `extra_hosts: ["host.docker.internal:host-gateway"]` (уже настроено для uvicorn).
-- HTTP-сервер на ноутбуке привязан к `0.0.0.0:8999` — доступен из контейнера.
+## 2. Инструмент `claude_shell_call`
 
-## 7. Использование Manager-агентом
-
-Manager (`task_plan_manager`, workflow #55) получает только `task_title`, `task_description`, `task_goals` — без знания структуры проекта. Для составления детальных планов Manager должен вызывать `claude_shell_call`:
+Файл: `src/tool/claude_shell/claude_shell.py`. Обнаруживается автоматически (`src/ai/ai_tool.py`),
+доступен шагам `tool_invoke` любого workflow.
 
 ```python
-# Пример использования Manager-агентом:
-result = claude_shell_call(
-    prompt=(
-        f"Проект #{project_id}. "
-        f"Опиши все страницы (project_design_prototype_page) с wireframe, "
-        f"блоки (project_design_prototype_page_block) и виджеты "
-        f"(project_design_prototype_widget). "
-        f"Составь детальную структуру для плана."
-    ),
-    use_gx10=True,
+result = await claude_shell_call(
+    prompt='Составь план работ по задаче ... Ответь одним JSON-объектом.',
+    role='manager',      # manager | developer | qa — роль карточки на /admin/team
+    timeout=300,         # секунд на весь вызов: ожидание готовности + доставка + ответ
+    work_dir='/home/user/project',  # каталог проекта — вторая половина адреса
 )
 ```
 
-**Результат** — структурированный текст от Claude в headless режиме, который Manager использует как контекст для планирования.
+**Адрес — пара «роль + каталог».** Роли в командах разных проектов называются одинаково,
+поэтому одной роли мало: без каталога сообщение ушло бы в любую живую оболочку с этой
+ролью, в том числе чужого проекта. `_session_find` сужает выборку реестра условием
+`AND TRIM(TRAILING '/' FROM work_dir) = %s` (хвостовой слэш нормализуется — каталог
+приходит и из настроек проекта, и из реестра сессий). Пустая строка — адресация только по
+роли, прежнее поведение. Конвейер задач подставляет каталог проекта задачи (см.
+`project_task.md` §«Кто планирует»).
 
-## 8. Константы
+**Результат** (`dict`):
+
+| Ключ | Значение |
+|------|----------|
+| `status` | `answered`, `no_session`, `busy`, `ack_timeout`, `timeout`, `failed` |
+| `response` | текст ответа агента как есть |
+| `payload_json` | JSON из ответа строкой (пустая, если JSON не нашёлся) |
+| `error` | описание проблемы; при `answered` заполняется только когда ответ не JSON |
+| `session_uuid` | сессия, которой ушло сообщение |
+| `inbox_id` | id строки `ai_claude_session` — по нему видно всю переписку шага |
+| `elapsed` | секунды, потраченные на доставку и ответ |
+
+Скалярные и вложенные поля разобранного JSON дополнительно поднимаются на верхний уровень
+результата, кроме служебных ключей из `CLAUDE_SHELL_RESULT_KEYS` — так шаг workflow
+обращается к `plan_text` или `subtasks` как к обычным переменным.
+
+**Разбор JSON терпимый.** Claude Code почти всегда обрамляет объект ```-блоком или парой
+слов: сначала пробуется прямой `json.loads`, затем содержимое ```-блоков, затем вырезка по
+первой `{` и последней `}`. Не разобрали — текст ответа остаётся в `response`, а в `error`
+попадает его начало (200 символов, кавычки и переводы строк вычищены, иначе подстановка
+`%..._error%` в JSON-шаблон следующего шага ломала бы разбор).
+
+**Оборванный ответ чинится.** Живой агент изредка обрывает вывод на одну закрывающую
+скобку раньше. Каждая попытка разбора поэтому идёт дважды: как есть и с достроенным
+хвостом — незакрытая строка и незакрытые скобки закрываются по стеку. Чинится только
+обрыв: лишняя или не та закрывающая скобка означает по-настоящему испорченный текст, и
+разбор честно проваливается. Без починки объект `{"plan_text": …, "subtasks": [...]}`
+сползал на последний фоллбэк «вырезать первый массив», и в `payload_json` уезжал один
+`subtasks` вместо всего плана.
+
+**Статусы провала различимы намеренно** — по ним видно, кто виноват:
+
+| Статус | Что произошло |
+|--------|---------------|
+| `no_session` | живой карточки с такой ролью нет вовсе — сообщение даже не поставлено в очередь |
+| `busy` | агент занят предыдущим ходом и не освободился за `timeout_shell_busy` |
+| `ack_timeout` | сообщение в очереди, но оболочка не подтвердила ввод в Claude Code |
+| `timeout` | текст введён, ответа не дождались |
+| `failed` | оболочка сама сообщила об ошибке (или `prompt` пустой) |
+
+## 3. Очередь `ai_claude_session` и фазы
+
+Таблица общая с чатом Mini App (`migrations/0001.sql`). Ключевое поле для инструмента —
+`status ENUM('queued','delivered','answered','failed')`, константы в
+`src/tool/claude_/claude_.py` (`CLAUDE_MESSAGE_STATUS_*`).
+
+| Фаза | Кто ставит | Смысл |
+|------|-----------|-------|
+| `queued` | `claude_message_user()` при вставке (значение по умолчанию) | сообщение лежит в очереди |
+| `delivered` | оболочка: `POST /telegram-app/claude/respond` с `status=delivered` и `inbox_id` | текст **действительно** введён в дочерний процесс |
+| `answered` | оболочка тем же эндпоинтом вместе с `response` | ответ агента записан |
+| `failed` | оболочка, если ответа не будет | не ждать до таймаута |
+
+Фазу нельзя вывести из `handled` и `responded_at`: оболочка ставит их уже на подтверждении
+приёма, задолго до настоящего ответа. Отсюда и отдельная колонка. Перевод в `delivered` —
+условный UPDATE `WHERE status = 'queued'`, он не трогает `response` и `handled`. Неизвестный
+статус нормализуется в `answered` (`_status_normalize`): оболочки старых версий про колонку
+не знают, и для них любой вызов `claude_message_cloud` означает готовый ответ.
+
+**Маркер `[[agent]]`** — первая строка сообщения от инструмента. По нему оболочка отличает
+запрос workflow от человеческого: не отвечает «Принял» (это заняло бы `response`, которого
+ждёт инструмент), ставит фазу доставки отдельным статусом, не пушит ответ в Telegram и не
+режет его до 2000 символов. Сам маркер в PTY не попадает.
+
+**Переносы строк в промпте сохраняются.** Раньше оболочка схлопывала сообщение в одну
+строку (`" ".join(text.split())`): перенос, записанный в PTY, для Claude Code — нажатый
+Enter, и размеченный заголовками промпт агента ушёл бы в работу по первой строке.
+Теперь многострочный текст вводится режимом вставки (`ESC [200~ … ESC [201~`), отправляет
+его единственный `\r` после вставки. В поле ввода длинная вставка показывается свёрнутой
+(«[Pasted text #1 +N lines]»), но модели и в расшифровку `.jsonl` уходит полный текст —
+поиск ответа по последнему промпту не ломается. Правка живёт в репозитории оболочки
+(`../claude-shell`, `shell.py`), на стороне RhapsodyAi менять нечего.
+
+## 4. Готовность агента
 
 ```python
-WRAPPER_PID_FILE       # claude_shell/wrapper.pid
-SESSION_UUID_PATH      # claude_shell/session_uuid
-CLEANUP_MARKER         # "__SESSION_CLEANUP__"
-RESTART_WATCH_MARKER   # "__RESTART_WATCH__"
-QUOTA_CHECK_MARKER     # "__QUOTA_CHECK__"
-
-_WORKFLOW_PORT         # 8999
-_WORKFLOW_SECRET       # "claude-shell-workflow"
-_CLAUDE_SHELL_URL      # "http://host.docker.internal:8999/run"
-_CLAUDE_SHELL_TIMEOUT  # 720
+state = await claude_shell_session_status(role='manager')
+# {'ready': 1, 'agent_status': 'ready', 'agent_status_reason': 'idle',
+#  'session_uuid': '...', 'seconds_ago': 3}
 ```
 
-## 9. Сравнение с Claude Session Registry
+Проверяются две вещи: свежесть пинга сессии (`ai_claude_session_registry.last_seen_at` не
+старше настройки `timeout_shell_stale` (умолчание 30с — столько же, сколько на карточках `/admin/team`)) и
+`agent_status` из реестра. Готовым считается всё, что не `busy`: `unknown` от старой оболочки
+не должен блокировать работу.
 
-| Аспект | Claude Session Registry | claude_shell (workflow-tool) |
-|--------|------------------------|------------------------------|
-| **Назначение** | Интерактивная сессия Claude Code через Mini App | Headless вызов из Docker-контейнера |
-| **Управление** | Хуки + PTY + inbox | HTTP-сервер + subprocess |
-| **Вызов** | Через Mini App UI / Claude Code CLI | Из DB-инструмента в контейнере |
-| **Видимость** | Сессии в Cloud-вкладке Mini App | Не виден в реестре |
-| **Лайфтайм** | Пока открыт терминал | Пока запущен процесс |
-| **LLM-бэкенд** | anthropic или gx10 (--gx10) | gx10 по умолчанию |
+Причины занятости приходят от оболочки в `agent_status_reason`: `child_down`, `permission`
+(открыт диалог разрешений), `turn`, `inject_pending`, `queue`, `answer_pending`, `output`.
+Подробности — `claude_session_registry.md` §4.1 и `architecture.md` оболочки.
 
-Два режима (`claude_shell.py --session-uuid ...` и `claude_shell.py --workflow-tool`) работают независимо и могут быть запущены одновременно.
+Занятость **ожидается, а не отклоняется сразу**: соседние шаги workflow бьют в одну оболочку
+подряд, и на следующем шаге менеджер обычно ещё дописывает предыдущий ход — это секунды.
+Отказ без ожидания возвращал `busy` с `elapsed = 0` и молча терял шаги судьи и целей.
+
+## 4.1. Перезапуск агента перед новой задачей
+
+Оболочка держит один долгоживущий Claude Code, и его контекст между задачами не обнуляется
+сам. Поэтому прогон конвейера начинается с перезапуска:
+
+```python
+from src.project.team.team_session import team_session_restart_role
+
+await team_session_restart_role('manager', '/home/user/project')
+# {'role': 'manager', 'session_uuid': '...', 'restarted': True, 'ready': True,
+#  'reason': '', 'elapsed': 41}
+```
+
+Каталог тут обязателен по той же причине, что и в вызове: без него перезапуск снёс бы
+контекст менеджера соседнего проекта — того самого, что прямо сейчас работает над своей
+задачей.
+
+Механизм тот же, что у кнопки на карточке `/admin/team` и у Mini App: в очередь кладётся
+маркер `__RESTART_WATCH__` с `dynamic=1`. Оболочка не показывает его агенту — подтверждает
+через `inbox-ack` и гасит дочерний процесс, после чего запускает его заново. Это именно
+сброс контекста, а не «оживление зависшей оболочки».
+
+Ожидание после маркера идёт в три шага, иначе первый же промпт уйдёт в умирающий процесс:
+
+| Шаг | Константа | Что ждём |
+|-----|-----------|----------|
+| подтверждение | `TEAM_SESSION_RESTART_ACK_TIMEOUT = 60` | `handled = 1` на строке маркера |
+| пауза | `TEAM_SESSION_RESTART_SETTLE_SECONDS = 10` | пока старый процесс убит — до этого heartbeat всё ещё отдаёт `ready` |
+| готовность | `TEAM_SESSION_RESTART_READY_TIMEOUT = 180` | `agent_status = ready` у поднявшегося процесса |
+
+Ответа на маркер не будет никогда: до агента он не доходит, и `handled = 1` — единственное
+подтверждение, что перезапуск состоится.
+
+Функция ничего не бросает, а возвращает `reason`: `no_session` (живой оболочки с такой ролью
+нет), `no_ack` (watch не читает очередь), `not_ready` (не поднялся за отведённое время).
+Прогон продолжается в любом случае — `claude_shell_call` дальше сам разберётся по своим
+правилам, а конвейер уведёт задачу в `failed`, если результат так и не придёт.
+
+**Перезапуск — один на прогон, до первого шага.** Шаги workflow #55 продолжают один и тот же
+разговор с агентом, и перезапуск между ними снёс бы наполовину готовый план. То же самое
+и в #56 у разработчика: реализация опирается на разбор, сделанный шагом раньше.
+
+У разработчика прогон вдобавок **не всегда** начинается с перезапуска: подзадачи одной
+задачи идут в общем контексте, и оболочка поднимается заново только на смене задачи
+(`project_task.md`, раздел Developer).
+
+## 5. Константы инструмента
+
+```python
+CLAUDE_SHELL_ROLE_DEFAULT = 'manager'
+CLAUDE_SHELL_POLL_SECONDS = 2          # период опроса строки очереди
+CLAUDE_SHELL_AGENT_MARKER = '[[agent]]'
+```
+
+Сами таймауты — не константы, а настройки (`src/project/task/task_setting_timeout.py`, группа
+«Оболочка»), правятся на карточках `/admin/team` и читаются в момент ожидания:
+
+| Настройка | Умолчание | Смысл |
+|---|---|---|
+| `timeout_shell_call` | 300 | весь вызов по умолчанию |
+| `timeout_shell_ack` | 120 | на подтверждение доставки |
+| `timeout_shell_busy` | 300 | на освобождение агента |
+| `timeout_shell_stale` | 30 | свежесть пинга сессии |
+
+Порог свежести считается через `datetime_now()`, а не `NOW()`: `last_seen_at` пишется в поясе
+из настройки timezone, пояс MySQL другой — сессия оказалась бы либо вечно живой, либо
+мгновенно мёртвой.
+
+Таймауты вызова вложены в таймауты конвейера задач: `timeout_shell_call` (300с на обращение) <
+`timeout_manager_run` / `timeout_developer_run` 3600с (весь прогон роли) <
+`timeout_worker_job` 3900с < `timeout_task_lock` 4200с.
+
+`timeout_shell_call` — только значение по умолчанию: workflow передаёт свой `timeout`
+на каждом шаге — 600с на всех семи обращениях к менеджеру в #55 и 600/1800/600 на трёх
+обращениях к разработчику в #56 (реализации нужно больше: она пишет код, а не текст).
+Ждать освобождения
+дольше, чем занимает сам ход, приходится потому, что таймаут шага **не прерывает ход агента**:
+инструмент отпускает строку очереди, а менеджер продолжает думать. Следующий шаг упирается
+в занятого агента, и если окно `busy` короче остатка хода — конвейер получает `busy` на живом
+менеджере и выбрасывает уже готовый результат. Отсюда 300с, а не 180с.
+
+## 6. Кто вызывает
+
+Конвейер задач — обе настоящие роли, каждая через свою оболочку:
+
+- **Manager**: workflow **#55** `task_plan_manager`, семь обращений (разведка, план, цели,
+  разбиение и три судьи), роль `manager`.
+- **Developer**: workflow **#56** `task_dev_developer`, три обращения (разбор, реализация,
+  самопроверка), роль `developer` — то есть другой живой Claude Code, а не тот, что писал план.
+
+В обоих каждый содержательный шаг — `tool_invoke claude_shell_call` с `role` из переменной
+`task_shell_role` и `work_dir` из `task_shell_work_dir` (кладут `task_agent_manager_plan` и
+`task_agent_developer_run`; раньше в шагах стояла константа `_const_manager`). LLM в этих
+workflow нет ни на одном шаге: работает не модель, а живой Claude Code. Шаги, переходы по
+`manager_status` / `dev_status` и поведение при недоступной оболочке —
+`project_task.md` §7.
+
+Правило для новых вызовов: **проверяйте `status`** первым же переходом
+(`manager_status != answered`) и решайте по смыслу шага — потеря судейского мнения не должна
+выбрасывать уже готовый результат, а потеря самого результата обязана уводить задачу в
+`failed` с причиной в тексте.
+
+## 7. Диагностика
+
+```sql
+-- Переписка одного шага workflow
+SELECT id, status, handled, LEFT(content, 80), LEFT(response, 200), created_at, responded_at
+FROM ai_claude_session WHERE id = <inbox_id>;
+
+-- Все обращения инструмента к оболочке (маркер агента)
+SELECT id, session_uuid, status, created_at FROM ai_claude_session
+WHERE content LIKE '[[agent]]%' ORDER BY id DESC LIMIT 20;
+
+-- Живые сессии и готовность агентов
+SELECT session_uuid, role, status, agent_status, agent_status_reason, last_seen_at
+FROM ai_claude_session_registry ORDER BY last_seen_at DESC;
+```
+
+Типовые причины:
+
+| Симптом | Причина |
+|---------|---------|
+| `no_session` при открытом терминале | оболочка запущена без нужной роли, либо пинг старше 30с (`watch` умер) |
+| `ack_timeout` | в терминале открыт диалог разрешений или дочерний процесс не отвечает |
+| `answered`, но `error` про «не JSON» | в промпте не потребован ответ одним JSON-объектом |
+| ответ приходит в Telegram, а не инструменту | потерян маркер `[[agent]]` в начале сообщения |
+
+## 8. Что ещё умеет оболочка
+
+Не используется конвейером задач, но живёт в том же репозитории:
+
+- **PTY-режим** (по умолчанию) — интерактивная сессия, регистрация в
+  `ai_claude_session_registry`, heartbeat, чат Mini App. См. `claude_session_registry.md`.
+- **Headless-режим** (`claude-shell -p '<prompt>'`) — разовый прогон `claude -p`, ответ в
+  stdout. Конвейер им **не** пользуется: такой процесс не виден в реестре, не наследует
+  контекст открытой сессии и не даёт фаз доставки. Только для ручных вызовов из терминала.
+- **LiteLLM proxy (gx10)** — локальный бэкенд на порту 4000, systemd-сервис; включается
+  флагом `--gx10`. См. `litellm.md` оболочки.
+
+Оболочка — отдельный git-репозиторий: правила проекта (не коммитить без разрешения,
+префиксы функций, приватные функции внизу файла) действуют и там.

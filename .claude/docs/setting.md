@@ -79,6 +79,55 @@ await setting_delete('timezone', node_id=9)                 # вернуть н�
 Страница `/admin/setting` требует только авторизации (`require_auth`), права
 проверяются на уровне API.
 
+## Таймауты конвейера — `task_setting_timeout.py`
+
+Таймауты конвейера задач раньше были константами в модулях (`TASK_WORKER_JOB_TIMEOUT`,
+`LOCK_TIMEOUT_SEC`, `CLAUDE_SHELL_TIMEOUT`, `MAX_ATTEMPTS`…). Теперь это строки таблицы
+`setting` с реестром в `src/project/task/task_setting_timeout.py` и редактором на карточках
+`/admin/team`. Значение читается в момент ожидания, поэтому правка работает без
+перезапуска контейнеров.
+
+| Ключ | Умолчание | Что обрывает |
+|------|-----------|--------------|
+| `timeout_manager_run` | 3600 с | прогон агента Manager |
+| `timeout_developer_run` | 3600 с | прогон агента Developer |
+| `timeout_qa_run` | 3600 с | прогон агента QA |
+| `timeout_shell_call` | 300 с | вызов `claude_shell_call` целиком |
+| `timeout_shell_ack` | 120 с | подтверждение доставки сообщения оболочке |
+| `timeout_shell_busy` | 300 с | ожидание, пока агент освободится |
+| `timeout_shell_stale` | 30 с | пинг оболочки, после которого её считают мёртвой |
+| `timeout_restart_ack` | 60 с | приём маркера перезапуска watch |
+| `timeout_restart_settle` | 10 с | пауза перед опросом готовности после перезапуска |
+| `timeout_restart_ready` | 180 с | ожидание поднявшегося агента |
+| `timeout_worker_job` | 3900 с | job воркера в rq (дефолт rq — 180 с!) |
+| `timeout_task_lock` | 4200 с | когда блокировку строки считают протухшей |
+| `timeout_ping_stale` | 30 с | свежесть карточки команды и живой роли |
+| `timeout_retry_max` | 3 раза | перезапусков агента на одном прогоне |
+| `timeout_attempt_max` | 3 раза | попыток одной задачи в конвейере |
+
+```python
+from src.project.task.task_setting_timeout import (
+    TASK_SETTING_TIMEOUT_WORKER_JOB,
+    task_setting_timeout_get)
+
+seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_WORKER_JOB)  # значение или умолчание
+items = await task_setting_timeout_all()                    # весь реестр одним запросом
+await task_setting_timeout_set('timeout_worker_job', 4000)  # ValueError вне границ
+```
+
+Реестр — единственный список правимых ключей: чужой ключ через API не пролезет, иначе
+страница команды стала бы редактором произвольных настроек. Значение из ячейки читается
+терпимо (`_value_normalize`): пустая строка, буквы или число вне границ дают умолчание,
+опечатка человека не роняет ожидание.
+
+Лестница «прогон агента < job воркера < блокировка строки» проверяется
+`task_setting_timeout_ladder_problem()` и только показывается предупреждением на карточке.
+Запретить нельзя: поднять все три значения разом одним запросом не получится, и
+промежуточное нарушение законно.
+
+API — в `project_team.py`: `GET /api/team/timeout` (весь реестр + `problem`),
+`POST /api/team/timeout` (`{key, value}`, 422 на неизвестный ключ и выход за границы).
+
 ## `/setting/config` — переменные для фронтенда
 
 ```python

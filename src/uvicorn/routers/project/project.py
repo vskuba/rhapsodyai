@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -11,9 +11,14 @@ router = APIRouter()
 
 @router.get('/project/list')
 async def project_admin_list(user=Depends(AuthChecker([AuthPermission.PROJECT_VIEW]))):
-    """Список всех проектов."""
+    """Список всех проектов.
+
+    Порядок — тот же, что у `/planning/project/list`: сперва `position`, который
+    человек правит перетаскиванием в левой колонке `/admin/project`, и лишь при
+    равных позициях свежие проекты выше.
+    """
     repo = PlanningProjectRepository()
-    return {'result': await repo.find_by({}, 'id ASC')}
+    return {'result': await repo.find_by({}, 'position ASC, id DESC')}
 
 
 @router.get('/project/{project_id}')
@@ -29,26 +34,28 @@ async def project_admin_create(data: dict, user=Depends(AuthChecker([AuthPermiss
     repo = PlanningProjectRepository()
     title = str(data.get('title') or '').strip()
     idea = str(data.get('idea') or '').strip()
-    path = str(data.get('path') or '').strip()
+    work_dir = str(data.get('work_dir') or '').strip()
     if not title:
         return {'error': 'title is required'}
     if not idea:
         idea = title[:200]
-    if not path:
-        path = idea[:200]
+    if not work_dir:
+        work_dir = idea[:200]
+    # Новый проект встаёт в конец списка: перетаскиванием его подвинут, если надо,
+    # а вклиниваться в чужой порядок создание не должно.
     async with mysql_get_db_async() as db:
-        await db.execute('SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM project')
+        await db.execute('SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM project')
         row = await db.fetchone()
-        next_id = int(row['next_id']) if row else 1
+        position = int(row['next_position']) if row else 0
     project_id = await repo.add({
         'node_id': 6,
         'user_id': 0,
         'title': title,
         'idea': idea,
-        'path': path,
+        'work_dir': work_dir,
         'status': 'complete',
         'phase_current': 'complete',
-        'position': 0,
+        'position': position,
     })
     return {'result': project_id}
 
@@ -64,14 +71,23 @@ async def project_admin_update(project_id: int, data: dict, user=Depends(AuthChe
         update['idea'] = str(data['idea'])
     if 'status' in data:
         update['status'] = str(data['status'])
-    if 'path' in data:
-        update['path'] = str(data['path'])
+    if 'work_dir' in data:
+        update['work_dir'] = str(data['work_dir'])
+    if 'task_server_url' in data:
+        # Адрес тест-сервера проекта: пустая строка допустима — тогда QA берёт
+        # общий адрес установки из `.env` (см. `task_role_project_server_url`).
+        update['task_server_url'] = str(data['task_server_url']).strip()
     if 'phase_current' in data:
         update['phase_current'] = str(data['phase_current'])
     if 'description' in data:
         update['description'] = str(data['description'])
-    if 'context' in data:
-        update['context'] = str(data['context'])
+    if 'position' in data:
+        # Перетаскивание в левой колонке шлёт по PUT на каждый проект списка —
+        # позиция это просто индекс в новом порядке.
+        try:
+            update['position'] = int(data['position'])
+        except (TypeError, ValueError):
+            return {'error': 'position must be an integer'}
     if update:
         await repo.update(project_id, update)
     return {'result': project_id}
@@ -83,35 +99,3 @@ async def project_admin_delete(project_id: int, user=Depends(AuthChecker([AuthPe
     repo = PlanningProjectRepository()
     await repo.delete(project_id)
     return {'result': project_id}
-
-
-@router.post('/project/context-generate')
-async def project_context_generate_endpoint(request: Request, data: dict,
-                                            user=Depends(AuthChecker([AuthPermission.PROJECT_UPDATE]))):
-    """Сгенерировать контекст проекта через LLM: обзор, функционал, страницы."""
-    path = str(data.get('path') or '').strip()
-    title = str(data.get('title') or '').strip()
-    project_id = int(data.get('project_id') or 0)
-    if not path:
-        return {'error': 'path is required'}
-    if not project_id:
-        return {'error': 'project_id is required'}
-
-    from src.project.project import project_context_generate
-
-    context_text = await project_context_generate(path=path, title=title, user_id=user.user_id)
-
-    repo = PlanningProjectRepository()
-    await repo.update(project_id, {'context': context_text})
-    return {'result': {'context': context_text}}
-
-
-@router.post('/project/get_context')
-async def project_admin_get_context(data: dict, user=Depends(AuthChecker([AuthPermission.PROJECT_VIEW]))):
-    """Вернуть контекст проекта из базы данных."""
-    project_id = int(data.get('project_id') or 0)
-    if not project_id:
-        return {'error': 'project_id is required'}
-    repo = PlanningProjectRepository()
-    project = await repo.find(project_id)
-    return {'result': {'context': project.get('context', '') if project else ''}}

@@ -1,7 +1,7 @@
 """
 Движок фазы планирования: находит проекты, готовые к фазе, и прогоняет по каждому агента.
 
-Потребителей два — `planning_runner` (событийный, внутри uvicorn) и `planning_batch`
+Потребителей два — `planning_worker` (событийный, job в Redis-очереди) и `planning_batch`
 (пакетный, из Cronicle). Цепочка фаз здесь не описывается, она в `planning_chain`.
 """
 import asyncio
@@ -52,9 +52,11 @@ async def planning_phase_run(
         processed: сколько проектов обработано успешно.
         errors: сколько завершилось ошибкой.
 
-    skip_init=True: пропустить queue_init и ai_thread_framework_run
-        (используется из planning_runner внутри uvicorn, где они уже запущены).
-    project_id_filter: обработать только конкретный проект (для runner'а).
+    skip_init=True: не поднимать очереди и поток движка и не трогать состояние
+        Cronicle-прохода (touch, сброс застрявших). Так зовёт `planning_worker`:
+        job поднимает инфраструктуру сам, один раз на всю цепочку проекта, а
+        Cronicle-состояние принадлежит пакетному `planning_batch`.
+    project_id_filter: обработать только конкретный проект (так зовёт воркер).
     """
     if not skip_init:
         queue_init([

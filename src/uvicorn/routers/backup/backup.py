@@ -2,7 +2,9 @@ import gzip
 import io
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
+
+from src.tool.datetime_.datetime_ import _utc_now_str
 
 import pymysql
 import pymysql.converters
@@ -10,6 +12,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import FileResponse
 
 from mysql_.mysql_ import host, port, user, password, db, mysql_conn_get
+from setting_.setting_ import setting_get
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 
@@ -29,14 +32,17 @@ async def backup_list(request: Request, user_=Depends(AuthChecker([AuthPermissio
 async def backup_create(request: Request, user_=Depends(AuthChecker([AuthPermission.SETTING_UPDATE]))):
     os.makedirs(BACKUPS_DIR, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"backup_{ts}{_EXT}"
+    tz_offset = await setting_get('timezone', '+0')
+    ts = _utc_now_str(tz_offset)
+    # 'YYYY-MM-DD HH:MM:SSZ' → 'YYYY-MM-DD_HH-MM-SS'
+    ts_clean = ts.rstrip('Z').replace(' ', '_').replace(':', '-')
+    filename = f"backup_{ts_clean}{_EXT}"
     filepath = os.path.join(BACKUPS_DIR, filename)
 
     try:
         _backup_via_mysqldump(filepath)
     except FileNotFoundError:
-        _backup_via_python(filepath)
+        _backup_via_python(filepath, ts)
     except Exception as e:
         if os.path.exists(filepath):
             os.remove(filepath)
@@ -134,12 +140,12 @@ def _backup_via_mysqldump(filepath: str):
         gz.write(result.stdout)
 
 
-def _backup_via_python(filepath: str):
+def _backup_via_python(filepath: str, ts: str = ""):
     conn = mysql_conn_get()
     try:
         buf = io.StringIO()
         buf.write(f"-- Backup (pymysql fallback)\n")
-        buf.write(f"-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        buf.write(f"-- Generated: {ts}\n")
         buf.write(f"-- Database: {db}\n\n")
         buf.write("SET NAMES utf8mb4;\n")
         buf.write("SET FOREIGN_KEY_CHECKS = 0;\n\n")
@@ -201,7 +207,7 @@ def _backup_list():
         files.append({
             "name": name,
             "size": stat.st_size,
-            "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "Z",
         })
     return files
 

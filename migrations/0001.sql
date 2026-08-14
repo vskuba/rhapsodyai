@@ -20,8 +20,12 @@ DROP TABLE IF EXISTS `project_planning_document`;
 DROP TABLE IF EXISTS `project_planning_phase`;
 DROP TABLE IF EXISTS `project_planning_phase_source`;
 DROP TABLE IF EXISTS `project_task_attempt`;
+-- Таблицы больше нет: подзадачи конвейера живут в `project_task` через `parent_id`.
+-- Строку оставляем, чтобы прогон схемы поверх старой базы дочищал за собой.
 DROP TABLE IF EXISTS `project_task_subtask`;
 DROP TABLE IF EXISTS `project_task`;
+DROP TABLE IF EXISTS `project_team`;
+DROP TABLE IF EXISTS `project_task_type`;
 DROP TABLE IF EXISTS `project`;
 -- developing / detective
 DROP TABLE IF EXISTS `developing_task`;
@@ -405,6 +409,7 @@ CREATE TABLE `ai_claude_session` (
     `response` LONGTEXT NULL,
     `responded_at` DATETIME NULL,
     `dynamic` TINYINT(1) NOT NULL DEFAULT 0,
+    `status` ENUM('queued','delivered','answered','failed') NOT NULL DEFAULT 'queued' COMMENT 'Фаза обработки строки очереди: queued - лежит в инбоксе, delivered - оболочка ввела текст в Claude Code, answered - пришёл ответ, failed - оболочка сдалась',
     INDEX `idx_claude_session_handled` (`handled`, `created_at`),
     INDEX `idx_claude_session_uuid` (`session_uuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -422,6 +427,9 @@ CREATE TABLE `ai_claude_session_registry` (
     `status` ENUM('active','closing','inactive') NOT NULL DEFAULT 'active',
     `server_llm` ENUM('anthropic','gx10') NOT NULL DEFAULT 'anthropic',
     `summary` VARCHAR(500) NULL,
+    `work_dir` VARCHAR(500) NULL COMMENT 'Абсолютный путь, в котором запущена shell-оболочка',
+    `agent_status` ENUM('unknown','ready','busy') NOT NULL DEFAULT 'unknown' COMMENT 'Готов ли агент принять сообщение прямо сейчас; приходит с heartbeat оболочки',
+    `agent_status_reason` VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'Причина занятости: permission / turn / queue / ... — только для диагностики',
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     `last_seen_at` DATETIME NULL,
     `closed_at` DATETIME NULL,
@@ -498,8 +506,9 @@ CREATE TABLE `project_task` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `project_id` INT DEFAULT NULL,
     -- Дерево задач: NULL = корневая, иначе подзадача своего родителя. Глубина не
-    -- ограничена схемой. Не путать с `project_task_subtask` — та принадлежит
-    -- конвейеру и живёт отдельно; здесь человеческая декомпозиция «эпик → подзадачи».
+    -- ограничена схемой. Дерево одно на всех: и человеческая декомпозиция
+    -- «эпик → подзадачи», и подзадачи конвейера, которые Manager раскладывает из
+    -- утверждённого плана, — это строки этой же таблицы со своим `parent_id`.
     `parent_id` INT DEFAULT NULL,
     `title` VARCHAR(255) NOT NULL DEFAULT '',
     `description` TEXT NOT NULL,
@@ -510,15 +519,52 @@ CREATE TABLE `project_task` (
     `position` INT NOT NULL DEFAULT '0',
     -- Конвейер агентов. NULL = обычная ручная задача, конвейера не касается (opt-in).
     -- Ортогонально `status`, который остаётся человеческим kanban-статусом.
-    -- `review` — человек нажал «Обновить план»: план есть, но его надо пересмотреть.
+    -- `reviewing` — человек нажал «Обновить план»: план есть, но его надо пересмотреть.
     -- Отдельное значение обязательно: отбор в конвейер идёт по «в плане нет подзадач»
     -- (`task_claim_task_unplanned`), и задачу с готовым планом иначе никто не подберёт.
-    `pipeline_state` ENUM('new','planning','pending_approval','review','approved','split','done','failed') DEFAULT NULL,
+    --
+    -- Один ENUM на две ветки конвейера, потому что таблица одна:
+    --   родитель: new -> planning -> plan_approval -> approved -> processing -> done|failed
+    --             reviewing --^ (человек нажал «Обновить план»)      '-> testing --^
+    --   ребёнок:  planned -> developing -> qa_pending -> testing -> done
+    --                            ^                          '-> failed_qa -> повтор до MAX_ATTEMPTS
+    --                            '---------------------------'      '-> blocked (лимит исчерпан)
+    -- `testing` у родителя — та же работа, что и `processing`, но после пометки
+    -- «в тестирование»: разработка по всем подзадачам закончена, идёт проверка.
+    -- Закрывается оттуда же, откуда и `processing` (`task_state_task_finalize`).
+    -- `testing` у ребёнка — QA взял подзадачу в работу (`qa_pending` — только очередь
+    -- к нему). Значение общее для обеих веток намеренно: смысл один и тот же —
+    -- «идёт проверка», и человеку на странице оно читается одинаково.
+    -- Остальные значения не пересекаются: ветку задаёт `parent_id`, а не колонка.
+    `pipeline_state` ENUM('new','planning','plan_approval','reviewing','approved','processing',
+                          'testing','planned','developing','qa_pending','failed_qa','blocked',
+                          'done','failed') DEFAULT NULL,
     `pipeline_plan` MEDIUMTEXT NOT NULL,
     `pipeline_error` TEXT NOT NULL,
+    -- Сколько кругов Developer -> QA уже прошла подзадача. У родителя всегда 0:
+    -- круг идёт по детям, лимит — `task_pipeline.MAX_ATTEMPTS`.
+    `pipeline_attempt_count` INT NOT NULL DEFAULT '0',
+    -- 1 = строку создал конвейер, разложив утверждённый план родителя; 0 = задачу
+    -- завёл человек. Дерево общее, отдельной таблицы подзадач нет, и по состоянию
+    -- происхождение не восстановить: сброс и пересмотр плана сносят свои строки
+    -- целиком, а человеческую декомпозицию трогать нельзя ни при каких условиях.
+    `pipeline_from_plan` TINYINT(1) NOT NULL DEFAULT '0',
     `pipeline_locked_at` DATETIME DEFAULT NULL,
     `pipeline_locked_by` VARCHAR(64) NOT NULL DEFAULT '',
+    -- Когда началась текущая работа над строкой. Отдельно от `pipeline_locked_at`
+    -- потому, что тот подновляется на ходу (`task_claim_lock_touch`): живой job
+    -- держит блокировку свежей, и по ней уже не сказать, давно ли идёт прогон.
+    -- Отсюда карточки команды считают остаток до таймаута агента.
+    -- При снятии блокировки не чистится: читается только вместе с ней.
+    `pipeline_started_at` DATETIME DEFAULT NULL,
     `trace_meta` JSON NULL COMMENT 'Мета-данные интеграций: [{domain, ...}]',
+    -- Свободный мешок данных задачи: ключ -> значение, читается и пишется целиком
+    -- через `task_metadata`. Сюда кладут то, под что заводить колонку рано: пометки
+    -- агентов, ссылки на внешние сущности, счётчики. Схема ничего не знает о
+    -- составе — контракт держит код, который пишет конкретный ключ.
+    -- Отличие от `trace_meta`: тот — след интеграции, привязка задачи к источнику
+    -- ошибки, по нему идёт дедуп (`task_bug_dedup`), и трогать его нельзя.
+    `metadata` JSON NULL COMMENT 'Произвольные данные задачи: {ключ: значение}',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -533,32 +579,15 @@ CREATE TABLE `project_task` (
     CONSTRAINT `fk_pt_task_type` FOREIGN KEY (`task_type_id`) REFERENCES `project_task_type` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Единица работы конвейера: Manager раскладывает утверждённый план на подзадачи,
--- дальше по каждой идёт цикл Developer → QA.
-CREATE TABLE `project_task_subtask` (
-    `id` INT NOT NULL AUTO_INCREMENT,
-    `task_id` INT NOT NULL,
-    `position` INT NOT NULL DEFAULT '0',
-    `title` VARCHAR(255) NOT NULL DEFAULT '',
-    `description` TEXT NOT NULL,
-    `state` ENUM('planned','developing','qa_pending','failed_qa','done','blocked') NOT NULL DEFAULT 'planned',
-    `attempt_count` INT NOT NULL DEFAULT '0',
-    `last_error` TEXT NOT NULL,
-    `locked_at` DATETIME DEFAULT NULL,
-    `locked_by` VARCHAR(64) NOT NULL DEFAULT '',
-    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    INDEX `idx_pts_task` (`task_id`, `position`),
-    INDEX `idx_pts_state` (`state`),
-    CONSTRAINT `fk_pts_task` FOREIGN KEY (`task_id`) REFERENCES `project_task` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- История попыток: нужна, чтобы вернуть ошибку QA обратно разработчику
 -- и чтобы Developer с QA не пинг-понговали бесконечно (см. MAX_ATTEMPTS).
+--
+-- `task_id` — та самая подзадача, по которой шёл круг, то есть строка `project_task`
+-- с непустым `parent_id`. Отдельной таблицы подзадач у конвейера нет: единица работы
+-- живёт в дереве задач наравне с остальными.
 CREATE TABLE `project_task_attempt` (
     `id` INT NOT NULL AUTO_INCREMENT,
-    `subtask_id` INT NOT NULL,
+    `task_id` INT NOT NULL,
     `attempt_no` INT NOT NULL DEFAULT '0',
     `role` ENUM('manager','developer','qa') NOT NULL,
     `status` ENUM('ok','error') NOT NULL,
@@ -567,8 +596,8 @@ CREATE TABLE `project_task_attempt` (
     `duration_ms` INT NOT NULL DEFAULT '0',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    INDEX `idx_pta_subtask` (`subtask_id`, `attempt_no`),
-    CONSTRAINT `fk_pta_subtask` FOREIGN KEY (`subtask_id`) REFERENCES `project_task_subtask` (`id`) ON DELETE CASCADE
+    INDEX `idx_pta_task` (`task_id`, `attempt_no`),
+    CONSTRAINT `fk_pta_task` FOREIGN KEY (`task_id`) REFERENCES `project_task` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- История версий плана. План перезаписывается на месте, и без снапшота предыдущая
@@ -645,9 +674,13 @@ CREATE TABLE `project` (
     `user_id` INT NOT NULL DEFAULT '0',
     `title` VARCHAR(255) NOT NULL DEFAULT '',
     `idea` LONGTEXT NOT NULL,
-    `path` VARCHAR(500) NULL,
+    `work_dir` VARCHAR(500) NULL,
+    -- Адрес сервера, поднятого над рабочим каталогом подзадачи этого проекта:
+    -- QA проверяет ветку на нём, а не на общем сервере установки. У каждого
+    -- проекта свой порт и своя команда запуска, поэтому значение на проекте, а
+    -- не в `.env`; пусто — берётся PROJECT_TASK_QA_SERVER_URL (`project_task.md`).
+    `task_server_url` VARCHAR(255) NOT NULL DEFAULT '',
     `description` TEXT NULL,
-    `context` TEXT NULL,
     `status` ENUM('pending','processing','complete','error') NOT NULL DEFAULT 'pending',
     `phase_current` VARCHAR(100) NOT NULL DEFAULT '',
     `position` INT NOT NULL DEFAULT '0',
@@ -885,6 +918,7 @@ CREATE TABLE `project_task_type` (
 
 CREATE TABLE `project_team` (
     `id` INT NOT NULL AUTO_INCREMENT,
+    `project_id` INT DEFAULT NULL COMMENT 'Проект карточки; NULL — карточка вне проектов',
     `name` VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Имя члена команды',
     `role` VARCHAR(50) NOT NULL DEFAULT 'developer' COMMENT 'manager, developer, qa',
     `command` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'Команда для запуска (например: claude-shell --gx10 --manager)',
@@ -896,6 +930,8 @@ CREATE TABLE `project_team` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_team_name` (`name`),
-    INDEX `idx_team_status` (`status`)
+    UNIQUE KEY `uk_team_project_name` (`project_id`, `name`),
+    INDEX `idx_team_status` (`status`),
+    INDEX `idx_team_project_role` (`project_id`, `role`),
+    CONSTRAINT `fk_team_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -74,8 +74,14 @@ async def project_create(title: str, idea: str) -> dict:
         await db.connection.commit()
         project_id = int(db.lastrowid)
 
-    from src.project.planning.planning_runner import planning_runner_enqueue
-    await planning_runner_enqueue(project_id)
+    # Карточки команды заводим сразу: блок проекта на `/admin/team` рисуется по
+    # строкам `project_team`, и без них новый проект встретит человека пустыми
+    # ролями без команды запуска.
+    from src.project.team.team_member import team_member_cards_ensure
+    await team_member_cards_ensure(project_id)
+
+    from src.worker.project.planning_worker import planning_worker_enqueue
+    planning_worker_enqueue(project_id)
 
     return {'project_id': project_id, 'title': title}
 

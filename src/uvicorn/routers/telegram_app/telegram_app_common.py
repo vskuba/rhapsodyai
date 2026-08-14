@@ -11,6 +11,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.project.team.team_session import TEAM_SESSION_RESTART_MARKER
 
 agent_manager = AiFrameworkAgentManager()
 
@@ -22,7 +23,9 @@ TELEGRAM_CHAT_COMPANION_NAME = 'user_admin'
 TELEGRAM_CHAT_COMPANION_TITLE = 'admin'
 
 SESSION_CLEANUP_MARKER = '__SESSION_CLEANUP__'
-RESTART_WATCH_MARKER = '__RESTART_WATCH__'
+# Перезапуск watch просят из двух мест — Mini App и карточки на /admin/team, —
+# поэтому маркер живёт в `team_session`, а здесь только имя для местных вызовов.
+RESTART_WATCH_MARKER = TEAM_SESSION_RESTART_MARKER
 QUOTA_CHECK_MARKER = '__QUOTA_CHECK__'
 
 

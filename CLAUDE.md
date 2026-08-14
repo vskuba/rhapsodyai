@@ -14,11 +14,17 @@ See `.claude/docs/ai_framework.md` for AI Framework architecture and usage.
 
 See `.claude/docs/database.md` and `.claude/docs/migration.md` for database schema, migrations, and reset procedures.
 
+**Универсальные правила — в `.claude/docs-common/`** (индекс: `.claude/docs-common/readme.md`).
+Там правила без привязки к проекту: именование, контракт API, права, схема БД, деплой,
+инструменты, LLM, трейс, тесты, формат документации. `.claude/docs/` описывает, как это
+реализовано именно здесь. При расхождении конкретика из `.claude/docs/` — актуальнее.
+
 ## Development Patterns
 
 See the documentation files in `.claude/docs/` for detailed patterns:
 
 - **New Tool** → `.claude/docs/workflow_tool.md`
+- **New Worker / фоновая обработка** → `.claude/docs/worker.md`
 - **New Admin Page** → `.claude/docs/dashboard_frontend.md`
 - **New Protected Endpoint** → `.claude/docs/auth.md`
 - **Workflow** → `.claude/docs/workflow.md`
@@ -51,11 +57,34 @@ asyncio.run(telegram_send_owner('your message'))
 | `src/telegram_bot.py` | Telegram bot handler |
 | `src/auth/auth.py` | `AuthChecker`, `get_current_user` |
 | `src/cronjob/` | Cron job entry points |
+| `src/worker/` | Все воркеры (Redis/rq): `project/task_worker.py` — очередь `default`, `project/planning_worker.py` — очередь `planning` |
 | `migrations/0001.sql` | Единственный источник схемы БД |
 
 ## Docs Reference
 
-Все файлы — в `.claude/docs/`.
+Две папки: `.claude/docs-common/` — универсальные правила (переносимы в любой проект),
+`.claude/docs/` — устройство этой инсталляции.
+
+### Универсальные правила — `.claude/docs-common/`
+
+| File | Contents |
+|------|---------|
+| `readme.md` | Индекс папки, разделение `docs-common/` и `docs/`, правила самой папки |
+| `code_rules.md` | Префикс функций и констант, приватные внизу, дробление файлов, ветки размещения |
+| `api_rules.md` | Контракт ответов, формат ошибок, разделение роутеров, валидация входа |
+| `auth_rules.md` | Сессии, RBAC, проверка по возможностям (не по имени роли), полевые политики |
+| `database_rules.md` | Единственный DDL-файл, DDL против данных, порядок FK, идемпотентность, прод |
+| `backup_rules.md` | Seed против бэкапа, экспорт/восстановление, безопасность имён файлов |
+| `env_config_rules.md` | `.env` / `.dist` / `.local`, секреты, таблица настроек, конфиг для фронтенда |
+| `frontend_rules.md` | SSR-страницы админки, чек-лист новой страницы, локальность зависимостей |
+| `deploy_rules.md` | Blue-Green, конфиг прокси как источник истины, healthcheck, откат |
+| `tool_rules.md` | Автообнаруживаемые инструменты: контракт функции, докстринг для LLM, ошибки |
+| `llm_rules.md` | Маршрутизация по провайдерам, приоритет и фоллбэк, параллельность, журнал |
+| `observability_rules.md` | Трейс выполнения, «сбой журнала не роняет процесс», обрезка, чистка |
+| `testing_rules.md` | Интеграционная сюита, тестовая учётка, проверка после реализации |
+| `docs_rules.md` | Формат документации: структура файла, тон, что не писать |
+
+### Проектная документация — `.claude/docs/`
 
 **Основы**
 
@@ -63,7 +92,8 @@ asyncio.run(telegram_send_owner('your message'))
 |------|---------|
 | `quickstart.md` | Запуск через Docker, порты, тесты, переменные `.env` |
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
-| `architecture_rules.md` | Код-правила: функция-префикс = имя файла, дробление файлов |
+| `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
+| `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
 | `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда |
 | `dashboard_frontend.md` | Паттерны админ-страниц: JS, CSS, контракты API |

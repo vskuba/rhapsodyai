@@ -80,7 +80,7 @@ function renderClaudeSessionList(sessions) {
                  data-role="${escHtml(s.role)}" data-project="${escHtml(s.project_label)}">
                 <div class="session-title">
                     <span class="session-status-dot"></span>
-                    ${escHtml(s.role)} — ${escHtml(s.project_label)} — ${escHtml(s.server_llm)}
+                    ${[s.project_label, s.server_llm, s.role].filter(Boolean).map(escHtml).join(' — ')}
                 </div>
                 <div class="session-subtitle">${escHtml(subtitle)}</div>
             </div>`;
@@ -94,7 +94,7 @@ function renderClaudeSessionList(sessions) {
 
 export async function openClaudeSession(sessionUuid, role, projectLabel) {
     state.claude.sessionUuid = sessionUuid;
-    state.claude.sessionLabel = `${role} — ${projectLabel}`;
+    state.claude.sessionLabel = role ? `${projectLabel} - ${role}` : String(projectLabel || '');
     state.claude.sessionUnreachable = false;
     state.claude.renderedUserIds = new Set();
     state.claude.renderedResponses = new Map();

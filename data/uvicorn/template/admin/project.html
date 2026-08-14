@@ -57,6 +57,24 @@
         font-weight: 600;
     }
 
+    .project-item.dragging {
+        opacity: 0.4;
+    }
+
+    /* Ручка перетаскивания для drag-and-drop сортировки */
+    .project-item .drag-handle {
+        color: #c0c8ce;
+        cursor: grab;
+        font-size: 12px;
+        flex-shrink: 0;
+        user-select: none;
+        margin-right: 8px;
+    }
+
+    .project-item:hover .drag-handle {
+        color: #7f8c8d;
+    }
+
     .project-item .status-dot {
         width: 8px;
         height: 8px;
@@ -216,27 +234,6 @@
         cursor: pointer;
     }
 
-    .btn-get-context {
-        color: white;
-        border: none;
-        padding: 2px 10px;
-        border-radius: 5px;
-        cursor: pointer;
-        font-weight: bold;
-        font-size: 12px;
-        transition: all 0.2s;
-        height: 20px;
-    }
-
-    .btn-get-context:hover:not(:disabled) {
-        background: #229954;
-    }
-
-    .btn-get-context:disabled {
-        background: #bdc3c7;
-        cursor: not-allowed;
-    }
-
     .btn-delete {
         background: transparent;
         color: #e74c3c;
@@ -302,7 +299,11 @@
                 </div>
                 <div class="form-group">
                     <label>Путь к директории</label>
-                    <input type="text" id="path" class="form-control" placeholder="/absolute/path/to/project">
+                    <input type="text" id="work_dir" class="form-control" placeholder="/absolute/path/to/project">
+                </div>
+                <div class="form-group">
+                    <label>Тест-сервер задач</label>
+                    <input type="text" id="task_server_url" class="form-control" placeholder="http://localhost:8013">
                 </div>
             </div>
 
@@ -311,16 +312,6 @@
                     <label>Описание</label>
                     <textarea id="description" class="form-control" rows="3"
                               placeholder="Краткое описание проекта"></textarea>
-                </div>
-            </div>
-
-            <div style="margin-top: 15px;">
-                <div class="form-group">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <label>Контекст</label>
-                        <button type="button" class="btn-get-context" id="updateContextBtn">Обновить контекст</button>
-                    </div>
-                    <textarea id="context" class="form-control" rows="6" placeholder="Контекст проекта"></textarea>
                 </div>
             </div>
 
@@ -346,7 +337,6 @@
     const projectForm = document.getElementById('projectForm');
     const createNewProjectBtn = document.getElementById('createNewProject');
     const deleteBtn = document.getElementById('deleteBtn');
-    const updateContextBtn = document.getElementById('updateContextBtn');
     const emptyState = document.getElementById('emptyState');
     const formTitle = document.getElementById('formTitle');
 
@@ -386,22 +376,74 @@
         projects.forEach(project => {
             const div = document.createElement('div');
             div.className = 'project-item';
+            div.draggable = true;
             div.dataset.id = project.id;
 
             const title = project.title || 'Без названия';
             const statusDot = `<span class="status-dot ${statusClass(project.status)}" title="${project.status || 'pending'}"></span>`;
 
-            div.innerHTML = `<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</span>${statusDot}`;
+            div.innerHTML = `<span class="drag-handle" title="Перетащите для изменения порядка">⠿</span>`
+                + `<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${title}</span>${statusDot}`;
 
             div.onclick = () => selectProject(project.id, div);
+            div.addEventListener('dragstart', onDragStart);
+            div.addEventListener('dragover', onDragOver);
+            div.addEventListener('dragend', onDragEnd);
             projectListContainer.appendChild(div);
         });
 
-        // Автоматически выбираем первый проект
+        // Восстанавливаем ранее выбранный проект из sessionStorage (переживает обновление
+        // страницы), иначе - первый пункт списка
+        const savedProjectId = sessionStorage.getItem('project_page_selected_id');
+        const savedElement = savedProjectId
+            ? Array.from(projectListContainer.querySelectorAll('.project-item')).find(el => el.dataset.id === savedProjectId)
+            : null;
+
+        if (savedElement) {
+            selectProject(savedProjectId, savedElement);
+            return;
+        }
+
         const firstProject = projects[0];
         const firstElement = projectListContainer.querySelector('.project-item');
         if (firstProject && firstElement) {
             selectProject(firstProject.id, firstElement);
+        }
+    }
+
+    // Drag-and-drop: перестановка проектов, порядок сохраняется в position
+    let draggedItem = null;
+
+    function onDragStart(e) {
+        draggedItem = e.currentTarget;
+        draggedItem.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function onDragOver(e) {
+        const target = e.currentTarget;
+        if (!draggedItem || draggedItem === target) return;
+        e.preventDefault();
+        const rect = target.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        projectListContainer.insertBefore(draggedItem, after ? target.nextSibling : target);
+    }
+
+    async function onDragEnd() {
+        if (!draggedItem) return;
+        draggedItem.classList.remove('dragging');
+        draggedItem = null;
+
+        // Новый порядок по DOM -> сохраняем индексы в position
+        const items = Array.from(projectListContainer.querySelectorAll('.project-item'));
+        try {
+            await Promise.all(items.map((el, index) =>
+                putData(`/project/${el.dataset.id}`, {position: index})
+            ));
+            showNotification('Порядок проектов сохранён', 'success');
+        } catch (e) {
+            console.error('Ошибка сохранения порядка:', e);
+            showNotification(`Ошибка сохранения порядка: ${e.message}`, 'error');
         }
     }
 
@@ -425,11 +467,9 @@
 
             document.getElementById('projectId').value = project.id;
             document.getElementById('title').value = project.title || '';
-            document.getElementById('path').value = project.path || '';
+            document.getElementById('work_dir').value = project.work_dir || '';
+            document.getElementById('task_server_url').value = project.task_server_url || '';
             document.getElementById('description').value = project.description || '';
-            document.getElementById('context').value = project.context || '';
-
-            checkPathForContext();
 
             formTitle.textContent = `Проект: ${project.title || 'Без названия'}`;
             if (saveBtn) saveBtn.disabled = false;
@@ -466,9 +506,9 @@
         const id = document.getElementById('projectId').value;
         const payload = {
             title: document.getElementById('title').value.trim(),
-            path: document.getElementById('path').value.trim(),
+            work_dir: document.getElementById('work_dir').value.trim(),
+            task_server_url: document.getElementById('task_server_url').value.trim(),
             description: document.getElementById('description').value.trim(),
-            context: document.getElementById('context').value.trim(),
         };
 
         if (!payload.title) {
@@ -521,53 +561,6 @@
         }
     }
 
-    /**
-     * Проверка поля пути — включить/выключить кнопку "Обновить контекст"
-     */
-    function checkPathForContext() {
-        const pathVal = document.getElementById('path').value.trim();
-        if (updateContextBtn) {
-            updateContextBtn.disabled = pathVal === '';
-        }
-    }
-
-    /**
-     * Обновление контекста проекта через API
-     */
-    async function updateContext() {
-        const pathVal = document.getElementById('path').value.trim();
-        if (!pathVal) {
-            showNotification('Укажите путь к директории проекта', 'error');
-            return;
-        }
-
-        if (updateContextBtn) {
-            updateContextBtn.disabled = true;
-            updateContextBtn.textContent = '⏳ Загрузка...';
-        }
-
-        try {
-            const titleVal = document.getElementById('title').value.trim();
-            const res = await postData('/project/context-generate', {path: pathVal, title: titleVal});
-            if (res.error) {
-                showNotification('Ошибка: ' + res.error, 'error');
-                return;
-            }
-            const ctx = res.result || {};
-            document.getElementById('context').value = ctx.context || '';
-            showNotification('Контекст обновлён', 'success');
-        } catch (e) {
-            console.error('Ошибка обновления контекста:', e);
-            showNotification('Не удалось обновить контекст: ' + e.message, 'error');
-        } finally {
-            if (updateContextBtn) {
-                updateContextBtn.textContent = 'Обновить контекст';
-                updateContextBtn.disabled = false;
-                checkPathForContext();
-            }
-        }
-    }
-
     // Слушатели событий
     document.addEventListener('DOMContentLoaded', () => {
         init();
@@ -582,15 +575,6 @@
 
         if (deleteBtn) {
             deleteBtn.addEventListener('click', deleteProject);
-        }
-
-        if (updateContextBtn) {
-            updateContextBtn.addEventListener('click', updateContext);
-        }
-
-        const pathInput = document.getElementById('path');
-        if (pathInput) {
-            pathInput.addEventListener('input', checkPathForContext);
         }
     });
 </script>

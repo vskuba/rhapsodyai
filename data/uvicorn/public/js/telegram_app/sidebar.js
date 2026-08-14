@@ -38,7 +38,7 @@ export function initSidebar({ inputBars, onTabChange, onGoHome }) {
     });
     document.getElementById('dasboardLocal').addEventListener('click', async () => {
         const config = await loadConfig();
-        const url = config.SITE_LOGIN_LOCAL_URL || 'http://93.175.229.252:44152/login';
+        const url = config.SITE_LOGIN_LOCAL_URL || 'https://93.175.229.252.sslip.io:44152/login';
         if (tg?.openLink) tg.openLink(url);
         else window.open(url, '_blank');
     });

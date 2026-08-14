@@ -61,22 +61,26 @@ Fallback цепочка: openrouter/gpt-oss-120b → cerebras/gpt-oss-120b → .
 
 ## 3. Поток выполнения
 
-### planning_runner (внутренний asyncio-runner, `src/project/planning/planning_runner.py`)
+### planning_worker (job в Redis-очереди, `src/worker/project/planning_worker.py`)
 
-Запускается из `main_uvicorn.py` через `asyncio.create_task(planning_runner_start())` **после** завершения `ai_tool_sync()`. ВАЖНО: порядок критичен — `ai_tool_sync(force=True)` очищает таблицу `tool` перед ресканом; runner, стартовавший раньше, получит пустой `tools` dict и упадёт с "инструмент не найден".
+Цепочку фаз выполняет контейнер `worker_planning` (`rq worker-pool … planning`) — очередь своя, не общая с конвейером задач: цепочка идёт до 13 часов и в общей очереди держала бы исполнителя весь день. Кто ставит проект в очередь — тот его не планирует: инструмент, роутер и восстановление в lifespan только зовут `planning_worker_enqueue(project_id)`. Общие правила воркеров — `worker.md`.
+
+`main_uvicorn.py` зовёт `planning_worker_recover()` **после** `ai_tool_sync()`. ВАЖНО: порядок критичен — `ai_tool_sync(force=True)` очищает таблицу `tool` перед ресканом; job, стартовавший раньше, получит пустой `tools` dict и упадёт с "инструмент не найден".
 
 ```
 uvicorn startup:
-  ai_tool_sync(force=True)              # сначала синхронизируем инструменты
-  asyncio.create_task(planning_runner_start())   # только потом стартуем runner
+  ai_tool_sync(force=True)         # сначала синхронизируем инструменты
+  await planning_worker_recover()  # только потом восстановление
 
-planning_runner_start():
-  _startup_reset()   # running → pending для прерванных фаз
+planning_worker_recover():
+  _startup_reset()   # running → pending, но только для проектов без flight-ключа:
+                     #   job переживает рестарт uvicorn, живую фазу отбирать нельзя
   _recover_pending() # ставим в очередь pending/processing проекты
-  
-  while True:
-    project_id = await queue.get()
-    asyncio.create_task(_run_project_chain(project_id))  # параллельно для каждого проекта
+
+контейнер worker:
+  planning_worker_job_run(project_id)   # один job = вся цепочка одного проекта
+    → _job_async(): logging_init, queue_init, поток движка, mysql_pool_close в finally
+      → _run_project_chain(project_id)
 
 _run_project_chain(project_id):
   # Выполняет PHASE_GROUPS по волнам:
@@ -93,12 +97,14 @@ _run_project_chain(project_id):
   )
 ```
 
-**Параллельность проектов:** каждый проект получает отдельный asyncio.Task → оба проекта видны как `processing` одновременно, LLM-вызовы идут конкурентно (async HTTP не блокирует друг друга).
+**Параллельность проектов:** каждый проект — отдельный job в очереди, поэтому проекты планируются одновременно ровно настолько, насколько хватает воркеров: одна цепочка занимает один воркер целиком (до 13 часов). Больше параллельных проектов — больше контейнеров `worker_task`.
+
+**Дубликаты:** ключ Redis `planning_worker:flight:<project_id>` берётся при постановке в очередь и снимается в `finally` job'а. Планирование зовут из трёх мест, захвата строки у фазы нет — без ключа один проект спланировался бы дважды.
 
 ```
 planning_bot (чат) → planning_project_create() → planning_project.status=pending
                                                          ↓
-planning_runner_enqueue(project_id) → _run_project_chain()
+planning_worker_enqueue(project_id) → _run_project_chain()
   → planning_phase_run(agent_name, phase, requires, project_id_filter=project_id)
       → AiFrameworkAgentManager.framework_workflow_run()   # прямой asyncio.Task, без TTL-очереди
            → tool_invoke(planning_project_load) → idea, phases_context
@@ -247,12 +253,16 @@ pos 4: tool_invoke(planning_document_save)
 
 | Функция | Назначение |
 |---------|-----------|
-| `planning_project_load(project_id)` | → `{idea, phases_context}` — идея + markdown завершённых фаз. **Tiered:** последние 2 фазы — полный текст; более ранние усечены до 1500 символов (~60K → ~25K для financial) |
-| `planning_phase_save(project_id, phase, result)` | Сохранить результат фазы в `planning_phase` |
-| `planning_document_save(project_id, doc_type, title, content)` | Сохранить Blueprint / Supplement в `planning_document` |
-| `planning_project_create(title, idea)` | Создать проект |
-| `planning_bot_action(action, ...)` | Диспетчер для planning_bot chat |
-| `planning_projects_list()` | Список проектов для чат-бота |
+| `planning_project_load(project_id)` | → `{idea, phases_context, project_title}` — идея + markdown завершённых фаз (`supplement_*` исключены). **Tiered:** последние 2 фазы — полный текст; более ранние усечены до 1500 символов (~60K → ~25K для financial) |
+| `planning_phase_save(project_id, phase, result)` | Сохранить результат фазы в `project_planning_phase` |
+| `planning_phase_blueprint_load(project_id)` | Blueprint-документ для агента оценки |
+| `planning_phase_supplement_context_load(project_id, supplement_type)` | Blueprint + одна релевантная фаза для supplement-агента |
+| `planning_phase_design_context_load(project_id)` | Blueprint + product + market для дизайн-агента |
+| `planning_phase_document_save(project_id, doc_type, title, content)` | Сохранить Blueprint / Supplement в `project_planning_document` |
+| `planning_project_status_get(project_id)` | Статус проекта, фазы и документы |
+| `planning_project_score_save(project_id, …)` | Оценки проекта после blueprint |
+| `planning_project_list(limit)` | Список проектов чипами с прогрессом |
+| `planning_project_bot_action(action, …)` | Диспетчер для planning_bot chat |
 
 ## 8. Переменные workflow агентов
 
@@ -442,9 +452,9 @@ LLM воспринимает это как мягкую рекомендацию
    При синтезе проверить, укладывается ли в контекст LLM.
 2. **Зависимость фаз** — если одна фаза упала (status=failed), все последующие не запустятся.
    Механизм retry реализован (см. §10).
-3. **Старт runner'а после tool_sync** — race condition: если `planning_runner_start()` стартует
-   до завершения `ai_tool_sync(force=True)`, runner получит пустой `tools` dict во время
-   очистки таблицы `tool`. Исправлено в `main_uvicorn.py` — runner создаётся строго после sync.
+3. **Восстановление после tool_sync** — race condition: если `planning_worker_recover()` ставит
+   проекты в очередь до завершения `ai_tool_sync(force=True)`, job получит пустой `tools` dict
+   во время очистки таблицы `tool`. В `main_uvicorn.py` восстановление идёт строго после sync.
 4. ~~**phases_context растёт с каждой фазой**~~ — **Исправлено** в `planning_project_load`:
    последние 2 фазы передаются полным текстом, остальные усечены до 1500 символов.
    Размер financial-промпта сократился с ~60K до ~25K, blueprint — с ~60K до ~19K.

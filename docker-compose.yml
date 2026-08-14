@@ -79,6 +79,12 @@ services:
       - "8011:8000"
     volumes:
       - ./:/app
+      # Тот же репозиторий вторым монтированием — по хостовому пути. Нужно для
+      # рабочих каталогов задач (`task_worktree`): git пишет в служебные файлы
+      # worktree абсолютные пути, и созданный из контейнера каталог с путями
+      # `/app/...` на хосте не открывается — а живёт в нём Claude Code хоста.
+      # Совпадение путей внутри и снаружи снимает вопрос целиком.
+      - ${PROJECT_HOST_DIR}:${PROJECT_HOST_DIR}
     env_file:
       - .env
     environment:
@@ -123,6 +129,57 @@ services:
       - os-net
     # unless-stopped: restarts on crash (when active), but NOT after explicit
     # `docker stop` (when inactive slot is being stopped by bluegreen.sh)
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Сервер задачи: тот же образ, но кодом служит рабочий каталог подзадачи, а не
+  # общий чекаут. Нужен QA — проверять ветку на живом сервере, не трогая :8011,
+  # на котором в это время работает человек и соседние задачи.
+  #
+  # База, redis и qdrant общие с основным сервером: разводить ещё и данные значит
+  # проверять задачу на пустой базе, где нет ни проектов, ни настроек. Цена — QA
+  # пишет в ту же БД, что и все; для задач конвейера это принято сознательно.
+  #
+  # Профиль `task` держит сервис выключенным при обычном `docker compose up`.
+  # Поднимают его на время проверки: `./task_server.sh up <id>` (см. скрипт).
+  uvicorn_task:
+    build:
+      context: .
+      dockerfile: docker/uvicorn/dockerfile
+    # Тот же образ, что у основного сервера: сборка одна и та же, а без общего
+    # имени compose собирал бы её второй раз — это минуты ожидания на каждой
+    # первой проверке и лишний образ в гигабайт.
+    image: rhapsodyai-uvicorn:latest
+    container_name: uvicorn_task
+    profiles: ["task"]
+    ports:
+      - "8013:8000"
+    volumes:
+      # Каталог подзадачи вместо репозитория. Без переменной поднимется обычный
+      # чекаут — то же, что :8011, и это заметно сразу.
+      - ${TASK_WORKTREE_DIR:-./}:/app
+      # Ссылки внутри каталога подзадачи (`.env`, `.venv`, рабочие папки `data`)
+      # указывают на хостовые пути — без этого монтирования они оборваны.
+      - ${PROJECT_HOST_DIR}:${PROJECT_HOST_DIR}
+    env_file:
+      - .env
+    environment:
+      # Каталог задачи временный, и снимать его будет человек с хоста. Контейнер
+      # работает root-ом: оставленные им `__pycache__` root-овые, и `git worktree
+      # remove` спотыкается о них с «Permission denied». Байткод здесь не нужен.
+      - PYTHONDONTWRITEBYTECODE=1
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+      - HF_HOME=/root/.cache/huggingface
+      - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
+    depends_on:
+      - qdrant
+    networks:
+      - os-net
+    # unless-stopped, а не always: остановленный после проверки сервер не должен
+    # подниматься сам при перезапуске docker.
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -176,12 +233,62 @@ services:
       - os-net
     restart: always
 
-  worker:
+  worker_task:
     build:
       context: .
       dockerfile: docker/uvicorn/dockerfile
-    container_name: worker
-    command: rq worker --url redis://redis:6379 default # слушает очередь default
+    container_name: worker_task
+    # Пул, а не одиночный `rq worker`: шаг конвейера ждёт живой Claude Code до часа,
+    # и на одном процессе очередь стоит всё это время — Manager одной задачи держит
+    # Developer'а другой. Три процесса = три роли конвейера одновременно.
+    command: rq worker-pool --url redis://redis:6379 -n 3 default
+    volumes:
+      - ./:/app
+      # Хостовой путь репозитория — см. пояснение у `uvicorn`. Рабочие каталоги
+      # задач заводит именно этот контейнер: `task_worktree_ensure` зовётся из
+      # шага конвейера.
+      #
+      # Здесь смонтирован только проект самой установки. Карточки заводят и на
+      # другие проекты машины — у каждого свой репозиторий по своему пути
+      # (`project.work_dir`), и каталог задачи конвейер режет в нём же. Чтобы
+      # такой проект был виден, добавьте его в `docker-compose.override.yml` тем
+      # же правилом «путь внутри = путь снаружи»:
+      #
+      #   services:
+      #     worker_task:
+      #       volumes:
+      #         - /home/user/projects/shop:/home/user/projects/shop
+      #
+      # Невидимый каталог конвейер не молчит: `_subtask_dir` пишет в лог, что
+      # проверить, и работает без изоляции, в общем каталоге проекта.
+      - ${PROJECT_HOST_DIR}:${PROJECT_HOST_DIR}
+    env_file:
+      - .env
+    environment:
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+      - HF_HOME=/root/.cache/huggingface
+      - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
+    depends_on:
+      - redis
+      - uvicorn
+    networks:
+      - os-net
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Отдельный контейнер, а не ещё пара процессов в `worker_task`: у планирования другой
+  # профиль нагрузки — цепочка фаз идёт до 13 часов против часа у шага конвейера.
+  # В общей очереди один запланированный проект занял бы исполнителя на весь день,
+  # и конвейер задач встал бы вместе с ним.
+  worker_planning:
+    build:
+      context: .
+      dockerfile: docker/uvicorn/dockerfile
+    container_name: worker_planning
+    command: rq worker-pool --url redis://redis:6379 -n 2 planning
     volumes:
       - ./:/app
     env_file:
@@ -287,6 +394,30 @@ services:
       - os-net
     # No depends_on uvicorn: Blue-Green manages which uvicorn slot is active.
     # Caddy handles upstream unavailability gracefully via lb_try_duration.
+
+  # HTTPS на машине разработчика: Telegram принимает Web App URL только по HTTPS.
+  # Отдельный сервис, а не профиль у caddy — Caddyfile и порты разные,
+  # а на проде этот контейнер занял бы 80-й порт у боевого caddy.
+  caddy_local:
+    image: caddy:2
+    container_name: caddy_local
+    profiles: ["on_local_only"]
+    restart: always
+    ports:
+      # 80 нужен только для ACME-челленджа (внешний 443 не проброшен).
+      # Наружу Mini App отдается на 44152, но локальный 44152 занят системным
+      # Apache, поэтому на хосте берем 44153: роутер пробрасывает
+      # внешний 44152 -> 44153, внутри контейнера Caddy слушает 44152,
+      # чтобы адрес сайта совпадал с портом в URL.
+      - "80:80"
+      - "44153:44152"
+    volumes:
+      - ./docker/caddy/Caddyfile_local:/etc/caddy/Caddyfile:ro
+      - ./apps:/srv/apps:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - os-net
 
 volumes:
   opensearch-data:

@@ -9,7 +9,7 @@ from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
-from src.project.planning.planning_runner import planning_runner_enqueue
+from src.worker.project.planning_worker import planning_worker_enqueue
 
 router = APIRouter()
 
@@ -117,6 +117,6 @@ async def planning_ideas_bulk_create(request: Request, data: dict, user=Depends(
         await db.connection.commit()
 
     for item in created:
-        await planning_runner_enqueue(item['id'])
+        planning_worker_enqueue(item['id'])
 
     return {'result': created}
