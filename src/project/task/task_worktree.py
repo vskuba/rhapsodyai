@@ -131,7 +131,7 @@ async def task_worktree_ensure(repo_dir: str, subtask_id) -> str:
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     branch = task_worktree_branch(subtask_id)
-    base = await _base_ref(repo_dir)
+    base = await _base_branch(repo_dir)
 
     # Ветка могла остаться от прошлого прогона (каталог сняли, ветку нет) —
     # тогда подключаем её, а не пересоздаём: в ней уже есть коммиты подзадачи.
@@ -353,21 +353,6 @@ def _dirty_lines(path: str, status: str) -> list[str]:
     return dirty
 
 
-async def _base_ref(repo_dir: str) -> str:
-    """
-    От чего резать ветку: главная ветка репозитория, по возможности с сервера.
-
-    `origin/<имя>` точнее локальной ветки — он не зависит от того, что человек
-    намержил у себя, — но берётся, только если ответил `git fetch`; без сети
-    остаётся локальная.
-    """
-    branch = await _base_branch(repo_dir)
-    await _git(repo_dir, 'fetch', 'origin', branch)
-    code, _ = await _git(repo_dir, 'rev-parse', '--verify', f'origin/{branch}')
-
-    return f'origin/{branch}' if not code else branch
-
-
 async def _base_branch(repo_dir: str) -> str:
     """
     Имя главной ветки репозитория — локальное, без `origin/`.
@@ -376,8 +361,13 @@ async def _base_branch(repo_dir: str) -> str:
     `origin/HEAD`; у клона, где эта ссылка не настроена, пробуем известные имена и
     берём то, которое в репозитории есть.
 
-    Без `origin/` — потому что вливать (`task_worktree_merge`) можно только в
-    локальную ветку: удалённая read-only, её двигает `push`.
+    Без `origin/` — и на резке ветки (`task_worktree_ensure`), и на слиянии
+    (`task_worktree_merge`). На слиянии иначе нельзя: удалённая ветка read-only,
+    её двигает `push`. На резке — потому что от `origin/` каталог агента
+    получается не тем репозиторием, который агент планировал: менеджер читает
+    главный чекаут, а там локальная ветка, и она бывает на десятки коммитов
+    впереди сервера. Разработчик тогда не находит файлов, про которые ему пишут
+    в плане. База и цель слияния должны быть одной веткой.
     """
     code, out = await _git(repo_dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
     branch = (out or '').strip().split('\n')[-1].removeprefix('origin/').strip() if not code else ''
