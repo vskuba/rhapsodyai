@@ -67,12 +67,26 @@ case "$command_run" in
         worktree_dir="$REPO_DIR/.claude/worktrees/feature_task_${subtask_id}"
 
         # Гасим сервер, только если он поднят именно над этим каталогом: иначе
-        # уборка одной задачи погасила бы проверку другой.
-        if docker ps --format '{{.Names}}' | grep -qx "$SERVICE"; then
+        # уборка одной задачи погасила бы проверку другой. Контейнер ищем среди
+        # всех, а не только работающих: контейнер над снесённым каталогом падает
+        # на старте и висит в `Restarting` — в `docker ps` он мелькает, а из
+        # `ps -a` виден всегда.
+        if docker ps -a --format '{{.Names}}' | grep -qx "$SERVICE"; then
             mount_dir=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app"}}{{.Source}}{{end}}{{end}}' "$SERVICE")
             if [ "$mount_dir" = "$worktree_dir" ]; then
                 "$0" down
             fi
+        fi
+
+        # Каталога уже нет — сервер погашен выше, больше убирать нечего. Это не
+        # ошибка: каталог могли снять руками, а `restart: unless-stopped` тогда
+        # крутит контейнер вечно, и Docker при каждом старте заводит каталог
+        # монтирования заново — пустой и root-овый. Ради этого `clean` и должен
+        # доводиться до конца, а не падать на первой же команде git.
+        if [ ! -d "$worktree_dir" ]; then
+            git -C "$REPO_DIR" worktree prune
+            echo "[task-server] каталога уже нет: $worktree_dir (сервер погашен)"
+            exit 0
         fi
 
         # Несохранённые правки — повод остановиться: работа упавшей задачи или
