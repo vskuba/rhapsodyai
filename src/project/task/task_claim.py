@@ -30,14 +30,23 @@ from src.worker.project.task_worker import TASK_WORKER_ENQUEUE_GRACE_SEC, task_w
 # строки и постановкой сообщения в очередь.
 LOCK_ORPHAN_GRACE_SEC = TASK_WORKER_ENQUEUE_GRACE_SEC
 
+# Как часто работающий job подновляет свою блокировку (`task_claim_lock_touch`).
+# Заведомо меньше `LOCK_ORPHAN_GRACE_SEC`: пока job жив, его строка не должна
+# доживать до возраста, при котором реклейм вправе счесть её брошенной, — иначе
+# сбой опроса очереди отбирает работу у живого агента.
+TASK_CLAIM_LOCK_TOUCH_SEC = 45
+
 # Переходные состояния и то, куда их возвращать при брошенной блокировке.
-# Для qa_pending и reviewing состояние то же — снимается только сама блокировка.
+# Для reviewing состояние то же — снимается только сама блокировка.
 #
 # `reviewing` нельзя возвращать в `new`, как `planning`: план у такой задачи есть, и
 # `task_claim_task_unplanned` её не подберёт — задача залипла бы навсегда. Оставляем
 # ждать пересмотра, за ней придёт следующий тик.
+#
+# `testing` возвращается в `qa_pending`: брошенная проверка — это работа, которой не
+# было, и подзадача снова становится в очередь к QA, а не считается проверенной.
 _TASK_STATE_RECLAIM = {'planning': 'new', 'reviewing': 'reviewing'}
-_SUBTASK_STATE_RECLAIM = {'developing': 'planned', 'qa_pending': 'qa_pending'}
+_SUBTASK_STATE_RECLAIM = {'developing': 'planned', 'testing': 'qa_pending'}
 
 # Состояния «работа в полёте»: строка захвачена, и за ней прямо сейчас думает агент
 # в живой оболочке. Это ровно те же переходные состояния, что возвращает реклейм, —
@@ -124,8 +133,8 @@ async def task_claim_task_review(worker: str, roles_by_project) -> dict | None:
     """
     Захватить задачу, отправленную человеком на пересмотр плана.
 
-    Состояние не меняется — `reviewing` остаётся `reviewing`, ставится только блокировка
-    (так же устроен захват `qa_pending`). Из-за этого условие на свободную блокировку
+    Состояние не меняется — `reviewing` остаётся `reviewing`, ставится только блокировка.
+    Из-за этого условие на свободную блокировку
     обязано быть в самом `where`: в `_task_claim` от второго воркера защищает переход
     состояния, а здесь перехода нет, и без проверки задачу взяли бы двое.
 
@@ -197,12 +206,14 @@ async def task_claim_subtask_testable(worker: str, roles_by_project) -> dict | N
     оболочка, которая код не писала, иначе самопроверка разработчика и проверка QA
     сходятся в один контекст.
 
-    Состояние не меняется (`qa_pending` -> `qa_pending`), ставится только
-    блокировка: отдельного «проверяется» в конвейере нет, а от второго воркера
-    защищает условие на свободную блокировку внутри `task_claim_subtask`.
+    Захват меняет состояние: `qa_pending` -> `testing`. Разница между «ждёт очереди
+    к QA» и «QA проверяет прямо сейчас» видна человеку только по состоянию —
+    блокировку страница задач не показывает, и подзадача под живой проверкой
+    выглядела бы застрявшей в очереди. Своё состояние заодно защищает строку от
+    второго воркера самим переходом, как у разработчика.
     """
     role_sql, role_params = task_role_project_sql(roles_by_project, 'qa')
-    return await task_claim_subtask('qa_pending', 'qa_pending', worker, role_sql, role_params)
+    return await task_claim_subtask('qa_pending', 'testing', worker, role_sql, role_params)
 
 
 async def task_claim_locks_reclaim() -> int:
@@ -219,6 +230,14 @@ async def task_claim_locks_reclaim() -> int:
     Таймаут (`timeout_task_lock`) остаётся запасным признаком — на случай, когда
     очередь недоступна и проверить job нечем, или когда job жив, а работа в нём
     встала намертво.
+
+    Оба признака смотрят на возраст блокировки, а живой job подновляет её сам
+    (`task_claim_lock_touch`), поэтому строка под работающим агентом до возраста
+    `LOCK_ORPHAN_GRACE_SEC` не доживает и под реклейм не попадает, даже если
+    очередь на секунду перестала показывать её job. Так и должно быть: сведения
+    из Redis о часовом прогоне живут минутами и обновляются самим rq, а цена
+    ошибки здесь — снятая блокировка у работающего агента и, следом, лишний
+    прогон сверх предела «Parallel LLM».
 
     Хозяина блокировки (`pipeline_locked_by`) не проверяем вовсе: строку блокирует
     тик внутри uvicorn, а выполняет её job в контейнере воркера, и по имени хоста
@@ -251,6 +270,32 @@ async def task_claim_locks_reclaim() -> int:
     if total:
         logger_info(f'[task] сброшено брошенных блокировок: {total}')
     return total
+
+
+async def task_claim_lock_touch(row_id: int) -> bool:
+    """
+    Подновить блокировку строки: «job ещё жив, работа идёт».
+
+    Зовёт сам работающий job раз в `TASK_CLAIM_LOCK_TOUCH_SEC` секунд
+    (`task_pipeline_action_run`). Блокировка от этого перестаёт стареть, а вместе
+    с ней перестаёт стареть и признак брошенности: реклейм судит по возрасту.
+
+    False — подновлять больше нечего: блокировку уже сняли (реклейм, ручной
+    повтор, человек на странице задач). Для зовущего это сигнал прекратить —
+    строка больше не его, и ставить на неё чужую метку времени нельзя.
+    """
+    if not row_id:
+        return False
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "UPDATE project_task SET pipeline_locked_at = NOW() "
+            " WHERE id = %s AND pipeline_locked_at IS NOT NULL AND pipeline_locked_by <> ''",
+            (int(row_id),))
+        touched = db.rowcount
+        await db.connection.commit()
+
+    return bool(touched)
 
 
 async def task_claim_inflight_by_project() -> dict[int, int]:
@@ -319,15 +364,33 @@ async def _lock_reclaim(db, state_from: str, state_to: str, live_ids: set | None
 
     `extra` — дополнительное условие отбора (подзадачи, незавершённый `processing`).
     Коммит не делает: все реклеймы одного тика закрываются одной транзакцией.
+
+    Сначала выбираем id, потом обновляем по ним: реклейм — событие редкое и
+    неприятное, и в журнале должно быть видно, у кого именно отобрали работу, а
+    не только сколько строк. В обычном тике выборка пуста, и UPDATE не идёт вовсе.
+    Условие в UPDATE остаётся полным: между двумя запросами строку мог увести
+    кто-то ещё, и `id IN` здесь — уточнение, а не замена проверки.
     """
-    kanban_sql, kanban_params = task_state_kanban_sql(state_to)
     stale_sql, stale_params = _lock_stale_sql(live_ids, lock_timeout)
+    where = (f"pipeline_state = %s{extra} AND pipeline_locked_at IS NOT NULL AND {stale_sql}")
+    params = [state_from] + stale_params
+
+    await db.execute(f"SELECT id, pipeline_locked_by FROM project_task WHERE {where}", params)
+    rows = await db.fetchall() or []
+    if not rows:
+        return 0
+
+    kanban_sql, kanban_params = task_state_kanban_sql(state_to)
+    placeholders = ', '.join(['%s'] * len(rows))
     await db.execute(
         f"UPDATE project_task SET pipeline_state = %s, {kanban_sql + ', ' if kanban_sql else ''}"
         "       pipeline_locked_at = NULL, pipeline_locked_by = '' "
-        f" WHERE pipeline_state = %s{extra} AND pipeline_locked_at IS NOT NULL AND {stale_sql}",
-        [state_to] + kanban_params + [state_from] + stale_params,
+        f" WHERE {where} AND id IN ({placeholders})",
+        [state_to] + kanban_params + params + [int(row['id']) for row in rows],
     )
+    if db.rowcount:
+        freed = ', '.join(f"#{row['id']}({row['pipeline_locked_by'] or '?'})" for row in rows)
+        logger_info(f'[task] реклейм {state_from} -> {state_to}: {freed}')
     return db.rowcount
 
 

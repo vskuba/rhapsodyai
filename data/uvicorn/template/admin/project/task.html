@@ -521,7 +521,6 @@
         border-radius: 4px; padding: 1px 5px; outline: none; font-family: inherit;
     }
     .ig-goals-wrapper { display: flex; flex-direction: column; gap: 2px; }
-    .ig-goals-wrapper > .subtask-status-tag { align-self: flex-start; margin-bottom: 1px; }
     .ig-btn {
         background: none; border: none; cursor: pointer; padding: 1px 3px;
         font-size: 11px; color: #cbd5e1; line-height: 1.4; flex-shrink: 0; border-radius: 4px;
@@ -828,7 +827,9 @@
     .pipe-failed_qa        { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
     .pipe-blocked          { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
     /* Шестерёнка крутится там, где прямо сейчас кто-то работает. `qa_pending` сюда не
-       входит: разработчик закончил, а QA ещё не начал — это очередь, а не работа. */
+       входит: разработчик закончил, а QA ещё не начал — это очередь, а не работа.
+       Как только QA берёт подзадачу, состояние становится `testing`, и шестерёнка
+       крутится уже у неё — тем же правилом, что и у родителя в тестировании. */
     .pipe-planning::before, .pipe-processing::before, .pipe-reviewing::before,
     .pipe-testing::before, .pipe-developing::before { animation: spin 2.4s linear infinite; }
     /* Не стадия конвейера, а объяснение её отсутствия: задачу с подзадачами конвейер
@@ -967,6 +968,7 @@
     .pipe-sub-planned    { background: #f1f5f9; color: #64748b; }
     .pipe-sub-developing { background: #ede9fe; color: #6d28d9; }
     .pipe-sub-qa_pending { background: #fef3c7; color: #a16207; }
+    .pipe-sub-testing    { background: #ccfbf1; color: #0f766e; }
     .pipe-sub-failed_qa  { background: #ffedd5; color: #c2410c; }
     .pipe-sub-done       { background: #dcfce7; color: #15803d; }
     .pipe-sub-blocked    { background: #fee2e2; color: #b91c1c; }
@@ -1699,11 +1701,19 @@ document.querySelectorAll('#phaseTabs .page-tab').forEach(tab => {
 });
 phaseTabsSync();
 
+// Строки последней отрисовки: id задачи → строка дерева (см. `renderTable`).
+const _rowById = new Map();
+
 function renderTable() {
     const wrap = document.getElementById('taskTableWrap');
     renderChips();
 
     const rows = treeRows();
+    // Строка дерева нужна не только таблице: ячейку «Прогресс» перерисовывает клик
+    // по галочке цели, а в ней есть и чипс подзадач, которому нужны `hasKids`/`kidsFull`.
+    // `row.t` — та же ссылка, что в `_tasks`, поэтому кэш не устаревает от правки задачи.
+    _rowById.clear();
+    rows.forEach(r => _rowById.set(r.t.id, r));
     phaseTabsCount();
 
     if (!_tasks.length) {
@@ -1744,7 +1754,7 @@ function renderTable() {
 // соседняя «✕ Очередь»: замкнутая пара, менявшая только подпись, цвет и порядок сортировки.
 // Статус остался редактируемым в селекте раскрытой строки, где он ничего не обещает.
 
-function renderInlineGoals(t, statusOverride, hasKids) {
+function renderInlineGoals(t, hasKids) {
     const isLeaf = !hasKids;
     const goals = parseGoals(t.goals);
     if (!goals.length) return '<span class="ig-goals-empty">—</span>';
@@ -1761,7 +1771,7 @@ function renderInlineGoals(t, statusOverride, hasKids) {
     const items = goals.map((g, i) => `
         <div class="inline-goal-item" id="ig-${t.id}-${i}">
             <input type="checkbox" ${g.done ? 'checked' : ''} onclick="event.stopPropagation();inlineToggleGoal(${t.id},${i})">
-            <span class="inline-goal-text${g.done ? ' inline-goal-done' : ''}" id="igt-${t.id}-${i}">${esc(g.text)}</span>
+            <span class="inline-goal-text${g.done ? ' inline-goal-done' : ''}" id="igt-${t.id}-${i}"${g.evidence ? ` title="Проверено: ${esc(g.evidence)}"` : ''}>${esc(g.text)}</span>
             <button class="ig-btn" onclick="event.stopPropagation();inlineEditGoal(${t.id},${i})" title="Редактировать">✏</button>
             <button class="ig-btn del" onclick="event.stopPropagation();inlineDeleteGoal(${t.id},${i})" title="Удалить">✕</button>
         </div>`).join('');
@@ -1851,11 +1861,28 @@ function taskTypeSelect(taskId, currentTypeId) {
         </select>`;
 }
 
+// Содержимое колонки «Прогресс» — статус задачи + состояние конвейера + подзадачи/goals.
+// Оси две и они независимы: `status` — ручной kanban, `pipeline_state` — стадия
+// автоматики. Без второго чипса задача с ручным «Ожидает» и сорвавшимся конвейером
+// выглядит на странице спокойно ждущей очереди, хотя оркестратор её больше не возьмёт.
+//
+// Отдельной функцией, а не куском `renderRow`: ячейку перерисовывает ещё и клик по
+// галочке цели (`_refreshInlineGoals`). Пока сборка жила только в `renderRow`, тот
+// клик подставлял в ячейку одни цели — и статусные чипсы пропадали до перезагрузки.
+function renderProgressCell(row) {
+    const t = row.t;
+    const status = taskRowStatus(row);
+    const hint = esc(taskReportHint(t, row));
+    const badge = `<span class="task-status-badge status-${status}" title="${hint}">${STATUS_LABELS[status] || status}</span>`;
+
+    return badge + renderDevFlag(t) + renderTestFlag(t) + renderPipeChip(t, row) + (row.hasKids
+        ? renderSubtaskSummary(row)
+        : renderInlineGoals(t, false));
+}
+
 function renderRow(row, index, hasParent) {
     const t = row.t;
-    const hint  = esc(taskReportHint(t, row));
     const status = taskRowStatus(row);
-    const badge = `<span class="task-status-badge status-${status}" title="${hint}">${STATUS_LABELS[status] || status}</span>`;
     const dateStr = t.created_at ? t.created_at.substring(0, 10) : '';
     const kidsPill = row.hasKids
         ? `<span class="tree-kids${row.kidsDone === row.kidsTotal ? ' tree-kids-done' : ''}"
@@ -1867,14 +1894,7 @@ function renderRow(row, index, hasParent) {
     // Соседи для кнопок up/down
     const sortBtns = _sortBtns(t.id, t.position);
 
-    // Содержимое колонки «Прогресс» — статус задачи + состояние конвейера + подзадачи/goals.
-    // Оси две и они независимы: `status` — ручной kanban, `pipeline_state` — стадия
-    // автоматики. Без второго чипса задача с ручным «Ожидает» и сорвавшимся конвейером
-    // выглядит на странице спокойно ждущей очереди, хотя оркестратор её больше не возьмёт.
-    const pipeChip = renderPipeChip(t, row);
-    const progressContent = badge + renderDevFlag(t) + renderTestFlag(t) + pipeChip + (row.hasKids
-        ? renderSubtaskSummary(row)
-        : renderInlineGoals(t, undefined, false));
+    const progressContent = renderProgressCell(row);
 
     return `
         <tr class="${cls.join(' ')}" id="tr-${t.id}" style="--row-accent:${STATUS_ACCENT[status] || 'transparent'};--row-bg:${rowBg(row, index)}" onclick="toggleEdit(${t.id})" title="Нажмите, чтобы редактировать">
@@ -2208,7 +2228,7 @@ function renderGoals(taskId, goals = null, readonly = false) {
     el.innerHTML = list.map((g, i) => `
         <div class="task-goal-item" id="gi-${taskId}-${i}">
             <input type="checkbox" ${g.done ? 'checked' : ''} onchange="toggleGoalDone(${taskId},${i})">
-            <span class="task-goal-text${g.done ? ' done' : ''}" id="gt-${taskId}-${i}" onclick="startEditGoal(${taskId},${i})">${esc(g.text)}</span>
+            <span class="task-goal-text${g.done ? ' done' : ''}" id="gt-${taskId}-${i}" onclick="startEditGoal(${taskId},${i})"${g.evidence ? ` title="Проверено: ${esc(g.evidence)}"` : ''}>${esc(g.text)}</span>
             <button class="btn-goal-icon del" onclick="deleteGoal(${taskId},${i})" title="Удалить">✕</button>
         </div>`).join('');
 }
@@ -2322,10 +2342,13 @@ function inlineSaveGoalText(taskId, idx) {
     _refreshInlineGoals(taskId);
 }
 
+// Перерисовываем ячейку целиком, а не только список целей: в ней рядом с целями
+// живут статусный бейдж, флаги и чипс конвейера, и подстановка одних целей стирала
+// их до перезагрузки страницы.
 function _refreshInlineGoals(taskId) {
-    const task = _tasks.find(t => t.id === taskId);
+    const row  = _rowById.get(taskId);
     const cell = document.querySelector(`#tr-${taskId} [data-col="goals"]`);
-    if (task && cell) cell.innerHTML = renderInlineGoals(task);
+    if (row && cell) cell.innerHTML = renderProgressCell(row);
 }
 
 // ── Ревизии плана ──
@@ -2638,7 +2661,7 @@ function renderPipeMr(t) {
 // самую отстающую: задача продвинулась ровно настолько, насколько продвинулся её
 // самый медленный ребёнок. `failed_qa` стоит сразу после `planned` — это работа,
 // которую предстоит делать заново, то есть откат назад, а не продвижение.
-const SUBTASK_STATE_ORDER = ['planned', 'failed_qa', 'developing', 'qa_pending', 'done'];
+const SUBTASK_STATE_ORDER = ['planned', 'failed_qa', 'developing', 'qa_pending', 'testing', 'done'];
 
 // Человеческий статус строки. У родителя в `processing` он свой — `active`, — но работа
 // идёт не у него, а у подзадач, и рядом с чипсом подзадачи «В работе» противоречит
@@ -3044,7 +3067,7 @@ setInterval(loadTeamRow, TEAM_ROW_REFRESH_MS);
                                 </div>
                                 <div class="help-pipe-item">
                                     <span class="help-dot" style="background:#0ea5e9"></span>
-                                    <span><code>qa_pending</code> <span class="help-branch help-branch-sub">[подзадача]</span> — разработчик своё сделал, подзадача ждёт очереди к QA (LLM).</span>
+                                    <span><code>qa_pending</code> <span class="help-branch help-branch-sub">[подзадача]</span> — разработчик своё сделал, подзадача ждёт очереди к QA (LLM). Взял в работу — состояние станет <code>testing</code>.</span>
                                 </div>
                             </td>
                         </tr>
@@ -3099,6 +3122,10 @@ setInterval(loadTeamRow, TEAM_ROW_REFRESH_MS);
                                 <div class="help-pipe-item">
                                     <span class="help-dot" style="background:#ca8a04"></span>
                                     <span><code>developing</code> <span class="help-branch help-branch-sub">[подзадача]</span> — Developer (LLM) работает над подзадачей.</span>
+                                </div>
+                                <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#0f766e"></span>
+                                    <span><code>testing</code> <span class="help-branch help-branch-sub">[подзадача]</span> — QA (LLM) взял подзадачу и проверяет её прямо сейчас.</span>
                                 </div>
                             </td>
                         </tr>
@@ -3227,7 +3254,9 @@ setInterval(loadTeamRow, TEAM_ROW_REFRESH_MS);
                         <div class="vlink"></div>
                         <div class="vrow"><span class="pn pn-sub">developing</span><span class="note">Developer (LLM) делает работу</span></div>
                         <div class="vlink"></div>
-                        <div class="vrow"><span class="pn pn-qa">qa_pending</span><span class="note">работа сделана, ждёт проверки QA (LLM)</span></div>
+                        <div class="vrow"><span class="pn pn-qa">qa_pending</span><span class="note">работа сделана, ждёт очереди к QA (LLM)</span></div>
+                        <div class="vlink"></div>
+                        <div class="vrow"><span class="pn pn-teal">testing</span><span class="note">QA (LLM) взял подзадачу и проверяет цели</span></div>
                         <div class="vfork">
                             <div class="vfork-item">
                                 <div class="vrow"><span class="pn pn-qaok">done</span><span class="note note-green">QA принял работу</span></div>

@@ -94,6 +94,47 @@ async def task_retry_take(task_id: int, role: str, error: str) -> dict:
     return {'allowed': allowed, 'count': count, 'total': total, 'max': retry_max}
 
 
+async def task_retry_reset_tree(task_id: int) -> list[str]:
+    """
+    Ручной повтор задачи: обнулить серии повторов задачи и её подзадач и сказать,
+    чьи прогоны на них оборвались.
+
+    Returns: роли, чей последний прогон не вернулся (`manager` | `developer` | `qa`),
+    без повторов. Пустой список — обрывать было нечего.
+
+    Кого считать оборванным, знает сам счётчик: `count` обнуляется первым же
+    состоявшимся прогоном (`task_retry_clear`), поэтому ненулевой `count` и значит
+    «последний прогон этой строки не вернулся» — а его агент, скорее всего, до сих
+    пор дожёвывает брошенный ход в своей оболочке. Роль берём оттуда же: она
+    записана в момент срыва и точнее, чем догадка по состоянию задачи.
+
+    Обнулять серию обязательно: задача ушла в `failed` с исчерпанным счётчиком, и
+    оставь мы его как есть — первый же новый срыв уронил бы её обратно, не дав
+    ручному перезапуску ни одной попытки.
+    """
+    if not task_id:
+        return []
+
+    path = f'$.{TASK_METADATA_KEY_RETRY}'
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            f"SELECT id, JSON_UNQUOTE(JSON_EXTRACT(metadata, '{path}.role')) AS role "
+            "  FROM project_task "
+            f" WHERE (id = %s OR parent_id = %s) AND JSON_EXTRACT(metadata, '{path}.count') > 0",
+            (task_id, task_id),
+        )
+        rows = await db.fetchall()
+
+    roles = []
+    for row in rows or []:
+        await task_retry_clear(int(row['id']))
+        role = str(row.get('role') or '').strip()
+        if role and role not in roles:
+            roles.append(role)
+
+    return roles
+
+
 async def task_retry_clear(task_id: int) -> None:
     """
     Обнулить серию повторов: прогон состоялся, чем бы он ни кончился.

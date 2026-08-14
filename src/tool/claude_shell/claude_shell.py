@@ -78,7 +78,10 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
         prompt:  Текст задания агенту. Если нужен машинно-читаемый ответ, прямо
                  в тексте просите ответить одним JSON-объектом.
         role:    Роль агента в команде проекта: manager, developer, qa.
-        timeout: Сколько секунд ждать ответ. 0 - взять значение из настроек.
+        timeout: Сколько секунд ждать ответ агента, считая от доставки задания.
+                 0 - взять значение из настроек. Ожидание освобождения занятого
+                 агента и подтверждения доставки в этот срок не входят: у них
+                 свои настройки (timeout_shell_busy, timeout_shell_ack).
         work_dir: Каталог проекта. Роли в командах разных проектов одинаковые,
                  поэтому одной роли мало: без каталога сообщение уйдёт в любую
                  живую оболочку с этой ролью, в том числе чужого проекта.
@@ -115,8 +118,13 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     if not prompt:
         return _result_build(CLAUDE_SHELL_STATUS_FAILED, error='prompt пустой', elapsed=0)
 
-    session, problem = await _session_ready_wait(
-        role, min(busy_timeout, timeout), work_dir)
+    # Три ожидания идут подряд, но бюджеты у них раздельные, и `timeout` — бюджет
+    # только последнего, ответа. Общий бюджет на всё выглядел экономнее, но врал:
+    # занятый агент съедал минуты ожиданием освобождения, до ответа их не
+    # оставалось, и шаг сдавался с «не ответил за 600с» — при том, что агент как
+    # раз отвечал, просто на минуту позже. Потолок всему прогону ставит не этот
+    # инструмент, а таймаут роли (`timeout_developer_run` и соседние).
+    session, problem = await _session_ready_wait(role, busy_timeout, work_dir)
     if problem == CLAUDE_SHELL_STATUS_NO_SESSION:
         return _result_build(
             CLAUDE_SHELL_STATUS_NO_SESSION,
@@ -143,18 +151,20 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     row = await _row_wait(inbox_id, (CLAUDE_MESSAGE_STATUS_DELIVERED,
                                      CLAUDE_MESSAGE_STATUS_ANSWERED,
                                      CLAUDE_MESSAGE_STATUS_FAILED),
-                          min(ack_timeout, timeout - _elapsed(started)))
+                          ack_timeout)
     if row is None:
         return _result_build(
             CLAUDE_SHELL_STATUS_ACK_TIMEOUT,
             error=f'Оболочка {role} не подтвердила доставку за {ack_timeout}с',
             session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started))
 
-    # Фаза 2: ответ агента.
+    # Фаза 2: ответ агента. Отсчёт — от доставки: агент начинает думать над
+    # заданием только сейчас, и время, потраченное на ожидание его освобождения,
+    # к сроку ответа отношения не имеет.
     if row['status'] == CLAUDE_MESSAGE_STATUS_DELIVERED:
         row = await _row_wait(inbox_id, (CLAUDE_MESSAGE_STATUS_ANSWERED,
                                          CLAUDE_MESSAGE_STATUS_FAILED),
-                              timeout - _elapsed(started))
+                              timeout)
     if row is None:
         return _result_build(
             CLAUDE_SHELL_STATUS_TIMEOUT,

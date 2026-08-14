@@ -8,7 +8,7 @@
 захвата, поэтому первый элемент списка ожидания — следующий кандидат в работу.
 
 «В работе» и «в очереди» различаются блокировкой: захват ставит `pipeline_locked_by`,
-а состояние при этом может не меняться — так устроен захват `reviewing` и `qa_pending`.
+а состояние при этом может не меняться — так устроен захват `reviewing`.
 
 Подзадача — строка того же `project_task` с непустым `parent_id`, поэтому запросы
 Developer/QA — это самосоединение: ребёнок даёт работу, родитель — название задачи,
@@ -127,14 +127,14 @@ async def _developer_rows() -> list[dict]:
 
 
 async def _qa_rows() -> list[dict]:
-    """Подзадачи у QA: состояние одно (`qa_pending`), работу от ожидания отличает блокировка."""
+    """Подзадачи у QA: `qa_pending` — очередь, `testing` — проверка уже идёт."""
     sql = (
         "SELECT s.id AS subtask_id, s.parent_id AS task_id, t.project_id, "
         "       s.title, t.title AS task_title, s.pipeline_state AS state, "
         "       (s.pipeline_locked_by <> '') AS busy "
         "  FROM project_task s "
         "  JOIN project_task t ON t.id = s.parent_id "
-        " WHERE s.pipeline_state = 'qa_pending' "
+        " WHERE s.pipeline_state IN ('qa_pending', 'testing') "
         " ORDER BY s.parent_id, s.position, s.id"
     )
 

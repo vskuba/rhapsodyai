@@ -16,7 +16,6 @@ from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_metadata import TASK_METADATA_KEY_DEV, TASK_METADATA_KEY_TEST
 from src.project.task.task_plan import (
-    task_plan_goals_close,
     task_plan_goals_normalize,
     task_plan_serialize,
 )
@@ -159,10 +158,11 @@ async def task_state_dev_to_testing(task_id: int) -> bool:
     считается стоящей, пока её явно не сняли (`<> FALSE`, а не `= TRUE`).
 
     «Дошла до проверки» — это состояние, которое страница задач и так показывает у
-    родителя чипсом: самая отстающая подзадача из плана в `qa_pending`. То есть по всем
-    веткам плана разработчик своё закончил и ни одна не осталась в работе, на повторе
-    или в сбое. Смотрим детей, а не саму задачу: `qa_pending` — состояние детской ветки,
-    родителю его не выставляет никто, у него всё это время `processing`.
+    родителя чипсом: самая отстающая подзадача из плана в `qa_pending` или `testing`.
+    То есть по всем веткам плана разработчик своё закончил и ни одна не осталась в
+    работе, на повторе или в сбое. Смотрим детей, а не саму задачу: очередь к QA и сама
+    проверка — состояния детской ветки, родителю их не выставляет никто, у него всё это
+    время `processing`.
 
     Подзапрос обёрнут в производную таблицу — MySQL 1093 запрещает читать в UPDATE ту же
     таблицу, которую пишет. Наличие типа `test` проверяем отдельно: без строки типа
@@ -258,29 +258,48 @@ async def task_state_task_fail(task_id: int, error: str) -> None:
     logger_info(f'[task] task#{task_id} -> failed: {error}')
 
 
-async def task_state_goals_close(task_id: int) -> int:
+async def task_state_goals_inherit(task_id: int) -> int:
     """
-    Отметить все цели задачи выполненными. Returns: сколько целей отмечено.
+    Перенести на задачу отметки её же целей, закрытых в подзадачах.
+    Returns: сколько целей отмечено этим вызовом.
 
-    Зовётся, когда работа принята: QA закрыл подзадачу, финализация закрыла задачу.
-    Цели — это список того, что проверялось, и у готовой задачи пустые чекбоксы
-    читаются как «ничего не сделано». Ставим все разом, а не по одной: вердикт QA
-    в конвейере один на подзадачу — «прошло» или «на доработку», и разбирать, какая
-    именно цель закрылась, нечем.
+    Галочку ставит только QA и только по отдельному ответу про эту цель
+    (`src/tool/project/task_goal.py`), поэтому у родителя своих отметок не
+    появляется: проверяют подзадачи. Но цели плана менеджер раздаёт детям теми же
+    словами, что и родителю, — совпадение формулировок и есть тот самый
+    подтверждённый ответ QA, только записанный строкой ниже.
 
-    Отдельным UPDATE, а не внутри перевода состояния: закрывают цели два разных
-    места, а состояние там меняется по-своему.
+    Что не совпало — остаётся незакрытым. Готовая задача с пустым чекбоксом
+    честнее, чем галочка без проверки: именно она в прошлый раз выдала за
+    проверенное то, чего никто не открывал.
     """
     async with mysql_get_db_async() as db:
         await db.execute("SELECT goals FROM project_task WHERE id = %s", (task_id,))
         row = await db.fetchone()
-        goals_json = task_plan_goals_close((row or {}).get('goals'))
-        if goals_json is None:
+        goals = task_plan_goals_normalize((row or {}).get('goals'))
+        if not goals or all(g['done'] for g in goals):
             return 0
-        await db.execute("UPDATE project_task SET goals = %s WHERE id = %s", (goals_json, task_id))
+
+        await db.execute("SELECT goals FROM project_task WHERE parent_id = %s", (task_id,))
+        children = await db.fetchall()
+        closed = set()
+        for child in children or []:
+            closed |= {g['text'].lower() for g in task_plan_goals_normalize(child.get('goals')) if g['done']}
+
+        count = 0
+        for goal in goals:
+            if goal['done'] or goal['text'].lower() not in closed:
+                continue
+            goal['done'] = True
+            count += 1
+        if not count:
+            return 0
+
+        await db.execute("UPDATE project_task SET goals = %s WHERE id = %s",
+                         (json.dumps(goals, ensure_ascii=False), task_id))
         await db.connection.commit()
-    count = len(task_plan_goals_normalize(goals_json))
-    logger_info(f'[task] task#{task_id}: цели отмечены выполненными ({count})')
+
+    logger_info(f'[task] task#{task_id}: цели отмечены по проверкам подзадач ({count} из {len(goals)})')
     return count
 
 
@@ -409,9 +428,14 @@ async def task_state_attempt_log(subtask_id: int, attempt_no: int, role: str,
 
 
 # Родители, у которых разработка по плану закончена и всё упёрлось в проверку: есть
-# хотя бы один ребёнок в `qa_pending` и ни одного, который ещё в работе, на повторе или
-# в сбое. Это ровно то, что страница задач показывает чипсом родителя (самая отстающая
-# подзадача), поэтому и условие тут повторяет её порядок состояний.
+# хотя бы один ребёнок в `qa_pending` или `testing` и ни одного, который ещё в работе,
+# на повторе или в сбое. Это ровно то, что страница задач показывает чипсом родителя
+# (самая отстающая подзадача), поэтому и условие тут повторяет её порядок состояний.
+#
+# `testing` у ребёнка — та же фаза, что и `qa_pending`, только проверка уже началась:
+# QA взял подзадачу в работу. Разработчику там делать нечего, и ждать перевода
+# родителя до конца проверки значило бы держать задачу на вкладке «Разработка»,
+# когда разработка кончилась.
 #
 # Считаем только детей из плана (`pipeline_from_plan`): подзадачи, заведённые человеком
 # руками, живут своей жизнью — по той же причине их не ждёт и финализация.
@@ -420,7 +444,7 @@ _KIDS_AWAITING_QA_SQL = (
     "    SELECT parent_id AS pid FROM project_task "
     "     WHERE parent_id IS NOT NULL AND pipeline_from_plan = 1 "
     "     GROUP BY parent_id "
-    "    HAVING SUM(pipeline_state = 'qa_pending') > 0 "
+    "    HAVING SUM(pipeline_state IN ('qa_pending','testing')) > 0 "
     "       AND SUM(pipeline_state IN ('planned','failed_qa','developing','blocked','failed')) = 0"
     ") AS _t)"
 )
@@ -431,13 +455,15 @@ _KIDS_AWAITING_QA_SQL = (
 # `blocked` — работа встала и нужен человек разобрать сбой,
 # `queued` — план утверждён, задача ждёт следующего шага конвейера.
 #
-# Таблица одна на обе ветки: и родительские состояния, и детские. Ветки не пересекаются
-# по значениям, так что развилка по `parent_id` здесь не нужна. `failed_qa` — это
+# Таблица одна на обе ветки: и родительские состояния, и детские. Развилка по
+# `parent_id` не нужна: единственное общее значение — `testing`, и означает оно в обеих
+# ветках одно и то же (идёт проверка), то есть и kanban-статус у него один. `failed_qa` — это
 # `queued`, а не `blocked`: круг повторится сам, человека звать пока не за чем.
 # `plan_approval` — `pending`, а не `blocked`: план готов, ничего не сломалось,
 # задача просто ждёт решения человека — это и есть «Ожидает».
-# `qa_pending` — тоже `pending`: разработчик своё уже сделал, задача лежит в очереди
+# `qa_pending` — тоже `pending`: разработчик своё уже сделал, подзадача лежит в очереди
 # к QA, и никто над ней прямо сейчас не работает. «В работе» здесь врал бы о ходе дел.
+# Как только QA её берёт, состояние становится `testing` — вот оно уже `active`.
 _TASK_STATE_KANBAN = {
     'new':              'pending',
     'planning':         'active',

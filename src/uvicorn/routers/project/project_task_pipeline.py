@@ -4,8 +4,6 @@
 Сам конвейер крутится в `src/project/task/`; здесь только точки, где в него
 вмешивается пользователь. CRUD задач — в `project_task.py`.
 """
-import json
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
@@ -18,7 +16,9 @@ from src.project.task.task_plan import (
     task_plan_parse,
     task_plan_serialize,
 )
+from src.project.task.task_pipeline import task_pipeline_shells_restart
 from src.project.task.task_report import task_report_write
+from src.project.task.task_role import TASK_ROLE_TITLE
 from src.project.task.task_state import task_state_kanban_sql
 from src.project.task.task_revision import (
     TASK_REVISION_LIMIT,
@@ -149,10 +149,15 @@ async def project_task_pipeline_retry(task_id: int, user=Depends(AuthChecker([Au
     * есть подзадачи      -> `processing`: план уже материализован, менеджер не нужен;
     * план есть, подзадач нет -> `approved`: сорвалось разложение, повторяем его;
     * плана нет           -> `new`: за планом к менеджеру.
+
+    Вместе с состоянием перезапускаем и агентов в оболочках
+    (`task_pipeline_shells_restart`): срыв по таймауту оставляет дочерний Claude
+    Code с брошенным ходом, и новый прогон ушёл бы в занятую оболочку.
     """
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, pipeline_state, pipeline_plan FROM project_task WHERE id = %s", (task_id,))
+            "SELECT id, project_id, pipeline_state, pipeline_plan FROM project_task WHERE id = %s",
+            (task_id,))
         task = await db.fetchone()
         if not task:
             raise HTTPException(status_code=404, detail='task not found')
@@ -194,6 +199,13 @@ async def project_task_pipeline_retry(task_id: int, user=Depends(AuthChecker([Au
     else:
         new_state = 'new'
         note = 'ждёт плана от менеджера'
+
+    # Перезапуск до смены состояния: иначе тик успел бы забрать задачу и отправить
+    # прогон в оболочку ровно в тот момент, когда мы её гасим.
+    roles = await task_pipeline_shells_restart(task)
+    if roles:
+        titles = ', '.join(TASK_ROLE_TITLE.get(role, role) for role in roles)
+        note += f'; перезапущены оболочки: {titles}'
 
     return await _pipeline_state_set(task_id, expected='failed', new_state=new_state,
                                      report=f'{user.username} перезапустил конвейер — {note}')
@@ -307,21 +319,10 @@ async def project_task_plan_revision_delete(task_id: int, revision_no: int,
     Номера не пересчитываются — удаляем строку, остальные номера остаются на месте.
     """
     async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT pipeline_plan, goals FROM project_task WHERE id = %s", (task_id,))
+        await db.execute("SELECT id FROM project_task WHERE id = %s", (task_id,))
         row = await db.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail='task not found')
-
-    plan_text = ''
-    goals = ''
-    try:
-        plan_data = json.loads(row['pipeline_plan'] or '')
-        plan_text = str(plan_data.get('plan_text', '') or '')
-        goals = plan_data.get('goals', '')
-    except (ValueError, TypeError, AttributeError):
-        plan_text = str(row['pipeline_plan'] or '')
-        goals = str(row['goals'] or '')
 
     await task_revision_delete(task_id, revision_no)
     return {'ok': True}

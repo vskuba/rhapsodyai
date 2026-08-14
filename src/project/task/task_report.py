@@ -85,7 +85,8 @@ async def task_report_subtasks_summary(task_id: int) -> str:
 # `planned` не показываем — это «ещё не начинали», остаток и так виден из «готово X из Y».
 _REPORT_STATE_LABELS = {
     'developing': 'в разработке',
-    'qa_pending': 'на проверке',
+    'qa_pending': 'ждёт проверки',
+    'testing':    'на проверке',
     'failed_qa':  'вернулось от QA',
     'blocked':    'заблокировано',
 }

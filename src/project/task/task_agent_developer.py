@@ -21,6 +21,8 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_plan import task_plan_parse
 from src.project.team.team_session import team_session_restart_role
+from src.tool.claude_shell.claude_shell import (CLAUDE_SHELL_AGENT_STATUS_BUSY,
+                                                claude_shell_session_status)
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_DEVELOPER_RUN,
     task_setting_timeout_get)
@@ -133,9 +135,13 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
     # Если перезапускаем — то до первого шага и ровно один раз. Между шагами
     # нельзя: они продолжают один разговор, и реализация опирается на разбор,
     # сделанный шагом раньше.
+    # Второе основание для перезапуска — занятый агент. Новый прогон начинается
+    # только после того, как предыдущий отпустил задачу, поэтому «занят» на старте
+    # значит одно: оболочка дожёвывает брошенный ход сорвавшегося прогона. Ждать
+    # его бессмысленно — ответит он на позапрошлый вопрос.
     task_id      = int(subtask.get('parent_id') or (task or {}).get('id') or 0)
     task_id_last = await _shell_task_id_last(role, (task or {}).get('project_id'))
-    if not task_id or task_id != task_id_last:
+    if not task_id or task_id != task_id_last or await _shell_busy(role, work_dir):
         await team_session_restart_role(role, work_dir)
 
     loop   = asyncio.get_running_loop()
@@ -153,12 +159,16 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
         'session_uuid':       session_uuid,
         'tools':              await _tools_load(),
     })
-    agent_manager.framework_workflow_run(framework_model, future, loop)
+    workflow_task = agent_manager.framework_workflow_run(framework_model, future, loop)
 
     timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN)
     try:
         result_text = await asyncio.wait_for(future, timeout=timeout)
     except asyncio.TimeoutError:
+        # Прогон отменяем целиком. Отмена одного `future` его не останавливает:
+        # брошенный workflow продолжает идти по шагам и слать разработчику
+        # промпты — уже никем не ожидаемые, поверх работы следующего круга.
+        workflow_task.cancel()
         future.cancel()
         raise RuntimeError(f'разработчик не уложился в {timeout}s')
 
@@ -232,6 +242,18 @@ async def _shell_task_id_last(role: str, project_id) -> int:
         row = await db.fetchone()
 
     return int((row or {}).get('task_id') or 0)
+
+
+async def _shell_busy(role: str, work_dir: str) -> bool:
+    """
+    Занят ли агент прямо сейчас. Спрашиваем реестр, а не ждём освобождения:
+    это решение «перезапускать ли», а ожидание своё возьмёт `claude_shell_call`.
+
+    Реестр молчит (оболочки нет вовсе) — считаем незанятым: перезапускать нечего,
+    и шаг сам вернёт `no_session`.
+    """
+    session = await claude_shell_session_status(role, work_dir)
+    return str(session.get('agent_status') or '') == CLAUDE_SHELL_AGENT_STATUS_BUSY
 
 
 def _goals_text(goals_raw) -> str:

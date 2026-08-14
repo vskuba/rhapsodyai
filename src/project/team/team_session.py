@@ -81,7 +81,7 @@ async def team_session_restart(session_uuid: str) -> dict | None:
     return status
 
 
-async def team_session_restart_role(role: str, work_dir: str = '') -> dict:
+async def team_session_restart_role(role: str, work_dir: str = '', wait: bool = True) -> dict:
     """
     Перезапустить агента в оболочке с указанной ролью и дождаться готовности.
 
@@ -100,6 +100,12 @@ async def team_session_restart_role(role: str, work_dir: str = '') -> dict:
             одинаково, и без каталога перезапуск снёс бы контекст менеджера
             соседнего проекта — того самого, что сейчас работает над своей
             задачей. Пустая строка — адресация только по роли.
+        wait: дожидаться ли поднявшегося агента. False — маркер уходит, и на этом
+            всё: так зовёт ручной повтор задачи (`task_pipeline_shells_restart`),
+            где ждать некому — это HTTP-запрос человека, а не воркер. Прогон,
+            который задачу подберёт, всё равно перезапустит оболочку своим
+            вызовом и готовности дождётся уже он. `restarted`/`ready` при этом
+            остаются False: подтверждения мы не видели.
 
     Returns:
         role, session_uuid: кого перезапускали (session_uuid пуст, если сессии нет).
@@ -119,6 +125,9 @@ async def team_session_restart_role(role: str, work_dir: str = '') -> dict:
 
     ack_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_RESTART_ACK)
     inbox = await claude_message_user(TEAM_SESSION_RESTART_MARKER, session_uuid, dynamic=1)
+    if not wait:
+        logger_info(f'[team] restart {role}: маркер отправлен, готовности не ждём')
+        return _restart_result(role, session_uuid, False, False, '', started)
     if not await _inbox_handled_wait(int(inbox['id']), ack_timeout):
         logger_info(f'[team] restart {role}: оболочка не подтвердила маркер за {ack_timeout}s')
         return _restart_result(role, session_uuid, False, False, TEAM_SESSION_RESTART_NO_ACK, started)

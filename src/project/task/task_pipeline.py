@@ -26,20 +26,24 @@
     уходит в `approved`, сменив тип с `plan` на `dev` (`task_state_plan_to_development`).
 
     Из `processing` задача уходит в `testing`, когда разработка кончилась по всем веткам
-    плана (все дети в `qa_pending`), а пометка «в тестирование» (`metadata.to_testing`) не
+    плана (все дети в `qa_pending` или `testing`), а пометка «в тестирование» (`metadata.to_testing`) не
     снята — по умолчанию она стоит. Тип меняется с `dev` на `test`, работа продолжается
     та же: круг QA по подзадачам и общая финализация (`task_state_dev_to_testing`).
 
     Подзадача.pipeline_state:
-        planned -> developing -> qa_pending -> done
-                        ^              '-> failed_qa -> повтор, пока попыток < timeout_attempt_max
-                        '----------------'                    '-> blocked (лимит исчерпан)
+        planned -> developing -> qa_pending -> testing -> done
+                        ^                         '-> failed_qa -> повтор, пока попыток < timeout_attempt_max
+                        '---------------------------'                    '-> blocked (лимит исчерпан)
+
+    `qa_pending` — очередь к QA, `testing` — проверка уже идёт. Состояния два, а не одно,
+    потому что «работа сделана и ждёт» и «над работой сейчас думают» — разные новости для
+    человека: подзадача под живой проверкой иначе выглядит на странице застрявшей.
 
     Подзадача — строка того же `project_task` с непустым `parent_id`: отдельной таблицы
     у конвейера нет, дерево задач одно. Поэтому ветку задаёт `parent_id`, а не колонка:
     у корневой задачи состояния планирования, у ребёнка — круг Developer → QA.
 
-    Переходные состояния (`planning`, `reviewing`, `developing`, `qa_pending`) — это и
+    Переходные состояния (`planning`, `reviewing`, `developing`, `testing`) — это и
     есть «действие в работе»: пока строка в них, тик её не подберёт. Умер воркер —
     блокировку вернёт `task_claim_locks_reclaim()` по таймауту, и работа встанет
     в очередь заново.
@@ -54,14 +58,18 @@ job для воркера, `task_state` — запись результатов,
 через shell-оболочку, `task_agent_developer` — Developer через свою оболочку,
 `task_agent_qa` — QA через свою, `task_plan` — формат плана.
 """
+import asyncio
 import time
+from contextlib import suppress
 
 from logging_.logging_ import logger_info
 from src.project.task.task_agent_developer import TASK_DEVELOPER_ROLE, task_agent_developer_run
 from src.project.task.task_agent_manager import task_agent_manager_plan
 from src.project.task.task_agent_qa import TASK_QA_ROLE, task_agent_qa_run
 from src.project.task.task_claim import (
+    TASK_CLAIM_LOCK_TOUCH_SEC,
     task_claim_inflight_by_project,
+    task_claim_lock_touch,
     task_claim_locks_reclaim,
     task_claim_subtask_developable,
     task_claim_subtask_testable,
@@ -82,14 +90,14 @@ from src.project.task.task_plan import (
     task_plan_serialize,
 )
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
-from src.project.task.task_retry import task_retry_clear, task_retry_take
+from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree, task_retry_take
 from src.project.task.task_role import (TASK_ROLE_DEFAULT, TASK_ROLE_TITLE, task_role_of_task,
                                         task_role_project_work_dir, task_role_shell_live_by_project)
 from src.project.task.task_revision import task_revision_add
 from src.project.task.task_state import (
     task_state_attempt_log,
     task_state_dev_to_testing,
-    task_state_goals_close,
+    task_state_goals_inherit,
     task_state_plan_save,
     task_state_plan_to_development,
     task_state_subtask_fail,
@@ -173,11 +181,56 @@ async def task_pipeline_action_run(action: dict) -> str | None:
     None — делать оказалось нечего: строку успел увести другой воркер или её
     состояние изменил человек, пока сообщение лежало в очереди. Это норма, а не
     ошибка: работу вернёт следующий тик.
+
+    Пока действие идёт, рядом крутится `_lock_hold`: он подновляет блокировку
+    строки, и та не стареет до возраста, на котором реклейм считает работу
+    брошенной. Без этого час работы агента держался на том, что тик всё это время
+    видит job в Redis, — а увидеть его тик может не всегда.
     """
     runner = _RUNNERS.get(str(action.get('kind') or ''))
     if not runner:
         return None
-    return await runner(action)
+
+    hold = asyncio.create_task(_lock_hold(action))
+    try:
+        return await runner(action)
+    finally:
+        hold.cancel()
+        with suppress(asyncio.CancelledError):
+            await hold
+
+
+async def task_pipeline_shells_restart(task: dict) -> list[str]:
+    """
+    Погасить агентов, зависших на сорванном прогоне задачи. Зовёт ручной повтор.
+
+    Автоповтор перезапускает оболочку сам (`_retry_task`, `_retry_subtask`), но
+    последний срыв — тот самый, что увёл задачу в `failed`, — уходит человеку без
+    перезапуска: повторов больше нет, и перезапускать было незачем. Значит,
+    дочерний Claude Code так и остался с брошенным ходом, и «Перезапустить» без
+    этого вызова отдало бы новый прогон оболочке, которая всё ещё дожёвывает
+    предыдущий.
+
+    Кого гасить и обнуление серии повторов — за `task_retry_reset_tree`: счётчик
+    срывов его, там же и роль сорвавшегося прогона.
+
+    Готовности агента не ждём: это HTTP-запрос человека, а не воркер, и держать
+    соединение полминуты нечем. Прогон, который задачу подберёт, перезапустит
+    оболочку своим `team_session_restart_role` и дождётся её сам.
+
+    Returns: роли, которым ушёл маркер перезапуска.
+    """
+    task_id = int(task.get('id') or 0)
+    roles = await task_retry_reset_tree(task_id) if task_id else []
+    if not roles:
+        return []
+
+    work_dir = await task_role_project_work_dir(task.get('project_id'))
+    for role in roles:
+        await team_session_restart_role(role, work_dir, wait=False)
+
+    logger_info(f'[task] task#{task_id}: ручной повтор, перезапуск оболочек: {", ".join(roles)}')
+    return roles
 
 
 # ─── Отбор работы: что тик кладёт в очередь ────────────────────────────────────
@@ -431,7 +484,7 @@ async def _run_developer(action: dict) -> str | None:
 
 async def _run_qa(action: dict) -> str | None:
     """
-    qa_pending -> done | failed_qa | blocked.
+    testing -> done | failed_qa | blocked.
 
     Адрес оболочки собирается здесь по тем же правилам, что и у разработчика:
     роль постоянная (`qa`), каталог — у проекта родительской задачи. Ошибка QA
@@ -465,9 +518,9 @@ async def _run_qa(action: dict) -> str | None:
 
     if result.get('ok'):
         await task_state_subtask_set(subtask['id'], 'done', last_error='', attempt_count=attempt_no)
-        # Вердикт QA «прошло» — это и есть отметка о проверке целей: они уходили
-        # тестировщику на вход списком того, что надо проверить.
-        await task_state_goals_close(subtask['id'])
+        # Цели подзадачи здесь не трогаем: галочки уже проставил сам QA в ходе
+        # прогона — по одной, каждую своим ответом (`src/tool/project/task_goal.py`).
+        # Закрыть их отсюда значило бы отметить проверенным и то, что он не подтвердил.
         await _subtask_report(subtask, 'проверку QA прошла, подзадача готова')
         return f"subtask#{subtask['id']} qa -> done"
 
@@ -487,9 +540,9 @@ async def _run_finalize(action: dict) -> str | None:
     task_id, final = finalized
     summary = await task_report_subtasks_summary(task_id)
     if final == 'done':
-        # Цели родителя закрываем только вместе с самой задачей: пока хоть одна
-        # подзадача не готова, отмечать в них нечего — проверены они не были.
-        await task_state_goals_close(task_id)
+        # Цели родителя проверяет не он сам, а его подзадачи: сюда переносим только
+        # те отметки, которые QA уже подтвердил ниже по дереву.
+        await task_state_goals_inherit(task_id)
         await task_report_write(task_id, f'Задача выполнена успешно: все подзадачи готовы ({summary})')
     else:
         # Не через `task_state_task_fail`: та ставит состояние сама, а его уже
@@ -711,6 +764,33 @@ async def _subtask_branch_save(subtask_id: int, result: dict) -> None:
     ) if value}
     if patch:
         await task_metadata_update(subtask_id, patch)
+
+
+async def _lock_hold(action: dict) -> None:
+    """
+    Пока действие выполняется — держать его блокировку свежей.
+
+    Реклейм судит о брошенности по возрасту блокировки, и живой строке стареть
+    незачем: раз в `TASK_CLAIM_LOCK_TOUCH_SEC` секунд подновляем `pipeline_locked_at`,
+    и до возраста «брошена» строка не доживает, пока идёт работа. Это заменяет
+    прежнюю опору на запись job в Redis: та живёт своим коротким TTL, и её пропажа
+    у часового прогона означала снятую блокировку у работающего агента — а следом
+    и лишний захват сверх предела «Parallel LLM».
+
+    Ограничены сроком job: если процесс завис, но не умер, подновление
+    прекращается, и дальше работает прежняя страховка по `timeout_task_lock`.
+    Отказ `task_claim_lock_touch` — блокировку уже сняли (реклейм, ручной повтор,
+    человек на странице задач); тогда просто уходим, чужую метку не ставим.
+    """
+    row_id = int(action.get('task_id') or action.get('subtask_id') or 0)
+    if not row_id:
+        return
+
+    deadline = time.monotonic() + await task_setting_timeout_get(TASK_SETTING_TIMEOUT_WORKER_JOB)
+    while time.monotonic() < deadline:
+        await asyncio.sleep(TASK_CLAIM_LOCK_TOUCH_SEC)
+        if not await task_claim_lock_touch(row_id):
+            return
 
 
 def _role_title(role: str) -> str:

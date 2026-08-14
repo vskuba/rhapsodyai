@@ -130,12 +130,15 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
         'session_uuid':       session_uuid,
         'tools':              await _tools_load(),
     })
-    agent_manager.framework_workflow_run(framework_model, future, loop)
+    workflow_task = agent_manager.framework_workflow_run(framework_model, future, loop)
 
     timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_MANAGER_RUN)
     try:
         result_text = await asyncio.wait_for(future, timeout=timeout)
     except asyncio.TimeoutError:
+        # Отменяем сам прогон, а не только ожидание: иначе брошенный workflow
+        # продолжает шагать и слать сообщения оболочке (см. framework_workflow_run).
+        workflow_task.cancel()
         future.cancel()
         raise RuntimeError(f'менеджер не уложился в {timeout}s')
 

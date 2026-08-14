@@ -11,6 +11,16 @@
 расхождение будет нечем.
 """
 import json
+import re
+from difflib import SequenceMatcher
+
+# Насколько похожие формулировки считаем одной целью.
+#
+# Точного совпадения мало: менеджер разводит одну проверку на две строки, поменяв
+# в ней пару слов, — человеку это две галочки об одном и том же, а QA прогоняет
+# круг проверки на каждую. Порог подобран по живым планам: 0.85 склеивает такие
+# пары и оставляет врозь цели, у которых различие по существу, а не в обёртке.
+TASK_PLAN_GOAL_SIMILAR_RATIO = 0.85
 
 
 def task_plan_serialize(plan_text: str, subtasks: list, goals: list | None = None) -> str:
@@ -37,8 +47,12 @@ def task_plan_goals_normalize(goals_raw) -> list[dict]:
     Привести цели к формату колонки `project_task.goals` — `[{'text', 'done'}]`.
 
     На входе что угодно из трёх источников: JSON-строка из БД, список строк от
-    менеджера (`task_goals_json`) или уже готовые словари. Пустые и повторные
-    формулировки отбрасываем — в UI это были бы пустые чекбоксы.
+    менеджера (`task_goals_json`) или уже готовые словари. Пустые формулировки
+    отбрасываем — в UI это были бы пустые чекбоксы, — а повторные и близкие к уже
+    принятым схлопываем в одну: см. `TASK_PLAN_GOAL_SIMILAR_RATIO`.
+
+    Из пары похожих остаётся первая: порядок целей задаёт человек или менеджер, и
+    вторая формулировка — это уже пересказ принятой, а не уточнение к ней.
     """
     if isinstance(goals_raw, str):
         try:
@@ -50,13 +64,13 @@ def task_plan_goals_normalize(goals_raw) -> list[dict]:
     if not isinstance(goals_raw, list):
         return []
 
-    goals, seen = [], set()
+    goals, keys = [], []
     for item in goals_raw:
         text = str((item.get('text') if isinstance(item, dict) else item) or '').strip()
-        key = text.lower()
-        if not text or key in seen:
+        key = _task_plan_goal_key(text)
+        if not key or _task_plan_goal_seen(key, keys):
             continue
-        seen.add(key)
+        keys.append(key)
         goals.append({'text': text, 'done': bool(item.get('done')) if isinstance(item, dict) else False})
     return goals
 
@@ -68,33 +82,36 @@ def task_plan_goals_merge(goals_current_raw, goals_new: list) -> str:
 
     Перезаписывать нельзя — у уже отмеченных целей потерялся бы `done`, а список
     человека для менеджера был входными данными, а не черновиком.
+
+    Похожие на уже имеющиеся цели менеджера не добавляем по тому же правилу, что и
+    внутри одного списка: человек написал цель своими словами, менеджер повторил её
+    своими — проверять это дважды незачем.
     """
     goals = task_plan_goals_normalize(goals_current_raw)
-    seen = {g['text'].lower() for g in goals}
+    keys = [_task_plan_goal_key(goal['text']) for goal in goals]
     for goal in task_plan_goals_normalize(goals_new):
-        if goal['text'].lower() in seen:
+        key = _task_plan_goal_key(goal['text'])
+        if _task_plan_goal_seen(key, keys):
             continue
-        seen.add(goal['text'].lower())
+        keys.append(key)
         goals.append(goal)
     return json.dumps(goals, ensure_ascii=False)
 
 
-def task_plan_goals_close(goals_raw) -> str | None:
+def _task_plan_goal_key(text: str) -> str:
     """
-    Отметить все цели выполненными. Returns: JSON для `project_task.goals` или None,
-    если отмечать нечего.
+    Формулировка без регистра, знаков и лишних пробелов — по ней сверяем цели.
 
-    Зовётся в тот момент, когда работа принята: цели — это и есть список того, что
-    проверялось, и оставлять их пустыми чекбоксами у готовой задачи значит показывать
-    человеку «ничего не сделано». None вместо JSON — чтобы не гонять UPDATE вхолостую
-    у задач без целей и у тех, где всё уже отмечено.
+    Пунктуация здесь только мешает: «панель раскрывается, и схлопывается» и
+    «панель раскрывается и схлопывается» — одна цель.
     """
-    goals = task_plan_goals_normalize(goals_raw)
-    if not goals or all(g['done'] for g in goals):
-        return None
-    for goal in goals:
-        goal['done'] = True
-    return json.dumps(goals, ensure_ascii=False)
+    return ' '.join(re.sub(r'[^\w\s]+', ' ', str(text or '').lower()).split())
+
+
+def _task_plan_goal_seen(key: str, keys: list[str]) -> bool:
+    """Есть ли среди уже принятых целей та же — точно или с точностью до слов."""
+    return any(key == seen or SequenceMatcher(None, key, seen).ratio() >= TASK_PLAN_GOAL_SIMILAR_RATIO
+               for seen in keys)
 
 
 def _task_plan_dict(raw) -> dict:
