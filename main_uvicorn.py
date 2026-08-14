@@ -70,7 +70,7 @@ from src.uvicorn.routers.detective import detective
 from src.uvicorn.routers.seed import seed
 from src.uvicorn.routers.backup import backup
 from src.uvicorn.routers.project import project_team as project_team_router
-from src.uvicorn.routers.dating import dating
+from src.uvicorn.routers.playwright import playwright
 
 
 @asynccontextmanager
@@ -471,4 +471,4 @@ app.include_router(event_router.router, include_in_schema=False)
 app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)
 app.include_router(project_team_router.router, include_in_schema=False)
-app.include_router(dating.router, include_in_schema=False)
+app.include_router(playwright.router, include_in_schema=False)

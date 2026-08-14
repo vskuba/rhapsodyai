@@ -108,11 +108,11 @@ async def user_page(request: Request, user: AuthSession = Depends(require_auth))
     )
 
 
-@router.get("/admin/dating", response_class=HTMLResponse)
+@router.get("/admin/playwright", response_class=HTMLResponse)
 async def user_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        "admin/dating.html"
+        "admin/playwright.html"
     )
 
 
