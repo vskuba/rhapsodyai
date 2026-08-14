@@ -2757,7 +2757,7 @@ function renderPipeChip(t, row) {
         const decomposed = !!(row && row.hasKids);
         const title = decomposed
             ? `План составляется только для задач без подзадач — эта уже разложена на ${row.kidsTotal} ${_taskPluralSub(row.kidsTotal)}`
-            : 'Задача вне конвейера — агенты её не трогают. Кнопка «В конвейер» в раскрытой строке';
+            : 'Задача вне конвейера — агенты её не трогают.';
         return `<div><span class="pipe-chip ${decomposed ? 'pipe-decomposed' : 'pipe-none'}" `
              + `title="${esc(title)}">${PIPELINE_LABEL_NONE}</span></div>`;
     }
@@ -2948,10 +2948,6 @@ async function planReview(taskId) {
 
 function _pipelineRender(taskId, data, body, actions) {
     const state = data.pipeline_state;
-    // Родителя конвейер не берёт (см. task_claim_task_unplanned): его план — это его
-    // же подзадачи. Кнопку «В конвейер» тут прятать обязательно, а не просто пояснять:
-    // она проставила бы `new`, воркер задачу не подобрал бы, и она зависла бы в этом
-    // состоянии навсегда.
     const kids = _tasks.filter(x => x.parent_id === taskId).length;
 
     // План мог появиться уже после отрисовки строки — подставим, пока поле не трогали.
@@ -2961,9 +2957,7 @@ function _pipelineRender(taskId, data, body, actions) {
     if (actions) {
         let html;
         if (!state) {
-            html = kids
-                ? ''
-                : `<button class="btn-pipe primary" onclick="pipelineAction(${taskId},'start')">▶ В конвейер</button>`;
+            html = '';
         } else if (state === 'plan_approval') {
             html =
                 `<button class="btn-pipe ok" onclick="pipelineAction(${taskId},'approve')">✓ Утвердить</button>` +
