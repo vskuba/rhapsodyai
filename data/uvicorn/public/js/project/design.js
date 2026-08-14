@@ -385,8 +385,8 @@
         </div>
         ${b.vars && b.vars !== '{}' ? `
         <div class="bw-vars-panel">
-            <details class="bw-vars-details" ${varsOpen ? 'open' : ''}>
-                <summary class="bw-css-summary" onclick="this.parentElement.toggleAttribute('open');localStorage.setItem('bw_vars_collapsed_${b.id}', this.parentElement.hasAttribute('open') ? '0' : '1')">Переменные (vars)</summary>
+            <details class="bw-vars-details" data-block-id="${b.id}" ${varsOpen ? 'open' : ''}>
+                <summary class="bw-css-summary">Переменные (vars)</summary>
                 <textarea class="bw-vars-textarea" readonly>${esc(JSON.stringify(JSON.parse(b.vars), null, 2))}</textarea>
             </details>
         </div>` : ''}
@@ -1062,6 +1062,34 @@
             });
         })();
 
+        /* Vars panel collapse/expand — delegated capture handler */
+        (function () {
+            document.addEventListener('click', function (e) {
+                if (!e.target.classList.contains('bw-css-summary')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                var details = e.target.closest('.bw-vars-details');
+                if (!details) return;
+                var wasOpen = details.hasAttribute('open');
+                if (wasOpen) {
+                    details.removeAttribute('open');
+                } else {
+                    details.setAttribute('open', '');
+                }
+                var blockId = details.getAttribute('data-block-id') || '';
+                // Determine key prefix from ancestor
+                var wrap = e.target.closest('.bw-preview-content, .lib-block-preview');
+                var prefix = 'bw';
+                if (wrap && wrap.id === 'libBlockPreview') {
+                    prefix = 'lib';
+                }
+                if (blockId) {
+                    var key = prefix + '_vars_collapsed_' + blockId;
+                    localStorage.setItem(key, wasOpen ? '1' : '0');
+                }
+            }, true);
+        })();
+
     });
 
     function onProjectChange() {
@@ -1287,8 +1315,8 @@
         const libVarsOpen = (b.vars && b.vars !== '{}') && (libVarsCollapsed === null || libVarsCollapsed !== '1');
         const libVarsHtml = b.vars && b.vars !== '{}' ?
             '<div class="bw-vars-panel">' +
-            '<details class="bw-vars-details" ' + (libVarsOpen ? 'open' : '') + '>' +
-            '<summary class="bw-css-summary" onclick="this.parentElement.toggleAttribute(\'open\');localStorage.setItem(\'lib_vars_collapsed_' + b.id + '\', this.parentElement.hasAttribute(\'open\') ? \'0\' : \'1\')">Переменные (vars)</summary>' +
+            '<details class="bw-vars-details" data-block-id="' + b.id + '" ' + (libVarsOpen ? 'open' : '') + '>' +
+            '<summary class="bw-css-summary">Переменные (vars)</summary>' +
             '<textarea class="bw-vars-textarea" readonly>' + esc(JSON.stringify(JSON.parse(b.vars), null, 2)) + '</textarea>' +
             '</details></div>' : '';
         wrap.innerHTML = '<div style="padding:12px 14px">' +
