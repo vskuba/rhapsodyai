@@ -103,6 +103,17 @@ Jinja-глобалом `<NAME>_PORT` из `main_uvicorn.py`; номеров в �
 .venv/bin/python3 -m pytest tests/ -v -s          # с логами
 ```
 
+Адрес сервера — в переменной `BASE_URL`, по умолчанию `http://localhost:8011`:
+
+```bash
+BASE_URL=http://localhost:8013 .venv/bin/python3 -m pytest tests/ -q
+```
+
+Переменная нужна конвейеру задач: QA проверяет не общий `:8011`, а сервер ветки
+подзадачи (`uvicorn_task`, свой порт). На `:8011` работает код основного чекаута,
+и сьюита там зелёная независимо от того, что сделал разработчик. Читают переменную
+`tests/conftest.py` и каждый тестовый модуль — одна команда переключает всю сьюиту.
+
 Конфиг — `[tool.pytest.ini_options]` в `pyproject.toml`: `asyncio_mode = "auto"`,
 `pythonpath = [".", "py_modules"]`.
 
