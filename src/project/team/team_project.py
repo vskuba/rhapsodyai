@@ -64,7 +64,7 @@ async def team_project_blocks_get() -> list[dict]:
     На карточку кладётся очередь её роли по этому проекту (`team_queue`): сколько
     задач ждёт роль, первые из них списком и что роль делает прямо сейчас.
     """
-    projects = await PlanningProjectRepository().find_by({}, order_by='position ASC')
+    projects = await PlanningProjectRepository().find_by({}, order_by='position ASC, id ASC')
     members = await ProjectTeamRepository().find_by({}, order_by='id ASC')
     sessions = await AiClaudeSessionRegistryRepository().find_by({}, order_by='id ASC')
     queues = await team_queue_by_project()
@@ -136,7 +136,7 @@ async def team_project_id_by_work_dir(work_dir: str) -> int | None:
     if not work_dir:
         return None
 
-    for project in await PlanningProjectRepository().find_by({}, order_by='position ASC'):
+    for project in await PlanningProjectRepository().find_by({}, order_by='position ASC, id ASC'):
         if _path_normalize(project.get('work_dir')) == work_dir:
             return int(project.get('id') or 0) or None
 
