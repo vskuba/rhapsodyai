@@ -14,7 +14,11 @@ import time
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
-from src.project.task.task_metadata import TASK_METADATA_KEY_DEV, TASK_METADATA_KEY_TEST
+from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_DEV,
+    TASK_METADATA_KEY_TEST,
+    task_metadata_stop_sql,
+)
 from src.project.task.task_plan import (
     task_plan_goals_normalize,
     task_plan_serialize,
@@ -34,11 +38,16 @@ def task_state_kanban_sql(pipeline_state: str | None) -> tuple[str, list]:
 
     `cancelled` не перезаписываем. Это единственный статус, которым человек говорит «не
     делать»; молча вернуть отменённую задачу в работу хуже, чем разойтись с осью конвейера.
+
+    По той же причине не трогаем статус остановленной строки (кнопка ◼, `task_stop`):
+    прогон, которому её остановили на ходу, доигрывает свой конец в воркере и пишет
+    результат уже после стопа — без этой оговорки он вернул бы задаче «В очереди»
+    поверх «Ожидает», и человек увидел бы, что кнопка не сработала.
     """
     kanban = task_state_kanban_status(pipeline_state)
     if not kanban:
         return '', []
-    return "status = IF(status = 'cancelled', status, %s)", [kanban]
+    return f"status = IF(status = 'cancelled' OR {task_metadata_stop_sql()}, status, %s)", [kanban]
 
 
 def task_state_kanban_status(pipeline_state: str | None) -> str:
@@ -310,7 +319,7 @@ async def task_state_task_requeue(task_id: int, state: str, error: str) -> None:
     Нужна для повтора сорвавшегося прогона (`task_retry`): менеджер не ответил, но
     работы он и не сделал — хоронить задачу в `failed` не за что, её надо просто
     отдать следующему тику. Состояние выбирает вызывающий, и оно то же, что у возврата
-    брошенной блокировки (`task_claim._TASK_STATE_RECLAIM`): планирование -> `new`,
+    брошенной блокировки (`task_claim.TASK_CLAIM_STATE_RECLAIM`): планирование -> `new`,
     пересмотр -> `reviewing`.
 
     Причину кладём в `pipeline_error`: состояние снова рабочее, и без неё на странице

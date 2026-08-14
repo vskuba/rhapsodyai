@@ -9,7 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.project.task.task_metadata import task_metadata_row_apply
+from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_PLAN,
+    task_metadata_row_apply,
+    task_metadata_update,
+)
 from src.project.task.task_plan import (
     task_plan_goals_get,
     task_plan_goals_merge,
@@ -18,8 +22,9 @@ from src.project.task.task_plan import (
 )
 from src.project.task.task_pipeline import task_pipeline_shells_restart
 from src.project.task.task_report import task_report_write
-from src.project.task.task_role import TASK_ROLE_TITLE
+from src.project.task.task_role import TASK_ROLE_TITLE, task_role_project_work_dir
 from src.project.task.task_state import task_state_kanban_sql
+from src.project.task.task_stop import task_stop_apply, task_stop_clear
 from src.project.task.task_revision import (
     TASK_REVISION_LIMIT,
     task_revision_add,
@@ -27,6 +32,7 @@ from src.project.task.task_revision import (
     task_revision_get,
     task_revision_list,
 )
+from src.project.task.task_worktree import task_worktree_merge
 
 # Состояния, в которых план можно трогать: конвейер над ним не работает и подзадач
 # по нему ещё (или уже) нет. `approved`/`processing` сюда не входят намеренно — план там
@@ -89,7 +95,16 @@ async def project_task_pipeline_get(task_id: int, user=Depends(AuthChecker([Auth
 
 @router.post('/task/{task_id}/pipeline/start')
 async def project_task_pipeline_start(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
-    """Отправить задачу в конвейер. Вход только явный — обычные задачи агенты не трогают."""
+    """
+    Отправить задачу в конвейер. Вход только явный — обычные задачи агенты не трогают.
+
+    Снятый флажок «в планирование» кнопка снимает: нажатие — это и есть просьба о плане
+    прямо сейчас, а с пометкой задача ушла бы в `new` и там же осталась — захват её не
+    видит (`task_metadata_plan_free_sql`). Ключ стираем (`None`), а не пишем `true`:
+    умолчание там «включено».
+    """
+    await task_stop_clear(task_id, user.username)
+    await task_metadata_update(task_id, {TASK_METADATA_KEY_PLAN: None})
     return await _pipeline_state_set(task_id, expected=None, new_state='new',
                                      report=f'{user.username} отправил задачу в конвейер — ждёт плана от менеджера')
 
@@ -153,7 +168,12 @@ async def project_task_pipeline_retry(task_id: int, user=Depends(AuthChecker([Au
     Вместе с состоянием перезапускаем и агентов в оболочках
     (`task_pipeline_shells_restart`): срыв по таймауту оставляет дочерний Claude
     Code с брошенным ходом, и новый прогон ушёл бы в занятую оболочку.
+
+    Остановку снимаем заодно: «Перезапустить» — это и есть «продолжаем», и оставленный
+    запрет обернул бы нажатие сменой состояния без единого прогона следом.
     """
+    await task_stop_clear(task_id, user.username)
+
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT id, project_id, pipeline_state, pipeline_plan FROM project_task WHERE id = %s",
@@ -209,6 +229,84 @@ async def project_task_pipeline_retry(task_id: int, user=Depends(AuthChecker([Au
 
     return await _pipeline_state_set(task_id, expected='failed', new_state=new_state,
                                      report=f'{user.username} перезапустил конвейер — {note}')
+
+
+@router.post('/task/{task_id}/pipeline/stop')
+async def project_task_pipeline_stop(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Остановить работу над задачей — кнопка ◼ рядом со статусом.
+
+    В отличие от «Отклонить», задачу из конвейера не выводим и состояние не теряем:
+    строка возвращается туда, откуда её взяли, и ждёт человека. Продолжение — возврат
+    флажка фазы или кнопка ▶ (`/pipeline/resume`), и задача идёт дальше с того же места.
+
+    Подробности — в `task_stop`: там же объяснено, почему запрет живёт в `metadata`,
+    а не в человеческом `status`.
+    """
+    result = await task_stop_apply(task_id, user.username)
+    if not result:
+        raise HTTPException(status_code=404, detail='task not found')
+
+    return {'ok': True, **result, 'task': await _task_row(task_id)}
+
+
+@router.post('/task/{task_id}/pipeline/resume')
+async def project_task_pipeline_resume(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Снять остановку — задачу снова видно отбору.
+
+    Ничего не запускает руками: работу отдаст ближайший тик оркестратора по тому же
+    `pipeline_state`, в который её вернула остановка. Повторное нажатие безвредно.
+    """
+    if not await _task_row(task_id):
+        raise HTTPException(status_code=404, detail='task not found')
+
+    resumed = await task_stop_clear(task_id, user.username)
+    return {'ok': True, 'resumed': resumed, 'task': await _task_row(task_id)}
+
+
+@router.post('/task/{task_id}/worktree/merge')
+async def project_task_worktree_merge(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Влить ветку подзадачи в главную ветку проекта и снять её рабочий каталог.
+
+    Кнопка «mr2master&rm_worktree» в колонке прогресса. Делается по кнопке, а не
+    автоматом после `done`: закрытая подзадача ещё не значит принятая работа —
+    merge request может ждать ревью, а каталог нужен, чтобы посмотреть, что там
+    вышло. Решение остаётся за человеком.
+
+    Только у подзадачи: ветку заводят под конкретную работу, у родителя своей нет.
+
+    Слияние локальное, без `push` — отправку в общий репозиторий человек делает сам.
+    Отказ (грязный каталог, конфликт, нет ветки) отдаём как 400 с текстом от git:
+    разбирать такое всё равно человеку, и общая формулировка ему не поможет.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT s.id, s.parent_id, p.project_id "
+            "  FROM project_task s LEFT JOIN project_task p ON p.id = s.parent_id "
+            " WHERE s.id = %s",
+            (task_id,)
+        )
+        subtask = await db.fetchone()
+    if not subtask:
+        raise HTTPException(status_code=404, detail='task not found')
+    if not subtask['parent_id']:
+        raise HTTPException(status_code=400, detail='ветка заводится под подзадачу — у задачи её нет')
+
+    work_dir = await task_role_project_work_dir(subtask['project_id'])
+    if not work_dir:
+        raise HTTPException(status_code=400, detail='у проекта не задан рабочий каталог (карточка проекта)')
+
+    result = await task_worktree_merge(work_dir, task_id)
+    if not result['ok']:
+        raise HTTPException(status_code=400, detail=result['error'])
+
+    await task_report_write(
+        task_id, f'{user.username} влил ветку {result["branch"]} в {result["base"]}'
+                 + ('' if result['removed'] else ' (рабочий каталог снять не удалось — смотрите лог)'))
+
+    return result
 
 
 @router.get('/task/{task_id}/plan/revisions')
@@ -326,6 +424,15 @@ async def project_task_plan_revision_delete(task_id: int, revision_no: int,
 
     await task_revision_delete(task_id, revision_no)
     return {'ok': True}
+
+
+async def _task_row(task_id: int) -> dict | None:
+    """Строка задачи для ответа — с разобранным `metadata`. Нет задачи — None."""
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
+        task = await db.fetchone()
+
+    return task_metadata_row_apply(task) if task else None
 
 
 async def _plan_editable_task(task_id: int) -> dict:

@@ -79,6 +79,12 @@ services:
       - "8011:8000"
     volumes:
       - ./:/app
+      # Тот же репозиторий вторым монтированием — по хостовому пути. Нужно для
+      # рабочих каталогов задач (`task_worktree`): git пишет в служебные файлы
+      # worktree абсолютные пути, и созданный из контейнера каталог с путями
+      # `/app/...` на хосте не открывается — а живёт в нём Claude Code хоста.
+      # Совпадение путей внутри и снаружи снимает вопрос целиком.
+      - ${PROJECT_HOST_DIR}:${PROJECT_HOST_DIR}
     env_file:
       - .env
     environment:
@@ -123,6 +129,57 @@ services:
       - os-net
     # unless-stopped: restarts on crash (when active), but NOT after explicit
     # `docker stop` (when inactive slot is being stopped by bluegreen.sh)
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Сервер задачи: тот же образ, но кодом служит рабочий каталог подзадачи, а не
+  # общий чекаут. Нужен QA — проверять ветку на живом сервере, не трогая :8011,
+  # на котором в это время работает человек и соседние задачи.
+  #
+  # База, redis и qdrant общие с основным сервером: разводить ещё и данные значит
+  # проверять задачу на пустой базе, где нет ни проектов, ни настроек. Цена — QA
+  # пишет в ту же БД, что и все; для задач конвейера это принято сознательно.
+  #
+  # Профиль `task` держит сервис выключенным при обычном `docker compose up`.
+  # Поднимают его на время проверки: `./task_server.sh up <id>` (см. скрипт).
+  uvicorn_task:
+    build:
+      context: .
+      dockerfile: docker/uvicorn/dockerfile
+    # Тот же образ, что у основного сервера: сборка одна и та же, а без общего
+    # имени compose собирал бы её второй раз — это минуты ожидания на каждой
+    # первой проверке и лишний образ в гигабайт.
+    image: rhapsodyai-uvicorn:latest
+    container_name: uvicorn_task
+    profiles: ["task"]
+    ports:
+      - "8013:8000"
+    volumes:
+      # Каталог подзадачи вместо репозитория. Без переменной поднимется обычный
+      # чекаут — то же, что :8011, и это заметно сразу.
+      - ${TASK_WORKTREE_DIR:-./}:/app
+      # Ссылки внутри каталога подзадачи (`.env`, `.venv`, рабочие папки `data`)
+      # указывают на хостовые пути — без этого монтирования они оборваны.
+      - ${PROJECT_HOST_DIR}:${PROJECT_HOST_DIR}
+    env_file:
+      - .env
+    environment:
+      # Каталог задачи временный, и снимать его будет человек с хоста. Контейнер
+      # работает root-ом: оставленные им `__pycache__` root-овые, и `git worktree
+      # remove` спотыкается о них с «Permission denied». Байткод здесь не нужен.
+      - PYTHONDONTWRITEBYTECODE=1
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+      - HF_HOME=/root/.cache/huggingface
+      - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
+    depends_on:
+      - qdrant
+    networks:
+      - os-net
+    # unless-stopped, а не always: остановленный после проверки сервер не должен
+    # подниматься сам при перезапуске docker.
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -187,6 +244,24 @@ services:
     command: rq worker-pool --url redis://redis:6379 -n 3 default
     volumes:
       - ./:/app
+      # Хостовой путь репозитория — см. пояснение у `uvicorn`. Рабочие каталоги
+      # задач заводит именно этот контейнер: `task_worktree_ensure` зовётся из
+      # шага конвейера.
+      #
+      # Здесь смонтирован только проект самой установки. Карточки заводят и на
+      # другие проекты машины — у каждого свой репозиторий по своему пути
+      # (`project.work_dir`), и каталог задачи конвейер режет в нём же. Чтобы
+      # такой проект был виден, добавьте его в `docker-compose.override.yml` тем
+      # же правилом «путь внутри = путь снаружи»:
+      #
+      #   services:
+      #     worker_task:
+      #       volumes:
+      #         - /home/user/projects/shop:/home/user/projects/shop
+      #
+      # Невидимый каталог конвейер не молчит: `_subtask_dir` пишет в лог, что
+      # проверить, и работает без изоляции, в общем каталоге проекта.
+      - ${PROJECT_HOST_DIR}:${PROJECT_HOST_DIR}
     env_file:
       - .env
     environment:

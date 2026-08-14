@@ -301,6 +301,10 @@
                     <label>Путь к директории</label>
                     <input type="text" id="work_dir" class="form-control" placeholder="/absolute/path/to/project">
                 </div>
+                <div class="form-group">
+                    <label>Тест-сервер задач</label>
+                    <input type="text" id="task_server_url" class="form-control" placeholder="http://localhost:8013">
+                </div>
             </div>
 
             <div style="margin-top: 15px;">
@@ -464,6 +468,7 @@
             document.getElementById('projectId').value = project.id;
             document.getElementById('title').value = project.title || '';
             document.getElementById('work_dir').value = project.work_dir || '';
+            document.getElementById('task_server_url').value = project.task_server_url || '';
             document.getElementById('description').value = project.description || '';
 
             formTitle.textContent = `Проект: ${project.title || 'Без названия'}`;
@@ -502,6 +507,7 @@
         const payload = {
             title: document.getElementById('title').value.trim(),
             work_dir: document.getElementById('work_dir').value.trim(),
+            task_server_url: document.getElementById('task_server_url').value.trim(),
             description: document.getElementById('description').value.trim(),
         };
 

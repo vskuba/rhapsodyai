@@ -21,6 +21,7 @@ Developer, а проверяет QA. План уже разложен, спор�
 Задача без типа достаётся менеджеру: тип не обязателен (`ON DELETE SET NULL`), и
 без владельца задача выпала бы из конвейера совсем.
 """
+from config.config import config_get
 from datetime_.datetime_ import datetime_now
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_setting_timeout import (
@@ -267,6 +268,35 @@ async def task_role_project_work_dir(project_id) -> str:
         row = await db.fetchone()
 
     return _path_normalize(row.get('work_dir') if row else '')
+
+
+async def task_role_project_server_url(project_id) -> str:
+    """
+    Адрес сервера, на котором QA проверяет ветку подзадачи этого проекта.
+
+    Значение проектное, а не установочное: проектов на машине несколько, у каждого
+    свой репозиторий и своя команда запуска сервера, и порт у каждого свой. Общего
+    адреса на установку не бывает — с ним QA соседнего проекта открывал бы чужой
+    сервер и видел бы чужой код вместо проверяемой ветки.
+
+    Пусто на проекте — берём `PROJECT_TASK_QA_SERVER_URL` из `.env`. Это адрес
+    проекта самой установки: он совпадает с портом `uvicorn_task` в
+    `docker-compose.yml`, и заводить его ещё и в карточке проекта незачем.
+
+    Пустая строка на выходе означает «сервера для проверки нет»: QA скажет об
+    этом в отчёте, а не пойдёт проверять на общем `:8011` — там код основного
+    чекаута, а не ветки.
+    """
+    project_id = int(project_id or TASK_ROLE_PROJECT_NONE)
+    if project_id:
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT task_server_url FROM project WHERE id = %s', (project_id,))
+            row = await db.fetchone()
+        url = str((row or {}).get('task_server_url') or '').strip()
+        if url:
+            return url.rstrip('/')
+
+    return str(config_get('PROJECT_TASK_QA_SERVER_URL', '') or '').strip().rstrip('/')
 
 
 def _path_normalize(path) -> str:

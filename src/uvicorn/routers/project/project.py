@@ -73,6 +73,10 @@ async def project_admin_update(project_id: int, data: dict, user=Depends(AuthChe
         update['status'] = str(data['status'])
     if 'work_dir' in data:
         update['work_dir'] = str(data['work_dir'])
+    if 'task_server_url' in data:
+        # Адрес тест-сервера проекта: пустая строка допустима — тогда QA берёт
+        # общий адрес установки из `.env` (см. `task_role_project_server_url`).
+        update['task_server_url'] = str(data['task_server_url']).strip()
     if 'phase_current' in data:
         update['phase_current'] = str(data['phase_current'])
     if 'description' in data:

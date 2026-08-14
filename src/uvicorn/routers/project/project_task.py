@@ -26,6 +26,7 @@ from src.project.task.task_plan import (
 from src.project.task.task_report import task_report_write
 from src.project.task.task_revision import task_revision_add
 from src.project.task.task_state import task_state_dev_to_testing, task_state_plan_to_development
+from src.project.task.task_stop import task_stop_clear
 from src.project.task.task_tree import task_tree_parent_check, task_tree_position_next
 
 _TASK_AI_AGENT_NAME = 'task_ai_generator'
@@ -191,10 +192,19 @@ async def project_task_metadata_patch(task_id: int, data: dict, user=Depends(Aut
     Пометку «в тестирование» ловим по `is not False`, а не по `is True`: включённое
     состояние там — это отсутствие ключа, и человек, вернувший флажок галкой, шлёт
     `null` (удаление), а не `true`.
+
+    Возвращённый флажок заодно снимает остановку (`task_stop`): останавливая задачу,
+    кнопка ◼ этот флажок сняла, и галка обратно — то самое «продолжаем», ради которого
+    человек её и ставит. Порядок обязателен: пока пометка остановки на месте,
+    `task_state_kanban_sql` держит статус, и переход фазы прошёл бы наполовину.
     """
     patch = data.get('patch')
     if not isinstance(patch, dict) or not patch:
         raise HTTPException(status_code=400, detail='patch must be a non-empty object')
+
+    if patch.get(TASK_METADATA_KEY_DEV) is True \
+            or (TASK_METADATA_KEY_TEST in patch and patch[TASK_METADATA_KEY_TEST] is not False):
+        await task_stop_clear(task_id, user.username)
 
     await task_metadata_update(task_id, patch)
     if patch.get(TASK_METADATA_KEY_DEV) is True and await task_state_plan_to_development(task_id):

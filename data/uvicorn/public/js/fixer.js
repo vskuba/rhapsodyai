@@ -30,6 +30,12 @@ const FIXER_TYPE_LIST_URL    = '/api/team/types';
 const FIXER_TASK_URL         = '/tasks/{project_id}';
 const FIXER_VOICE_URL        = '/chat/voice';
 
+// Пометка «в планирование» — тот же ключ, что у флажка на `/admin/task` (см.
+// `TASK_METADATA_KEY_PLAN` в src/project/task/task_metadata.py). Хранится наизнанку:
+// включено — это отсутствие ключа, и снятый флажок отправляется явным `false`. Поэтому
+// в обычном случае metadata не шлём вовсе.
+const FIXER_META_KEY_PLAN = 'to_planning';
+
 // Разметка выбранного элемента уходит в описание целиком, но не безразмерно: в
 // неё бывает завёрнут весь список строк таблицы, а задача с мегабайтом HTML
 // нечитаема. Обрезанное отмечаем прямо в тексте, чтобы обрыв не выглядел багом.
@@ -178,6 +184,19 @@ const FIXER_CSS = `
 
 .fixer-pop-send:hover { background: #4338ca; }
 .fixer-pop-send:disabled { opacity: .6; cursor: default; }
+
+.fixer-pop-flag {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 7px;
+    font-size: 11px;
+    color: #475569;
+    cursor: pointer;
+    user-select: none;
+}
+
+.fixer-pop-flag input { margin: 0; cursor: pointer; }
 `;
 
 let _mode   = false;   // режим выбора включён
@@ -339,7 +358,10 @@ function _popupOpen(el) {
             <button type="button" class="fixer-pop-mic" title="Продиктовать">🎤</button>
             <textarea class="fixer-pop-text" placeholder="Что поправить?"></textarea>
             <button type="button" class="fixer-pop-send">Отправить</button>
-        </div>`;
+        </div>
+        <label class="fixer-pop-flag" title="Отдать задачу менеджеру за планом. Снять — задача заведётся и будет ждать, плана для неё писать не будут">
+            <input type="checkbox" class="fixer-pop-plan" checked>в планирование
+        </label>`;
     document.body.appendChild(_pop);
 
     _pop.querySelector('.fixer-pop-path').value = _pathBuild(el);
@@ -377,6 +399,7 @@ function _popupPlace(el) {
 async function _send(btn) {
     const path = _pop.querySelector('.fixer-pop-path').value.trim();
     const text = _pop.querySelector('.fixer-pop-text').value.trim();
+    const plan = _pop.querySelector('.fixer-pop-plan').checked;
     if (!text) {
         showNotification('Опишите, что поправить', 'warning');
         return;
@@ -397,12 +420,19 @@ async function _send(btn) {
         // (с хостом и хэшем) — по нему сразу видно роутинг, вплоть до вкладки.
         const parts = [text, '', `Страница: ${location.href}`, `Элемент: ${path}`];
         if (html) parts.push('', 'HTML элемента:', '```html', html, '```');
-        await postData(FIXER_TASK_URL.replace('{project_id}', target.project_id), {
+        const body = {
             title,
             description: parts.join('\n'),
             task_type_id: target.task_type_id,
-        });
-        showNotification(`Задача создана — проект «${FIXER_PROJECT_TITLE}», тип «Планирование»`, 'success');
+        };
+        // Флажок снят — пишем пометку сразу при заведении, а не отдельным запросом:
+        // между созданием задачи и вторым вызовом успевает пройти тик оркестратора, и
+        // менеджер забрал бы её как раз в тот промежуток.
+        if (!plan) body.metadata = {[FIXER_META_KEY_PLAN]: false};
+        await postData(FIXER_TASK_URL.replace('{project_id}', target.project_id), body);
+        showNotification(
+            `Задача создана — проект «${FIXER_PROJECT_TITLE}», тип «Планирование»`
+            + (plan ? '' : ' (без планирования)'), 'success');
         _modeOff();
     } catch (err) {
         showNotification(`Не удалось создать задачу: ${err.message}`, 'error');

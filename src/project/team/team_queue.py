@@ -21,6 +21,9 @@ Developer/QA — это самосоединение: ребёнок даёт р
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_ATTEMPT_MAX,
+    TASK_SETTING_TIMEOUT_DEVELOPER_RUN,
+    TASK_SETTING_TIMEOUT_MANAGER_RUN,
+    TASK_SETTING_TIMEOUT_QA_RUN,
     task_setting_timeout_get)
 from src.project.task.task_role import TASK_ROLE_TYPES, task_role_type_sql
 
@@ -36,7 +39,7 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
 
     Returns:
         {project_id: {role: {'waiting_count': int, 'waiting': [item], 'current': item|None}}}
-        где item — {'task_id', 'subtask_id', 'title', 'task_title', 'state'}.
+        где item — {'task_id', 'subtask_id', 'title', 'task_title', 'state', 'left_seconds'}.
     """
     queues: dict[int, dict[str, dict]] = {}
 
@@ -44,15 +47,22 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
     # Developer/QA — нет: подзадачи утверждённого плана всегда делает разработчик,
     # а проверяет QA. Поэтому у developer и qa по два источника строк, и
     # `_slot_get` копит их в одну ячейку.
-    for role, rows in (
-        [(role, await _planner_rows(role)) for role in TASK_ROLE_TYPES] + [
-            ('developer', await _developer_rows()),
-            ('qa', await _qa_rows()),
+    #
+    # Таймаут берётся по источнику строк, а не по имени роли: планирование любой
+    # роли — это прогон менеджерского агента (`task_agent_manager`), и ждут его
+    # столько, сколько указано в «Ответ менеджера».
+    plan_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_MANAGER_RUN)
+    for role, rows, timeout in (
+        [(role, await _planner_rows(role), plan_timeout) for role in TASK_ROLE_TYPES] + [
+            ('developer', await _developer_rows(),
+             await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN)),
+            ('qa', await _qa_rows(),
+             await task_setting_timeout_get(TASK_SETTING_TIMEOUT_QA_RUN)),
         ]
     ):
         for row in rows:
             slot = _slot_get(queues, row.get('project_id'), role)
-            item = _item_build(row)
+            item = _item_build(row, timeout)
             if int(row.get('busy') or 0):
                 # Воркеров может быть несколько, но карточка роли одна: показываем
                 # первую по порядку захвата — остальные видны в списке задач.
@@ -86,6 +96,7 @@ async def _planner_rows(role: str) -> list[dict]:
         "SELECT t.id AS task_id, NULL AS subtask_id, t.project_id, "
         "       t.title, t.title AS task_title, t.pipeline_state AS state, "
         "       (t.pipeline_locked_by <> '') AS busy, "
+        "       TIMESTAMPDIFF(SECOND, t.pipeline_started_at, NOW()) AS run_seconds, "
         "       CASE WHEN t.pipeline_state = 'reviewing' THEN 0 ELSE 1 END AS claim_order "
         "  FROM project_task t "
         f" WHERE {role_sql} AND ("
@@ -113,6 +124,7 @@ async def _developer_rows() -> list[dict]:
         "SELECT s.id AS subtask_id, s.parent_id AS task_id, t.project_id, "
         "       s.title, t.title AS task_title, s.pipeline_state AS state, "
         "       (s.pipeline_locked_by <> '') AS busy, "
+        "       TIMESTAMPDIFF(SECOND, s.pipeline_started_at, NOW()) AS run_seconds, "
         "       CASE WHEN s.pipeline_state = 'planned' THEN 0 ELSE 1 END AS claim_order "
         "  FROM project_task s "
         "  JOIN project_task t ON t.id = s.parent_id "
@@ -131,7 +143,8 @@ async def _qa_rows() -> list[dict]:
     sql = (
         "SELECT s.id AS subtask_id, s.parent_id AS task_id, t.project_id, "
         "       s.title, t.title AS task_title, s.pipeline_state AS state, "
-        "       (s.pipeline_locked_by <> '') AS busy "
+        "       (s.pipeline_locked_by <> '') AS busy, "
+        "       TIMESTAMPDIFF(SECOND, s.pipeline_started_at, NOW()) AS run_seconds "
         "  FROM project_task s "
         "  JOIN project_task t ON t.id = s.parent_id "
         " WHERE s.pipeline_state IN ('qa_pending', 'testing') "
@@ -157,12 +170,24 @@ def _slot_get(queues: dict, project_id, role: str) -> dict:
         role, {'waiting_count': 0, 'waiting': [], 'current': None})
 
 
-def _item_build(row: dict) -> dict:
-    """Строка очереди для карточки: у менеджера это задача, у Developer/QA — подзадача."""
+def _item_build(row: dict, timeout: int) -> dict:
+    """Строка очереди для карточки: у менеджера это задача, у Developer/QA — подзадача.
+
+    `left_seconds` — остаток до таймаута агента, и он есть только у работающей
+    строки: у ожидающей отсчёт ещё не начинался. None вместо нуля потому, что
+    «времени не осталось» и «время не считается» — разные вещи, и карточка их
+    показывает по-разному.
+    """
+    run_seconds = row.get('run_seconds')
+    left_seconds = None
+    if int(row.get('busy') or 0) and run_seconds is not None:
+        left_seconds = max(0, int(timeout) - int(run_seconds))
+
     return {
         'task_id': int(row.get('task_id') or 0),
         'subtask_id': int(row['subtask_id']) if row.get('subtask_id') else None,
         'title': str(row.get('title') or '').strip() or f"Задача #{row.get('task_id')}",
         'task_title': str(row.get('task_title') or '').strip(),
         'state': str(row.get('state') or ''),
+        'left_seconds': left_seconds,
     }

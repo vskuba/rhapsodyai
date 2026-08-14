@@ -84,6 +84,16 @@ async def team_project_blocks_get() -> list[dict]:
 
     blocks = []
     matched_ids = set()
+
+    # Находим позицию для блока «Без проекта» — он имеет implicit position=0,
+    # то есть перед первым проектом с position > 0. Проекты уже отсортированы
+    # по position ASC, значит достаточно одного линейного прохода.
+    insert_index = len(projects)
+    for idx, proj in enumerate(projects):
+        if int(proj.get('position') or 0) > 0:
+            insert_index = idx
+            break
+
     for project in projects:
         project_id = int(project.get('id') or 0)
         project_sessions = _project_sessions_select(project, sessions_shown)
@@ -100,7 +110,7 @@ async def team_project_blocks_get() -> list[dict]:
 
     orphans = [row for row in sessions_shown if row['id'] not in matched_ids]
     if orphans:
-        blocks.append({
+        blocks.insert(insert_index, {
             'project_id': 0,
             'title': 'Без проекта',
             'work_dir': '',

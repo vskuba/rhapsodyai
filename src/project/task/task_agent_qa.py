@@ -26,6 +26,8 @@ from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_plan import task_plan_parse
+from src.project.task.task_role import task_role_project_server_url
+from src.project.task.task_worktree import task_worktree_branch
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_QA_RUN,
@@ -47,7 +49,7 @@ QA_USER_ID = 1  # только для атрибуции session/log
 
 async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
                             role: str = TASK_QA_ROLE,
-                            work_dir: str = '') -> dict:
+                            work_dir: str = '', subtask_dir: str = '') -> dict:
     """
     Проверить одну выполненную подзадачу силами оболочки QA.
 
@@ -67,6 +69,10 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
             проекте»: команды заведены на каждый проект отдельно, и QA разных
             проектов называются одинаково. Пустая строка (задача без проекта) —
             адресация только по роли.
+        subtask_dir: рабочий каталог подзадачи — та же выкладка репозитория, в
+            которой работал разработчик, с выкаченной веткой подзадачи. Проверять
+            надо именно её: в общем чекауте лежит чужой код. Пустая строка —
+            каталога нет, проверка идёт в каталоге проекта.
 
     Returns:
         ok: проверки пройдены, подзадачу можно закрывать.
@@ -116,6 +122,18 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         'task_last_error':   str(last_error or ''),
         'task_shell_role':   role,
         'task_shell_work_dir': str(work_dir or ''),
+        # Где проверять. Каталог тот же, что был у разработчика, ветка в нём уже
+        # выкачена — переключать её QA не нужно и не должен. Пустая строка ложна
+        # для `%if%`: блок про переход не раскроется.
+        'subtask_work_dir':  str(subtask_dir or ''),
+        # Имя ветки берём из того же места, что и разработчик: промпт QA раньше
+        # склеивал его сам («task/N») и расходился с настоящим именем.
+        'subtask_branch':    task_worktree_branch(int(subtask.get('id') or 0)),
+        # Адрес сервера этой задачи — свой у каждого проекта. Общий сервер
+        # установки для проверки не годится: на нём код основного чекаута, а не
+        # ветки подзадачи. Нет каталога подзадачи — нет и своего сервера.
+        'subtask_server_url': await task_role_project_server_url(
+            (task or {}).get('project_id')) if subtask_dir else '',
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
 

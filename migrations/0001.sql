@@ -551,6 +551,12 @@ CREATE TABLE `project_task` (
     `pipeline_from_plan` TINYINT(1) NOT NULL DEFAULT '0',
     `pipeline_locked_at` DATETIME DEFAULT NULL,
     `pipeline_locked_by` VARCHAR(64) NOT NULL DEFAULT '',
+    -- Когда началась текущая работа над строкой. Отдельно от `pipeline_locked_at`
+    -- потому, что тот подновляется на ходу (`task_claim_lock_touch`): живой job
+    -- держит блокировку свежей, и по ней уже не сказать, давно ли идёт прогон.
+    -- Отсюда карточки команды считают остаток до таймаута агента.
+    -- При снятии блокировки не чистится: читается только вместе с ней.
+    `pipeline_started_at` DATETIME DEFAULT NULL,
     `trace_meta` JSON NULL COMMENT 'Мета-данные интеграций: [{domain, ...}]',
     -- Свободный мешок данных задачи: ключ -> значение, читается и пишется целиком
     -- через `task_metadata`. Сюда кладут то, под что заводить колонку рано: пометки
@@ -669,6 +675,11 @@ CREATE TABLE `project` (
     `title` VARCHAR(255) NOT NULL DEFAULT '',
     `idea` LONGTEXT NOT NULL,
     `work_dir` VARCHAR(500) NULL,
+    -- Адрес сервера, поднятого над рабочим каталогом подзадачи этого проекта:
+    -- QA проверяет ветку на нём, а не на общем сервере установки. У каждого
+    -- проекта свой порт и своя команда запуска, поэтому значение на проекте, а
+    -- не в `.env`; пусто — берётся PROJECT_TASK_QA_SERVER_URL (`project_task.md`).
+    `task_server_url` VARCHAR(255) NOT NULL DEFAULT '',
     `description` TEXT NULL,
     `status` ENUM('pending','processing','complete','error') NOT NULL DEFAULT 'pending',
     `phase_current` VARCHAR(100) NOT NULL DEFAULT '',

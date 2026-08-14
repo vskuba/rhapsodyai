@@ -412,6 +412,33 @@
     .status-active::before { animation: status-pulse 1.6s ease-in-out infinite; }
     @keyframes status-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 
+    /* ── Остановка работы (◼ / ▶) ── */
+    /* Вплотную к статусному бейджу и в одну с ним строку: кнопка говорит ровно о том,
+       что бейдж показывает, — «идёт работа, прекратить». Через `vertical-align`, как
+       флажки фазы: у бейджа своя высота из-за точки-индикатора.
+
+       Оформление приглушённое, без красного: остановка не ломает задачу и не теряет
+       сделанного — строка возвращается туда, откуда её взяли, — а красным на странице
+       помечен настоящий сбой (`failed`, `.pipe-retry`). ▶ зелёный: это уже продолжение. */
+    .task-stop {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 6px;
+        padding: 2px 6px;
+        font-size: 10px;
+        line-height: 1.2;
+        cursor: pointer;
+        color: #475569;
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-radius: 5px;
+        vertical-align: middle;
+    }
+    .task-stop:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
+    .task-stop:disabled { opacity: .5; cursor: progress; }
+    .task-stop-resume { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+    .task-stop-resume:hover:not(:disabled) { background: #dcfce7; border-color: #86efac; }
+
     /* ── Флажки фазы («в разработку», «в тестирование») ── */
     /* Стоят в одну строку со статусным бейджем, поэтому inline-flex и выравнивание
        по середине: у бейджа своя высота из-за точки-индикатора, и по базовой линии
@@ -885,6 +912,28 @@
     }
     .pipe-mr::before { content: '⎇'; font-size: 10px; opacity: .7; }
     .pipe-mr:hover { background: #dbeafe; border-color: #93c5fd; }
+    /* «Влить в главную и снять каталог» — стоит вплотную к ссылке MR, потому что это
+       её следующий шаг: посмотрел работу — принял. Зелёный, но приглушённый: действие
+       завершающее, а не опасное, и рвать им взгляд по всей таблице незачем. Пока идёт
+       git — `disabled`, иначе второй клик уедет в уже снятый каталог. */
+    .pipe-merge {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 4px;
+        padding: 2px 6px;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        cursor: pointer;
+        color: #15803d;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 5px;
+        vertical-align: middle;
+    }
+    .pipe-merge:hover:not(:disabled) { background: #dcfce7; border-color: #86efac; }
+    .pipe-merge:disabled { opacity: .5; cursor: progress; }
     /* Счётчик сорвавшихся прогонов (`metadata.retry`): агент не ответил, оболочку
        перезапустили, вход отдали заново. Стоит рядом с чипсом, потому что говорит о том
        же — почему строка столько времени в одном состоянии. Приглушённый янтарь: это
@@ -1173,6 +1222,14 @@
         padding: 0 5px; border-radius: 8px; cursor: pointer;
         background: #dbeafe; color: #1e40af; font-weight: 700;
     }
+    /* Остаток до таймаута агента. Моноширинный, чтобы плашка не дёргалась в ряду
+       при каждом тике: цифры разной ширины двигают соседние карточки. */
+    .team-mini-left {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; color: #475569; font-variant-numeric: tabular-nums;
+    }
+    /* Последняя минута — прогон вот-вот оборвут по таймауту. */
+    .team-mini-left.is-low { color: #b91c1c; font-weight: 700; }
 </style>
 {% endblock %}
 
@@ -1374,13 +1431,42 @@ function teamMiniCardHtml(card) {
     // Пульсирует только карточка, которая и жива, и держит задачу: погасшая
     // оболочка с остатком в очереди ничего не выполняет и мигать не должна.
     const busy  = card.active && taskId ? ' team-mini-busy' : '';
+    // Остаток до таймаута агента. Держим не число, а момент окончания: ответ
+    // приходит раз в 15 секунд, а тикать надо каждую, и от абсолютного дедлайна
+    // отсчёт не уедет между обновлениями.
+    const left = busy && cur && cur.left_seconds !== null && cur.left_seconds !== undefined
+        ? `<span class="team-mini-left" data-until="${Date.now() + cur.left_seconds * 1000}">${teamMiniLeftText(cur.left_seconds)}</span>`
+        : '';
     const title = `${esc(card.role_title)} · ${card.active ? 'активен' : 'не активен'}`
         + (busy ? ` · в работе ${label}` : '');
 
     return `<div class="team-mini${card.active ? ' team-mini-on' : ''}${busy}" title="${title}">
         <span class="team-mini-dot"></span>
-        <span class="team-mini-name">${esc(card.name)}</span>${task}
+        <span class="team-mini-name">${esc(card.name)}</span>${task}${left}
     </div>`;
+}
+
+// Ч:ММ:СС для длинных прогонов, М:СС для коротких — час в «215:04» не читается,
+// а нули часа в получасовом остатке только шумят.
+function teamMiniLeftText(seconds) {
+    const left = Math.max(0, Math.round(seconds));
+    const h = Math.floor(left / 3600);
+    const m = Math.floor((left % 3600) / 60);
+    const s = left % 60;
+    const pad = n => String(n).padStart(2, '0');
+
+    return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+// Отдельный секундный тик: перерисовывать весь ряд ради цифр — это лишний запрос
+// и потеря наведённой подсказки.
+function teamMiniLeftTick() {
+    const now = Date.now();
+    document.querySelectorAll('.team-mini-left').forEach(el => {
+        const left = Math.max(0, (+el.dataset.until - now) / 1000);
+        el.textContent = teamMiniLeftText(left);
+        el.classList.toggle('is-low', left <= 60);
+    });
 }
 
 // Строки может не быть: подзадача разработчика живёт на вкладке «Разработка», а
@@ -1492,7 +1578,16 @@ function taskMatches(t) {
 }
 
 function taskCompare(a, b) {
-    // Position — основной ключ сортировки, потом порядок создания
+    // Статус — первый ключ: наверху то, что идёт прямо сейчас («В работе»), под ним
+    // ближайшее к запуску («В очереди»), затем всё незакрытое, и в самом низу «Готово»
+    // — законченное место наверху занимать не должно, а список задач растёт именно им.
+    // Порядок групп берём из STATUS_ORDER, того же, по которому стоят чипы фильтра.
+    const sa = STATUS_ORDER[a.status] ?? 99;
+    const sb = STATUS_ORDER[b.status] ?? 99;
+    if (sa !== sb) return sa - sb;
+    // Внутри группы — ручной порядок (стрелки ⬆⬇ правят position), потом создание.
+    // Стрелки поэтому двигают задачу внутри её группы: соседа из другой группы
+    // перепрыгнуть нельзя, пока не сменится статус.
     const pa = parseInt(a.position, 10) || 0;
     const pb = parseInt(b.position, 10) || 0;
     if (pa !== pb) return pa - pb;
@@ -1875,7 +1970,8 @@ function renderProgressCell(row) {
     const hint = esc(taskReportHint(t, row));
     const badge = `<span class="task-status-badge status-${status}" title="${hint}">${STATUS_LABELS[status] || status}</span>`;
 
-    return badge + renderDevFlag(t) + renderTestFlag(t) + renderPipeChip(t, row) + (row.hasKids
+    return badge + renderStopBtn(t, status) + renderPlanFlag(t) + renderDevFlag(t) + renderTestFlag(t)
+        + renderPipeChip(t, row) + (row.hasKids
         ? renderSubtaskSummary(row)
         : renderInlineGoals(t, false));
 }
@@ -2500,8 +2596,27 @@ const PIPELINE_LABEL_NONE = '(нет плана)';
 // Ключ пометки в `project_task.metadata`. Колонка — свободный мешок «ключ -> значение»
 // (см. src/project/task/task_metadata.py), схема о составе не знает, контракт держит
 // тот, кто ключ пишет, — то есть этот файл.
+const TASK_META_KEY_PLAN = 'to_planning';
 const TASK_META_KEY_DEV = 'to_development';
 const TASK_META_KEY_TEST = 'to_testing';
+
+// Флажок «в планирование» — первый в ряду, потому что первым идёт и сам шаг: пока он
+// стоит, задачу заберёт ближайший тик и менеджер напишет ей план. Снятый флажок —
+// «завёл, но плана пока не прошу»: захват такую задачу не видит
+// (`task_metadata_plan_free_sql` в `task_claim_task_unplanned`), и она спокойно лежит
+// в списке, пока флажок не вернут.
+//
+// Умолчание «включено», поэтому хранение наизнанку, как у «в тестирование»: ключа нет —
+// планируем, снятый флажок пишется явным `false`. Отсюда `!== false`, а не `!!`.
+//
+// Только на вкладке «Планирование» и только у задач без родителя: план пишется задаче
+// целиком, у подзадачи он уже есть — это строка родительского плана.
+function renderPlanFlag(t) {
+    if (_phaseFilter !== 'planning' || t.parent_id) return '';
+    const on = (t.metadata || {})[TASK_META_KEY_PLAN] !== false;
+    return _taskFlagHtml(t.id, 'в планирование', on, 'togglePlanFlag',
+        'Отдать задачу менеджеру за планом. Снять — задача останется в списке, но плана для неё писать не будут');
+}
 
 // Флажок «в разработку» рядом со статусом — согласие человека, данное заранее: план
 // утверждать не потребуется. Как только менеджер его допишет, задача сама сменит тип на
@@ -2542,6 +2657,13 @@ function renderTestFlag(t) {
     const on = (t.metadata || {})[TASK_META_KEY_TEST] !== false;
     return _taskFlagHtml(t.id, 'в тестирование', on, 'toggleTestFlag',
         'Готовую работу отдать на проверку: задача уйдёт в тестирование без отдельного решения человека');
+}
+
+async function togglePlanFlag(id, checked) {
+    // Как у «в тестирование»: хранится отклонение от умолчания, а возврат к нему ключ
+    // стирает. Ничего не запускаем отдельно — задача просто снова попадает в отбор
+    // ближайшего тика оркестратора.
+    await _taskFlagSave(id, TASK_META_KEY_PLAN, checked ? null : false);
 }
 
 async function toggleDevFlag(id, checked) {
@@ -2586,6 +2708,47 @@ async function _taskFlagSave(id, key, value) {
     }
 }
 
+// Ключ остановки в `metadata` — пишет `src/project/task/task_stop.py`. Пометка одна на
+// задачу целиком: подзадачи плана гасит она же, через проверку родителя в захвате.
+const TASK_META_KEY_STOP = 'stopped';
+
+// Кнопка ◼ «Остановить» в одну строку со статусом — и ▶ «Продолжить» на её месте, когда
+// задача уже остановлена. Один слот на оба состояния: это одна мысль («работа идёт —
+// работа стоит»), и разносить её по двум кнопкам значит показывать человеку выбор,
+// которого у него нет.
+//
+// ◼ только у «В работе»: останавливать нечего, пока никто не работает. У остановленной
+// строки статус уже «Ожидает» — ветка `stopped` идёт первой и оставляет ▶.
+//
+// ▶ нужен не только ради симметрии: продолжают задачу обычно возвратом флажка фазы, но
+// флажок есть не у всякой строки — у подзадач его нет вовсе, и без этой кнопки их
+// остановка была бы дорогой в один конец.
+function renderStopBtn(t, status) {
+    const stopped = (t.metadata || {})[TASK_META_KEY_STOP] === true;
+    if (!stopped && status !== 'active') return '';
+    const title = stopped
+        ? 'Продолжить: задачу снова видно отбору, работу отдаст ближайший тик оркестратора'
+        : 'Остановить работу: агента погасить, строку вернуть в очередь, задачу — в «Ожидает».'
+          + ' Сделанное не пропадёт, продолжить можно этой же кнопкой или флажком фазы';
+    return `<button class="task-stop${stopped ? ' task-stop-resume' : ''}"`
+         + ` onclick="event.stopPropagation();taskStopToggle(${t.id},${stopped},this)"`
+         + ` title="${esc(title)}">${stopped ? '▶' : '◼'}</button>`;
+}
+
+// Гасим кнопку на время запроса: за ним стоит перезапуск оболочек, ответ идёт секундами,
+// и повторный клик ушёл бы уже во второе действие. Список перечитываем в любом исходе —
+// остановка могла пройти частично (строки вернули, оболочку погасить не удалось).
+async function taskStopToggle(taskId, stopped, btn) {
+    if (btn) btn.disabled = true;
+    try {
+        await taskFetch(`/task/${taskId}/pipeline/${stopped ? 'resume' : 'stop'}`, { method: 'POST' });
+    } catch(e) {
+        alert(e.message || (stopped ? 'Не удалось продолжить задачу' : 'Не удалось остановить задачу'));
+    }
+    if (btn) btn.disabled = false;
+    await loadTasks();
+}
+
 function renderPipeChip(t, row) {
     if (!t.pipeline_state) {
         // Состояние одно, но причин у него две, и они требуют разных действий:
@@ -2616,7 +2779,8 @@ function renderPipeChip(t, row) {
         ? `Задача разложена на подзадачи (processing), показана самая отстающая из них\n\n${taskReportHint(t, row)}`
         : taskReportHint(t, row);
     return `<div><span class="pipe-chip pipe-${state}" `
-         + `title="${esc(hint)}">${esc(state)}</span>${retry}${renderPipeRetries(t)}${renderPipeMr(t)}</div>`;
+         + `title="${esc(hint)}">${esc(state)}</span>${retry}${renderPipeRetries(t)}`
+         + `${renderPipeMr(t)}${renderPipeMerge(t)}</div>`;
 }
 
 // Статистика технических повторов строки (`metadata.retry`, пишет `task_retry.py`).
@@ -2655,6 +2819,23 @@ function renderPipeMr(t) {
     return `<a class="pipe-mr" href="${esc(url)}" target="_blank" rel="noopener"`
          + ` onclick="event.stopPropagation()" title="Merge request подзадачи #${t.id}, ветка ${esc(branch)}">`
          + `MR #${t.id}</a>`;
+}
+
+// «Влить в главную ветку и снять каталог» — ручное завершение работы над подзадачей.
+// Не автоматом после `done`: закрытая подзадача — это «QA не нашёл замечаний», а не
+// «работа принята»; merge request может ещё ждать ревью, и каталог нужен, чтобы
+// посмотреть, что получилось. Момент выбирает человек.
+//
+// Только у подзадачи (`parent_id`) и только у готовой: своей ветки у родителя нет, а
+// вливать незаконченную работу — то же, что закрывать её за агента. Каталога у
+// подзадачи может уже не быть (сняли руками) — сервер ответит понятной ошибкой,
+// прятать кнопку из-за этого не за чем: состояние каталогов странице не известно.
+function renderPipeMerge(t) {
+    if (!t.parent_id || t.pipeline_state !== 'done') return '';
+    const branch = String(t.metadata?.branch || `feature/task_${t.id}`).trim();
+    return `<button class="pipe-merge" onclick="event.stopPropagation();worktreeMerge(${t.id},this)"`
+         + ` title="Влить ${esc(branch)} в главную ветку проекта (локально, без push) и снять`
+         + ` рабочий каталог подзадачи">mr2master&amp;rm_worktree</button>`;
 }
 
 // Состояния подзадачи от «ещё не начата» к «готова». Порядок нужен, чтобы выбрать
@@ -2732,6 +2913,30 @@ async function pipelineAction(taskId, action) {
     // `renderTable` пересобирает таблицу и закрывает раскрытую строку — открываем её
     // заново, иначе панель конвейера исчезает прямо из-под курсора.
     if (wasOpen) toggleEdit(taskId);
+}
+
+// Слияние ветки подзадачи в главную + снятие рабочего каталога. Спрашиваем прежде,
+// чем делать: снятый каталог обратно не поднять кнопкой, а коммит слияния хоть и
+// откатывается (`git reset`), но руками и в консоли.
+//
+// Кнопку гасим на время запроса, а не всю строку: git тут ходит в сеть (`fetch`) и
+// поднимает подмодули, ответ идёт секундами, и за это время кликают повторно.
+// Список перечитываем в любом исходе: слияние могло пройти, а снятие нет.
+async function worktreeMerge(taskId, btn) {
+    if (!confirm(`Влить ветку подзадачи #${taskId} в главную ветку проекта и снять её рабочий каталог?\n\n`
+               + 'Слияние локальное, без push — отправлять в общий репозиторий вам.\n'
+               + 'Каталог снимается только чистым: несохранённые правки остановят действие.')) return;
+    if (btn) btn.disabled = true;
+    try {
+        const data = await taskFetch(`/task/${taskId}/worktree/merge`, { method: 'POST' });
+        if (!data.removed) alert(`Ветка влита в ${data.base}, но рабочий каталог снять не удалось — смотрите лог воркера`);
+    } catch(e) {
+        // Причина отказа приходит текстом от git (конфликт, грязный каталог, нет
+        // ветки) — разбирать её человеку, и общая формулировка ему не поможет.
+        alert(e.message || 'Слияние не прошло');
+    }
+    if (btn) btn.disabled = false;
+    await loadTasks();
 }
 
 async function planReview(taskId) {
@@ -3026,6 +3231,7 @@ treeCollapsedLoad();
 // Активность роли протухает через 30 секунд без пинга — без обновления ряд
 // показывал бы «активен» у оболочки, закрытой полчаса назад.
 setInterval(loadTeamRow, TEAM_ROW_REFRESH_MS);
+setInterval(teamMiniLeftTick, 1000);
 </script>
 
 <!-- ─── Help modal ─────────────────────────────────────── -->

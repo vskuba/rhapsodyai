@@ -47,6 +47,7 @@ docker restart uvicorn
 |--------|------|--------|-----------|
 | uvicorn | 8011 | 8000 | основной сервер |
 | uvicorn_green | 8012 | 8000 | profile `green`, blue-green деплой |
+| uvicorn_task | 8013 | 8000 | profile `task`, сервер над каталогом подзадачи: `./task_server.sh up <id>` (`project_task.md`) |
 | mysql | 3302 | 3306 | в `.env` порт 3306 — он контейнерный |
 | phpmyadmin | 9634 | 80 | |
 | redis | — | 6379 | наружу не публикуется |
@@ -160,6 +161,17 @@ TELEGRAM_SITE_LOGIN_REMOTE_URL=https://your-domain.com
 TELEGRAM_SITE_LOGIN_LOCAL_URL=http://localhost:8011
 
 SESSION_SECRET_KEY=...
+
+# Хостовый путь репозитория. Без него `docker compose` не поднимется вовсе:
+# монтирование `${PROJECT_HOST_DIR}:${PROJECT_HOST_DIR}` есть у uvicorn,
+# worker_task и uvicorn_task — рабочие каталоги задач (`project_task.md`).
+# Каталоги других проектов машины монтируются отдельно, в
+# `docker-compose.override.yml` — см. «Много проектов» в `project_task.md`.
+PROJECT_HOST_DIR=/home/user/PycharmProjects/RhapsodyAi
+# Адрес сервера задачи для проекта самой установки (сервис `uvicorn_task`).
+# У других проектов свой порт — их адрес хранится в карточке проекта
+# (`project.task_server_url`), а это значение остаётся запасным.
+PROJECT_TASK_QA_SERVER_URL=http://localhost:8013
 ```
 
 Ключи LLM-провайдеров (`OPENAI_API_KEY`, `CLAUDE_API_KEY`, `GEMINI_API_KEY`,

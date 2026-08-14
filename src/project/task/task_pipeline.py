@@ -59,6 +59,7 @@ job для воркера, `task_state` — запись результатов,
 `task_agent_qa` — QA через свою, `task_plan` — формат плана.
 """
 import asyncio
+import os
 import time
 from contextlib import suppress
 
@@ -109,6 +110,7 @@ from src.project.task.task_state import (
     task_state_task_get,
     task_state_task_requeue,
 )
+from src.project.task.task_worktree import task_worktree_ensure
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_parallel import (
     TASK_SETTING_PARALLEL_DEFAULT,
@@ -442,6 +444,12 @@ async def _run_developer(action: dict) -> str | None:
     родительской задачи — разработчики разных проектов называются одинаково, и без
     каталога прогон ушёл бы в чужую оболочку.
 
+    Каталогов здесь два, и путать их нельзя. `work_dir` — адрес оболочки, там
+    запущен живой Claude Code, и меняться он не может. `subtask_dir` — где лежит
+    код, который правят: своя выкладка репозитория со своей веткой
+    (`.claude/worktrees/feature_task_<id>`). Оболочка остаётся на месте, а работает
+    в каталоге подзадачи — так правки не задевают ни master, ни каталог человека.
+
     Сорвавшийся прогон (исключение из агента: таймаут, мёртвая оболочка) круг не
     закрывает и попытку не жжёт — подзадача уходит на повтор, см. `_retry_subtask`.
     Попытку жжёт только состоявшаяся работа, которая не сошлась.
@@ -454,11 +462,12 @@ async def _run_developer(action: dict) -> str | None:
     attempt_no = int(subtask['pipeline_attempt_count']) + 1
     started = time.monotonic()
     work_dir = await task_role_project_work_dir((task or {}).get('project_id'))
+    subtask_dir = await _subtask_dir(work_dir, subtask['id'])
 
     try:
         result = await task_agent_developer_run(
             task, subtask, str(subtask.get('pipeline_error') or ''),
-            role=TASK_DEVELOPER_ROLE, work_dir=work_dir)
+            role=TASK_DEVELOPER_ROLE, work_dir=work_dir, subtask_dir=subtask_dir)
     except Exception as e:
         return await _retry_subtask(subtask, 'developer', 'planned', TASK_DEVELOPER_ROLE,
                                     work_dir, attempt_no, started, f'Developer: {e}')
@@ -487,7 +496,9 @@ async def _run_qa(action: dict) -> str | None:
     testing -> done | failed_qa | blocked.
 
     Адрес оболочки собирается здесь по тем же правилам, что и у разработчика:
-    роль постоянная (`qa`), каталог — у проекта родительской задачи. Ошибка QA
+    роль постоянная (`qa`), каталог — у проекта родительской задачи. Код проверяем
+    в каталоге подзадачи — том же, где его писал разработчик: проверять ветку по
+    общему чекауту значило бы смотреть чужой код. Ошибка QA
     уходит подзадаче в `pipeline_error`, и следующий круг разработчик получает её
     на вход замечанием — поэтому важно, чтобы в ней были конкретные пункты, а не
     «проверки не прошли».
@@ -504,11 +515,12 @@ async def _run_qa(action: dict) -> str | None:
     attempt_no = int(subtask['pipeline_attempt_count']) + 1
     started = time.monotonic()
     work_dir = await task_role_project_work_dir((task or {}).get('project_id'))
+    subtask_dir = await _subtask_dir(work_dir, subtask['id'])
 
     try:
         result = await task_agent_qa_run(
             task, subtask, str(subtask.get('pipeline_error') or ''),
-            role=TASK_QA_ROLE, work_dir=work_dir)
+            role=TASK_QA_ROLE, work_dir=work_dir, subtask_dir=subtask_dir)
     except Exception as e:
         return await _retry_subtask(subtask, 'qa', 'qa_pending', TASK_QA_ROLE,
                                     work_dir, attempt_no, started, f'QA: {e}')
@@ -764,6 +776,47 @@ async def _subtask_branch_save(subtask_id: int, result: dict) -> None:
     ) if value}
     if patch:
         await task_metadata_update(subtask_id, patch)
+
+
+async def _subtask_dir(work_dir: str, subtask_id: int) -> str:
+    """
+    Рабочий каталог подзадачи — своя выкладка репозитория со своей веткой.
+
+    Заводится здесь, а не агентом: имя ветки и точка отреза (`origin/master`) —
+    решения конвейера, и живому Claude Code их пересказывать нельзя, он их
+    переиначивает. К моменту первого промпта ветка уже выкачена, разработчику
+    остаётся работать.
+
+    Каталог общий у Developer и QA, поэтому вызов идёт из обеих веток и обязан
+    быть идемпотентным — `task_worktree_ensure` таков.
+
+    Сорваться создание может по-разному (нет прав, занята ветка, битый git), и
+    ронять из-за этого круг не станем: пустая строка означает «работай там же, где
+    раньше» — в общем каталоге проекта. Это прежнее поведение конвейера, оно
+    рабочее, просто без изоляции.
+
+    Отдельно ловим невидимый каталог. Проектов на машине несколько, каждый со своим
+    репозиторием, а в контейнер смонтированы не все: свой каталог установки идёт из
+    `PROJECT_HOST_DIR`, чужие добавляют руками в `docker-compose.override.yml`.
+    Забытое монтирование выглядит изнутри как «каталога нет» и без отдельного
+    сообщения выливается в невнятный сбой git — поэтому говорим прямо, что делать.
+    """
+    if not work_dir or not subtask_id:
+        return ''
+
+    if not os.path.isdir(work_dir):
+        logger_info(f'[task] subtask#{subtask_id}: каталог проекта {work_dir} не виден — '
+                    f'проверьте PROJECT_HOST_DIR и монтирования в docker-compose.override.yml '
+                    f'(путь внутри контейнера обязан совпадать с путём на хосте); '
+                    f'работаем в каталоге проекта')
+        return ''
+
+    try:
+        return await task_worktree_ensure(work_dir, subtask_id)
+    except Exception as e:
+        logger_info(f'[task] subtask#{subtask_id}: рабочий каталог не создан ({e}), '
+                    f'работаем в каталоге проекта')
+        return ''
 
 
 async def _lock_hold(action: dict) -> None:

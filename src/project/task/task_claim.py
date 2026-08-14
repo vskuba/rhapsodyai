@@ -12,6 +12,7 @@ import socket
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+from src.project.task.task_metadata import task_metadata_plan_free_sql, task_metadata_stop_free_sql
 from src.project.task.task_role import task_role_project_sql, task_role_project_type_sql
 from src.project.task.task_state import task_state_kanban_sql, task_state_subtask_set
 from src.project.task.task_setting_timeout import (
@@ -45,15 +46,20 @@ TASK_CLAIM_LOCK_TOUCH_SEC = 45
 #
 # `testing` возвращается в `qa_pending`: брошенная проверка — это работа, которой не
 # было, и подзадача снова становится в очередь к QA, а не считается проверенной.
-_TASK_STATE_RECLAIM = {'planning': 'new', 'reviewing': 'reviewing'}
-_SUBTASK_STATE_RECLAIM = {'developing': 'planned', 'testing': 'qa_pending'}
+#
+# Карты разделены по ветке дерева: `testing` бывает и у корневой задачи, но там это
+# фаза «задача на проверке», а не захваченная работа, и возвращать её в `qa_pending`
+# нельзя. Кто отменяет работу на ходу (реклейм, кнопка ◼ «Стоп» — `task_stop`), берёт
+# карту по наличию `parent_id`.
+TASK_CLAIM_STATE_RECLAIM = {'planning': 'new', 'reviewing': 'reviewing'}
+TASK_CLAIM_SUBTASK_STATE_RECLAIM = {'developing': 'planned', 'testing': 'qa_pending'}
 
 # Состояния «работа в полёте»: строка захвачена, и за ней прямо сейчас думает агент
 # в живой оболочке. Это ровно те же переходные состояния, что возвращает реклейм, —
 # список один, чтобы новое переходное состояние не пришлось помнить в двух местах.
 # Разбор плана (`approved` -> `processing`) сюда не входит: он идёт в воркере без
 # похода в LLM и карточку команды не занимает.
-TASK_CLAIM_INFLIGHT_STATES = tuple(_TASK_STATE_RECLAIM) + tuple(_SUBTASK_STATE_RECLAIM)
+TASK_CLAIM_INFLIGHT_STATES = tuple(TASK_CLAIM_STATE_RECLAIM) + tuple(TASK_CLAIM_SUBTASK_STATE_RECLAIM)
 
 # Родители, у которых уже есть подзадачи из плана. Обёртка в производную таблицу —
 # MySQL 1093 запрещает читать в UPDATE ту же таблицу, которую пишет.
@@ -107,6 +113,11 @@ async def task_claim_task_unplanned(worker: str, roles_by_project) -> dict | Non
 
     Подзадачи, разложенные конвейером, отдельно исключать не нужно: у них
     `pipeline_state = 'planned'`, а фильтр берёт только NULL и `new`.
+
+    Снятый флажок «в планирование» (`metadata.to_planning = false`) задачу отсюда
+    убирает: человек завёл её, но плана пока не просит. Проверка стоит только в этом
+    отборе, а не в общем `_task_claim`, — пометка запрещает написание плана, а не
+    работу вообще, и задачу, у которой план уже есть, тормозить ей нечего.
     """
     # Родительские задачи (их не берёт ни один шаг).
     # Обёртка в derived table — MySQL 1093 запрещает читать из UPDATE ту же таблицу.
@@ -125,7 +136,7 @@ async def task_claim_task_unplanned(worker: str, roles_by_project) -> dict | Non
         " OR JSON_LENGTH(COALESCE("
         "    IF(JSON_VALID(goals), goals, '[]'), '$')) = 0) "
         " AND (pipeline_state IS NULL OR pipeline_state = 'new') "
-        f" AND id NOT IN ({subparents} ) AND {role_sql}",
+        f" AND id NOT IN ({subparents} ) AND {task_metadata_plan_free_sql()} AND {role_sql}",
         role_params, 'planning', worker)
 
 
@@ -250,7 +261,7 @@ async def task_claim_locks_reclaim() -> int:
 
     total = 0
     async with mysql_get_db_async() as db:
-        for state_from, state_to in _TASK_STATE_RECLAIM.items():
+        for state_from, state_to in TASK_CLAIM_STATE_RECLAIM.items():
             total += await _lock_reclaim(db, state_from, state_to, live_tasks, lock_timeout)
 
         # Разбор плана на подзадачи: состояние `processing` задача не покидает и после
@@ -261,7 +272,7 @@ async def task_claim_locks_reclaim() -> int:
             db, 'processing', 'approved', live_tasks, lock_timeout,
             extra=f' AND id NOT IN {_SPLIT_PARENTS_SQL}')
 
-        for state_from, state_to in _SUBTASK_STATE_RECLAIM.items():
+        for state_from, state_to in TASK_CLAIM_SUBTASK_STATE_RECLAIM.items():
             total += await _lock_reclaim(db, state_from, state_to, live_subtasks, lock_timeout,
                                          extra=' AND parent_id IS NOT NULL')
 
@@ -332,7 +343,19 @@ async def _task_claim(where: str, params: list, state_to: str, worker: str,
     """
     Общий захват задачи: выбрать первую подходящую под `where` и перевести её
     в `state_to`. Условие повторяется в UPDATE, поэтому строку не увести дважды.
+
+    `pipeline_started_at` ставится здесь и дальше не меняется: это начало работы, а
+    не её признак. `pipeline_locked_at` на ту же роль не годится — живой job
+    подновляет его на ходу (`task_claim_lock_touch`), и возраст блокировки говорит
+    про job, а не про прогон. Остаток до таймаута агента на карточках команды
+    считается от начала.
+
+    Остановленные человеком строки отсекаются здесь, а не в каждом отборе по
+    отдельности: захват один на все шаги конвейера, и это единственное место, где
+    пометку нельзя забыть проверить. Человеческий `status` для запрета не годится —
+    отбор его не смотрит, и «Ожидает», выставленное руками, тик перебил бы сразу же.
     """
+    where = f'({where}) AND {task_metadata_stop_free_sql()}'
     async with mysql_get_db_async() as db:
         await db.execute(f"SELECT id FROM project_task WHERE {where} ORDER BY {order} LIMIT 1", params)
         row = await db.fetchone()
@@ -342,7 +365,7 @@ async def _task_claim(where: str, params: list, state_to: str, worker: str,
         kanban_sql, kanban_params = task_state_kanban_sql(state_to)
         await db.execute(
             f"UPDATE project_task SET pipeline_state = %s, {kanban_sql + ', ' if kanban_sql else ''}"
-            f"       pipeline_locked_at = NOW(), pipeline_locked_by = %s "
+            f"       pipeline_locked_at = NOW(), pipeline_started_at = NOW(), pipeline_locked_by = %s "
             f" WHERE id = %s AND {where}",
             [state_to] + kanban_params + [worker, row['id']] + params,
         )

@@ -20,6 +20,7 @@ from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_plan import task_plan_parse
+from src.project.task.task_worktree import task_worktree_branch
 from src.project.team.team_session import team_session_restart_role
 from src.tool.claude_shell.claude_shell import (CLAUDE_SHELL_AGENT_STATUS_BUSY,
                                                 claude_shell_session_status)
@@ -40,16 +41,10 @@ TASK_DEVELOPER_ROLE = 'developer'
 # — см. `task_setting_timeout`.
 DEVELOPER_USER_ID = 1  # только для атрибуции session/log
 
-# Имя ветки подзадачи. Шаблон один на всех, потому что имя должны одинаково собирать
-# трое: разработчик — когда заводит ветку, страница задач — когда показывает ссылку,
-# человек — когда ищет ветку руками. Номер берётся у подзадачи, а не у родителя: работу
-# и merge request заводят под конкретную подзадачу.
-TASK_DEVELOPER_BRANCH_TEMPLATE = 'feature/task_{subtask_id}'
-
 
 async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = '',
                                    role: str = TASK_DEVELOPER_ROLE,
-                                   work_dir: str = '') -> dict:
+                                   work_dir: str = '', subtask_dir: str = '') -> dict:
     """
     Выполнить одну подзадачу плана силами оболочки разработчика.
 
@@ -70,6 +65,10 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
             проекте»: команды заведены на каждый проект отдельно, и разработчики
             разных проектов называются одинаково. Пустая строка (задача без
             проекта) — адресация только по роли.
+        subtask_dir: рабочий каталог подзадачи — своя выкладка репозитория, в
+            которой уже выкачена ветка подзадачи. Не путать с `work_dir`: тот
+            адресует оболочку, а этот говорит ей, где лежит код. Пустая строка —
+            каталога завести не вышло, работаем по-старому в каталоге проекта.
 
     Оболочку перед прогоном перезапускаем только при смене задачи: подзадачи
     одной задачи идут в общем контексте, и разработчик помнит, что уже сделал
@@ -117,13 +116,18 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
         # имя промпту не переспорить, а вот правило «назови ветку feature/task_НОМЕР»
         # живой Claude Code переиначивает — то дефис вместо подчёркивания, то номер
         # родителя. По этому же имени страница задач ищет merge request.
-        'subtask_branch':    task_agent_developer_branch(subtask.get('id')),
+        'subtask_branch':    task_worktree_branch(subtask.get('id')),
         # Пустая строка — не «нет значения», а осознанная ложь для
         # `%if task_last_error%`: `ai_workflow_variable_truthy` считает пустую
         # строку ложной, и блоки про прошлую ошибку QA не раскроются.
         'task_last_error':   str(last_error or ''),
         'task_shell_role':   role,
         'task_shell_work_dir': str(work_dir or ''),
+        # Где работать. Каталог уже создан конвейером, ветка в нём выкачена —
+        # промпту остаётся сказать «перейди туда», а не «заведи ветку». Пустая
+        # строка ложна для `%if%`: блок про переход не раскроется, и разработчик
+        # останется в каталоге проекта — прежнее поведение.
+        'subtask_work_dir':  str(subtask_dir or ''),
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
 
@@ -173,14 +177,6 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
         raise RuntimeError(f'разработчик не уложился в {timeout}s')
 
     return _result_parse(result_text)
-
-
-def task_agent_developer_branch(subtask_id) -> str:
-    """
-    Имя ветки подзадачи по шаблону. Нет номера — нет и ветки, возвращаем пустую строку.
-    """
-    subtask_id = int(subtask_id or 0)
-    return TASK_DEVELOPER_BRANCH_TEMPLATE.format(subtask_id=subtask_id) if subtask_id else ''
 
 
 async def _agent_get() -> dict:
