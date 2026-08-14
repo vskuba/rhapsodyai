@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block title %}Diff подзадачи{% endblock %}
+
+{% block head %}
+<style>
+    .page-wrap { padding: 24px 28px; max-width: 1600px; }
+
+    .page-header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    .page-header h2 { margin: 0; font-size: 19px; color: #2c3e50; }
+    .page-header .subtitle { color: #7a8794; font-size: 13px; }
+
+    /* Диапазон сравнения — главное, что отличает эту страницу от merge request. */
+    .range {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px; background: #f4f6f8; border: 1px solid #e0e4e9;
+        border-radius: 4px; padding: 3px 9px; color: #34495e; white-space: nowrap;
+    }
+
+    .btn-reload {
+        background: #3498db; color: #fff; border: none; padding: 6px 14px;
+        border-radius: 4px; cursor: pointer; font-size: 12.5px;
+    }
+    .btn-reload:hover { background: #2179a8; }
+    .btn-reload:disabled { opacity: .6; cursor: progress; }
+
+    .btn-back { color: #3498db; font-size: 12.5px; text-decoration: none; }
+    .btn-back:hover { text-decoration: underline; }
+
+    .note {
+        border-radius: 5px; padding: 9px 13px; font-size: 12.5px;
+        margin-bottom: 10px; line-height: 1.5;
+    }
+    .note-warn  { background: #fff8e6; border: 1px solid #f5d78e; color: #7a5a10; }
+    .note-error { background: #fdeaea; border: 1px solid #f0b4b4; color: #8f2323; }
+    .note-info  { background: #eef6fd; border: 1px solid #bcd9f0; color: #1f5c8b; }
+    .note b { font-weight: 600; }
+
+    .layout { display: flex; gap: 18px; align-items: flex-start; }
+
+    /* ── Левая колонка: файлы и коммиты ─────────────────────────────────── */
+    .side { width: 330px; flex-shrink: 0; position: sticky; top: 12px; }
+    .side-box {
+        border: 1px solid #e0e4e9; border-radius: 6px; background: #fff;
+        margin-bottom: 14px; overflow: hidden;
+    }
+    .side-box h3 {
+        margin: 0; padding: 9px 12px; font-size: 12px; text-transform: uppercase;
+        letter-spacing: .04em; color: #5a6878; background: #f4f6f8;
+        border-bottom: 1px solid #e0e4e9; font-weight: 600;
+    }
+    .side-list { max-height: 46vh; overflow-y: auto; }
+
+    .file-item {
+        display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+        border-bottom: 1px solid #f2f4f6; font-size: 12.5px; cursor: pointer;
+        text-decoration: none; color: #2c3e50;
+    }
+    .file-item:hover { background: #f7fafc; }
+    .file-item .fname {
+        flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; direction: rtl; text-align: left;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    }
+    .file-item .fadd { color: #1a7f37; font-size: 11.5px; white-space: nowrap; }
+    .file-item .fdel { color: #cf222e; font-size: 11.5px; white-space: nowrap; }
+
+    .commit-item { padding: 7px 12px; border-bottom: 1px solid #f2f4f6; font-size: 12.5px; }
+    .commit-item .csubj { color: #2c3e50; margin-bottom: 2px; }
+    .commit-item .cmeta {
+        color: #96a0ab; font-size: 11.5px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    /* ── Правая колонка: сам diff ───────────────────────────────────────── */
+    .diff-wrap { flex: 1; min-width: 0; }
+
+    .diff-file {
+        border: 1px solid #e0e4e9; border-radius: 6px; background: #fff;
+        margin-bottom: 16px; overflow: hidden;
+    }
+    .diff-file-head {
+        padding: 8px 12px; background: #f4f6f8; border-bottom: 1px solid #e0e4e9;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px; color: #34495e; display: flex; gap: 10px; align-items: center;
+    }
+    .diff-file-head .fstat { margin-left: auto; font-size: 11.5px; }
+
+    .diff-body { overflow-x: auto; }
+    .diff-body table { border-collapse: collapse; width: 100%; }
+    .diff-body td {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px; line-height: 1.5; padding: 0 10px; vertical-align: top;
+        white-space: pre; }
+    /* Номера строк не выделяются мышью: копировать нужно код, а не нумерацию. */
+    .diff-body td.ln {
+        width: 1%; min-width: 42px; text-align: right; color: #b0b8c1;
+        background: #fafbfc; border-right: 1px solid #eef0f3; padding: 0 8px;
+        user-select: none;
+    }
+    .d-add td      { background: #e6ffec; }
+    .d-add td.ln   { background: #d2f8d9; }
+    .d-del td      { background: #ffebe9; }
+    .d-del td.ln   { background: #ffd7d5; }
+    .d-hunk td     { background: #f1f8ff; color: #57606a; }
+    .d-hunk td.ln  { background: #eaf2fa; }
+    .d-meta td     { background: #fafbfc; color: #8b949e; }
+
+    .empty-msg { padding: 22px; color: #999; font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+    <div class="page-header">
+        <h2 id="diffTitle">Diff подзадачи</h2>
+        <span class="range" id="diffRange">…</span>
+        <span class="subtitle" id="diffStat"></span>
+        <button class="btn-reload" id="btnReload" onclick="loadDiff()">Обновить</button>
+        <a class="btn-back" href="/admin/task">← к задачам</a>
+    </div>
+
+    <div id="diffNotes"></div>
+
+    <div class="layout">
+        <div class="side">
+            <div class="side-box">
+                <h3>Файлы</h3>
+                <div class="side-list" id="fileList"><div class="empty-msg">Загрузка…</div></div>
+            </div>
+            <div class="side-box">
+                <h3>Коммиты ветки</h3>
+                <div class="side-list" id="commitList"><div class="empty-msg">Загрузка…</div></div>
+            </div>
+        </div>
+
+        <div class="diff-wrap" id="diffWrap">
+            <div class="empty-msg">Загрузка…</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData} from '/static/js/api.js';
+
+    // Номер подзадачи — в адресе: страница открывается ссылкой из строки задачи и
+    // ничего своего не помнит. Так её можно оставить в закладке и перезагрузить.
+    const taskId = Number(new URLSearchParams(location.search).get('task') || 0);
+
+    function esc(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                              .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // Якорь файла — из его пути: имена файлов в id как есть не годятся (точки, слеши),
+    // а порядковый номер разъехался бы со списком слева при обновлении.
+    function fileAnchor(path) {
+        return 'f-' + String(path).replace(/[^a-zA-Z0-9]+/g, '-');
+    }
+
+    // ── Разбор unified diff ──────────────────────────────────────────────
+    // Делим вывод git на файлы по `diff --git`, внутри файла — на строки с типом.
+    // Номера строк ведём от заголовка hunk (`@@ -a,b +c,d @@`): без них ревью
+    // превращается в поиск места правки глазами по контексту.
+    function parseDiff(text) {
+        const files = [];
+        let current = null, oldNo = 0, newNo = 0;
+
+        for (const line of String(text || '').split('\n')) {
+            if (line.startsWith('diff --git ')) {
+                current = {path: line.replace(/^diff --git a\/(.*) b\/.*$/, '$1'), lines: []};
+                files.push(current);
+                oldNo = newNo = 0;
+                continue;
+            }
+            if (!current) continue;
+
+            if (line.startsWith('@@')) {
+                const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+                if (m) { oldNo = Number(m[1]); newNo = Number(m[2]); }
+                current.lines.push({type: 'hunk', text: line, old: '', new: ''});
+            } else if (line.startsWith('+++') || line.startsWith('---') ||
+                       line.startsWith('index ') || line.startsWith('new file') ||
+                       line.startsWith('deleted file') || line.startsWith('similarity ') ||
+                       line.startsWith('rename ') || line.startsWith('old mode') ||
+                       line.startsWith('new mode') || line.startsWith('Binary files')) {
+                current.lines.push({type: 'meta', text: line, old: '', new: ''});
+            } else if (line.startsWith('+')) {
+                current.lines.push({type: 'add', text: line, old: '', new: newNo++});
+            } else if (line.startsWith('-')) {
+                current.lines.push({type: 'del', text: line, old: oldNo++, new: ''});
+            } else if (line.startsWith('\\')) {
+                current.lines.push({type: 'meta', text: line, old: '', new: ''});
+            } else {
+                current.lines.push({type: 'ctx', text: line, old: oldNo++, new: newNo++});
+            }
+        }
+        return files;
+    }
+
+    function renderDiff(text, stats) {
+        const files = parseDiff(text);
+        if (!files.length) return '<div class="empty-msg">Изменений нет</div>';
+
+        return files.map(f => {
+            const st = stats[f.path];
+            const stat = st ? `<span class="fstat"><span style="color:#1a7f37">+${st.added}</span> `
+                            + `<span style="color:#cf222e">−${st.deleted}</span></span>` : '';
+            const rows = f.lines.map(l =>
+                `<tr class="d-${l.type}"><td class="ln">${l.old || ''}</td>`
+              + `<td class="ln">${l.new || ''}</td><td>${esc(l.text) || ' '}</td></tr>`).join('');
+            return `<div class="diff-file" id="${fileAnchor(f.path)}">`
+                 + `<div class="diff-file-head"><span>${esc(f.path)}</span>${stat}</div>`
+                 + `<div class="diff-body"><table>${rows}</table></div></div>`;
+        }).join('');
+    }
+
+    function renderNotes(d) {
+        const notes = [];
+        if (d.behind_remote > 0) {
+            notes.push(`<div class="note note-warn">Локальная ветка <b>${esc(d.base)}</b> обогнала `
+                     + `<b>origin/${esc(d.base)}</b> на <b>${d.behind_remote}</b> коммитов. `
+                     + `Merge request на сервере сравнивает с удалённой копией и покажет их как `
+                     + `изменения этой подзадачи — здесь их нет.</div>`);
+        }
+        if (d.dirty?.length) {
+            notes.push(`<div class="note note-info">В рабочем каталоге подзадачи есть незакоммиченные `
+                     + `правки (${d.dirty.length}) — в diff их нет: `
+                     + `<code>${esc(d.dirty.slice(0, 5).join('; '))}</code></div>`);
+        }
+        if (d.truncated) {
+            notes.push(`<div class="note note-warn">Показана только начальная часть diff — он слишком `
+                     + `велик для страницы. Полностью: <code>git diff ${esc(d.base)}...${esc(d.branch)}</code></div>`);
+        }
+        return notes.join('');
+    }
+
+    window.loadDiff = async function() {
+        const btn = document.getElementById('btnReload');
+        const wrap = document.getElementById('diffWrap');
+        if (!taskId) {
+            wrap.innerHTML = '<div class="note note-error">В адресе нет номера подзадачи: '
+                           + 'откройте страницу ссылкой «diff» из строки задачи.</div>';
+            return;
+        }
+        btn.disabled = true;
+        try {
+            const d = await getData(`/task/${taskId}/diff`);
+
+            document.getElementById('diffTitle').textContent =
+                `Diff подзадачи #${taskId}` + (d.task?.title ? ` — ${d.task.title}` : '');
+            document.getElementById('diffRange').textContent =
+                d.base && d.branch ? `${d.base}...${d.branch}` : '—';
+            document.getElementById('diffStat').textContent = d.stat || '';
+            document.getElementById('diffNotes').innerHTML = renderNotes(d);
+
+            if (!d.ok) {
+                wrap.innerHTML = `<div class="note note-error">${esc(d.error)}</div>`;
+                document.getElementById('fileList').innerHTML = '<div class="empty-msg">—</div>';
+                document.getElementById('commitList').innerHTML = '<div class="empty-msg">—</div>';
+                return;
+            }
+
+            const stats = {};
+            (d.files || []).forEach(f => { stats[f.path] = f; });
+
+            document.getElementById('fileList').innerHTML = (d.files || []).length
+                ? d.files.map(f => `<a class="file-item" href="#${fileAnchor(f.path)}">`
+                    + `<span class="fname" title="${esc(f.path)}">${esc(f.path)}</span>`
+                    + (f.binary ? '<span class="fadd">bin</span>'
+                                : `<span class="fadd">+${f.added}</span><span class="fdel">−${f.deleted}</span>`)
+                    + `</a>`).join('')
+                : '<div class="empty-msg">Файлов нет</div>';
+
+            document.getElementById('commitList').innerHTML = (d.commits || []).length
+                ? d.commits.map(c => `<div class="commit-item"><div class="csubj">${esc(c.subject)}</div>`
+                    + `<div class="cmeta">${esc(c.hash)} · ${esc(c.author)} · ${esc(c.date)}</div></div>`).join('')
+                : '<div class="empty-msg">Коммитов нет</div>';
+
+            wrap.innerHTML = renderDiff(d.diff, stats);
+        } catch (e) {
+            wrap.innerHTML = `<div class="note note-error">Ошибка загрузки: ${esc(e.message)}</div>`;
+        } finally {
+            btn.disabled = false;
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', loadDiff);
+</script>
+{% endblock %}
