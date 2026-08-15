@@ -21,6 +21,7 @@ Developer/QA — это самосоединение: ребёнок даёт р
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_ATTEMPT_MAX,
+    TASK_SETTING_TIMEOUT_BY_KEY,
     TASK_SETTING_TIMEOUT_DEVELOPER_RUN,
     TASK_SETTING_TIMEOUT_MANAGER_RUN,
     TASK_SETTING_TIMEOUT_QA_RUN,
@@ -40,7 +41,8 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
 
     Returns:
         {project_id: {role: {'waiting_count': int, 'waiting': [item], 'current': item|None}}}
-        где item — {'task_id', 'subtask_id', 'title', 'task_title', 'state', 'left_seconds'}.
+        где item — {'task_id', 'subtask_id', 'title', 'task_title', 'state',
+        'left_seconds', 'left_title'}.
     """
     queues: dict[int, dict[str, dict]] = {}
 
@@ -55,17 +57,20 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
     plan_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_MANAGER_RUN)
     # Один запрос на всю выдачу: работающих прогонов единицы, а строк очереди сотни.
     progress = await team_progress_running()
-    for role, rows, timeout in (
-        [(role, await _planner_rows(role), plan_timeout) for role in TASK_ROLE_TYPES] + [
+    for role, rows, timeout, timeout_key in (
+        [(role, await _planner_rows(role), plan_timeout, TASK_SETTING_TIMEOUT_MANAGER_RUN)
+         for role in TASK_ROLE_TYPES] + [
             ('developer', await _developer_rows(),
-             await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN)),
+             await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN),
+             TASK_SETTING_TIMEOUT_DEVELOPER_RUN),
             ('qa', await _qa_rows(),
-             await task_setting_timeout_get(TASK_SETTING_TIMEOUT_QA_RUN)),
+             await task_setting_timeout_get(TASK_SETTING_TIMEOUT_QA_RUN),
+             TASK_SETTING_TIMEOUT_QA_RUN),
         ]
     ):
         for row in rows:
             slot = _slot_get(queues, row.get('project_id'), role)
-            item = _item_build(row, timeout, progress)
+            item = _item_build(row, timeout, timeout_key, progress)
             if int(row.get('busy') or 0):
                 # Воркеров может быть несколько, но карточка роли одна: показываем
                 # первую по порядку захвата — остальные видны в списке задач.
@@ -173,13 +178,17 @@ def _slot_get(queues: dict, project_id, role: str) -> dict:
         role, {'waiting_count': 0, 'waiting': [], 'current': None})
 
 
-def _item_build(row: dict, timeout: int, progress: dict) -> dict:
+def _item_build(row: dict, timeout: int, timeout_key: str, progress: dict) -> dict:
     """Строка очереди для карточки: у менеджера это задача, у Developer/QA — подзадача.
 
-    `left_seconds` — остаток до таймаута агента, и он есть только у работающей
-    строки: у ожидающей отсчёт ещё не начинался. None вместо нуля потому, что
-    «времени не осталось» и «время не считается» — разные вещи, и карточка их
-    показывает по-разному.
+    `left_seconds` — остаток до **ближайшего** таймаута, а `left_title` — его
+    название. Ближайший, а не потолок прогона: планирование живёт больше часа по
+    `timeout_manager_run`, но гибнет через десять минут на ожидании ответа
+    оболочки, и час на карточке — обещание, которого никто не сдержит.
+
+    Остаток есть только у работающей строки: у ожидающей отсчёт ещё не начинался.
+    None вместо нуля потому, что «времени не осталось» и «время не считается» —
+    разные вещи, и карточка их показывает по-разному.
 
     `percent`, `step_index`, `step_total`, `step_title` — из трейса работающего
     прогона (`team_progress_running`). Их нет ни у ожидающей строки, ни у прогона,
@@ -188,12 +197,19 @@ def _item_build(row: dict, timeout: int, progress: dict) -> dict:
     """
     run_seconds = row.get('run_seconds')
     left_seconds = None
+    left_title   = ''
     if int(row.get('busy') or 0) and run_seconds is not None:
         left_seconds = max(0, int(timeout) - int(run_seconds))
+        left_title   = str(TASK_SETTING_TIMEOUT_BY_KEY.get(timeout_key, {}).get('title') or '')
 
     subtask_id = int(row['subtask_id']) if row.get('subtask_id') else None
     task_id    = int(row.get('task_id') or 0)
     step = progress.get(('subtask', subtask_id) if subtask_id else ('task', task_id), {})
+
+    step_left = step.get('step_left_seconds')
+    if left_seconds is not None and step_left is not None and step_left < left_seconds:
+        left_seconds = int(step_left)
+        left_title   = str(step.get('step_running_title') or '')
 
     return {
         'task_id': task_id,
@@ -202,6 +218,7 @@ def _item_build(row: dict, timeout: int, progress: dict) -> dict:
         'task_title': str(row.get('task_title') or '').strip(),
         'state': str(row.get('state') or ''),
         'left_seconds': left_seconds,
+        'left_title': left_title,
         'percent': step.get('percent'),
         'step_index': step.get('step_index'),
         'step_total': step.get('step_total'),

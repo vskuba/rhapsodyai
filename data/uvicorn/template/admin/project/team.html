@@ -870,10 +870,13 @@
         if (!mine.length && !common.length) return '';
 
         const key = `${(block && block.project_id) || 0}:${card.role}`;
-        const rows = mine.map(renderTimeoutRow);
+        const rows = [];
 
+        // Заголовок группы — и у своих строк тоже: кроме потолка прогона у роли
+        // теперь есть сроки шагов её workflow, а их десяток, и без подписи
+        // «Шаги агента» они читались бы как продолжение общих настроек.
         let group = '';
-        common.forEach(item => {
+        mine.concat(common).forEach(item => {
             if (item.group && item.group !== group) {
                 group = item.group;
                 rows.push(`<div class="team-timeout-group">${escapeHtml(group)}</div>`);
