@@ -46,7 +46,7 @@ case "$command_run" in
 
         # Профиль `task` — сервис не поднимается обычным `docker compose up`.
         # Каталог передаём переменной: на неё смотрит монтирование в compose.
-        TASK_WORKTREE_DIR="$worktree_dir" docker compose --profile task up -d "$SERVICE"
+        PROJECT_TASK_WORKTREE_DIR="$worktree_dir" docker compose --profile task up -d "$SERVICE"
 
         echo "[task-server] поднят на http://localhost:${PORT} из $worktree_dir"
         ;;
