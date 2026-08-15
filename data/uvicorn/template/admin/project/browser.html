@@ -1,0 +1,2086 @@
+{% extends "base.html" %}
+
+{% block title %}Браузер{% endblock %}
+
+{% block head %}
+<!-- Вкладки страницы (`.page-tabs`, `.tab-panel`) берём готовые — те же, что на
+     задачах и дизайне. Своя копия этих правил разошлась бы с ними на первой правке. -->
+<link rel="stylesheet" href="/static/css/design.css">
+<style>
+    .browser-page {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+    }
+
+    /* Страница админки не прокручивается (`.page-content{overflow:hidden}`), поэтому
+       высота раздаётся сверху вниз: контейнер занимает её всю, а экран забирает
+       остаток. Иначе низ окна сессии уезжает за край и до него не добраться. */
+    .browser-container {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        padding: 16px;
+        display: flex;
+        gap: 16px;
+        align-items: stretch;
+        box-sizing: border-box;
+    }
+
+    /* ---------- Левая колонка: сессии ---------- */
+
+    .browser-side {
+        flex: 0 0 280px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px;
+        box-sizing: border-box;
+        overflow-y: auto;
+    }
+
+    .browser-side-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+    }
+
+    .browser-side-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #111827;
+    }
+
+    .browser-stat {
+        font-size: 11px;
+        color: #6b7280;
+        line-height: 1.6;
+        margin-bottom: 12px;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+    }
+
+    .browser-session {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        transition: border-color .15s, background .15s;
+    }
+
+    .browser-session:hover {
+        background: #f9fafb;
+    }
+
+    .browser-session.active {
+        border-color: #2563eb;
+        background: #eff6ff;
+    }
+
+    .browser-session-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: #111827;
+        display: flex;
+        justify-content: space-between;
+        gap: 6px;
+    }
+
+    .browser-session-url {
+        font-size: 11px;
+        color: #6b7280;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        direction: rtl;
+        text-align: left;
+    }
+
+    .browser-session-meta {
+        font-size: 10px;
+        color: #9ca3af;
+        margin-top: 3px;
+    }
+
+    .browser-empty {
+        font-size: 12px;
+        color: #9ca3af;
+        padding: 10px 0;
+    }
+
+    /* Запись сценария — отдельная полоса внизу карточки: это не сведения о
+       сессии, а действие над ней, и разделитель говорит об этом без подписи. */
+    .browser-session-rec {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .browser-session-rec input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 4px 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 12px;
+    }
+
+    .browser-session-rec .browser-btn {
+        flex: 0 0 auto;
+        min-height: 26px;
+        padding: 4px 10px;
+        font-size: 12px;
+    }
+
+    /* Идущая запись видна и с закрытой карточкой: точка мигает в заголовке. */
+    .browser-session-rec-on {
+        color: #b91c1c;
+        border-color: #fca5a5;
+        background: #fef2f2;
+    }
+
+    .browser-session-dot {
+        flex: 0 0 auto;
+        animation: browser-rec-blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes browser-rec-blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .25; }
+    }
+
+    /* Запуск сценария — вторая полоса действий, под записью: записанное здесь же
+       и проигрывается, в той самой сессии, которую человек видит в окне. */
+    .browser-session-play {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .browser-session-play select {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 4px 6px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 12px;
+    }
+
+    .browser-session-play .browser-btn {
+        flex: 0 0 auto;
+        min-height: 26px;
+        padding: 4px 10px;
+        font-size: 12px;
+    }
+
+    /* Подстановки выбранного сценария — теми же строками, что и на вкладке
+       сценариев, только уже: в карточке на имя ключа места вдвое меньше. */
+    .browser-session-play-keys {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 6px;
+    }
+
+    .browser-session-play-keys .scenario-key-name { flex: 0 0 88px; }
+
+    /* ---------- Правая колонка: окно ---------- */
+
+    .browser-view {
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 12px;
+        box-sizing: border-box;
+    }
+
+    .browser-bar {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .browser-bar input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 6px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+    }
+
+    /* Значки — вложенный `<svg>`, а не символы вроде «←» и «⟳»: шрифт с ними есть
+       не в каждой системе, и без него кнопка остаётся пустым белым квадратом. */
+    .browser-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: 30px;
+        padding: 6px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        background: #fff;
+        color: #374151;
+        cursor: pointer;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    .browser-btn svg {
+        display: block;
+        flex: 0 0 auto;
+    }
+
+    .browser-btn:hover {
+        background: #f3f4f6;
+    }
+
+    .browser-btn.primary {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+    }
+
+    .browser-btn.danger {
+        color: #b91c1c;
+    }
+
+    /* Серая кнопка — это и есть ответ «введено ещё не всё»: гнать сценарий без
+       пароля незачем, и объяснять это подписью не приходится. */
+    .browser-btn:disabled {
+        background: #f3f4f6;
+        border-color: #e5e7eb;
+        color: #9ca3af;
+        cursor: default;
+    }
+
+    .browser-btn:disabled:hover {
+        background: #f3f4f6;
+    }
+
+    /* ---------- Вкладки ---------- */
+
+    .browser-tabs {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 4px;
+        margin-bottom: 8px;
+        overflow-x: auto;
+    }
+
+    .browser-tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 220px;
+        padding: 5px 8px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px 6px 0 0;
+        background: #f9fafb;
+        font-size: 12px;
+        color: #6b7280;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .browser-tab.active {
+        background: #fff;
+        border-color: #2563eb;
+        color: #111827;
+    }
+
+    .browser-tab-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .browser-tab-close {
+        display: flex;
+        align-items: center;
+        border: none;
+        background: none;
+        padding: 0;
+        color: #9ca3af;
+        cursor: pointer;
+    }
+
+    .browser-tab-close:hover {
+        color: #b91c1c;
+    }
+
+    /* Экран занимает остаток высоты, а картинка вписывается в него сама: размер
+       ей задают собственные пропорции кадра и два `max-*`. Это не украшение —
+       клик нормируется по прямоугольнику `<img>`, и он обязан совпадать с
+       картинкой пиксель в пиксель. Растяни картинку по контейнеру с полями
+       по бокам (`object-fit: contain`) — и каждый клик уедет на ширину поля. */
+    .browser-screen {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #111827;
+        border-radius: 8px;
+        overflow: hidden;
+        outline: none;
+    }
+
+    .browser-screen:focus-within {
+        box-shadow: 0 0 0 2px #93c5fd;
+    }
+
+    .browser-screen img {
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
+        display: block;
+    }
+
+    .browser-screen-hint {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9ca3af;
+        font-size: 13px;
+        text-align: center;
+        padding: 20px;
+        pointer-events: none;
+    }
+
+    .browser-status {
+        flex: 0 0 auto;
+        margin-top: 8px;
+        font-size: 11px;
+        color: #6b7280;
+        min-height: 16px;
+    }
+
+    .browser-status.error {
+        color: #b91c1c;
+    }
+
+    /* ---------- Вкладка «Сценарии» ---------- */
+
+    .scenario-session {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        transition: border-color .15s, background .15s;
+    }
+
+    .scenario-session:hover {
+        background: #f9fafb;
+    }
+
+    .scenario-session.active {
+        border-color: #2563eb;
+        background: #eff6ff;
+    }
+
+    /* Метка сценария повторяет метку сессии (`browser_scenario.status`): draft —
+       ещё не проверен, active — последний прогон прошёл, broken — упал. */
+    .scenario-mark {
+        font-size: 10px;
+        font-weight: 600;
+        border-radius: 4px;
+        padding: 1px 5px;
+        text-transform: uppercase;
+    }
+
+    .scenario-mark.draft  { background: #f3f4f6; color: #6b7280; }
+    .scenario-mark.active { background: #dcfce7; color: #15803d; }
+    .scenario-mark.broken { background: #fee2e2; color: #b91c1c; }
+
+    /* Имя тянется на всю ширину: у `.browser-session-name` стоит `space-between`,
+       и без этого метка с крестиком разъехались бы по разным краям карточки. */
+    .scenario-session .browser-session-name > span:first-child {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Крестик виден только под мышью: в списке из десятка сценариев ряд красных
+       крестов читается как «здесь всё сломано», а нужен он раз в месяц. */
+    .scenario-del {
+        display: flex;
+        align-items: center;
+        border: none;
+        background: none;
+        padding: 0;
+        color: #d1d5db;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity .15s, color .15s;
+    }
+
+    .scenario-session:hover .scenario-del {
+        opacity: 1;
+    }
+
+    .scenario-del:hover {
+        color: #b91c1c;
+    }
+
+    .scenario-form {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .scenario-form label {
+        display: flex;
+        flex: 1 1 0;
+        min-width: 0;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .scenario-form input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 6px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 13px;
+    }
+
+    /* Две колонки: слева сценарий как он лежит в базе, справа — прогон и его следы.
+       Обе тянутся по высоте, потому что и шаги, и трасса бывают длинными. */
+    .scenario-body {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0;
+        gap: 12px;
+    }
+
+    .scenario-col {
+        display: flex;
+        flex: 1 1 0;
+        min-width: 0;
+        min-height: 0;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .scenario-label {
+        flex: 0 0 auto;
+        font-size: 11px;
+        font-weight: 600;
+        color: #6b7280;
+    }
+
+    .scenario-col textarea {
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: 8px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        resize: none;
+        tab-size: 2;
+    }
+
+    .scenario-col textarea.short {
+        flex: 0 0 64px;
+    }
+
+    /* Сессия выбирается один раз на всю вкладку: сценарии гоняют по той странице,
+       которую человек и так держит открытой на соседней вкладке. */
+    #tab-scenario {
+        flex-direction: column;
+    }
+
+    #tab-scenario .browser-container {
+        height: auto;
+        flex: 1 1 auto;
+        padding-top: 0;
+    }
+
+    .scenario-head {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 8px;
+        align-items: center;
+        padding: 12px 16px;
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .scenario-head-label {
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .scenario-head select {
+        max-width: 320px;
+        padding: 5px 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 12px;
+    }
+
+    .scenario-head-hint {
+        color: #9ca3af;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Подстановки: ключи собраны из шагов, человек заполняет только значения. */
+    .scenario-keys {
+        flex: 0 0 auto;
+        max-height: 132px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .scenario-key {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .scenario-key-name {
+        flex: 0 0 128px;
+        overflow: hidden;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 11px;
+        color: #374151;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .scenario-key.secret .scenario-key-name { color: #b45309; }
+
+    .scenario-key input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 4px 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 12px;
+    }
+
+    .scenario-key button {
+        flex: 0 0 auto;
+        padding: 2px 6px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        background: #fff;
+        color: #9ca3af;
+        font-size: 12px;
+        line-height: 1.2;
+        cursor: pointer;
+    }
+
+    .scenario-key button:hover { color: #b91c1c; border-color: #fecaca; }
+
+    .scenario-keys-empty {
+        font-size: 11px;
+        color: #9ca3af;
+    }
+
+    .scenario-keys-head {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 6px;
+        align-items: baseline;
+    }
+
+    .scenario-keys-head .scenario-label { flex: 1 1 auto; }
+
+    .scenario-keys-add {
+        padding: 0 6px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        background: #fff;
+        color: #6b7280;
+        font-size: 11px;
+        cursor: pointer;
+    }
+
+    .scenario-run {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .scenario-run select {
+        max-width: 190px;
+        padding: 5px 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 12px;
+    }
+
+    .scenario-out {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 8px;
+        background: #fafafa;
+        font-size: 12px;
+    }
+
+    .scenario-trace {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+    }
+
+    .scenario-trace td {
+        padding: 3px 5px;
+        border-bottom: 1px solid #eef0f2;
+        vertical-align: top;
+    }
+
+    .scenario-trace td.step-no { width: 22px; color: #9ca3af; text-align: right; }
+    .scenario-trace td.step-act { width: 78px; font-weight: 600; color: #374151; }
+    .scenario-trace td.step-ms { width: 52px; text-align: right; color: #9ca3af; }
+
+    .scenario-out .step-target {
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        color: #6b7280;
+        word-break: break-all;
+    }
+
+    .scenario-trace tr.fail td { background: #fef2f2; }
+    .scenario-trace tr.fail td.step-act { color: #b91c1c; }
+
+    .scenario-run-head {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0 3px;
+        font-size: 11px;
+        color: #6b7280;
+    }
+
+    .scenario-run-head:first-child { margin-top: 0; }
+
+    .scenario-error {
+        color: #b91c1c;
+        font-size: 11px;
+        margin: 3px 0;
+        word-break: break-word;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="browser-page">
+
+<div class="page-tabs" id="browserTabs">
+    <button class="page-tab active" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
+    <button class="page-tab" data-tab="scenario">Сценарии <span class="page-tab-n" id="tabCount-scenario"></span></button>
+    <button class="page-tab" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
+</div>
+
+<div class="tab-panel active" id="tab-session">
+<div class="browser-container">
+
+    <div class="browser-side">
+        <div class="browser-side-head">
+            <span class="browser-side-title">Сессии</span>
+            <button type="button" class="browser-btn primary" id="sessionCreateBtn">+</button>
+        </div>
+        <div class="browser-stat" id="browserStat">—</div>
+        <div id="sessionList"></div>
+    </div>
+
+    <div class="browser-view">
+        <div class="browser-bar">
+            <button type="button" class="browser-btn" id="backBtn" title="Назад" aria-label="Назад">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+            </button>
+            <button type="button" class="browser-btn" id="forwardBtn" title="Вперёд" aria-label="Вперёд">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+            </button>
+            <button type="button" class="browser-btn" id="reloadBtn" title="Обновить" aria-label="Обновить">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6M1 20v-6h6"/>
+                    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                </svg>
+            </button>
+            <input type="text" id="urlInput" placeholder="https://…" spellcheck="false">
+            <button type="button" class="browser-btn primary" id="gotoBtn">Открыть</button>
+            <button type="button" class="browser-btn danger" id="closeBtn">Погасить</button>
+        </div>
+
+        <div class="browser-tabs" id="tabs" style="display:none"></div>
+
+        <div class="browser-screen" id="screen" tabindex="0">
+            <img id="frame" alt="">
+            <div class="browser-screen-hint" id="screenHint">Выберите сессию слева, заведите новую или впишите адрес в строке сверху</div>
+        </div>
+
+        <div class="browser-status" id="status"></div>
+    </div>
+
+</div>
+</div>
+
+<div class="tab-panel" id="tab-scenario">
+
+<div class="scenario-head">
+    <span class="scenario-head-label">Сессия</span>
+    <select id="scenarioSession" title="В какой сессии гнать шаги"></select>
+    <label><input type="checkbox" id="scenarioKeep" checked> оставить сессию</label>
+    <span class="scenario-head-hint" id="scenarioSessionHint"></span>
+</div>
+
+<div class="browser-container">
+
+    <div class="browser-side">
+        <div class="browser-side-head">
+            <span class="browser-side-title">Сценарии</span>
+            <button type="button" class="browser-btn primary" id="scenarioNewBtn">+</button>
+        </div>
+        <div class="browser-stat" id="scenarioStat">—</div>
+        <div id="scenarioList"></div>
+    </div>
+
+    <div class="browser-view">
+        <div class="browser-bar">
+            <input type="text" id="scenarioName" placeholder="имя сценария" spellcheck="false">
+            <button type="button" class="browser-btn primary" id="scenarioSaveBtn">Сохранить</button>
+            <button type="button" class="browser-btn" id="scenarioAuthorBtn"
+                    title="LLM напишет шаги сама, глядя на страницу">Написать по цели</button>
+        </div>
+
+        <div class="scenario-form">
+            <label>Цель <input type="text" id="scenarioGoal" placeholder="чего добиться — по нему шаги перепишут потом"></label>
+            <label>Старт <input type="text" id="scenarioStartUrl" placeholder="https://…" spellcheck="false"></label>
+        </div>
+
+        <div class="scenario-body">
+            <div class="scenario-col">
+                <div class="scenario-label">Шаги (JSON): action + selector/url/value/key/name, timeout_ms, optional</div>
+                <textarea id="scenarioSteps" spellcheck="false"></textarea>
+                <div class="scenario-label">Переменные по умолчанию (JSON) — попадают в базу и журнал</div>
+                <textarea id="scenarioVariables" class="short" spellcheck="false"></textarea>
+            </div>
+
+            <div class="scenario-col">
+                <div class="scenario-run">
+                    <button type="button" class="browser-btn primary" id="scenarioRunBtn">Запустить</button>
+                    <button type="button" class="browser-btn" id="scenarioLogBtn">Журнал</button>
+                </div>
+                <div class="scenario-keys-head">
+                    <div class="scenario-label">Подстановки — ключи из шагов; пустые в базу не попадут</div>
+                    <button type="button" class="scenario-keys-add" id="scenarioKeyAddBtn"
+                            title="Ключ, которого ещё нет в шагах — например, логин для автора">+ ключ</button>
+                </div>
+                <div class="scenario-keys" id="scenarioKeys"></div>
+                <div class="scenario-label">Трасса</div>
+                <div class="scenario-out" id="scenarioOut"></div>
+            </div>
+        </div>
+
+        <div class="browser-status" id="scenarioMsg"></div>
+    </div>
+
+</div>
+</div>
+
+<div class="tab-panel" id="tab-site">
+
+<div class="site-head">
+    <input type="text" id="siteName" placeholder="название" spellcheck="false" maxlength="100">
+    <input type="text" id="siteUrl" placeholder="https://…" spellcheck="false" maxlength="500">
+    <button type="button" class="browser-btn primary" id="siteSaveBtn">Сохранить</button>
+    <button type="button" class="browser-btn" id="siteResetBtn">Сбросить</button>
+    <span class="scenario-head-hint" id="siteHint"></span>
+</div>
+
+<div class="site-cards" id="siteCards"></div>
+
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, postData, putData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const listEl = document.getElementById('sessionList');
+    const statEl = document.getElementById('browserStat');
+    const screenEl = document.getElementById('screen');
+    const frameEl = document.getElementById('frame');
+    const hintEl = document.getElementById('screenHint');
+    const urlEl = document.getElementById('urlInput');
+    const statusEl = document.getElementById('status');
+    const tabsEl = document.getElementById('tabs');
+
+    let socket = null;
+    let currentId = '';
+    let urlEdited = false;
+
+    // Живые сессии последнего опроса: их же выбирают в форме запуска сценария.
+    let sessions = [];
+
+    // Сценарии последнего опроса: из них собран селект запуска в карточке сессии.
+    let scenarios = [];
+
+    // ---------- Вкладки страницы ----------
+
+    // Вкладку помним между заходами — как на странице задач: работа со сценариями
+    // идёт длинными заходами, и каждый раз возвращаться к ней вручную незачем.
+    const TAB_KEY = 'browser_tab';
+
+    function tabSelect(name) {
+        localStorage.setItem(TAB_KEY, name);
+        document.querySelectorAll('#browserTabs .page-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === name);
+        });
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+            panel.classList.toggle('active', panel.id === 'tab-' + name);
+        });
+
+        // Окно сессии живёт на своей вкладке и при уходе на сценарии не гасится:
+        // сценарий с «оставить сессию» гоняют именно ради того, чтобы вернуться
+        // сюда и посмотреть, где он остановился.
+        if (name === 'scenario') {
+            scenariosLoad();
+            // Селект в шапке должен показывать ту сессию, которую человек только что
+            // смотрел на соседней вкладке, — а не ту, что была на прошлой загрузке.
+            sessionSelectFill();
+        }
+    }
+
+    document.querySelectorAll('#browserTabs .page-tab').forEach(tab => {
+        tab.addEventListener('click', () => tabSelect(tab.dataset.tab));
+    });
+
+    // ---------- Список сессий ----------
+
+    async function sessionsLoad() {
+        let data;
+        try {
+            data = await getData('/api/browser/session');
+        } catch (e) {
+            statEl.textContent = 'контейнер-браузер недоступен';
+            listEl.innerHTML = '<div class="browser-empty">нет связи</div>';
+            sessions = [];
+            sessionSelectFill();
+            countSet('session', '');
+            return;
+        }
+
+        const pool = data.pool || {};
+        const memory = data.memory || {};
+        statEl.innerHTML =
+            `Chromium ${pool.version || '—'}<br>` +
+            `сессий ${pool.sessions || 0} из ${pool.session_limit || 0}<br>` +
+            `память ${memory.container_mb || 0} / ${memory.container_limit_mb || 0} МБ`;
+
+        sessions = data.sessions || [];
+        countSet('session', sessions.length);
+        sessionSelectFill();
+
+        if (sessions.length === 0) {
+            listEl.innerHTML = '<div class="browser-empty">сессий нет</div>';
+            return;
+        }
+
+        // Пока в карточке печатают, список не перерисовываем: перерисовка уводит
+        // фокус и роняет каретку на середине пароля. Сведения подождут до
+        // следующего опроса — набранное дороже.
+        const focused = document.activeElement;
+        if (listEl.contains(focused) && (focused.tagName === 'INPUT' || focused.tagName === 'SELECT')) return;
+
+        listEl.innerHTML = '';
+        for (const session of sessions) {
+            const el = document.createElement('div');
+            el.className = 'browser-session' + (session.session_id === currentId ? ' active' : '');
+            el.innerHTML =
+                `<div class="browser-session-name"><span>${_escape(session.name)}</span>` +
+                `<span>${session.recording ? '<span class="browser-session-dot">🔴</span> ' : ''}` +
+                `${session.alive ? '🟢' : '⚪'}</span></div>` +
+                `<div class="browser-session-url">${_escape(session.url)}</div>` +
+                `<div class="browser-session-meta">живёт ${session.uptime_sec} с · простой ${session.idle_sec} с</div>` +
+                recordRow(session) +
+                playRow(session);
+            el.addEventListener('click', () => viewOpen(session.session_id, session.url));
+            recordBind(el, session);
+            playBind(el, session.session_id);
+            listEl.appendChild(el);
+        }
+    }
+
+    // ---------- Запись сценария ----------
+
+    const RECORD_NAME_DEFAULT = 'новый сценарий';
+
+    // Набранное имя живёт здесь, а не в поле: список перерисовывается каждые
+    // десять секунд, и вместе с карточкой пропадало бы имя на полуслове.
+    const recordNames = new Map();
+
+    function recordRow(session) {
+        const on = session.recording;
+        return '<div class="browser-session-rec">' +
+            `<input type="text" maxlength="100" placeholder="${RECORD_NAME_DEFAULT}">` +
+            `<button class="browser-btn${on ? ' browser-session-rec-on' : ''}">` +
+            `${on ? 'Остановить' : 'Старт'}</button></div>`;
+    }
+
+    function recordBind(el, session) {
+        const row = el.querySelector('.browser-session-rec');
+        const input = row.querySelector('input');
+        const button = row.querySelector('button');
+
+        // Значение ставится кодом, а не атрибутом: `_escape` не трогает кавычки,
+        // и имя с кавычкой разорвало бы разметку карточки.
+        input.value = recordNames.has(session.session_id)
+            ? recordNames.get(session.session_id) : RECORD_NAME_DEFAULT;
+
+        // Клик по карточке открывает окно — но не когда метили в поле или кнопку.
+        row.addEventListener('click', event => event.stopPropagation());
+        input.addEventListener('input', () => recordNames.set(session.session_id, input.value));
+        button.addEventListener('click', () => {
+            if (session.recording) recordStop(session); else recordStart(session, input.value);
+        });
+    }
+
+    async function recordStart(session, name) {
+        try {
+            await postData(`/api/browser/session/${session.session_id}/record/start`,
+                           {name: (name || '').trim()});
+        } catch (e) {
+            showNotification('Запись не началась: ' + e.message, 'error');
+            return;
+        }
+
+        // Записывается то, что человек делает на странице, — значит, страницу надо
+        // показать: без открытого окна совершать действия ему попросту негде.
+        if (currentId !== session.session_id) viewOpen(session.session_id, session.url);
+
+        showNotification('Идёт запись: работайте в окне', 'success');
+        sessionsLoad();
+    }
+
+    async function recordStop(session) {
+        let data;
+        try {
+            data = await postData(`/api/browser/session/${session.session_id}/record/stop`,
+                                  {name: (recordNames.get(session.session_id) || '').trim()});
+        } catch (e) {
+            showNotification('Сценарий не записан: ' + e.message, 'error');
+            sessionsLoad();
+            return;
+        }
+
+        const steps = ((data.record || {}).steps || []).length;
+        recordNames.delete(session.session_id);
+        showNotification(`Сценарий записан: «${data.name}», шагов ${steps}`, 'success');
+
+        sessionsLoad();
+        scenariosLoad();
+    }
+
+    // ---------- Запуск сценария из карточки ----------
+
+    // Выбор и набранные значения живут вне карточки: список сессий
+    // перерисовывается каждые десять секунд, и вместе с карточкой пропадали бы и
+    // выбранный сценарий, и наполовину введённый пароль.
+    const playChoice = new Map();  // session_id -> id сценария строкой
+    const playValues = new Map();  // session_id -> {ключ: значение}
+    const playBusy = new Set();    // сессии, в которых прогон уже идёт
+
+    // Сценарий целиком приезжает отдельным запросом: список везёт только имена, а
+    // спросить надо ровно те подстановки, что стоят в шагах.
+    const playDetails = new Map();  // id сценария -> {used: [...], defaults: {}}
+
+    function playRow(session) {
+        return '<div class="browser-session-play">' +
+            `<select data-session="${session.session_id}" title="Какой сценарий гнать в этой сессии"></select>` +
+            '<button class="browser-btn primary" disabled>Запустить</button></div>' +
+            '<div class="browser-session-play-keys"></div>';
+    }
+
+    function playBind(el, sessionId) {
+        const select = el.querySelector('.browser-session-play select');
+        const button = el.querySelector('.browser-session-play button');
+
+        // Клик по карточке открывает окно — но не когда метили в селект, кнопку
+        // или поле подстановки.
+        el.querySelector('.browser-session-play').addEventListener('click', event => event.stopPropagation());
+        el.querySelector('.browser-session-play-keys').addEventListener('click', event => event.stopPropagation());
+
+        playOptionsFill(select);
+        select.addEventListener('change', () => {
+            playChoice.set(sessionId, select.value);
+            // У другого сценария другие ключи: набранное для прежнего к ним не
+            // относится, и подставлять пароль вслепую — худшее, что можно сделать.
+            playValues.delete(sessionId);
+            playKeysRender(el, sessionId);
+        });
+        button.addEventListener('click', () => playRun(el, sessionId));
+
+        playKeysRender(el, sessionId);
+    }
+
+    function playOptionsFill(select) {
+        const chosen = playChoice.get(select.dataset.session) || '';
+
+        select.innerHTML = '<option value="">сценарий…</option>';
+        for (const row of scenarios) {
+            const option = document.createElement('option');
+            option.value = String(row.id);
+            option.textContent = row.name;
+            select.appendChild(option);
+        }
+
+        // Удалённый сценарий не остаётся выбранным: кнопка звала бы в никуда.
+        select.value = scenarios.some(row => String(row.id) === chosen) ? chosen : '';
+        if (select.value !== chosen) playChoice.delete(select.dataset.session);
+    }
+
+    // Список сценариев приезжает своим запросом и позже карточек: когда он
+    // обновился, селекты перебираются на месте — дёргать контейнер незачем.
+    function playSelectsFill() {
+        for (const el of listEl.querySelectorAll('.browser-session')) {
+            const select = el.querySelector('.browser-session-play select');
+            if (!select) continue;
+
+            playOptionsFill(select);
+            playKeysRender(el, select.dataset.session);
+        }
+    }
+
+    // Поля подстановок раскрываются сразу за выбором: сценарию нужны логин и
+    // пароль — значит, спрашиваем их здесь же, а не после неудачного прогона.
+    async function playKeysRender(el, sessionId) {
+        const keysEl = el.querySelector('.browser-session-play-keys');
+        const id = playChoice.get(sessionId) || '';
+
+        keysEl.innerHTML = '';
+        if (!id) {
+            playButtonSync(el, sessionId);
+            return;
+        }
+
+        const detail = await playDetail(id);
+        const values = playValues.get(sessionId) || {};
+        playValues.set(sessionId, values);
+
+        for (const name of detail.used) {
+            // Признак тот же, что и на вкладке сценариев: есть значение по
+            // умолчанию — переменная, ей место в журнале; нет — секрет.
+            const known = Object.prototype.hasOwnProperty.call(detail.defaults, name);
+            const row = document.createElement('div');
+            row.className = 'scenario-key' + (known ? '' : ' secret');
+
+            const label = document.createElement('span');
+            label.className = 'scenario-key-name';
+            label.textContent = name;
+            label.title = known
+                ? 'значение по умолчанию из сценария — уйдёт в журнал'
+                : 'в сценарии значения нет: уйдёт секретом — ни в базу, ни в журнал';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.spellcheck = false;
+            input.autocomplete = 'off';
+            input.dataset.key = name;
+            input.placeholder = known ? String(detail.defaults[name]) : 'значение на этот прогон';
+            input.value = values[name] !== undefined
+                ? values[name]
+                : (known ? String(detail.defaults[name]) : '');
+            values[name] = input.value;
+            input.addEventListener('input', () => {
+                values[name] = input.value;
+                playButtonSync(el, sessionId);
+            });
+
+            row.appendChild(label);
+            row.appendChild(input);
+            keysEl.appendChild(row);
+        }
+
+        playButtonSync(el, sessionId);
+    }
+
+    // Кнопка серая, пока заполнено не всё: прогон с пустым паролем стоит человеку
+    // тех же минут, что и настоящий, и оставляет в журнале сломанный сценарий.
+    function playButtonSync(el, sessionId) {
+        const button = el.querySelector('.browser-session-play button');
+        const inputs = [...el.querySelectorAll('.browser-session-play-keys input[data-key]')];
+        const busy = playBusy.has(sessionId);
+        const ready = !!playChoice.get(sessionId) && inputs.every(input => input.value.trim() !== '');
+
+        button.disabled = busy || !ready;
+        button.textContent = busy ? 'Идёт…' : 'Запустить';
+    }
+
+    async function playDetail(id) {
+        if (playDetails.has(id)) return playDetails.get(id);
+
+        let data;
+        try {
+            data = await getData('/api/browser/scenario/' + id);
+        } catch (e) {
+            showNotification('Сценарий не открылся: ' + e.message, 'error');
+            // Неудачу не запоминаем: следующий выбор попробует снова.
+            return {used: [], defaults: {}};
+        }
+
+        const detail = {used: data.variables_used || [], defaults: (data.result || {}).variables || {}};
+        playDetails.set(id, detail);
+        return detail;
+    }
+
+    async function playRun(el, sessionId) {
+        const id = playChoice.get(sessionId);
+        if (!id) return;
+
+        const {variables, secrets} = playSubstitutions(el, id);
+        const session = sessions.find(row => row.session_id === sessionId) || {};
+
+        playBusy.add(sessionId);
+        playButtonSync(el, sessionId);
+
+        // Прогон смотрят в живом окне — ради этого сценарий и гонят из карточки, а
+        // не с соседней вкладки: шаги идут по той странице, что перед глазами.
+        if (currentId !== sessionId) viewOpen(sessionId, session.url);
+
+        let data;
+        try {
+            data = await postData(`/api/browser/scenario/${id}/run`, {
+                session_id: sessionId,
+                variables,
+                secrets,
+                // Сессия человека, а не заведённая под прогон: гасить её нельзя.
+                keep_session: true,
+            });
+        } catch (e) {
+            showNotification('Прогон не состоялся: ' + e.message, 'error');
+            playBusy.delete(sessionId);
+            playButtonSync(el, sessionId);
+            // Карточку могло перерисовать опросом, пока шёл прогон: тогда «Идёт…»
+            // висит на новой кнопке, а сняли мы его со старой, уже выброшенной.
+            sessionsLoad();
+            return;
+        }
+
+        playBusy.delete(sessionId);
+
+        const run = data.result || {};
+        if (run.status === 'error') {
+            showNotification(`Шаг ${run.step_no} не прошёл: ${run.error}`, 'error');
+        } else {
+            showNotification(`Сценарий прошёл целиком за ${run.duration_ms} мс`, 'success');
+        }
+
+        // Список сценариев — из-за метки: прогон переводит сценарий в active или broken.
+        sessionsLoad();
+        scenariosLoad();
+    }
+
+    function playSubstitutions(el, id) {
+        const defaults = (playDetails.get(id) || {}).defaults || {};
+        const variables = {};
+        const secrets = {};
+
+        for (const input of el.querySelectorAll('.browser-session-play-keys input[data-key]')) {
+            if (input.value === '') continue;
+            if (Object.prototype.hasOwnProperty.call(defaults, input.dataset.key)) {
+                variables[input.dataset.key] = input.value;
+            } else {
+                secrets[input.dataset.key] = input.value;
+            }
+        }
+
+        return {variables, secrets};
+    }
+
+    // ---------- Живое окно ----------
+
+    function viewOpen(sessionId, url) {
+        viewClose();
+
+        currentId = sessionId;
+        urlEdited = false;
+        urlEl.value = url || '';
+        tabsClear();
+        hintEl.textContent = 'подключение…';
+        hintEl.style.display = '';
+
+        const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        socket = new WebSocket(`${scheme}://${window.location.host}/api/browser/view/${sessionId}`);
+
+        socket.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+
+            // Неудачное действие приходит строкой, а не обрывом окна: страница
+            // жива, а человек должен видеть, почему переход никуда не привёл.
+            if (message.type === 'error') {
+                statusSet(message.text || 'действие не удалось', true);
+                return;
+            }
+            if (message.type === 'tabs') {
+                tabsRender(message);
+                return;
+            }
+            if (message.type === 'clipboard') {
+                clipboardWrite(message.text);
+                return;
+            }
+            if (message.type !== 'frame') return;
+
+            frameEl.src = 'data:image/jpeg;base64,' + message.data;
+            hintEl.style.display = 'none';
+
+            // Адрес не перетираем, пока в поле печатают: иначе кадр,
+            // пришедший в момент набора, сотрёт половину введённого URL.
+            if (!urlEdited && message.url) urlEl.value = message.url;
+        };
+
+        socket.onclose = (event) => {
+            if (event.code === 4403) statusSet('нет прав на просмотр', true);
+            else if (event.code === 4404) statusSet('сессия не найдена — обновите список', true);
+            else if (event.code === 4502) statusSet('контейнер-браузер недоступен', true);
+            else statusSet('окно закрыто');
+        };
+
+        socket.onopen = () => {
+            statusSet('окно ' + sessionId);
+        };
+
+        sessionsLoad();
+    }
+
+    async function sessionCreate(url, name) {
+        statusSet('завожу сессию…');
+        try {
+            const data = await postData('/api/browser/session', {name: name || 'сессия', url: url || ''});
+            showNotification('Сессия заведена', 'success');
+            await sessionsLoad();
+            viewOpen(data.session.session_id, data.session.url);
+        } catch (e) {
+            statusSet('не удалось завести сессию: ' + e.message, true);
+            showNotification('Не удалось: ' + e.message, 'error');
+        }
+    }
+
+    function viewClose() {
+        if (socket) {
+            socket.onclose = null;
+            socket.close();
+            socket = null;
+        }
+    }
+
+    function send(message) {
+        if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+    }
+
+    function statusSet(text, isError) {
+        statusEl.textContent = text || '';
+        statusEl.classList.toggle('error', !!isError);
+    }
+
+    // Адрес без схемы браузер бы принял, а `page.goto` — нет: «example.com» он
+    // считает относительным путём. Дописываем `https://`, раз человек так набрал.
+    function urlNormalize(value) {
+        const url = (value || '').trim();
+        return url && !url.includes('://') ? 'https://' + url : url;
+    }
+
+    // ---------- Вкладки ----------
+
+    // Первая вкладка — сама сессия, дальше идут дочерние окна сайта: они
+    // появляются сами, когда страница открывает popup, и окно переходит на них.
+    // Закрыть можно только дочернюю — на первой сессия и держится.
+    function tabsRender(message) {
+        const tabs = message.tabs || [];
+        tabsEl.innerHTML = '';
+        tabsEl.style.display = tabs.length ? '' : 'none';
+
+        for (const tab of tabs) {
+            const el = document.createElement('div');
+            el.className = 'browser-tab' + (tab.index === message.active ? ' active' : '');
+            el.title = tab.url || '';
+            el.innerHTML = `<span class="browser-tab-name">${_escape(tabLabel(tab.url))}</span>`;
+            el.addEventListener('click', () => send({type: 'tab', index: tab.index}));
+
+            if (tab.index > 0) {
+                const close = document.createElement('button');
+                close.type = 'button';
+                close.className = 'browser-tab-close';
+                close.title = 'Закрыть вкладку';
+                close.innerHTML =
+                    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"' +
+                    ' stroke="currentColor" stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+                close.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    send({type: 'tab_close', index: tab.index});
+                });
+                el.appendChild(close);
+            }
+
+            tabsEl.appendChild(el);
+        }
+    }
+
+    function tabsClear() {
+        tabsEl.innerHTML = '';
+        tabsEl.style.display = 'none';
+    }
+
+    function tabLabel(url) {
+        if (!url || url === 'about:blank') return 'пустая';
+        try {
+            const parsed = new URL(url);
+            return parsed.hostname.replace(/^www\./, '') + (parsed.pathname === '/' ? '' : parsed.pathname);
+        } catch (e) {
+            return url;
+        }
+    }
+
+    // ---------- Буфер обмена ----------
+
+    // Системный буфер и буфер чужого Chromium — разные буфера, и `Control+c`
+    // сам по себе ничего между ними не переносит: текст выделения приходит
+    // сообщением, а сюда его кладёт уже сама страница админки.
+    async function clipboardWrite(text) {
+        if (!text) {
+            statusSet('нечего копировать: выделение пусто');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(text);
+            statusSet('скопировано, символов: ' + text.length);
+        } catch (e) {
+            statusSet('браузер не дал доступ к буферу: ' + e.message, true);
+        }
+    }
+
+    // ---------- Ввод ----------
+
+    // Координаты уходят долей ширины и высоты картинки, а не пикселями: на сервере
+    // их пересчитают по метаданным кадра, и размер окна в админке ни на что не влияет.
+    function point(event) {
+        const rect = frameEl.getBoundingClientRect();
+        return {
+            x: (event.clientX - rect.left) / rect.width,
+            y: (event.clientY - rect.top) / rect.height,
+        };
+    }
+
+    screenEl.addEventListener('click', (event) => {
+        screenEl.focus();
+        send({type: 'mouse', action: 'click', ...point(event)});
+    });
+
+    screenEl.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        send({type: 'mouse', action: 'click', button: 'right', ...point(event)});
+    });
+
+    screenEl.addEventListener('dblclick', (event) => {
+        send({type: 'mouse', action: 'click', clicks: 2, ...point(event)});
+    });
+
+    let moveAt = 0;
+    screenEl.addEventListener('mousemove', (event) => {
+        // Мышь шлёт сотни событий в секунду; hover ловится и на двадцати.
+        const now = Date.now();
+        if (now - moveAt < 50) return;
+        moveAt = now;
+        send({type: 'mouse', action: 'move', ...point(event)});
+    });
+
+    screenEl.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        send({type: 'wheel', dx: event.deltaX, dy: event.deltaY, ...point(event)});
+    }, {passive: false});
+
+    const KEY_NAMED = new Set([
+        'Enter', 'Tab', 'Backspace', 'Delete', 'Escape', 'Home', 'End', 'PageUp', 'PageDown',
+        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    ]);
+
+    screenEl.addEventListener('keydown', (event) => {
+        if (!socket) return;
+
+        const combo = event.ctrlKey || event.metaKey;
+        const letter = event.key.length === 1 ? event.key.toLowerCase() : '';
+
+        // Ctrl+V в страницу не уходит вовсе: буфер того Chromium пуст, и сайт
+        // получил бы пустую вставку поверх выделения. Текст даст событие `paste`
+        // ниже — но только если сейчас не звать `preventDefault`, иначе браузер
+        // его не создаст.
+        if (combo && letter === 'v') return;
+
+        // Копирование, наоборот, уходит в страницу как есть (её собственный
+        // обработчик копирования должен отработать), а выделение мы просим
+        // отдельно — его положит в системный буфер уже `clipboardWrite`.
+        if (combo && (letter === 'c' || letter === 'x')) send({type: 'copy'});
+
+        event.preventDefault();
+
+        const modifiers = [];
+        if (event.ctrlKey) modifiers.push('Control');
+        if (event.altKey) modifiers.push('Alt');
+        if (event.metaKey) modifiers.push('Meta');
+        if (event.shiftKey && event.key.length > 1) modifiers.push('Shift');
+
+        // Обычный печатный символ уходит как текст: Playwright сам разложит его
+        // на события клавиши. Именованные клавиши и сочетания — как `press`.
+        if (modifiers.length === 0 && event.key.length === 1) {
+            send({type: 'text', text: event.key});
+        } else if (KEY_NAMED.has(event.key) || modifiers.length > 0) {
+            send({type: 'key', key: [...modifiers, event.key].join('+')});
+        }
+    });
+
+    // Вставку слушаем на документе, а не на экране: событие `paste` браузер шлёт
+    // в активный элемент, и на нередактируемом `<div>` оно до обработчика на нём
+    // самом доходит не в каждом браузере. Чужие поля ввода при этом не трогаем.
+    document.addEventListener('paste', (event) => {
+        if (!socket || document.activeElement !== screenEl) return;
+        event.preventDefault();
+
+        const text = (event.clipboardData || window.clipboardData).getData('text');
+        if (!text) return;
+
+        send({type: 'paste', text});
+        statusSet('вставлено символов: ' + text.length);
+    });
+
+    // ---------- Кнопки ----------
+
+    document.getElementById('backBtn').addEventListener('click', () => send({type: 'back'}));
+    document.getElementById('forwardBtn').addEventListener('click', () => send({type: 'forward'}));
+    document.getElementById('reloadBtn').addEventListener('click', () => send({type: 'reload'}));
+
+    urlEl.addEventListener('input', () => { urlEdited = true; });
+    urlEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') document.getElementById('gotoBtn').click();
+    });
+
+    document.getElementById('gotoBtn').addEventListener('click', async () => {
+        const url = urlNormalize(urlEl.value);
+        if (!url) return;
+        urlEl.value = url;
+        urlEdited = false;
+
+        // Без открытого окна слать «перейди» некому — раньше кнопка на этом молча
+        // заканчивалась. Адрес набран, значит его хотят открыть: заводим сессию.
+        if (!currentId || !socket) {
+            await sessionCreate(url);
+            return;
+        }
+        if (socket.readyState !== WebSocket.OPEN) {
+            statusSet('окно ещё подключается — повторите', true);
+            return;
+        }
+
+        statusSet('открываю ' + url);
+        send({type: 'goto', url});
+    });
+
+    document.getElementById('sessionCreateBtn').addEventListener('click', async () => {
+        const name = prompt('Имя сессии', 'сессия');
+        if (name === null) return;
+        const url = prompt('Открыть URL (можно пустым)', 'https://example.com');
+        if (url === null) return;
+
+        await sessionCreate(urlNormalize(url), name);
+    });
+
+    document.getElementById('closeBtn').addEventListener('click', async () => {
+        if (!currentId) return;
+        if (!confirm('Погасить сессию? Страница и её авторизация будут потеряны.')) return;
+
+        viewClose();
+        try {
+            await deleteData('/api/browser/session/' + currentId);
+        } catch (e) {
+            showNotification('Не удалось: ' + e.message, 'error');
+        }
+
+        currentId = '';
+        tabsClear();
+        frameEl.removeAttribute('src');
+        hintEl.textContent = 'Выберите сессию слева, заведите новую или впишите адрес в строке сверху';
+        hintEl.style.display = '';
+        statusSet('');
+        await sessionsLoad();
+    });
+
+    // ---------- Сценарии ----------
+
+    const scenarioListEl = document.getElementById('scenarioList');
+    const scenarioStatEl = document.getElementById('scenarioStat');
+    const scenarioNameEl = document.getElementById('scenarioName');
+    const scenarioGoalEl = document.getElementById('scenarioGoal');
+    const scenarioUrlEl = document.getElementById('scenarioStartUrl');
+    const scenarioStepsEl = document.getElementById('scenarioSteps');
+    const scenarioVariablesEl = document.getElementById('scenarioVariables');
+    const scenarioKeysEl = document.getElementById('scenarioKeys');
+    const scenarioSessionEl = document.getElementById('scenarioSession');
+    const scenarioSessionHintEl = document.getElementById('scenarioSessionHint');
+    const scenarioKeepEl = document.getElementById('scenarioKeep');
+    const scenarioOutEl = document.getElementById('scenarioOut');
+    const scenarioMsgEl = document.getElementById('scenarioMsg');
+
+    // 0 — новый, ещё не сохранённый сценарий: у него нет ни журнала, ни запуска.
+    let scenarioId = 0;
+
+    // Значения подстановок живут только в форме: ключи пересобираются из шагов на
+    // каждой правке, и набранное между перерисовками терять нельзя.
+    let scenarioKeyValues = {};
+
+    // Ключи, которых в шагах ещё нет: автору сценария логин с паролем нужны
+    // до того, как появится первый шаг с подстановкой `username`.
+    let scenarioKeyExtra = new Set();
+
+    // Пока человек не тронул список сессий, он следует за выбранной на вкладке
+    // «Сессии»: сценарий пишут по той же странице, которую там и смотрят.
+    let scenarioSessionPinned = false;
+
+    // Заготовка нового сценария: пустое поле шагов заставляло бы вспоминать имена
+    // действий, а они закрытым списком лежат в схеме и на глаз не угадываются.
+    const SCENARIO_SAMPLE = [
+        {action: 'goto', url: 'https://example.com'},
+        {action: 'click', selector: 'text=More information'},
+        {action: 'extract', selector: 'h1', name: 'title'},
+    ];
+
+    async function scenariosLoad() {
+        let data;
+        try {
+            data = await getData('/api/browser/scenario');
+        } catch (e) {
+            scenarioStatEl.textContent = 'список не пришёл: ' + e.message;
+            return;
+        }
+
+        const rows = data.result || [];
+        countSet('scenario', rows.length);
+        scenarioStatEl.innerHTML =
+            `сценариев ${rows.length}<br>` +
+            `сломанных ${rows.filter(row => row.status === 'broken').length}`;
+
+        // Список нужен и соседней вкладке: селект запуска в карточке сессии собран
+        // из него же — второго запроса на те же имена не делаем.
+        scenarios = rows;
+        playSelectsFill();
+
+        if (rows.length === 0) {
+            scenarioListEl.innerHTML = '<div class="browser-empty">сценариев нет</div>';
+            return;
+        }
+
+        scenarioListEl.innerHTML = '';
+        for (const row of rows) {
+            const el = document.createElement('div');
+            el.className = 'scenario-session' + (row.id === scenarioId ? ' active' : '');
+            el.innerHTML =
+                `<div class="browser-session-name"><span>${_escape(row.name)}</span>` +
+                `<span class="scenario-mark ${_escape(row.status)}">${_escape(row.status)}</span>` +
+                '<button type="button" class="scenario-del" title="Удалить сценарий">' +
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+                ' stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>' +
+                `<div class="browser-session-meta">${_escape(row.goal || 'цель не записана')}</div>`;
+            el.addEventListener('click', () => scenarioOpen(row.id));
+            // Крестик внутри карточки: без остановки всплытия клик по нему заодно
+            // открыл бы сценарий, который через миг перестанет существовать.
+            el.querySelector('.scenario-del').addEventListener('click', (event) => {
+                event.stopPropagation();
+                scenarioDelete(row.id, row.name);
+            });
+            scenarioListEl.appendChild(el);
+        }
+    }
+
+    // Удаление живёт в карточке, а не в форме: чтобы стереть чужой сценарий, его
+    // пришлось бы сперва открыть — и открытый в форме тут же перестал бы совпадать
+    // с тем, что человек правил.
+    async function scenarioDelete(id, name) {
+        if (!confirm(`Удалить сценарий «${name}» вместе с журналом прогонов?`)) return;
+
+        try {
+            await deleteData('/api/browser/scenario/' + id);
+        } catch (e) {
+            showNotification('Не удалось: ' + e.message, 'error');
+            return;
+        }
+
+        // Форму чистим, только если стёрли именно открытый сценарий: удаление
+        // соседа не повод терять несохранённые правки.
+        if (id === scenarioId) scenarioNew();
+        else scenariosLoad();
+
+        showNotification('Сценарий удалён', 'success');
+    }
+
+    async function scenarioOpen(id) {
+        let data;
+        try {
+            data = await getData('/api/browser/scenario/' + id);
+        } catch (e) {
+            scenarioSay('сценарий не открылся: ' + e.message, true);
+            return;
+        }
+
+        const row = data.result || {};
+        scenarioId = id;
+        scenarioNameEl.value = row.name || '';
+        scenarioGoalEl.value = row.goal || '';
+        scenarioUrlEl.value = row.start_url || '';
+        scenarioStepsEl.value = JSON.stringify(row.steps || [], null, 2);
+        scenarioVariablesEl.value = JSON.stringify(row.variables || {}, null, 2);
+        scenarioOutEl.innerHTML = '';
+
+        // Набранные значения к прошлому сценарию и не относятся: перенести чужой
+        // пароль в чужую форму хуже, чем набрать его заново.
+        scenarioKeyValues = {};
+        scenarioKeyExtra = new Set();
+        scenarioKeysRender();
+
+        // Секреты в базе не лежат — форма запуска спрашивает ровно те подстановки,
+        // которых сценарий ждёт, а какие из них секретные, решает человек.
+        const used = data.variables_used || [];
+        scenarioSay(used.length ? 'сценарий ждёт подстановки: ' + used.join(', ') : 'подстановок нет');
+        scenariosLoad();
+    }
+
+    function scenarioNew() {
+        scenarioId = 0;
+        scenarioNameEl.value = '';
+        scenarioGoalEl.value = '';
+        scenarioUrlEl.value = '';
+        scenarioStepsEl.value = JSON.stringify(SCENARIO_SAMPLE, null, 2);
+        scenarioVariablesEl.value = '{}';
+        scenarioOutEl.innerHTML = '';
+        scenarioKeyValues = {};
+        scenarioKeyExtra = new Set();
+        scenarioKeysRender();
+        scenarioSay('новый сценарий: впишите имя и шаги, затем «Сохранить»');
+        scenariosLoad();
+        scenarioNameEl.focus();
+    }
+
+    async function scenarioSave() {
+        const body = scenarioBody();
+        if (!body) return;
+
+        try {
+            if (scenarioId) {
+                await putData('/api/browser/scenario/' + scenarioId, body);
+            } else {
+                const data = await postData('/api/browser/scenario', body);
+                scenarioId = data.result;
+            }
+        } catch (e) {
+            // Шаги проверяет та же схема, что и на прогоне: несуществующее действие
+            // или незаполненное поле видно здесь, а не через минуту в браузере.
+            scenarioSay('не сохранено: ' + e.message, true);
+            showNotification('Не сохранено: ' + e.message, 'error');
+            return;
+        }
+
+        scenarioSay('сохранено, сценарий ' + scenarioId);
+        showNotification('Сценарий сохранён', 'success');
+        // Правка меняет и подстановки: карточки сессий держат их в кэше, и без
+        // сброса селект спрашивал бы ключи прошлой редакции.
+        playDetails.clear();
+        scenariosLoad();
+    }
+
+    async function scenarioRun() {
+        if (!scenarioId) {
+            scenarioSay('сначала сохраните сценарий — гоняется то, что лежит в базе', true);
+            return;
+        }
+
+        const {variables, secrets} = scenarioSubstitutions();
+
+        scenarioSay('гоню сценарий…');
+        scenarioOutEl.innerHTML = '';
+
+        let data;
+        try {
+            data = await postData(`/api/browser/scenario/${scenarioId}/run`, {
+                session_id: scenarioSessionEl.value,
+                variables,
+                secrets,
+                keep_session: scenarioKeepEl.checked,
+            });
+        } catch (e) {
+            scenarioSay('прогон не состоялся: ' + e.message, true);
+            return;
+        }
+
+        // Упавший сценарий — это удачный запрос с `status: "error"`: HTTP-код
+        // говорит про запрос, а не про то, чем кончились шаги.
+        const run = data.result || {};
+        scenarioOutEl.innerHTML =
+            scenarioRunHead(run) + scenarioTrace(run.steps || []) + scenarioExtract(run.extract);
+
+        const where = run.session_kept ? ` — сессия ${run.session_id} осталась, смотрите на вкладке «Сессии»` : '';
+        if (run.status === 'error') {
+            scenarioSay(`шаг ${run.step_no} не прошёл: ${run.error}${where}`, true);
+        } else {
+            scenarioSay(`прошёл целиком за ${run.duration_ms} мс${where}`);
+        }
+
+        sessionsLoad();
+        scenariosLoad();
+    }
+
+    async function scenarioLog() {
+        if (!scenarioId) {
+            scenarioSay('журнал ведётся по сохранённому сценарию', true);
+            return;
+        }
+
+        let data;
+        try {
+            data = await getData(`/api/browser/scenario/${scenarioId}/run`);
+        } catch (e) {
+            scenarioSay('журнал не пришёл: ' + e.message, true);
+            return;
+        }
+
+        const rows = data.result || [];
+        if (rows.length === 0) {
+            scenarioOutEl.innerHTML = '<div class="browser-empty">прогонов не было</div>';
+            scenarioSay('журнал пуст');
+            return;
+        }
+
+        scenarioOutEl.innerHTML = rows.map(row =>
+            scenarioRunHead({...row, duration_ms: row.duration_ms}) + scenarioTrace(row.trace || [])
+        ).join('');
+        scenarioSay('прогонов в журнале: ' + rows.length);
+    }
+
+    async function scenarioAuthor() {
+        const name = (scenarioNameEl.value || '').trim();
+        const goal = (scenarioGoalEl.value || '').trim();
+        const url = urlNormalize(scenarioUrlEl.value);
+        if (!name || !goal || !url) {
+            scenarioSay('автору нужны имя, цель и стартовый адрес — шаги он напишет сам', true);
+            return;
+        }
+
+        const defaults = _jsonParse(scenarioVariablesEl.value || '{}', 'переменные');
+        if (defaults === null) return;
+        const filled = scenarioSubstitutions();
+
+        scenarioSay('пишу сценарий по цели — это витки со снимками страницы, до нескольких минут…');
+        let data;
+        try {
+            data = await postData('/api/browser/scenario/author', {
+                name, goal, start_url: url,
+                variables: {...defaults, ...filled.variables},
+                secrets: filled.secrets,
+                session_id: scenarioSessionEl.value,
+            });
+        } catch (e) {
+            scenarioSay('автор не отработал: ' + e.message, true);
+            return;
+        }
+
+        // Автор сохраняет написанное сам — и когда цели не достиг: черновик с
+        // половиной пути полезнее пустого поля, его дописывают руками.
+        const result = data.result || {};
+        if (result.scenario_id) await scenarioOpen(result.scenario_id);
+
+        scenarioSay(`${result.status === 'ok' ? 'цель достигнута' : 'цель не достигнута'}: ` +
+            `${result.reason || ''} · витков ${(result.iterations || []).length} · сценарий ${result.scenario_status}`,
+            result.status !== 'ok');
+        sessionsLoad();
+    }
+
+    // Живые сессии в шапке вкладки: сценарий чаще всего гонят по уже открытой
+    // странице — там, где вход уже сделан руками.
+    function sessionSelectFill() {
+        const chosen = scenarioSessionPinned ? scenarioSessionEl.value : currentId;
+        scenarioSessionEl.innerHTML = '<option value="">временная сессия</option>';
+
+        for (const session of sessions) {
+            const option = document.createElement('option');
+            option.value = session.session_id;
+            option.textContent = session.name + ' · ' + session.session_id.slice(0, 8);
+            scenarioSessionEl.appendChild(option);
+        }
+
+        // Погашенная сессия не выбирается: молча гнать сценарий во временной
+        // вместо той, что человек видел в списке, — худший вид сюрприза.
+        scenarioSessionEl.value = sessions.some(session => session.session_id === chosen) ? chosen : '';
+        // Подпись врала бы про «погаснет», пока стоит галка: временную сессию с ней
+        // держат живой ровно ради того, чтобы посмотреть, чем кончился прогон.
+        scenarioSessionHintEl.textContent = scenarioSessionEl.value
+            ? (scenarioSessionPinned ? 'выбрана вручную' : 'та же, что открыта на вкладке «Сессии»')
+            : (scenarioKeepEl.checked
+                ? 'заведётся своя и останется на вкладке «Сессии»'
+                : 'заведётся своя и погаснет после прогона');
+    }
+
+    // Ключи подстановок берутся из самих шагов: отдельный список ключей был бы
+    // вторым источником правды и разошёлся бы с шагами на первой же правке.
+    // Читается сырой текст, а не разобранный JSON, — поля должны появляться и
+    // пока шаги ещё дописывают.
+    function scenarioKeysUsed() {
+        const names = new Set();
+        const pattern = /\{\{\s*([\w.-]+)\s*\}\}/g;
+        let found;
+
+        while ((found = pattern.exec(scenarioStepsEl.value || '')) !== null) names.add(found[1]);
+        for (const name of scenarioKeyExtra) names.add(name);
+
+        return [...names];
+    }
+
+    function scenarioKeysRender() {
+        const defaults = _jsonQuiet(scenarioVariablesEl.value) || {};
+        const names = scenarioKeysUsed();
+
+        scenarioKeysEl.innerHTML = '';
+        if (names.length === 0) {
+            // Двойные фигурные скобки — сущностями: страница проходит через Jinja,
+            // и написанные в лоб они уехали бы в шаблонизатор, а не к человеку.
+            scenarioKeysEl.innerHTML =
+                '<div class="scenario-keys-empty">в шагах нет &#123;&#123;подстановок&#125;&#125;</div>';
+            return;
+        }
+
+        for (const name of names) {
+            const known = Object.prototype.hasOwnProperty.call(defaults, name);
+            const row = document.createElement('div');
+            row.className = 'scenario-key' + (known ? '' : ' secret');
+
+            const label = document.createElement('span');
+            label.className = 'scenario-key-name';
+            label.textContent = name;
+            label.title = known
+                ? 'значение по умолчанию из переменных — уйдёт в базу и журнал'
+                : 'в переменных значения нет: уйдёт секретом — ни в базу, ни в журнал';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.spellcheck = false;
+            input.autocomplete = 'off';
+            input.dataset.key = name;
+            input.placeholder = known ? String(defaults[name]) : 'значение на этот прогон';
+            input.value = scenarioKeyValues[name] !== undefined
+                ? scenarioKeyValues[name]
+                : (known ? String(defaults[name]) : '');
+            input.addEventListener('input', () => { scenarioKeyValues[name] = input.value; });
+
+            row.appendChild(label);
+            row.appendChild(input);
+
+            // Крестик только у ключей, добавленных руками: тот, что пришёл из шагов,
+            // убирается правкой шага, а не кнопкой — иначе вернётся на перерисовке.
+            if (scenarioKeyExtra.has(name)) {
+                const drop = document.createElement('button');
+                drop.type = 'button';
+                drop.textContent = '×';
+                drop.title = 'убрать ключ';
+                drop.addEventListener('click', () => {
+                    scenarioKeyExtra.delete(name);
+                    delete scenarioKeyValues[name];
+                    scenarioKeysRender();
+                });
+                row.appendChild(drop);
+            }
+
+            scenarioKeysEl.appendChild(row);
+        }
+    }
+
+    // Две корзины по одному признаку: есть значение по умолчанию — это переменная,
+    // ей место в журнале; нет — значит секрет, и в базе ему делать нечего.
+    function scenarioSubstitutions() {
+        const defaults = _jsonQuiet(scenarioVariablesEl.value) || {};
+        const variables = {};
+        const secrets = {};
+
+        for (const input of scenarioKeysEl.querySelectorAll('input[data-key]')) {
+            if (input.value === '') continue;
+            if (Object.prototype.hasOwnProperty.call(defaults, input.dataset.key)) {
+                variables[input.dataset.key] = input.value;
+            } else {
+                secrets[input.dataset.key] = input.value;
+            }
+        }
+
+        return {variables, secrets};
+    }
+
+    function scenarioBody() {
+        const steps = _jsonParse(scenarioStepsEl.value || '[]', 'шаги');
+        if (steps === null) return null;
+        const variables = _jsonParse(scenarioVariablesEl.value || '{}', 'переменные');
+        if (variables === null) return null;
+
+        if (!(scenarioNameEl.value || '').trim()) {
+            scenarioSay('имя обязательно — по нему сценарий зовут из задач и расписания', true);
+            return null;
+        }
+
+        return {
+            name: scenarioNameEl.value.trim(),
+            goal: scenarioGoalEl.value.trim(),
+            start_url: urlNormalize(scenarioUrlEl.value),
+            steps,
+            variables,
+            status: 'draft',
+        };
+    }
+
+    function scenarioRunHead(run) {
+        const when = run.created_at ? ` · ${_escape(String(run.created_at).slice(0, 19).replace('T', ' '))}` : '';
+        const mark = run.status === 'error' ? 'broken' : 'active';
+        const error = run.error ? `<div class="scenario-error">${_escape(run.error)}</div>` : '';
+
+        return `<div class="scenario-run-head"><span class="scenario-mark ${mark}">${_escape(run.status)}</span>` +
+            `<span>${run.duration_ms || 0} мс${when}</span></div>${error}`;
+    }
+
+    function scenarioTrace(steps) {
+        if (steps.length === 0) return '<div class="browser-empty">шагов не выполнено</div>';
+
+        const rows = steps.map(step => {
+            const value = step.value ? ` → ${_escape(String(step.value).slice(0, 200))}` : '';
+            const error = step.error ? `<div class="scenario-error">${_escape(step.error)}</div>` : '';
+
+            return `<tr class="${step.ok ? '' : 'fail'}">` +
+                `<td class="step-no">${step.index}</td>` +
+                `<td class="step-act">${_escape(step.action)}</td>` +
+                `<td class="step-target">${_escape(step.target || '')}${value}${error}</td>` +
+                `<td class="step-ms">${step.ms || 0}</td></tr>`;
+        }).join('');
+
+        return `<table class="scenario-trace">${rows}</table>`;
+    }
+
+    function scenarioExtract(extract) {
+        const names = Object.keys(extract || {});
+        if (names.length === 0) return '';
+
+        return '<div class="scenario-run-head"><span>собрано</span></div>' +
+            names.map(name => `<div class="step-target">${_escape(name)}: ${_escape(String(extract[name]))}</div>`).join('');
+    }
+
+    function scenarioSay(text, isError) {
+        scenarioMsgEl.textContent = text || '';
+        scenarioMsgEl.classList.toggle('error', !!isError);
+    }
+
+    function countSet(name, value) {
+        const el = document.getElementById('tabCount-' + name);
+        if (el) el.textContent = value === '' ? '' : `(${value})`;
+    }
+
+    document.getElementById('scenarioNewBtn').addEventListener('click', scenarioNew);
+    document.getElementById('scenarioSaveBtn').addEventListener('click', scenarioSave);
+    document.getElementById('scenarioRunBtn').addEventListener('click', scenarioRun);
+    document.getElementById('scenarioLogBtn').addEventListener('click', scenarioLog);
+    document.getElementById('scenarioAuthorBtn').addEventListener('click', scenarioAuthor);
+
+    // Поля подстановок идут за шагами: дописали подстановку — строка появилась сразу.
+    scenarioStepsEl.addEventListener('input', scenarioKeysRender);
+    scenarioVariablesEl.addEventListener('input', scenarioKeysRender);
+
+    scenarioSessionEl.addEventListener('change', () => {
+        scenarioSessionPinned = true;
+        sessionSelectFill();
+    });
+
+    scenarioKeepEl.addEventListener('change', sessionSelectFill);
+
+    document.getElementById('scenarioKeyAddBtn').addEventListener('click', () => {
+        const name = (prompt('Имя подстановки — например, password') || '').trim();
+        if (!name) return;
+
+        scenarioKeyExtra.add(name);
+        scenarioKeysRender();
+    });
+
+
+    function _escape(value) {
+        const el = document.createElement('div');
+        el.textContent = value || '';
+        return el.innerHTML;
+    }
+
+    // Возвращает `null` на разборе, а не бросает: вызывающий уже сказал человеку,
+    // где именно сломан JSON, и второй раз падать незачем.
+    function _jsonParse(text, label) {
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            scenarioSay(`${label}: это не JSON — ${e.message}`, true);
+            return null;
+        }
+    }
+
+    // Тихий разбор: подстановки перерисовываются на каждое нажатие, и ругаться на
+    // недописанный JSON переменных посимвольно незачем — на «Сохранить» скажут.
+    function _jsonQuiet(text) {
+        try {
+            return JSON.parse((text || '').trim() || '{}');
+        } catch (e) {
+            return null;
+        }
+    }
+
+    tabSelect(localStorage.getItem(TAB_KEY) === 'scenario' ? 'scenario' : 'session');
+    scenarioKeysRender();
+    sessionsLoad();
+    scenariosLoad();
+    setInterval(sessionsLoad, 10000);
+</script>
+{% endblock %}
