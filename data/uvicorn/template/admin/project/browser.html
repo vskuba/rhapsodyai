@@ -517,11 +517,15 @@
 
     /* Сессия выбирается один раз на всю вкладку: сценарии гоняют по той странице,
        которую человек и так держит открытой на соседней вкладке. */
-    #tab-scenario {
+    #tab-scenario,
+    #tab-session,
+    #tab-workflow {
         flex-direction: column;
     }
 
-    #tab-scenario .browser-container {
+    #tab-scenario .browser-container,
+    #tab-session .browser-container,
+    #tab-workflow .browser-container {
         height: auto;
         flex: 1 1 auto;
         padding-top: 0;
@@ -703,6 +707,592 @@
         margin: 3px 0;
         word-break: break-word;
     }
+
+    /* Итог прогона цепочки: строка на звено — номер, имя, «ок» или причина. */
+    .scenario-trace-row {
+        padding: 3px 0;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 11px;
+        color: #475569;
+        word-break: break-word;
+    }
+
+    .scenario-trace-row.bad { color: #b91c1c; }
+    .browser-status.bad { color: #b91c1c; }
+
+    /* Подзаголовок внутри колонки: цепочки и сценарии — разные сущности, и
+       разделить их надписью дешевле, чем двумя колонками. */
+    .browser-side-sub {
+        margin: 10px 0 6px;
+        font-size: 11px;
+        font-weight: 700;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+
+    /* ---------- Шаги сценария ---------- */
+
+    /* Шаг — строка полей, а не кусок JSON: действие выбирают списком, а поля под
+       него подставляются по той же схеме, что шаги и проверяет. */
+    .scenario-steps {
+        flex: 1 1 auto;
+        min-height: 0;
+        margin: 4px 0 8px;
+        overflow-y: auto;
+    }
+
+    .scenario-step {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 5px;
+        padding: 6px;
+        margin-bottom: 5px;
+        border: 1px solid #e5e7eb;
+        border-radius: 7px;
+        background: #fff;
+        font-size: 11px;
+    }
+
+    .scenario-step-num {
+        flex: 0 0 auto;
+        min-width: 16px;
+        color: #94a3b8;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .scenario-step select,
+    .scenario-step input[type="text"],
+    .scenario-step input[type="number"] {
+        min-width: 0;
+        padding: 4px 6px;
+        border: 1px solid #e5e7eb;
+        border-radius: 5px;
+        font-size: 11px;
+        background: #fff;
+    }
+
+    .scenario-step select.action { flex: 0 0 108px; font-weight: 600; color: #3730a3; }
+    .scenario-step .field { flex: 1 1 140px; }
+    .scenario-step .field.wide { flex: 2 1 220px; }
+    .scenario-step input.timeout { flex: 0 0 64px; }
+
+    /* Подпись поля мелкая и слева от него: без неё строка из трёх одинаковых
+       прямоугольников не читается. */
+    .scenario-step-field {
+        display: flex;
+        flex: 1 1 160px;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .scenario-step-label {
+        flex: 0 0 auto;
+        color: #94a3b8;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .scenario-step-opt {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 3px;
+        color: #64748b;
+    }
+
+    .scenario-step-tools { display: flex; flex: 0 0 auto; gap: 2px; margin-left: auto; }
+
+    .scenario-step-tool {
+        display: flex;
+        padding: 2px;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: #cbd5e1;
+        cursor: pointer;
+        font-size: 11px;
+        line-height: 1;
+    }
+
+    .scenario-step:hover .scenario-step-tool { color: #94a3b8; }
+    .scenario-step-tool:hover { background: #eef2ff; color: #4338ca; }
+    .scenario-step-tool.danger:hover { background: #fee2e2; color: #b91c1c; }
+
+    .scenario-steps-empty {
+        padding: 6px 0;
+        color: #9ca3af;
+        font-size: 11px;
+    }
+
+    /* ---------- Переменные сценария ---------- */
+
+    /* Пара полей на строку вместо JSON: значение по умолчанию правят по одному, а
+       разбирать за человека забытую запятую страница всё равно не умеет. */
+    .scenario-vars-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .scenario-vars-head .scenario-label { flex: 1 1 auto; margin: 0; }
+
+    .scenario-vars-add {
+        padding: 1px 6px;
+        border: 1px solid #e5e7eb;
+        border-radius: 5px;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 11px;
+        cursor: pointer;
+    }
+
+    .scenario-vars-add:hover { border-color: #c7d2fe; color: #4338ca; }
+
+    .scenario-vars-save {
+        display: flex;
+        padding: 3px;
+        border: 1px solid #e5e7eb;
+        border-radius: 5px;
+        background: #f8fafc;
+        color: #475569;
+        cursor: pointer;
+    }
+
+    .scenario-vars-save:hover { border-color: #6366f1; color: #4338ca; background: #eef2ff; }
+
+    .scenario-vars {
+        flex: 0 0 auto;
+        max-height: 132px;
+        margin: 4px 0 8px;
+        overflow-y: auto;
+    }
+
+    .scenario-var {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 4px;
+    }
+
+    .scenario-var input {
+        min-width: 0;
+        padding: 4px 6px;
+        border: 1px solid #e5e7eb;
+        border-radius: 5px;
+        font-size: 11px;
+    }
+
+    .scenario-var input.key {
+        flex: 0 0 34%;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #0f172a;
+    }
+
+    .scenario-var input.value { flex: 1 1 auto; }
+
+    .scenario-var-del {
+        display: flex;
+        padding: 2px;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: #cbd5e1;
+        cursor: pointer;
+    }
+
+    .scenario-var:hover .scenario-var-del { color: #94a3b8; }
+    .scenario-var-del:hover { background: #fee2e2; color: #b91c1c; }
+
+    .scenario-vars-empty {
+        padding: 4px 0 8px;
+        color: #9ca3af;
+        font-size: 11px;
+    }
+
+    /* ---------- Инспектор элементов ---------- */
+
+    .browser-btn.on {
+        border-color: #6366f1;
+        background: #eef2ff;
+        color: #4338ca;
+    }
+
+    /* Экран — контейнер попапа: он привязан к окну страницы, а не к странице
+       админки, и уезжать вместе с прокруткой ему некуда. */
+    .browser-view { position: relative; }
+
+    .inspect-pop {
+        display: none;
+        position: absolute;
+        right: 18px;
+        bottom: 46px;
+        z-index: 5;
+        width: 360px;
+        max-width: calc(100% - 36px);
+        padding: 8px 10px;
+        border: 1px solid #c7d2fe;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 8px 24px rgba(15,23,42,.18);
+        font-size: 11px;
+    }
+
+    .inspect-pop.visible { display: block; }
+
+    .inspect-pop-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 4px;
+    }
+
+    .inspect-pop-tag {
+        flex: 1 1 auto;
+        font-weight: 700;
+        color: #3730a3;
+    }
+
+    .inspect-pop-copy {
+        padding: 2px 6px;
+        border: 1px solid #e5e7eb;
+        border-radius: 5px;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 11px;
+        cursor: pointer;
+    }
+
+    .inspect-pop-copy:hover { border-color: #c7d2fe; color: #4338ca; }
+
+    .inspect-pop-sel {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #0f172a;
+        word-break: break-all;
+        margin-bottom: 4px;
+    }
+
+    /* Разметка — та же компактность: три-четыре строки и прокрутка, а не
+       редактор во весь экран. */
+    .inspect-pop-html {
+        max-height: 96px;
+        margin: 0;
+        padding: 6px;
+        overflow: auto;
+        border-radius: 6px;
+        background: #f8fafc;
+        color: #475569;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    /* ---------- Вкладки сессий ---------- */
+
+    /* Второй уровень вкладок: страницы одной работы. Полоса тоньше и спокойнее
+       верхней — иначе две одинаковые полосы читались бы как один ряд. */
+    .session-bar {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 12px;
+        padding: 0 16px 8px;
+        min-width: 0;
+    }
+
+    .session-tabs {
+        display: flex;
+        flex: 1 1 auto;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+        overflow-x: auto;
+    }
+
+    .session-bar .browser-stat {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .session-tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 220px;
+        padding: 5px 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 12px;
+        color: #475569;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    .session-tab:hover { border-color: #c7d2fe; }
+
+    .session-tab.active {
+        border-color: #6366f1;
+        background: #eef2ff;
+        color: #3730a3;
+        font-weight: 600;
+    }
+
+    .session-tab-name { overflow: hidden; text-overflow: ellipsis; }
+
+    /* Крестик держит место всегда: появляйся он под мышью, соседние вкладки
+       дёргались бы на каждое наведение. */
+    .session-tab-close {
+        display: flex;
+        padding: 2px;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: #cbd5e1;
+        cursor: pointer;
+    }
+
+    .session-tab:hover .session-tab-close { color: #94a3b8; }
+    .session-tab-close:hover { background: #fee2e2; color: #b91c1c; }
+
+    .session-tab-add {
+        padding: 5px 10px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 8px;
+        background: none;
+        color: #64748b;
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .session-tab-add:hover { border-color: #6366f1; color: #4f46e5; background: #eef2ff; }
+
+    /* Полоса записи — над шапкой колонки: она заводит следующий сценарий, а не
+       управляет одним из списка. */
+    .browser-record {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+
+    .browser-record input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 5px 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 12px;
+    }
+
+    /* ---------- Сайты ---------- */
+
+    /* Панель — колонка: форма сверху, сетка карточек под ней забирает остаток
+       высоты и прокручивается сама (страница админки прокрутки не даёт). */
+    #tab-site {
+        flex-direction: column;
+    }
+
+    /* Сетка карточек, а не список: у сайта два поля, и колонка в пол-экрана
+       оставляла бы справа пустоту. Ширина в `minmax` — чтобы на узком окне
+       карточки перестраивались сами, без правил под каждую ширину. */
+    .site-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 12px;
+        padding: 16px;
+        overflow-y: auto;
+        align-content: start;
+    }
+
+    .site-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        min-height: 108px;
+        padding: 12px 14px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        cursor: pointer;
+        transition: border-color .15s, box-shadow .15s;
+    }
+
+    .site-card:hover { border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(15,23,42,.08); }
+
+    /* Перетаскиваемая карточка бледнеет — видно, что именно едет. */
+    .site-card.dragging { opacity: .4; }
+
+    /* Куда встанет карточка — полоса по краю соседа. Не подсветка всей карточки:
+       та говорила бы «сюда вместо неё», а встаёт она до или после. */
+    .site-card.drop-before { box-shadow: inset 3px 0 0 #6366f1; }
+    .site-card.drop-after { box-shadow: inset -3px 0 0 #6366f1; }
+
+    .site-card-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: #111827;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding-right: 44px;
+    }
+
+    /* Адрес переносится по символам: у длинного пути нет пробелов, и без переноса
+       он вылезал бы за карточку. Две строки максимум — карточки в ряду обязаны
+       остаться одной высоты, а весь путь и так виден в подсказке. */
+    .site-card-url {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #6b7280;
+        word-break: break-all;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* Кнопки прижаты к низу: у карточек разной длины адреса ряд кнопок иначе
+       гуляет по высоте и читается как разные элементы. */
+    .site-card-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: auto;
+        padding-top: 10px;
+    }
+
+    /* Правка и удаление — в углу и проступают под мышью: в спокойном состоянии
+       карточка показывает то, ради чего заведена, а не три кнопки. */
+    .site-card-tools {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        display: flex;
+        gap: 2px;
+        opacity: 0;
+        transition: opacity .15s;
+    }
+
+    .site-card:hover .site-card-tools,
+    .site-card:focus-within .site-card-tools { opacity: 1; }
+
+    .site-tool {
+        display: flex;
+        padding: 3px;
+        border: 0;
+        border-radius: 5px;
+        background: none;
+        color: #9ca3af;
+        cursor: pointer;
+    }
+
+    .site-tool:hover { background: #eef2ff; color: #4f46e5; }
+    .site-tool.danger:hover { background: #fee2e2; color: #b91c1c; }
+
+    /* Карточка заведения стоит первой в той же сетке: «+» на месте, где человек
+       ищет новый сайт, а не кнопкой в шапке, которой на этой вкладке нет. */
+    .site-card-add {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-height: 108px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 10px;
+        background: #f8fafc;
+        color: #64748b;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .site-card-add:hover { border-color: #6366f1; color: #4f46e5; background: #eef2ff; }
+    .site-card-add-plus { font-size: 22px; line-height: 1; }
+
+    /* ---------- Окно правки сайта ---------- */
+
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0,0,0,.45);
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-overlay.visible { display: flex; }
+
+    .modal-box {
+        display: flex;
+        flex-direction: column;
+        width: 90vw;
+        max-width: 460px;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 20px 60px rgba(0,0,0,.2);
+    }
+
+    .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .modal-header h3 { margin: 0; font-size: 15px; font-weight: 700; color: #1e293b; }
+
+    .modal-close {
+        padding: 4px 8px;
+        border: 0;
+        border-radius: 6px;
+        background: #f1f5f9;
+        color: #64748b;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .modal-close:hover { background: #e2e8f0; color: #0f172a; }
+    .modal-body { padding: 18px; }
+
+    .modal-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 18px;
+        border-top: 1px solid #eee;
+    }
+
+    .site-field {
+        display: block;
+        margin-bottom: 12px;
+        font-size: 12px;
+        color: #374151;
+    }
+
+    .site-field span { display: block; margin-bottom: 4px; font-weight: 600; }
+
+    .site-field input {
+        width: 100%;
+        padding: 7px 9px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 13px;
+        box-sizing: border-box;
+    }
+
+    .site-field input:focus { outline: none; border-color: #6366f1; }
+
+    .site-modal-error {
+        min-height: 16px;
+        color: #b91c1c;
+        font-size: 12px;
+    }
 </style>
 {% endblock %}
 
@@ -710,21 +1300,52 @@
 <div class="browser-page">
 
 <div class="page-tabs" id="browserTabs">
-    <button class="page-tab active" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
+    <button class="page-tab active" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
+    <button class="page-tab" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
     <button class="page-tab" data-tab="scenario">Сценарии <span class="page-tab-n" id="tabCount-scenario"></span></button>
-    <button class="page-tab" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
+    <button class="page-tab" data-tab="workflow">Workflow <span class="page-tab-n" id="tabCount-workflow"></span></button>
 </div>
 
-<div class="tab-panel active" id="tab-session">
+<div class="tab-panel active" id="tab-site">
+
+<div class="site-cards" id="siteCards"></div>
+
+</div>
+
+
+<div class="tab-panel" id="tab-session">
+
+<div class="scenario-head">
+    <span class="scenario-head-label">Сайт</span>
+    <select id="siteSelectSession" title="Адрес закладки подставится в строку адреса"></select>
+    <span class="scenario-head-hint" id="siteSelectSessionHint"></span>
+</div>
+
+<!-- Сессии — вкладки второго уровня: одна страница на вкладку, «+» заводит ещё
+     одну. Список карточек и живое окно под ними принадлежат выбранной сессии. -->
+<div class="session-bar">
+    <div class="session-tabs" id="sessionTabs"></div>
+    <!-- Память и предел сессий — про контейнер, а не про сценарии: их место рядом
+         с вкладками сессий, которые этот предел и расходуют. -->
+    <div class="browser-stat" id="browserStat">—</div>
+</div>
+
 <div class="browser-container">
 
     <div class="browser-side">
-        <div class="browser-side-head">
-            <span class="browser-side-title">Сессии</span>
-            <button type="button" class="browser-btn primary" id="sessionCreateBtn">+</button>
+        <!-- Запись нового сценария — над шапкой колонки: это не один из сценариев
+             списка, а способ завести следующий. -->
+        <div class="browser-record">
+            <input type="text" id="recordName" maxlength="100" placeholder="новый сценарий" spellcheck="false">
+            <button type="button" class="browser-btn" id="recordBtn">Старт</button>
         </div>
-        <div class="browser-stat" id="browserStat">—</div>
-        <div id="sessionList"></div>
+        <div class="browser-side-head">
+            <span class="browser-side-title">Что запустить</span>
+        </div>
+        <div class="browser-side-sub" id="sessionWorkflowHead">Цепочки</div>
+        <div id="sessionWorkflowList"></div>
+        <div class="browser-side-sub">Сценарии</div>
+        <div id="sessionScenarioList"></div>
     </div>
 
     <div class="browser-view">
@@ -748,13 +1369,32 @@
             <input type="text" id="urlInput" placeholder="https://…" spellcheck="false">
             <button type="button" class="browser-btn primary" id="gotoBtn">Открыть</button>
             <button type="button" class="browser-btn danger" id="closeBtn">Погасить</button>
+            <button type="button" class="browser-btn" id="inspectBtn"
+                    title="Инспектор: подсветить элементы страницы и посмотреть их селектор">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 3h6M3 3v6M21 3h-6M21 3v6M3 21h6M3 21v-6M21 21h-6M21 21v-6"/>
+                    <path d="M11 11l7 3-3 1.5L13.5 18z"/>
+                </svg>
+            </button>
         </div>
 
         <div class="browser-tabs" id="tabs" style="display:none"></div>
 
         <div class="browser-screen" id="screen" tabindex="0">
             <img id="frame" alt="">
-            <div class="browser-screen-hint" id="screenHint">Выберите сессию слева, заведите новую или впишите адрес в строке сверху</div>
+            <div class="browser-screen-hint" id="screenHint">Откройте сайт, впишите адрес сверху или заведите вкладку кнопкой «+»</div>
+        </div>
+
+        <!-- Компактно и поверх окна: смотрят на страницу, а попап только
+             подписывает, во что ткнули. -->
+        <div class="inspect-pop" id="inspectPop">
+            <div class="inspect-pop-head">
+                <span class="inspect-pop-tag" id="inspectTag"></span>
+                <button type="button" class="inspect-pop-copy" id="inspectCopy" title="Скопировать селектор">копировать</button>
+                <button type="button" class="modal-close" id="inspectClose" title="Закрыть">✕</button>
+            </div>
+            <div class="inspect-pop-sel" id="inspectSel"></div>
+            <pre class="inspect-pop-html" id="inspectHtml"></pre>
         </div>
 
         <div class="browser-status" id="status"></div>
@@ -766,6 +1406,8 @@
 <div class="tab-panel" id="tab-scenario">
 
 <div class="scenario-head">
+    <span class="scenario-head-label">Сайт</span>
+    <select id="siteSelectScenario" title="Адрес закладки подставится в «Старт» сценария"></select>
     <span class="scenario-head-label">Сессия</span>
     <select id="scenarioSession" title="В какой сессии гнать шаги"></select>
     <label><input type="checkbox" id="scenarioKeep" checked> оставить сессию</label>
@@ -798,10 +1440,25 @@
 
         <div class="scenario-body">
             <div class="scenario-col">
-                <div class="scenario-label">Шаги (JSON): action + selector/url/value/key/name, timeout_ms, optional</div>
-                <textarea id="scenarioSteps" spellcheck="false"></textarea>
-                <div class="scenario-label">Переменные по умолчанию (JSON) — попадают в базу и журнал</div>
-                <textarea id="scenarioVariables" class="short" spellcheck="false"></textarea>
+                <div class="scenario-vars-head">
+                    <div class="scenario-label">Шаги — действие и его поля, по порядку</div>
+                    <button type="button" class="scenario-vars-add" id="scenarioStepAddBtn"
+                            title="Добавить шаг">+ шаг</button>
+                </div>
+                <div class="scenario-steps" id="scenarioSteps"></div>
+                <div class="scenario-vars-head">
+                    <div class="scenario-label">Переменные по умолчанию — попадают в базу и журнал</div>
+                    <button type="button" class="scenario-vars-add" id="scenarioVarAddBtn"
+                            title="Добавить переменную">+ переменная</button>
+                    <button type="button" class="scenario-vars-save" id="scenarioVarSaveBtn"
+                            title="Сохранить сценарий вместе с переменными">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                            <path d="M17 21v-8H7v8M7 3v5h8"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="scenario-vars" id="scenarioVariables"></div>
             </div>
 
             <div class="scenario-col">
@@ -826,20 +1483,80 @@
 </div>
 </div>
 
-<div class="tab-panel" id="tab-site">
+<div class="tab-panel" id="tab-workflow">
 
-<div class="site-head">
-    <input type="text" id="siteName" placeholder="название" spellcheck="false" maxlength="100">
-    <input type="text" id="siteUrl" placeholder="https://…" spellcheck="false" maxlength="500">
-    <button type="button" class="browser-btn primary" id="siteSaveBtn">Сохранить</button>
-    <button type="button" class="browser-btn" id="siteResetBtn">Сбросить</button>
-    <span class="scenario-head-hint" id="siteHint"></span>
+<div class="scenario-head">
+    <span class="scenario-head-label">Сайт</span>
+    <select id="siteSelectWorkflow" title="К какому сайту относится цепочка"></select>
+    <span class="scenario-head-hint">цепочка гонит сценарии по порядку в одной сессии</span>
 </div>
 
-<div class="site-cards" id="siteCards"></div>
+<div class="browser-container">
+
+    <div class="browser-side">
+        <div class="browser-side-head">
+            <span class="browser-side-title">Цепочки</span>
+            <button type="button" class="browser-btn primary" id="workflowNewBtn">+</button>
+        </div>
+        <div class="browser-stat" id="workflowStat">—</div>
+        <div id="workflowList"></div>
+    </div>
+
+    <div class="browser-view">
+        <div class="browser-bar">
+            <input type="text" id="workflowName" placeholder="имя цепочки" spellcheck="false" maxlength="100">
+            <button type="button" class="browser-btn primary" id="workflowSaveBtn">Сохранить</button>
+            <button type="button" class="browser-btn" id="workflowRunBtn">Запустить</button>
+        </div>
+
+        <div class="scenario-body">
+            <div class="scenario-col">
+                <div class="scenario-vars-head">
+                    <div class="scenario-label">Сценарии по порядку прогона</div>
+                    <button type="button" class="scenario-vars-add" id="workflowStepAddBtn"
+                            title="Добавить сценарий в цепочку">+ сценарий</button>
+                </div>
+                <div class="scenario-steps" id="workflowSteps"></div>
+            </div>
+
+            <div class="scenario-col">
+                <div class="scenario-label">Что цепочка вернёт и где встанет</div>
+                <div class="scenario-out" id="workflowOut"></div>
+            </div>
+        </div>
+
+        <div class="browser-status" id="workflowMsg"></div>
+    </div>
+
+</div>
+</div>
 
 </div>
 
+<!-- Заведение и правка сайта — одним окном: полей два, и вторая форма была бы
+     копией первой. Заголовок и кнопка говорят, что именно сейчас происходит. -->
+<div class="modal-overlay" id="siteModal">
+    <div class="modal-box site-modal">
+        <div class="modal-header">
+            <h3 id="siteModalTitle">Новый сайт</h3>
+            <button type="button" class="modal-close" id="siteModalClose" title="Закрыть">✕</button>
+        </div>
+        <div class="modal-body">
+            <label class="site-field">
+                <span>Название</span>
+                <input type="text" id="siteName" placeholder="личный кабинет" spellcheck="false" maxlength="100">
+            </label>
+            <label class="site-field">
+                <span>Адрес</span>
+                <input type="text" id="siteUrl" placeholder="https://…" spellcheck="false" maxlength="500">
+            </label>
+            <div class="site-modal-error" id="siteError"></div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="browser-btn" id="siteCancelBtn">Отмена</button>
+            <button type="button" class="browser-btn primary" id="siteSaveBtn">Сохранить</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -848,7 +1565,6 @@
     import {getData, postData, putData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
 
-    const listEl = document.getElementById('sessionList');
     const statEl = document.getElementById('browserStat');
     const screenEl = document.getElementById('screen');
     const frameEl = document.getElementById('frame');
@@ -891,13 +1607,33 @@
             // смотрел на соседней вкладке, — а не ту, что была на прошлой загрузке.
             sessionSelectFill();
         }
+        // Список сайтов правят и из соседней вкладки браузера — перечитываем на входе,
+        // а не держим то, что пришло при загрузке страницы.
+        if (name === 'site') sitesLoad();
+        // Звенья выбирают из сценариев, а список цепочек правят и с вкладки сессий.
+        if (name === 'workflow') {
+            scenariosLoad();
+            workflowsLoad();
+        }
+
+        // Вкладка сессий без окна бесполезна: страница живёт в контейнере и после
+        // перезагрузки админки, поэтому показываем первую живую сразу.
+        if (name === 'session' && !currentId && sessions.length) {
+            viewOpen(sessions[0].session_id, sessions[0].url);
+        }
     }
 
     document.querySelectorAll('#browserTabs .page-tab').forEach(tab => {
         tab.addEventListener('click', () => tabSelect(tab.dataset.tab));
     });
 
-    // ---------- Список сессий ----------
+    // ---------- Сессии: вкладки второго уровня ----------
+
+    // Сессия — это страница, и живёт она ровно как вкладка браузера: своя полоса
+    // сверху, «+» рядом заводит следующую. Списком карточек сессии были раньше;
+    // карточками теперь заняты сценарии, а переключаться между страницами вкладки
+    // умеют лучше — переключение это один клик, а не выбор в списке.
+    const SESSION_NAME_PREFIX = 'Сессия';
 
     async function sessionsLoad() {
         let data;
@@ -905,210 +1641,297 @@
             data = await getData('/api/browser/session');
         } catch (e) {
             statEl.textContent = 'контейнер-браузер недоступен';
-            listEl.innerHTML = '<div class="browser-empty">нет связи</div>';
             sessions = [];
             sessionSelectFill();
+            sessionTabsRender();
             countSet('session', '');
             return;
         }
 
         const pool = data.pool || {};
         const memory = data.memory || {};
-        statEl.innerHTML =
-            `Chromium ${pool.version || '—'}<br>` +
-            `сессий ${pool.sessions || 0} из ${pool.session_limit || 0}<br>` +
-            `память ${memory.container_mb || 0} / ${memory.container_limit_mb || 0} МБ`;
+        statEl.textContent =
+            `Chromium ${pool.version || '—'} · сессий ${pool.sessions || 0} из ${pool.session_limit || 0}`
+            + ` · память ${memory.container_mb || 0} / ${memory.container_limit_mb || 0} МБ`;
 
         sessions = data.sessions || [];
         countSet('session', sessions.length);
         sessionSelectFill();
+        sessionTabsRender();
+        sessionScenariosRender();
+        recordSync();
 
-        if (sessions.length === 0) {
-            listEl.innerHTML = '<div class="browser-empty">сессий нет</div>';
+        // Первый ответ приходит уже после выбора вкладки, поэтому окно открываем
+        // и здесь: страница пережила перезагрузку админки, показать её надо сразу.
+        if (!currentId && sessions.length && document.getElementById('tab-session').classList.contains('active')) {
+            viewOpen(sessions[0].session_id, sessions[0].url);
+        }
+    }
+
+    // Пока живых сессий нет, полоса всё равно показывает «Сессия 1»: страница
+    // обещает вкладку, а заведётся она первым же действием — «Открыть» или «+».
+    // Заводить контекст Chromium заранее, до того как он понадобился, незачем.
+    function sessionTabsRender() {
+        const tabsRoot = document.getElementById('sessionTabs');
+        if (!tabsRoot) return;
+        tabsRoot.innerHTML = '';
+
+        const mine = sessionsOfSite();
+        if (!mine.length) {
+            tabsRoot.appendChild(_sessionTabEl(`${SESSION_NAME_PREFIX} 1`, '', true, ''));
+        }
+
+        mine.forEach((session, index) => {
+            const title = `${session.name || SESSION_NAME_PREFIX + ' ' + (index + 1)}`;
+            tabsRoot.appendChild(_sessionTabEl(
+                title, session.url, session.session_id === currentId, session.session_id));
+        });
+
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'session-tab-add';
+        add.title = 'Новая сессия';
+        add.textContent = '+';
+        add.addEventListener('click', sessionTabAdd);
+        tabsRoot.appendChild(add);
+    }
+
+    function sessionsOfSite() {
+        const site = siteCurrent();
+        if (!site) return sessions;
+
+        return sessions.filter(row => !row.site_id || Number(row.site_id) === site.id);
+    }
+
+    function _sessionTabEl(title, url, active, sessionId) {
+        const el = document.createElement('div');
+        el.className = 'session-tab' + (active ? ' active' : '');
+        el.title = url || 'страница ещё не открыта';
+        el.innerHTML = `<span class="session-tab-name">${_escape(title)}</span>`;
+
+        if (sessionId) {
+            el.addEventListener('click', () => viewOpen(sessionId, url));
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.className = 'session-tab-close';
+            close.title = 'Погасить сессию';
+            close.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none"'
+                + ' stroke="currentColor" stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+            // Крестик гасит страницу, а не просто прячет вкладку: сессия живёт в
+            // контейнере, и «закрыть вкладку» без гашения оставило бы её висеть.
+            close.addEventListener('click', (event) => {
+                event.stopPropagation();
+                sessionKill(sessionId, title);
+            });
+            el.appendChild(close);
+        }
+
+        return el;
+    }
+
+    // Имя даём сами и по счёту: спрашивать его в `prompt` на каждую вкладку —
+    // лишний шаг там, где человеку нужна просто ещё одна страница. Переименование
+    // сессии никому не нужно: адрес виден в строке, а работу ведут по карточкам.
+    async function sessionTabAdd() {
+        const site = siteCurrent();
+        const url = urlNormalize(urlEl.value) || (site ? site.url : '');
+        await sessionCreate(url, `${SESSION_NAME_PREFIX} ${sessionsOfSite().length + 1}`);
+    }
+
+    async function sessionKill(sessionId, title) {
+        if (!confirm(`Погасить «${title}»? Страница и её авторизация будут потеряны.`)) return;
+        if (sessionId === currentId) viewClose();
+
+        try {
+            await deleteData('/api/browser/session/' + sessionId);
+        } catch (e) {
+            showNotification('Не удалось: ' + e.message, 'error');
             return;
         }
 
-        // Пока в карточке печатают, список не перерисовываем: перерисовка уводит
-        // фокус и роняет каретку на середине пароля. Сведения подождут до
-        // следующего опроса — набранное дороже.
-        const focused = document.activeElement;
-        if (listEl.contains(focused) && (focused.tagName === 'INPUT' || focused.tagName === 'SELECT')) return;
-
-        listEl.innerHTML = '';
-        for (const session of sessions) {
-            const el = document.createElement('div');
-            el.className = 'browser-session' + (session.session_id === currentId ? ' active' : '');
-            el.innerHTML =
-                `<div class="browser-session-name"><span>${_escape(session.name)}</span>` +
-                `<span>${session.recording ? '<span class="browser-session-dot">🔴</span> ' : ''}` +
-                `${session.alive ? '🟢' : '⚪'}</span></div>` +
-                `<div class="browser-session-url">${_escape(session.url)}</div>` +
-                `<div class="browser-session-meta">живёт ${session.uptime_sec} с · простой ${session.idle_sec} с</div>` +
-                recordRow(session) +
-                playRow(session);
-            el.addEventListener('click', () => viewOpen(session.session_id, session.url));
-            recordBind(el, session);
-            playBind(el, session.session_id);
-            listEl.appendChild(el);
+        if (sessionId === currentId) {
+            currentId = '';
+            tabsClear();
+            frameEl.removeAttribute('src');
+            hintEl.textContent = 'Выберите вкладку сессии или впишите адрес в строке сверху';
+            hintEl.style.display = '';
         }
+        await sessionsLoad();
+
+        // Гасли последнюю — открывать нечего; иначе переходим на соседнюю, чтобы
+        // окно не осталось пустым при живых страницах.
+        if (!currentId && sessions.length) viewOpen(sessions[0].session_id, sessions[0].url);
     }
 
     // ---------- Запись сценария ----------
 
+    // Запись идёт в открытой сессии: пишется то, что человек делает на странице,
+    // а страница у вкладки одна. Отсюда и место полосы — над списком сценариев,
+    // а не в каждой его карточке: она заводит следующий сценарий, а не гоняет
+    // существующий.
     const RECORD_NAME_DEFAULT = 'новый сценарий';
 
-    // Набранное имя живёт здесь, а не в поле: список перерисовывается каждые
-    // десять секунд, и вместе с карточкой пропадало бы имя на полуслове.
-    const recordNames = new Map();
-
-    function recordRow(session) {
-        const on = session.recording;
-        return '<div class="browser-session-rec">' +
-            `<input type="text" maxlength="100" placeholder="${RECORD_NAME_DEFAULT}">` +
-            `<button class="browser-btn${on ? ' browser-session-rec-on' : ''}">` +
-            `${on ? 'Остановить' : 'Старт'}</button></div>`;
+    function recordSession() {
+        return sessions.find(row => row.session_id === currentId) || null;
     }
 
-    function recordBind(el, session) {
-        const row = el.querySelector('.browser-session-rec');
-        const input = row.querySelector('input');
-        const button = row.querySelector('button');
+    function recordSync() {
+        const button = document.getElementById('recordBtn');
+        const session = recordSession();
+        const on = !!(session && session.recording);
 
-        // Значение ставится кодом, а не атрибутом: `_escape` не трогает кавычки,
-        // и имя с кавычкой разорвало бы разметку карточки.
-        input.value = recordNames.has(session.session_id)
-            ? recordNames.get(session.session_id) : RECORD_NAME_DEFAULT;
-
-        // Клик по карточке открывает окно — но не когда метили в поле или кнопку.
-        row.addEventListener('click', event => event.stopPropagation());
-        input.addEventListener('input', () => recordNames.set(session.session_id, input.value));
-        button.addEventListener('click', () => {
-            if (session.recording) recordStop(session); else recordStart(session, input.value);
-        });
+        button.textContent = on ? 'Остановить' : 'Старт';
+        button.classList.toggle('browser-session-rec-on', on);
+        button.disabled = !session;
+        button.title = session ? '' : 'Сначала откройте страницу: записывать нечего';
     }
 
-    async function recordStart(session, name) {
+    async function recordToggle() {
+        const session = recordSession();
+        if (!session) {
+            showNotification('Нет открытой сессии: заведите вкладку или откройте сайт', 'error');
+            return;
+        }
+        if (session.recording) await recordStop(session); else await recordStart(session);
+    }
+
+    async function recordStart(session) {
+        const input = document.getElementById('recordName');
         try {
             await postData(`/api/browser/session/${session.session_id}/record/start`,
-                           {name: (name || '').trim()});
+                           {name: (input.value || '').trim()});
         } catch (e) {
             showNotification('Запись не началась: ' + e.message, 'error');
             return;
         }
 
-        // Записывается то, что человек делает на странице, — значит, страницу надо
-        // показать: без открытого окна совершать действия ему попросту негде.
-        if (currentId !== session.session_id) viewOpen(session.session_id, session.url);
-
         showNotification('Идёт запись: работайте в окне', 'success');
-        sessionsLoad();
+        await sessionsLoad();
+        recordSync();
     }
 
     async function recordStop(session) {
+        const input = document.getElementById('recordName');
         let data;
         try {
             data = await postData(`/api/browser/session/${session.session_id}/record/stop`,
-                                  {name: (recordNames.get(session.session_id) || '').trim()});
+                                  {name: (input.value || '').trim(),
+                                   site_id: (siteCurrent() || {}).id || null});
         } catch (e) {
             showNotification('Сценарий не записан: ' + e.message, 'error');
-            sessionsLoad();
+            await sessionsLoad();
+            recordSync();
             return;
         }
 
         const steps = ((data.record || {}).steps || []).length;
-        recordNames.delete(session.session_id);
+        input.value = '';
         showNotification(`Сценарий записан: «${data.name}», шагов ${steps}`, 'success');
 
-        sessionsLoad();
+        await sessionsLoad();
+        recordSync();
         scenariosLoad();
     }
 
-    // ---------- Запуск сценария из карточки ----------
+    // ---------- Сценарии в колонке сессии ----------
 
-    // Выбор и набранные значения живут вне карточки: список сессий
-    // перерисовывается каждые десять секунд, и вместе с карточкой пропадали бы и
-    // выбранный сценарий, и наполовину введённый пароль.
-    const playChoice = new Map();  // session_id -> id сценария строкой
-    const playValues = new Map();  // session_id -> {ключ: значение}
-    const playBusy = new Set();    // сессии, в которых прогон уже идёт
+    // Карточка и есть сценарий, поэтому выбирать его больше нечем и незачем:
+    // «Запустить» гонит ту строку, в которой нажали, — по странице открытой
+    // вкладки, чтобы шаги было видно.
+    // Ключ карт — «вид:номер»: цепочка и сценарий с одинаковым номером это разные
+    // строки, и путать их значения нельзя.
+    const playValues = new Map();  // 'scenario:7' -> {ключ: значение}
+    const playBusy = new Set();    // то, чей прогон уже идёт
+    const playDetails = new Map(); // 'workflow:2' -> {used: [...], defaults: {}}
 
-    // Сценарий целиком приезжает отдельным запросом: список везёт только имена, а
-    // спросить надо ровно те подстановки, что стоят в шагах.
-    const playDetails = new Map();  // id сценария -> {used: [...], defaults: {}}
+    function sessionScenariosRender() {
+        const root = document.getElementById('sessionScenarioList');
+        if (!root) return;
 
-    function playRow(session) {
-        return '<div class="browser-session-play">' +
-            `<select data-session="${session.session_id}" title="Какой сценарий гнать в этой сессии"></select>` +
-            '<button class="browser-btn primary" disabled>Запустить</button></div>' +
-            '<div class="browser-session-play-keys"></div>';
-    }
+        // Пока в карточке печатают, список не перерисовываем: перерисовка уводит
+        // фокус и роняет каретку на середине пароля.
+        const focused = document.activeElement;
+        if (root.contains(focused) && focused.tagName === 'INPUT') return;
 
-    function playBind(el, sessionId) {
-        const select = el.querySelector('.browser-session-play select');
-        const button = el.querySelector('.browser-session-play button');
+        const site = siteCurrent();
+        // Сценарии этой закладки плюс ничьи: те заведены до появления сайтов, и
+        // спрятать их значило бы потерять работу, которую человек уже сделал.
+        const mine = site
+            ? scenarios.filter(row => !row.site_id || Number(row.site_id) === site.id)
+            : scenarios;
 
-        // Клик по карточке открывает окно — но не когда метили в селект, кнопку
-        // или поле подстановки.
-        el.querySelector('.browser-session-play').addEventListener('click', event => event.stopPropagation());
-        el.querySelector('.browser-session-play-keys').addEventListener('click', event => event.stopPropagation());
-
-        playOptionsFill(select);
-        select.addEventListener('change', () => {
-            playChoice.set(sessionId, select.value);
-            // У другого сценария другие ключи: набранное для прежнего к ним не
-            // относится, и подставлять пароль вслепую — худшее, что можно сделать.
-            playValues.delete(sessionId);
-            playKeysRender(el, sessionId);
-        });
-        button.addEventListener('click', () => playRun(el, sessionId));
-
-        playKeysRender(el, sessionId);
-    }
-
-    function playOptionsFill(select) {
-        const chosen = playChoice.get(select.dataset.session) || '';
-
-        select.innerHTML = '<option value="">сценарий…</option>';
-        for (const row of scenarios) {
-            const option = document.createElement('option');
-            option.value = String(row.id);
-            option.textContent = row.name;
-            select.appendChild(option);
-        }
-
-        // Удалённый сценарий не остаётся выбранным: кнопка звала бы в никуда.
-        select.value = scenarios.some(row => String(row.id) === chosen) ? chosen : '';
-        if (select.value !== chosen) playChoice.delete(select.dataset.session);
-    }
-
-    // Список сценариев приезжает своим запросом и позже карточек: когда он
-    // обновился, селекты перебираются на месте — дёргать контейнер незачем.
-    function playSelectsFill() {
-        for (const el of listEl.querySelectorAll('.browser-session')) {
-            const select = el.querySelector('.browser-session-play select');
-            if (!select) continue;
-
-            playOptionsFill(select);
-            playKeysRender(el, select.dataset.session);
-        }
-    }
-
-    // Поля подстановок раскрываются сразу за выбором: сценарию нужны логин и
-    // пароль — значит, спрашиваем их здесь же, а не после неудачного прогона.
-    async function playKeysRender(el, sessionId) {
-        const keysEl = el.querySelector('.browser-session-play-keys');
-        const id = playChoice.get(sessionId) || '';
-
-        keysEl.innerHTML = '';
-        if (!id) {
-            playButtonSync(el, sessionId);
+        root.innerHTML = '';
+        if (!mine.length) {
+            root.innerHTML = '<div class="browser-empty">сценариев нет — запишите первый сверху</div>';
             return;
         }
 
-        const detail = await playDetail(id);
-        const values = playValues.get(sessionId) || {};
-        playValues.set(sessionId, values);
+        for (const row of mine) {
+            root.appendChild(_playCard('scenario', row.id, row.name,
+                                       row.goal || 'цель не записана', row.status));
+        }
+    }
 
+    // Цепочки живут в той же колонке и запускаются так же: разница только в том,
+    // что за одной кнопкой стоит несколько сценариев подряд.
+    function sessionWorkflowsRender() {
+        const root = document.getElementById('sessionWorkflowList');
+        if (!root) return;
+
+        const focused = document.activeElement;
+        if (root.contains(focused) && focused.tagName === 'INPUT') return;
+
+        const site = siteCurrent();
+        const mine = site
+            ? workflows.filter(row => !row.site_id || Number(row.site_id) === site.id)
+            : workflows;
+
+        document.getElementById('sessionWorkflowHead').style.display = mine.length ? '' : 'none';
+        root.innerHTML = '';
+        for (const row of mine) {
+            root.appendChild(_playCard('workflow', row.id, row.name,
+                                       `${row.steps} ${_plural(row.steps, 'сценарий', 'сценария', 'сценариев')}`));
+        }
+    }
+
+    function _plural(n, one, few, many) {
+        const mod10 = n % 10;
+        const mod100 = n % 100;
+        if (mod10 === 1 && mod100 !== 11) return one;
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+
+        return many;
+    }
+
+    function _playCard(kind, id, name, meta, status) {
+        const el = document.createElement('div');
+        el.className = 'browser-session';
+        el.innerHTML =
+            `<div class="browser-session-name"><span>${_escape(name)}</span>` +
+            (status ? `<span class="scenario-mark ${_escape(status)}">${_escape(status)}</span>` : '') +
+            '</div>' +
+            `<div class="browser-session-meta">${_escape(meta)}</div>` +
+            '<div class="browser-session-play">' +
+            '<button class="browser-btn primary">Запустить</button></div>' +
+            '<div class="browser-session-play-keys"></div>';
+
+        el.querySelector('.browser-session-play button')
+          .addEventListener('click', () => playRun(el, kind, id));
+        playKeysRender(el, kind, id);
+
+        return el;
+    }
+
+    // Поля подстановок раскрыты сразу: сценарию нужны логин и пароль — значит,
+    // спрашиваем их здесь же, а не после неудачного прогона.
+    async function playKeysRender(el, kind, id) {
+        const keysEl = el.querySelector('.browser-session-play-keys');
+        const key = `${kind}:${id}`;
+        const detail = await playDetail(kind, id);
+        const values = playValues.get(key) || {};
+        playValues.set(key, values);
+
+        keysEl.innerHTML = '';
         for (const name of detail.used) {
             // Признак тот же, что и на вкладке сценариев: есть значение по
             // умолчанию — переменная, ей место в журнале; нет — секрет.
@@ -1135,7 +1958,7 @@
             values[name] = input.value;
             input.addEventListener('input', () => {
                 values[name] = input.value;
-                playButtonSync(el, sessionId);
+                playButtonSync(el, kind, id);
             });
 
             row.appendChild(label);
@@ -1143,56 +1966,62 @@
             keysEl.appendChild(row);
         }
 
-        playButtonSync(el, sessionId);
+        playButtonSync(el, kind, id);
     }
 
     // Кнопка серая, пока заполнено не всё: прогон с пустым паролем стоит человеку
     // тех же минут, что и настоящий, и оставляет в журнале сломанный сценарий.
-    function playButtonSync(el, sessionId) {
+    function playButtonSync(el, kind, id) {
         const button = el.querySelector('.browser-session-play button');
         const inputs = [...el.querySelectorAll('.browser-session-play-keys input[data-key]')];
-        const busy = playBusy.has(sessionId);
-        const ready = !!playChoice.get(sessionId) && inputs.every(input => input.value.trim() !== '');
+        const busy = playBusy.has(`${kind}:${id}`);
 
-        button.disabled = busy || !ready;
+        button.disabled = busy || !inputs.every(input => input.value.trim() !== '');
         button.textContent = busy ? 'Идёт…' : 'Запустить';
     }
 
-    async function playDetail(id) {
-        if (playDetails.has(id)) return playDetails.get(id);
+    async function playDetail(kind, id) {
+        const key = `${kind}:${id}`;
+        if (playDetails.has(key)) return playDetails.get(key);
 
         let data;
         try {
-            data = await getData('/api/browser/scenario/' + id);
+            data = await getData(`/api/browser/${kind}/${id}`);
         } catch (e) {
-            showNotification('Сценарий не открылся: ' + e.message, 'error');
-            // Неудачу не запоминаем: следующий выбор попробует снова.
+            showNotification('Не открылось: ' + e.message, 'error');
+            // Неудачу не запоминаем: следующая перерисовка попробует снова.
             return {used: [], defaults: {}};
         }
 
-        const detail = {used: data.variables_used || [], defaults: (data.result || {}).variables || {}};
-        playDetails.set(id, detail);
+        // У цепочки умолчания собраны по всем её сценариям и лежат отдельным
+        // полем: у неё самой столбца `variables` нет.
+        const detail = {
+            used: data.variables_used || [],
+            defaults: kind === 'workflow' ? (data.variables || {}) : ((data.result || {}).variables || {}),
+        };
+        playDetails.set(key, detail);
+
         return detail;
     }
 
-    async function playRun(el, sessionId) {
-        const id = playChoice.get(sessionId);
-        if (!id) return;
+    async function playRun(el, kind, id) {
+        const key = `${kind}:${id}`;
+        const {variables, secrets} = playSubstitutions(el, kind, id);
 
-        const {variables, secrets} = playSubstitutions(el, id);
-        const session = sessions.find(row => row.session_id === sessionId) || {};
+        // Гонят ради того, чтобы посмотреть: без открытой страницы смотреть не на
+        // что, поэтому сессию заводим сами — так же, как это делает «Открыть».
+        if (!currentId) {
+            await sessionCreate(urlNormalize(urlEl.value), `${SESSION_NAME_PREFIX} 1`);
+            if (!currentId) return;
+        }
 
-        playBusy.add(sessionId);
-        playButtonSync(el, sessionId);
-
-        // Прогон смотрят в живом окне — ради этого сценарий и гонят из карточки, а
-        // не с соседней вкладки: шаги идут по той странице, что перед глазами.
-        if (currentId !== sessionId) viewOpen(sessionId, session.url);
+        playBusy.add(key);
+        playButtonSync(el, kind, id);
 
         let data;
         try {
-            data = await postData(`/api/browser/scenario/${id}/run`, {
-                session_id: sessionId,
+            data = await postData(`/api/browser/${kind}/${id}/run`, {
+                session_id: currentId,
                 variables,
                 secrets,
                 // Сессия человека, а не заведённая под прогон: гасить её нельзя.
@@ -1200,30 +2029,30 @@
             });
         } catch (e) {
             showNotification('Прогон не состоялся: ' + e.message, 'error');
-            playBusy.delete(sessionId);
-            playButtonSync(el, sessionId);
-            // Карточку могло перерисовать опросом, пока шёл прогон: тогда «Идёт…»
-            // висит на новой кнопке, а сняли мы его со старой, уже выброшенной.
-            sessionsLoad();
+            playBusy.delete(key);
+            playButtonSync(el, kind, id);
             return;
         }
 
-        playBusy.delete(sessionId);
+        playBusy.delete(key);
 
         const run = data.result || {};
         if (run.status === 'error') {
-            showNotification(`Шаг ${run.step_no} не прошёл: ${run.error}`, 'error');
+            showNotification(kind === 'workflow'
+                ? `Цепочка встала на «${run.name}»: ${run.error}`
+                : `Шаг ${run.step_no} не прошёл: ${run.error}`, 'error');
         } else {
-            showNotification(`Сценарий прошёл целиком за ${run.duration_ms} мс`, 'success');
+            showNotification(kind === 'workflow'
+                ? `Цепочка прошла целиком: ${(run.runs || []).length} сценариев`
+                : `Сценарий прошёл целиком за ${run.duration_ms} мс`, 'success');
         }
 
         // Список сценариев — из-за метки: прогон переводит сценарий в active или broken.
-        sessionsLoad();
         scenariosLoad();
     }
 
-    function playSubstitutions(el, id) {
-        const defaults = (playDetails.get(id) || {}).defaults || {};
+    function playSubstitutions(el, kind, id) {
+        const defaults = (playDetails.get(`${kind}:${id}`) || {}).defaults || {};
         const variables = {};
         const secrets = {};
 
@@ -1239,10 +2068,52 @@
         return {variables, secrets};
     }
 
+
+    // ---------- Инспектор элементов ----------
+
+    // Окно показывает картинку, поэтому «что это за элемент» знает только сама
+    // страница: режим включается в ней, а сюда приходит уже готовая пара
+    // «селектор + разметка». Признак включённости держим у себя — сессия одна,
+    // а сообщения о её состоянии в потоке кадров нет.
+    let inspectOn = false;
+
+    function inspectToggle() {
+        if (!currentId || !socket || socket.readyState !== WebSocket.OPEN) {
+            statusSet('инспектору нужна открытая страница', true);
+            return;
+        }
+
+        inspectOn = !inspectOn;
+        send({type: 'inspect', on: inspectOn});
+        document.getElementById('inspectBtn').classList.toggle('on', inspectOn);
+        statusSet(inspectOn ? 'инспектор: наведите и кликните по элементу' : '');
+        if (!inspectOn) inspectHide();
+    }
+
+    function inspectShow(message) {
+        document.getElementById('inspectTag').textContent = message.tag ? `<${message.tag}>` : 'элемент';
+        document.getElementById('inspectSel').textContent = message.selector || 'селектор не вычислен';
+        document.getElementById('inspectHtml').textContent = message.html || '';
+        document.getElementById('inspectPop').classList.add('visible');
+    }
+
+    function inspectHide() {
+        document.getElementById('inspectPop').classList.remove('visible');
+    }
+
+    // Окно закрылось (сессия погасла, ушли на другую) — режим начинается заново:
+    // страница о прежнем включении не знает.
+    function inspectReset() {
+        inspectOn = false;
+        document.getElementById('inspectBtn').classList.remove('on');
+        inspectHide();
+    }
+
     // ---------- Живое окно ----------
 
     function viewOpen(sessionId, url) {
         viewClose();
+        inspectReset();
 
         currentId = sessionId;
         urlEdited = false;
@@ -1271,6 +2142,10 @@
                 clipboardWrite(message.text);
                 return;
             }
+            if (message.type === 'inspect') {
+                inspectShow(message);
+                return;
+            }
             if (message.type !== 'frame') return;
 
             frameEl.src = 'data:image/jpeg;base64,' + message.data;
@@ -1292,13 +2167,21 @@
             statusSet('окно ' + sessionId);
         };
 
+        sessionTabsRender();
+        recordSync();
         sessionsLoad();
     }
 
     async function sessionCreate(url, name) {
         statusSet('завожу сессию…');
         try {
-            const data = await postData('/api/browser/session', {name: name || 'сессия', url: url || ''});
+            const data = await postData('/api/browser/session', {
+                name: name || 'сессия',
+                url: url || '',
+                // Метка сайта: по ней полоса вкладок отбирает страницы этой закладки.
+                // В базу она не уезжает — сессия живёт в памяти контейнера.
+                site_id: (siteCurrent() || {}).id || 0,
+            });
             showNotification('Сессия заведена', 'success');
             await sessionsLoad();
             viewOpen(data.session.session_id, data.session.url);
@@ -1526,33 +2409,10 @@
         send({type: 'goto', url});
     });
 
-    document.getElementById('sessionCreateBtn').addEventListener('click', async () => {
-        const name = prompt('Имя сессии', 'сессия');
-        if (name === null) return;
-        const url = prompt('Открыть URL (можно пустым)', 'https://example.com');
-        if (url === null) return;
-
-        await sessionCreate(urlNormalize(url), name);
-    });
-
-    document.getElementById('closeBtn').addEventListener('click', async () => {
+    document.getElementById('closeBtn').addEventListener('click', () => {
         if (!currentId) return;
-        if (!confirm('Погасить сессию? Страница и её авторизация будут потеряны.')) return;
-
-        viewClose();
-        try {
-            await deleteData('/api/browser/session/' + currentId);
-        } catch (e) {
-            showNotification('Не удалось: ' + e.message, 'error');
-        }
-
-        currentId = '';
-        tabsClear();
-        frameEl.removeAttribute('src');
-        hintEl.textContent = 'Выберите сессию слева, заведите новую или впишите адрес в строке сверху';
-        hintEl.style.display = '';
-        statusSet('');
-        await sessionsLoad();
+        const session = sessions.find(row => row.session_id === currentId) || {};
+        sessionKill(currentId, session.name || 'сессия');
     });
 
     // ---------- Сценарии ----------
@@ -1612,7 +2472,10 @@
         // Список нужен и соседней вкладке: селект запуска в карточке сессии собран
         // из него же — второго запроса на те же имена не делаем.
         scenarios = rows;
-        playSelectsFill();
+        sessionScenariosRender();
+        // Звенья цепочки выбирают сценарий из этого же списка: удалённый сценарий
+        // не должен остаться выбранным в открытом редакторе.
+        if (workflowSteps.length) workflowStepsRender();
 
         if (rows.length === 0) {
             scenarioListEl.innerHTML = '<div class="browser-empty">сценариев нет</div>';
@@ -1676,8 +2539,8 @@
         scenarioNameEl.value = row.name || '';
         scenarioGoalEl.value = row.goal || '';
         scenarioUrlEl.value = row.start_url || '';
-        scenarioStepsEl.value = JSON.stringify(row.steps || [], null, 2);
-        scenarioVariablesEl.value = JSON.stringify(row.variables || {}, null, 2);
+        scenarioStepsSet(row.steps || []);
+        scenarioVarsSet(row.variables || {});
         scenarioOutEl.innerHTML = '';
 
         // Набранные значения к прошлому сценарию и не относятся: перенести чужой
@@ -1698,8 +2561,8 @@
         scenarioNameEl.value = '';
         scenarioGoalEl.value = '';
         scenarioUrlEl.value = '';
-        scenarioStepsEl.value = JSON.stringify(SCENARIO_SAMPLE, null, 2);
-        scenarioVariablesEl.value = '{}';
+        scenarioStepsSet(SCENARIO_SAMPLE);
+        scenarioVarsSet({});
         scenarioOutEl.innerHTML = '';
         scenarioKeyValues = {};
         scenarioKeyExtra = new Set();
@@ -1813,8 +2676,7 @@
             return;
         }
 
-        const defaults = _jsonParse(scenarioVariablesEl.value || '{}', 'переменные');
-        if (defaults === null) return;
+        const defaults = scenarioVarsGet();
         const filled = scenarioSubstitutions();
 
         scenarioSay('пишу сценарий по цели — это витки со снимками страницы, до нескольких минут…');
@@ -1869,21 +2731,21 @@
 
     // Ключи подстановок берутся из самих шагов: отдельный список ключей был бы
     // вторым источником правды и разошёлся бы с шагами на первой же правке.
-    // Читается сырой текст, а не разобранный JSON, — поля должны появляться и
-    // пока шаги ещё дописывают.
+    // Смотрим на собранные шаги целиком: подстановка может стоять в любом поле —
+    // и в адресе, и в селекторе, и в значении.
     function scenarioKeysUsed() {
         const names = new Set();
         const pattern = /\{\{\s*([\w.-]+)\s*\}\}/g;
         let found;
 
-        while ((found = pattern.exec(scenarioStepsEl.value || '')) !== null) names.add(found[1]);
+        while ((found = pattern.exec(JSON.stringify(scenarioStepsGet()))) !== null) names.add(found[1]);
         for (const name of scenarioKeyExtra) names.add(name);
 
         return [...names];
     }
 
     function scenarioKeysRender() {
-        const defaults = _jsonQuiet(scenarioVariablesEl.value) || {};
+        const defaults = scenarioVarsGet();
         const names = scenarioKeysUsed();
 
         scenarioKeysEl.innerHTML = '';
@@ -1940,10 +2802,595 @@
         }
     }
 
+    // ---------- Цепочки сценариев ----------
+
+    // Цепочка — порядок сценариев и общий прогон в одной сессии: состояние
+    // страницы переходит от звена к звену, ради этого она и нужна. Сами сценарии
+    // остаются самостоятельными и гоняются по отдельности с соседней вкладки.
+    let workflows = [];
+    let workflowId = 0;
+    let workflowSteps = [];   // id сценариев по порядку
+
+    const workflowListEl = document.getElementById('workflowList');
+    const workflowStatEl = document.getElementById('workflowStat');
+    const workflowNameEl = document.getElementById('workflowName');
+    const workflowStepsEl = document.getElementById('workflowSteps');
+    const workflowOutEl = document.getElementById('workflowOut');
+
+    async function workflowsLoad() {
+        let data;
+        try {
+            data = await getData('/api/browser/workflow');
+        } catch (e) {
+            workflowStatEl.textContent = 'список не пришёл: ' + e.message;
+            return;
+        }
+
+        workflows = data.result || [];
+        countSet('workflow', workflows.length);
+        workflowStatEl.textContent = `цепочек ${workflows.length}`;
+        workflowListRender();
+        sessionWorkflowsRender();
+    }
+
+    function workflowListRender() {
+        workflowListEl.innerHTML = '';
+        if (!workflows.length) {
+            workflowListEl.innerHTML = '<div class="browser-empty">цепочек нет</div>';
+            return;
+        }
+
+        for (const row of workflows) {
+            const el = document.createElement('div');
+            el.className = 'scenario-session' + (row.id === workflowId ? ' active' : '');
+            el.innerHTML =
+                `<div class="browser-session-name"><span>${_escape(row.name)}</span>` +
+                '<button type="button" class="scenario-del" title="Удалить цепочку">' +
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+                ' stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>' +
+                `<div class="browser-session-meta">${row.steps} ` +
+                `${_plural(row.steps, 'сценарий', 'сценария', 'сценариев')}</div>`;
+            el.addEventListener('click', () => workflowOpen(row.id));
+            el.querySelector('.scenario-del').addEventListener('click', (event) => {
+                event.stopPropagation();
+                workflowDelete(row.id, row.name);
+            });
+            workflowListEl.appendChild(el);
+        }
+    }
+
+    function workflowNew() {
+        workflowId = 0;
+        workflowNameEl.value = '';
+        workflowSteps = [];
+        workflowOutEl.innerHTML = '';
+        workflowStepsRender();
+        workflowSay('новая цепочка: имя и сценарии по порядку, затем «Сохранить»');
+        workflowListRender();
+    }
+
+    async function workflowOpen(id) {
+        let data;
+        try {
+            data = await getData('/api/browser/workflow/' + id);
+        } catch (e) {
+            workflowSay('цепочка не открылась: ' + e.message, true);
+            return;
+        }
+
+        const row = data.result || {};
+        workflowId = id;
+        workflowNameEl.value = row.name || '';
+        workflowSteps = (row.steps || []).map(step => Number(step.scenario_id));
+        workflowOutEl.innerHTML = '';
+        // Сайт цепочки — тот же селект, что и у сценариев: правка не должна
+        // сбрасывать привязку только потому, что человек её не трогал.
+        const select = document.getElementById('siteSelectWorkflow');
+        if (row.site_id) select.value = String(row.site_id);
+        workflowStepsRender();
+        workflowSay(data.variables_used?.length
+            ? 'цепочка ждёт подстановки: ' + data.variables_used.join(', ')
+            : 'подстановок нет');
+        workflowListRender();
+    }
+
+    function workflowStepsRender() {
+        workflowStepsEl.innerHTML = '';
+        if (!workflowSteps.length) {
+            workflowStepsEl.innerHTML =
+                '<div class="scenario-steps-empty">сценариев нет — «+ сценарий» добавит первый</div>';
+            return;
+        }
+
+        workflowSteps.forEach((scenarioId, index) => {
+            const el = document.createElement('div');
+            el.className = 'scenario-step';
+
+            const num = document.createElement('span');
+            num.className = 'scenario-step-num';
+            num.textContent = index + 1;
+            el.appendChild(num);
+
+            const select = document.createElement('select');
+            select.className = 'field';
+            for (const row of scenarios) {
+                const option = document.createElement('option');
+                option.value = String(row.id);
+                option.textContent = row.name;
+                select.appendChild(option);
+            }
+            select.value = String(scenarioId);
+            select.addEventListener('change', () => { workflowSteps[index] = Number(select.value); });
+            el.appendChild(select);
+
+            const tools = document.createElement('div');
+            tools.className = 'scenario-step-tools';
+            tools.appendChild(_scenarioStepTool('↑', 'Выше', () => workflowStepMove(index, -1)));
+            tools.appendChild(_scenarioStepTool('↓', 'Ниже', () => workflowStepMove(index, 1)));
+            tools.appendChild(_scenarioStepTool('✕', 'Убрать из цепочки', () => {
+                workflowSteps.splice(index, 1);
+                workflowStepsRender();
+            }, true));
+            el.appendChild(tools);
+
+            workflowStepsEl.appendChild(el);
+        });
+    }
+
+    function workflowStepMove(index, shift) {
+        const to = index + shift;
+        if (to < 0 || to >= workflowSteps.length) return;
+
+        const [moved] = workflowSteps.splice(index, 1);
+        workflowSteps.splice(to, 0, moved);
+        workflowStepsRender();
+    }
+
+    function workflowStepAdd() {
+        if (!scenarios.length) {
+            workflowSay('сначала заведите хотя бы один сценарий', true);
+            return;
+        }
+
+        // Новое звено — первый сценарий списка: выбрать нужный человек всё равно
+        // будет сам, а пустая строка в цепочке никуда не годится.
+        workflowSteps.push(scenarios[0].id);
+        workflowStepsRender();
+    }
+
+    async function workflowSave() {
+        const name = (workflowNameEl.value || '').trim();
+        if (!name) {
+            workflowSay('имя обязательно — по нему цепочку зовут из списка', true);
+            return;
+        }
+        if (!workflowSteps.length) {
+            workflowSay('в цепочке нет ни одного сценария', true);
+            return;
+        }
+
+        const body = {
+            name,
+            site_id: Number(document.getElementById('siteSelectWorkflow').value || 0) || null,
+            scenario_ids: workflowSteps,
+        };
+
+        try {
+            if (workflowId) await putData('/api/browser/workflow/' + workflowId, body);
+            else workflowId = (await postData('/api/browser/workflow', body)).result;
+        } catch (e) {
+            workflowSay('не сохранено: ' + e.message, true);
+            showNotification('Не сохранено: ' + e.message, 'error');
+            return;
+        }
+
+        workflowSay('сохранено, цепочка ' + workflowId);
+        showNotification('Цепочка сохранена', 'success');
+        // Подстановки цепочки собраны по её сценариям: сменили состав — кэш врёт.
+        playDetails.delete(`workflow:${workflowId}`);
+        workflowsLoad();
+    }
+
+    async function workflowDelete(id, name) {
+        if (!confirm(`Удалить цепочку «${name}»? Сценарии останутся на месте.`)) return;
+
+        try {
+            await deleteData('/api/browser/workflow/' + id);
+        } catch (e) {
+            showNotification('Не удалось: ' + e.message, 'error');
+            return;
+        }
+
+        if (id === workflowId) workflowNew();
+        showNotification('Цепочка удалена', 'success');
+        workflowsLoad();
+    }
+
+    // Прогон с этой вкладки идёт в сессии, выбранной у сценариев: цепочку пишут и
+    // проверяют там же, где и её звенья.
+    async function workflowRun() {
+        if (!workflowId) {
+            workflowSay('сначала сохраните цепочку — гоняется то, что лежит в базе', true);
+            return;
+        }
+
+        workflowSay('гоню цепочку — это несколько сценариев подряд…');
+        workflowOutEl.innerHTML = '';
+        let data;
+        try {
+            data = await postData(`/api/browser/workflow/${workflowId}/run`, {
+                session_id: scenarioSessionEl.value,
+                variables: {},
+                secrets: {},
+                keep_session: scenarioKeepEl.checked,
+            });
+        } catch (e) {
+            workflowSay('прогон не состоялся: ' + e.message, true);
+            return;
+        }
+
+        const run = data.result || {};
+        workflowOutEl.innerHTML = (run.runs || []).map(item =>
+            `<div class="scenario-trace-row${item.result.status === 'error' ? ' bad' : ''}">` +
+            `${item.step_no}. ${_escape(item.name)} — ` +
+            `${item.result.status === 'error' ? _escape(item.result.error || 'ошибка') : 'ок'}</div>`
+        ).join('') || '<div class="scenario-trace-row">звеньев нет</div>';
+
+        workflowSay(run.status === 'error'
+            ? `встала на «${run.name}»: ${run.error}`
+            : 'цепочка прошла целиком');
+        scenariosLoad();
+    }
+
+    function workflowSay(text, bad = false) {
+        const el = document.getElementById('workflowMsg');
+        el.textContent = text || '';
+        el.classList.toggle('bad', !!bad);
+    }
+
+    // ---------- Шаги ----------
+
+    // Шаг — строка полей, а не кусок JSON: действие выбирают списком, поля под него
+    // подставляются по схеме, которую отдаёт сам контейнер
+    // (`GET /api/browser/scenario/action`). Второй список действий на странице
+    // разошёлся бы со схемой на первой же её правке.
+    let scenarioSteps = [];
+    let scenarioActions = {};
+    let scenarioStepTimeout = 10000;
+
+    // Клавиши, которые жмут в сценариях чаще всего. Список не исчерпывающий —
+    // Playwright знает их сотни, — поэтому у поля есть и свободный ввод.
+    const SCENARIO_KEYS = ['Enter', 'Escape', 'Tab', 'Backspace', 'Delete',
+                           'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+                           'Home', 'End', 'PageUp', 'PageDown',
+                           'Control+a', 'Control+c', 'Control+v'];
+
+    // Поля, у которых есть заранее известные значения: клавиша — из списка выше,
+    // адрес — из закладок вкладки «Сайты». Остальные (селектор, текст, имя) знает
+    // только человек, у них обычный ввод.
+    const SCENARIO_FIELD_CHOICES = {
+        key: () => SCENARIO_KEYS,
+        url: () => sites.map(row => row.url),
+    };
+
+    const SCENARIO_FIELD_LABEL = {
+        selector: 'селектор',
+        url: 'адрес',
+        value: 'значение',
+        key: 'клавиша',
+        name: 'имя',
+    };
+
+    async function scenarioActionsLoad() {
+        try {
+            const data = await getData('/api/browser/scenario/action');
+            scenarioActions = (data.result || {}).actions || {};
+            scenarioStepTimeout = (data.result || {}).timeout_ms || scenarioStepTimeout;
+        } catch (e) {
+            // Без справочника редактор бесполезен: показываем это прямо в списке,
+            // а не пустой формой, из которой ничего не сохранится.
+            scenarioSay('справочник действий не пришёл: ' + e.message, true);
+        }
+        scenarioStepsRender();
+    }
+
+    function scenarioStepsSet(steps) {
+        scenarioSteps = (steps || []).map(step => ({
+            action: step.action || 'goto',
+            selector: step.selector || '',
+            url: step.url || '',
+            value: step.value || '',
+            key: step.key || '',
+            name: step.name || '',
+            timeout_ms: Number(step.timeout_ms || scenarioStepTimeout),
+            optional: !!step.optional,
+        }));
+        scenarioStepsRender();
+    }
+
+    // В сценарий уходят только поля своего действия: у `click` нет ни `url`, ни
+    // `value`, и таскать их пустыми — мусор в базе и в трассе.
+    function scenarioStepsGet() {
+        return scenarioSteps.map(step => {
+            const out = {action: step.action, timeout_ms: Number(step.timeout_ms) || scenarioStepTimeout};
+            if (step.optional) out.optional = true;
+            for (const field of scenarioActions[step.action] || []) out[field] = step[field] || '';
+
+            return out;
+        });
+    }
+
+    function scenarioStepsRender() {
+        scenarioStepsEl.innerHTML = '';
+        if (!scenarioSteps.length) {
+            scenarioStepsEl.innerHTML =
+                '<div class="scenario-steps-empty">шагов нет — «+ шаг» добавит первый</div>';
+            return;
+        }
+
+        scenarioSteps.forEach((step, index) => {
+            scenarioStepsEl.appendChild(_scenarioStepEl(step, index));
+        });
+    }
+
+    function _scenarioStepEl(step, index) {
+        const el = document.createElement('div');
+        el.className = 'scenario-step';
+
+        const num = document.createElement('span');
+        num.className = 'scenario-step-num';
+        num.textContent = index + 1;
+        el.appendChild(num);
+
+        const action = document.createElement('select');
+        action.className = 'action';
+        action.title = 'Что делает шаг';
+        for (const name of Object.keys(scenarioActions)) {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            action.appendChild(option);
+        }
+        action.value = step.action;
+        // Сменили действие — сменился и набор полей: перерисовываем строку целиком,
+        // чтобы человек не заполнял поле, которое в сценарий не уйдёт.
+        action.addEventListener('change', () => {
+            step.action = action.value;
+            scenarioStepsRender();
+            scenarioKeysRender();
+        });
+        el.appendChild(action);
+
+        for (const field of scenarioActions[step.action] || []) {
+            el.appendChild(_scenarioFieldEl(step, field));
+        }
+
+        const timeout = document.createElement('input');
+        timeout.type = 'number';
+        timeout.className = 'timeout';
+        timeout.min = '100';
+        timeout.max = '120000';
+        timeout.step = '100';
+        timeout.title = 'Сколько ждать шаг, мс';
+        timeout.value = step.timeout_ms;
+        timeout.addEventListener('input', () => { step.timeout_ms = Number(timeout.value) || scenarioStepTimeout; });
+        el.appendChild(timeout);
+
+        const optional = document.createElement('label');
+        optional.className = 'scenario-step-opt';
+        optional.title = 'Шаг может не сработать — прогон продолжится';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = step.optional;
+        box.addEventListener('change', () => { step.optional = box.checked; });
+        optional.appendChild(box);
+        optional.appendChild(document.createTextNode('необяз.'));
+        el.appendChild(optional);
+
+        const tools = document.createElement('div');
+        tools.className = 'scenario-step-tools';
+        tools.appendChild(_scenarioStepTool('↑', 'Выше', () => scenarioStepMove(index, -1)));
+        tools.appendChild(_scenarioStepTool('↓', 'Ниже', () => scenarioStepMove(index, 1)));
+        tools.appendChild(_scenarioStepTool('✕', 'Убрать шаг', () => {
+            scenarioSteps.splice(index, 1);
+            scenarioStepsRender();
+            scenarioKeysRender();
+        }, true));
+        el.appendChild(tools);
+
+        return el;
+    }
+
+    // Поле со списком известных значений — селект, но с пунктом свободного ввода:
+    // закладок и частых клавиш хватает на большинство шагов, а редкий случай не
+    // должен упираться в отсутствие варианта.
+    function _scenarioFieldEl(step, field) {
+        const wrap = document.createElement('div');
+        wrap.className = 'scenario-step-field' + (field === 'selector' ? ' wide' : '');
+
+        const label = document.createElement('span');
+        label.className = 'scenario-step-label';
+        label.textContent = SCENARIO_FIELD_LABEL[field] || field;
+        wrap.appendChild(label);
+
+        const choices = SCENARIO_FIELD_CHOICES[field] ? SCENARIO_FIELD_CHOICES[field]() : null;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'field';
+        input.spellcheck = false;
+        input.placeholder = SCENARIO_FIELD_LABEL[field] || field;
+        input.value = step[field] || '';
+        input.addEventListener('input', () => {
+            step[field] = input.value;
+            // В значениях живут `{{подстановки}}`, а список ключей собирается из них.
+            scenarioKeysRender();
+        });
+
+        if (!choices || !choices.length) {
+            wrap.appendChild(input);
+            return wrap;
+        }
+
+        const select = document.createElement('select');
+        select.className = 'field';
+        for (const choice of choices) {
+            const option = document.createElement('option');
+            option.value = choice;
+            option.textContent = choice;
+            select.appendChild(option);
+        }
+        const own = document.createElement('option');
+        own.value = '__own__';
+        own.textContent = '— своё —';
+        select.appendChild(own);
+
+        // Значение не из списка (чужой адрес, редкая клавиша) сразу открывает ввод:
+        // иначе селект молча показал бы первый вариант и подменил шаг.
+        const known = choices.includes(step[field]);
+        select.value = known ? step[field] : '__own__';
+        input.style.display = known ? 'none' : '';
+
+        select.addEventListener('change', () => {
+            if (select.value === '__own__') {
+                input.style.display = '';
+                input.focus();
+                return;
+            }
+            step[field] = select.value;
+            input.value = select.value;
+            input.style.display = 'none';
+            scenarioKeysRender();
+        });
+
+        wrap.appendChild(select);
+        wrap.appendChild(input);
+
+        return wrap;
+    }
+
+    function _scenarioStepTool(text, title, onClick, danger = false) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'scenario-step-tool' + (danger ? ' danger' : '');
+        button.title = title;
+        button.textContent = text;
+        button.addEventListener('click', onClick);
+
+        return button;
+    }
+
+    function scenarioStepMove(index, shift) {
+        const to = index + shift;
+        if (to < 0 || to >= scenarioSteps.length) return;
+
+        const [moved] = scenarioSteps.splice(index, 1);
+        scenarioSteps.splice(to, 0, moved);
+        scenarioStepsRender();
+    }
+
+    function scenarioStepAdd() {
+        // Новый шаг повторяет действие предыдущего: сценарии почти всегда идут
+        // сериями однотипных шагов — заполнить форму, нажать, проверить.
+        const last = scenarioSteps[scenarioSteps.length - 1];
+        scenarioSteps.push({
+            action: last ? last.action : 'goto',
+            selector: '', url: '', value: '', key: '', name: '',
+            timeout_ms: scenarioStepTimeout,
+            optional: false,
+        });
+        scenarioStepsRender();
+        const fields = scenarioStepsEl.querySelectorAll('.scenario-step:last-child input.field');
+        if (fields.length) fields[0].focus();
+    }
+
+    // ---------- Переменные по умолчанию ----------
+
+    // Пара полей на строку вместо JSON: значения правят по одному, а забытую
+    // запятую страница за человека всё равно не разберёт — она отвечала отказом
+    // на сохранении, когда правка уже сделана.
+    //
+    // Строки держим массивом, а не словарём: пустой ключ в новой строке законен,
+    // пока в неё не начали печатать, а в словаре два таких затёрли бы друг друга.
+    let scenarioVars = [];
+
+    function scenarioVarsSet(values) {
+        scenarioVars = Object.entries(values || {}).map(([key, value]) => ({key, value: String(value)}));
+        scenarioVarsRender();
+    }
+
+    function scenarioVarsGet() {
+        const out = {};
+        for (const row of scenarioVars) {
+            const key = (row.key || '').trim();
+            // Строка без ключа — начатая и брошенная: в базу ей нечего нести.
+            if (key) out[key] = row.value || '';
+        }
+
+        return out;
+    }
+
+    function scenarioVarsRender() {
+        scenarioVariablesEl.innerHTML = '';
+        if (!scenarioVars.length) {
+            scenarioVariablesEl.innerHTML =
+                '<div class="scenario-vars-empty">переменных нет — «+ переменная» добавит строку</div>';
+            return;
+        }
+
+        scenarioVars.forEach((row, index) => {
+            const el = document.createElement('div');
+            el.className = 'scenario-var';
+
+            const key = document.createElement('input');
+            key.type = 'text';
+            key.className = 'key';
+            key.spellcheck = false;
+            key.placeholder = 'ключ';
+            key.value = row.key;
+
+            const value = document.createElement('input');
+            value.type = 'text';
+            value.className = 'value';
+            value.spellcheck = false;
+            value.placeholder = 'значение по умолчанию';
+            value.value = row.value;
+
+            // Ключ решает, чем станет подстановка — переменной или секретом,
+            // поэтому список ключей перерисовывается сразу за набором.
+            key.addEventListener('input', () => { row.key = key.value; scenarioKeysRender(); });
+            value.addEventListener('input', () => { row.value = value.value; });
+
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'scenario-var-del';
+            del.title = 'Убрать переменную';
+            del.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none"'
+                + ' stroke="currentColor" stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+            del.addEventListener('click', () => {
+                scenarioVars.splice(index, 1);
+                scenarioVarsRender();
+                scenarioKeysRender();
+            });
+
+            el.appendChild(key);
+            el.appendChild(value);
+            el.appendChild(del);
+            scenarioVariablesEl.appendChild(el);
+        });
+    }
+
+    function scenarioVarAdd() {
+        scenarioVars.push({key: '', value: ''});
+        scenarioVarsRender();
+        // Фокус в новый ключ: строку добавляют, чтобы сразу печатать.
+        const inputs = scenarioVariablesEl.querySelectorAll('.scenario-var input.key');
+        if (inputs.length) inputs[inputs.length - 1].focus();
+    }
+
     // Две корзины по одному признаку: есть значение по умолчанию — это переменная,
     // ей место в журнале; нет — значит секрет, и в базе ему делать нечего.
     function scenarioSubstitutions() {
-        const defaults = _jsonQuiet(scenarioVariablesEl.value) || {};
+        const defaults = scenarioVarsGet();
         const variables = {};
         const secrets = {};
 
@@ -1960,10 +3407,22 @@
     }
 
     function scenarioBody() {
-        const steps = _jsonParse(scenarioStepsEl.value || '[]', 'шаги');
-        if (steps === null) return null;
-        const variables = _jsonParse(scenarioVariablesEl.value || '{}', 'переменные');
-        if (variables === null) return null;
+        const steps = scenarioStepsGet();
+
+        // Схему шаги пройдут и на сервере, но её отказ — текст pydantic с путём
+        // до поля. Здесь то же самое сказано номером шага и подписью поля,
+        // которую человек только что видел в форме.
+        const bad = steps.findIndex((step, index) =>
+            (scenarioActions[step.action] || []).some(field => !String(step[field] || '').trim()));
+        if (bad >= 0) {
+            const step = steps[bad];
+            const field = (scenarioActions[step.action] || [])
+                .find(name => !String(step[name] || '').trim());
+            scenarioSay(`шаг ${bad + 1} (${step.action}): не заполнено поле `
+                        + `«${SCENARIO_FIELD_LABEL[field] || field}»`, true);
+            return null;
+        }
+        const variables = scenarioVarsGet();
 
         if (!(scenarioNameEl.value || '').trim()) {
             scenarioSay('имя обязательно — по нему сценарий зовут из задач и расписания', true);
@@ -1971,6 +3430,9 @@
         }
 
         return {
+            // Сайт берём из селекта этой вкладки: сценарий принадлежит закладке,
+            // и без поля правка сбрасывала бы привязку в NULL на каждом «Сохранить».
+            site_id: Number(document.getElementById('siteSelectScenario').value || 0) || null,
             name: scenarioNameEl.value.trim(),
             goal: scenarioGoalEl.value.trim(),
             start_url: urlNormalize(scenarioUrlEl.value),
@@ -2024,6 +3486,371 @@
         if (el) el.textContent = value === '' ? '' : `(${value})`;
     }
 
+    // ---------- Сайты ----------
+
+    // Закладки контейнера: имя и адрес того, с чем работают. До них адрес чужой
+    // админки жил в голове или в истории живого окна, а история умирает вместе
+    // с контейнером.
+    const siteCardsEl = document.getElementById('siteCards');
+    const siteModalEl = document.getElementById('siteModal');
+    const siteTitleEl = document.getElementById('siteModalTitle');
+    const siteNameEl = document.getElementById('siteName');
+    const siteUrlEl = document.getElementById('siteUrl');
+    const siteErrorEl = document.getElementById('siteError');
+
+    // Правим карточку тем же окном, что и заводим: полей два, и отдельная форма
+    // правки была бы копией этой. Ноль — окно заводит новый сайт.
+    let siteId = 0;
+
+    let sites = [];
+
+    async function sitesLoad() {
+        let data;
+        try {
+            data = await getData('/api/browser/site');
+        } catch (e) {
+            // Карточку заведения оставляем: список не пришёл, но добавить сайт
+            // это не мешает — и человеку видно, что вкладка жива.
+            sites = [];
+            countSet('site', '');
+            siteCardsRender();
+            showNotification('Список сайтов не пришёл: ' + e.message, 'error');
+            return;
+        }
+
+        sites = data.result || [];
+        countSet('site', sites.length);
+        siteCardsRender();
+        siteSelectsFill();
+    }
+
+    // Закладки нужны и соседним вкладкам: на «Сессиях» адрес уходит в строку
+    // адреса, на «Сценариях» — в «Старт». Селект собирается из того же ответа,
+    // которым живёт вкладка сайтов, — второго запроса за те же адреса нет.
+    function siteSelectsFill() {
+        for (const [id, target] of [['siteSelectSession', urlEl],
+                                    ['siteSelectScenario', scenarioUrlEl],
+                                    ['siteSelectWorkflow', null]]) {
+            const select = document.getElementById(id);
+            if (!select) continue;
+
+            // Значение опции — id сайта, а не адрес: сайт стал контекстом работы,
+            // по нему отбираются вкладки сессий и сценарии колонки. Выбранное
+            // держим по нему же: список перечитывается после каждой правки, и
+            // порядок в нём меняется вместе с именем.
+            const chosen = select.value;
+            select.innerHTML = '<option value="">— выбрать сайт —</option>' +
+                sites.map(row =>
+                    `<option value="${row.id}">${_escape(row.name)} — ${_escape(row.url)}</option>`
+                ).join('');
+            select.value = sites.some(row => String(row.id) === chosen) ? chosen : '';
+
+            // Поле уже заполнено адресом одной из закладок — покажем это выбором.
+            const known = target && sites.find(row => row.url === target.value);
+            if (!select.value && known) {
+                select.value = String(known.id);
+                continue;
+            }
+
+            // Иначе предлагаем первый сайт раскладки: порядок карточек человек
+            // задал сам, и верхняя — та, с которой он чаще всего и начинает.
+            if (!select.value && sites.length) {
+                select.value = String(sites[0].id);
+                // Адрес подставляем только в пустое поле: в строке адреса живого
+                // окна стоит адрес открытой сессии, и затирать его нельзя.
+                if (target && !target.value) target.value = sites[0].url;
+            }
+        }
+
+        sessionTabsRender();
+        sessionScenariosRender();
+        sessionWorkflowsRender();
+    }
+
+    // Выбранный сайт — контекст работы: его сессии показывает полоса вкладок, его
+    // сценарии — колонка слева, к нему же привязывается всё заведённое здесь.
+    function siteCurrent() {
+        const id = Number(document.getElementById('siteSelectSession').value || 0);
+
+        return sites.find(row => row.id === id) || null;
+    }
+
+    // Подставляем адрес, но никуда не идём: «Открыть» и «Запустить» человек жмёт
+    // сам, а выбор из списка — ещё не команда открыть.
+    function siteSelectApply(select, target, hintId) {
+        const site = sites.find(row => String(row.id) === select.value);
+        const hint = document.getElementById(hintId);
+
+        if (site) {
+            target.value = site.url;
+            if (target === urlEl) urlEdited = true;
+            if (hint) hint.textContent = 'адрес подставлен — нажмите «Открыть»';
+        } else if (hint) {
+            hint.textContent = '';
+        }
+
+        // Сменился сайт — сменились и его вкладки сессий, и его сценарии с цепочками.
+        sessionTabsRender();
+        sessionScenariosRender();
+        sessionWorkflowsRender();
+    }
+
+    function siteCardsRender() {
+        siteCardsEl.innerHTML = '';
+        // Карточка заведения — первой и всегда: пустая вкладка иначе не сообщала бы,
+        // что сайт вообще можно добавить.
+        siteCardsEl.appendChild(_siteAddCard());
+
+        for (const row of sites) {
+            const el = document.createElement('div');
+            el.className = 'site-card';
+            el.title = row.url;
+            // Порядок карточек человек раскладывает мышью: он же решает, какой сайт
+            // селекты соседних вкладок предложат первым.
+            el.draggable = true;
+            el.dataset.siteId = row.id;
+            el.addEventListener('dragstart', siteDragStart);
+            el.addEventListener('dragover', siteDragOver);
+            el.addEventListener('drop', siteDrop);
+            el.addEventListener('dragend', siteDragEnd);
+            el.innerHTML =
+                `<div class="site-card-name">${_escape(row.name)}</div>` +
+                `<div class="site-card-url">${_escape(row.url)}</div>` +
+                '<div class="site-card-actions">' +
+                '<button type="button" class="browser-btn primary site-open">Открыть</button>' +
+                '</div>' +
+                '<div class="site-card-tools">' +
+                '<button type="button" class="site-tool site-edit" title="Изменить">' +
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+                ' stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>' +
+                '</svg></button>' +
+                '<button type="button" class="site-tool danger site-del" title="Удалить сайт">' +
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+                ' stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg></button>' +
+                '</div>';
+
+            // Клик по карточке — правка: открывается то же окно, что и у карандаша.
+            el.addEventListener('click', () => siteEdit(row));
+            // Кнопки внутри карточки останавливают всплытие: иначе «Открыть» заодно
+            // распахивало бы окно правки, а «✕» — правило бы уже удалённое.
+            el.querySelector('.site-open').addEventListener('click', (event) => {
+                event.stopPropagation();
+                siteOpen(row);
+            });
+            el.querySelector('.site-edit').addEventListener('click', (event) => {
+                event.stopPropagation();
+                siteEdit(row);
+            });
+            el.querySelector('.site-del').addEventListener('click', (event) => {
+                event.stopPropagation();
+                siteDelete(row);
+            });
+            siteCardsEl.appendChild(el);
+        }
+    }
+
+    // Тащат карточку целиком, поэтому и целится она в карточку: id перетаскиваемой
+    // держим в переменной, а не только в `dataTransfer` — Firefox отдаёт его
+    // содержимое лишь на `drop`, а подсветка нужна уже на `dragover`.
+    let siteDragId = 0;
+
+    function siteDragStart(event) {
+        siteDragId = Number(event.currentTarget.dataset.siteId || 0);
+        event.currentTarget.classList.add('dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        // Пустой `setData` некоторые браузеры считают отменой перетаскивания.
+        event.dataTransfer.setData('text/plain', String(siteDragId));
+    }
+
+    // Половина карточки решает, встать до неё или после: так порядок меняется
+    // предсказуемо, без «прыжка через одну» на границе.
+    function siteDragOver(event) {
+        if (!siteDragId) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+
+        const card = event.currentTarget;
+        // Метку держит только та карточка, над которой сейчас курсор: `dragleave`
+        // на быстром движении приходит не всегда, и следы оставались бы на соседях.
+        siteDropMarksClear();
+        if (Number(card.dataset.siteId) === siteDragId) return;
+        const box = card.getBoundingClientRect();
+        const after = event.clientX > box.left + box.width / 2;
+        card.classList.toggle('drop-before', !after);
+        card.classList.toggle('drop-after', after);
+    }
+
+    async function siteDrop(event) {
+        event.preventDefault();
+        const card = event.currentTarget;
+        const targetId = Number(card.dataset.siteId || 0);
+        const after = card.classList.contains('drop-after');
+        siteDropMarksClear();
+        if (!siteDragId || !targetId || targetId === siteDragId) return;
+
+        const moved = sites.find(row => row.id === siteDragId);
+        const rest = sites.filter(row => row.id !== siteDragId);
+        const at = rest.findIndex(row => row.id === targetId);
+        if (!moved || at < 0) return;
+
+        rest.splice(after ? at + 1 : at, 0, moved);
+        sites = rest;
+        // Рисуем сразу, ответ ждём молча: перетаскивание обязано выглядеть
+        // мгновенным, а порядок всё равно перечитается следующим `sitesLoad`.
+        siteCardsRender();
+        siteSelectsFill();
+
+        try {
+            await postData('/api/browser/site/order', {ids: sites.map(row => row.id)});
+        } catch (e) {
+            showNotification('Порядок не сохранился: ' + e.message, 'error');
+        }
+        await sitesLoad();
+    }
+
+    function siteDragEnd(event) {
+        event.currentTarget.classList.remove('dragging');
+        siteDragId = 0;
+        siteDropMarksClear();
+    }
+
+    function siteDropMarksClear() {
+        siteCardsEl.querySelectorAll('.drop-before, .drop-after')
+            .forEach(el => el.classList.remove('drop-before', 'drop-after'));
+    }
+
+    function _siteAddCard() {
+        const el = document.createElement('div');
+        el.className = 'site-card-add';
+        el.title = 'Добавить сайт';
+        el.innerHTML = '<span class="site-card-add-plus">+</span><span>Добавить сайт</span>';
+        el.addEventListener('click', siteNew);
+
+        return el;
+    }
+
+    function siteNew() {
+        siteModalOpen(0, 'Новый сайт', '', '');
+    }
+
+    function siteEdit(row) {
+        siteModalOpen(row.id, `Сайт «${row.name}»`, row.name, row.url);
+    }
+
+    function siteModalOpen(id, title, name, url) {
+        siteId = id;
+        siteTitleEl.textContent = title;
+        siteNameEl.value = name;
+        siteUrlEl.value = url;
+        siteSay('');
+        siteModalEl.classList.add('visible');
+        // Фокус в первое поле: окно открывают, чтобы печатать, а не чтобы кликать
+        // по нему ещё раз.
+        siteNameEl.focus();
+        siteNameEl.select();
+    }
+
+    function siteModalClose() {
+        siteModalEl.classList.remove('visible');
+        siteId = 0;
+    }
+
+    async function siteSave() {
+        const name = siteNameEl.value.trim();
+        const url = urlNormalize(siteUrlEl.value);
+        if (!name || !url) {
+            siteSay('нужны и название, и адрес');
+            return;
+        }
+
+        try {
+            if (siteId) await putData('/api/browser/site/' + siteId, {name, url});
+            else await postData('/api/browser/site', {name, url});
+        } catch (e) {
+            // Ошибку показываем в самом окне и окно не закрываем: набранное нужно
+            // поправить, а не набирать заново.
+            siteSay(e.message);
+            return;
+        }
+
+        showNotification(siteId ? 'Сайт сохранён' : 'Сайт добавлен', 'success');
+        siteModalClose();
+        await sitesLoad();
+    }
+
+    async function siteDelete(row) {
+        if (!confirm(`Удалить сайт «${row.name}»?`)) return;
+
+        try {
+            await deleteData('/api/browser/site/' + row.id);
+        } catch (e) {
+            showNotification('Не удалось: ' + e.message, 'error');
+            return;
+        }
+
+        // Стёрли тот, что правили в открытом окне, — сохранять больше нечего.
+        if (row.id === siteId) siteModalClose();
+        showNotification('Сайт удалён', 'success');
+        await sitesLoad();
+    }
+
+    // Открыть сайт — увести живое окно на его адрес. Открытой сессии нет — заводим
+    // новую с именем сайта: закладку жмут, чтобы оказаться на странице, а не чтобы
+    // узнать, что сессию сперва надо создать самому.
+    async function siteOpen(row) {
+        tabSelect('session');
+        urlEl.value = row.url;
+        urlEdited = false;
+
+        if (!currentId || !socket || socket.readyState !== WebSocket.OPEN) {
+            await sessionCreate(row.url, row.name);
+            return;
+        }
+
+        statusSet('открываю ' + row.url);
+        send({type: 'goto', url: row.url});
+    }
+
+    function siteSay(text) {
+        siteErrorEl.textContent = text || '';
+    }
+
+    document.getElementById('inspectBtn').addEventListener('click', inspectToggle);
+    document.getElementById('inspectClose').addEventListener('click', inspectHide);
+    document.getElementById('inspectCopy').addEventListener('click', async () => {
+        const text = document.getElementById('inspectSel').textContent || '';
+        try {
+            await navigator.clipboard.writeText(text);
+            statusSet('селектор скопирован');
+        } catch (e) {
+            // Буфер браузер даёт только по жесту и на защищённом соединении —
+            // молчать об отказе нельзя, иначе кнопка выглядит сломанной.
+            statusSet('буфер недоступен: ' + e.message, true);
+        }
+    });
+
+    document.getElementById('recordBtn').addEventListener('click', recordToggle);
+
+    document.getElementById('siteSelectSession').addEventListener('change', (event) =>
+        siteSelectApply(event.target, urlEl, 'siteSelectSessionHint'));
+    document.getElementById('siteSelectScenario').addEventListener('change', (event) =>
+        siteSelectApply(event.target, scenarioUrlEl, ''));
+
+    document.getElementById('siteSaveBtn').addEventListener('click', siteSave);
+    document.getElementById('siteCancelBtn').addEventListener('click', siteModalClose);
+    document.getElementById('siteModalClose').addEventListener('click', siteModalClose);
+    // Клик мимо окна закрывает его, клик по самому окну — нет: иначе промах по
+    // полю стирал бы набранное.
+    siteModalEl.addEventListener('click', (event) => {
+        if (event.target === siteModalEl) siteModalClose();
+    });
+    // Слушаем на самом окне, а не на полях: Escape должен закрывать его и когда
+    // фокус ушёл на кнопку.
+    siteModalEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && event.target.tagName === 'INPUT') siteSave();
+        if (event.key === 'Escape') siteModalClose();
+    });
+
     document.getElementById('scenarioNewBtn').addEventListener('click', scenarioNew);
     document.getElementById('scenarioSaveBtn').addEventListener('click', scenarioSave);
     document.getElementById('scenarioRunBtn').addEventListener('click', scenarioRun);
@@ -2031,8 +3858,13 @@
     document.getElementById('scenarioAuthorBtn').addEventListener('click', scenarioAuthor);
 
     // Поля подстановок идут за шагами: дописали подстановку — строка появилась сразу.
-    scenarioStepsEl.addEventListener('input', scenarioKeysRender);
-    scenarioVariablesEl.addEventListener('input', scenarioKeysRender);
+    document.getElementById('scenarioStepAddBtn').addEventListener('click', scenarioStepAdd);
+    document.getElementById('workflowNewBtn').addEventListener('click', workflowNew);
+    document.getElementById('workflowSaveBtn').addEventListener('click', workflowSave);
+    document.getElementById('workflowRunBtn').addEventListener('click', workflowRun);
+    document.getElementById('workflowStepAddBtn').addEventListener('click', workflowStepAdd);
+    document.getElementById('scenarioVarAddBtn').addEventListener('click', scenarioVarAdd);
+    document.getElementById('scenarioVarSaveBtn').addEventListener('click', scenarioSave);
 
     scenarioSessionEl.addEventListener('change', () => {
         scenarioSessionPinned = true;
@@ -2056,31 +3888,17 @@
         return el.innerHTML;
     }
 
-    // Возвращает `null` на разборе, а не бросает: вызывающий уже сказал человеку,
-    // где именно сломан JSON, и второй раз падать незачем.
-    function _jsonParse(text, label) {
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            scenarioSay(`${label}: это не JSON — ${e.message}`, true);
-            return null;
-        }
-    }
-
-    // Тихий разбор: подстановки перерисовываются на каждое нажатие, и ругаться на
-    // недописанный JSON переменных посимвольно незачем — на «Сохранить» скажут.
-    function _jsonQuiet(text) {
-        try {
-            return JSON.parse((text || '').trim() || '{}');
-        } catch (e) {
-            return null;
-        }
-    }
-
-    tabSelect(localStorage.getItem(TAB_KEY) === 'scenario' ? 'scenario' : 'session');
+    // Первая вкладка — она же по умолчанию: с сайтов работа и начинается, сессию
+    // заводят с их карточки. Запомненный выбор всё равно старше умолчания, а
+    // неизвестное значение (осталось от прошлой раскладки) откатывается сюда же.
+    const TAB_KNOWN = ['site', 'session', 'scenario', 'workflow'];
+    tabSelect(TAB_KNOWN.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'site');
     scenarioKeysRender();
+    scenarioActionsLoad();
+    workflowsLoad();
     sessionsLoad();
     scenariosLoad();
+    sitesLoad();
     setInterval(sessionsLoad, 10000);
 </script>
 {% endblock %}

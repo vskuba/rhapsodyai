@@ -39,6 +39,7 @@ class BrowserRecordStart(BaseModel):
 class BrowserRecordStop(BaseModel):
     name: str = Field('', max_length=BROWSER_RECORD_NAME_LIMIT,
                       description='Имя черновика; пусто — возьмётся то, с которым начинали')
+    site_id: int | None = Field(None, description='Сайт, к которому отнести записанный сценарий')
 
 
 @router.get('/{session_id}/record')
@@ -75,6 +76,9 @@ async def browser_record_stop(session_id: str, data: BrowserRecordStop,
     start_url = str(record.get('start_url', ''))[:500]
 
     scenario_id = await BrowserScenarioRepository().add({
+        # Сайт берём от страницы, на которой писали: сценарий заводят от закладки,
+        # и без привязки он потерялся бы в общем списке.
+        'site_id': data.site_id,
         'name': name,
         'goal': '',
         'start_url': start_url,

@@ -23,6 +23,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from logging_.logging_ import logger_info
 
 from src.browser.browser_api import BROWSER_API_TOKEN
+from src.browser.browser_inspect import browser_inspect_queue, browser_inspect_set
 from src.browser.browser_pool import (
     BROWSER_POOL_GOTO_TIMEOUT_MS,
     BROWSER_POOL_VIEWPORT_HEIGHT,
@@ -150,13 +151,16 @@ async def browser_view_socket(websocket: WebSocket, session_id: str, token: str 
     logger_info(f'[browser] окно открыто: {session_id}')
 
     sender = asyncio.create_task(_frames_send(emit, frames, state))
+    # Выбранный инспектором элемент приходит из страницы через привязку, а не
+    # ответом на сообщение: тычок делает человек, и ждать его в цикле нечем.
+    picker = asyncio.create_task(_inspect_send(emit, entry))
     try:
         while True:
             message = await websocket.receive_json()
             entry['used_at'] = time.time()
 
             try:
-                await _message_apply(message, context, state, view_switch, emit, session_id)
+                await _message_apply(message, context, state, view_switch, emit, session_id, entry)
             except Exception as e:
                 # Неудачное действие — строка клиенту, а не конец окна. Опечатка в
                 # адресе и не успевшая загрузиться страница случаются постоянно, и
@@ -168,6 +172,7 @@ async def browser_view_socket(websocket: WebSocket, session_id: str, token: str 
         logger_info(f'[browser] окно {session_id} оборвалось: {e}')
     finally:
         sender.cancel()
+        picker.cancel()
         # Подписки снимаем обязательно: контекст живёт дольше окна, и оставленный
         # обработчик копил бы задачи для давно закрытого сокета при каждом popup.
         context.remove_listener('page', on_page)
@@ -177,9 +182,24 @@ async def browser_view_socket(websocket: WebSocket, session_id: str, token: str 
         logger_info(f'[browser] окно закрыто: {session_id}')
 
 
-async def _message_apply(message: dict, context, state: dict, view_switch, emit, session_id: str = ''):
+async def _inspect_send(emit, entry: dict):
+    """Гонит выбранные инспектором элементы клиенту, пока окно открыто."""
+    queue = browser_inspect_queue(entry)
+    while True:
+        await emit(await queue.get())
+
+
+async def _message_apply(message: dict, context, state: dict, view_switch, emit,
+                         session_id: str = '', entry: dict | None = None):
     """Сообщение клиента: вкладки и буфер — здесь, всё остальное — над текущей страницей."""
     kind = message.get('type', '')
+
+    if kind == 'inspect':
+        # Инспектор — свойство сессии, а не окна: переключили и ушли на другую
+        # вкладку админки, вернулись — режим там же, где его оставили.
+        if entry is not None:
+            await browser_inspect_set(entry, bool(message.get('on')))
+        return
 
     if kind == 'copy':
         # Обратная сторона вставки: выделили в чужом Chromium, а системный буфер

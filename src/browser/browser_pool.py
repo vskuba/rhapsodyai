@@ -75,11 +75,16 @@ async def browser_pool_stop():
 
 
 async def browser_pool_session_open(name: str = '', url: str = '', storage_state: dict | None = None,
-                                    viewport: dict | None = None) -> dict:
+                                    viewport: dict | None = None, site_id: int = 0) -> dict:
     """Заводит сессию: свой контекст, одна страница в нём.
 
     `storage_state` — сохранённые cookie и localStorage прошлой сессии: с ним
     страница открывается уже авторизованной, без повторного прохода по форме входа.
+
+    `site_id` — закладка, от которой сессию завели (`browser_site` в базе `uvicorn`).
+    Контейнер её не проверяет и ничего о ней не знает: для него это метка, по
+    которой админка отбирает вкладки своего сайта. В базу она не уезжает и уезжать
+    не должна — сессия живёт в памяти и умирает вместе с контейнером.
     """
     if _browser is None:
         raise RuntimeError('браузер не запущен')
@@ -98,6 +103,7 @@ async def browser_pool_session_open(name: str = '', url: str = '', storage_state
         _sessions[session_id] = {
             'session_id': session_id,
             'name': name or session_id,
+            'site_id': int(site_id or 0),
             'context': context,
             'page': page,
             'created_at': time.time(),
@@ -190,6 +196,7 @@ def _session_info(entry: dict) -> dict:
     return {
         'session_id': entry['session_id'],
         'name': entry['name'],
+        'site_id': entry.get('site_id', 0),
         'url': page.url,
         'alive': not page.is_closed(),
         'uptime_sec': round(now - entry['created_at']),

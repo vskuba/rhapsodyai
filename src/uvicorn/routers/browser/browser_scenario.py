@@ -20,7 +20,10 @@ from mysql_.mysql_ import mysql_get_db_async
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.browser.browser_scenario import BrowserScenario, browser_scenario_variables_used
+from src.browser.browser_scenario import (BROWSER_SCENARIO_ACTIONS,
+                                          BROWSER_SCENARIO_STEP_TIMEOUT_MS,
+                                          BrowserScenario,
+                                          browser_scenario_variables_used)
 from src.mysql_.repository.browser.scenario_repository import BrowserScenarioRepository
 from src.uvicorn.routers.browser.browser_upstream import (
     BROWSER_UPSTREAM_SCENARIO_TIMEOUT,
@@ -38,6 +41,7 @@ BROWSER_SCENARIO_RUN_PAGE = 50
 class BrowserScenarioSave(BaseModel):
     """Тело создания и правки. Шаги проверяются схемой контейнера — той же самой."""
 
+    site_id: int | None = Field(None, description='Сайт-закладка, к которому относится сценарий')
     name: str = Field(..., min_length=1, max_length=100)
     goal: str = Field('', max_length=255)
     start_url: str = Field('', max_length=500)
@@ -55,12 +59,27 @@ class BrowserScenarioRun(BaseModel):
     keep_session: bool = Field(False, description='Оставить сессию живой — посмотреть результат в /admin/browser')
 
 
+@router.get('/action')
+async def browser_scenario_action_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """Справочник действий: какое действие какие поля требует.
+
+    Отдаётся из той же схемы, что проверяет шаги (`BROWSER_SCENARIO_ACTIONS`), —
+    форма редактора спрашивает ровно обязательные поля, и второй список действий,
+    который разошёлся бы с ней на первой правке, заводить не приходится.
+
+    Путь до `/{scenario_id}`: иначе `action` уехал бы в него номером и вернул 422.
+    """
+    return {'result': {'actions': {name: list(fields)
+                                   for name, fields in BROWSER_SCENARIO_ACTIONS.items()},
+                       'timeout_ms': BROWSER_SCENARIO_STEP_TIMEOUT_MS}}
+
+
 @router.get('')
 async def browser_scenario_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Все сценарии, свежие сверху."""
     async with mysql_get_db_async() as db:
         await db.execute(
-            'SELECT id, name, goal, start_url, status, created_at, updated_at '
+            'SELECT id, site_id, name, goal, start_url, status, created_at, updated_at '
             'FROM browser_scenario ORDER BY id DESC'
         )
         rows = await db.fetchall()
@@ -76,6 +95,7 @@ async def browser_scenario_create(data: BrowserScenarioSave,
 
     try:
         scenario_id = await BrowserScenarioRepository().add({
+            'site_id': data.site_id,
             'name': data.name,
             'goal': data.goal,
             'start_url': data.start_url,
@@ -110,6 +130,7 @@ async def browser_scenario_update(scenario_id: int, data: BrowserScenarioSave,
     scenario = _scenario_check(data)
 
     await BrowserScenarioRepository().update(scenario_id, {
+        'site_id': data.site_id,
         'name': data.name,
         'goal': data.goal,
         'start_url': data.start_url,
@@ -139,17 +160,34 @@ async def browser_scenario_run(scenario_id: int, data: BrowserScenarioRun,
     Удачные прогоны журналируются наравне с неудачными: по одним ошибкам не видно,
     что сценарий стал вдвое медленнее, — а это первый признак, что вёрстка поехала.
     """
+    result = await browser_scenario_run_one(scenario_id, data.session_id, data.variables,
+                                           data.secrets, data.keep_session)
+
+    return {'result': result}
+
+
+async def browser_scenario_run_one(scenario_id: int, session_id: str, variables: dict,
+                                   secrets: dict, keep_session: bool) -> dict:
+    """Один прогон сценария: отдать контейнеру, записать журнал, поправить метку.
+
+    Отдельной функцией, а не только ручкой: цепочка (`browser_workflow`) гонит
+    те же сценарии по очереди, и второй такой же код разошёлся бы с этим — журнал
+    писался бы у одного и не писался у другой.
+
+    Возвращает ответ контейнера как есть: код запроса тут ни при чём, упавший на
+    третьем шаге сценарий — это `status: "error"` с трассой, а не ошибка HTTP.
+    """
     row = await _scenario_row(scenario_id)
     scenario = _scenario_load(row)
 
     payload = {
         'scenario': scenario.model_dump(),
-        'session_id': data.session_id,
+        'session_id': session_id,
         # Значения сценария — основа, переданные при запуске перекрывают их:
         # адрес стенда в базе, а на проверке хочется другой.
-        'variables': {**_variables_default(row), **data.variables},
-        'secrets': data.secrets,
-        'keep_session': data.keep_session,
+        'variables': {**_variables_default(row), **(variables or {})},
+        'secrets': secrets or {},
+        'keep_session': keep_session,
     }
 
     result = await browser_upstream_request('POST', '/browser/scenario/run', payload,
@@ -162,7 +200,7 @@ async def browser_scenario_run(scenario_id: int, data: BrowserScenarioRun,
     if row.get('status') != status:
         await BrowserScenarioRepository().update(scenario_id, {'status': status})
 
-    return {'result': result}
+    return result
 
 
 @router.get('/{scenario_id}/run')

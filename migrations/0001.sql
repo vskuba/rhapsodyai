@@ -5,6 +5,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
 -- browser
+DROP TABLE IF EXISTS `browser_workflow_step`;
+DROP TABLE IF EXISTS `browser_workflow`;
 DROP TABLE IF EXISTS `browser_scenario_run`;
 DROP TABLE IF EXISTS `browser_scenario`;
 DROP TABLE IF EXISTS `browser_site`;
@@ -971,9 +973,14 @@ CREATE TABLE `browser_site` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `name` VARCHAR(100) NOT NULL,
     `url` VARCHAR(500) NOT NULL COMMENT 'Полный адрес со схемой: сессии заводят по нему',
+    -- Порядок карточек человек раскладывает мышью, и он же решает, какой сайт
+    -- селекты соседних вкладок предлагают первым. Алфавит для этого не годится:
+    -- рабочий стенд не обязан начинаться на «А».
+    `position` INT NOT NULL DEFAULT 0,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
+    INDEX `idx_browser_site_position` (`position`),
     -- Имя уникально: карточки различают по нему, два «личного кабинета» с разными
     -- адресами человек не разберёт.
     UNIQUE KEY `uk_browser_site_name` (`name`)
@@ -987,6 +994,10 @@ CREATE TABLE `browser_site` (
 -- значения приходят на прогон: обычные — в журнал, секретные — мимо него.
 CREATE TABLE `browser_scenario` (
     `id` INT NOT NULL AUTO_INCREMENT,
+    -- Сайт, к которому сценарий относится: работа идёт от закладки — открыть её
+    -- страницу и гнать по ней шаги. NULL — сценарий, заведённый до появления
+    -- сайтов либо общий; удаление сайта его не уносит, только отвязывает.
+    `site_id` INT NULL,
     `name` VARCHAR(100) NOT NULL,
     -- Цель словами: «войти в админку и оказаться на списке задач». По ней агент
     -- перепишет шаги, когда вёрстка сайта изменится, — сами шаги для этого
@@ -1002,7 +1013,38 @@ CREATE TABLE `browser_scenario` (
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_browser_scenario_name` (`name`),
-    INDEX `idx_browser_scenario_status` (`status`)
+    INDEX `idx_browser_scenario_status` (`status`),
+    INDEX `idx_browser_scenario_site` (`site_id`),
+    CONSTRAINT `fk_bs_site` FOREIGN KEY (`site_id`) REFERENCES `browser_site` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Цепочка сценариев: «войти» → «открыть раздел» → «проверить». Сценарии остаются
+-- самостоятельными и гоняются по отдельности; цепочка лишь задаёт порядок и общий
+-- прогон в одной сессии — состояние страницы переходит от звена к звену.
+CREATE TABLE `browser_workflow` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `site_id` INT NULL,
+    `name` VARCHAR(100) NOT NULL,
+    `position` INT NOT NULL DEFAULT 0 COMMENT 'Порядок в списке — как у карточек сайтов',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_browser_workflow_name` (`name`),
+    INDEX `idx_browser_workflow_site` (`site_id`),
+    CONSTRAINT `fk_bw_site` FOREIGN KEY (`site_id`) REFERENCES `browser_site` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Звено цепочки. Каскад по сценарию намеренный: удалённый сценарий не должен
+-- оставлять в цепочке ссылку в никуда — прогон встал бы на ней молча.
+CREATE TABLE `browser_workflow_step` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `workflow_id` INT NOT NULL,
+    `scenario_id` INT NOT NULL,
+    `position` INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    INDEX `idx_bws_workflow` (`workflow_id`, `position`),
+    CONSTRAINT `fk_bws_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `browser_workflow` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_bws_scenario` FOREIGN KEY (`scenario_id`) REFERENCES `browser_scenario` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Журнал прогонов. Пишется и на успехе тоже: «сценарий сломался» видно только в

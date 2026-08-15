@@ -33,6 +33,7 @@ BROWSER_API_WAIT_UNTIL = ('commit', 'domcontentloaded', 'load', 'networkidle')
 
 class BrowserSessionCreate(BaseModel):
     name: str = Field('', max_length=100, description='Человеческое имя сессии для списка')
+    site_id: int = Field(0, ge=0, description='Закладка `browser_site`, от которой завели сессию')
     url: str = Field('', description='Куда сразу перейти; пусто — остаться на about:blank')
     storage_state: dict | None = Field(None, description='Cookie и localStorage прошлой сессии')
     viewport: dict | None = Field(None, description='{"width": …, "height": …}')
@@ -99,6 +100,7 @@ async def browser_api_session_create(data: BrowserSessionCreate):
             url=data.url,
             storage_state=data.storage_state,
             viewport=data.viewport,
+            site_id=data.site_id,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))

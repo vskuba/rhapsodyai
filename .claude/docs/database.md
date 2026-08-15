@@ -95,8 +95,11 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 - `project_design_token` — design token sets (JSON)
 
 ### Browser
-- `browser_scenario` — UI scenarios: goal + JSON steps (no secrets in `steps`)
+- `browser_scenario` — UI scenarios: goal + JSON steps (no secrets in `steps`), `site_id` → `browser_site` (ON DELETE SET NULL)
 - `browser_scenario_run` — run journal: trace, extract, duration; written on success too
+- `browser_workflow` — scenario chains: `site_id`, unique `name`, `position`
+- `browser_workflow_step` — chain links: `workflow_id` → `scenario_id` (both cascade), `position`
+- `browser_site` — bookmarks for the browser container: unique `name` + `url` (scheme required), `position` for the drag-and-drop order
 
 ## Table Order in 0001.sql (FK dependency order)
 
@@ -116,7 +119,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 14. `project_design_prototype_browser_history`
 15. `project_state` → `project_design_prototype_page` → `project_design_prototype_widget` → `project_design_prototype_page_block`
 16. `project_design_ui_component` → `project_design_ui_block_type` → `project_design_ui_block` → `project_design_ui_block_size` → `project_design_token`
-17. `browser_scenario` → `browser_scenario_run`
+17. `browser_site` → `browser_scenario` → `browser_scenario_run`; `browser_workflow` → `browser_workflow_step`
 
 ## Changing the Schema
 
