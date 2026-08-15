@@ -720,15 +720,48 @@
     .scenario-trace-row.bad { color: #b91c1c; }
     .browser-status.bad { color: #b91c1c; }
 
-    /* Подзаголовок внутри колонки: цепочки и сценарии — разные сущности, и
-       разделить их надписью дешевле, чем двумя колонками. */
+    /* Подзаголовок внутри колонки — он же кнопка аккордеона: цепочки и сценарии
+       занимают одно и то же место, и открыт всегда ровно один из них. Колонка
+       узкая, а карточки с полями подстановок высокие: показывать оба списка разом
+       значит заставлять человека прокручивать мимо того, что ему сейчас не нужно. */
     .browser-side-sub {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
         margin: 10px 0 6px;
+        padding: 4px 2px;
+        border: 0;
+        border-bottom: 1px solid #f1f5f9;
+        background: none;
         font-size: 11px;
         font-weight: 700;
+        font-family: inherit;
         color: #94a3b8;
         text-transform: uppercase;
         letter-spacing: .04em;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .browser-side-sub:hover { color: #64748b; }
+    .browser-side-sub.open { color: #4338ca; border-bottom-color: #c7d2fe; }
+
+    .browser-side-caret {
+        display: inline-block;
+        font-size: 9px;
+        transition: transform .15s;
+    }
+
+    .browser-side-sub.open .browser-side-caret { transform: rotate(90deg); }
+
+    /* Счётчик у заголовка: закрытая секция всё равно должна говорить, сколько
+       в ней лежит, — иначе непонятно, стоит ли её открывать. */
+    .browser-side-n {
+        margin-left: auto;
+        font-weight: 400;
+        letter-spacing: 0;
+        text-transform: none;
     }
 
     /* ---------- Шаги сценария ---------- */
@@ -966,12 +999,52 @@
 
     .inspect-pop-copy:hover { border-color: #c7d2fe; color: #4338ca; }
 
-    .inspect-pop-sel {
+    /* Вариантов селектора несколько, и выбирает человек: у одного элемента есть и
+       пометка, и текст, и место в списке — что из этого переживёт правку вёрстки,
+       видно только тому, кто пишет сценарий. */
+    .inspect-pop-list {
+        max-height: 132px;
+        overflow-y: auto;
+        margin-bottom: 4px;
+    }
+
+    .inspect-pop-row {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        padding: 3px 0;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .inspect-pop-row:last-child { border-bottom: 0; }
+
+    .inspect-pop-label {
+        flex: 0 0 96px;
+        color: #94a3b8;
+        font-size: 10px;
+    }
+
+    .inspect-pop-value {
+        flex: 1 1 auto;
+        min-width: 0;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         color: #0f172a;
         word-break: break-all;
-        margin-bottom: 4px;
+        cursor: pointer;
     }
+
+    .inspect-pop-value:hover { color: #4338ca; text-decoration: underline; }
+
+    /* Сколько элементов совпадёт. Клик в сценарии идёт через строгий locator, и
+       два совпадения — это упавший шаг, а не «возьмём первый». */
+    .inspect-pop-n {
+        flex: 0 0 auto;
+        font-size: 10px;
+        color: #16a34a;
+    }
+
+    .inspect-pop-n.bad { color: #b91c1c; font-weight: 700; }
+    .inspect-pop-n.unknown { color: #94a3b8; }
 
     /* Разметка — та же компактность: три-четыре строки и прокрутка, а не
        редактор во весь экран. */
@@ -1339,12 +1412,13 @@
             <input type="text" id="recordName" maxlength="100" placeholder="новый сценарий" spellcheck="false">
             <button type="button" class="browser-btn" id="recordBtn">Старт</button>
         </div>
-        <div class="browser-side-head">
-            <span class="browser-side-title">Что запустить</span>
-        </div>
-        <div class="browser-side-sub" id="sessionWorkflowHead">Цепочки</div>
+        <button type="button" class="browser-side-sub" id="sessionWorkflowHead" data-section="workflow">
+            <span class="browser-side-caret">▸</span>Цепочки<span class="browser-side-n" id="sessionWorkflowN"></span>
+        </button>
         <div id="sessionWorkflowList"></div>
-        <div class="browser-side-sub">Сценарии</div>
+        <button type="button" class="browser-side-sub" id="sessionScenarioHead" data-section="scenario">
+            <span class="browser-side-caret">▸</span>Сценарии<span class="browser-side-n" id="sessionScenarioN"></span>
+        </button>
         <div id="sessionScenarioList"></div>
     </div>
 
@@ -1390,10 +1464,9 @@
         <div class="inspect-pop" id="inspectPop">
             <div class="inspect-pop-head">
                 <span class="inspect-pop-tag" id="inspectTag"></span>
-                <button type="button" class="inspect-pop-copy" id="inspectCopy" title="Скопировать селектор">копировать</button>
                 <button type="button" class="modal-close" id="inspectClose" title="Закрыть">✕</button>
             </div>
-            <div class="inspect-pop-sel" id="inspectSel"></div>
+            <div class="inspect-pop-list" id="inspectList"></div>
             <pre class="inspect-pop-html" id="inspectHtml"></pre>
         </div>
 
@@ -1840,9 +1913,71 @@
     // вкладки, чтобы шаги было видно.
     // Ключ карт — «вид:номер»: цепочка и сценарий с одинаковым номером это разные
     // строки, и путать их значения нельзя.
-    const playValues = new Map();  // 'scenario:7' -> {ключ: значение}
     const playBusy = new Set();    // то, чей прогон уже идёт
     const playDetails = new Map(); // 'workflow:2' -> {used: [...], defaults: {}}
+
+    // Набранные значения переживают перезагрузку страницы: их подбирают руками под
+    // конкретный стенд (логин тестовой учётки, номер анкеты), и терять их на каждом
+    // F5 дороже, чем хранить. Ключ карты — «вид:номер», внутри — {подстановка: значение}.
+    //
+    // Лежит это в localStorage браузера админа, то есть на его диске: если в поле
+    // введён настоящий пароль, он останется там до «Забыть значения».
+    const PLAY_VALUES_KEY = 'browser_play_values';
+
+    const playValues = new Map(Object.entries(_playValuesLoad()));
+
+    function _playValuesLoad() {
+        try {
+            const raw = JSON.parse(localStorage.getItem(PLAY_VALUES_KEY) || '{}');
+            return raw && typeof raw === 'object' ? raw : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function playValuesSave() {
+        try {
+            localStorage.setItem(PLAY_VALUES_KEY, JSON.stringify(Object.fromEntries(playValues)));
+        } catch (e) {
+            // Хранилище переполнено или запрещено — работать это не мешает,
+            // значения просто не переживут перезагрузку.
+        }
+    }
+
+    function playValuesForget() {
+        playValues.clear();
+        try { localStorage.removeItem(PLAY_VALUES_KEY); } catch (e) {}
+        sessionScenariosRender();
+        sessionWorkflowsRender();
+        showNotification('Введённые значения забыты', 'success');
+    }
+
+    // ---------- Аккордеон колонки ----------
+
+    // Открыт всегда ровно один список: раскрыли цепочки — сценарии свернулись.
+    // Выбор запоминается, как и вкладка страницы: работа идёт длинными заходами.
+    const SIDE_SECTION_KEY = 'browser_side_section';
+
+    let sideSection = localStorage.getItem(SIDE_SECTION_KEY) === 'workflow' ? 'workflow' : 'scenario';
+
+    function sideSectionApply() {
+        for (const [name, headId, listId] of [['workflow', 'sessionWorkflowHead', 'sessionWorkflowList'],
+                                              ['scenario', 'sessionScenarioHead', 'sessionScenarioList']]) {
+            const head = document.getElementById(headId);
+            const list = document.getElementById(listId);
+            if (!head || !list) continue;
+
+            const open = sideSection === name;
+            head.classList.toggle('open', open);
+            list.style.display = open ? '' : 'none';
+        }
+    }
+
+    function sideSectionSet(name) {
+        sideSection = name === 'workflow' ? 'workflow' : 'scenario';
+        localStorage.setItem(SIDE_SECTION_KEY, sideSection);
+        sideSectionApply();
+    }
 
     function sessionScenariosRender() {
         const root = document.getElementById('sessionScenarioList');
@@ -1860,9 +1995,11 @@
             ? scenarios.filter(row => !row.site_id || Number(row.site_id) === site.id)
             : scenarios;
 
+        document.getElementById('sessionScenarioN').textContent = mine.length || '';
         root.innerHTML = '';
         if (!mine.length) {
             root.innerHTML = '<div class="browser-empty">сценариев нет — запишите первый сверху</div>';
+            sideSectionApply();
             return;
         }
 
@@ -1870,6 +2007,7 @@
             root.appendChild(_playCard('scenario', row.id, row.name,
                                        row.goal || 'цель не записана', row.status));
         }
+        sideSectionApply();
     }
 
     // Цепочки живут в той же колонке и запускаются так же: разница только в том,
@@ -1886,12 +2024,18 @@
             ? workflows.filter(row => !row.site_id || Number(row.site_id) === site.id)
             : workflows;
 
-        document.getElementById('sessionWorkflowHead').style.display = mine.length ? '' : 'none';
+        // Заголовок остаётся всегда: аккордеон, у которого секции то появляются, то
+        // исчезают, читается как сбой. Пустоту показывает сам список.
+        document.getElementById('sessionWorkflowN').textContent = mine.length || '';
         root.innerHTML = '';
+        if (!mine.length) {
+            root.innerHTML = '<div class="browser-empty">цепочек нет</div>';
+        }
         for (const row of mine) {
             root.appendChild(_playCard('workflow', row.id, row.name,
                                        `${row.steps} ${_plural(row.steps, 'сценарий', 'сценария', 'сценариев')}`));
         }
+        sideSectionApply();
     }
 
     function _plural(n, one, few, many) {
@@ -1956,8 +2100,10 @@
                 ? values[name]
                 : (known ? String(detail.defaults[name]) : '');
             values[name] = input.value;
+            playValuesSave();
             input.addEventListener('input', () => {
                 values[name] = input.value;
+                playValuesSave();
                 playButtonSync(el, kind, id);
             });
 
@@ -2092,9 +2238,62 @@
 
     function inspectShow(message) {
         document.getElementById('inspectTag').textContent = message.tag ? `<${message.tag}>` : 'элемент';
-        document.getElementById('inspectSel').textContent = message.selector || 'селектор не вычислен';
         document.getElementById('inspectHtml').textContent = message.html || '';
+
+        // Вариантов несколько: у элемента бывает и пометка, и текст, и место в
+        // списке. Что из этого переживёт правку вёрстки, решает человек — страница
+        // только считает, сколько элементов совпадёт с каждым.
+        const list = document.getElementById('inspectList');
+        list.innerHTML = '';
+        const rows = (message.selectors || []).length
+            ? message.selectors
+            : [{label: 'селектор', value: message.selector || '', count: -1}];
+
+        for (const row of rows) {
+            if (!row.value) continue;
+            const el = document.createElement('div');
+            el.className = 'inspect-pop-row';
+
+            const label = document.createElement('span');
+            label.className = 'inspect-pop-label';
+            label.textContent = row.label || '';
+
+            // Клик по самому селектору копирует его: до кнопки в узкой строке
+            // ещё целиться, а строку человек и так читает.
+            const value = document.createElement('span');
+            value.className = 'inspect-pop-value';
+            value.textContent = row.value;
+            value.title = 'Нажмите, чтобы скопировать';
+            value.addEventListener('click', () => inspectCopy(row.value));
+
+            const num = document.createElement('span');
+            num.className = 'inspect-pop-n'
+                + (row.count > 1 ? ' bad' : (row.count < 0 ? ' unknown' : ''));
+            num.textContent = row.count === 1 ? '1' : (row.count < 0 ? '?' : String(row.count));
+            num.title = row.count === 1
+                ? 'единственное совпадение — клик сработает'
+                : (row.count < 0
+                    ? 'браузер этот селектор не разбирает: псевдоклассы Playwright он и не должен понимать'
+                    : `совпадений ${row.count}: строгий locator на таком шаге упадёт`);
+
+            el.appendChild(label);
+            el.appendChild(value);
+            el.appendChild(num);
+            list.appendChild(el);
+        }
+
         document.getElementById('inspectPop').classList.add('visible');
+    }
+
+    async function inspectCopy(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            statusSet('селектор скопирован: ' + text);
+        } catch (e) {
+            // Буфер браузер даёт только по жесту и на защищённом соединении —
+            // молчать об отказе нельзя, иначе клик выглядит несработавшим.
+            statusSet('буфер недоступен: ' + e.message, true);
+        }
     }
 
     function inspectHide() {
@@ -3815,20 +4014,20 @@
         siteErrorEl.textContent = text || '';
     }
 
+    for (const id of ['sessionWorkflowHead', 'sessionScenarioHead']) {
+        document.getElementById(id).addEventListener('click', (event) =>
+            sideSectionSet(event.currentTarget.dataset.section));
+    }
+
+    // Забыть набранное: значения лежат в localStorage браузера, и пароль тестовой
+    // учётки там останется, пока его оттуда не уберут.
+    document.getElementById('recordBtn').insertAdjacentHTML('afterend',
+        '<button type="button" class="browser-btn" id="playForgetBtn" '
+        + 'title="Забыть введённые значения подстановок">🧹</button>');
+    document.getElementById('playForgetBtn').addEventListener('click', playValuesForget);
+
     document.getElementById('inspectBtn').addEventListener('click', inspectToggle);
     document.getElementById('inspectClose').addEventListener('click', inspectHide);
-    document.getElementById('inspectCopy').addEventListener('click', async () => {
-        const text = document.getElementById('inspectSel').textContent || '';
-        try {
-            await navigator.clipboard.writeText(text);
-            statusSet('селектор скопирован');
-        } catch (e) {
-            // Буфер браузер даёт только по жесту и на защищённом соединении —
-            // молчать об отказе нельзя, иначе кнопка выглядит сломанной.
-            statusSet('буфер недоступен: ' + e.message, true);
-        }
-    });
-
     document.getElementById('recordBtn').addEventListener('click', recordToggle);
 
     document.getElementById('siteSelectSession').addEventListener('change', (event) =>
@@ -3894,6 +4093,7 @@
     const TAB_KNOWN = ['site', 'session', 'scenario', 'workflow'];
     tabSelect(TAB_KNOWN.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'site');
     scenarioKeysRender();
+    sideSectionApply();
     scenarioActionsLoad();
     workflowsLoad();
     sessionsLoad();

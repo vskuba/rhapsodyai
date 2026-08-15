@@ -197,9 +197,10 @@ def _entry_get(session_id: str) -> dict:
 async def _listeners_install(entry: dict):
     """Ставит привязку и init-скрипт — один раз на сессию.
 
-    Init-скрипт достаётся только новым документам, поэтому уже открытая страница
-    вооружается отдельным `evaluate`: запись должна начаться там, где человек
-    сейчас стоит, а не со следующего перехода.
+    Init-скрипт достаётся только новым документам, поэтому уже открытые страницы
+    вооружаются отдельным `evaluate`: запись должна начаться там, где человек
+    сейчас стоит, а не со следующего перехода. Страниц может быть несколько —
+    сайт открывает дочерние окна, и показывают проход часто именно в них.
     """
     context = entry['context']
     session_id = entry['session_id']
@@ -212,9 +213,16 @@ async def _listeners_install(entry: dict):
         await context.add_init_script(BROWSER_RECORD_JS)
         entry['record_installed'] = True
 
-    page = entry['page']
-    if not page.is_closed():
-        await page.evaluate(BROWSER_RECORD_JS)
+    # Вооружаем все открытые страницы, а не только первую: к началу записи у сессии
+    # уже может быть всплывшее дочернее окно, и человек показывает проход именно в
+    # нём. Новые окна init-скрипт получат сами.
+    for page in entry['context'].pages:
+        if page.is_closed():
+            continue
+        try:
+            await page.evaluate(BROWSER_RECORD_JS)
+        except Exception as e:
+            logger_info(f'[browser] запись: скрипт не встал на страницу: {e}')
 
 
 def _emit(session_id: str, step):
