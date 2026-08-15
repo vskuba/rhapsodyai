@@ -22,6 +22,7 @@ HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по о
 | `/admin/llm` | `admin/llm.html` | LLM и статистика запросов |
 | `/admin/node` | `admin/node.html` | Ноды |
 | `/admin/tool` | `admin/tool.html` | Инструменты + тест-раннер |
+| `/admin/dating` | `admin/dating.html` | Dating; **не** наследует `base.html` (standalone) |
 | `/admin/fact`, `/admin/fact_collection` | `admin/fact*.html` | Факты и коллекции |
 | `/admin/session` | `admin/session.html` | Просмотр сессий |
 | `/admin/user`, `/admin/role` | `admin/user.html`, `admin/role.html` | Пользователи и роли |
