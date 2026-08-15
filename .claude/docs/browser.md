@@ -268,7 +268,7 @@ REST-ручки (`/browser/session`, `/browser/session/{id}/goto`) наобор�
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
-| `GET` | `/api/browser/site` | список в порядке раскладки (`position`, затем `id`); чтение — `PLANNING_VIEW` |
+| `GET` | `/api/browser/site` | список в порядке раскладки (`position`, затем `id`); чтение — `PLANNING_VIEW`; **виден в `/docs`** |
 | `POST` | `/api/browser/site` | завести (`name`, `url`) → 201, встаёт в конец; правки — `PLANNING_CREATE` |
 | `POST` | `/api/browser/site/order` | новая раскладка: `ids` сверху вниз |
 | `PUT` | `/api/browser/site/{id}` | переписать имя и адрес |
@@ -544,7 +544,7 @@ curl -s -X POST http://127.0.0.1:8011/api/browser/scenario/1/run \
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
-| `GET` | `/api/browser/workflow` | список с числом звеньев; чтение — `PLANNING_VIEW` |
+| `GET` | `/api/browser/workflow` | список с числом звеньев; чтение — `PLANNING_VIEW`; **виден в `/docs`** |
 | `POST` | `/api/browser/workflow` | завести (`name`, `site_id`, `scenario_ids`) → 201 |
 | `GET` | `/api/browser/workflow/{id}` | звенья по порядку + `variables_used` и умолчания всех звеньев |
 | `PUT` | `/api/browser/workflow/{id}` | переписать имя, сайт и порядок звеньев |
@@ -567,6 +567,26 @@ curl -s -X POST http://127.0.0.1:8011/api/browser/scenario/1/run \
 «Запустить». Итог прогона — строка на звено: номер, имя, «ок» или причина. Запускать
 цепочку можно и с вкладки «Сессии»: в колонке она стоит над сценариями, с той же кнопкой и
 теми же полями подстановок — они собраны по всем её звеньям, потому что значения общие.
+
+## 5.3 Что из браузера видно в `/docs`
+
+Схема OpenAPI на `/docs` — витрина для внешних потребителей, а не полный список ручек:
+роутеры админки регистрируются с `include_in_schema=False`, и в схему попадает единичное.
+От браузера там **два списка** — сайты (`GET /api/browser/site`) и цепочки
+(`GET /api/browser/workflow`): по ним внешняя система узнаёт, с чем работает браузер и
+какие цепочки у него есть. Остальные ручки обоих роутеров помечены
+`include_in_schema=False` у себя в декораторе: заведение, правка, раскладка и запуск — это
+внутренняя кухня страницы `/admin/browser`, и публиковать её контракт наружу незачем.
+
+Устройство то же, что у `POST /agent/list`: у публикуемой ручки есть `response_model`
+(`BrowserSiteListResponse` / `BrowserWorkflowListResponse`), `summary`, `description` и
+`response_description`, а сам роутер регистрируется в `main_uvicorn.py` **без**
+`include_in_schema=False` — флаг на роутере перекрывает настройку отдельных маршрутов и
+скрыл бы всё разом.
+
+Права не ослаблены: обе ручки закрыты `PLANNING_VIEW`. Авторизация — либо кука сессии
+админки, либо заголовок `X-API-KEY` с токеном из `user_access_token` (`get_current_user`);
+без того и другого — `401`.
 
 ## 6. Снимок страницы для LLM
 
