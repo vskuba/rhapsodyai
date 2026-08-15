@@ -1211,8 +1211,15 @@
         padding: 0 5px; border-radius: 8px; cursor: pointer;
         background: #dbeafe; color: #1e40af; font-weight: 700;
     }
-    /* Остаток до таймаута агента. Моноширинный, чтобы плашка не дёргалась в ряду
-       при каждом тике: цифры разной ширины двигают соседние карточки. */
+    /* Название ближайшего таймаута — шаг оболочки или потолок прогона. Длинные
+       имена шагов режем многоточием: ряд карточек горизонтальный, и «Ответ JSON:
+       разбиение» целиком выдавил бы соседей за край. Полное имя — в подсказке. */
+    .team-mini-left-name {
+        max-width: 92px; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; font-size: 11px; color: #64748b;
+    }
+    /* Остаток до ближайшего таймаута. Моноширинный, чтобы плашка не дёргалась в
+       ряду при каждом тике: цифры разной ширины двигают соседние карточки. */
     .team-mini-left {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 11px; color: #475569; font-variant-numeric: tabular-nums;
@@ -1428,11 +1435,17 @@ function teamMiniCardHtml(card) {
     // Пульсирует только карточка, которая и жива, и держит задачу: погасшая
     // оболочка с остатком в очереди ничего не выполняет и мигать не должна.
     const busy  = card.active && taskId ? ' team-mini-busy' : '';
-    // Остаток до таймаута агента. Держим не число, а момент окончания: ответ
-    // приходит раз в 15 секунд, а тикать надо каждую, и от абсолютного дедлайна
-    // отсчёт не уедет между обновлениями.
-    const left = busy && cur && cur.left_seconds !== null && cur.left_seconds !== undefined
-        ? `<span class="team-mini-left" data-until="${Date.now() + cur.left_seconds * 1000}">${teamMiniLeftText(cur.left_seconds)}</span>`
+    // Остаток до ближайшего таймаута и его название — сервер уже выбрал тот, что
+    // сработает первым: у планирования это десять минут на ответ оболочки, а не
+    // час прогона, и без имени непонятно, что именно оборвётся.
+    // Держим не число, а момент окончания: ответ приходит раз в 15 секунд, а
+    // тикать надо каждую, и от абсолютного дедлайна отсчёт не уедет между обновлениями.
+    const hasLeft = busy && cur && cur.left_seconds !== null && cur.left_seconds !== undefined;
+    const leftName = hasLeft && cur.left_title
+        ? `<span class="team-mini-left-name" title="Ближайший таймаут: ${esc(cur.left_title)}">${esc(cur.left_title)}</span>`
+        : '';
+    const left = hasLeft
+        ? leftName + `<span class="team-mini-left" data-until="${Date.now() + cur.left_seconds * 1000}">${teamMiniLeftText(cur.left_seconds)}</span>`
         : '';
     // Доля пройденных шагов прогона. Считает сервер по трейсу; здесь её только
     // показывают — и только когда сервер её прислал: у прогона, начатого до
@@ -1445,7 +1458,8 @@ function teamMiniCardHtml(card) {
           + (cur.step_title ? `: ${cur.step_title}` : '')
         : '';
     const title = `${esc(card.role_title)} · ${card.active ? 'активен' : 'не активен'}`
-        + (busy ? ` · в работе ${label}` : '') + esc(step);
+        + (busy ? ` · в работе ${label}` : '') + esc(step)
+        + (hasLeft && cur.left_title ? ` · ближайший таймаут: ${esc(cur.left_title)}` : '');
 
     return `<div class="team-mini${card.active ? ' team-mini-on' : ''}${busy}" title="${title}">
         <span class="team-mini-dot"></span>
@@ -2476,6 +2490,74 @@ function _refreshInlineGoals(taskId) {
     if (row && cell) cell.innerHTML = renderProgressCell(row);
 }
 
+// ── Живое обновление колонки «Прогресс» ────────────────────────────────────────
+// Состояния меняет конвейер, а не страница: пока человек смотрит на таблицу, задача
+// успевает уйти из `planning` в `plan_approval`, подзадача — из `developing` в
+// `qa_pending`. До этого обновления колонка врала до ручной перезагрузки.
+//
+// Перерисовываем именно ячейки, а не таблицу: `renderTable` пересобирает `innerHTML`
+// и закрывает раскрытую строку вместе с несохранённым вводом, а сворачивать её под
+// руками раз в пятнадцать секунд — хуже, чем показывать состояние на тик позже.
+const TASK_PROGRESS_REFRESH_MS = 15000;
+
+async function taskProgressRefresh() {
+    // Вкладка в фоне — обновлять нечего: вернётся человек, вернётся и опрос.
+    if (document.hidden) return;
+    // Проект ещё не выбран (список не загрузился) — запрашивать нечего.
+    if (_taskProjectId === null) return;
+
+    let data;
+    try {
+        data = await taskFetch(`/tasks/${_taskProjectId}`);
+    } catch(e) {
+        // Молча: сеть моргнула, следующий тик повторит. Плашку «Ошибка загрузки»
+        // на месте живой таблицы фоновый опрос ставить не вправе.
+        return;
+    }
+
+    const before = _progressRowsSignature();
+    _tasks = data.tasks || [];
+    const rows = treeRows();
+    _rowById.clear();
+    rows.forEach(r => _rowById.set(r.t.id, r));
+    renderChips();
+    phaseTabsCount();
+
+    // Состав строк изменился (менеджер разложил план на подзадачи, задача сменила
+    // фазу) — тут одними ячейками не обойтись. Но не под открытой строкой: в ней
+    // лежит несохранённый ввод, и он важнее свежести соседних строк.
+    if (_progressRowsSignature() !== before) {
+        if (!document.querySelector('.task-edit-row.open')) {
+            renderTable();
+            return;
+        }
+    }
+
+    rows.forEach(_progressCellSync);
+}
+
+// Подпись состава таблицы: порядок строк, их вложенность и «призрачность». Меняется
+// ровно тогда, когда ячейками не обойтись; сами состояния в неё не входят — их
+// обновление и есть работа этого опроса.
+function _progressRowsSignature() {
+    return Array.from(_rowById.values())
+        .map(r => `${r.t.id}:${r.depth}:${r.ghost ? 1 : 0}`).join(',');
+}
+
+function _progressCellSync(row) {
+    const tr = document.getElementById(`tr-${row.t.id}`);
+    if (!tr) return;
+
+    const cell = tr.querySelector('[data-col="goals"]');
+    // Внутри ячейки правят цель — там открытый инпут с текстом, которого ещё нет
+    // в базе. Перерисовать её значит потерять набранное.
+    if (!cell || cell.contains(document.activeElement)) return;
+
+    const html = renderProgressCell(row);
+    if (cell.innerHTML !== html) cell.innerHTML = html;
+    tr.style.setProperty('--row-accent', STATUS_ACCENT[taskRowStatus(row)] || 'transparent');
+}
+
 // ── Ревизии плана ──
 // План перезаписывается на месте, поэтому каждая его запись — менеджером или человеком —
 // оставляет строку в истории. Самая свежая ревизия и есть текущий план: отдельного чипса
@@ -3370,6 +3452,9 @@ treeCollapsedLoad();
 // показывал бы «активен» у оболочки, закрытой полчаса назад.
 setInterval(loadTeamRow, TEAM_ROW_REFRESH_MS);
 setInterval(teamMiniLeftTick, 1000);
+// Состояния конвейера меняются сами по себе — колонка «Прогресс» обязана это
+// показывать без перезагрузки страницы.
+setInterval(taskProgressRefresh, TASK_PROGRESS_REFRESH_MS);
 </script>
 
 <!-- ─── Help modal ─────────────────────────────────────── -->
