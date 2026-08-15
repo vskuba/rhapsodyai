@@ -48,6 +48,7 @@ docker restart uvicorn
 | uvicorn | 8011 | 8000 | основной сервер |
 | uvicorn_green | 8012 | 8000 | profile `green`, blue-green деплой |
 | uvicorn_task | 8013 | 8000 | profile `task`, сервер над каталогом подзадачи: `./task_server.sh up <id>` (`project_task.md`) |
+| browser | 127.0.0.1:8014 | 8000 | контейнер-браузер, порт только для отладки (`browser.md`) |
 | mysql | 3302 | 3306 | в `.env` порт 3306 — он контейнерный |
 | phpmyadmin | 9634 | 80 | |
 | redis | — | 6379 | наружу не публикуется |
