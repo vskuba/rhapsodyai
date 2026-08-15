@@ -5,6 +5,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
 -- browser
+DROP TABLE IF EXISTS `browser_error`;
 DROP TABLE IF EXISTS `browser_workflow_step`;
 DROP TABLE IF EXISTS `browser_workflow`;
 DROP TABLE IF EXISTS `browser_scenario_run`;
@@ -1045,6 +1046,27 @@ CREATE TABLE `browser_workflow_step` (
     INDEX `idx_bws_workflow` (`workflow_id`, `position`),
     CONSTRAINT `fk_bws_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `browser_workflow` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_bws_scenario` FOREIGN KEY (`scenario_id`) REFERENCES `browser_scenario` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Журнал ошибок браузера: что сломалось, где и при каких обстоятельствах.
+--
+-- Ошибки живого окна видно только тому, кто в этот момент смотрит в строку
+-- состояния: сокет их показал и забыл. Здесь они остаются с контекстом, чтобы
+-- разбираться после, а не воспроизводить наугад.
+--
+-- Без внешних ключей: сессия живёт в памяти контейнера, а сценарий к моменту
+-- разбора могли удалить — ошибка переживает и то, и другое.
+CREATE TABLE `browser_error` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `source` VARCHAR(50) NOT NULL COMMENT 'Откуда пришла: view, scenario, workflow, proxy, page',
+    `message` TEXT NOT NULL COMMENT 'Текст ошибки — то, что увидел человек',
+    `session_id` VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'Сессия контейнера, если ошибка из окна',
+    `url` VARCHAR(1000) NOT NULL DEFAULT '' COMMENT 'Адрес страницы на момент ошибки',
+    `context` JSON NOT NULL COMMENT 'Что делали: действие, селектор, номер шага, сценарий',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_browser_error_created` (`created_at`),
+    INDEX `idx_browser_error_source` (`source`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Журнал прогонов. Пишется и на успехе тоже: «сценарий сломался» видно только в

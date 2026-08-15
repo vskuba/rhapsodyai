@@ -26,6 +26,7 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.browser.browser_scenario import BROWSER_SCENARIO_VAR_RE
 from src.mysql_.repository.browser.workflow_repository import BrowserWorkflowRepository
+from src.uvicorn.routers.browser.browser_error import browser_error_write
 from src.uvicorn.routers.browser.browser_scenario import browser_scenario_run_one
 
 router = APIRouter(prefix='/api/browser/workflow', tags=['browser'])
@@ -216,6 +217,13 @@ async def browser_workflow_run(workflow_id: int, data: BrowserWorkflowRun,
         extract.update(result.get('extract') or {})
 
         if result.get('status') == 'error':
+            # Звено цепочки уже записало свою ошибку само; здесь добавляем, на каком
+            # месте встала вся цепочка — по одной ошибке сценария это не видно.
+            await browser_error_write(
+                'workflow', f"цепочка встала на «{step['name']}»: {result.get('error', '')}",
+                session_id=str(data.session_id or ''),
+                context={'workflow_id': workflow_id, 'step_no': number,
+                         'scenario_id': step['scenario_id']})
             return {'result': {'status': 'error', 'step_no': number, 'name': step['name'],
                                'error': result.get('error', ''), 'runs': runs, 'extract': extract}}
 

@@ -97,6 +97,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 ### Browser
 - `browser_scenario` — UI scenarios: goal + JSON steps (no secrets in `steps`), `site_id` → `browser_site` (ON DELETE SET NULL)
 - `browser_scenario_run` — run journal: trace, extract, duration; written on success too
+- `browser_error` — error journal: `source`, `message`, `session_id`, `url`, JSON `context` (no FKs on purpose)
 - `browser_workflow` — scenario chains: `site_id`, unique `name`, `position`
 - `browser_workflow_step` — chain links: `workflow_id` → `scenario_id` (both cascade), `position`
 - `browser_site` — bookmarks for the browser container: unique `name` + `url` (scheme required), `position` for the drag-and-drop order

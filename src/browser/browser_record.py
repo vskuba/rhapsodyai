@@ -18,6 +18,7 @@
 адресовать элемент одинаково — иначе один сценарий чинился бы двумя способами.
 """
 
+import asyncio
 import time
 
 from fastapi import APIRouter, HTTPException
@@ -46,8 +47,13 @@ BROWSER_RECORD_ACTIONS = ('click', 'fill', 'select', 'press', 'goto')
 # Ставится на каждый документ сессии — включая переходы и дочерние окна.
 BROWSER_RECORD_JS = """
 (() => {
-  if (window.__browserRecordOn) return;
-  window.__browserRecordOn = true;
+  // Флаг на документе, а не на окне: у всплывшего окна `window` переживает
+  // навигацию, а `document` — нет. С флагом на `window` скрипт считал окно
+  // вооружённым и выходил, тогда как слушатели остались на предыдущем документе
+  // (обычно на `about:blank`, с которого popup начинается) — и клики в дочерней
+  // вкладке не записывались вовсе.
+  if (document.__browserRecordOn) return;
+  document.__browserRecordOn = true;
 
   const selectorOf = __SELECTOR_ONE__;
 
@@ -211,6 +217,16 @@ async def _listeners_install(entry: dict):
 
         await context.expose_binding(BROWSER_RECORD_BINDING, emit)
         await context.add_init_script(BROWSER_RECORD_JS)
+
+        # Одного init-скрипта всплывшему окну не хватает: до того, как он там
+        # отработает, страница уже успевает принять клики, и первые действия
+        # человека в новом окне теряются. Подписка догоняет окно и вооружает его
+        # явно — тем же приёмом, что и инспектор. Снять её нечем, поэтому ставится
+        # один раз на сессию.
+        def on_page(page):
+            asyncio.create_task(_page_arm(page))
+
+        context.on('page', on_page)
         entry['record_installed'] = True
 
     # Вооружаем все открытые страницы, а не только первую: к началу записи у сессии
@@ -223,6 +239,20 @@ async def _listeners_install(entry: dict):
             await page.evaluate(BROWSER_RECORD_JS)
         except Exception as e:
             logger_info(f'[browser] запись: скрипт не встал на страницу: {e}')
+
+
+async def _page_arm(page) -> None:
+    """Вооружает всплывшее окно: ждёт документ и ставит слушатели.
+
+    Скрипт защищён от повторного запуска (`window.__browserRecordOn`), так что
+    столкнуться с init-скриптом здесь не страшно — второй раз он просто выйдет.
+    """
+    try:
+        await page.wait_for_load_state('domcontentloaded')
+        if not page.is_closed():
+            await page.evaluate(BROWSER_RECORD_JS)
+    except Exception as e:
+        logger_info(f'[browser] запись: всплывшее окно не вооружилось: {e}')
 
 
 def _emit(session_id: str, step):

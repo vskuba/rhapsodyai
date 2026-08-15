@@ -25,6 +25,7 @@ from src.browser.browser_scenario import (BROWSER_SCENARIO_ACTIONS,
                                           BrowserScenario,
                                           browser_scenario_variables_used)
 from src.mysql_.repository.browser.scenario_repository import BrowserScenarioRepository
+from src.uvicorn.routers.browser.browser_error import browser_error_write
 from src.uvicorn.routers.browser.browser_upstream import (
     BROWSER_UPSTREAM_SCENARIO_TIMEOUT,
     browser_upstream_request,
@@ -194,6 +195,15 @@ async def browser_scenario_run_one(scenario_id: int, session_id: str, variables:
                                             timeout=BROWSER_UPSTREAM_SCENARIO_TIMEOUT)
 
     await _run_save(scenario_id, result)
+
+    # Упавший шаг — в журнал ошибок: трасса лежит в `browser_scenario_run`, но её
+    # надо сначала найти, а вкладка «Ошибки» показывает всё сломавшееся разом.
+    if result.get('status') == 'error':
+        await browser_error_write(
+            'scenario', str(result.get('error') or 'сценарий не прошёл'),
+            session_id=str(result.get('session_id') or ''),
+            context={'scenario_id': scenario_id, 'name': row.get('name', ''),
+                     'step_no': result.get('step_no', 0)})
 
     # Сломанный сценарий помечается сразу: по метке видно, что чинить, без чтения журнала.
     status = 'broken' if result.get('status') == 'error' else 'active'

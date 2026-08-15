@@ -944,6 +944,64 @@
         font-size: 11px;
     }
 
+    /* ---------- Журнал ошибок ---------- */
+
+    #tab-error { flex-direction: column; }
+
+    .error-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0 16px 16px;
+    }
+
+    .error-row {
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        border: 1px solid #e5e7eb;
+        border-left: 3px solid #f87171;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 12px;
+    }
+
+    .error-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 3px;
+    }
+
+    .error-source {
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: #fee2e2;
+        color: #b91c1c;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .error-when { color: #94a3b8; font-size: 11px; }
+    .error-url { flex: 1 1 auto; min-width: 0; color: #6b7280; font-size: 11px;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .error-message {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #0f172a;
+        word-break: break-word;
+    }
+
+    /* Контекст — то, ради чего журнал и заводился: что делали в момент сбоя. */
+    .error-context {
+        margin-top: 4px;
+        color: #64748b;
+        font-size: 11px;
+        word-break: break-word;
+    }
+
+    .error-empty { padding: 16px; color: #9ca3af; font-size: 12px; }
+
     /* ---------- Инспектор элементов ---------- */
 
     .browser-btn.on {
@@ -1377,6 +1435,7 @@
     <button class="page-tab" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
     <button class="page-tab" data-tab="scenario">Сценарии <span class="page-tab-n" id="tabCount-scenario"></span></button>
     <button class="page-tab" data-tab="workflow">Workflow <span class="page-tab-n" id="tabCount-workflow"></span></button>
+    <button class="page-tab" data-tab="error">Ошибки <span class="page-tab-n" id="tabCount-error"></span></button>
 </div>
 
 <div class="tab-panel active" id="tab-site">
@@ -1606,6 +1665,27 @@
 
 </div>
 
+<div class="tab-panel" id="tab-error">
+
+<div class="scenario-head">
+    <span class="scenario-head-label">Откуда</span>
+    <select id="errorSource" title="Сузить журнал до одного происхождения">
+        <option value="">все</option>
+        <option value="view">живое окно</option>
+        <option value="scenario">сценарии</option>
+        <option value="workflow">цепочки</option>
+        <option value="proxy">прокси</option>
+        <option value="page">страница админки</option>
+    </select>
+    <button type="button" class="browser-btn" id="errorReloadBtn">Обновить</button>
+    <button type="button" class="browser-btn danger" id="errorClearBtn">Очистить журнал</button>
+    <span class="scenario-head-hint" id="errorHint"></span>
+</div>
+
+<div class="error-list" id="errorList"></div>
+
+</div>
+
 <!-- Заведение и правка сайта — одним окном: полей два, и вторая форма была бы
      копией первой. Заголовок и кнопка говорят, что именно сейчас происходит. -->
 <div class="modal-overlay" id="siteModal">
@@ -1688,6 +1768,7 @@
             scenariosLoad();
             workflowsLoad();
         }
+        if (name === 'error') errorsLoad();
 
         // Вкладка сессий без окна бесполезна: страница живёт в контейнере и после
         // перезагрузки админки, поэтому показываем первую живую сразу.
@@ -2215,6 +2296,85 @@
     }
 
 
+    // ---------- Журнал ошибок ----------
+
+    // Ошибку живого окна видно только тому, кто смотрел в строку состояния в ту
+    // секунду. Здесь она лежит с контекстом: что делали, на какой странице, в какой
+    // сессии — по этому её можно повторить, а не угадывать.
+    const errorListEl = document.getElementById('errorList');
+
+    async function errorsLoad() {
+        const source = document.getElementById('errorSource').value;
+        let data;
+        try {
+            data = await getData('/api/browser/error' + (source ? '?source=' + encodeURIComponent(source) : ''));
+        } catch (e) {
+            errorListEl.innerHTML = '<div class="error-empty">журнал не пришёл: ' + _escape(e.message) + '</div>';
+            return;
+        }
+
+        const rows = data.result || [];
+        countSet('error', rows.length || '');
+        document.getElementById('errorHint').textContent = rows.length
+            ? `записей ${rows.length}` : '';
+
+        errorListEl.innerHTML = '';
+        if (!rows.length) {
+            errorListEl.innerHTML = '<div class="error-empty">ошибок нет</div>';
+            return;
+        }
+
+        for (const row of rows) {
+            const el = document.createElement('div');
+            el.className = 'error-row';
+            const ctx = row.context && Object.keys(row.context).length
+                ? Object.entries(row.context).map(([k, v]) => `${k}: ${v}`).join(' · ')
+                : '';
+            el.innerHTML =
+                '<div class="error-head">'
+                + `<span class="error-source">${_escape(row.source)}</span>`
+                + `<span class="error-when">${_escape(_when(row.created_at))}</span>`
+                + `<span class="error-url" title="${_escape(row.url || '')}">${_escape(row.url || '')}</span>`
+                + '</div>'
+                + `<div class="error-message">${_escape(row.message)}</div>`
+                + (ctx ? `<div class="error-context">${_escape(ctx)}</div>` : '')
+                + (row.session_id ? `<div class="error-context">сессия ${_escape(row.session_id)}</div>` : '');
+            errorListEl.appendChild(el);
+        }
+    }
+
+    function _when(value) {
+        return String(value || '').slice(0, 19).replace('T', ' ');
+    }
+
+    async function errorsClear() {
+        if (!confirm('Очистить журнал ошибок целиком?')) return;
+
+        try {
+            await deleteData('/api/browser/error');
+        } catch (e) {
+            showNotification('Не удалось: ' + e.message, 'error');
+            return;
+        }
+        showNotification('Журнал очищен', 'success');
+        errorsLoad();
+    }
+
+    // Сбой самой страницы админки виден только ей: сюда попадают отказы её запросов
+    // и всё, что она не смогла разобрать.
+    async function errorReport(message, context) {
+        try {
+            await postData('/api/browser/error', {
+                source: 'page',
+                message: String(message || '').slice(0, 2000),
+                session_id: currentId || '',
+                context: context || {},
+            });
+        } catch (e) {
+            // Журнал недоступен — сама работа от этого не зависит.
+        }
+    }
+
     // ---------- Инспектор элементов ----------
 
     // Окно показывает картинку, поэтому «что это за элемент» знает только сама
@@ -2487,26 +2647,43 @@
 
     // Координаты уходят долей ширины и высоты картинки, а не пикселями: на сервере
     // их пересчитают по метаданным кадра, и размер окна в админке ни на что не влияет.
+    // Доля от прямоугольника картинки. Кадра ещё нет — прямоугольник нулевой, и
+    // деление дало бы NaN, который уходит на сервер как null: там он ронял действие
+    // ошибкой про NoneType. Возвращаем null сами, а `send` такое событие не шлёт.
     function point(event) {
         const rect = frameEl.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+
         return {
             x: (event.clientX - rect.left) / rect.width,
             y: (event.clientY - rect.top) / rect.height,
         };
     }
 
+    // Событие мыши без координат смысла не имеет: страница получила бы клик в угол.
+    function sendAt(message, event, quiet = false) {
+        const at = point(event);
+        if (!at) {
+            // Наведение шлётся на каждое движение мыши: жаловаться на него значит
+            // залить строку состояния одним и тем же сообщением.
+            if (!quiet) statusSet('окно ещё не показало страницу — подождите кадр', true);
+            return;
+        }
+        send({...message, ...at});
+    }
+
     screenEl.addEventListener('click', (event) => {
         screenEl.focus();
-        send({type: 'mouse', action: 'click', ...point(event)});
+        sendAt({type: 'mouse', action: 'click'}, event);
     });
 
     screenEl.addEventListener('contextmenu', (event) => {
         event.preventDefault();
-        send({type: 'mouse', action: 'click', button: 'right', ...point(event)});
+        sendAt({type: 'mouse', action: 'click', button: 'right'}, event);
     });
 
     screenEl.addEventListener('dblclick', (event) => {
-        send({type: 'mouse', action: 'click', clicks: 2, ...point(event)});
+        sendAt({type: 'mouse', action: 'click', clicks: 2}, event);
     });
 
     let moveAt = 0;
@@ -2515,12 +2692,12 @@
         const now = Date.now();
         if (now - moveAt < 50) return;
         moveAt = now;
-        send({type: 'mouse', action: 'move', ...point(event)});
+        sendAt({type: 'mouse', action: 'move'}, event, true);
     });
 
     screenEl.addEventListener('wheel', (event) => {
         event.preventDefault();
-        send({type: 'wheel', dx: event.deltaX, dy: event.deltaY, ...point(event)});
+        sendAt({type: 'wheel', dx: event.deltaX || 0, dy: event.deltaY || 0}, event);
     }, {passive: false});
 
     const KEY_NAMED = new Set([
@@ -4026,6 +4203,10 @@
         + 'title="Забыть введённые значения подстановок">🧹</button>');
     document.getElementById('playForgetBtn').addEventListener('click', playValuesForget);
 
+    document.getElementById('errorReloadBtn').addEventListener('click', errorsLoad);
+    document.getElementById('errorClearBtn').addEventListener('click', errorsClear);
+    document.getElementById('errorSource').addEventListener('change', errorsLoad);
+
     document.getElementById('inspectBtn').addEventListener('click', inspectToggle);
     document.getElementById('inspectClose').addEventListener('click', inspectHide);
     document.getElementById('recordBtn').addEventListener('click', recordToggle);
@@ -4090,7 +4271,7 @@
     // Первая вкладка — она же по умолчанию: с сайтов работа и начинается, сессию
     // заводят с их карточки. Запомненный выбор всё равно старше умолчания, а
     // неизвестное значение (осталось от прошлой раскладки) откатывается сюда же.
-    const TAB_KNOWN = ['site', 'session', 'scenario', 'workflow'];
+    const TAB_KNOWN = ['site', 'session', 'scenario', 'workflow', 'error'];
     tabSelect(TAB_KNOWN.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'site');
     scenarioKeysRender();
     sideSectionApply();

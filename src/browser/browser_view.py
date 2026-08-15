@@ -308,7 +308,7 @@ async def _input_apply(page, message: dict, metadata: dict):
     elif kind == 'wheel':
         x, y = _point(message, metadata)
         await page.mouse.move(x, y)
-        await page.mouse.wheel(float(message.get('dx', 0)), float(message.get('dy', 0)))
+        await page.mouse.wheel(_number(message.get('dx')), _number(message.get('dy')))
 
     elif kind == 'key':
         # Строка вида `Control+a` — Playwright сам разложит её на модификаторы.
@@ -367,6 +367,23 @@ def _tabs_payload(context, current) -> dict:
     }
 
 
+def _number(value, default: float = 0.0) -> float:
+    """Число из сообщения клиента: `null` и мусор считаем значением по умолчанию.
+
+    `dict.get(ключ, 0)` тут не спасает: умолчание применяется к отсутствующему
+    ключу, а не к присланному `null`. А `null` приходит буднично — клиент делит
+    координату на размер картинки, и пока кадра нет, деление на ноль даёт `NaN`,
+    который `JSON.stringify` превращает как раз в `null`.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+    # NaN мимо `float()` проходит, но арифметику после себя обнуляет молча.
+    return float(default) if number != number else number
+
+
 def _point(message: dict, metadata: dict) -> tuple[float, float]:
     """Нормированная точка кадра → CSS-пиксели viewport.
 
@@ -375,12 +392,12 @@ def _point(message: dict, metadata: dict) -> tuple[float, float]:
     `maxWidth`. Обратный пересчёт делают метаданные последнего кадра —
     `deviceWidth`/`deviceHeight` там и есть viewport в CSS-пикселях.
     """
-    width = float(metadata.get('deviceWidth') or BROWSER_POOL_VIEWPORT_WIDTH)
-    height = float(metadata.get('deviceHeight') or BROWSER_POOL_VIEWPORT_HEIGHT)
-    offset_top = float(metadata.get('offsetTop') or 0)
+    width = _number(metadata.get('deviceWidth'), BROWSER_POOL_VIEWPORT_WIDTH)
+    height = _number(metadata.get('deviceHeight'), BROWSER_POOL_VIEWPORT_HEIGHT)
+    offset_top = _number(metadata.get('offsetTop'))
 
-    x = min(max(float(message.get('x', 0)), 0.0), 1.0) * width
-    y = min(max(float(message.get('y', 0)), 0.0), 1.0) * height + offset_top
+    x = min(max(_number(message.get('x')), 0.0), 1.0) * width
+    y = min(max(_number(message.get('y')), 0.0), 1.0) * height + offset_top
 
     return x, y
 

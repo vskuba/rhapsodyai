@@ -47,7 +47,11 @@ BROWSER_INSPECT_SELECTOR_VARIANTS = 6
 # Ставится на каждый документ сессии — включая переходы и дочерние окна.
 BROWSER_INSPECT_JS = """
 (() => {
-  if (window.__browserInspect) return;
+  // Флаг на документе, а не на окне: у всплывшего окна `window` переживает
+  // навигацию, а `document` — нет, и слушатели остались бы на предыдущем
+  // документе. Само API держим на `window` — его зовут снаружи, из Python.
+  if (document.__browserInspectOn) return;
+  document.__browserInspectOn = true;
 
   const selectorOf = __SELECTOR_ONE__;
   const KEY = '__browserInspect';

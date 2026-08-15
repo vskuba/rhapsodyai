@@ -12,6 +12,8 @@
 
 import asyncio
 
+import json
+
 import websockets
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
@@ -20,6 +22,7 @@ from logging_.logging_ import logger_info
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.auth.auth_role import auth_role_permissions
+from src.uvicorn.routers.browser.browser_error import browser_error_write
 from src.uvicorn.routers.browser.browser_upstream import (
     browser_upstream_headers,
     browser_upstream_request,
@@ -106,7 +109,7 @@ async def browser_proxy_view(websocket: WebSocket, session_id: str):
     try:
         async with websockets.connect(upstream_url, additional_headers=headers,
                                       max_size=BROWSER_PROXY_FRAME_LIMIT) as upstream:
-            await _pipe(websocket, upstream)
+            await _pipe(websocket, upstream, session_id)
     except WebSocketDisconnect:
         pass
     except websockets.exceptions.ConnectionClosed as e:
@@ -116,6 +119,8 @@ async def browser_proxy_view(websocket: WebSocket, session_id: str):
         await _close_quiet(websocket, e.code or BROWSER_PROXY_CLOSE_UPSTREAM, e.reason or '')
     except Exception as e:
         logger_info(f'[browser] прокси окна {session_id} оборвался: {e}')
+        await browser_error_write('proxy', f'окно оборвалось: {e}', session_id=session_id,
+                                  context={'origin': 'прокси вебсокета'})
         await _close_quiet(websocket, BROWSER_PROXY_CLOSE_UPSTREAM, 'контейнер-браузер недоступен')
 
 
@@ -127,9 +132,9 @@ async def _close_quiet(websocket: WebSocket, code: int, reason: str):
         pass
 
 
-async def _pipe(websocket: WebSocket, upstream):
+async def _pipe(websocket: WebSocket, upstream, session_id: str = ''):
     """Гоняет текстовые кадры в обе стороны, пока жива хотя бы одна сторона."""
-    down = asyncio.create_task(_pipe_down(websocket, upstream))
+    down = asyncio.create_task(_pipe_down(websocket, upstream, session_id))
     up = asyncio.create_task(_pipe_up(websocket, upstream))
 
     done, pending = await asyncio.wait({down, up}, return_when=asyncio.FIRST_COMPLETED)
@@ -141,10 +146,29 @@ async def _pipe(websocket: WebSocket, upstream):
         task.result()
 
 
-async def _pipe_down(websocket: WebSocket, upstream):
-    """Кадры из контейнера — в окно админки."""
+async def _pipe_down(websocket: WebSocket, upstream, session_id: str = ''):
+    """Кадры из контейнера — в окно админки, ошибки по дороге — в журнал.
+
+    Журнал ведёт эта сторона, а не контейнер: базы у контейнера нет. И не клиент:
+    окно могли закрыть до того, как человек прочитал строку состояния, а разбираться
+    с ошибкой всё равно придётся.
+    """
+    last_url = ''
     async for message in upstream:
         await websocket.send_text(message)
+
+        # Разбираем уже отправленное: журнал не должен задерживать кадр.
+        try:
+            data = json.loads(message)
+        except Exception:
+            continue
+
+        if data.get('type') == 'frame' and data.get('url'):
+            last_url = str(data['url'])
+        elif data.get('type') == 'error':
+            await browser_error_write('view', str(data.get('text') or ''),
+                                      session_id=session_id, url=last_url,
+                                      context={'origin': 'живое окно'})
 
 
 async def _pipe_up(websocket: WebSocket, upstream):
