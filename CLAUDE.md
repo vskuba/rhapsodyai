@@ -47,6 +47,7 @@ asyncio.run(telegram_send_owner('your message'))
 |------|---------|
 | `main_uvicorn.py` | App bootstrap (FastAPI/Uvicorn server) |
 | `main_telegram.py` | Telegram bot entry point |
+| `main_browser.py` | Контейнер-браузер: один Chromium, изолированные сессии |
 | `py_modules/ai/framework/ai_framework.py` | AI framework base (provider-agnostic) |
 | `py_modules/ai/framework/ai_framework_manager.py` | Base manager: step execution primitives |
 | `src/ai/framework/agent/ai_framework_manager.py` | Workflow engine: steps, transitions, tool invocation |
@@ -94,6 +95,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
+| `browser.md` | Контейнер-браузер: сессии-контексты, API :8014, память, настройки compose |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
 | `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда |
 | `dashboard_frontend.md` | Паттерны админ-страниц: JS, CSS, контракты API |

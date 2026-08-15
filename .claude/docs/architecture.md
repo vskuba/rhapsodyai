@@ -34,6 +34,7 @@
 |------|---------|
 | `ai/` | AI workflow, tools, fact collection |
 | `auth/` | Authentication (session, role, permission, field policy) |
+| `browser/` | Контейнер-браузер: пул сессий, живое окно, движок сценариев (точка входа — `main_browser.py`, см. `browser.md`) |
 | `cronjob/` | Scheduled jobs — только точки входа (см. `architecture_rules.md`) |
 | `event/` | `event_handlers.py` — подписки на шину `py_modules/event_` (event_log, Telegram-уведомления) |
 | `faster_whisper/` | Speech-to-text |
@@ -67,6 +68,7 @@ Install: `pip install -r docker/uvicorn/requirements.txt` / `docker/telegram/req
 | `uvicorn` | 8011→8000 | — | Main FastAPI application (blue-слот) |
 | `uvicorn_green` | 8012→8000 | `green` | Green-слот для Blue-Green деплоя (`deploy.md`) |
 | `uvicorn_task` | 8013→8000 | `task` | Сервер над рабочим каталогом подзадачи: на нём QA проверяет ветку, поднимается `./task_server.sh up <id>` (`project_task.md`) |
+| `browser` | 127.0.0.1:8014→8000 | — | Контейнер-браузер: один Chromium, изолированные сессии-контексты (`browser.md`) |
 | `worker_task` | — | — | `rq worker-pool … -n 3 default` — конвейер задач |
 | `worker_planning` | — | — | `rq worker-pool … -n 2 planning` — цепочки фаз планирования |
 | `mysql` | 3302→3306 | — | Primary database |
