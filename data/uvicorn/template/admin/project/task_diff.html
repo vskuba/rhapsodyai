@@ -4,7 +4,19 @@
 
 {% block head %}
 <style>
-    .page-wrap { padding: 24px 28px; max-width: 1600px; }
+    /* Прокрутка своя: `.page-content` в common.css стоит `overflow: hidden` — общее
+       правило админки, страницы там сами раздают высоту внутренним блокам. Diff же
+       обычная длинная простыня, и без этих трёх строк всё, что не влезло в экран,
+       обрезалось и было недостижимо. Высоту берём у родителя, а не считаем от
+       100vh: высота меню и паддинги `.page-content` в такую арифметику не входят. */
+    .page-wrap {
+        width: 100%;
+        height: 100%;
+        overflow-y: auto;
+        padding: 24px 28px;
+        max-width: 1600px;
+        box-sizing: border-box;
+    }
 
     .page-header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
     .page-header h2 { margin: 0; font-size: 19px; color: #2c3e50; }
