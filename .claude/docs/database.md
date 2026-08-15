@@ -94,6 +94,10 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 - `project_design_ui_component` — UI component metadata
 - `project_design_token` — design token sets (JSON)
 
+### Browser
+- `browser_scenario` — UI scenarios: goal + JSON steps (no secrets in `steps`)
+- `browser_scenario_run` — run journal: trace, extract, duration; written on success too
+
 ## Table Order in 0001.sql (FK dependency order)
 
 1. `llm` → `role` → `user` → `user_access_token`
@@ -112,6 +116,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 14. `project_design_prototype_browser_history`
 15. `project_state` → `project_design_prototype_page` → `project_design_prototype_widget` → `project_design_prototype_page_block`
 16. `project_design_ui_component` → `project_design_ui_block_type` → `project_design_ui_block` → `project_design_ui_block_size` → `project_design_token`
+17. `browser_scenario` → `browser_scenario_run`
 
 ## Changing the Schema
 

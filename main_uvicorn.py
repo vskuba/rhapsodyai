@@ -71,6 +71,8 @@ from src.uvicorn.routers.seed import seed
 from src.uvicorn.routers.backup import backup
 from src.uvicorn.routers.project import project_team as project_team_router
 from src.uvicorn.routers.playwright import playwright
+from src.uvicorn.routers.browser import (browser_author, browser_proxy, browser_record,
+                                         browser_scenario, browser_site)
 
 
 @asynccontextmanager
@@ -472,3 +474,8 @@ app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)
 app.include_router(project_team_router.router, include_in_schema=False)
 app.include_router(playwright.router, include_in_schema=False)
+app.include_router(browser_proxy.router, include_in_schema=False)
+app.include_router(browser_scenario.router, include_in_schema=False)
+app.include_router(browser_author.router, include_in_schema=False)
+app.include_router(browser_record.router, include_in_schema=False)
+app.include_router(browser_site.router, include_in_schema=False)

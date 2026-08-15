@@ -4,6 +4,10 @@ USE `project`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- Удаляем таблицы, если они существуют
+-- browser
+DROP TABLE IF EXISTS `browser_scenario_run`;
+DROP TABLE IF EXISTS `browser_scenario`;
+DROP TABLE IF EXISTS `browser_site`;
 -- project / planning (new names)
 DROP TABLE IF EXISTS `project_design_prototype_page_block`;
 DROP TABLE IF EXISTS `project_design_prototype_widget`;
@@ -953,4 +957,68 @@ CREATE TABLE `project_team` (
     INDEX `idx_team_status` (`status`),
     INDEX `idx_team_project_role` (`project_id`, `role`),
     CONSTRAINT `fk_team_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Browser ───────────────────────────────────────────────────────────────────
+
+-- Сайт — закладка контейнера-браузера: имя и адрес, с которого начинают работу.
+-- Живёт в базе, а не в реестре сессий: сессия умирает вместе с контейнером, а
+-- список сайтов, с которыми работают, обязан пережить и рестарт, и падение.
+--
+-- Вход в сайт (cookie, `storage_state`) здесь не хранится: это состояние сессии,
+-- у него свой срок жизни и свои секреты, а закладка — только «куда идти».
+CREATE TABLE `browser_site` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL,
+    `url` VARCHAR(500) NOT NULL COMMENT 'Полный адрес со схемой: сессии заводят по нему',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- Имя уникально: карточки различают по нему, два «личного кабинета» с разными
+    -- адресами человек не разберёт.
+    UNIQUE KEY `uk_browser_site_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Сценарий — последовательность действий над страницей. Хранится здесь, а не в
+-- контейнере-браузере: контейнер держит только живые страницы и переживает падение
+-- базы, а сценарий должен пережить падение контейнера.
+--
+-- Паролей в `steps` нет и быть не должно. Шаги ссылаются на `{{переменные}}`,
+-- значения приходят на прогон: обычные — в журнал, секретные — мимо него.
+CREATE TABLE `browser_scenario` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL,
+    -- Цель словами: «войти в админку и оказаться на списке задач». По ней агент
+    -- перепишет шаги, когда вёрстка сайта изменится, — сами шаги для этого
+    -- бесполезны, они описывают старую вёрстку.
+    `goal` VARCHAR(255) NOT NULL DEFAULT '',
+    `start_url` VARCHAR(500) NOT NULL DEFAULT '' COMMENT 'Справочно: с какого адреса сценарий начинается',
+    `steps` JSON NOT NULL COMMENT 'Массив шагов по схеме src/browser/browser_scenario.py',
+    `variables` JSON NOT NULL COMMENT 'Значения по умолчанию; секретов здесь нет',
+    -- `broken` ставит не человек, а неудачный прогон: по нему заводится задача
+    -- на переписывание, и сценарий не дёргают, пока агент его не починит.
+    `status` ENUM('draft','active','broken') NOT NULL DEFAULT 'draft',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_browser_scenario_name` (`name`),
+    INDEX `idx_browser_scenario_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Журнал прогонов. Пишется и на успехе тоже: «сценарий сломался» видно только в
+-- сравнении с тем, как он работал раньше — сколько шагов проходил и за сколько.
+CREATE TABLE `browser_scenario_run` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `scenario_id` INT NOT NULL,
+    `session_id` VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'Сессия контейнера; живёт в памяти, FK на неё невозможен',
+    `status` ENUM('ok','error') NOT NULL,
+    `step_no` INT NOT NULL DEFAULT '0' COMMENT 'Номер упавшего шага; 0 — дошли до конца',
+    `error` TEXT NOT NULL,
+    `trace` JSON NOT NULL COMMENT 'Шаг за шагом: действие, цель, время, ошибка',
+    `extract` JSON NOT NULL COMMENT 'Что сценарий забрал со страницы',
+    `duration_ms` INT NOT NULL DEFAULT '0',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_bsr_scenario` (`scenario_id`, `id`),
+    CONSTRAINT `fk_bsr_scenario` FOREIGN KEY (`scenario_id`) REFERENCES `browser_scenario` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

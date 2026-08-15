@@ -160,12 +160,24 @@ services:
     image: rhapsodyai-uvicorn:latest
     container_name: uvicorn_task
     profiles: ["task"]
+    # Проверка каталога перед стартом. Каталог подзадачи временный: его снимает
+    # `./task_server.sh clean` или кнопка `rm_worktree`, и сервер может пережить
+    # свой каталог. Docker при следующем старте заводит точку монтирования заново
+    # — пустым root-овым каталогом, — и uvicorn падает на `Could not import module
+    # "main_uvicorn"`, что про исчезнувший worktree не говорит ничего.
+    command: >
+      sh -c 'test -f /app/main_uvicorn.py || {
+               echo "[uvicorn_task] каталога подзадачи нет: смонтирован пустой /app." >&2;
+               echo "[uvicorn_task] поднимать так: ./task_server.sh up <id>" >&2;
+               exit 1;
+             };
+             exec uvicorn main_uvicorn:app --host 0.0.0.0 --port 8000'
     ports:
       - "8013:8000"
     volumes:
       # Каталог подзадачи вместо репозитория. Без переменной поднимется обычный
       # чекаут — то же, что :8011, и это заметно сразу.
-      - ${TASK_WORKTREE_DIR:-./}:/app
+      - ${PROJECT_TASK_WORKTREE_DIR:-./}:/app
       # Ссылки внутри каталога подзадачи (`.env`, `.venv`, рабочие папки `data`)
       # указывают на хостовые пути — без этого монтирования они оборваны.
       # Значение по умолчанию — см. пояснение у `uvicorn`: без переменной compose
@@ -187,9 +199,12 @@ services:
       - qdrant
     networks:
       - os-net
-    # unless-stopped, а не always: остановленный после проверки сервер не должен
-    # подниматься сам при перезапуске docker.
-    restart: unless-stopped
+    # on-failure с лимитом, а не unless-stopped: остановленный после проверки сервер
+    # не должен подниматься сам при перезапуске docker, а сервер над исчезнувшим
+    # каталогом не должен крутиться вечно. Три попытки покрывают разовый сбой на
+    # старте; каталога нет — контейнер встаёт и ждёт человека, а не шумит в логах
+    # сутками (так и вышло с #588).
+    restart: on-failure:3
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -316,6 +331,50 @@ services:
     networks:
       - os-net
     restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Контейнер-браузер: один Chromium, много изолированных сессий, каждая — своя
+  # страница. Отдельный сервис, потому что ритмы жизни несовместимы: :8011 рестартует
+  # на каждой правке `.py`, а здесь страницы должны висеть неделями (открытый чат,
+  # ждущий сообщения, чужой рестарт не переживёт).
+  browser:
+    build:
+      context: .
+      dockerfile: docker/uvicorn/dockerfile
+    # Тот же образ, что у основного сервера: Chromium в нём уже стоит (см. dockerfile,
+    # `playwright install chromium-headless-shell`). Общее имя избавляет от второй
+    # сборки того же самого — это минуты ожидания и лишний гигабайт.
+    image: rhapsodyai-uvicorn:latest
+    container_name: browser
+    command: uvicorn main_browser:app --host 0.0.0.0 --port 8000
+    ports:
+      # Только на петлю: сервис для внутренней сети, наружу его публиковать нечего.
+      # Порт открыт, чтобы можно было руками посмотреть список сессий и память.
+      - "127.0.0.1:8014:8000"
+    volumes:
+      - ./:/app
+    env_file:
+      - .env
+    # 64 МБ /dev/shm по умолчанию Chromium не хватает — тяжёлая страница роняет
+    # вкладку с «Target crashed». Лечится размером shm, а не флагом
+    # `--disable-dev-shm-usage`: тот уводит браузер на диск и замедляет отрисовку.
+    shm_size: 1gb
+    # Chromium плодит процессы на каждую вкладку. Без reaper-а PID 1 зомби копятся
+    # неделями — а контейнер тут именно неделями и живёт.
+    init: true
+    # Предел не для экономии, а чтобы утечка страниц убивала один контейнер, а не
+    # машину вместе с базой. Реальную цену страницы показывает `GET /browser/session`.
+    mem_limit: 4g
+    networks:
+      - os-net
+    restart: always
+    healthcheck:
+      # Питоном, а не curl-ом: наличие curl в образе никто не обещал.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/browser/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

@@ -224,6 +224,15 @@ async def task_diff_page(request: Request, user: AuthSession = Depends(require_a
     )
 
 
+@router.get("/admin/browser", response_class=HTMLResponse)
+async def browser_page(request: Request, user: AuthSession = Depends(require_auth)):
+    """Живое окно сессий контейнера-браузера (`browser.md`)."""
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/project/browser.html",
+    )
+
+
 @router.get("/admin/design", response_class=HTMLResponse)
 async def design_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
