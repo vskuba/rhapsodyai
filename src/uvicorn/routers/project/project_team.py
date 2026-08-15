@@ -16,6 +16,9 @@ from src.project.team.team_task_type import team_task_type_list
 from src.project.task.task_setting_parallel import (
     TASK_SETTING_PARALLEL_OPTIONS,
     task_setting_parallel_set)
+from src.project.task.task_setting_step import (task_setting_step_all,
+                                                task_setting_step_key_is,
+                                                task_setting_step_set)
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_PING_STALE,
     task_setting_timeout_all,
@@ -142,23 +145,35 @@ async def project_team_task_types_list(user=Depends(AuthChecker([AuthPermission.
 async def project_team_timeout_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Все таймауты конвейера с текущими значениями — блок на карточке команды.
 
+    Кроме настроек отдаются сроки шагов агентских workflow (`task_setting_step`):
+    прогон обрывается по ним раньше, чем по потолку роли, и карточка, где их нет,
+    обещает час там, где на деле десять минут.
+
     `problem` — непустая строка, если лестница таймаутов нарушена (прогон агента
-    обязан срываться раньше job'а, а job — раньше возврата блокировки). Это
-    предупреждение, а не запрет: поднять все три значения разом одним запросом
-    нельзя, и промежуточное состояние законно.
+    обязан срываться раньше job'а, а job — раньше возврата блокировки). Считается
+    по настройкам: шаги в лестницу не входят, их срок меньше потолка роли по самому
+    смыслу. Это предупреждение, а не запрет: поднять все три значения разом одним
+    запросом нельзя, и промежуточное состояние законно.
     """
     items = await task_setting_timeout_all()
     problem = task_setting_timeout_ladder_problem({item['key']: item['value'] for item in items})
 
-    return {'result': {'items': items, 'problem': problem}}
+    return {'result': {'items': items + await task_setting_step_all(), 'problem': problem}}
 
 
 @router.post('/timeout')
 async def project_team_timeout_set(timeout_request: TeamTimeoutRequest,
                                    user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
-    """Записать одно значение таймаута. Неизвестный ключ или выход за границы — 422."""
+    """Записать одно значение таймаута. Неизвестный ключ или выход за границы — 422.
+
+    Ключ `step_timeout_<id>` — срок шага workflow: он лежит не в таблице настроек,
+    а в определении самого шага, и пишется туда же. Развилка по ключу, а не
+    отдельный endpoint: для страницы это одна и та же строка в одном блоке.
+    """
     try:
-        item = await task_setting_timeout_set(timeout_request.key, timeout_request.value)
+        item = (await task_setting_step_set(timeout_request.key, timeout_request.value)
+                if task_setting_step_key_is(timeout_request.key)
+                else await task_setting_timeout_set(timeout_request.key, timeout_request.value))
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
 
