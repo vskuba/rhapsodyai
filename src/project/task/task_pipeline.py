@@ -484,6 +484,15 @@ async def _run_developer(action: dict) -> str | None:
         return await _retry_subtask(subtask, 'developer', 'planned', TASK_DEVELOPER_ROLE,
                                     work_dir, attempt_no, started, f'Developer: {e}')
 
+    # Среда не пригодна для работы (сервер подзадачи не поднялся, ветка выкачена от
+    # сломанного master) — работы не было, и жечь попытку не за что: возвращаем строку
+    # в очередь тем же путём, что и сорвавшийся прогон. Лимит повторов не даст крутить
+    # это вечно: три отказа подряд человек увидит как `blocked`.
+    if not result.get('env_ok', True):
+        return await _retry_subtask(subtask, 'developer', 'planned', TASK_DEVELOPER_ROLE,
+                                    work_dir, attempt_no, started,
+                                    f"Developer: среда не готова — {result.get('error') or 'сервер подзадачи не отвечает'}")
+
     await task_retry_clear(subtask['id'])
     await task_state_attempt_log(subtask['id'], attempt_no, 'developer', result, started)
     await _subtask_branch_save(subtask['id'], result)
@@ -536,6 +545,13 @@ async def _run_qa(action: dict) -> str | None:
     except Exception as e:
         return await _retry_subtask(subtask, 'qa', 'qa_pending', TASK_QA_ROLE,
                                     work_dir, attempt_no, started, f'QA: {e}')
+
+    # Проверять не на чем — вернуть подзадачу разработчику нельзя: его работу никто
+    # не смотрел. Как и у разработчика, это повтор без потраченной попытки.
+    if not result.get('env_ok', True):
+        return await _retry_subtask(subtask, 'qa', 'qa_pending', TASK_QA_ROLE,
+                                    work_dir, attempt_no, started,
+                                    f"QA: среда не готова — {result.get('error') or 'сервер подзадачи не отвечает'}")
 
     await task_retry_clear(subtask['id'])
     await task_state_attempt_log(subtask['id'], attempt_no, 'qa', result, started)

@@ -256,7 +256,13 @@ def _result_parse(result_text) -> dict:
     if not ok and not error:
         error = 'QA не назвал причину отказа'
 
-    return {'ok': ok, 'output': _report_text(report) or raw[:2000], 'error': error}
+    # `env_ok = false` — проверять не на чем: сервер подзадачи не поднялся. Вернуть
+    # за это подзадачу разработчику нельзя — его работу никто не смотрел, поэтому
+    # конвейер уводит такой ответ в повтор (`_run_qa`), не сжигая попытку.
+    env_ok = bool(parsed.get('env_ok', report.get('env_ok', True)))
+
+    return {'ok': ok, 'env_ok': env_ok,
+            'output': _report_text(report) or raw[:2000], 'error': error}
 
 
 def _report_text(report: dict) -> str:
