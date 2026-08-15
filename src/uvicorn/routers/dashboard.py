@@ -249,6 +249,14 @@ async def tool_page(request: Request, user: AuthSession = Depends(require_auth))
     )
 
 
+@router.get("/admin/dating", response_class=HTMLResponse)
+async def dating_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/dating.html"
+    )
+
+
 @router.get("/admin/team", response_class=HTMLResponse)
 async def team_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
