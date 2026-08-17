@@ -5,7 +5,7 @@ import time
 import traceback
 
 from pydantic_ai import Agent, AgentRunResult, ModelSettings
-from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
 
 from src.ai.ai_llm import ai_llm_request_log
 from src.ai.ai_session import ai_session_message_add
@@ -161,6 +161,13 @@ class AiFrameworkAgent(AbstractAiFramework):
                 if error_code is None and ('timeout' in str(e).lower() or 'timed out' in str(e).lower()):
                     error_code = 503
 
+                # Провайдер недоступен (хост не отвечает, соединение отвергнуто).
+                # У такой ошибки status_code нет вовсе, а лечится она только сменой
+                # модели: повторять запрос к выключенной машине бессмысленно.
+                if error_code is None and isinstance(e, ModelAPIError) \
+                        and 'connection' in str(e).lower():
+                    error_code = 502
+
                 # Журнал запросов к LLM: неуспешный вызов (метрики /admin/llm)
                 await ai_llm_request_log(
                     framework_model.entity_llm_current.get('id'),
@@ -174,7 +181,10 @@ class AiFrameworkAgent(AbstractAiFramework):
                 # 401 - Unauthorized, 429 - Too Many Requests, 413 - Payload Too Large,
                 # 402 - Payment Required, 503 - Service Unavailable,
                 # 500 - некорректный ответ провайдера (UnexpectedModelBehavior)
-                if error_code in [401, 429, 413, 402, 503, 500]:
+                # 502/504 — провайдер недоступен или шлюз не дождался: и то и другое
+                # лечится следующей моделью, а не повтором к этой же. Без 502 цепочка
+                # падала на первой выключенной машине, не попробовав остальные.
+                if error_code in [401, 429, 413, 402, 503, 502, 504, 500]:
                     logger_info(
                         f"❌ Код ошибки: {error_code}."
                     )
