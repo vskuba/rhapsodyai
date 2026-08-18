@@ -7,7 +7,7 @@ click
 crawl4ai
 ddgs
 fastapi
-fastembed
+fastembed==0.8.0
 groq
 httpx
 openai
@@ -19,7 +19,11 @@ pymysql
 python-dotenv
 python-json-logger
 json-repair
-qdrant_client
+# Версия закреплена. В 1.19 у `AsyncQdrantClient` убрали `set_model`, которым
+# пользуется синхронизация фактов, — прод собрался с новой библиотекой и падал на
+# «object has no attribute 'set_model'», а локальная установка с 1.18 работала.
+# Незакреплённая версия означает, что сборка образа зависит от дня недели.
+qdrant_client==1.18.0
 uvicorn[standard]
 yoyo-migrations
 fpdf2
