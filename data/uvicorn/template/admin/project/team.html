@@ -137,6 +137,7 @@
 
     .team-card.active.role-manager { border-left-color: #667eea; }
     .team-card.active.role-developer { border-left-color: #f5576c; }
+    .team-card.active.role-bugfixer { border-left-color: #f59e0b; }
     .team-card.active.role-qa { border-left-color: #4facfe; }
 
     .team-card-top {
@@ -171,6 +172,10 @@
 
     .team-card.active .team-avatar.role-developer {
         background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .team-card.active .team-avatar.role-bugfixer {
+        background: linear-gradient(135deg, #fbbf24 0%, #f97316 100%);
     }
 
     .team-card.active .team-avatar.role-qa {
@@ -586,8 +591,11 @@
     // иначе карточка успеет позеленеть и погаснуть между двумя запросами.
     const TEAM_REFRESH_MS = 15000;
 
-    const ROLE_ICONS = { manager: '👔', developer: '💻', qa: '🔍' };
-    const ROLE_KNOWN = ['manager', 'developer', 'qa'];
+    // Роли, у которых на карточке своё лицо: иконка и цвет полосы. Роль вне списка
+    // рисуется нейтрально (🧩, без цветной полосы) — это не ошибка, а запас на роль,
+    // которую завели в `TEAM_MEMBER_ROLE_CARD`, но оформить ещё не успели.
+    const ROLE_ICONS = { manager: '👔', developer: '💻', bugfixer: '🔧', qa: '🔍' };
+    const ROLE_KNOWN = ['manager', 'developer', 'bugfixer', 'qa'];
 
     // Подписи готовности агента; причина занятости уходит в title бейджа.
     const AGENT_STATUS_TITLE = {
