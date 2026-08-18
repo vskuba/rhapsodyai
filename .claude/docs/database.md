@@ -100,7 +100,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 - `browser_error` — error journal: `source`, `message`, `session_id`, `url`, JSON `context` (no FKs on purpose)
 - `browser_workflow` — scenario chains: `site_id`, unique `name`, `position`
 - `browser_workflow_step` — chain links: `workflow_id` → `scenario_id` (both cascade), `position`
-- `browser_site` — bookmarks for the browser container: unique `name` + `url` (scheme required), `position` for the drag-and-drop order
+- `browser_site` — bookmarks for the browser container: unique `name` + `url` (scheme required), `position` for the drag-and-drop order, `tags` (comma-separated, lowercase) so neighbours can filter their own sites via `GET /api/browser/site?tag=dating`
 
 ## Table Order in 0001.sql (FK dependency order)
 

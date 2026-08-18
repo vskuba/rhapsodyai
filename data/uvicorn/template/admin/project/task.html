@@ -1253,7 +1253,8 @@
     <div class="page-tabs" id="phaseTabs">
         <button class="page-tab active" data-tab="planning">Планирование <span class="page-tab-n" id="tabCount-planning"></span></button>
         <button class="page-tab" data-tab="development">Разработка <span class="page-tab-n" id="tabCount-development"></span></button>
-        <button class="page-tab" data-tab="testing">Тестирование/Баги <span class="page-tab-n" id="tabCount-testing"></span></button>
+        <button class="page-tab" data-tab="testing">Тестирование <span class="page-tab-n" id="tabCount-testing"></span></button>
+        <button class="page-tab" data-tab="bugs">Баги <span class="page-tab-n" id="tabCount-bugs"></span></button>
     </div>
 
     <!-- Toolbar: title, filters, add -->
@@ -1320,20 +1321,24 @@ let _taskTypes = [];
 
 // Mapping фазы к именам типов задач (из project_task_type.name)
 // Реальные данные: dev=1, bug=2, test=3, research=4, plan=5
+// `bug` уехал с «Тестирования» на свою вкладку вместе с владельцем: тип принадлежит
+// роли `bugfixer` (см. src/project/task/task_role.py), а тестирование осталось за QA.
 const PHASE_TYPE_NAMES = {
-    planning: ['research', 'plan'],      // 4, 5
-    development: ['dev'],                 // 1
-    testing: ['bug', 'test']              // 2, 3
+    planning:    ['research', 'plan'],   // 4, 5
+    development: ['dev'],                // 1
+    testing:     ['test'],               // 3
+    bugs:        ['bug'],                // 2
 };
 
 // Тип новой задачи — по вкладке, на которой её заводят: полей «Статус» и «Тип» в форме
 // больше нет, а тип решает, чья карточка возьмёт задачу в работу (см. `task_role.py`).
 // Вкладка перечисляет несколько типов, для новой задачи нужен один — основной для фазы:
-// «Планирование» → plan (не research), «Тестирование/Баги» → test (не bug).
+// «Планирование» → plan (не research).
 const PHASE_NEW_TYPE_NAME = {
-    planning: 'plan',
+    planning:    'plan',
     development: 'dev',
-    testing: 'test',
+    testing:     'test',
+    bugs:        'bug',
 };
 
 const STATUS_LABELS = {
@@ -1585,11 +1590,17 @@ function taskIsDone(t) {
 // веток и вливают её в главную. Иначе одна и та же готовая задача висела бы сразу
 // на двух вкладках — своей по типу и на тестировании, — а принимать её было бы
 // негде: у разработки таких кнопок нет.
+//
+// У багов инстанция своя. Вкладка «Баги» — полный жизненный цикл бага, от заведения до
+// принятой ветки, и уводить закрытый баг на чужую вкладку значило бы прятать его от
+// того, кто его завёл. Кнопки приёмки от вкладки не зависят (см. `renderPipeDiff`) —
+// они смотрят только на то, что строка корневая и `pipeline_state === 'done'`.
 function taskMatchesPhase(t) {
     // Задачи без task_type_id считаются типом "dev" (development)
     const typeName = getTaskTypeNameById(t.task_type_id) || 'dev'; // NULL → dev по умолчанию
     if (!_phaseFilter) return true;
-    if (taskIsDone(t)) return _phaseFilter === 'testing';
+    if (taskIsDone(t)) return typeName === 'bug' ? _phaseFilter === 'bugs'
+                                                 : _phaseFilter === 'testing';
     return (PHASE_TYPE_NAMES[_phaseFilter] || []).includes(typeName);
 }
 
@@ -1818,7 +1829,9 @@ function phaseTabsCount() {
             // Тот же разбор, что в `taskMatchesPhase`, и другим он быть не может:
             // число во вкладке обещает, сколько строк там лежит, и разойдись оно с
             // отбором — вкладка звала бы на пустое место.
-            const ok = taskIsDone(t) ? phase === 'testing' : PHASE_TYPE_NAMES[phase].includes(typeName);
+            const ok = taskIsDone(t)
+                ? (typeName === 'bug' ? phase === 'bugs' : phase === 'testing')
+                : PHASE_TYPE_NAMES[phase].includes(typeName);
             if (ok) counts[phase] = (counts[phase] || 0) + 1;
         });
     });
@@ -2012,7 +2025,7 @@ function renderProgressCell(row) {
     // Порядок в ряду один и тот же на всех вкладках: сперва выключатель этой фазы
     // («в планирование» / «в разработку» / «в тестирование»), за ним — разрешение на
     // следующую. Каждая пара сама решает, показываться ли ей на текущей вкладке.
-    return badge + renderRunFlag(t, status) + renderQaFlag(t, status)
+    return badge + renderRunFlag(t, status) + renderQaFlag(t, status) + renderBugFlag(t, status)
         + renderPlanFlag(t) + renderDevFlag(t) + renderTestFlag(t)
         + renderPipeChip(t, row) + (row.hasKids
         ? renderSubtaskSummary(row)
@@ -2942,6 +2955,37 @@ async function toggleQaFlag(taskId, checked, el) {
     await _taskPhaseSwitch(taskId, TASK_META_KEY_TEST, checked, el);
 }
 
+// Ключ пометки «в багфикс» — тот же, что читает захват бага
+// (src/project/task/task_metadata.py, TASK_METADATA_KEY_BUGFIX).
+const TASK_META_KEY_BUGFIX = 'to_bugfix';
+
+// Флажок «в багфикс» на вкладке «Баги» — выключатель фазы, как «в тестирование» на
+// «Тестировании». Стоит галка — багфиксер берёт баг в работу, снята — не берёт, а
+// идущий прогон гасится.
+//
+// Умолчание «включено»: заведённый баг обязан попадать в работу сам, решением человека
+// является отказ. Поэтому хранится отклонение от умолчания — ключа нет = флажок стоит,
+// снятый пишется явным `false`. Отсюда `!== false`, а не `!!`.
+//
+// Второго флажка у вкладки нет: после починки баг идёт к человеку, а не следующему
+// агенту, и разрешать заранее нечего.
+function renderBugFlag(t, status) {
+    if (t.parent_id) return '';
+    if (_phaseFilter !== 'bugs' || !TASK_RUN_FLAG_STATUS.includes(status)) return '';
+    const on = (t.metadata || {})[TASK_META_KEY_BUGFIX] !== false;
+    const title = on
+        ? 'Баг у багфиксера. Снять — работа прекратится: агента погасим, баг вернём'
+          + ' в «Ожидает». Сделанное в ветке не пропадёт'
+        : 'Отдать баг багфиксеру — работу отдаст ближайший тик оркестратора';
+    return _taskFlagHtml(t.id, 'в багфикс', on, 'toggleBugFlag', title);
+}
+
+async function toggleBugFlag(taskId, checked, el) {
+    // Выключатель фазы: сперва снимаем разрешение, потом гасим прогон. В обратном
+    // порядке тик успел бы подобрать баг в тот же миг, когда его остановили.
+    await _taskPhaseSwitch(taskId, TASK_META_KEY_BUGFIX, checked, el);
+}
+
 function renderPipeChip(t, row) {
     if (!t.pipeline_state) {
         // Состояние одно, но причин у него две, и они требуют разных действий:
@@ -3030,8 +3074,10 @@ function renderPipeDiff(t) {
 // задачи обходит ветки её плана по порядку. Кнопка у каждой подзадачи звала бы
 // вливать половину просмотренного.
 //
-// Готовая задача видна только на «Тестировании» (см. `taskMatchesPhase`), поэтому
-// обе кнопки живут там же — на вкладке, где работу и принимают.
+// Готовая задача видна на «Тестировании», а готовый баг — на «Багах» (см.
+// `taskMatchesPhase`), поэтому обе кнопки живут на той вкладке, где работу и
+// принимают. Сама разметка кнопок от вкладки не зависит — только от того, что строка
+// корневая и `pipeline_state === 'done'`.
 //
 // Каталога подзадачи может уже не быть (сняли руками) — сервер ответит понятной
 // ошибкой, прятать кнопку из-за этого не за чем: состояние каталогов странице не
@@ -3166,6 +3212,19 @@ async function planReview(taskId) {
     await pipelineAction(taskId, 'review');
 }
 
+// Что панель «Конвейер» говорит про баг на каждом шаге. Своя карта, потому что
+// остальные подсказки построены вокруг плана, а у бага его нет: он идёт от заведения
+// до готовой ветки одним прогоном багфиксера.
+const BUG_PIPE_NOTE = {
+    new:       'Баг ждёт багфиксера — работу отдаст ближайший тик оркестратора.',
+    bugfixing: 'Багфиксер работает: воспроизводит баг, ищет причину, правит код и проверяет.'
+             + ' Плана и подзадач у бага нет — вся работа идёт одним прогоном.',
+    done:      'Баг починен. Посмотрите разницу веток кнопкой «diff» и влейте её в главную.',
+    failed:    'Багфиксер не смог починить баг — причина ниже.'
+             + ' «Перезапустить» отдаст его на второй заход.',
+    _other:    'Баг в конвейере.',
+};
+
 function _pipelineRender(taskId, data, body, actions) {
     const state = data.pipeline_state;
     // Родителя конвейер не берёт (см. task_claim_task_unplanned): его план — это его
@@ -3216,6 +3275,12 @@ function _pipelineRender(taskId, data, body, actions) {
     // Цели тут не повторяем: агент пишет их в те же самые цели задачи, которые блоком
     // выше уже показаны с чекбоксами. Дубль был полным — только удлинял раскрытую
     // строку и оставлял вопрос, какой из двух списков главный.
+    // У бага плана и подзадач не бывает ни на одном шаге: вся его работа — один прогон
+    // багфиксера. Общие подсказки для него не годятся и врут прямым текстом —
+    // «Оркестратор ещё не дошёл до этой задачи» показывалось бы и во время починки,
+    // и после неё, потому что обе ветки ниже опираются на отсутствие плана.
+    const isBug = getTaskTypeNameById((_tasks.find(x => x.id === taskId) || {}).task_type_id) === 'bug';
+
     const subtasks = data.subtasks || [];
     if (subtasks.length) {
         html += '<div class="pipe-section">Подзадачи</div>' + subtasks.map((s, i) => {
@@ -3228,6 +3293,8 @@ function _pipelineRender(taskId, data, body, actions) {
                         <span class="pipe-sub-state pipe-sub-${s.state}">${esc(s.state)}</span>
                     </div>`;
         }).join('');
+    } else if (isBug) {
+        html += `<span class="task-pipeline-muted">${esc(BUG_PIPE_NOTE[state] || BUG_PIPE_NOTE._other)}</span>`;
     } else if (state === 'plan_approval') {
         html += '<span class="task-pipeline-muted">План ждёт утверждения — подзадачи появятся после «Утвердить».</span>';
     } else if (!data.plan_text) {
@@ -3549,6 +3616,10 @@ setInterval(taskProgressRefresh, TASK_PROGRESS_REFRESH_MS);
                                     <span><code>testing</code> <span class="help-branch help-branch-parent">[задача]</span> — та же работа, что и <code>processing</code>, но разработка по всем подзадачам закончена: по пометке «в тестирование» задача сменила тип на «Тестирование» и идёт проверка.</span>
                                 </div>
                                 <div class="help-pipe-item">
+                                    <span class="help-dot" style="background:#dc2626"></span>
+                                    <span><code>bugfixing</code> <span class="help-branch help-branch-parent">[баг]</span> — баг у багфиксера: он воспроизводит, чинит и проверяет за один прогон. Успех — <code>done</code>, отрицательный вердикт — <code>failed</code>, то есть «Заблокировано». Плана и подзадач у бага нет.</span>
+                                </div>
+                                <div class="help-pipe-item">
                                     <span class="help-dot" style="background:#ca8a04"></span>
                                     <span><code>developing</code> <span class="help-branch help-branch-sub">[подзадача]</span> — Developer (LLM) работает над подзадачей.</span>
                                 </div>
@@ -3647,6 +3718,7 @@ setInterval(taskProgressRefresh, TASK_PROGRESS_REFRESH_MS);
                         <div class="vfork">
                             <div class="vfork-item vside">
                                 <div class="vrow"><span class="pn pn-teal">testing</span><span class="note">разработка закончена по всем подзадачам, пометка «в тестирование» — тип сменён на «Тестирование», идёт проверка</span></div>
+                                <div class="vrow"><span class="pn pn-teal">bugfixing</span><span class="note">баг чинит багфиксер, один прогон: done либо failed</span></div>
                             </div>
                         </div>
                         <div class="vlink"></div>

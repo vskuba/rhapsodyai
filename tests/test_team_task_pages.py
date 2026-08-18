@@ -112,9 +112,14 @@ class TestTeamPage:
         command = buttons.first.get_attribute('data-command')
         assert command, 'У кнопки копирования нет data-command'
 
-        commands = [m['command'] for m in page.request.get(f'{BASE_URL}/api/team').json()]
-        assert command.strip() in [c.strip() for c in commands], \
-            'Команда на кнопке не совпадает ни с одной командой из /api/team'
+        # `/api/team` отдаёт сырую команду из `project_team.command`, а карточка блока
+        # проекта подставляет к ней каталог: `cd <work_dir> && <команда>`
+        # (`team_project._command_build`). Поэтому сверяем хвост, а не строку целиком —
+        # у карточки проекта без каталога префикса не будет, и подходят оба вида.
+        commands = [str(m['command']).strip() for m in page.request.get(f'{BASE_URL}/api/team').json()]
+        command = command.strip()
+        assert any(command == c or command.endswith(f'&& {c}') for c in commands), \
+            f'Команда на кнопке не совпадает ни с одной командой из /api/team: {command!r}'
 
     def test_timeouts_block_lists_agent_steps(self, page: Page):
         """Блок «⏱ Таймауты» показывает и настройки, и сроки шагов workflow роли.
@@ -189,16 +194,34 @@ class TestTaskPage:
 
         В подписи таба, кроме названия фазы, живёт счётчик задач (`.page-tab-n`),
         поэтому сверяется название без него: число зависит от содержимого базы.
+
+        Вкладок четыре: баги уехали с «Тестирования» на свою вместе с владельцем —
+        тип `bug` принадлежит роли `bugfixer`, а тестирование осталось за QA.
         """
         page.goto(f'{BASE_URL}/admin/task')
         page.wait_for_selector('#phaseTabs .page-tab', state='visible', timeout=5000)
 
         tabs = page.locator('#phaseTabs .page-tab')
-        assert tabs.count() == 3, f'Ожидается 3 таба фаз, получено {tabs.count()}'
+        assert tabs.count() == 4, f'Ожидается 4 таба фаз, получено {tabs.count()}'
 
         labels = [_tab_label(tabs.nth(i)) for i in range(tabs.count())]
-        assert labels == ['Планирование', 'Разработка', 'Тестирование/Баги']
+        assert labels == ['Планирование', 'Разработка', 'Тестирование', 'Баги']
         assert page.locator('#phaseTabs .page-tab.active').count() == 1
+
+    def test_bugs_tab_filters_by_bug_type(self, page: Page):
+        """Вкладка «Баги» — своя фаза со своим типом и своим счётчиком.
+
+        Разметку сверяем по атрибутам, а не по содержимому таблицы: список задач
+        зависит от базы, а контракт вкладки — нет.
+        """
+        page.goto(f'{BASE_URL}/admin/task')
+        page.wait_for_selector('#phaseTabs .page-tab', state='visible', timeout=5000)
+
+        assert page.locator('#phaseTabs .page-tab[data-tab="bugs"]').count() == 1
+        assert page.locator('#tabCount-bugs').count() == 1
+
+        html = page.content()
+        assert 'Тестирование/Баги' not in html, 'старое имя вкладки осталось в разметке'
 
     def test_task_type_api_endpoint(self, page: Page):
         response = page.request.get(f'{BASE_URL}/api/team/types')

@@ -24,6 +24,7 @@ from mysql_.mysql_ import mysql_get_db_async
 TASK_SETTING_TIMEOUT_MANAGER_RUN = 'timeout_manager_run'
 TASK_SETTING_TIMEOUT_DEVELOPER_RUN = 'timeout_developer_run'
 TASK_SETTING_TIMEOUT_QA_RUN = 'timeout_qa_run'
+TASK_SETTING_TIMEOUT_BUGFIX_RUN = 'timeout_bugfix_run'
 TASK_SETTING_TIMEOUT_SHELL_CALL = 'timeout_shell_call'
 TASK_SETTING_TIMEOUT_SHELL_ACK = 'timeout_shell_ack'
 TASK_SETTING_TIMEOUT_SHELL_BUSY = 'timeout_shell_busy'
@@ -62,6 +63,10 @@ TASK_SETTING_TIMEOUT_ITEMS = (
      'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'qa', 'unit': 'с',
      'title': 'Ответ тестировщика',
      'hint': 'Сколько ждать проверку подзадачи. Должно быть меньше job воркера.'},
+    {'key': TASK_SETTING_TIMEOUT_BUGFIX_RUN, 'default': 3600, 'min': 60, 'max': 86400,
+     'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'bugfixer', 'unit': 'с',
+     'title': 'Ответ багфиксера',
+     'hint': 'Сколько ждать починку бага. Должно быть меньше job воркера.'},
 
     {'key': TASK_SETTING_TIMEOUT_SHELL_CALL, 'default': 300, 'min': 30, 'max': 86400,
      'group': TASK_SETTING_TIMEOUT_GROUP_SHELL, 'role': '', 'unit': 'с',
@@ -183,9 +188,12 @@ def task_setting_timeout_ladder_problem(values: dict) -> str:
     """
     job = int(values.get(TASK_SETTING_TIMEOUT_WORKER_JOB) or 0)
     lock = int(values.get(TASK_SETTING_TIMEOUT_TASK_LOCK) or 0)
+    # Потолок берём максимальный из агентских: лестницу ломает самый долгий прогон,
+    # а не «средний по ролям» — job воркера убьёт любого из них одинаково.
     agent = max(int(values.get(TASK_SETTING_TIMEOUT_MANAGER_RUN) or 0),
                 int(values.get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN) or 0),
-                int(values.get(TASK_SETTING_TIMEOUT_QA_RUN) or 0))
+                int(values.get(TASK_SETTING_TIMEOUT_QA_RUN) or 0),
+                int(values.get(TASK_SETTING_TIMEOUT_BUGFIX_RUN) or 0))
 
     if agent >= job:
         return (f'Ожидание агента ({agent}с) не меньше job воркера ({job}с): '

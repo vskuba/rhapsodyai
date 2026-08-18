@@ -11,6 +11,7 @@
 """
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
+from src.project.task.task_agent_bugfixer import TASK_BUGFIXER_AGENT_NAME
 from src.project.task.task_agent_developer import TASK_DEVELOPER_AGENT_NAME
 from src.project.task.task_agent_manager import TASK_MANAGER_AGENT_NAME
 from src.project.task.task_agent_qa import TASK_QA_AGENT_NAME
@@ -20,6 +21,7 @@ from src.project.task.task_agent_qa import TASK_QA_AGENT_NAME
 TEAM_AGENT_BY_ROLE = {
     'manager':   TASK_MANAGER_AGENT_NAME,
     'developer': TASK_DEVELOPER_AGENT_NAME,
+    'bugfixer':  TASK_BUGFIXER_AGENT_NAME,
     'qa':        TASK_QA_AGENT_NAME,
 }
 

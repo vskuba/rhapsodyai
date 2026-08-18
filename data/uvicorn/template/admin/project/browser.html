@@ -1427,6 +1427,38 @@
 
     .site-field input:focus { outline: none; border-color: #6366f1; }
 
+    .site-field-hint {
+        display: block;
+        margin-top: 4px;
+        color: #9ca3af;
+        font-size: 11px;
+        font-style: normal;
+    }
+
+    .site-field-hint code {
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: #f1f5f9;
+        font-size: 10px;
+    }
+
+    /* Метки на карточке — подписью, а не кнопкой: их читают, а правят в окне. */
+    .site-card-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 6px;
+    }
+
+    .site-card-tag {
+        padding: 1px 6px;
+        border-radius: 10px;
+        background: #eef2ff;
+        color: #4f46e5;
+        font-size: 10px;
+        letter-spacing: .02em;
+    }
+
     .site-modal-error {
         min-height: 16px;
         color: #b91c1c;
@@ -1710,6 +1742,12 @@
             <label class="site-field">
                 <span>Адрес</span>
                 <input type="text" id="siteUrl" placeholder="https://…" spellcheck="false" maxlength="500">
+            </label>
+            <label class="site-field">
+                <span>Метки</span>
+                <input type="text" id="siteTags" placeholder="dating" spellcheck="false" maxlength="255"
+                       title="Через запятую. По ним соседние проекты отбирают своё: DatingAi показывает в анкетах только сайты с меткой dating">
+                <em class="site-field-hint">через запятую; по метке <code>dating</code> сайт видит DatingAi</em>
             </label>
             <div class="site-modal-error" id="siteError"></div>
         </div>
@@ -3880,6 +3918,7 @@
     const siteTitleEl = document.getElementById('siteModalTitle');
     const siteNameEl = document.getElementById('siteName');
     const siteUrlEl = document.getElementById('siteUrl');
+    const siteTagsEl = document.getElementById('siteTags');
     const siteErrorEl = document.getElementById('siteError');
 
     // Правим карточку тем же окном, что и заводим: полей два, и отдельная форма
@@ -4000,6 +4039,7 @@
             el.innerHTML =
                 `<div class="site-card-name">${_escape(row.name)}</div>` +
                 `<div class="site-card-url">${_escape(row.url)}</div>` +
+                _siteTagsHtml(row.tags) +
                 '<div class="site-card-actions">' +
                 '<button type="button" class="browser-btn primary site-open">Открыть</button>' +
                 '</div>' +
@@ -4031,6 +4071,18 @@
             });
             siteCardsEl.appendChild(el);
         }
+    }
+
+    // Метки видно прямо на карточке: по ним соседние проекты отбирают свои сайты,
+    // и «почему DatingAi не показывает эту закладку» должно читаться отсюда, а не
+    // из окна правки. Меток нет — и строки нет: пустая полоска только шумит.
+    function _siteTagsHtml(tags) {
+        const list = String(tags || '').split(',').map(t => t.trim()).filter(Boolean);
+        if (!list.length) return '';
+
+        return '<div class="site-card-tags">' +
+            list.map(t => `<span class="site-card-tag">${_escape(t)}</span>`).join('') +
+            '</div>';
     }
 
     // Тащат карточку целиком, поэтому и целится она в карточку: id перетаскиваемой
@@ -4114,18 +4166,19 @@
     }
 
     function siteNew() {
-        siteModalOpen(0, 'Новый сайт', '', '');
+        siteModalOpen(0, 'Новый сайт', '', '', '');
     }
 
     function siteEdit(row) {
-        siteModalOpen(row.id, `Сайт «${row.name}»`, row.name, row.url);
+        siteModalOpen(row.id, `Сайт «${row.name}»`, row.name, row.url, row.tags);
     }
 
-    function siteModalOpen(id, title, name, url) {
+    function siteModalOpen(id, title, name, url, tags) {
         siteId = id;
         siteTitleEl.textContent = title;
         siteNameEl.value = name;
         siteUrlEl.value = url;
+        siteTagsEl.value = tags || '';
         siteSay('');
         siteModalEl.classList.add('visible');
         // Фокус в первое поле: окно открывают, чтобы печатать, а не чтобы кликать
@@ -4142,14 +4195,18 @@
     async function siteSave() {
         const name = siteNameEl.value.trim();
         const url = urlNormalize(siteUrlEl.value);
+        // Метки к общему виду приводит сервер: он же по ним отбирает, и второе
+        // место, где решают, что «Dating» и «dating» — одно и то же, разошлось бы
+        // с первым на первой правке.
+        const tags = siteTagsEl.value.trim();
         if (!name || !url) {
             siteSay('нужны и название, и адрес');
             return;
         }
 
         try {
-            if (siteId) await putData('/api/browser/site/' + siteId, {name, url});
-            else await postData('/api/browser/site', {name, url});
+            if (siteId) await putData('/api/browser/site/' + siteId, {name, url, tags});
+            else await postData('/api/browser/site', {name, url, tags});
         } catch (e) {
             // Ошибку показываем в самом окне и окно не закрываем: набранное нужно
             // поправить, а не набирать заново.

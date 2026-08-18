@@ -14,7 +14,7 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mysql_.mysql_ import mysql_get_db_async
@@ -31,11 +31,31 @@ router = APIRouter(prefix='/api/browser/site', tags=['browser'])
 BROWSER_SITE_SCHEMES = ('http://', 'https://')
 
 
+def browser_site_tags_normalize(tags: str) -> str:
+    """Метки к одному виду: строчными, без пробелов и пустот, через запятую.
+
+    Хранить как набрал человек нельзя: `Dating, dating ,DATING` — это одна метка,
+    а отбор по ней сравнивает строки. Приводим при записи, а не при чтении, чтобы
+    в базе лежало ровно то, с чем потом сверяются, и `FIND_IN_SET` не разбирал
+    пробелы. Порядок сохраняем — он ничей не выбор, но и путать человека сменой
+    очерёдности незачем.
+    """
+    seen = []
+    for tag in str(tags or '').replace(';', ',').split(','):
+        tag = tag.strip().lower()
+        if tag and tag not in seen:
+            seen.append(tag)
+
+    return ','.join(seen)
+
+
 class BrowserSiteSave(BaseModel):
     """Тело создания и правки карточки сайта."""
 
     name: str = Field(..., min_length=1, max_length=100)
     url: str = Field(..., min_length=1, max_length=500)
+    tags: str = Field('', max_length=255,
+                      description='Метки через запятую: чьи это сайты («dating»)')
 
     @field_validator('name', 'url')
     @classmethod
@@ -50,6 +70,11 @@ class BrowserSiteSave(BaseModel):
 
         return value
 
+    @field_validator('tags')
+    @classmethod
+    def _tags(cls, value: str) -> str:
+        return browser_site_tags_normalize(value)
+
 
 class BrowserSiteResponse(BaseModel):
     """Карточка сайта в списке."""
@@ -59,6 +84,7 @@ class BrowserSiteResponse(BaseModel):
     url: str = Field(..., description='Полный адрес со схемой', examples=['https://goldenbride.net/'])
     position: int = Field(..., description='Порядок в раскладке карточек; список отсортирован по нему',
                           examples=[1])
+    tags: str = Field('', description='Метки через запятую: чьи это сайты', examples=['dating'])
     created_at: datetime | None = Field(None, description='Когда заведена')
     updated_at: datetime | None = Field(None, description='Когда правилась последний раз')
 
@@ -75,6 +101,7 @@ class BrowserSiteListResponse(BaseModel):
                         'name': 'Goldenbride',
                         'url': 'https://goldenbride.net/',
                         'position': 1,
+                        'tags': 'dating',
                         'created_at': '2026-08-15T13:10:26',
                         'updated_at': '2026-08-15T13:11:46',
                     }
@@ -96,20 +123,40 @@ class BrowserSiteOrder(BaseModel):
     summary='Получить список сайтов контейнера-браузера',
     description='Возвращает закладки — имя и адрес того, с чем работает браузер, — '
                 'в порядке раскладки карточек на `/admin/browser`. '
+                '`tag` отбирает по метке: `?tag=dating` вернёт только сайты знакомств. '
                 'Нужна сессия админки или заголовок `X-API-KEY` с токеном доступа '
                 'пользователя, имеющего право `BROWSER_VIEW`.',
     response_description='Успешный ответ со списком сайтов',
 )
-async def browser_site_list(user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
+async def browser_site_list(
+        tag: str = Query('', max_length=50,
+                         description='Метка сайта: вернутся только помеченные ею'),
+        user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Все сайты в порядке раскладки — карточки и селекты идут тем же порядком.
 
     Сортировка по `position`, а `id` — только чтобы порядок был определён у
     карточек с одинаковой позицией (так лягут все, если раскладку ещё не трогали).
+
+    `tag` нужен соседям: у DatingAi в селекте анкет должны быть сайты знакомств, а
+    не вся раскладка вместе со стендами и этой самой админкой. Отбор строгий —
+    закладка без меток не попадёт ни в один `?tag=`. Без параметра список прежний,
+    целиком: вкладка «Сайты» показывает всё, что заведено, иначе непомеченный сайт
+    пропал бы и оттуда, и завести его заново было бы нечем.
     """
+    tag = browser_site_tags_normalize(tag)
+    # Отбор ровно по одной метке. Список через запятую не отбивается тихо пустым
+    # ответом: `FIND_IN_SET` со запятой внутри иглы не совпадёт ни с чем, и человек
+    # читал бы это как «сайтов нет», а не как «так спрашивать нельзя».
+    if ',' in tag:
+        raise HTTPException(status_code=422, detail='tag — одна метка, не список')
+
+    where = ' WHERE FIND_IN_SET(%s, tags) > 0' if tag else ''
+
     async with mysql_get_db_async() as db:
         await db.execute(
-            'SELECT id, name, url, position, created_at, updated_at '
-            'FROM browser_site ORDER BY position, id'
+            'SELECT id, name, url, position, tags, created_at, updated_at '
+            f'FROM browser_site{where} ORDER BY position, id',
+            (tag,) if tag else None
         )
         rows = await db.fetchall()
 
@@ -129,7 +176,7 @@ async def browser_site_get(site_id: int,
     берёт отсюда, чем опрашивать присутствие анкеты и каким кадром слать сообщение.
     """
     async with mysql_get_db_async() as db:
-        await db.execute('SELECT id, name, url, presence, position, created_at, updated_at '
+        await db.execute('SELECT id, name, url, presence, position, tags, created_at, updated_at '
                          '  FROM browser_site WHERE id = %s', (int(site_id),))
         row = await db.fetchone()
 
@@ -149,7 +196,8 @@ async def browser_site_create(data: BrowserSiteSave,
     """
     try:
         site_id = await BrowserSiteRepository().add({
-            'name': data.name, 'url': data.url, 'position': await _position_next()})
+            'name': data.name, 'url': data.url, 'tags': data.tags,
+            'position': await _position_next()})
     except Exception as e:
         raise HTTPException(status_code=409, detail=_save_error(e, data.name))
 
@@ -180,11 +228,12 @@ async def browser_site_order(data: BrowserSiteOrder,
 @router.put('/{site_id}', include_in_schema=False)
 async def browser_site_update(site_id: int, data: BrowserSiteSave,
                               user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
-    """Переписывает имя и адрес карточки."""
+    """Переписывает имя, адрес и метки карточки."""
     await _site_row(site_id)
 
     try:
-        await BrowserSiteRepository().update(site_id, {'name': data.name, 'url': data.url})
+        await BrowserSiteRepository().update(site_id, {'name': data.name, 'url': data.url,
+                                                       'tags': data.tags})
     except Exception as e:
         raise HTTPException(status_code=409, detail=_save_error(e, data.name))
 

@@ -53,6 +53,16 @@ TASK_METADATA_KEY_TEST = 'to_testing'
 # план она не отменяет, и задачу, ушедшую дальше планирования, не трогает вовсе.
 TASK_METADATA_KEY_PLAN = 'to_planning'
 
+# Пометка «в багфикс»: флажок на вкладке «Баги». Хранится наизнанку, как `to_planning`
+# и `to_testing`, и по той же причине: заведённый баг по умолчанию идёт в работу сам,
+# а решением человека является отказ — «этот пока не чинить». Ключа нет = баг чинится,
+# снятый флажок пишется явным `false`.
+#
+# Читает захват (`task_metadata_bugfix_free_sql` в `task_claim_task_bug`), снимает
+# остановка (`task_stop._task_stop_patch`) — на вкладке «Баги» этот флажок и есть
+# выключатель фазы, как «в тестирование» на «Тестировании».
+TASK_METADATA_KEY_BUGFIX = 'to_bugfix'
+
 # Ветка и merge request подзадачи — то, что разработчик отдаёт вместе с отчётом. Живут
 # в мешке, а не в колонках: пишет их один шаг конвейера, читает одна ячейка страницы
 # задач, и половина установок вообще работает без внешнего хостинга репозитория.
@@ -153,15 +163,22 @@ def task_metadata_plan_free_sql(column: str = 'metadata') -> str:
     `false` в `$.to_planning`. Отсутствующий ключ, NULL и битый JSON — это задача,
     которую никто не откладывал, и она к менеджеру идёт.
 
-    `COALESCE` обёрнут вокруг сравнения, а не вокруг `JSON_EXTRACT`, — та же ловушка,
-    что и в `task_metadata_stop_sql`: у второго аргумента тип не JSON, и MySQL привёл
-    бы к нему всё выражение, а сравнение стало бы ложным для всех строк разом.
-
     Родителя, в отличие от остановки, не смотрим: план пишется только листьям, и
     строки с подзадачами захват отбрасывает раньше этого условия.
     """
-    return (f"NOT COALESCE(JSON_EXTRACT(IF(JSON_VALID({column}), {column}, '{{}}'), "
-            f"'$.{TASK_METADATA_KEY_PLAN}') = FALSE, FALSE)")
+    return _key_free_sql(TASK_METADATA_KEY_PLAN, column)
+
+
+def task_metadata_bugfix_free_sql(column: str = 'metadata') -> str:
+    """
+    Условие «починка бага не запрещена человеком» — фильтр захвата в `task_claim_task_bug`.
+
+    Устроено как `task_metadata_plan_free_sql`, отличается только ключом: умолчание
+    «разрешено», проверяется отклонение — явный `false` в `$.to_bugfix`.
+
+    Родителя не смотрим: баг всегда корневая строка, подзадач у него не бывает.
+    """
+    return _key_free_sql(TASK_METADATA_KEY_BUGFIX, column)
 
 
 def task_metadata_test_free_sql(parent_column: str = 'parent_id') -> str:
@@ -259,3 +276,21 @@ def _task_metadata_dump(data: dict | None) -> str | None:
     if not data or not isinstance(data, dict):
         return None
     return json.dumps(data, ensure_ascii=False)
+
+
+def _key_free_sql(key: str, column: str) -> str:
+    """
+    Условие «пометка `key` не снята явным `false`» — общий вид для ключей с
+    умолчанием «разрешено» (`to_planning`, `to_bugfix`).
+
+    Без параметров намеренно: путь в JSON — константа, а условие подставляется в
+    `where`, который в захвате повторяется дважды (SELECT и UPDATE, см. `_task_claim`),
+    и второй список параметров пришлось бы тянуть через все вызовы.
+
+    `COALESCE` обёрнут вокруг сравнения, а не вокруг `JSON_EXTRACT`, — та же ловушка,
+    что в `task_metadata_stop_sql`: у второго аргумента тип не JSON, MySQL привёл бы к
+    нему всё выражение, и условие стало бы ложным для всех строк разом. Ошибка тихая:
+    синтаксис верный, смысл потерян.
+    """
+    return (f"NOT COALESCE(JSON_EXTRACT(IF(JSON_VALID({column}), {column}, '{{}}'), "
+            f"'$.{key}') = FALSE, FALSE)")
