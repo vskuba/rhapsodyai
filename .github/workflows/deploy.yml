@@ -113,6 +113,15 @@ jobs:
             echo "Перезапускаем worker и worker_planning с новым образом..."
             docker compose up -d --build --force-recreate --no-deps worker_task worker_planning
 
+            # --- Контейнер-браузер ---
+            # Отдельной строкой, а не зависимостью: он живёт неделями со своим пулом
+            # вкладок, и перезапускать его на каждом деплое незачем — но образ должен
+            # быть свежим, иначе правки сценариев доедут до кода и не доедут до браузера.
+            # `--no-deps` по той же причине, что и у воркеров: не тянуть за собой uvicorn
+            # и не ломать Blue-Green.
+            echo "Обновляем контейнер-браузер..."
+            docker compose up -d --build --force-recreate --no-deps browser
+
             # --- Очистка ---
             echo "Очистка..."
             mkdir -p ./data/log/sincedb

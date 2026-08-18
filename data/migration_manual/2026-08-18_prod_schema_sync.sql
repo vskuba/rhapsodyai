@@ -112,6 +112,38 @@ CREATE TABLE IF NOT EXISTS `browser_error` (
     INDEX `idx_browser_error_source` (`source`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ------------------------------------------- 4. Недостающие колонки
+--
+-- Найдены полной сверкой `information_schema` (511 колонок локально против 510 на
+-- проде), а не сверкой имён таблиц: имена совпадали, а колонок не хватало — на
+-- этом и споткнулся первый перенос закладок сайтов.
+--
+-- `browser_site.presence` — чем опрашивать присутствие анкеты: адреса и тела
+-- запросов, которые сайт шлёт сам. Настройкой, а не в коде: у каждого сайта свои
+-- ручки. Без колонки закладки Goldenbride на прод не встают вовсе.
+SET @sql := IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'browser_site'
+        AND COLUMN_NAME = 'presence') = 0,
+    "ALTER TABLE `browser_site` ADD COLUMN `presence` JSON NULL
+       COMMENT 'Опрос присутствия: heartbeat, статус, непрочитанные' AFTER `position`",
+    'SELECT ''browser_site.presence уже на месте'' AS шаг');
+PREPARE это FROM @sql; EXECUTE это; DEALLOCATE PREPARE это;
+
+-- `project_task_type.created_at` — в коде не используется, но расхождение схемы
+-- само по себе повод: следующая сверка снова покажет его, и время уйдёт на
+-- выяснение, важно оно или нет.
+SET @sql := IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'project_task_type'
+        AND COLUMN_NAME = 'created_at') = 0,
+    "ALTER TABLE `project_task_type` ADD COLUMN `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    'SELECT ''project_task_type.created_at уже на месте'' AS шаг');
+PREPARE это FROM @sql; EXECUTE это; DEALLOCATE PREPARE это;
+
+-- ⚠️ `node.migration_file` есть на проде и нет в `0001.sql`. Не сносим: колонка
+-- заполнена, а код к ней не обращается — снос ничего не даёт и теряет данные.
+
 -- ---------------------------------------------------------------- После
 SELECT 'ПОСЛЕ' AS этап,
        (SELECT COUNT(*) FROM information_schema.TABLES
@@ -119,4 +151,7 @@ SELECT 'ПОСЛЕ' AS этап,
        (SELECT COUNT(*) FROM node_variable)          AS переменных,
        (SELECT COUNT(*) FROM node_variable_role)     AS связей_ролей,
        (SELECT COUNT(*) FROM node_variable_workflow) AS связей_workflow,
-       (SELECT COUNT(*) FROM browser_error)          AS ошибок_в_журнале;
+       (SELECT COUNT(*) FROM browser_error)          AS ошибок_в_журнале,
+       (SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'browser_site'
+           AND COLUMN_NAME = 'presence')              AS есть_presence;
