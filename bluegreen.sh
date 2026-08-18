@@ -87,10 +87,17 @@ if [ "$HEALTHY" != "true" ]; then
 fi
 
 # --- Switch Caddy ---
-# Matches: reverse_proxy uvicorn:8000 {
-#      or: reverse_proxy uvicorn_green:8000 {
+# Заменяем ТОЛЬКО собственный upstream, а не любой `reverse_proxy` в файле.
+#
+# Раньше шаблон был широким (`reverse_proxy [a-zA-Z_]*:[0-9]* {`) и переписывал
+# все совпадения — включая чужие маршруты на том же домене. Так деплой молча увёл
+# `/dating` (панель DatingAi) на админку: блок остался, но смотрел на `uvicorn`, и
+# страница отвечала 200 чужим содержимым — самый неприятный сорт поломки.
+#
+# Привязка к именам слотов и к отступу верхнего уровня (ровно 4 пробела): у чужих
+# маршрутов внутри `handle_path` отступ восемь, и под шаблон они не попадают.
 echo "[BG] Переключение Caddy -> $NEW_BACKEND"
-sed -i "s|reverse_proxy [a-zA-Z_]*:[0-9]* {|reverse_proxy $NEW_BACKEND {|" "$CADDYFILE"
+sed -i -E "s@^    reverse_proxy (uvicorn|uvicorn_green):8000 \{@    reverse_proxy $NEW_BACKEND {@" "$CADDYFILE"
 
 # caddy reload returns 0 even when it silently rejects the new config (e.g. when
 # the new upstream isn't DNS-resolvable yet at reload time). A full restart is
