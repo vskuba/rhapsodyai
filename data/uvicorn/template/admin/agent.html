@@ -44,23 +44,59 @@
         overflow-y: auto;
     }
 
-    /* Группировка и элементы списка */
-    .group-header {
-        padding: 6px 10px 5px;
-        font-size: 11px;
-        color: #df983d;
-        font-weight: bold;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        cursor: pointer;
+    /* Карусель нод в сайдбаре */
+    .node-carousel {
         display: flex;
         align-items: center;
-        gap: 5px;
-        user-select: none;
-        transition: color 0.15s;
+        gap: 6px;
+        margin-top: 12px;
     }
-    .group-header:hover { color: #c47d22; }
 
+    .node-carousel-name {
+        flex: 1;
+        text-align: center;
+        font-size: 13px;
+        font-weight: bold;
+        color: #df983d;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .node-carousel-arrow {
+        width: 26px;
+        height: 26px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f1f4f6;
+        color: #2c3e50;
+        border: 1px solid #d6eaf8;
+        border-radius: 5px;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+        transition: all 0.2s;
+        padding: 0;
+    }
+
+    .node-carousel-arrow:hover {
+        background: #3498db;
+        color: #fff;
+    }
+
+    .agent-list-empty {
+        padding: 12px 10px;
+        font-size: 12px;
+        color: #999;
+        text-align: center;
+    }
+
+    /* Группировка и элементы списка. Заголовка ноды здесь нет: ее имя показывает
+       карусель, а список содержит агентов только этой одной ноды */
     .group-folder-name { flex: 1; }
     .folder-icon { flex-shrink: 0; }
 
@@ -371,6 +407,13 @@
     <div class="agents-sidebar">
         <div class="sidebar-header">
             <button class="btn-create" id="createNewAgent">+ Создать агента</button>
+
+            <!-- Карусель нод: стрелки листают ноды по кругу -->
+            <div class="node-carousel">
+                <button type="button" class="node-carousel-arrow" id="nodeCarouselPrev" title="Предыдущая нода">‹</button>
+                <div class="node-carousel-name" id="nodeCarouselName">—</div>
+                <button type="button" class="node-carousel-arrow" id="nodeCarouselNext" title="Следующая нода">›</button>
+            </div>
         </div>
         <div class="agent-list" id="agentList">
             <!-- JS контент -->
@@ -503,6 +546,15 @@
 
     let allWorkflows = [];
 
+    // Карусель нод: список показывает агентов одной ноды, стрелки листают их по кругу
+    let carouselNodes = [];
+    let carouselIndex = 0;
+    let sidebarAgents = [];
+
+    // Под каким ключом помним последнюю ноду. sessionStorage, а не localStorage:
+    // выбор живет столько же, сколько вкладка — как на странице workflow
+    const AGENT_NODE_KEY = 'agent_selected_node_id';
+
     /**
      * Инициализация менеджера: загрузка групп и списка агентов
      */
@@ -587,47 +639,103 @@
     }
 
     function renderNodeList(agents, nodes) {
-        agentListContainer.innerHTML = '';
-        const currentAgentId = document.getElementById('agentId')?.value || '';
-        const byLabel = (a, b) => (a.title || a.name).localeCompare(b.title || b.name, 'ru');
+        sidebarAgents = agents || [];
 
-        const agentsByNode = {};
-        for (const agent of agents) {
-            const nid = agent.node_id || 'none';
-            if (!agentsByNode[nid]) agentsByNode[nid] = [];
-            agentsByNode[nid].push(agent);
+        carouselNodes = nodes.map(n => ({id: n.id, name: n.name}));
+        if (sidebarAgents.some(a => !a.node_id) || carouselNodes.length === 0) {
+            carouselNodes.push({id: 'none', name: 'Вне ноды'});
         }
 
-        const createNodeSection = (nid, nodeName) => {
-            const nodeAgents = agentsByNode[nid];
-            if (!nodeAgents) return;
+        // Показываем ноду открытого агента, чтобы выбор пережил перерисовку списка
+        const currentAgentId = document.getElementById('agentId')?.value || '';
+        let activeNodeId = null;
+        if (currentAgentId) {
+            const agent = sidebarAgents.find(a => String(a.id) === String(currentAgentId));
+            if (agent) activeNodeId = agent.node_id || 'none';
+        }
+        // Холодная загрузка страницы: открытого агента еще нет — берем последнюю ноду
+        if (activeNodeId === null) activeNodeId = sessionStorage.getItem(AGENT_NODE_KEY);
 
-            const header = document.createElement('div');
-            header.className = 'group-header';
-            header.textContent = nodeName;
-            agentListContainer.appendChild(header);
+        if (activeNodeId !== null) {
+            const idx = carouselNodes.findIndex(n => String(n.id) === String(activeNodeId));
+            if (idx >= 0) carouselIndex = idx;
+        }
+        if (carouselIndex >= carouselNodes.length) carouselIndex = 0;
 
-            const sorted = [...nodeAgents].sort(byLabel);
-            renderGroupTree(buildGroupTree(sorted), agentListContainer, 0, `agent_group_${nid}`, (agent, depth, indent) => {
-                const div = document.createElement('div');
-                div.className = 'agent-item';
-                div.dataset.agentId = agent.id;
-                if (depth > 0) div.style.paddingLeft = `${indent}px`;
-                if (agent.id.toString() === currentAgentId) div.classList.add('active');
-
-                const titleSpan = document.createElement('span');
-                titleSpan.className = 'agent-item-title';
-                titleSpan.textContent = (depth > 0 ? '· ' : '') + (agent.title || agent.name);
-                titleSpan.onclick = () => selectAgentForEdit(agent.id, div);
-                div.appendChild(titleSpan);
-
-                return div;
-            });
-        };
-
-        nodes.forEach(g => createNodeSection(g.id, g.name));
-        createNodeSection('none', 'Вне ноды');
+        renderCarouselNode();
     }
+
+    // Отрисовывает список агентов текущей ноды карусели
+    function renderCarouselNode() {
+        const node = carouselNodes[carouselIndex];
+        const nameEl = document.getElementById('nodeCarouselName');
+        if (nameEl) {
+            nameEl.textContent = node ? node.name : '—';
+            nameEl.title = node ? node.name : '';
+        }
+
+        agentListContainer.innerHTML = '';
+        if (!node) return;
+
+        const currentAgentId = document.getElementById('agentId')?.value || '';
+        const nodeAgents = sidebarAgents.filter(a => String(a.node_id || 'none') === String(node.id));
+
+        if (nodeAgents.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'agent-list-empty';
+            empty.textContent = 'В ноде нет агентов';
+            agentListContainer.appendChild(empty);
+            return;
+        }
+
+        const byLabel = (a, b) => (a.title || a.name).localeCompare(b.title || b.name, 'ru');
+        const sorted = [...nodeAgents].sort(byLabel);
+
+        renderGroupTree(buildGroupTree(sorted), agentListContainer, 0, `agent_group_${node.id}`, (agent, depth, indent) => {
+            const div = document.createElement('div');
+            div.className = 'agent-item';
+            div.dataset.agentId = agent.id;
+            if (depth > 0) div.style.paddingLeft = `${indent}px`;
+            if (agent.id.toString() === currentAgentId) div.classList.add('active');
+
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'agent-item-title';
+            titleSpan.textContent = (depth > 0 ? '· ' : '') + (agent.title || agent.name);
+            titleSpan.onclick = () => selectAgentForEdit(agent.id, div);
+            div.appendChild(titleSpan);
+
+            return div;
+        });
+    }
+
+    // Переключает карусель на ноду с указанным id и запоминает выбор
+    function carouselNodeSelect(nodeId) {
+        const idx = carouselNodes.findIndex(n => String(n.id) === String(nodeId || 'none'));
+        if (idx < 0) return false;
+
+        if (idx !== carouselIndex) {
+            carouselIndex = idx;
+            renderCarouselNode();
+        }
+        sessionStorage.setItem(AGENT_NODE_KEY, String(carouselNodes[carouselIndex].id));
+        return true;
+    }
+
+    // Стрелки карусели: следующая/предыдущая нода по кругу. Выбор запоминаем сразу,
+    // а не при открытии агента: пролистать ноду и уйти на другую страницу — обычное дело
+    document.getElementById('nodeCarouselPrev')?.addEventListener('click', () => {
+        if (!carouselNodes.length) return;
+        carouselIndex = (carouselIndex - 1 + carouselNodes.length) % carouselNodes.length;
+        renderCarouselNode();
+        sessionStorage.setItem(AGENT_NODE_KEY, String(carouselNodes[carouselIndex].id));
+    });
+
+    document.getElementById('nodeCarouselNext')?.addEventListener('click', () => {
+        if (!carouselNodes.length) return;
+        carouselIndex = (carouselIndex + 1) % carouselNodes.length;
+        renderCarouselNode();
+        sessionStorage.setItem(AGENT_NODE_KEY, String(carouselNodes[carouselIndex].id));
+    });
 
     /**
      * Загрузка данных конкретного агента в форму
@@ -670,6 +778,10 @@
             langSwitcher.fieldLoad(document.getElementById('prompt_system'), agent.prompt_system || '');
 
             setSelectedRoles(agent.role_ids || []);
+
+            // Запоминаем ноду открытого агента: после перезагрузки страницы карусель
+            // вернется к ней, а не к первой по счету
+            sessionStorage.setItem(AGENT_NODE_KEY, String(agent.node_id || 'none'));
 
             const varContainer = document.getElementById('variablesContainer');
             if (varContainer) {
@@ -799,6 +911,11 @@
                 }
             }
 
+            // Карусель должна остаться на ноде, выбранной в форме: у нового агента
+            // скрытое поле id еще пустое, и без этого список ушел бы на прошлую ноду,
+            // спрятав только что созданного агента
+            sessionStorage.setItem(AGENT_NODE_KEY, String(currentNodeId || 'none'));
+
             await initAgentsManager(currentNodeId, currentWorkflowId, targetRoleIds);
 
         } catch (e) {
@@ -856,6 +973,11 @@
     const _deepLinkAgentId = new URLSearchParams(window.location.search).get('agent_id');
     await initAgentsManager();
     if (_deepLinkAgentId) {
+        // Агент из ссылки может лежать в другой ноде — сначала листаем карусель на нее,
+        // иначе его строки в списке просто нет
+        const target = sidebarAgents.find(a => String(a.id) === String(_deepLinkAgentId));
+        if (target) carouselNodeSelect(target.node_id || 'none');
+
         const el = document.querySelector(`.agent-item[data-agent-id="${_deepLinkAgentId}"]`);
         if (el) {
             el.scrollIntoView({block: 'nearest'});

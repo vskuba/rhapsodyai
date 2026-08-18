@@ -115,12 +115,13 @@ async def ai_workflow_variables_global_get() -> list[dict]:
         return await db.fetchall()
 
 
-async def ai_workflow_variables_public_get(node_id: int) -> list[dict]:
-    # Публичные переменные ноды (включая proxy) — порядок по position важен:
-    # переменные ниже по списку могут ссылаться на %переменные% выше
+async def ai_workflow_variables_node_get(node_id: int) -> list[dict]:
+    # Переменные ноды (включая proxy) — порядок по position важен: переменная
+    # ниже по списку может ссылаться на %переменные% выше и должна получить их
+    # уже раскрытыми, а не сырым шаблоном
     sql = """
         SELECT v.*
-        FROM agent_workflow_variable_public v
+        FROM node_variable v
         WHERE v.node_id = %s
         ORDER BY v.position ASC, v.name ASC
     """

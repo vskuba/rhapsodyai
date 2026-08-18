@@ -26,6 +26,7 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.PLAN_VIEW,
     AuthPermission.PLANNING_VIEW,
     AuthPermission.PLANNING_UPDATE,
+    AuthPermission.BROWSER_VIEW,
     AuthPermission.SESSION_VIEW,
     AuthPermission.SETTING_VIEW,
     AuthPermission.QUEUE_VIEW,
@@ -40,8 +41,31 @@ AUTH_PERMISSIONS_DEFAULT = {
 # workflow: с view-набором почти каждый тест падал бы на 403. Роль отделена от
 # `admin` не по объёму прав, а чтобы прогоны и ручные операции QA было видно
 # в логах и сессиях отдельно от настоящего администратора.
+#
+# `dating_service` — служебная учётка модуля знакомств: ею ходят в API дейтинга
+# (карточки, вход на сайт, проверка, диалоги, ответы) и ею же заводится агент
+# анкеты. Набор узкий намеренно: этой учёткой правит не человек, а автоматика, и
+# лишнее право здесь — не удобство, а возможность снести чужое по ошибке в коде.
+#
+# Почему именно эти четыре: ручки `/api/dating/girl/*` требуют `dating:view` и
+# `dating:create`, `POST /agent/create` — `agent:create`, а `agent:view` нужен,
+# чтобы прочитать заведённого агента обратно. `/chat/ask`, которым workflow создаёт
+# девушку и сочиняет ответы, своего права не требует — ему достаточно сессии.
+#
+# `planning:*` здесь стоять не должно, хотя ручки знакомств были прикрыты именно им:
+# это право открывает ещё и закладки сайтов, сценарии браузера и его сессии.
 AUTH_ROLE_PERMISSIONS = {
     'qa': set(AuthPermission),
+    'dating_service': {
+        # Учётка соседнего проекта DatingAi: анкеты и переписка живут там, а сюда
+        # он ходит за браузером (закладки с `presence`, прогон сценариев в живой
+        # сессии) и за агентом анкеты. Ручек знакомств здесь больше нет, поэтому
+        # и прав `dating:*` нет — они уехали вместе со страницей.
+        AuthPermission.BROWSER_VIEW,
+        AuthPermission.BROWSER_CREATE,
+        AuthPermission.AGENT_VIEW,
+        AuthPermission.AGENT_CREATE,
+    },
 }
 
 

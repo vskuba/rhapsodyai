@@ -250,10 +250,14 @@ async def auth_middleware(request: Request, call_next):
     # Check if user is authenticated via session
     user_id = request.session.get("user_id")
     if not user_id:
-        # Если передан X-API-KEY или X-Claude-Secret, разрешаем пропустить редирект/блокировку
-        # и доверяем авторизацию самому роутеру (_require_claude_secret / _require_api_key)
-        if (request.headers.get("X-API-KEY") or request.headers.get("x-api-key")
-                or request.headers.get("X-Claude-Secret")):
+        # Пришёл токен доступа (`Authorization: Bearer …` либо `X-API-KEY`) или
+        # секрет claude-shell — пропускаем, а проверку делает сам роутер
+        # (`AuthChecker` / `_require_claude_secret`). Разбор заголовков — общий с
+        # `AuthChecker`: две копии этого условия разошлись бы, и заголовок,
+        # который роутер принимает, здесь молча отсекался бы (так и было с
+        # `Authorization`: до проверки прав запрос не доходил вовсе).
+        from src.auth.auth import auth_token_of
+        if auth_token_of(request) or request.headers.get("X-Claude-Secret"):
             return await call_next(request)
 
         # For HTML routes, redirect to login with ?next= for post-login return

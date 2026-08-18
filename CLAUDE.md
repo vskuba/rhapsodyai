@@ -48,6 +48,12 @@ asyncio.run(telegram_send_owner('your message'))
 | `main_uvicorn.py` | App bootstrap (FastAPI/Uvicorn server) |
 | `main_telegram.py` | Telegram bot entry point |
 | `main_browser.py` | Контейнер-браузер: один Chromium, изолированные сессии |
+
+**Знакомства уехали.** Анкеты, живой чат и страница `/admin/dating` живут в отдельном
+проекте **DatingAi**; он ходит сюда по HTTP за браузером (`/api/browser/*`) и за
+агентом анкеты (`/agent/create`, `/agent/name/{name}`) под учёткой `dating_service`.
+Здесь остались агенты, workflow `dating_talk` / `dating_girl_create` и коллекция
+фактов `dating_girl` — они про агентов, а не про анкеты.
 | `py_modules/ai/framework/ai_framework.py` | AI framework base (provider-agnostic) |
 | `py_modules/ai/framework/ai_framework_manager.py` | Base manager: step execution primitives |
 | `src/ai/framework/agent/ai_framework_manager.py` | Workflow engine: steps, transitions, tool invocation |

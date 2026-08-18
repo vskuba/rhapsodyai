@@ -54,6 +54,10 @@ BROWSER_SCENARIO_VAR_RE = re.compile(r'\{\{\s*([A-Za-z0-9_]+)\s*\}\}')
 # вреднее, чем оставить — от такой маски журнал перестаёт читаться.
 BROWSER_SCENARIO_MASK_MIN_LEN = 4
 
+# `value: "@src"` у `extract` — снять атрибут, а не текст. Иначе адрес картинки
+# не достать: у `<img>` текста нет, и шаг вернул бы пустую строку.
+BROWSER_SCENARIO_ATTR_MARK = '@'
+
 
 class BrowserScenarioStep(BaseModel):
     """Один шаг. Поля общие на все действия, обязательные — по таблице выше."""
@@ -61,7 +65,8 @@ class BrowserScenarioStep(BaseModel):
     action: str
     selector: str = Field('', max_length=500, description='CSS или text=… — ровно один элемент')
     url: str = Field('', max_length=1000)
-    value: str = Field('', max_length=2000, description='Текст, вариант списка, мс или пиксели')
+    value: str = Field('', max_length=2000,
+                       description='Текст, вариант списка, мс, пиксели; у extract «@src» — атрибут')
     key: str = Field('', max_length=50, description='Enter, Control+a')
     name: str = Field('', max_length=50, description='Под каким именем сложить результат extract')
     timeout_ms: int = Field(BROWSER_SCENARIO_STEP_TIMEOUT_MS, ge=100, le=120000)

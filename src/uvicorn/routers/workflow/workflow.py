@@ -134,8 +134,8 @@ async def workflow_duplicate(
         )
         await db.execute(
             """
-            INSERT INTO agent_workflow_variable_public_workflow (public_variable_id, workflow_id)
-            SELECT public_variable_id, %s FROM agent_workflow_variable_public_workflow WHERE workflow_id = %s
+            INSERT INTO node_variable_workflow (node_variable_id, workflow_id)
+            SELECT node_variable_id, %s FROM node_variable_workflow WHERE workflow_id = %s
             """,
             (new_workflow_id, workflow_id)
         )
@@ -227,8 +227,8 @@ async def workflow_variables(
          WHERE v.type = 'global')
         UNION
         (SELECT v.id, v.name, 'node' as `type`, v.`default`, v.description, v.node_id
-         FROM `agent_workflow_variable_public` v
-         JOIN `agent_workflow_variable_public_workflow` vw ON v.id = vw.public_variable_id
+         FROM `node_variable` v
+         JOIN `node_variable_workflow` vw ON v.id = vw.node_variable_id
          WHERE vw.workflow_id = %s)
         ORDER BY name ASC
     """

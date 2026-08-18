@@ -18,11 +18,10 @@ HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по о
 | `/admin/agent` | `admin/agent.html` | Агенты |
 | `/admin/workflow` | `admin/agent_workflow.html` | Редактор workflow и шагов |
 | `/admin/workflow_trace` | `admin/workflow_trace.html` | Трейсы прогонов, токены |
-| `/admin/variable` | `admin/agent_workflow_variable_public.html` | Публичные переменные (роль-зависимый шаблон) |
+| `/admin/variable` | `admin/node_variable.html` | Переменные ноды (роль-зависимый шаблон) |
 | `/admin/llm` | `admin/llm.html` | LLM и статистика запросов |
 | `/admin/node` | `admin/node.html` | Ноды |
 | `/admin/tool` | `admin/tool.html` | Инструменты + тест-раннер |
-| `/admin/dating` | `admin/dating.html` | Dating; **не** наследует `base.html` (standalone) |
 | `/admin/fact`, `/admin/fact_collection` | `admin/fact*.html` | Факты и коллекции |
 | `/admin/session` | `admin/session.html` | Просмотр сессий |
 | `/admin/user`, `/admin/role` | `admin/user.html`, `admin/role.html` | Пользователи и роли |
@@ -39,7 +38,7 @@ HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по о
 | `/admin/developing` | `admin/project/developing.html` | Разработка |
 
 Вне админки: `telegram_app.html` (Mini App, см. `telegram_mini_app.md`) и
-`custom/dating/agent_workflow_variable_public.html` — кастомный шаблон под роль,
+`custom/dating/node_variable.html` — кастомный шаблон под роль,
 подменяется через `template_role_mapping` в `dashboard.py:16`.
 
 ## `base.html`
@@ -112,7 +111,7 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
 
 `agent.html`, `agent_workflow.html`, `node.html`, `tool.html`, `user.html`, `role.html`,
 `plan.html`, `fact_collection.html`, `workflow_trace.html`, `project/planning.html`,
-`agent_workflow_variable_public.html`, `queue.html`.
+`node_variable.html`, `queue.html`.
 
 ```html
 <div class="editor-container">

@@ -97,10 +97,10 @@ class BrowserSiteOrder(BaseModel):
     description='Возвращает закладки — имя и адрес того, с чем работает браузер, — '
                 'в порядке раскладки карточек на `/admin/browser`. '
                 'Нужна сессия админки или заголовок `X-API-KEY` с токеном доступа '
-                'пользователя, имеющего право `PLANNING_VIEW`.',
+                'пользователя, имеющего право `BROWSER_VIEW`.',
     response_description='Успешный ответ со списком сайтов',
 )
-async def browser_site_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def browser_site_list(user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Все сайты в порядке раскладки — карточки и селекты идут тем же порядком.
 
     Сортировка по `position`, а `id` — только чтобы порядок был определён у
@@ -116,9 +116,32 @@ async def browser_site_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VI
     return {'result': rows}
 
 
+@router.get('/{site_id}', include_in_schema=False)
+async def browser_site_get(site_id: int,
+                           user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
+    """Карточка сайта целиком, вместе с настройкой присутствия (`presence`).
+
+    Отдельно от списка, потому что `presence` — это простыня: адреса ручек сайта,
+    заготовки GWT-запросов, имена сценариев по ролям. В списке, который рисует
+    селекты и карточки, она была бы мёртвым грузом на каждой строке.
+
+    Наружу нужна тем, кто работает с сайтом, а карточками не управляет: DatingAi
+    берёт отсюда, чем опрашивать присутствие анкеты и каким кадром слать сообщение.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT id, name, url, presence, position, created_at, updated_at '
+                         '  FROM browser_site WHERE id = %s', (int(site_id),))
+        row = await db.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f'сайта #{site_id} нет')
+
+    return {'result': row}
+
+
 @router.post('', status_code=201, include_in_schema=False)
 async def browser_site_create(data: BrowserSiteSave,
-                              user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                              user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Заводит карточку сайта. Занятое имя — 409, а не молчаливый второй такой же.
 
     Новая карточка встаёт в конец: первым идёт то, что человек туда положил, и
@@ -135,7 +158,7 @@ async def browser_site_create(data: BrowserSiteSave,
 
 @router.post('/order', include_in_schema=False)
 async def browser_site_order(data: BrowserSiteOrder,
-                             user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                             user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Раскладка карточек мышью: список id в новом порядке.
 
     Позиции переписываются целиком по присланному списку, а не сдвигаются по
@@ -156,7 +179,7 @@ async def browser_site_order(data: BrowserSiteOrder,
 
 @router.put('/{site_id}', include_in_schema=False)
 async def browser_site_update(site_id: int, data: BrowserSiteSave,
-                              user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                              user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Переписывает имя и адрес карточки."""
     await _site_row(site_id)
 
@@ -170,7 +193,7 @@ async def browser_site_update(site_id: int, data: BrowserSiteSave,
 
 @router.delete('/{site_id}', include_in_schema=False)
 async def browser_site_delete(site_id: int,
-                              user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                              user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Удаляет карточку. Живые сессии этого сайта не трогает — они сами по себе."""
     await _site_row(site_id)
     await BrowserSiteRepository().delete(site_id)

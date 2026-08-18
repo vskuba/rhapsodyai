@@ -97,10 +97,10 @@ class BrowserWorkflowRun(BaseModel):
                 'сессии, — в порядке раскладки на вкладке «Workflow» страницы `/admin/browser`. '
                 'В списке только сами цепочки и число звеньев; звенья по порядку отдаёт '
                 '`GET /api/browser/workflow/{workflow_id}`. Нужна сессия админки или заголовок '
-                '`X-API-KEY` с токеном доступа пользователя, имеющего право `PLANNING_VIEW`.',
+                '`X-API-KEY` с токеном доступа пользователя, имеющего право `BROWSER_VIEW`.',
     response_description='Успешный ответ со списком цепочек',
 )
-async def browser_workflow_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def browser_workflow_list(user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Цепочки в порядке раскладки, с числом звеньев."""
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -117,7 +117,7 @@ async def browser_workflow_list(user=Depends(AuthChecker([AuthPermission.PLANNIN
 
 @router.post('', status_code=201, include_in_schema=False)
 async def browser_workflow_create(data: BrowserWorkflowSave,
-                                  user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                                  user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Заводит цепочку вместе со звеньями."""
     try:
         workflow_id = await BrowserWorkflowRepository().add({
@@ -138,7 +138,7 @@ async def browser_workflow_create(data: BrowserWorkflowSave,
 
 @router.get('/{workflow_id}', include_in_schema=False)
 async def browser_workflow_get(workflow_id: int,
-                               user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+                               user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Цепочка целиком: звенья по порядку с именами сценариев и их подстановками.
 
     `variables_used` — объединение подстановок всех звеньев: спрашивать их надо
@@ -162,7 +162,7 @@ async def browser_workflow_get(workflow_id: int,
 
 @router.put('/{workflow_id}', include_in_schema=False)
 async def browser_workflow_update(workflow_id: int, data: BrowserWorkflowSave,
-                                  user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                                  user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Переписывает цепочку целиком — имя, сайт и порядок звеньев."""
     await _workflow_row(workflow_id)
 
@@ -179,7 +179,7 @@ async def browser_workflow_update(workflow_id: int, data: BrowserWorkflowSave,
 
 @router.delete('/{workflow_id}', include_in_schema=False)
 async def browser_workflow_delete(workflow_id: int,
-                                  user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                                  user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Удаляет цепочку вместе со звеньями (каскадом). Сценарии остаются."""
     await _workflow_row(workflow_id)
     await BrowserWorkflowRepository().delete(workflow_id)
@@ -189,7 +189,7 @@ async def browser_workflow_delete(workflow_id: int,
 
 @router.post('/{workflow_id}/run', include_in_schema=False)
 async def browser_workflow_run(workflow_id: int, data: BrowserWorkflowRun,
-                               user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                               user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Гонит звенья по порядку в одной сессии.
 
     **Первое упавшее звено останавливает цепочку.** Следующие рассчитывают, что

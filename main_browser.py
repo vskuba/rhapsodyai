@@ -24,6 +24,7 @@ from src.browser.browser_record import router as browser_record_router
 from src.browser.browser_scenario_run import router as browser_scenario_run_router
 from src.browser.browser_snapshot import router as browser_snapshot_router
 from src.browser.browser_view import router as browser_view_router
+from src.browser.browser_ws import router as browser_ws_router
 
 
 @asynccontextmanager
@@ -43,6 +44,7 @@ app = FastAPI(lifespan=lifespan, title='RhapsodyAi Browser')
 
 app.include_router(browser_api_router)
 app.include_router(browser_view_router)
+app.include_router(browser_ws_router)
 app.include_router(browser_scenario_run_router)
 app.include_router(browser_snapshot_router)
 app.include_router(browser_record_router)

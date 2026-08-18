@@ -21,7 +21,7 @@ router = APIRouter(prefix='/api/browser/scenario', tags=['browser'])
 
 @router.post('/author')
 async def browser_author_post(data: BrowserAuthorRequest,
-                              user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                              user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Пишет сценарий под цель и сохраняет его: `active`, если прошёл проверку с нуля."""
     try:
         result = await browser_author_run(data, user_id=user.user_id)

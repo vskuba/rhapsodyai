@@ -17,7 +17,7 @@ template_role_mapping: dict = {
     '/admin/variable': [
         {
             'role': {'manager_dating', 'manager_dating_junior'},
-            'template': 'custom/dating/agent_workflow_variable_public.html'
+            'template': 'custom/dating/node_variable.html'
         }
     ],
 }
@@ -249,14 +249,6 @@ async def tool_page(request: Request, user: AuthSession = Depends(require_auth))
     )
 
 
-@router.get("/admin/dating", response_class=HTMLResponse)
-async def dating_page(request: Request, user: AuthSession = Depends(require_auth)):
-    return request.app.state.jinja2_template.TemplateResponse(
-        request,
-        "admin/dating.html"
-    )
-
-
 @router.get("/admin/team", response_class=HTMLResponse)
 async def team_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
@@ -296,7 +288,7 @@ async def workflow_variable_page(request: Request, user: AuthSession = Depends(r
         get_template_for_role(
             request.url.path,
             user.role,
-            "admin/agent_workflow_variable_public.html",
+            "admin/node_variable.html",
             request.app.state.jinja2_template
         )
     )

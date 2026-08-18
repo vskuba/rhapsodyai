@@ -39,44 +39,64 @@ BROWSER_PROXY_FRAME_LIMIT = 4 * 1024 * 1024
 BROWSER_PROXY_CLOSE_FORBIDDEN = 4403
 BROWSER_PROXY_CLOSE_UPSTREAM = 4502
 
+# Перехват адреса сокета открывает страницу и ждёт подключения — это минуты, а не
+# секунды: сам контейнер ждёт до 120 с, и обрывать его раньше времени бессмысленно.
+BROWSER_PROXY_CAPTURE_TIMEOUT = 180.0
+
 
 @router.get('/session')
-async def browser_proxy_session_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def browser_proxy_session_list(user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Сессии контейнера-браузера и его память."""
     return await browser_upstream_request('GET', '/browser/session')
 
 
 @router.post('/session', status_code=201)
-async def browser_proxy_session_create(data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def browser_proxy_session_create(data: dict, user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Заводит сессию: `name`, `url`, `storage_state`, `viewport`."""
     return await browser_upstream_request('POST', '/browser/session', data)
 
 
 @router.delete('/session/{session_id}')
 async def browser_proxy_session_close(session_id: str,
-                                      user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                                      user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Гасит сессию. Повторный вызов не ошибка."""
     return await browser_upstream_request('DELETE', f'/browser/session/{session_id}')
 
 
 @router.post('/session/{session_id}/goto')
 async def browser_proxy_session_goto(session_id: str, data: dict,
-                                     user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+                                     user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Переводит страницу сессии на URL."""
     return await browser_upstream_request('POST', f'/browser/session/{session_id}/goto', data)
 
 
 @router.get('/session/{session_id}/storage_state')
 async def browser_proxy_storage_state(session_id: str,
-                                      user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+                                      user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Cookie и localStorage сессии."""
     return await browser_upstream_request('GET', f'/browser/session/{session_id}/storage_state')
 
 
 @router.post('/snapshot')
-async def browser_proxy_snapshot(data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def browser_proxy_snapshot(data: dict, user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Снимок дерева страницы для LLM: `session_id` или `url`, `selector`, `depth`."""
     return await browser_upstream_request('POST', '/browser/snapshot', data)
+
+
+@router.post('/ws/capture')
+async def browser_proxy_ws_capture(data: dict,
+                                   user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
+    """Адреса вебсокетов, которые подняла страница: `url`, `storage_state`, `wait_sec`.
+
+    Наружу нужно тем, кто держит сокет сам, а браузер зовёт один раз — подсмотреть
+    адрес. Так работает DatingAi: вкладка Chromium стоит ~143 МБ, вебсокет-клиент
+    десятки килобайт, и держать ради одного адреса открытую страницу незачем.
+
+    Право на запись, а не на чтение: перехват открывает страницу и водит её
+    (прогрев, клик по кнопке чата) — это действие, а не просмотр.
+    """
+    return await browser_upstream_request('POST', '/browser/ws/capture', data,
+                                          timeout=BROWSER_PROXY_CAPTURE_TIMEOUT)
 
 
 @router.websocket('/view/{session_id}')
@@ -89,7 +109,7 @@ async def browser_proxy_view(websocket: WebSocket, session_id: str):
 
     Сначала проверяется сама сессия, и только потом права. Одной проверки прав мало:
     у неизвестной роли — а пустая строка без куки как раз такая — набор прав
-    view-по-умолчанию, в котором `PLANNING_VIEW` есть. Без первой проверки окно
+    view-по-умолчанию, в котором `BROWSER_VIEW` есть. Без первой проверки окно
     открывалось бы вообще без входа в систему.
     """
     if not websocket.session.get('user_id') or not websocket.session.get('role'):
@@ -97,7 +117,7 @@ async def browser_proxy_view(websocket: WebSocket, session_id: str):
         return
 
     role = websocket.session.get('role', '')
-    if AuthPermission.PLANNING_VIEW not in auth_role_permissions(role):
+    if AuthPermission.BROWSER_VIEW not in auth_role_permissions(role):
         await websocket.close(code=BROWSER_PROXY_CLOSE_FORBIDDEN, reason='нет прав')
         return
 

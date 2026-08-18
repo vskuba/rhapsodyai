@@ -57,7 +57,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 - `agent`, `agent_role`, `companion`
 - `agent_workflow`, `agent_workflow_step_type`, `agent_workflow_step`
 - `agent_workflow_variable`, `agent_workflow_variable_workflow`
-- `agent_workflow_variable_public`, `agent_workflow_variable_public_role`, `agent_workflow_variable_public_workflow`
+- `node_variable`, `node_variable_role`, `node_variable_workflow`
 - `agent_session` — conversation memory
 - `agent_workflow_trace`, `agent_workflow_trace_step` — execution trace
 
@@ -110,7 +110,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 4. `tool_group` → `tool`
 5. `agent_workflow` → `agent_workflow_step_type` → `agent_workflow_step`
 6. `agent_workflow_variable` → `agent_workflow_variable_workflow`
-7. `agent_workflow_variable_public` → `agent_workflow_variable_public_role` → `agent_workflow_variable_public_workflow`
+7. `node_variable` → `node_variable_role` → `node_variable_workflow`
 8. `companion` → `fact_collection` → `agent` → `agent_role` → `plan` → `fact` → `agent_session`
 9. `ai_claude_session` → `ai_claude_session_registry`
 10. `agent_workflow_trace` → `agent_workflow_trace_step`

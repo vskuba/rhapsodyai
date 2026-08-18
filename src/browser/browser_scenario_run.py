@@ -24,6 +24,7 @@ from src.browser.browser_pool import (
     browser_pool_session_open,
 )
 from src.browser.browser_scenario import (
+    BROWSER_SCENARIO_ATTR_MARK,
     BrowserScenario,
     BrowserScenarioStep,
     browser_scenario_mask,
@@ -260,6 +261,16 @@ async def _step_apply(page, step: BrowserScenarioStep, values: dict) -> str:
         # Ждать приходится отдельно: `all_inner_texts` не ждёт ничего и на ещё не
         # отрисованном списке молча вернул бы пусто.
         await page.locator(selector).first.wait_for(timeout=timeout)
+
+        # `@src` в значении — снять атрибут, а не текст. Без этого адрес картинки
+        # не достать: у `<img>` текста нет, и extract вернул бы пустоту.
+        if value.startswith(BROWSER_SCENARIO_ATTR_MARK):
+            name = value[len(BROWSER_SCENARIO_ATTR_MARK):].strip()
+            found = await page.locator(selector).evaluate_all(
+                '(els, name) => els.map(e => e.getAttribute(name) || "")', name)
+
+            return '\n'.join(item.strip() for item in found if item and item.strip())
+
         texts = [text.strip() for text in await page.locator(selector).all_inner_texts()]
 
         return '\n'.join(text for text in texts if text)

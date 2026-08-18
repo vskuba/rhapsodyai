@@ -47,9 +47,9 @@ DROP TABLE IF EXISTS `agent`;
 DROP TABLE IF EXISTS `fact`;
 DROP TABLE IF EXISTS `fact_collection`;
 DROP TABLE IF EXISTS `companion`;
-DROP TABLE IF EXISTS `agent_workflow_variable_public_workflow`;
-DROP TABLE IF EXISTS `agent_workflow_variable_public_role`;
-DROP TABLE IF EXISTS `agent_workflow_variable_public`;
+DROP TABLE IF EXISTS `node_variable_workflow`;
+DROP TABLE IF EXISTS `node_variable_role`;
+DROP TABLE IF EXISTS `node_variable`;
 DROP TABLE IF EXISTS `agent_workflow_variable_workflow`;
 DROP TABLE IF EXISTS `agent_workflow_variable`;
 DROP TABLE IF EXISTS `agent_workflow_step`;
@@ -260,10 +260,13 @@ CREATE TABLE `agent_workflow_variable_workflow` (
     CONSTRAINT `fk_vw_workflow_variable_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Публичные переменные (бывшие "переменные ноды"): привязаны к ноде, редактируются менеджерами.
+-- Переменные ноды: привязаны к ноде, редактируются менеджерами. Отличаются от
+-- переменных workflow (`agent_workflow_variable`) тем, что задают общий для ноды
+-- текст — правила ответа, примеры, шаблоны, — и раскрываются в порядке `position`:
+-- переменная ниже видит уже готовые значения тех, что выше.
 -- type='proxy' — переменная-подсказка: показывается как доступный %плейсхолдер% при
--- редактировании публичных переменных той же ноды (замена старого механизма use_as_hint)
-CREATE TABLE `agent_workflow_variable_public` (
+-- редактировании переменных той же ноды (замена старого механизма use_as_hint)
+CREATE TABLE `node_variable` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `node_id` INT NULL,
     `name` CHAR(50) NOT NULL,
@@ -272,25 +275,25 @@ CREATE TABLE `agent_workflow_variable_public` (
     `default` LONGTEXT NULL,
     `position` INT NOT NULL DEFAULT 0,
     `description` CHAR(200) DEFAULT NULL,
-    CONSTRAINT `fk_vp_workflow_variable_public_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_node_variable_node` FOREIGN KEY (`node_id`) REFERENCES `node` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE `agent_workflow_variable_public_role` (
-    `public_variable_id` INT NOT NULL,
+CREATE TABLE `node_variable_role` (
+    `node_variable_id` INT NOT NULL,
     `role_id` INT NOT NULL,
-    PRIMARY KEY (`public_variable_id`, `role_id`),
-    CONSTRAINT `fk_vpr_workflow_variable_public` FOREIGN KEY (`public_variable_id`) REFERENCES `agent_workflow_variable_public` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_vpr_workflow_variable_public_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
+    PRIMARY KEY (`node_variable_id`, `role_id`),
+    CONSTRAINT `fk_nvr_node_variable` FOREIGN KEY (`node_variable_id`) REFERENCES `node_variable` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_nvr_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Привязка публичной переменной к workflow: переменная видна не во всех workflow ноды,
+-- Привязка переменной ноды к workflow: переменная видна не во всех workflow ноды,
 -- а только в тех, где реально используется
-CREATE TABLE `agent_workflow_variable_public_workflow` (
-    `public_variable_id` INT NOT NULL,
+CREATE TABLE `node_variable_workflow` (
+    `node_variable_id` INT NOT NULL,
     `workflow_id` INT NOT NULL,
-    PRIMARY KEY (`public_variable_id`, `workflow_id`),
-    CONSTRAINT `fk_vpw_workflow_variable_public` FOREIGN KEY (`public_variable_id`) REFERENCES `agent_workflow_variable_public` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_vpw_workflow_variable_public_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE CASCADE
+    PRIMARY KEY (`node_variable_id`, `workflow_id`),
+    CONSTRAINT `fk_nvw_node_variable` FOREIGN KEY (`node_variable_id`) REFERENCES `node_variable` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_nvw_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `agent_workflow` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `companion` (
@@ -978,6 +981,12 @@ CREATE TABLE `browser_site` (
     -- селекты соседних вкладок предлагают первым. Алфавит для этого не годится:
     -- рабочий стенд не обязан начинаться на «А».
     `position` INT NOT NULL DEFAULT 0,
+    -- Чем проверять присутствие учётки: адреса и тела запросов, которые сайт шлёт
+    -- сам, пока человек сидит на странице. Настройкой, а не в коде: у каждого сайта
+    -- свои ручки, и вписывать их в Python значило бы править код ради нового сайта.
+    -- Формат разбирает потребитель — проект DatingAi (`src/dating/dating_presence.py`
+    -- в нём): анкеты уехали туда, а закладки сайтов остались здесь.
+    `presence` JSON NULL COMMENT 'Опрос присутствия: heartbeat, статус, непрочитанные',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -1047,6 +1056,8 @@ CREATE TABLE `browser_workflow_step` (
     CONSTRAINT `fk_bws_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `browser_workflow` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_bws_scenario` FOREIGN KEY (`scenario_id`) REFERENCES `browser_scenario` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── Dating ────────────────────────────────────────────────────────────────────
 
 -- Журнал ошибок браузера: что сломалось, где и при каких обстоятельствах.
 --

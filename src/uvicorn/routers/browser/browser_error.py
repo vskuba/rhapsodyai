@@ -91,11 +91,11 @@ class BrowserErrorListResponse(BaseModel):
     summary='Получить журнал ошибок браузера',
     description='Ошибки живого окна, сценариев и обращений к контейнеру-браузеру, свежие '
                 'сверху. Нужна сессия админки или заголовок `X-API-KEY` с токеном доступа '
-                'пользователя, имеющего право `PLANNING_VIEW`.',
+                'пользователя, имеющего право `BROWSER_VIEW`.',
     response_description='Успешный ответ со списком ошибок',
 )
 async def browser_error_list(limit: int = BROWSER_ERROR_PAGE, source: str = '',
-                             user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+                             user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Журнал, свежие сверху. `source` сужает выборку до одного происхождения."""
     limit = max(1, min(int(limit or BROWSER_ERROR_PAGE), BROWSER_ERROR_PAGE))
     where, params = '', []
@@ -117,10 +117,10 @@ async def browser_error_list(limit: int = BROWSER_ERROR_PAGE, source: str = '',
 
 @router.post('', status_code=201, include_in_schema=False)
 async def browser_error_create(data: BrowserErrorSave,
-                               user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+                               user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Записывает ошибку. Открыт странице: её собственный сбой видно только ей.
 
-    Право на запись то же, что на чтение (`PLANNING_VIEW`): это журнал для отладки,
+    Право на запись то же, что на чтение (`BROWSER_VIEW`): это журнал для отладки,
     а не действие над данными, и человек, который видит ошибку, должен уметь её
     сохранить.
     """
@@ -130,7 +130,7 @@ async def browser_error_create(data: BrowserErrorSave,
 
 
 @router.delete('', include_in_schema=False)
-async def browser_error_clear(user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def browser_error_clear(user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Чистит журнал целиком — разобрались и убрали."""
     async with mysql_get_db_async() as db:
         await db.execute('DELETE FROM browser_error')

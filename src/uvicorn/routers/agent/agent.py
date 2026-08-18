@@ -1,7 +1,9 @@
+import httpx
 from fastapi import APIRouter, Request, Depends, Body, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
 import json
 
+from config.config import config_get
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
@@ -11,6 +13,22 @@ from src.auth.auth_permission import AuthPermission
 from src.auth.auth_role import auth_role_is_full
 
 router = APIRouter()
+
+# Свой же сервер: workflow гоняем через `/chat/ask`, а не мимо него — у точки своя
+# проверка прав, свой журнал и своя сборка переменных, и вторая дорога к движку
+# разошлась бы с первой на первой же правке.
+AGENT_CREATE_CHAT_URL = config_get('UVICORN_URL', 'http://uvicorn:8000') + '/chat/ask'
+
+# Тип собеседника для движка: у служебного прогона он один.
+AGENT_CREATE_COMPANION_ID = 1
+
+# Прогон с LLM идёт минуты, а не секунды.
+AGENT_CREATE_TIMEOUT = 300.0
+
+# Сколько `/chat/ask` ждёт движок. Его умолчание — 60 секунд, и создание девушки
+# в них не укладывается: один шаг разбирает биографию на три десятка фактов.
+# Перед экраном здесь никто не сидит, поэтому ждём столько, сколько работа занимает.
+AGENT_CREATE_CHAT_TIMEOUT = 240
 
 # All agent routes require AGENT_VIEW permission
 agent_auth = AuthChecker([AuthPermission.AGENT_VIEW])
@@ -102,6 +120,127 @@ async def agent_list(
 ):
     repo = AgentRepository()
     return {"result": await _agent_list_for_user(repo, user.user_id, data.find_by or {})}
+
+
+class AgentCreateRequest(BaseModel):
+    """Заведение агента по именам, а не по номерам.
+
+    Номера узла и workflow — внутреннее дело установки: они разные на стенде и на
+    проде, и клиенту их взять неоткуда. Имена одинаковы везде и видны в админке.
+    """
+
+    node: str = Field(..., min_length=1, max_length=50,
+                      description="Имя узла (`node.name`), например `Dating`")
+    name: str = Field(..., min_length=1, max_length=50,
+                      description="Системное имя агента; должно быть уникальным")
+    workflow: str = Field(..., min_length=1, max_length=50,
+                          description="Имя workflow (`agent_workflow.name`)")
+    title: str = Field('', max_length=150, description="Отображаемое имя; пусто — возьмётся `name`")
+    description: str = Field('', max_length=250, description="Для чего агент")
+    greeting: str = Field('', description="Первая реплика агента в диалоге")
+    prompt_system: str = Field('', description="Системная инструкция агента")
+    variables: dict = Field(
+        default_factory=dict,
+        description="Значения обязательных полей workflow (`input`-переменные). "
+                    "Каких именно — смотрите в отказе `422`: он их перечисляет")
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"node": "Dating", "name": "support_agent", "workflow": "dating_talk",
+                    "title": "Служба поддержки"}})
+
+
+class AgentCreatedResponse(BaseModel):
+    """Что получилось: номера проставлены сервером по переданным именам."""
+
+    id: int = Field(..., description="Идентификатор заведённого агента", examples=[42])
+    name: str = Field(..., description="Системное имя", examples=["support_agent"])
+    title: str = Field(..., description="Отображаемое имя", examples=["Служба поддержки"])
+    node_id: int = Field(..., description="Найденный узел", examples=[2])
+    workflow_id: int = Field(..., description="Найденный workflow", examples=[7])
+
+
+class AgentCreatedResult(BaseModel):
+    result: AgentCreatedResponse
+
+
+@router.post(
+    "/agent/create",
+    response_model=AgentCreatedResult,
+    status_code=201,
+    summary="Создать агента по именам узла и workflow",
+    description="Заводит агента, находя узел и workflow **по имени**. Нужен заголовок "
+                "`Authorization: Bearer <access-token>` пользователя с правом `AGENT_CREATE` "
+                "(вместо него принимается и `X-API-KEY`). Имя агента глобально уникально: "
+                "занятое имя даёт `409`, неизвестный узел или workflow — `422`.",
+    response_description="Агент заведён",
+)
+async def agent_create_by_name(
+        request: Request,
+        data: AgentCreateRequest,
+        user=Depends(AuthChecker([AuthPermission.AGENT_CREATE]))
+):
+    repo = AgentRepository()
+    await _agent_name_unique_check(repo, data.name)
+
+    node_id = await _entity_id_by_name('node', data.node)
+    workflow_id = await _entity_id_by_name('agent_workflow', data.workflow)
+
+    # Workflow, который умеет заводить агента сам, и заводит его сам: у него для
+    # этого есть шаги — промпт из шаблона узла, факты из биографии. Дублировать
+    # это записью в таблицу значило бы завести вторую, расходящуюся дорогу.
+    if await _workflow_creates_agent(workflow_id):
+        # Обязательные поля проверяем здесь, а не выше: они нужны **работе**
+        # workflow. У обычного агента те же переменные задаются в
+        # `workflow_variable` и требуются в первом разговоре, а не при заведении.
+        await _workflow_inputs_check(workflow_id, data.variables)
+
+        return await _agent_create_by_workflow(request, data, node_id, workflow_id, user)
+
+    agent_id = await repo.add({
+        "name": data.name.strip(),
+        "title": (data.title or data.name).strip(),
+        "greeting": data.greeting,
+        "node_id": node_id,
+        "prompt_system": data.prompt_system,
+        "workflow_id": workflow_id,
+        "description": data.description,
+        "group_name": None,
+        "workflow_variable": None,
+    })
+
+    return {"result": {"id": agent_id, "name": data.name.strip(),
+                       "title": (data.title or data.name).strip(),
+                       "node_id": node_id, "workflow_id": workflow_id}}
+
+
+@router.get(
+    "/agent/name/{name}",
+    summary="Найти агента по системному имени",
+    description="Отдаёт номер, имя и заголовок агента по его системному имени (`name`). "
+                "Нужен заголовок `Authorization: Bearer <access-token>` пользователя с правом "
+                "`AGENT_VIEW` (принимается и `X-API-KEY`). Нет такого агента — `404`.",
+    response_description="Агент найден",
+)
+async def agent_get_by_name(name: str, user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))):
+    """Агент по имени — точечный поиск вместо просмотра списка.
+
+    Списком это не сделать: `/agent/list` для неполноправной роли отдаёт только
+    агентов, доступных её узлам, и служебной учётке приходит пустой массив. Ей и
+    не нужен весь список — нужен один агент, про которого она знает имя.
+
+    Так работает DatingAi: имя агента анкеты он собирает сам
+    (`natalia_1430119`), а номер спрашивает здесь. Проверка «есть ли агент» идёт
+    по имени, потому что агента могли удалить или переименовать в админке, и
+    хранимая ссылка соврала бы.
+    """
+    agent = await AgentRepository().find_one_by({'name': str(name).strip()})
+    if not agent:
+        raise HTTPException(status_code=404, detail=f'агента «{name}» нет')
+
+    return {"result": {"id": int(agent['id']), "name": agent['name'],
+                       "title": agent.get('title') or '',
+                       "node_id": agent.get('node_id'),
+                       "workflow_id": agent.get('workflow_id')}}
 
 
 @router.get("/agent/{agent_id}", include_in_schema=False)
@@ -276,6 +415,119 @@ async def _agent_role_ids_set(agent_id: int, role_ids: list, replace: bool = Fal
             await db.execute("DELETE FROM agent_role WHERE agent_id = %s", (agent_id,))
         for role_id in role_ids:
             await db.execute("INSERT INTO agent_role (agent_id, role_id) VALUES (%s, %s)", (agent_id, role_id))
+
+
+# Инструмент, по которому узнаём: workflow сам заводит агента или нет.
+AGENT_CREATE_TOOL = 'agent_create_or_update'
+
+
+async def _workflow_inputs_check(workflow_id: int, variables: dict) -> None:
+    """Проверяет обязательные поля workflow. Не хватает — 422 с перечнем.
+
+    Проверяем только `input`-переменные. Как раскрыть шаблоны промпта — забота
+    самого workflow: он их и рендерит, а вызывающему знать про `%wildcards%`
+    незачем.
+    """
+    from src.ai.ai_workflow import ai_workflow_variables_input_get
+
+    missing = []
+    for row in await ai_workflow_variables_input_get(workflow_id):
+        name = str(row.get('name') or '')
+        if name and not str(variables.get(name) or '').strip():
+            missing.append(f"{name} — {row.get('description') or 'обязательное поле'}")
+
+    if missing:
+        raise HTTPException(status_code=422,
+                            detail='не заполнены обязательные поля workflow: ' + '; '.join(missing))
+
+
+async def _workflow_creates_agent(workflow_id: int) -> bool:
+    """Есть ли у workflow шаг, который заводит агента."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT COUNT(*) AS n FROM agent_workflow_step '
+            ' WHERE workflow_id = %s AND metadata LIKE %s',
+            (int(workflow_id), f'%{AGENT_CREATE_TOOL}%'))
+        row = await db.fetchone()
+
+    return bool(row and row['n'])
+
+
+async def _agent_create_by_workflow(request: Request, data: AgentCreateRequest,
+                                    node_id: int, workflow_id: int, user) -> dict:
+    """Заводит агента прогоном workflow и отдаёт его итог.
+
+    Имя девушки уходит в `question`, а не в переменные: у узла Dating есть своя
+    переменная `girl_title` типа `proxy` со значением `%prompt_user%`, и она
+    перекрывает одноимённую из запроса. Идти против этого значило бы чинить узел
+    ради одного вызова.
+    """
+    # Агент-исполнитель: тот, кто умеет гонять этот workflow. Заводим временного,
+    # потому что `/chat/ask` работает от агента, а нашего ещё нет — его и создаст
+    # прогон.
+    runner_name = f'{data.workflow}_runner'
+    runner = await AgentRepository().find_one_by({'name': runner_name})
+    if not runner:
+        runner_id = await AgentRepository().add({
+            'name': runner_name, 'title': f'Мастер: {data.workflow}',
+            'greeting': '', 'node_id': node_id, 'prompt_system': '',
+            'workflow_id': workflow_id, 'description': f'Служебный агент для {data.workflow}',
+            'group_name': None, 'workflow_variable': None})
+    else:
+        runner_id = int(runner['id'])
+
+    # `agent_name` кладём сами: workflow обязан создать агента под тем именем,
+    # которое просил вызывающий, а не выводить своё. Иначе точка отвечает 201 на
+    # повторный запрос — имя-то свободно, занято другое.
+    variables = dict(data.variables or {})
+    variables['agent_name'] = data.name
+    variables.setdefault('chat_timeout', AGENT_CREATE_CHAT_TIMEOUT)
+
+    payload = {'question': (data.title or data.name).strip(),
+               'agent_id': runner_id,
+               'companion_id': AGENT_CREATE_COMPANION_ID,
+               'variables': variables}
+
+    headers = {}
+    for header in ('authorization', 'x-api-key', 'cookie'):
+        value = request.headers.get(header)
+        if value:
+            headers[header] = value
+
+    async with httpx.AsyncClient(timeout=AGENT_CREATE_TIMEOUT) as client:
+        response = await client.post(AGENT_CREATE_CHAT_URL, json=payload, headers=headers)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502,
+                            detail=f'workflow «{data.workflow}» не отработал: {response.text[:300]}')
+
+    answer = str((response.json() or {}).get('result') or '').strip()
+    created = await AgentRepository().find_one_by({'name': data.name})
+
+    return {'result': {'id': int(created['id']) if created else 0,
+                       'name': data.name, 'title': data.title or data.name,
+                       'node_id': node_id, 'workflow_id': workflow_id,
+                       'workflow_answer': answer}}
+
+
+async def _entity_id_by_name(table: str, name: str) -> int:
+    """Номер записи по её имени. Нет такой — 422 с перечнем того, что есть.
+
+    Список в ответе не роскошь: клиент задал имя, которого нет, и без подсказки
+    ему остаётся гадать. Отдаём немного — ровно чтобы узнать своё.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(f"SELECT id FROM `{table}` WHERE name = %s", (name.strip(),))
+        row = await db.fetchone()
+        if row:
+            return int(row['id'])
+
+        await db.execute(f"SELECT name FROM `{table}` ORDER BY name LIMIT 20")
+        known = [str(r['name']) for r in (await db.fetchall() or [])]
+
+    raise HTTPException(
+        status_code=422,
+        detail=f"{table}: имя «{name}» не найдено. Известные: {', '.join(known) or '—'}")
 
 
 async def _agent_name_unique_check(repo: AgentRepository, name: str | None, exclude_id: int | None = None):

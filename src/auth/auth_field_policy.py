@@ -7,7 +7,7 @@ ALL_FIELDS = '*'
 # Роли динамические (таблица `role`), поэтому '*' — fallback для любой урезанной роли.
 # Полноправные роли (`admin`, `qa`) сюда не попадают — им ALL_FIELDS в auth_fields_allowed.
 AUTH_FIELD_POLICY = {
-    'agent_workflow_variable_public': {
+    'node_variable': {
         'fields': {'name', 'title', 'description', 'default', 'node_id', 'position', 'type', 'role_ids', 'workflow_ids'},
         'write': {
             '*': {'default'},  # не-админы пишут только поле `default`

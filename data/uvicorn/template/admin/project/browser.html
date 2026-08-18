@@ -946,13 +946,21 @@
 
     /* ---------- Журнал ошибок ---------- */
 
-    #tab-error { flex-direction: column; }
+    /* Панель-колонка, как у сценариев: шапка с фильтром сверху, список забирает
+       остаток высоты и прокручивается сам — страница админки прокрутки не даёт. */
+    #tab-error {
+        flex-direction: column;
+        width: 100%;
+        min-width: 0;
+    }
 
     .error-list {
         flex: 1 1 auto;
+        width: 100%;
         min-height: 0;
         overflow-y: auto;
         padding: 0 16px 16px;
+        box-sizing: border-box;
     }
 
     .error-row {
@@ -1663,8 +1671,6 @@
 </div>
 </div>
 
-</div>
-
 <div class="tab-panel" id="tab-error">
 
 <div class="scenario-head">
@@ -1683,6 +1689,8 @@
 </div>
 
 <div class="error-list" id="errorList"></div>
+
+</div>
 
 </div>
 

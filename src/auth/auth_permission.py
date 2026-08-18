@@ -89,6 +89,15 @@ class AuthPermission(str, Enum):
     PLANNING_UPDATE = "planning:update"
     PLANNING_DELETE = "planning:delete"
 
+    # Browser permissions
+    #
+    # Контейнер-браузер — общий инструмент: закладки сайтов, сценарии, живые сессии
+    # Chromium и запись действий. Права свои по той же причине, что и у знакомств:
+    # `planning:*` смешивал в одно право планирование проектов, анкеты и чужие
+    # браузерные сессии, и служебной учётке приходилось выдавать всё разом.
+    BROWSER_VIEW = "browser:view"
+    BROWSER_CREATE = "browser:create"
+
     # Queue permissions
     QUEUE_VIEW = "queue:view"
 

@@ -93,7 +93,7 @@ SQL парсится `_seed_split_sql()` — корректный сплитте
 ## Какие таблицы включать
 
 **Включать** (архитектурные, ручные данные):
-`node`, `node_llm`, `llm`, `role`, `role_node`, `setting`, `user`, `user_access_token`, `user_node`, `agent`, `agent_role`, `agent_workflow`, `agent_workflow_step`, `agent_workflow_step_type`, `agent_workflow_variable`, `agent_workflow_variable_workflow`, `agent_workflow_variable_public`, `agent_workflow_variable_public_role`, `agent_workflow_variable_public_workflow`, `fact_collection`, `planning_phase`, `planning_phase_source`
+`node`, `node_llm`, `llm`, `role`, `role_node`, `setting`, `user`, `user_access_token`, `user_node`, `agent`, `agent_role`, `agent_workflow`, `agent_workflow_step`, `agent_workflow_step_type`, `agent_workflow_variable`, `agent_workflow_variable_workflow`, `node_variable`, `node_variable_role`, `node_variable_workflow`, `fact_collection`, `planning_phase`, `planning_phase_source`
 
 **Не включать** (генерируются автоматически или runtime):
 - `tool`, `tool_group` — синхронизируются через `ai_tool_sync()` при каждом старте

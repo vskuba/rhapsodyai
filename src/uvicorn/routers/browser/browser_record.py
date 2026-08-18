@@ -43,14 +43,14 @@ class BrowserRecordStop(BaseModel):
 
 
 @router.get('/{session_id}/record')
-async def browser_record_state(session_id: str, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def browser_record_state(session_id: str, user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Идёт ли запись в сессии и сколько шагов уже набралось."""
     return await browser_upstream_request('GET', f'/browser/session/{session_id}/record')
 
 
 @router.post('/{session_id}/record/start')
 async def browser_record_start(session_id: str, data: BrowserRecordStart,
-                               user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                               user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Включает запись действий: дальше человек просто работает в живом окне."""
     return await browser_upstream_request(
         'POST', f'/browser/session/{session_id}/record/start', {'name': _name_clean(data.name)})
@@ -58,7 +58,7 @@ async def browser_record_start(session_id: str, data: BrowserRecordStart,
 
 @router.post('/{session_id}/record/stop')
 async def browser_record_stop(session_id: str, data: BrowserRecordStop,
-                              user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                              user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Останавливает запись и сохраняет снятые шаги черновиком сценария."""
     result = await browser_upstream_request('POST', f'/browser/session/{session_id}/record/stop')
     record = result.get('record') or {}

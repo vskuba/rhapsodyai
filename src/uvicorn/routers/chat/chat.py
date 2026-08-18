@@ -11,7 +11,7 @@ from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load
 from src.ai.ai_workflow import ai_workflow_variables_render
 from src.ai.ai_workflow import ai_workflow_variables_input_get
-from src.ai.ai_workflow import ai_workflow_variables_public_get
+from src.ai.ai_workflow import ai_workflow_variables_node_get
 from src.ai.ai_workflow import ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.mysql_.repository.companion_repository import CompanionRepository
 from setting_.setting_ import setting_get
@@ -126,7 +126,7 @@ async def ask_ai(
 
     # Получаем переменные ноды воркфлоу и рендерим их с учетом уже собранных переменных
     if node_id:
-        for x in await ai_workflow_variables_public_get(node_id):
+        for x in await ai_workflow_variables_node_get(node_id):
             # Рендерим переменные ноды по очереди с учетом сортировки по позиции, чтобы переменные могли ссылаться друг на друга
             workflow_variable_node = ai_workflow_variables_render(
                 {x.get('name'): x.get('default', None)},

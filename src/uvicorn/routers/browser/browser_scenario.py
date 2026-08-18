@@ -61,7 +61,7 @@ class BrowserScenarioRun(BaseModel):
 
 
 @router.get('/action')
-async def browser_scenario_action_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def browser_scenario_action_list(user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Справочник действий: какое действие какие поля требует.
 
     Отдаётся из той же схемы, что проверяет шаги (`BROWSER_SCENARIO_ACTIONS`), —
@@ -76,7 +76,7 @@ async def browser_scenario_action_list(user=Depends(AuthChecker([AuthPermission.
 
 
 @router.get('')
-async def browser_scenario_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def browser_scenario_list(user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Все сценарии, свежие сверху."""
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -90,7 +90,7 @@ async def browser_scenario_list(user=Depends(AuthChecker([AuthPermission.PLANNIN
 
 @router.post('', status_code=201)
 async def browser_scenario_create(data: BrowserScenarioSave,
-                                  user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                                  user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Заводит сценарий, предварительно прогнав шаги через схему."""
     scenario = _scenario_check(data)
 
@@ -112,7 +112,7 @@ async def browser_scenario_create(data: BrowserScenarioSave,
 
 
 @router.get('/{scenario_id}')
-async def browser_scenario_get(scenario_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def browser_scenario_get(scenario_id: int, user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Сценарий целиком: шаги и имена переменных, которые он ждёт."""
     row = await _scenario_row(scenario_id)
     variables_used = _variables_used(row)
@@ -125,7 +125,7 @@ async def browser_scenario_get(scenario_id: int, user=Depends(AuthChecker([AuthP
 
 @router.put('/{scenario_id}')
 async def browser_scenario_update(scenario_id: int, data: BrowserScenarioSave,
-                                  user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                                  user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Переписывает сценарий целиком — так же, как это сделает агент этапа 7."""
     await _scenario_row(scenario_id)
     scenario = _scenario_check(data)
@@ -145,7 +145,7 @@ async def browser_scenario_update(scenario_id: int, data: BrowserScenarioSave,
 
 @router.delete('/{scenario_id}')
 async def browser_scenario_delete(scenario_id: int,
-                                  user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                                  user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Удаляет сценарий вместе с его журналом (каскадом по внешнему ключу)."""
     await _scenario_row(scenario_id)
     await BrowserScenarioRepository().delete(scenario_id)
@@ -155,7 +155,7 @@ async def browser_scenario_delete(scenario_id: int,
 
 @router.post('/{scenario_id}/run')
 async def browser_scenario_run(scenario_id: int, data: BrowserScenarioRun,
-                               user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+                               user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Гонит сценарий в контейнере и кладёт трассу в журнал.
 
     Удачные прогоны журналируются наравне с неудачными: по одним ошибкам не видно,
@@ -215,7 +215,7 @@ async def browser_scenario_run_one(scenario_id: int, session_id: str, variables:
 
 @router.get('/{scenario_id}/run')
 async def browser_scenario_run_list(scenario_id: int, limit: int = BROWSER_SCENARIO_RUN_PAGE, offset: int = 0,
-                                    user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+                                    user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
     """Журнал прогонов: свежие сверху, с трассой каждого."""
     await _scenario_row(scenario_id)
     limit = max(1, min(limit, BROWSER_SCENARIO_RUN_PAGE))

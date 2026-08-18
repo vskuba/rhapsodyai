@@ -46,15 +46,37 @@ class AuthSession(BaseModel):
 
 ## get_current_user()
 
+Два способа авторизации: сессия админки и токен доступа (`user_access_token`).
+
 ```python
 async def get_current_user(request: Request) -> AuthSession:
-    user_id = request.session.get("user_id")
-    username = request.session.get("username")
-    role = request.session.get("role")
-    if not user_id or not username or not role:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return AuthSession(user_id=user_id, username=username, role=role)
+    # 1. Сессия админки
+    if request.session.get("user_id"):
+        return AuthSession(...)
+    # 2. Токен доступа — общий разбор заголовков
+    token = auth_token_of(request)
+    if token:
+        return await auth_token_user(token)
+    raise HTTPException(status_code=401, detail="Not authenticated")
 ```
+
+Токен принимается тремя видами заголовка, разбор — в `auth_token_of()`:
+
+| Заголовок | Пример |
+|-----------|--------|
+| `Authorization: Bearer <token>` | общепринятый, им пользуются готовые клиенты |
+| `Authorization: <token>` | без слова `Bearer` — отказывать из-за него придирка |
+| `X-API-KEY: <token>` | остаётся: на нём написаны существующие интеграции |
+
+**Проверка одна на все точки.** Точки зовут `AuthChecker`, он — `get_current_user`,
+поэтому новый способ авторизации появляется сразу везде, а не там, куда его не
+забыли добавить.
+
+**Ловушка — `auth_middleware` в `main_uvicorn.py`.** Он отсекает неавторизованные
+запросы **до** роутера, и его условие обязано знать те же заголовки. Пока он знал
+только `X-API-KEY`, запрос с `Authorization` получал 401, не доходя до проверки
+прав, — и выглядело это как «токен неверный». Поэтому middleware зовёт тот же
+`auth_token_of()`, а не повторяет разбор своей копией.
 
 ## AuthChecker Dependency
 
@@ -113,6 +135,32 @@ async def me(request: Request):
 **`qa`** (`vova.tkachenko`, логин/пароль в `.env.local`: `QA_USERNAME` / `QA_PASSWORD`) — учётка автотестов
 и ручных проверок, права полные: сюита создаёт и удаляет пользователей, роли, агентов, workflow.
 Отделена от `admin`, чтобы её сессии и действия были видны в логах отдельно от владельца.
+
+**`dating_service`** (логин/пароль в `.env.local`: `DATING_USERNAME` / `DATING_PASSWORD`) — учётка
+**соседнего проекта DatingAi**. Анкеты и переписка живут там, а сюда он ходит за браузером и за
+агентом анкеты. Права узкие намеренно — `browser:view`, `browser:create`, `agent:view`,
+`agent:create`: этой учёткой правит автоматика, и лишнее право здесь не удобство, а возможность
+снести чужое по ошибке в коде.
+
+⚠️ Знакомства и браузер прикрывались `planning:*` — по образцу соседнего модуля. Пока все учётки были
+полноправными, разница не была видна; вылезла она на служебной: чтобы дать ей работать с анкетами,
+приходилось выдавать `planning:create`, а он открывает ещё и закладки сайтов, сценарии браузера и его
+сессии (проверено — учётка знакомств заводила сессию Chromium). Теперь у каждого модуля свои права:
+
+| Модуль | Права | Где |
+|--------|-------|-----|
+| контейнер-браузер | `browser:view`, `browser:create` | `routers/browser/` — закладки, сценарии, сессии, запись, журнал ошибок |
+| планирование и design | `planning:*` | `routers/project/`, в том числе `design/design_browser.py` |
+
+`design_browser.py` водит браузер, но это ручки модуля design — они и остались на `planning:*`.
+Право определяется тем, **чем управляет ручка**, а не тем, что она использует под капотом.
+
+`browser:view` входит в `AUTH_PERMISSIONS_DEFAULT` — там же, где `planning:view`,
+чтобы у существующих ролей (`manager_dating` и прочих) доступ не изменился.
+
+Знакомства уехали в отдельный проект, и `dating:*` вместе с ними: ручек `/api/dating/*` здесь
+больше нет. Теперь DatingAi водит браузер **по HTTP**, поэтому его учётке нужны именно
+`browser:view` и `browser:create` — то, чего внутри одного процесса не требовалось.
 
 ⚠️ Не проверять роль по имени (`if user.role == 'admin'`) — такие проверки отсекают `qa` и любую
 другую полноправную роль. Использовать `auth_role_is_full(role)`; так сделано в `agent.py`,

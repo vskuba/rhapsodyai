@@ -19,10 +19,10 @@ async def variable_list(
                GROUP_CONCAT(DISTINCT r.name) as role_names,
                GROUP_CONCAT(DISTINCT r.id) as role_ids,
                GROUP_CONCAT(DISTINCT vw.workflow_id) as workflow_ids
-        FROM agent_workflow_variable_public v
-        LEFT JOIN agent_workflow_variable_public_role vr ON v.id = vr.public_variable_id
+        FROM node_variable v
+        LEFT JOIN node_variable_role vr ON v.id = vr.node_variable_id
         LEFT JOIN role r ON vr.role_id = r.id
-        LEFT JOIN agent_workflow_variable_public_workflow vw ON v.id = vw.public_variable_id
+        LEFT JOIN node_variable_workflow vw ON v.id = vw.node_variable_id
         WHERE v.node_id IS NOT NULL
     """
     params = []
@@ -34,11 +34,11 @@ async def variable_list(
         # Переменные без ролей — всем; с ролями — только при совпадении роли пользователя
         sql += """
             AND (
-                NOT EXISTS (SELECT 1 FROM agent_workflow_variable_public_role vr2 WHERE vr2.public_variable_id = v.id)
+                NOT EXISTS (SELECT 1 FROM node_variable_role vr2 WHERE vr2.node_variable_id = v.id)
                 OR EXISTS (
-                    SELECT 1 FROM agent_workflow_variable_public_role vr3
+                    SELECT 1 FROM node_variable_role vr3
                     JOIN role r3 ON r3.id = vr3.role_id
-                    WHERE vr3.public_variable_id = v.id AND r3.name = %s
+                    WHERE vr3.node_variable_id = v.id AND r3.name = %s
                 )
             )
         """
@@ -61,7 +61,7 @@ async def variable_list(
                 row['workflow_ids'] = []
 
         # Отдаём только поля, разрешённые роли пользователя на чтение
-        allowed = auth_fields_allowed('agent_workflow_variable_public', 'read', user.role)
+        allowed = auth_fields_allowed('node_variable', 'read', user.role)
         if allowed != ALL_FIELDS:
             results = [{k: v for k, v in row.items() if k in allowed} for row in results]
 
@@ -75,7 +75,7 @@ async def variable_hints(
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_VIEW]))
 ):
     async with mysql_get_db_async() as db:
-        await db.execute("SELECT node_id FROM agent_workflow_variable_public WHERE id=%s", (variable_id,))
+        await db.execute("SELECT node_id FROM node_variable WHERE id=%s", (variable_id,))
         variable = await db.fetchone()
 
         if not variable:
@@ -85,7 +85,7 @@ async def variable_hints(
         await db.execute(
             """
             SELECT name, description
-            FROM agent_workflow_variable_public
+            FROM node_variable
             WHERE node_id <=> %s AND `type` = 'proxy' AND id != %s
             ORDER BY position ASC
             """,
@@ -107,12 +107,12 @@ async def variable_create(
         position = data.get('position')
         if position is None:
             await db.execute(
-                "SELECT COALESCE(MAX(position), -1) + 1 AS position FROM agent_workflow_variable_public WHERE node_id <=> %s",
+                "SELECT COALESCE(MAX(position), -1) + 1 AS position FROM node_variable WHERE node_id <=> %s",
                 (data.get('node_id'),))
             position = (await db.fetchone())['position']
 
         sql = """
-            INSERT INTO agent_workflow_variable_public (name, `title`, description, `default`, node_id, position, `type`)
+            INSERT INTO node_variable (name, `title`, description, `default`, node_id, position, `type`)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         # Заголовок не задан — по умолчанию совпадает с системным именем
@@ -125,7 +125,7 @@ async def variable_create(
         # Сохранение ролей
         role_ids = data.get('role_ids', [])
         for role_id in role_ids:
-            await db.execute("INSERT INTO agent_workflow_variable_public_role (public_variable_id, role_id) VALUES (%s, %s)",
+            await db.execute("INSERT INTO node_variable_role (node_variable_id, role_id) VALUES (%s, %s)",
                              (variable_id, role_id))
 
         # Привязка к workflow: переменная видна только в выбранных workflow ноды
@@ -133,7 +133,7 @@ async def variable_create(
         for workflow_id in workflow_ids:
             if workflow_id:
                 await db.execute(
-                    "INSERT INTO agent_workflow_variable_public_workflow (public_variable_id, workflow_id) VALUES (%s, %s)",
+                    "INSERT INTO node_variable_workflow (node_variable_id, workflow_id) VALUES (%s, %s)",
                     (variable_id, workflow_id))
 
         return {"result": {"id": variable_id}}
@@ -147,7 +147,7 @@ async def variable_update(
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_UPDATE]))
 ):
     # Оставляем только поля, разрешённые роли пользователя (admin — все)
-    fields, data = auth_fields_filter_for_update('agent_workflow_variable_public', 'write', user.role, data)
+    fields, data = auth_fields_filter_for_update('node_variable', 'write', user.role, data)
 
     async with mysql_get_db_async() as db:
         if fields:
@@ -156,22 +156,22 @@ async def variable_update(
             if db_fields:
                 set_clause = ', '.join(f"`{f}`=%s" for f in db_fields)
                 values = [data[f] for f in db_fields] + [variable_id]
-                await db.execute(f"UPDATE agent_workflow_variable_public SET {set_clause} WHERE id=%s", values)
+                await db.execute(f"UPDATE node_variable SET {set_clause} WHERE id=%s", values)
 
         # Обновление ролей — только если поле role_ids разрешено политикой
         if 'role_ids' in data:
-            await db.execute("DELETE FROM agent_workflow_variable_public_role WHERE public_variable_id=%s", (variable_id,))
+            await db.execute("DELETE FROM node_variable_role WHERE node_variable_id=%s", (variable_id,))
             for role_id in data.get('role_ids') or []:
-                await db.execute("INSERT INTO agent_workflow_variable_public_role (public_variable_id, role_id) VALUES (%s, %s)",
+                await db.execute("INSERT INTO node_variable_role (node_variable_id, role_id) VALUES (%s, %s)",
                                  (variable_id, role_id))
 
         # Обновление привязок к workflow — только если поле workflow_ids разрешено политикой
         if 'workflow_ids' in data:
-            await db.execute("DELETE FROM agent_workflow_variable_public_workflow WHERE public_variable_id=%s", (variable_id,))
+            await db.execute("DELETE FROM node_variable_workflow WHERE node_variable_id=%s", (variable_id,))
             for workflow_id in data.get('workflow_ids') or []:
                 if workflow_id:
                     await db.execute(
-                        "INSERT INTO agent_workflow_variable_public_workflow (public_variable_id, workflow_id) VALUES (%s, %s)",
+                        "INSERT INTO node_variable_workflow (node_variable_id, workflow_id) VALUES (%s, %s)",
                         (variable_id, workflow_id))
 
         return {"result": "success"}
@@ -185,5 +185,5 @@ async def variable_delete(
 ):
     async with mysql_get_db_async() as db:
         # Связи с ролями удалятся каскадно (FK ON DELETE CASCADE)
-        await db.execute("DELETE FROM agent_workflow_variable_public WHERE id=%s", (variable_id,))
+        await db.execute("DELETE FROM node_variable WHERE id=%s", (variable_id,))
     return {"result": "success"}

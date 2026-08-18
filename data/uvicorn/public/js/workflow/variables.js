@@ -278,7 +278,7 @@ function workflowVariableSections(groups) {
     return [
         ['📥 Входящие переменные', groups.inputGroup, 'input'],
         ['🇬 Глобальные переменные', groups.commonGroup, 'common'],
-        ['🇳 Публичные переменные', groups.nodeGroup, 'node'],
+        ['🇳 Node переменные', groups.nodeGroup, 'node'],
         ['⚙️ Tool переменные', groups.toolGroup, 'tool'],
         ['🇼 Workflow переменные ', groups.workflowGroup, 'workflow'],
     ];
@@ -386,7 +386,7 @@ export function renderWorkflowVariables(variables) {
         }
 
         // Кнопка удаления переменной.
-        // Публичные (node) и глобальные переменные живут в других таблицах —
+        // Переменные ноды и глобальные живут в других таблицах —
         // из редактора workflow их удалять нельзя
         if (variable.id > 0 && variable.type !== 'node' && variable.type !== 'global') {
             const deleteBtn = document.createElement('button');

@@ -1,7 +1,7 @@
 # Workflow — редактор, движок, переменные
 
 > Составлено по результатам анализа кода: редактор (`data/uvicorn/template/admin/agent_workflow.html`,
-> `agent_workflow_variable_public.html`), API (`src/uvicorn/routers/workflow/*`), схема БД
+> `node_variable.html`), API (`src/uvicorn/routers/workflow/*`), схема БД
 > (`migrations/0001.sql` — единственная миграция), движок выполнения (`src/ai/framework/agent/ai_framework_manager.py`, `src/ai/ai_workflow.py`),
 > журнал выполнения (`src/ai/ai_workflow_trace.py`, роутер `workflow_trace.py`, страница `admin/workflow_trace.html`).
 
@@ -31,9 +31,9 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 | `agent_workflow_step_type` | Справочник 6 типов шагов (name, icon, description, metadata-схема) |
 | `agent_workflow_variable` | Реестр переменных: name, **type ENUM('global','input','workflow')**, default, description |
 | `agent_workflow_variable_workflow` | M:N переменная ↔ workflow (для workflow/input-переменных) |
-| `agent_workflow_variable_public` | Публичные переменные (бывшие «переменные ноды»): name, node_id, **type ENUM('public','proxy')**, default, position, description. Редактируются менеджерами на публичных страницах |
-| `agent_workflow_variable_public_role` | M:N публичная переменная ↔ роль (гранулярный доступ) |
-| `agent_workflow_variable_public_workflow` | M:N публичная переменная ↔ workflow: переменная видна в редакторе только тех workflow ноды, к которым привязана |
+| `node_variable` | Переменные ноды (бывшие «переменные ноды»): name, node_id, **type ENUM('public','proxy')**, default, position, description. Редактируются менеджерами на публичных страницах |
+| `node_variable_role` | M:N публичная переменная ↔ роль (гранулярный доступ) |
+| `node_variable_workflow` | M:N публичная переменная ↔ workflow: переменная видна в редакторе только тех workflow ноды, к которым привязана |
 | `agent` | workflow_id (FK) + workflow_variable (JSON-инициализация) |
 | `session.metadata` | Персистентное состояние: `workflow_step_current_index` для continue_workflow |
 | `agent_session` | История: user-prompt / response-final / tool-call / system-prompt |
@@ -47,7 +47,7 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 1. **Базовые** — `prompt_user`, `user_id/username/email`, `agent_*`, `companion_*`, `session_uuid`, `workflow_id`, `node_id`.
 2. **Из агента** — `agent.workflow_variable` (JSON).
 3. **Из запроса** — `request.variables` (клиент может передать переменные).
-4. **Публичные переменные ноды** (таблица `agent_workflow_variable_public`, включая proxy) — рендерятся по порядку `position` с учетом уже собранных (могут ссылаться на них: `girl_title` default=`%prompt_user%`).
+4. **Переменные ноды ноды** (таблица `node_variable`, включая proxy) — рендерятся по порядку `position` с учетом уже собранных (могут ссылаться на них: `girl_title` default=`%prompt_user%`).
 5. **Переменные workflow** (`type='workflow'`) — default-значения, добавляются только если ключа еще нет.
 6. **Валидация global** — все `type='global'` обязаны присутствовать, иначе HTTP 400.
 7. **Валидация input** — все `type='input'` обязаны присутствовать, иначе HTTP 400. **Это готовый контракт входа для будущих sub-workflow.**
@@ -385,11 +385,11 @@ continue_workflow, если не были возвращены пользова�
   панель переменных в 5 группах: входящие/общие/ноды/tool/workflow, конструктор metadata по типу шага,
   редактор переходов before/after). Неиспользуемые в шагах workflow-переменные подсвечиваются серым
   (`extractVariablesFromSteps` → класс `unused-variable`).
-- **`/admin/variable`** (шаблоны `agent_workflow_variable_public.html` — admin и custom/dating) — реестр
-  публичных переменных по нодам: name, node, description, роли, type (public/proxy), default, drag-drop
+- **`/admin/variable`** (шаблоны `node_variable.html` — admin и custom/dating) — реестр
+  переменных ноды по нодам: name, node, description, роли, type (public/proxy), default, drag-drop
   порядка (position). Подсказки под полем «Значение» — proxy-переменные той же ноды (эндпоинт
   `/workflow_variable/public/{id}/hints`). Для ролей manager_dating* рендерится упрощенный кастомный шаблон
-  (только значение + подсказки). Field-policy (`agent_workflow_variable_public`): не-админ читает
+  (только значение + подсказки). Field-policy (`node_variable`): не-админ читает
   ограниченный набор полей и пишет только `default`.
 
 ## 8. Известные баги и тонкости (актуализировано при повторном анализе)
@@ -540,7 +540,7 @@ UI и БД тоже готовы: тип шага id=6 (сиды), виджет 
 
 ### 9.4 Производительность
 - **Кэш загрузки на chat/ask** — сейчас на каждый запрос 6-7 SQL: workflow + шаги + переменные,
-  global-переменные, input-переменные, публичные переменные ноды, полный список tools. Всё это
+  global-переменные, input-переменные, переменные ноды ноды, полный список tools. Всё это
   меняется редко — просится TTL-кэш в памяти (инвалидация по PUT workflow/step/variable).
 - **Однопроходный рендер переменных** — `ai_workflow_variables_render` для каждой строки
   перебирает ВСЕ переменные (O(строк × переменных)); замена на один проход
@@ -806,3 +806,54 @@ transitions_after:
 ```
 
 Третья строка (`!= "Создать проект"`) — catch-all: срабатывает только если первые два не сработали (т.к. transitions_after первый match выигрывает).
+
+## Создание агента через workflow
+
+`POST /agent/create` умеет не только записывать агента в таблицу, но и **заводить
+его прогоном workflow**. Развилка проходит по самому workflow: есть у него шаг с
+`agent_create_or_update` — значит он умеет создавать сам, и точка не дублирует эту
+работу записью в таблицу (иначе появилась бы вторая, расходящаяся дорога).
+
+| Что | Обычный агент | Агент из workflow |
+|-----|---------------|-------------------|
+| кто создаёт запись | точка | шаг workflow |
+| `input`-переменные | не требуются | обязательны, `422` с перечнем |
+| пример | `dating_talk` | `dating_girl_create` |
+
+**Валидация только для прогона.** `input`-переменные нужны *работе* workflow, а не
+записи агента: у обычного агента те же значения лежат в `workflow_variable` и
+понадобятся в первом разговоре. Требовать их при заведении — мешать без причины.
+
+**Имя агента задаёт вызывающий.** Точка кладёт `agent_name` в переменные прогона, и
+workflow обязан создать агента именно под ним. Пока workflow выводил имя сам
+(транслитерацией из имени девушки), точка отвечала `201` на повторный запрос —
+имя-то свободно, занято другое.
+
+**Ожидание движка поднято до 240 секунд** (`chat_timeout` в переменных): умолчание
+`/chat/ask` — 60, а разбор биографии на три десятка фактов в них не укладывается.
+
+### `dating_girl_create`
+
+Заводит агента девушки: системный промпт из переменной ноды `girl_prompt_system`,
+факты — из биографии.
+
+- **Обязательное поле:** `girl_bio` — краткая биография.
+- **Имя девушки** идёт в `question`, а не в переменные: у узла Dating есть своя
+  переменная `girl_title` типа `proxy` со значением `%prompt_user%`, и она
+  перекрывает одноимённую из запроса. Требовать `girl_title` в теле запроса
+  значило бы обещать то, что всё равно отбросят.
+- **Wildcards шаблона — забота workflow, а не API.** `girl_prompt_system` содержит
+  `%girl_title%`; появится завтра `%girl_city%` — его добавят в шаг
+  `variable_conversion`, и точка не изменится.
+
+### Грабли
+
+1. **Имя результата шага содержит его `id`, а не позицию:**
+   `<инструмент>_<id шага>_result_<тип>`. Копируя шаг из другого workflow, ссылку
+   надо перецелить — иначе она указывает на чужой шаг. Именно так LLM оставалась
+   без образца формата и возвращала строки вместо словарей.
+2. **Переменные workflow не наследуются при копировании шагов.** Скопированный шаг
+   ждёт те же имена (`fact_collection_girl_name` и прочие), и без привязки к
+   новому workflow они приходят пустыми.
+3. **Переменные ноды перекрывают переменные запроса** — они применяются позже
+   (`update`, а не `setdefault`). Для `proxy`-переменных это и задумано.
