@@ -23,6 +23,7 @@ TEAM_MEMBER_SESSION_FIELDS = ('pid', 'session_uuid', 'work_dir')
 TEAM_MEMBER_ROLE_CARD = {
     'manager':   ('Manager',   'claude-shell --gx10 --manager'),
     'developer': ('Developer', 'claude-shell --gx10 --developer'),
+    'bugfixer':  ('Bugfixer',  'claude-shell --gx10 --bugfixer'),
     'qa':        ('QA',        'claude-shell --gx10 --qa'),
 }
 

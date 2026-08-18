@@ -332,3 +332,108 @@ class TestTaskPlanRevision:
             assert resp.status_code in (400, 404), resp.text
         finally:
             await client.delete(f"/task/{other_id}")
+
+
+class TestTaskPipelineBug:
+    """
+    Баг идёт своим путём: его берёт багфиксер, а менеджерский шаг обходит стороной.
+
+    Живой оболочки багфиксера в тестовой среде может не быть, и это не делает тест
+    бесполезным: отсутствие захвата менеджером проверяется независимо от неё, а сам
+    захват — только когда карточка жива (иначе `task_role_shell_live_by_project` роли
+    не увидит, и это законное поведение, а не сбой).
+    """
+
+    @pytest.fixture
+    async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False,
+                                     timeout=CLIENT_TIMEOUT) as client:
+            await client.post("/auth/login", json=TEST_AUTH)
+            yield client
+
+    @pytest.fixture(autouse=True)
+    async def db_pool_release(self) -> AsyncGenerator[None, None]:
+        yield
+        from mysql_.mysql_ import mysql_pool_close
+        await mysql_pool_close()
+
+    @pytest.fixture
+    async def bug_task(self, client: httpx.AsyncClient) -> AsyncGenerator[int, None]:
+        """
+        Баг без проекта — его берёт только оболочка вне проектов, чужие не тронут.
+
+        Типы задач отдаёт карточка команды (`GET /api/team/types`) плоским списком, без
+        обёртки `result`; создание задачи возвращает `{'task': {...}}`.
+        """
+        resp = await client.get("/api/team/types")
+        assert resp.status_code == 200, resp.text
+        bug_type = next(t for t in resp.json() if t["name"] == "bug")
+
+        resp = await client.post("/tasks/0", json={
+            "title": f"{TEST_TASK_TITLE}_bug",
+            "description": "Тестовый баг: воспроизведение падает на пустом входе",
+            "task_type_id": bug_type["id"],
+        })
+        assert resp.status_code == 200, resp.text
+        task_id = resp.json()["task"]["id"]
+        yield task_id
+        await client.delete(f"/task/{task_id}")
+
+    async def test_bug_is_not_taken_by_manager(self, client: httpx.AsyncClient, bug_task: int):
+        """
+        Менеджерский шаг баг не забирает: план у бага не пишут.
+
+        Проверяем состоянием, а не списком jobs: тик мог поставить в очередь чужую
+        работу, и её присутствие ничего про наш баг не говорит. `bugfixing` в списке
+        допустимых — законный исход, если карточка багфиксера в этой среде жива.
+        """
+        await _tick(client, max_actions=3)
+        state = (await _pipeline(client, bug_task))["pipeline_state"]
+        assert state in (None, "", "new", "bugfixing", "done", "failed"), \
+            f"баг ушёл в чужое состояние: {state}"
+
+        # План — то, чего у бага быть не должно ни при каком исходе.
+        assert not (await _pipeline(client, bug_task))["plan_text"], \
+            "багу написали план, хотя писать его некому"
+
+    async def test_bug_flag_off_keeps_it_out_of_work(self, client: httpx.AsyncClient, bug_task: int):
+        """Снятый флажок «в багфикс» убирает баг из отбора."""
+        resp = await client.post(f"/task/{bug_task}/metadata",
+                                 json={"patch": {"to_bugfix": False}})
+        assert resp.status_code == 200, resp.text
+
+        await _tick(client, max_actions=3)
+        state = (await _pipeline(client, bug_task))["pipeline_state"]
+        assert state in (None, "", "new"), f"баг взяли в работу вопреки снятому флажку: {state}"
+
+    async def test_start_button_clears_bugfix_flag(self, client: httpx.AsyncClient, bug_task: int):
+        """
+        «В конвейер» снимает флажок «в багфикс», а не только остановку.
+
+        Без этого кнопка вела в тихий тупик: состояние менялось на `new`, а захват
+        (`task_metadata_bugfix_free_sql`) баг всё равно не видел, и он оставался там
+        навсегда. Ровно та же защита, что у `to_planning` для обычной задачи.
+        """
+        resp = await client.post(f"/task/{bug_task}/metadata",
+                                 json={"patch": {"to_bugfix": False}})
+        assert resp.status_code == 200, resp.text
+
+        resp = await client.post(f"/task/{bug_task}/pipeline/start")
+        assert resp.status_code == 200, resp.text
+
+        # Отдельной ручки «прочитать одну задачу» нет — берём её из списка проекта.
+        resp = await client.get("/tasks/0")
+        assert resp.status_code == 200, resp.text
+        task = next(t for t in resp.json()["tasks"] if t["id"] == bug_task)
+        metadata = task.get("metadata") or {}
+        assert metadata.get("to_bugfix") is not False, \
+            f"флажок «в багфикс» остался снятым — баг не заберут: {metadata}"
+
+    async def test_cancelled_bug_is_not_taken(self, client: httpx.AsyncClient, bug_task: int):
+        """Отменённый баг в работу не уходит — у него нет ни одного шага с человеком."""
+        resp = await client.put(f"/task/{bug_task}", json={"status": "cancelled"})
+        assert resp.status_code == 200, resp.text
+
+        await _tick(client, max_actions=3)
+        state = (await _pipeline(client, bug_task))["pipeline_state"]
+        assert state in (None, "", "new"), f"отменённый баг взяли в работу: {state}"

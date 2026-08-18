@@ -21,12 +21,13 @@ Developer/QA — это самосоединение: ребёнок даёт р
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_ATTEMPT_MAX,
+    TASK_SETTING_TIMEOUT_BUGFIX_RUN,
     TASK_SETTING_TIMEOUT_BY_KEY,
     TASK_SETTING_TIMEOUT_DEVELOPER_RUN,
     TASK_SETTING_TIMEOUT_MANAGER_RUN,
     TASK_SETTING_TIMEOUT_QA_RUN,
     task_setting_timeout_get)
-from src.project.task.task_role import TASK_ROLE_TYPES, task_role_type_sql
+from src.project.task.task_role import TASK_ROLE_BUGFIXER, TASK_ROLE_TYPES, task_role_type_sql
 from src.project.team.team_progress import team_progress_running
 
 # Сколько задач очереди показываем на карточке — списком, а не только числом.
@@ -55,10 +56,16 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
     # роли — это прогон менеджерского агента (`task_agent_manager`), и ждут его
     # столько, сколько указано в «Ответ менеджера».
     plan_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_MANAGER_RUN)
+    # Багфиксер из этого правила выпадает: он не планирует, а чинит, и ждут его
+    # столько, сколько указано в «Ответ багфиксера». Считай мы ему менеджерский
+    # бюджет, карточка обещала бы не тот остаток, как только значения разойдутся.
+    bugfix_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_BUGFIX_RUN)
+    role_timeout = {TASK_ROLE_BUGFIXER: (bugfix_timeout, TASK_SETTING_TIMEOUT_BUGFIX_RUN)}
     # Один запрос на всю выдачу: работающих прогонов единицы, а строк очереди сотни.
     progress = await team_progress_running()
     for role, rows, timeout, timeout_key in (
-        [(role, await _planner_rows(role), plan_timeout, TASK_SETTING_TIMEOUT_MANAGER_RUN)
+        [(role, await _planner_rows(role),
+          *role_timeout.get(role, (plan_timeout, TASK_SETTING_TIMEOUT_MANAGER_RUN)))
          for role in TASK_ROLE_TYPES] + [
             ('developer', await _developer_rows(),
              await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN),
@@ -93,9 +100,14 @@ async def _planner_rows(role: str) -> list[dict]:
     исключены, битый JSON приравнен к пустому.
 
     Роль отбирается типом задачи (`task_role`), тем же условием, что и в захвате:
-    баги и тестирование планирует QA, разработку — разработчик, остальное менеджер.
-    Живой оболочки здесь, в отличие от захвата, не требуется — карточка для того и
-    показывает очередь, чтобы было видно, что ждёт погашенную роль.
+    тестирование за QA, разработку ведёт разработчик, баги — багфиксер, остальное
+    менеджер. Живой оболочки здесь, в отличие от захвата, не требуется — карточка для
+    того и показывает очередь, чтобы было видно, что ждёт погашенную роль.
+
+    Багфиксер попадает сюда наравне с планировщиками, хотя плана не пишет: ждущий баг
+    отбирается той же веткой «плана нет» (у бага его не бывает), а идущий — состоянием
+    `bugfixing` в первой ветке. Без него карточка показывала бы очередь и никогда —
+    саму работу, а `team_progress` не к чему было бы привязать.
     """
     subparents = ("SELECT DISTINCT parent_id FROM project_task "
                   " WHERE parent_id IS NOT NULL")
@@ -108,7 +120,8 @@ async def _planner_rows(role: str) -> list[dict]:
         "       CASE WHEN t.pipeline_state = 'reviewing' THEN 0 ELSE 1 END AS claim_order "
         "  FROM project_task t "
         f" WHERE {role_sql} AND ("
-        "        (t.pipeline_state IN ('planning', 'reviewing') AND t.pipeline_locked_by <> '') "
+        "        (t.pipeline_state IN ('planning', 'reviewing', 'bugfixing') "
+        "         AND t.pipeline_locked_by <> '') "
         "    OR (t.pipeline_state = 'reviewing' "
         "        AND (t.pipeline_locked_at IS NULL OR t.pipeline_locked_by = '')) "
         "    OR ((COALESCE(JSON_LENGTH(JSON_EXTRACT("

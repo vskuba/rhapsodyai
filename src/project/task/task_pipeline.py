@@ -43,6 +43,15 @@
     у конвейера нет, дерево задач одно. Поэтому ветку задаёт `parent_id`, а не колонка:
     у корневой задачи состояния планирования, у ребёнка — круг Developer → QA.
 
+    Баг.pipeline_state:
+        (тип `bug`) -> bugfixing -> done | failed
+
+    У бага нет плана, подзадач и второго круга: багфиксер воспроизводит, чинит и
+    проверяет за один прогон. Отрицательный вердикт — это `failed`, то есть
+    «Заблокировано» для человека, а не новый круг: та же фактура дала бы тот же ответ.
+    Отсюда и отдельное состояние захвата: `developing` бывает только у подзадач плана,
+    и карты возврата брошенной блокировки у корневых строк и подзадач разные.
+
     Переходные состояния (`planning`, `reviewing`, `developing`, `testing`) — это и
     есть «действие в работе»: пока строка в них, тик её не подберёт. Умер воркер —
     блокировку вернёт `task_claim_locks_reclaim()` по таймауту, и работа встанет
@@ -64,6 +73,7 @@ import time
 from contextlib import suppress
 
 from logging_.logging_ import logger_info
+from src.project.task.task_agent_bugfixer import TASK_BUGFIXER_ROLE, task_agent_bugfixer_run
 from src.project.task.task_agent_developer import TASK_DEVELOPER_ROLE, task_agent_developer_run
 from src.project.task.task_agent_manager import task_agent_manager_plan
 from src.project.task.task_agent_qa import TASK_QA_ROLE, task_agent_qa_run
@@ -75,6 +85,7 @@ from src.project.task.task_claim import (
     task_claim_subtask_developable,
     task_claim_subtask_testable,
     task_claim_task,
+    task_claim_task_bug,
     task_claim_task_review,
     task_claim_task_unplanned,
     task_claim_worker_id,
@@ -93,7 +104,8 @@ from src.project.task.task_plan import (
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
 from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree, task_retry_take
 from src.project.task.task_role import (TASK_ROLE_DEFAULT, TASK_ROLE_TITLE, task_role_of_task,
-                                        task_role_project_work_dir, task_role_shell_live_by_project)
+                                        task_role_planners_only, task_role_project_work_dir,
+                                        task_role_shell_live_by_project)
 from src.project.task.task_revision import task_revision_add
 from src.project.task.task_state import (
     task_state_attempt_log,
@@ -105,6 +117,7 @@ from src.project.task.task_state import (
     task_state_subtask_get,
     task_state_subtask_set,
     task_state_subtasks_create,
+    task_state_task_done,
     task_state_task_fail,
     task_state_task_finalize,
     task_state_task_get,
@@ -280,6 +293,11 @@ async def _action_claim(worker: str) -> dict | None:
     for claim in (
         _claim_qa,
         _claim_developer,
+        # Починка бага — такая же работа роли, как разработка, поэтому идёт до
+        # планирования: закрыть начатое важнее, чем добавить незакрытого. После
+        # разработки, а не до неё: подзадача идущего плана ближе к финишу, чем баг,
+        # которым ещё не занимались.
+        _claim_bugfix,
         # Разбор плана на подзадачи — перед менеджерскими шагами, но после работы
         # ролей: оболочки и похода в LLM тут нет, зато он даёт разработчику работу.
         _claim_plan_split,
@@ -335,7 +353,9 @@ def _action_queue(stats: dict, action: dict, job_timeout: int) -> None:
 
 
 async def _claim_manager_review(worker: str, roles_by_project) -> dict | None:
-    task = await task_claim_task_review(worker, roles_by_project)
+    # Багфиксер плана не пишет: тип `bug` принадлежит ему, и без отсева менеджерский
+    # шаг забрал бы баг себе (`task_role_planners_only`).
+    task = await task_claim_task_review(worker, task_role_planners_only(roles_by_project))
     if not task:
         return None
     role = await task_role_of_task(task)
@@ -344,7 +364,7 @@ async def _claim_manager_review(worker: str, roles_by_project) -> dict | None:
 
 
 async def _claim_manager_plan(worker: str, roles_by_project) -> dict | None:
-    task = await task_claim_task_unplanned(worker, roles_by_project)
+    task = await task_claim_task_unplanned(worker, task_role_planners_only(roles_by_project))
     if not task:
         return None
     # Если план уже есть (есть subtasks), но goals пуст — пересматриваем,
@@ -370,6 +390,14 @@ async def _claim_developer(worker: str, roles_by_project) -> dict | None:
 async def _claim_qa(worker: str, roles_by_project) -> dict | None:
     subtask = await task_claim_subtask_testable(worker, roles_by_project)
     return {'kind': 'qa', 'subtask_id': subtask['id']} if subtask else None
+
+
+async def _claim_bugfix(worker: str, roles_by_project) -> dict | None:
+    task = await task_claim_task_bug(worker, roles_by_project)
+    if not task:
+        return None
+    await task_report_write(task['id'], 'Баг взят в работу (Багфиксер)', ok=None)
+    return {'kind': 'bugfix', 'task_id': task['id']}
 
 
 def _action_label(action: dict, job_id: str) -> str:
@@ -570,6 +598,65 @@ async def _run_qa(action: dict) -> str | None:
     await _subtask_report(subtask, f'QA вернул на доработку (попытка {attempt_no} из {max_attempts}): {error}',
                           ok=False, blocked=state == 'blocked')
     return f"subtask#{subtask['id']} qa -> {state}"
+
+
+async def _run_bugfix(action: dict) -> str | None:
+    """
+    bugfixing -> done | failed.
+
+    Один прогон, один ответ: кругов «не сошлось» у бага нет. `ok: false` — это
+    состоявшаяся работа с отрицательным вердиктом («не воспроизводится», «причина вне
+    проекта»), и второй заход по той же фактуре дал бы тот же ответ. Такой баг уходит
+    человеку в `blocked` — через `failed`, который карта статусов и переводит в
+    «Заблокировано».
+
+    Сорвавшийся прогон — другое дело: оболочка не ответила, Claude Code мёртв, вернулся
+    не-JSON. Работы не было, и хоронить баг не за что — уходит на повтор тем же
+    `_retry_task`, что и менеджер, с возвратом в `new`.
+
+    Каталогов здесь два, и путать их нельзя. `work_dir` — адрес оболочки, там запущен
+    живой Claude Code. `task_dir` — где лежит код, который правят: своя выкладка
+    репозитория с веткой бага. Ключом выкладки идёт id самой задачи: у бага нет
+    подзадач, и ветка у него своя, как у любого листа конвейера.
+    """
+    task = await task_state_task_get(int(action.get('task_id') or 0))
+    if not task:
+        return None
+
+    started  = time.monotonic()
+    work_dir = await task_role_project_work_dir(task.get('project_id'))
+    task_dir = await _subtask_dir(work_dir, task['id'])
+
+    try:
+        result = await task_agent_bugfixer_run(
+            task, role=TASK_BUGFIXER_ROLE, work_dir=work_dir, task_dir=task_dir)
+    except Exception as e:
+        return await _retry_task(task, 'bugfix', 'new', TASK_BUGFIXER_ROLE,
+                                 work_dir, f'Багфиксер: {e}')
+
+    # Среда не пригодна для работы (каталог бага не поднялся, ветка выкачена от
+    # сломанного master) — работы не было, и вести баг в `blocked` не за что: его никто
+    # не смотрел. Возвращаем строку в очередь тем же путём, что и сорвавшийся прогон;
+    # лимит повторов не даст крутить это вечно.
+    if not result.get('env_ok', True):
+        return await _retry_task(
+            task, 'bugfix', 'new', TASK_BUGFIXER_ROLE, work_dir,
+            f"Багфиксер: среда не готова — {result.get('error') or 'каталог бага не поднялся'}")
+
+    await task_retry_clear(task['id'])
+    # Попытка всегда первая: круг у бага один, и `pipeline_attempt_count` он не растит.
+    # Строка журнала нужна ради времени прогона и текста отчёта — по ней видно, сколько
+    # багфиксер думал и что сделал.
+    await task_state_attempt_log(task['id'], 1, TASK_BUGFIXER_ROLE, result, started)
+
+    if result.get('ok'):
+        report = str(result.get('output') or '').strip() or 'отчёт не заполнен'
+        await task_state_task_done(task['id'], f'Баг починен (Багфиксер): {report}')
+        return f"task#{task['id']} bugfix -> done"
+
+    error = str(result.get('error') or 'багфиксер не назвал причину')
+    await task_state_task_fail(task['id'], f'Баг не починен: {error}')
+    return f"task#{task['id']} bugfix -> failed"
 
 
 async def _run_finalize(action: dict) -> str | None:
@@ -903,5 +990,6 @@ _RUNNERS = {
     'plan_split':     _run_plan_split,
     'developer':      _run_developer,
     'qa':             _run_qa,
+    'bugfix':         _run_bugfix,
     'finalize':       _run_finalize,
 }

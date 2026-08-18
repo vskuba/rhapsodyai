@@ -307,6 +307,36 @@ async def task_state_task_fail(task_id: int, error: str) -> None:
     logger_info(f'[task] task#{task_id} -> failed: {error}')
 
 
+async def task_state_task_done(task_id: int, report: str) -> None:
+    """
+    Закрыть корневую задачу как выполненную: `pipeline_state = done`, `status = done`.
+
+    Отдельно от `task_state_task_finalize()`: та закрывает задачу по терминальности её
+    подзадач, а у бага подзадач нет вовсе — финализация его просто не увидит.
+
+    Обе оси ставим разом, потому что решение об этом принял агент: у бага нет ни
+    утверждения плана человеком, ни приёмки QA, и «конвейер закончил, а человек ещё
+    нет» здесь означало бы просто забытую строку.
+
+    Блокировку снимаем той же правкой, а `pipeline_error` чистим: у бага, дошедшего до
+    `done` со второго захода, там осталась бы причина прошлого срыва.
+
+    `task_state_kanban_sql` не даёт перебить статус отменённой и остановленной строки —
+    прогон, доигрывающий свой конец в воркере, не воскресит их своим `done`.
+    """
+    kanban_sql, kanban_params = task_state_kanban_sql('done')
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            f"UPDATE project_task SET pipeline_state = 'done', {kanban_sql}, pipeline_error = '', "
+            "pipeline_locked_at = NULL, pipeline_locked_by = '' WHERE id = %s",
+            kanban_params + [task_id],
+        )
+        await db.connection.commit()
+
+    await task_report_write(task_id, report)
+    logger_info(f'[task] task#{task_id} -> done')
+
+
 async def task_state_goals_inherit(task_id: int) -> int:
     """
     Перенести на задачу отметки её же целей, закрытых в подзадачах.
@@ -518,6 +548,10 @@ _TASK_STATE_KANBAN = {
     'planning':         'active',
     'plan_approval':    'pending',
     'reviewing':        'active',
+    # Баг у багфиксера: работа идёт прямо сейчас, значит «В работе». Своё состояние,
+    # а не `developing`, потому что `developing` бывает только у подзадач плана, и
+    # карты реклейма у корневых строк и подзадач разные.
+    'bugfixing':        'active',
     'approved':         'queued',
     'processing':       'active',
     'testing':          'active',

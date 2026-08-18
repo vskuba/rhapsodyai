@@ -13,6 +13,7 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.project.task.task_diff import task_diff_build, task_diff_build_task
 from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_BUGFIX,
     TASK_METADATA_KEY_MERGED,
     TASK_METADATA_KEY_PLAN,
     task_metadata_parse,
@@ -103,13 +104,19 @@ async def project_task_pipeline_start(task_id: int, user=Depends(AuthChecker([Au
     """
     Отправить задачу в конвейер. Вход только явный — обычные задачи агенты не трогают.
 
-    Снятый флажок «в планирование» кнопка снимает: нажатие — это и есть просьба о плане
-    прямо сейчас, а с пометкой задача ушла бы в `new` и там же осталась — захват её не
-    видит (`task_metadata_plan_free_sql`). Ключ стираем (`None`), а не пишем `true`:
-    умолчание там «включено».
+    Снятый флажок фазы кнопка снимает: нажатие — это и есть просьба взять задачу в
+    работу прямо сейчас, а с пометкой она ушла бы в `new` и там же осталась — захват её
+    не видит (`task_metadata_plan_free_sql`, `task_metadata_bugfix_free_sql`). Ключи
+    стираем (`None`), а не пишем `true`: умолчание у обоих «включено».
+
+    Стираем оба разом, не разбирая тип задачи: у обычной задачи `to_bugfix` не
+    используется, у бага — `to_planning`, и лишнее стирание никого не задевает. Разбор
+    же по типу пришлось бы повторять здесь целиком (`task_role`), а забытая ветка дала
+    бы ровно тот тупик, от которого эта строка и защищает.
     """
     await task_stop_clear(task_id, user.username)
-    await task_metadata_update(task_id, {TASK_METADATA_KEY_PLAN: None})
+    await task_metadata_update(task_id, {TASK_METADATA_KEY_PLAN: None,
+                                         TASK_METADATA_KEY_BUGFIX: None})
     return await _pipeline_state_set(task_id, expected=None, new_state='new',
                                      report=f'{user.username} отправил задачу в конвейер — ждёт плана от менеджера')
 

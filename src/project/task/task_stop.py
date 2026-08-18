@@ -28,6 +28,7 @@
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
+from src.project.task.task_agent_bugfixer import TASK_BUGFIXER_ROLE
 from src.project.task.task_agent_developer import TASK_DEVELOPER_ROLE
 from src.project.task.task_agent_qa import TASK_QA_ROLE
 from src.project.task.task_claim import (
@@ -36,6 +37,7 @@ from src.project.task.task_claim import (
     TASK_CLAIM_SUBTASK_STATE_RECLAIM,
 )
 from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_BUGFIX,
     TASK_METADATA_KEY_DEV,
     TASK_METADATA_KEY_STOP,
     TASK_METADATA_KEY_TEST,
@@ -136,9 +138,22 @@ async def task_stop_is_stopped(task_id: int) -> bool:
 
 
 def _task_stop_patch(task: dict, role: str) -> dict:
-    """Патч пометок для остановки: сам запрет плюс снятый флажок фазы."""
+    """
+    Патч пометок для остановки: сам запрет плюс снятый флажок фазы.
+
+    Флажок снимаем тот, который человек на своей вкладке и видит: «в багфикс» у бага,
+    «в тестирование» у задачи разработчика, «в разработку» у задачи менеджера. Иначе
+    снятая остановка сработала бы повторно — оставшийся флажок увёл бы задачу дальше
+    сам, тем же тиком.
+
+    Значения разные не для красоты: у `to_bugfix` и `to_testing` умолчание «включено»,
+    и снять их можно только явным `false`; у `to_development` умолчание «выключено»,
+    и снятие — это стирание ключа (`None` в JSON_MERGE_PATCH).
+    """
     patch = {TASK_METADATA_KEY_STOP: True}
-    if role == TASK_DEVELOPER_ROLE:
+    if role == TASK_BUGFIXER_ROLE:
+        patch[TASK_METADATA_KEY_BUGFIX] = False
+    elif role == TASK_DEVELOPER_ROLE:
         if not task.get('parent_id'):
             patch[TASK_METADATA_KEY_TEST] = False
     else:

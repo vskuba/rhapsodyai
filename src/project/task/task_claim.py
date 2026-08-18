@@ -13,11 +13,13 @@ import socket
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_metadata import (
+    task_metadata_bugfix_free_sql,
     task_metadata_plan_free_sql,
     task_metadata_stop_free_sql,
     task_metadata_test_free_sql,
 )
-from src.project.task.task_role import task_role_project_sql, task_role_project_type_sql
+from src.project.task.task_role import (TASK_ROLE_BUGFIXER, task_role_project_sql,
+                                        task_role_project_type_sql, task_role_type_sql)
 from src.project.task.task_state import task_state_kanban_sql, task_state_subtask_set
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_TASK_LOCK,
@@ -55,7 +57,10 @@ TASK_CLAIM_LOCK_TOUCH_SEC = 45
 # фаза «задача на проверке», а не захваченная работа, и возвращать её в `qa_pending`
 # нельзя. Кто отменяет работу на ходу (реклейм, снятый флажок «в разработку» —
 # `task_stop`), берёт карту по наличию `parent_id`.
-TASK_CLAIM_STATE_RECLAIM = {'planning': 'new', 'reviewing': 'reviewing'}
+# `bugfixing` возвращается в `new`: брошенная починка — это работа, которой не было,
+# и баг снова встаёт в очередь к багфиксеру. В `failed` его такой возврат уводить не
+# должен — там баг ждал бы человека из-за упавшего воркера, а не из-за самого бага.
+TASK_CLAIM_STATE_RECLAIM = {'planning': 'new', 'reviewing': 'reviewing', 'bugfixing': 'new'}
 TASK_CLAIM_SUBTASK_STATE_RECLAIM = {'developing': 'planned', 'testing': 'qa_pending'}
 
 # Состояния «работа в полёте»: строка захвачена, и за ней прямо сейчас думает агент
@@ -161,6 +166,44 @@ async def task_claim_task_review(worker: str, roles_by_project) -> dict | None:
         "pipeline_state = 'reviewing' AND (pipeline_locked_at IS NULL OR pipeline_locked_by = '') "
         f"AND {role_sql}",
         role_params, 'reviewing', worker)
+
+
+async def task_claim_task_bug(worker: str, roles_by_project) -> dict | None:
+    """
+    Захватить баг и увести его в `bugfixing`.
+
+    Вход в работу у бага автоматический: заведённая строка типа `bug` уходит
+    багфиксеру ближайшим тиком. Плана он не пишет и утверждения не ждёт — чинить
+    начинают сразу, поэтому и состояние тут одно, рабочее.
+
+    Отбираем только корневые строки: подзадач у бага не бывает, а `parent_id IS NOT NULL`
+    в этом состоянии означало бы строку чужого плана.
+
+    `status <> 'cancelled'` стоит здесь явно, в отличие от остальных шагов. Те смотрят
+    только на `pipeline_state`, и отменённая задача им не попадается по другой причине:
+    у неё либо уже есть план, либо человек её в конвейер не заводил. У бага же по пути
+    нет ни одного человеческого решения — без этого условия отменённый баг ушёл бы
+    чиниться молча.
+
+    Тип отбираем через `task_role_type_sql`, а не руками: условие по именам типов уже
+    описано там, и второй его экземпляр разошёлся бы с первым при первой же правке карты.
+
+    `roles_by_project` — живые оболочки в разрезе проектов (`task_role`). Роль здесь
+    одна, `bugfixer`, и тип задан отдельным условием, поэтому берём
+    `task_role_project_sql` (только проект), а не `task_role_project_type_sql`.
+    Нет живой карточки — не берём вовсе: прогон сорвался бы на первом же обращении к
+    оболочке, а баг ушёл бы в `failed` и потребовал человека на ровном месте.
+
+    Снятый флажок «в багфикс» (`metadata.to_bugfix = false`) баг отсюда убирает: человек
+    завёл его, но чинить пока не просит.
+    """
+    type_sql, type_params = task_role_type_sql([TASK_ROLE_BUGFIXER])
+    role_sql, role_params = task_role_project_sql(roles_by_project, TASK_ROLE_BUGFIXER)
+    return await _task_claim(
+        "parent_id IS NULL AND (pipeline_state IS NULL OR pipeline_state = 'new') "
+        f"AND status <> 'cancelled' AND {type_sql} "
+        f"AND {task_metadata_bugfix_free_sql()} AND {role_sql}",
+        type_params + role_params, 'bugfixing', worker)
 
 
 async def task_claim_subtask(state_from: str, state_to: str, worker: str,

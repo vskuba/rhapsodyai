@@ -26,16 +26,18 @@ from src.project.task.task_setting_timeout import (
 # из них был бы запросом на пустом месте.
 
 # Роли, которые в блоке проекта есть всегда: нет живой сессии — карточка серая.
-TEAM_PROJECT_ROLE_BASE = ('manager', 'developer', 'qa')
+TEAM_PROJECT_ROLE_BASE = ('manager', 'developer', 'bugfixer', 'qa')
 
 # Карточки одной роли идут рядом, QA — последней. Роль вне списка попадает
-# между developer и qa, чтобы QA осталась в конце ряда.
-TEAM_PROJECT_ROLE_ORDER = {'manager': 0, 'developer': 1, 'qa': 3}
+# между developer и qa, чтобы QA осталась в конце ряда. Багфиксер занимает то же
+# место осознанно: он правит код, как разработчик, и стоять ему рядом с ним.
+TEAM_PROJECT_ROLE_ORDER = {'manager': 0, 'developer': 1, 'bugfixer': 2, 'qa': 3}
 TEAM_PROJECT_ROLE_ORDER_OTHER = 2
 
 TEAM_PROJECT_ROLE_TITLE = {
     'manager': 'Менеджер задач',
     'developer': 'Разработчик',
+    'bugfixer': 'Багфиксер',
     'qa': 'Тестировщик',
 }
 
