@@ -269,11 +269,6 @@
                         <input type="text" id="name" class="form-control" required
                                placeholder="Напр: Workflow Engine">
                     </div>
-                    <div class="form-group form-group-name">
-                        <label>Файл миграции (для экспорта подпроекта)</label>
-                        <input type="text" id="migrationFile" class="form-control"
-                               placeholder="Напр: migrations/0004.sql">
-                    </div>
                     <div class="form-group">
                         <label>Параллельных LLM на агент (llm_parallel_per_agent_max)</label>
                         <select id="llmParallelMax" class="form-control" style="max-width:120px">
@@ -523,7 +518,6 @@
             // Заполнение полей формы
             document.getElementById('nodeId').value = node.id;
             document.getElementById('name').value = node.name;
-            document.getElementById('migrationFile').value = node.migration_file || '';
             document.getElementById('llmParallelMax').value = String(node.llm_parallel_per_agent_max || 1);
 
             // Отметить/переставить LLM ноды в сохранённом порядке
@@ -606,7 +600,6 @@
         const id = document.getElementById('nodeId').value;
         const payload = {
             name: document.getElementById('name').value,
-            migration_file: document.getElementById('migrationFile').value.trim() || null,
             llm_parallel_per_agent_max: parseInt(document.getElementById('llmParallelMax').value, 10) || 1,
             llm_ids: selectedLlmIds
         };
