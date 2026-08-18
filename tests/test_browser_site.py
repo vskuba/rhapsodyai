@@ -120,6 +120,51 @@ class TestBrowserSite:
         site = next(row for row in rows if row['id'] == site_id)
         assert site['url'] == 'https://example.org/admin'
 
+    async def test_tags_are_normalized(self, client: httpx.AsyncClient, site_id: int):
+        """Метки ложатся строчными, без пробелов и повторов.
+
+        Отбор сравнивает строки, и `Dating`, ` dating ` и `dating` обязаны стать
+        одной меткой ещё при записи — иначе сосед спросит `?tag=dating` и не найдёт
+        сайт, который человек пометил с заглавной.
+        """
+        resp = await client.put(f'/api/browser/site/{site_id}',
+                                json={'name': SITE_NAME, 'url': SITE_URL,
+                                      'tags': ' Dating , VIP ,dating,'})
+        assert resp.status_code == 200, resp.text
+
+        rows = (await client.get('/api/browser/site')).json()['result']
+        site = next(row for row in rows if row['id'] == site_id)
+        assert site['tags'] == 'dating,vip', site['tags']
+
+    async def test_tag_filters_the_list(self, client: httpx.AsyncClient, site_id: int):
+        """`?tag=` отбирает по метке: этим DatingAi берёт себе только сайты знакомств."""
+        await client.put(f'/api/browser/site/{site_id}',
+                         json={'name': SITE_NAME, 'url': SITE_URL, 'tags': 'test_tag'})
+
+        rows = (await client.get('/api/browser/site?tag=test_tag')).json()['result']
+
+        assert [row['id'] for row in rows] == [site_id], [row['name'] for row in rows]
+
+    async def test_untagged_site_is_out_of_tag_list(self, client: httpx.AsyncClient, site_id: int):
+        """Закладка без меток не попадает ни в один `?tag=` — отбор строгий."""
+        rows = (await client.get('/api/browser/site?tag=test_tag')).json()['result']
+
+        assert all(row['id'] != site_id for row in rows), 'непомеченный сайт попал в отбор'
+
+    async def test_unknown_tag_gives_empty_list(self, client: httpx.AsyncClient, site_id: int):
+        """Незнакомая метка — пустой список, а не весь набор закладок."""
+        rows = (await client.get('/api/browser/site?tag=нетакой')).json()['result']
+
+        assert rows == [], rows
+
+    async def test_tag_list_is_rejected(self, client: httpx.AsyncClient):
+        """Несколько меток разом — 422.
+
+        `FIND_IN_SET` с запятой внутри иглы не совпал бы ни с чем, и человек читал
+        бы пустой ответ как «сайтов нет», а не как «так спрашивать нельзя».
+        """
+        assert (await client.get('/api/browser/site?tag=dating,vip')).status_code == 422
+
     async def test_update_of_missing_site_not_found(self, client: httpx.AsyncClient):
         resp = await client.put('/api/browser/site/99999999',
                                 json={'name': 'нет такого', 'url': 'https://example.com'})
