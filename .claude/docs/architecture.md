@@ -78,7 +78,7 @@ Install: `pip install -r docker/uvicorn/requirements.txt` / `docker/telegram/req
 | `opensearch-dashboards` | 5601 | — | Log visualization |
 | `logstash` | — | — | Доставка логов в OpenSearch |
 | `cronicle` | 3012 | — | Job scheduler |
-| `rq-dashboard` | 9181 | — | Redis queue monitoring |
+| `rq-dashboard` | 9181 | — | Redis queue monitoring; свой образ `docker/rq_dashboard/dockerfile` (151 МБ) — общий с приложением тянул Playwright и модели ради веб-страницы |
 | `phpmyadmin` | 9634→80 | — | MySQL admin |
 | `gatus` | 8090→8080 | — | Health-мониторинг эндпоинтов |
 | `telegram` | — | `on_prod_only` | Telegram-бот, образ `ghcr.io/vskuba/marina-ai:latest` |

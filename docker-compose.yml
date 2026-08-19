@@ -236,21 +236,19 @@ services:
     restart: always
 
   rq-dashboard:
+    # Свой лёгкий образ (151 МБ), а не общий с приложением (15.4 ГБ): дашборд читает
+    # ключи очередей из Redis и рисует их страницей — ни кода проекта, ни Playwright,
+    # ни моделей ему не нужно. Контекст сборки — только его каталог, поэтому пересборка
+    # не зависит от изменений в репозитории.
     build:
-      context: .
-      dockerfile: docker/uvicorn/dockerfile
+      context: docker/rq_dashboard
+      dockerfile: dockerfile
     container_name: rq_dashboard
-    # Устанавливаем dashboard прямо при старте и запускаем его
-    command: >
-      sh -c "pip install rq-dashboard && rq-dashboard --redis-url redis://redis:6379"
+    # Команды здесь больше нет: пакет стоит в образе, адрес Redis — в CMD Dockerfile.
+    # Раньше строка вида `pip install rq-dashboard && rq-dashboard ...` ходила в сеть
+    # на каждом перезапуске контейнера.
     ports:
       - "9181:9181"
-    environment:
-      - HF_HUB_OFFLINE=1
-      - TRANSFORMERS_OFFLINE=1
-      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
-      - HF_HOME=/root/.cache/huggingface
-      - FASTEMBED_CACHE_PATH=/root/.cache/fastembed
     depends_on:
       - redis
     networks:
