@@ -36,12 +36,20 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Собираем только бота, остальные образы возьмем готовые
+      #
+      # Одна архитектура, а не две: образ забирает единственный сервис `telegram`
+      # (docker-compose.yml), он помечен профилем `on_prod_only` и живёт только на
+      # проде, а прод — Oracle A1, то есть aarch64. Вариант `linux/amd64` не забирал
+      # никто: собирался, пушился в GHCR и лежал мёртвым грузом.
+      #
+      # QEMU выше по-прежнему нужен: раннер `ubuntu-latest` — amd64, и arm64-образ
+      # на нём собирается эмуляцией.
       - name: Build and push Bot image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/telegram/dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           push: true
           tags: ghcr.io/vskuba/marina-ai:latest
           cache-from: type=gha

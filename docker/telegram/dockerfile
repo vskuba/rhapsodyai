@@ -16,10 +16,16 @@ WORKDIR /app
 
 # === Установка PyTorch CPU-only ПЕРЕД остальными зависимостями ===
 # Это важно: torch должен установиться с CPU-индекса, иначе pip возьмёт CUDA-версию из PyPI
+#
+# Только `torch`, без `torchvision` и `torchaudio`: их не импортирует ни строчка кода и
+# не просит ни один пакет из requirements. Торч нужен `sentence-transformers`, а
+# `faster-whisper` работает поверх CTranslate2 и торча не требует вовсе.
+#
+# Проверено на образе `uvicorn`, где тот же набор библиотек стоит без этих двух: модель
+# `all-MiniLM-L6-v2` грузится и считает вектор, `faster_whisper` импортируется, и ни
+# `torchvision`, ни `torchaudio` при этом в `sys.modules` не появляются.
 RUN pip install --no-cache-dir \
     torch \
-    torchvision \
-    torchaudio \
     --index-url https://download.pytorch.org/whl/cpu
 
 # Копируем и устанавливаем остальные зависимости
