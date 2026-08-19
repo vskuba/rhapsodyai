@@ -42,6 +42,19 @@ export function initSidebar({ inputBars, onTabChange, onGoHome }) {
         if (tg?.openLink) tg.openLink(url);
         else window.open(url, '_blank');
     });
+    // Запасного адреса, в отличие от соседей, нет: те ведут на свою же установку и
+    // угадываются, а этот — внешний сервис из `.env`. Пустая переменная означает, что
+    // адрес не задан, и открывать вместо него выдуманный URL нельзя.
+    document.getElementById('deepseekHarness').addEventListener('click', async () => {
+        const config = await loadConfig();
+        const url = config.DEEPSEEK_HARNESS_GX10;
+        if (!url) {
+            alert('Адрес DeepSeek не задан: переменная DEEPSEEK_HARNESS_GX10 пуста');
+            return;
+        }
+        if (tg?.openLink) tg.openLink(url);
+        else window.open(url, '_blank');
+    });
 }
 
 export function setSidebarPageMode(isInPage) {

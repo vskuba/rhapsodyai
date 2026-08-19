@@ -137,6 +137,7 @@ async def setting_config_route(request: Request, user=Depends(AuthChecker([AuthP
         "result": {
             "SITE_LOGIN_REMOTE_URL": os.getenv("TELEGRAM_SITE_LOGIN_REMOTE_URL", ""),
             "SITE_LOGIN_LOCAL_URL": os.getenv("TELEGRAM_SITE_LOGIN_LOCAL_URL", ""),
+            "DEEPSEEK_HARNESS_GX10": os.getenv("DEEPSEEK_HARNESS_GX10", ""),
         }
     }
 ```
@@ -146,7 +147,13 @@ async def setting_config_route(request: Request, user=Depends(AuthChecker([AuthP
 ```bash
 TELEGRAM_SITE_LOGIN_REMOTE_URL=https://your-domain.com   # продакшен
 TELEGRAM_SITE_LOGIN_LOCAL_URL=http://localhost:8011      # разработка
+DEEPSEEK_HARNESS_GX10=http://host:port                   # иконка 🐋 в меню Mini App
 ```
+
+> Имя ключа наружу совпадает с именем переменной, если у той нет префикса
+> `TELEGRAM_`: тот префикс отрезается (`TELEGRAM_SITE_LOGIN_LOCAL_URL` →
+> `SITE_LOGIN_LOCAL_URL`), а `DEEPSEEK_HARNESS_GX10` уходит как есть — переменная
+> заведена под этим именем и читается не только Mini App'ом.
 
 Это не таблица `setting`, а проброс `.env` в браузер. Секреты сюда не попадают:
 всё, что возвращает endpoint, видно в DevTools.

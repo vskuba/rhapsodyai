@@ -84,5 +84,8 @@ async def setting_config_route(request: Request, user=Depends(AuthChecker([AuthP
         "result": {
             "SITE_LOGIN_REMOTE_URL": os.getenv("TELEGRAM_SITE_LOGIN_REMOTE_URL", ""),
             "SITE_LOGIN_LOCAL_URL": os.getenv("TELEGRAM_SITE_LOGIN_LOCAL_URL", ""),
+            # Имя без префикса `TELEGRAM_`, в отличие от соседей: переменная заведена в
+            # `.env.local` под этим именем и читается не только отсюда.
+            "DEEPSEEK_HARNESS_GX10": os.getenv("DEEPSEEK_HARNESS_GX10", ""),
         }
     }
