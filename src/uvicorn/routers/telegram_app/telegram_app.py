@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 
 from config.config import config_get
 from mysql_.mysql_ import mysql_get_db_async
+from src.setting.setting_config import setting_config_public
 from src.uvicorn.routers.telegram_app.telegram_app_common import _require_telegram_owner
 
 router = APIRouter()
@@ -50,6 +51,21 @@ async def telegram_app_auth(request: Request, data: dict):
     request.session["telegram_owner_id"] = telegram_user_id
 
     return {"result": {"ok": True}}
+
+
+@router.get("/telegram-app/config")
+async def telegram_app_config(request: Request):
+    """Переменные `.env` для фронтенда Mini App.
+
+    Отдельно от `/setting/config`, хотя список тот же: тот закрыт `AuthChecker` по праву
+    роли, а у Mini App обычной сессии с ролью нет — вход кладёт в сессию только
+    `telegram_owner_id`. Пока своей ручки не было, конфиг из Mini App не читался вовсе:
+    `/setting/config` отвечал «Not authenticated», а `config.js` кэшировал пустой словарь
+    до перезагрузки страницы. Подробности — `src/setting/setting_config.py`.
+    """
+    _require_telegram_owner(request)
+
+    return {"result": setting_config_public()}
 
 
 @router.get("/telegram-app/agents")

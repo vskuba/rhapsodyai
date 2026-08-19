@@ -6,6 +6,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from py_modules.setting_.setting_ import setting_get, setting_set, setting_delete
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from src.setting.setting_config import setting_config_public
 
 router = APIRouter()
 
@@ -79,13 +80,9 @@ async def setting_set_route(request: Request, key: str, user_id: int, data: dict
 
 @router.get("/setting/config")
 async def setting_config_route(request: Request, user=Depends(AuthChecker([AuthPermission.SETTING_VIEW]))):
-    """Получение конфигурационных переменных для frontend."""
-    return {
-        "result": {
-            "SITE_LOGIN_REMOTE_URL": os.getenv("TELEGRAM_SITE_LOGIN_REMOTE_URL", ""),
-            "SITE_LOGIN_LOCAL_URL": os.getenv("TELEGRAM_SITE_LOGIN_LOCAL_URL", ""),
-            # Имя без префикса `TELEGRAM_`, в отличие от соседей: переменная заведена в
-            # `.env.local` под этим именем и читается не только отсюда.
-            "DEEPSEEK_HARNESS_GX10": os.getenv("DEEPSEEK_HARNESS_GX10", ""),
-        }
-    }
+    """Конфигурационные переменные для фронтенда админки.
+
+    Mini App ходит не сюда, а в `/telegram-app/config`: у него своя авторизация, и
+    `AuthChecker` его не пропускает — см. `src/setting/setting_config.py`.
+    """
+    return {"result": setting_config_public()}
