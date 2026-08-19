@@ -17,12 +17,37 @@ WORKDIR /app
 
 # Устанавливаем САМЫЕ тяжелые пакеты отдельно с увеличенным таймаутом
 # Faster-whisper и Sentence-transformers тянут за собой много зависимостей
+#
+# Торч ставится ПЕРВЫМ и с CPU-индекса, отдельной командой. Порядок и отдельность
+# обязательны: `--index-url` делает индекс основным, и faster-whisper с
+# sentence-transformers оттуда не поставились бы — их нужно тянуть с обычного PyPI
+# следующим шагом. Через `--extra-index-url` это не решается: PyPI остаётся основным,
+# и pip берёт оттуда CUDA-сборку торча.
+#
+# CPU-сборка, а не CUDA. Раньше здесь стоял индекс `cu121` и явные `nvidia-cublas-cu12`
+# с `nvidia-cudnn-cu12` — они тянули 4.5 ГБ CUDA-библиотек в образ, который никогда не
+# видел видеокарты: ни прод (Oracle A1, aarch64), ни машина разработчика. Вдобавок
+# фактически вставал не cu121, а cu130, и его собственные зависимости приносили ВТОРОЙ
+# комплект тех же библиотек — `nvidia-cublas`, `nvidia-cudnn` и `nvidia-cuda-nvrtc`
+# стояли в образе дважды, в версиях cu12 и cu13.
+#
+# Проверено сборкой пробного образа с этим же набором пакетов:
+#   * распознавание речи не задето вовсе — `faster-whisper` считает на CTranslate2, а тот
+#     с CUDA не слинкован (`ldd` по `_ext*.so` не даёт ни одной CUDA-зависимости) и
+#     подгружает её динамически только при `device="cuda"`. У нас в коде жёстко
+#     `device="cpu", compute_type="int8"` (`src/faster_whisper/faster_whisper_model.py`);
+#   * один и тот же файл распознан одинаково: язык `en`, длительность 3.0, тот же текст;
+#   * `sentence-transformers` даёт побитово тот же вектор `all-MiniLM-L6-v2`;
+#   * site-packages: 7.9 ГБ → 1.7 ГБ.
+#
+# Колесо `torch-2.13.0+cpu-cp311-cp311-manylinux_2_28_aarch64.whl` на CPU-индексе есть —
+# прод на ARM соберётся тем же путём, что и amd64.
+RUN pip install --no-cache-dir --default-timeout=1000 \
+    torch --index-url https://download.pytorch.org/whl/cpu
+
 RUN pip install --no-cache-dir --default-timeout=1000 \
     faster-whisper \
-    sentence-transformers \
-    nvidia-cublas-cu12 \
-    nvidia-cudnn-cu12 \
-    torch --extra-index-url https://download.pytorch.org/whl/cu121
+    sentence-transformers
 
 # Копируем файл с зависимостями
 COPY docker/uvicorn/requirements.txt .
