@@ -71,6 +71,7 @@ from src.uvicorn.routers.seed import seed
 from src.uvicorn.routers.backup import backup
 from src.uvicorn.routers.project import project_team as project_team_router
 from src.uvicorn.routers.playwright import playwright
+from src.uvicorn.routers.stt import stt
 from src.uvicorn.routers.browser import (browser_author, browser_error, browser_proxy,
                                          browser_record, browser_scenario, browser_site,
                                          browser_workflow)
@@ -438,6 +439,8 @@ if os.path.isdir(apps_static_path):
 app.include_router(detective.router)
 app.include_router(dashboard.router, include_in_schema=False)
 app.include_router(chat.router)
+# Расшифровка речи для соседних проектов (BlogAi / Блокнот): см. stt.py
+app.include_router(stt.router)
 app.include_router(agent.router)
 app.include_router(auth_router.router, include_in_schema=False)
 app.include_router(user.router, include_in_schema=False)

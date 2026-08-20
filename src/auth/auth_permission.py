@@ -98,6 +98,12 @@ class AuthPermission(str, Enum):
     BROWSER_VIEW = "browser:view"
     BROWSER_CREATE = "browser:create"
 
+    # Расшифровка речи — общий инструмент, как и браузер: модель Whisper живёт
+    # здесь, а голос присылают соседние проекты. Право своё, а не `agent:*`:
+    # расшифровка агентов не трогает, и служебной учётке соседа незачем получать
+    # доступ к агентам ради одного микрофона.
+    STT_CREATE = "stt:create"
+
     # Queue permissions
     QUEUE_VIEW = "queue:view"
 

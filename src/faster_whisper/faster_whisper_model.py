@@ -7,7 +7,7 @@ from setting_.setting_ import setting_get
 _model_cache: dict[str, WhisperModel] = {}
 
 
-async def faster_whisper_create_model() -> WhisperModel:
+async def faster_whisper_create_model(model_name: str | None = None) -> WhisperModel:
     """
     Возвращает Whisper модель для распознавания речи, создавая ее лениво и
     переиспользуя между запросами (загрузка весов с диска - самая дорогая
@@ -15,7 +15,8 @@ async def faster_whisper_create_model() -> WhisperModel:
     Название модели — настройка 'whisper_model_name' (страница настроек);
     фолбэк — env WHISPER_MODEL_NAME, затем 'base' (предзагружена в docker-образ).
     """
-    model_name = str(await setting_get('whisper_model_name', config_get('whisper_model_name') or 'base'))
+    if not model_name:
+        model_name = str(await setting_get('whisper_model_name', config_get('whisper_model_name') or 'base'))
 
     if model_name not in _model_cache:
         # cpu_count вместо фиксированных 16: на слабых VM (2 ядра на проде)
@@ -29,20 +30,39 @@ async def faster_whisper_create_model() -> WhisperModel:
     return _model_cache[model_name]
 
 
-async def faster_whisper_transcribe(file_path: str) -> str:
+async def faster_whisper_transcribe(
+    file_path: str,
+    model_name: str | None = None,
+    language: str | None = None,
+    beam_size: int = 5,
+) -> str:
     """
     Транскрибирует аудиофайл в текст. vad_filter отсеивает тишину/фон до
     распознавания и сегменты с высоким no_speech_prob отбрасываются - без
     этого faster-whisper на пустом звуке нередко галлюцинирует однословные
     артефакты вроде "You"/"Thank you." (известная особенность моделей Whisper,
     обученных на YouTube-субтитрах, где тишине часто предшествовали эти фразы).
+
+    model_name / language / beam_size вынесены в параметры ради потокового
+    режима (`/api/stt/chunk`), где чанк надо расшифровать быстрее, чем он
+    длится. Замеры на 26.6 с русской речи (20.08.2026):
+
+      * явный `language` экономит 39% времени: автоопределение гоняет модель
+        по началу КАЖДОГО чанка заново, и на коротком куске это заметная доля;
+      * модель побольше делает целый файл лучше (small 16.4% ошибок против
+        base 20.5%), а чанки - ХУЖЕ (34.2%) и перестаёт успевать: нарезка рвёт
+        контекст, а большая модель на него сильнее опирается;
+      * `beam_size=1` вдвое быстрее, но ломает слова - годится показать живой
+        текст, не годится сохранить.
+
+    Умолчания оставлены прежними: старые вызовы работают как работали.
     """
-    model = await faster_whisper_create_model()
+    model = await faster_whisper_create_model(model_name)
     segments, _ = model.transcribe(
         file_path,
-        beam_size=5,
-        best_of=5,
-        language=None,
+        beam_size=beam_size,
+        best_of=beam_size,
+        language=language,
         condition_on_previous_text=False,
         vad_filter=True,
     )
