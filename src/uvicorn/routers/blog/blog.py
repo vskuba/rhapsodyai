@@ -33,6 +33,7 @@ router = APIRouter(prefix="/api/blog", tags=["blog"])
 agent_manager = AiFrameworkAgentManager()
 
 BLOG_TAGGER_AGENT_NAME = "blog_tagger"
+BLOG_WRITER_AGENT_NAME = "blog_writer"
 
 # От чьего имени идёт запрос. Учётка владельца: черновики — его личные мысли,
 # и разводить их по пользователям пока незачем.
@@ -46,6 +47,9 @@ BLOG_COMPANION_ID = 1
 # Ждём разметку не дольше минуты. Черновик короткий, и если модель думает
 # дольше — что-то не так, а BlogAi не должен висеть на этом запросе.
 BLOG_AGENT_TIMEOUT = 60.0
+
+# Сборка текста дольше разметки: модель пишет абзацы, а не подбирает слова.
+BLOG_COMPOSE_TIMEOUT = 180.0
 
 # Сколько тегов из словаря показать агенту. Весь словарь в промпт не влезет,
 # когда он разрастётся, а ходовые и есть те, которые надо переиспользовать.
@@ -83,7 +87,46 @@ async def blog_tag(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREA
     return {"result": {"tags": tags, "title": str(parsed.get("title") or "").strip()}}
 
 
+@router.post("/compose")
+async def blog_compose(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
+    """Черновики → связный текст.
+
+    Агенту приходят пронумерованные куски, а не склеенная простыня: так он
+    видит границы мыслей и не смешивает их в одну.
+
+    Отдаём текст как есть, без разбора: тут нет структуры, которую надо
+    доставать, — есть материал, который человек будет читать и править.
+    """
+    drafts = [str(d).strip() for d in (data.get("drafts") or []) if str(d).strip()]
+    if not drafts:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="нет черновиков — собирать нечего")
+
+    hint = str(data.get("hint") or "").strip()
+    body = "\n\n".join(f"[черновик {i + 1}]\n{text}" for i, text in enumerate(drafts))
+    prompt = (f"Пожелание автора: {hint}\n\n" if hint else "") + body
+
+    text = _thinking_strip(await _agent_ask(BLOG_WRITER_AGENT_NAME, prompt))
+    logger_info(f"[blog] сборка: {len(drafts)} черновиков → {len(text)} знаков")
+
+    return {"result": {"text": text}}
+
+
 # ---------------------------------------------------------------------------
+
+def _thinking_strip(text: str) -> str:
+    """Убирает размышления модели из ответа.
+
+    Рассуждающие модели пишут ход мысли в `<think>…</think>` и только потом
+    ответ. Обычно движок это срезает, но при обрыве по лимиту закрывающий тег
+    приходит без открывающего — и в текст протекает хвост вроде «exceeded,
+    let\'s stop and write the final answer now.</think>». Наступили на это на
+    первом же прогоне сборки.
+    """
+    marker = text.rfind("</think>")
+
+    return text[marker + len("</think>"):].strip() if marker >= 0 else text.strip()
+
 
 def _prompt(text: str, vocabulary: list) -> str:
     """Промпт с словарём впереди текста.
@@ -147,8 +190,9 @@ async def _agent_ask(agent_name: str, message: str) -> str:
     })
     agent_manager.framework_workflow_run(framework_model, future, loop)
 
+    timeout = BLOG_COMPOSE_TIMEOUT if agent_name == BLOG_WRITER_AGENT_NAME else BLOG_AGENT_TIMEOUT
     try:
-        return await asyncio.wait_for(future, timeout=BLOG_AGENT_TIMEOUT)
+        return await asyncio.wait_for(future, timeout=timeout)
     except asyncio.TimeoutError:
         future.cancel()
         raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT,
