@@ -82,6 +82,15 @@ RUN mkdir -p data/qdrant_storage data/history data/log data/report data/sqlite3
 # Добавляем права на запись (777 гарантирует доступ любому пользователю внутри контейнера)
 RUN chmod -R 777 data/qdrant_storage data/history data/log data/report data/sqlite3 docker/logstash
 
+# SSH-клиент для вкладки GX10 (управление сервисами локальных LLM по SSH).
+# Слой добавлен В КОНЦЕ файла: пересборка не трогает кэшированные слои с торчем
+# и моделями (15 ГБ), а добавляет ~5 МБ. sshpass берёт пароль из SSHPASS,
+# пароль в argv не попадает (правило про секреты).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssh-client \
+    sshpass \
+    && rm -rf /var/lib/apt/lists/*
+
 # Запускаем Uvicorn
 # --host 0.0.0.0 обязателен, чтобы контейнер был доступен снаружи
 CMD ["uvicorn", "main_uvicorn:app", "--host", "0.0.0.0", "--port", "8000"]

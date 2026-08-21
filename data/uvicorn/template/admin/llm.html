@@ -699,6 +699,74 @@
         color: #a0aec0;
         font-size: 13px;
     }
+    /* ===================== Вкладка GX10 ===================== */
+    .gx10-memory {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        background: #fafbfc;
+        max-width: 400px;
+    }
+    .gx10-memory-label { font-size: 13px; font-weight: 600; color: #2d3748; white-space: nowrap; }
+    .gx10-memory-bar { flex: 1; height: 14px; background: #e2e8f0; border-radius: 7px; overflow: hidden; }
+    .gx10-memory-fill { height: 100%; background: #31ce76; border-radius: 7px; transition: width .4s; }
+    .gx10-memory-fill.warn { background: #dd6b20; }
+    .gx10-memory-fill.crit { background: #c53030; }
+    .gx10-memory-text { font-size: 12px; color: #4a5568; white-space: nowrap; }
+
+    .gx10-table { width: 100%; border-collapse: collapse; border: 1px solid #e0e0e0; border-radius: 8px; }
+    .gx10-table thead th {
+        background: #f7fafc; text-align: left; padding: 10px 12px; font-size: 12px;
+        color: #4a5568; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid #e0e0e0;
+    }
+    .gx10-table tbody td { padding: 10px 12px; border-bottom: 1px solid #edf2f7; font-size: 13px; vertical-align: middle; }
+    .gx10-table tbody tr:last-child td { border-bottom: none; }
+    .gx10-unit { font-weight: 600; color: #2d3748; font-family: monospace; }
+
+    .gx10-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .gx10-badge.active { background: #c6f6d5; color: #22543d; }
+    .gx10-badge.failed { background: #fed7d7; color: #742a2a; }
+    .gx10-badge.inactive { background: #e2e8f0; color: #4a5568; }
+    .gx10-badge.other { background: #fefcbf; color: #744210; }
+    .gx10-badge.enabled { background: #ebf8ff; color: #2a4365; }
+    .gx10-badge.disabled { background: #edf2f7; color: #718096; }
+
+    .gx10-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .gx10-btn {
+        border: 1px solid #cbd5e0; background: #fff; color: #2d3748; border-radius: 5px;
+        padding: 4px 10px; font-size: 12px; cursor: pointer; transition: all .15s;
+    }
+    .gx10-btn:hover:not(:disabled) { background: #edf2f7; border-color: #a0aec0; }
+    .gx10-btn:disabled { opacity: .45; cursor: default; }
+    .gx10-spinner {
+        display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
+        border: 2px solid rgba(45, 55, 72, .25); border-top-color: #2d3748;
+        border-radius: 50%; animation: gx10spin .7s linear infinite;
+    }
+    @keyframes gx10spin { to { transform: rotate(360deg); } }
+    .gx10-btn.start { color: #22543d; } .gx10-btn.start:hover:not(:disabled) { background: #c6f6d5; }
+    .gx10-btn.stop { color: #742a2a; } .gx10-btn.stop:hover:not(:disabled) { background: #fed7d7; }
+    .gx10-btn.enable { color: #2a4365; } .gx10-btn.enable:hover:not(:disabled) { background: #ebf8ff; }
+    .gx10-btn.disable { color: #4a5568; } .gx10-btn.disable:hover:not(:disabled) { background: #e2e8f0; }
+
+    .gx10-banner {
+        padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; display: none;
+    }
+    .gx10-banner.error { display: block; background: #fff5f5; border: 1px solid #fed7d7; color: #742a2a; }
+    .gx10-banner.warn { display: block; background: #fffaf0; border: 1px solid #feebc8; color: #7b341e; }
+
+    .gx10-toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+    .gx10-toolbar-title { font-size: 15px; font-weight: 600; color: #2d3748; }
+    #gx10RefreshSelect { min-width: 111px; }
+
+    #tab-gx10 {
+        padding: 20px;
+    }
+
 </style>
 {% endblock %}
 
@@ -709,6 +777,7 @@
     <div class="page-tabs">
         <button class="page-tab active" data-tab="monitor">Мониторинг</button>
         <button class="page-tab" data-tab="crud">Управление LLM</button>
+        <button class="page-tab" data-tab="gx10">GX10</button>
     </div>
 
     <!-- ==================== Вкладка 1: мониторинг ==================== -->
@@ -829,6 +898,41 @@
         </div>
     </div><!-- /tab-crud -->
 
+    <!-- ==================== Вкладка 3: GX10 ==================== -->
+    <div class="tab-panel" id="tab-gx10">
+        <div class="gx10-toolbar">
+            <span class="gx10-toolbar-title">Сервисы на GX10</span>
+            <div class="filter-item auto-refresh-item">
+                <label class="filter-label" for="gx10RefreshSelect">Автообновление</label>
+                <select id="gx10RefreshSelect">
+                    <option value="1">1 сек</option>
+                    <option value="3" selected>3 сек</option>
+                    <option value="7">7 сек</option>
+                </select>
+            </div>
+        </div>
+        <div class="gx10-banner" id="gx10Banner"></div>
+        <div class="gx10-memory" id="gx10MemoryBox">
+            <span class="gx10-memory-label">Память GX10</span>
+            <div class="gx10-memory-bar"><div class="gx10-memory-fill" id="gx10MemoryFill" style="width: 0%;"></div></div>
+            <span class="gx10-memory-text" id="gx10MemoryText">—</span>
+        </div>
+        <table class="gx10-table">
+            <thead>
+            <tr>
+                <th style="width: 26%;">Сервис</th>
+                <th style="width: 14%;">Статус</th>
+                <th style="width: 14%;">Автозапуск</th>
+                <th style="width: 16%;">Память процесса</th>
+                <th>Действия</th>
+            </tr>
+            </thead>
+            <tbody id="gx10TableBody">
+            <tr><td colspan="5" class="empty-note">Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div><!-- /tab-gx10 -->
+
 </div>
 {% endblock %}
 
@@ -838,13 +942,23 @@
     import {showNotification} from '/static/js/notification.js';
 
     /* ===================== Tab switching ===================== */
+    // Вкладку помним между заходами — как на странице задач (PHASE_KEY): страница
+    // открывается там, где её оставили. Сохранение — здесь, восстановление — в конце
+    // модуля (там уже инициализированы let-переменные, на которые смотрят loadCrud
+    // и gx10OnTabSwitch).
+    const LLM_TAB_KEY = 'llm_tab';
+
+    function switchTab(name) {
+        document.querySelectorAll('.page-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+        if (name === 'crud') loadCrud();
+        gx10OnTabSwitch(name);
+    }
+
     document.querySelectorAll('.page-tab').forEach(tab => {
         tab.addEventListener('click', () => {
-            document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-            tab.classList.add('active');
-            document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-            if (tab.dataset.tab === 'crud') loadCrud();
+            localStorage.setItem(LLM_TAB_KEY, tab.dataset.tab);
+            switchTab(tab.dataset.tab);
         });
     });
 
@@ -1612,5 +1726,166 @@
 
     btnShowAddRow.onclick = showAddRow;
 
+    /* ===================== GX10 tab ===================== */
+    const gx10TableBody = document.getElementById('gx10TableBody');
+    const gx10Banner = document.getElementById('gx10Banner');
+    const gx10MemoryFill = document.getElementById('gx10MemoryFill');
+    const gx10MemoryText = document.getElementById('gx10MemoryText');
+    let gx10Timer = null;
+    let gx10Loading = false;
+    let gx10ErrorCount = 0;
+
+    function gx10FmtBytes(bytes) {
+        if (bytes === null || bytes === undefined) return '—';
+        const gib = bytes / (1024 ** 3);
+        if (gib >= 1) return gib.toFixed(1) + ' ГиБ';
+        const mib = bytes / (1024 ** 2);
+        if (mib >= 1) return mib.toFixed(0) + ' МиБ';
+        return Math.round(bytes / 1024) + ' КиБ';
+    }
+
+    function gx10StateBadge(state) {
+        const cls = state === 'active' ? 'active'
+            : state === 'failed' ? 'failed'
+            : (state === 'inactive' || state === 'unknown') ? 'inactive' : 'other';
+        return '<span class="gx10-badge ' + cls + '">' + state + '</span>';
+    }
+
+    function gx10BannerShow(kind, text) {
+        gx10Banner.className = 'gx10-banner ' + (kind === 'none' ? '' : kind);
+        gx10Banner.textContent = text || '';
+    }
+
+    async function gx10Load() {
+        if (gx10Loading) return;
+        gx10Loading = true;
+        try {
+            const data = await getData('/api/gx10/status');
+            const g = data.gx10;
+            if (!g.configured) {
+                gx10BannerShow('warn', 'GX10 не настроен: укажите GX10_HOST / GX10_USERNAME / GX10_PASSWORD в .env.local и перезапустите uvicorn');
+                gx10TableBody.innerHTML = '';
+                const row = document.createElement('tr');
+                const cell = el('td', 'empty-note', 'Нет данных');
+                cell.colSpan = 5;
+                row.appendChild(cell);
+                gx10TableBody.appendChild(row);
+                return;
+            }
+            gx10ErrorCount = 0;
+            gx10BannerShow('none', '');
+
+            if (g.memory) {
+                const pct = g.memory.total ? Math.round(g.memory.used * 100 / g.memory.total) : 0;
+                gx10MemoryFill.style.width = pct + '%';
+                gx10MemoryFill.className = 'gx10-memory-fill' + (pct >= 90 ? ' crit' : pct >= 75 ? ' warn' : '');
+                gx10MemoryText.textContent = gx10FmtBytes(g.memory.used) + ' / ' + gx10FmtBytes(g.memory.total) + ' (' + pct + '%) ';
+            }
+
+            gx10TableBody.innerHTML = '';
+            (g.services || []).forEach(s => {
+                const row = document.createElement('tr');
+                const tdUnit = el('td');
+                tdUnit.appendChild(el('span', 'gx10-unit', s.unit));
+                const tdState = el('td');
+                tdState.innerHTML = gx10StateBadge(s.state);
+                const tdEnabled = el('td');
+                tdEnabled.innerHTML = '<span class="gx10-badge ' + (s.enabled === 'enabled' ? 'enabled' : 'disabled') + '">' + s.enabled + '</span>';
+                const tdMem = el('td', null, gx10FmtBytes(s.memory));
+                const tdActions = el('td');
+                const actions = el('div', 'gx10-actions');
+                // Логика состояний кнопок: Start недоступен у запущенного сервиса,
+                // Stop — у остановленного; Enable/Disable — когда автозапуск уже так.
+                const running = s.state === 'active' || s.state === 'activating';
+                [['start', 'Start'], ['restart', 'Restart'], ['stop', 'Stop'], ['enable', 'Enable'], ['disable', 'Disable']].forEach(([action, label]) => {
+                    const btn = el('button', 'gx10-btn ' + action, label);
+                    btn.type = 'button';
+                    if (action === 'start' && running) btn.disabled = true;
+                    if (action === 'stop' && !running) btn.disabled = true;
+                    if (action === 'enable' && s.enabled === 'enabled') btn.disabled = true;
+                    if (action === 'disable' && s.enabled === 'disabled') btn.disabled = true;
+                    btn.onclick = () => gx10Control(s.unit, action, btn);
+                    actions.appendChild(btn);
+                });
+                tdActions.appendChild(actions);
+                row.appendChild(tdUnit);
+                row.appendChild(tdState);
+                row.appendChild(tdEnabled);
+                row.appendChild(tdMem);
+                row.appendChild(tdActions);
+                gx10TableBody.appendChild(row);
+            });
+        } catch (e) {
+            console.error('Ошибка GX10:', e);
+            gx10ErrorCount += 1;
+            // Тост один раз, дальше — только плашка, чтобы не спамить при поллинге.
+            if (gx10ErrorCount === 1) {
+                gx10BannerShow('error', 'Ошибка получения статуса GX10: ' + e.message);
+            }
+        } finally {
+            gx10Loading = false;
+        }
+    }
+
+    async function gx10Control(unit, action, btn) {
+        btn.disabled = true;
+        // Пока команда исполняется, в кнопке — спиннер вместо подписи.
+        // min-width фиксируем, чтобы таблица не «прыгала» при смене содержимого.
+        const label = btn.textContent;
+        const minW = btn.offsetWidth + 'px';
+        btn.style.minWidth = minW;
+        btn.textContent = '';
+        btn.appendChild(el('span', 'gx10-spinner'));
+        try {
+            const res = await postData('/api/gx10/control', {unit, action});
+            const verbs = {start: 'запущен', stop: 'остановлен', restart: 'перезапущен', enable: 'включён в автозапуск', disable: 'выключен из автозапуска'};
+            showNotification(unit + ' ' + (verbs[action] || action), 'success');
+            await gx10Load(); // строка перерисована — кнопка заменена новой
+        } catch (e) {
+            showNotification('Ошибка: ' + e.message, 'error');
+            if (btn.isConnected) btn.textContent = label; // перезагрузки не было — вернём подпись
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    const gx10RefreshSelect = document.getElementById('gx10RefreshSelect');
+
+    function gx10IntervalSec() {
+        return parseInt(gx10RefreshSelect.value, 10) || 3;
+    }
+
+    function gx10Start() {
+        if (gx10Timer) return;
+        gx10Load();
+        gx10Timer = setInterval(gx10Load, gx10IntervalSec() * 1000);
+    }
+
+    let gx10TabActive = false;
+    gx10RefreshSelect.onchange = () => {
+        if (gx10TabActive) { gx10Stop(); gx10Start(); }
+    };
+
+    function gx10Stop() {
+        if (gx10Timer) {
+            clearInterval(gx10Timer);
+            gx10Timer = null;
+        }
+    }
+
+    function gx10OnTabSwitch(tabId) {
+        gx10TabActive = tabId === 'gx10';
+        if (gx10TabActive) gx10Start();
+        else gx10Stop();
+    }
+
+    // Восстановление вкладки из прошлой сессии. Сохранённое имя сверяем с текущей
+    // разметкой (как PHASE_TYPE_NAMES на странице задач): вкладка могла исчезнуть при
+    // правке — иначе страница открылась бы вообще без активного панели.
+    // 'monitor' — дефолт по разметке, повторный вызов не нужен.
+    const _savedTab = localStorage.getItem(LLM_TAB_KEY);
+    if (_savedTab && _savedTab !== 'monitor' && document.querySelector('.page-tab[data-tab="' + _savedTab + '"]')) {
+        switchTab(_savedTab);
+    }
 </script>
 {% endblock %}

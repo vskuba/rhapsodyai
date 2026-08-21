@@ -107,6 +107,14 @@ class AuthPermission(str, Enum):
     # Queue permissions
     QUEUE_VIEW = "queue:view"
 
+    # GX10 permissions
+    #
+    # Отдельная машина с локальными LLM (llama.cpp) и ComfyUI: вкладка LLM → GX10.
+    # View — читать статус сервисов и память, control — start/stop/restart/enable/disable.
+    # Роль admin и qa получают оба права автоматически (полный набор).
+    GX10_VIEW = "gx10:view"
+    GX10_CONTROL = "gx10:control"
+
     # Design permissions
     DESIGN_VIEW = "design:view"
     DESIGN_CREATE = "design:create"

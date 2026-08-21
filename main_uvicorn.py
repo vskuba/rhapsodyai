@@ -52,6 +52,7 @@ from src.uvicorn.routers.project import (
 from src.uvicorn.routers.project.design import design_block, design as design_router, design_browser, \
     design_prototype as design_prototype_router
 from src.uvicorn.routers.llm import llm
+from src.uvicorn.routers import gx10
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
 from src.uvicorn.routers.setting import setting
@@ -452,6 +453,7 @@ app.include_router(fact.router, include_in_schema=False)
 app.include_router(setting.router, include_in_schema=False)
 app.include_router(translate.router, include_in_schema=False)
 app.include_router(llm.router, include_in_schema=False)
+app.include_router(gx10.router, include_in_schema=False)
 app.include_router(session.router, include_in_schema=False)
 app.include_router(node.router, include_in_schema=False)
 app.include_router(role.router, include_in_schema=False)

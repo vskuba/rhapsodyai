@@ -181,3 +181,28 @@ HTTP-клиент: `httpx.AsyncClient(timeout=60s, connect=10s)` с хуками
 **`ai_llm_speed_get(llm_id, target_seconds=10)`** — возвращает `{chars_per_ms, avg_ms, chunk_size, n}`.  
 Кешируется в `llm.chunk_size` (JSON, ключ = `str(target_seconds)`) на 15 минут (`CHUNK_SIZE_REFRESH_MINUTES`).  
 При отсутствии данных — дефолт `chars_per_ms=1.5`, `chunk_size=max(5000, 1.5 * target * 1000 * 0.7)`.
+### Вкладка GX10 (локальные LLM на отдельной машине)
+
+GX10 — машина с systemd-сервисами llama.cpp (`llama-qwen-large/small/vl.service`) и ComfyUI.
+uvicorn ходит на неё по SSH и показывает: статус/автозапуск/память каждого процесса и RAM хоста.
+
+- **Роутер:** `src/uvicorn/routers/gx10.py` — `GET /api/gx10/status`, `POST /api/gx10/control`
+- **Права:** `gx10:view` / `gx10:control` (в `auth_permission.py`); у `admin` и `qa` — полный набор
+- **Конфиг:** `GX10_HOST`, `GX10_PORT` (дефолт 22), `GX10_USERNAME`, `GX10_PASSWORD` — в `.env(.local)`.
+  Пусто — вкладка показывает «не настроен», SSH не используется
+- **Транспорт:** `sshpass -e ssh ...` — пароль в `SSHPASS` (не argv); образ собирают с `openssh-client` + `sshpass`
+- **Кэш статуса:** 3 сек (TTL + лок): поллинг фронтенда 3 сек, но SSH-снапшот — не чаще 1/3 сек;
+  после `POST /control` кэш сбрасывается
+- **Ошибки:** 502 — SSH/система (текст stderr, напр. «Permission denied», «Unit not found»);
+  503 — нет конфига; 400 — неизвестный unit/action
+- **Управление через sudo:** команды `POST /control` идут как `sudo systemctl ...` — polkit для
+  непривилегированного пользователя требует интерактивной аутентификации. Обязательное
+  sudoers-правило: в `/etc/sudoers.d/gx10` — `<USER> ALL=(root) NOPASSWD: /bin/systemctl`
+- **Новый сервис** — одна строка в `GX10_SERVICES` (фронтенд рисует список из ответа API)
+- **UI:** селект автообновления 1/3/7 сек (дефолт 3, как на «Мониторинге»); кнопки по состоянию —
+  Start/Enable недоступны у запущенного и включённого, Stop/Disable — у остановленного и выключенного;
+  на время исполнения команды в кнопке — спиннер (`.gx10-spinner`), подпись возвращается при ошибке;
+  последняя открытая вкладка запоминается в `localStorage` (`llm_tab`) и восстанавливается
+  при перезагрузке — тот же паттерн, что на странице задач (`task_phase`)
+- **Локаль:** `free` вызывается как `LC_ALL=C free -b` — на GX10 заголовки по локали («Память:»),
+  парсер ищет строку `Mem:`
