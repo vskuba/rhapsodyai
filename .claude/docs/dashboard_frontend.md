@@ -26,6 +26,7 @@ HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по о
 | `/admin/session` | `admin/session.html` | Просмотр сессий |
 | `/admin/user`, `/admin/role` | `admin/user.html`, `admin/role.html` | Пользователи и роли |
 | `/admin/cabinet` | `admin/cabinet.html` | Личный кабинет, access-токены |
+| `/admin/miniapp` | `admin/miniapp.html` | Mini App в рамке телефона (iframe на `/telegram-app`) |
 | `/admin/setting` | `admin/setting.html` | Настройки |
 | `/admin/seed`, `/admin/backup` | `admin/seed.html`, `admin/backup.html` | Seed SQL и бэкапы |
 | `/admin/queue` | `admin/queue.html` | Мониторинг очередей |
@@ -49,14 +50,15 @@ HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по о
 Подключает глобально: `common.css`, `menu_top.css`, `notification.css` и `tz.js`.
 
 **Меню двухуровневое.** Верхний ряд — `.tabnav-group` (Чат, LLM, Проекты, Логи, Ноды,
-Пользователи, Настройки, Инструменты), под ним — `.tabnav-panel` со ссылками своей
+Пользователи, MiniApp, Настройки, Инструменты), под ним — `.tabnav-panel` со ссылками своей
 группы. Активная группа вычисляется инлайн-скриптом внизу `base.html` по карте
 `groupMap` (URL → группа): **добавил страницу — допиши её в `groupMap`**, иначе меню не
 подсветится. Часть пунктов ведёт наружу (Phpmyadmin, Qdrant, Cronicle, Redis, Grafana,
 Gatus, OpenSearch) — это `localhost:PORT`, работающие при поднятом ssh-туннеле
 `rhapsody-prod`.
 
-Там же модульный скрипт: `/auth/me` → ссылка на Mini App с access-токеном, и logout.
+Там же модульный скрипт: logout. Access-токен для Mini App берёт сама страница
+`/admin/miniapp` — в шапке этой логики больше нет.
 
 ## Общие скрипты (`data/uvicorn/public/js/`)
 

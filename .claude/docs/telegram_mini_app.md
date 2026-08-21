@@ -55,6 +55,13 @@ POST /telegram-app/auth
 
 Все защищённые эндпоинты вызывают `_require_telegram_owner(request)` — проверяет `telegram_owner_id` в сессии.
 
+**Mini App внутри админки.** Страница `/admin/miniapp` (вкладка «📱 MiniApp» в шапке)
+открывает тот же `/telegram-app` в iframe шириной 390 px. Токен страница берёт сама:
+`/auth/me` → `/user/{id}/token` → `?access_token=…`. Отсюда следствие: под учёткой, чей
+`user_id ≠ 1`, в рамке будет «Доступ запрещён» — токен ищется только у владельца
+(см. способ 2 выше). На iframe стоит `allow="microphone"`, иначе голосовой ввод молча
+не запустится.
+
 **Env-переменные:**
 - `TELEGRAM_TOKEN_RHAPSODY` — токен бота (подпись initData + X-Claude-Secret)
 - `TELEGRAM_OWNER_CHAT_ID` — Telegram user_id владельца

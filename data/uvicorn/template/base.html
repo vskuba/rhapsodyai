@@ -44,6 +44,7 @@
 
             {% if request.session.get('role') == 'admin' %}
             <a class="tabnav-group" data-group="people" href="/admin/user">👥 Пользователи</a>
+            <a class="tabnav-group" data-group="miniapp" href="/admin/miniapp">📱 MiniApp</a>
             <a class="tabnav-group" data-group="setting" href="/admin/setting">⚙️ Настройки</a>
             <a class="tabnav-group" data-group="tool" href="/admin/tool">🔧 Инструменты</a>
             {% endif %}
@@ -53,10 +54,6 @@
             <div class="topbar-user">
                 <span class="user-label">👤 Кабинет</span>
                 <div class="topbar-user-menu">
-                    {% if request.session.get('role') == 'admin' %}
-                    <a href="#" id="miniAppNavLink" target="_blank">Mini App</a>
-                    <div class="topbar-divider"></div>
-                    {% endif %}
                     <a href="/admin/cabinet">Личный кабинет</a>
                     <a href="#" id="logoutBtn">Выйти</a>
                 </div>
@@ -132,6 +129,14 @@
             {% endif %}
 
             {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="miniapp">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/miniapp">📱 Как в Telegram</a>
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
+
+            {% if request.session.get('role') == 'admin' %}
             <div class="tabnav-panel" data-group="setting">
                 <span class="tabnav-sep"></span>
                 <a href="/admin/seed">Seed SQL</a>
@@ -175,32 +180,8 @@
 
 <!-- ══ Scripts ══════════════════════════════════════════════ -->
 <script type="module">
-    import {postData, getData} from '/static/js/api.js';
+    import {postData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
-
-    async function loadCurrentUser() {
-        try {
-            const response = await getData('/auth/me');
-            if (response && response.user) {
-                _loadMiniAppNavLink(response.user.id);
-            }
-        } catch (e) {
-        }
-    }
-
-    async function _loadMiniAppNavLink(userId) {
-        const link = document.getElementById('miniAppNavLink');
-        if (!link) return;
-        try {
-            const res = await getData(`/user/${userId}/token`);
-            const tokens = res.result || [];
-            const base = window.location.origin + '/telegram-app';
-            link.href = tokens.length > 0
-                ? `${base}?access_token=${encodeURIComponent(tokens[0].token)}`
-                : '/admin/cabinet';
-        } catch {
-        }
-    }
 
     document.getElementById('logoutBtn')?.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -212,8 +193,6 @@
             showNotification('Ошибка при выходе: ' + err.message, 'error');
         }
     });
-
-    loadCurrentUser();
 </script>
 
 <script type="module" src="/static/js/fixer.js"></script>
@@ -247,6 +226,7 @@
             '/admin/browser': 'projects',
             '/admin/user': 'people',
             '/admin/role': 'people',
+            '/admin/miniapp': 'miniapp',
             '/admin/workflow_trace': 'logs',
             '/admin/setting': 'setting',
             '/admin/backup': 'setting',

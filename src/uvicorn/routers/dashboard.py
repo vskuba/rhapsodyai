@@ -108,8 +108,16 @@ async def user_page(request: Request, user: AuthSession = Depends(require_auth))
     )
 
 
+@router.get("/admin/miniapp", response_class=HTMLResponse)
+async def miniapp_page(request: Request, user: AuthSession = Depends(require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/miniapp.html"
+    )
+
+
 @router.get("/admin/playwright", response_class=HTMLResponse)
-async def user_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def playwright_page(request: Request, user: AuthSession = Depends(require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/playwright.html"

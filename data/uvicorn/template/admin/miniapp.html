@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}MiniApp | RhapsodyAI{% endblock %}
+
+{% block head %}
+<style>
+    .ma-layout {
+        display: flex; flex-direction: column; width: 100%; height: 100%; background: #fff;
+    }
+
+    .ma-header {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 20px; border-bottom: 1px solid #e0e0e0; flex-shrink: 0;
+    }
+    .ma-header h2 { margin: 0; font-size: 1.05rem; color: #2c3e50; font-weight: 600; }
+    .ma-hint { font-size: 12px; color: #888; }
+    .ma-header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+    .btn {
+        display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;
+        border: none; border-radius: 5px; font-size: 12px; font-weight: 600;
+        cursor: pointer; white-space: nowrap; text-decoration: none;
+    }
+    .btn-outline { background: #fff; color: #555; border: 1px solid #ccc; }
+    .btn-outline:hover { background: #f5f5f5; }
+    .btn-outline[disabled] { opacity: .5; cursor: default; }
+
+    /* align-items: stretch, чтобы рамка взяла высоту от контейнера, а не от
+       вычтенного вручную числа: подгонка через calc(100vh - N) промахивается
+       при любом изменении шапки. */
+    .ma-body {
+        flex: 1; overflow: auto; padding: 24px 20px; min-height: 0;
+        display: flex; gap: 26px; align-items: stretch; justify-content: center;
+        background: #f5f7f9;
+    }
+
+    /* Рамка телефона: приложение сделано под палец и узкий экран, и в
+       развёрнутом на всю ширину окне выглядело бы не так, как у человека в
+       руках. Размер — 390×780, обычный экран телефона. */
+    .ma-phone {
+        width: 390px; flex: none;
+        display: flex; flex-direction: column;
+        /* Не выше настоящего телефона: на большом мониторе растянутая на всю
+           высоту «трубка» перестаёт показывать то, что увидит человек. */
+        max-height: 780px; min-height: 420px;
+        border: 10px solid #1e293b; border-radius: 30px;
+        box-shadow: 0 12px 34px rgba(15, 23, 42, .22);
+        overflow: hidden; background: #fff;
+    }
+    .ma-phone iframe { flex: 1; display: block; width: 100%; border: 0; }
+
+    /* Заглушка на время загрузки токена и на случай, когда токена нет. */
+    .ma-phone-stub {
+        flex: 1; display: flex; align-items: center; justify-content: center;
+        padding: 24px; text-align: center; font-size: 13px; color: #64748b;
+        line-height: 1.6;
+    }
+    .ma-phone-stub a { color: #3498db; }
+
+    /* Пояснения не растягиваем: stretch на контейнере тянул бы и их. */
+    .ma-side {
+        max-width: 420px; align-self: flex-start;
+        font-size: 13px; color: #475569; line-height: 1.6;
+    }
+    .ma-side h3 { margin: 0 0 8px; font-size: 13px; color: #1e293b; }
+    .ma-side p { margin: 0 0 12px; }
+    .ma-side code {
+        background: #eef2f7; padding: 1px 5px; border-radius: 3px; font-size: 12px;
+    }
+    .ma-note {
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+        padding: 12px 14px; margin-bottom: 12px;
+    }
+    .ma-note.warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ma-layout">
+
+    <div class="ma-header">
+        <h2>Мини-приложение</h2>
+        <span class="ma-hint">то же самое, что открывается в Telegram</span>
+        <div class="ma-header-actions">
+            <button type="button" class="btn btn-outline" id="maReload" disabled>Перезагрузить</button>
+            <a class="btn btn-outline" id="maOpen" href="/admin/cabinet" target="_blank" rel="noopener">Открыть отдельно</a>
+        </div>
+    </div>
+
+    <div class="ma-body">
+        <div class="ma-phone">
+            <!-- allow="microphone" обязателен: без него запись голоса в рамке молча
+                 не начнётся — разрешение страницы на вложенную не распространяется. -->
+            <iframe id="maFrame" allow="microphone" title="Мини-приложение" style="display:none;"></iframe>
+            <div class="ma-phone-stub" id="maStub">Загрузка мини-приложения…</div>
+        </div>
+
+        <div class="ma-side">
+            <div class="ma-note">
+                <h3>Это не копия, а само приложение</h3>
+                <p>
+                    В рамке открыт тот же адрес <code>/telegram-app</code>, который Telegram
+                    показывает на телефоне. События, чат с Claude и планы — общие: начатое
+                    здесь видно в Telegram, и наоборот.
+                </p>
+                <p style="margin:0;">
+                    Вход — по вашему access-токену: страница берёт его сама, тем же способом,
+                    что и ссылка на Mini App в шапке. Токен живёт в
+                    <a href="/admin/cabinet">личном кабинете</a>.
+                </p>
+            </div>
+
+            <div class="ma-note warn">
+                <h3>Микрофон</h3>
+                <p style="margin:0;">
+                    Браузер спросит разрешение при первом нажатии на микрофон. Если запись
+                    не идёт — проверьте, что разрешение выдано для этой страницы, а не
+                    только для отдельной вкладки.
+                </p>
+            </div>
+
+            <p style="color:#94a3b8;font-size:12px;margin:0;">
+                Ширина рамки — 390 пикселей, обычный экран телефона: приложение сделано
+                под палец, и на всю ширину окна выглядело бы не так, как у вас в руках.
+                Высота подстраивается под окно.
+            </p>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData} from '/static/js/api.js';
+
+    const frame = document.getElementById('maFrame');
+    const stub = document.getElementById('maStub');
+    const reloadBtn = document.getElementById('maReload');
+    const openLink = document.getElementById('maOpen');
+
+    let miniAppUrl = '';
+
+    async function initMiniApp() {
+        try {
+            const me = await getData('/auth/me');
+            const userId = me?.user?.id;
+            if (!userId) {
+                stub.textContent = 'Не удалось определить пользователя';
+                return;
+            }
+
+            const res = await getData(`/user/${userId}/token`);
+            const tokens = res.result || [];
+            if (tokens.length === 0) {
+                stub.innerHTML = 'Нет access-токена — мини-приложение не открыть.<br>'
+                    + 'Создайте токен в <a href="/admin/cabinet">личном кабинете</a>.';
+                return;
+            }
+
+            miniAppUrl = `/telegram-app?access_token=${encodeURIComponent(tokens[0].token)}`;
+            frame.src = miniAppUrl;
+            frame.style.display = 'block';
+            stub.style.display = 'none';
+            reloadBtn.disabled = false;
+            openLink.href = miniAppUrl;
+        } catch (e) {
+            stub.textContent = 'Ошибка загрузки Mini App: ' + e.message;
+        }
+    }
+
+    // Перезагрузка через смену src, а не contentWindow.location.reload():
+    // обращение к содержимому кадра — лишняя связанность, а результат тот же.
+    reloadBtn.addEventListener('click', () => {
+        if (!miniAppUrl) return;
+        frame.src = miniAppUrl + '&_=' + Date.now();
+    });
+
+    initMiniApp();
+</script>
+{% endblock %}
