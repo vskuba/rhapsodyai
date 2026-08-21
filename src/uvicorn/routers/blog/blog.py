@@ -26,6 +26,9 @@ from src.ai.ai_workflow import (ai_workflow_load, ai_workflow_variables_base,
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from qdrant_.qdrant_ import (EMBEDDING_MODEL, _qdrant_db_get_client, qdrant_remove_by,
+                             qdrant_save)
+
 from src.mysql_.repository.agent_repository import AgentRepository
 
 router = APIRouter(prefix="/api/blog", tags=["blog"])
@@ -34,6 +37,26 @@ agent_manager = AiFrameworkAgentManager()
 
 BLOG_TAGGER_AGENT_NAME = "blog_tagger"
 BLOG_WRITER_AGENT_NAME = "blog_writer"
+
+# Коллекция Qdrant под черновики «Блокнота». Своя, а не общая с фактами: у них
+# разный смысл и разная жизнь, а смешивать их значило бы находить факты в
+# ответе на «покажи похожие мысли».
+BLOG_COLLECTION = "blog_draft"
+
+# Схема полей коллекции. `document` — текст, по которому считается вектор;
+# `id` — идентификатор черновика в BlogAi, по нему потом и находят.
+BLOG_COLLECTION_META = {
+    "id": {"table_name": "draft"},
+    "document": {"table_name": "draft"},
+}
+
+# Ниже этой близости считаем, что связи нет. Замер на русских парах
+# (fastembed, paraphrase-multilingual-MiniLM-L12-v2): близкие по смыслу дают
+# 0.46-0.59, не связанные - 0.01-0.29. Порог 0.40 лежит в этом провале.
+#
+# Планка нужна: без неё «похожим» всегда окажется что-нибудь, и человек
+# перестанет верить подсказке.
+BLOG_SIMILAR_MIN_SCORE = 0.40
 
 # От чьего имени идёт запрос. Учётка владельца: черновики — его личные мысли,
 # и разводить их по пользователям пока незачем.
@@ -112,7 +135,116 @@ async def blog_compose(data: dict, user=Depends(AuthChecker([AuthPermission.STT_
     return {"result": {"text": text}}
 
 
+@router.post("/index")
+async def blog_index(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
+    """Кладёт черновик в векторный поиск.
+
+    Зовётся при сохранении и при правке текста: вектор считается от текста, и
+    после правки старый указывал бы не туда.
+    """
+    draft_id = int(data.get("id") or 0)
+    text = str(data.get("text") or "").strip()
+    if not draft_id or not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="нужны id и text")
+
+    saved = await qdrant_save(BLOG_COLLECTION, BLOG_COLLECTION_META,
+                              [{"id": draft_id, "document": text}])
+    logger_info(f"[blog] в поиск: черновик #{draft_id}, {len(text)} знаков")
+
+    return {"result": {"saved": saved}}
+
+
+@router.post("/similar")
+async def blog_similar(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
+    """Похожие по СМЫСЛУ черновики.
+
+    Отдельно от поиска в BlogAi, и это не дублирование. Тот ищет по словам
+    (FULLTEXT) и по словам же ограничен: «ценообразование на консультации» и
+    «пересмотреть тарифы, почасовая оплата» — одно и то же, но общих слов нет,
+    и он их не свяжет. Проверено. Здесь ищется смысл.
+    """
+    text = str(data.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="пустой текст")
+
+    exclude = int(data.get("exclude_id") or 0)
+    limit = max(1, min(int(data.get("limit") or 5), 20))
+
+    found = await _dense_search(text, limit + 1)
+
+    similar = []
+    for point in found:
+        payload = point.payload or {}
+        found_id = int(payload.get("id") or 0)
+        if not found_id or found_id == exclude:
+            continue
+        if float(point.score) < BLOG_SIMILAR_MIN_SCORE:
+            continue
+        similar.append({"id": found_id, "score": round(float(point.score), 3)})
+        if len(similar) >= limit:
+            break
+
+    logger_info(f"[blog] похожие на {len(text)} знаков: {len(similar)} из {len(found)}")
+
+    return {"result": similar}
+
+
+@router.post("/index/remove")
+async def blog_index_remove(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
+    """Убирает черновик из поиска — вместе с его удалением в BlogAi.
+
+    Без этого удалённая мысль осталась бы всплывать в «похожих» указателем в
+    никуда.
+    """
+    draft_id = int(data.get("id") or 0)
+    if not draft_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="нужен id")
+
+    await qdrant_remove_by(BLOG_COLLECTION, BLOG_COLLECTION_META, {"id": draft_id})
+
+    return {"result": "ok"}
+
+
 # ---------------------------------------------------------------------------
+
+async def _dense_search(text: str, limit: int):
+    """Поиск по косинусной близости, БЕЗ слияния с полнотекстовым.
+
+    Общий `qdrant_search` из `py_modules` для этой задачи не годится: он сливает
+    векторный и BM25-поиск через RRF (Reciprocal Rank Fusion), а оценка RRF
+    отражает **ранг, а не близость**. Наступили на это сразу: запрос «квантовая
+    физика элементарных частиц» получил 0.5 против черновика про тарифы —
+    просто потому, что тот оказался первым в выдаче. Отсечь такое порогом
+    невозможно, RRF-оценка почти не зависит от смысла.
+
+    Здесь берётся чистая косинусная близость, и `BLOG_SIMILAR_MIN_SCORE`
+    работает так, как задумано. Для фактов RRF по-прежнему уместен: там ищут по
+    ключевым словам, и подмешать точное совпадение полезно.
+    """
+    client = _qdrant_db_get_client()
+    if not await client.collection_exists(BLOG_COLLECTION):
+        return []
+
+    client.set_model(EMBEDDING_MODEL)
+    # Имя вектора Qdrant складывает из имени модели — то же, что при записи.
+    vector_name = client.get_vector_field_name()
+
+    from qdrant_.qdrant_ import dense_encoder, _init_encoders
+    _init_encoders()
+    from qdrant_.qdrant_ import dense_encoder as encoder
+
+    response = await client.query_points(
+        collection_name=BLOG_COLLECTION,
+        query=next(encoder.embed([text])).tolist(),
+        using=vector_name,
+        limit=limit,
+        with_payload=True,
+    )
+
+    return response.points
+
 
 def _thinking_strip(text: str) -> str:
     """Убирает размышления модели из ответа.
