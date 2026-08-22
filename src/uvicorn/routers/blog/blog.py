@@ -344,9 +344,18 @@ def _topics_parse(answer: str, known_ids: set) -> list:
     if start < 0 or end <= start:
         return []
 
-    try:
-        parsed = _json.loads(answer[start:end + 1])
-    except ValueError:
+    chunk = answer[start:end + 1]
+    parsed = None
+    for candidate in _json_candidates(chunk):
+        try:
+            parsed = _json.loads(candidate)
+            break
+        except ValueError:
+            continue
+
+    if parsed is None:
+        logger_info(f"[blog] темы: ответ не разобрался — {chunk[:160]}")
+
         return []
 
     out = []
@@ -362,6 +371,39 @@ def _topics_parse(answer: str, known_ids: set) -> list:
                     "drafts": ids})
 
     return out
+
+
+def _json_candidates(chunk: str):
+    """Варианты, которыми стоит попробовать разобрать ответ модели.
+
+    Модель регулярно ошибается в закрывающих скобках: `{"topics": [{…}]]}`
+    вместо `{"topics": [{…}]}`. Наступили на это на проде — тема была найдена
+    правильно, а разбор молча вернул пустой список, и человек видел «тем нет».
+
+    Поэтому кроме самого куска пробуем срезать хвост после каждой закрывающей
+    скобки с конца: рабочий JSON почти всегда получается на первом-втором шаге.
+    """
+    yield chunk
+
+    # Балансируем скобки: считаем открытые и обрезаем всё, что после закрытия.
+    depth = 0
+    for i, ch in enumerate(chunk):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                yield chunk[:i + 1]
+                break
+
+    # Последняя попытка — снять лишние скобки с конца по одной.
+    trimmed = chunk
+    for _ in range(3):
+        trimmed = trimmed.rstrip()
+        if not trimmed.endswith(("}", "]")):
+            break
+        trimmed = trimmed[:-1]
+        yield trimmed + "}"
 
 
 def _reason_clean(reason: str) -> str:
