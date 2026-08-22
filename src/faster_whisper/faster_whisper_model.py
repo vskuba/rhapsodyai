@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from faster_whisper import WhisperModel
@@ -58,6 +59,24 @@ async def faster_whisper_transcribe(
     Умолчания оставлены прежними: старые вызовы работают как работали.
     """
     model = await faster_whisper_create_model(model_name)
+
+    return await asyncio.to_thread(
+        _transcribe_blocking, model, file_path, beam_size, language)
+
+
+def _transcribe_blocking(model: WhisperModel, file_path: str,
+                         beam_size: int, language: str | None) -> str:
+    """Сама расшифровка. Синхронная, поэтому вызывается ТОЛЬКО в отдельном потоке.
+
+    ⚠ Прямой вызов из корутины блокирует цикл событий целиком: пока считается
+    расшифровка, сервис не отвечает НИ НА ЧТО. Наступили на это в «Блокноте» —
+    короткий чанк, попавший в окно длинной расшифровки, ждал 27 секунд вместо
+    четырёх и падал по таймауту. Со стороны это выглядело как «живой текст не
+    работает», хотя дело было в заблокированном цикле.
+
+    `model.transcribe` возвращает ленивый генератор: работа идёт при переборе
+    сегментов, поэтому перебор тоже обязан быть внутри потока.
+    """
     segments, _ = model.transcribe(
         file_path,
         beam_size=beam_size,
@@ -66,4 +85,5 @@ async def faster_whisper_transcribe(
         condition_on_previous_text=False,
         vad_filter=True,
     )
+
     return "".join(s.text for s in segments if s.no_speech_prob < 0.6).strip()

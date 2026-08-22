@@ -37,6 +37,10 @@ agent_manager = AiFrameworkAgentManager()
 
 BLOG_TAGGER_AGENT_NAME = "blog_tagger"
 BLOG_WRITER_AGENT_NAME = "blog_writer"
+BLOG_MERGE_AGENT_NAME = "blog_merge"
+BLOG_TOPICS_AGENT_NAME = "blog_topics"
+BLOG_DOCUMENT_AGENT_NAME = "blog_document"
+BLOG_REWRITE_AGENT_NAME = "blog_rewrite"
 
 # Коллекция Qdrant под черновики «Блокнота». Своя, а не общая с фактами: у них
 # разный смысл и разная жизнь, а смешивать их значило бы находить факты в
@@ -73,6 +77,20 @@ BLOG_AGENT_TIMEOUT = 60.0
 
 # Сборка текста дольше разметки: модель пишет абзацы, а не подбирает слова.
 BLOG_COMPOSE_TIMEOUT = 180.0
+
+# Сведение расшифровок: работы меньше, чем у сборки, но текст переписывается
+# целиком — на длинной записи это те же абзацы.
+BLOG_MERGE_TIMEOUT = 180.0
+
+# Поиск тем: модель читает десяток черновиков и отвечает коротким списком.
+BLOG_TOPICS_TIMEOUT = 240.0
+
+# Сборка документа — самая долгая работа здесь: связный текст из всех
+# черновиков темы.
+BLOG_DOCUMENT_TIMEOUT = 300.0
+
+# Дополнение читает ВСЕ заметки плюс готовый документ — самый объёмный вход.
+BLOG_REWRITE_TIMEOUT = 420.0
 
 # Сколько тегов из словаря показать агенту. Весь словарь в промпт не влезет,
 # когда он разрастётся, а ходовые и есть те, которые надо переиспользовать.
@@ -207,7 +225,176 @@ async def blog_index_remove(data: dict, user=Depends(AuthChecker([AuthPermission
     return {"result": "ok"}
 
 
+@router.post("/merge")
+async def blog_merge(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
+    """Две расшифровки одной записи → один текст.
+
+    Обе версии машинные и обе с ошибками, но ошибки РАЗНЫЕ: чанковая врёт на
+    стыках пятисекундных кусков, целая — теряет отдельные слова. Там, где они
+    расходятся, модель выбирает чтение, осмысленное в предложении.
+
+    Обе версии обязательны. С одной сводить нечего, и звать сюда незачем —
+    выбор делается именно из расхождений.
+    """
+    chunked = str(data.get("chunked") or "").strip()
+    full = str(data.get("full") or "").strip()
+    if not chunked or not full:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="нужны обе расшифровки: chunked и full")
+
+    prompt = (f"Версия «по кускам»:\n{chunked}\n\n"
+              f"Версия «целиком»:\n{full}")
+
+    text = _thinking_strip(await _agent_ask(BLOG_MERGE_AGENT_NAME, prompt))
+    logger_info(f"[blog] сведение: {len(chunked)}+{len(full)} → {len(text)} знаков")
+
+    return {"result": {"text": text}}
+
+
+@router.post("/topics")
+async def blog_topics(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
+    """Черновики → темы возможных документов.
+
+    Возвращает догадки, а не решения: собирать документ или нет, решает человек.
+    Поэтому пустой список — нормальный ответ, и он лучше натянутых тем.
+
+    Черновики нумеруются в промпте, и модель ссылается на номера: имена и
+    заголовки она путает, а число — нет.
+    """
+    drafts = data.get("drafts") or []
+    if len(drafts) < 2:
+        # Из одной заметки документ уже есть — это она сама.
+        return {"result": []}
+
+    lines = []
+    for item in drafts:
+        tags = ", ".join(str(t) for t in (item.get("tags") or []))
+        lines.append(f"[черновик {item.get('id')}]"
+                     + (f" теги: {tags}" if tags else "")
+                     + f"\n{str(item.get('text') or '')[:1500]}")
+
+    answer = _thinking_strip(await _agent_ask(BLOG_TOPICS_AGENT_NAME, "\n\n".join(lines)))
+    topics = _topics_parse(answer, {int(d.get("id") or 0) for d in drafts})
+    logger_info(f"[blog] темы: из {len(drafts)} черновиков → {len(topics)}")
+
+    return {"result": topics}
+
+
+@router.post("/document")
+async def blog_document(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
+    """Черновики темы → готовый документ."""
+    title = str(data.get("title") or "").strip()
+    drafts = [str(d).strip() for d in (data.get("drafts") or []) if str(d).strip()]
+    if not title or not drafts:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="нужны title и drafts")
+
+    body = "\n\n".join(f"[заметка {i + 1}]\n{text}" for i, text in enumerate(drafts))
+    prompt = f"Тема документа: {title}\n\n{body}"
+
+    text = _thinking_strip(await _agent_ask(BLOG_DOCUMENT_AGENT_NAME, prompt))
+    logger_info(f"[blog] документ «{title}»: {len(drafts)} заметок → {len(text)} знаков")
+
+    return {"result": {"title": title, "text": text}}
+
+
+
+
+@router.post("/rewrite")
+async def blog_rewrite(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
+    """Готовый документ + ВСЕ заметки → дополненный документ.
+
+    Заметки идут все, а не только те, из которых документ собран: мысль,
+    записанная позже, могла лечь в эту тему, но в исходный набор не попала.
+    Отбирать нужное — работа модели, ей для этого и дают всё.
+    """
+    title = str(data.get("title") or "").strip()
+    current = str(data.get("current") or "").strip()
+    drafts = [str(d).strip() for d in (data.get("drafts") or []) if str(d).strip()]
+    if not title or not current:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="нужны title и current")
+
+    body = "\n\n".join(f"[заметка {i + 1}]\n{text}" for i, text in enumerate(drafts))
+    prompt = (f"Тема документа: {title}\n\n"
+              f"=== ТЕКУЩИЙ ТЕКСТ ДОКУМЕНТА ===\n{current}\n\n"
+              f"=== ВСЕ ЗАМЕТКИ АВТОРА ===\n{body}")
+
+    text = _thinking_strip(await _agent_ask(BLOG_REWRITE_AGENT_NAME, prompt))
+    logger_info(f"[blog] дополнение «{title}»: было {len(current)} знаков, "
+                f"стало {len(text)}, заметок {len(drafts)}")
+
+    return {"result": {"title": title, "text": text}}
+
 # ---------------------------------------------------------------------------
+
+def _topics_parse(answer: str, known_ids: set) -> list:
+    """Разбирает ответ модели про темы.
+
+    Модель просят вернуть JSON, но она регулярно оборачивает его в ```json или
+    добавляет фразу до и после — поэтому берём кусок от первой `{` до последней
+    `}`, а не доверяем ответу целиком.
+
+    Темы с неизвестными номерами черновиков отбрасываем: модель иногда
+    придумывает номер, которого не было, и такая тема указывала бы в пустоту.
+    """
+    import json as _json
+
+    start, end = answer.find("{"), answer.rfind("}")
+    if start < 0 or end <= start:
+        return []
+
+    try:
+        parsed = _json.loads(answer[start:end + 1])
+    except ValueError:
+        return []
+
+    out = []
+    for item in (parsed.get("topics") or []):
+        title = str(item.get("title") or "").strip()
+        ids = [int(x) for x in (item.get("drafts") or []) if str(x).isdigit()]
+        ids = [i for i in ids if i in known_ids]
+        # Тема из одного черновика документом не станет — это он сам.
+        if not title or len(ids) < 2:
+            continue
+        out.append({"title": title[:190],
+                    "reason": _reason_clean(str(item.get("reason") or "")),
+                    "drafts": ids})
+
+    return out
+
+
+def _reason_clean(reason: str) -> str:
+    """Чистит описание темы от служебных подробностей.
+
+    В `reason` нужно короткое «о чём будет документ», а модель, несмотря на
+    запрет в промпте, регулярно начинает с «Черновики 1, 18 и 42 …». Человеку
+    эти номера ничего не говорят — он их нигде не видит, — а сколько заметок
+    вошло, показано на карточке отдельно.
+
+    Порядок чистки важен: сначала убираем слово ВМЕСТЕ с номерами, иначе
+    остаются висящие «1, 18 и 42 …». Наступили на это сразу.
+
+    Промпт правит поведение в большинстве случаев, эта чистка — в остальных.
+    """
+    import re as _re
+
+    word = r"(?:черновик|заметк)\w*"
+    numbers = r"\s*№?\s*\d+(?:\s*(?:,|и)\s*\d+)*"
+
+    text = str(reason).strip()
+    # «Черновики 1, 18 и 42», «(черновик 5, 9)», «Заметки 3 и 7» — целиком.
+    text = _re.sub(rf"\(?\s*{word}{numbers}\s*\)?", " ", text, flags=_re.I)
+    # Осталось начало вида «Черновики содержат …» — рубим по первому разделителю.
+    text = _re.sub(rf"^\s*{word}\s+", "", text, flags=_re.I)
+    # Двойные пробелы после вырезания и висящая пунктуация по краям.
+    text = _re.sub(r"\s{2,}", " ", text).strip(" ,.;:—-")
+    # Союз, оставшийся от вырезанного куска: «Черновик 12 и заметка 4 говорят…»
+    # без вырезанного превращается в «И говорят…».
+    text = _re.sub(r"^(?:и|а|но|также|причём)\s+", "", text, flags=_re.I).strip(" ,.;:—-")
+
+    return (text[:1].upper() + text[1:])[:255] if text else ""
+
 
 async def _dense_search(text: str, limit: int):
     """Поиск по косинусной близости, БЕЗ слияния с полнотекстовым.
@@ -322,7 +509,11 @@ async def _agent_ask(agent_name: str, message: str) -> str:
     })
     agent_manager.framework_workflow_run(framework_model, future, loop)
 
-    timeout = BLOG_COMPOSE_TIMEOUT if agent_name == BLOG_WRITER_AGENT_NAME else BLOG_AGENT_TIMEOUT
+    slow = {BLOG_WRITER_AGENT_NAME: BLOG_COMPOSE_TIMEOUT, BLOG_MERGE_AGENT_NAME: BLOG_MERGE_TIMEOUT,
+            BLOG_TOPICS_AGENT_NAME: BLOG_TOPICS_TIMEOUT,
+            BLOG_DOCUMENT_AGENT_NAME: BLOG_DOCUMENT_TIMEOUT,
+            BLOG_REWRITE_AGENT_NAME: BLOG_REWRITE_TIMEOUT}
+    timeout = slow.get(agent_name, BLOG_AGENT_TIMEOUT)
     try:
         return await asyncio.wait_for(future, timeout=timeout)
     except asyncio.TimeoutError:
