@@ -50,10 +50,10 @@ HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по о
 Подключает глобально: `common.css`, `menu_top.css`, `notification.css` и `tz.js`.
 
 **Меню двухуровневое.** Верхний ряд — `.tabnav-group` (Чат, LLM, Проекты, Логи, Ноды,
-Пользователи, MiniApp, Настройки, Инструменты), под ним — `.tabnav-panel` со ссылками своей
+MiniApp, Настройки, Инструменты), под ним — `.tabnav-panel` со ссылками своей
 группы. Активная группа вычисляется инлайн-скриптом внизу `base.html` по карте
 `groupMap` (URL → группа): **добавил страницу — допиши её в `groupMap`**, иначе меню не
-подсветится. Часть пунктов ведёт наружу (Phpmyadmin, Qdrant, Cronicle, Redis, Grafana,
+подсветится. Пользователи и роли — подпункты «Настроек»: отдельной вкладки под них нет. Часть пунктов ведёт наружу (Phpmyadmin, Qdrant, Cronicle, Redis, Grafana,
 Gatus, OpenSearch) — это `localhost:PORT`, работающие при поднятом ssh-туннеле
 `rhapsody-prod`.
 

@@ -43,7 +43,6 @@
                href="{% if request.session.get('role') == 'admin' %}/admin/node{% else %}/admin/variable{% endif %}">🕸️ Ноды</a>
 
             {% if request.session.get('role') == 'admin' %}
-            <a class="tabnav-group" data-group="people" href="/admin/user">👥 Пользователи</a>
             <a class="tabnav-group" data-group="miniapp" href="/admin/miniapp">📱 MiniApp</a>
             <a class="tabnav-group" data-group="setting" href="/admin/setting">⚙️ Настройки</a>
             <a class="tabnav-group" data-group="tool" href="/admin/tool">🔧 Инструменты</a>
@@ -119,15 +118,6 @@
             </div>
             {% endif %}
 
-             <!-- people: /admin/user is the tab itself, so no Пользователи link here -->
-            {% if request.session.get('role') == 'admin' %}
-            <div class="tabnav-panel" data-group="people">
-                <span class="tabnav-sep"></span>
-                <a href="/admin/role">🛡️ Роли</a>
-                <span class="tabnav-sep"></span>
-            </div>
-            {% endif %}
-
             {% if request.session.get('role') == 'admin' %}
             <div class="tabnav-panel" data-group="miniapp">
                 <span class="tabnav-sep"></span>
@@ -138,6 +128,9 @@
 
             {% if request.session.get('role') == 'admin' %}
             <div class="tabnav-panel" data-group="setting">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/user">👥 Пользователи</a>
+                <a href="/admin/role">🛡️ Роли</a>
                 <span class="tabnav-sep"></span>
                 <a href="/admin/seed">Seed SQL</a>
                 <a href="/admin/backup">Backup</a>
@@ -224,11 +217,11 @@
             '/admin/design': 'projects',
             '/admin/playwright': 'projects',
             '/admin/browser': 'projects',
-            '/admin/user': 'people',
-            '/admin/role': 'people',
             '/admin/miniapp': 'miniapp',
             '/admin/workflow_trace': 'logs',
             '/admin/setting': 'setting',
+            '/admin/user': 'setting',
+            '/admin/role': 'setting',
             '/admin/backup': 'setting',
             '/admin/seed': 'setting',
             '/admin/tool': 'tool',
