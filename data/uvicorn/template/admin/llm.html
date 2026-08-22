@@ -735,6 +735,9 @@
     .gx10-badge.enabled { background: #ebf8ff; color: #2a4365; }
     .gx10-badge.disabled { background: #edf2f7; color: #718096; }
 
+    .gx10-address { font-family: monospace; font-size: 12px; color: #2b6cb0; text-decoration: none; }
+    .gx10-address:hover { text-decoration: underline; }
+
     .gx10-actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .gx10-btn {
         border: 1px solid #cbd5e0; background: #fff; color: #2d3748; border-radius: 5px;
@@ -920,15 +923,16 @@
         <table class="gx10-table">
             <thead>
             <tr>
-                <th style="width: 26%;">Сервис</th>
-                <th style="width: 14%;">Статус</th>
-                <th style="width: 14%;">Автозапуск</th>
-                <th style="width: 16%;">Память процесса</th>
+                <th style="width: 24%;">Сервис</th>
+                <th style="width: 11%;">Статус</th>
+                <th style="width: 12%;">Автозапуск</th>
+                <th style="width: 14%;">Адрес</th>
+                <th style="width: 14%;">Память процесса</th>
                 <th>Действия</th>
             </tr>
             </thead>
             <tbody id="gx10TableBody">
-            <tr><td colspan="5" class="empty-note">Загрузка...</td></tr>
+            <tr><td colspan="6" class="empty-note">Загрузка...</td></tr>
             </tbody>
         </table>
     </div><!-- /tab-gx10 -->
@@ -1751,6 +1755,17 @@
         return '<span class="gx10-badge ' + cls + '">' + state + '</span>';
     }
 
+    // Адрес — ссылка на сам сервис (llama-server отдаёт по нему веб-интерфейс).
+    // Собираем через DOM, а не innerHTML: строка приходит с чужой машины.
+    function gx10AddressCell(address) {
+        if (!address) return document.createTextNode('—');
+        const link = el('a', 'gx10-address', address);
+        link.href = 'http://' + address;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        return link;
+    }
+
     function gx10BannerShow(kind, text) {
         gx10Banner.className = 'gx10-banner ' + (kind === 'none' ? '' : kind);
         gx10Banner.textContent = text || '';
@@ -1767,7 +1782,7 @@
                 gx10TableBody.innerHTML = '';
                 const row = document.createElement('tr');
                 const cell = el('td', 'empty-note', 'Нет данных');
-                cell.colSpan = 5;
+                cell.colSpan = 6;
                 row.appendChild(cell);
                 gx10TableBody.appendChild(row);
                 return;
@@ -1791,6 +1806,8 @@
                 tdState.innerHTML = gx10StateBadge(s.state);
                 const tdEnabled = el('td');
                 tdEnabled.innerHTML = '<span class="gx10-badge ' + (s.enabled === 'enabled' ? 'enabled' : 'disabled') + '">' + s.enabled + '</span>';
+                const tdAddress = el('td');
+                tdAddress.appendChild(gx10AddressCell(s.address));
                 const tdMem = el('td', null, gx10FmtBytes(s.memory));
                 const tdActions = el('td');
                 const actions = el('div', 'gx10-actions');
@@ -1811,6 +1828,7 @@
                 row.appendChild(tdUnit);
                 row.appendChild(tdState);
                 row.appendChild(tdEnabled);
+                row.appendChild(tdAddress);
                 row.appendChild(tdMem);
                 row.appendChild(tdActions);
                 gx10TableBody.appendChild(row);

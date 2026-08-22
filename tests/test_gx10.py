@@ -20,9 +20,13 @@ from src.auth.auth_session import AuthSession
 #   + сырой вывод `free -b`, строка `Mem:` — total/used/free
 SNAPSHOT_OK = (
     "S llama-qwen-large.service active enabled 10737418240\n"
+    "P llama-qwen-large.service 8081\n"
     "S llama-qwen-small.service inactive disabled -\n"
+    "P llama-qwen-small.service 8080\n"
     "S llama-qwen-vl.service failed enabled -\n"
+    "P llama-qwen-vl.service 8083\n"
     "S comfyui.service active disabled 5368709120\n"
+    "P comfyui.service\n"
     "              total        used        free      shared  buff/cache   available\n"
     "Mem:        68719476736 21474836480 47244640256 0 2000000000 40000000000\n"
     "Swap:              0           0           0\n"
@@ -97,6 +101,24 @@ async def test_status_returns_all_services(client, monkey_ssh):
     assert by_unit["llama-qwen-small.service"]["state"] == "inactive"
     assert by_unit["llama-qwen-small.service"]["memory"] is None
     assert by_unit["llama-qwen-vl.service"]["state"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_status_returns_service_address(client, monkey_ssh):
+    """Адрес — GX10_HOST плюс порт из ExecStart юнита, а не --host 0.0.0.0."""
+    result = (await client.get("/api/gx10/status")).json()["gx10"]
+    by_unit = {s["unit"]: s for s in result["services"]}
+    assert by_unit["llama-qwen-large.service"]["address"] == "10.0.0.42:8081"
+    assert by_unit["llama-qwen-small.service"]["address"] == "10.0.0.42:8080"
+    assert by_unit["llama-qwen-vl.service"]["address"] == "10.0.0.42:8083"
+
+
+@pytest.mark.asyncio
+async def test_status_address_none_without_port(client, monkey_ssh):
+    """Юнит без --port (или которого нет на машине) адреса не получает."""
+    result = (await client.get("/api/gx10/status")).json()["gx10"]
+    by_unit = {s["unit"]: s for s in result["services"]}
+    assert by_unit["comfyui.service"]["address"] is None
 
 
 @pytest.mark.asyncio
@@ -268,6 +290,17 @@ def test_config_host_plain_unchanged(monkeypatch):
     env = {"GX10_HOST": "gx10.lan", "GX10_USERNAME": "u", "GX10_PASSWORD": "secret"}
     monkeypatch.setattr(gx10, "gx10_config_get", lambda key, default="": env.get(key, default))
     assert gx10._gx10_config()["host"] == "gx10.lan"
+
+def test_status_command_asks_execstart_port():
+    """Порт берём из ExecStart юнита — отдельной строкой «P <unit> <port>».
+
+    Шестым полем строки «S» его класть нельзя: MemoryCurrent у остановленного
+    юнита пустой, и порт встал бы на место памяти.
+    """
+    cmd = gx10._gx10_status_command()
+    assert "ExecStart" in cmd
+    assert "echo P $u $port" in cmd
+
 
 def test_status_command_forces_c_locale_for_free():
     """На GX10 `free` печатает заголовки по локали («Память:») — без

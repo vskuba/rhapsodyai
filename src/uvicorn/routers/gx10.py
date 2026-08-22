@@ -50,8 +50,9 @@ class Gx10ControlBody(BaseModel):
 
 @router.get("/api/gx10/status")
 async def gx10_status(user=Depends(AuthChecker([AuthPermission.GX10_VIEW]))):
-    """Снапшот GX10: настроенность, память хоста, статус/enable/память юнитов."""
-    if not _gx10_config():
+    """Снапшот GX10: настроенность, память хоста, статус/enable/память/адрес юнитов."""
+    cfg = _gx10_config()
+    if not cfg:
         return {"gx10": {"configured": False, "memory": None, "services": [], "fetched_at": None}}
 
     now = time.monotonic()
@@ -68,7 +69,7 @@ async def gx10_status(user=Depends(AuthChecker([AuthPermission.GX10_VIEW]))):
             # 502 — сбой вышестоящего сервиса (как LlmProviderError): фронтенд
             # держит последние значения и показывает причину.
             raise HTTPException(status_code=502, detail=f"GX10: {e}") from e
-        data = _gx10_snapshot_parse(snapshot)
+        data = _gx10_snapshot_parse(snapshot, cfg["host"])
         data["fetched_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _STATUS_CACHE["data"] = data
         _STATUS_CACHE["at"] = time.monotonic()
@@ -151,9 +152,16 @@ def _gx10_cache_fresh(now: float) -> bool:
 def _gx10_status_command() -> str:
     """Один shell-сниппет на снапшот: все юниты + память хоста.
 
-    Формат ответа: строки «S <unit> <state> <enabled> <mem|n/a|->» по каждой
-    юнит и сырой вывод free -b (строка Mem: — total/used/free).
-    Кавычек в сниппете нет: значения systemctl не содержат пробелов и globs.
+    Формат ответа: по каждому юниту строка «S <unit> <state> <enabled> <mem|n/a|->»
+    и строка «P <unit> <port>» с портом из ExecStart, дальше сырой вывод free -b
+    (строка Mem: — total/used/free).
+
+    Порт отдельной строкой, а не шестым полем «S»: MemoryCurrent у остановленного
+    юнита пустой, и порт уехал бы на место памяти. ExecStart в строку не кладём
+    вовсе — там пробелы и кавычки, парсить его на этой стороне нечего.
+
+    Кавычки внутри есть только у grep-шаблона: значения systemctl пробелов и
+    globs не содержат.
     """
     units = " ".join(GX10_SERVICES)
     return (
@@ -162,13 +170,17 @@ def _gx10_status_command() -> str:
         "en=$(systemctl is-enabled $u 2>/dev/null); " +
         "mem=$(systemctl show -p MemoryCurrent --value $u 2>/dev/null); " +
         "echo S $u $st $en $mem; " +
+        "port=$(systemctl show -p ExecStart --value $u 2>/dev/null | "
+        "grep -oE '[-]{1,2}port[ =][0-9]+' | head -1 | grep -oE '[0-9]+'); " +
+        "echo P $u $port; " +
         "done; " +
         "LC_ALL=C free -b"
     )
 
 
-def _gx10_snapshot_parse(snapshot: str) -> dict:
+def _gx10_snapshot_parse(snapshot: str, host: str) -> dict:
     services = {unit: None for unit in GX10_SERVICES}
+    ports = {}
     memory = None
     for line in snapshot.splitlines():
         parts = line.split()
@@ -183,6 +195,8 @@ def _gx10_snapshot_parse(snapshot: str) -> dict:
                 "enabled": enabled or "unknown",
                 "memory": int(raw_mem) if raw_mem.isdigit() else None,
             }
+        elif parts[0] == "P" and len(parts) >= 3 and parts[2].isdigit():
+            ports[parts[1]] = parts[2]
         elif parts[0] == "Mem:" and len(parts) >= 4:
             memory = {"total": int(parts[1]), "used": int(parts[2]), "free": int(parts[3])}
     # Юнит, которого снимок не отдал, — unknown: фронтенд покажет статус честно.
@@ -191,6 +205,11 @@ def _gx10_snapshot_parse(snapshot: str) -> dict:
         info = services[unit]
         if info is None:
             info = {"unit": unit, "state": "unknown", "enabled": "unknown", "memory": None}
+        # Адрес подключения: хост берём свой (в ExecStart стоит --host 0.0.0.0,
+        # показывать его человеку незачем), порт — из ExecStart юнита. Порта нет
+        # (юнит без --port или его вовсе нет на машине) — адреса тоже нет.
+        port = ports.get(unit)
+        info["address"] = f"{host}:{port}" if port else None
         ordered.append(info)
     return {"configured": True, "memory": memory, "services": ordered}
 
