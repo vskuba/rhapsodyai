@@ -58,6 +58,11 @@
 > возвращает `exceed_context_size_error`, а `_result_parse` засчитывает такой ответ как
 > состоявшийся круг и жжёт попытку впустую. 115k оставляет запас до этой границы.
 > Значение разбирает `set_autocompact` в репозитории `claude-shell` (`shell.py`).
+>
+> Таблица выше — заготовка для **новых** проектов (`team_member_cards_ensure`). Уже
+> заведённым карточкам флаг дописывает
+> `data/migration_manual/2026-08-24_team_card_autocompact.sql`: seed их не обновит,
+> он применяется через `INSERT IGNORE`.
 
 > Флаг `--bugfixer` живёт в отдельном репозитории `claude-shell` (`src/cli.py`,
 > `cli_role_resolve`): роль оболочка знает из флага запуска и сообщает её в реестр
