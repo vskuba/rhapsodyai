@@ -195,6 +195,9 @@ async def project_task_pipeline_retry(task_id: int, user=Depends(AuthChecker([Au
 
     Остановку снимаем заодно: «Перезапустить» — это и есть «продолжаем», и оставленный
     запрет обернул бы нажатие сменой состояния без единого прогона следом.
+
+    Замечание QA у разблокированных подзадач сохраняем — почему, см. комментарий
+    у самого UPDATE ниже.
     """
     await task_stop_clear(task_id, user.username)
 
@@ -225,11 +228,19 @@ async def project_task_pipeline_retry(task_id: int, user=Depends(AuthChecker([Au
         # уронить её обратно в `failed` в зазоре между двумя запросами.
         # Счётчик попыток обнуляем — иначе `task_claim_subtask_developable` захватит
         # подзадачу и тут же вернёт её в `blocked` по исчерпанному лимиту.
+        #
+        # `pipeline_error` при этом не трогаем. Замечание QA — единственное, что
+        # говорит следующему кругу, чего не хватило: `_run_developer` передаёт его
+        # разработчику как `task_last_error`, и по нему в промпте раскрывается блок
+        # «предыдущая попытка не прошла проверку QA — разбирайся с ошибкой, а не
+        # начинай подзадачу заново». Очистка здесь превращала перезапуск в старт
+        # с чистого листа: агент терял и замечание, и указание не переделывать
+        # сделанное (контекст оболочки перезапуск гасит отдельно).
         kanban_sql, kanban_params = task_state_kanban_sql('planned')
         async with mysql_get_db_async() as db:
             await db.execute(
                 f"UPDATE project_task SET pipeline_state = 'planned', {kanban_sql + ', ' if kanban_sql else ''}"
-                "       pipeline_attempt_count = 0, pipeline_error = '', "
+                "       pipeline_attempt_count = 0, "
                 "       pipeline_locked_at = NULL, pipeline_locked_by = '' "
                 " WHERE parent_id = %s AND pipeline_from_plan = 1 AND pipeline_state = 'blocked'",
                 kanban_params + [task_id])

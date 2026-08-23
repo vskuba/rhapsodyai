@@ -12,6 +12,9 @@ from tests.constants import TEST_AUTH
 
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_TASK_TITLE = "__pytest_pipeline_task__"
+# Замечание QA для теста перезапуска: узнаваемая строка, чтобы отличить сохранённое
+# значение от пустого и от чужого текста, оставшегося в колонке.
+QA_REMARK = "__pytest__ цель 2 не подтверждена: restore не воспроизведён"
 CRONJOB_PATH = "src/cronjob/task_orchestrator.py"
 # Тик — триггер: сбросил протухшие блокировки, поставил сообщения в Redis-очередь и вышел.
 # Работу делает контейнер `worker_task`, поэтому потолок тика — секунды, а не минуты.
@@ -54,6 +57,22 @@ async def _revisions(client: httpx.AsyncClient, task_id: int) -> list:
     resp = await client.get(f"/task/{task_id}/plan/revisions")
     assert resp.status_code == 200, resp.text
     return resp.json()["revisions"]
+
+
+async def _task_row_read(task_id: int) -> dict:
+    """
+    Строка `project_task` как есть — минуя API.
+
+    `/task/{id}/pipeline` отдаёт задачу, а проверять надо поля подзадачи: счётчик
+    попыток и замечание QA наружу в таком виде не выходят.
+    """
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT pipeline_state, pipeline_attempt_count, pipeline_error "
+            "  FROM project_task WHERE id = %s", (task_id,))
+        return await db.fetchone()
 
 
 async def _tick_until(client: httpx.AsyncClient, task_id: int, states: tuple,
@@ -437,3 +456,93 @@ class TestTaskPipelineBug:
         await _tick(client, max_actions=3)
         state = (await _pipeline(client, bug_task))["pipeline_state"]
         assert state in (None, "", "new"), f"отменённый баг взяли в работу: {state}"
+
+
+class TestTaskPipelineRetry:
+    """
+    Кнопка «Перезапустить» на задаче с заблокированными подзадачами.
+
+    Состояния конвейера ставим прямо в БД, а не гоняем настоящий круг агентов:
+    проверяется одна ручка `/pipeline/retry`, и живой Developer с QA ради этого
+    не нужны — их прогон занял бы десятки минут и зависел бы от поднятых оболочек.
+    """
+
+    @pytest.fixture
+    async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=CLIENT_TIMEOUT) as client:
+            await client.post("/auth/login", json=TEST_AUTH)
+            yield client
+
+    @pytest.fixture(autouse=True)
+    async def db_pool_release(self) -> AsyncGenerator[None, None]:
+        """Пул MySQL привязан к циклу событий теста — закрываем, см. test_task_metadata."""
+        yield
+        from mysql_.mysql_ import mysql_pool_close
+        await mysql_pool_close()
+
+    @pytest.fixture
+    async def blocked_pair(self, client: httpx.AsyncClient) -> AsyncGenerator[tuple, None]:
+        """Родитель в `failed` и его подзадача из плана в `blocked` с замечанием QA."""
+        from mysql_.mysql_ import mysql_get_db_async
+
+        resp = await client.post("/tasks/0", json={
+            "title": f"{TEST_TASK_TITLE}_retry", "description": "родитель для теста перезапуска"})
+        assert resp.status_code == 200, resp.text
+        parent = resp.json()["task"]["id"]
+
+        resp = await client.post("/tasks/0", json={
+            "title": f"{TEST_TASK_TITLE}_retry_kid", "description": "подзадача плана",
+            "parent_id": parent})
+        assert resp.status_code == 200, resp.text
+        kid = resp.json()["task"]["id"]
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "UPDATE project_task SET pipeline_state = 'failed', pipeline_plan = %s WHERE id = %s",
+                ('{"subtasks": [{"title": "подзадача плана"}]}', parent))
+            await db.execute(
+                "UPDATE project_task SET pipeline_from_plan = 1, pipeline_state = 'blocked', "
+                "       status = 'blocked', pipeline_attempt_count = 3, pipeline_error = %s "
+                " WHERE id = %s",
+                (QA_REMARK, kid))
+            await db.connection.commit()
+
+        yield parent, kid
+
+        await client.delete(f"/task/{kid}")
+        await client.delete(f"/task/{parent}")
+
+    async def test_retry_keeps_qa_remark(self, client: httpx.AsyncClient, blocked_pair: tuple):
+        """
+        Замечание QA переживает перезапуск — иначе следующий круг идёт с нуля.
+
+        `_run_developer` отдаёт `pipeline_error` подзадачи агенту как `task_last_error`,
+        и по нему в промптах #56 раскрывается блок «предыдущая попытка не прошла
+        проверку QA — разбирайся с ошибкой, а не начинай подзадачу заново». Пока
+        `retry` чистил колонку, ручной перезапуск лишал агента и текста замечания,
+        и указания не переделывать сделанное.
+        """
+        parent, kid = blocked_pair
+        resp = await client.post(f"/task/{parent}/pipeline/retry")
+        assert resp.status_code == 200, resp.text
+
+        row = await _task_row_read(kid)
+        assert row["pipeline_error"] == QA_REMARK, \
+            f"замечание QA стёрлось перезапуском: {row['pipeline_error']!r}"
+
+    async def test_retry_unblocks_subtask_and_resets_attempts(
+            self, client: httpx.AsyncClient, blocked_pair: tuple):
+        """
+        Подзадача возвращается в работу с нулём попыток.
+
+        Без обнуления `task_claim_subtask_developable` захватит её и тут же вернёт
+        в `blocked` по исчерпанному лимиту — кнопка не сделала бы ничего.
+        """
+        parent, kid = blocked_pair
+        resp = await client.post(f"/task/{parent}/pipeline/retry")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["pipeline_state"] == "processing"
+
+        row = await _task_row_read(kid)
+        assert row["pipeline_state"] == "planned"
+        assert row["pipeline_attempt_count"] == 0

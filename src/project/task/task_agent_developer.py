@@ -19,6 +19,7 @@ from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.project.task.task_agent_result import task_agent_result_provider_error
 from src.project.task.task_plan import task_plan_goals_text, task_plan_parse
 from src.project.task.task_worktree import task_worktree_branch
 from src.project.team.team_session import team_session_restart_role
@@ -278,6 +279,14 @@ def _result_parse(result_text) -> dict:
     if not parsed:
         return {'ok': False, 'output': raw[:2000],
                 'error': f'разработчик вернул не JSON: {raw[:200]}'}
+
+    # Ошибка провайдера вместо отчёта — прогона не было: промпт до модели не дошёл.
+    # Без этой ветки объект без ключа `ok` разбирался по умолчанию как `ok = True`,
+    # и нетронутый код уходил на проверку QA. См. `task_agent_result`.
+    provider_error = task_agent_result_provider_error(parsed)
+    if provider_error:
+        return {'ok': False, 'env_ok': False, 'output': raw[:2000],
+                'error': f'разработчик не начал работу: {provider_error}'}
 
     report = parsed.get('report')
     if not isinstance(report, dict):
