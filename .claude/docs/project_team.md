@@ -39,10 +39,25 @@
 
 | project_id | name | role | command |
 |------------|------|------|---------|
-| N | Manager | `manager` | `claude-shell --gx10 --manager` |
-| N | Developer | `developer` | `claude-shell --gx10 --developer` |
-| N | Bugfixer | `bugfixer` | `claude-shell --gx10 --bugfixer` |
-| N | QA | `qa` | `claude-shell --gx10 --qa` |
+| N | Manager | `manager` | `claude-shell --gx10 --manager --autocompact 115k` |
+| N | Developer | `developer` | `claude-shell --gx10 --developer --autocompact 115k` |
+| N | QA | `qa` | `claude-shell --gx10 --qa --autocompact 115k` |
+| N | Bugfixer | `bugfixer` | `claude-shell --gx10 --bugfixer --autocompact 115k` |
+
+> **Порядок ряда — по конвейеру: менеджер → разработчик → QA → багфиксер**
+> (`TEAM_PROJECT_ROLE_ORDER`). Багфиксер четвёртый, потому что он вне цепочки задачи:
+> у бага нет ни плана, ни подзадач, ни круга с QA. Одним этим словарём сортируются оба
+> места, где ряд виден, — карточки на `/admin/team` и полоска `.team-mini` на
+> `/admin/task`: обе рисуются из `GET /api/team/projects`. Шаг между значениями — 10:
+> роль вне списка (`TEAM_PROJECT_ROLE_ORDER_OTHER`) встаёт между разработчиком и QA,
+> и без зазора ей не нашлось бы места.
+
+> **`--autocompact 115k` у всех ролей.** Подзадачи одной задачи идут в общем контексте
+> оболочки — `task_agent_developer` перезапускает её только на смене задачи, — и разговор
+> растёт от круга к кругу. Окно модели GX10 — 131072 токена: дойдя до потолка, прогон
+> возвращает `exceed_context_size_error`, а `_result_parse` засчитывает такой ответ как
+> состоявшийся круг и жжёт попытку впустую. 115k оставляет запас до этой границы.
+> Значение разбирает `set_autocompact` в репозитории `claude-shell` (`shell.py`).
 
 > Флаг `--bugfixer` живёт в отдельном репозитории `claude-shell` (`src/cli.py`,
 > `cli_role_resolve`): роль оболочка знает из флага запуска и сообщает её в реестр
@@ -195,6 +210,19 @@ curl -s http://localhost:8011/api/team | python3 -m json.tool
 `last_ping_at` — наивный datetime из MySQL, без таймзоны; фронтенд дописывает `'Z'` и
 трактует его как UTC.
 
+> **Две метки времени живут в разных поясах, и это не ошибка.** `project_team.last_ping_at`
+> пишется `datetime_utc_now()` — его читает фронтенд как UTC. А
+> `ai_claude_session_registry.last_seen_at` пишется `datetime_now()`, то есть в поясе из
+> настройки `timezone` (`+3`), и весь код сравнивает его только со временем оттуда же:
+> `task_role_shell_live_by_project`, `claude_shell._session_find`, `team_project._seconds_ago`,
+> `team_session._status_build`, `telegram_app_claude_sessions_active`.
+>
+> Отсюда правило для ручных проверок: **не сравнивать эти колонки с `NOW()` в SQL.**
+> Контейнеры идут по UTC, и `TIMESTAMPDIFF(SECOND, last_seen_at, NOW())` у живой
+> оболочки даёт минус три часа — выглядит как метка из будущего и как «вечно живая
+> сессия», хотя код так её никогда не читает. Свежесть смотреть тем же
+> `datetime_now()` либо через `GET /api/team/projects`, где `seconds_ago` уже посчитан.
+
 Необязательные поля пинга собираются в `TeamPingRequest.session_get()` и попадают в
 `UPDATE` только если непустые (`TeamService._session_data`) — пинг без `pid` не затирает
 уже записанный PID.
@@ -332,7 +360,9 @@ curl -s http://localhost:8011/api/team | python3 -m json.tool
   из шаблона удалён.
 - Единственная кнопка на карточке — копирование команды запуска. Команда передаётся через
   `dataset.command` (`copyCommand(this)`), а не подстановкой строки в `onclick`: любая
-  кавычка внутри команды ломала обработчик.
+  кавычка внутри команды ломала обработчик. Она же лежит в `title` кнопки: копирование
+  происходит вслепую, и без подсказки не видно ни роли, ни флагов запуска. Поэтому
+  `escapeHtml()` в шаблоне экранирует и кавычки — результат подставляется в атрибуты.
 
 Никакого cron-джоба, который переводил бы просроченные записи в `inactive`, в проекте нет —
 устаревание существует только как вычисление на фронтенде.

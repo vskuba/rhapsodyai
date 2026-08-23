@@ -112,6 +112,11 @@ class TestTeamPage:
         command = buttons.first.get_attribute('data-command')
         assert command, 'У кнопки копирования нет data-command'
 
+        # Та же команда — в `title`: копирование происходит вслепую, и без подсказки
+        # не видно ни роли, ни флагов запуска, которые уедут в буфер.
+        assert buttons.first.get_attribute('title') == command, \
+            'В title кнопки не та команда, что уйдёт в буфер'
+
         # `/api/team` отдаёт сырую команду из `project_team.command`, а карточка блока
         # проекта подставляет к ней каталог: `cd <work_dir> && <команда>`
         # (`team_project._command_build`). Поэтому сверяем хвост, а не строку целиком —

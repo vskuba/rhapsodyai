@@ -20,11 +20,22 @@ TEAM_MEMBER_SESSION_FIELDS = ('pid', 'session_uuid', 'work_dir')
 # Заготовка карточек нового проекта: роль → (имя, команда запуска оболочки).
 # Ключи — те же роли, что рисует блок проекта на `/admin/team`, а команда здесь
 # без `cd`: каталог подставляется на карточке из work_dir проекта.
+#
+# `--autocompact 115k` есть у всех ролей: подзадачи одной задачи идут в общем
+# контексте оболочки (`task_agent_developer` перезапускает её только на смене
+# задачи), и разговор растёт от круга к кругу. У модели GX10 окно 131072 токена —
+# дойдя до потолка, прогон возвращает `exceed_context_size_error`, а конвейер
+# засчитывает его как состоявшийся круг и жжёт попытку впустую. 115k — запас
+# под ответ до этой границы.
+# Порядок ключей — порядок создания строк новому проекту, то есть их id. На
+# странице он ничего не решает (ряд сортируется по `TEAM_PROJECT_ROLE_ORDER`), но
+# держим его тем же, чтобы id и ряд не расходились: менеджер, разработчик, QA,
+# багфиксер.
 TEAM_MEMBER_ROLE_CARD = {
-    'manager':   ('Manager',   'claude-shell --gx10 --manager'),
-    'developer': ('Developer', 'claude-shell --gx10 --developer'),
-    'bugfixer':  ('Bugfixer',  'claude-shell --gx10 --bugfixer'),
-    'qa':        ('QA',        'claude-shell --gx10 --qa'),
+    'manager':   ('Manager',   'claude-shell --gx10 --manager --autocompact 115k'),
+    'developer': ('Developer', 'claude-shell --gx10 --developer --autocompact 115k'),
+    'qa':        ('QA',        'claude-shell --gx10 --qa --autocompact 115k'),
+    'bugfixer':  ('Bugfixer',  'claude-shell --gx10 --bugfixer --autocompact 115k'),
 }
 
 

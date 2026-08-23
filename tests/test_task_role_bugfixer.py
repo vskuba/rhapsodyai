@@ -318,15 +318,24 @@ class TestTeamBugfixerCard:
             TEAM_PROJECT_ROLE_BASE, TEAM_PROJECT_ROLE_ORDER, TEAM_PROJECT_ROLE_TITLE)
         assert 'bugfixer' in TEAM_PROJECT_ROLE_BASE
         assert TEAM_PROJECT_ROLE_TITLE['bugfixer'] == 'Багфиксер'
-        # Порядок в ряду: менеджер, разработчик, багфиксер, QA — проверяющий последний.
-        assert TEAM_PROJECT_ROLE_ORDER['bugfixer'] == 2
-        assert TEAM_PROJECT_ROLE_ORDER['qa'] == 3
+        # Порядок в ряду: менеджер, разработчик, QA, багфиксер — сначала конвейер
+        # задачи целиком, а починка бага отдельной веткой в конце. Сверяем взаимный
+        # порядок, а не сами числа: между ними оставлен зазор под роли вне списка.
+        assert [role for role, _ in sorted(TEAM_PROJECT_ROLE_ORDER.items(), key=lambda kv: kv[1])] \
+            == ['manager', 'developer', 'qa', 'bugfixer']
+        assert list(TEAM_PROJECT_ROLE_BASE) == ['manager', 'developer', 'qa', 'bugfixer']
+
+        from src.project.team.team_project import TEAM_PROJECT_ROLE_ORDER_OTHER
+        assert (TEAM_PROJECT_ROLE_ORDER['developer']
+                < TEAM_PROJECT_ROLE_ORDER_OTHER
+                < TEAM_PROJECT_ROLE_ORDER['qa']), \
+            'роль вне списка должна вставать между разработчиком и QA, а не слипаться с ними'
 
     def test_card_template_has_launch_command(self):
         from src.project.team.team_member import TEAM_MEMBER_ROLE_CARD
         name, command = TEAM_MEMBER_ROLE_CARD['bugfixer']
         assert name == 'Bugfixer'
-        assert command == 'claude-shell --gx10 --bugfixer'
+        assert command == 'claude-shell --gx10 --bugfixer --autocompact 115k'
 
     def test_agent_bound_to_role(self):
         from src.project.team.team_agent import TEAM_AGENT_BY_ROLE
