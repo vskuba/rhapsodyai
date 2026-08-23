@@ -28,7 +28,19 @@ Internet → Caddy (:80/:443) → uvicorn:8000  (blue,  host port 8011)
 | `bluegreen.sh` | Скрипт переключения (вызывается из deploy.yml) |
 | `.deploy_slot` | Текущий активный слот (`blue` / `green`); создаётся на сервере |
 | `docker-compose.yml` | `uvicorn_green` определён с `profiles: ["green"]` |
-| `docker/caddy/Caddyfile` | Строка `reverse_proxy <backend>:8000 {` меняется скриптом через `sed` |
+| `docker/caddy/Caddyfile` | Строки `reverse_proxy <backend>:8000 {` меняются скриптом через `sed` |
+
+> **Слотовых блоков в Caddyfile два, и sed правит оба.** Публичный
+> (`92.5.17.195.sslip.io`) и внутренний вход для Cronicle (`:8090`, наружу не
+> проброшен — у caddy опубликованы только 80 и 443). Второй появился потому, что
+> события Cronicle звали контейнер по имени (`http://uvicorn:8000/cronjob`) и
+> отваливались при каждом переключении слота: активен green, событие зовёт blue.
+> Через Caddy адрес слота не касается.
+>
+> Шаблон sed привязан к отступу в четыре пробела и к имени слота
+> (`^    reverse_proxy (uvicorn|uvicorn_green):8000 \{`) — **добавляя такой блок,
+> держи строку ровно в этом виде**, иначе слот в ней замрёт навсегда, а поймается
+> это только на втором деплое.
 | `.github/workflows/deploy.yml` | CI/CD — вызывает `bluegreen.sh` |
 
 ## Процесс деплоя (bluegreen.sh)
