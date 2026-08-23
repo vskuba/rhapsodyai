@@ -142,6 +142,52 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
         await _cleanup_test_roles(client)
 
 
+# Все задачи сюиты называются с этого префикса (`test_task_pipeline`, `test_task_tree`,
+# `test_task_metadata`, `test_planning`). Подчёркивания экранированы: в LIKE `_` — это
+# любой один символ, и без экранирования шаблон подошёл бы к чужому заголовку.
+TEST_TASK_TITLE_LIKE = r'\_\_pytest%'
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_test_tasks():
+    """
+    Снести задачи сюиты до и после прогона.
+
+    Фикстуры тестов убирают за собой сами, но прерванный прогон (Ctrl-C, таймаут,
+    упавший сервер) оставляет строки в рабочей БД — а конвейер их подхватывает
+    всерьёз. Задача без плана уходит живому Менеджеру независимо от статуса
+    (`task_claim_task_unplanned`), и агентское время тратится на пустышку в общей
+    очереди с настоящими задачами. Найдено на живой установке: 57 брошенных строк,
+    15 из них ждали Менеджера, трём план был уже написан.
+
+    Одним DELETE и по всем проектам: подзадачи, попытки и ревизии уходят каскадом
+    (`fk_pt_parent`, `fk_pta_task`, `fk_ptpr_task` в `migrations/0001.sql`), а
+    тестовые задачи заводятся и без проекта, и внутри него.
+
+    Свой цикл событий и `mysql_pool_close()` — по той же причине, что у
+    `create_test_user`: пул модульный и привязан к циклу, в котором создан.
+    """
+    from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
+
+    async def _sweep() -> None:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "DELETE FROM project_task WHERE title LIKE %s", (TEST_TASK_TITLE_LIKE,))
+            await db.connection.commit()
+
+    def _run() -> None:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_sweep())
+            loop.run_until_complete(mysql_pool_close())
+        finally:
+            loop.close()
+
+    _run()
+    yield
+    _run()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def create_test_user():
     """
