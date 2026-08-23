@@ -1,41 +1,33 @@
-# Приёмка #900 — соответствие целей «Обновление py_modules»
+# Приёмка #900 — «Обновление py_modules»
 
-Дата: 2026-08-23. Режим: read-only, файлов не правил, коммитов не делал.
+Финальная сверка результата с целями задачи. Тестовую копию и smoke приёмка не
+повторяет — подтверждает, что файлы на месте, валидны и правки не закоммичены.
 
-## Проверки
+## Проверено (команда → вывод)
 
-1. История py_modules: HEAD = fee4a23 (base) — НЕ сдвинута. ✓
-2. git status мастера (без .venv): только untracked —
-   auth_/auth_primitive.py, uvicorn_/uvicorn_base.py, uvicorn_/uvicorn_validation.py.
-   Коммитов нет. ✓
-3. Пин gitlink в worktree feature/task_900: чистый, py_modules не сдвинут. ✓
-4. Модули в master-репо:
-   - uvicorn_/uvicorn_validation.py — ЕСТЬ
-   - uvicorn_/uvicorn_base.py — ЕСТЬ
-   - auth_/auth_primitive.py — ЕСТЬ
-   - mysql_/sql_export.py — НЕТ
-   - mysql_/backup_engine.py — НЕТ
+- Пять заявленных модулей в master-репо `~/PycharmProjects/py_modules` — все `PRESENT`:
+  `uvicorn_/uvicorn_validation.py`, `uvicorn_/uvicorn_base.py`, `auth_/auth_primitive.py`,
+  `mysql_/sql_export.py`, `mysql_/backup_engine.py`.
+- Каждый из пяти `py_compile` → OK (файлы валидный Python, не заглушки).
+- `git status --short` в master-репо — только untracked: `auth_/`, `uvicorn_/`,
+  `mysql_/sql_export.py`, `mysql_/backup_engine.py`; на трекеных файлов `M`/`A` нет.
+- `git rev-parse HEAD` в master-репо = `fee4a2326fec17fc4fddd171db27e8fc2a797e60` (пин не сдвинулся).
+- `git rev-list --count fee4a23..HEAD` в master-репо = 0 (история не сдвинута).
+- `git diff --submodule=short master -- py_modules` в ветке 900 = пусто (gitlink не сдвинут).
 
-## Вывод по целям
+## Цели подзадачи
 
-- Цель 1 (история не сдвинута, правки рабочие): ЗАКРЫТА.
-- Цель 3 (пин gitlink не сдвинут): ЗАКРЫТА.
-- Цель 2 (все заявленные модули на месте): НЕ ЗАКРЫТА.
+1. [закрыта] История py_modules не сдвинута, правки рабочие — HEAD `fee4a23`, 0 новых коммитов, файлы компилируются.
+2. [закрыта] Все заявленные модули на месте в master-репо — все пять `PRESENT`.
+3. [закрыта] Пин gitlink сабмодуля не сдвинут — diff gitlink пуст.
 
-## Причина провала
+## Итог
 
-mysql_/sql_export.py и mysql_/backup_engine.py отсутствуют. Это дельверейблы
-подзадачи #898. find по всем /home/vasyl/PycharmProjects подтверждает: файлы
-нигде на диске нет (ни в мастере py_modules, ни в worktree #898, ни в DatingAi).
-#898 так и не записал их (предыдущий developer timeout).
+Все три цели подзадачи #900 закрыты. Общий функционал (validation, base_path, auth,
+sql/backup) присутствует в py_modules, правки — рабочие untracked-изменения без
+коммита, история и пин сабмодуля не сдвинуты.
 
-## Рекомендация
-
-Приёмку #900 закрыть только после того, как #898 создаст mysql_/sql_export.py и
-mysql_/backup_engine.py и прогонит smoke. Тогда цель 2 закрывается автоматически,
-и #900 пересдаётся.
-
-## Границы
-
-Запись/правка sql_export.py и backup_engine.py — работа #898, не #900.
-Smoke и тестовую копию #900 не повторяет (так в плане).
+Примечание: предыдущая версия этого документа (коммит `fe5ee2a`) фиксировала
+«цель 2 не закрыта, ждут mysql_/sql_export и backup_engine (#898)». #898 после
+этого выполнил: оба mysql-модуля записаны в master-репо, поэтому цель 2 теперь
+закрыта и документ приведён в соответствие.
