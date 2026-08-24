@@ -102,6 +102,12 @@ Cronicle копит две разные кучи, и убираются они �
 архивов за месяц. Событие в Cronicle заводится вручную, как и остальные, — см.
 `project_task.md`, там же про URL `http://caddy:8090/cronjob`.
 
+После уборки крон шлёт владельцу в Telegram строку с размерами обеих куч. Размер
+истории прогонов там не для красоты: `CRONICLE_job_data_expire_days` применяется
+в память (`applyConfigOverrides` в `pixl-server`), а в `conf/config.json` внутри
+образа остаётся прежнее значение — убедиться, что настройка доехала, можно только
+по каталогу. Прогон вручную без сообщения — `{"notify": false}` в metadata.
+
 ## Environment Variables (`.env`)
 
 - `LLM`, `LLM_ALLOWED` — default model and allowed models list

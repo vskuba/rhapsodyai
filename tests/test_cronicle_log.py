@@ -120,3 +120,54 @@ def test_missing_dir_is_not_an_error(tmp_path, monkeypatch):
     monkeypatch.setattr(cronicle_log, '_BASE_DIR', str(tmp_path))
 
     assert cronicle_log.cronicle_log_prune(KEEP_DAYS)['files'] == 0
+
+
+class TestSizesAndReport:
+    """Размеры обеих куч и строка отчёта, которая уходит в Telegram."""
+
+    def test_sizes_counted_per_dir(self, cronicle_logs, tmp_path):
+        """Архивы и история прогонов считаются раздельно: чистит их разный код."""
+        from src.cronicle.cronicle_log import cronicle_log_sizes
+
+        jobs = tmp_path / 'data' / 'cronicle' / 'data' / 'jobs'
+        jobs.mkdir(parents=True)
+        (jobs / 'job.json').write_bytes(b'z' * 300)
+
+        sizes = cronicle_log_sizes()
+
+        # В фикстуре два архива: старый 100 байт и свежий 50.
+        assert sizes['archives'] == 150
+        assert sizes['jobs'] == 300
+
+    def test_sizes_zero_without_dirs(self, tmp_path, monkeypatch):
+        from src.cronicle import cronicle_log
+
+        monkeypatch.setattr(cronicle_log, '_BASE_DIR', str(tmp_path))
+
+        assert cronicle_log.cronicle_log_sizes() == {'archives': 0, 'jobs': 0}
+
+    def test_report_mentions_both_heaps(self):
+        """
+        В отчёте обе кучи: по размеру истории прогонов только и видно, доехала ли
+        `CRONICLE_job_data_expire_days` — в config.json на диске остаётся 180.
+        """
+        from src.cronicle.cronicle_log import cronicle_log_report
+
+        text = cronicle_log_report(
+            {'files': 190, 'bytes': 27889979, 'dirs': 36, 'kept_days': 3},
+            {'archives': 2621440, 'jobs': 1181116006})
+
+        assert '190' in text
+        assert '2.5 МБ' in text
+        assert '1126.4 МБ' in text
+        assert '3 сут' in text
+
+    def test_report_small_sizes_in_kb(self):
+        """До мегабайта — в килобайтах: «0.0 МБ» человеку ничего не говорит."""
+        from src.cronicle.cronicle_log import cronicle_log_report
+
+        text = cronicle_log_report({'files': 0, 'bytes': 0, 'dirs': 0, 'kept_days': 3},
+                                   {'archives': 4096, 'jobs': 0})
+
+        assert '4 КБ' in text
+        assert '0 КБ' in text

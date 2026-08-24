@@ -32,6 +32,12 @@ CRONICLE_LOG_DIRS = (
 # Сколько суток логов держим.
 CRONICLE_LOG_KEEP_DAYS = 3
 
+# История прогонов: её чистит сам Cronicle, мы только показываем размер. Смысл —
+# увидеть, доехала ли `CRONICLE_job_data_expire_days` до его конфига: настройка
+# живёт в переменной окружения и применяется в память, на диске в `config.json`
+# остаётся прежнее значение, и проверить её иначе как по размеру каталога нечем.
+CRONICLE_LOG_JOBS_DIR = os.path.join('data', 'cronicle', 'data', 'jobs')
+
 # Страховка от чужого каталога: удаляем только внутри логов Cronicle. Путь
 # собирается из констант выше, но модуль зовётся из кронджоба с аргументами, и
 # один опечатанный `days` дешевле поймать здесь, чем в снесённом каталоге.
@@ -65,6 +71,58 @@ def cronicle_log_prune(keep_days: int = CRONICLE_LOG_KEEP_DAYS) -> dict:
                 f"освобождено {stats['bytes'] // 1024} КБ, каталогов {stats['dirs']}, "
                 f"оставлены последние {keep_days} сут.")
     return stats
+
+
+def cronicle_log_sizes() -> dict:
+    """
+    Размер обеих куч Cronicle в байтах: архивы логов и история прогонов.
+
+    Returns:
+        `{'archives': int, 'jobs': int}`. Каталога нет — ноль, это не ошибка:
+        на свежей установке Cronicle ещё ничего не ротировал.
+    """
+    return {
+        'archives': _dir_size(os.path.join(_BASE_DIR, CRONICLE_LOG_DIRS[0])),
+        'jobs': _dir_size(os.path.join(_BASE_DIR, CRONICLE_LOG_JOBS_DIR)),
+    }
+
+
+def cronicle_log_report(stats: dict, sizes: dict) -> str:
+    """
+    Строка отчёта для Telegram: что убрали и сколько осталось.
+
+    Отчёт короткий и уходит раз в сутки, поэтому без заголовков и списков —
+    человек читает его мельком в ленте уведомлений.
+    """
+    return (f"🧹 Логи Cronicle (держим {stats.get('kept_days', CRONICLE_LOG_KEEP_DAYS)} сут.): "
+            f"убрано {stats.get('files', 0)} файлов, {_size_text(stats.get('bytes', 0))}. "
+            f"Осталось: архивы {_size_text(sizes.get('archives', 0))}, "
+            f"история прогонов {_size_text(sizes.get('jobs', 0))}.")
+
+
+def _dir_size(path: str) -> int:
+    """Суммарный размер файлов каталога. Симлинки считаем по себе, а не по цели."""
+    if not os.path.isdir(path):
+        return 0
+
+    total = 0
+    for dir_path, _dir_names, file_names in os.walk(path):
+        for name in file_names:
+            try:
+                total += os.lstat(os.path.join(dir_path, name)).st_size
+            except OSError:
+                continue
+
+    return total
+
+
+def _size_text(size: int) -> str:
+    """Байты человеку: КБ до мегабайта, дальше МБ с десятой долей."""
+    size = int(size or 0)
+    if size < 1024 * 1024:
+        return f'{size // 1024} КБ'
+
+    return f'{size / (1024 * 1024):.1f} МБ'
 
 
 def _prune_dir(root: str, deadline: float, stats: dict) -> None:
