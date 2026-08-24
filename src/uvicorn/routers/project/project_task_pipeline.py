@@ -549,10 +549,17 @@ async def project_task_logs(project_id: int, user=Depends(AuthChecker([AuthPermi
     # Строки с идущим прогоном добавляем к тем, у кого уже есть файл: файл
     # появляется по концу круга, и строка, которую агент обрабатывает впервые,
     # в список не попадала — хотя показать по ней уже есть что.
+    running = await task_log_rows_running()
     seen = {item['task_id'] for item in items}
-    for task_id in await task_log_rows_running():
+    for task_id, role in running.items():
         if task_id not in seen:
             items.append({'task_id': task_id, 'bytes': 0, 'updated_at': ''})
+
+    # Кто в работе прямо сейчас — знает страница: она их подсвечивает и ставит
+    # наверх. Роль оттуда же: по ней видно, чей это круг, без открытия журнала.
+    for item in items:
+        item['running'] = item['task_id'] in running
+        item['role'] = running.get(item['task_id'], '')
 
     if not items:
         return {'result': []}
@@ -578,6 +585,11 @@ async def project_task_logs(project_id: int, user=Depends(AuthChecker([AuthPermi
         item['parent_id'] = task.get('parent_id')
         item['status'] = task.get('status') or ''
         item['pipeline_state'] = task.get('pipeline_state') or ''
+
+    # Сначала те, над кем работают прямо сейчас, дальше по свежести записи.
+    # Идущий прогон файла ещё не имеет и по времени правки ушёл бы в самый низ —
+    # то есть ровно то, что человеку нужнее всего, оказывалось дальше всего.
+    items.sort(key=lambda item: (item['running'], item['updated_at'] or ''), reverse=True)
 
     return {'result': items}
 

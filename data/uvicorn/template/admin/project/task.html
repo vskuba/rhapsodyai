@@ -1072,6 +1072,17 @@
     }
     .log-item:hover { background: #f8fafc; }
     .log-item.active { background: #eef2ff; box-shadow: inset 3px 0 0 #4f46e5; }
+    /* Строка в работе: та же пульсирующая точка, что у живого блока журнала —
+       один и тот же смысл, «здесь агент прямо сейчас». Подсветка бледная:
+       выбранную строку она перебивать не должна. */
+    .log-item.is-running { background: #f0fdf4; }
+    .log-item.is-running.active { background: #eef2ff; }
+    .log-item-live {
+        width: 6px; height: 6px; border-radius: 50%; background: #10b981;
+        flex-shrink: 0; animation: log-pulse 1.6s ease-in-out infinite;
+    }
+    @media (prefers-reduced-motion: reduce) { .log-item-live { animation: none } }
+    .log-item-role { color: #059669; font-weight: 700; }
     .log-item-top { display: flex; align-items: baseline; gap: 6px; }
     .log-item-id { color: #94a3b8; font-size: 11px; font-variant-numeric: tabular-nums; }
     .log-item-title {
@@ -1081,7 +1092,7 @@
     .log-item-meta { font-size: 11px; color: #94a3b8; display: flex; gap: 8px; }
     .log-side-empty { padding: 14px 12px; color: #94a3b8; font-size: 12.5px; line-height: 1.5; }
 
-    .log-main { flex: 1; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .log-main { flex: 1; display: flex; flex-direction: column; gap: 9px; min-width: 0; padding-top: 10px;}
     .log-state pre {
         margin: 0; padding: 10px 12px; overflow-y: auto;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -3809,16 +3820,21 @@ async function logListLoad() {
     }
 
     list.innerHTML = _logItems.map(item => {
-        const kb = Math.max(1, Math.round(item.bytes / 1024));
-        return `<div class="log-item${item.task_id === _logTaskId ? ' active' : ''}"
-                     onclick="logOpen(${item.task_id})">
+        // У строки с идущим прогоном файла может ещё не быть: показываем роль и
+        // «в работе» вместо нулевого размера и пустого времени.
+        const meta = item.running
+            ? `<span class="log-item-role">${esc(item.role || 'агент')} в работе</span>`
+            : `<span>${Math.max(1, Math.round(item.bytes / 1024))} КБ</span>`
+              + `<span>${esc(item.updated_at)}</span>`;
+        return `<div class="log-item${item.task_id === _logTaskId ? ' active' : ''}`
+             + `${item.running ? ' is-running' : ''}" onclick="logOpen(${item.task_id})">
             <div class="log-item-top">
+                ${item.running ? '<span class="log-item-live"></span>' : ''}
                 <span class="log-item-id">#${item.task_id}</span>
                 <span class="log-item-title">${esc(item.title) || '(без названия)'}</span>
             </div>
             <div class="log-item-meta">
-                <span>${esc(item.pipeline_state || '—')}</span>
-                <span>${kb} КБ</span><span>${esc(item.updated_at)}</span>
+                <span>${esc(item.pipeline_state || '—')}</span>${meta}
             </div>
         </div>`;
     }).join('');
@@ -3973,14 +3989,13 @@ async function logOpen(taskId) {
     const box = document.getElementById('logState');
     box.classList.toggle('empty', !data.state);
     box.innerHTML = '<div class="log-side-head"><span>Состояние</span></div><pre>'
-        + (data.state ? esc(data.state) : 'Агент ещё не записал состояние.') + '</pre>';
+        + (data.state ? esc(data.state) : 'Появится, когда закончится первый круг.') + '</pre>';
 
     _logEntries = logParse(data.log);
     logFiltersRender();
     if (!_logEntries.length) {
         document.getElementById('logBody').innerHTML =
-            '<div class="log-empty">Журнал пуст. Агент ведёт его по ходу работы в '
-            + '<code>.task-log.md</code> каталога строки.</div>';
+            '<div class="log-empty">Журнал пуст: строку ещё не брали в работу.</div>';
         return;
     }
     logBodyRender();
