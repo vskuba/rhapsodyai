@@ -1037,10 +1037,29 @@
        строки — «ЧЧ:ММ:СС ключевое-слово текст», см. `src/project/task/task_log.py`. */
     .log-pane { flex: 1; display: flex; gap: 14px; min-height: 0; padding: 0 0 4px; }
 
+    /* Левая колонка — два ряда: список строк и состояние выбранной. Ширину
+       задаёт inline-стиль от ручки (`logSplitter`), поэтому здесь только
+       умолчание и границы, за которые тянуть не дадим. */
     .log-side {
-        width: 290px; flex-shrink: 0; display: flex; flex-direction: column;
+        width: 290px; min-width: 180px; max-width: 60%;
+        flex-shrink: 0; display: flex; flex-direction: column; gap: 9px; min-height: 0;
+    }
+    .log-side-block {
+        display: flex; flex-direction: column; min-height: 0;
         border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; overflow: hidden;
     }
+    /* Список тянется, состояние занимает столько, сколько нужно, но не больше
+       половины: у длинного состояния список схлопывался в одну строку. */
+    .log-side-block:first-child { flex: 1 1 auto; }
+    .log-side.log-state, .log-side-block.log-state { flex: 0 1 auto; max-height: 50%; }
+
+    /* Ручка между колонками. Своя, а не общая с таблицей задач: там ширины
+       колонок в процентах и своё хранилище, здесь — одна граница в пикселях. */
+    .log-splitter {
+        width: 7px; flex-shrink: 0; cursor: col-resize; border-radius: 4px;
+        background: transparent; transition: background .12s;
+    }
+    .log-splitter:hover, .log-splitter.is-drag { background: #c7d2fe; }
     .log-side-head {
         padding: 8px 12px; border-bottom: 1px solid #eef2f6;
         font-size: 12px; color: #64748b; font-weight: 600;
@@ -1063,20 +1082,16 @@
     .log-side-empty { padding: 14px 12px; color: #94a3b8; font-size: 12.5px; line-height: 1.5; }
 
     .log-main { flex: 1; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
-    .log-state {
-        border: 1px solid #e2e8f0; border-radius: 10px; background: #fff;
-        padding: 11px 14px; max-height: 30vh; overflow-y: auto; flex-shrink: 0;
-    }
-    .log-state h3 {
-        margin: 0 0 7px; font-size: 11px; color: #64748b; font-weight: 700;
-        text-transform: uppercase; letter-spacing: .04em;
-    }
     .log-state pre {
-        margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        margin: 0; padding: 10px 12px; overflow-y: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 12.5px; line-height: 1.55; color: #1e293b;
         white-space: pre-wrap; word-break: break-word;
     }
     .log-state.empty pre { color: #94a3b8; }
+    /* Пока тянут ручку, выделение текста мешает: курсор уезжает в подсветку
+       строк вместо перетаскивания. */
+    .log-pane.is-drag { user-select: none; cursor: col-resize; }
 
     .log-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
     .log-chip {
@@ -1452,21 +1467,29 @@
     <!-- Вкладка «Журналы»: слева строки проекта, у которых есть журнал, справа
          состояние и хронология выбранной. Скрыта, пока вкладка не выбрана. -->
     <div class="log-pane" id="logPane" style="display:none">
-        <div class="log-side">
-            <div class="log-side-head">
-                <span>Строки с журналом</span>
-                <span id="logCount" class="log-item-id"></span>
+        <!-- Левая колонка в два ряда: сверху строки с журналом, снизу состояние
+             выбранной. Состояние ушло сюда из правой колонки, чтобы журнал шёл
+             во всю высоту: он длинный, а состояние короткое и не меняется. -->
+        <div class="log-side" id="logSide">
+            <div class="log-side-block">
+                <div class="log-side-head">
+                    <span>Строки с журналом</span>
+                    <span id="logCount" class="log-item-id"></span>
+                </div>
+                <div class="log-side-list" id="logList">
+                    <div class="log-side-empty">Загрузка…</div>
+                </div>
             </div>
-            <div class="log-side-list" id="logList">
-                <div class="log-side-empty">Загрузка…</div>
+
+            <div class="log-side-block log-state empty" id="logState">
+                <div class="log-side-head"><span>Состояние</span></div>
+                <pre>Выберите строку слева.</pre>
             </div>
         </div>
 
+        <div class="log-splitter" id="logSplitter" title="Потянуть, чтобы изменить ширину"></div>
+
         <div class="log-main">
-            <div class="log-state empty" id="logState">
-                <h3>Состояние</h3>
-                <pre>Выберите строку слева.</pre>
-            </div>
             <div class="log-filters" id="logFilters"></div>
             <div class="log-body" id="logBody">
                 <div class="log-empty">Выберите строку слева, чтобы увидеть её журнал.</div>
@@ -3949,7 +3972,7 @@ async function logOpen(taskId) {
 
     const box = document.getElementById('logState');
     box.classList.toggle('empty', !data.state);
-    box.innerHTML = '<h3>Состояние</h3><pre>'
+    box.innerHTML = '<div class="log-side-head"><span>Состояние</span></div><pre>'
         + (data.state ? esc(data.state) : 'Агент ещё не записал состояние.') + '</pre>';
 
     _logEntries = logParse(data.log);
@@ -3969,6 +3992,58 @@ function logShowForTask(taskId) {
     selectPhase(null, PHASE_LOGS);
     logOpen(taskId);
 }
+
+
+// ─── Ручка между колонками журнала ────────────────────────────────────────────
+// Ширина левой колонки — дело вкуса и ширины экрана: длинным названиям строк
+// нужно больше, длинному журналу — меньше. Помним выбор рядом с остальными
+// настройками страницы (проект, вкладка, свёрнутые ветки).
+const LOG_SIDE_KEY = 'task_log_side_px';
+const LOG_SIDE_MIN = 180;
+
+function logSplitInit() {
+    const side = document.getElementById('logSide');
+    const grip = document.getElementById('logSplitter');
+    const pane = document.getElementById('logPane');
+    if (!side || !grip || !pane) return;
+
+    const saved = parseInt(localStorage.getItem(LOG_SIDE_KEY) || '0', 10);
+    if (saved >= LOG_SIDE_MIN) side.style.width = saved + 'px';
+
+    let dragging = false;
+
+    grip.addEventListener('mousedown', e => {
+        dragging = true;
+        grip.classList.add('is-drag');
+        pane.classList.add('is-drag');
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        // Считаем от левого края панели, а не по смещению курсора: при быстром
+        // движении курсор убегает вперёд, и колонка «отставала» от него.
+        const width = e.clientX - pane.getBoundingClientRect().left;
+        const limit = Math.max(LOG_SIDE_MIN, Math.min(width, pane.clientWidth * 0.6));
+        side.style.width = limit + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        grip.classList.remove('is-drag');
+        pane.classList.remove('is-drag');
+        localStorage.setItem(LOG_SIDE_KEY, String(parseInt(side.style.width, 10) || 0));
+    });
+
+    // Двойной щелчок — вернуть умолчание: подобранная руками ширина иногда
+    // оказывается неудачной, а тянуть обратно на глаз неудобно.
+    grip.addEventListener('dblclick', () => {
+        side.style.width = '';
+        localStorage.removeItem(LOG_SIDE_KEY);
+    });
+}
+logSplitInit();
 
 // Журнал обновляется, пока агент работает; на чужих вкладках и в фоне не дёргаем.
 setInterval(() => {
