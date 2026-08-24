@@ -831,6 +831,17 @@
     .pipe-qa_pending       { background: #fef3c7; color: #a16207; border-color: #fde68a; }
     .pipe-failed_qa        { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
     .pipe-blocked          { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+    /* Не состояние конвейера, а причина простоя рядом с ним: подзадача-приёмка в
+       `planned`, но отбор её не возьмёт, пока соседи не закрыты (`final` в metadata,
+       см. task_metadata_final_wait_sql). Без пометки строка врёт: «в очереди», хотя
+       очередь её пропускает. Серый, как и само ожидание: человека она не ждёт —
+       соседи закроются, и она пойдёт сама. Песочные часы вместо шестерёнки: работы
+       нет, крутиться нечему. */
+    .pipe-wait {
+        background: #f8fafc; color: #64748b; border-color: #e2e8f0;
+        border-style: dashed; margin-left: 4px;
+    }
+    .pipe-wait::before { content: '⏳'; }
     /* Шестерёнка крутится там, где прямо сейчас кто-то работает. `qa_pending` сюда не
        входит: разработчик закончил, а QA ещё не начал — это очередь, а не работа.
        Как только QA берёт подзадачу, состояние становится `testing`, и шестерёнка
@@ -3240,8 +3251,35 @@ function renderPipeChip(t, row) {
         ? `Задача разложена на подзадачи (processing), показана самая отстающая из них\n\n${taskReportHint(t, row)}`
         : taskReportHint(t, row);
     return `<div><span class="pipe-chip pipe-${state}" `
-         + `title="${esc(hint)}">${esc(state)}</span>${retry}${renderPipeRetries(t)}`
+         + `title="${esc(hint)}">${esc(state)}</span>${renderPipeWait(t)}${retry}${renderPipeRetries(t)}`
          + `${renderPipeLog(t)}${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
+}
+
+// Пометка «ждёт соседей» у подзадачи-приёмки.
+//
+// Состояние у неё честное — `planned`, и менять его на `blocked` нельзя: `blocked`
+// значит «попытки исчерпаны, нужен человек», а приёмка человека не ждёт и попыток
+// не тратила. Но и «в очереди» без пояснения — неправда: отбор её пропускает, пока
+// хоть один сосед не `done` (task_metadata_final_wait_sql), и со стороны это
+// выглядит зависанием.
+//
+// Условие повторяет серверное: приёмка среди соседей себя не считает, и другие
+// приёмки тоже — иначе две такие подзадачи ждали бы друг друга насмерть.
+function renderPipeWait(t) {
+    if (!t.metadata?.final || ['done', 'blocked', 'failed'].includes(t.pipeline_state)) return '';
+
+    const siblings = _tasks.filter(x => x.parent_id === t.parent_id && x.id !== t.id
+                                        && !x.metadata?.final);
+    const left = siblings.filter(x => x.pipeline_state !== 'done');
+    if (!left.length) return '';
+
+    const names = left.slice(0, 5).map(x => `#${x.id} ${x.title || ''} — ${x.pipeline_state || 'без состояния'}`);
+    if (left.length > names.length) names.push(`… и ещё ${left.length - names.length}`);
+
+    return `<span class="pipe-chip pipe-wait" title="${esc(
+        'Подзадача-приёмка: проверяет результат остальных, поэтому конвейер не берёт её, '
+        + 'пока соседи не закрыты — иначе вердикт был бы «не сошлось», а попытки сгорели бы зря.\n\n'
+        + `Ждёт (${left.length}):\n${names.join('\n')}`)}">ждёт соседей: ${left.length}</span>`;
 }
 
 // Статистика технических повторов строки (`metadata.retry`, пишет `task_retry.py`).
