@@ -52,11 +52,6 @@ class BrowserWsCapture(BaseModel):
     wait_sec: int = Field(BROWSER_WS_WAIT_SEC, ge=1, le=120)
 
 
-def _same_page(current: str, target: str) -> bool:
-    """Одна и та же страница? Хеш не считаем: он не вызывает перезагрузки."""
-    return str(current or '').split('#')[0].rstrip('/') == str(target or '').split('#')[0].rstrip('/')
-
-
 @router.post('/browser/ws/capture', dependencies=browser_api_auth)
 async def browser_ws_capture_post(data: BrowserWsCapture):
     """Открывает страницу и возвращает адреса вебсокетов, которые она подняла.
@@ -128,3 +123,8 @@ async def browser_ws_capture_post(data: BrowserWsCapture):
     logger_info(f'[browser] перехват сокета на {data.url[:60]}: найдено {len(found)}')
 
     return {'sockets': found, 'session_id': '' if own else session_id}
+
+
+def _same_page(current: str, target: str) -> bool:
+    """Одна и та же страница? Хеш не считаем: он не вызывает перезагрузки."""
+    return str(current or '').split('#')[0].rstrip('/') == str(target or '').split('#')[0].rstrip('/')

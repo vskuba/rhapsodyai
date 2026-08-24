@@ -5,7 +5,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from qdrant_.qdrant_ import qdrant_save
 
 
-async def fact_qdrant_sync() -> str:
+async def ai_fact_qdrant_sync() -> str:
     """
     Фоновый воркер для синхронизации несинхронизированных фактов с Qdrant.
     Берет пачку из 50 записей, динамически извлекает разрешенные поля из базы и отправляет в Qdrant.

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
 from qdrant_.qdrant_ import qdrant_remove_by
-from src.ai.ai_fact import fact_qdrant_sync
+from src.ai.ai_fact import ai_fact_qdrant_sync
 from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.mysql_.repository.fact_collection_repository import FactCollectionRepository
 from src.auth.auth import AuthChecker
@@ -71,7 +71,7 @@ async def fact_collection_resync(
         if unsynced_before is not None and unsynced >= unsynced_before:
             break
         unsynced_before = unsynced
-        report = await fact_qdrant_sync()
+        report = await ai_fact_qdrant_sync()
 
     return {"result": {"documents_qty": len(document_ids), "report_str": report}}
 

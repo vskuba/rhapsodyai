@@ -14,13 +14,11 @@ LLM_PROVIDERS = ('openrouter', 'claude', 'ollama', 'gemini', 'groq', 'mistral', 
 # Журнал запросов держим неделю: этого хватает для метрик от 1 минуты до 7 дней
 LLM_REQUEST_TTL_DAYS = 7
 
-
 def ai_llm_provider(model_name: str) -> str | None:
     for provider in LLM_PROVIDERS:
         if (model_name or '').lower().startswith(provider + '/'):
             return provider
     return None
-
 
 async def ai_llm_node_get(
         node_id: int | None,
@@ -52,7 +50,6 @@ async def ai_llm_node_get(
     if output_type:
         rows = [r for r in rows if output_type in (r.get('output_type') or 'text').split(',')]
     return rows
-
 
 async def ai_llm_image_generate(
         llm: dict,
@@ -116,64 +113,6 @@ async def ai_llm_image_generate(
 
     return base64.b64decode(b64), usage
 
-
-def _ai_llm_comfyui_workflow(prompt: str, seed: int, width: int, height: int) -> dict:
-    unet  = config_get('GX10_COMFYUI_UNET')  or 'flux1-dev-fp8.safetensors'
-    clip1 = config_get('GX10_COMFYUI_CLIP1') or 'clip_l.safetensors'
-    clip2 = config_get('GX10_COMFYUI_CLIP2') or 't5xxl_fp8_e4m3fn.safetensors'
-    vae   = config_get('GX10_COMFYUI_VAE')   or 'ae.safetensors'
-    return {
-        "1": {"class_type": "UNETLoader",        "inputs": {"unet_name": unet, "weight_dtype": "default"}},
-        "2": {"class_type": "DualCLIPLoader",    "inputs": {"clip_name1": clip1, "clip_name2": clip2, "type": "flux"}},
-        "3": {"class_type": "VAELoader",         "inputs": {"vae_name": vae}},
-        "4": {"class_type": "CLIPTextEncode",    "inputs": {"text": prompt, "clip": ["2", 0]}},
-        "5": {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
-        "6": {"class_type": "KSampler",          "inputs": {"seed": seed, "steps": 20, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0, "model": ["1", 0], "positive": ["4", 0], "negative": ["4", 0], "latent_image": ["5", 0]}},
-        "7": {"class_type": "VAEDecode",         "inputs": {"samples": ["6", 0], "vae": ["3", 0]}},
-        "8": {"class_type": "SaveImage",         "inputs": {"filename_prefix": "rhapsody_gen", "images": ["7", 0]}},
-    }
-
-
-async def _ai_llm_image_generate_gx10(prompt: str, size: str = '1024x1024', timeout: float = 300.0) -> bytes:
-    import random as _random, uuid as _uuid, asyncio as _asyncio
-    parts = size.split('x')
-    width  = int(parts[0]) if len(parts) == 2 else 1024
-    height = int(parts[1]) if len(parts) == 2 else 1024
-    seed = _random.randint(0, 2 ** 32 - 1)
-    client_id = str(_uuid.uuid4())
-    workflow = _ai_llm_comfyui_workflow(prompt, seed, width, height)
-
-    comfyui_base = (config_get('GX10_COMFYUI_API_URL') or 'http://192.168.1.2:8188').rstrip('/')
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15.0)) as client:
-        resp = await client.post(f"{comfyui_base}/prompt", json={"prompt": workflow, "client_id": client_id})
-        if resp.status_code != 200:
-            raise ValueError(f'ComfyUI /prompt error {resp.status_code}: {resp.text[:200]}')
-        prompt_id = resp.json()['prompt_id']
-
-        elapsed = 0.0
-        poll_interval = 2.0
-        while elapsed < timeout:
-            hist = await client.get(f"{comfyui_base}/history/{prompt_id}")
-            history = hist.json()
-            if prompt_id in history:
-                outputs = history[prompt_id].get('outputs', {})
-                images = outputs.get('8', {}).get('images', [])
-                if images:
-                    img = images[0]
-                    view = await client.get(f"{comfyui_base}/view", params={
-                        'filename': img['filename'],
-                        'subfolder': img.get('subfolder', ''),
-                        'type': img.get('type', 'output'),
-                    })
-                    return view.content
-                break
-            await _asyncio.sleep(poll_interval)
-            elapsed += poll_interval
-
-    raise TimeoutError(f'ComfyUI генерация не завершилась за {timeout:.0f}с')
-
-
 def ai_llm_filter_by_type(
         llm_list: list[dict],
         input_type: str | None = None,
@@ -187,14 +126,12 @@ def ai_llm_filter_by_type(
         result = [r for r in result if output_type in (r.get('output_type') or 'text').split(',')]
     return result
 
-
 async def ai_llm_node_id_default_get() -> int:
     """Нода-фоллбэк (node.is_catchall=1) для агентов без своей ноды (node_id IS NULL)."""
     async with mysql_get_db_async() as db:
         await db.execute("SELECT id FROM `node` WHERE is_catchall = 1 LIMIT 1")
         row = await db.fetchone()
         return row['id'] if row else None
-
 
 async def ai_llm_parallel_per_agent_max_get(node_id: int | None) -> int:
     """llm_parallel_per_agent_max для ноды (1 если не задано)."""
@@ -206,10 +143,8 @@ async def ai_llm_parallel_per_agent_max_get(node_id: int | None) -> int:
         row = await db.fetchone()
         return int(row['llm_parallel_per_agent_max']) if row and row.get('llm_parallel_per_agent_max') else 1
 
-
 CHUNK_SIZE_REFRESH_MINUTES = 15
 CHUNK_SIZE_TARGET_SECONDS = 10
-
 
 async def ai_llm_speed_get(llm_id: int | None, target_seconds: int = CHUNK_SIZE_TARGET_SECONDS) -> dict:
     """Returns LLM speed metrics with cached chunk_size.
@@ -309,12 +244,6 @@ async def ai_llm_speed_get(llm_id: int | None, target_seconds: int = CHUNK_SIZE_
         f'📐 chunk_size пересчитан: llm_id={llm_id}, target={target_seconds}s → {chunk_size} симв. (chars/ms={chars_per_ms:.3f}, avg_ms={avg_ms:.0f})')
     return {'chars_per_ms': chars_per_ms, 'avg_ms': avg_ms, 'chunk_size': chunk_size, 'n': n}
 
-
-def _ai_llm_speed_default(target_seconds: int = CHUNK_SIZE_TARGET_SECONDS) -> dict:
-    chunk_size = max(5000, int(1.5 * target_seconds * 1000 * 0.7))
-    return {'chars_per_ms': 1.5, 'avg_ms': 10000.0, 'chunk_size': chunk_size, 'n': 0}
-
-
 async def ai_llm_request_log(
         llm_id: int | None,
         user_id: int | None,
@@ -352,3 +281,63 @@ async def ai_llm_request_log(
             )
     except Exception as e:
         logger_info(f"⚠️ Не удалось записать llm_request (llm_id={llm_id}): {e}")
+
+def _ai_llm_comfyui_workflow(prompt: str, seed: int, width: int, height: int) -> dict:
+    unet  = config_get('GX10_COMFYUI_UNET')  or 'flux1-dev-fp8.safetensors'
+    clip1 = config_get('GX10_COMFYUI_CLIP1') or 'clip_l.safetensors'
+    clip2 = config_get('GX10_COMFYUI_CLIP2') or 't5xxl_fp8_e4m3fn.safetensors'
+    vae   = config_get('GX10_COMFYUI_VAE')   or 'ae.safetensors'
+    return {
+        "1": {"class_type": "UNETLoader",        "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+        "2": {"class_type": "DualCLIPLoader",    "inputs": {"clip_name1": clip1, "clip_name2": clip2, "type": "flux"}},
+        "3": {"class_type": "VAELoader",         "inputs": {"vae_name": vae}},
+        "4": {"class_type": "CLIPTextEncode",    "inputs": {"text": prompt, "clip": ["2", 0]}},
+        "5": {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "6": {"class_type": "KSampler",          "inputs": {"seed": seed, "steps": 20, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0, "model": ["1", 0], "positive": ["4", 0], "negative": ["4", 0], "latent_image": ["5", 0]}},
+        "7": {"class_type": "VAEDecode",         "inputs": {"samples": ["6", 0], "vae": ["3", 0]}},
+        "8": {"class_type": "SaveImage",         "inputs": {"filename_prefix": "rhapsody_gen", "images": ["7", 0]}},
+    }
+
+async def _ai_llm_image_generate_gx10(prompt: str, size: str = '1024x1024', timeout: float = 300.0) -> bytes:
+    import random as _random, uuid as _uuid, asyncio as _asyncio
+    parts = size.split('x')
+    width  = int(parts[0]) if len(parts) == 2 else 1024
+    height = int(parts[1]) if len(parts) == 2 else 1024
+    seed = _random.randint(0, 2 ** 32 - 1)
+    client_id = str(_uuid.uuid4())
+    workflow = _ai_llm_comfyui_workflow(prompt, seed, width, height)
+
+    comfyui_base = (config_get('GX10_COMFYUI_API_URL') or 'http://192.168.1.2:8188').rstrip('/')
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15.0)) as client:
+        resp = await client.post(f"{comfyui_base}/prompt", json={"prompt": workflow, "client_id": client_id})
+        if resp.status_code != 200:
+            raise ValueError(f'ComfyUI /prompt error {resp.status_code}: {resp.text[:200]}')
+        prompt_id = resp.json()['prompt_id']
+
+        elapsed = 0.0
+        poll_interval = 2.0
+        while elapsed < timeout:
+            hist = await client.get(f"{comfyui_base}/history/{prompt_id}")
+            history = hist.json()
+            if prompt_id in history:
+                outputs = history[prompt_id].get('outputs', {})
+                images = outputs.get('8', {}).get('images', [])
+                if images:
+                    img = images[0]
+                    view = await client.get(f"{comfyui_base}/view", params={
+                        'filename': img['filename'],
+                        'subfolder': img.get('subfolder', ''),
+                        'type': img.get('type', 'output'),
+                    })
+                    return view.content
+                break
+            await _asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+    raise TimeoutError(f'ComfyUI генерация не завершилась за {timeout:.0f}с')
+
+def _ai_llm_speed_default(target_seconds: int = CHUNK_SIZE_TARGET_SECONDS) -> dict:
+    chunk_size = max(5000, int(1.5 * target_seconds * 1000 * 0.7))
+    return {'chars_per_ms': 1.5, 'avg_ms': 10000.0, 'chunk_size': chunk_size, 'n': 0}
+

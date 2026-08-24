@@ -24,11 +24,6 @@ _TAGS_MAP = {
     },
 }
 
-
-def _tags_for(name: str) -> str:
-    return ','.join(tag for tag, names in _TAGS_MAP.items() if name in names)
-
-
 async def ui_components_sync_from_doc(project_id: int) -> dict:
     """
     Читает project_planning_document (doc_type='design_ui_components') для проекта
@@ -93,7 +88,6 @@ async def ui_components_sync_from_doc(project_id: int) -> dict:
     skipped = len(rows_parsed) - synced
     return {'synced': synced, 'skipped': skipped, 'total': len(rows_parsed)}
 
-
 async def ui_components_list_get() -> dict:
     """
     Возвращает список всех допустимых имён UI-компонентов из таблицы project_design_ui_component.
@@ -105,7 +99,6 @@ async def ui_components_list_get() -> dict:
         rows = await db.fetchall()
     names = [r.get('name', '') for r in rows if r.get('name')]
     return {'ui_components_list': ', '.join(names)}
-
 
 async def ui_component_db_get(component_name: str) -> dict:
     """
@@ -179,7 +172,6 @@ async def ui_component_db_get(component_name: str) -> dict:
         'component_tag_auth': '1' if 'auth' in tags_list else '',
     }
 
-
 async def wireframe_page_extract(page_title: str, wireframes: str) -> dict:
     """
     Извлекает из общего текста вайрфреймов раздел для конкретной страницы.
@@ -214,3 +206,7 @@ async def wireframe_page_extract(page_title: str, wireframes: str) -> dict:
         section.append(line)
 
     return {'page_wireframe': '\n'.join(section).strip()}
+
+def _tags_for(name: str) -> str:
+    return ','.join(tag for tag, names in _TAGS_MAP.items() if name in names)
+

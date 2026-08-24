@@ -10,7 +10,7 @@ router = APIRouter()
 
 
 @router.get("/workflow_variable/public/list")
-async def variable_list(
+async def workflow_variable_list(
         request: Request,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_VIEW]))
 ):
@@ -69,7 +69,7 @@ async def variable_list(
 
 
 @router.get("/workflow_variable/public/{variable_id}/hints")
-async def variable_hints(
+async def workflow_variable_hints(
         request: Request,
         variable_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_VIEW]))
@@ -97,7 +97,7 @@ async def variable_hints(
 
 
 @router.post("/node/workflow_variable")
-async def variable_create(
+async def workflow_variable_create(
         request: Request,
         data: dict,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_CREATE]))
@@ -140,7 +140,7 @@ async def variable_create(
 
 
 @router.put("/workflow_variable/public/{variable_id}")
-async def variable_update(
+async def workflow_variable_update(
         request: Request,
         variable_id: int,
         data: dict,
@@ -178,7 +178,7 @@ async def variable_update(
 
 
 @router.delete("/workflow_variable/public/{variable_id}")
-async def variable_delete(
+async def workflow_variable_delete(
         request: Request,
         variable_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_DELETE]))

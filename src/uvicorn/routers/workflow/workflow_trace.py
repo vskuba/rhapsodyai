@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.get("/workflow_trace/run/list")
-async def trace_run_list(
+async def workflow_trace_run_list(
         request: Request,
         workflow_id: int | None = None,
         agent_id: int | None = None,
@@ -84,7 +84,7 @@ async def trace_run_list(
 
 
 @router.get("/workflow_trace/run/{run_uuid}")
-async def trace_run_detail(
+async def workflow_trace_run_detail(
         request: Request,
         run_uuid: str,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_VIEW]))
@@ -206,7 +206,7 @@ async def trace_run_detail(
 
 
 @router.post("/workflow_trace/run/{run_uuid}/replay")
-async def trace_run_replay(
+async def workflow_trace_run_replay(
         request: Request,
         run_uuid: str,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_REPLAY]))
@@ -285,7 +285,7 @@ async def trace_run_replay(
 
 
 @router.post("/workflow_trace/run/{run_uuid}/stop")
-async def trace_run_stop(
+async def workflow_trace_run_stop(
         request: Request,
         run_uuid: str,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_STOP]))
@@ -345,7 +345,7 @@ async def trace_run_stop(
 
 
 @router.delete("/workflow_trace/run/{run_uuid}")
-async def trace_run_delete(
+async def workflow_trace_run_delete(
         request: Request,
         run_uuid: str,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_DELETE]))

@@ -11,8 +11,8 @@ from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_p
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
     ai_workflow_variables_global_get
-from src.ai.ai_workflow_trace import (workflow_trace_run_start, workflow_trace_run_finish,
-                                      workflow_trace_step, workflow_trace_variables_diff)
+from src.ai.ai_workflow_trace import (ai_workflow_trace_run_start, ai_workflow_trace_run_finish,
+                                      ai_workflow_trace_step, ai_workflow_trace_variables_diff)
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
 from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
@@ -215,7 +215,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             # Журнал выполнения: запись запуска (сбой трейса не влияет на workflow)
             run_started = time.monotonic()
             run_uuid = str(uuid.uuid4())
-            trace_run_id = await workflow_trace_run_start(
+            trace_run_id = await ai_workflow_trace_run_start(
                 run_uuid=run_uuid,
                 workflow_id=top_workflow_id,
                 agent_id=model.entity_agent.get('id'),
@@ -241,7 +241,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 # отменяет задачу, не дождавшись ответа). Закрываем журнал и отвечаем
                 # без ошибки — ждущий свою причину назовёт сам.
                 logger_info(f"⏹ Workflow остановлен (run {run_uuid})")
-                await workflow_trace_run_finish(
+                await ai_workflow_trace_run_finish(
                     trace_run_id, 'stopped', error='Прогон отменён: «Стоп» или таймаут ожидающего',
                     duration_ms=int((time.monotonic() - run_started) * 1000)
                 )
@@ -249,7 +249,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     loop.call_soon_threadsafe(future.set_result, '⏹ Workflow остановлен')
                 return
             except Exception as e:
-                await workflow_trace_run_finish(
+                await ai_workflow_trace_run_finish(
                     trace_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
                     duration_ms=int((time.monotonic() - run_started) * 1000)
                 )
@@ -257,7 +257,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             finally:
                 workflow_runs_active.pop(run_uuid, None)
 
-            await workflow_trace_run_finish(
+            await ai_workflow_trace_run_finish(
                 trace_run_id, 'success', result=result,
                 duration_ms=int((time.monotonic() - run_started) * 1000)
             )
@@ -318,10 +318,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
             # Запись текущего шага в журнал (замыкание видит состояние итерации)
             async def trace_current_step(status: str = 'success', error: str | None = None):
-                await workflow_trace_step(
+                await ai_workflow_trace_step(
                     trace_run_id, trace_exec_index, current_step,
                     metadata_rendered=step_meta,
-                    variables_changed=workflow_trace_variables_diff(trace_vars_before, variables),
+                    variables_changed=ai_workflow_trace_variables_diff(trace_vars_before, variables),
                     output=trace_output, transition=trace_transition,
                     status=status, error=error,
                     duration_ms=int((time.monotonic() - trace_step_started) * 1000),
@@ -892,7 +892,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     # Журнал: дочерний запуск с привязкой к родителю и шагу-инициатору
                     child_run_started = time.monotonic()
-                    child_run_id = await workflow_trace_run_start(
+                    child_run_id = await ai_workflow_trace_run_start(
                         run_uuid=str(uuid.uuid4()),
                         workflow_id=child_workflow_id,
                         agent_id=model.entity_agent.get('id'),
@@ -922,7 +922,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             trace_run_id=child_run_id
                         )
                     except Exception as e:
-                        await workflow_trace_run_finish(
+                        await ai_workflow_trace_run_finish(
                             child_run_id, 'error', error=f"{e}\n{traceback.format_exc()}",
                             duration_ms=int((time.monotonic() - child_run_started) * 1000)
                         )
@@ -931,7 +931,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     finally:
                         model.session_uuid = parent_session_uuid
 
-                    await workflow_trace_run_finish(
+                    await ai_workflow_trace_run_finish(
                         child_run_id, 'success', result=child_result,
                         duration_ms=int((time.monotonic() - child_run_started) * 1000)
                     )
@@ -1036,7 +1036,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             var_name: var_value
                             for var_name, var_value in {
                                 **model.workflow_variables_restored,
-                                **workflow_trace_variables_diff(variables_run_start, variables),
+                                **ai_workflow_trace_variables_diff(variables_run_start, variables),
                             }.items()
                             if var_name not in variables_protected
                         }

@@ -6,34 +6,6 @@ from github.Commit import Commit
 
 github_: Github | None = None
 
-
-def _github_auth() -> Github:
-    """
-    Performs authorization on GitHub. The function returns a GitHub object for operation.
-    """
-    try:
-        global github_
-        if github_:
-            return github_
-
-        auth = Auth.Token(os.getenv('GITHUB_TOKEN'))
-        github_ = Github(auth=auth)
-
-        # Проверка "на вшивость": пробуем получить логин
-        # Если токен битый, вылетит ошибка здесь
-        user_login = github_.get_user().login
-        print(f"✅ Робот авторизован как: {user_login}")
-
-        return github_
-
-    except BadCredentialsException:
-        print("❌ Ошибка: Неверный GitHub токен!")
-        raise
-    except Exception as e:
-        print(f"❌ Робот не смог подключиться: {e}")
-        raise
-
-
 async def github_repository_list(org: str | None = None) -> List[str]:
     """
     The function returns a list of the user's GitHub repositories as an array of names.
@@ -54,7 +26,6 @@ async def github_repository_list(org: str | None = None) -> List[str]:
         return repos
     except Exception as e:
         return [f"Ошибка при получении списка: {str(e)}"]
-
 
 async def github_search_branch_with_last_commit(repo_full_name: str) -> str | None:
     """
@@ -79,7 +50,6 @@ async def github_search_branch_with_last_commit(repo_full_name: str) -> str | No
         print(f"Ошибка: {e}")
         return None
 
-
 async def github_search_repo_by_last_commit() -> str | None:
     """
     This function returns the full name of the repository.
@@ -97,7 +67,6 @@ async def github_search_repo_by_last_commit() -> str | None:
 
     return None
 
-
 async def github_get_branch_last_commit(repo_full_name: str, branch_name: str) -> Commit | None:
     """
     The function returns the latest commit in a branch. The function arguments are the full repository name and the branch name.
@@ -106,7 +75,6 @@ async def github_get_branch_last_commit(repo_full_name: str, branch_name: str) -
     g = _github_auth()
 
     return g.get_repo(repo_full_name).get_branch(branch_name).commit
-
 
 async def github_check_and_merge_url_get(repo_full_name: str, branch_head: str, branch_base: str) -> str:
     """
@@ -121,7 +89,6 @@ async def github_check_and_merge_url_get(repo_full_name: str, branch_head: str, 
     """
 
     return f"https://github.com/{repo_full_name}/compare/{branch_base}...{branch_head}"
-
 
 async def github_check_and_merge(repo_full_name: str, branch_head: str, branch_base: str) -> str:
     """
@@ -187,3 +154,30 @@ async def github_user_info(random: int = 2) -> dict:
         "name": user.name,
         "email": user.email,
     }
+
+def _github_auth() -> Github:
+    """
+    Performs authorization on GitHub. The function returns a GitHub object for operation.
+    """
+    try:
+        global github_
+        if github_:
+            return github_
+
+        auth = Auth.Token(os.getenv('GITHUB_TOKEN'))
+        github_ = Github(auth=auth)
+
+        # Проверка "на вшивость": пробуем получить логин
+        # Если токен битый, вылетит ошибка здесь
+        user_login = github_.get_user().login
+        print(f"✅ Робот авторизован как: {user_login}")
+
+        return github_
+
+    except BadCredentialsException:
+        print("❌ Ошибка: Неверный GitHub токен!")
+        raise
+    except Exception as e:
+        print(f"❌ Робот не смог подключиться: {e}")
+        raise
+
