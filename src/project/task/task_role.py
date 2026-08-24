@@ -226,6 +226,12 @@ def task_role_planners_only(roles_by_project) -> dict[int, list[str]]:
     return planners
 
 
+# Причина занятости, при которой оболочка ждёт человека, а не работает: в терминале
+# открыт запрос разрешения. Новый круг такой оболочке отдавать нельзя — он досидит
+# до таймаута и сожжёт попытку.
+TASK_ROLE_SHELL_REASON_BLOCKED = 'permission'
+
+
 async def task_role_shell_live_by_project() -> dict[int, list[str]]:
     """
     Живые оболочки claude-shell в разрезе проектов: `{project_id: [role]}`.
@@ -233,6 +239,11 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
     Без живой оболочки шаг workflow всё равно сорвётся, а задача уйдёт в `failed`
     и потребует человека. Поэтому такие задачи лучше не захватывать вовсе — на
     карточке роли они останутся видимой очередью и дождутся запуска.
+
+    По тому же основанию пропускаем оболочку, запертую на запросе разрешения
+    (`agent_status_reason = permission`): она жива и пингует, но ответить не
+    может, пока человек не нажмёт в терминале. Круг ей отдавать — терять
+    двадцать минут и попытку.
 
     Проект оболочки определяется каталогом запуска (`work_dir` реестра сессий) —
     тем же правилом, по которому сессии раскладываются по блокам проектов на
@@ -250,7 +261,8 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
     async with mysql_get_db_async() as db:
         placeholders = ', '.join(['%s'] * len(_TASK_ROLE_SESSION_STATUS_LIVE))
         await db.execute(
-            'SELECT role, work_dir, last_seen_at FROM ai_claude_session_registry '
+            'SELECT role, work_dir, last_seen_at, agent_status_reason '
+            '  FROM ai_claude_session_registry '
             f" WHERE role <> '' AND status IN ({placeholders})",
             list(_TASK_ROLE_SESSION_STATUS_LIVE),
         )
@@ -277,6 +289,14 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
         if not role or not last_seen_at:
             continue
         if (now - last_seen_at).total_seconds() >= stale_seconds:
+            continue
+        # Оболочка, запертая на запросе разрешения, жива, но работать не может:
+        # диалог держит её, пока человек не ответит в терминале. Отдать ей круг
+        # значит гарантированно потерять двадцать минут и сжечь попытку —
+        # ровно так задача #1027 потеряла два круга QA подряд. Пропускаем по той
+        # же причине, что и незапущенную: задача останется видимой очередью на
+        # карточке роли и дождётся человека.
+        if str(row.get('agent_status_reason') or '') == TASK_ROLE_SHELL_REASON_BLOCKED:
             continue
         project_id = project_by_dir.get(_path_normalize(row.get('work_dir')), TASK_ROLE_PROJECT_NONE)
         if project_id and (project_id, role) not in card_roles:

@@ -155,3 +155,66 @@ class TestTickGoalsFinish:
 
         await _subtasks_goals_finish()
         assert (await task_state_subtask_get(subtask_id))['pipeline_state'] == 'planned'
+
+
+class TestShellBlockedByPermission:
+    """
+    Оболочка, запертая на запросе разрешения, из отбора выпадает.
+
+    Она жива и пингует, но ответить не может, пока человек не нажмёт в терминале.
+    Круг ей отдать — потерять двадцать минут и сжечь попытку. Живьём задача #1027
+    потеряла так два круга QA подряд.
+    """
+
+    async def _session_add(self, role: str, reason: str, work_dir: str = '/tmp/pytest_shell'):
+        """Сессия в реестре.
+
+        `last_seen_at` берём временем приложения, а не MySQL `NOW()`: свежесть
+        считается в Python против `datetime_now()`, и запись временем базы выглядит
+        протухшей ровно на смещение часового пояса настройки.
+        """
+        from datetime_.datetime_ import datetime_now
+        from mysql_.mysql_ import mysql_get_db_async
+
+        seen = await datetime_now()
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "INSERT INTO ai_claude_session_registry "
+                "       (session_uuid, role, work_dir, status, agent_status, agent_status_reason, "
+                "        last_seen_at) "
+                "VALUES (UUID(), %s, %s, 'active', 'busy', %s, %s)",
+                (role, work_dir, reason, seen))
+            row_id = db.lastrowid
+            await db.connection.commit()
+
+        return row_id
+
+    async def _session_drop(self, row_id: int):
+        from mysql_.mysql_ import mysql_get_db_async
+
+        async with mysql_get_db_async() as db:
+            await db.execute("DELETE FROM ai_claude_session_registry WHERE id = %s", (row_id,))
+            await db.connection.commit()
+
+    async def test_запертая_не_попадает_в_живые(self):
+        from src.project.task.task_role import (TASK_ROLE_PROJECT_NONE,
+                                                task_role_shell_live_by_project)
+
+        row_id = await self._session_add('__pytest_role', 'permission')
+        try:
+            live = await task_role_shell_live_by_project()
+            assert '__pytest_role' not in live.get(TASK_ROLE_PROJECT_NONE, [])
+        finally:
+            await self._session_drop(row_id)
+
+    async def test_занятая_ходом_остаётся_живой(self):
+        """`turn` — это работа, а не ожидание человека: такую оболочку не трогаем."""
+        from src.project.task.task_role import (TASK_ROLE_PROJECT_NONE,
+                                                task_role_shell_live_by_project)
+
+        row_id = await self._session_add('__pytest_role', 'turn')
+        try:
+            live = await task_role_shell_live_by_project()
+            assert '__pytest_role' in live.get(TASK_ROLE_PROJECT_NONE, [])
+        finally:
+            await self._session_drop(row_id)
