@@ -15,6 +15,7 @@ import time
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_FINAL,
     TASK_METADATA_KEY_DEV,
     TASK_METADATA_KEY_TEST,
     task_metadata_stop_sql,
@@ -273,16 +274,23 @@ async def task_state_subtasks_create(task_id: int, subtasks: list) -> int:
             # Пустой план подзадачи оставляем пустой строкой, а не JSON-пустышкой:
             # так поле в форме выглядит незаполненным, а не «планом ни о чём».
             plan_json = task_plan_serialize(plan_text, [], goals) if plan_text or goals else ''
+            # Пометка приёмки едет из плана менеджера в мешок подзадачи: по ней
+            # отбор не берёт её в работу, пока соседи не закрыты
+            # (`task_metadata_final_wait_sql`). У обычной подзадачи мешок пуст —
+            # ключа нет вовсе, а не `false`: так же, как у флажков фаз.
+            metadata = (json.dumps({TASK_METADATA_KEY_FINAL: True}, ensure_ascii=False)
+                        if item.get('final') else None)
             await db.execute(
                 "INSERT INTO project_task "
                 "       (project_id, parent_id, title, description, goals, pipeline_plan, "
-                "        position, status, task_type_id, pipeline_state, pipeline_from_plan) "
+                "        position, status, task_type_id, pipeline_state, pipeline_from_plan, "
+                "        metadata) "
                 "SELECT t.project_id, t.id, %s, %s, %s, %s, %s, %s, "
-                "       (SELECT id FROM project_task_type WHERE name = 'dev'), 'planned', 1 "
+                "       (SELECT id FROM project_task_type WHERE name = 'dev'), 'planned', 1, %s "
                 "  FROM project_task t WHERE t.id = %s",
                 (str(item.get('title') or ''), str(item.get('description') or ''),
                  json.dumps(goals, ensure_ascii=False) if goals else '',
-                 plan_json, position, kanban, task_id),
+                 plan_json, position, kanban, metadata, task_id),
             )
         await db.execute(
             "UPDATE project_task SET pipeline_locked_at = NULL, pipeline_locked_by = '' WHERE id = %s",

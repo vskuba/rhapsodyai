@@ -103,6 +103,13 @@ TASK_METADATA_KEY_RETRY = 'retry'
 # «в разработку» или флажка фазы «в разработку»/«в тестирование» (`task_stop.py`).
 TASK_METADATA_KEY_STOP = 'stopped'
 
+# Подзадача-приёмка: та, что проверяет результат остальных. Её нельзя брать в
+# работу, пока соседи не закрыты, — иначе она честно отвечает «не сошлось»,
+# изменить это не может и жжёт свои круги на чужой невыполненной работе.
+# Наступали дважды за день: #900 в задаче #895 и #1031 в #1027, обе ушли в
+# `blocked`, не сделав ничего плохого.
+TASK_METADATA_KEY_FINAL = 'final'
+
 
 def task_metadata_parse(value) -> dict:
     """
@@ -204,6 +211,31 @@ def task_metadata_test_free_sql(parent_column: str = 'parent_id') -> str:
                  f"'$.{TASK_METADATA_KEY_TEST}') = FALSE, FALSE)")
     return (f'COALESCE({parent_column}, 0) NOT IN '
             f'(SELECT pid FROM (SELECT id AS pid FROM project_task WHERE {forbidden}) AS _no_testing)')
+
+
+def task_metadata_final_wait_sql(column: str = 'metadata') -> str:
+    """
+    Условие «подзадача-приёмка ждёт, пока соседи не закрыты».
+
+    Приёмка проверяет чужую работу, и до её готовности вердикт у неё один —
+    «не сошлось». Круги при этом жгутся: три отказа подряд, и она в `blocked`,
+    не сделав ничего плохого. Поэтому в отбор она попадает только тогда, когда
+    все соседи по плану уже `done`.
+
+    Обычная подзадача условию удовлетворяет всегда: ключа в мешке у неё нет.
+
+    Подзапрос обёрнут в производную таблицу — MySQL не даёт читать в UPDATE ту
+    же таблицу, которую пишет (ошибка 1093), а отбор идёт именно UPDATE-ом.
+    """
+    return (f"(NOT COALESCE(JSON_EXTRACT(IF(JSON_VALID({column}), {column}, '{{}}'), "
+            f"'$.{TASK_METADATA_KEY_FINAL}') = TRUE, FALSE) "
+            " OR NOT EXISTS (SELECT 1 FROM (SELECT id, parent_id, pipeline_state, metadata "
+            "                                 FROM project_task) AS _sib "
+            "                 WHERE _sib.parent_id = project_task.parent_id "
+            "                   AND _sib.id <> project_task.id "
+            f"                   AND NOT COALESCE(JSON_EXTRACT(IF(JSON_VALID(_sib.metadata), "
+            f"                       _sib.metadata, '{{}}'), '$.{TASK_METADATA_KEY_FINAL}') = TRUE, FALSE) "
+            "                   AND COALESCE(_sib.pipeline_state, '') <> 'done'))")
 
 
 def task_metadata_row_apply(row) -> dict:

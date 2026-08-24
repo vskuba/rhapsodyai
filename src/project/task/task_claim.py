@@ -13,6 +13,7 @@ import socket
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_metadata import (
+    task_metadata_final_wait_sql,
     task_metadata_bugfix_free_sql,
     task_metadata_plan_free_sql,
     task_metadata_stop_free_sql,
@@ -243,8 +244,11 @@ async def task_claim_subtask_developable(worker: str, roles_by_project, max_atte
     словарь — не берём ничего, подзадачи ждут запуска оболочки.
     """
     role_sql, role_params = task_role_project_sql(roles_by_project, 'developer')
+    # Подзадача-приёмка ждёт закрытия соседей: до их готовности её вердикт всегда
+    # «не сошлось», а круги при этом жгутся (см. `task_metadata_final_wait_sql`).
+    where = ' AND '.join(part for part in (role_sql, task_metadata_final_wait_sql()) if part)
     for state_from in ('planned', 'failed_qa'):
-        subtask = await task_claim_subtask(state_from, 'developing', worker, role_sql, role_params)
+        subtask = await task_claim_subtask(state_from, 'developing', worker, where, role_params)
         if not subtask:
             continue
         if int(subtask['pipeline_attempt_count']) < max_attempts:
