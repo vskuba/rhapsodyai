@@ -39,8 +39,9 @@
 `testing`, одновременной записи не бывает, а общая хронология ценнее разделённой —
 QA видит, что делал разработчик, и наоборот.
 """
+import ast
+import json
 import os
-import re
 from datetime import datetime
 
 from logging_.logging_ import logger_info
@@ -67,6 +68,11 @@ TASK_LOG_WORKTREE_PREFIX = TASK_WORKTREE_DIR_TEMPLATE.split('{')[0]
 # глазами целиком, а ответы у ролей на десятки килобайт: в журнал идёт суть,
 # полный текст остаётся в трассе (`/admin/workflow_trace`).
 TASK_LOG_STEP_MAX_CHARS = 220
+
+# Ключи ответа, в которых лежит смысл: их роли кладут в JSON-структуру шага.
+# Порядок важен — первым идёт то, что короче и понятнее человеку.
+TASK_LOG_ANSWER_KEYS = ('summary', 'verdict', 'plan_text', 'plan', 'error', 'report',
+                        'critique', 'evidence')
 
 # Потолок чтения. Журнал растёт кругами, а на страницу задач он идёт целиком в
 # ответе API — отдаём хвост, а не весь файл.
@@ -284,7 +290,13 @@ def _step_skip(step: dict) -> bool:
     подставляют переменные и возвращают пустоту. В журнале они дают строку без
     содержания на каждую вторую позицию и топят в себе настоящие события.
     """
-    return not _one_line(step.get('output')) and not _one_line(step.get('error'))
+    if _one_line(step.get('error')):
+        return False
+
+    output = _one_line(step.get('output'))
+    # Счётчик круга возвращает голое число: для движка это состояние, для журнала —
+    # строка без содержания между двумя настоящими событиями.
+    return not output or output.isdigit()
 
 
 def _step_failed(step: dict) -> bool:
@@ -312,23 +324,137 @@ def _step_failed(step: dict) -> bool:
 
 def _answer_text(output) -> str:
     """
-    Суть ответа шага: из результата инструмента достаём сам ответ агента.
+    Суть ответа шага: из результата инструмента достаём то, что сказал агент.
 
-    Вызов оболочки возвращает словарь со служебными полями (`session_uuid`,
-    `inbox_id`, `elapsed`), и в журнале от него нужен только `response` или
-    причина отказа. Не разобралось — отдаём как есть: журнал вспомогательный, и
-    ронять его из-за неожиданного формата незачем.
+    Разбираем, а не выковыриваем регулярным выражением. Ответ вызова оболочки —
+    это repr словаря, внутри которого `response` сам бывает JSON-ом, да ещё в
+    markdown-заборе. Регулярка на таком спотыкалась о первую же кавычку внутри
+    значения, и в журнал уезжала одна скобка вместо плана на восемь шагов.
+
+    Разбор не удался (ответ обрезан трассой, формат неожиданный) — отдаём текст
+    как есть: журнал вспомогательный, ронять его из-за формата незачем.
     """
-    text = _one_line(output)
-    if not text.startswith('{'):
+    raw = str(output or '').strip()
+    if not raw:
+        return ''
+    if raw.lower().startswith('json:'):
+        raw = raw[5:].strip()
+
+    data = _dict_parse(raw)
+    if data is None:
+        return _one_line(raw)
+
+    for key in ('response', 'error'):
+        value = str(data.get(key) or '').strip()
+        if value:
+            return _one_line(_inner_text(value))
+
+    # Ответ шага бывает и самой структурой, без обёртки вызова оболочки: так
+    # отвечает «Вернуть результат». Разбирать её тем же `_inner_text`, что и
+    # вложенный ответ, — иначе в журнал уезжает сырой JSON плана на восемь шагов.
+    return _tool_text(data) or _inner_text(raw) or _one_line(raw)
+
+
+def _dict_parse(raw: str):
+    """
+    Словарь из repr или JSON. `None` — не разобралось.
+
+    `literal_eval` вместо `eval`: разбирает только литералы и ничего не исполняет,
+    а в трассу попадает чужой текст.
+    """
+    if not raw.startswith('{'):
+        return None
+
+    for parse in (ast.literal_eval, json.loads):
+        try:
+            value = parse(raw)
+        except (ValueError, SyntaxError, MemoryError, RecursionError):
+            continue
+        if isinstance(value, dict):
+            return value
+
+    return None
+
+
+def _inner_text(value: str) -> str:
+    """
+    Ответ агента человеческим текстом, даже когда он завёрнут в JSON.
+
+    Шаги «Ответ JSON: …» просят у агента структуру, и в журнале от неё нужен
+    смысл, а не фигурные скобки: план, вердикт, причина отказа. Обычный текст
+    возвращаем нетронутым.
+    """
+    text = value.strip()
+    # Обёртки, в которые агент кладёт структуру: markdown-забор и префикс `json:`
+    # из шага `return_response_text`.
+    if text.startswith('```'):
+        text = text.strip('`')
+        text = text[4:] if text.lower().startswith('json') else text
+    if text.lower().startswith('json:'):
+        text = text[5:]
+
+    data = _dict_parse(text.strip())
+    if data is None:
         return text
 
-    for key in ('response', 'error', 'plan_text', 'summary'):
-        match = re.search(rf"['\"]{key}['\"]:\s*['\"]([^'\"]+)['\"]", text)
-        if match and match.group(1).strip():
-            return _one_line(match.group(1))
+    # Шаги «Ответ JSON: …» заворачивают ответ в один ключ (`task_plan_json`,
+    # `qa_report_json`): сам ключ человеку не говорит ничего, спускаемся внутрь.
+    while len(data) == 1:
+        inner = next(iter(data.values()))
+        # Список внутри обёртки — это перечень (цели, подзадачи): нумеруем, иначе
+        # в журнал уехал бы сырой массив в квадратных скобках.
+        if isinstance(inner, list):
+            return ' · '.join(f'{i}) {_one_line(item)}' for i, item in enumerate(inner, 1)
+                              if str(item or '').strip())
+        if not isinstance(inner, dict) or not inner:
+            break
+        data = inner
 
-    return text
+    parts = []
+    for key in TASK_LOG_ANSWER_KEYS:
+        found = data.get(key)
+        if isinstance(found, dict):
+            found = (found.get('summary') or found.get('plan_text')
+                     or found.get('error') or found.get('verdict'))
+        found = str(found or '').strip()
+        if found:
+            parts.append(found)
+
+    if parts:
+        return ' · '.join(parts)
+
+    # Известных ключей нет — показываем сам словарь парами «ключ: значение».
+    # Читается заметно лучше сырого JSON, а терять его содержимое незачем: у
+    # ролей там вердикты вида `qa_goal_ok: yes`.
+    pairs = [f'{key}: {_one_line(val)}' for key, val in data.items()
+             if not isinstance(val, (dict, list)) and str(val or '').strip()]
+
+    return ' · '.join(pairs) if pairs else text
+
+
+def _tool_text(data: dict) -> str:
+    """
+    Результат инструмента человеческой строкой.
+
+    Инструменты возвращают словари под движок, и в журнале они выглядели как
+    `{'goal_has': 'yes', 'goal_index': 0, …}` — читать невозможно. Известные
+    формы переписываем словами; неизвестные вызывающий отдаст как есть.
+    """
+    if 'env_ok' in data:
+        return ('среда готова' if str(data.get('env_ok')) == 'yes'
+                else f"среда не готова: {data.get('env_error') or 'причина не названа'}")
+
+    if 'goal_done_count' in data:
+        return (f"целей закрыто {data.get('goal_done_count')} из {data.get('goal_total')}, "
+                f"осталось {data.get('goal_open_count')}")
+
+    if 'goal_has' in data:
+        if str(data.get('goal_has')) != 'yes':
+            return 'цели кончились'
+        return (f"взял цель {data.get('goal_number')} из {data.get('goal_total')}: "
+                f"{data.get('goal_text')}")
+
+    return ''
 
 
 def _outcome_line(at, outcome: str) -> str:
@@ -341,8 +467,14 @@ def _outcome_line(at, outcome: str) -> str:
 
 
 def _one_line(text) -> str:
-    """Ответ шага в одну строку: журнал читают построчно, переносы его ломают."""
-    return ' '.join(str(text or '').split())
+    """
+    Ответ шага в одну строку: журнал читают построчно, переносы его ломают.
+
+    Литеральный «\\n» убираем наравне с настоящим переводом строки: в repr
+    словаря перенос остаётся двумя символами и в строке журнала выглядел бы
+    мусором посреди фразы.
+    """
+    return ' '.join(str(text or '').replace('\\n', ' ').replace('\\t', ' ').split())
 
 
 def _read_tail(path: str) -> str:

@@ -134,3 +134,83 @@ async def test_write_run_without_trace_writes_nothing(tmp_path):
     from src.project.task.task_log import task_log_write_run
 
     assert await task_log_write_run(str(tmp_path), 1, '', 'developer', 1, 'итог') == 0
+
+
+class TestAnswerParsing:
+    """
+    Разбор ответа шага. Все образцы — с живых прогонов: менеджера (трасса 1085) и
+    QA (1082). Регулярка на них спотыкалась о первую кавычку внутри значения, и в
+    журнал уезжала одна скобка вместо плана на восемь шагов.
+    """
+
+    def test_json_inside_shell_answer(self):
+        """`response` сам бывает JSON-ом в markdown-заборе — достаём смысл."""
+        from src.project.task.task_log import _answer_text
+
+        text = _answer_text("{'status': 'answered', 'response': '```json\\n"
+                            '{"task_plan_json": {"plan_text": "1. Прогнать автопроверки"}}'
+                            "```', 'elapsed': 3}")
+
+        assert text == '1. Прогнать автопроверки'
+
+    def test_wrapper_key_unwrapped(self):
+        """Обёртка `task_plan_json` человеку не говорит ничего — спускаемся внутрь."""
+        from src.project.task.task_log import _answer_text
+
+        assert _answer_text('{"qa_report_json": {"summary": "ветка проверена"}}') == 'ветка проверена'
+
+    def test_list_wrapper_numbered(self):
+        """Цели приходят массивом: нумеруем, а не показываем квадратные скобки."""
+        from src.project.task.task_log import _answer_text
+
+        text = _answer_text('{"task_goals_json": ["первая цель", "вторая цель"]}')
+
+        assert text == '1) первая цель · 2) вторая цель'
+
+    def test_json_prefix_stripped(self):
+        """Шаг «Вернуть результат» отдаёт ответ с префиксом `json:`."""
+        from src.project.task.task_log import _answer_text
+
+        assert _answer_text('json:{"plan": {"plan_text": "план работ"}}') == 'план работ'
+
+    def test_unknown_keys_rendered_as_pairs(self):
+        """Известных ключей нет — пары «ключ: значение» читаются лучше сырого JSON."""
+        from src.project.task.task_log import _answer_text
+
+        text = _answer_text('{"qa_goal_ok": "yes", "qa_goal_evidence": "живое воспроизведение"}')
+
+        assert 'qa_goal_ok: yes' in text and 'живое воспроизведение' in text
+
+    def test_tool_result_in_russian(self):
+        """Инструменты возвращают словари под движок — человеку нужен смысл."""
+        from src.project.task.task_log import _answer_text
+
+        assert _answer_text("{'env_ok': 'yes', 'env_error': '', 'env_dir': '/app'}") == 'среда готова'
+        assert 'взял цель 1 из 2' in _answer_text(
+            "{'goal_has': 'yes', 'goal_text': 'цель', 'goal_number': 1, 'goal_total': 2}")
+        assert 'целей закрыто 1 из 2' in _answer_text(
+            "{'goal_done_count': 1, 'goal_open_count': 1, 'goal_total': 2}")
+
+    def test_literal_newline_flattened(self):
+        """
+        В repr словаря перенос строки остаётся двумя символами.
+
+        Без замены он выглядел бы в журнале мусором «\\n» посреди фразы.
+        """
+        from src.project.task.task_log import _answer_text
+
+        assert '\\n' not in _answer_text("{'response': 'первая строка\\\\nвторая строка'}")
+
+    def test_broken_json_returned_as_is(self):
+        """Ответ обрезан трассой — отдаём как есть, журнал из-за формата не роняем."""
+        from src.project.task.task_log import _answer_text
+
+        assert _answer_text('{"summary": "обрезанны') == '{"summary": "обрезанны'
+
+
+def test_counter_step_skipped():
+    """Счётчик круга возвращает голое число — в журнале это строка без содержания."""
+    from src.project.task.task_log import _step_skip
+
+    assert _step_skip(_step('Счётчик итераций проверки', '1'))
+    assert not _step_skip(_step('Отметить цель', "{'goal_done_count': 1}"))
