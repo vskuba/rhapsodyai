@@ -546,3 +546,43 @@ class TestTaskPipelineRetry:
         row = await _task_row_read(kid)
         assert row["pipeline_state"] == "planned"
         assert row["pipeline_attempt_count"] == 0
+
+
+class TestGoalsAllDone:
+    """
+    Пропуск круга разработчика, когда закрывать уже нечего.
+
+    Цели проставляет сам QA, разобрав доказательство. Если закрыты все, работы для
+    разработчика не осталось — он прочитает журнал, увидит сделанное и ответит
+    «остаток вне моей подзадачи», потратив на это полный круг. Живьём это стоило
+    подзадаче #1028 нескольких кругов подряд.
+    """
+
+    def test_все_цели_закрыты(self):
+        from src.project.task.task_pipeline import _goals_all_done
+
+        subtask = {'goals': '[{"text": "раз", "done": true}, {"text": "два", "done": true}]'}
+
+        assert _goals_all_done(subtask) is True
+
+    def test_есть_незакрытая(self):
+        from src.project.task.task_pipeline import _goals_all_done
+
+        subtask = {'goals': '[{"text": "раз", "done": true}, {"text": "два", "done": false}]'}
+
+        assert _goals_all_done(subtask) is False
+
+    def test_без_целей_круг_нужен(self):
+        """Пустой список — это «принимать не по чему», а не «всё сделано»."""
+        from src.project.task.task_pipeline import _goals_all_done
+
+        assert _goals_all_done({'goals': '[]'}) is False
+        assert _goals_all_done({'goals': ''}) is False
+        assert _goals_all_done({}) is False
+
+    def test_цели_объектами(self):
+        """Из БД приходит строкой, из кода — уже разобранным списком."""
+        from src.project.task.task_pipeline import _goals_all_done
+
+        assert _goals_all_done({'goals': [{'text': 'раз', 'done': True}]}) is True
+        assert _goals_all_done({'goals': [{'text': 'раз'}]}) is False

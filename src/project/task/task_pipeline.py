@@ -501,6 +501,23 @@ async def _run_developer(action: dict) -> str | None:
         return None
 
     task = await task_state_task_get(subtask['parent_id'])
+
+    # Закрывать нечего — круга не будет вовсе. Цели подзадачи проставляет сам QA,
+    # разобрав доказательство (`task_goal_mark`), поэтому все закрытые цели это уже
+    # состоявшаяся проверка, а не обещание. Разработчику тут делать нечего: он
+    # прочитает журнал, увидит сделанное и ответит «остаток вне моей подзадачи» —
+    # потратив на это полный круг в десятки минут. Живьём это стоило #1028
+    # нескольких кругов подряд.
+    #
+    # И QA звать незачем: закрывал цели он же, второй заход по той же фактуре даст
+    # тот же ответ. Подзадача закрывается сразу.
+    if _goals_all_done(subtask):
+        await task_state_subtask_set(subtask['id'], 'done', last_error='',
+                                     attempt_count=int(subtask['pipeline_attempt_count']))
+        await _subtask_report(subtask, 'все цели закрыты QA — круг не нужен, подзадача готова')
+        logger_info(f"[task] subtask#{subtask['id']}: все цели закрыты, круг пропущен -> done")
+        return f"subtask#{subtask['id']} developer -> done (все цели закрыты)"
+
     attempt_no = int(subtask['pipeline_attempt_count']) + 1
     started = time.monotonic()
     work_dir = await task_role_project_work_dir((task or {}).get('project_id'))
@@ -573,6 +590,19 @@ async def _run_qa(action: dict) -> str | None:
         return None
 
     task = await task_state_task_get(subtask['parent_id'])
+
+    # Проверять нечего: все цели уже закрыты, и закрывал их QA — своим же
+    # инструментом `task_goal_mark`, разобрав доказательство по каждой. Второй заход
+    # по той же фактуре даст тот же ответ, поэтому подзадача закрывается сразу.
+    # Та же проверка стоит и на входе разработчика: до QA такая строка вообще не
+    # доходит, а здесь она остаётся для тех, кто попал в очередь раньше правки.
+    if _goals_all_done(subtask):
+        await task_state_subtask_set(subtask['id'], 'done', last_error='',
+                                     attempt_count=int(subtask['pipeline_attempt_count']))
+        await _subtask_report(subtask, 'все цели закрыты QA — проверять нечего, подзадача готова')
+        logger_info(f"[task] subtask#{subtask['id']}: все цели закрыты, круг QA пропущен -> done")
+        return f"subtask#{subtask['id']} qa -> done (все цели закрыты)"
+
     attempt_no = int(subtask['pipeline_attempt_count']) + 1
     started = time.monotonic()
     work_dir = await task_role_project_work_dir((task or {}).get('project_id'))
@@ -925,6 +955,19 @@ async def _subtask_branch_save(subtask_id: int, result: dict) -> None:
     ) if value}
     if patch:
         await task_metadata_update(subtask_id, patch)
+
+
+def _goals_all_done(subtask: dict) -> bool:
+    """
+    У подзадачи есть цели и все они закрыты.
+
+    Подзадача без целей сюда не попадает: пустой список означает не «всё
+    сделано», а «принимать не по чему», и пропускать по нему разработку значило
+    бы отдать QA пустую строку и закрыть её ни за что.
+    """
+    goals = task_plan_goals_normalize(subtask.get('goals'))
+
+    return bool(goals) and all(goal.get('done') for goal in goals)
 
 
 async def _question_hold(subtask: dict, result: dict, role: str, attempt_no: int) -> bool:
