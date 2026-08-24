@@ -513,14 +513,20 @@ async def _run_developer(action: dict) -> str | None:
         return await _retry_subtask(subtask, 'developer', 'planned', TASK_DEVELOPER_ROLE,
                                     work_dir, attempt_no, started, f'Developer: {e}')
 
-    # Среда не пригодна для работы (сервер подзадачи не поднялся, ветка выкачена от
-    # сломанного master) — работы не было, и жечь попытку не за что: возвращаем строку
-    # в очередь тем же путём, что и сорвавшийся прогон. Лимит повторов не даст крутить
-    # это вечно: три отказа подряд человек увидит как `blocked`.
+    # `env_ok = false` значит «прогона не было» — и причин у этого две. Среда
+    # непригодна (сервер подзадачи не поднялся, ветка от сломанного master) —
+    # это шаг проверки среды. Или агент не ответил вовсе: таймаут, мёртвая
+    # оболочка, ошибка провайдера — это шаги-заглушки. Работы не было ни там, ни
+    # там, и жечь попытку не за что: строка идёт в повтор тем же путём, что и
+    # сорвавшийся прогон. Лимит повторов не даст крутить это вечно.
+    #
+    # Формулировка нейтральная именно поэтому. Раньше стояло «среда не готова», и
+    # на таймауте это врало: среда была готова, шаг её проверки прошёл за десять
+    # секунд, — а человек шёл смотреть каталог и сервер вместо зависшей оболочки.
     if not result.get('env_ok', True):
         return await _retry_subtask(subtask, 'developer', 'planned', TASK_DEVELOPER_ROLE,
                                     work_dir, attempt_no, started,
-                                    f"Developer: среда не готова — {result.get('error') or 'сервер подзадачи не отвечает'}")
+                                    f"Developer: прогон не состоялся — {result.get('error') or 'сервер подзадачи не отвечает'}")
 
     await task_retry_clear(subtask['id'])
     await task_state_attempt_log(subtask['id'], attempt_no, 'developer', result, started)
@@ -576,12 +582,20 @@ async def _run_qa(action: dict) -> str | None:
         return await _retry_subtask(subtask, 'qa', 'qa_pending', TASK_QA_ROLE,
                                     work_dir, attempt_no, started, f'QA: {e}')
 
-    # Проверять не на чем — вернуть подзадачу разработчику нельзя: его работу никто
-    # не смотрел. Как и у разработчика, это повтор без потраченной попытки.
+    # `env_ok = false` значит «прогона не было» — и причин у этого две. Среда
+    # непригодна (сервер подзадачи не поднялся, ветка от сломанного master) —
+    # это шаг проверки среды. Или агент не ответил вовсе: таймаут, мёртвая
+    # оболочка, ошибка провайдера — это шаги-заглушки. Работы не было ни там, ни
+    # там, и жечь попытку не за что: строка идёт в повтор тем же путём, что и
+    # сорвавшийся прогон. Лимит повторов не даст крутить это вечно.
+    #
+    # Формулировка нейтральная именно поэтому. Раньше стояло «среда не готова», и
+    # на таймауте это врало: среда была готова, шаг её проверки прошёл за десять
+    # секунд, — а человек шёл смотреть каталог и сервер вместо зависшей оболочки.
     if not result.get('env_ok', True):
         return await _retry_subtask(subtask, 'qa', 'qa_pending', TASK_QA_ROLE,
                                     work_dir, attempt_no, started,
-                                    f"QA: среда не готова — {result.get('error') or 'сервер подзадачи не отвечает'}")
+                                    f"QA: прогон не состоялся — {result.get('error') or 'сервер подзадачи не отвечает'}")
 
     await task_retry_clear(subtask['id'])
     await task_state_attempt_log(subtask['id'], attempt_no, 'qa', result, started)
@@ -644,7 +658,7 @@ async def _run_bugfix(action: dict) -> str | None:
     if not result.get('env_ok', True):
         return await _retry_task(
             task, 'bugfix', 'new', TASK_BUGFIXER_ROLE, work_dir,
-            f"Багфиксер: среда не готова — {result.get('error') or 'каталог бага не поднялся'}")
+            f"Багфиксер: прогон не состоялся — {result.get('error') or 'каталог бага не поднялся'}")
 
     await task_retry_clear(task['id'])
     # Попытка всегда первая: круг у бага один, и `pipeline_attempt_count` он не растит.
