@@ -123,6 +123,7 @@ from src.project.task.task_state import (
     task_state_task_get,
     task_state_task_requeue,
 )
+from src.project.task.task_log import task_log_write_run
 from src.project.task.task_worktree import task_worktree_ensure
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_parallel import (
@@ -524,6 +525,7 @@ async def _run_developer(action: dict) -> str | None:
     await task_retry_clear(subtask['id'])
     await task_state_attempt_log(subtask['id'], attempt_no, 'developer', result, started)
     await _subtask_branch_save(subtask['id'], result)
+    await _log_run(subtask['id'], work_dir, result, 'developer', attempt_no)
 
     if result.get('ok'):
         await task_state_subtask_set(subtask['id'], 'qa_pending', last_error='')
@@ -583,6 +585,7 @@ async def _run_qa(action: dict) -> str | None:
 
     await task_retry_clear(subtask['id'])
     await task_state_attempt_log(subtask['id'], attempt_no, 'qa', result, started)
+    await _log_run(subtask['id'], work_dir, result, 'qa', attempt_no)
 
     if result.get('ok'):
         await task_state_subtask_set(subtask['id'], 'done', last_error='', attempt_count=attempt_no)
@@ -707,8 +710,15 @@ async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str
     # менялся бы вместе с ней, а сообщение помнит только момент захвата. Пустой
     # каталог (задача без проекта) — адресация остаётся по одной роли.
     work_dir = await task_role_project_work_dir(task.get('project_id'))
+    # Каталог заводим и менеджеру, хотя кода он не пишет: в нём живут журнал и
+    # состояние строки (`task_log`), а без каталога у задачи под менеджером не было
+    # бы для них места и пришлось бы держать второе правило хранения. Номера строки
+    # для каталога достаточно, а `task_worktree_ensure` идемпотентен — на пересмотре
+    # плана каталог просто найдётся готовым.
+    task_dir = await _subtask_dir(work_dir, int(task['id']))
     try:
-        result = await task_agent_manager_plan(task, revise=revise, role=role, work_dir=work_dir)
+        result = await task_agent_manager_plan(task, revise=revise, role=role,
+                                               work_dir=work_dir, task_dir=task_dir)
     except Exception as e:
         return await _retry_task(task, label, state_retry, role, work_dir, f'Manager: {e}')
 
@@ -815,6 +825,9 @@ async def _retry_subtask(subtask: dict, step: str, state_retry: str, role: str, 
     """
     result = {'ok': False, 'output': '', 'error': error}
     await task_state_attempt_log(subtask['id'], attempt_no, step, result, started)
+    # Ради этого журнал и заводили: ответа нет, но шаги, что успели пройти, в
+    # трассе остались — следующий круг начнёт с них, а не с чистого листа.
+    await _log_run(subtask['id'], work_dir, result, role, attempt_no, error)
 
     retry = await task_retry_take(subtask['id'], role, error)
     if not retry['allowed']:
@@ -891,6 +904,29 @@ async def _subtask_branch_save(subtask_id: int, result: dict) -> None:
     ) if value}
     if patch:
         await task_metadata_update(subtask_id, patch)
+
+
+async def _log_run(task_id: int, work_dir: str, result: dict, role: str,
+                   attempt_no: int, error: str = '') -> None:
+    """
+    Переложить прогон роли в журнал строки — то, что прочтёт следующий круг.
+
+    Зовётся после каждого прогона: и удавшегося, и не сошедшегося, и оборванного.
+    Оборванный тут важнее всех — ответа у него нет, а пройденные шаги в трассе
+    есть, и без этой записи следующий круг начал бы с чистого листа. Так и вышло
+    с подзадачей #1028: шестнадцать минут, чтобы заново узнать про собственный
+    коммит.
+
+    Ошибки глушим: журнал вспомогательный, и ронять из-за него состоявшийся круг
+    нечестно.
+    """
+    outcome = str(error or result.get('error') or '').strip()
+    if not outcome:
+        outcome = 'готово' if result.get('ok') else 'работа не сошлась'
+
+    with suppress(Exception):
+        await task_log_write_run(work_dir, task_id, str(result.get('session_uuid') or ''),
+                                 role, attempt_no, outcome)
 
 
 async def _subtask_dir(work_dir: str, subtask_id: int) -> str:

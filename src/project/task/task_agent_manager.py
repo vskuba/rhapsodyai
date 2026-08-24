@@ -43,7 +43,7 @@ MANAGER_USER_ID = 1  # только для атрибуции session/log
 
 async def task_agent_manager_plan(task: dict, revise: bool = False,
                                   role: str = TASK_ROLE_DEFAULT,
-                                  work_dir: str = '') -> dict:
+                                  work_dir: str = '', task_dir: str = '') -> dict:
     """
     Разложить глобальную задачу на план, подзадачи и цели.
 
@@ -62,6 +62,10 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
             называются одинаково — без каталога прогон ушёл бы в оболочку
             соседнего проекта. Уходит в переменную `task_shell_work_dir`.
             Пустая строка (задача без проекта) — адресация только по роли.
+        task_dir: каталог самой задачи. Кода менеджер не пишет, но в этом
+            каталоге живут его журнал и состояние (`task_log`) — по ним
+            следующий круг понимает, докуда дошёл прошлый. Пустая строка —
+            каталога завести не вышло, промпт про журнал не раскроется.
 
     Returns:
         plan_text: человекочитаемый план для утверждения человеком.
@@ -112,6 +116,9 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
         # «в чьём проекте»: карточки заведены на каждый проект, и роли у них
         # одинаковые.
         'task_shell_work_dir': str(work_dir or ''),
+        # Где вести журнал. Пустая строка ложна для `%if%` — блок про журнал
+        # тогда не раскроется, и менеджер отработает как раньше.
+        'task_work_dir':     str(task_dir or ''),
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
 
@@ -147,7 +154,10 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
         future.cancel()
         raise RuntimeError(f'менеджер не уложился в {timeout}s')
 
-    return _plan_parse(result_text)
+    # `session_uuid` отдаём наружу: по нему `task_log` находит трассу этого
+    # прогона и перекладывает пройденные шаги в журнал строки. Своего способа
+    # добраться до трассы у конвейера нет — сессию заводит эта функция.
+    return {**_plan_parse(result_text), 'session_uuid': session_uuid}
 
 
 async def _agent_get() -> dict:

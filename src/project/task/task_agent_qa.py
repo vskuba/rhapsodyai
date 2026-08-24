@@ -175,7 +175,10 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         future.cancel()
         raise RuntimeError(f'QA не уложился в {timeout}s')
 
-    return _result_parse(result_text)
+    # `session_uuid` отдаём наружу: по нему `task_log` находит трассу этого
+    # прогона и перекладывает пройденные шаги в журнал строки. Своего способа
+    # добраться до трассы у конвейера нет — сессию заводит эта функция.
+    return {**_result_parse(result_text), 'session_uuid': session_uuid}
 
 
 async def _agent_get() -> dict:

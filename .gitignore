@@ -51,3 +51,9 @@ docker-compose.override.yml
 
 # Blue-Green deployment state (git clean -fd must not delete this)
 .deploy_slot
+
+# Журнал и состояние работы агента по подзадаче: пишутся в корень её worktree и
+# в .claude/task-logs/ (у менеджера worktree нет). Это следы процесса, а не
+# результат работы, — в коммит и в merge request им нельзя.
+.task-*.md
+.claude/task-logs

@@ -139,7 +139,10 @@ async def task_agent_bugfixer_run(task: dict, role: str = TASK_BUGFIXER_ROLE,
         future.cancel()
         raise RuntimeError(f'Багфиксер не уложился в {timeout}s')
 
-    return _result_parse(result_text)
+    # `session_uuid` отдаём наружу: по нему `task_log` находит трассу этого
+    # прогона и перекладывает пройденные шаги в журнал строки. Своего способа
+    # добраться до трассы у конвейера нет — сессию заводит эта функция.
+    return {**_result_parse(result_text), 'session_uuid': session_uuid}
 
 
 async def _agent_get() -> dict:
