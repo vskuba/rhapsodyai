@@ -355,3 +355,121 @@ class TestCutText:
         line = _step_line(_step('Шаг', "{'response': '" + 'я' * 4000 + "'}"))
 
         assert TASK_LOG_CUT_MARK in line
+
+
+class TestSummaryChunks:
+    """
+    Нарезка длинных ответов на порции под контекст модели.
+
+    Порция — не украшение, а следствие двух измеренных ограничений: контекст
+    `gx10/qwen-small` отвечает `exceed_context_size_error` на 2583 токенах, а
+    вызовы одного агента не параллелятся (слот один) и на 180 секундах их рвёт
+    сам фреймворк. Поэтому режем и шлём по очереди.
+    """
+
+    def test_короткие_идут_одной_порцией(self):
+        from src.project.task.task_log_summary import _chunks_split
+
+        items = [{'key': n, 'text': 'я' * 300} for n in range(3)]
+
+        assert [len(c) for c in _chunks_split(items)] == [3]
+
+    def test_длинные_делятся(self):
+        from src.project.task.task_log_summary import TASK_LOG_SUMMARY_CHUNK_MAX, _chunks_split
+
+        items = [{'key': n, 'text': 'я' * (TASK_LOG_SUMMARY_CHUNK_MAX // 2 + 50)} for n in range(4)]
+        chunks = _chunks_split(items)
+
+        assert len(chunks) > 1
+        assert sum(len(c) for c in chunks) == 4
+
+    def test_блок_больше_порции_уходит_один(self):
+        """Он уже урезан по своему потолку — выбрасывать его нечестно."""
+        from src.project.task.task_log_summary import TASK_LOG_SUMMARY_CHUNK_MAX, _chunks_split
+
+        items = [{'key': 0, 'text': 'я' * (TASK_LOG_SUMMARY_CHUNK_MAX * 3)},
+                 {'key': 1, 'text': 'коротко'}]
+        chunks = _chunks_split(items)
+
+        assert [len(c) for c in chunks] == [1, 1]
+
+    def test_пусто(self):
+        from src.project.task.task_log_summary import _chunks_split
+
+        assert _chunks_split([]) == []
+
+
+class TestSummaryBlocks:
+    """Сборка промпта из блоков порции."""
+
+    def test_нумерация_с_единицы(self):
+        from src.project.task.task_log_summary import _blocks_build
+
+        text = _blocks_build([{'text': 'раз', 'title': 'Разбор', 'kind': 'сделал'},
+                              {'text': 'два', 'title': 'Вердикт', 'kind': 'затык'}])
+
+        assert '=== 1 · Шаг: Разбор · Исход: сделал ===' in text
+        assert '=== 2 · Шаг: Вердикт · Исход: затык ===' in text
+
+    def test_длинный_ответ_режется(self):
+        from src.project.task.task_log_summary import TASK_LOG_SUMMARY_BLOCK_MAX, _blocks_build
+
+        text = _blocks_build([{'text': 'я' * 9000, 'title': 'Ш', 'kind': 'сделал'}])
+
+        assert len(text) < TASK_LOG_SUMMARY_BLOCK_MAX + 200
+
+    def test_пустой_ответ_пропускается(self):
+        from src.project.task.task_log_summary import _blocks_build
+
+        assert _blocks_build([{'text': '   ', 'title': 'Ш', 'kind': 'сделал'}]) == ''
+
+
+class TestSummaryAnswer:
+    """
+    Разбор ответа модели. Терпимость к форме тут не вежливость: пересказ уже
+    стоил десятков секунд, и терять его из-за того, что модель назвала номер
+    `number` вместо `n`, — расточительство.
+    """
+
+    def test_обычная_форма(self):
+        from src.project.task.task_log_summary import _answer_parse
+
+        raw = 'json:{"log_summary_json": {"lines": [{"n": 1, "text": "суть"}]}}'
+
+        assert _answer_parse(raw, 850) == {1: 'суть'}
+
+    def test_список_прямо_под_ключом(self):
+        from src.project.task.task_log_summary import _answer_parse
+
+        raw = '{"log_summary_json": [{"n": 2, "text": "суть"}]}'
+
+        assert _answer_parse(raw, 850) == {2: 'суть'}
+
+    def test_массив_строк_нумеруется_по_месту(self):
+        from src.project.task.task_log_summary import _answer_parse
+
+        raw = '{"lines": ["первая", "вторая"]}'
+
+        assert _answer_parse(raw, 850) == {1: 'первая', 2: 'вторая'}
+
+    def test_переводы_строк_схлопываются(self):
+        """Журнал читают построчно — перенос внутри строки его ломает."""
+        from src.project.task.task_log_summary import _answer_parse
+
+        raw = '{"lines": [{"n": 1, "text": "две\\nстроки"}]}'
+
+        assert _answer_parse(raw, 850) == {1: 'две строки'}
+
+    def test_длина_режется_потолком(self):
+        from src.project.task.task_log_summary import _answer_parse
+
+        raw = '{"lines": [{"n": 1, "text": "' + 'я' * 3000 + '"}]}'
+
+        assert len(_answer_parse(raw, 850)[1]) == 850
+
+    def test_мусор_даёт_пустоту(self):
+        from src.project.task.task_log_summary import _answer_parse
+
+        assert _answer_parse('', 850) == {}
+        assert _answer_parse('не json вовсе', 850) == {}
+        assert _answer_parse('{"lines": "не список"}', 850) == {}

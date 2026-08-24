@@ -54,6 +54,7 @@ from datetime_.datetime_ import datetime_offset_apply
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from setting_.setting_ import setting_get
+from src.project.task.task_log_summary import task_log_summary_many
 from src.project.task.task_worktree import (TASK_WORKTREE_BASE_DIR,
                                             task_worktree_base_branch,
                                             task_worktree_git,
@@ -102,6 +103,10 @@ TASK_LOG_STATES_IN_FLIGHT = ('planning', 'reviewing', 'developing', 'testing', '
 # Потолок чтения. Журнал растёт кругами, а на страницу задач он идёт целиком в
 # ответе API — отдаём хвост, а не весь файл.
 TASK_LOG_READ_MAX_CHARS = 40000
+
+# Под каким ключом в наборе пересказов лежит итог круга. Шаги нумеруются с нуля, и
+# отрицательное число с ними не столкнётся.
+TASK_LOG_SUMMARY_OUTCOME_KEY = -1
 
 
 def task_log_dir(repo_dir: str, task_id) -> str:
@@ -348,12 +353,14 @@ async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
     head = (f"\n## круг {int(attempt_no or 0)} · {role}{_retry_mark(directory, attempt_no, role)} · "
             f"{started.strftime('%Y-%m-%d %H:%M') if started else ''}\n")
 
+    shown = [step for step in steps if not _step_skip(step)]
+    summaries = await _summaries_make(shown, outcome)
+
     lines = [head]
-    for step in steps:
-        if _step_skip(step):
-            continue
-        lines.append(_step_line(step))
-    lines.append(_outcome_line(steps[-1].get('created_at'), outcome))
+    for number, step in enumerate(shown):
+        lines.append(_step_line(step, summaries.get(number, '')))
+    lines.append(_outcome_line(steps[-1].get('created_at'), outcome,
+                               summaries.get(TASK_LOG_SUMMARY_OUTCOME_KEY, '')))
 
     try:
         with open(os.path.join(directory, TASK_LOG_FILE), 'a', encoding='utf-8') as fh:
@@ -483,13 +490,50 @@ async def _trace_steps(session_uuid: str) -> list[dict]:
         return [dict(row) for row in (await db.fetchall() or [])]
 
 
-def _step_line(step: dict) -> str:
+async def _summaries_make(steps: list, outcome: str) -> dict:
+    """
+    Пересказать то, что не влезает в строку журнала. Ключ — номер шага в `steps`.
+
+    Пересказываем только длинное. Короткий ответ уже и есть суть: звать модель
+    ради него значит платить временем за переписывание готового, а строка от
+    этого не станет понятнее.
+
+    Итог круга идёт наравне с шагами, под своим ключом: он такой же длинный текст
+    и обрезался ровно так же — а читают его первым, это последняя строка блока.
+
+    Сбой пересказа не сбой журнала: `task_log_summary_many` возвращает пустой
+    набор, и все строки уходят в обрезку, как раньше.
+    """
+    items = []
+    for number, step in enumerate(steps):
+        text = _one_line(step.get('error') or '') or _answer_text(step.get('output'))
+        if len(text) <= TASK_LOG_STEP_MAX_CHARS:
+            continue
+        items.append({'key': number, 'title': str(step.get('step_title') or 'шаг'),
+                      'kind': 'затык' if _step_failed(step) else 'сделал', 'text': text})
+
+    outcome_text = _one_line(outcome)
+    if len(outcome_text) > TASK_LOG_STEP_MAX_CHARS:
+        items.append({'key': TASK_LOG_SUMMARY_OUTCOME_KEY, 'title': 'итог круга',
+                      'kind': 'готово' if outcome_text.startswith(TASK_LOG_OUTCOME_OK) else 'затык',
+                      'text': outcome_text})
+
+    if not items:
+        return {}
+
+    return await task_log_summary_many(items, TASK_LOG_STEP_MAX_CHARS)
+
+
+def _step_line(step: dict, summary: str = '') -> str:
     """
     Шаг трассы одной строкой журнала: время, ключевое слово, шаг, время, суть.
 
     Ключевых слов шесть, те же, что разбирает вкладка «Журналы». Ошибка шага и
     сорвавшийся вызов оболочки — `затык`: по нему следующий круг и ищет, обо что
     споткнулся прошлый.
+
+    `summary` — готовый пересказ длинного ответа (`task_log_summary`). Пуст —
+    режем по потолку, как раньше: пересказ вспомогательный и отказывать умеет.
     """
     at = step.get('created_at')
     stamp = at.strftime('%H:%M:%S') if at else '--:--:--'
@@ -500,7 +544,7 @@ def _step_line(step: dict) -> str:
     spent = f' [{seconds // 60} мин]' if seconds >= 60 else (f' [{seconds}с]' if seconds else '')
     title = str(step.get('step_title') or 'шаг')
 
-    return f'{stamp}  {keyword:<9} {title}{spent}: {_cut_text(text)}\n'
+    return f'{stamp}  {keyword:<9} {title}{spent}: {summary or _cut_text(text)}\n'
 
 
 def _step_skip(step: dict) -> bool:
@@ -678,7 +722,7 @@ def _tool_text(data: dict) -> str:
     return ''
 
 
-def _outcome_line(at, outcome: str) -> str:
+def _outcome_line(at, outcome: str, summary: str = '') -> str:
     """
     Итог круга — последняя строка блока: с неё начинает следующий круг.
 
@@ -691,7 +735,7 @@ def _outcome_line(at, outcome: str) -> str:
     text = _one_line(outcome)
     keyword = 'готово' if text.startswith(TASK_LOG_OUTCOME_OK) else 'затык'
 
-    return f'{stamp}  {keyword:<9} итог круга: {_cut_text(text)}\n'
+    return f'{stamp}  {keyword:<9} итог круга: {summary or _cut_text(text)}\n'
 
 
 def _cut_text(text: str) -> str:
