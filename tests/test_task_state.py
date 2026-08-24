@@ -103,3 +103,55 @@ class TestLateRoundGuard:
 
         row = await task_state_subtask_get(subtask_id)
         assert row['pipeline_state'] == 'done'
+
+
+class TestTickGoalsFinish:
+    """
+    Тик закрывает строки, по которым делать нечего.
+
+    Проверка есть и на входе раннеров, но туда подзадача попадает, только выиграв
+    очередь, а очередь у проекта одна на всех и занята чужими кругами по двадцать
+    минут. Живьём #1028 стояла в `failed_qa` с закрытыми целями, пока сосед
+    доделывал свой круг, — хотя закрыть её стоило одного UPDATE.
+    """
+
+    async def _goals_set(self, subtask_id: int, goals: str, state: str = 'planned'):
+        from mysql_.mysql_ import mysql_get_db_async
+
+        async with mysql_get_db_async() as db:
+            await db.execute("UPDATE project_task SET goals = %s, pipeline_state = %s WHERE id = %s",
+                             (goals, state, subtask_id))
+            await db.connection.commit()
+
+    async def test_закрывает_строку_с_закрытыми_целями(self, subtask_id: int):
+        from src.project.task.task_pipeline import _subtasks_goals_finish
+        from src.project.task.task_state import task_state_subtask_get
+
+        await self._goals_set(subtask_id, '[{"text": "цель", "done": true}]', 'failed_qa')
+
+        assert await _subtasks_goals_finish() >= 1
+        assert (await task_state_subtask_get(subtask_id))['pipeline_state'] == 'done'
+
+    async def test_не_трогает_незакрытые_цели(self, subtask_id: int):
+        from src.project.task.task_pipeline import _subtasks_goals_finish
+        from src.project.task.task_state import task_state_subtask_get
+
+        await self._goals_set(subtask_id, '[{"text": "цель", "done": false}]')
+
+        await _subtasks_goals_finish()
+        assert (await task_state_subtask_get(subtask_id))['pipeline_state'] == 'planned'
+
+    async def test_не_трогает_занятую_строку(self, subtask_id: int):
+        """Идущий круг закрывать нельзя: его итог придёт своим путём."""
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_pipeline import _subtasks_goals_finish
+        from src.project.task.task_state import task_state_subtask_get
+
+        await self._goals_set(subtask_id, '[{"text": "цель", "done": true}]')
+        async with mysql_get_db_async() as db:
+            await db.execute("UPDATE project_task SET pipeline_locked_at = NOW() WHERE id = %s",
+                             (subtask_id,))
+            await db.connection.commit()
+
+        await _subtasks_goals_finish()
+        assert (await task_state_subtask_get(subtask_id))['pipeline_state'] == 'planned'

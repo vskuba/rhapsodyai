@@ -73,6 +73,7 @@ import time
 from contextlib import suppress
 
 from logging_.logging_ import logger_info
+from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_agent_bugfixer import TASK_BUGFIXER_ROLE, task_agent_bugfixer_run
 from src.project.task.task_agent_developer import TASK_DEVELOPER_ROLE, task_agent_developer_run
 from src.project.task.task_agent_manager import task_agent_manager_plan
@@ -179,6 +180,13 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
             continue
         if task_worker_flight_acquire(kind, job_timeout):
             _action_queue(stats, {'kind': kind}, job_timeout)
+
+    # Закрываем строки, по которым делать нечего, до отбора работы. Здесь нет ни
+    # оболочки, ни похода в LLM — только запись состояния, — поэтому предел
+    # «Parallel LLM» их не касается: иначе подзадача с закрытыми целями ждала бы
+    # своей очереди за чужими двадцатиминутными кругами, ничего при этом не
+    # собираясь делать. Тем же правилом живёт разбор плана (`_claim_plan_split`).
+    stats['finished'] = await _subtasks_goals_finish()
 
     for _ in range(max(1, int(max_actions))):
         action = await _action_claim(worker)
@@ -964,6 +972,41 @@ async def _subtask_branch_save(subtask_id: int, result: dict) -> None:
     ) if value}
     if patch:
         await task_metadata_update(subtask_id, patch)
+
+
+async def _subtasks_goals_finish() -> int:
+    """
+    Закрыть подзадачи, у которых все цели уже проставлены QA.
+
+    Отметку «цель закрыта» ставит QA, разобрав доказательство, поэтому все
+    закрытые цели — состоявшаяся проверка. Круг такой строке не нужен ни от
+    разработчика, ни от QA; та же проверка стоит и на входе обоих раннеров, но
+    туда строка попадает только выиграв очередь, а очередь у проекта одна на
+    всех и занята чужими кругами по двадцать минут.
+
+    Берём только незанятые строки в состояниях, из которых конвейер и так взял
+    бы их в работу. Идущий круг не трогаем: его итог придёт своим путём, а
+    закрытую строку он уже не воскресит (`unless_done`).
+
+    Returns: сколько строк закрыли.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id, parent_id, title, goals FROM project_task "
+            " WHERE parent_id IS NOT NULL AND pipeline_locked_at IS NULL "
+            "   AND pipeline_state IN ('planned', 'failed_qa', 'qa_pending')")
+        rows = await db.fetchall()
+
+    closed = 0
+    for row in rows:
+        if not _goals_all_done(row):
+            continue
+        await task_state_subtask_set(row['id'], 'done', last_error='')
+        await _subtask_report(row, 'все цели закрыты QA — круг не нужен, подзадача готова')
+        logger_info(f"[task] subtask#{row['id']}: все цели закрыты, закрыта тиком")
+        closed += 1
+
+    return closed
 
 
 def _goals_all_done(subtask: dict) -> bool:
