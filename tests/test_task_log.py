@@ -285,3 +285,37 @@ def test_retry_mark_on_second_run(tmp_path):
 
     assert _retry_mark(str(tmp_path), 1, 'developer') == ' · повтор 2'
     assert _retry_mark(str(tmp_path), 2, 'developer') == '', 'у нового круга пометки быть не должно'
+
+
+class TestOutcomeKeyword:
+    """
+    Ключевое слово итога круга. Формулировку задаёт `task_pipeline._log_run`,
+    разбирает её `_outcome_line` — договорённость строковая, и её надо держать.
+
+    Наступили живьём: QA закрыл подзадачу #1030 с `qa_ok: yes`, но вернул
+    замечания на будущее («стоит явно пометить»), они легли в `error`, и круг
+    подписался «затык». Человек видел затык у принятой работы, а следующий круг
+    прочёл бы это как «не приняли» и пошёл переделывать.
+    """
+
+    def test_plain_success(self):
+        from src.project.task.task_log import TASK_LOG_OUTCOME_OK, _outcome_line
+
+        assert 'готово' in _outcome_line(datetime(2026, 8, 24, 16, 19), TASK_LOG_OUTCOME_OK)
+        assert 'затык' not in _outcome_line(datetime(2026, 8, 24, 16, 19), TASK_LOG_OUTCOME_OK)
+
+    def test_success_with_notes_is_not_a_blocker(self):
+        from src.project.task.task_log import _outcome_line
+
+        line = _outcome_line(datetime(2026, 8, 24, 16, 19),
+                             'готово, с замечаниями: blog.md §1 стоит пометить явно')
+
+        assert 'готово' in line and 'затык' not in line
+
+    def test_failure_is_a_blocker(self):
+        from src.project.task.task_log import _outcome_line
+
+        line = _outcome_line(datetime(2026, 8, 24, 16, 19),
+                             'Цели, которые проверка не подтвердила: …')
+
+        assert 'затык' in line

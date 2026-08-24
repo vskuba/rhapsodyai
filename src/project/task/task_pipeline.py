@@ -123,7 +123,7 @@ from src.project.task.task_state import (
     task_state_task_get,
     task_state_task_requeue,
 )
-from src.project.task.task_log import task_log_write_run
+from src.project.task.task_log import TASK_LOG_OUTCOME_OK, task_log_write_run
 from src.project.task.task_worktree import task_worktree_ensure
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_parallel import (
@@ -934,9 +934,17 @@ async def _log_run(task_id: int, work_dir: str, result: dict, role: str,
     Ошибки глушим: журнал вспомогательный, и ронять из-за него состоявшийся круг
     нечестно.
     """
-    outcome = str(error or result.get('error') or '').strip()
-    if not outcome:
-        outcome = 'готово' if result.get('ok') else 'работа не сошлась'
+    # Исход круга определяет `ok`, а не наличие текста в `error`. QA при успешном
+    # вердикте всё равно возвращает замечания на будущее («стоит явно пометить»,
+    # «можно уточнить формулировку»), и по прежнему правилу закрытая подзадача
+    # подписывалась в журнале как затык — а следующий круг прочёл бы это как
+    # «работу не приняли» и пошёл переделывать принятое.
+    note = str(error or result.get('error') or '').strip()
+    if error or not result.get('ok'):
+        outcome = note or 'работа не сошлась'
+    else:
+        outcome = (f'{TASK_LOG_OUTCOME_OK}, с замечаниями: {note}' if note
+                   else TASK_LOG_OUTCOME_OK)
 
     with suppress(Exception):
         await task_log_write_run(work_dir, task_id, str(result.get('session_uuid') or ''),

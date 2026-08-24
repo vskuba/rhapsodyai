@@ -82,6 +82,10 @@ TASK_LOG_STEP_MAX_CHARS = 220
 TASK_LOG_ANSWER_KEYS = ('summary', 'verdict', 'plan_text', 'plan', 'error', 'report',
                         'critique', 'evidence')
 
+# С этого слова начинается формулировка удачного исхода круга (`_log_run`).
+# По нему `_outcome_line` выбирает ключевое слово строки журнала.
+TASK_LOG_OUTCOME_OK = 'готово'
+
 # Состояния, в которых над строкой действительно работают. Те же переходные
 # состояния, что и у конвейера (`task_pipeline`): пока строка в них, её держит
 # живой прогон.
@@ -667,10 +671,17 @@ def _tool_text(data: dict) -> str:
 
 
 def _outcome_line(at, outcome: str) -> str:
-    """Итог круга — последняя строка блока: с неё начинает следующий круг."""
+    """
+    Итог круга — последняя строка блока: с неё начинает следующий круг.
+
+    Удачный исход `task_pipeline._log_run` формулирует с этого слова — «готово»
+    или «готово, с замечаниями: …». Договорённость строковая, зато исход круга и
+    его текст остаются одним значением: разошлись бы они — и в журнале появился
+    бы «затык» с текстом об успехе.
+    """
     stamp = at.strftime('%H:%M:%S') if at else '--:--:--'
     text = _one_line(outcome)
-    keyword = 'затык' if not text.startswith('готово') else 'готово'
+    keyword = 'готово' if text.startswith(TASK_LOG_OUTCOME_OK) else 'затык'
 
     return f'{stamp}  {keyword:<9} итог круга: {text[:TASK_LOG_STEP_MAX_CHARS]}\n'
 
