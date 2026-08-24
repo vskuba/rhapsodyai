@@ -82,6 +82,11 @@ TASK_LOG_STEP_MAX_CHARS = 220
 TASK_LOG_ANSWER_KEYS = ('summary', 'verdict', 'plan_text', 'plan', 'error', 'report',
                         'critique', 'evidence')
 
+# Состояния, в которых над строкой действительно работают. Те же переходные
+# состояния, что и у конвейера (`task_pipeline`): пока строка в них, её держит
+# живой прогон.
+TASK_LOG_STATES_IN_FLIGHT = ('planning', 'reviewing', 'developing', 'testing', 'bugfixing')
+
 # Потолок чтения. Журнал растёт кругами, а на страницу задач он идёт целиком в
 # ответе API — отдаём хвост, а не весь файл.
 TASK_LOG_READ_MAX_CHARS = 40000
@@ -135,6 +140,9 @@ async def _live_block(task_id) -> str:
     чем агент занят, человек хочет пока тот занят. Смещение читаем то же, что и
     у записанного, иначе живой блок разъехался бы с остальным журналом на часы.
     """
+    if not await _row_in_flight(task_id):
+        return ''
+
     runs = await _runs_active(task_id)
     if not runs:
         return ''
@@ -155,6 +163,23 @@ async def _live_block(task_id) -> str:
         blocks.append(''.join(lines))
 
     return ''.join(blocks)
+
+
+async def _row_in_flight(task_id) -> bool:
+    """
+    Строка действительно в работе — по состоянию конвейера, а не по трассе.
+
+    Трасса оборванного прогона навсегда остаётся в `running`: закрыть её некому,
+    процесс умер. Без этой сверки журнал показывал бы «идёт сейчас» на прогоне,
+    который встал час назад, — и человек ждал бы результата, которого не будет.
+    Состояние строки ведёт сам конвейер, и оно тут единственный честный признак.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT pipeline_state FROM project_task WHERE id = %s",
+                         (int(task_id or 0),))
+        row = await db.fetchone()
+
+    return str((row or {}).get('pipeline_state') or '') in TASK_LOG_STATES_IN_FLIGHT
 
 
 async def _runs_active(task_id) -> list[dict]:
@@ -292,6 +317,12 @@ async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
 
     steps = await _trace_steps(str(session_uuid or ''))
     if not steps:
+        # Сорвавшийся по таймауту прогон номера сессии не отдаёт: агентная функция
+        # уходит исключением, и результата с ним не возвращает вовсе. А это ровно
+        # тот случай, ради которого журнал и заводили. Берём последнюю трассу этой
+        # строки: её шаги дошли до обрыва и лежат нетронутыми.
+        steps = await _trace_steps(await _trace_last_session(task_id))
+    if not steps:
         return 0
 
     # Время трассы пишет MySQL, а он в контейнере живёт по UTC. Человек сверяет
@@ -389,6 +420,40 @@ def _retry_mark(directory: str, attempt_no, role: str) -> str:
         return ''
 
     return f' · повтор {seen + 1}' if seen else ''
+
+
+async def _trace_last_session(task_id) -> str:
+    """
+    Сессия последней трассы строки — запасной путь, когда номер потерялся.
+
+    Теряется он при обрыве: агентная функция уходит исключением по таймауту и
+    результата, в котором номер лежал бы, не возвращает. Трасса при этом на месте
+    и остаётся в `running` — её никто уже не закроет.
+
+    Отбор тот же, что у идущих прогонов: `subtask_id` у подзадачи, `task_id` у
+    задачи под менеджером — и обязательно без `subtask_id`, иначе задача забрала
+    бы себе прогон своей же подзадачи.
+
+    Берём именно последнюю, и это верно только потому, что зовут её сразу после
+    обрыва: строка в этот момент заблокирована конвейером, новый прогон по ней
+    начаться не успел. Позвать позже — и «последняя» окажется уже следующим
+    кругом, а в журнал уедет его копия.
+    """
+    task_id = int(task_id or 0)
+    if not task_id:
+        return ''
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT session_uuid FROM agent_workflow_trace "
+            " WHERE variables_start LIKE %s "
+            "    OR (variables_start LIKE %s AND variables_start NOT LIKE %s) "
+            " ORDER BY id DESC LIMIT 1",
+            (f'%"subtask_id": "{task_id}"%',
+             f'%"task_id": "{task_id}"%', '%"subtask_id": "%'))
+        row = await db.fetchone()
+
+    return str((row or {}).get('session_uuid') or '')
 
 
 async def _trace_steps(session_uuid: str) -> list[dict]:
