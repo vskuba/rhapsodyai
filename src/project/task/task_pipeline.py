@@ -101,6 +101,7 @@ from src.project.task.task_plan import (
     task_plan_parse,
     task_plan_serialize,
 )
+from src.project.task.task_question import task_question_set
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
 from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree, task_retry_take
 from src.project.task.task_role import (TASK_ROLE_DEFAULT, TASK_ROLE_TITLE, task_role_of_task,
@@ -539,6 +540,9 @@ async def _run_developer(action: dict) -> str | None:
         await _task_to_testing(task)
         return f"subtask#{subtask['id']} developer -> qa_pending"
 
+    if await _question_hold(subtask, result, 'developer', attempt_no):
+        return f"subtask#{subtask['id']} developer -> blocked (вопрос человеку)"
+
     # Развалился сам разработчик — попытка засчитана, круг закрываем как провал.
     error = str(result.get('error') or 'ошибка разработчика')
     max_attempts = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX)
@@ -608,6 +612,9 @@ async def _run_qa(action: dict) -> str | None:
         # Закрыть их отсюда значило бы отметить проверенным и то, что он не подтвердил.
         await _subtask_report(subtask, 'проверку QA прошла, подзадача готова')
         return f"subtask#{subtask['id']} qa -> done"
+
+    if await _question_hold(subtask, result, 'qa', attempt_no):
+        return f"subtask#{subtask['id']} qa -> blocked (вопрос человеку)"
 
     error = str(result.get('error') or 'проверки не прошли')
     max_attempts = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX)
@@ -918,6 +925,37 @@ async def _subtask_branch_save(subtask_id: int, result: dict) -> None:
     ) if value}
     if patch:
         await task_metadata_update(subtask_id, patch)
+
+
+async def _question_hold(subtask: dict, result: dict, role: str, attempt_no: int) -> bool:
+    """
+    Роль спросила человека — придержать подзадачу до ответа. Вопроса нет — False.
+
+    Круг за вопрос не жжём и `task_state_subtask_fail` не зовём: работа встала не
+    оттого, что агент не справился, а оттого, что дальше без решения нельзя, и
+    следующие два круга упёрлись бы в ту же развилку. Счётчик попыток остаётся
+    прежним — `task_state_subtask_set` без `attempt_count` его не трогает.
+
+    Состояние всё равно `blocked`: его смысл — «нужен человек», и это ровно тот
+    случай. Отличает вопрос от исчерпанных попыток не состояние, а сам вопрос в
+    мешке — по нему страница задач и рисует кнопку с ответами.
+
+    Вопрос смотрим только на несошедшемся круге. Роль, которая доделала работу и
+    всё-таки спросила, спрашивает уже задним числом: придержать за это готовую
+    подзадачу значило бы наказать за любознательность.
+    """
+    question = result.get('question')
+    if not question or result.get('ok'):
+        return False
+
+    await task_question_set(subtask['id'], question, role)
+    text = str(question.get('text') or '').strip()
+    await task_state_subtask_set(subtask['id'], 'blocked', last_error=f'Вопрос человеку: {text}')
+    await _subtask_report(subtask, f'{_role_title(role)} задал вопрос (попытка {attempt_no} не засчитана): {text}',
+                          ok=False, blocked=True)
+    logger_info(f"[task] subtask#{subtask['id']} -> blocked, вопрос от {role}: {text[:120]}")
+
+    return True
 
 
 async def _log_run(task_id: int, work_dir: str, result: dict, role: str,

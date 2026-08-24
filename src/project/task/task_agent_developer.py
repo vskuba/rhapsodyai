@@ -21,6 +21,7 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_agent_result import task_agent_result_provider_error
 from src.project.task.task_plan import task_plan_goals_text, task_plan_parse
+from src.project.task.task_question import task_question_decisions_text, task_question_parse
 from src.project.task.task_worktree import task_worktree_branch
 from src.project.team.team_session import team_session_restart_role
 from src.tool.claude_shell.claude_shell import (CLAUDE_SHELL_AGENT_STATUS_BUSY,
@@ -126,6 +127,12 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
         # `%if task_last_error%`: `ai_workflow_variable_truthy` считает пустую
         # строку ложной, и блоки про прошлую ошибку QA не раскроются.
         'task_last_error':   str(last_error or ''),
+        # Решения человека по развилкам этой подзадачи — те, что он принял, отвечая
+        # на вопросы роли (`task_question`). Идут в каждый круг, а не только в
+        # следующий за ответом: решение принимается один раз, кругов после него
+        # может быть сколько угодно. Пусто — блок `%if subtask_decisions%` в промпте
+        # не раскроется, и промпт останется прежним.
+        'subtask_decisions': task_question_decisions_text(subtask),
         'task_shell_role':   role,
         'task_shell_work_dir': str(work_dir or ''),
         # Где работать. Каталог уже создан конвейером, ветка в нём выкачена —
@@ -309,6 +316,9 @@ def _result_parse(result_text) -> dict:
     # Ветка и merge request идут отдельными полями, а не только строкой в отчёте:
     # по ним страница задач рисует ссылку, и разбирать их обратно из текста журнала
     # было бы гаданием. Название ключа у живого агента гуляет — принимаем оба.
+    # Вопрос человеку ищем и в отчёте, и на верхнем уровне: развилка может встать
+    # раньше, чем разработчику будет о чём отчитываться, и тогда объект `report`
+    # он не заполняет вовсе. См. `task_question`.
     return {
         'ok':     ok,
         'env_ok': env_ok,
@@ -316,6 +326,7 @@ def _result_parse(result_text) -> dict:
         'error':  error,
         'branch': str(report.get('branch') or '').strip(),
         'mr_url': str(report.get('mr_url') or report.get('merge_request') or '').strip(),
+        'question': task_question_parse(report) or task_question_parse(parsed),
     }
 
 

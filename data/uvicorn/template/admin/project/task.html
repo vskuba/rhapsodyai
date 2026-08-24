@@ -519,6 +519,31 @@
     .inline-goal-item input[type=checkbox] {
         accent-color: #2db15e; flex-shrink: 0; cursor: pointer; margin-top: 2px;
     }
+    /* Отметку ставит QA, человеку она только показывается, — поэтому input стоит
+       `disabled`. Но браузер гасит выключенную галочку в серый, и закрытая цель
+       переставала отличаться от незакрытой: пропадало ровно то, ради чего на неё
+       смотрят. Рисуем сами — тем же зелёным, что и в остальной админке. */
+    .inline-goal-item input[type=checkbox]:disabled,
+    .task-goal-item   input[type=checkbox]:disabled {
+        appearance: none; -webkit-appearance: none;
+        /* Обнуление padding обязательно: глобальное `input, select { padding: 10px }`
+           вместе с border-box раздувало коробку с 13px до 22px, и галочка выходила
+           вдвое крупнее обычного чекбокса. 13px — родной размер в браузере. */
+        width: 13px; height: 13px; padding: 0; margin: 0 2px 0 0;
+        box-sizing: border-box; border-radius: 3px;
+        border: 1.5px solid #cbd5e1; background: #fff;
+        opacity: 1; cursor: default; position: relative;
+    }
+    .inline-goal-item input[type=checkbox]:disabled:checked,
+    .task-goal-item   input[type=checkbox]:disabled:checked {
+        background: #2db15e; border-color: #2db15e;
+    }
+    .inline-goal-item input[type=checkbox]:disabled:checked::after,
+    .task-goal-item   input[type=checkbox]:disabled:checked::after {
+        content: '✓'; position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 10px; font-weight: 700; line-height: 1;
+    }
     .inline-goal-done { text-decoration: line-through; color: #94a3b8 !important; }
     .inline-goal-text { flex: 1; cursor: default; word-break: break-word; }
     .inline-goal-input {
@@ -842,6 +867,62 @@
         border-style: dashed; margin-left: 4px;
     }
     .pipe-wait::before { content: '⏳'; }
+    /* Кнопка вопроса. Жёлтая и заметная — это единственное на странице, что прямо
+       требует действия человека: пока не ответят, подзадача не сдвинется. Тихий
+       вариант (`quiet`) — та же кнопка там, где вопроса нет, а решение добавить
+       можно; ей заметность вредна, иначе строка кричит без повода. */
+    .pipe-ask {
+        display: inline-flex; align-items: center; gap: 4px; margin-left: 4px;
+        font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+        border: 1px solid #fcd34d; background: #fef3c7; color: #a16207;
+        cursor: pointer; white-space: nowrap;
+    }
+    .pipe-ask:hover { background: #fde68a; }
+    .pipe-ask.quiet {
+        background: #f8fafc; color: #94a3b8; border-color: #e2e8f0; font-weight: 600;
+    }
+    .pipe-ask.quiet:hover { background: #f1f5f9; color: #475569; }
+    /* ─── Попап вопроса ─────────────────────────────────────── */
+    .ask-question {
+        background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+        padding: 12px 14px; margin-bottom: 14px; color: #78350f;
+        font-size: 13px; line-height: 1.55; white-space: pre-wrap;
+    }
+    .ask-role { font-size: 11px; color: #a16207; font-weight: 700; margin-bottom: 6px; }
+    .ask-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .ask-option {
+        display: flex; gap: 9px; align-items: flex-start; padding: 9px 11px;
+        border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer;
+        transition: border-color .12s, background .12s;
+    }
+    .ask-option:hover { border-color: #cbd5e1; background: #f8fafc; }
+    .ask-option input { margin-top: 2px; flex-shrink: 0; }
+    .ask-option.picked { border-color: #6366f1; background: #eef2ff; }
+    .ask-option-label { font-size: 13px; color: #1e293b; font-weight: 600; }
+    .ask-option-hint { display: block; font-size: 12px; color: #64748b; margin-top: 2px; font-weight: 400; }
+    .ask-note {
+        width: 100%; box-sizing: border-box; min-height: 68px; resize: vertical;
+        border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 11px;
+        font-family: inherit; font-size: 13px; color: #1e293b;
+    }
+    .ask-label { font-size: 11px; color: #64748b; font-weight: 700; margin: 0 0 6px; }
+    .ask-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+    .ask-btn {
+        border: none; border-radius: 7px; padding: 8px 15px; font-size: 13px;
+        font-weight: 600; cursor: pointer;
+    }
+    .ask-btn.primary { background: #4f46e5; color: #fff; }
+    .ask-btn.primary:hover { background: #4338ca; }
+    .ask-btn.plain { background: #f1f5f9; color: #475569; }
+    .ask-btn.plain:hover { background: #e2e8f0; }
+    .ask-btn[disabled] { opacity: .5; cursor: default; }
+    .ask-decision {
+        border-left: 3px solid #cbd5e1; padding: 6px 0 6px 11px; margin-bottom: 10px;
+        font-size: 12px; color: #475569; line-height: 1.5;
+    }
+    .ask-decision b { color: #1e293b; }
+    .ask-decision-meta { display: block; color: #94a3b8; font-size: 11px; margin-top: 3px; }
+    .ask-empty { color: #94a3b8; font-size: 12px; }
     /* Шестерёнка крутится там, где прямо сейчас кто-то работает. `qa_pending` сюда не
        входит: разработчик закончил, а QA ещё не начал — это очередь, а не работа.
        Как только QA берёт подзадачу, состояние становится `testing`, и шестерёнка
@@ -2152,7 +2233,13 @@ function renderInlineGoals(t, hasKids) {
     }
     const items = goals.map((g, i) => `
         <div class="inline-goal-item" id="ig-${t.id}-${i}">
-            <input type="checkbox" ${g.done ? 'checked' : ''} onclick="event.stopPropagation();inlineToggleGoal(${t.id},${i})">
+            <!-- Галочку «цель закрыта» ставит QA инструментом task_goal_mark, разобрав
+            доказательство. Человеку она только показывается: снятая руками отметка
+            означала бы «проверено», хотя никто не проверял, и следующий круг QA
+            прошёл бы мимо этой цели. Охват меняют через вопрос конвейера — там
+            цели дробят и убирают, и это записывается решением. -->
+            <input type="checkbox" ${g.done ? 'checked' : ''} disabled
+                   title="Отметку ставит QA, разобрав доказательство">
             <span class="inline-goal-text${g.done ? ' inline-goal-done' : ''}" id="igt-${t.id}-${i}"${g.evidence ? ` title="Проверено: ${esc(g.evidence)}"` : ''}>${esc(g.text)}</span>
             <button class="ig-btn" onclick="event.stopPropagation();inlineEditGoal(${t.id},${i})" title="Редактировать">✏</button>
             <button class="ig-btn del" onclick="event.stopPropagation();inlineDeleteGoal(${t.id},${i})" title="Удалить">✕</button>
@@ -2614,7 +2701,8 @@ function renderGoals(taskId, goals = null, readonly = false) {
     }
     el.innerHTML = list.map((g, i) => `
         <div class="task-goal-item" id="gi-${taskId}-${i}">
-            <input type="checkbox" ${g.done ? 'checked' : ''} onchange="toggleGoalDone(${taskId},${i})">
+            <input type="checkbox" ${g.done ? 'checked' : ''} disabled
+                   title="Отметку ставит QA, разобрав доказательство">
             <span class="task-goal-text${g.done ? ' done' : ''}" id="gt-${taskId}-${i}" onclick="startEditGoal(${taskId},${i})"${g.evidence ? ` title="Проверено: ${esc(g.evidence)}"` : ''}>${esc(g.text)}</span>
             <button class="btn-goal-icon del" onclick="deleteGoal(${taskId},${i})" title="Удалить">✕</button>
         </div>`).join('');
@@ -2639,14 +2727,6 @@ function saveGoalText(taskId, idx) {
     const text = inp.value.trim();
     if (!text) return;
     if (_goalsCache[taskId]) _goalsCache[taskId][idx].text = text;
-    renderGoals(taskId);
-    saveGoals(taskId);
-}
-
-function toggleGoalDone(taskId, idx) {
-    const goals = _goalsCache[taskId];
-    if (!goals || !goals[idx]) return;
-    goals[idx].done = !goals[idx].done;
     renderGoals(taskId);
     saveGoals(taskId);
 }
@@ -2678,18 +2758,6 @@ async function saveGoals(taskId) {
 }
 
 // ── Inline goals (edited straight from the table row) ──
-function inlineToggleGoal(taskId, idx) {
-    const task = _tasks.find(t => t.id === taskId);
-    if (!task) return;
-    const goals = parseGoals(task.goals);
-    if (!goals[idx]) return;
-    goals[idx].done = !goals[idx].done;
-    _goalsCache[taskId] = goals;
-    saveGoals(taskId);
-    task.goals = JSON.stringify(goals);
-    _refreshInlineGoals(taskId);
-}
-
 function inlineDeleteGoal(taskId, idx) {
     const task = _tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -3251,8 +3319,34 @@ function renderPipeChip(t, row) {
         ? `Задача разложена на подзадачи (processing), показана самая отстающая из них\n\n${taskReportHint(t, row)}`
         : taskReportHint(t, row);
     return `<div><span class="pipe-chip pipe-${state}" `
-         + `title="${esc(hint)}">${esc(state)}</span>${renderPipeWait(t)}${retry}${renderPipeRetries(t)}`
+         + `title="${esc(hint)}">${esc(state)}</span>${renderPipeAsk(t)}${renderPipeWait(t)}${retry}${renderPipeRetries(t)}`
          + `${renderPipeLog(t)}${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
+}
+
+// Кнопка вопроса у подзадачи.
+//
+// Вопрос один как понятие, хотя авторов два: роль спрашивает о том, чего не вправе
+// решать сама, конвейер — о том, чего не смог сделать (подзадача встала, круги
+// жгутся, нужно решение об охвате). Для человека это одно действие — открыть
+// строку, которая не движется, и ответить, — поэтому и кнопка одна, одним видом.
+//
+// У строк, которые идут своим ходом, кнопки нет: спрашивать там не о чем.
+const ASK_STUCK_STATES = ['blocked', 'failed_qa', 'failed'];
+
+function renderPipeAsk(t) {
+    if (!t.parent_id) return '';
+
+    const asked = !!t.metadata?.question?.text;
+    if (!asked && !ASK_STUCK_STATES.includes(t.pipeline_state)) return '';
+
+    const kept  = (t.metadata?.decisions || []).length;
+    const title = asked
+        ? 'Роль задала вопрос и ждёт ответа — подзадача не сдвинется, пока не ответите'
+        : `Подзадача встала: конвейер спрашивает, что делать с её охватом${
+            kept ? `. Уже принято решений: ${kept}` : ''}`;
+
+    return `<button class="pipe-ask" onclick="event.stopPropagation();askOpen(${t.id})" `
+         + `title="${esc(title)}">❓ Вопрос${kept ? ` · ${kept}` : ''}</button>`;
 }
 
 // Пометка «ждёт соседей» у подзадачи-приёмки.
@@ -3774,6 +3868,158 @@ function taskVoiceToggle() { _voice.toggle(); }
 
 // ── Column order (drag-and-drop) ──
 // ─── Help modal ───────────────────────────────────────
+// ─── Вопрос роли и решение человека ──────────────────────────────────────────
+//
+// Попап решает одну задачу: превратить развилку, из-за которой встала подзадача,
+// в клик. Поэтому варианты ответа готовит сама роль — она знает, между чем
+// выбирают, — а человеку остаётся отметить нужный. Свободное поле рядом не
+// «ещё один вариант», а место для условия («переименовать, но реестр не трогать»):
+// без него готовые варианты пришлось бы плодить под каждую оговорку.
+
+let _askTaskId = 0;
+let _askData = null;
+
+async function askOpen(taskId) {
+    _askTaskId = taskId;
+    _askData = null;
+    document.getElementById('askModal').classList.add('visible');
+    document.getElementById('askBody').innerHTML = '<div class="ask-empty">Загружаю…</div>';
+    try {
+        _askData = await taskFetch(`/task/${taskId}/question`);
+        askRender();
+    } catch (e) {
+        document.getElementById('askBody').innerHTML =
+            `<div class="ask-empty">Не открылось: ${esc(e.message || 'ошибка')}</div>`;
+    }
+}
+
+function askClose() {
+    document.getElementById('askModal').classList.remove('visible');
+    _askTaskId = 0;
+    _askData = null;
+}
+
+// Варианты автовопроса, которым нужен выбор целей. Ключи приходят с сервера
+// (`task_question.TASK_QUESTION_ACTION_*`); выбрал такой — попап раскрывает список
+// целей, потому что «раздробить» без ответа на «что именно» это не ответ.
+const ASK_GOAL_ACTIONS = ['goals_split', 'goals_drop'];
+
+function askRender() {
+    const data = _askData || {};
+    const q = data.question || {};
+    document.getElementById('askTitle').textContent = `Вопрос по подзадаче #${_askTaskId}`;
+
+    const parts = [];
+
+    if (!q.text) {
+        parts.push('<div class="ask-empty">Вопросов по этой подзадаче нет — она идёт своим ходом.</div>');
+        document.getElementById('askBody').innerHTML = parts.join('');
+        return;
+    }
+
+    // Кто спрашивает — важнее, чем кажется: вопрос разработчика и вопрос QA
+    // означают разные развилки, а вопрос конвейера означает, что роль не
+    // справилась и дело не в ней.
+    parts.push(`<div class="ask-question"><div class="ask-role">Спрашивает: ${
+        esc(q.auto ? 'Конвейер' : _askRoleTitle(q.role))}</div>${esc(q.text)}</div>`);
+
+    const options = q.options || [];
+    if (options.length) {
+        const type = q.multi ? 'checkbox' : 'radio';
+        parts.push('<div class="ask-label">Варианты ответа</div><div class="ask-options">'
+            + options.map(o => `<label class="ask-option" onclick="askPick()">`
+                + `<input type="${type}" name="askOpt" value="${esc(o.key)}">`
+                + `<span class="ask-option-label">${esc(o.label)}`
+                + `${o.hint ? `<span class="ask-option-hint">${esc(o.hint)}</span>` : ''}</span></label>`).join('')
+            + '</div>');
+    }
+
+    // Цели скрыты, пока не выбрано действие над ними: показанный сразу список с
+    // чекбоксами читается как «отметь цели», хотя ответ может быть и не про них.
+    parts.push(`<div id="askGoals" style="display:none">${askGoalsHtml(data.goals || [])}</div>`);
+
+    parts.push('<div class="ask-label">Уточнение</div>'
+             + '<textarea class="ask-note" id="askNote" placeholder="'
+             + (options.length ? 'Необязательно: условие или оговорка к выбранному варианту'
+                               : 'Ответ своими словами')
+             + '"></textarea>');
+
+    parts.push('<div class="ask-actions">'
+             + '<button class="ask-btn plain" onclick="askClose()">Отмена</button>'
+             + '<button class="ask-btn primary" id="askSend" onclick="askSend()">'
+             + 'Ответить и вернуть в работу</button></div>');
+
+    const kept = data.decisions || [];
+    if (kept.length) {
+        parts.push(`<div class="ask-label" style="margin-top:20px">Принятые решения (${kept.length})</div>`
+            + kept.slice().reverse().map(d => `<div class="ask-decision">`
+                + (d.question ? `<b>${esc(d.question)}</b><br>` : '')
+                + `${esc(d.answer)}<span class="ask-decision-meta">${
+                    esc(window.fmtTz ? window.fmtTz(d.at) : (d.at || ''))}${d.by ? ` · ${esc(d.by)}` : ''}</span></div>`).join(''));
+    }
+
+    document.getElementById('askBody').innerHTML = parts.join('');
+}
+
+function askGoalsHtml(goals) {
+    if (!goals.length) return '<div class="ask-empty">Целей у подзадачи нет — делить нечего.</div>';
+
+    // Закрытые цели показываем, но не даём отметить: вынести или убрать уже
+    // проверенную работу значит потерять то, что QA подтвердил.
+    return '<div class="ask-label">Какие цели</div><div class="ask-options">'
+        + goals.map((g, n) => `<label class="ask-option"${g.done ? ' style="opacity:.55"' : ''}>`
+            + `<input type="checkbox" name="askGoal" value="${n}"${g.done ? ' disabled' : ''}>`
+            + `<span class="ask-option-label">${esc(g.text)}`
+            + `${g.done ? '<span class="ask-option-hint">закрыта — не трогаем</span>' : ''}`
+            + '</span></label>').join('') + '</div>';
+}
+
+function askPick() {
+    // Подсветку ведём по фактическому состоянию input, а не переключаем классы
+    // руками: у radio выбор одного снимает соседний, и ручное переключение
+    // оставило бы подсвеченными оба. setTimeout — чтобы браузер успел применить
+    // клик по label к самому input.
+    setTimeout(() => {
+        document.querySelectorAll('#askBody .ask-option').forEach(
+            el => el.classList.toggle('picked', !!el.querySelector('input')?.checked));
+        const picked = [...document.querySelectorAll('#askBody input[name="askOpt"]:checked')]
+            .map(i => i.value);
+        const goals = document.getElementById('askGoals');
+        if (goals) goals.style.display = picked.some(k => ASK_GOAL_ACTIONS.includes(k)) ? '' : 'none';
+    }, 0);
+}
+
+async function askSend() {
+    const button = document.getElementById('askSend');
+    const answers = [...document.querySelectorAll('#askBody input[name="askOpt"]:checked')].map(i => i.value);
+    const goalIndexes = [...document.querySelectorAll('#askBody input[name="askGoal"]:checked')]
+        .map(i => parseInt(i.value, 10));
+    const note = (document.getElementById('askNote')?.value || '').trim();
+    if (!answers.length && !note) { alert('Выберите вариант или напишите ответ'); return; }
+    if (answers.some(k => ASK_GOAL_ACTIONS.includes(k)) && !goalIndexes.length) {
+        alert('Отметьте цели, которых касается ответ'); return;
+    }
+
+    button.disabled = true;
+    button.textContent = 'Отправляю…';
+    try {
+        await taskFetch(`/task/${_askTaskId}/question/answer`, {
+            method: 'POST',
+            body: JSON.stringify({ answers, note, goal_indexes: goalIndexes }),
+        });
+        askClose();
+        await loadTasks();
+    } catch (e) {
+        alert(e.message || 'Не отправилось');
+        button.disabled = false;
+        button.textContent = 'Ответить и вернуть в работу';
+    }
+}
+
+function _askRoleTitle(role) {
+    return { developer: 'Разработчик', qa: 'QA', manager: 'Менеджер', bugfixer: 'Багфиксер' }[role] || role;
+}
+
 function showHelpModal() {
     document.getElementById('helpModal').classList.add('visible');
 }
@@ -4112,6 +4358,16 @@ setInterval(() => {
 </script>
 
 <!-- ─── Help modal ─────────────────────────────────────── -->
+<div class="modal-overlay" id="askModal" onclick="askClose()">
+    <div class="modal-box" style="max-width:640px" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="askTitle">Решение по подзадаче</h3>
+            <button class="modal-close" onclick="askClose()" title="Закрыть">✕</button>
+        </div>
+        <div class="modal-body" id="askBody"></div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="helpModal" onclick="closeHelpModal()">
     <div class="modal-box" onclick="event.stopPropagation()">
         <div class="modal-header">

@@ -27,6 +27,7 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_agent_result import task_agent_result_provider_error
 from src.project.task.task_plan import task_plan_goals_text, task_plan_parse
+from src.project.task.task_question import task_question_decisions_text, task_question_parse
 from src.project.task.task_role import task_role_project_server_url
 from src.project.task.task_worktree import task_worktree_branch
 from src.project.team.team_session import team_session_restart_role
@@ -125,6 +126,10 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         # `%if task_last_error%`: `ai_workflow_variable_truthy` считает пустую
         # строку ложной, и блоки про прошлый круг не раскроются.
         'task_last_error':   str(last_error or ''),
+        # Решения человека по развилкам подзадачи (`task_question`). QA они нужны
+        # не меньше разработчика: без них проверяющий требует ровно того, от чего
+        # человек отказался, и вердикт получается «не сошлось» на пустом месте.
+        'subtask_decisions': task_question_decisions_text(subtask),
         'task_shell_role':   role,
         'task_shell_work_dir': str(work_dir or ''),
         # Где проверять. Каталог тот же, что был у разработчика, ветка в нём уже
@@ -273,8 +278,11 @@ def _result_parse(result_text) -> dict:
     # конвейер уводит такой ответ в повтор (`_run_qa`), не сжигая попытку.
     env_ok = bool(parsed.get('env_ok', report.get('env_ok', True)))
 
+    # Вопрос человеку ищем и в отчёте, и на верхнем уровне: развилка может встать
+    # раньше, чем QA будет о чём отчитываться. См. `task_question`.
     return {'ok': ok, 'env_ok': env_ok,
-            'output': _report_text(report) or raw[:2000], 'error': error}
+            'output': _report_text(report) or raw[:2000], 'error': error,
+            'question': task_question_parse(report) or task_question_parse(parsed)}
 
 
 def _report_text(report: dict) -> str:
