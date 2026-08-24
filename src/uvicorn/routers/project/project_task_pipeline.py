@@ -586,10 +586,13 @@ async def project_task_logs(project_id: int, user=Depends(AuthChecker([AuthPermi
         item['status'] = task.get('status') or ''
         item['pipeline_state'] = task.get('pipeline_state') or ''
 
-    # Сначала те, над кем работают прямо сейчас, дальше по свежести записи.
-    # Идущий прогон файла ещё не имеет и по времени правки ушёл бы в самый низ —
-    # то есть ровно то, что человеку нужнее всего, оказывалось дальше всего.
-    items.sort(key=lambda item: (item['running'], item['updated_at'] or ''), reverse=True)
+    # Три яруса: сверху те, над кем работают прямо сейчас, под ними незакрытые по
+    # свежести записи, в самом низу закрытые. Закрытая строка внимания уже не
+    # требует, а по свежести она всплывала над той, что ещё в работе, — то есть
+    # ровно то, что человеку нужнее всего, оказывалось ниже сделанного.
+    items.sort(key=lambda item: (item['running'],
+                                 item['pipeline_state'] != 'done',
+                                 item['updated_at'] or ''), reverse=True)
 
     return {'result': items}
 
