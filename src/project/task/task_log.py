@@ -13,6 +13,9 @@
 отдельным шагом). Брать при этом неоткуда и не нужно: шаги workflow вместе с
 ответами уже лежат в трассе, `task_log_write_run` их оттуда и перекладывает.
 
+Времена показываются в поясе настройки `timezone`: трассу пишет MySQL, а он в
+контейнере живёт по UTC (см. `.claude/docs-common/datetime_rules.md`).
+
 Отсюда главное свойство: журнал переживает обрыв. У прогона, срубленного
 таймаутом, ответа нет, но пройденные шаги в трассе остались — и попадут в журнал.
 Агента промпт просит об одном: прочитать журнал прежде, чем лезть в проект.
@@ -22,6 +25,9 @@
 * `.task-log.md`   — хронология, только дописывается. Строка на шаг:
                      `ЧЧ:ММ:СС ключевое-слово шаг [время]: суть ответа`.
                      Читается и человеком на вкладке «Журналы», и следующим кругом.
+                     Файл дописывается по концу круга, поэтому `task_log_read`
+                     подмешивает к нему шаги прогонов, которые идут прямо сейчас:
+                     круг QA тянется часами, и всё это время страница была пуста.
 * `.task-state.md` — состояние, перезаписывается целиком: последний круг, его итог
                      и что лежит в ветке. Короткое — чтобы возобновляющий круг
                      обошёлся одним чтением.
@@ -88,22 +94,104 @@ def task_log_dir(repo_dir: str, task_id) -> str:
     return task_worktree_path(root, int(task_id or 0))
 
 
-def task_log_read(repo_dir: str, task_id) -> dict:
+async def task_log_read(repo_dir: str, task_id) -> dict:
     """
-    Журнал и состояние строки для страницы задач.
+    Журнал и состояние строки для страницы задач — вместе с идущим прогоном.
+
+    Файл дописывается по концу круга, и одного его человеку мало: круг QA идёт
+    часами, а на странице всё это время было пусто — «QA работает постоянно, а в
+    журнале ничего». Поэтому к записанному добавляем шаги прогонов, которые прямо
+    сейчас в работе: их трасса уже пишется движком пошагово, и брать её оттуда
+    ничего не стоит.
+
+    Задвоения не будет: живьём показываем только незакрытые трассы, а закрытая
+    приходит из файла.
 
     Returns:
-        `{'log': str, 'state': str, 'dir': str}` — пустые строки, если файлов нет.
-        Отсутствие файлов не ошибка: строка могла ещё не браться в работу, агент —
-        не дойти до первой записи, а каталог — уже уехать после слияния.
+        `{'log': str, 'state': str, 'dir': str, 'running': bool}` — пустые строки,
+        если ни файла, ни идущего прогона нет. Это не ошибка: строка могла ещё не
+        браться в работу, а каталог — уже уехать после слияния.
     """
     directory = task_log_dir(repo_dir, task_id)
+    log = _read_tail(os.path.join(directory, TASK_LOG_FILE))
+
+    live = await _live_block(task_id)
+    if live:
+        log = f'{log}\n{live}' if log else live
 
     return {
-        'log': _read_tail(os.path.join(directory, TASK_LOG_FILE)),
+        'log': log,
         'state': _read_tail(os.path.join(directory, TASK_STATE_FILE)),
         'dir': directory,
+        'running': bool(live),
     }
+
+
+async def _live_block(task_id) -> str:
+    """
+    Шаги прогонов строки, которые идут прямо сейчас.
+
+    Собираются из трассы, а не из файла: файл пишется по концу круга, а увидеть,
+    чем агент занят, человек хочет пока тот занят. Смещение читаем то же, что и
+    у записанного, иначе живой блок разъехался бы с остальным журналом на часы.
+    """
+    runs = await _runs_active(task_id)
+    if not runs:
+        return ''
+
+    offset = await setting_get('timezone', '+0')
+    blocks = []
+    for run in runs:
+        steps = await _trace_steps(str(run.get('session_uuid') or ''))
+        for step in steps:
+            step['created_at'] = datetime_offset_apply(step.get('created_at'), offset)
+
+        started = datetime_offset_apply(run.get('started_at'), offset)
+        lines = [f"\n## идёт сейчас · {run.get('role') or 'агент'} · "
+                 f"{started.strftime('%Y-%m-%d %H:%M') if started else ''}\n"]
+        lines += [_step_line(step) for step in steps if not _step_skip(step)]
+        # Шагов может не быть вовсе: прогон только начался. Сам заголовок при этом
+        # новость — по нему видно, что строка не брошена, а в работе.
+        blocks.append(''.join(lines))
+
+    return ''.join(blocks)
+
+
+async def _runs_active(task_id) -> list[dict]:
+    """
+    Незакрытые трассы строки и чья это роль.
+
+    Ищем по переменным прогона: у подзадачи это `subtask_id`, у задачи под
+    менеджером — `task_id`. Разделять обязательно: в трассе подзадачи лежит и
+    номер её родителя, и без второго условия задача забирала бы себе прогоны
+    всех своих подзадач.
+
+    Роль берём из тех же переменных (`task_shell_role`) — в самой трассе её нет.
+    """
+    task_id = int(task_id or 0)
+    if not task_id:
+        return []
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT session_uuid, started_at, variables_start "
+            "  FROM agent_workflow_trace "
+            " WHERE status = 'running' "
+            "   AND (variables_start LIKE %s "
+            "        OR (variables_start LIKE %s AND variables_start NOT LIKE %s)) "
+            " ORDER BY id",
+            (f'%"subtask_id": "{task_id}"%',
+             f'%"task_id": "{task_id}"%', '%"subtask_id": "%'))
+        rows = await db.fetchall() or []
+
+    runs = []
+    for row in rows:
+        variables = _dict_parse(str(row.get('variables_start') or '')) or {}
+        runs.append({'session_uuid': row.get('session_uuid'),
+                     'started_at': row.get('started_at'),
+                     'role': str(variables.get('task_shell_role') or '')})
+
+    return runs
 
 
 def task_log_list(repo_dir: str) -> list[dict]:

@@ -1105,6 +1105,15 @@
         display: flex; align-items: center; gap: 8px;
     }
     .log-round-role { font-size: 11px; padding: 1px 7px; border-radius: 20px; font-weight: 700; }
+    /* Идущий прогон: тот же блок, но подписан иначе и подсвечен — по нему
+       видно, что агент работает прямо сейчас, а не что строка встала. */
+    .log-round.is-live { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+    .log-round.is-live .log-live-dot {
+        width: 7px; height: 7px; border-radius: 50%; background: #10b981;
+        animation: log-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes log-pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+    @media (prefers-reduced-motion: reduce) { .log-round.is-live .log-live-dot { animation: none } }
     .log-role-manager   { background: #eef2ff; color: #4338ca; }
     .log-role-developer { background: #ede9fe; color: #6d28d9; }
     .log-role-qa        { background: #fef3c7; color: #a16207; }
@@ -3858,12 +3867,27 @@ function logToggleRole(r) {
     logFiltersRender(); logBodyRender();
 }
 
+// Круги переставляем от свежего к старому, шаги внутри круга не трогаем.
+function _entriesNewestFirst(entries) {
+    const blocks = [];
+    entries.forEach(e => {
+        if (e.kind === 'round' || !blocks.length) blocks.push([]);
+        blocks[blocks.length - 1].push(e);
+    });
+
+    return blocks.reverse().flat();
+}
+
 function logBodyRender() {
     const input = document.getElementById('logSearch');
     if (input) _logSearch = input.value;
     const needle = _logSearch.trim().toLowerCase();
 
-    const shown = _logEntries.filter(e => {
+    // Свежее сверху: человек открывает журнал, чтобы увидеть, что происходит
+    // сейчас, а не с чего всё начиналось. Переворачиваем блоками, а не построчно —
+    // внутри круга порядок шагов обязан остаться прямым, иначе разрывы во времени
+    // и сама причинность читались бы задом наперёд.
+    const shown = _entriesNewestFirst(_logEntries).filter(e => {
         if (e.role && e.role !== 'unknown' && _logOffRole.has(e.role)) return false;
         if (e.kind === 'line' && _logOffKw.has(e.kw)) return false;
         return !needle || (e.text || '').toLowerCase().includes(needle);
@@ -3878,7 +3902,10 @@ function logBodyRender() {
     let html = '', prev = null;
     shown.forEach(e => {
         if (e.kind === 'round') {
-            html += `<div class="log-round"><span class="log-round-role log-role-${e.role}">`
+            const live = e.text.startsWith('идёт сейчас');
+            html += `<div class="log-round${live ? ' is-live' : ''}">`
+                 + (live ? '<span class="log-live-dot"></span>' : '')
+                 + `<span class="log-round-role log-role-${e.role}">`
                  + `${esc(e.role)}</span>${esc(e.text)}</div>`;
             prev = null;
             return;

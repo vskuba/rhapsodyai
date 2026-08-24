@@ -22,6 +22,22 @@ STUB_REPORT = ('json:{"env_ok": false, "ok": false, "report": {}, '
                '"error": "Разработчик не ответил. Статус: timeout"}')
 
 
+@pytest.fixture(autouse=True)
+async def db_pool_release():
+    """
+    Закрыть пул MySQL после каждого теста.
+
+    Пул в `mysql_` модульный и привязан к циклу событий, в котором создан, а
+    pytest-asyncio даёт каждому тесту свой. `task_log_read` теперь ходит в базу
+    за идущими прогонами — оставленный пул ломал сессионную уборку `conftest.py`,
+    у которой цикл свой: «Event loop is closed» на teardown всей сюиты.
+    Та же дисциплина в `test_task_metadata.py` и `test_planning.py`.
+    """
+    yield
+    from mysql_.mysql_ import mysql_pool_close
+    await mysql_pool_close()
+
+
 def _step(title, output='', status='success', ms=1000):
     return {'step_title': title, 'status': status, 'duration_ms': ms,
             'output': output, 'error': '', 'created_at': datetime(2026, 8, 24, 12, 30, 15)}
@@ -114,18 +130,20 @@ class TestPaths:
 
         assert task_log_dir('/srv/app', 1028).endswith('.claude/worktrees/feature_task_1028')
 
-    def test_read_missing_is_empty_not_error(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_read_missing_is_empty_not_error(self, tmp_path):
         """
-        Нет файлов — пустые строки, а не исключение.
+        Нет файлов и нет идущего прогона — пустые строки, а не исключение.
 
         Строка могла ещё не браться в работу, а каталог — уже уехать после
         слияния ветки: и то, и другое штатно.
         """
         from src.project.task.task_log import task_log_read
 
-        result = task_log_read(str(tmp_path), 999999)
+        result = await task_log_read(str(tmp_path), 999999)
 
         assert result['log'] == '' and result['state'] == ''
+        assert result['running'] is False
 
 
 @pytest.mark.asyncio

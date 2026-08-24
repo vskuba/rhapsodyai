@@ -597,7 +597,7 @@ async def project_task_log(task_id: int, user=Depends(AuthChecker([AuthPermissio
     if not work_dir:
         return {'log': '', 'state': '', 'dir': '', 'task_id': task_id}
 
-    return {**task_log_read(work_dir, task_id), 'task_id': task_id}
+    return {**await task_log_read(work_dir, task_id), 'task_id': task_id}
 
 
 async def _diff_target(task_id: int) -> tuple[str, list, dict]:
