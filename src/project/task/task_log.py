@@ -72,10 +72,16 @@ TASK_LOG_FILES = (TASK_LOG_FILE, TASK_STATE_FILE)
 TASK_LOG_WORKTREES_DIR = TASK_WORKTREE_BASE_DIR
 TASK_LOG_WORKTREE_PREFIX = TASK_WORKTREE_DIR_TEMPLATE.split('{')[0]
 
-# Сколько символов ответа шага уносим в строку журнала. Строка обязана читаться
-# глазами целиком, а ответы у ролей на десятки килобайт: в журнал идёт суть,
-# полный текст остаётся в трассе (`/admin/workflow_trace`).
-TASK_LOG_STEP_MAX_CHARS = 220
+# Сколько символов ответа шага уносим в строку журнала. Ответы у ролей бывают на
+# десятки килобайт — простыня сделала бы журнал нечитаемым, а полный текст и так
+# лежит в трассе (`/admin/workflow_trace`).
+#
+# Ставили 220 — оказалось мало: мысль не успевала дочитаться, строки рвались на
+# «Второй раунд я …». 600 — это абзац: хватает на законченную мысль и всё ещё
+# далеко от простыни. Обрезку помечаем многоточием (`TASK_LOG_CUT_MARK`): молчащая
+# обрезка не даёт понять, кончилась фраза или её отрезали.
+TASK_LOG_STEP_MAX_CHARS = 600
+TASK_LOG_CUT_MARK = '…'
 
 # Ключи ответа, в которых лежит смысл: их роли кладут в JSON-структуру шага.
 # Порядок важен — первым идёт то, что короче и понятнее человеку.
@@ -492,7 +498,7 @@ def _step_line(step: dict) -> str:
     spent = f' [{seconds // 60} мин]' if seconds >= 60 else (f' [{seconds}с]' if seconds else '')
     title = str(step.get('step_title') or 'шаг')
 
-    return f'{stamp}  {keyword:<9} {title}{spent}: {text[:TASK_LOG_STEP_MAX_CHARS]}\n'
+    return f'{stamp}  {keyword:<9} {title}{spent}: {_cut_text(text)}\n'
 
 
 def _step_skip(step: dict) -> bool:
@@ -683,7 +689,15 @@ def _outcome_line(at, outcome: str) -> str:
     text = _one_line(outcome)
     keyword = 'готово' if text.startswith(TASK_LOG_OUTCOME_OK) else 'затык'
 
-    return f'{stamp}  {keyword:<9} итог круга: {text[:TASK_LOG_STEP_MAX_CHARS]}\n'
+    return f'{stamp}  {keyword:<9} итог круга: {_cut_text(text)}\n'
+
+
+def _cut_text(text: str) -> str:
+    """Текст до потолка строки журнала; обрезанное помечаем многоточием."""
+    if len(text) <= TASK_LOG_STEP_MAX_CHARS:
+        return text
+
+    return text[:TASK_LOG_STEP_MAX_CHARS].rstrip() + TASK_LOG_CUT_MARK
 
 
 def _one_line(text) -> str:

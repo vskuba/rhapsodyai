@@ -319,3 +319,39 @@ class TestOutcomeKeyword:
                              'Цели, которые проверка не подтвердила: …')
 
         assert 'затык' in line
+
+
+class TestCutText:
+    """
+    Обрезка длинного ответа. Ставили 220 символов — мысль не успевала дочитаться,
+    строки рвались на «Второй раунд я …». И рвались молча: понять, кончилась фраза
+    или её отрезали, было нельзя.
+    """
+
+    def test_short_text_untouched(self):
+        from src.project.task.task_log import TASK_LOG_CUT_MARK, _cut_text
+
+        assert _cut_text('коротко') == 'коротко'
+        assert TASK_LOG_CUT_MARK not in _cut_text('коротко')
+
+    def test_long_text_marked(self):
+        from src.project.task.task_log import (TASK_LOG_CUT_MARK, TASK_LOG_STEP_MAX_CHARS,
+                                               _cut_text)
+
+        result = _cut_text('я' * (TASK_LOG_STEP_MAX_CHARS * 3))
+
+        assert result.endswith(TASK_LOG_CUT_MARK), 'обрезка должна быть видна'
+        assert len(result) == TASK_LOG_STEP_MAX_CHARS + len(TASK_LOG_CUT_MARK)
+
+    def test_cap_fits_a_paragraph(self):
+        """Потолок должен вмещать законченную мысль, а не полфразы."""
+        from src.project.task.task_log import TASK_LOG_STEP_MAX_CHARS
+
+        assert TASK_LOG_STEP_MAX_CHARS >= 500
+
+    def test_step_line_marks_the_cut(self):
+        from src.project.task.task_log import TASK_LOG_CUT_MARK, _step_line
+
+        line = _step_line(_step('Шаг', "{'response': '" + 'я' * 4000 + "'}"))
+
+        assert TASK_LOG_CUT_MARK in line
