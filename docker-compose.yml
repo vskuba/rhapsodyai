@@ -219,6 +219,12 @@ services:
     environment:
       - CRONICLE_foreground=1
       - CRONICLE_echo=1
+      # История прогонов в data/jobs: держим трое суток вместо стандартных 180.
+      # Чистит её сам Cronicle в ночное обслуживание (`maintenance: "04:00"`).
+      # На проде при умолчании накопился гигабайт. Архивы суточной ротации
+      # логов (logs/archives) этой настройке не подчиняются — их сносит
+      # `src/cronjob/cronicle_log_cleanup.py`.
+      - CRONICLE_job_data_expire_days=3
     volumes:
       - ./:/app
       - ./data/cronicle/data:/opt/cronicle/data

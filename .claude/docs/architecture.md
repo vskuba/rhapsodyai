@@ -87,6 +87,21 @@ Install: `pip install -r docker/uvicorn/requirements.txt` / `docker/telegram/req
 Сервисы с профилем не поднимаются обычным `docker compose up` — нужен
 `--profile green` / `--profile on_prod_only`.
 
+### Хранение логов Cronicle
+
+Cronicle копит две разные кучи, и убираются они по-разному. Держим трое суток
+в обеих.
+
+| Что | Где | Кто чистит |
+|-----|-----|-----------|
+| История прогонов | `data/cronicle/data/jobs` | сам Cronicle в ночное обслуживание (`maintenance: "04:00"`) по `CRONICLE_job_data_expire_days=3` из `docker-compose.yml` |
+| Архивы суточной ротации логов | `data/cronicle/logs/archives` | `src/cronjob/cronicle_log_cleanup.py` (логика — `src/cronicle/cronicle_log.py`) |
+
+Второй крон нужен потому, что **свой лог Cronicle ротирует, но архивы не удаляет
+никогда**: при умолчаниях на проде накопился гигабайт истории прогонов и 30 МБ
+архивов за месяц. Событие в Cronicle заводится вручную, как и остальные, — см.
+`project_task.md`, там же про URL `http://caddy:8090/cronjob`.
+
 ## Environment Variables (`.env`)
 
 - `LLM`, `LLM_ALLOWED` — default model and allowed models list
