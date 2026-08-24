@@ -235,6 +235,34 @@ def task_log_list(repo_dir: str) -> list[dict]:
     return sorted(items, key=lambda item: item['updated_at'], reverse=True)
 
 
+async def task_log_rows_running() -> dict[int, str]:
+    """
+    Строки, по которым прогон идёт прямо сейчас: `{номер строки: роль}`.
+
+    Нужны списку журналов. Сам список строится по файлам на диске, а файл
+    появляется только по концу круга — строка, которую агент обрабатывает первый
+    раз, в список не попадала вовсе, и найти её журнал было нельзя, хотя
+    показывать там уже есть что.
+
+    Номер берём из переменных прогона: у подзадачи `subtask_id`, у задачи под
+    менеджером `task_id`. Приоритет у подзадачи — в её трассе лежит и номер
+    родителя, и иначе работа приписалась бы задаче.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT variables_start FROM agent_workflow_trace WHERE status = 'running'")
+        rows = await db.fetchall() or []
+
+    running: dict[int, str] = {}
+    for row in rows:
+        variables = _dict_parse(str(row.get('variables_start') or '')) or {}
+        task_id = str(variables.get('subtask_id') or variables.get('task_id') or '').strip()
+        if task_id.isdigit():
+            running[int(task_id)] = str(variables.get('task_shell_role') or '')
+
+    return running
+
+
 async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
                              role: str, attempt_no: int, outcome: str) -> int:
     """

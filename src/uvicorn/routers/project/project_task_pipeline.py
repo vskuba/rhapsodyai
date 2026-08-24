@@ -12,7 +12,8 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.project.task.task_diff import task_diff_build, task_diff_build_task
-from src.project.task.task_log import task_log_list, task_log_read
+from src.project.task.task_log import (task_log_list, task_log_read,
+                                       task_log_rows_running)
 from src.project.task.task_metadata import (
     TASK_METADATA_KEY_BUGFIX,
     TASK_METADATA_KEY_MERGED,
@@ -545,15 +546,31 @@ async def project_task_logs(project_id: int, user=Depends(AuthChecker([AuthPermi
     work_dir = await task_role_project_work_dir(project_id)
     items = task_log_list(work_dir) if work_dir else []
 
+    # Строки с идущим прогоном добавляем к тем, у кого уже есть файл: файл
+    # появляется по концу круга, и строка, которую агент обрабатывает впервые,
+    # в список не попадала — хотя показать по ней уже есть что.
+    seen = {item['task_id'] for item in items}
+    for task_id in await task_log_rows_running():
+        if task_id not in seen:
+            items.append({'task_id': task_id, 'bytes': 0, 'updated_at': ''})
+
     if not items:
         return {'result': []}
 
     async with mysql_get_db_async() as db:
         placeholders = ', '.join(['%s'] * len(items))
         await db.execute(
-            f"SELECT id, title, parent_id, status, pipeline_state FROM project_task "
-            f" WHERE id IN ({placeholders})", [item['task_id'] for item in items])
+            f"SELECT s.id, s.title, s.parent_id, s.status, s.pipeline_state, "
+            f"       COALESCE(s.project_id, p.project_id) AS project_id "
+            f"  FROM project_task s LEFT JOIN project_task p ON p.id = s.parent_id "
+            f" WHERE s.id IN ({placeholders})", [item['task_id'] for item in items])
         tasks = {row['id']: row for row in (await db.fetchall() or [])}
+
+    # Каталоги на диске уже принадлежат проекту, а идущие прогоны собраны по всей
+    # установке — чужие отсеиваем здесь, иначе в списке проекта появились бы
+    # строки соседнего.
+    items = [item for item in items
+             if int((tasks.get(item['task_id']) or {}).get('project_id') or 0) == project_id]
 
     for item in items:
         task = tasks.get(item['task_id']) or {}
