@@ -214,3 +214,56 @@ def test_counter_step_skipped():
 
     assert _step_skip(_step('Счётчик итераций проверки', '1'))
     assert not _step_skip(_step('Отметить цель', "{'goal_done_count': 1}"))
+
+
+class TestTimezone:
+    """
+    Метки времени показываются в поясе настройки `timezone`, а не базы.
+
+    Трассу пишет MySQL, в контейнере он живёт по UTC. Человек сверяет журнал с
+    часами на стене: без сдвига «47 минут без записей» приходилось пересчитывать
+    руками, а сама метка выглядела меткой из прошлого.
+    """
+
+    def test_offset_applied_to_stored_time(self):
+        from datetime_.datetime_ import datetime_offset_apply
+
+        shifted = datetime_offset_apply(datetime(2026, 8, 24, 7, 56, 38), '+3')
+
+        assert shifted.hour == 10 and shifted.minute == 56
+
+    def test_negative_and_prefixed_offsets(self):
+        from datetime_.datetime_ import datetime_offset_apply
+
+        value = datetime(2026, 8, 24, 12, 0, 0)
+
+        assert datetime_offset_apply(value, 'UTC-2').hour == 10
+        assert datetime_offset_apply(value, '+0').hour == 12
+
+    def test_garbage_offset_is_utc(self):
+        """Мусор в настройке — показываем UTC, а не падаем."""
+        from datetime_.datetime_ import datetime_offset_apply
+
+        assert datetime_offset_apply(datetime(2026, 8, 24, 12, 0, 0), 'какая-то ерунда').hour == 12
+
+    def test_none_stays_none(self):
+        """Пустой колонке нечего сдвигать — подставлять «сейчас» было бы враньём."""
+        from datetime_.datetime_ import datetime_offset_apply
+
+        assert datetime_offset_apply(None, '+3') is None
+
+
+def test_retry_mark_on_second_run(tmp_path):
+    """
+    Технический повтор круг не жжёт — и два блока подряд подписывались одинаково.
+
+    Человек не понимал, почему «круг 1 · developer» случился дважды.
+    """
+    from src.project.task.task_log import TASK_LOG_FILE, _retry_mark
+
+    assert _retry_mark(str(tmp_path), 1, 'developer') == ''
+
+    (tmp_path / TASK_LOG_FILE).write_text('## круг 1 · developer · 2026-08-24 10:56\n')
+
+    assert _retry_mark(str(tmp_path), 1, 'developer') == ' · повтор 2'
+    assert _retry_mark(str(tmp_path), 2, 'developer') == '', 'у нового круга пометки быть не должно'

@@ -44,8 +44,10 @@ import json
 import os
 from datetime import datetime
 
+from datetime_.datetime_ import datetime_offset_apply
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+from setting_.setting_ import setting_get
 from src.project.task.task_worktree import (TASK_WORKTREE_BASE_DIR,
                                             task_worktree_base_branch,
                                             task_worktree_git,
@@ -176,8 +178,15 @@ async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
     if not steps:
         return 0
 
+    # Время трассы пишет MySQL, а он в контейнере живёт по UTC. Человек сверяет
+    # журнал с часами на стене, поэтому показываем в поясе настройки `timezone`.
+    # Читаем её один раз на прогон: меток в круге десятки.
+    offset = await setting_get('timezone', '+0')
+    for step in steps:
+        step['created_at'] = datetime_offset_apply(step.get('created_at'), offset)
+
     started = steps[0].get('created_at')
-    head = (f"\n## круг {int(attempt_no or 0)} · {role} · "
+    head = (f"\n## круг {int(attempt_no or 0)} · {role}{_retry_mark(directory, attempt_no, role)} · "
             f"{started.strftime('%Y-%m-%d %H:%M') if started else ''}\n")
 
     lines = [head]
@@ -245,6 +254,25 @@ async def _branch_commits(directory: str) -> str:
                                         f'{base}..HEAD')
 
     return out.strip() if code == 0 else ''
+
+
+def _retry_mark(directory: str, attempt_no, role: str) -> str:
+    """
+    Пометка «повтор N», когда круг с тем же номером уже есть в журнале.
+
+    Технический повтор круг не жжёт — счётчик попыток при нём не растёт, и это
+    правильно: работы не было, жечь нечего. Но в журнале два блока подряд
+    оказывались одинаково подписаны «круг 1 · developer», и человек не понимал,
+    почему одно и то же случилось дважды. Считаем прежние блоки и подписываем.
+    """
+    head = f'## круг {int(attempt_no or 0)} · {role}'
+    try:
+        with open(os.path.join(directory, TASK_LOG_FILE), encoding='utf-8') as fh:
+            seen = fh.read().count(head)
+    except OSError:
+        return ''
+
+    return f' · повтор {seen + 1}' if seen else ''
 
 
 async def _trace_steps(session_uuid: str) -> list[dict]:

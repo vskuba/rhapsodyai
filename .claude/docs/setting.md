@@ -54,6 +54,26 @@ await setting_set('runner_state', 'busy', dynamic=1)        # служебное
 await setting_delete('timezone', node_id=9)                 # вернуть ноду к общему значению
 ```
 
+### `timezone` — пояс показа, а не хранения
+
+Настройка `timezone` (`'+3'`) отвечает на один вопрос: в каком поясе человек читает
+метки времени. Хранится время в UTC — и в базе, и в приложении, контейнеры живут по
+UTC.
+
+Отсюда правило: **всё, что уходит человеку, сдвигается перед показом.** Помощники —
+в `py_modules/datetime_/datetime_.py`:
+
+```python
+offset = await setting_get('timezone', '+0')                 # один раз на список
+shown  = datetime_offset_apply(row['created_at'], offset)    # хранимое UTC → пояс показа
+one    = await datetime_local(row['created_at'])             # разовый показ, смещение само
+now    = await datetime_now()                                # «сейчас» в поясе настройки
+```
+
+Полное правило со всеми ловушками — `.claude/docs-common/datetime_rules.md`: там же
+про сравнение свежести (обе стороны обязаны быть из одного источника) и про колонки,
+которые фронтенд переводит сам и потому пишутся строго в UTC.
+
 ## REST API
 
 Роутер подключён без префикса (`main_uvicorn.py`), пути — как ниже.
