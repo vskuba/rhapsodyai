@@ -460,12 +460,23 @@ async def task_state_task_finalize() -> tuple[int, str] | None:
 
 
 async def task_state_subtask_set(subtask_id: int, state: str, last_error: str | None = None,
-                                 attempt_count: int | None = None) -> None:
+                                 attempt_count: int | None = None,
+                                 unless_done: bool = False) -> None:
     """
     Новое состояние подзадачи со снятием блокировки.
 
     `parent_id IS NOT NULL` в условии — та же страховка, что и в `task_state_subtask_get`:
     детские состояния родителю выставлять нельзя, иначе ветки конвейера перепутаются.
+
+    `unless_done` — не трогать закрытую подзадачу. Ставят его те, кто пишет
+    **итог круга**: круг мог отвалиться по таймауту и вернуться с ответом, когда
+    строку уже закрыли другим путём. Поймано живьём: #1028 закрылась пропуском по
+    целям, а через десять минут вернулся оборванный круг QA и увёл её в
+    `failed_qa` — воскресив работу, которой не было.
+
+    Человеческие переходы флаг не ставят: «Перезапустить» и ответ на вопрос
+    возвращают в работу осознанно, и запрещать это было бы враньём про то, кто
+    здесь решает.
     """
     kanban_sql, kanban_params = task_state_kanban_sql(state)
     sets = ["pipeline_state = %s", kanban_sql, "pipeline_locked_at = NULL", "pipeline_locked_by = ''"]
@@ -478,10 +489,11 @@ async def task_state_subtask_set(subtask_id: int, state: str, last_error: str | 
         params.append(attempt_count)
     params.append(subtask_id)
 
+    guard = " AND pipeline_state <> 'done'" if unless_done else ''
     async with mysql_get_db_async() as db:
         await db.execute(
             f"UPDATE project_task SET {', '.join(s for s in sets if s)} "
-            "WHERE id = %s AND parent_id IS NOT NULL",
+            f"WHERE id = %s AND parent_id IS NOT NULL{guard}",
             params,
         )
         await db.connection.commit()
@@ -495,7 +507,8 @@ async def task_state_subtask_fail(subtask_id: int, attempt_no: int, error: str, 
     Returns: новое состояние подзадачи.
     """
     state = 'blocked' if attempt_no >= max_attempts else 'failed_qa'
-    await task_state_subtask_set(subtask_id, state, last_error=error, attempt_count=attempt_no)
+    await task_state_subtask_set(subtask_id, state, last_error=error, attempt_count=attempt_no,
+                                 unless_done=True)
     logger_info(f'[task] subtask#{subtask_id} -> {state} (попытка {attempt_no}): {error}')
     return state
 

@@ -874,6 +874,15 @@ async def _retry_subtask(subtask: dict, step: str, state_retry: str, role: str, 
     `state_retry` — куда вернуть строку: разработка -> `planned`, проверка ->
     `qa_pending` (те же значения, что у возврата брошенной блокировки).
     """
+    # Строку могли закрыть, пока прогон висел: круг отваливается по таймауту через
+    # двадцать минут, и за это время подзадачу закрывает пропуск по целям или
+    # человек. Возвращать её в очередь после этого значит воскрешать работу,
+    # которой нет. Поймано живьём на #1028.
+    fresh = await task_state_subtask_get(int(subtask['id']))
+    if (fresh or {}).get('pipeline_state') == 'done':
+        logger_info(f"[task] subtask#{subtask['id']}: круг {role} опоздал, строка уже закрыта")
+        return f"subtask#{subtask['id']} {step} -> опоздал, строка закрыта"
+
     result = {'ok': False, 'output': '', 'error': error}
     await task_state_attempt_log(subtask['id'], attempt_no, step, result, started)
     # Ради этого журнал и заводили: ответа нет, но шаги, что успели пройти, в
@@ -897,7 +906,7 @@ async def _retry_subtask(subtask: dict, step: str, state_retry: str, role: str, 
         f'{retry["count"]} из {retry["max"]}',
         ok=None)
     await team_session_restart_role(role, work_dir)
-    await task_state_subtask_set(subtask['id'], state_retry)
+    await task_state_subtask_set(subtask['id'], state_retry, unless_done=True)
     return f"subtask#{subtask['id']} {step} -> retry {retry['count']}/{retry['max']}"
 
 
