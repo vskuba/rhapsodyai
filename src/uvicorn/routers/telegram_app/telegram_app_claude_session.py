@@ -58,7 +58,7 @@ async def telegram_app_claude_session_inbox(request: Request, session_uuid: str)
 
 
 @router.get("/telegram-app/claude/sessions")
-async def telegram_app_claude_sessions(request: Request, project_label: str):
+async def telegram_app_claude_session_list(request: Request, project_label: str):
     """
     Список зарегистрированных сессий (любой статус) для проекта - вызывается
     хуком SessionStart при старте терминала.
@@ -299,7 +299,7 @@ async def telegram_app_claude_session_inbox_ack(request: Request, data: dict):
 
 
 @router.post("/telegram-app/claude/quota-check")
-async def telegram_app_claude_quota_check(request: Request, data: dict):
+async def telegram_app_claude_session_quota_check(request: Request, data: dict):
     """
     Кладёт маркер __QUOTA_CHECK__ (dynamic=1) в очередь ai_claude_session.
     Терминал подхватывает маркер через inbox-поллинг, запрашивает квоту у Anthropic
