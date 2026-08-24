@@ -47,7 +47,9 @@ def test_old_archive_removed(cronicle_logs):
 
     assert not cronicle_logs['old'].exists()
     assert stats['files'] == 1
-    assert stats['bytes'] == 100
+    # Освобождённое место считается блоками, как `du`, — файл в 100 байт занимает
+    # целый блок. Отсюда «не меньше длины», а не точное число.
+    assert stats['bytes'] >= 100
 
 
 def test_fresh_archive_kept(cronicle_logs):
@@ -135,9 +137,31 @@ class TestSizesAndReport:
 
         sizes = cronicle_log_sizes()
 
-        # В фикстуре два архива: старый 100 байт и свежий 50.
-        assert sizes['archives'] == 150
-        assert sizes['jobs'] == 300
+        # В фикстуре два архива (100 и 50 байт), в истории один файл на 300.
+        # Сверяем «не меньше длины»: место считается блоками, как у `du`.
+        assert sizes['archives'] >= 150
+        assert sizes['jobs'] >= 300
+        assert sizes['archives'] != sizes['jobs'], 'кучи посчитаны как одна'
+
+    def test_size_counts_blocks_not_length(self, tmp_path, monkeypatch):
+        """
+        Место считается блоками, а не длиной файлов.
+
+        В `data/jobs` у Cronicle 110 тысяч крошечных файлов: по длине это 121 МБ,
+        а `du` показывает 1.1 ГБ — каждый занимает целый блок. Отчёт о длине
+        занижал бы расход диска почти в десять раз.
+        """
+        from src.cronicle import cronicle_log
+
+        jobs = tmp_path / 'data' / 'cronicle' / 'data' / 'jobs'
+        jobs.mkdir(parents=True)
+        for i in range(20):
+            (jobs / f'{i}.json').write_bytes(b'x')
+
+        monkeypatch.setattr(cronicle_log, '_BASE_DIR', str(tmp_path))
+        size = cronicle_log.cronicle_log_sizes()['jobs']
+
+        assert size > 20, f'20 файлов по байту не могут занимать {size} байт на диске'
 
     def test_sizes_zero_without_dirs(self, tmp_path, monkeypatch):
         from src.cronicle import cronicle_log
@@ -159,8 +183,17 @@ class TestSizesAndReport:
 
         assert '190' in text
         assert '2.5 МБ' in text
-        assert '1126.4 МБ' in text
+        assert '1.10 ГБ' in text
         assert '3 сут' in text
+
+    def test_report_gigabytes_above_1024_mb(self):
+        """Гигабайты отдельной ступенью: «1765.9 МБ» с одного взгляда не читается."""
+        from src.cronicle.cronicle_log import cronicle_log_report
+
+        text = cronicle_log_report({'files': 0, 'bytes': 0, 'dirs': 0, 'kept_days': 3},
+                                   {'archives': 0, 'jobs': 1851645952})
+
+        assert '1.72 ГБ' in text
 
     def test_report_small_sizes_in_kb(self):
         """До мегабайта — в килобайтах: «0.0 МБ» человеку ничего не говорит."""

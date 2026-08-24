@@ -101,28 +101,62 @@ def cronicle_log_report(stats: dict, sizes: dict) -> str:
 
 
 def _dir_size(path: str) -> int:
-    """Суммарный размер файлов каталога. Симлинки считаем по себе, а не по цели."""
+    """
+    Место на диске под каталогом — то же, что показывает `du`.
+
+    Сами каталоги тоже считаем, и это не мелочь: Cronicle раскладывает историю
+    прогонов по вложенным хеш-каталогам, их там сотни тысяч, и на диске они
+    занимают больше, чем сами файлы. Без этого счёта отчёт расходился с `du`
+    вдвое. Симлинки считаем по себе, а не по цели.
+    """
     if not os.path.isdir(path):
         return 0
 
     total = 0
     for dir_path, _dir_names, file_names in os.walk(path):
-        for name in file_names:
+        for name in [None] + list(file_names):
+            entry = dir_path if name is None else os.path.join(dir_path, name)
             try:
-                total += os.lstat(os.path.join(dir_path, name)).st_size
+                total += _file_size(os.lstat(entry))
             except OSError:
                 continue
 
     return total
 
 
+def _file_size(info) -> int:
+    """
+    Занятое место, а не длина файла: считаем блоки, как `du`.
+
+    Разница здесь не косметическая. В `data/jobs` у Cronicle 110 тысяч крошечных
+    файлов: по длине это 121 МБ, а на диске — 1.1 ГБ, потому что каждый занимает
+    целый блок. Отчёт о длине занижал бы расход диска почти в десять раз, а весь
+    смысл отчёта — вовремя увидеть, что каталог растёт.
+
+    `st_blocks` считается в единицах по 512 байт независимо от файловой системы.
+    Его нет на Windows — там откатываемся на длину: приложение живёт в linux-
+    контейнерах, и эта ветка нужна только чтобы модуль импортировался где угодно.
+    """
+    blocks = getattr(info, 'st_blocks', None)
+
+    return blocks * 512 if blocks is not None else info.st_size
+
+
 def _size_text(size: int) -> str:
-    """Байты человеку: КБ до мегабайта, дальше МБ с десятой долей."""
+    """
+    Байты человеку: КБ, МБ, ГБ по порогам.
+
+    Ступеней три, потому что отчёт читают мельком: «0.0 МБ» на пустом каталоге и
+    «1765.9 МБ» на полном одинаково бесполезны — в первом не видно, что там что-то
+    есть, во втором не сосчитать порядок с одного взгляда.
+    """
     size = int(size or 0)
     if size < 1024 * 1024:
         return f'{size // 1024} КБ'
+    if size < 1024 * 1024 * 1024:
+        return f'{size / (1024 * 1024):.1f} МБ'
 
-    return f'{size / (1024 * 1024):.1f} МБ'
+    return f'{size / (1024 * 1024 * 1024):.2f} ГБ'
 
 
 def _prune_dir(root: str, deadline: float, stats: dict) -> None:
@@ -154,7 +188,7 @@ def _prune_file(path: str, deadline: float, stats: dict) -> None:
         return
 
     stats['files'] += 1
-    stats['bytes'] += info.st_size
+    stats['bytes'] += _file_size(info)
 
 
 def _prune_empty_dir(path: str, stats: dict) -> None:
