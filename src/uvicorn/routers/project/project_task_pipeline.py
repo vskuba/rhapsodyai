@@ -12,6 +12,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.project.task.task_diff import task_diff_build, task_diff_build_task
+from src.project.task.task_log import task_log_list, task_log_read
 from src.project.task.task_metadata import (
     TASK_METADATA_KEY_BUGFIX,
     TASK_METADATA_KEY_MERGED,
@@ -523,6 +524,80 @@ async def _task_row(task_id: int) -> dict | None:
         task = await db.fetchone()
 
     return task_metadata_row_apply(task) if task else None
+
+
+@router.get('/task/logs/{project_id}')
+async def project_task_logs(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """
+    Живые журналы проекта: что показывать на вкладке «Журналы» страницы задач.
+
+    Номер проекта обязателен, потому что каталоги у проектов свои: журнал лежит в
+    каталоге строки внутри репозитория проекта, и общий список смешал бы работу
+    соседних. Тот же номер выбран селектором проекта на странице.
+
+    Список строится по каталогам на диске, а не по таблице задач: журнал живёт в
+    каталоге строки и исчезает вместе с ним после слияния ветки — таблица об этом
+    ничего не знает. Названия и состояния подставляем из БД: файлы имён не знают.
+
+    Путь `/task/logs/...` объявлен до `/task/{task_id}/log`: иначе FastAPI разобрал
+    бы «logs» как номер задачи и ответил бы 422 на каждый запрос списка.
+    """
+    work_dir = await task_role_project_work_dir(project_id)
+    items = task_log_list(work_dir) if work_dir else []
+
+    if not items:
+        return {'result': []}
+
+    async with mysql_get_db_async() as db:
+        placeholders = ', '.join(['%s'] * len(items))
+        await db.execute(
+            f"SELECT id, title, parent_id, status, pipeline_state FROM project_task "
+            f" WHERE id IN ({placeholders})", [item['task_id'] for item in items])
+        tasks = {row['id']: row for row in (await db.fetchall() or [])}
+
+    for item in items:
+        task = tasks.get(item['task_id']) or {}
+        item['title'] = str(task.get('title') or '')
+        item['parent_id'] = task.get('parent_id')
+        item['status'] = task.get('status') or ''
+        item['pipeline_state'] = task.get('pipeline_state') or ''
+
+    return {'result': items}
+
+
+@router.get('/task/{task_id}/log')
+async def project_task_log(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """
+    Журнал и состояние строки: чем агент занят сейчас и докуда дошёл.
+
+    Пишет их сам агент по ходу работы — `.task-log.md` (хронология, дописывается)
+    и `.task-state.md` (сделано/осталось/затыки, перезаписывается). Подробности,
+    зачем они и где лежат, — в `src/project/task/task_log.py`.
+
+    Номер берём и подзадачи, и задачи: у задачи с планом свой каталог есть не
+    всегда, зато есть журнал менеджера в постоянном архиве.
+
+    Путь собирается по номеру строки через `task_log_dir` — из запроса не приходит
+    ни куска пути. Иначе ручка превратилась бы в чтение произвольного файла с диска.
+
+    Пустой ответ не ошибка: строка могла ещё не браться в работу, а агент — не
+    дойти до первой записи. Плашку про это рисует страница.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT s.id, s.parent_id, COALESCE(s.project_id, p.project_id) AS project_id "
+            "  FROM project_task s LEFT JOIN project_task p ON p.id = s.parent_id "
+            " WHERE s.id = %s", (task_id,))
+        task = await db.fetchone()
+
+    if not task:
+        raise HTTPException(status_code=404, detail='task not found')
+
+    work_dir = await task_role_project_work_dir(task['project_id'])
+    if not work_dir:
+        return {'log': '', 'state': '', 'dir': '', 'task_id': task_id}
+
+    return {**task_log_read(work_dir, task_id), 'task_id': task_id}
 
 
 async def _diff_target(task_id: int) -> tuple[str, list, dict]:

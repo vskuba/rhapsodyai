@@ -889,6 +889,18 @@
         vertical-align: middle;
     }
     .pipe-diff::before { content: '±'; font-size: 10px; opacity: .7; }
+    /* Ссылка на журнал: та же форма, что у `diff`, — обе ведут на отдельную
+       страницу по этой же строке, и рядом они читаются как пара. */
+    .pipe-log {
+        font-family: inherit; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 3px;
+        margin-left: 4px; padding: 2px 6px;
+        font-size: 10px; font-weight: 700; line-height: 1.2; white-space: nowrap;
+        text-decoration: none; color: #4338ca; background: #eef2ff;
+        border: 1px solid #c7d2fe; border-radius: 5px; vertical-align: middle;
+    }
+    .pipe-log::before { content: '📜'; font-size: 9px; opacity: .8; }
+    .pipe-log:hover { background: #e0e7ff; border-color: #a5b4fc; }
     .pipe-diff:hover { background: #e5e7eb; border-color: #9ca3af; }
     /* «Влить в главную и снять каталог» — стоит вплотную к ссылке MR, потому что это
        её следующий шаг: посмотрел работу — принял. Зелёный, но приглушённый: действие
@@ -1017,6 +1029,123 @@
     }
     .pipe-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
                     letter-spacing: .04em; margin: 10px 0 4px; }
+
+
+    /* ─── Вкладка «Журналы» ─────────────────────────────────────
+       Журнал работы агента по строке: `.task-log.md` (хронология) и
+       `.task-state.md` (сделано/осталось/затыки) из каталога строки. Формат
+       строки — «ЧЧ:ММ:СС ключевое-слово текст», см. `src/project/task/task_log.py`. */
+    .log-pane { flex: 1; display: flex; gap: 14px; min-height: 0; padding: 0 0 4px; }
+
+    .log-side {
+        width: 290px; flex-shrink: 0; display: flex; flex-direction: column;
+        border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; overflow: hidden;
+    }
+    .log-side-head {
+        padding: 8px 12px; border-bottom: 1px solid #eef2f6;
+        font-size: 12px; color: #64748b; font-weight: 600;
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .log-side-list { flex: 1; overflow-y: auto; }
+    .log-item {
+        padding: 8px 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer;
+        display: flex; flex-direction: column; gap: 3px; transition: background .12s;
+    }
+    .log-item:hover { background: #f8fafc; }
+    .log-item.active { background: #eef2ff; box-shadow: inset 3px 0 0 #4f46e5; }
+    .log-item-top { display: flex; align-items: baseline; gap: 6px; }
+    .log-item-id { color: #94a3b8; font-size: 11px; font-variant-numeric: tabular-nums; }
+    .log-item-title {
+        flex: 1; font-size: 12.5px; color: #1e293b; font-weight: 600;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .log-item-meta { font-size: 11px; color: #94a3b8; display: flex; gap: 8px; }
+    .log-side-empty { padding: 14px 12px; color: #94a3b8; font-size: 12.5px; line-height: 1.5; }
+
+    .log-main { flex: 1; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .log-state {
+        border: 1px solid #e2e8f0; border-radius: 10px; background: #fff;
+        padding: 11px 14px; max-height: 30vh; overflow-y: auto; flex-shrink: 0;
+    }
+    .log-state h3 {
+        margin: 0 0 7px; font-size: 11px; color: #64748b; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .04em;
+    }
+    .log-state pre {
+        margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px; line-height: 1.55; color: #1e293b;
+        white-space: pre-wrap; word-break: break-word;
+    }
+    .log-state.empty pre { color: #94a3b8; }
+
+    .log-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
+    .log-chip {
+        border: 1px solid #e2e8f0; background: #fff; border-radius: 20px;
+        padding: 3px 10px; font-size: 12px; color: #475569; cursor: pointer;
+        font-weight: 600; transition: all .12s; user-select: none;
+    }
+    .log-chip:hover { border-color: #cbd5e1; }
+    .log-chip.on { background: #1e293b; border-color: #1e293b; color: #fff; }
+    .log-chip-n { opacity: .55; margin-left: 4px; font-variant-numeric: tabular-nums; }
+    .log-search {
+        flex: 1; min-width: 150px; padding: 5px 10px; font-size: 12.5px;
+        border: 1px solid #e2e8f0; border-radius: 7px; outline: none;
+    }
+    .log-search:focus { border-color: #a5b4fc; }
+    .log-filters-sep { width: 1px; align-self: stretch; background: #e2e8f0; margin: 0 3px; }
+
+    .log-body {
+        flex: 1; min-height: 0; overflow-y: auto;
+        border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; padding: 4px 0;
+    }
+    .log-round {
+        margin: 9px 12px 4px; padding: 5px 10px; border-radius: 7px;
+        background: #f8fafc; border: 1px solid #eef2f6;
+        font-size: 12px; color: #475569; font-weight: 700;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .log-round-role { font-size: 11px; padding: 1px 7px; border-radius: 20px; font-weight: 700; }
+    .log-role-manager   { background: #eef2ff; color: #4338ca; }
+    .log-role-developer { background: #ede9fe; color: #6d28d9; }
+    .log-role-qa        { background: #fef3c7; color: #a16207; }
+    .log-role-bugfixer  { background: #fee2e2; color: #b91c1c; }
+    .log-role-unknown   { background: #f1f5f9; color: #64748b; }
+
+    .log-line {
+        display: flex; gap: 10px; padding: 3px 14px; font-size: 12.5px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.5;
+        border-left: 3px solid transparent;
+    }
+    .log-line:hover { background: #fafbfc; }
+    .log-time { color: #94a3b8; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .log-kw {
+        flex-shrink: 0; width: 72px; font-weight: 700; font-size: 11.5px;
+        text-transform: uppercase; letter-spacing: .02em;
+    }
+    .log-text { flex: 1; color: #1e293b; word-break: break-word; white-space: pre-wrap; }
+
+    .log-kw-start    { color: #64748b; }
+    .log-kw-done     { color: #15803d; }
+    .log-kw-left     { color: #a16207; }
+    .log-kw-commit   { color: #1d4ed8; }
+    .log-kw-block    { color: #b91c1c; }
+    .log-line.log-blocked { border-left-color: #fca5a5; background: #fef7f7; }
+
+    /* Разрыв во времени: где круг надолго замолчал. Ради этого и нужны отметки
+       времени — простой виден до чтения самого текста. */
+    .log-gap {
+        margin: 2px 14px 2px 0; padding: 2px 12px 2px 14px;
+        font-size: 11.5px; color: #b45309; display: flex; align-items: center; gap: 6px;
+    }
+    .log-gap::before { content: '\23F1'; }
+    .log-gap.big { color: #b91c1c; font-weight: 600; }
+
+    .log-raw {
+        padding: 3px 14px; font-size: 12.5px; color: #64748b;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
+    }
+    .log-empty { padding: 24px 16px; text-align: center; color: #94a3b8; font-size: 13px; line-height: 1.6; }
+    .log-empty code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
     /* ─── Help modal ──────────────────────────────────────── */
     .modal-overlay {
@@ -1255,6 +1384,9 @@
         <button class="page-tab" data-tab="development">Разработка <span class="page-tab-n" id="tabCount-development"></span></button>
         <button class="page-tab" data-tab="testing">Тестирование <span class="page-tab-n" id="tabCount-testing"></span></button>
         <button class="page-tab" data-tab="bugs">Баги <span class="page-tab-n" id="tabCount-bugs"></span></button>
+        <!-- Журналы не фаза задачи, а другой взгляд на тот же проект: показывают,
+             чем агенты заняты прямо сейчас. Живут, пока жив каталог строки. -->
+        <button class="page-tab" data-tab="logs">📜 Журналы <span class="page-tab-n" id="tabCount-logs"></span></button>
     </div>
 
     <!-- Toolbar: title, filters, add -->
@@ -1305,6 +1437,31 @@
     <div class="task-scroll">
         <div id="taskTableWrap">
             <div class="task-placeholder"><span class="task-placeholder-icon">🗂️</span>Выберите проект выше</div>
+        </div>
+    </div>
+
+    <!-- Вкладка «Журналы»: слева строки проекта, у которых есть журнал, справа
+         состояние и хронология выбранной. Скрыта, пока вкладка не выбрана. -->
+    <div class="log-pane" id="logPane" style="display:none">
+        <div class="log-side">
+            <div class="log-side-head">
+                <span>Строки с журналом</span>
+                <span id="logCount" class="log-item-id"></span>
+            </div>
+            <div class="log-side-list" id="logList">
+                <div class="log-side-empty">Загрузка…</div>
+            </div>
+        </div>
+
+        <div class="log-main">
+            <div class="log-state empty" id="logState">
+                <h3>Состояние</h3>
+                <pre>Выберите строку слева.</pre>
+            </div>
+            <div class="log-filters" id="logFilters"></div>
+            <div class="log-body" id="logBody">
+                <div class="log-empty">Выберите строку слева, чтобы увидеть её журнал.</div>
+            </div>
         </div>
     </div>
 
@@ -1403,6 +1560,9 @@ function selectProjectById(id, title) {
     localStorage.setItem(PROJECT_KEY, String(_taskProjectId));
     loadTasks();
     loadTeamRow();
+    // Журналы принадлежат проекту: сменили проект — список обязан смениться с ним,
+    // иначе на вкладке остались бы строки соседнего.
+    if (typeof logListLoad === 'function' && _phaseFilter === PHASE_LOGS) logListLoad();
 }
 
 // ── Мини-карточки команды ──────────────────────────────────────────────────────
@@ -1801,14 +1961,31 @@ function setStatusFilter(status) {
 const PHASE_KEY = 'task_phase';
 // Вкладка из прошлой сессии могла исчезнуть при правке PHASE_TYPE_NAMES — сверяем
 // с текущим списком, иначе таблица молча осталась бы пустой на несуществующей фазе.
-let _phaseFilter = PHASE_TYPE_NAMES[localStorage.getItem(PHASE_KEY)]
+// `logs` в PHASE_TYPE_NAMES нет намеренно: это не фаза задачи, а другой взгляд
+// на проект, и в отборе строк таблицы он не участвует. Поэтому проверка на
+// живую вкладку пропускает его отдельно.
+const PHASE_LOGS = 'logs';
+let _phaseFilter = (PHASE_TYPE_NAMES[localStorage.getItem(PHASE_KEY)]
+                    || localStorage.getItem(PHASE_KEY) === PHASE_LOGS)
     ? localStorage.getItem(PHASE_KEY) : 'development';
 
 function selectPhase(btn, phase) {
     _phaseFilter = phase; // Всегда выбирать вкладку, не отключать
     localStorage.setItem(PHASE_KEY, phase);
     phaseTabsSync();
-    renderTable();
+    phasePanesSync();
+    if (phase === PHASE_LOGS) logListLoad();
+    else renderTable();
+}
+
+// Журналы занимают место таблицы целиком: панель фильтров и кнопка «Добавить»
+// к ним не относятся, а оставленные сверху читались бы как управление журналом.
+function phasePanesSync() {
+    const logs = _phaseFilter === PHASE_LOGS;
+    document.querySelector('.task-toolbar').style.display = logs ? 'none' : '';
+    document.querySelector('.task-scroll').style.display = logs ? 'none' : '';
+    document.getElementById('taskAddForm').style.display = logs ? 'none' : '';
+    document.getElementById('logPane').style.display = logs ? 'flex' : 'none';
 }
 
 function phaseTabsSync() {
@@ -3017,7 +3194,7 @@ function renderPipeChip(t, row) {
         : taskReportHint(t, row);
     return `<div><span class="pipe-chip pipe-${state}" `
          + `title="${esc(hint)}">${esc(state)}</span>${retry}${renderPipeRetries(t)}`
-         + `${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
+         + `${renderPipeLog(t)}${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
 }
 
 // Статистика технических повторов строки (`metadata.retry`, пишет `task_retry.py`).
@@ -3055,6 +3232,18 @@ function renderPipeRetries(t) {
 // смотреть по одной незачем: человеку нужен ответ на один вопрос — что задача изменила
 // в проекте, — и страница собирает его из веток всего плана сама. Пока работа идёт,
 // сравнивать нечего: половина плана ещё без коммитов.
+// Кнопка журнала: уводит на вкладку «Журналы» этой же страницы с открытой строкой.
+// Не отдельная страница и не всплывающее окно: журнал принадлежит проекту, а проект
+// выбран здесь же селектором сверху — своя страница потребовала бы второго выбора и
+// разъезжалась бы с этим. Живёт журнал ровно пока жив каталог строки.
+// Кнопка есть у всего, что конвейер брал в работу: каталог, а с ним и журнал,
+// заводится на первом же прогоне — в том числе у задачи под менеджером.
+function renderPipeLog(t) {
+    if (!t.pipeline_state) return '';
+    return `<button class="pipe-log" onclick="event.stopPropagation();logShowForTask(${t.id})"`
+         + ` title="Журнал работы агента: что сделано, что осталось, где были затыки">лог</button>`;
+}
+
 function renderPipeDiff(t) {
     if (t.parent_id || t.pipeline_state !== 'done') return '';
     return `<a class="pipe-diff" href="/admin/task/diff?task=${t.id}" target="_blank" rel="noopener"`
@@ -3512,6 +3701,7 @@ treeCollapsedLoad();
 // Смещение часового пояса тянем до первой отрисовки: без loadTz() глобальный fmtTz
 // молча показывает UTC, и времена ревизий разъезжаются с остальной админкой.
 (async () => {
+    phasePanesSync();
     await loadTaskTypes();
     (window.loadTz ? window.loadTz() : Promise.resolve()).then(loadProjects);
 })();
@@ -3522,6 +3712,244 @@ setInterval(teamMiniLeftTick, 1000);
 // Состояния конвейера меняются сами по себе — колонка «Прогресс» обязана это
 // показывать без перезагрузки страницы.
 setInterval(taskProgressRefresh, TASK_PROGRESS_REFRESH_MS);
+
+// ─── Вкладка «Журналы» ────────────────────────────────────────────────────────
+// Агент по ходу работы пишет в каталог своей строки два файла: `.task-log.md`
+// (хронология, только дописывается) и `.task-state.md` (сделано/осталось/затыки,
+// перезаписывается). Нужны они прежде всего самому конвейеру — прогон обрывается
+// по таймауту, оболочку перезапускают, и следующий круг начинает с них, а не с
+// нуля. Здесь то же самое читает человек.
+//
+// Живут, пока жив каталог строки: влили ветку — `task_worktree_merge` каталог
+// снимает, и журнал уходит с ним. Поэтому вкладка, а не отдельная страница:
+// показывать нечего, кроме работы, которая идёт прямо сейчас.
+const LOG_KEYWORDS = ['старт', 'сделал', 'осталось', 'коммит', 'затык', 'готово'];
+// Класс подсветки на ключевое слово: в CSS кириллицы в именах классов избегаем.
+const LOG_KW_CLASS = {
+    'старт': 'log-kw-start', 'сделал': 'log-kw-done', 'осталось': 'log-kw-left',
+    'коммит': 'log-kw-commit', 'затык': 'log-kw-block', 'готово': 'log-kw-done',
+};
+const LOG_ROLES = ['manager', 'developer', 'qa', 'bugfixer'];
+// Порог разрыва: меньше трёх минут — обычный ход работы. Ниже опускать не стоит,
+// журнал зарастает отметками «1 мин», и настоящие простои в них тонут.
+const LOG_GAP_MIN_SEC = 180;
+const LOG_GAP_BIG_SEC = 600;
+
+let _logItems = [];
+let _logTaskId = null;
+let _logEntries = [];
+let _logSearch = '';
+const _logOffKw = new Set();
+const _logOffRole = new Set();
+
+async function logListLoad() {
+    const list = document.getElementById('logList');
+    if (!_taskProjectId) {
+        list.innerHTML = '<div class="log-side-empty">Выберите проект: журналы лежат '
+            + 'в каталогах его строк.</div>';
+        document.getElementById('tabCount-logs').textContent = '(0)';
+        return;
+    }
+
+    let data;
+    try {
+        const resp = await fetch(`/task/logs/${_taskProjectId}`);
+        if (!resp.ok) throw new Error(resp.status);
+        data = await resp.json();
+    } catch (e) {
+        list.innerHTML = '<div class="log-side-empty">Не удалось загрузить список.</div>';
+        return;
+    }
+
+    _logItems = data.result || [];
+    document.getElementById('logCount').textContent = _logItems.length || '';
+    document.getElementById('tabCount-logs').textContent = `(${_logItems.length})`;
+
+    if (!_logItems.length) {
+        list.innerHTML = '<div class="log-side-empty">Живых журналов нет. Они заводятся, '
+            + 'когда конвейер берёт строку в работу, и уходят вместе с её каталогом '
+            + 'после слияния ветки.</div>';
+        return;
+    }
+
+    list.innerHTML = _logItems.map(item => {
+        const kb = Math.max(1, Math.round(item.bytes / 1024));
+        return `<div class="log-item${item.task_id === _logTaskId ? ' active' : ''}"
+                     onclick="logOpen(${item.task_id})">
+            <div class="log-item-top">
+                <span class="log-item-id">#${item.task_id}</span>
+                <span class="log-item-title">${esc(item.title) || '(без названия)'}</span>
+            </div>
+            <div class="log-item-meta">
+                <span>${esc(item.pipeline_state || '—')}</span>
+                <span>${kb} КБ</span><span>${esc(item.updated_at)}</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    // Без выбора вкладка выглядела бы сломанной: список есть, справа пусто.
+    if (!_logItems.some(i => i.task_id === _logTaskId)) logOpen(_logItems[0].task_id);
+}
+
+// Строка «12:04:31  сделал  текст» и заголовок круга «## круг 2 · developer · дата».
+function logParse(text) {
+    const entries = [];
+    let role = 'unknown';
+
+    (text || '').split('\n').forEach(raw => {
+        const line = raw.replace(/\s+$/, '');
+        if (!line.trim()) return;
+
+        const head = line.match(/^#{1,3}\s*(.+)$/);
+        if (head) {
+            const found = LOG_ROLES.find(r => head[1].toLowerCase().includes(r));
+            if (found) role = found;
+            entries.push({kind: 'round', text: head[1], role});
+            return;
+        }
+
+        const m = line.match(/^(\d{1,2}:\d{2}(?::\d{2})?)\s+(\S+)\s*(.*)$/);
+        if (m && LOG_KEYWORDS.includes(m[2].toLowerCase())) {
+            entries.push({kind: 'line', time: m[1], kw: m[2].toLowerCase(), text: m[3], role});
+            return;
+        }
+        entries.push({kind: 'raw', text: line, role});
+    });
+
+    return entries;
+}
+
+function logSeconds(time) {
+    const p = String(time || '').split(':').map(Number);
+    if (p.length < 2 || p.some(isNaN)) return null;
+    return p[0] * 3600 + p[1] * 60 + (p[2] || 0);
+}
+
+function logFiltersRender() {
+    const kw = {}, roles = {};
+    _logEntries.forEach(e => {
+        if (e.kind === 'line') kw[e.kw] = (kw[e.kw] || 0) + 1;
+        if (e.role && e.role !== 'unknown') roles[e.role] = (roles[e.role] || 0) + 1;
+    });
+
+    const kwChips = LOG_KEYWORDS.filter(k => kw[k]).map(k =>
+        `<span class="log-chip${_logOffKw.has(k) ? '' : ' on'}" onclick="logToggleKw('${k}')">`
+        + `${k}<span class="log-chip-n">${kw[k]}</span></span>`).join('');
+    const roleChips = Object.keys(roles).map(r =>
+        `<span class="log-chip${_logOffRole.has(r) ? '' : ' on'}" onclick="logToggleRole('${r}')">`
+        + `${r}<span class="log-chip-n">${roles[r]}</span></span>`).join('');
+
+    document.getElementById('logFilters').innerHTML =
+        (roleChips ? roleChips + '<span class="log-filters-sep"></span>' : '') + kwChips
+        + `<input class="log-search" id="logSearch" placeholder="поиск по тексту…"`
+        + ` value="${esc(_logSearch)}" oninput="logBodyRender()">`;
+}
+
+function logToggleKw(k) {
+    _logOffKw.has(k) ? _logOffKw.delete(k) : _logOffKw.add(k);
+    logFiltersRender(); logBodyRender();
+}
+function logToggleRole(r) {
+    _logOffRole.has(r) ? _logOffRole.delete(r) : _logOffRole.add(r);
+    logFiltersRender(); logBodyRender();
+}
+
+function logBodyRender() {
+    const input = document.getElementById('logSearch');
+    if (input) _logSearch = input.value;
+    const needle = _logSearch.trim().toLowerCase();
+
+    const shown = _logEntries.filter(e => {
+        if (e.role && e.role !== 'unknown' && _logOffRole.has(e.role)) return false;
+        if (e.kind === 'line' && _logOffKw.has(e.kw)) return false;
+        return !needle || (e.text || '').toLowerCase().includes(needle);
+    });
+
+    const body = document.getElementById('logBody');
+    if (!shown.length) {
+        body.innerHTML = '<div class="log-empty">Под фильтры ничего не подошло.</div>';
+        return;
+    }
+
+    let html = '', prev = null;
+    shown.forEach(e => {
+        if (e.kind === 'round') {
+            html += `<div class="log-round"><span class="log-round-role log-role-${e.role}">`
+                 + `${esc(e.role)}</span>${esc(e.text)}</div>`;
+            prev = null;
+            return;
+        }
+        if (e.kind === 'raw') { html += `<div class="log-raw">${esc(e.text)}</div>`; return; }
+
+        const now = logSeconds(e.time);
+        if (prev !== null && now !== null && now - prev >= LOG_GAP_MIN_SEC) {
+            const gap = now - prev;
+            const text = gap >= 3600
+                ? `${Math.floor(gap / 3600)} ч ${Math.round((gap % 3600) / 60)} мин без записей`
+                : `${Math.round(gap / 60)} мин без записей`;
+            html += `<div class="log-gap${gap >= LOG_GAP_BIG_SEC ? ' big' : ''}">${text}</div>`;
+        }
+        if (now !== null) prev = now;
+
+        html += `<div class="log-line${e.kw === 'затык' ? ' log-blocked' : ''}">`
+             + `<span class="log-time">${esc(e.time)}</span>`
+             + `<span class="log-kw ${LOG_KW_CLASS[e.kw] || ''}">${esc(e.kw)}</span>`
+             + `<span class="log-text">${esc(e.text)}</span></div>`;
+    });
+    body.innerHTML = html;
+}
+
+async function logOpen(taskId) {
+    _logTaskId = taskId;
+    document.querySelectorAll('.log-item').forEach(el => {
+        el.classList.toggle('active', el.getAttribute('onclick').includes(`(${taskId})`));
+    });
+
+    let data;
+    try {
+        const resp = await fetch(`/task/${taskId}/log`);
+        if (!resp.ok) throw new Error(resp.status);
+        data = await resp.json();
+    } catch (e) {
+        document.getElementById('logBody').innerHTML =
+            '<div class="log-empty">Не удалось прочитать журнал.</div>';
+        return;
+    }
+
+    const box = document.getElementById('logState');
+    box.classList.toggle('empty', !data.state);
+    box.innerHTML = '<h3>Состояние</h3><pre>'
+        + (data.state ? esc(data.state) : 'Агент ещё не записал состояние.') + '</pre>';
+
+    _logEntries = logParse(data.log);
+    logFiltersRender();
+    if (!_logEntries.length) {
+        document.getElementById('logBody').innerHTML =
+            '<div class="log-empty">Журнал пуст. Агент ведёт его по ходу работы в '
+            + '<code>.task-log.md</code> каталога строки.</div>';
+        return;
+    }
+    logBodyRender();
+}
+
+// Кнопка «лог» в строке задачи: переключает на вкладку и открывает эту строку —
+// без ухода со страницы, проект и так уже выбран.
+function logShowForTask(taskId) {
+    selectPhase(null, PHASE_LOGS);
+    logOpen(taskId);
+}
+
+// Журнал обновляется, пока агент работает; на чужих вкладках и в фоне не дёргаем.
+setInterval(() => {
+    if (_phaseFilter !== PHASE_LOGS || document.hidden) return;
+    logListLoad();
+    if (_logTaskId) {
+        const body = document.getElementById('logBody');
+        const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+        logOpen(_logTaskId).then(() => { if (atBottom) body.scrollTop = body.scrollHeight; });
+    }
+}, TASK_PROGRESS_REFRESH_MS);
+
 </script>
 
 <!-- ─── Help modal ─────────────────────────────────────── -->
