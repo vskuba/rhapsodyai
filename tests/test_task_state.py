@@ -218,3 +218,70 @@ class TestShellBlockedByPermission:
             assert '__pytest_role' in live.get(TASK_ROLE_PROJECT_NONE, [])
         finally:
             await self._session_drop(row_id)
+
+
+class TestRunningRowsFromTrace:
+    """
+    «Строка в работе» сверяется с состоянием строки, а не только с трассой.
+
+    Статус `running` в трассе держится, пока прогон её не закроет, — а закрыть он
+    может не успеть: перезапуск контейнера или смерть воркера оставляют запись
+    висеть навсегда. Живьём две такие трассы от вчерашних кругов подсвечивали
+    подзадачу #1033 как работающую, хотя она стояла в `planned`.
+    """
+
+    async def _trace_add(self, subtask_id: int, role: str = 'developer'):
+        import json
+
+        from mysql_.mysql_ import mysql_get_db_async
+
+        variables = json.dumps({'subtask_id': str(subtask_id), 'task_shell_role': role},
+                               ensure_ascii=False)
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "INSERT INTO agent_workflow_trace (run_uuid, workflow_id, status, variables_start) "
+                "VALUES (UUID(), 56, 'running', %s)", (variables,))
+            row_id = db.lastrowid
+            await db.connection.commit()
+
+        return row_id
+
+    async def _trace_drop(self, row_id: int):
+        from mysql_.mysql_ import mysql_get_db_async
+
+        async with mysql_get_db_async() as db:
+            await db.execute("DELETE FROM agent_workflow_trace WHERE id = %s", (row_id,))
+            await db.connection.commit()
+
+    async def test_зависшая_трасса_не_делает_строку_работающей(self, subtask_id: int):
+        from src.project.task.task_log import task_log_rows_running
+        from src.project.task.task_state import task_state_subtask_set
+
+        await task_state_subtask_set(subtask_id, 'planned')
+        trace_id = await self._trace_add(subtask_id)
+        try:
+            assert subtask_id not in await task_log_rows_running()
+        finally:
+            await self._trace_drop(trace_id)
+
+    async def test_настоящая_работа_видна(self, subtask_id: int):
+        from src.project.task.task_log import task_log_rows_running
+        from src.project.task.task_state import task_state_subtask_set
+
+        await task_state_subtask_set(subtask_id, 'developing')
+        trace_id = await self._trace_add(subtask_id)
+        try:
+            assert (await task_log_rows_running()).get(subtask_id) == 'developer'
+        finally:
+            await self._trace_drop(trace_id)
+
+    async def test_закрытая_строка_не_работает(self, subtask_id: int):
+        from src.project.task.task_log import task_log_rows_running
+        from src.project.task.task_state import task_state_subtask_set
+
+        await task_state_subtask_set(subtask_id, 'done')
+        trace_id = await self._trace_add(subtask_id)
+        try:
+            assert subtask_id not in await task_log_rows_running()
+        finally:
+            await self._trace_drop(trace_id)

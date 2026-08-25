@@ -289,20 +289,40 @@ async def task_log_rows_running() -> dict[int, str]:
     Номер берём из переменных прогона: у подзадачи `subtask_id`, у задачи под
     менеджером `task_id`. Приоритет у подзадачи — в её трассе лежит и номер
     родителя, и иначе работа приписалась бы задаче.
+
+    **Одной трассы мало.** Статус `running` в ней держится, пока прогон её не
+    закроет, — а закрыть он может не успеть: перезапуск контейнера, смерть
+    процесса, оборванный воркер оставляют запись висеть навсегда. Живьём такие
+    трассы от вчерашних кругов подсвечивали строку #1033 как работающую, хотя она
+    стояла в `planned`.
+
+    Поэтому сверяем с состоянием самой строки: работа идёт только тогда, когда
+    конвейер держит её в переходном состоянии. Строка — источник правды, трасса
+    отвечает лишь на вопрос «чей это прогон и какая роль».
     """
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT variables_start FROM agent_workflow_trace WHERE status = 'running'")
         rows = await db.fetchall() or []
 
-    running: dict[int, str] = {}
-    for row in rows:
-        variables = _dict_parse(str(row.get('variables_start') or '')) or {}
-        task_id = str(variables.get('subtask_id') or variables.get('task_id') or '').strip()
-        if task_id.isdigit():
-            running[int(task_id)] = str(variables.get('task_shell_role') or '')
+        running: dict[int, str] = {}
+        for row in rows:
+            variables = _dict_parse(str(row.get('variables_start') or '')) or {}
+            task_id = str(variables.get('subtask_id') or variables.get('task_id') or '').strip()
+            if task_id.isdigit():
+                running[int(task_id)] = str(variables.get('task_shell_role') or '')
+        if not running:
+            return {}
 
-    return running
+        placeholders = ', '.join(['%s'] * len(running))
+        states = ', '.join(['%s'] * len(TASK_LOG_STATES_IN_FLIGHT))
+        await db.execute(
+            f"SELECT id FROM project_task "
+            f" WHERE id IN ({placeholders}) AND pipeline_state IN ({states})",
+            [*running, *TASK_LOG_STATES_IN_FLIGHT])
+        alive = {int(row['id']) for row in await db.fetchall() or []}
+
+    return {task_id: role for task_id, role in running.items() if task_id in alive}
 
 
 async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
@@ -393,7 +413,10 @@ async def _state_write(directory: str, task_id, role: str, attempt_no: int,
     last = done[-1] if done else None
     commits = await _branch_commits(directory)
 
-    text = (f'# Строка {task_id} · последний круг {int(attempt_no or 0)} · {role}\n\n'
+    # «Задача», а не «строка»: внутри кода строкой зовётся и задача, и подзадача —
+    # там это удобно, потому что конвейер обращается с ними одинаково. Но читает
+    # файл человек и агент, и для них «строка» — это строка текста.
+    text = (f'# Задача #{task_id} · последний круг {int(attempt_no or 0)} · {role}\n\n'
             f'## Итог круга\n{_one_line(outcome) or "—"}\n\n'
             f'## Докуда дошли\n'
             f'{_one_line(last.get("step_title")) if last else "ни один шаг не завершился"}\n\n'
