@@ -28,7 +28,7 @@ from src.mysql_.seed.mysql_seed_up import mysql_seed_up
 from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
-from src.ai.ai_workflow_trace import workflow_trace_runs_stale_close
+from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
 from src.event.event_handlers import event_handlers_register
 from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
     event_handlers_register()
     await telegram_notify_bot_setup()
 
-    await workflow_trace_runs_stale_close()
+    await ai_workflow_trace_runs_stale_close()
 
     queue_init([
         'chat',

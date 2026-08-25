@@ -207,7 +207,6 @@ BROWSER_INSPECT_JS = """
             ).replace('__HTML_LIMIT__', str(BROWSER_INSPECT_HTML_LIMIT)
             ).replace('__LIMIT__', str(BROWSER_INSPECT_SELECTOR_VARIANTS))
 
-
 async def browser_inspect_set(entry: dict, on: bool) -> None:
     """Включает или гасит инспектор во всех страницах сессии.
 
@@ -227,25 +226,6 @@ async def browser_inspect_set(entry: dict, on: bool) -> None:
 
     logger_info(f"[browser] инспектор {'включён' if on else 'выключен'}: {entry['session_id']}")
 
-
-def _pages(entry: dict) -> list:
-    """Живые страницы сессии: первая и всплывшие дочерние окна."""
-    try:
-        return [page for page in entry['context'].pages if not page.is_closed()]
-    except Exception:
-        return []
-
-
-async def _page_switch(page, on: bool) -> None:
-    """Переключает режим на одной странице. Закрылась по дороге — не наша забота."""
-    try:
-        await page.evaluate(
-            '(on) => { const i = window.__browserInspect; if (!i) return; on ? i.on() : i.off(); }',
-            on)
-    except Exception as e:
-        logger_info(f'[browser] инспектор: страница не переключилась: {e}')
-
-
 def browser_inspect_queue(entry: dict) -> asyncio.Queue:
     """Очередь выбранных элементов сессии — из неё читает живое окно."""
     queue = entry.get('inspect_queue')
@@ -255,6 +235,21 @@ def browser_inspect_queue(entry: dict) -> asyncio.Queue:
 
     return queue
 
+def _pages(entry: dict) -> list:
+    """Живые страницы сессии: первая и всплывшие дочерние окна."""
+    try:
+        return [page for page in entry['context'].pages if not page.is_closed()]
+    except Exception:
+        return []
+
+async def _page_switch(page, on: bool) -> None:
+    """Переключает режим на одной странице. Закрылась по дороге — не наша забота."""
+    try:
+        await page.evaluate(
+            '(on) => { const i = window.__browserInspect; if (!i) return; on ? i.on() : i.off(); }',
+            on)
+    except Exception as e:
+        logger_info(f'[browser] инспектор: страница не переключилась: {e}')
 
 async def _install(entry: dict) -> None:
     """Привязка, init-скрипт и подписка на новые окна — один раз на сессию."""
@@ -285,7 +280,6 @@ async def _install(entry: dict) -> None:
 
     entry['inspect_installed'] = True
 
-
 async def _page_arm(page, entry: dict) -> None:
     """Догоняет всплывшее окно: ждёт загрузки и включает в нём режим."""
     try:
@@ -296,7 +290,6 @@ async def _page_arm(page, entry: dict) -> None:
     await _page_evaluate(page, BROWSER_INSPECT_JS)
     await _page_switch(page, bool(entry.get('inspect')))
 
-
 async def _page_evaluate(page, script: str) -> None:
     """Выполняет скрипт на странице, не роняя вызывающего."""
     try:
@@ -304,7 +297,6 @@ async def _page_evaluate(page, script: str) -> None:
             await page.evaluate(script)
     except Exception as e:
         logger_info(f'[browser] инспектор: скрипт не встал на страницу: {e}')
-
 
 def _variants(raw) -> list:
     """Варианты селектора со страницы: обрезаем и приводим к одной форме.
@@ -325,7 +317,6 @@ def _variants(raw) -> list:
                     'count': int(item.get('count') if str(item.get('count') or '').lstrip('-').isdigit() else -1)})
 
     return out
-
 
 def _pick_put(entry: dict, payload) -> None:
     """Кладёт выбранное в очередь. Полная очередь — выбрасываем старое.
@@ -350,3 +341,4 @@ def _pick_put(entry: dict, payload) -> None:
             break
 
     queue.put_nowait(message)
+

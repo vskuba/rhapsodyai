@@ -1,13 +1,13 @@
 import asyncio
 from logging_.logging_ import logger_info, logging_init
-from src.ai.ai_fact import fact_qdrant_sync
+from src.ai.ai_fact import ai_fact_qdrant_sync
 from qdrant_.qdrant_ import _qdrant_db_get_client
 
 
 async def main():
     logging_init()
     try:
-        result = await fact_qdrant_sync()
+        result = await ai_fact_qdrant_sync()
         logger_info(result)
         print(result)
     except Exception as e:

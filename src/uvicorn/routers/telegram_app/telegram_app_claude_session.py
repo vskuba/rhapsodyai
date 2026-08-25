@@ -58,7 +58,7 @@ async def telegram_app_claude_session_inbox(request: Request, session_uuid: str)
 
 
 @router.get("/telegram-app/claude/sessions")
-async def telegram_app_claude_sessions(request: Request, project_label: str):
+async def telegram_app_claude_session_list(request: Request, project_label: str):
     """
     Список зарегистрированных сессий (любой статус) для проекта - вызывается
     хуком SessionStart при старте терминала.
@@ -299,7 +299,7 @@ async def telegram_app_claude_session_inbox_ack(request: Request, data: dict):
 
 
 @router.post("/telegram-app/claude/quota-check")
-async def telegram_app_claude_quota_check(request: Request, data: dict):
+async def telegram_app_claude_session_quota_check(request: Request, data: dict):
     """
     Кладёт маркер __QUOTA_CHECK__ (dynamic=1) в очередь ai_claude_session.
     Терминал подхватывает маркер через inbox-поллинг, запрашивает квоту у Anthropic
@@ -314,26 +314,6 @@ async def telegram_app_claude_quota_check(request: Request, data: dict):
 
     result = await claude_message_user(QUOTA_CHECK_MARKER, session_uuid, dynamic=1)
     return {"result": {"ok": True, "message_id": result["id"]}}
-
-
-def _compute_process_status(row: dict, now: datetime) -> dict:
-    """`now` приходит из datetime_now(): last_seen_at записан в том же поясе."""
-    last_seen_at = row.get("last_seen_at")
-    seconds_ago = None
-    watch_alive = False
-    if last_seen_at:
-        delta = (now - last_seen_at).total_seconds()
-        seconds_ago = int(delta)
-        watch_alive = delta <= 15
-    return {
-        "watch_alive": watch_alive,
-        "server_ok": True,
-        "seconds_ago": seconds_ago,
-        "last_seen_at": str(last_seen_at) if last_seen_at else None,
-        "role": row.get("role"),
-        "project_label": row.get("project_label"),
-        "status": row.get("status"),
-    }
 
 
 @router.get("/telegram-app/claude/session/process-status")
@@ -404,3 +384,23 @@ def _agent_status_parse(data: dict) -> dict:
 
     return {"agent_status": agent_status,
             "agent_status_reason": reason[:TELEGRAM_CLAUDE_AGENT_STATUS_REASON_MAX]}
+
+
+def _compute_process_status(row: dict, now: datetime) -> dict:
+    """`now` приходит из datetime_now(): last_seen_at записан в том же поясе."""
+    last_seen_at = row.get("last_seen_at")
+    seconds_ago = None
+    watch_alive = False
+    if last_seen_at:
+        delta = (now - last_seen_at).total_seconds()
+        seconds_ago = int(delta)
+        watch_alive = delta <= 15
+    return {
+        "watch_alive": watch_alive,
+        "server_ok": True,
+        "seconds_ago": seconds_ago,
+        "last_seen_at": str(last_seen_at) if last_seen_at else None,
+        "role": row.get("role"),
+        "project_label": row.get("project_label"),
+        "status": row.get("status"),
+    }

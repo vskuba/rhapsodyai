@@ -144,7 +144,7 @@ async def user_delete(request: Request, user_id: int, user=Depends(AuthChecker([
 
 
 @router.get("/role/list")
-async def role_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
+async def user_role_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
     async with db:
         await db.execute("SELECT id, name FROM `role` ORDER BY id")
         return {"result": await db.fetchall()}
