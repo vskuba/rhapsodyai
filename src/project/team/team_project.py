@@ -55,6 +55,10 @@ TEAM_PROJECT_SESSION_STATUS_SHOWN = ('active', 'closing')
 TEAM_PROJECT_NO_PROJECT = 0
 
 
+# Каталог рабочих выкладок внутри проекта — в нём поднимают оболочку роли
+# (см. `team_member.TEAM_MEMBER_WORKTREES_DIR`).
+TEAM_PROJECT_WORKTREES_DIR = '.claude/worktrees'
+
 async def team_project_blocks_get() -> list[dict]:
     """Карточки команды в разрезе проектов.
 
@@ -130,6 +134,14 @@ async def team_project_blocks_get() -> list[dict]:
     return blocks
 
 
+def _team_project_dir(work_dir) -> str:
+    """Каталог проекта по адресу оболочки: хвост рабочих выкладок отбрасываем."""
+    path = _path_normalize(work_dir)
+    tail = '/' + TEAM_PROJECT_WORKTREES_DIR
+
+    return path[:-len(tail)] if path.endswith(tail) else path
+
+
 async def team_project_id_by_work_dir(work_dir: str) -> int | None:
     """Проект, которому принадлежит каталог запуска оболочки.
 
@@ -139,7 +151,10 @@ async def team_project_id_by_work_dir(work_dir: str) -> int | None:
 
     Returns: id проекта либо None, если каталог пуст или ничей.
     """
-    work_dir = _path_normalize(work_dir)
+    # Оболочку роли поднимают в выкладках проекта (`.claude/worktrees`), а
+    # проекты записаны своим корнем: хвост снимаем, иначе пинг не нашёл бы
+    # карточку и она осталась бы «не запущена» при живой оболочке.
+    work_dir = _team_project_dir(work_dir)
     if not work_dir:
         return None
 

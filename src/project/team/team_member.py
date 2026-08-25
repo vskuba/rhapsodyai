@@ -17,6 +17,11 @@ from src.mysql_.repository.project.team_repository import ProjectTeamRepository
 # пинга игнорируем: оболочка внешняя, доверять её полям на запись нельзя.
 TEAM_MEMBER_SESSION_FIELDS = ('pid', 'session_uuid', 'work_dir')
 
+# Каталог рабочих выкладок внутри проекта — в нём поднимают оболочку роли.
+# Значение то же, что у `task_worktree.TASK_WORKTREE_BASE_DIR`; своя копия —
+# команда карточки не должна тянуть за собой модуль конвейера задач.
+TEAM_MEMBER_WORKTREES_DIR = '.claude/worktrees'
+
 # Заготовка карточек нового проекта: роль → (имя, команда запуска оболочки).
 # Ключи — те же роли, что рисует блок проекта на `/admin/team`, а команда здесь
 # без `cd`: каталог подставляется на карточке из work_dir проекта.
@@ -37,6 +42,28 @@ TEAM_MEMBER_ROLE_CARD = {
     'qa':        ('QA',        'claude-shell --gx10 --qa --autocompact 115k'),
     'bugfixer':  ('Bugfixer',  'claude-shell --gx10 --bugfixer --autocompact 115k'),
 }
+
+
+def team_member_role_work_dir(project_dir) -> str:
+    """
+    Каталог запуска оболочки роли: рабочие выкладки проекта, а не его корень.
+
+    Так корень репозитория оказывается **выше** рабочего каталога агента, и
+    Claude Code за его пределы не ходит: чекаут человека, `src/`, конфиги
+    остаются недоступными на запись. Каталоги подзадач при этом лежат внутри
+    подпапками — одна оболочка обслуживает их все, и общий контекст между
+    кругами не теряется.
+
+    Живой повод: агент подзадачи #1033 час правил основной чекаут, включая
+    файлы вне своей подзадачи, и довёл дерево до незапускаемого состояния.
+    Промпт запрещал это словами — словами оно и не удержалось.
+
+    Пустой каталог проекта оставляем пустым: карточка без каталога значит
+    «проект не настроен», и подсовывать ей путь из ниоткуда нельзя.
+    """
+    base = str(project_dir or '').strip().rstrip('/')
+
+    return f'{base}/{TEAM_MEMBER_WORKTREES_DIR}' if base else ''
 
 
 async def team_member_list() -> list:
@@ -94,7 +121,8 @@ async def team_member_cards_ensure(project_id: int) -> int:
         if role in existing:
             continue
         await repo.add({'project_id': project_id, 'name': name, 'role': role,
-                        'command': command, 'work_dir': str(project.get('work_dir') or '')})
+                        'command': command,
+                        'work_dir': team_member_role_work_dir(project.get('work_dir'))})
         created += 1
 
     return created
