@@ -1222,6 +1222,17 @@
         font-size: 12px; color: #475569; font-weight: 700;
         display: flex; align-items: center; gap: 8px;
     }
+    /* Номер строки в заголовке круга — тот же вид, что у `.tree-num` в дереве
+       задач: журнал и дерево показывают одну и ту же сущность, и разными
+       обличьями звать её незачем. `flex: none` обязателен, как и там: без него
+       номер тянулся бы вслед за длиной заголовка. */
+    .log-round-num {
+        flex: none;
+        color: #a1866a;
+        font-size: 11px; font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
     .log-round-role { font-size: 11px; padding: 1px 7px; border-radius: 20px; font-weight: 700; }
     /* Идущий прогон: тот же блок, но подписан иначе и подсвечен — по нему
        видно, что агент работает прямо сейчас, а не что строка встала. */
@@ -4240,6 +4251,11 @@ function logBodyRender() {
             const live = e.text.startsWith('идёт сейчас');
             html += `<div class="log-round${live ? ' is-live' : ''}">`
                  + (live ? '<span class="log-live-dot"></span>' : '')
+                 // Номер строки — перед чипсом роли, тем же видом, что в дереве
+                 // задач (`.tree-num`). Журнал открывают по клику из списка и
+                 // читают долго, прокручивая круги; без номера через десяток
+                 // заголовков уже не помнишь, чей это журнал.
+                 + `<span class="log-round-num">#${_logTaskId}</span>`
                  + `<span class="log-round-role log-role-${e.role}">`
                  + `${esc(e.role)}</span>${esc(e.text)}</div>`;
             prev = null;
