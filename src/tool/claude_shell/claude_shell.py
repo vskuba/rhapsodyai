@@ -39,6 +39,12 @@ CLAUDE_SHELL_ROLE_DEFAULT = 'manager'
 # доставки (`timeout_shell_ack`), ожидание занятого агента (`timeout_shell_busy`)
 # и свежесть пинга реестра (`timeout_shell_stale`). Здесь остаётся только шаг
 # опроса: он не настройка, а частота обращений к базе внутри ожидания.
+# Каталог рабочих выкладок внутри проекта: в нём поднимают оболочку роли, чтобы
+# корень репозитория остался выше рабочего каталога агента. Значение то же, что
+# у `task_worktree.TASK_WORKTREE_BASE_DIR`; своя копия — потому что импорт
+# оттуда замкнул бы кольцо: `task_worktree` тянет этот модуль.
+CLAUDE_SHELL_WORKTREES_DIR = '.claude/worktrees'
+
 CLAUDE_SHELL_POLL_SECONDS = 2
 
 # Как часто, ожидая ответа, переспрашивать реестр — жива ли ещё та сессия, в
@@ -277,8 +283,15 @@ async def _session_find(role: str, work_dir: str = '') -> dict | None:
     placeholders = ','.join(['%s'] * len(CLAUDE_SHELL_SESSION_STATUS_SHOWN))
     work_dir_sql, work_dir_params = '', []
     if work_dir:
-        work_dir_sql = "AND TRIM(TRAILING '/' FROM work_dir) = %s "
-        work_dir_params = [work_dir]
+        # Оболочка роли поднимается не в корне проекта, а в каталоге его рабочих
+        # выкладок (`.claude/worktrees`): так корень репозитория оказывается выше
+        # рабочего каталога, и Claude Code не пишет в чекаут человека. Спрашивают
+        # же её по каталогу проекта — конвейер знает проект, а не выкладки.
+        # Поэтому оба адреса считаем одной оболочкой.
+        variants = _work_dir_variants(work_dir)
+        placeholders_dir = ','.join(['%s'] * len(variants))
+        work_dir_sql = f"AND TRIM(TRAILING '/' FROM work_dir) IN ({placeholders_dir}) "
+        work_dir_params = variants
 
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -544,6 +557,31 @@ def _error_no_payload(response: str) -> str:
 def _elapsed(started: float) -> int:
     """Секунды с начала вызова — их видно в трейсе workflow."""
     return int(time.monotonic() - started)
+
+
+def _work_dir_variants(work_dir: str) -> list:
+    """
+    Адреса, под которыми может быть зарегистрирована оболочка проекта.
+
+    Их два: сам каталог проекта и его `.claude/worktrees`. Роль запускают во
+    втором — чтобы корень репозитория остался выше рабочего каталога и
+    правки агента не уходили в чекаут человека, — а спрашивают по первому:
+    конвейер оперирует проектом, про выкладки он не знает.
+
+    Оба конца делаем понятными друг другу здесь, а не в вызывающих: адрес
+    сверяется в нескольких местах, и разъехавшиеся правила означали бы, что
+    роль видна одному и не видна другому.
+
+    Переданный адрес уже с выкладками — второй вариант не добавляем: он бы
+    указывал на `worktrees/worktrees`, которого нет.
+    """
+    base = _path_normalize(work_dir)
+    if not base:
+        return []
+    if base.endswith('/' + CLAUDE_SHELL_WORKTREES_DIR):
+        return [base]
+
+    return [base, f'{base}/{CLAUDE_SHELL_WORKTREES_DIR}']
 
 
 def _path_normalize(path) -> str:

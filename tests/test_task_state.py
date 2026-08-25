@@ -447,3 +447,56 @@ class TestSessionReplaced:
         from src.tool.claude_shell.claude_shell import _session_replaced
 
         assert await _session_replaced('__pytest_нет_такой', '/tmp/pytest_shell', 'uuid') is False
+
+
+class TestShellWorkDirAddressing:
+    """
+    Каталог проекта и его рабочие выкладки адресуют одну оболочку.
+
+    Роль поднимают в `<проект>/.claude/worktrees`, чтобы корень репозитория остался
+    выше рабочего каталога агента и его правки не уходили в чекаут человека. А
+    спрашивают её по каталогу проекта: конвейер знает проект, про выкладки он не
+    знает. Разъедься эти два адреса — роль стала бы невидимой для отбора.
+
+    Живой повод: агент подзадачи #1033 час писал в основной чекаут, доведя дерево
+    до незапускаемого состояния.
+    """
+
+    def test_адрес_проекта_даёт_оба_варианта(self):
+        from src.tool.claude_shell.claude_shell import _work_dir_variants
+
+        variants = _work_dir_variants('/srv/app')
+
+        assert variants == ['/srv/app', '/srv/app/.claude/worktrees']
+
+    def test_адрес_выкладок_не_удваивается(self):
+        """Иначе получился бы `worktrees/worktrees`, которого нет."""
+        from src.tool.claude_shell.claude_shell import _work_dir_variants
+
+        assert _work_dir_variants('/srv/app/.claude/worktrees') == ['/srv/app/.claude/worktrees']
+
+    def test_хвостовой_слеш_не_мешает(self):
+        from src.tool.claude_shell.claude_shell import _work_dir_variants
+
+        assert _work_dir_variants('/srv/app/')[0] == '/srv/app'
+
+    def test_пустой_адрес(self):
+        from src.tool.claude_shell.claude_shell import _work_dir_variants
+
+        assert _work_dir_variants('') == []
+
+    def test_проект_по_адресу_выкладок(self):
+        from src.project.task.task_role import _shell_project_dir
+
+        assert _shell_project_dir('/srv/app/.claude/worktrees') == '/srv/app'
+
+    def test_проект_по_адресу_корня(self):
+        """Старая расстановка обязана работать по-прежнему."""
+        from src.project.task.task_role import _shell_project_dir
+
+        assert _shell_project_dir('/srv/app') == '/srv/app'
+
+    def test_похожий_хвост_не_срезаем(self):
+        from src.project.task.task_role import _shell_project_dir
+
+        assert _shell_project_dir('/srv/worktrees') == '/srv/worktrees'

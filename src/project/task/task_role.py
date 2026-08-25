@@ -34,6 +34,12 @@ from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_PING_STALE,
     task_setting_timeout_get)
 
+# Каталог рабочих выкладок внутри проекта: в нём поднимают оболочку роли, чтобы
+# корень репозитория остался выше рабочего каталога агента. Значение то же, что
+# у `task_worktree.TASK_WORKTREE_BASE_DIR`; своя копия — прямой импорт оттуда
+# замкнул бы кольцо, `task_worktree` тянет этот модуль.
+TASK_ROLE_WORKTREES_DIR = '.claude/worktrees'
+
 # Роль по умолчанию: ей достаются задачи без типа и с типом, которого нет в карте.
 TASK_ROLE_DEFAULT = 'manager'
 
@@ -232,6 +238,20 @@ def task_role_planners_only(roles_by_project) -> dict[int, list[str]]:
 TASK_ROLE_SHELL_REASON_BLOCKED = 'permission'
 
 
+def _shell_project_dir(work_dir) -> str:
+    """
+    Каталог проекта по адресу оболочки: с рабочих выкладок хвост снимаем.
+
+    Роль запускают в `<проект>/.claude/worktrees`, а проекты в базе записаны
+    своим корнем. Без этого сведения оболочка роли не нашла бы свой проект,
+    попала бы в «Без проекта» и выпала из отбора работы.
+    """
+    path = _path_normalize(work_dir)
+    tail = '/' + TASK_ROLE_WORKTREES_DIR
+
+    return path[:-len(tail)] if path.endswith(tail) else path
+
+
 async def task_role_shell_live_by_project() -> dict[int, list[str]]:
     """
     Живые оболочки claude-shell в разрезе проектов: `{project_id: [role]}`.
@@ -298,7 +318,11 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
         # карточке роли и дождётся человека.
         if str(row.get('agent_status_reason') or '') == TASK_ROLE_SHELL_REASON_BLOCKED:
             continue
-        project_id = project_by_dir.get(_path_normalize(row.get('work_dir')), TASK_ROLE_PROJECT_NONE)
+        # Оболочку роли поднимают в каталоге рабочих выкладок проекта, а не в его
+        # корне, — чтобы правки агента не уходили в чекаут человека. Для раскладки
+        # по проектам это тот же проект, поэтому хвост выкладок снимаем.
+        project_id = project_by_dir.get(_shell_project_dir(row.get('work_dir')),
+                                        TASK_ROLE_PROJECT_NONE)
         if project_id and (project_id, role) not in card_roles:
             continue
         roles = live.setdefault(project_id, [])
