@@ -105,25 +105,10 @@ from src.project.task.task_pipeline_claim import (
 )
 
 # ── Исполнители: что делает воркер ──────────────────────────────────────────────
-from src.project.task.task_pipeline_run import (
-    _RUNNERS,
-    _log_run,
-    _manager_plan_write,
-    _retry_subtask,
-    _retry_task,
-    _run_bug_scan,
-    _run_bugfix,
-    _run_developer,
-    _run_finalize,
-    _run_manager_plan,
-    _run_manager_review,
-    _run_plan_split,
-    _run_qa,
-    _subtask_branch_save,
-    _subtask_dir,
-    _subtask_report,
-    _task_to_testing,
-)
+# Карта `_RUNNERS` — в `task_pipeline_run`; сами исполнители разложены по модулям
+# (`task_pipeline_run` — Developer/QA/Багфиксер, `task_pipeline_manager` — шаги
+# менеджера и скан багов, `task_pipeline_retry` — повторы и общие хвосты).
+from src.project.task.task_pipeline_run import _RUNNERS
 
 BUG_TASK_SCAN_ENABLED = True  # env: BUG_TASK_SCAN_ENABLED=1
 
