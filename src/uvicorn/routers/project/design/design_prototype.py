@@ -109,7 +109,7 @@ async def design_prototype_page_render(
 
 
 @router.post("/design/prototype/page/{page_id}/auto-blocks")
-async def design_page_auto_blocks(
+async def design_prototype_page_auto_blocks(
     request: Request,
     page_id: int,
     data: dict = None,
