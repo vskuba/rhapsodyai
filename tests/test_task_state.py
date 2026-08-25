@@ -543,3 +543,65 @@ class TestTeamLaunchCommand:
         cmd = _command_build('claude-shell --qa', '/srv/app/')
 
         assert cmd.startswith('cd /srv/app/.claude/worktrees &&')
+
+
+class TestBackupOrder:
+    """
+    Список копий — от свежих к старым, по времени файла.
+
+    Сортировка шла по имени, и порядок выглядел случайным: копии кладут не только
+    кнопкой на странице, рядом лежат снимки, снятые руками перед рискованной
+    правкой, и у них свои префиксы. По алфавиту `prod_rescue_2026-08-25`
+    оказывается ниже `before_volume_2026-08-25`.
+    """
+
+    def _dir(self, tmp_path, files):
+        """Каталог с копиями: имя -> время файла."""
+        import os
+
+        for name, when in files.items():
+            path = tmp_path / name
+            path.write_bytes(b'x')
+            os.utime(path, (when, when))
+
+        return str(tmp_path)
+
+    def _list(self, monkeypatch, path):
+        from src.uvicorn.routers.backup import backup
+
+        monkeypatch.setattr(backup, 'BACKUPS_DIR', path)
+
+        return [f['name'] for f in backup._backup_list()]
+
+    def test_свежие_сверху_вопреки_алфавиту(self, tmp_path, monkeypatch):
+        path = self._dir(tmp_path, {
+            'aaa_старый.sql.gz':  1_000_000,
+            'zzz_свежий.sql.gz':  3_000_000,
+            'mmm_средний.sql.gz': 2_000_000,
+        })
+
+        assert self._list(monkeypatch, path) == [
+            'zzz_свежий.sql.gz', 'mmm_средний.sql.gz', 'aaa_старый.sql.gz']
+
+    def test_одинаковое_время_упорядочено_именем(self, tmp_path, monkeypatch):
+        """Иначе строки прыгали бы при каждом обновлении страницы."""
+        path = self._dir(tmp_path, {
+            'б_вторая.sql.gz': 2_000_000,
+            'а_первая.sql.gz': 2_000_000,
+            'в_третья.sql.gz': 2_000_000,
+        })
+
+        # Одно и то же время у всех: порядок задаёт имя, по убыванию.
+        assert self._list(monkeypatch, path) == [
+            'в_третья.sql.gz', 'б_вторая.sql.gz', 'а_первая.sql.gz']
+
+    def test_чужие_расширения_не_попадают(self, tmp_path, monkeypatch):
+        path = self._dir(tmp_path, {
+            'копия.sql.gz': 2_000_000,
+            'заметка.txt':  3_000_000,
+        })
+
+        assert self._list(monkeypatch, path) == ['копия.sql.gz']
+
+    def test_каталога_нет(self, tmp_path, monkeypatch):
+        assert self._list(monkeypatch, str(tmp_path / 'нет-такого')) == []

@@ -197,19 +197,37 @@ def _backup_escape_value(val) -> str:
 
 
 def _backup_list():
+    """
+    Список копий, свежие сверху.
+
+    Сортируем по времени файла, а не по имени. Имя сортировке не помощник:
+    копии кладут не только кнопкой на странице — рядом лежат снимки, снятые
+    руками перед рискованной правкой, и у них свои префиксы. По алфавиту
+    `prod_rescue_2026-08-25` оказывается ниже `before_volume_2026-08-25`, и
+    порядок выглядит случайным.
+
+    Ключ сортировки — `st_mtime`, то самое число, из которого потом собирается
+    показываемая дата: список и колонка «дата» не могут разойтись.
+    """
     if not os.path.exists(BACKUPS_DIR):
         return []
+
     files = []
-    for name in sorted(os.listdir(BACKUPS_DIR), reverse=True):
+    for name in os.listdir(BACKUPS_DIR):
         if not name.endswith(_EXT):
             continue
         stat = os.stat(os.path.join(BACKUPS_DIR, name))
-        files.append({
-            "name": name,
-            "size": stat.st_size,
-            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "Z",
-        })
-    return files
+        files.append((stat.st_mtime, name, stat.st_size))
+
+    # Имя вторым ключом — у копий одной секунды порядок иначе плавал бы от
+    # запроса к запросу, и строки прыгали бы при каждом обновлении страницы.
+    files.sort(reverse=True)
+
+    return [{
+        "name": name,
+        "size": size,
+        "modified": datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "Z",
+    } for mtime, name, size in files]
 
 
 def _backup_filename_safe(filename: str) -> bool:
