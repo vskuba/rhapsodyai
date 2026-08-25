@@ -4190,7 +4190,16 @@ function logToggleRole(r) {
     logFiltersRender(); logBodyRender();
 }
 
-// Круги переставляем от свежего к старому, шаги внутри круга не трогаем.
+// Записи журнала — от свежей к старой: и круги, и шаги внутри круга.
+//
+// Файл пишется дописыванием, то есть снизу вверх по времени. Читают его наоборот:
+// человек открывает журнал, чтобы увидеть, что было только что. Переворачивали
+// сначала одни круги — внутри круга шаги оставались по возрастанию, и «сверху
+// самое свежее» держалось только до первого заголовка.
+//
+// Заголовок круга остаётся во главе своего блока: это подпись к нему, а не запись
+// со своим временем. Отсортируй его наравне со строками — и он уехал бы под них,
+// потому что помечен началом круга.
 function _entriesNewestFirst(entries) {
     const blocks = [];
     entries.forEach(e => {
@@ -4198,7 +4207,10 @@ function _entriesNewestFirst(entries) {
         blocks[blocks.length - 1].push(e);
     });
 
-    return blocks.reverse().flat();
+    return blocks.reverse().flatMap(block => {
+        const head = block[0]?.kind === 'round' ? block.slice(0, 1) : [];
+        return [...head, ...block.slice(head.length).reverse()];
+    });
 }
 
 function logBodyRender() {
