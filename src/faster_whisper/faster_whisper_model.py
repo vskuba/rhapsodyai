@@ -57,6 +57,35 @@ async def faster_whisper_transcribe(
         текст, не годится сохранить.
 
     Умолчания оставлены прежними: старые вызовы работают как работали.
+
+    Возвращает ТОЛЬКО текст — обёртка над `faster_whisper_detect()`. Нужен ещё
+    и определённый язык (авторежим диктовки) — зовите её напрямую.
+    """
+    detected = await faster_whisper_detect(file_path, model_name, language, beam_size)
+
+    return detected["text"]
+
+
+async def faster_whisper_detect(
+    file_path: str,
+    model_name: str | None = None,
+    language: str | None = None,
+    beam_size: int = 5,
+) -> dict:
+    """Расшифровка вместе с определённым языком: `{text, language, probability}`.
+
+    Язык Whisper определяет ВСЕГДА — и когда его задали, и когда нет; в первом
+    случае просто возвращает заданный. Считается он при том же проходе, что и
+    текст, то есть **достаётся бесплатно**: до этой функции второй элемент
+    ответа `model.transcribe()` молча отбрасывался (`segments, _ = ...`).
+
+    Зачем понадобился: BlogAi даёт человеку диктовать в авторежиме, и тогда
+    язык записи не знает никто. Без него черновик оставался с пустым языком, а
+    сосед угадывал его по буквам-приметам текста — при том что настоящий ответ
+    всё это время лежал рядом и выбрасывался.
+
+    `probability` отдаём вместе с языком: на коротком чанке уверенность бывает
+    низкой, и решать, верить ли ответу, должен вызывающий — здесь порога нет.
     """
     model = await faster_whisper_create_model(model_name)
 
@@ -65,7 +94,7 @@ async def faster_whisper_transcribe(
 
 
 def _transcribe_blocking(model: WhisperModel, file_path: str,
-                         beam_size: int, language: str | None) -> str:
+                         beam_size: int, language: str | None) -> dict:
     """Сама расшифровка. Синхронная, поэтому вызывается ТОЛЬКО в отдельном потоке.
 
     ⚠ Прямой вызов из корутины блокирует цикл событий целиком: пока считается
@@ -76,8 +105,12 @@ def _transcribe_blocking(model: WhisperModel, file_path: str,
 
     `model.transcribe` возвращает ленивый генератор: работа идёт при переборе
     сегментов, поэтому перебор тоже обязан быть внутри потока.
+
+    ⚠ `info` берётся ДО перебора сегментов и это правильно: язык определяется
+    на первых секундах, ещё до расшифровки, и в объекте он уже есть. А вот сам
+    текст до перебора пуст — генератор ленивый.
     """
-    segments, _ = model.transcribe(
+    segments, info = model.transcribe(
         file_path,
         beam_size=beam_size,
         best_of=beam_size,
@@ -86,4 +119,10 @@ def _transcribe_blocking(model: WhisperModel, file_path: str,
         vad_filter=True,
     )
 
-    return "".join(s.text for s in segments if s.no_speech_prob < 0.6).strip()
+    text = "".join(s.text for s in segments if s.no_speech_prob < 0.6).strip()
+
+    return {
+        "text": text,
+        "language": str(getattr(info, "language", "") or ""),
+        "probability": float(getattr(info, "language_probability", 0.0) or 0.0),
+    }

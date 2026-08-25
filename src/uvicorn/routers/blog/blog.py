@@ -9,6 +9,15 @@ workflow, session_uuid и идентификаторы агентов. Он пр
 черновик независимо, и через сотню записей получаются «бизнес», «про бизнес»,
 «бизнес-идеи» и «business» — четыре полки вместо одной. Поэтому словарь идёт в
 промпт, а агенту велено переиспользовать существующее.
+
+**Язык тегов задаёт вызывающий** (`language` в `/tag`). Решает он, а не эта
+точка: BlogAi держит все теги на одном языке независимо от языка диктовки, и
+почему именно так — его дело (`blog_languages.md` у него). Поле необязательное,
+без него разметка работает как работала.
+
+⚠ Словарь при этом **сильнее указания языка**: пока в нём лежит «видео», агент
+возьмёт его и на украинском черновике — замерено. Указание языка работает на
+новых тегах, а старый словарь вызывающий приводит сам.
 """
 
 import asyncio
@@ -96,6 +105,27 @@ BLOG_REWRITE_TIMEOUT = 420.0
 # когда он разрастётся, а ходовые и есть те, которые надо переиспользовать.
 BLOG_VOCABULARY_MAX = 120
 
+# Языки, на которых просим отвечать разметку. Название — для промпта: модель
+# держит «украинском» надёжнее, чем код `uk`.
+#
+# Список закрытый намеренно: код приходит от соседа и уходит прямо в текст
+# промпта, а подстановка чужой строки в инструкцию — это способ ею управлять.
+# Неизвестный код просто не даёт указания языка, и разметка работает как
+# работала.
+BLOG_TAG_LANGUAGES = {
+    "ru": "русском",
+    "uk": "украинском",
+    "en": "английском",
+    "de": "немецком",
+    "es": "испанском",
+    "fr": "французском",
+    "it": "итальянском",
+    "pl": "польском",
+    "cs": "чешском",
+    "pt": "португальском",
+    "tr": "турецком",
+}
+
 
 @router.post("/tag")
 async def blog_tag(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREATE]))):
@@ -113,7 +143,10 @@ async def blog_tag(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREA
     vocabulary = [str(v).strip() for v in (data.get("vocabulary") or []) if str(v).strip()]
     vocabulary = vocabulary[:BLOG_VOCABULARY_MAX]
 
-    answer = await _agent_ask(BLOG_TAGGER_AGENT_NAME, _prompt(text, vocabulary))
+    # Язык тегов. Не передали — работаем как раньше: язык выберет сам агент.
+    language = str(data.get("language") or "").strip().lower()
+
+    answer = await _agent_ask(BLOG_TAGGER_AGENT_NAME, _prompt(text, vocabulary, language))
     parsed = json_from_string(answer) or {}
 
     tags = [str(t).strip() for t in (parsed.get("tags") or []) if str(t).strip()]
@@ -122,7 +155,8 @@ async def blog_tag(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CREA
         # тегов нет. Различить можно только по сырому ответу, поэтому он идёт
         # в журнал: без него такой случай не разобрать.
         logger_info(f"[blog] разметка ПУСТАЯ, сырой ответ: {answer[:300]}")
-    logger_info(f"[blog] разметка: {len(text)} знаков, словарь {len(vocabulary)} → "
+    logger_info(f"[blog] разметка: {len(text)} знаков, словарь {len(vocabulary)}, "
+                f"язык тегов {language or 'по усмотрению агента'} → "
                 f"{', '.join(tags) or 'ничего'}")
 
     return {"result": {"tags": tags, "title": str(parsed.get("title") or "").strip()}}
@@ -489,17 +523,29 @@ def _thinking_strip(text: str) -> str:
     return text[marker + len("</think>"):].strip() if marker >= 0 else text.strip()
 
 
-def _prompt(text: str, vocabulary: list) -> str:
+def _prompt(text: str, vocabulary: list, language: str = "") -> str:
     """Промпт с словарём впереди текста.
 
     Словарь идёт ПЕРВЫМ намеренно: модель сильнее держит начало инструкции, а
     переиспользование существующих тегов — главное требование, а не приписка.
+
+    `language` — на каком языке нужны ТЕГИ (не заголовок). Пусто — язык выберет
+    сам агент, как было до появления параметра.
+
+    ⚠ **Заголовок остаётся на языке черновика.** Тег — метка на полке, её род
+    занятий от языка не зависит; заголовок человек читает как часть своей мысли,
+    и переводить его значит подменять записанное.
     """
     if vocabulary:
         head = ("Существующие теги (переиспользуй подходящие, новый заводи только "
                 "если ни один не годится):\n" + ", ".join(vocabulary))
     else:
         head = "Словарь пока пуст — это первые черновики, теги задаёшь ты."
+
+    name = BLOG_TAG_LANGUAGES.get(language)
+    if name:
+        head += (f"\n\nТеги давай на {name} языке, даже если черновик на другом. "
+                 f"Заголовок — на языке самого черновика.")
 
     return f"{head}\n\n=== Черновик ===\n{text}"
 
