@@ -24,7 +24,7 @@
 | `src/mysql_/repository/project/team_repository.py` | Репозиторий `project_team` |
 | `src/mysql_/repository/project/task_type_repository.py` | Репозиторий `project_task_type` |
 | `data/uvicorn/template/admin/project/team.html` | Страница `/admin/team` — карточки, авто-обновление |
-| `src/uvicorn/routers/dashboard.py` | Роут `/admin/team` (`require_auth`) |
+| `src/uvicorn/routers/dashboard.py` | Роут `/admin/team` (`dashboard_require_auth`) |
 | `migrations/0001.sql` | Схема `project_team`, `project_task_type`, FK `project_task.task_type_id` |
 | `tests/test_team_ping.py` | Интеграционные тесты API (`pytest.mark.integration`) |
 

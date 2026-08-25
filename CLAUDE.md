@@ -60,7 +60,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `src/ai/ai_tool.py` | Tool auto-discovery & sync |
 | `src/tool/` | All tools — auto-scanned by category |
 | `src/uvicorn/routers/` | All API endpoints |
-| `src/uvicorn/routers/dashboard.py` | HTML admin page routes + `require_auth` |
+| `src/uvicorn/routers/dashboard.py` | HTML admin page routes + `dashboard_require_auth` |
 | `src/telegram_bot.py` | Telegram bot handler |
 | `src/auth/auth.py` | `AuthChecker`, `get_current_user` |
 | `src/cronjob/` | Cron job entry points |
