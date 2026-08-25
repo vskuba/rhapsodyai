@@ -27,7 +27,10 @@ from src.project.task.task_report import task_report_write
 from src.project.task.task_revision import task_revision_add
 from src.project.task.task_state import task_state_dev_to_testing, task_state_plan_to_development
 from src.project.task.task_stop import task_stop_clear
-from src.project.task.task_tree import task_tree_parent_check, task_tree_position_next
+from src.project.task.task_role import task_role_project_work_dir
+from src.project.task.task_tree import (task_tree_descendants, task_tree_parent_check,
+                                        task_tree_position_next)
+from src.project.task.task_worktree import task_worktree_remove_tree
 
 _TASK_AI_AGENT_NAME = 'task_ai_generator'
 _TASK_AI_TIMEOUT    = 60.0
@@ -231,10 +234,35 @@ async def project_task_metadata_patch(task_id: int, data: dict, user=Depends(Aut
 
 @router.delete('/task/{task_id}')
 async def project_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+    """
+    Удалить строку вместе со всей веткой дерева — и снять их рабочие каталоги.
+
+    Каталоги снимаем потому, что каскад про них не знает: `DELETE` уносит строки,
+    а `.claude/worktrees/feature_task_<id>` остаётся на диске сиротой, и его
+    приходилось убирать руками после каждой отменённой подзадачи.
+
+    Ветки при этом остаются: закоммиченная работа переживает удаление строки и
+    достаётся обычным `git checkout feature/task_<id>`. Пропадает только
+    несохранённое — какие строки это задело, видно в ответе (`worktrees.dirty`).
+
+    Порядок важен: сначала база, потом диск. Не снявшийся каталог — это мусор,
+    который уберут потом; а снятый каталог при неудавшемся удалении строки был бы
+    работающей подзадачей без места работы.
+    """
     async with mysql_get_db_async() as db:
+        await db.execute("SELECT id, project_id FROM project_task WHERE id = %s", (task_id,))
+        task = await db.fetchone()
+        if not task:
+            return {'ok': True, 'worktrees': {'removed': [], 'kept': [], 'dirty': []}}
+
+        removed_ids = await task_tree_descendants(db, task_id)
         await db.execute("DELETE FROM project_task WHERE id = %s", (task_id,))
         await db.connection.commit()
-    return {'ok': True}
+
+    work_dir = await task_role_project_work_dir(task.get('project_id'))
+    worktrees = await task_worktree_remove_tree(work_dir, removed_ids)
+
+    return {'ok': True, 'worktrees': worktrees}
 
 
 @router.post('/task/{task_id}/move')

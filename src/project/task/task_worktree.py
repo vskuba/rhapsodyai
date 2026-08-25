@@ -180,14 +180,111 @@ async def task_worktree_remove(repo_dir: str, subtask_id, force: bool = False) -
             logger_info(f'task_worktree: {path} не снят — есть несохранённые правки: {dirty}')
             return False
 
-    code, out = await task_worktree_git(repo_dir, 'worktree', 'remove', '--force', path)
+    # Снимаем тем путём и из того корня, какими каталог записан у git, а не теми,
+    # какими мы их посчитали. Репозиторий бывает виден по нескольким адресам сразу
+    # (в контейнере это `/app` и путь хоста), а git сверяет обратную ссылку: на
+    # чужом адресе он отвечает «is not a working tree», из чужого корня — «does not
+    # point back», и каталог в обоих случаях остаётся сиротой.
+    registered = await _worktree_registered(repo_dir, path)
+    owner = _worktree_owner(registered) or repo_dir
+    code, out = await task_worktree_git(owner, 'worktree', 'remove', '--force', registered)
     if code:
-        logger_info(f'task_worktree: снять {path} не вышло: {out}')
+        logger_info(f'task_worktree: снять {registered} не вышло: {out}')
         return False
 
     logger_info(f'task_worktree: снят {path}')
 
     return True
+
+
+def _worktree_owner(path: str) -> str:
+    """
+    Корень репозитория, которому принадлежит каталог. Не выяснить — пустая строка.
+
+    Каталог подзадачи хранит обратную ссылку в своём файле `.git`:
+    `gitdir: <корень>/.git/worktrees/<имя>`. Она и есть ответ на вопрос, из какого
+    корня звать git: тот же репозиторий, видимый по другому адресу, git считает
+    чужим и снимать каталог отказывается.
+    """
+    marker = '/.git/worktrees/'
+    try:
+        with open(os.path.join(path, '.git'), encoding='utf-8') as fh:
+            gitdir = fh.read().strip()
+    except OSError:
+        return ''
+
+    gitdir = gitdir.removeprefix('gitdir:').strip()
+
+    return gitdir.split(marker)[0] if marker in gitdir else ''
+
+
+async def _worktree_registered(repo_dir: str, path: str) -> str:
+    """
+    Путь каталога так, как он записан у git. Не нашёлся — отдаём как есть.
+
+    Сверяем по имени каталога: оно собрано из номера строки и уникально, а вот
+    полный путь у одного и того же каталога бывает разным — репозиторий виден
+    и по `/app`, и по адресу хоста.
+    """
+    name = os.path.basename(str(path or "").rstrip("/"))
+    if not name:
+        return path
+
+    code, out = await task_worktree_git(repo_dir, 'worktree', 'list', '--porcelain')
+    if code:
+        return path
+
+    for line in out.splitlines():
+        if not line.startswith('worktree '):
+            continue
+        found = line[len('worktree '):].strip()
+        if os.path.basename(found.rstrip('/')) == name:
+            return found
+
+    return path
+
+
+async def task_worktree_remove_tree(repo_dir: str, task_ids) -> dict:
+    """
+    Снять каталоги удалённых строк — своей и всех, что ушли с ней каскадом.
+
+    Удаление строки из базы каскадом уносит её детей, но каталоги на диске
+    остаются: `DELETE` про них не знает. Раньше их убирали руками, и после
+    каждой отменённой подзадачи в `.claude/worktrees/` копился мусор — каталоги
+    по несколько сотен мегабайт, привязанные к строкам, которых уже нет.
+
+    Снимаем принудительно: строку удалили осознанно, и каталог без неё — сирота,
+    который никто уже не откроет. **Ветку при этом не трогаем** (её сохраняет
+    `task_worktree_remove`), поэтому всё закоммиченное остаётся на месте и
+    достаётся обычным `git checkout feature/task_<id>`. Пропадают только
+    незакоммиченные правки — и об этом вызывающий узнаёт из ответа, а не
+    догадывается.
+
+    Returns: `{removed: [id], kept: [id], dirty: [id]}` — снятые, не снявшиеся и
+        те, у кого пропали несохранённые правки.
+    """
+    result = {'removed': [], 'kept': [], 'dirty': []}
+    for task_id in task_ids or []:
+        path = task_worktree_path(repo_dir, task_id)
+        if not path or not os.path.isdir(path):
+            continue
+
+        # Смотрим до снятия: после него сказать, была ли работа, уже нельзя.
+        _, status = await task_worktree_git(path, 'status', '--porcelain', '-uall',
+                                            '--ignore-submodules=all')
+        if _dirty_lines(path, status):
+            result['dirty'].append(int(task_id))
+
+        if await task_worktree_remove(repo_dir, task_id, force=True):
+            result['removed'].append(int(task_id))
+        else:
+            result['kept'].append(int(task_id))
+
+    if result['removed'] or result['kept']:
+        logger_info(f"task_worktree: удаление строк — снято {result['removed']}, "
+                    f"осталось {result['kept']}, с правками {result['dirty']}")
+
+    return result
 
 
 async def task_worktree_merge(repo_dir: str, subtask_id) -> dict:

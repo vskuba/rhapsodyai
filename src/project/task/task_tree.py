@@ -91,3 +91,26 @@ async def task_tree_position_next(db, project_id: int | None, parent_id: int | N
             "SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM project_task WHERE parent_id = %s", (parent_id,))
     row = await db.fetchone()
     return int(row['pos']) if row else 0
+
+async def task_tree_descendants(db, task_id: int) -> list[int]:
+    """
+    Строка и всё, что висит под ней, — сверху вниз.
+
+    Нужно перед удалением: `DELETE` уносит поддерево каскадом по `parent_id`, и
+    после него спросить, кто там был, уже не у кого. А спросить надо — за каждой
+    строкой стоит рабочий каталог на диске, который каскад не убирает.
+
+    Обходим уровнями, а не рекурсивным запросом: глубина дерева ограничена
+    (`task_tree_depth`), уровней получается единицы, и обычный `IN` понятнее
+    рекурсивного CTE, которого в этой схеме больше нигде нет.
+    """
+    found = [int(task_id)]
+    level = [int(task_id)]
+    while level:
+        placeholders = ', '.join(['%s'] * len(level))
+        await db.execute(
+            f"SELECT id FROM project_task WHERE parent_id IN ({placeholders})", level)
+        level = [int(row['id']) for row in await db.fetchall() or []]
+        found.extend(level)
+
+    return found

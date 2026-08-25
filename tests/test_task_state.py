@@ -325,3 +325,66 @@ class TestDirtyLines:
         status = '?? .taskrc\n?? .task-log.txt\n'
 
         assert len(_dirty_lines('/tmp', status)) == 2
+
+
+class TestWorktreeOwner:
+    """
+    Корень репозитория, которому принадлежит каталог подзадачи.
+
+    Репозиторий бывает виден по нескольким адресам сразу — в контейнере это `/app`
+    и путь хоста. Реестр git хранит тот, которым каталог заводили, и снять его из
+    чужого корня нельзя: git отвечает «does not point back». Ответ лежит в самом
+    каталоге, в его файле `.git`.
+    """
+
+    def test_читает_обратную_ссылку(self, tmp_path):
+        from src.project.task.task_worktree import _worktree_owner
+
+        (tmp_path / '.git').write_text('gitdir: /app/.git/worktrees/feature_task_42\n')
+
+        assert _worktree_owner(str(tmp_path)) == '/app'
+
+    def test_путь_хоста(self, tmp_path):
+        from src.project.task.task_worktree import _worktree_owner
+
+        (tmp_path / '.git').write_text('gitdir: /home/vasyl/proj/.git/worktrees/feature_task_7')
+
+        assert _worktree_owner(str(tmp_path)) == '/home/vasyl/proj'
+
+    def test_нет_файла(self, tmp_path):
+        from src.project.task.task_worktree import _worktree_owner
+
+        assert _worktree_owner(str(tmp_path)) == ''
+
+    def test_чужой_формат(self, tmp_path):
+        """Обычный репозиторий: `.git` — каталог, а не ссылка."""
+        from src.project.task.task_worktree import _worktree_owner
+
+        (tmp_path / '.git').write_text('ref: refs/heads/master')
+
+        assert _worktree_owner(str(tmp_path)) == ''
+
+
+class TestTreeDescendants:
+    """Строка и всё, что уйдёт с ней каскадом, — собирается до удаления."""
+
+    async def test_родитель_и_ребёнок(self, subtask_id: int):
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_tree import task_tree_descendants
+
+        async with mysql_get_db_async() as db:
+            await db.execute("SELECT parent_id FROM project_task WHERE id = %s", (subtask_id,))
+            parent = int((await db.fetchone())['parent_id'])
+            found = await task_tree_descendants(db, parent)
+
+        assert found[0] == parent
+        assert subtask_id in found
+
+    async def test_лист_сам_по_себе(self, subtask_id: int):
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_tree import task_tree_descendants
+
+        async with mysql_get_db_async() as db:
+            found = await task_tree_descendants(db, subtask_id)
+
+        assert found == [subtask_id]
