@@ -500,3 +500,46 @@ class TestShellWorkDirAddressing:
         from src.project.task.task_role import _shell_project_dir
 
         assert _shell_project_dir('/srv/worktrees') == '/srv/worktrees'
+
+
+class TestTeamLaunchCommand:
+    """
+    Команда с кнопки «Команда запуска» ведёт в рабочие выкладки.
+
+    Оболочка роли обязана стартовать в `<проект>/.claude/worktrees`: тогда корень
+    репозитория оказывается выше рабочего каталога, и Claude Code не пишет в чекаут
+    человека. Команду копируют кнопкой и выполняют руками — если она приведёт в
+    корень, вся защита обойдётся одним `cd`.
+    """
+
+    def test_ведёт_в_выкладки(self):
+        from src.project.team.team_project import _command_build
+
+        cmd = _command_build('claude-shell --developer', '/srv/app')
+
+        assert cmd == 'cd /srv/app/.claude/worktrees && claude-shell --developer'
+
+    def test_адрес_выкладок_не_удваивается(self):
+        from src.project.team.team_project import _command_build
+
+        cmd = _command_build('claude-shell --qa', '/srv/app/.claude/worktrees')
+
+        assert cmd == 'cd /srv/app/.claude/worktrees && claude-shell --qa'
+
+    def test_без_каталога_только_команда(self):
+        """Проект без каталога: подставлять путь из ниоткуда нельзя."""
+        from src.project.team.team_project import _command_build
+
+        assert _command_build('claude-shell --manager', '') == 'claude-shell --manager'
+
+    def test_без_команды_пусто(self):
+        from src.project.team.team_project import _command_build
+
+        assert _command_build('', '/srv/app') == ''
+
+    def test_хвостовой_слеш(self):
+        from src.project.team.team_project import _command_build
+
+        cmd = _command_build('claude-shell --qa', '/srv/app/')
+
+        assert cmd.startswith('cd /srv/app/.claude/worktrees &&')

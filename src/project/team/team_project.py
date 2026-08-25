@@ -403,15 +403,44 @@ def _card_placeholder(role: str, member_by_role: dict, work_dir: str) -> dict:
 
 
 def _command_build(command, work_dir) -> str:
-    """Команда запуска с переходом в каталог проекта — её копируют кнопкой на карточке."""
+    """
+    Команда запуска с переходом в каталог — её копируют кнопкой на карточке.
+
+    Каталог — рабочие выкладки проекта (`.claude/worktrees`), а не его корень.
+    Оболочка роли обязана стартовать именно там: тогда корень репозитория
+    оказывается выше рабочего каталога, и Claude Code не пишет в чекаут
+    человека. Каталоги подзадач лежат внутри подпапками, так что одна оболочка
+    по-прежнему обслуживает их все.
+
+    Приводим здесь, а не полагаемся на `project_team.work_dir`: команду строят
+    из каталога проекта (`team_project_blocks`), и карточка со своим адресом
+    сюда не доходит. Пока приведение в одном месте, команда с кнопки и адрес,
+    по которому оболочку потом ищут, не разъедутся.
+    """
     command = str(command or '').strip()
-    work_dir = str(work_dir or '').strip()
+    work_dir = _command_work_dir(work_dir)
     if not command:
         return ''
     if not work_dir:
         return command
 
     return f'cd {work_dir} && {command}'
+
+
+def _command_work_dir(work_dir) -> str:
+    """
+    Каталог запуска оболочки: рабочие выкладки проекта.
+
+    Адрес, уже указывающий на выкладки, оставляем как есть — иначе получилось бы
+    `worktrees/worktrees`, которого нет.
+    """
+    base = str(work_dir or '').strip().rstrip('/')
+    if not base:
+        return ''
+    if base.endswith('/' + TEAM_PROJECT_WORKTREES_DIR):
+        return base
+
+    return f'{base}/{TEAM_PROJECT_WORKTREES_DIR}'
 
 
 def _seconds_ago(last_seen_at, now: datetime):
