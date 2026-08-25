@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.get('/planning/phase-source/doc/{filename}')
-async def project_planning_phase_source_doc(
+async def project_phase_source_planning_phase_source_doc(
     request: Request,
     filename: str,
     user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW])),
@@ -30,7 +30,7 @@ async def project_planning_phase_source_doc(
 
 
 @router.get('/planning/phase-source/list')
-async def project_planning_phase_source_list(
+async def project_phase_source_planning_phase_source_list(
     request: Request,
     user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW])),
 ):
@@ -44,7 +44,7 @@ async def project_planning_phase_source_list(
 
 
 @router.post('/planning/phase-source')
-async def project_planning_phase_source_create(
+async def project_phase_source_planning_phase_source_create(
     request: Request,
     user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW])),
 ):
@@ -69,7 +69,7 @@ async def project_planning_phase_source_create(
 
 
 @router.put('/planning/phase-source/{source_id}')
-async def project_planning_phase_source_update(
+async def project_phase_source_planning_phase_source_update(
     request: Request,
     source_id: int,
     user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW])),
@@ -98,7 +98,7 @@ async def project_planning_phase_source_update(
 
 
 @router.delete('/planning/phase-source/{source_id}')
-async def project_planning_phase_source_delete(
+async def project_phase_source_planning_phase_source_delete(
     request: Request,
     source_id: int,
     user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW])),

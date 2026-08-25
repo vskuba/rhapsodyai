@@ -39,7 +39,7 @@ router = APIRouter()
 
 
 @router.get('/tasks')
-async def project_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_task_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     async with mysql_get_db_async() as db:
         await db.execute("SELECT * FROM project_task ORDER BY position, id")
         rows = await db.fetchall()
@@ -47,7 +47,7 @@ async def project_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_VI
 
 
 @router.get('/tasks/{project_id}')
-async def project_tasks_list(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_task_tasks_list(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     # project_id = 0 — это «Без проекта» в селекте. В колонке «без проекта» — всегда
     # NULL: ноль означал бы проект №0, которого не бывает. Чтение остаётся терпимым к
     # нулю ради установок, где старые строки ещё не переведены скриптом

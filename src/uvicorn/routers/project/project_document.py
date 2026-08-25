@@ -22,7 +22,7 @@ _phase_sections_cache: dict | None = None
 
 
 @router.get('/planning/phase-sections')
-async def project_planning_phase_sections(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_document_planning_phase_sections(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     global _phase_sections_cache
     if _phase_sections_cache is None:
         _phase_sections_cache = await _build_phase_sections()
@@ -30,14 +30,14 @@ async def project_planning_phase_sections(request: Request, user=Depends(AuthChe
 
 
 @router.get('/planning/document/{doc_id}')
-async def project_planning_document_get(request: Request, doc_id: int,
+async def project_document_planning_document_get(request: Request, doc_id: int,
                                         user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     repo = PlanningDocumentRepository()
     return {'result': await repo.find(doc_id)}
 
 
 @router.get('/planning/document/{doc_id}/view')
-async def project_planning_document_view(request: Request, doc_id: int,
+async def project_document_planning_document_view(request: Request, doc_id: int,
                                          user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Отдаёт документ как HTML-страницу. Для prototype — редирект на версионированную директорию."""
     repo = PlanningDocumentRepository()
@@ -61,7 +61,7 @@ async def project_planning_document_view(request: Request, doc_id: int,
 
 
 @router.get('/planning/project/{project_id}/prototypes')
-async def project_prototypes(request: Request, project_id: int,
+async def project_document_prototypes(request: Request, project_id: int,
                              user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Список всех версий прототипа проекта."""
     async with mysql_get_db_async() as db:
@@ -88,7 +88,7 @@ async def project_prototypes(request: Request, project_id: int,
 
 
 @router.delete('/planning/project/{project_id}/prototype/{version}')
-async def planning_prototype_version_delete(
+async def project_document_prototype_version_delete(
         request: Request, project_id: int, version: int,
         user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))
 ):
@@ -107,7 +107,7 @@ async def planning_prototype_version_delete(
 
 
 @router.get('/planning/preview/{project_id}/{path:path}')
-async def planning_preview_file(request: Request, project_id: int, path: str,
+async def project_document_preview_file(request: Request, project_id: int, path: str,
                                 user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Отдаёт статические файлы прототипа. Поддерживает v{N}/ префикс и legacy пути."""
     from fastapi import HTTPException
@@ -146,7 +146,7 @@ async def planning_preview_file(request: Request, project_id: int, path: str,
 
 
 @router.get('/planning/document/{doc_id}/download')
-async def project_planning_document_download(request: Request, doc_id: int,
+async def project_document_planning_document_download(request: Request, doc_id: int,
                                              user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     repo = PlanningDocumentRepository()
     doc = await repo.find(doc_id)
@@ -163,7 +163,7 @@ async def project_planning_document_download(request: Request, doc_id: int,
 
 
 @router.get('/planning/document/{doc_id}/download/pdf')
-async def project_planning_document_download_pdf(request: Request, doc_id: int,
+async def project_document_planning_document_download_pdf(request: Request, doc_id: int,
                                                  user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     repo = PlanningDocumentRepository()
     doc = await repo.find(doc_id)
