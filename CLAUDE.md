@@ -138,6 +138,20 @@ asyncio.run(telegram_send_owner('your message'))
 | `project_task.md` | `/admin/task`, конвейер агентов Manager/Developer/QA |
 | `project_team.md` | Члены команды, `/admin/team`, heartbeat `/api/team/ping`, типы задач |
 
+**API соседей и подсистемы `src/`**
+
+| File | Contents |
+|------|---------|
+| `blog.md` | `/api/blog`: 9 точек BlogAi, 6 агентов под нодой `Blog` (`tag`/`compose`/`similar` — в `stt.md`) |
+| `chat.md` | `/chat/*`: ask (агент), messages (журнал), voice (wav→whisper); LLM по ноде агента, i18n по ноде/юзеру |
+| `translate.md` | `POST /translate`: перевод «вне ноды», агент ищется **по имени** `translator` |
+| `node.md` | `/api/node`: CRUD нод LLM, `llm_ids` = полная замена, порядок — `rate_limit_at, position` |
+| `gx10.md` | `/api/gx10`: статус и control SSH-хоста через sshpass (SSHPASS в env), кэш 3 с |
+| `playwright.md` | `/admin/playwright` + роутер: **пустой** заглушка, зарезервировано под прокси к контейнеру-браузеру |
+| `event.md` | `py_modules/event_` (fire-and-forget) + `src/event/event_handlers.py`: лог-системы и Telegram по `user.login` |
+| `translator.md` | `src/translator/`: сканер папок MD-перевода, подсистема без вызовов |
+| `parser.md` | `src/parser/`: YAML-конфиги парсеров (`html/json/md`→json/qdrant/fact), без вызовов |
+
 **Telegram и Claude Code**
 
 | File | Contents |
