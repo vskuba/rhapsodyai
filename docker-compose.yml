@@ -396,6 +396,12 @@ services:
     networks:
       - os-net
     volumes:
+      # Данные — в именованном томе. Образ mysql объявляет `VOLUME /var/lib/mysql`,
+      # и без этой строки Docker заводит анонимный том со случайным именем: он
+      # переживает `restart`, но теряется из виду при пересоздании сервиса и
+      # удаляется вместе с `down -v`. Именованный том виден в `docker volume ls`,
+      # переживает пересоздание и удаляется только по явной команде.
+      - mysql-data:/var/lib/mysql
       - ./backups/:/backups/
       - ./docker/mysql/:/docker-entrypoint-initdb.d/
     environment:
@@ -499,6 +505,7 @@ services:
       - os-net
 
 volumes:
+  mysql-data:
   opensearch-data:
   cronicle-data:
   cronicle-logs:
