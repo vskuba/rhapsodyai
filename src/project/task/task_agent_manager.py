@@ -255,6 +255,19 @@ def _plan_parse(result_text) -> dict:
                 # выглядела бы как настоящий план подзадачи.
                 'plan':        str(item.get('plan') or '').strip(),
                 'goals':       task_plan_goals_normalize(item.get('goals')),
+                # Три пометки разбиения — насквозь, как есть. Разбирает их
+                # `task_state._subtask_metadata`, и здесь их только не надо
+                # потерять: этот разбор — единственная дорога от ответа менеджера
+                # до строки в базе.
+                #
+                # Живьём на #1027 их и теряли: менеджер объём считал, судья счёт
+                # проверял и возвращал разбиение на доработку, — а до подзадач
+                # доезжали одни `title`/`description`/`plan`/`goals`. Приёмка не
+                # знала, что она приёмка, и уходила в работу наравне с соседями, а
+                # `split_more` не срабатывал вовсе: дробить в глубину было нечем.
+                'final':         bool(item.get('final')),
+                'split_more':    bool(item.get('split_more')),
+                'context_lines': item.get('context_lines'),
             })
 
     return {
