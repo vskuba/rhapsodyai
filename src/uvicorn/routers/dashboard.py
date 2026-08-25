@@ -23,7 +23,7 @@ template_role_mapping: dict = {
 }
 
 
-def get_template_for_role(path: str, role: str, value: str, jinja2_template) -> str:
+def dashboard_get_template_for_role(path: str, role: str, value: str, jinja2_template) -> str:
     """Return the template path for a given route and role, or None if not found."""
     for mapping in template_role_mapping.get(path, []):
         if role in mapping['role']:
@@ -41,7 +41,7 @@ def get_template_for_role(path: str, role: str, value: str, jinja2_template) -> 
     return value
 
 
-async def require_auth(request: Request) -> AuthSession:
+async def dashboard_require_auth(request: Request) -> AuthSession:
     """Dependency that requires authentication for HTML routes.
     Redirects to login if not authenticated (401), re-raises 403."""
     try:
@@ -61,7 +61,7 @@ async def require_auth(request: Request) -> AuthSession:
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def dashboard_login_page(request: Request):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "login.html"
@@ -69,7 +69,7 @@ async def login_page(request: Request):
 
 
 @router.get("/", response_class=HTMLResponse)
-async def default(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_default(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/chat.html"
@@ -77,7 +77,7 @@ async def default(request: Request, user: AuthSession = Depends(require_auth)):
 
 
 @router.get("/admin/node", response_class=HTMLResponse)
-async def node(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_node(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/node.html"
@@ -85,7 +85,7 @@ async def node(request: Request, user: AuthSession = Depends(require_auth)):
 
 
 @router.get("/admin/agent", response_class=HTMLResponse)
-async def agent(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_agent(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/agent.html"
@@ -93,7 +93,7 @@ async def agent(request: Request, user: AuthSession = Depends(require_auth)):
 
 
 @router.get("/admin/session", response_class=HTMLResponse)
-async def session(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_session(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/session.html"
@@ -101,7 +101,7 @@ async def session(request: Request, user: AuthSession = Depends(require_auth)):
 
 
 @router.get("/admin/user", response_class=HTMLResponse)
-async def user_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_user_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/user.html"
@@ -109,7 +109,7 @@ async def user_page(request: Request, user: AuthSession = Depends(require_auth))
 
 
 @router.get("/admin/miniapp", response_class=HTMLResponse)
-async def miniapp_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_miniapp_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/miniapp.html"
@@ -117,7 +117,7 @@ async def miniapp_page(request: Request, user: AuthSession = Depends(require_aut
 
 
 @router.get("/admin/playwright", response_class=HTMLResponse)
-async def playwright_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_playwright_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/playwright.html"
@@ -125,7 +125,7 @@ async def playwright_page(request: Request, user: AuthSession = Depends(require_
 
 
 @router.get("/admin/cabinet", response_class=HTMLResponse)
-async def cabinet_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_cabinet_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/cabinet.html"
@@ -133,7 +133,7 @@ async def cabinet_page(request: Request, user: AuthSession = Depends(require_aut
 
 
 @router.get("/admin/workflow", response_class=HTMLResponse)
-async def agent_workflow_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_agent_workflow_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/agent_workflow.html"
@@ -141,7 +141,7 @@ async def agent_workflow_page(request: Request, user: AuthSession = Depends(requ
 
 
 @router.get("/admin/workflow_trace", response_class=HTMLResponse)
-async def workflow_trace_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_workflow_trace_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/workflow_trace.html"
@@ -149,7 +149,7 @@ async def workflow_trace_page(request: Request, user: AuthSession = Depends(requ
 
 
 @router.get("/admin/llm", response_class=HTMLResponse)
-async def llm_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_llm_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/llm.html"
@@ -157,7 +157,7 @@ async def llm_page(request: Request, user: AuthSession = Depends(require_auth)):
 
 
 @router.get("/admin/fact", response_class=HTMLResponse)
-async def fact_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_fact_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/fact.html"
@@ -165,7 +165,7 @@ async def fact_page(request: Request, user: AuthSession = Depends(require_auth))
 
 
 @router.get("/admin/fact_collection", response_class=HTMLResponse)
-async def fact_collection_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_fact_collection_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/fact_collection.html"
@@ -173,7 +173,7 @@ async def fact_collection_page(request: Request, user: AuthSession = Depends(req
 
 
 @router.get("/admin/plan", response_class=HTMLResponse)
-async def plan_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_plan_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/plan.html"
@@ -181,7 +181,7 @@ async def plan_page(request: Request, user: AuthSession = Depends(require_auth))
 
 
 @router.get("/admin/planning", response_class=HTMLResponse)
-async def planning_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_planning_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     from py_modules.setting_.setting_ import setting_get
     tz_offset = await setting_get('timezone', '+0')
     return request.app.state.jinja2_template.TemplateResponse(
@@ -192,7 +192,7 @@ async def planning_page(request: Request, user: AuthSession = Depends(require_au
 
 
 @router.get("/admin/project", response_class=HTMLResponse)
-async def project_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_project_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/project.html",
@@ -200,7 +200,7 @@ async def project_page(request: Request, user: AuthSession = Depends(require_aut
 
 
 @router.get("/admin/developing", response_class=HTMLResponse)
-async def developing_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_developing_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/project/developing.html",
@@ -208,7 +208,7 @@ async def developing_page(request: Request, user: AuthSession = Depends(require_
 
 
 @router.get("/admin/planning-phase-source", response_class=HTMLResponse)
-async def planning_phase_source_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_planning_phase_source_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/project/planning_phase_source.html",
@@ -216,7 +216,7 @@ async def planning_phase_source_page(request: Request, user: AuthSession = Depen
 
 
 @router.get("/admin/task", response_class=HTMLResponse)
-async def task_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_task_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/project/task.html",
@@ -224,7 +224,7 @@ async def task_page(request: Request, user: AuthSession = Depends(require_auth))
 
 
 @router.get("/admin/task/diff", response_class=HTMLResponse)
-async def task_diff_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_task_diff_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     """Разница главной ветки и ветки подзадачи. Номер подзадачи — в `?task=<id>`."""
     return request.app.state.jinja2_template.TemplateResponse(
         request,
@@ -233,7 +233,7 @@ async def task_diff_page(request: Request, user: AuthSession = Depends(require_a
 
 
 @router.get("/admin/browser", response_class=HTMLResponse)
-async def browser_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_browser_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     """Живое окно сессий контейнера-браузера (`browser.md`)."""
     return request.app.state.jinja2_template.TemplateResponse(
         request,
@@ -242,7 +242,7 @@ async def browser_page(request: Request, user: AuthSession = Depends(require_aut
 
 
 @router.get("/admin/design", response_class=HTMLResponse)
-async def design_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_design_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/project/design.html",
@@ -250,7 +250,7 @@ async def design_page(request: Request, user: AuthSession = Depends(require_auth
 
 
 @router.get("/admin/tool", response_class=HTMLResponse)
-async def tool_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_tool_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/tool.html"
@@ -258,7 +258,7 @@ async def tool_page(request: Request, user: AuthSession = Depends(require_auth))
 
 
 @router.get("/admin/team", response_class=HTMLResponse)
-async def team_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_team_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/project/team.html"
@@ -266,7 +266,7 @@ async def team_page(request: Request, user: AuthSession = Depends(require_auth))
 
 
 @router.get("/admin/role", response_class=HTMLResponse)
-async def role_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_role_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/role.html"
@@ -274,7 +274,7 @@ async def role_page(request: Request, user: AuthSession = Depends(require_auth))
 
 
 @router.get("/admin/seed", response_class=HTMLResponse)
-async def seed_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_seed_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/seed.html"
@@ -282,7 +282,7 @@ async def seed_page(request: Request, user: AuthSession = Depends(require_auth))
 
 
 @router.get("/admin/backup", response_class=HTMLResponse)
-async def backup_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_backup_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/backup.html"
@@ -290,10 +290,10 @@ async def backup_page(request: Request, user: AuthSession = Depends(require_auth
 
 
 @router.get("/admin/variable", response_class=HTMLResponse)
-async def workflow_variable_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_workflow_variable_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
-        get_template_for_role(
+        dashboard_get_template_for_role(
             request.url.path,
             user.role,
             "admin/node_variable.html",
@@ -303,7 +303,7 @@ async def workflow_variable_page(request: Request, user: AuthSession = Depends(r
 
 
 @router.get("/admin/setting", response_class=HTMLResponse)
-async def setting_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_setting_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/setting.html"
@@ -311,7 +311,7 @@ async def setting_page(request: Request, user: AuthSession = Depends(require_aut
 
 
 @router.get("/admin/queue", response_class=HTMLResponse)
-async def queue_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_queue_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     queues = queue_get_all()
 
     rows = ""
@@ -329,5 +329,5 @@ async def queue_page(request: Request, user: AuthSession = Depends(require_auth)
 
 
 @router.get("/favicon.ico", include_in_schema=False)
-async def favicon():
+async def dashboard_favicon():
     return Response(status_code=204)
