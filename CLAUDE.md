@@ -135,7 +135,8 @@ asyncio.run(telegram_send_owner('your message'))
 |------|---------|
 | `project_planning.md` | Фазы, агенты, `research_loop` sub-workflow |
 | `project_design.md` | Вкладки, API, таблицы, конфигуратор прототипа |
-| `project_task.md` | `/admin/task`, конвейер агентов Manager/Developer/QA |
+| `project_task.md` | `/admin/task`, устройство конвейера: состояния, отбор работы, схема БД, API |
+| `project_task_roles.md` | Роли конвейера: Manager/Developer/QA/багфиксер — workflow, шаги, промпты, таймауты |
 | `project_team.md` | Члены команды, `/admin/team`, heartbeat `/api/team/ping`, типы задач |
 
 **API соседей и подсистемы `src/`**
