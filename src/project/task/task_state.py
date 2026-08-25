@@ -118,6 +118,51 @@ async def task_state_plan_save(task_id: int, plan_json: str, goals_json: str | N
         await db.connection.commit()
 
 
+async def task_state_type_to_plan(task_id: int) -> bool:
+    """
+    Задача взята в планирование: тип -> `plan`.
+
+    Тип задачи здесь — отметка текущей фазы, а не природы работы: план утверждают —
+    тип уходит в `dev` (`task_state_type_to_dev`), работа доходит до проверки — в
+    `test` (`task_state_dev_to_testing`). Одного звена в этой цепочке не хватало —
+    входа: заведённая человеком задача типа `dev` уезжала планироваться, оставаясь
+    `dev`. А по типу выбирается роль-планировщик (`task_role_by_type`), и план такой
+    задачи писала карточка разработчика вместо менеджера.
+
+    Меняем только корневые задачи. У подзадачи обратного перехода нет:
+    `task_state_type_to_dev` берёт лишь `parent_id IS NULL`, и подзадача, переведённая
+    в `plan`, застряла бы этим типом навсегда.
+
+    `bug` не трогаем: багфиксер плана не пишет вовсе (`TASK_ROLE_PLANNERS`), и перевод
+    увёл бы баг с его собственного пути. Сюда он попасть и не может — отбор
+    планирования отсеивает багфиксера раньше, — но функция публичная, и полагаться на
+    осторожность будущего вызывающего не за чем.
+
+    `COALESCE` на типе — ради задач без типа вообще: `NULL NOT IN (...)` дало бы NULL,
+    и строка не обновилась бы, хотя ей-то тип как раз и нужен.
+
+    Returns:
+        True — тип сменён. False — задача уже `plan`, это баг, подзадача или строки
+        типа `plan` в установке нет; это норма, а не ошибка.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "UPDATE project_task "
+            "   SET task_type_id = (SELECT id FROM project_task_type WHERE name = 'plan') "
+            " WHERE id = %s AND parent_id IS NULL "
+            "   AND COALESCE(task_type_id, 0) NOT IN "
+            "       (SELECT id FROM project_task_type WHERE name IN ('plan', 'bug')) "
+            "   AND EXISTS (SELECT 1 FROM project_task_type WHERE name = 'plan')",
+            (task_id,),
+        )
+        moved = db.rowcount > 0
+        await db.connection.commit()
+
+    if moved:
+        logger_info(f'[task] task#{task_id} взята в планирование: тип -> plan')
+    return moved
+
+
 async def task_state_plan_to_development(task_id: int) -> bool:
     """
     Задача планирования с пометкой «в разработку»: тип -> `dev`, состояние -> `approved`.

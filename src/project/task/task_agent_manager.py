@@ -22,6 +22,8 @@ from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_plan import (task_plan_goals_normalize, task_plan_goals_text,
                                         task_plan_parse)
+from src.project.task.task_question import (task_question_decisions_text,
+                                            task_question_parse)
 from src.project.task.task_role import TASK_ROLE_DEFAULT
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_timeout import (
@@ -109,6 +111,11 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
         # ложь для `%if task_plan_current%`: `ai_workflow_variable_truthy` считает
         # пустую строку ложной, и блок пересмотра в промпте просто не раскроется.
         'task_plan_current': task_plan_parse(task.get('pipeline_plan') or '')[0] if revise else '',
+        # Решения человека по прежним вопросам менеджера. Вопрос одноразовый, а
+        # решение живёт: план пересматривают не один раз, и на каждом пересмотре
+        # менеджер обязан помнить, что уже решено, — иначе спросит о том же снова.
+        # Пусто — блок `%if task_decisions%` в промпте не раскроется.
+        'task_decisions':    task_question_decisions_text(task),
         # Адрес оболочки для шагов `claude_shell_call`: раньше роль была вписана
         # в шаги константой `_const_manager`, теперь её везёт прогон.
         'task_shell_role':   role,
@@ -254,4 +261,13 @@ def _plan_parse(result_text) -> dict:
         'plan_text': str(plan.get('plan_text') or '').strip(),
         'subtasks':  subtasks,
         'goals':     task_plan_goals_normalize(parsed.get('goals')),
+        # Вопрос человеку, если разведка упёрлась в развилку, которую решает
+        # заказчик, а не код. Лежит внутри плана, а не рядом: план приходит одним
+        # объектом от шага `Ответ JSON: план`, и отдельный ключ в корне пришлось бы
+        # склеивать шаблоном последнего шага — а тот собирает JSON строкой, и
+        # кавычка в вопросе разломала бы весь ответ прогона.
+        #
+        # Разбор общий с ролями (`task_question_parse`): вопрос менеджера и вопрос
+        # разработчика — одна сущность, и человек отвечает на них одинаково.
+        'question':  task_question_parse(plan),
     }

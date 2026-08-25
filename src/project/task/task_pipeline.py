@@ -102,13 +102,16 @@ from src.project.task.task_plan import (
     task_plan_parse,
     task_plan_serialize,
 )
-from src.project.task.task_question import task_question_set
+from src.project.task.task_question import task_question_parse, task_question_set
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
 from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree, task_retry_take
-from src.project.task.task_role import (TASK_ROLE_DEFAULT, TASK_ROLE_TITLE, task_role_of_task,
-                                        task_role_planners_only, task_role_project_work_dir,
+from src.project.task.task_role import (TASK_ROLE_DEFAULT, TASK_ROLE_MANAGER,
+                                        TASK_ROLE_PROJECT_NONE, TASK_ROLE_TITLE,
+                                        task_role_of_task, task_role_planners_only,
+                                        task_role_project_work_dir,
                                         task_role_shell_live_by_project)
 from src.project.task.task_revision import task_revision_add
+from src.project.task.task_shell_dialog import task_shell_dialog_question
 from src.project.task.task_state import (
     task_state_attempt_log,
     task_state_dev_to_testing,
@@ -124,6 +127,7 @@ from src.project.task.task_state import (
     task_state_task_finalize,
     task_state_task_get,
     task_state_task_requeue,
+    task_state_type_to_plan,
 )
 from src.project.task.task_log import TASK_LOG_OUTCOME_OK, task_log_write_run
 from src.project.task.task_worktree import task_worktree_ensure
@@ -365,22 +369,24 @@ def _action_queue(stats: dict, action: dict, job_timeout: int) -> None:
 async def _claim_manager_review(worker: str, roles_by_project) -> dict | None:
     # Багфиксер плана не пишет: тип `bug` принадлежит ему, и без отсева менеджерский
     # шаг забрал бы баг себе (`task_role_planners_only`).
-    task = await task_claim_task_review(worker, task_role_planners_only(roles_by_project))
+    planners = task_role_planners_only(roles_by_project)
+    task = await task_claim_task_review(worker, planners)
     if not task:
         return None
-    role = await task_role_of_task(task)
+    role = await _plan_role(task, planners)
     await task_report_write(task['id'], f'План отправлен на пересмотр ({_role_title(role)})', ok=None)
     return {'kind': 'manager_review', 'task_id': task['id'], 'revise': True, 'role': role}
 
 
 async def _claim_manager_plan(worker: str, roles_by_project) -> dict | None:
-    task = await task_claim_task_unplanned(worker, task_role_planners_only(roles_by_project))
+    planners = task_role_planners_only(roles_by_project)
+    task = await task_claim_task_unplanned(worker, planners)
     if not task:
         return None
     # Если план уже есть (есть subtasks), но goals пуст — пересматриваем,
     # а не пишем заново: менеджер удалит subtasks при write-from-scratch.
     _, existing_subtasks = task_plan_parse(task.get('pipeline_plan') or '')
-    role = await task_role_of_task(task)
+    role = await _plan_role(task, planners)
     await task_report_write(task['id'], f'Задача взята в планирование ({_role_title(role)})', ok=None)
     return {'kind': 'manager_plan', 'task_id': task['id'],
             'revise': len(existing_subtasks) > 0, 'role': role}
@@ -808,13 +814,31 @@ async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str
     await task_revision_add(task['id'], plan_text, task_plan_goals_normalize(goals_json),
                             subtasks, author_kind='manager')
 
+    # Вопрос менеджера — развилка, которую решает заказчик, а не код: разведка
+    # упёрлась в неё и составила план по своему допущению. Кладём вопрос на задачу
+    # рядом с планом, там же, где его задаёт роль по подзадаче, — человек ответит
+    # тем же попапом (`task_question`).
+    #
+    # Круг за вопрос не жжём и работу не останавливаем: у планирования человеческий
+    # шаг и так впереди — утверждение плана. Останавливать задачу ради вопроса
+    # значило бы завести второе ожидание человека перед первым.
+    question = result.get('question') or {}
+    if question:
+        await task_question_set(task['id'], question, role)
+
     # Пометка «в разработку» — заранее данное человеком согласие: план готов, ждать
     # ещё и нажатия «Утвердить» не за чем. Задача сама меняет тип на `dev` и уходит
     # в `approved`, дальше её подберёт разбор плана на подзадачи.
-    to_dev = await task_state_plan_to_development(task['id'])
+    #
+    # Заданный вопрос эту пометку перевешивает: согласие давали на план вообще, а не
+    # на план, у которого менеджер спрашивает про развилку. Утвердить его молча
+    # значит принять допущение менеджера за решение человека.
+    to_dev = not question and await task_state_plan_to_development(task['id'])
     state = 'approved' if to_dev else 'plan_approval'
     tail  = ('. Задача помечена «в разработку» — план утверждён без человека, '
              'тип сменён на «Разработка»') if to_dev else '. Ждёт утверждения человеком'
+    if question:
+        tail += '; менеджер задал вопрос'
 
     action_word = 'пересмотрел план' if revise else 'составил план'
     await task_report_write(
@@ -847,6 +871,9 @@ async def _retry_task(task: dict, label: str, state_retry: str, role: str,
     вернули бы мы; отпусти мы её первой, задачу успел бы забрать соседний воркер и
     отправить в оболочку, которую мы в этот момент гасим.
     """
+    if await _dialog_hold(task, role, error, parent_id=None, back_state=state_retry):
+        return f"task#{task['id']} {label} -> вопрос человеку (диалог оболочки)"
+
     retry = await task_retry_take(task['id'], role, error)
     if not retry['allowed']:
         # Счётчик дописываем в текст ошибки: она же уходит в отчёт задачи, и без него
@@ -896,6 +923,10 @@ async def _retry_subtask(subtask: dict, step: str, state_retry: str, role: str, 
     # Ради этого журнал и заводили: ответа нет, но шаги, что успели пройти, в
     # трассе остались — следующий круг начнёт с них, а не с чистого листа.
     await _log_run(subtask['id'], work_dir, result, role, attempt_no, error)
+
+    if await _dialog_hold(subtask, role, error, parent_id=subtask.get('parent_id'),
+                          back_state=state_retry):
+        return f"subtask#{subtask['id']} {step} -> вопрос человеку (диалог оболочки)"
 
     retry = await task_retry_take(subtask['id'], role, error)
     if not retry['allowed']:
@@ -1150,6 +1181,85 @@ async def _lock_hold(action: dict) -> None:
         await asyncio.sleep(TASK_CLAIM_LOCK_TOUCH_SEC)
         if not await task_claim_lock_touch(row_id):
             return
+
+
+async def _dialog_hold(row: dict, role: str, error: str, parent_id, back_state: str) -> bool:
+    """
+    Оболочка встала на вопросе Claude Code: спросить человека вместо повтора.
+
+    Повтор здесь бессмыслен и вреден. Повтор лечит случайный срыв, а диалог —
+    не случайность: пока на него не ответят, хода не будет, и следующий круг
+    упрётся туда же. Хуже того, повтор идёт с перезапуском оболочки, а перезапуск
+    сносит и сам диалог, и ход за ним. Живьём: планирование #1027 потеряло так
+    четыре круга и час.
+
+    Поэтому круг не жжём (`task_retry_take` не зовём вовсе), оболочку не трогаем,
+    а вопрос кладём на строку — тем же механизмом, каким его задают роли.
+
+    **Строку при этом обязательно останавливаем.** Оставить её в переходном
+    состоянии нельзя: блокировку перестанет обновлять закончившийся job,
+    `task_claim_locks_reclaim()` через таймаут вернёт строку в отбор, и круг
+    пойдёт заново — мимо всего, ради чего мы его придержали. Состояние берём то
+    же, что у вопроса роли (`_question_hold`): подзадача — `blocked`, задача —
+    `failed`. Смысл у обоих один, «нужен человек», а отличает вопрос от
+    исчерпанных попыток не состояние, а сам вопрос в мешке.
+
+    `back_state` — куда вернуть строку, когда человек ответит. Помним его здесь,
+    потому что только здесь он известен: у планирования это `new`, у пересмотра
+    плана — `reviewing`, и перепутать их значит переписать план вместо правки.
+
+    Returns: `True` — вопрос задан, вызывающему больше делать нечего. `False` —
+        отказ обычный, повторяем как раньше.
+    """
+    dialog = task_shell_dialog_question(error, _role_title(role))
+    if not dialog:
+        return False
+
+    row_id = int(row['id'])
+    question = {**task_question_parse({'question': dialog}), 'dialog': True,
+                'back_state': str(back_state or '')}
+    await task_question_set(row_id, question, role)
+
+    text = f'Оболочка {_role_title(role)} ждёт ответа на вопрос Claude Code'
+    if parent_id:
+        await task_state_subtask_set(row_id, 'blocked', last_error=text)
+        await _subtask_report(row, f'{text}. Круг не засчитан', ok=False, blocked=True)
+    else:
+        await task_state_task_fail(row_id, text)
+        await task_report_write(row_id, f'{text}. Круг не засчитан', ok=False)
+
+    logger_info(f'[task] #{row_id}: диалог в оболочке {role} — задан вопрос человеку')
+
+    return True
+
+
+async def _plan_role(task: dict, planners: dict) -> str:
+    """
+    Кто пишет план — и заодно приведение типа задачи к фазе.
+
+    Планирует менеджер. Тип `dev` у ещё не разложенной задачи описывает будущую
+    работу, а не текущий шаг, и без этого перевода план писала бы карточка
+    разработчика: роль выбирается по типу (`task_role_by_type`). Поэтому взятой в
+    планирование задаче ставим тип `plan` — он и есть то, что с ней происходит, — а
+    разработка достаётся подзадачам. Обратно тип вернёт утверждение плана
+    (`task_state_type_to_dev`).
+
+    Роль не выдумываем второй раз, а перечитываем задачу: тип сменён — и
+    `task_role_of_task` сама вернёт менеджера. Два места, решающих одно и то же,
+    разошлись бы при первой правке карты типов.
+
+    Тип не трогаем, когда живой карточки менеджера у проекта нет: перевод увёл бы
+    задачу к роли, до которой некому дойти, и прогон сорвался бы на первом обращении
+    к оболочке. Тогда планирует тот, за кем задачу и взяли, — как и раньше.
+
+    `planners` — живые роли-планировщики по проектам (`task_role_planners_only`), тот
+    же словарь, по которому шёл захват.
+    """
+    live = planners.get(task.get('project_id') or TASK_ROLE_PROJECT_NONE) or []
+    if TASK_ROLE_MANAGER in live and await task_state_type_to_plan(int(task['id'])):
+        task = await task_state_task_get(int(task['id'])) or task
+
+    return await task_role_of_task(task)
 
 
 def _role_title(role: str) -> str:

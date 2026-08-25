@@ -473,3 +473,65 @@ class TestSummaryAnswer:
         assert _answer_parse('', 850) == {}
         assert _answer_parse('не json вовсе', 850) == {}
         assert _answer_parse('{"lines": "не список"}', 850) == {}
+
+
+class TestShellBlocks:
+    """
+    Хронология оболочки живёт отдельным файлом и сводится с журналом только на
+    странице человека.
+
+    Разделение не косметическое: общий журнал следующий круг читает целиком, и
+    «задание ушло, ответ получен» для него шум — работу он ведёт не с оболочкой, а
+    внутри неё. Человеку же без этих отметок не видно, на чьей стороне затык:
+    поймано на планировании #1027, где оболочка ответ выдала, а шаг разведки всё
+    равно закрылся как «менеджер не ответил».
+    """
+
+    LOG = ('\n## круг 1 · manager · 2026-08-25 17:03\n'
+           '17:03:21  сделал    Промпт: разведка: собран\n'
+           '17:17:59  затык     Менеджер: разведка [14 мин]: ответа нет\n')
+    SHELL = ('\n## круг 1 · manager · 2026-08-25 17:03\n'
+             '17:03:21  запрос    оболочка manager ← задание: Ты менеджер разработки\n'
+             '17:17:58  ответ     оболочка manager → ответ [14 мин]: план готов\n')
+
+    def test_lines_interleave_by_time(self):
+        """Смысл именно в чередовании: ответ оболочки должен стоять перед затыком шага."""
+        from src.project.task.task_log import _blocks_merge
+
+        lines = [line for line in _blocks_merge(self.LOG, self.SHELL).splitlines() if line.strip()]
+
+        assert lines[0].startswith('## круг 1'), 'заголовок круга остаётся один'
+        assert [line.split()[0] for line in lines[1:]] == ['17:03:21', '17:03:21',
+                                                           '17:17:58', '17:17:59']
+        assert 'ответ' in lines[3] and 'затык' in lines[4], \
+            'ответ оболочки пришёл раньше, чем шаг сдался, — иначе затык не прочитать'
+
+    def test_blocks_pair_by_round_head(self):
+        """Круги сводятся по заголовку: строка несёт время без даты."""
+        from src.project.task.task_log import _blocks_merge
+
+        second_log = '\n## круг 2 · manager · 2026-08-25 18:00\n18:00:10  сделал    Промпт: план: собран\n'
+        merged = _blocks_merge(self.LOG + second_log, self.SHELL)
+
+        first, second = merged.split('## круг 2')
+        assert 'оболочка manager' in first, 'события первого круга остались в первом круге'
+        assert 'оболочка manager' not in second, 'во второй круг чужие события попасть не должны'
+
+    def test_shell_block_without_pair_kept(self):
+        """Журнал не записался — хронологию оболочки всё равно не теряем."""
+        from src.project.task.task_log import _blocks_merge
+
+        assert 'оболочка manager' in _blocks_merge('', self.SHELL)
+        assert _blocks_merge(self.LOG, '') == self.LOG, 'без оболочки журнал не трогаем'
+
+    def test_service_command_reads_as_words(self):
+        """`__RESTART_WATCH__` в ленте — это причина потерянного ответа, а не мусор."""
+        from src.project.task.task_log_shell import TASK_LOG_SHELL_SERVICE, task_log_shell_line
+
+        line = task_log_shell_line({'created_at': datetime(2026, 8, 25, 17, 19, 5),
+                                    'keyword': 'запрос',
+                                    'title': f"оболочка manager: {TASK_LOG_SHELL_SERVICE['__RESTART_WATCH__']}",
+                                    'text': '', 'seconds': 0})
+
+        assert line == '17:19:05  запрос    оболочка manager: оболочка перезапущена\n'
+        assert not line.rstrip().endswith(':'), 'висящее двоеточие читается как потерянное значение'

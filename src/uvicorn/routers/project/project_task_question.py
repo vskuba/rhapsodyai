@@ -30,7 +30,7 @@ from src.project.task.task_question import (TASK_QUESTION_ACTION_DROP, TASK_QUES
 from src.project.task.task_report import task_report_write
 from src.project.task.task_setting_timeout import (TASK_SETTING_TIMEOUT_ATTEMPT_MAX,
                                                    task_setting_timeout_get)
-from src.project.task.task_state import task_state_subtask_set
+from src.project.task.task_state import task_state_subtask_set, task_state_task_requeue
 
 router = APIRouter()
 
@@ -70,7 +70,9 @@ async def project_task_question_get(task_id: int,
 
     attempts = await _attempts(task_id)
     question = task_question_get(subtask)
-    if not question:
+    # Автовопрос — только по подзадаче: его варианты дробят и сокращают цели, а у
+    # задачи целиком цели ведёт план менеджера, и охват там меняют не так.
+    if not question and subtask.get('parent_id'):
         question = task_question_auto(subtask, attempts,
                                       await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX))
 
@@ -109,14 +111,19 @@ async def project_task_question_answer(task_id: int, body: TaskQuestionAnswer,
     subtask = await _subtask_row(task_id)
     if not subtask:
         raise HTTPException(status_code=404, detail='task not found')
-    if not subtask.get('parent_id'):
-        raise HTTPException(status_code=409, detail='Вопросы задаются по подзадачам, а не по задаче целиком')
 
     # Вопрос берём тот же, что показывали: у автовопроса в мешке ничего не лежит, и
     # без него в решение попал бы голый ключ `goals_split` вместо подписи варианта.
-    question = task_question_get(subtask) or task_question_auto(
-        subtask, await _attempts(task_id),
-        await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX))
+    question = task_question_get(subtask)
+    if not question and not subtask.get('parent_id'):
+        # Автовопрос — про охват подзадачи: его варианты дробят и сокращают цели,
+        # а у корневой задачи цели ведёт план, и трогать их отсюда нельзя.
+        raise HTTPException(status_code=409,
+                            detail='По задаче целиком вопрос задаёт только менеджер при планировании')
+    if not question:
+        question = task_question_auto(
+            subtask, await _attempts(task_id),
+            await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX))
 
     scope = await _scope_apply(subtask, body)
     if scope and not scope.get('ok'):
@@ -128,14 +135,54 @@ async def project_task_question_answer(task_id: int, body: TaskQuestionAnswer,
     if not decision:
         raise HTTPException(status_code=400, detail='Ответ пустой: выберите вариант или напишите решение')
 
-    await task_state_subtask_set(task_id, TASK_QUESTION_STATE_BACK, last_error='', attempt_count=0)
+    state = await _answer_after(subtask, task_id, user.username, decision, question)
+
+    return {'ok': True, 'decision': decision, 'state': state, 'scope': scope}
+
+
+async def _answer_after(subtask: dict, task_id: int, username: str, decision: dict,
+                        question: dict) -> str:
+    """
+    Что делать со строкой после ответа. Возвращает её состояние.
+
+    У подзадачи ответ возвращает круг: она уходит в `planned` с обнулённым
+    счётчиком. Счётчик обнуляем потому, что круги до вопроса упирались в
+    нерешённое — считать их неудачами нечестно, и подзадача, спросившая на третьем
+    круге, иначе вернулась бы в `blocked` первым же прогоном.
+
+    У задачи целиком всё зависит от того, кто спросил, и различает их пометка
+    `dialog` в самом вопросе:
+
+    * **Менеджер вместе с планом** — возвращать нечего. Задача уже стоит там, где
+      её ждёт человек, на утверждении; решение записано и уйдёт в промпт, если
+      план отправят на пересмотр. Тронуть состояние здесь значило бы вырвать
+      задачу из-под утверждения ответом на вопрос.
+    * **Оболочка встала на диалоге Claude Code** (`task_shell_dialog`) — задача
+      лежит в `failed`, и без возврата она осталась бы там навсегда: круга не
+      было, а ответ снял то, из-за чего он не состоялся. Возвращаем туда, откуда
+      её сняли, — `back_state` запомнил сам придержавший (`_dialog_hold`):
+      планирование ждёт задачу в `new`, пересмотр плана — в `reviewing`.
+    """
     title = str(subtask.get('title') or '').strip()
+
+    if not subtask.get('parent_id'):
+        back = str((question or {}).get('back_state') or '') if (question or {}).get('dialog') else ''
+        if back:
+            await task_state_task_requeue(task_id, back, '')
+        await task_report_write(
+            task_id,
+            f"Решение принято ({username}) — {decision['answer']}"
+            + (f'. Задача возвращена в работу ({back})' if back else ''),
+            ok=True)
+        return back or str(subtask.get('pipeline_state') or '')
+
+    await task_state_subtask_set(task_id, TASK_QUESTION_STATE_BACK, last_error='', attempt_count=0)
     label = f'Подзадача #{task_id}' + (f' «{title}»' if title else '')
     await task_report_write(int(subtask['parent_id']),
-                            f"{label}: решение принято ({user.username}) — {decision['answer']}. "
+                            f"{label}: решение принято ({username}) — {decision['answer']}. "
                             f"Возвращена в работу, попытки обнулены", ok=True)
 
-    return {'ok': True, 'decision': decision, 'state': TASK_QUESTION_STATE_BACK, 'scope': scope}
+    return TASK_QUESTION_STATE_BACK
 
 
 async def _scope_apply(subtask: dict, body: TaskQuestionAnswer) -> dict:

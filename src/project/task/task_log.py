@@ -54,6 +54,7 @@ from datetime_.datetime_ import datetime_offset_apply
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from setting_.setting_ import setting_get
+from src.project.task.task_log_shell import task_log_shell_events, task_log_shell_line
 from src.project.task.task_log_summary import task_log_summary_many
 from src.project.task.task_worktree import (TASK_WORKTREE_BASE_DIR,
                                             task_worktree_base_branch,
@@ -65,7 +66,15 @@ from src.project.task.task_worktree import (TASK_WORKTREE_BASE_DIR,
 # не результат работы, и в коммит с merge request им нельзя.
 TASK_LOG_FILE = '.task-log.md'
 TASK_STATE_FILE = '.task-state.md'
-TASK_LOG_FILES = (TASK_LOG_FILE, TASK_STATE_FILE)
+
+# Хронология оболочки: когда задание ушло агенту и когда вернулось (`task_log_shell`).
+# Отдельным файлом, а не строками в общем журнале, по одной причине: общий журнал
+# читает следующий круг целиком, и «запрос ушёл / ответ получен» ему только шум —
+# работу он ведёт не с оболочкой, а внутри неё. Человеку же это единственный способ
+# увидеть, на чьей стороне затык, и на странице оба файла сливаются по времени.
+TASK_SHELL_FILE = '.task-shell.md'
+
+TASK_LOG_FILES = (TASK_LOG_FILE, TASK_STATE_FILE, TASK_SHELL_FILE)
 
 # Каталог и префикс имени берём у `task_worktree`: перебор каталогов обязан
 # находить ровно то, что тот создаёт. Префикс — шаблон без подстановки, до
@@ -129,13 +138,19 @@ async def task_log_read(repo_dir: str, task_id) -> dict:
     Задвоения не будет: живьём показываем только незакрытые трассы, а закрытая
     приходит из файла.
 
+    Хронологию оболочки (`.task-shell.md`) подмешиваем здесь же и только здесь: в
+    общий журнал ей нельзя — его целиком читает следующий круг, — а человеку она
+    нужна ровно на своём месте по времени. Блоки в обоих файлах подписаны одним и
+    тем же заголовком круга, по нему и сходятся.
+
     Returns:
         `{'log': str, 'state': str, 'dir': str, 'running': bool}` — пустые строки,
         если ни файла, ни идущего прогона нет. Это не ошибка: строка могла ещё не
         браться в работу, а каталог — уже уехать после слияния.
     """
     directory = task_log_dir(repo_dir, task_id)
-    log = _read_tail(os.path.join(directory, TASK_LOG_FILE))
+    log = _blocks_merge(_read_tail(os.path.join(directory, TASK_LOG_FILE)),
+                        _read_tail(os.path.join(directory, TASK_SHELL_FILE)))
 
     live = await _live_block(task_id)
     if live:
@@ -156,6 +171,11 @@ async def _live_block(task_id) -> str:
     Собираются из трассы, а не из файла: файл пишется по концу круга, а увидеть,
     чем агент занят, человек хочет пока тот занят. Смещение читаем то же, что и
     у записанного, иначе живой блок разъехался бы с остальным журналом на часы.
+
+    Здесь же — события оболочки, и ради идущего прогона они и заводились. Шаг
+    `claude_shell_call` появляется в трассе только когда кончится, и всё это время
+    журнал молчал; строка «задание ушло» без пары «ответ получен» показывает, что
+    ждём агента, а пара без последующего шага — что ответ до движка не доехал.
     """
     if not await _row_in_flight(task_id):
         return ''
@@ -168,13 +188,17 @@ async def _live_block(task_id) -> str:
     blocks = []
     for run in runs:
         steps = await _trace_steps(str(run.get('session_uuid') or ''))
-        for step in steps:
-            step['created_at'] = datetime_offset_apply(step.get('created_at'), offset)
+        # Конец окна открыт: прогон идёт, и ответ может прийти в любую секунду.
+        shell = await task_log_shell_events(str(run.get('role') or ''),
+                                            str(run.get('work_dir') or ''),
+                                            run.get('started_at'))
+        for item in (*steps, *shell):
+            item['created_at'] = datetime_offset_apply(item.get('created_at'), offset)
 
         started = datetime_offset_apply(run.get('started_at'), offset)
         lines = [f"\n## идёт сейчас · {run.get('role') or 'агент'} · "
                  f"{started.strftime('%Y-%m-%d %H:%M') if started else ''}\n"]
-        lines += [_step_line(step) for step in steps if not _step_skip(step)]
+        lines += _lines_merge([step for step in steps if not _step_skip(step)], shell)
         # Шагов может не быть вовсе: прогон только начался. Сам заголовок при этом
         # новость — по нему видно, что строка не брошена, а в работе.
         blocks.append(''.join(lines))
@@ -231,7 +255,10 @@ async def _runs_active(task_id) -> list[dict]:
         variables = _dict_parse(str(row.get('variables_start') or '')) or {}
         runs.append({'session_uuid': row.get('session_uuid'),
                      'started_at': row.get('started_at'),
-                     'role': str(variables.get('task_shell_role') or '')})
+                     'role': str(variables.get('task_shell_role') or ''),
+                     # Второй половиной адреса оболочки: роли в командах разных
+                     # проектов зовутся одинаково (`task_agent_manager`).
+                     'work_dir': str(variables.get('task_shell_work_dir') or '')})
 
     return runs
 
@@ -362,12 +389,17 @@ async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
     if not steps:
         return 0
 
+    # События оболочки берём по окну прогона — до перевода времени, пока обе
+    # стороны ещё в UTC: смещение к ним применяется тем же проходом, что и к шагам.
+    shell = await task_log_shell_events(role, repo_dir,
+                                        steps[0].get('created_at'), steps[-1].get('created_at'))
+
     # Время трассы пишет MySQL, а он в контейнере живёт по UTC. Человек сверяет
     # журнал с часами на стене, поэтому показываем в поясе настройки `timezone`.
     # Читаем её один раз на прогон: меток в круге десятки.
     offset = await setting_get('timezone', '+0')
-    for step in steps:
-        step['created_at'] = datetime_offset_apply(step.get('created_at'), offset)
+    for item in (*steps, *shell):
+        item['created_at'] = datetime_offset_apply(item.get('created_at'), offset)
 
     started = steps[0].get('created_at')
     head = (f"\n## круг {int(attempt_no or 0)} · {role}{_retry_mark(directory, attempt_no, role)} · "
@@ -381,6 +413,12 @@ async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
         lines.append(_step_line(step, summaries.get(number, '')))
     lines.append(_outcome_line(steps[-1].get('created_at'), outcome,
                                summaries.get(TASK_LOG_SUMMARY_OUTCOME_KEY, '')))
+
+    # Оболочку пишем в свой файл, а не в этот. Журнал читает следующий круг, и
+    # «задание ушло, ответ пришёл» ему не говорит ничего: работу он ведёт не с
+    # оболочкой, а внутри неё. Зато человеку это единственный способ увидеть, на
+    # чьей стороне затык, — страница сливает оба файла по времени (`task_log_read`).
+    _shell_write(directory, head, shell)
 
     try:
         with open(os.path.join(directory, TASK_LOG_FILE), 'a', encoding='utf-8') as fh:
@@ -549,6 +587,114 @@ async def _summaries_make(steps: list, outcome: str) -> dict:
         return {}
 
     return await task_log_summary_many(items, TASK_LOG_STEP_MAX_CHARS)
+
+
+def _lines_merge(steps: list, shell: list, summaries: dict | None = None) -> list[str]:
+    """
+    Шаги workflow и события оболочки одной хронологией, по времени.
+
+    Двумя списками их держать нельзя: смысл именно в чередовании. «Задание ушло в
+    17:03, ответ вернулся в 17:17, а шаг закрылся в 17:18 без ответа» — читается
+    только когда три строки стоят подряд.
+
+    Сортировка устойчивая, и при равном времени шаг идёт первым: у события
+    оболочки и породившего его шага метки совпадают до секунды, а причина
+    (шаг начался) логически раньше следствия (задание ушло).
+
+    `summaries` — пересказы длинных ответов шагов по их номеру; у событий оболочки
+    пересказа не бывает, они и так короткие.
+    """
+    summaries = summaries or {}
+    items = [(step.get('created_at'), 0, _step_line(step, summaries.get(number, '')))
+             for number, step in enumerate(steps)]
+    items += [(event.get('created_at'), 1, task_log_shell_line(event)) for event in shell]
+
+    # Без метки времени строку не поставить в ряд — отдаём её в конец, а не роняем
+    # сортировку: пустая метка возможна у оборванного шага.
+    items.sort(key=lambda item: (item[0] is None, item[0], item[1]))
+
+    return [line for _, _, line in items]
+
+
+def _shell_write(directory: str, head: str, shell: list) -> None:
+    """
+    Дописать хронологию оболочки за круг в её собственный файл.
+
+    Заголовок круга тот же, что у общего журнала, — по нему страница и сводит два
+    файла в одну ленту (`_blocks_merge`). Пустой список круга всё равно пишем
+    заголовком: «оболочку не звали вовсе» — это тоже ответ на вопрос, где затык.
+
+    Сбой записи не сбой круга: файл вспомогательный, и роль его не читает.
+    """
+    lines = [head] + [task_log_shell_line(event) for event in shell]
+    try:
+        with open(os.path.join(directory, TASK_SHELL_FILE), 'a', encoding='utf-8') as fh:
+            fh.write(''.join(lines))
+    except OSError as e:
+        logger_info(f'task_log: хронология оболочки не дописана: {type(e).__name__}: {e}')
+
+
+def _blocks_merge(log: str, shell: str) -> str:
+    """
+    Свести журнал круга с хронологией его оболочки в одну ленту по времени.
+
+    Оба файла разбиты на блоки одинаковыми заголовками (`## круг N · роль · дата`),
+    и склеиваем поблочно, а не файл к файлу: строка несёт только `ЧЧ:ММ:СС`, дата
+    живёт в заголовке — за пределами своего блока такую метку не с чем сравнивать.
+
+    Блок оболочки без пары (журнал не записался) добавляем в конец: терять его
+    незачем, а без заголовка-близнеца встать ему некуда.
+    """
+    if not shell.strip():
+        return log
+    if not log.strip():
+        return shell
+
+    shell_blocks = _blocks_split(shell)
+    parts = []
+    for head, lines in _blocks_split(log):
+        extra = [item for item in shell_blocks if item[0] == head]
+        for item in extra:
+            shell_blocks.remove(item)
+        parts.append(_block_join(head, lines + [line for _, block in extra for line in block]))
+
+    parts += [_block_join(head, lines) for head, lines in shell_blocks]
+
+    return ''.join(parts)
+
+
+def _blocks_split(text: str) -> list[tuple[str, list[str]]]:
+    """
+    Текст журнала на блоки: `[(заголовок круга, [строки])]`.
+
+    Пустые строки выбрасываем: разделение между блоками рисует `_block_join`, а
+    попав в общий список, пустая строка уехала бы сортировкой в начало блока.
+
+    Строки до первого заголовка (обрезанный хвост файла) отдаём под пустым
+    заголовком — так они остаются на месте и не притворяются частью первого круга.
+    """
+    blocks: list[tuple[str, list[str]]] = [('', [])]
+    for line in text.splitlines(keepends=True):
+        if line.startswith('## '):
+            blocks.append((line, []))
+        elif line.strip():
+            blocks[-1][1].append(line)
+
+    return [block for block in blocks if block[0] or block[1]]
+
+
+def _block_join(head: str, lines: list[str]) -> str:
+    """
+    Блок обратно в текст: пустая строка, заголовок, строки по времени.
+
+    Сортируем сами строки, а не разобранные метки: формат у всех один и начинается
+    с `ЧЧ:ММ:СС`, поэтому обычный лексикографический порядок и есть порядок по
+    времени — и он устойчив, то есть при равной секунде порядок внутри блока
+    сохраняется таким, каким его собрали.
+    """
+    body = ''.join(sorted(lines))
+
+    return f'\n{head}{body}' if head else body
 
 
 def _step_line(step: dict, summary: str = '') -> str:
