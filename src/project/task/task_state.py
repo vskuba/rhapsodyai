@@ -15,7 +15,9 @@ import time
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_CONTEXT,
     TASK_METADATA_KEY_FINAL,
+    TASK_METADATA_KEY_SPLIT_MORE,
     TASK_METADATA_KEY_DEV,
     TASK_METADATA_KEY_TEST,
     task_metadata_stop_sql,
@@ -266,7 +268,10 @@ async def task_state_subtasks_create(task_id: int, subtasks: list) -> int:
     тот же JSON, что и у родителя, но с пустым списком подзадач — детей у ребёнка нет,
     зато форма колонки одна на всё дерево, и `task_plan_parse` читает её везде одинаково.
     """
-    kanban = task_state_kanban_status('planned')
+    # Канбан-статус считаем на каждую подзадачу: крупная уходит в `new`
+    # (человеку — «Ожидает»), обычная в `planned` («В очереди»). Одно значение на
+    # всех показало бы крупную стоящей в очереди к разработчику, хотя её ждёт
+    # менеджер.
     async with mysql_get_db_async() as db:
         for position, item in enumerate(subtasks):
             goals = task_plan_goals_normalize(item.get('goals'))
@@ -278,19 +283,19 @@ async def task_state_subtasks_create(task_id: int, subtasks: list) -> int:
             # отбор не берёт её в работу, пока соседи не закрыты
             # (`task_metadata_final_wait_sql`). У обычной подзадачи мешок пуст —
             # ключа нет вовсе, а не `false`: так же, как у флажков фаз.
-            metadata = (json.dumps({TASK_METADATA_KEY_FINAL: True}, ensure_ascii=False)
-                        if item.get('final') else None)
+            metadata = _subtask_metadata(item)
             await db.execute(
                 "INSERT INTO project_task "
                 "       (project_id, parent_id, title, description, goals, pipeline_plan, "
                 "        position, status, task_type_id, pipeline_state, pipeline_from_plan, "
                 "        metadata) "
                 "SELECT t.project_id, t.id, %s, %s, %s, %s, %s, %s, "
-                "       (SELECT id FROM project_task_type WHERE name = 'dev'), 'planned', 1, %s "
+                "       (SELECT id FROM project_task_type WHERE name = 'dev'), %s, 1, %s "
                 "  FROM project_task t WHERE t.id = %s",
                 (str(item.get('title') or ''), str(item.get('description') or ''),
                  json.dumps(goals, ensure_ascii=False) if goals else '',
-                 plan_json, position, kanban, metadata, task_id),
+                 plan_json, position, task_state_kanban_status(_subtask_state(item)),
+                 _subtask_state(item), metadata, task_id),
             )
         await db.execute(
             "UPDATE project_task SET pipeline_locked_at = NULL, pipeline_locked_by = '' WHERE id = %s",
@@ -298,6 +303,53 @@ async def task_state_subtasks_create(task_id: int, subtasks: list) -> int:
         )
         await db.connection.commit()
     return len(subtasks)
+
+
+def _subtask_state(item: dict) -> str:
+    """
+    Состояние новой подзадачи: обычная — `planned`, крупная — `new`.
+
+    Тут и включается дробление в глубину. `planned` — начало круга
+    Developer → QA, туда идёт подзадача, помещающаяся в память исполнителя.
+    А `new` — состояние, из которого работу забирает планирование
+    (`task_claim_task_unplanned`: нет своих подзадач, состояние `new`, сама не
+    родитель). Никакой отдельной ветки для рекурсии не нужно — подзадача,
+    помеченная `split_more`, просто попадает менеджеру как обычная задача, и
+    он раскладывает её своим заходом.
+
+    Глубина от этого не ограничена: разложенная подзадача может снова
+    оказаться крупной, снова получить `new` и уехать на планирование ещё раз.
+    Останавливает это не счётчик уровней, а сам объём — дробить бесконечно
+    нечего, куски кончаются.
+    """
+    return 'new' if item.get('split_more') else 'planned'
+
+
+def _subtask_metadata(item: dict) -> str | None:
+    """
+    Мешок новой подзадачи из строки плана менеджера. Пусто — `None`.
+
+    Три пометки, и все три ставит менеджер при разбиении:
+
+    * `final` — приёмка, ждёт закрытия соседей;
+    * `split_more` — не влезает в память исполнителя, дробить дальше;
+    * `context_lines` — его оценка объёма чтения, для разбора провалов.
+
+    Ложь и ноль не пишем: ключа нет — пометки нет, как у флажков фаз. Иначе
+    в мешке копился бы след от каждой подзадачи, которую менеджер посмотрел
+    и признал обычной.
+    """
+    data = {}
+    if item.get('final'):
+        data[TASK_METADATA_KEY_FINAL] = True
+    if item.get('split_more'):
+        data[TASK_METADATA_KEY_SPLIT_MORE] = True
+
+    lines = item.get('context_lines')
+    if isinstance(lines, (int, float)) and lines > 0:
+        data[TASK_METADATA_KEY_CONTEXT] = int(lines)
+
+    return json.dumps(data, ensure_ascii=False) if data else None
 
 
 async def task_state_task_fail(task_id: int, error: str) -> None:

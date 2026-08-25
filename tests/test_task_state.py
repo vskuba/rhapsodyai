@@ -605,3 +605,62 @@ class TestBackupOrder:
 
     def test_каталога_нет(self, tmp_path, monkeypatch):
         assert self._list(monkeypatch, str(tmp_path / 'нет-такого')) == []
+
+
+class TestSubtaskVolume:
+    """
+    Дробление по объёму: крупная подзадача уходит на планирование, а не к разработчику.
+
+    Исполнитель держит код в окне ограниченного размера. Замер токенизатором на
+    наших прогонах: подзадача #1028 «имена во всех файлах src/**» требовала 459k
+    токенов при окне 131k — двенадцать сорвавшихся кругов, ни одного удачного.
+    Менеджер теперь оценивает объём и помечает неделимо-крупные `split_more`.
+    """
+
+    def test_обычная_идёт_к_разработчику(self):
+        from src.project.task.task_state import _subtask_state
+
+        assert _subtask_state({'title': 'правка'}) == 'planned'
+
+    def test_крупная_идёт_на_планирование(self):
+        """`new` — состояние, из которого работу забирает планирование."""
+        from src.project.task.task_state import _subtask_state
+
+        assert _subtask_state({'split_more': True}) == 'new'
+
+    def test_оценка_объёма_сохраняется(self):
+        import json
+
+        from src.project.task.task_state import _subtask_metadata
+
+        assert json.loads(_subtask_metadata({'context_lines': 800})) == {'context_lines': 800}
+
+    def test_крупная_помечена_в_мешке(self):
+        import json
+
+        from src.project.task.task_state import _subtask_metadata
+
+        data = json.loads(_subtask_metadata({'split_more': True, 'context_lines': 4200}))
+        assert data == {'split_more': True, 'context_lines': 4200}
+
+    def test_приёмка_и_объём_вместе(self):
+        import json
+
+        from src.project.task.task_state import _subtask_metadata
+
+        data = json.loads(_subtask_metadata({'final': True, 'context_lines': 300}))
+        assert data == {'final': True, 'context_lines': 300}
+
+    def test_обычная_не_копит_пустых_пометок(self):
+        """Ключа нет — пометки нет, как у флажков фаз."""
+        from src.project.task.task_state import _subtask_metadata
+
+        assert _subtask_metadata({'title': 'x', 'final': False, 'split_more': False}) is None
+
+    def test_мусор_в_оценке_отбрасываем(self):
+        """Менеджер живой и вместо числа присылает «много» или ноль."""
+        from src.project.task.task_state import _subtask_metadata
+
+        assert _subtask_metadata({'context_lines': 'много'}) is None
+        assert _subtask_metadata({'context_lines': 0}) is None
+        assert _subtask_metadata({'context_lines': -5}) is None
