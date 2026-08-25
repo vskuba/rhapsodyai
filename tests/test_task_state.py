@@ -285,3 +285,43 @@ class TestRunningRowsFromTrace:
             assert subtask_id not in await task_log_rows_running()
         finally:
             await self._trace_drop(trace_id)
+
+
+class TestDirtyLines:
+    """
+    Что считается несохранённой работой на входе в слияние.
+
+    Слияние останавливается на несохранённых правках — иначе снятый каталог унёс
+    бы с собой то, чего нет в коммитах. Но записи конвейера правками не являются:
+    журнал строки пишет код, и на #1028 собственный `.task-log.md` встал поперёк
+    слияния, потому что ветка отошла раньше, чем шаблон попал в `.gitignore`.
+    """
+
+    def test_журнал_не_мешает(self):
+        from src.project.task.task_worktree import _dirty_lines
+
+        status = '?? .task-log.md\n?? .task-state.md\n'
+
+        assert _dirty_lines('/tmp', status) == []
+
+    def test_работа_мешает(self):
+        from src.project.task.task_worktree import _dirty_lines
+
+        status = ' M src/project/task/task_pipeline.py\n?? src/project/task/task_pipeline_run.py\n'
+
+        assert len(_dirty_lines('/tmp', status)) == 2
+
+    def test_журнал_среди_работы_не_прячет_её(self):
+        from src.project.task.task_worktree import _dirty_lines
+
+        status = '?? .task-log.md\n M src/app.py\n?? .task-state.md\n'
+
+        assert _dirty_lines('/tmp', status) == [' M src/app.py']
+
+    def test_похожее_имя_не_путаем(self):
+        """`.taskrc` и `.task-log.txt` журналом не являются."""
+        from src.project.task.task_worktree import _dirty_lines
+
+        status = '?? .taskrc\n?? .task-log.txt\n'
+
+        assert len(_dirty_lines('/tmp', status)) == 2

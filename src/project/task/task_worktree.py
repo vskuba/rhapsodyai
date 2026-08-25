@@ -464,6 +464,13 @@ def _owner_run_as(cwd: str) -> dict:
     return {'user': owner_uid, 'group': owner_gid, 'env': {**os.environ, 'HOME': '/tmp'}}
 
 
+# Имя журнала строки: его пишет конвейер в корень каталога подзадачи. Шаблон, а не
+# полные имена — они живут в `task_log`, а тот сам берёт отсюда каталоги, и импорт
+# в обратную сторону замкнул бы кольцо.
+TASK_WORKTREE_LOG_PREFIX = '.task-'
+TASK_WORKTREE_LOG_SUFFIX = '.md'
+
+
 def _dirty_lines(path: str, status: str) -> list[str]:
     """
     Что из `git status --porcelain` считать несохранённой работой.
@@ -478,6 +485,11 @@ def _dirty_lines(path: str, status: str) -> list[str]:
     `--ignore-submodules=all`. Их коммит выставили мы сами (`_submodule_align`), и
     сдвиг указателя — не работа агента; без этого флага ни один каталог подзадачи
     не снимался бы и ни одно слияние не проходило.
+
+    Журнал строки (`.task-*.md`) — по той же причине: его пишет конвейер, а не
+    агент. Шаблон закрыт в `.gitignore` главной ветки, но ветка подзадачи могла
+    отойти раньше, чем шаблон туда попал, — и тогда собственный журнал вставал
+    поперёк слияния. Поймано на #1028: `?? .task-log.md`, `?? .task-state.md`.
     """
     dirty = []
     for line in (status or '').splitlines():
@@ -485,9 +497,19 @@ def _dirty_lines(path: str, status: str) -> list[str]:
             continue
         if line.startswith('?? ') and os.path.islink(os.path.join(path, line[3:].strip().rstrip('/'))):
             continue
+        if _dirty_is_log(line):
+            continue
         dirty.append(line)
 
     return dirty
+
+
+def _dirty_is_log(line: str) -> bool:
+    """Строка статуса про журнал конвейера, а не про работу агента."""
+    name = os.path.basename(line[3:].strip().strip('"').rstrip('/'))
+
+    return (name.startswith(TASK_WORKTREE_LOG_PREFIX)
+            and name.endswith(TASK_WORKTREE_LOG_SUFFIX))
 
 
 async def _submodule_align(repo_dir: str, path: str) -> None:
