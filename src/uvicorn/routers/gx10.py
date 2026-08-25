@@ -25,6 +25,7 @@ router = APIRouter()
 # из ответа GET /api/gx10/status, хардкода во вкладке нет.
 GX10_SERVICES = (
     "llama-qwen-large.service",
+    "llama-qwen-medium.service",
     "llama-qwen-small.service",
     "llama-qwen-vl.service",
     "comfyui.service",

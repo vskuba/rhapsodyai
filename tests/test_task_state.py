@@ -388,3 +388,62 @@ class TestTreeDescendants:
             found = await task_tree_descendants(db, subtask_id)
 
         assert found == [subtask_id]
+
+
+class TestSessionReplaced:
+    """
+    Ожидающий прогон замечает, что адресат сменился.
+
+    Оболочку перезапускают и мимо конвейера — руками в терминале. Тогда у роли
+    появляется новая сессия, а отправленное сообщение висит в старой: отвечать
+    некому. Без проверки прогон досиживал до своего таймаута — сорок шесть минут
+    при свободной роли.
+    """
+
+    async def _session_add(self, role: str, uuid_value: str, work_dir: str = '/tmp/pytest_shell'):
+        from datetime_.datetime_ import datetime_now
+        from mysql_.mysql_ import mysql_get_db_async
+
+        seen = await datetime_now()
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "INSERT INTO ai_claude_session_registry "
+                "       (session_uuid, role, work_dir, status, agent_status, agent_status_reason, "
+                "        last_seen_at) "
+                "VALUES (%s, %s, %s, 'active', 'ready', 'idle', %s)",
+                (uuid_value, role, work_dir, seen))
+            row_id = db.lastrowid
+            await db.connection.commit()
+
+        return row_id
+
+    async def _session_drop(self, row_id: int):
+        from mysql_.mysql_ import mysql_get_db_async
+
+        async with mysql_get_db_async() as db:
+            await db.execute("DELETE FROM ai_claude_session_registry WHERE id = %s", (row_id,))
+            await db.connection.commit()
+
+    async def test_своя_сессия_не_смена(self):
+        from src.tool.claude_shell.claude_shell import _session_replaced
+
+        row_id = await self._session_add('__pytest_shell', 'uuid-первый')
+        try:
+            assert await _session_replaced('__pytest_shell', '/tmp/pytest_shell', 'uuid-первый') is False
+        finally:
+            await self._session_drop(row_id)
+
+    async def test_чужая_сессия_это_смена(self):
+        from src.tool.claude_shell.claude_shell import _session_replaced
+
+        row_id = await self._session_add('__pytest_shell', 'uuid-второй')
+        try:
+            assert await _session_replaced('__pytest_shell', '/tmp/pytest_shell', 'uuid-первый') is True
+        finally:
+            await self._session_drop(row_id)
+
+    async def test_пропавшая_сессия_сменой_не_считается(self):
+        """Оболочку могли на секунду потерять по пингу — на это есть таймаут."""
+        from src.tool.claude_shell.claude_shell import _session_replaced
+
+        assert await _session_replaced('__pytest_нет_такой', '/tmp/pytest_shell', 'uuid') is False

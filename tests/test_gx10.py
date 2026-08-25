@@ -21,6 +21,8 @@ from src.auth.auth_session import AuthSession
 SNAPSHOT_OK = (
     "S llama-qwen-large.service active enabled 10737418240\n"
     "P llama-qwen-large.service 8081\n"
+    "S llama-qwen-medium.service active disabled 6442450944\n"
+    "P llama-qwen-medium.service 8082\n"
     "S llama-qwen-small.service inactive disabled -\n"
     "P llama-qwen-small.service 8080\n"
     "S llama-qwen-vl.service failed enabled -\n"
@@ -308,3 +310,19 @@ def test_status_command_forces_c_locale_for_free():
     """
     cmd = gx10._gx10_status_command()
     assert "LC_ALL=C free -b" in cmd
+
+@pytest.mark.asyncio
+async def test_gx10_status_lists_medium(client, monkey_ssh):
+    """
+    Средняя модель — такой же управляемый юнит, как остальные.
+
+    Список юнитов задан одной константой, и фронтенд рисует его из ответа. Тест
+    держит границу: добавили сервис в `GX10_SERVICES` — он обязан появиться в
+    ответе со своим адресом, а не потеряться в разборе снапшота.
+    """
+    data = (await client.get("/api/gx10/status")).json()["gx10"]
+    by_unit = {s["unit"]: s for s in data["services"]}
+
+    assert "llama-qwen-medium.service" in by_unit
+    assert by_unit["llama-qwen-medium.service"]["state"] == "active"
+    assert by_unit["llama-qwen-medium.service"]["address"].endswith(":8082")

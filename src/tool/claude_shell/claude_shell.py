@@ -16,6 +16,7 @@ import time
 from datetime import timedelta
 
 from datetime_.datetime_ import datetime_now
+from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
 from src.project.task.task_setting_timeout import (
@@ -39,6 +40,16 @@ CLAUDE_SHELL_ROLE_DEFAULT = 'manager'
 # и свежесть пинга реестра (`timeout_shell_stale`). Здесь остаётся только шаг
 # опроса: он не настройка, а частота обращений к базе внутри ожидания.
 CLAUDE_SHELL_POLL_SECONDS = 2
+
+# Как часто, ожидая ответа, переспрашивать реестр — жива ли ещё та сессия, в
+# которую ушло сообщение. Реже опроса очереди намеренно: ожидание тянется
+# десятками минут, и проверка на каждом опросе стоила бы тысячи запросов.
+CLAUDE_SHELL_SESSION_CHECK_SECONDS = 20
+
+# Ответ, которым помечается сообщение осиротевшей сессии. Дословно тот же, что
+# пишет сама оболочка при перезапуске из конвейера: для читающего журнал это
+# одно и то же событие, и разными словами звать его незачем.
+CLAUDE_SHELL_ERROR_RESTARTED = 'Оболочка перезапущена, ответ на сообщение потерян'
 
 CLAUDE_SHELL_SESSION_STATUS_SHOWN = ('active', 'closing')
 
@@ -151,7 +162,7 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     row = await _row_wait(inbox_id, (CLAUDE_MESSAGE_STATUS_DELIVERED,
                                      CLAUDE_MESSAGE_STATUS_ANSWERED,
                                      CLAUDE_MESSAGE_STATUS_FAILED),
-                          ack_timeout)
+                          ack_timeout, role, work_dir, session_uuid)
     if row is None:
         return _result_build(
             CLAUDE_SHELL_STATUS_ACK_TIMEOUT,
@@ -164,7 +175,7 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     if row['status'] == CLAUDE_MESSAGE_STATUS_DELIVERED:
         row = await _row_wait(inbox_id, (CLAUDE_MESSAGE_STATUS_ANSWERED,
                                          CLAUDE_MESSAGE_STATUS_FAILED),
-                              timeout)
+                              timeout, role, work_dir, session_uuid)
     if row is None:
         return _result_build(
             CLAUDE_SHELL_STATUS_TIMEOUT,
@@ -285,9 +296,27 @@ async def _session_find(role: str, work_dir: str = '') -> dict | None:
     return rows[0] if rows else None
 
 
-async def _row_wait(inbox_id: int, statuses: tuple, timeout: float) -> dict | None:
-    """Опрос строки очереди до одной из целевых фаз. None — не дождались."""
+async def _row_wait(inbox_id: int, statuses: tuple, timeout: float,
+                    role: str = '', work_dir: str = '', session_uuid: str = '') -> dict | None:
+    """
+    Опрос строки очереди до одной из целевых фаз. None — не дождались.
+
+    Заодно следим, жив ли адресат. Оболочку перезапускают и мимо конвейера — руками
+    в терминале, — и тогда у роли появляется новая сессия, а наше сообщение остаётся
+    висеть в старой: отвечать на него уже некому. Без этой проверки прогон досиживал
+    до своего таймаута: сорок шесть минут ожидания при свободной роли, которая всё
+    это время простаивала.
+
+    Смена сессии возвращается как сбой доставки — той же строкой, что пишет сама
+    оболочка, когда её перезапускает конвейер. Дальше по общему пути: круг считается
+    несостоявшимся, попытка не жжётся, вход отдаётся заново.
+
+    Сессию проверяем не каждый опрос, а раз в `CLAUDE_SHELL_SESSION_CHECK_SECONDS`:
+    опрос идёт каждые две секунды, и лишний запрос в реестр на каждом из них за
+    сорок минут ожидания вылился бы в тысячу с лишним походов в базу впустую.
+    """
     deadline = time.monotonic() + max(float(timeout), 0.0)
+    checked_at = time.monotonic()
     while True:
         async with mysql_get_db_async() as db:
             await db.execute(
@@ -302,7 +331,28 @@ async def _row_wait(inbox_id: int, statuses: tuple, timeout: float) -> dict | No
         if time.monotonic() >= deadline:
             return None
 
+        if session_uuid and time.monotonic() - checked_at >= CLAUDE_SHELL_SESSION_CHECK_SECONDS:
+            checked_at = time.monotonic()
+            if await _session_replaced(role, work_dir, session_uuid):
+                logger_info(f'claude_shell: сессия роли {role} сменилась, ждать ответа больше некому')
+                return {'id': inbox_id, 'status': CLAUDE_MESSAGE_STATUS_FAILED,
+                        'response': CLAUDE_SHELL_ERROR_RESTARTED, 'handled': 0}
+
         await asyncio.sleep(CLAUDE_SHELL_POLL_SECONDS)
+
+
+async def _session_replaced(role: str, work_dir: str, session_uuid: str) -> bool:
+    """
+    У роли живёт другая сессия, не та, в которую ушло сообщение.
+
+    Пропавшая сессия сменой не считается: оболочку могли на секунду потерять по
+    пингу, и объявлять прогон сорванным из-за этого рано — на то есть таймаут.
+    Уверенный признак один: сессия есть, и она другая.
+    """
+    session = await _session_find(role, work_dir)
+    found = str((session or {}).get('session_uuid') or '')
+
+    return bool(found) and found != session_uuid
 
 
 def _payload_parse(response: str) -> dict | list:
