@@ -244,20 +244,6 @@ def task_role_planners_only(roles_by_project) -> dict[int, list[str]]:
 TASK_ROLE_SHELL_REASON_BLOCKED = 'permission'
 
 
-def _shell_project_dir(work_dir) -> str:
-    """
-    Каталог проекта по адресу оболочки: с рабочих выкладок хвост снимаем.
-
-    Роль запускают в `<проект>/.claude/worktrees`, а проекты в базе записаны
-    своим корнем. Без этого сведения оболочка роли не нашла бы свой проект,
-    попала бы в «Без проекта» и выпала из отбора работы.
-    """
-    path = _path_normalize(work_dir)
-    tail = '/' + TASK_ROLE_WORKTREES_DIR
-
-    return path[:-len(tail)] if path.endswith(tail) else path
-
-
 async def task_role_shell_live_by_project() -> dict[int, list[str]]:
     """
     Живые оболочки claude-shell в разрезе проектов: `{project_id: [role]}`.
@@ -400,3 +386,17 @@ def _path_normalize(path) -> str:
         value = value.rstrip('/')
 
     return value
+
+
+def _shell_project_dir(work_dir) -> str:
+    """
+    Каталог проекта по адресу оболочки: с рабочих выкладок хвост снимаем.
+
+    Роль запускают в `<проект>/.claude/worktrees`, а проекты в базе записаны
+    своим корнем. Без этого сведения оболочка роли не нашла бы свой проект,
+    попала бы в «Без проекта» и выпала из отбора работы.
+    """
+    path = _path_normalize(work_dir)
+    tail = '/' + TASK_ROLE_WORKTREES_DIR
+
+    return path[:-len(tail)] if path.endswith(tail) else path

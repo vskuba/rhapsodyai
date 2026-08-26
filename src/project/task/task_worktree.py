@@ -220,154 +220,6 @@ async def task_worktree_remove(repo_dir: str, subtask_id, force: bool = False) -
     return True
 
 
-def _worktree_broken(path: str) -> bool:
-    """
-    Каталог перестал быть рабочей копией: git им уже не управляет, а папка осталась.
-
-    Два вида остатков, и оба надо снести:
-
-    * **Огрызок.** `git worktree remove` снял запись реестра и файлы, но каталог
-      не убрал: внутри лежал `__pycache__`, записанный из контейнера от root, и
-      подмодуль. Остаётся дерево пустых папок с чужим байткодом — на 2.7 МБ
-      каждое, и растут они с каждой подзадачей.
-    * **Сирота.** Файл `.git` на месте, а служебной папки, на которую он смотрит,
-      нет. Так бывает при снятии из чужого корня: репозиторий виден и по `/app`, и
-      по адресу хоста, и снятый по одному адресу каталог по второму — просто папка.
-
-    Признак берём по файловой системе, а не по ответу git, и это принципиально.
-    Без `.git` git ищет репозиторий вверх по дереву и находит основной чекаут:
-    `status` отвечает состоянием чужого каталога. Живьём это выглядело как
-    «в подзадаче #1028 несохранённая работа» — на деле там был перечень правок
-    человека в корне проекта, и каталог из-за них не снимался никогда.
-
-    Путь сюда приходит только от `task_worktree_path`, то есть заведомо наш
-    `.claude/worktrees/feature_task_<номер>`; посторонние папки сюда не попадают.
-    """
-    marker = os.path.join(path, '.git')
-
-    # Настоящая рабочая копия: git ведёт каталог, снимать его должен он.
-    if os.path.isdir(marker):
-        return False
-
-    if not os.path.isfile(marker):
-        return True
-
-    try:
-        with open(marker, encoding='utf-8') as fh:
-            gitdir = fh.read().strip().removeprefix('gitdir:').strip()
-    except OSError:
-        return False
-
-    return bool(gitdir) and not os.path.exists(gitdir)
-
-
-async def _tree_drop(path: str) -> bool:
-    """
-    Снести каталог с диска. Не вышло — `False`, и вызывающий скажет об этом в лог.
-
-    Через `rm -rf` в отдельном процессе, а не `shutil.rmtree`: внутри лежат файлы
-    от разных пользователей, и `rmtree` спотыкается о первый же чужой.
-
-    **Не от владельца каталога, в отличие от `task_worktree_git`.** Внутри лежит
-    `__pycache__`, записанный из контейнера от root, а удалить файл можно только
-    имея право писать в его папку — владелец каталога такого права здесь не имеет
-    и снести огрызок не может. Это и держало каталоги на диске.
-
-    Отсюда проверка пути. Команда идёт от root и рекурсивно, поэтому снимаем
-    только своё: путь обязан лежать внутри `.claude/worktrees` и называться по
-    шаблону каталога подзадачи. Ошибка в вызывающем не должна превращаться в
-    `rm -rf` по чужой папке.
-    """
-    if not _drop_allowed(path):
-        logger_info(f'task_worktree: {path} сносить отказываюсь — это не каталог подзадачи')
-        return False
-
-    try:
-        process = await asyncio.create_subprocess_exec(
-            'rm', '-rf', path,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-        out, _ = await asyncio.wait_for(process.communicate(), timeout=TASK_WORKTREE_GIT_TIMEOUT)
-    except (OSError, asyncio.TimeoutError) as e:
-        logger_info(f'task_worktree: {path} не снести: {type(e).__name__}: {e}')
-        return False
-
-    if process.returncode:
-        logger_info(f'task_worktree: {path} не снести: {out.decode(errors="replace")[:200]}')
-        return False
-
-    return not os.path.exists(path)
-
-
-def _drop_allowed(path: str) -> bool:
-    """
-    Путь можно сносить рекурсивно: это каталог подзадачи, а не что-то ещё.
-
-    Три условия разом — родитель зовётся `worktrees` и лежит в `.claude`, имя
-    начинается с шаблона каталога подзадачи, а остаток имени — номер. Каждое по
-    отдельности обходится опечаткой, вместе — нет.
-
-    Путь приводим к абсолютному без символических ссылок: `..` в середине провёл
-    бы проверку и увёл `rm` куда угодно.
-    """
-    real = os.path.realpath(str(path or ''))
-    name = os.path.basename(real)
-    parent = os.path.dirname(real)
-
-    if os.path.join(os.path.basename(os.path.dirname(parent)), os.path.basename(parent)) \
-            != TASK_WORKTREE_BASE_DIR:
-        return False
-
-    return (name.startswith(TASK_WORKTREE_DIR_TEMPLATE.split('{')[0])
-            and name[len(TASK_WORKTREE_DIR_TEMPLATE.split('{')[0]):].isdigit())
-
-
-def _worktree_owner(path: str) -> str:
-    """
-    Корень репозитория, которому принадлежит каталог. Не выяснить — пустая строка.
-
-    Каталог подзадачи хранит обратную ссылку в своём файле `.git`:
-    `gitdir: <корень>/.git/worktrees/<имя>`. Она и есть ответ на вопрос, из какого
-    корня звать git: тот же репозиторий, видимый по другому адресу, git считает
-    чужим и снимать каталог отказывается.
-    """
-    marker = '/.git/worktrees/'
-    try:
-        with open(os.path.join(path, '.git'), encoding='utf-8') as fh:
-            gitdir = fh.read().strip()
-    except OSError:
-        return ''
-
-    gitdir = gitdir.removeprefix('gitdir:').strip()
-
-    return gitdir.split(marker)[0] if marker in gitdir else ''
-
-
-async def _worktree_registered(repo_dir: str, path: str) -> str:
-    """
-    Путь каталога так, как он записан у git. Не нашёлся — отдаём как есть.
-
-    Сверяем по имени каталога: оно собрано из номера строки и уникально, а вот
-    полный путь у одного и того же каталога бывает разным — репозиторий виден
-    и по `/app`, и по адресу хоста.
-    """
-    name = os.path.basename(str(path or "").rstrip("/"))
-    if not name:
-        return path
-
-    code, out = await task_worktree_git(repo_dir, 'worktree', 'list', '--porcelain')
-    if code:
-        return path
-
-    for line in out.splitlines():
-        if not line.startswith('worktree '):
-            continue
-        found = line[len('worktree '):].strip()
-        if os.path.basename(found.rstrip('/')) == name:
-            return found
-
-    return path
-
-
 async def task_worktree_remove_tree(repo_dir: str, task_ids) -> dict:
     """
     Снять каталоги удалённых строк — своей и всех, что ушли с ней каскадом.
@@ -955,3 +807,151 @@ async def _shared_names(repo_dir: str) -> list[str]:
         names.append(name)
 
     return names
+
+
+def _worktree_broken(path: str) -> bool:
+    """
+    Каталог перестал быть рабочей копией: git им уже не управляет, а папка осталась.
+
+    Два вида остатков, и оба надо снести:
+
+    * **Огрызок.** `git worktree remove` снял запись реестра и файлы, но каталог
+      не убрал: внутри лежал `__pycache__`, записанный из контейнера от root, и
+      подмодуль. Остаётся дерево пустых папок с чужим байткодом — на 2.7 МБ
+      каждое, и растут они с каждой подзадачей.
+    * **Сирота.** Файл `.git` на месте, а служебной папки, на которую он смотрит,
+      нет. Так бывает при снятии из чужого корня: репозиторий виден и по `/app`, и
+      по адресу хоста, и снятый по одному адресу каталог по второму — просто папка.
+
+    Признак берём по файловой системе, а не по ответу git, и это принципиально.
+    Без `.git` git ищет репозиторий вверх по дереву и находит основной чекаут:
+    `status` отвечает состоянием чужого каталога. Живьём это выглядело как
+    «в подзадаче #1028 несохранённая работа» — на деле там был перечень правок
+    человека в корне проекта, и каталог из-за них не снимался никогда.
+
+    Путь сюда приходит только от `task_worktree_path`, то есть заведомо наш
+    `.claude/worktrees/feature_task_<номер>`; посторонние папки сюда не попадают.
+    """
+    marker = os.path.join(path, '.git')
+
+    # Настоящая рабочая копия: git ведёт каталог, снимать его должен он.
+    if os.path.isdir(marker):
+        return False
+
+    if not os.path.isfile(marker):
+        return True
+
+    try:
+        with open(marker, encoding='utf-8') as fh:
+            gitdir = fh.read().strip().removeprefix('gitdir:').strip()
+    except OSError:
+        return False
+
+    return bool(gitdir) and not os.path.exists(gitdir)
+
+
+async def _tree_drop(path: str) -> bool:
+    """
+    Снести каталог с диска. Не вышло — `False`, и вызывающий скажет об этом в лог.
+
+    Через `rm -rf` в отдельном процессе, а не `shutil.rmtree`: внутри лежат файлы
+    от разных пользователей, и `rmtree` спотыкается о первый же чужой.
+
+    **Не от владельца каталога, в отличие от `task_worktree_git`.** Внутри лежит
+    `__pycache__`, записанный из контейнера от root, а удалить файл можно только
+    имея право писать в его папку — владелец каталога такого права здесь не имеет
+    и снести огрызок не может. Это и держало каталоги на диске.
+
+    Отсюда проверка пути. Команда идёт от root и рекурсивно, поэтому снимаем
+    только своё: путь обязан лежать внутри `.claude/worktrees` и называться по
+    шаблону каталога подзадачи. Ошибка в вызывающем не должна превращаться в
+    `rm -rf` по чужой папке.
+    """
+    if not _drop_allowed(path):
+        logger_info(f'task_worktree: {path} сносить отказываюсь — это не каталог подзадачи')
+        return False
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            'rm', '-rf', path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        out, _ = await asyncio.wait_for(process.communicate(), timeout=TASK_WORKTREE_GIT_TIMEOUT)
+    except (OSError, asyncio.TimeoutError) as e:
+        logger_info(f'task_worktree: {path} не снести: {type(e).__name__}: {e}')
+        return False
+
+    if process.returncode:
+        logger_info(f'task_worktree: {path} не снести: {out.decode(errors="replace")[:200]}')
+        return False
+
+    return not os.path.exists(path)
+
+
+def _drop_allowed(path: str) -> bool:
+    """
+    Путь можно сносить рекурсивно: это каталог подзадачи, а не что-то ещё.
+
+    Три условия разом — родитель зовётся `worktrees` и лежит в `.claude`, имя
+    начинается с шаблона каталога подзадачи, а остаток имени — номер. Каждое по
+    отдельности обходится опечаткой, вместе — нет.
+
+    Путь приводим к абсолютному без символических ссылок: `..` в середине провёл
+    бы проверку и увёл `rm` куда угодно.
+    """
+    real = os.path.realpath(str(path or ''))
+    name = os.path.basename(real)
+    parent = os.path.dirname(real)
+
+    if os.path.join(os.path.basename(os.path.dirname(parent)), os.path.basename(parent)) \
+            != TASK_WORKTREE_BASE_DIR:
+        return False
+
+    return (name.startswith(TASK_WORKTREE_DIR_TEMPLATE.split('{')[0])
+            and name[len(TASK_WORKTREE_DIR_TEMPLATE.split('{')[0]):].isdigit())
+
+
+def _worktree_owner(path: str) -> str:
+    """
+    Корень репозитория, которому принадлежит каталог. Не выяснить — пустая строка.
+
+    Каталог подзадачи хранит обратную ссылку в своём файле `.git`:
+    `gitdir: <корень>/.git/worktrees/<имя>`. Она и есть ответ на вопрос, из какого
+    корня звать git: тот же репозиторий, видимый по другому адресу, git считает
+    чужим и снимать каталог отказывается.
+    """
+    marker = '/.git/worktrees/'
+    try:
+        with open(os.path.join(path, '.git'), encoding='utf-8') as fh:
+            gitdir = fh.read().strip()
+    except OSError:
+        return ''
+
+    gitdir = gitdir.removeprefix('gitdir:').strip()
+
+    return gitdir.split(marker)[0] if marker in gitdir else ''
+
+
+async def _worktree_registered(repo_dir: str, path: str) -> str:
+    """
+    Путь каталога так, как он записан у git. Не нашёлся — отдаём как есть.
+
+    Сверяем по имени каталога: оно собрано из номера строки и уникально, а вот
+    полный путь у одного и того же каталога бывает разным — репозиторий виден
+    и по `/app`, и по адресу хоста.
+    """
+    name = os.path.basename(str(path or "").rstrip("/"))
+    if not name:
+        return path
+
+    code, out = await task_worktree_git(repo_dir, 'worktree', 'list', '--porcelain')
+    if code:
+        return path
+
+    for line in out.splitlines():
+        if not line.startswith('worktree '):
+            continue
+        found = line[len('worktree '):].strip()
+        if os.path.basename(found.rstrip('/')) == name:
+            return found
+
+    return path
