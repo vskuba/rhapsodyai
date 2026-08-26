@@ -4,7 +4,7 @@ from config.config import config_get
 from logging_.logging_ import logger_info
 
 
-async def telegram_send_owner(text: str):
+async def telegram_notify_send_owner(text: str):
     """
     Отправляет сообщение владельцу бота напрямую через Telegram Bot API (HTTP,
     без aiogram - в процессе uvicorn эта библиотека не установлена, она нужна

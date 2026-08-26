@@ -10,7 +10,7 @@ from src.mysql_.repository.ai_claude_session_registry_repository import AiClaude
 from src.mysql_.repository.project.team_repository import ProjectTeamRepository
 from src.project.team.team_member import team_member_get_by_role
 from src.project.team.team_project import team_project_id_by_work_dir
-from src.telegram_.telegram_notify import telegram_send_owner
+from src.telegram_.telegram_notify import telegram_notify_send_owner
 from src.tool.claude_.claude_ import claude_message_user
 from src.uvicorn.routers.telegram_app.telegram_app_common import (
     _require_telegram_owner,
@@ -358,7 +358,7 @@ async def telegram_app_claude_session_restart_processes(request: Request, data: 
     # (inbox не читается) — Telegram MCP в терминале получит это сообщение
     # и разбудит агента, который перезапустит watch/Monitor вручную.
     try:
-        await telegram_send_owner(
+        await telegram_notify_send_owner(
             f"🔄 Запрос перезапуска процессов сессии из Mini App\n"
             f"Сессия: {row.get('project_label')} / {row.get('role')}\n"
             f"watch alive: {'да' if status['watch_alive'] else 'нет'}"
