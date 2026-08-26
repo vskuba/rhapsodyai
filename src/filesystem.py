@@ -3,7 +3,7 @@ import platform
 import subprocess
 
 
-def open_file_in_editor(path):
+def filesystem_open_file_in_editor(path):
     """
     Открывает файл в Windows/Linux, чтобы пользователь его отредактировал.
     Арументы функции:
