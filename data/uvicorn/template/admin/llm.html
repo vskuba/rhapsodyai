@@ -256,6 +256,9 @@
     .io-chip.audio   { background: #fffaf0; color: #dd6b20; }
     .io-chip.video   { background: #fff5f5; color: #c53030; }
     .io-chip.embeddings { background: #ebf8ff; color: #2b6cb0; }
+    /* Запрет размышлений — свойство самой модели, а не её входов и выходов,
+       поэтому чипс отделён от пары «вход → выход» своим цветом. */
+    .io-chip.no-reasoning { background: #fffaf0; color: #c05621; }
 
     .io-arrow {
         font-size: 10px;
@@ -977,15 +980,29 @@
     }
 
     /* ===================== IO type chips ===================== */
-    function buildIoChips(inputType, outputType) {
+    function buildIoChips(inputType, outputType, reasoningDisable) {
         const wrap = document.createElement('span');
         wrap.className = 'io-type-chips';
 
         const inputs = (inputType || 'text').split(',').map(s => s.trim()).filter(Boolean);
         const outputs = (outputType || 'text').split(',').map(s => s.trim()).filter(Boolean);
 
+        // Запрет размышлений добавляем до раннего выхода: у обычной text→text
+        // модели пары чипсов нет, а пометка нужна и ей.
+        const noReasoning = () => {
+            if (!Number(reasoningDisable)) return;
+            const chip = document.createElement('span');
+            chip.className = 'io-chip no-reasoning';
+            chip.textContent = 'no reasoning';
+            chip.title = 'Размышления этой модели запрещены настройкой (Управление LLM)';
+            wrap.appendChild(chip);
+        };
+
         // Skip rendering if both are just 'text' (default, not interesting)
-        if (inputs.join(',') === 'text' && outputs.join(',') === 'text') return wrap;
+        if (inputs.join(',') === 'text' && outputs.join(',') === 'text') {
+            noReasoning();
+            return wrap;
+        }
 
         inputs.forEach(t => {
             const chip = document.createElement('span');
@@ -1005,6 +1022,8 @@
             chip.textContent = t;
             wrap.appendChild(chip);
         });
+
+        noReasoning();
 
         return wrap;
     }
@@ -1205,7 +1224,8 @@
             row.appendChild(posCell);
 
             const nameCell = el('td', 'llm-model-name', llm.name);
-            nameCell.appendChild(buildIoChips(llm.input_type, llm.output_type));
+            nameCell.appendChild(buildIoChips(llm.input_type, llm.output_type,
+                                              llm.reasoning_disable));
             if (llm.active) nameCell.appendChild(el('span', 'active-mark', 'активная'));
             row.appendChild(nameCell);
 
@@ -1472,9 +1492,11 @@
     // и пометка на каждой второй строке была бы шумом.
     function reasoningBadge(disabled) {
         if (!Number(disabled)) return '<span style="color:#cbd5e0;font-size:11px;">—</span>';
+        // Подпись та же, что у чипса на «Мониторинге»: одна пометка на двух
+        // вкладках должна читаться как одна, а не как два разных признака.
         return '<span title="Размышления модели запрещены" '
              + 'style="background:#dd6b201a;color:#dd6b20;border-radius:3px;'
-             + 'padding:1px 5px;font-size:11px;">запрещены</span>';
+             + 'padding:1px 5px;font-size:11px;">no reasoning</span>';
     }
 
     async function renderCrud() {

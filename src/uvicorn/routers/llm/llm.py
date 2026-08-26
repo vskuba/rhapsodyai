@@ -71,7 +71,8 @@ async def llm_status(node_id: int | None = None, reset_seconds: int | None = Non
         # Порядок отображения — приоритет (position), как настроено в node_llm
         await db.execute(
             """
-            SELECT l.id, l.name, nl.position, nl.rate_limit_at, nl.code_error
+            SELECT l.id, l.name, l.input_type, l.output_type, l.reasoning_disable,
+                   nl.position, nl.rate_limit_at, nl.code_error
             FROM node_llm nl
             JOIN llm l ON l.id = nl.llm_id
             WHERE nl.node_id = %s
@@ -147,6 +148,11 @@ async def llm_status(node_id: int | None = None, reset_seconds: int | None = Non
                 'id': row['id'],
                 'name': row['name'],
                 'provider': ai_llm_provider(row['name']),
+                'input_type': row['input_type'],
+                'output_type': row['output_type'],
+                # Мониторинг помечает такие модели чипсом: размышления влияют и на
+                # время ответа, и на расход токенов, а обе эти цифры тут же рядом.
+                'reasoning_disable': int(row['reasoning_disable'] or 0),
                 'position': row['position'],
                 'rate_limit_at': str(row['rate_limit_at']) if row['rate_limit_at'] else None,
                 'code_error': row['code_error'],
