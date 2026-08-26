@@ -121,6 +121,16 @@ TASK_LOG_STATES_IN_FLIGHT = ('planning', 'reviewing', 'developing', 'testing', '
 # ответе API — отдаём хвост, а не весь файл.
 TASK_LOG_READ_MAX_CHARS = 40000
 
+# Потолок для хронологии оболочки — свой и больше общего. Ответы оболочки в неё
+# кладутся целиком (`TASK_LOG_SHELL_ANSWER_MAX`), и одна строка там весит не
+# двести символов, а тысячи: с общим потолком в хвост влезал бы последний круг, а
+# предыдущие вытеснялись бы — при том, что смотрят в этот файл как раз чтобы
+# сравнить круги между собой.
+#
+# Роль от этого не толстеет: файл идёт только на страницу (`task_log_read`), а
+# промпт следующего круга собирается из `TASK_LOG_FILE`, у которого потолок общий.
+TASK_LOG_READ_SHELL_MAX_CHARS = 150000
+
 # Под каким ключом в наборе пересказов лежит итог круга. Шаги нумеруются с нуля, и
 # отрицательное число с ними не столкнётся.
 TASK_LOG_SUMMARY_OUTCOME_KEY = -1
@@ -159,7 +169,8 @@ async def task_log_read(repo_dir: str, task_id) -> dict:
     """
     directory = task_log_dir(repo_dir, task_id)
     log = _blocks_merge(_read_tail(os.path.join(directory, TASK_LOG_FILE)),
-                        _read_tail(os.path.join(directory, TASK_SHELL_FILE)),
+                        _read_tail(os.path.join(directory, TASK_SHELL_FILE),
+                                   TASK_LOG_READ_SHELL_MAX_CHARS),
                         _read_tail(os.path.join(directory, TASK_DECISION_FILE)))
 
     live = await _live_block(task_id)
@@ -1011,15 +1022,26 @@ def _one_line(text) -> str:
     return ' '.join(str(text or '').replace('\\n', ' ').replace('\\t', ' ').split())
 
 
-def _read_tail(path: str) -> str:
-    """Хвост файла до потолка. Нет файла или не читается — пустая строка."""
+def _read_tail(path: str, limit: int = TASK_LOG_READ_MAX_CHARS) -> str:
+    """
+    Хвост файла до потолка. Нет файла или не читается — пустая строка.
+
+    Потолок параметром, потому что у хронологии оболочки он свой: строки там
+    длиннее на порядок, а читает её только человек.
+
+    Обрезаем по границе строки, а не по символу: разрезанное посередине событие
+    теряет метку времени, и `_blocks_merge` уносит его огрызок сортировкой в
+    случайное место блока — читается это как чужой обрывок текста.
+    """
     try:
         with open(path, encoding='utf-8', errors='replace') as fh:
             text = fh.read()
     except OSError:
         return ''
 
-    if len(text) <= TASK_LOG_READ_MAX_CHARS:
+    if len(text) <= limit:
         return text
 
-    return '…начало журнала обрезано…\n' + text[-TASK_LOG_READ_MAX_CHARS:]
+    tail = text[-limit:]
+
+    return '…начало журнала обрезано…\n' + tail[tail.find('\n') + 1:]
