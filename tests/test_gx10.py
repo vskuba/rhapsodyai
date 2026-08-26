@@ -65,14 +65,14 @@ def monkey_ssh(monkeypatch):
         "GX10_USERNAME": "rhapsody",
         "GX10_PASSWORD": "secret",
     }.get(key, default))
-    monkeypatch.setattr("src.auth.auth.get_current_user", _fake_user)
+    monkeypatch.setattr("src.auth.auth.auth_get_current_user", _fake_user)
     gx10.gx10_status_cache_reset()
     return {"calls": calls, "state": state}
 
 
 @pytest.fixture
 def app(monkeypatch):
-    monkeypatch.setattr("src.auth.auth.get_current_user", _fake_user)
+    monkeypatch.setattr("src.auth.auth.auth_get_current_user", _fake_user)
     application = FastAPI()
     application.include_router(gx10.router)
     return application

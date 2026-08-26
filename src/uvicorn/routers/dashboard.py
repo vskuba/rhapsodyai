@@ -8,7 +8,7 @@ from jinja2 import TemplateNotFound
 
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get_all
-from src.auth.auth import get_current_user
+from src.auth.auth import auth_get_current_user
 from src.auth.auth_session import AuthSession
 
 router = APIRouter()
@@ -45,7 +45,7 @@ async def require_auth(request: Request) -> AuthSession:
     """Dependency that requires authentication for HTML routes.
     Redirects to login if not authenticated (401), re-raises 403."""
     try:
-        user = await get_current_user(request)
+        user = await auth_get_current_user(request)
         return user
     except HTTPException as e:
         # Only redirect on 401 (not authenticated)

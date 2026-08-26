@@ -62,7 +62,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `src/uvicorn/routers/` | All API endpoints |
 | `src/uvicorn/routers/dashboard.py` | HTML admin page routes + `require_auth` |
 | `src/telegram_bot.py` | Telegram bot handler |
-| `src/auth/auth.py` | `AuthChecker`, `get_current_user` |
+| `src/auth/auth.py` | `AuthChecker`, `auth_get_current_user` |
 | `src/cronjob/` | Cron job entry points |
 | `src/worker/` | Все воркеры (Redis/rq): `project/task_worker.py` — очередь `default`, `project/planning_worker.py` — очередь `planning` |
 | `migrations/0001.sql` | Единственный источник схемы БД |
