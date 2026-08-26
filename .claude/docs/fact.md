@@ -1,5 +1,10 @@
 # Fact — факты и коллекции фактов (Qdrant-синхронизация)
 
+> Два роутера в одной подсистеме: fact.py (факты: список с пагинацией,
+> обновление, удаление, пересинк в Qdrant) и fact_collection.py (CRUD
+> коллекций). Не-админы видят только собственные факты — по `fact.user_id`.
+> Поля фактов динамические: набор задаёт `fact_collection.field`.
+
 `fact` — хранилище фактов по коллекциям. `fact_collection` описывает
 коллекцию: `name` (системное имя, по нему Qdrant-коллекция), `field` — строка
 списком допустимых полей фактов (`document_id,category,language,document,tags`
@@ -9,11 +14,6 @@
 (агентский `name`, см. agent.md). Связка MySQL ↔ Qdrant: флаг `qdrant_synced`
 и крон `src/cronjob/fact/fact_qdrant_sync.py` (входит в общий механизм кронов,
 см. architecture.md).
-
-> Два роутера в одной подсистеме: fact.py (факты: список с пагинацией,
-> обновление, удаление, пересинк в Qdrant) и fact_collection.py (CRUD
-> коллекций). Не-админы видят только собственные факты — по `fact.user_id`.
-> Поля фактов динамические: набор задаёт `fact_collection.field`.
 
 ## 1. Роуты фактов — `src/uvicorn/routers/fact/fact.py`
 
