@@ -1127,7 +1127,7 @@
        Накопленные замеры работы ролей: объём контекста против времени, токенов и
        правок. Таблицы плотные и числовые, поэтому моноширинные цифры и выравнивание
        по правому краю — колонку чисел читают сверху вниз, а не по строкам. */
-    .stat-pane { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; padding: 0 0 8px; }
+    .stat-pane { padding: 10px;flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
     .stat-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
     .stat-title { font-size: 14px; font-weight: 700; color: #0f172a; }
     .stat-scope { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 5px; cursor: pointer; }
@@ -1147,6 +1147,20 @@
     .stat-card-k { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .03em; }
 
     .stat-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; }
+
+    /* Переключатель таблиц. Повторяет общий `.page-tab`, но мельче: это вкладки
+       внутри вкладки, и в один рост с верхними они спорили бы за главную роль. */
+    .stat-tabs { display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; margin-top: 2px; }
+    .stat-tab {
+        padding: 6px 14px; font-size: 12px; font-weight: 600; color: #718096;
+        cursor: pointer; border: none; background: none;
+        border-bottom: 2px solid transparent; margin-bottom: -2px;
+        transition: color .15s, border-color .15s;
+    }
+    .stat-tab.active { color: #2c3e50; border-bottom-color: #3498db; }
+    .stat-tab:hover:not(.active) { color: #4a5568; }
+    .stat-tab-n { font-size: 11px; color: #a0aec0; font-variant-numeric: tabular-nums; }
+    .stat-tab.active .stat-tab-n { color: inherit; opacity: .75; }
     .stat-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
     .stat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .stat-table th {
@@ -1156,6 +1170,21 @@
     .stat-table td { padding: 5px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
     .stat-table tr:last-child td { border-bottom: none; }
     .stat-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Полосы группировки: соседние строки одной задачи (в «замерах») или одной
+       роли (в «средних») лежат на общем фоне. Читают эти таблицы сверху вниз, и
+       без полос граница группы теряется — номер строки меняется, а глазом это
+       не ловится.
+
+       Цвет в обеих таблицах один: группы там разные по смыслу, но роль у полосы
+       одна, и два оттенка читались бы как разные сущности. Оттенок едва заметный —
+       он размечает, а не выделяет: выделять в этих таблицах нужно числа. */
+    .stat-table tr.band-b td { background: #f8fafc; }
+    .stat-table tr.band-a td { background: #fff; }
+    /* Первая строка новой группы: тонкая черта сверху. Одного фона мало, когда
+       две соседние группы случайно попали на один оттенок. */
+    .stat-table tr.band-start td { border-top: 1px solid #e2e8f0; }
+    .stat-table tr.band-start:first-child td { border-top: none; }
     /* Столбец, ради которого таблица и заведена: сколько секунд стоит тысяча
        строк контекста. По нему и подбирают порог разбиения. */
     .stat-table .rate { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: #1d4ed8; }
@@ -1667,10 +1696,16 @@
             <button class="stat-refresh" onclick="statLoad()">Обновить</button>
         </div>
         <div class="stat-totals" id="statTotals"></div>
-        <div class="stat-section">Средние по роли и шагу</div>
-        <div class="stat-table-wrap"><table class="stat-table" id="statSummary"></table></div>
-        <div class="stat-section">Последние замеры</div>
-        <div class="stat-table-wrap"><table class="stat-table" id="statRows"></table></div>
+        <!-- Две таблицы вкладками, а не одна под другой: смотрят в них по
+             очереди — сначала «сколько это обычно стоит», потом «а что было в
+             конкретном круге», — и вторая таблица под первой только уводила
+             прокрутку от карточек итогов. -->
+        <div class="stat-tabs" id="statTabs">
+            <button class="stat-tab active" data-stat="summary">Средние по роли и шагу</button>
+            <button class="stat-tab" data-stat="rows">Последние замеры <span class="stat-tab-n" id="statTabRowsN"></span></button>
+        </div>
+        <div class="stat-table-wrap" id="statPaneSummary"><table class="stat-table" id="statSummary"></table></div>
+        <div class="stat-table-wrap" id="statPaneRows" style="display:none"><table class="stat-table" id="statRows"></table></div>
     </div>
 
     <div class="log-pane" id="logPane" style="display:none">
@@ -4190,7 +4225,27 @@ async function statLoad() {
     statRenderTotals(data.totals || {});
     statRenderSummary(data.summary || []);
     statRenderRows(data.rows || []);
+
+    // Число замеров прямо во вкладке: по нему видно, есть ли смысл туда идти, —
+    // не открывая её. Та же логика, что у счётчиков в верхних вкладках.
+    const n = document.getElementById('statTabRowsN');
+    if (n) n.textContent = (data.rows || []).length ? `(${(data.rows || []).length})` : '';
 }
+
+// Переключение таблиц. Выбранная вкладка не запоминается между открытиями: на
+// статистику заходят за средними, и возвращать человека в «последние замеры»
+// только потому, что он туда однажды заглянул, значило бы прятать главное.
+function statTabSelect(name) {
+    document.querySelectorAll('#statTabs .stat-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.stat === name);
+    });
+    document.getElementById('statPaneSummary').style.display = name === 'summary' ? '' : 'none';
+    document.getElementById('statPaneRows').style.display = name === 'rows' ? '' : 'none';
+}
+
+document.querySelectorAll('#statTabs .stat-tab').forEach(tab => {
+    tab.addEventListener('click', () => statTabSelect(tab.dataset.stat));
+});
 
 // Список задач для разреза приходит от сервера вместе с данными, и строится он по
 // самой таблице замеров, а не по дереву задач на странице.
@@ -4239,7 +4294,7 @@ function statRenderSummary(rows) {
     const head = ['роль', 'шаг', 'кругов', 'строк', 'сек', 'макс', 'токенов', 'ток/с', 'с/1000'];
     table.innerHTML = '<tr>' + head.map((h, i) =>
         `<th class="${i >= 2 ? 'num' : ''}">${esc(h)}</th>`).join('') + '</tr>'
-      + rows.map(r => '<tr>'
+      + rows.map((r, i) => `<tr class="${statBand(rows, i, x => x.role)}">`
           + `<td>${esc(r.role || '—')}</td>`
           + `<td>${esc(r.step_title || '—')}</td>`
           + `<td class="num">${r.runs || 0}</td>`
@@ -4261,7 +4316,7 @@ function statRenderRows(rows) {
     const head = ['строка', 'задача', 'роль', 'шаг', 'круг', 'строк', 'код', 'сек', 'токенов', 'ток/с', ''];
     table.innerHTML = '<tr>' + head.map((h, i) =>
         `<th class="${i >= 4 ? 'num' : ''}">${esc(h)}</th>`).join('') + '</tr>'
-      + rows.map(r => '<tr>'
+      + rows.map((r, i) => `<tr class="${statBand(rows, i, x => x.task_id)}">`
           + `<td class="num">#${r.task_id}</td>`
           + `<td class="${r.task_gone ? 'stat-gone' : ''}" title="${r.task_gone ? 'задача удалена, замер сохранён' : ''}">`
           + `${esc(String(r.title || '—').slice(0, 40))}${r.task_gone ? ' (удалена)' : ''}</td>`
@@ -4290,6 +4345,24 @@ async function statDelete(taskId) {
         return;
     }
     statLoad();
+}
+
+// Класс полосы для строки: чередуем фон при смене группы, а не через строку.
+// Через строку — это зебра, она размечает единицы; здесь размечаются группы, и
+// полоса обязана держаться, пока группа не кончилась.
+//
+// `key` — чем группа определяется: задачей в «замерах», ролью в «средних».
+// Обе выборки приходят уже отсортированными по этому ключу (`task_metric`:
+// замеры — по номеру строки убыванием, средние — по роли), поэтому достаточно
+// сравнить с предыдущей строкой, не собирая группы заранее.
+function statBand(rows, i, key) {
+    let band = 0;
+    for (let n = 1; n <= i; n++) {
+        if (key(rows[n]) !== key(rows[n - 1])) band++;
+    }
+    const start = i === 0 || key(rows[i]) !== key(rows[i - 1]);
+
+    return `${band % 2 ? 'band-b' : 'band-a'}${start ? ' band-start' : ''}`;
 }
 
 function statNum(v) {

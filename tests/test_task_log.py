@@ -535,3 +535,64 @@ class TestShellBlocks:
 
         assert line == '17:19:05  запрос    оболочка manager: оболочка перезапущена\n'
         assert not line.rstrip().endswith(':'), 'висящее двоеточие читается как потерянное значение'
+
+
+class TestHonestReportIsNotBlocker:
+    """
+    `ok: false` сам по себе затыком не считается.
+
+    Роль отвечает так и когда работала честно: «переименовал девять функций, но
+    остановился на развилке» — это состоявшийся ход с содержанием. Помечать его
+    наравне с мёртвой оболочкой значит врать: человек ищет в журнале, где всё
+    встало, и красная пометка на нормальном ответе уводит его не туда.
+
+    Поймано вживую на #1626: строка «10:58:27 затык Ответ JSON: отчёт» стояла
+    рядом с тем же текстом, помеченным «ответ», — один и тот же ответ LLM с двумя
+    разными ярлыками.
+
+    Отличаем по содержанию: у заглушки несостоявшегося прогона его нет — пустой
+    отчёт и текст ошибки вместо работы.
+    """
+
+    STUB = ('json:{"env_ok": false, "ok": false, "report": {}, '
+            '"error": "Разработчик не ответил. Статус: timeout"}')
+    REAL = ('json:{"dev_report_json": {"ok": false, "summary": '
+            '"Переименовал 9 публичных инструментов в 3 файлах"}}')
+
+    def test_stub_without_work_is_a_blocker(self):
+        from src.project.task.task_log import _step_failed
+
+        assert _step_failed(_step('Разработчик недоступен', self.STUB))
+
+    def test_short_stub_without_report_is_a_blocker(self):
+        """Заглушка бывает и без ключа `report` — отличает её отсутствие сути."""
+        from src.project.task.task_log import _step_failed
+
+        assert _step_failed(_step('QA недоступен', 'json:{"ok": false, "error": "QA не ответил"}'))
+
+    def test_report_with_work_is_not_a_blocker(self):
+        from src.project.task.task_log import _step_failed
+
+        assert not _step_failed(_step('Ответ JSON: отчёт', self.REAL))
+
+    def test_qa_verdict_with_work_is_not_a_blocker(self):
+        """Вердикт «не принято» — тоже состоявшаяся работа, а не затык."""
+        from src.project.task.task_log import _step_failed
+
+        output = ('json:{"qa_report_json": {"ok": false, '
+                  '"verdict": "цель закрыта, но документация устарела"}}')
+
+        assert not _step_failed(_step('Ответ JSON: вердикт', output))
+
+    def test_line_keyword_follows(self):
+        """Ярлык строки journal идёт за тем же решением."""
+        from src.project.task.task_log import _step_line
+
+        assert 'сделал' in _step_line(_step('Ответ JSON: отчёт', self.REAL))
+        assert 'затык' in _step_line(_step('Разработчик недоступен', self.STUB))
+
+    def test_dead_shell_still_a_blocker(self):
+        """Статус вызова оболочки проверяется отдельно и остаётся затыком."""
+        from src.project.task.task_log import _step_failed
+
+        assert _step_failed(_step('Разработчик: реализация', SHELL_TIMEOUT))

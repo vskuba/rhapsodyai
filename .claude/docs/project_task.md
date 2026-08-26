@@ -984,7 +984,7 @@ QA, а «оболочка не ответила» замечанием не яв
   повторяется ровно один раз.
 
 Все таблицы конвейера — runtime-данные, **в seed не добавлять**. Схема живёт только в
-`migrations/0001.sql`.
+`migrations/20260101000000_initial_schema.sql`.
 
 ## 6. API
 
@@ -1093,7 +1093,7 @@ CRUD — `project_task.py`, конвейер — `project_task_pipeline.py`. К�
 | `tests/test_task_metric.py` | счётчики модели, дельта, разбор токенов из ответа инструмента |
 | `tests/test_task_worktree.py` | остатки снятых каталогов и защита рекурсивного сноса |
 | `tests/test_task_tree.py` | тесты дерева задач |
-| `migrations/0001.sql` | `project_task`, `project_task_attempt`, `project_task_plan_revision`, `project_task_metric` |
+| `migrations/20260101000000_initial_schema.sql` | `project_task`, `project_task_attempt`, `project_task_plan_revision`, `project_task_metric` |
 
 ## 9. Проверка
 
@@ -1164,7 +1164,7 @@ CRUD — `project_task.py`, конвейер — `project_task_pipeline.py`. К�
   строку и отдаёт `rowcount = 1`. Захват выглядит удавшимся, человеческий статус
   меняется, а строка залипает навсегда — реклейм ищет своё состояние, следующий тик
   ищет NULL или `new`, и пустую строку не видит ни один. Так вышло с `bugfixing`:
-  значение забыли в `migrations/0001.sql`, и поймала это только проверка на живой базе.
+  значение забыли в `migrations/20260101000000_initial_schema.sql`, и поймала это только проверка на живой базе.
   Теперь расхождение кода и схемы ловит `TestPipelineStateEnum` в
   `tests/test_task_role_bugfixer.py`. Порядок значений в ENUM менять нельзя — он
   хранится числом, перестановка переписала бы состояния существующих строк; новое
@@ -1189,13 +1189,13 @@ CRUD — `project_task.py`, конвейер — `project_task_pipeline.py`. К�
   Проверяющая роль в каждый момент одна, и это принято сознательно. У другого проекта машины
   свой `./task_server.sh` и свой порт — пересечения нет, но следить за занятостью портов
   между проектами приходится человеку: общего реестра нет
-- **Прод: изменения схемы не приедут сами.** `migrations/0001.sql` там помечен
+- **Прод: изменения схемы не приедут сами.** `migrations/20260101000000_initial_schema.sql` там помечен
   применённым (19.07.2026), yoyo повторно его не гоняет — всё, что дописано в файл
   после этой даты, доезжает только руками. Как подключаться — `database.md`,
   раздел «Connecting to Prod MySQL».
 
   **07.08.2026 применено:** `task` (0 строк, без входящих FK) заменена на
-  `project_task` + `project_task_subtask` + `project_task_attempt` по DDL из `0001.sql`;
+  `project_task` + `project_task_subtask` + `project_task_attempt` по DDL из `20260101000000_initial_schema.sql`;
   заодно доехали 4 колонки в `llm` (`input_type`, `output_type`, `chunk_size`,
   `chunk_size_refresh_at`) — без них `src/ai/ai_llm.py:231` падал с ошибкой 1054.
   Вариант с `RENAME TABLE` не годился: `task_subtask`/`task_attempt` на проде не
@@ -1207,10 +1207,10 @@ CRUD — `project_task.py`, конвейер — `project_task_pipeline.py`. К�
   молча (см. «Известные ограничения»).
 
   Расхождения, оставленные сознательно: `node.migration_file` и таблица
-  `detective_case` — наследие удалённых фич, в `0001.sql` их нет; `tinyint(4)` против
+  `detective_case` — наследие удалённых фич, в `20260101000000_initial_schema.sql` их нет; `tinyint(4)` против
   `tinyint` — MySQL 8.0.19+ просто не хранит display width, это не дрейф.
 
-  **Ещё не на проде** (появилось в `0001.sql` после 07.08): переименованные значения
+  **Ещё не на проде** (появилось в `20260101000000_initial_schema.sql` после 07.08): переименованные значения
   ENUM `pipeline_state` (`pending_approval` → `plan_approval`, `review` → `reviewing`,
   `split` → `processing`), таблица `project_task_plan_revision`, слияние
   `project_task_subtask` в `project_task` и колонка `metadata`.
@@ -1242,7 +1242,7 @@ CRUD — `project_task.py`, конвейер — `project_task_pipeline.py`. К�
       ADD COLUMN `metadata` JSON NULL COMMENT 'Произвольные данные задачи: {ключ: значение}' AFTER `trace_meta`;
   -- project_task_attempt: subtask_id -> task_id с FK на project_task (DDL см. в 0001.sql)
   DROP TABLE IF EXISTS `project_task_subtask`;
-  -- + CREATE TABLE `project_task_plan_revision` (DDL см. в migrations/0001.sql)
+  -- + CREATE TABLE `project_task_plan_revision` (DDL см. в migrations/20260101000000_initial_schema.sql)
   ```
 
   Перед `DROP` проверить `SELECT COUNT(*) FROM project_task_subtask` на проде: если

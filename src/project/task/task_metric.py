@@ -149,7 +149,11 @@ async def task_metric_summary(parent_id=None) -> list[dict]:
             "       SUM(lines_changed) AS lines_changed, "
             "       ROUND(AVG(duration_ms) / 1000 / GREATEST(AVG(context_lines), 1) * 1000) AS sec_per_1k "
             f"  FROM project_task_metric {where} "
-            " GROUP BY role, step_title ORDER BY AVG(duration_ms) DESC", params)
+            # Сначала по роли, потом по тяжести шага. Роль первой — чтобы её шаги
+            # шли группой: страница красит группы полосой, а вперемешку полоса не
+            # складывается. Внутри роли самый долгий шаг всё равно первый, и
+            # главный вопрос «на что уходит круг» читается сразу.
+            " GROUP BY role, step_title ORDER BY role, AVG(duration_ms) DESC", params)
 
         return [dict(row) for row in (await db.fetchall() or [])]
 

@@ -779,6 +779,16 @@ def _step_failed(step: dict) -> bool:
     отведённое время — это `timeout`, мёртвая оболочка — `failed` или
     `no_session`. Для движка шаг при этом успешен, инструмент же отработал; для
     журнала — затык, и человек ищет в журнале именно его.
+
+    **`ok: false` сам по себе затыком не считается.** Роль отвечает так и когда
+    работала честно: «переименовал девять функций, но остановился на развилке» —
+    это состоявшийся ход с содержанием, и помечать его наравне с мёртвой
+    оболочкой значит врать. Отрицательный исход круга и так виден отдельной
+    строкой «итог круга» в конце блока.
+
+    Затык здесь только у шага-заглушки «роль недоступна»: она возвращает тот же
+    `ok: false`, но без содержания — пустой отчёт и текст ошибки вместо работы.
+    По содержанию их и различаем.
     """
     if str(step.get('status') or '') == 'error':
         return True
@@ -789,9 +799,46 @@ def _step_failed(step: dict) -> bool:
            for bad in ('timeout', 'failed', 'no_session', 'busy')):
         return True
 
-    # Шаг-заглушка «роль недоступна» возвращает готовый отчёт с `ok: false`:
-    # для движка это успешная подстановка, для работы — несостоявшийся прогон.
-    return "'ok': false" in output.lower() or '"ok": false' in output.lower()
+    if "'ok': false" not in output.lower() and '"ok": false' not in output.lower():
+        return False
+
+    return not _answer_has_substance(output)
+
+
+def _answer_has_substance(output: str) -> bool:
+    """
+    В ответе есть работа, а не только признание, что её не было.
+
+    Смотрим на ключи смысла (`TASK_LOG_ANSWER_KEYS`) — тот же список, по которому
+    журнал достаёт суть ответа. Есть непустой `summary` или `report` — роль что-то
+    сделала и рассказала об этом; нет ничего, кроме `error`, — это заглушка
+    несостоявшегося прогона.
+
+    `error` из списка исключаем намеренно: он есть и у заглушки, и по нему как раз
+    ничего не отличить.
+    """
+    text = _answer_text(output)
+    if not text:
+        return False
+
+    data = _dict_parse(str(output or '').removeprefix('json:').strip())
+    if data is None:
+        return bool(text)
+
+    # Спускаемся сквозь обёртку из одного ключа: роли отвечают
+    # `{"dev_report_json": {...}}`, и содержание лежит внутри, а не снаружи. Тот
+    # же спуск делает `_inner_text`, когда достаёт из ответа человеческий текст.
+    while isinstance(data, dict) and len(data) == 1:
+        inner = next(iter(data.values()))
+        if not isinstance(inner, dict):
+            break
+        data = inner
+
+    if isinstance(data.get('report'), dict):
+        data = data['report']
+
+    return any(str((data or {}).get(key) or '').strip()
+               for key in TASK_LOG_ANSWER_KEYS if key != 'error')
 
 
 def _answer_text(output) -> str:
