@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Depends
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
-from src.auth.auth_field_policy import ALL_FIELDS, auth_fields_filter_for_update, auth_fields_allowed
+from src.auth.auth_field_policy import ALL_FIELDS, auth_field_policy_fields_filter_for_update, auth_field_policy_fields_allowed
 from src.auth.auth_permission import AuthPermission
 from src.auth.auth_role import auth_role_is_full
 
@@ -61,7 +61,7 @@ async def workflow_variable_list(
                 row['workflow_ids'] = []
 
         # Отдаём только поля, разрешённые роли пользователя на чтение
-        allowed = auth_fields_allowed('node_variable', 'read', user.role)
+        allowed = auth_field_policy_fields_allowed('node_variable', 'read', user.role)
         if allowed != ALL_FIELDS:
             results = [{k: v for k, v in row.items() if k in allowed} for row in results]
 
@@ -147,7 +147,7 @@ async def workflow_variable_update(
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_UPDATE]))
 ):
     # Оставляем только поля, разрешённые роли пользователя (admin — все)
-    fields, data = auth_fields_filter_for_update('node_variable', 'write', user.role, data)
+    fields, data = auth_field_policy_fields_filter_for_update('node_variable', 'write', user.role, data)
 
     async with mysql_get_db_async() as db:
         if fields:

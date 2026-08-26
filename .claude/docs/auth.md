@@ -200,12 +200,12 @@ AUTH_FIELD_POLICY = {
 Key: `'*'` is the fallback for any restricted role; a specific role name overrides it. Полноправные роли (`auth_role_is_full` — `admin`, `qa`) в политике не описываются — всегда `ALL_FIELDS`.
 
 **Functions:**
-- `auth_fields_allowed(entity, action, role)` → `ALL_FIELDS` or `set` of allowed fields
-- `auth_fields_filter_for_update(entity, action, role, data)` → `(fields, data)` filtered to allowed columns
+- `auth_field_policy_fields_allowed(entity, action, role)` → `ALL_FIELDS` or `set` of allowed fields
+- `auth_field_policy_fields_filter_for_update(entity, action, role, data)` → `(fields, data)` filtered to allowed columns
 
 **Usage in PUT router:**
 ```python
-fields, data = auth_fields_filter_for_update('agent_workflow_variable', 'write', user.role, data)
+fields, data = auth_field_policy_fields_filter_for_update('agent_workflow_variable', 'write', user.role, data)
 if fields:
     set_clause = ', '.join(f"`{f}`=%s" for f in fields)
     await db.execute(f"UPDATE agent_workflow_variable SET {set_clause} WHERE id=%s", ...)
@@ -213,14 +213,14 @@ if fields:
 
 **Usage in GET/list router:**
 ```python
-allowed = auth_fields_allowed('agent_workflow_variable', 'read', user.role)
+allowed = auth_field_policy_fields_allowed('agent_workflow_variable', 'read', user.role)
 if allowed != ALL_FIELDS:
     results = [{k: v for k, v in row.items() if k in allowed} for row in results]
 ```
 
 Adding field policy for a new entity:
 1. Add entity key to `AUTH_FIELD_POLICY` with `fields`, `write`, `read`
-2. Replace static UPDATE with `auth_fields_filter_for_update()` + dynamic SET clause
-3. Filter list/get response with `auth_fields_allowed(entity, 'read', user.role)`
+2. Replace static UPDATE with `auth_field_policy_fields_filter_for_update()` + dynamic SET clause
+3. Filter list/get response with `auth_field_policy_fields_allowed(entity, 'read', user.role)`
 
 **Note:** `workflow_variable` uses separate permissions `WORKFLOW_VARIABLE_VIEW` / `WORKFLOW_VARIABLE_UPDATE` so regular users can save `default` without needing `WORKFLOW_UPDATE`.
