@@ -1122,6 +1122,31 @@
     .pipe-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
                     letter-spacing: .04em; margin: 10px 0 4px; }
 
+    /* Разбиение, предложенное планировщиком: строк ещё нет, они появятся после
+       «Утвердить». Пунктир и приглушённый фон — чтобы намерение не путалось с
+       заведённой подзадачей, у которой есть состояние и попытки. */
+    .pipe-planned {
+        border-left: 2px dashed #cbd5e1; padding: 5px 6px 5px 10px; margin-left: 2px;
+        line-height: 1.45;
+    }
+    .pipe-planned + .pipe-planned { margin-top: 2px; }
+    .pipe-planned-head { display: flex; align-items: baseline; gap: 8px; }
+    .pipe-planned-title { flex: 1; font-weight: 600; word-break: break-word; }
+    .pipe-planned-desc { color: #64748b; font-size: 12px; margin-top: 2px; word-break: break-word; }
+    /* Объём контекста — главный критерий разбиения: по нему видно, влезает ли
+       подзадача в окно исполнителя. Порог сжатия ~2300 строк, отсюда и подсветка. */
+    .pipe-planned-lines {
+        font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+        white-space: nowrap; flex-shrink: 0; background: #f1f5f9; color: #64748b;
+        font-variant-numeric: tabular-nums;
+    }
+    .pipe-planned-lines.over { background: #ffedd5; color: #c2410c; }
+    .pipe-planned-mark {
+        font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+        white-space: nowrap; flex-shrink: 0; background: #ede9fe; color: #6d28d9;
+    }
+    .pipe-planned-note { color: #94a3b8; font-size: 11px; margin: 2px 0 6px; }
+
 
     /* ─── Вкладка «Статистика» ──────────────────────────────────
        Накопленные замеры работы ролей: объём контекста против времени, токенов и
@@ -3813,14 +3838,64 @@ function _pipelineRender(taskId, data, body, actions) {
         }).join('');
     } else if (isBug) {
         html += `<span class="task-pipeline-muted">${esc(BUG_PIPE_NOTE[state] || BUG_PIPE_NOTE._other)}</span>`;
+    } else if ((data.plan_subtasks || []).length) {
+        // Разбиение показываем до утверждения, а не после: «Утвердить» — это
+        // решение как раз про него, и раньше человек нажимал кнопку вслепую. Строк
+        // ещё нет, поэтому ни состояний, ни попыток тут не бывает.
+        html += _plannedSubtasksHtml(data.plan_subtasks, state);
     } else if (state === 'plan_approval') {
-        html += '<span class="task-pipeline-muted">План ждёт утверждения — подзадачи появятся после «Утвердить».</span>';
+        html += '<span class="task-pipeline-muted">План ждёт утверждения, но разбиения в нём нет — '
+              + 'утверждать нечего. Нажмите «Обновить план», чтобы планировщик написал его заново.</span>';
     } else if (!data.plan_text) {
         html += '<span class="task-pipeline-muted">Оркестратор ещё не дошёл до этой задачи.</span>';
     }
 
     if (data.error) html += `<div class="pipe-error">${esc(data.error)}</div>`;
     body.innerHTML = html;
+}
+
+// Порог автосжатия контекста в строках: подзадача крупнее идёт вслепую — исполнитель
+// упрётся в сжатие и продолжит по пересказу. Замер по вкладке «Статистика»
+// (~17 токенов на строку при окне 131072), тот же ориентир, что в `role_manager.md`.
+const PLAN_LINES_LIMIT = 2300;
+
+// Разбиение, предложенное планировщиком, — то, что появится строками после
+// «Утвердить». Показываем именно то, по чему принимается решение: заголовок,
+// описание, объём контекста и две пометки, меняющие судьбу строки.
+function _plannedSubtasksHtml(planned, state) {
+    const pending = state === 'plan_approval';
+    const note = pending
+        ? 'Строк ещё нет — они заведутся после «Утвердить». Так это разложил планировщик:'
+        : 'Разбиение из плана. Строки по нему ещё не заведены.';
+
+    return '<div class="pipe-section">Разбиение из плана</div>'
+        + `<div class="pipe-planned-note">${esc(note)}</div>`
+        + planned.map((s, i) => {
+            // Объём подсвечиваем, когда он за порогом: такую подзадачу раздробят
+            // ещё раз, и знать об этом до утверждения важнее, чем после.
+            const over  = s.context_lines > PLAN_LINES_LIMIT;
+            const lines = s.context_lines
+                ? `<span class="pipe-planned-lines${over ? ' over' : ''}" title="${
+                    over
+                        ? `Оценка объёма чтения: ${s.context_lines} строк — больше порога сжатия (${PLAN_LINES_LIMIT}). Исполнитель упрётся в автосжатие и продолжит вслепую`
+                        : `Оценка объёма чтения: ${s.context_lines} строк, порог сжатия — ${PLAN_LINES_LIMIT}`
+                  }">${s.context_lines} стр</span>`
+                : '';
+            const marks =
+                (s.split_more ? '<span class="pipe-planned-mark" title="Планировщик считает подзадачу крупной — её разложат ещё раз, отдельным заходом">раздробят</span>' : '')
+              + (s.final ? '<span class="pipe-planned-mark" title="Подзадача-приёмка: в работу пойдёт только после того, как закроются соседи">приёмка</span>' : '');
+            const desc = s.description
+                ? `<div class="pipe-planned-desc">${esc(s.description)}</div>` : '';
+
+            return `<div class="pipe-planned">
+                        <div class="pipe-planned-head">
+                            <span class="pipe-subtask-pos">${i + 1}.</span>
+                            <span class="pipe-planned-title">${esc(s.title)}</span>
+                            ${lines}${marks}
+                        </div>
+                        ${desc}
+                    </div>`;
+        }).join('');
 }
 
 // Почему кнопка заблокирована — по состояниям, в которых сервер откажет.
