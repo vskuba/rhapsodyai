@@ -134,14 +134,6 @@ async def team_project_blocks_get() -> list[dict]:
     return blocks
 
 
-def _team_project_dir(work_dir) -> str:
-    """Каталог проекта по адресу оболочки: хвост рабочих выкладок отбрасываем."""
-    path = _path_normalize(work_dir)
-    tail = '/' + TEAM_PROJECT_WORKTREES_DIR
-
-    return path[:-len(tail)] if path.endswith(tail) else path
-
-
 async def team_project_id_by_work_dir(work_dir: str) -> int | None:
     """Проект, которому принадлежит каталог запуска оболочки.
 
@@ -463,3 +455,11 @@ def _path_normalize(path) -> str:
         value = value.rstrip('/')
 
     return value
+
+
+def _team_project_dir(work_dir) -> str:
+    """Каталог проекта по адресу оболочки: хвост рабочих выкладок отбрасываем."""
+    path = _path_normalize(work_dir)
+    tail = '/' + TEAM_PROJECT_WORKTREES_DIR
+
+    return path[:-len(tail)] if path.endswith(tail) else path

@@ -518,15 +518,6 @@ async def project_task_plan_revision_delete(task_id: int, revision_no: int,
     return {'ok': True}
 
 
-async def _task_row(task_id: int) -> dict | None:
-    """Строка задачи для ответа — с разобранным `metadata`. Нет задачи — None."""
-    async with mysql_get_db_async() as db:
-        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
-        task = await db.fetchone()
-
-    return task_metadata_row_apply(task) if task else None
-
-
 @router.get('/task/logs/{project_id}')
 async def project_task_logs(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """
@@ -760,3 +751,12 @@ async def _pipeline_state_set(task_id: int, expected: str | None | list, new_sta
 
 def _states_label(states: list) -> str:
     return ' / '.join(s if s else 'вне конвейера' for s in states)
+
+
+async def _task_row(task_id: int) -> dict | None:
+    """Строка задачи для ответа — с разобранным `metadata`. Нет задачи — None."""
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
+        task = await db.fetchone()
+
+    return task_metadata_row_apply(task) if task else None
