@@ -47,6 +47,7 @@ from src.uvicorn.routers.project import (
     project_task,
     project_task_pipeline,
     project_task_metric,
+    project_task_migration,
     project_task_question,
     project_phase_source,
     project as project_admin,
@@ -474,6 +475,7 @@ app.include_router(project_document.router, include_in_schema=False)
 app.include_router(project_task.router, include_in_schema=False)
 app.include_router(project_task_pipeline.router, include_in_schema=False)
 app.include_router(project_task_metric.router, include_in_schema=False)
+app.include_router(project_task_migration.router, include_in_schema=False)
 app.include_router(project_task_question.router, include_in_schema=False)
 app.include_router(project_phase_source.router, include_in_schema=False)
 app.include_router(project_admin.router, include_in_schema=False)

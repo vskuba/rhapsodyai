@@ -13,7 +13,7 @@
 | `src/uvicorn/routers/workflow/workflow_trace.py` | REST API: list, detail, replay, stop, delete |
 | `data/uvicorn/template/admin/workflow_trace.html` | Страница `/admin/workflow_trace` |
 | `src/auth/auth_permission.py` | `WORKFLOW_TRACE_VIEW/DELETE/REPLAY/STOP` |
-| `migrations/0001.sql` | DDL: `agent_workflow_run`, `agent_workflow_run_step` |
+| `migrations/20260101000000_initial_schema.sql` | DDL: `agent_workflow_run`, `agent_workflow_run_step` |
 
 ## Схема данных
 

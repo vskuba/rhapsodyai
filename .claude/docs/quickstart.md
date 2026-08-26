@@ -201,7 +201,7 @@ PROJECT_TASK_QA_SERVER_URL=http://localhost:8013
 
 ## База данных
 
-Схема живёт только в `migrations/0001.sql`, данные — через Seed UI. Подробности
+Схема живёт только в `migrations/20260101000000_initial_schema.sql`, данные — через Seed UI. Подробности
 и порядок сброса — `migration.md`, `database.md`, `seed.md`.
 
 ```bash
