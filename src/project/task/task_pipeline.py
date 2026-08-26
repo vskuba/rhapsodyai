@@ -216,7 +216,7 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
     # Тоже без оболочки и без LLM: одна запись состояния. Строка с единственной
     # целью, круг которой не оставил кода, ждать очереди не должна — ей в этой
     # очереди делать нечего, пока охват не переразложат.
-    stats['replanned'] = await _subtasks_replan_stuck(await _replan_work_dir())
+    stats['replanned'] = await _subtasks_replan_stuck()
 
     for _ in range(max(1, int(max_actions))):
         action = await _action_claim(worker)
@@ -1066,28 +1066,7 @@ async def _subtasks_goals_finish() -> int:
     return closed
 
 
-async def _replan_work_dir() -> str:
-    """
-    Каталог проекта для подсчёта изменённого кода при возврате на планирование.
-
-    Проект берём у первой вставшей строки, а не перебираем все: подзадачи одной
-    задачи живут в одном проекте, а тик и так гоняется часто — второй запрос ради
-    редкого случая с несколькими проектами не окупается. Ошибётся он безобидно:
-    чужой каталог даст ноль изменённых строк, то есть в худшем случае вернём на
-    планирование строку, которая код всё-таки написала, — а её вернёт назад сам
-    менеджер, увидев готовую работу.
-    """
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT project_id FROM project_task "
-            " WHERE parent_id IS NOT NULL AND pipeline_state IN ('failed_qa', 'blocked') "
-            " ORDER BY id LIMIT 1")
-        row = await db.fetchone()
-
-    return await task_role_project_work_dir((row or {}).get('project_id'))
-
-
-async def _subtasks_replan_stuck(work_dir: str) -> int:
+async def _subtasks_replan_stuck() -> int:
     """
     Вернуть менеджеру строки, которые встали, а работы не дали.
 
@@ -1116,8 +1095,18 @@ async def _subtasks_replan_stuck(work_dir: str) -> int:
     sent = 0
     for row in rows:
         row = dict(row)
+        # Каталог свой у каждой строки: подзадачи разных задач живут в разных
+        # проектах, и один каталог на всех давал бы чужой ответ.
+        work_dir = await task_role_project_work_dir(row.get('project_id'))
+        changed = await _lines_changed(work_dir, row['id'])
+        if changed is None:
+            # Не посчитали — не знаем, была ли работа. Отправлять на переразбиение
+            # вслепую нельзя: так теряется сделанное.
+            logger_info(f"[task] subtask#{row['id']}: правки не посчитаны, переразбиение пропущено")
+            continue
+
         goals = task_plan_goals_normalize(row.get('goals'))
-        if not task_goal_replan_needed(row, goals, await _lines_changed(work_dir, row['id'])):
+        if not task_goal_replan_needed(row, goals, changed):
             continue
 
         result = await task_goal_replan_send(row)
@@ -1237,11 +1226,14 @@ async def _metric_collect(task_id: int, work_dir: str, result: dict,
         session_uuid=str(result.get('session_uuid') or ''),
         context_lines=int(meta.get(TASK_METADATA_KEY_CONTEXT) or 0),
         task_title=str(row.get('title') or ''),
-        lines_changed=await _lines_changed(work_dir, task_id),
+        # Не посчитали — пишем ноль: в замерах это поле справочное, и пустое
+        # значение там честнее выдумки. Решение о переразбиении принимается
+        # не здесь, и `None` туда не попадёт.
+        lines_changed=await _lines_changed(work_dir, task_id) or 0,
     )
 
 
-async def _lines_changed(work_dir: str, task_id: int) -> int:
+async def _lines_changed(work_dir: str, task_id: int) -> int | None:
     """
     Сколько строк кода в ветке подзадачи отличается от главной. Не выяснить — 0.
 
@@ -1250,18 +1242,20 @@ async def _lines_changed(work_dir: str, task_id: int) -> int:
     Поэтому в замер идёт накопленный итог, и складывать эти числа по кругам
     нельзя (в таблице оно и стоит один раз на круг, а не на каждый шаг).
 
-    Ноль означает «не посчитали»: каталога нет, git отказал, работа ещё не
-    закоммичена. Отличить его от честного нуля можно по времени шага — круг без
-    единой правки редко идёт сорок минут.
+    **`None` — не посчитали, `0` — посчитали и работы нет.** Разница
+    принципиальная: по этому числу решают, вернуть ли строку менеджеру, и
+    молчаливый ноль от ненайденного каталога отправлял бы на переразбиение
+    сделанную работу. Живьём: подзадача #1626 с готовым коммитом на 18 строк
+    уехала к менеджеру, потому что каталог не нашёлся и ноль сошёл за факт.
     """
     directory = task_worktree_path(work_dir, task_id)
     if not directory or not os.path.isdir(directory):
-        return 0
+        return None
 
     base = await task_worktree_base_branch(directory)
     code, out = await task_worktree_git(directory, 'diff', '--numstat', f'{base}...HEAD')
     if code:
-        return 0
+        return None
 
     total = 0
     for line in out.splitlines():

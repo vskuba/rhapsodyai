@@ -113,3 +113,41 @@ class TestStuckOptions:
         goals = [*ONE_GOAL, {'text': 'вторая', 'done': False}]
 
         assert TASK_QUESTION_ACTION_SPLIT in [o['key'] for o in _stuck_options(goals)]
+
+
+class TestUncountedIsNotZero:
+    """
+    «Не посчитали» — не то же самое, что «работы не было».
+
+    Подсчёт правок отвечает `None`, когда посчитать не вышло: каталога нет, git
+    отказал, проект не определился. Принять этот ответ за ноль — значит отправить
+    на переразбиение работу, которая сделана.
+
+    Поймано живьём: подзадача #1626 с готовым коммитом на 18 строк уехала к
+    менеджеру, потому что каталог искали по проекту чужой строки, получили пустой
+    путь и молчаливый ноль сошёл за факт.
+    """
+
+    def test_zero_means_no_work(self):
+        """Честный ноль — основание вернуть строку менеджеру."""
+        from src.project.task.task_goal_replan import task_goal_replan_needed
+
+        assert task_goal_replan_needed(STUCK, ONE_GOAL, 0)
+
+    def test_any_code_blocks_replan(self):
+        """Есть код — значит круг что-то сделал, и это спор о качестве."""
+        from src.project.task.task_goal_replan import task_goal_replan_needed
+
+        assert not task_goal_replan_needed(STUCK, ONE_GOAL, 18)
+
+    async def test_missing_dir_gives_none_not_zero(self):
+        """
+        Нет каталога — подсчёт обязан сказать «не знаю», а не «ноль».
+
+        Проверяем поведением, а не чтением исходника: важно, что вернулось, а не
+        как это записано.
+        """
+        from src.project.task.task_pipeline import _lines_changed
+
+        assert await _lines_changed('/каталога/нет', 1626) is None
+        assert await _lines_changed('', 1626) is None
