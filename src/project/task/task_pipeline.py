@@ -74,6 +74,7 @@ from contextlib import suppress
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
 from src.project.task.task_agent_bugfixer import TASK_BUGFIXER_ROLE, task_agent_bugfixer_run
 from src.project.task.task_agent_developer import TASK_DEVELOPER_ROLE, task_agent_developer_run
 from src.project.task.task_agent_manager import task_agent_manager_plan
@@ -198,6 +199,17 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
     # «Parallel LLM» их не касается: иначе подзадача с закрытыми целями ждала бы
     # своей очереди за чужими двадцатиминутными кругами, ничего при этом не
     # собираясь делать. Тем же правилом живёт разбор плана (`_claim_plan_split`).
+    # Брошенные трассы закрываем тем же тиком. Функция для этого была, но звалась
+    # только при старте сервера, а между рестартами записи копились: прогон умер,
+    # запись осталась в `running` навсегда — закрыть её больше некому.
+    #
+    # Живой прогон не пострадает: замолчавшим он считается только через час
+    # (`TRACE_RUN_STALE_SECONDS`), а самый долгий шаг конвейера ждёт агента вдвое
+    # меньше. Порог обязан оставаться больше шага — иначе тик гасил бы работу,
+    # которая просто идёт молча.
+    with suppress(Exception):
+        stats['traces_closed'] = await ai_workflow_trace_runs_stale_close()
+
     stats['finished'] = await _subtasks_goals_finish()
 
     # Тем же правилом и по тому же месту — возврат безнадёжных строк менеджеру.

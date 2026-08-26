@@ -586,3 +586,40 @@ class TestGoalsAllDone:
 
         assert _goals_all_done({'goals': [{'text': 'раз', 'done': True}]}) is True
         assert _goals_all_done({'goals': [{'text': 'раз'}]}) is False
+
+
+class TestStaleTracesClosed:
+    """
+    Брошенные трассы закрываются тиком, а не только рестартом сервера.
+
+    Прогон умирает вместе с процессом — воркер убили, контейнер пересоздали, —
+    и запись остаётся в `running` навсегда: закрыть её больше некому. Функция для
+    этого была, но звалась только на старте `main_uvicorn`, поэтому между
+    рестартами записи копились.
+
+    Проверяем именно границу: живой прогон, который просто долго молчит (шаг
+    «реализация» ждёт агента до получаса), тик закрывать не должен.
+    """
+
+    def test_threshold_outlives_the_longest_step(self):
+        """
+        Порог молчания обязан быть больше самого долгого шага конвейера.
+
+        Иначе тик гасил бы работу, которая идёт: у шага реализации между записями
+        в трассу проходят десятки минут, и по молчанию он неотличим от мёртвого.
+        """
+        from src.ai.ai_workflow_trace import TRACE_RUN_STALE_SECONDS
+
+        # Самый долгий замеренный шаг — реализация, 2517 с (подзадача #1623).
+        assert TRACE_RUN_STALE_SECONDS > 2517, \
+            'порог ниже реального шага — тик начнёт убивать живые прогоны'
+
+    def test_tick_calls_the_closer(self):
+        """Уборка должна быть в тике: рестарта сервера можно ждать сутками."""
+        import inspect
+
+        from src.project.task import task_pipeline
+
+        source = inspect.getsource(task_pipeline.task_pipeline_tick)
+
+        assert 'ai_workflow_trace_runs_stale_close' in source
