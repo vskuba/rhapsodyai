@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.faster_whisper.faster_whisper_model import faster_whisper_detect
+from src.faster_whisper.faster_whisper_model import faster_whisper_model_detect
 
 router = APIRouter(prefix="/api/stt", tags=["stt"])
 
@@ -97,7 +97,7 @@ async def _transcribe_upload(file: UploadFile, max_bytes: int,
                              model_name: str, language: str | None) -> dict:
     """Читает загруженный файл, расшифровывает, убирает за собой.
 
-    Отдаёт `{text, language, probability}` — то же, что `faster_whisper_detect`.
+    Отдаёт `{text, language, probability}` — то же, что `faster_whisper_model_detect`.
 
     Файл кладётся на диск, потому что faster-whisper принимает путь, а не
     байты. Временный каталог, а не рабочая папка: параллельные запросы не
@@ -120,7 +120,7 @@ async def _transcribe_upload(file: UploadFile, max_bytes: int,
         with open(path, "wb") as target:
             target.write(content)
 
-        return await faster_whisper_detect(
+        return await faster_whisper_model_detect(
             path, model_name=model_name, language=language)
     finally:
         # Не оставляем мусор даже когда расшифровка упала: точку дёргают
