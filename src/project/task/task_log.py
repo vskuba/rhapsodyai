@@ -185,105 +185,6 @@ async def task_log_read(repo_dir: str, task_id) -> dict:
     }
 
 
-async def _live_block(task_id) -> str:
-    """
-    Шаги прогонов строки, которые идут прямо сейчас.
-
-    Собираются из трассы, а не из файла: файл пишется по концу круга, а увидеть,
-    чем агент занят, человек хочет пока тот занят. Смещение читаем то же, что и
-    у записанного, иначе живой блок разъехался бы с остальным журналом на часы.
-
-    Здесь же — события оболочки, и ради идущего прогона они и заводились. Шаг
-    `claude_shell_call` появляется в трассе только когда кончится, и всё это время
-    журнал молчал; строка «задание ушло» без пары «ответ получен» показывает, что
-    ждём агента, а пара без последующего шага — что ответ до движка не доехал.
-    """
-    if not await _row_in_flight(task_id):
-        return ''
-
-    runs = await _runs_active(task_id)
-    if not runs:
-        return ''
-
-    offset = await setting_get('timezone', '+0')
-    blocks = []
-    for run in runs:
-        steps = await _trace_steps(str(run.get('session_uuid') or ''))
-        # Конец окна открыт: прогон идёт, и ответ может прийти в любую секунду.
-        shell = await task_log_shell_events(str(run.get('role') or ''),
-                                            str(run.get('work_dir') or ''),
-                                            run.get('started_at'))
-        for item in (*steps, *shell):
-            item['created_at'] = datetime_offset_apply(item.get('created_at'), offset)
-
-        started = datetime_offset_apply(run.get('started_at'), offset)
-        lines = [f"\n## идёт сейчас · {run.get('role') or 'агент'} · "
-                 f"{started.strftime('%Y-%m-%d %H:%M') if started else ''}\n"]
-        lines += _lines_merge([step for step in steps if not _step_skip(step)], shell)
-        # Шагов может не быть вовсе: прогон только начался. Сам заголовок при этом
-        # новость — по нему видно, что строка не брошена, а в работе.
-        blocks.append(''.join(lines))
-
-    return ''.join(blocks)
-
-
-async def _row_in_flight(task_id) -> bool:
-    """
-    Строка действительно в работе — по состоянию конвейера, а не по трассе.
-
-    Трасса оборванного прогона навсегда остаётся в `running`: закрыть её некому,
-    процесс умер. Без этой сверки журнал показывал бы «идёт сейчас» на прогоне,
-    который встал час назад, — и человек ждал бы результата, которого не будет.
-    Состояние строки ведёт сам конвейер, и оно тут единственный честный признак.
-    """
-    async with mysql_get_db_async() as db:
-        await db.execute("SELECT pipeline_state FROM project_task WHERE id = %s",
-                         (int(task_id or 0),))
-        row = await db.fetchone()
-
-    return str((row or {}).get('pipeline_state') or '') in TASK_LOG_STATES_IN_FLIGHT
-
-
-async def _runs_active(task_id) -> list[dict]:
-    """
-    Незакрытые трассы строки и чья это роль.
-
-    Ищем по переменным прогона: у подзадачи это `subtask_id`, у задачи под
-    менеджером — `task_id`. Разделять обязательно: в трассе подзадачи лежит и
-    номер её родителя, и без второго условия задача забирала бы себе прогоны
-    всех своих подзадач.
-
-    Роль берём из тех же переменных (`task_shell_role`) — в самой трассе её нет.
-    """
-    task_id = int(task_id or 0)
-    if not task_id:
-        return []
-
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT session_uuid, started_at, variables_start "
-            "  FROM agent_workflow_trace "
-            " WHERE status = 'running' "
-            "   AND (variables_start LIKE %s "
-            "        OR (variables_start LIKE %s AND variables_start NOT LIKE %s)) "
-            " ORDER BY id",
-            (f'%"subtask_id": "{task_id}"%',
-             f'%"task_id": "{task_id}"%', '%"subtask_id": "%'))
-        rows = await db.fetchall() or []
-
-    runs = []
-    for row in rows:
-        variables = _dict_parse(str(row.get('variables_start') or '')) or {}
-        runs.append({'session_uuid': row.get('session_uuid'),
-                     'started_at': row.get('started_at'),
-                     'role': str(variables.get('task_shell_role') or ''),
-                     # Второй половиной адреса оболочки: роли в командах разных
-                     # проектов зовутся одинаково (`task_agent_manager`).
-                     'work_dir': str(variables.get('task_shell_work_dir') or '')})
-
-    return runs
-
-
 def task_log_list(repo_dir: str) -> list[dict]:
     """
     Строки, у которых есть журнал: что показывать на странице логов без выбора задачи.
@@ -452,6 +353,105 @@ async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
     await _state_write(directory, task_id, role, attempt_no, outcome, steps)
 
     return len(lines) - 1
+
+
+async def _live_block(task_id) -> str:
+    """
+    Шаги прогонов строки, которые идут прямо сейчас.
+
+    Собираются из трассы, а не из файла: файл пишется по концу круга, а увидеть,
+    чем агент занят, человек хочет пока тот занят. Смещение читаем то же, что и
+    у записанного, иначе живой блок разъехался бы с остальным журналом на часы.
+
+    Здесь же — события оболочки, и ради идущего прогона они и заводились. Шаг
+    `claude_shell_call` появляется в трассе только когда кончится, и всё это время
+    журнал молчал; строка «задание ушло» без пары «ответ получен» показывает, что
+    ждём агента, а пара без последующего шага — что ответ до движка не доехал.
+    """
+    if not await _row_in_flight(task_id):
+        return ''
+
+    runs = await _runs_active(task_id)
+    if not runs:
+        return ''
+
+    offset = await setting_get('timezone', '+0')
+    blocks = []
+    for run in runs:
+        steps = await _trace_steps(str(run.get('session_uuid') or ''))
+        # Конец окна открыт: прогон идёт, и ответ может прийти в любую секунду.
+        shell = await task_log_shell_events(str(run.get('role') or ''),
+                                            str(run.get('work_dir') or ''),
+                                            run.get('started_at'))
+        for item in (*steps, *shell):
+            item['created_at'] = datetime_offset_apply(item.get('created_at'), offset)
+
+        started = datetime_offset_apply(run.get('started_at'), offset)
+        lines = [f"\n## идёт сейчас · {run.get('role') or 'агент'} · "
+                 f"{started.strftime('%Y-%m-%d %H:%M') if started else ''}\n"]
+        lines += _lines_merge([step for step in steps if not _step_skip(step)], shell)
+        # Шагов может не быть вовсе: прогон только начался. Сам заголовок при этом
+        # новость — по нему видно, что строка не брошена, а в работе.
+        blocks.append(''.join(lines))
+
+    return ''.join(blocks)
+
+
+async def _row_in_flight(task_id) -> bool:
+    """
+    Строка действительно в работе — по состоянию конвейера, а не по трассе.
+
+    Трасса оборванного прогона навсегда остаётся в `running`: закрыть её некому,
+    процесс умер. Без этой сверки журнал показывал бы «идёт сейчас» на прогоне,
+    который встал час назад, — и человек ждал бы результата, которого не будет.
+    Состояние строки ведёт сам конвейер, и оно тут единственный честный признак.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT pipeline_state FROM project_task WHERE id = %s",
+                         (int(task_id or 0),))
+        row = await db.fetchone()
+
+    return str((row or {}).get('pipeline_state') or '') in TASK_LOG_STATES_IN_FLIGHT
+
+
+async def _runs_active(task_id) -> list[dict]:
+    """
+    Незакрытые трассы строки и чья это роль.
+
+    Ищем по переменным прогона: у подзадачи это `subtask_id`, у задачи под
+    менеджером — `task_id`. Разделять обязательно: в трассе подзадачи лежит и
+    номер её родителя, и без второго условия задача забирала бы себе прогоны
+    всех своих подзадач.
+
+    Роль берём из тех же переменных (`task_shell_role`) — в самой трассе её нет.
+    """
+    task_id = int(task_id or 0)
+    if not task_id:
+        return []
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT session_uuid, started_at, variables_start "
+            "  FROM agent_workflow_trace "
+            " WHERE status = 'running' "
+            "   AND (variables_start LIKE %s "
+            "        OR (variables_start LIKE %s AND variables_start NOT LIKE %s)) "
+            " ORDER BY id",
+            (f'%"subtask_id": "{task_id}"%',
+             f'%"task_id": "{task_id}"%', '%"subtask_id": "%'))
+        rows = await db.fetchall() or []
+
+    runs = []
+    for row in rows:
+        variables = _dict_parse(str(row.get('variables_start') or '')) or {}
+        runs.append({'session_uuid': row.get('session_uuid'),
+                     'started_at': row.get('started_at'),
+                     'role': str(variables.get('task_shell_role') or ''),
+                     # Второй половиной адреса оболочки: роли в командах разных
+                     # проектов зовутся одинаково (`task_agent_manager`).
+                     'work_dir': str(variables.get('task_shell_work_dir') or '')})
+
+    return runs
 
 
 async def _state_write(directory: str, task_id, role: str, attempt_no: int,
