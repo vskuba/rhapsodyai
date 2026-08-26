@@ -365,53 +365,6 @@ async def task_state_subtasks_create(task_id: int, subtasks: list) -> int:
     return len(subtasks)
 
 
-def _subtask_state(item: dict) -> str:
-    """
-    Состояние новой подзадачи: обычная — `planned`, крупная — `new`.
-
-    Тут и включается дробление в глубину. `planned` — начало круга
-    Developer → QA, туда идёт подзадача, помещающаяся в память исполнителя.
-    А `new` — состояние, из которого работу забирает планирование
-    (`task_claim_task_unplanned`: нет своих подзадач, состояние `new`, сама не
-    родитель). Никакой отдельной ветки для рекурсии не нужно — подзадача,
-    помеченная `split_more`, просто попадает менеджеру как обычная задача, и
-    он раскладывает её своим заходом.
-
-    Глубина от этого не ограничена: разложенная подзадача может снова
-    оказаться крупной, снова получить `new` и уехать на планирование ещё раз.
-    Останавливает это не счётчик уровней, а сам объём — дробить бесконечно
-    нечего, куски кончаются.
-    """
-    return 'new' if item.get('split_more') else 'planned'
-
-
-def _subtask_metadata(item: dict) -> str | None:
-    """
-    Мешок новой подзадачи из строки плана менеджера. Пусто — `None`.
-
-    Три пометки, и все три ставит менеджер при разбиении:
-
-    * `final` — приёмка, ждёт закрытия соседей;
-    * `split_more` — не влезает в память исполнителя, дробить дальше;
-    * `context_lines` — его оценка объёма чтения, для разбора провалов.
-
-    Ложь и ноль не пишем: ключа нет — пометки нет, как у флажков фаз. Иначе
-    в мешке копился бы след от каждой подзадачи, которую менеджер посмотрел
-    и признал обычной.
-    """
-    data = {}
-    if item.get('final'):
-        data[TASK_METADATA_KEY_FINAL] = True
-    if item.get('split_more'):
-        data[TASK_METADATA_KEY_SPLIT_MORE] = True
-
-    lines = item.get('context_lines')
-    if isinstance(lines, (int, float)) and lines > 0:
-        data[TASK_METADATA_KEY_CONTEXT] = int(lines)
-
-    return json.dumps(data, ensure_ascii=False) if data else None
-
-
 async def task_state_task_fail(task_id: int, error: str) -> None:
     kanban_sql, kanban_params = task_state_kanban_sql('failed')
     async with mysql_get_db_async() as db:
@@ -637,6 +590,53 @@ async def task_state_attempt_log(subtask_id: int, attempt_no: int, role: str,
              int((time.monotonic() - started) * 1000)),
         )
         await db.connection.commit()
+
+
+def _subtask_state(item: dict) -> str:
+    """
+    Состояние новой подзадачи: обычная — `planned`, крупная — `new`.
+
+    Тут и включается дробление в глубину. `planned` — начало круга
+    Developer → QA, туда идёт подзадача, помещающаяся в память исполнителя.
+    А `new` — состояние, из которого работу забирает планирование
+    (`task_claim_task_unplanned`: нет своих подзадач, состояние `new`, сама не
+    родитель). Никакой отдельной ветки для рекурсии не нужно — подзадача,
+    помеченная `split_more`, просто попадает менеджеру как обычная задача, и
+    он раскладывает её своим заходом.
+
+    Глубина от этого не ограничена: разложенная подзадача может снова
+    оказаться крупной, снова получить `new` и уехать на планирование ещё раз.
+    Останавливает это не счётчик уровней, а сам объём — дробить бесконечно
+    нечего, куски кончаются.
+    """
+    return 'new' if item.get('split_more') else 'planned'
+
+
+def _subtask_metadata(item: dict) -> str | None:
+    """
+    Мешок новой подзадачи из строки плана менеджера. Пусто — `None`.
+
+    Три пометки, и все три ставит менеджер при разбиении:
+
+    * `final` — приёмка, ждёт закрытия соседей;
+    * `split_more` — не влезает в память исполнителя, дробить дальше;
+    * `context_lines` — его оценка объёма чтения, для разбора провалов.
+
+    Ложь и ноль не пишем: ключа нет — пометки нет, как у флажков фаз. Иначе
+    в мешке копился бы след от каждой подзадачи, которую менеджер посмотрел
+    и признал обычной.
+    """
+    data = {}
+    if item.get('final'):
+        data[TASK_METADATA_KEY_FINAL] = True
+    if item.get('split_more'):
+        data[TASK_METADATA_KEY_SPLIT_MORE] = True
+
+    lines = item.get('context_lines')
+    if isinstance(lines, (int, float)) and lines > 0:
+        data[TASK_METADATA_KEY_CONTEXT] = int(lines)
+
+    return json.dumps(data, ensure_ascii=False) if data else None
 
 
 # Родители, у которых разработка по плану закончена и всё упёрлось в проверку: есть
