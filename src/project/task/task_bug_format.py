@@ -2,14 +2,14 @@
 Форматирование title / description для баг-задач из workflow trace.
 
 Публичные функции:
-    task_bug_run_title — заголовок для run-level ошибки
-    task_bug_run_description — описание для run-level ошибки
-    task_bug_step_title — заголовок для step-level ошибки
-    task_bug_step_description — описание для step-level ошибки
+    task_bug_format_run_title — заголовок для run-level ошибки
+    task_bug_format_run_description — описание для run-level ошибки
+    task_bug_format_step_title — заголовок для step-level ошибки
+    task_bug_format_step_description — описание для step-level ошибки
 """
 
 
-def task_bug_run_title(workflow_title: str, error: str, duration_ms: int | None) -> str:
+def task_bug_format_run_title(workflow_title: str, error: str, duration_ms: int | None) -> str:
     """
     Заголовок баг-задачи из run-level ошибки.
 
@@ -26,7 +26,7 @@ def task_bug_run_title(workflow_title: str, error: str, duration_ms: int | None)
     return f'[Bug] {workflow_title} failed after {duration} — {exception_short}'
 
 
-def task_bug_run_description(workflow_title: str, agent_name: str | None,
+def task_bug_format_run_description(workflow_title: str, agent_name: str | None,
                              error: str, duration_ms: int | None,
                              started_at: str, finished_at: str) -> str:
     """
@@ -60,8 +60,8 @@ def task_bug_run_description(workflow_title: str, agent_name: str | None,
     return '\n'.join(desc_lines)
 
 
-def task_bug_step_title(workflow_title: str, step_title: str, step_type: str,
-                        error: str) -> str:
+def task_bug_format_step_title(workflow_title: str, step_title: str, step_type: str,
+                               error: str) -> str:
     """
     Заголовок баг-задачи из step-level ошибки.
 
@@ -78,8 +78,9 @@ def task_bug_step_title(workflow_title: str, step_title: str, step_type: str,
     return f'[Bug] {workflow_title} step "{step_title}" ({step_type}) failed — {exception_short}'
 
 
-def task_bug_step_description(workflow_title: str, step_title: str, step_type: str,
-                              step_id: int, error: str, variables_changed: str | None) -> str:
+def task_bug_format_step_description(workflow_title: str, step_title: str, step_type: str,
+                                     step_id: int, error: str,
+                                     variables_changed: str | None) -> str:
     """
     Описание баг-задачи из step-level ошибки.
 
