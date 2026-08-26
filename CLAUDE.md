@@ -104,7 +104,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
 | `browser.md` | Контейнер-браузер: сессии-контексты, API :8014, память, настройки compose |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
-| `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда |
+| `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда, `gx10_autocompact_limit` |
 | `dashboard_frontend.md` | Паттерны админ-страниц: JS, CSS, контракты API |
 | `deploy.md` | Blue-Green деплой, `bluegreen.sh`, rollback |
 

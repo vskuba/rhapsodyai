@@ -3,6 +3,7 @@
 на конкретном проекте, а её активность считается по свежести пинга сессии
 claude-shell. Записью статусов членов команды занимается `team_member`.
 """
+import re
 from datetime import datetime
 
 from datetime_.datetime_ import datetime_now
@@ -10,6 +11,8 @@ from datetime_.datetime_ import datetime_now
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
 from src.mysql_.repository.project.project_repository import PlanningProjectRepository
 from src.mysql_.repository.project.team_repository import ProjectTeamRepository
+from src.project.team.team_setting_autocompact import (
+    TEAM_SETTING_AUTOCOMPACT_FLAG, team_setting_autocompact_get)
 from src.project.team.team_agent import team_agent_by_role
 from src.project.team.team_queue import (TEAM_QUEUE_PREVIEW_LIMIT, TEAM_QUEUE_PROJECT_NONE,
                                          team_queue_by_project)
@@ -77,6 +80,9 @@ async def team_project_blocks_get() -> list[dict]:
     """
     projects = await PlanningProjectRepository().find_by({}, order_by='position ASC, id ASC')
     members = await ProjectTeamRepository().find_by({}, order_by='id ASC')
+    # Порог автосжатия читаем один раз на весь показ: он общий для всех карточек,
+    # а запрос на каждую дал бы их столько, сколько ролей во всех проектах.
+    autocompact = await team_setting_autocompact_get()
     sessions = await AiClaudeSessionRegistryRepository().find_by({}, order_by='id ASC')
     queues = await team_queue_by_project()
     agents = await team_agent_by_role()
@@ -116,7 +122,8 @@ async def team_project_blocks_get() -> list[dict]:
             'parallel': int(parallel.get(project_id, TASK_SETTING_PARALLEL_DEFAULT)),
             'cards': _cards_build(project_sessions, members_by_project.get(project_id, {}),
                                   str(project.get('work_dir') or ''), now, stale_seconds,
-                                  queues=queues.get(project_id, {}), agents=agents),
+                                  queues=queues.get(project_id, {}), agents=agents,
+                                  autocompact=autocompact),
         })
 
     orphans = [row for row in sessions_shown if row['id'] not in matched_ids]
@@ -128,7 +135,8 @@ async def team_project_blocks_get() -> list[dict]:
             'parallel': int(parallel.get(TEAM_PROJECT_NO_PROJECT, TASK_SETTING_PARALLEL_DEFAULT)),
             'cards': _cards_build(orphans, members_by_project.get(TEAM_PROJECT_NO_PROJECT, {}),
                                   '', now, stale_seconds, placeholders=False,
-                                  queues=queues.get(TEAM_QUEUE_PROJECT_NONE, {}), agents=agents),
+                                  queues=queues.get(TEAM_QUEUE_PROJECT_NONE, {}), agents=agents,
+                                  autocompact=autocompact),
         })
 
     return blocks
@@ -229,9 +237,10 @@ def _project_sessions_select(project: dict, sessions: list[dict]) -> list[dict]:
 
 def _cards_build(sessions: list[dict], member_by_role: dict, work_dir: str,
                  now: datetime, stale_seconds: int, placeholders: bool = True,
-                 queues: dict | None = None, agents: dict | None = None) -> list[dict]:
+                 queues: dict | None = None, agents: dict | None = None,
+                 autocompact: str = '') -> list[dict]:
     """Собрать карточки блока: сессии плюс серые заглушки на роли без сессии."""
-    cards = [_card_from_session(row, member_by_role, work_dir, now, stale_seconds)
+    cards = [_card_from_session(row, member_by_role, work_dir, now, stale_seconds, autocompact)
              for row in sessions]
     cards = _cards_stale_drop(cards)
 
@@ -239,7 +248,7 @@ def _cards_build(sessions: list[dict], member_by_role: dict, work_dir: str,
         roles_present = {card['role'] for card in cards}
         for role in TEAM_PROJECT_ROLE_BASE:
             if role not in roles_present:
-                cards.append(_card_placeholder(role, member_by_role, work_dir))
+                cards.append(_card_placeholder(role, member_by_role, work_dir, autocompact))
 
     _cards_queue_attach(cards, queues or {})
     _cards_agent_attach(cards, agents or {})
@@ -345,7 +354,7 @@ def _card_freshness(card: dict) -> int:
 
 
 def _card_from_session(row: dict, member_by_role: dict, work_dir: str, now: datetime,
-                       stale_seconds: int) -> dict:
+                       stale_seconds: int, autocompact: str = '') -> dict:
     """Карточка живой (или недавно живой) сессии реестра.
 
     Роль здесь всегда заполнена — сессии без роли отфильтрованы выше.
@@ -359,7 +368,8 @@ def _card_from_session(row: dict, member_by_role: dict, work_dir: str, now: date
         'role': role,
         'role_title': TEAM_PROJECT_ROLE_TITLE.get(role, role),
         'name': str(member.get('name') or TEAM_PROJECT_ROLE_TITLE.get(role, role)),
-        'command': _command_build(member.get('command'), work_dir or row.get('work_dir')),
+        'command': _command_build(member.get('command'), work_dir or row.get('work_dir'),
+                                  autocompact),
         'session_id': row.get('id'),
         'session_uuid': row.get('session_uuid'),
         'session_status': str(row.get('status') or ''),
@@ -378,7 +388,8 @@ def _card_from_session(row: dict, member_by_role: dict, work_dir: str, now: date
     }
 
 
-def _card_placeholder(role: str, member_by_role: dict, work_dir: str) -> dict:
+def _card_placeholder(role: str, member_by_role: dict, work_dir: str,
+                      autocompact: str = '') -> dict:
     """Серая карточка роли, у которой нет зарегистрированной сессии."""
     member = member_by_role.get(role, {})
 
@@ -386,7 +397,7 @@ def _card_placeholder(role: str, member_by_role: dict, work_dir: str) -> dict:
         'role': role,
         'role_title': TEAM_PROJECT_ROLE_TITLE.get(role, role),
         'name': str(member.get('name') or TEAM_PROJECT_ROLE_TITLE.get(role, role)),
-        'command': _command_build(member.get('command'), work_dir),
+        'command': _command_build(member.get('command'), work_dir, autocompact),
         'session_id': None,
         'session_uuid': None,
         'session_status': '',
@@ -402,7 +413,7 @@ def _card_placeholder(role: str, member_by_role: dict, work_dir: str) -> dict:
     }
 
 
-def _command_build(command, work_dir) -> str:
+def _command_build(command, work_dir, autocompact: str = '') -> str:
     """
     Команда запуска с переходом в каталог — её копируют кнопкой на карточке.
 
@@ -421,10 +432,27 @@ def _command_build(command, work_dir) -> str:
     work_dir = _command_work_dir(work_dir)
     if not command:
         return ''
+
+    # Порог автосжатия подставляем здесь, а не при заведении карточки: команда
+    # лежит в `project_team.command` и переживает правку настройки. Подставь мы
+    # значение один раз — смена настройки не дошла бы до уже созданных карточек,
+    # и человек копировал бы кнопкой старое число, не подозревая об этом.
+    if autocompact:
+        command = _autocompact_replace(command, autocompact)
+
     if not work_dir:
         return command
 
     return f'cd {work_dir} && {command}'
+
+
+def _autocompact_replace(command: str, value: str) -> str:
+    """Подменить значение `--autocompact` в готовой команде. Флага нет — не трогаем."""
+    if TEAM_SETTING_AUTOCOMPACT_FLAG not in command:
+        return command
+
+    return re.sub(r'--autocompact(?:[= ]\S+)?',
+                  f'{TEAM_SETTING_AUTOCOMPACT_FLAG} {value}', command, count=1)
 
 
 def _command_work_dir(work_dir) -> str:
