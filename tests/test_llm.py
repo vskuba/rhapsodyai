@@ -116,3 +116,114 @@ class TestLlm:
     async def test_llm_usage_stats_custom_days(self, client: httpx.AsyncClient):
         resp = await client.get("/llm/usage/stats?days=14")
         assert resp.status_code == 200
+
+
+class TestReasoningDisable:
+    """
+    Запрет размышлений (`llm.reasoning_disable`) доезжает до тела запроса.
+
+    Размышления модель тратит на внутренний монолог до ответа. Где они не нужны,
+    они обходятся дважды — временем и токенами, — а локальная модель с ними
+    вообще съедает бюджет ответа и возвращает пустой текст.
+
+    Проверяем не «настройка проставилась», а что уходит провайдеру: у настройки
+    два пути мимо запроса — профиль модели может её отбросить, а у моделей,
+    размышляющих всегда, `False` библиотека игнорирует намеренно.
+    """
+
+    # Единый ключ размышлений появился в pydantic-ai 2.x. Версия в проекте не
+    # закреплена и разъезжается между окружениями (в контейнере одна, в локальном
+    # venv другая), поэтому проверки тела запроса пропускаем честным skip: на
+    # старой библиотеке запрет не применяется по замыслу, а не из-за поломки.
+    OLD_LIB = pytest.mark.skipif(
+        'thinking' not in getattr(__import__('pydantic_ai').settings.ModelSettings,
+                                  '__annotations__', {}),
+        reason='pydantic-ai в этом окружении не знает единый ключ thinking (нужна 2.x)')
+
+    @staticmethod
+    def _reply(request):
+        import json
+
+        import httpx
+
+        TestReasoningDisable.body = {
+            k: v for k, v in json.loads(request.content.decode()).items()
+            if k not in ('messages', 'model', 'stream')
+        }
+
+        return httpx.Response(200, json={
+            'id': 'x', 'object': 'chat.completion', 'created': 0, 'model': 'm',
+            'choices': [{'index': 0, 'finish_reason': 'stop',
+                         'message': {'role': 'assistant', 'content': 'ok'}}],
+            'usage': {'prompt_tokens': 1, 'completion_tokens': 1, 'total_tokens': 2}})
+
+    async def _body(self, name, thinking):
+        """Тело запроса, которое уйдёт провайдеру. Наружу ничего не летит — мок."""
+        import httpx
+        from pydantic_ai import Agent
+        from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+        from ai.framework.ai_framework import _settings_thinking_off
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(self._reply))
+        provider = OpenAIProvider(base_url='http://stub/v1', api_key='k', http_client=client)
+
+        model = OpenAIChatModel(name, provider=provider)
+        if not thinking:
+            model = OpenAIChatModel(name, provider=provider,
+                                    settings=_settings_thinking_off(model))
+        await Agent(model).run('привет')
+
+        return TestReasoningDisable.body
+
+    @staticmethod
+    def _model(reasoning_disable, step_wants):
+        from ai.framework.ai_framework_model import AiFrameworkModel
+
+        row = AiFrameworkModel(name='x', prompt_user='', prompt_system='', user_id=1,
+                               request_uuid='r', session_uuid='s')
+        row.entity_llm_current = {'reasoning_disable': reasoning_disable}
+        row.thinking_enable = step_wants
+
+        return row
+
+    def test_llm_reasoning_disable_beats_step_request(self):
+        """
+        Шаг просит размышления у всех моделей разом, а запрет ставят у той, где
+        они ломают ответ. Иначе настройку пришлось бы дублировать в каждом шаге.
+        """
+        assert self._model(1, True).thinking is False, 'запрет обязан перевесить шаг'
+        assert self._model(0, True).thinking is True
+        assert self._model(0, False).thinking is False
+
+    def test_llm_reasoning_disable_zero_string_is_not_a_ban(self):
+        """`bool('0')` — истина: модель молча перестала бы размышлять."""
+        for value in (0, '0', '', None, 'false'):
+            assert self._model(value, True).thinking is True, f'{value!r} — это не запрет'
+
+    @OLD_LIB
+    async def test_llm_reasoning_disable_turns_model_off(self):
+        body = await self._body('gpt-5.2', thinking=False)
+
+        assert body.get('reasoning_effort'), 'запрет не доехал до тела запроса'
+
+    @OLD_LIB
+    async def test_llm_reasoning_disable_falls_back_to_minimal(self):
+        """
+        `False` у таких моделей pydantic-ai отбрасывает: выключить у них нечего.
+        Без подмены на минимум запрет молча не доезжал бы до запроса.
+        """
+        body = await self._body('openai/gpt-oss-120b', thinking=False)
+
+        assert body.get('reasoning_effort') == 'minimal'
+
+    @OLD_LIB
+    async def test_llm_reasoning_disable_skips_plain_model(self):
+        """Лишнее поле — это 400 от провайдера, то есть сорванный ход."""
+        for name in ('gemma-4-31b', 'llama-3.3-70b-versatile', 'mistral-large-2512'):
+            assert await self._body(name, thinking=False) == {}, f'{name}: лишнее поле в запросе'
+
+    @OLD_LIB
+    async def test_llm_reasoning_kept_when_not_disabled(self):
+        """Разрешение — умолчание; явное «думай» меняло бы формат ответа и цену хода."""
+        assert await self._body('gpt-5.2', thinking=True) == {}

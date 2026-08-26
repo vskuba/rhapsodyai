@@ -17,7 +17,7 @@ import json
 class TestQuestionParse:
     """Разбор вопроса из отчёта роли."""
 
-    def test_объект_с_вариантами(self):
+    def test_task_question_parse_object_with_options(self):
         from src.project.task.task_question import task_question_parse
 
         q = task_question_parse({'question': {
@@ -31,7 +31,7 @@ class TestQuestionParse:
         assert q['multi'] is False
         assert q['asked_at']
 
-    def test_строка_разворачивается_в_вопрос(self):
+    def test_task_question_parse_string_becomes_question(self):
         """Агент поленился завести объект — вопрос всё равно не теряем."""
         from src.project.task.task_question import task_question_parse
 
@@ -40,14 +40,14 @@ class TestQuestionParse:
         assert q['text'] == 'Что делать с реестром?'
         assert q['options'] == []
 
-    def test_словарь_вариантов(self):
+    def test_task_question_parse_options_as_dict(self):
         from src.project.task.task_question import task_question_parse
 
         q = task_question_parse({'question': {'text': 'Как?', 'options': {'a': 'Так', 'b': 'Иначе'}}})
 
         assert [(o['key'], o['label']) for o in q['options']] == [('a', 'Так'), ('b', 'Иначе')]
 
-    def test_пустое_не_вопрос(self):
+    def test_task_question_parse_empty_is_not_question(self):
         """Пустой вопрос увёл бы подзадачу в blocked с пустым попапом."""
         from src.project.task.task_question import task_question_parse
 
@@ -57,21 +57,21 @@ class TestQuestionParse:
         assert task_question_parse({'question': {'options': ['Да']}}) == {}
         assert task_question_parse({'question': ['не тот тип']}) == {}
 
-    def test_варианты_обрезаются_по_потолку(self):
+    def test_task_question_parse_options_capped(self):
         from src.project.task.task_question import TASK_QUESTION_OPTIONS_MAX, task_question_parse
 
         q = task_question_parse({'question': {'text': 'Что?', 'options': [f'в{n}' for n in range(20)]}})
 
         assert len(q['options']) == TASK_QUESTION_OPTIONS_MAX
 
-    def test_длинный_текст_обрезается(self):
+    def test_task_question_parse_long_text_cut(self):
         from src.project.task.task_question import TASK_QUESTION_TEXT_MAX, task_question_parse
 
         q = task_question_parse({'question': {'text': 'я' * 5000}})
 
         assert len(q['text']) == TASK_QUESTION_TEXT_MAX
 
-    def test_вариант_без_подписи_пропускается(self):
+    def test_task_question_parse_option_without_label_skipped(self):
         from src.project.task.task_question import task_question_parse
 
         q = task_question_parse({'question': {'text': 'Что?', 'options': ['', {'key': 'x'}, 'Годный']}})
@@ -82,14 +82,14 @@ class TestQuestionParse:
 class TestQuestionRead:
     """Чтение вопроса и решений из строки подзадачи."""
 
-    def test_вопрос_из_metadata(self):
+    def test_task_question_read_from_metadata(self):
         from src.project.task.task_question import task_question_get
 
         row = {'metadata': {'question': {'text': 'Как быть?'}}}
 
         assert task_question_get(row)['text'] == 'Как быть?'
 
-    def test_metadata_строкой_из_mysql(self):
+    def test_task_question_metadata_as_mysql_string(self):
         """JSON-колонка приходит строкой, если строку не пропустили через row_apply."""
         from src.project.task.task_question import task_question_get
 
@@ -97,7 +97,7 @@ class TestQuestionRead:
 
         assert task_question_get(row)['text'] == 'Как быть?'
 
-    def test_нет_вопроса(self):
+    def test_task_question_read_no_question(self):
         from src.project.task.task_question import task_question_get
 
         assert task_question_get({}) == {}
@@ -105,14 +105,14 @@ class TestQuestionRead:
         assert task_question_get({'metadata': {'question': {'text': ''}}}) == {}
         assert task_question_get({'metadata': {'question': 'мусор'}}) == {}
 
-    def test_решения_списком(self):
+    def test_task_question_read_decisions_as_list(self):
         from src.project.task.task_question import task_question_decisions
 
         row = {'metadata': {'decisions': [{'answer': 'раз'}, 'мусор', {'answer': 'два'}]}}
 
         assert [d['answer'] for d in task_question_decisions(row)] == ['раз', 'два']
 
-    def test_решений_нет(self):
+    def test_task_question_read_no_decisions(self):
         from src.project.task.task_question import task_question_decisions
 
         assert task_question_decisions({}) == []
@@ -122,21 +122,21 @@ class TestQuestionRead:
 class TestDecisionsText:
     """Решения для промпта роли."""
 
-    def test_вопрос_и_ответ_вместе(self):
+    def test_task_question_decisions_text_pairs_question_and_answer(self):
         from src.project.task.task_question import task_question_decisions_text
 
         row = {'metadata': {'decisions': [{'question': 'Переименовывать?', 'answer': 'Нет'}]}}
 
         assert task_question_decisions_text(row) == '- Вопрос: Переименовывать?\n  Решение: Нет'
 
-    def test_решение_без_вопроса_одной_строкой(self):
+    def test_task_question_decisions_text_answer_without_question(self):
         from src.project.task.task_question import task_question_decisions_text
 
         row = {'metadata': {'decisions': [{'question': '', 'answer': 'Реестр не трогать'}]}}
 
         assert task_question_decisions_text(row) == '- Реестр не трогать'
 
-    def test_пусто_ложно_для_if(self):
+    def test_task_question_decisions_text_empty_is_falsy(self):
         """Пустая строка — то, что `%if subtask_decisions%` не раскроет."""
         from src.project.task.task_question import task_question_decisions_text
 
@@ -152,14 +152,14 @@ class TestAutoQuestion:
     он открывает строку, которая не движется. Поэтому форма ответа та же.
     """
 
-    def test_идущую_подзадачу_не_спрашивают(self):
+    def test_task_question_auto_skips_running_subtask(self):
         from src.project.task.task_question import task_question_auto
 
         assert task_question_auto({'pipeline_state': 'developing'}, []) == {}
         assert task_question_auto({'pipeline_state': 'done'}, []) == {}
         assert task_question_auto({}, []) == {}
 
-    def test_вставшую_спрашивают_с_вариантами(self):
+    def test_task_question_auto_asks_stuck_subtask_with_options(self):
         """С несколькими целями дробление осмысленно — его и предлагаем первым."""
         from src.project.task.task_question import (TASK_QUESTION_ACTION_DROP,
                                                     TASK_QUESTION_ACTION_RETRY,
@@ -177,7 +177,7 @@ class TestAutoQuestion:
                                                     TASK_QUESTION_ACTION_DROP,
                                                     TASK_QUESTION_ACTION_RETRY]
 
-    def test_одна_цель_предлагает_планирование_вместо_дробления(self):
+    def test_task_question_auto_single_goal_offers_planning(self):
         """
         Раздробить единственную цель нечем, а убрать её — отменить подзадачу.
 
@@ -200,7 +200,7 @@ class TestAutoQuestion:
         assert TASK_QUESTION_ACTION_SPLIT not in keys
         assert TASK_QUESTION_ACTION_DROP not in keys
 
-    def test_закрытые_цели_не_считаются_за_охват(self):
+    def test_task_question_auto_done_goals_not_counted_as_scope(self):
         """Одна незакрытая при закрытых соседях — тот же случай: дробить нечего."""
         from src.project.task.task_question import TASK_QUESTION_ACTION_PLAN, task_question_auto
 
@@ -212,7 +212,7 @@ class TestAutoQuestion:
 
         assert keys[0] == TASK_QUESTION_ACTION_PLAN
 
-    def test_без_целей_остаётся_только_перезапуск(self):
+    def test_task_question_auto_without_goals_only_restart(self):
         """Варианты про цели были бы кнопками в пустоту."""
         from src.project.task.task_question import TASK_QUESTION_ACTION_RETRY, task_question_auto
 
@@ -220,14 +220,14 @@ class TestAutoQuestion:
 
         assert [o['key'] for o in q['options']] == [TASK_QUESTION_ACTION_RETRY]
 
-    def test_закрытые_цели_не_считаются(self):
+    def test_task_question_auto_done_goals_not_counted(self):
         from src.project.task.task_question import TASK_QUESTION_ACTION_RETRY, task_question_auto
 
         subtask = {'pipeline_state': 'blocked', 'goals': '[{"text": "сделано", "done": true}]'}
 
         assert [o['key'] for o in task_question_auto(subtask, [])['options']] == [TASK_QUESTION_ACTION_RETRY]
 
-    def test_таймауты_дают_вывод_про_объём(self):
+    def test_task_question_auto_timeouts_hint_at_volume(self):
         """Два оборванных прогона — уже свойство подзадачи, а не случайность."""
         from src.project.task.task_question import task_question_auto
 
@@ -241,7 +241,7 @@ class TestAutoQuestion:
         assert 'объём не влезает в круг' in q['text']
         assert 'файлы не разрезаны' in q['text']
 
-    def test_без_таймаутов_вывод_другой(self):
+    def test_task_question_auto_without_timeouts_other_hint(self):
         from src.project.task.task_question import task_question_auto
 
         attempts = [{'error': 'проверки не прошли'}, {'error': 'проверки не прошли снова'}]
@@ -254,7 +254,7 @@ class TestAutoQuestion:
 class TestGoalsPartition:
     """Разделение целей на отмеченные и оставшиеся."""
 
-    def test_порядок_сохраняется(self):
+    def test_task_question_goals_partition_keeps_order(self):
         from src.project.task.task_goal_scope import _goals_partition
 
         goals = [{'text': 'раз'}, {'text': 'два'}, {'text': 'три'}]
@@ -263,7 +263,7 @@ class TestGoalsPartition:
         assert [g['text'] for g in picked] == ['раз', 'три']
         assert [g['text'] for g in kept] == ['два']
 
-    def test_номер_за_границей_пропускается(self):
+    def test_task_question_goals_partition_skips_out_of_range(self):
         """Пока попап был открыт, цели мог поменять сам агент."""
         from src.project.task.task_goal_scope import _goals_partition
 
@@ -272,7 +272,7 @@ class TestGoalsPartition:
         assert picked == []
         assert [g['text'] for g in kept] == ['раз']
 
-    def test_мусор_в_номерах(self):
+    def test_task_question_goals_partition_garbage_numbers(self):
         from src.project.task.task_goal_scope import _goals_partition
 
         picked, kept = _goals_partition([{'text': 'раз'}], ['0', None, 'ой'])
@@ -284,20 +284,20 @@ class TestGoalsPartition:
 class TestAnswerLabels:
     """Ключи выбранных вариантов превращаются в подписи."""
 
-    def test_подписи_вместо_ключей(self):
+    def test_task_question_answer_labels_instead_of_keys(self):
         from src.project.task.task_question import _answer_labels
 
         question = {'options': [{'key': 'a', 'label': 'Так'}, {'key': 'b', 'label': 'Иначе'}]}
 
         assert _answer_labels(question, ['b', 'a']) == ['Иначе', 'Так']
 
-    def test_неизвестный_ключ_пропускается(self):
+    def test_task_question_answer_unknown_key_skipped(self):
         """Вопрос мог смениться, пока попап был открыт."""
         from src.project.task.task_question import _answer_labels
 
         assert _answer_labels({'options': [{'key': 'a', 'label': 'Так'}]}, ['z']) == []
 
-    def test_без_ответов(self):
+    def test_task_question_answer_labels_empty(self):
         from src.project.task.task_question import _answer_labels
 
         assert _answer_labels({'options': []}, None) == []

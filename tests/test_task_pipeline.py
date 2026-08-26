@@ -558,21 +558,21 @@ class TestGoalsAllDone:
     подзадаче #1028 нескольких кругов подряд.
     """
 
-    def test_все_цели_закрыты(self):
+    def test_task_pipeline_goals_all_done(self):
         from src.project.task.task_pipeline import _goals_all_done
 
         subtask = {'goals': '[{"text": "раз", "done": true}, {"text": "два", "done": true}]'}
 
         assert _goals_all_done(subtask) is True
 
-    def test_есть_незакрытая(self):
+    def test_task_pipeline_goals_one_left_open(self):
         from src.project.task.task_pipeline import _goals_all_done
 
         subtask = {'goals': '[{"text": "раз", "done": true}, {"text": "два", "done": false}]'}
 
         assert _goals_all_done(subtask) is False
 
-    def test_без_целей_круг_нужен(self):
+    def test_task_pipeline_goals_empty_still_needs_round(self):
         """Пустой список — это «принимать не по чему», а не «всё сделано»."""
         from src.project.task.task_pipeline import _goals_all_done
 
@@ -580,7 +580,7 @@ class TestGoalsAllDone:
         assert _goals_all_done({'goals': ''}) is False
         assert _goals_all_done({}) is False
 
-    def test_цели_объектами(self):
+    def test_task_pipeline_goals_accept_parsed_list(self):
         """Из БД приходит строкой, из кода — уже разобранным списком."""
         from src.project.task.task_pipeline import _goals_all_done
 
@@ -623,3 +623,58 @@ class TestStaleTracesClosed:
         source = inspect.getsource(task_pipeline.task_pipeline_tick)
 
         assert 'ai_workflow_trace_runs_stale_close' in source
+
+
+class TestPlanSubtasksShown:
+    """
+    Разбиение из плана видно до утверждения.
+
+    Кнопка «Утвердить» — это решение именно про разбиение, а строк подзадач до
+    нажатия ещё нет: панель показывала «подзадачи появятся после «Утвердить»», и
+    человек соглашался вслепую. Поймано на #1628: план предлагал две подзадачи,
+    на экране не было ни одной.
+    """
+
+    def test_task_pipeline_plan_subtasks_in_response(self):
+        from src.uvicorn.routers.project.project_task_pipeline import _plan_subtasks
+
+        rows = _plan_subtasks([{'title': 'первая', 'description': 'что делать',
+                                'context_lines': 1627},
+                               {'title': 'вторая', 'context_lines': 1359}])
+
+        assert [r['title'] for r in rows] == ['первая', 'вторая']
+        assert [r['context_lines'] for r in rows] == [1627, 1359]
+
+    def test_task_pipeline_plan_subtasks_keep_marks(self):
+        """`split_more` и `final` решают, когда подзадача пойдёт в работу и пойдёт ли."""
+        from src.uvicorn.routers.project.project_task_pipeline import _plan_subtasks
+
+        rows = _plan_subtasks([{'title': 'крупная', 'split_more': True},
+                               {'title': 'приёмка', 'final': True}])
+
+        assert rows[0]['split_more'] is True and rows[0]['final'] is False
+        assert rows[1]['final'] is True and rows[1]['split_more'] is False
+
+    def test_task_pipeline_plan_subtasks_survive_garbage(self):
+        """Планировщик — LLM: вместо числа приходит «много», вместо словаря строка."""
+        from src.uvicorn.routers.project.project_task_pipeline import _plan_subtasks
+
+        assert _plan_subtasks(None) == []
+        assert _plan_subtasks(['строка', 42]) == []
+        assert _plan_subtasks([{'title': 'x', 'context_lines': 'много'}])[0]['context_lines'] == 0
+        assert _plan_subtasks([{'title': 'x', 'context_lines': -5}])[0]['context_lines'] == 0
+
+    def test_task_pipeline_plan_lines_limit_matches_measurement(self):
+        """
+        Панель красит объём за порогом сжатия. Порог зашит в шаблоне, и разойдись он
+        с тем, о чём говорит инструкция менеджера, — подсветка врала бы.
+        """
+        import re
+        from pathlib import Path
+
+        page = Path('data/uvicorn/template/admin/project/task.html').read_text(encoding='utf-8')
+        found = re.search(r'PLAN_LINES_LIMIT\s*=\s*(\d+)', page)
+
+        assert found, 'порог подсветки объёма пропал из панели плана'
+        assert 2000 <= int(found.group(1)) <= 2600, \
+            'порог разошёлся с замером ~2300 строк из role_manager.md'
