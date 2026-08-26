@@ -234,10 +234,27 @@ async def task_diff_page(request: Request, user: AuthSession = Depends(require_a
 
 @router.get("/admin/browser", response_class=HTMLResponse)
 async def browser_page(request: Request, user: AuthSession = Depends(require_auth)):
-    """Живое окно сессий контейнера-браузера (`browser.md`)."""
+    """Список заведённых сайтов контейнера-браузера (`browser.md`)."""
     return request.app.state.jinja2_template.TemplateResponse(
         request,
         "admin/project/browser.html",
+        {"browser_page": "sites"},
+    )
+
+
+@router.get("/admin/browser/site", response_class=HTMLResponse)
+async def browser_site_page(request: Request, user: AuthSession = Depends(require_auth)):
+    """
+    Работа по одному сайту: сессии, сценарии, workflow, ошибки.
+
+    Шаблон тот же, что у списка сайтов, — разделён параметром, а не копией.
+    Страница на четыре тысячи строк, и второй её экземпляр разошёлся бы с первым
+    при первой же правке.
+    """
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/project/browser.html",
+        {"browser_page": "site"},
     )
 
 

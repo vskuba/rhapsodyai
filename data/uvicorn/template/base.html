@@ -44,6 +44,7 @@
 
             {% if request.session.get('role') == 'admin' %}
             <a class="tabnav-group" data-group="miniapp" href="/admin/miniapp">📱 MiniApp</a>
+            <a class="tabnav-group" data-group="browser" href="/admin/browser">🖥️ Браузер</a>
             <a class="tabnav-group" data-group="setting" href="/admin/setting">⚙️ Настройки</a>
             <a class="tabnav-group" data-group="tool" href="/admin/tool">🔧 Инструменты</a>
             {% endif %}
@@ -95,7 +96,6 @@
                 <a href="/admin/planning">🗂️ Планирование</a>
                 <a href="/admin/design">🎨 Дизайн</a>
                 <a href="/admin/playwright">🌐 Playwright</a>
-                <a href="/admin/browser">🖥️ Браузер</a>
 
                 <span class="tabnav-sep"></span>
             </div>
@@ -122,6 +122,19 @@
             <div class="tabnav-panel" data-group="miniapp">
                 <span class="tabnav-sep"></span>
                 <a href="/admin/miniapp">📱 Как в Telegram</a>
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
+
+            {% if request.session.get('role') == 'admin' %}
+            <!-- Две страницы, потому что предметы разные: «Сайты» — список того,
+                 что вообще заведено, «Сайт» — работа по одному выбранному. Раньше
+                 всё лежало на одной странице, и вкладки сценариев и workflow
+                 показывали чужое: выбор сайта на них ни на что не влиял. -->
+            <div class="tabnav-panel" data-group="browser">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/browser">🗂️ Сайты</a>
+                <a href="/admin/browser/site">🖥️ Сайт</a>
                 <span class="tabnav-sep"></span>
             </div>
             {% endif %}
@@ -216,7 +229,8 @@
             '/admin/developing': 'projects',
             '/admin/design': 'projects',
             '/admin/playwright': 'projects',
-            '/admin/browser': 'projects',
+            '/admin/browser': 'browser',
+            '/admin/browser/site': 'browser',
             '/admin/miniapp': 'miniapp',
             '/admin/workflow_trace': 'logs',
             '/admin/setting': 'setting',
