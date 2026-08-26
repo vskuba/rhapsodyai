@@ -1123,6 +1123,51 @@
                     letter-spacing: .04em; margin: 10px 0 4px; }
 
 
+    /* ─── Вкладка «Статистика» ──────────────────────────────────
+       Накопленные замеры работы ролей: объём контекста против времени, токенов и
+       правок. Таблицы плотные и числовые, поэтому моноширинные цифры и выравнивание
+       по правому краю — колонку чисел читают сверху вниз, а не по строкам. */
+    .stat-pane { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; padding: 0 0 8px; }
+    .stat-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .stat-title { font-size: 14px; font-weight: 700; color: #0f172a; }
+    .stat-scope { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .stat-refresh {
+        margin-left: auto; font-size: 12px; padding: 4px 12px; cursor: pointer;
+        border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155;
+    }
+    .stat-refresh:hover { background: #f8fafc; }
+
+    /* Итоги — крупные числа в ряд: их читают первыми и по ним решают, есть ли
+       вообще о чём говорить (пять замеров — ещё нет). */
+    .stat-totals { display: flex; gap: 10px; flex-wrap: wrap; }
+    .stat-card {
+        border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 14px; background: #fff; min-width: 116px;
+    }
+    .stat-card-v { font-size: 19px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .stat-card-k { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .03em; }
+
+    .stat-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; }
+    .stat-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
+    .stat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .stat-table th {
+        text-align: left; padding: 6px 10px; font-size: 11px; font-weight: 700; color: #64748b;
+        border-bottom: 1px solid #e2e8f0; white-space: nowrap; background: #f8fafc;
+    }
+    .stat-table td { padding: 5px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+    .stat-table tr:last-child td { border-bottom: none; }
+    .stat-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+    /* Столбец, ради которого таблица и заведена: сколько секунд стоит тысяча
+       строк контекста. По нему и подбирают порог разбиения. */
+    .stat-table .rate { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: #1d4ed8; }
+    .stat-empty { padding: 14px; color: #94a3b8; font-size: 12px; }
+    /* Замер задачи, которой уже нет: статистика её переживает, и об этом надо
+       сказать — иначе номер выглядит опечаткой. */
+    .stat-gone { color: #94a3b8; font-style: italic; }
+    .stat-del {
+        border: none; background: none; cursor: pointer; color: #cbd5e1; font-size: 13px; padding: 0 4px;
+    }
+    .stat-del:hover { color: #b91c1c; }
+
     /* ─── Вкладка «Журналы» ─────────────────────────────────────
        Журнал работы агента по строке: `.task-log.md` (хронология) и
        `.task-state.md` (сделано/осталось/затыки) из каталога строки. Формат
@@ -1283,6 +1328,15 @@
     .log-line.log-shell { border-left-color: #ddd6fe; background: #faf8ff; }
     .log-line.log-shell .log-text { color: #4c1d95; }
     .log-line.log-shell:hover { background: #f4efff; }
+
+    /* Вопрос роли и ответ человека: единственные строки, где действовал не агент.
+       Янтарный — тот же, которым помечены разрывы во времени: и там, и тут работа
+       стояла. Полоса слева заметнее, чем у оболочки: таких строк единицы, и они
+       объясняют, почему круги вокруг них пошли по-разному. */
+    .log-line.log-ask { border-left-color: #f59e0b; background: #fffbeb; }
+    .log-line.log-ask .log-text { color: #78350f; }
+    .log-line.log-ask:hover { background: #fef3c7; }
+    .log-kw-ask { color: #b45309; }
 
     /* Разрыв во времени: где круг надолго замолчал. Ради этого и нужны отметки
        времени — простой виден до чтения самого текста. */
@@ -1540,6 +1594,10 @@
         <!-- Журналы не фаза задачи, а другой взгляд на тот же проект: показывают,
              чем агенты заняты прямо сейчас. Живут, пока жив каталог строки. -->
         <button class="page-tab" data-tab="logs">📜 Журналы <span class="page-tab-n" id="tabCount-logs"></span></button>
+        <!-- Статистика тоже не фаза: это накопленные замеры работы ролей — объём
+             контекста против времени, токенов и правок. Задачи удаляют, а замеры
+             остаются, поэтому вкладка живёт отдельно от дерева задач. -->
+        <button class="page-tab" data-tab="stats">📊 Статистика <span class="page-tab-n" id="tabCount-stats"></span></button>
     </div>
 
     <!-- Toolbar: title, filters, add -->
@@ -1595,6 +1653,26 @@
 
     <!-- Вкладка «Журналы»: слева строки проекта, у которых есть журнал, справа
          состояние и хронология выбранной. Скрыта, пока вкладка не выбрана. -->
+    <!-- Вкладка «Статистика»: сводка по ролям и шагам, итоги и последние замеры.
+         Данные — `/api/task/metric`, механика — `src/project/task/task_metric.py`. -->
+    <div class="stat-pane" id="statPane" style="display:none">
+        <div class="stat-head">
+            <span class="stat-title">Замеры работы ролей</span>
+            <label class="stat-scope">
+                разрез:
+                <select id="statScope" onchange="statLoad()">
+                    <option value="0">все задачи</option>
+                </select>
+            </label>
+            <button class="stat-refresh" onclick="statLoad()">Обновить</button>
+        </div>
+        <div class="stat-totals" id="statTotals"></div>
+        <div class="stat-section">Средние по роли и шагу</div>
+        <div class="stat-table-wrap"><table class="stat-table" id="statSummary"></table></div>
+        <div class="stat-section">Последние замеры</div>
+        <div class="stat-table-wrap"><table class="stat-table" id="statRows"></table></div>
+    </div>
+
     <div class="log-pane" id="logPane" style="display:none">
         <!-- Левая колонка в два ряда: сверху строки с журналом, снизу состояние
              выбранной. Состояние ушло сюда из правой колонки, чтобы журнал шёл
@@ -2130,6 +2208,7 @@ const PHASE_KEY = 'task_phase';
 // на проект, и в отборе строк таблицы он не участвует. Поэтому проверка на
 // живую вкладку пропускает его отдельно.
 const PHASE_LOGS = 'logs';
+const PHASE_STATS = 'stats';
 let _phaseFilter = (PHASE_TYPE_NAMES[localStorage.getItem(PHASE_KEY)]
                     || localStorage.getItem(PHASE_KEY) === PHASE_LOGS)
     ? localStorage.getItem(PHASE_KEY) : 'development';
@@ -2140,17 +2219,23 @@ function selectPhase(btn, phase) {
     phaseTabsSync();
     phasePanesSync();
     if (phase === PHASE_LOGS) logListLoad();
+    else if (phase === PHASE_STATS) statLoad();
     else renderTable();
 }
 
 // Журналы занимают место таблицы целиком: панель фильтров и кнопка «Добавить»
 // к ним не относятся, а оставленные сверху читались бы как управление журналом.
 function phasePanesSync() {
-    const logs = _phaseFilter === PHASE_LOGS;
-    document.querySelector('.task-toolbar').style.display = logs ? 'none' : '';
-    document.querySelector('.task-scroll').style.display = logs ? 'none' : '';
-    document.getElementById('taskAddForm').style.display = logs ? 'none' : '';
+    const logs  = _phaseFilter === PHASE_LOGS;
+    const stats = _phaseFilter === PHASE_STATS;
+    // Обе вкладки занимают место таблицы целиком: панель фильтров и «Добавить»
+    // к ним не относятся, а оставленные сверху читались бы как управление ими.
+    const bare = logs || stats;
+    document.querySelector('.task-toolbar').style.display = bare ? 'none' : '';
+    document.querySelector('.task-scroll').style.display = bare ? 'none' : '';
+    document.getElementById('taskAddForm').style.display = bare ? 'none' : '';
     document.getElementById('logPane').style.display = logs ? 'flex' : 'none';
+    document.getElementById('statPane').style.display = stats ? 'flex' : 'none';
 }
 
 function phaseTabsSync() {
@@ -4074,6 +4159,148 @@ setInterval(teamMiniLeftTick, 1000);
 // показывать без перезагрузки страницы.
 setInterval(taskProgressRefresh, TASK_PROGRESS_REFRESH_MS);
 
+// ─── Вкладка «Статистика» ──────────────────────────────────────────────────
+// Накопленные замеры работы ролей: сколько строк агенту дали прочесть, сколько он
+// работал, сколько токенов сгенерировала модель и сколько кода круг изменил.
+//
+// Зачем это на странице задач. Порог разбиения по объёму и таймауты ролей —
+// числа, взятые из головы, и проверить их можно только накопленными фактами.
+// Отсюда главный столбец таблицы — «с/1000»: сколько секунд стоит тысяча строк
+// контекста. По нему и подбирают порог.
+//
+// Замеры задачу переживают: план сбрасывают, подзадачи удаляют пачками, а строки
+// остаются. Поэтому у удалённой задачи показываем сохранённое название с
+// пометкой — иначе голый номер выглядел бы опечаткой.
+
+async function statLoad() {
+    const scope = document.getElementById('statScope');
+    const parent = Number(scope && scope.value) || 0;
+
+    let data;
+    try {
+        const resp = await fetch(`/api/task/metric?parent_id=${parent}`);
+        data = await resp.json();
+    } catch (e) {
+        document.getElementById('statTotals').innerHTML =
+            `<div class="stat-empty">Статистика не загрузилась: ${esc(String(e))}</div>`;
+        return;
+    }
+
+    statScopeFill(data.parents || []);
+    statRenderTotals(data.totals || {});
+    statRenderSummary(data.summary || []);
+    statRenderRows(data.rows || []);
+}
+
+// Список задач для разреза приходит от сервера вместе с данными, и строится он по
+// самой таблице замеров, а не по дереву задач на странице.
+//
+// Две причины. Дерево зависит от выбранного проекта и на свежей вкладке пусто —
+// разрез тогда предлагал бы одну строку «все задачи». И главное: замеры задачу
+// переживают, а удалённая задача обязана остаться в выборе — накопленное по ней
+// никуда не делось, а посмотреть его иначе будет нельзя.
+//
+// Выбранное значение сохраняем при перестроении: список обновляется на каждой
+// загрузке, и без этого разрез сбрасывался бы в «все задачи» на каждом обновлении.
+function statScopeFill(parents) {
+    const select = document.getElementById('statScope');
+    if (!select) return;
+
+    const want = select.value;
+    select.innerHTML = '<option value="0">все задачи</option>'
+        + (parents || []).map(p => `<option value="${p.parent_id}">`
+            + `#${p.parent_id} ${esc(String(p.title || '').slice(0, 36))}`
+            + `${p.gone ? ' (удалена)' : ''} · ${p.runs}</option>`).join('');
+    if ([...select.options].some(o => o.value === want)) select.value = want;
+}
+
+function statRenderTotals(t) {
+    const cards = [
+        ['замеров',        t.runs || 0],
+        ['времени',        statMinutes(t.ms_total || 0)],
+        ['токенов',        statNum(t.tokens_total || 0)],
+        ['строк кода',     statNum(t.lines_changed_total || 0)],
+        ['средний объём',  t.lines_avg ? `${statNum(t.lines_avg)} стр` : '—'],
+        ['скорость',       t.speed_avg ? `${t.speed_avg} ток/с` : '—'],
+    ];
+    document.getElementById('statTotals').innerHTML = cards.map(([k, v]) =>
+        `<div class="stat-card"><div class="stat-card-v">${esc(String(v))}</div>`
+      + `<div class="stat-card-k">${esc(k)}</div></div>`).join('');
+}
+
+function statRenderSummary(rows) {
+    const table = document.getElementById('statSummary');
+    if (!rows.length) {
+        table.innerHTML = '<tr><td class="stat-empty">Замеров пока нет — они появятся по концу первого круга</td></tr>';
+        return;
+    }
+    // «макс» рядом со «средним» намеренно: таймаут ставят не по среднему, а по
+    // хвосту — круг, уложившийся в среднее, никогда и не срывался.
+    const head = ['роль', 'шаг', 'кругов', 'строк', 'сек', 'макс', 'токенов', 'ток/с', 'с/1000'];
+    table.innerHTML = '<tr>' + head.map((h, i) =>
+        `<th class="${i >= 2 ? 'num' : ''}">${esc(h)}</th>`).join('') + '</tr>'
+      + rows.map(r => '<tr>'
+          + `<td>${esc(r.role || '—')}</td>`
+          + `<td>${esc(r.step_title || '—')}</td>`
+          + `<td class="num">${r.runs || 0}</td>`
+          + `<td class="num">${statNum(r.lines_avg || 0)}</td>`
+          + `<td class="num">${statNum(r.sec_avg || 0)}</td>`
+          + `<td class="num">${statNum(r.sec_max || 0)}</td>`
+          + `<td class="num">${statNum(r.tokens_avg || 0)}</td>`
+          + `<td class="num">${r.speed_avg || '—'}</td>`
+          + `<td class="rate">${statNum(r.sec_per_1k || 0)}</td>`
+        + '</tr>').join('');
+}
+
+function statRenderRows(rows) {
+    const table = document.getElementById('statRows');
+    if (!rows.length) {
+        table.innerHTML = '<tr><td class="stat-empty">Пусто</td></tr>';
+        return;
+    }
+    const head = ['строка', 'задача', 'роль', 'шаг', 'круг', 'строк', 'код', 'сек', 'токенов', 'ток/с', ''];
+    table.innerHTML = '<tr>' + head.map((h, i) =>
+        `<th class="${i >= 4 ? 'num' : ''}">${esc(h)}</th>`).join('') + '</tr>'
+      + rows.map(r => '<tr>'
+          + `<td class="num">#${r.task_id}</td>`
+          + `<td class="${r.task_gone ? 'stat-gone' : ''}" title="${r.task_gone ? 'задача удалена, замер сохранён' : ''}">`
+          + `${esc(String(r.title || '—').slice(0, 40))}${r.task_gone ? ' (удалена)' : ''}</td>`
+          + `<td>${esc(r.role || '—')}</td>`
+          + `<td>${esc(String(r.step_title || '—').slice(0, 30))}</td>`
+          + `<td class="num">${r.attempt_no}</td>`
+          + `<td class="num">${statNum(r.context_lines || 0)}</td>`
+          + `<td class="num">${r.lines_changed ? statNum(r.lines_changed) : '—'}</td>`
+          + `<td class="num">${Math.round((r.duration_ms || 0) / 1000)}</td>`
+          + `<td class="num">${statNum(r.tokens_output || 0)}</td>`
+          + `<td class="num">${r.tokens_per_sec > 0 ? r.tokens_per_sec : '—'}</td>`
+          + `<td><button class="stat-del" title="Убрать замеры этой строки"`
+          + ` onclick="statDelete(${r.task_id})">✕</button></td>`
+        + '</tr>').join('');
+}
+
+// Удаление — по строке целиком, а не по одному замеру: замеры круга без соседей
+// бессмысленны, разбор без реализации ничего не описывает. Пересчитывать средние
+// после этого не нужно — их считает запрос по оставшимся строкам.
+async function statDelete(taskId) {
+    if (!confirm(`Убрать все замеры строки #${taskId}? Накопленное не восстановить.`)) return;
+    try {
+        await fetch(`/api/task/metric?task_id=${taskId}`, {method: 'DELETE'});
+    } catch (e) {
+        alert(`Не удалось убрать замеры: ${e}`);
+        return;
+    }
+    statLoad();
+}
+
+function statNum(v) {
+    return Math.round(Number(v) || 0).toLocaleString('ru-RU');
+}
+
+function statMinutes(ms) {
+    const min = Math.round((Number(ms) || 0) / 60000);
+    return min >= 60 ? `${Math.floor(min / 60)} ч ${min % 60} мин` : `${min} мин`;
+}
+
 // ─── Вкладка «Журналы» ────────────────────────────────────────────────────────
 // Агент по ходу работы пишет в каталог своей строки два файла: `.task-log.md`
 // (хронология, только дописывается) и `.task-state.md` (сделано/осталось/затыки,
@@ -4089,12 +4316,16 @@ setInterval(taskProgressRefresh, TASK_PROGRESS_REFRESH_MS);
 // закрывается только когда вызов кончился, и без этих двух отметок нельзя было
 // сказать, где потерялся ответ — в оболочке или по дороге к движку.
 const LOG_KEYWORDS = ['старт', 'сделал', 'осталось', 'коммит', 'затык', 'готово',
-                      'запрос', 'ответ'];
+                      'запрос', 'ответ', 'вопрос', 'решение'];
 // Класс подсветки на ключевое слово: в CSS кириллицы в именах классов избегаем.
 const LOG_KW_CLASS = {
     'старт': 'log-kw-start', 'сделал': 'log-kw-done', 'осталось': 'log-kw-left',
     'коммит': 'log-kw-commit', 'затык': 'log-kw-block', 'готово': 'log-kw-done',
     'запрос': 'log-kw-shell', 'ответ': 'log-kw-shell',
+    // Вопрос роли и ответ человека — единственные строки в ленте, где действовал
+    // не агент. Свой цвет и фон: по ним видно, где работа остановилась и чем
+    // именно её сдвинули (`task_log_decision`).
+    'вопрос': 'log-kw-ask', 'решение': 'log-kw-ask',
 };
 const LOG_ROLES = ['manager', 'developer', 'qa', 'bugfixer'];
 // Порог разрыва: меньше трёх минут — обычный ход работы. Ниже опускать не стоит,
@@ -4302,7 +4533,8 @@ function logBodyRender() {
         // только у неё (`task_log_shell`). Сорвавшийся вызов приходит со словом
         // `затык` и красную заливку сохраняет — по ней и ищут, где встало.
         const shell = e.kw === 'запрос' || e.kw === 'ответ';
-        html += `<div class="log-line${e.kw === 'затык' ? ' log-blocked' : ''}${shell ? ' log-shell' : ''}">`
+        const ask = e.kw === 'вопрос' || e.kw === 'решение';
+        html += `<div class="log-line${e.kw === 'затык' ? ' log-blocked' : ''}${shell ? ' log-shell' : ''}${ask ? ' log-ask' : ''}">`
              + `<span class="log-time">${esc(e.time)}</span>`
              + `<span class="log-kw ${LOG_KW_CLASS[e.kw] || ''}">${esc(e.kw)}</span>`
              + `<span class="log-text">${esc(e.text)}</span></div>`;

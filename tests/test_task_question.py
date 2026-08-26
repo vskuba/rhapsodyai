@@ -160,12 +160,14 @@ class TestAutoQuestion:
         assert task_question_auto({}, []) == {}
 
     def test_вставшую_спрашивают_с_вариантами(self):
+        """С несколькими целями дробление осмысленно — его и предлагаем первым."""
         from src.project.task.task_question import (TASK_QUESTION_ACTION_DROP,
                                                     TASK_QUESTION_ACTION_RETRY,
                                                     TASK_QUESTION_ACTION_SPLIT, task_question_auto)
 
         subtask = {'pipeline_state': 'blocked', 'pipeline_attempt_count': 3,
-                   'goals': '[{"text": "разрезать файлы", "done": false}]'}
+                   'goals': '[{"text": "разрезать файлы", "done": false}, '
+                            ' {"text": "перенести приватные вниз", "done": false}]'}
 
         q = task_question_auto(subtask, [], max_attempts=3)
 
@@ -174,6 +176,41 @@ class TestAutoQuestion:
         assert [o['key'] for o in q['options']] == [TASK_QUESTION_ACTION_SPLIT,
                                                     TASK_QUESTION_ACTION_DROP,
                                                     TASK_QUESTION_ACTION_RETRY]
+
+    def test_одна_цель_предлагает_планирование_вместо_дробления(self):
+        """
+        Раздробить единственную цель нечем, а убрать её — отменить подзадачу.
+
+        Развилка тут ложная, и настоящая причина в другом: раз строка встала, охват
+        ей задали неподъёмный — ошиблось планирование, а не исполнение. Поэтому
+        вместо двух пустых кнопок предлагаем вернуть строку менеджеру, чтобы он
+        разложил её на подзадачи следующего уровня (`task_goal_replan`).
+        """
+        from src.project.task.task_question import (TASK_QUESTION_ACTION_DROP,
+                                                    TASK_QUESTION_ACTION_PLAN,
+                                                    TASK_QUESTION_ACTION_RETRY,
+                                                    TASK_QUESTION_ACTION_SPLIT, task_question_auto)
+
+        subtask = {'pipeline_state': 'blocked', 'pipeline_attempt_count': 3,
+                   'goals': '[{"text": "разрезать файлы", "done": false}]'}
+
+        keys = [o['key'] for o in task_question_auto(subtask, [], max_attempts=3)['options']]
+
+        assert keys == [TASK_QUESTION_ACTION_PLAN, TASK_QUESTION_ACTION_RETRY]
+        assert TASK_QUESTION_ACTION_SPLIT not in keys
+        assert TASK_QUESTION_ACTION_DROP not in keys
+
+    def test_закрытые_цели_не_считаются_за_охват(self):
+        """Одна незакрытая при закрытых соседях — тот же случай: дробить нечего."""
+        from src.project.task.task_question import TASK_QUESTION_ACTION_PLAN, task_question_auto
+
+        subtask = {'pipeline_state': 'failed_qa', 'pipeline_attempt_count': 2,
+                   'goals': '[{"text": "сделана", "done": true}, '
+                            ' {"text": "осталась одна", "done": false}]'}
+
+        keys = [o['key'] for o in task_question_auto(subtask, [], max_attempts=3)['options']]
+
+        assert keys[0] == TASK_QUESTION_ACTION_PLAN
 
     def test_без_целей_остаётся_только_перезапуск(self):
         """Варианты про цели были бы кнопками в пустоту."""

@@ -93,7 +93,9 @@ from src.project.task.task_claim import (
 )
 from src.project.task.task_metadata import (
     TASK_METADATA_KEY_BRANCH,
+    TASK_METADATA_KEY_CONTEXT,
     TASK_METADATA_KEY_MR,
+    task_metadata_parse,
     task_metadata_update,
 )
 from src.project.task.task_plan import (
@@ -129,8 +131,14 @@ from src.project.task.task_state import (
     task_state_task_requeue,
     task_state_type_to_plan,
 )
+from src.project.task.task_goal_replan import (task_goal_replan_needed,
+                                               task_goal_replan_send)
 from src.project.task.task_log import TASK_LOG_OUTCOME_OK, task_log_write_run
-from src.project.task.task_worktree import task_worktree_ensure
+from src.project.task.task_metric import task_metric_collect
+from src.project.task.task_worktree import (task_worktree_base_branch,
+                                            task_worktree_ensure,
+                                            task_worktree_git,
+                                            task_worktree_path)
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_parallel import (
     TASK_SETTING_PARALLEL_DEFAULT,
@@ -191,6 +199,12 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
     # своей очереди за чужими двадцатиминутными кругами, ничего при этом не
     # собираясь делать. Тем же правилом живёт разбор плана (`_claim_plan_split`).
     stats['finished'] = await _subtasks_goals_finish()
+
+    # Тем же правилом и по тому же месту — возврат безнадёжных строк менеджеру.
+    # Тоже без оболочки и без LLM: одна запись состояния. Строка с единственной
+    # целью, круг которой не оставил кода, ждать очереди не должна — ей в этой
+    # очереди делать нечего, пока охват не переразложат.
+    stats['replanned'] = await _subtasks_replan_stuck(await _replan_work_dir())
 
     for _ in range(max(1, int(max_actions))):
         action = await _action_claim(worker)
@@ -1040,6 +1054,72 @@ async def _subtasks_goals_finish() -> int:
     return closed
 
 
+async def _replan_work_dir() -> str:
+    """
+    Каталог проекта для подсчёта изменённого кода при возврате на планирование.
+
+    Проект берём у первой вставшей строки, а не перебираем все: подзадачи одной
+    задачи живут в одном проекте, а тик и так гоняется часто — второй запрос ради
+    редкого случая с несколькими проектами не окупается. Ошибётся он безобидно:
+    чужой каталог даст ноль изменённых строк, то есть в худшем случае вернём на
+    планирование строку, которая код всё-таки написала, — а её вернёт назад сам
+    менеджер, увидев готовую работу.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT project_id FROM project_task "
+            " WHERE parent_id IS NOT NULL AND pipeline_state IN ('failed_qa', 'blocked') "
+            " ORDER BY id LIMIT 1")
+        row = await db.fetchone()
+
+    return await task_role_project_work_dir((row or {}).get('project_id'))
+
+
+async def _subtasks_replan_stuck(work_dir: str) -> int:
+    """
+    Вернуть менеджеру строки, которые встали, а работы не дали.
+
+    Три условия разом (`task_goal_replan_needed`): строка встала, цель ровно одна
+    и круг не оставил кода. Спрашивать тут нечего — раздробить единственную цель
+    нечем, а повтор с тем же охватом кончится тем же. Значит, ошиблось не
+    исполнение, а планирование, и правильный ход один: пусть менеджер разложит
+    строку на подзадачи следующего уровня.
+
+    Делаем сами, без вопроса человеку, потому что выбор здесь не выбор: человек
+    видит ровно то же, что и мы, и ответить может только это же. Второй такой же
+    тупик подряд уже показываем вопросом — пометка `replanned` одноразовая.
+
+    Здесь, в тике, а не в конце круга: круг мог и не состояться вовсе (оболочка
+    молчала), а строка всё равно стоит и ждёт решения.
+
+    Returns: сколько строк вернули на планирование.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id, parent_id, title, goals, metadata, pipeline_state FROM project_task "
+            " WHERE parent_id IS NOT NULL AND pipeline_locked_at IS NULL "
+            "   AND pipeline_state IN ('failed_qa', 'blocked')")
+        rows = await db.fetchall() or []
+
+    sent = 0
+    for row in rows:
+        row = dict(row)
+        goals = task_plan_goals_normalize(row.get('goals'))
+        if not task_goal_replan_needed(row, goals, await _lines_changed(work_dir, row['id'])):
+            continue
+
+        result = await task_goal_replan_send(row)
+        if not result.get('ok'):
+            continue
+
+        await _subtask_report(
+            row, 'круг не оставил кода, а цель одна — дробить нечего. Возвращена менеджеру '
+                 'на разбиение: охват задан неподъёмный', ok=None)
+        sent += 1
+
+    return sent
+
+
 def _goals_all_done(subtask: dict) -> bool:
     """
     У подзадачи есть цели и все они закрыты.
@@ -1113,6 +1193,71 @@ async def _log_run(task_id: int, work_dir: str, result: dict, role: str,
     with suppress(Exception):
         await task_log_write_run(work_dir, task_id, str(result.get('session_uuid') or ''),
                                  role, attempt_no, outcome)
+
+    with suppress(Exception):
+        await _metric_collect(task_id, work_dir, result, role, attempt_no)
+
+
+async def _metric_collect(task_id: int, work_dir: str, result: dict,
+                          role: str, attempt_no: int) -> None:
+    """
+    Записать замеры круга: объём контекста против времени, токенов и правок.
+
+    Здесь, а не в самих агентных модулях, по той же причине, что и журнал: это
+    единственное место, куда сходятся все три роли с уже готовым результатом и
+    номером круга.
+
+    Строки контекста берём из мешка строки — это оценка менеджера при разбиении,
+    та самая, по которой решали дробить. Изменённый код считаем по ветке
+    подзадачи: сколько круг реально написал, видно только там.
+
+    Название задачи кладём копией: замер задачу переживает (`project_task_metric`
+    без FK), а по одному номеру удалённую строку в отчёте не прочесть.
+    """
+    row = await task_state_subtask_get(int(task_id)) or {}
+    meta = task_metadata_parse(row.get('metadata'))
+
+    await task_metric_collect(
+        task_id=int(task_id),
+        parent_id=row.get('parent_id'),
+        role=role,
+        attempt_no=attempt_no,
+        session_uuid=str(result.get('session_uuid') or ''),
+        context_lines=int(meta.get(TASK_METADATA_KEY_CONTEXT) or 0),
+        task_title=str(row.get('title') or ''),
+        lines_changed=await _lines_changed(work_dir, task_id),
+    )
+
+
+async def _lines_changed(work_dir: str, task_id: int) -> int:
+    """
+    Сколько строк кода в ветке подзадачи отличается от главной. Не выяснить — 0.
+
+    Считаем по ветке целиком, а не по одному кругу: круг мог доделывать начатое
+    прошлым, и разделить их вклад нечем — коммиты не подписаны номером круга.
+    Поэтому в замер идёт накопленный итог, и складывать эти числа по кругам
+    нельзя (в таблице оно и стоит один раз на круг, а не на каждый шаг).
+
+    Ноль означает «не посчитали»: каталога нет, git отказал, работа ещё не
+    закоммичена. Отличить его от честного нуля можно по времени шага — круг без
+    единой правки редко идёт сорок минут.
+    """
+    directory = task_worktree_path(work_dir, task_id)
+    if not directory or not os.path.isdir(directory):
+        return 0
+
+    base = await task_worktree_base_branch(directory)
+    code, out = await task_worktree_git(directory, 'diff', '--numstat', f'{base}...HEAD')
+    if code:
+        return 0
+
+    total = 0
+    for line in out.splitlines():
+        parts = line.split('\t')
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            total += int(parts[0]) + int(parts[1])
+
+    return total
 
 
 async def _subtask_dir(work_dir: str, subtask_id: int) -> str:

@@ -122,6 +122,11 @@ TASK_METADATA_KEY_SPLIT_MORE = 'split_more'
 # обречена по размеру или сорвалась по другой причине.
 TASK_METADATA_KEY_CONTEXT = 'context_lines'
 
+# Строку уже возвращали менеджеру на разбиение. Пометка навсегда и снимается
+# только руками: без неё связка «планирование → тупик → планирование» крутилась бы
+# сама и плодила уровни вложенности без конца (`task_goal_replan`).
+TASK_METADATA_KEY_REPLANNED = 'replanned'
+
 
 def task_metadata_parse(value) -> dict:
     """
