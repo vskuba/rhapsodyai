@@ -24,7 +24,7 @@ _TAGS_MAP = {
     },
 }
 
-async def ui_components_sync_from_doc(project_id: int) -> dict:
+async def design_ui_components_sync_from_doc(project_id: int) -> dict:
     """
     Читает project_planning_document (doc_type='design_ui_components') для проекта
     и добавляет отсутствующие компоненты в project_design_ui_component (INSERT IGNORE).
@@ -88,7 +88,7 @@ async def ui_components_sync_from_doc(project_id: int) -> dict:
     skipped = len(rows_parsed) - synced
     return {'synced': synced, 'skipped': skipped, 'total': len(rows_parsed)}
 
-async def ui_components_list_get() -> dict:
+async def design_ui_components_list_get() -> dict:
     """
     Возвращает список всех допустимых имён UI-компонентов из таблицы project_design_ui_component.
     Returns:
@@ -100,7 +100,7 @@ async def ui_components_list_get() -> dict:
     names = [r.get('name', '') for r in rows if r.get('name')]
     return {'ui_components_list': ', '.join(names)}
 
-async def ui_component_db_get(component_name: str) -> dict:
+async def design_ui_component_db_get(component_name: str) -> dict:
     """
     Находит UI-компонент по имени в таблице project_design_ui_component.
     Возвращает отформатированную спецификацию и теги для условного рендеринга в промпте.
@@ -172,7 +172,7 @@ async def ui_component_db_get(component_name: str) -> dict:
         'component_tag_auth': '1' if 'auth' in tags_list else '',
     }
 
-async def wireframe_page_extract(page_title: str, wireframes: str) -> dict:
+async def design_wireframe_page_extract(page_title: str, wireframes: str) -> dict:
     """
     Извлекает из общего текста вайрфреймов раздел для конкретной страницы.
     Разделы разделены заголовками вида '### /url (Page Title)'.
