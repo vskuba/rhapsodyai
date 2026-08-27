@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get('/design/{project_id}/blocks')
-async def planning_blocks_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def design_block_planning_blocks_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     async with mysql_get_db_async() as db:
         await db.execute(
             """SELECT b.id, b.name, b.title, b.description, b.created_by, b.order_index, b.section
@@ -45,7 +45,7 @@ async def planning_blocks_get(request: Request, project_id: int, user=Depends(Au
 
 
 @router.put('/design/block/{block_id}/title')
-async def planning_block_title_update(request: Request, block_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_block_title_update(request: Request, block_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Обновить пользовательское название блока (title). Техническое name не изменяется."""
     title = str(data.get('title') or '').strip()[:255] or None
     async with mysql_get_db_async() as db:
@@ -58,7 +58,7 @@ async def planning_block_title_update(request: Request, block_id: int, data: dic
 
 
 @router.get('/design/{project_id}/wireframe-pages')
-async def planning_wireframe_pages(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def design_block_planning_wireframe_pages(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Возвращает страницы с их вайрфреймами и блоками."""
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -109,7 +109,7 @@ async def planning_wireframe_pages(request: Request, project_id: int, user=Depen
 
 
 @router.get('/design/block/{block_id}/widgets')
-async def planning_block_widgets_get(request: Request, block_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def design_block_planning_block_widgets_get(request: Request, block_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT id, name, description, css, html, created_by, order_index "
@@ -121,7 +121,7 @@ async def planning_block_widgets_get(request: Request, block_id: int, user=Depen
 
 
 @router.post('/design/block/{block_id}/widget')
-async def planning_widget_create(request: Request, block_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_widget_create(request: Request, block_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     name = str(data.get('name') or '').strip()[:255]
     if not name:
         return {'error': 'name is required'}
@@ -144,7 +144,7 @@ async def planning_widget_create(request: Request, block_id: int, data: dict, us
 
 
 @router.put('/design/widget/{widget_id}')
-async def planning_widget_update(request: Request, widget_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_widget_update(request: Request, widget_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     fields = {}
     if 'name' in data:
         fields['name'] = str(data['name'])[:255]
@@ -167,7 +167,7 @@ async def planning_widget_update(request: Request, widget_id: int, data: dict, u
 
 
 @router.delete('/design/widget/{widget_id}')
-async def planning_widget_delete(request: Request, widget_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_widget_delete(request: Request, widget_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     async with mysql_get_db_async() as db:
         await db.execute("DELETE FROM project_design_prototype_widget WHERE id = %s", (widget_id,))
         await db.connection.commit()
@@ -175,7 +175,7 @@ async def planning_widget_delete(request: Request, widget_id: int, user=Depends(
 
 
 @router.put('/design/page/{page_id}/blocks')
-async def planning_page_blocks_update(request: Request, page_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_page_blocks_update(request: Request, page_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Заменяет блоки страницы и пересчитывает wireframe-текст."""
     blocks = data.get('blocks') or []
     grid_layout = data.get('grid_layout')
@@ -243,7 +243,7 @@ async def planning_page_blocks_update(request: Request, page_id: int, data: dict
 
 
 @router.post('/design/block/{block_id}/regenerate')
-async def planning_block_regenerate(request: Request, block_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_block_regenerate(request: Request, block_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Запустить AI-перегенерацию блока: новое описание + виджеты с CSS."""
     async with mysql_get_db_async() as db:
         await db.execute("SELECT id FROM project_design_ui_block WHERE id = %s", (block_id,))
@@ -309,7 +309,7 @@ async def planning_block_regenerate(request: Request, block_id: int, user=Depend
 
 
 @router.put('/design/block/{block_id}')
-async def planning_block_update(request: Request, block_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_block_update(request: Request, block_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Обновить описание/название блока."""
     fields = {}
     if 'name' in data and data['name']:
@@ -346,7 +346,7 @@ async def planning_block_update(request: Request, block_id: int, data: dict, use
 
 
 @router.delete('/design/block/{block_id}')
-async def planning_block_delete(request: Request, block_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_block_delete(request: Request, block_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Удалить блок и все его виджеты и состояния."""
     async with mysql_get_db_async() as db:
         await db.execute("DELETE FROM project_design_prototype_page_block WHERE block_id = %s", (block_id,))
@@ -357,7 +357,7 @@ async def planning_block_delete(request: Request, block_id: int, user=Depends(Au
 
 
 @router.post('/design/{project_id}/block')
-async def planning_block_create(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_block_create(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Создать новый блок вручную."""
     name = str(data.get('name') or '').strip()[:255]
     if not name:
@@ -377,7 +377,7 @@ async def planning_block_create(request: Request, project_id: int, data: dict, u
 
 
 @router.post('/design/{project_id}/block/generate')
-async def planning_block_generate(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def design_block_planning_block_generate(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Создать новый блок из описания и сразу сгенерировать виджеты через WF50."""
     name = str(data.get('name') or '').strip()[:255]
     description = str(data.get('description') or '').strip() or None
