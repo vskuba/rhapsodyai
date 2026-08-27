@@ -36,8 +36,8 @@ See the documentation files in `.claude/docs/` for detailed patterns:
 ```bash
 docker exec uvicorn python3 -c "
 import asyncio
-from src.telegram_.telegram_notify import telegram_send_owner
-asyncio.run(telegram_send_owner('your message'))
+from src.telegram_.telegram_notify import telegram_notify_send_owner
+asyncio.run(telegram_notify_send_owner('your message'))
 "
 ```
 
@@ -60,9 +60,9 @@ asyncio.run(telegram_send_owner('your message'))
 | `src/ai/ai_tool.py` | Tool auto-discovery & sync |
 | `src/tool/` | All tools — auto-scanned by category |
 | `src/uvicorn/routers/` | All API endpoints |
-| `src/uvicorn/routers/dashboard.py` | HTML admin page routes + `require_auth` |
+| `src/uvicorn/routers/dashboard.py` | HTML admin page routes + `dashboard_require_auth` |
 | `src/telegram_bot.py` | Telegram bot handler |
-| `src/auth/auth.py` | `AuthChecker`, `get_current_user` |
+| `src/auth/auth.py` | `AuthChecker`, `auth_get_current_user` |
 | `src/cronjob/` | Cron job entry points |
 | `src/worker/` | Все воркеры (Redis/rq): `project/task_worker.py` — очередь `default`, `project/planning_worker.py` — очередь `planning` |
 | `migrations/*.sql` | Миграции yoyo, имя — метка времени; начальная схема заморожена. **И схема, и данные** — отдельного пути для данных нет, `data/migration_manual/` упразднена |

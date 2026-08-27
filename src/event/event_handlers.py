@@ -3,7 +3,7 @@ import json
 from event_.event_ import Event, event_subscribe
 from src.auth.auth_role import auth_role_is_full
 from src.mysql_.repository.event_log_repository import EventLogRepository
-from src.telegram_.telegram_notify import telegram_send_owner
+from src.telegram_.telegram_notify import telegram_notify_send_owner
 
 
 def event_handlers_register():
@@ -29,4 +29,4 @@ async def _telegram_notify_login(event: Event):
     # уведомление только шумит; интересны входы остальных пользователей
     if auth_role_is_full(role):
         return
-    await telegram_send_owner(f"🔐 Пользователь \"{username}\" ({role}) залогинился в систему")
+    await telegram_notify_send_owner(f"🔐 Пользователь \"{username}\" ({role}) залогинился в систему")

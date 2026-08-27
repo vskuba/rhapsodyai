@@ -2,7 +2,7 @@ import os
 
 from fastapi import APIRouter, Request, UploadFile, File
 
-from src.faster_whisper.faster_whisper_model import faster_whisper_transcribe
+from src.faster_whisper.faster_whisper_model import faster_whisper_model_transcribe
 from src.uvicorn.routers.telegram_app.telegram_app_common import (
     _require_telegram_owner,
     _telegram_agent_chat_ask,
@@ -28,7 +28,7 @@ async def telegram_app_chat_voice(request: Request, file: UploadFile = File(...)
         buffer.write(content)
 
     try:
-        text = await faster_whisper_transcribe(temp_file)
+        text = await faster_whisper_model_transcribe(temp_file)
     finally:
         os.remove(temp_file)
 

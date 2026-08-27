@@ -86,7 +86,7 @@ class BrowserAuthorRequest(BaseModel):
     save: bool = Field(True, description='Сохранить результат в браузерные сценарии')
 
 
-async def browser_author_run(data: BrowserAuthorRequest, user_id: int = 0) -> dict:
+async def browser_author_run_browser_author_run(data: BrowserAuthorRequest, user_id: int = 0) -> dict:
     """Пишет сценарий под цель и возвращает его вместе с историей витков.
 
     Возвращает результат, а не бросает исключение на недостигнутой цели: неудачный

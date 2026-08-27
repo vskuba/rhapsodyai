@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.uvicorn.routers.browser.browser_author_run import BrowserAuthorRequest, browser_author_run
+from src.uvicorn.routers.browser.browser_author_run import BrowserAuthorRequest, browser_author_run_browser_author_run
 
 router = APIRouter(prefix='/api/browser/scenario', tags=['browser'])
 
@@ -24,7 +24,7 @@ async def browser_author_post(data: BrowserAuthorRequest,
                               user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
     """Пишет сценарий под цель и сохраняет его: `active`, если прошёл проверку с нуля."""
     try:
-        result = await browser_author_run(data, user_id=user.user_id)
+        result = await browser_author_run_browser_author_run(data, user_id=user.user_id)
     except HTTPException:
         raise
     except Exception as e:

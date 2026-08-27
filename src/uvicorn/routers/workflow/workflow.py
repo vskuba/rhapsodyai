@@ -152,13 +152,13 @@ async def workflow_list(request: Request, node_id: int, user=Depends(AuthChecker
 
 
 @router.get("/workflow/{workflow_id}")
-async def workflow(request: Request, workflow_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
+async def workflow_get(request: Request, workflow_id: int, user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))):
     repo = AgentWorkflowRepository()
     return {"result": await repo.find(workflow_id)}
 
 
 @router.put("/workflow/{workflow_id}")
-async def workflow(
+async def workflow_update(
         request: Request,
         workflow_id: int,
         data: dict,

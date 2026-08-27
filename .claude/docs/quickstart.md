@@ -220,7 +220,7 @@ docker exec -it uvicorn bash
 # Уведомление в Telegram владельцу
 docker exec uvicorn python3 -c "
 import asyncio
-from src.telegram_.telegram_notify import telegram_send_owner
-asyncio.run(telegram_send_owner('your message'))
+from src.telegram_.telegram_notify import telegram_notify_send_owner
+asyncio.run(telegram_notify_send_owner('your message'))
 "
 ```

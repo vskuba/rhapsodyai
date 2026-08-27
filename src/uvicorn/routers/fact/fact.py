@@ -290,7 +290,7 @@ async def fact_collection_save(
 
 
 @router.delete("/fact/{fact_id}")
-async def delete_fact(fact_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.FACT_DELETE]))):
+async def fact_delete_fact(fact_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.FACT_DELETE]))):
     from logging_.logging_ import logger_info
     from qdrant_.qdrant_ import qdrant_remove_by
 
