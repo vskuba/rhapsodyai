@@ -32,7 +32,7 @@
     /* ---------- Левая колонка: сессии ---------- */
 
     .browser-side {
-        flex: 0 0 280px;
+        flex: 0 0 400px;
         background: #fff;
         border: 1px solid #e5e7eb;
         border-radius: 12px;
@@ -81,7 +81,7 @@
     }
 
     .browser-session-name {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 600;
         color: #111827;
         display: flex;
@@ -518,14 +518,12 @@
     /* Сессия выбирается один раз на всю вкладку: сценарии гоняют по той странице,
        которую человек и так держит открытой на соседней вкладке. */
     #tab-scenario,
-    #tab-session,
-    #tab-workflow {
+    #tab-session {
         flex-direction: column;
     }
 
     #tab-scenario .browser-container,
-    #tab-session .browser-container,
-    #tab-workflow .browser-container {
+    #tab-session .browser-container {
         height: auto;
         flex: 1 1 auto;
         padding-top: 0;
@@ -708,7 +706,7 @@
         word-break: break-word;
     }
 
-    /* Итог прогона цепочки: строка на звено — номер, имя, «ок» или причина. */
+    /* Итог прогона: строка на шаг — номер, действие, «ок» или причина. */
     .scenario-trace-row {
         padding: 3px 0;
         border-bottom: 1px solid #f1f5f9;
@@ -720,10 +718,9 @@
     .scenario-trace-row.bad { color: #b91c1c; }
     .browser-status.bad { color: #b91c1c; }
 
-    /* Подзаголовок внутри колонки — он же кнопка аккордеона: цепочки и сценарии
-       занимают одно и то же место, и открыт всегда ровно один из них. Колонка
-       узкая, а карточки с полями подстановок высокие: показывать оба списка разом
-       значит заставлять человека прокручивать мимо того, что ему сейчас не нужно. */
+    /* Подзаголовок списка сценариев в колонке. Кнопкой он был, пока рядом жили
+       цепочки и списки сворачивались по очереди; список остался один — сворачивать
+       нечего, но отбивка и счётчик нужны. */
     .browser-side-sub {
         display: flex;
         align-items: center;
@@ -1138,7 +1135,7 @@
         flex: 0 0 auto;
         align-items: center;
         gap: 12px;
-        padding: 0 16px 8px;
+        padding: 10px 16px 8px;
         min-width: 0;
     }
 
@@ -1464,34 +1461,64 @@
         color: #b91c1c;
         font-size: 12px;
     }
+
+    /* Шапка страницы сайта: выбор, к которому относятся все её вкладки. Стоит
+       над вкладками, а не внутри них: он общий, и место внутри вкладки означало
+       бы, что у каждой свой сайт — ровно та путаница, из-за которой списки и
+       показывали чужое. */
+    .browser-site-head {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 25px 0; background: #fff;
+    }
+    .browser-site-label { font-size: 12px; color: #718096; font-weight: 600; }
+    #browserSiteSelect {
+        font-size: 13px; padding: 5px 10px; border: 1px solid #cbd5e1;
+        border-radius: 6px; background: #fff; color: #1e293b; max-width: 220px;
+    }
+    .browser-site-back {
+        margin-left: auto; font-size: 12px; color: #64748b; text-decoration: none;
+    }
+    .browser-site-back:hover { color: #2c3e50; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="browser-page">
 
+{# Две страницы на одном шаблоне: `sites` — список того, что заведено, `site` —
+   работа по одному выбранному. Копией их разделять нельзя: страница на четыре
+   тысячи строк, и второй экземпляр разошёлся бы с первым при первой правке. #}
+{% set browser_page = browser_page | default('sites') %}
+
+{% if browser_page == 'site' %}
+<!-- Селект сайта — единственный источник того, чьи сценарии, сессии и ошибки
+     показаны. Раньше выбор был на каждой вкладке своим и ни на что не влиял:
+     списки приходили без фильтра, и при смене сайта оставались чужие строки. -->
+<div class="browser-site-head">
+    <span class="browser-site-label">Сайт</span>
+    <select id="browserSiteSelect" onchange="browserSiteSelect(+this.value)"></select>
+    <a class="browser-site-back" href="/admin/browser">← ко всем сайтам</a>
+</div>
+{% endif %}
+
 <div class="page-tabs" id="browserTabs">
-    <button class="page-tab active" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
-    <button class="page-tab" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
+    {% if browser_page == 'site' %}
+    <button class="page-tab active" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
     <button class="page-tab" data-tab="scenario">Сценарии <span class="page-tab-n" id="tabCount-scenario"></span></button>
-    <button class="page-tab" data-tab="workflow">Workflow <span class="page-tab-n" id="tabCount-workflow"></span></button>
     <button class="page-tab" data-tab="error">Ошибки <span class="page-tab-n" id="tabCount-error"></span></button>
+    {% else %}
+    <button class="page-tab active" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
+    {% endif %}
 </div>
 
-<div class="tab-panel active" id="tab-site">
+<div class="tab-panel{% if browser_page != 'site' %} active{% endif %}" id="tab-site">
 
 <div class="site-cards" id="siteCards"></div>
 
 </div>
 
 
-<div class="tab-panel" id="tab-session">
-
-<div class="scenario-head">
-    <span class="scenario-head-label">Сайт</span>
-    <select id="siteSelectSession" title="Адрес закладки подставится в строку адреса"></select>
-    <span class="scenario-head-hint" id="siteSelectSessionHint"></span>
-</div>
+<div class="tab-panel{% if browser_page == 'site' %} active{% endif %}" id="tab-session">
 
 <!-- Сессии — вкладки второго уровня: одна страница на вкладку, «+» заводит ещё
      одну. Список карточек и живое окно под ними принадлежат выбранной сессии. -->
@@ -1511,13 +1538,11 @@
             <input type="text" id="recordName" maxlength="100" placeholder="новый сценарий" spellcheck="false">
             <button type="button" class="browser-btn" id="recordBtn">Старт</button>
         </div>
-        <button type="button" class="browser-side-sub" id="sessionWorkflowHead" data-section="workflow">
-            <span class="browser-side-caret">▸</span>Цепочки<span class="browser-side-n" id="sessionWorkflowN"></span>
-        </button>
-        <div id="sessionWorkflowList"></div>
-        <button type="button" class="browser-side-sub" id="sessionScenarioHead" data-section="scenario">
-            <span class="browser-side-caret">▸</span>Сценарии<span class="browser-side-n" id="sessionScenarioN"></span>
-        </button>
+        <!-- Список один, поэтому и аккордеона нет: сворачивать нечего. Заголовок
+             оставлен ради счётчика — по нему видно, сколько сценариев у сайта. -->
+        <div class="browser-side-sub browser-side-sub-static">
+            Сценарии<span class="browser-side-n" id="sessionScenarioN"></span>
+        </div>
         <div id="sessionScenarioList"></div>
     </div>
 
@@ -1578,8 +1603,6 @@
 <div class="tab-panel" id="tab-scenario">
 
 <div class="scenario-head">
-    <span class="scenario-head-label">Сайт</span>
-    <select id="siteSelectScenario" title="Адрес закладки подставится в «Старт» сценария"></select>
     <span class="scenario-head-label">Сессия</span>
     <select id="scenarioSession" title="В какой сессии гнать шаги"></select>
     <label><input type="checkbox" id="scenarioKeep" checked> оставить сессию</label>
@@ -1655,54 +1678,6 @@
 </div>
 </div>
 
-<div class="tab-panel" id="tab-workflow">
-
-<div class="scenario-head">
-    <span class="scenario-head-label">Сайт</span>
-    <select id="siteSelectWorkflow" title="К какому сайту относится цепочка"></select>
-    <span class="scenario-head-hint">цепочка гонит сценарии по порядку в одной сессии</span>
-</div>
-
-<div class="browser-container">
-
-    <div class="browser-side">
-        <div class="browser-side-head">
-            <span class="browser-side-title">Цепочки</span>
-            <button type="button" class="browser-btn primary" id="workflowNewBtn">+</button>
-        </div>
-        <div class="browser-stat" id="workflowStat">—</div>
-        <div id="workflowList"></div>
-    </div>
-
-    <div class="browser-view">
-        <div class="browser-bar">
-            <input type="text" id="workflowName" placeholder="имя цепочки" spellcheck="false" maxlength="100">
-            <button type="button" class="browser-btn primary" id="workflowSaveBtn">Сохранить</button>
-            <button type="button" class="browser-btn" id="workflowRunBtn">Запустить</button>
-        </div>
-
-        <div class="scenario-body">
-            <div class="scenario-col">
-                <div class="scenario-vars-head">
-                    <div class="scenario-label">Сценарии по порядку прогона</div>
-                    <button type="button" class="scenario-vars-add" id="workflowStepAddBtn"
-                            title="Добавить сценарий в цепочку">+ сценарий</button>
-                </div>
-                <div class="scenario-steps" id="workflowSteps"></div>
-            </div>
-
-            <div class="scenario-col">
-                <div class="scenario-label">Что цепочка вернёт и где встанет</div>
-                <div class="scenario-out" id="workflowOut"></div>
-            </div>
-        </div>
-
-        <div class="browser-status" id="workflowMsg"></div>
-    </div>
-
-</div>
-</div>
-
 <div class="tab-panel" id="tab-error">
 
 <div class="scenario-head">
@@ -1711,7 +1686,6 @@
         <option value="">все</option>
         <option value="view">живое окно</option>
         <option value="scenario">сценарии</option>
-        <option value="workflow">цепочки</option>
         <option value="proxy">прокси</option>
         <option value="page">страница админки</option>
     </select>
@@ -1809,11 +1783,6 @@
         // Список сайтов правят и из соседней вкладки браузера — перечитываем на входе,
         // а не держим то, что пришло при загрузке страницы.
         if (name === 'site') sitesLoad();
-        // Звенья выбирают из сценариев, а список цепочек правят и с вкладки сессий.
-        if (name === 'workflow') {
-            scenariosLoad();
-            workflowsLoad();
-        }
         if (name === 'error') errorsLoad();
 
         // Вкладка сессий без окна бесполезна: страница живёт в контейнере и после
@@ -2016,7 +1985,7 @@
         try {
             data = await postData(`/api/browser/session/${session.session_id}/record/stop`,
                                   {name: (input.value || '').trim(),
-                                   site_id: (siteCurrent() || {}).id || null});
+                                   site_id: _browserSiteId || null});
         } catch (e) {
             showNotification('Сценарий не записан: ' + e.message, 'error');
             await sessionsLoad();
@@ -2038,10 +2007,10 @@
     // Карточка и есть сценарий, поэтому выбирать его больше нечем и незачем:
     // «Запустить» гонит ту строку, в которой нажали, — по странице открытой
     // вкладки, чтобы шаги было видно.
-    // Ключ карт — «вид:номер»: цепочка и сценарий с одинаковым номером это разные
+    // Ключ карт — «вид:номер»: вид остался от времён, когда рядом жили цепочки,
     // строки, и путать их значения нельзя.
     const playBusy = new Set();    // то, чей прогон уже идёт
-    const playDetails = new Map(); // 'workflow:2' -> {used: [...], defaults: {}}
+    const playDetails = new Map(); // 'scenario:7' -> {used: [...], defaults: {}}
 
     // Набранные значения переживают перезагрузку страницы: их подбирают руками под
     // конкретный стенд (логин тестовой учётки, номер анкеты), и терять их на каждом
@@ -2075,35 +2044,7 @@
         playValues.clear();
         try { localStorage.removeItem(PLAY_VALUES_KEY); } catch (e) {}
         sessionScenariosRender();
-        sessionWorkflowsRender();
         showNotification('Введённые значения забыты', 'success');
-    }
-
-    // ---------- Аккордеон колонки ----------
-
-    // Открыт всегда ровно один список: раскрыли цепочки — сценарии свернулись.
-    // Выбор запоминается, как и вкладка страницы: работа идёт длинными заходами.
-    const SIDE_SECTION_KEY = 'browser_side_section';
-
-    let sideSection = localStorage.getItem(SIDE_SECTION_KEY) === 'workflow' ? 'workflow' : 'scenario';
-
-    function sideSectionApply() {
-        for (const [name, headId, listId] of [['workflow', 'sessionWorkflowHead', 'sessionWorkflowList'],
-                                              ['scenario', 'sessionScenarioHead', 'sessionScenarioList']]) {
-            const head = document.getElementById(headId);
-            const list = document.getElementById(listId);
-            if (!head || !list) continue;
-
-            const open = sideSection === name;
-            head.classList.toggle('open', open);
-            list.style.display = open ? '' : 'none';
-        }
-    }
-
-    function sideSectionSet(name) {
-        sideSection = name === 'workflow' ? 'workflow' : 'scenario';
-        localStorage.setItem(SIDE_SECTION_KEY, sideSection);
-        sideSectionApply();
     }
 
     function sessionScenariosRender() {
@@ -2126,7 +2067,6 @@
         root.innerHTML = '';
         if (!mine.length) {
             root.innerHTML = '<div class="browser-empty">сценариев нет — запишите первый сверху</div>';
-            sideSectionApply();
             return;
         }
 
@@ -2134,35 +2074,6 @@
             root.appendChild(_playCard('scenario', row.id, row.name,
                                        row.goal || 'цель не записана', row.status));
         }
-        sideSectionApply();
-    }
-
-    // Цепочки живут в той же колонке и запускаются так же: разница только в том,
-    // что за одной кнопкой стоит несколько сценариев подряд.
-    function sessionWorkflowsRender() {
-        const root = document.getElementById('sessionWorkflowList');
-        if (!root) return;
-
-        const focused = document.activeElement;
-        if (root.contains(focused) && focused.tagName === 'INPUT') return;
-
-        const site = siteCurrent();
-        const mine = site
-            ? workflows.filter(row => !row.site_id || Number(row.site_id) === site.id)
-            : workflows;
-
-        // Заголовок остаётся всегда: аккордеон, у которого секции то появляются, то
-        // исчезают, читается как сбой. Пустоту показывает сам список.
-        document.getElementById('sessionWorkflowN').textContent = mine.length || '';
-        root.innerHTML = '';
-        if (!mine.length) {
-            root.innerHTML = '<div class="browser-empty">цепочек нет</div>';
-        }
-        for (const row of mine) {
-            root.appendChild(_playCard('workflow', row.id, row.name,
-                                       `${row.steps} ${_plural(row.steps, 'сценарий', 'сценария', 'сценариев')}`));
-        }
-        sideSectionApply();
     }
 
     function _plural(n, one, few, many) {
@@ -2266,11 +2177,11 @@
             return {used: [], defaults: {}};
         }
 
-        // У цепочки умолчания собраны по всем её сценариям и лежат отдельным
+        // Умолчания подстановок лежат отдельным
         // полем: у неё самой столбца `variables` нет.
         const detail = {
             used: data.variables_used || [],
-            defaults: kind === 'workflow' ? (data.variables || {}) : ((data.result || {}).variables || {}),
+            defaults: (data.result || {}).variables || {},
         };
         playDetails.set(key, detail);
 
@@ -2311,13 +2222,9 @@
 
         const run = data.result || {};
         if (run.status === 'error') {
-            showNotification(kind === 'workflow'
-                ? `Цепочка встала на «${run.name}»: ${run.error}`
-                : `Шаг ${run.step_no} не прошёл: ${run.error}`, 'error');
+            showNotification(`Шаг ${run.step_no} не прошёл: ${run.error}`, 'error');
         } else {
-            showNotification(kind === 'workflow'
-                ? `Цепочка прошла целиком: ${(run.runs || []).length} сценариев`
-                : `Сценарий прошёл целиком за ${run.duration_ms} мс`, 'success');
+            showNotification(`Сценарий прошёл целиком за ${run.duration_ms} мс`, 'success');
         }
 
         // Список сценариев — из-за метки: прогон переводит сценарий в active или broken.
@@ -2585,7 +2492,7 @@
                 url: url || '',
                 // Метка сайта: по ней полоса вкладок отбирает страницы этой закладки.
                 // В базу она не уезжает — сессия живёт в памяти контейнера.
-                site_id: (siteCurrent() || {}).id || 0,
+                site_id: _browserSiteId || 0,
             });
             showNotification('Сессия заведена', 'success');
             await sessionsLoad();
@@ -2876,10 +2783,71 @@
         {action: 'extract', selector: 'h1', name: 'title'},
     ];
 
+    // ─── Выбор сайта ───────────────────────────────────────────────────────
+    // Сценарии принадлежат сайту (`site_id` в строке), и до появления
+    // этого выбора списки приходили без фильтра: заведёшь новый сайт — а на его
+    // вкладках чужие сценарии. Выбор один на страницу, а не свой на каждой
+    // вкладке: иначе вкладки показывали бы разные сайты одновременно.
+    const BROWSER_SITE_KEY = 'browser_site_id';
+    let _browserSiteId = 0;
+
+    // Ноль — «сайт не выбран»: тогда списки приходят целиком, как раньше. Это
+    // состояние страницы до первой загрузки и при пустом списке сайтов.
+    function browserSiteQuery() {
+        return _browserSiteId ? `?site_id=${_browserSiteId}` : '';
+    }
+
+    async function browserSiteFill() {
+        const sel = document.getElementById('browserSiteSelect');
+        if (!sel) return;
+        let rows = [];
+        try {
+            rows = (await getData('/api/browser/site')).result || [];
+        } catch (e) {
+            sel.innerHTML = '<option value="0">список сайтов не пришёл</option>';
+            return;
+        }
+        if (!rows.length) {
+            sel.innerHTML = '<option value="0">Сайтов нет</option>';
+            return;
+        }
+        sel.innerHTML = rows.map(r =>
+            `<option value="${r.id}">${_escape(r.name || r.url || ('#' + r.id))}</option>`).join('');
+        // Сайт из прошлого захода мог быть удалён — сверяем со списком и молча
+        // берём первый, иначе страница показывала бы пустоту без объяснения.
+        const saved = localStorage.getItem(BROWSER_SITE_KEY);
+        sel.value = [...sel.options].some(o => o.value === saved) ? saved : String(rows[0].id);
+        browserSiteSelect(+sel.value, true);
+    }
+
+    window.browserSiteSelect = function (id, silent) {
+        _browserSiteId = id || 0;
+        localStorage.setItem(BROWSER_SITE_KEY, String(_browserSiteId));
+        if (silent) return;
+        // Перегружаем всё, что принадлежит сайту, а не только открытую вкладку:
+        // в заголовках вкладок стоят счётчики, и без этого они врали бы до
+        // перехода на вкладку.
+        if (typeof scenariosLoad === 'function') scenariosLoad();
+
+        // Сессии и сценарии вкладки «Сессии» отбираются по тому же
+        // выбору — раньше это делал её собственный селект, теперь он один.
+        // Рисуем из уже загруженного, запроса за этим нет.
+        sessionTabsRender();
+        sessionScenariosRender();
+
+        // Адрес закладки подставляем в строку адреса, но никуда не идём:
+        // «Открыть» человек жмёт сам, а выбор сайта — ещё не команда открыть.
+        const site = siteCurrent();
+        if (site && urlEl) {
+            urlEl.value = site.url;
+            urlEdited = true;
+        }
+    };
+
     async function scenariosLoad() {
         let data;
         try {
-            data = await getData('/api/browser/scenario');
+            data = await getData('/api/browser/scenario' + browserSiteQuery());
         } catch (e) {
             scenarioStatEl.textContent = 'список не пришёл: ' + e.message;
             return;
@@ -2895,10 +2863,6 @@
         // из него же — второго запроса на те же имена не делаем.
         scenarios = rows;
         sessionScenariosRender();
-        // Звенья цепочки выбирают сценарий из этого же списка: удалённый сценарий
-        // не должен остаться выбранным в открытом редакторе.
-        if (workflowSteps.length) workflowStepsRender();
-
         if (rows.length === 0) {
             scenarioListEl.innerHTML = '<div class="browser-empty">сценариев нет</div>';
             return;
@@ -2982,7 +2946,10 @@
         scenarioId = 0;
         scenarioNameEl.value = '';
         scenarioGoalEl.value = '';
-        scenarioUrlEl.value = '';
+        // «Старт» заполняем адресом выбранного сайта: сценарий всё равно будет
+        // приписан ему, и набирать тот же адрес руками незачем. Раньше это делал
+        // селект закладок на вкладке — его убрали, подстановка осталась.
+        scenarioUrlEl.value = (siteCurrent() || {}).url || '';
         scenarioStepsSet(SCENARIO_SAMPLE);
         scenarioVarsSet({});
         scenarioOutEl.innerHTML = '';
@@ -3222,252 +3189,6 @@
 
             scenarioKeysEl.appendChild(row);
         }
-    }
-
-    // ---------- Цепочки сценариев ----------
-
-    // Цепочка — порядок сценариев и общий прогон в одной сессии: состояние
-    // страницы переходит от звена к звену, ради этого она и нужна. Сами сценарии
-    // остаются самостоятельными и гоняются по отдельности с соседней вкладки.
-    let workflows = [];
-    let workflowId = 0;
-    let workflowSteps = [];   // id сценариев по порядку
-
-    const workflowListEl = document.getElementById('workflowList');
-    const workflowStatEl = document.getElementById('workflowStat');
-    const workflowNameEl = document.getElementById('workflowName');
-    const workflowStepsEl = document.getElementById('workflowSteps');
-    const workflowOutEl = document.getElementById('workflowOut');
-
-    async function workflowsLoad() {
-        let data;
-        try {
-            data = await getData('/api/browser/workflow');
-        } catch (e) {
-            workflowStatEl.textContent = 'список не пришёл: ' + e.message;
-            return;
-        }
-
-        workflows = data.result || [];
-        countSet('workflow', workflows.length);
-        workflowStatEl.textContent = `цепочек ${workflows.length}`;
-        workflowListRender();
-        sessionWorkflowsRender();
-    }
-
-    function workflowListRender() {
-        workflowListEl.innerHTML = '';
-        if (!workflows.length) {
-            workflowListEl.innerHTML = '<div class="browser-empty">цепочек нет</div>';
-            return;
-        }
-
-        for (const row of workflows) {
-            const el = document.createElement('div');
-            el.className = 'scenario-session' + (row.id === workflowId ? ' active' : '');
-            el.innerHTML =
-                `<div class="browser-session-name"><span>${_escape(row.name)}</span>` +
-                '<button type="button" class="scenario-del" title="Удалить цепочку">' +
-                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
-                ' stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>' +
-                `<div class="browser-session-meta">${row.steps} ` +
-                `${_plural(row.steps, 'сценарий', 'сценария', 'сценариев')}</div>`;
-            el.addEventListener('click', () => workflowOpen(row.id));
-            el.querySelector('.scenario-del').addEventListener('click', (event) => {
-                event.stopPropagation();
-                workflowDelete(row.id, row.name);
-            });
-            workflowListEl.appendChild(el);
-        }
-    }
-
-    function workflowNew() {
-        workflowId = 0;
-        workflowNameEl.value = '';
-        workflowSteps = [];
-        workflowOutEl.innerHTML = '';
-        workflowStepsRender();
-        workflowSay('новая цепочка: имя и сценарии по порядку, затем «Сохранить»');
-        workflowListRender();
-    }
-
-    async function workflowOpen(id) {
-        let data;
-        try {
-            data = await getData('/api/browser/workflow/' + id);
-        } catch (e) {
-            workflowSay('цепочка не открылась: ' + e.message, true);
-            return;
-        }
-
-        const row = data.result || {};
-        workflowId = id;
-        workflowNameEl.value = row.name || '';
-        workflowSteps = (row.steps || []).map(step => Number(step.scenario_id));
-        workflowOutEl.innerHTML = '';
-        // Сайт цепочки — тот же селект, что и у сценариев: правка не должна
-        // сбрасывать привязку только потому, что человек её не трогал.
-        const select = document.getElementById('siteSelectWorkflow');
-        if (row.site_id) select.value = String(row.site_id);
-        workflowStepsRender();
-        workflowSay(data.variables_used?.length
-            ? 'цепочка ждёт подстановки: ' + data.variables_used.join(', ')
-            : 'подстановок нет');
-        workflowListRender();
-    }
-
-    function workflowStepsRender() {
-        workflowStepsEl.innerHTML = '';
-        if (!workflowSteps.length) {
-            workflowStepsEl.innerHTML =
-                '<div class="scenario-steps-empty">сценариев нет — «+ сценарий» добавит первый</div>';
-            return;
-        }
-
-        workflowSteps.forEach((scenarioId, index) => {
-            const el = document.createElement('div');
-            el.className = 'scenario-step';
-
-            const num = document.createElement('span');
-            num.className = 'scenario-step-num';
-            num.textContent = index + 1;
-            el.appendChild(num);
-
-            const select = document.createElement('select');
-            select.className = 'field';
-            for (const row of scenarios) {
-                const option = document.createElement('option');
-                option.value = String(row.id);
-                option.textContent = row.name;
-                select.appendChild(option);
-            }
-            select.value = String(scenarioId);
-            select.addEventListener('change', () => { workflowSteps[index] = Number(select.value); });
-            el.appendChild(select);
-
-            const tools = document.createElement('div');
-            tools.className = 'scenario-step-tools';
-            tools.appendChild(_scenarioStepTool('↑', 'Выше', () => workflowStepMove(index, -1)));
-            tools.appendChild(_scenarioStepTool('↓', 'Ниже', () => workflowStepMove(index, 1)));
-            tools.appendChild(_scenarioStepTool('✕', 'Убрать из цепочки', () => {
-                workflowSteps.splice(index, 1);
-                workflowStepsRender();
-            }, true));
-            el.appendChild(tools);
-
-            workflowStepsEl.appendChild(el);
-        });
-    }
-
-    function workflowStepMove(index, shift) {
-        const to = index + shift;
-        if (to < 0 || to >= workflowSteps.length) return;
-
-        const [moved] = workflowSteps.splice(index, 1);
-        workflowSteps.splice(to, 0, moved);
-        workflowStepsRender();
-    }
-
-    function workflowStepAdd() {
-        if (!scenarios.length) {
-            workflowSay('сначала заведите хотя бы один сценарий', true);
-            return;
-        }
-
-        // Новое звено — первый сценарий списка: выбрать нужный человек всё равно
-        // будет сам, а пустая строка в цепочке никуда не годится.
-        workflowSteps.push(scenarios[0].id);
-        workflowStepsRender();
-    }
-
-    async function workflowSave() {
-        const name = (workflowNameEl.value || '').trim();
-        if (!name) {
-            workflowSay('имя обязательно — по нему цепочку зовут из списка', true);
-            return;
-        }
-        if (!workflowSteps.length) {
-            workflowSay('в цепочке нет ни одного сценария', true);
-            return;
-        }
-
-        const body = {
-            name,
-            site_id: Number(document.getElementById('siteSelectWorkflow').value || 0) || null,
-            scenario_ids: workflowSteps,
-        };
-
-        try {
-            if (workflowId) await putData('/api/browser/workflow/' + workflowId, body);
-            else workflowId = (await postData('/api/browser/workflow', body)).result;
-        } catch (e) {
-            workflowSay('не сохранено: ' + e.message, true);
-            showNotification('Не сохранено: ' + e.message, 'error');
-            return;
-        }
-
-        workflowSay('сохранено, цепочка ' + workflowId);
-        showNotification('Цепочка сохранена', 'success');
-        // Подстановки цепочки собраны по её сценариям: сменили состав — кэш врёт.
-        playDetails.delete(`workflow:${workflowId}`);
-        workflowsLoad();
-    }
-
-    async function workflowDelete(id, name) {
-        if (!confirm(`Удалить цепочку «${name}»? Сценарии останутся на месте.`)) return;
-
-        try {
-            await deleteData('/api/browser/workflow/' + id);
-        } catch (e) {
-            showNotification('Не удалось: ' + e.message, 'error');
-            return;
-        }
-
-        if (id === workflowId) workflowNew();
-        showNotification('Цепочка удалена', 'success');
-        workflowsLoad();
-    }
-
-    // Прогон с этой вкладки идёт в сессии, выбранной у сценариев: цепочку пишут и
-    // проверяют там же, где и её звенья.
-    async function workflowRun() {
-        if (!workflowId) {
-            workflowSay('сначала сохраните цепочку — гоняется то, что лежит в базе', true);
-            return;
-        }
-
-        workflowSay('гоню цепочку — это несколько сценариев подряд…');
-        workflowOutEl.innerHTML = '';
-        let data;
-        try {
-            data = await postData(`/api/browser/workflow/${workflowId}/run`, {
-                session_id: scenarioSessionEl.value,
-                variables: {},
-                secrets: {},
-                keep_session: scenarioKeepEl.checked,
-            });
-        } catch (e) {
-            workflowSay('прогон не состоялся: ' + e.message, true);
-            return;
-        }
-
-        const run = data.result || {};
-        workflowOutEl.innerHTML = (run.runs || []).map(item =>
-            `<div class="scenario-trace-row${item.result.status === 'error' ? ' bad' : ''}">` +
-            `${item.step_no}. ${_escape(item.name)} — ` +
-            `${item.result.status === 'error' ? _escape(item.result.error || 'ошибка') : 'ок'}</div>`
-        ).join('') || '<div class="scenario-trace-row">звеньев нет</div>';
-
-        workflowSay(run.status === 'error'
-            ? `встала на «${run.name}»: ${run.error}`
-            : 'цепочка прошла целиком');
-        scenariosLoad();
-    }
-
-    function workflowSay(text, bad = false) {
-        const el = document.getElementById('workflowMsg');
-        el.textContent = text || '';
-        el.classList.toggle('bad', !!bad);
     }
 
     // ---------- Шаги ----------
@@ -3852,9 +3573,14 @@
         }
 
         return {
-            // Сайт берём из селекта этой вкладки: сценарий принадлежит закладке,
-            // и без поля правка сбрасывала бы привязку в NULL на каждом «Сохранить».
-            site_id: Number(document.getElementById('siteSelectScenario').value || 0) || null,
+            // Сайт — тот, что выбран в шапке страницы: список сценариев отобран
+            // по нему же, значит правка не может относиться к другому. Своего
+            // селекта у вкладки нет — два независимых выбора расходились.
+            //
+            // Берём id из выбора, а не через `siteCurrent`: та ищет по списку
+            // сайтов, и пока он не пришёл, вернула бы null — сохранение в этот
+            // момент сбросило бы привязку.
+            site_id: _browserSiteId || null,
             name: scenarioNameEl.value.trim(),
             goal: scenarioGoalEl.value.trim(),
             start_url: urlNormalize(scenarioUrlEl.value),
@@ -3944,78 +3670,23 @@
         sites = data.result || [];
         countSet('site', sites.length);
         siteCardsRender();
-        siteSelectsFill();
-    }
 
-    // Закладки нужны и соседним вкладкам: на «Сессиях» адрес уходит в строку
-    // адреса, на «Сценариях» — в «Старт». Селект собирается из того же ответа,
-    // которым живёт вкладка сайтов, — второго запроса за те же адреса нет.
-    function siteSelectsFill() {
-        for (const [id, target] of [['siteSelectSession', urlEl],
-                                    ['siteSelectScenario', scenarioUrlEl],
-                                    ['siteSelectWorkflow', null]]) {
-            const select = document.getElementById(id);
-            if (!select) continue;
-
-            // Значение опции — id сайта, а не адрес: сайт стал контекстом работы,
-            // по нему отбираются вкладки сессий и сценарии колонки. Выбранное
-            // держим по нему же: список перечитывается после каждой правки, и
-            // порядок в нём меняется вместе с именем.
-            const chosen = select.value;
-            select.innerHTML = '<option value="">— выбрать сайт —</option>' +
-                sites.map(row =>
-                    `<option value="${row.id}">${_escape(row.name)} — ${_escape(row.url)}</option>`
-                ).join('');
-            select.value = sites.some(row => String(row.id) === chosen) ? chosen : '';
-
-            // Поле уже заполнено адресом одной из закладок — покажем это выбором.
-            const known = target && sites.find(row => row.url === target.value);
-            if (!select.value && known) {
-                select.value = String(known.id);
-                continue;
-            }
-
-            // Иначе предлагаем первый сайт раскладки: порядок карточек человек
-            // задал сам, и верхняя — та, с которой он чаще всего и начинает.
-            if (!select.value && sites.length) {
-                select.value = String(sites[0].id);
-                // Адрес подставляем только в пустое поле: в строке адреса живого
-                // окна стоит адрес открытой сессии, и затирать его нельзя.
-                if (target && !target.value) target.value = sites[0].url;
-            }
-        }
-
+        // Отбор по сайту держится на этом списке: пока он не пришёл, `siteCurrent`
+        // отдаёт null, и полоса вкладок показывает сессии всех сайтов сразу.
+        // Перерисовываем по приходу, иначе чужое висело бы до следующего опроса.
         sessionTabsRender();
         sessionScenariosRender();
-        sessionWorkflowsRender();
     }
 
     // Выбранный сайт — контекст работы: его сессии показывает полоса вкладок, его
     // сценарии — колонка слева, к нему же привязывается всё заведённое здесь.
+    //
+    // Источник выбора один на страницу — селект в шапке. Свои селекты сайта были
+    // на каждой вкладке; их убрали, потому что они расходились между собой и с
+    // отбором списков: вкладки показывали разные сайты одновременно, а сохранение
+    // могло приписать сценарий не тому сайту, чьи сценарии человек видел.
     function siteCurrent() {
-        const id = Number(document.getElementById('siteSelectSession').value || 0);
-
-        return sites.find(row => row.id === id) || null;
-    }
-
-    // Подставляем адрес, но никуда не идём: «Открыть» и «Запустить» человек жмёт
-    // сам, а выбор из списка — ещё не команда открыть.
-    function siteSelectApply(select, target, hintId) {
-        const site = sites.find(row => String(row.id) === select.value);
-        const hint = document.getElementById(hintId);
-
-        if (site) {
-            target.value = site.url;
-            if (target === urlEl) urlEdited = true;
-            if (hint) hint.textContent = 'адрес подставлен — нажмите «Открыть»';
-        } else if (hint) {
-            hint.textContent = '';
-        }
-
-        // Сменился сайт — сменились и его вкладки сессий, и его сценарии с цепочками.
-        sessionTabsRender();
-        sessionScenariosRender();
-        sessionWorkflowsRender();
+        return sites.find(row => row.id === _browserSiteId) || null;
     }
 
     function siteCardsRender() {
@@ -4134,7 +3805,6 @@
         // Рисуем сразу, ответ ждём молча: перетаскивание обязано выглядеть
         // мгновенным, а порядок всё равно перечитается следующим `sitesLoad`.
         siteCardsRender();
-        siteSelectsFill();
 
         try {
             await postData('/api/browser/site/order', {ids: sites.map(row => row.id)});
@@ -4256,10 +3926,6 @@
         siteErrorEl.textContent = text || '';
     }
 
-    for (const id of ['sessionWorkflowHead', 'sessionScenarioHead']) {
-        document.getElementById(id).addEventListener('click', (event) =>
-            sideSectionSet(event.currentTarget.dataset.section));
-    }
 
     // Забыть набранное: значения лежат в localStorage браузера, и пароль тестовой
     // учётки там останется, пока его оттуда не уберут.
@@ -4275,11 +3941,6 @@
     document.getElementById('inspectBtn').addEventListener('click', inspectToggle);
     document.getElementById('inspectClose').addEventListener('click', inspectHide);
     document.getElementById('recordBtn').addEventListener('click', recordToggle);
-
-    document.getElementById('siteSelectSession').addEventListener('change', (event) =>
-        siteSelectApply(event.target, urlEl, 'siteSelectSessionHint'));
-    document.getElementById('siteSelectScenario').addEventListener('change', (event) =>
-        siteSelectApply(event.target, scenarioUrlEl, ''));
 
     document.getElementById('siteSaveBtn').addEventListener('click', siteSave);
     document.getElementById('siteCancelBtn').addEventListener('click', siteModalClose);
@@ -4304,10 +3965,6 @@
 
     // Поля подстановок идут за шагами: дописали подстановку — строка появилась сразу.
     document.getElementById('scenarioStepAddBtn').addEventListener('click', scenarioStepAdd);
-    document.getElementById('workflowNewBtn').addEventListener('click', workflowNew);
-    document.getElementById('workflowSaveBtn').addEventListener('click', workflowSave);
-    document.getElementById('workflowRunBtn').addEventListener('click', workflowRun);
-    document.getElementById('workflowStepAddBtn').addEventListener('click', workflowStepAdd);
     document.getElementById('scenarioVarAddBtn').addEventListener('click', scenarioVarAdd);
     document.getElementById('scenarioVarSaveBtn').addEventListener('click', scenarioSave);
 
@@ -4336,14 +3993,26 @@
     // Первая вкладка — она же по умолчанию: с сайтов работа и начинается, сессию
     // заводят с их карточки. Запомненный выбор всё равно старше умолчания, а
     // неизвестное значение (осталось от прошлой раскладки) откатывается сюда же.
-    const TAB_KNOWN = ['site', 'session', 'scenario', 'workflow', 'error'];
-    tabSelect(TAB_KNOWN.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'site');
+    // Набор вкладок теперь разный на двух страницах, и запомненная вкладка с
+    // соседней страницы сюда не годится: на «Сайтах» её просто нет в разметке.
+    // Поэтому сверяем не со списком всех известных, а с тем, что реально есть.
+    const TAB_PRESENT = [...document.querySelectorAll('#browserTabs .page-tab')]
+        .map(t => t.dataset.tab);
+    const TAB_SAVED = localStorage.getItem(TAB_KEY);
+    tabSelect(TAB_PRESENT.includes(TAB_SAVED) ? TAB_SAVED : TAB_PRESENT[0]);
+
     scenarioKeysRender();
-    sideSectionApply();
     scenarioActionsLoad();
-    workflowsLoad();
+
+    // Порядок важен: выбор сайта заполняется первым, и только после него грузятся
+    // списки — иначе первый запрос ушёл бы без фильтра и на мгновение показал
+    // чужие сценарии.
+    (async () => {
+        await browserSiteFill();
+        scenariosLoad();
+    })();
+
     sessionsLoad();
-    scenariosLoad();
     sitesLoad();
     setInterval(sessionsLoad, 10000);
 </script>

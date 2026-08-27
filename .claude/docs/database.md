@@ -1,7 +1,7 @@
 # Database — репозитории, схема, миграции
 
 > Список репозиториев `src/mysql_/repository/`, группы таблиц, порядок создания с учётом
-> FK и правила правки схемы. Схема живёт в единственном файле `migrations/0001.sql`;
+> FK и правила правки схемы. Схема живёт в единственном файле `migrations/20260101000000_initial_schema.sql`;
 > механика прогона и сидов — `migration.md`.
 
 ## Repositories (`src/mysql_/repository/`)
@@ -35,7 +35,7 @@ Migrations apply automatically on Uvicorn startup via `mysql_migration_up()`. Fi
 
 | File | Purpose |
 |------|---------|
-| `0001.sql` | DDL schema — CREATE TABLE, FK, indexes for ALL tables; includes DROP TABLE IF EXISTS at the top for clean recreation |
+| `20260101000000_initial_schema.sql` | DDL schema — CREATE TABLE, FK, indexes for ALL tables; includes DROP TABLE IF EXISTS at the top for clean recreation |
 
 Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is managed through the **Seed UI** at `/admin/seed`, not via SQL files. See `seed.md`.
 
@@ -98,8 +98,6 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 - `browser_scenario` — UI scenarios: goal + JSON steps (no secrets in `steps`), `site_id` → `browser_site` (ON DELETE SET NULL)
 - `browser_scenario_run` — run journal: trace, extract, duration; written on success too
 - `browser_error` — error journal: `source`, `message`, `session_id`, `url`, JSON `context` (no FKs on purpose)
-- `browser_workflow` — scenario chains: `site_id`, unique `name`, `position`
-- `browser_workflow_step` — chain links: `workflow_id` → `scenario_id` (both cascade), `position`
 - `browser_site` — bookmarks for the browser container: unique `name` + `url` (scheme required), `position` for the drag-and-drop order, `tags` (comma-separated, lowercase) so neighbours can filter their own sites via `GET /api/browser/site?tag=dating`
 
 ## Table Order in 0001.sql (FK dependency order)
@@ -120,7 +118,7 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 14. `project_design_prototype_browser_history`
 15. `project_state` → `project_design_prototype_page` → `project_design_prototype_widget` → `project_design_prototype_page_block`
 16. `project_design_ui_component` → `project_design_ui_block_type` → `project_design_ui_block` → `project_design_ui_block_size` → `project_design_token`
-17. `browser_site` → `browser_scenario` → `browser_scenario_run`; `browser_workflow` → `browser_workflow_step`
+17. `browser_site` → `browser_scenario` → `browser_scenario_run`
 
 ## Changing the Schema
 
@@ -181,8 +179,8 @@ Kill it when done: `pkill -f 'ssh.*rhapsody-prod-db'`.
 
 ### Cautions
 
-- **Never pipe `0001.sql` at prod.** It starts with `USE \`project\`` plus `DROP TABLE IF EXISTS` — it self-selects the live database and wipes it regardless of which host or DB name you thought you were targeting.
-- **`0001.sql` never re-applies on prod** (yoyo already marked it applied). Schema changes reach prod only as hand-written `ALTER TABLE` / `RENAME TABLE` / `CREATE TABLE`, applied through Route A. Keep the same change in `0001.sql` so a fresh install still matches.
+- **Never pipe the initial schema at prod.** It starts with `DROP TABLE IF EXISTS` for every table. The old `USE \`project\`` line is gone (the DB name now comes from the connection), so the file no longer self-selects the live database — but piping it at a live DB still wipes it.
+- **The initial schema is frozen** and never re-applies (yoyo marked it applied). New tables and `ALTER TABLE` go into their own timestamped migration in `migrations/` — yoyo applies it on the next start, on every install alike. Editing the frozen file would change an already-applied migration: live DBs would never see it, fresh installs would.
 - **Don't run ad-hoc `mysql_pool_get()` scripts against prod** without a guaranteed pool close — leaked connections accumulate on the server.
 - Data (not schema) goes through the Seed UI `/admin/seed`; a full dump is `/admin/backup`.
 

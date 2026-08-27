@@ -65,7 +65,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `src/auth/auth.py` | `AuthChecker`, `get_current_user` |
 | `src/cronjob/` | Cron job entry points |
 | `src/worker/` | Все воркеры (Redis/rq): `project/task_worker.py` — очередь `default`, `project/planning_worker.py` — очередь `planning` |
-| `migrations/0001.sql` | Единственный источник схемы БД |
+| `migrations/*.sql` | Миграции yoyo, имя — метка времени; начальная схема заморожена |
 
 ## Docs Reference
 
@@ -104,7 +104,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
 | `browser.md` | Контейнер-браузер: сессии-контексты, API :8014, память, настройки compose |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
-| `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда |
+| `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда, `gx10_autocompact_limit` |
 | `dashboard_frontend.md` | Паттерны админ-страниц: JS, CSS, контракты API |
 | `deploy.md` | Blue-Green деплой, `bluegreen.sh`, rollback |
 
@@ -113,7 +113,7 @@ asyncio.run(telegram_send_owner('your message'))
 | File | Contents |
 |------|---------|
 | `database.md` | Схема, порядок FK-таблиц |
-| `migration.md` | yoyo, `0001.sql`, `mysql_seed_up`, сброс БД |
+| `migration.md` | yoyo, `20260101000000_initial_schema.sql`, `mysql_seed_up`, сброс БД |
 | `seed.md` | Seed SQL: API, генерация, автозапуск |
 | `backup.md` | mysqldump/python-fallback, gzip, restore |
 
@@ -137,6 +137,11 @@ asyncio.run(telegram_send_owner('your message'))
 | `project_design.md` | Вкладки, API, таблицы, конфигуратор прототипа |
 | `project_task.md` | `/admin/task`, устройство конвейера: состояния, отбор работы, схема БД, API |
 | `project_task_roles.md` | Роли конвейера: Manager/Developer/QA/багфиксер — workflow, шаги, промпты, таймауты |
+| `role_toolbox.md` | **Читают сами роли:** чем работать — команды, запреты, где писать |
+| `role_developer.md` | Инструкция Developer: порядок круга, что не делать, когда спрашивать |
+| `role_qa.md` | Инструкция QA: как проверять, чем доказывать цель, почему не чинить |
+| `role_bugfixer.md` | Инструкция Bugfixer: воспроизвести → причина → минимальная правка |
+| `role_manager.md` | Инструкция Manager: разведка, цели, разбиение по объёму контекста |
 | `project_team.md` | Члены команды, `/admin/team`, heartbeat `/api/team/ping`, типы задач |
 
 **API соседей и подсистемы `src/`**

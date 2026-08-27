@@ -367,14 +367,14 @@ class TestSummaryChunks:
     сам фреймворк. Поэтому режем и шлём по очереди.
     """
 
-    def test_короткие_идут_одной_порцией(self):
+    def test_task_log_summary_short_blocks_go_in_one_chunk(self):
         from src.project.task.task_log_summary import _chunks_split
 
         items = [{'key': n, 'text': 'я' * 300} for n in range(3)]
 
         assert [len(c) for c in _chunks_split(items)] == [3]
 
-    def test_длинные_делятся(self):
+    def test_task_log_summary_long_blocks_are_split(self):
         from src.project.task.task_log_summary import TASK_LOG_SUMMARY_CHUNK_MAX, _chunks_split
 
         items = [{'key': n, 'text': 'я' * (TASK_LOG_SUMMARY_CHUNK_MAX // 2 + 50)} for n in range(4)]
@@ -383,7 +383,7 @@ class TestSummaryChunks:
         assert len(chunks) > 1
         assert sum(len(c) for c in chunks) == 4
 
-    def test_блок_больше_порции_уходит_один(self):
+    def test_task_log_summary_oversized_block_goes_alone(self):
         """Он уже урезан по своему потолку — выбрасывать его нечестно."""
         from src.project.task.task_log_summary import TASK_LOG_SUMMARY_CHUNK_MAX, _chunks_split
 
@@ -393,7 +393,7 @@ class TestSummaryChunks:
 
         assert [len(c) for c in chunks] == [1, 1]
 
-    def test_пусто(self):
+    def test_task_log_summary_empty_input(self):
         from src.project.task.task_log_summary import _chunks_split
 
         assert _chunks_split([]) == []
@@ -402,7 +402,7 @@ class TestSummaryChunks:
 class TestSummaryBlocks:
     """Сборка промпта из блоков порции."""
 
-    def test_нумерация_с_единицы(self):
+    def test_task_log_summary_blocks_numbered_from_one(self):
         from src.project.task.task_log_summary import _blocks_build
 
         text = _blocks_build([{'text': 'раз', 'title': 'Разбор', 'kind': 'сделал'},
@@ -411,14 +411,14 @@ class TestSummaryBlocks:
         assert '=== 1 · Шаг: Разбор · Исход: сделал ===' in text
         assert '=== 2 · Шаг: Вердикт · Исход: затык ===' in text
 
-    def test_длинный_ответ_режется(self):
+    def test_task_log_summary_blocks_long_answer_cut(self):
         from src.project.task.task_log_summary import TASK_LOG_SUMMARY_BLOCK_MAX, _blocks_build
 
         text = _blocks_build([{'text': 'я' * 9000, 'title': 'Ш', 'kind': 'сделал'}])
 
         assert len(text) < TASK_LOG_SUMMARY_BLOCK_MAX + 200
 
-    def test_пустой_ответ_пропускается(self):
+    def test_task_log_summary_blocks_skip_empty_answer(self):
         from src.project.task.task_log_summary import _blocks_build
 
         assert _blocks_build([{'text': '   ', 'title': 'Ш', 'kind': 'сделал'}]) == ''
@@ -431,28 +431,28 @@ class TestSummaryAnswer:
     `number` вместо `n`, — расточительство.
     """
 
-    def test_обычная_форма(self):
+    def test_task_log_summary_answer_plain_shape(self):
         from src.project.task.task_log_summary import _answer_parse
 
         raw = 'json:{"log_summary_json": {"lines": [{"n": 1, "text": "суть"}]}}'
 
         assert _answer_parse(raw, 850) == {1: 'суть'}
 
-    def test_список_прямо_под_ключом(self):
+    def test_task_log_summary_answer_list_under_key(self):
         from src.project.task.task_log_summary import _answer_parse
 
         raw = '{"log_summary_json": [{"n": 2, "text": "суть"}]}'
 
         assert _answer_parse(raw, 850) == {2: 'суть'}
 
-    def test_массив_строк_нумеруется_по_месту(self):
+    def test_task_log_summary_answer_array_numbered_in_place(self):
         from src.project.task.task_log_summary import _answer_parse
 
         raw = '{"lines": ["первая", "вторая"]}'
 
         assert _answer_parse(raw, 850) == {1: 'первая', 2: 'вторая'}
 
-    def test_переводы_строк_схлопываются(self):
+    def test_task_log_summary_answer_newlines_collapse(self):
         """Журнал читают построчно — перенос внутри строки его ломает."""
         from src.project.task.task_log_summary import _answer_parse
 
@@ -460,14 +460,14 @@ class TestSummaryAnswer:
 
         assert _answer_parse(raw, 850) == {1: 'две строки'}
 
-    def test_длина_режется_потолком(self):
+    def test_task_log_summary_answer_length_capped(self):
         from src.project.task.task_log_summary import _answer_parse
 
         raw = '{"lines": [{"n": 1, "text": "' + 'я' * 3000 + '"}]}'
 
         assert len(_answer_parse(raw, 850)[1]) == 850
 
-    def test_мусор_даёт_пустоту(self):
+    def test_task_log_summary_answer_garbage_gives_empty(self):
         from src.project.task.task_log_summary import _answer_parse
 
         assert _answer_parse('', 850) == {}
@@ -535,3 +535,137 @@ class TestShellBlocks:
 
         assert line == '17:19:05  запрос    оболочка manager: оболочка перезапущена\n'
         assert not line.rstrip().endswith(':'), 'висящее двоеточие читается как потерянное значение'
+
+
+class TestHonestReportIsNotBlocker:
+    """
+    `ok: false` сам по себе затыком не считается.
+
+    Роль отвечает так и когда работала честно: «переименовал девять функций, но
+    остановился на развилке» — это состоявшийся ход с содержанием. Помечать его
+    наравне с мёртвой оболочкой значит врать: человек ищет в журнале, где всё
+    встало, и красная пометка на нормальном ответе уводит его не туда.
+
+    Поймано вживую на #1626: строка «10:58:27 затык Ответ JSON: отчёт» стояла
+    рядом с тем же текстом, помеченным «ответ», — один и тот же ответ LLM с двумя
+    разными ярлыками.
+
+    Отличаем по содержанию: у заглушки несостоявшегося прогона его нет — пустой
+    отчёт и текст ошибки вместо работы.
+    """
+
+    STUB = ('json:{"env_ok": false, "ok": false, "report": {}, '
+            '"error": "Разработчик не ответил. Статус: timeout"}')
+    REAL = ('json:{"dev_report_json": {"ok": false, "summary": '
+            '"Переименовал 9 публичных инструментов в 3 файлах"}}')
+
+    def test_stub_without_work_is_a_blocker(self):
+        from src.project.task.task_log import _step_failed
+
+        assert _step_failed(_step('Разработчик недоступен', self.STUB))
+
+    def test_short_stub_without_report_is_a_blocker(self):
+        """Заглушка бывает и без ключа `report` — отличает её отсутствие сути."""
+        from src.project.task.task_log import _step_failed
+
+        assert _step_failed(_step('QA недоступен', 'json:{"ok": false, "error": "QA не ответил"}'))
+
+    def test_report_with_work_is_not_a_blocker(self):
+        from src.project.task.task_log import _step_failed
+
+        assert not _step_failed(_step('Ответ JSON: отчёт', self.REAL))
+
+    def test_qa_verdict_with_work_is_not_a_blocker(self):
+        """Вердикт «не принято» — тоже состоявшаяся работа, а не затык."""
+        from src.project.task.task_log import _step_failed
+
+        output = ('json:{"qa_report_json": {"ok": false, '
+                  '"verdict": "цель закрыта, но документация устарела"}}')
+
+        assert not _step_failed(_step('Ответ JSON: вердикт', output))
+
+    def test_line_keyword_follows(self):
+        """Ярлык строки journal идёт за тем же решением."""
+        from src.project.task.task_log import _step_line
+
+        assert 'сделал' in _step_line(_step('Ответ JSON: отчёт', self.REAL))
+        assert 'затык' in _step_line(_step('Разработчик недоступен', self.STUB))
+
+    def test_dead_shell_still_a_blocker(self):
+        """Статус вызова оболочки проверяется отдельно и остаётся затыком."""
+        from src.project.task.task_log import _step_failed
+
+        assert _step_failed(_step('Разработчик: реализация', SHELL_TIMEOUT))
+
+
+class TestShellAnswerNotCut:
+    """
+    Ответ оболочки в хронологию кладётся целиком, задание — по-прежнему обрезком.
+
+    Резали и то и другое на двухстах символах, и на этом обрывалось ровно нужное:
+    вердикт QA — на «а цель требует п…», JSON-отчёт — на середине первого поля.
+    По такому огрызку не понять, что произошло, и тем более не собрать вопрос
+    человеку — а вопрос задают как раз тогда, когда роль во что-то упёрлась.
+
+    Задание оставляем коротким намеренно: его собирает движок по шаблону шага, и
+    от него в ленте нужно одно — какой шаг ушёл и когда.
+    """
+
+    def test_task_log_shell_answer_kept_whole(self):
+        from src.project.task.task_log_shell import (TASK_LOG_SHELL_ANSWER_MAX,
+                                                     _text_cut)
+
+        answer = 'в' * 5000
+
+        assert _text_cut(answer, TASK_LOG_SHELL_ANSWER_MAX) == answer
+
+    def test_task_log_shell_prompt_stays_short(self):
+        from src.project.task.task_log_shell import (TASK_LOG_SHELL_SENT_MAX,
+                                                     _text_cut)
+
+        cut = _text_cut('з' * 5000, TASK_LOG_SHELL_SENT_MAX)
+
+        assert len(cut) == TASK_LOG_SHELL_SENT_MAX + 1 and cut.endswith('…')
+
+    def test_task_log_shell_event_is_single_line(self):
+        """
+        Формат ленты — событие на строку. Перенос внутри события разорвал бы её:
+        `_blocks_merge` раскладывает строки сортировкой, и продолжение без метки
+        времени уехало бы в другое место блока.
+        """
+        from datetime import datetime
+
+        from src.project.task.task_log_shell import (TASK_LOG_SHELL_ANSWER_MAX,
+                                                     _text_cut, task_log_shell_line)
+
+        text = _text_cut('{"ok": false,\n "summary": "разбор",\n\n "checks": []}',
+                         TASK_LOG_SHELL_ANSWER_MAX)
+        line = task_log_shell_line({'created_at': datetime(2026, 8, 26, 17, 6, 12),
+                                    'keyword': 'ответ', 'title': 'оболочка qa → ответ',
+                                    'text': text, 'seconds': 142})
+
+        assert line.count('\n') == 1 and line.endswith('\n')
+        assert '"checks": []}' in line, 'хвост ответа обязан доехать до строки'
+
+    def test_task_log_shell_has_own_read_limit(self):
+        """
+        Полные ответы весят на порядок больше, и с общим потолком в хвост влезал
+        бы последний круг. Роль от этого не толстеет: файл идёт только на страницу.
+        """
+        from src.project.task.task_log import (TASK_LOG_READ_MAX_CHARS,
+                                               TASK_LOG_READ_SHELL_MAX_CHARS)
+
+        assert TASK_LOG_READ_SHELL_MAX_CHARS > TASK_LOG_READ_MAX_CHARS
+
+    def test_task_log_tail_cut_on_line_boundary(self, tmp_path):
+        """Разрезанное событие теряет метку времени, и сортировка уносит огрызок."""
+        from src.project.task.task_log import _read_tail
+
+        path = tmp_path / 'shell.md'
+        path.write_text('17:00:01  ответ     первое: ааааааааааа\n'
+                        '17:00:02  ответ     второе: ббббббббббб\n', encoding='utf-8')
+
+        tail = _read_tail(str(path), 30)
+        body = [line for line in tail.splitlines() if not line.startswith('…')]
+
+        assert all(line[2] == ':' for line in body), 'в хвосте остались обрывки без времени'

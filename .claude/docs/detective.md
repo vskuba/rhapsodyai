@@ -212,10 +212,10 @@ Workflow (таблица `agent_workflow`):
 
 ## Known issues
 
-- **Нет DDL для `detective_case`.** В `migrations/0001.sql` на месте таблицы только
+- **Нет DDL для `detective_case`.** В `migrations/20260101000000_initial_schema.sql` на месте таблицы только
   комментарий `-- developing / detective`, самой `CREATE TABLE` нет ни там, ни в `data/`.
   На чистой БД `/new_case` падает на шаге `detective_case_create`, а `/accuse` отвечает
-  «Дело еще не начато». Схема живёт только в `0001.sql` (`migration.md`) — таблицу надо
+  «Дело еще не начато». Схема живёт только в `20260101000000_initial_schema.sql` (`migration.md`) — таблицу надо
   туда добавить.
 - **Нет companion `id = 4` (`detective_player`).** Ни в БД, ни в seed-файле, а
   `apps/detective/js/app.js` жёстко шлёт `companion_id: 4`. `POST /chat/ask` отвечает

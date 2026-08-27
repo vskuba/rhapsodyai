@@ -116,3 +116,232 @@ class TestLlm:
     async def test_llm_usage_stats_custom_days(self, client: httpx.AsyncClient):
         resp = await client.get("/llm/usage/stats?days=14")
         assert resp.status_code == 200
+
+
+class TestReasoningDisable:
+    """
+    Запрет размышлений (`llm.reasoning_disable`) доезжает до тела запроса.
+
+    Размышления модель тратит на внутренний монолог до ответа. Где они не нужны,
+    они обходятся дважды — временем и токенами, — а локальная модель с ними
+    вообще съедает бюджет ответа и возвращает пустой текст.
+
+    Проверяем не «настройка проставилась», а что уходит провайдеру: у настройки
+    два пути мимо запроса — профиль модели может её отбросить, а у моделей,
+    размышляющих всегда, `False` библиотека игнорирует намеренно.
+    """
+
+    # Единый ключ размышлений появился в pydantic-ai 2.x. Версия в проекте не
+    # закреплена и разъезжается между окружениями (в контейнере одна, в локальном
+    # venv другая), поэтому проверки тела запроса пропускаем честным skip: на
+    # старой библиотеке запрет не применяется по замыслу, а не из-за поломки.
+    OLD_LIB = pytest.mark.skipif(
+        'thinking' not in getattr(__import__('pydantic_ai').settings.ModelSettings,
+                                  '__annotations__', {}),
+        reason='pydantic-ai в этом окружении не знает единый ключ thinking (нужна 2.x)')
+
+    @staticmethod
+    def _reply(request):
+        import json
+
+        import httpx
+
+        TestReasoningDisable.body = {
+            k: v for k, v in json.loads(request.content.decode()).items()
+            if k not in ('messages', 'model', 'stream')
+        }
+
+        return httpx.Response(200, json={
+            'id': 'x', 'object': 'chat.completion', 'created': 0, 'model': 'm',
+            'choices': [{'index': 0, 'finish_reason': 'stop',
+                         'message': {'role': 'assistant', 'content': 'ok'}}],
+            'usage': {'prompt_tokens': 1, 'completion_tokens': 1, 'total_tokens': 2}})
+
+    async def _body(self, name, reasoning_disable=1):
+        """
+        Тело запроса, которое уйдёт провайдеру. Наружу ничего не летит — мок
+        подменяет транспорт у уже собранной моделью фабрики.
+
+        Собираем через настоящий `llm_model_get`, а не руками: половина дефектов
+        сидела как раз в нём — провайдер `openrouter` подменялся общим, и профиль
+        модели приезжал чужой.
+        """
+        import httpx
+        from pydantic_ai import Agent
+        from ai.framework.ai_framework import AbstractAiFramework
+
+        model = AbstractAiFramework.llm_model_get(self._model(reasoning_disable, False, name))
+        model._provider._client._client._transport = httpx.MockTransport(self._reply)
+        await Agent(model).run('привет')
+
+        return TestReasoningDisable.body
+
+    @staticmethod
+    def _model(reasoning_disable, step_wants, name='openai/gpt-5.2'):
+        from ai.framework.ai_framework_model import AiFrameworkModel
+
+        row = AiFrameworkModel(name='x', prompt_user='', prompt_system='', user_id=1,
+                               request_uuid='r', session_uuid='s')
+        row.entity_llm_current = {'name': name, 'reasoning_disable': reasoning_disable}
+        row.thinking_enable = step_wants
+
+        return row
+
+    def test_llm_reasoning_disable_beats_step_request(self):
+        """
+        Шаг просит размышления у всех моделей разом, а запрет ставят у той, где
+        они ломают ответ. Иначе настройку пришлось бы дублировать в каждом шаге.
+        """
+        assert self._model(1, True).thinking is False, 'запрет обязан перевесить шаг'
+        assert self._model(0, True).thinking is True
+        assert self._model(0, False).thinking is False
+
+    def test_llm_reasoning_disable_is_not_step_default(self):
+        """
+        «Шаг не просил» и «модели запрещено» — разные вещи, и путать их нельзя.
+
+        `thinking_enable` у шага по умолчанию выключен. Слив два признака, мы
+        глушили бы размышления у всех моделей на любом шаге — это уже не настройка
+        модели, а смена поведения по умолчанию.
+        """
+        assert self._model(0, False).thinking_disabled is False, 'без флага запрета нет'
+        assert self._model(1, False).thinking_disabled is True
+
+    def test_llm_reasoning_disable_zero_string_is_not_a_ban(self):
+        """`bool('0')` — истина: модель молча перестала бы размышлять."""
+        for value in (0, '0', '', None, 'false'):
+            assert self._model(value, True).thinking_disabled is False, f'{value!r} — это не запрет'
+
+    @OLD_LIB
+    async def test_llm_reasoning_disable_turns_model_off(self):
+        assert (await self._body('openai/gpt-5.2')).get('reasoning_effort'), \
+            'запрет не доехал до тела запроса'
+
+    @OLD_LIB
+    async def test_llm_reasoning_disable_reaches_openrouter(self):
+        """
+        Модель за OpenRouter: запрет обязан доехать и до неё.
+
+        Собранная общим `OpenAIProvider` с подменённым адресом, она для pydantic-ai
+        «просто совместимый сервер»: профиль приезжает чужой, `deepseek-v4-flash` в
+        нём помечен неразмышляющим, и настройку библиотека молча выбрасывает.
+        Поймано живьём — у модели в ноде Blog флаг стоял, а тело уходило пустым.
+        """
+        body = await self._body('openrouter/deepseek/deepseek-v4-flash-0731')
+
+        assert body.get('reasoning_effort'), 'запрет не доехал до модели за OpenRouter'
+
+    @OLD_LIB
+    async def test_llm_reasoning_disable_falls_back_to_minimal(self):
+        """
+        `False` у моделей, размышляющих всегда, pydantic-ai отбрасывает: выключить
+        у них нечего. Без подмены на минимум запрет молча не доезжал бы до запроса.
+        """
+        body = await self._body('openrouter/openai/gpt-oss-120b')
+
+        assert body.get('reasoning_effort') in ('minimal', 'none')
+
+    @OLD_LIB
+    async def test_llm_reasoning_disable_skips_plain_model(self):
+        """Лишнее поле — это 400 от провайдера, то есть сорванный ход."""
+        for name in ('groq/llama-3.3-70b-versatile', 'cerebras/gpt-oss-120b',
+                     'mistral/mistral-large-2512'):
+            assert await self._body(name) == {}, f'{name}: лишнее поле в запросе'
+
+    @OLD_LIB
+    async def test_llm_reasoning_kept_when_not_disabled(self):
+        """Разрешение — умолчание; явное «думай» меняло бы формат ответа и цену хода."""
+        assert await self._body('openai/gpt-5.2', reasoning_disable=0) == {}
+        assert await self._body('openrouter/deepseek/deepseek-v4-flash-0731',
+                                reasoning_disable=0) == {}
+
+    def test_llm_reasoning_local_model_uses_own_key(self):
+        """
+        llama.cpp переключает размышления аргументом шаблона чата, а не полем
+        запроса. Профиля у неё в pydantic-ai нет — единый ключ до неё не доехал бы.
+        """
+        from ai.framework.ai_framework import AbstractAiFramework
+
+        def flag(reasoning_disable, step_wants):
+            model = AbstractAiFramework.llm_model_get(
+                self._model(reasoning_disable, step_wants, 'gx10/qwen-medium'))
+            body = dict(model.settings or {}).get('extra_body', {})
+            return body.get('chat_template_kwargs', {}).get('enable_thinking')
+
+        assert flag(0, True) is True, 'шаг просит, запрета нет — размышления даём'
+        assert flag(1, True) is False, 'запрет перевешивает просьбу шага'
+        assert flag(0, False) is False, 'шаг не просит — не даём'
+
+
+class TestProviderStrategy:
+    """
+    Выбор провайдера по имени модели — `py_modules/ai/provider/`.
+
+    Сборка была цепочкой `if` в одной функции, и особенности сервисов стояли там
+    вперемешку: адрес локальной модели зависит от её размера, у Gemini свой класс
+    модели, у OpenRouter свой провайдер pydantic-ai. Из-за соседства и появился
+    дефект — модели за OpenRouter собирались общим провайдером, тот подсовывал
+    чужой профиль, и запрет размышлений до запроса не доезжал.
+    """
+
+    @staticmethod
+    def _framework_model(name):
+        from ai.framework.ai_framework_model import AiFrameworkModel
+
+        row = AiFrameworkModel(name='x', prompt_user='', prompt_system='', user_id=1,
+                               request_uuid='r', session_uuid='s')
+        row.entity_llm_current = {'name': name, 'reasoning_disable': 0}
+
+        return row
+
+    @staticmethod
+    def _build(name):
+        import httpx
+        from ai.provider.ai_provider_registry import ai_provider_registry_model_get
+
+        return ai_provider_registry_model_get(
+            name, TestProviderStrategy._framework_model(name), httpx.AsyncClient())
+
+    def test_llm_provider_registry_covers_every_service(self):
+        """Реестр — контракт: по нему видно, какие сервисы вообще поддержаны."""
+        from ai.provider.ai_provider_registry import AI_PROVIDER_REGISTRY
+
+        assert {'openrouter', 'gx10', 'gemini', 'openai'} <= set(AI_PROVIDER_REGISTRY)
+
+    def test_llm_provider_unknown_service_refused_by_name(self):
+        """
+        Отказываем сразу и по имени. Без этого вызов уходил бы в никуда и падал
+        позже, уже на ответе провайдера, — там причина не видна.
+        """
+        import pytest as _pytest
+
+        for bad in ('vseti/model-1', 'просто-имя', '', 'openrouter/'):
+            with _pytest.raises(ValueError, match='не найден подходящий провайдер'):
+                self._build(bad)
+
+    def test_llm_provider_gemini_uses_its_own_model_class(self):
+        """Gemini — единственный не по протоколу OpenAI: свой класс, не подмена адреса."""
+        from pydantic_ai.models.google import GoogleModel
+
+        assert isinstance(self._build('gemini/gemini-3-flash-preview'), GoogleModel)
+
+    def test_llm_provider_gx10_address_depends_on_model_size(self):
+        """
+        Локальные модели живут на разных портах одной машины, и какой брать —
+        видно из хвоста имени. У остальных сервисов адрес один на все модели.
+        """
+        large = str(self._build('gx10/qwen-large')._provider.base_url)
+        medium = str(self._build('gx10/qwen-medium')._provider.base_url)
+
+        assert large and medium and large != medium, 'размер модели не влияет на адрес'
+
+    def test_llm_provider_openrouter_has_its_own_provider(self):
+        """
+        Общий провайдер с подменённым адресом даёт чужой профиль модели, и запрет
+        размышлений теряется. Проверяем сам класс: именно он приносит правильный.
+        """
+        from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+        model = self._build('openrouter/deepseek/deepseek-v4-flash-0731')
+
+        assert isinstance(model._provider, OpenRouterProvider)

@@ -44,10 +44,24 @@ TASK_LOG_SHELL_KEYWORD_FAIL = 'затык'
 TASK_LOG_SHELL_STATUS_ANSWERED = 'answered'
 TASK_LOG_SHELL_STATUS_FAILED = 'failed'
 
-# Сколько символов задания и ответа уносим в строку. Меньше, чем у шага
-# (`TASK_LOG_STEP_MAX_CHARS`): здесь важен факт и время, а не содержание — полный
-# текст лежит и в очереди, и в трассе шага.
-TASK_LOG_SHELL_TEXT_MAX = 200
+# Сколько символов задания уносим в строку. Задание собирает движок по шаблону
+# шага, и в ленте от него нужно одно: какой шаг ушёл и когда. Полный текст лежит
+# в очереди и в трассе шага.
+TASK_LOG_SHELL_SENT_MAX = 200
+
+# Ответ не режем вовсе.
+#
+# Резали и на 200 символах теряли ровно то, ради чего в журнал и смотрят: вердикт
+# QA обрывался на «а цель требует п…», JSON-отчёт — на середине первого поля.
+# Понять по такому огрызку, что произошло, нельзя, а собрать по нему вопрос
+# человеку — тем более: вопрос задают как раз тогда, когда роль упёрлась, и
+# упёрлась она в то, что в обрезанный хвост не влезло.
+#
+# Дорого это не обходится. Файл читает только человек — роль его не видит
+# (`TASK_SHELL_FILE` в `task_log`), так что в контекст следующего круга длинные
+# строки не попадают. От неограниченного роста файл держит `_read_tail`: показ
+# берёт последние `TASK_LOG_READ_MAX_CHARS` символов.
+TASK_LOG_SHELL_ANSWER_MAX = 0
 
 # Метка агентного сообщения в начале задания (`CLAUDE_SHELL_AGENT_MARKER`).
 # Обрезаем: она служебная, и без неё в строку влезает больше сути.
@@ -100,7 +114,7 @@ async def task_log_shell_events(role: str, work_dir: str, since, until=None) -> 
             'created_at': row.get('created_at'),
             'keyword': TASK_LOG_SHELL_KEYWORD_SENT,
             'title': f'оболочка {role}: {service}' if service else f'оболочка {role} ← задание',
-            'text': '' if service else _text_cut(_marker_strip(content)),
+            'text': '' if service else _text_cut(_marker_strip(content), TASK_LOG_SHELL_SENT_MAX),
             'seconds': 0,
         })
         # У служебной команды ответа не ждут: она ничего не спрашивает.
@@ -116,7 +130,7 @@ async def task_log_shell_events(role: str, work_dir: str, since, until=None) -> 
             'created_at': answered_at,
             'keyword': TASK_LOG_SHELL_KEYWORD_FAIL if failed else TASK_LOG_SHELL_KEYWORD_ANSWER,
             'title': f'оболочка {role} → ответ',
-            'text': _text_cut(str(row.get('response') or '')) or 'пусто',
+            'text': _text_cut(str(row.get('response') or ''), TASK_LOG_SHELL_ANSWER_MAX) or 'пусто',
             'seconds': _seconds_between(row.get('created_at'), answered_at),
         })
 
@@ -193,13 +207,22 @@ def _marker_strip(text: str) -> str:
     return stripped.strip()
 
 
-def _text_cut(text: str) -> str:
-    """Текст в одну строку до потолка; обрезанное помечаем многоточием."""
+def _text_cut(text: str, limit: int) -> str:
+    """
+    Текст в одну строку; за потолком обрезаем и помечаем многоточием.
+
+    `limit` = 0 — не резать вовсе (так идут ответы оболочки).
+
+    В одну строку сворачиваем всегда, даже когда не режем. Формат ленты — событие
+    на строку, и перенос внутри события её разорвал бы: `_blocks_merge`
+    раскладывает строки по времени обычной сортировкой, а продолжение без метки
+    времени уехало бы от своего события в другое место блока.
+    """
     one_line = ' '.join(str(text or '').replace('\\n', ' ').split())
-    if len(one_line) <= TASK_LOG_SHELL_TEXT_MAX:
+    if not limit or len(one_line) <= limit:
         return one_line
 
-    return one_line[:TASK_LOG_SHELL_TEXT_MAX].rstrip() + '…'
+    return one_line[:limit].rstrip() + '…'
 
 
 def _seconds_between(start, end) -> int:

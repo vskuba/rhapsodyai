@@ -256,6 +256,9 @@
     .io-chip.audio   { background: #fffaf0; color: #dd6b20; }
     .io-chip.video   { background: #fff5f5; color: #c53030; }
     .io-chip.embeddings { background: #ebf8ff; color: #2b6cb0; }
+    /* Запрет размышлений — свойство самой модели, а не её входов и выходов,
+       поэтому чипс отделён от пары «вход → выход» своим цветом. */
+    .io-chip.no-reasoning { background: #fffaf0; color: #c05621; }
 
     .io-arrow {
         font-size: 10px;
@@ -889,12 +892,14 @@
                     <th>Имя модели</th>
                     <th style="width: 130px;">Input</th>
                     <th style="width: 130px;">Output</th>
+                    <th style="width: 110px;"
+                        title="Не передавать модели размышления (reasoning / thinking). Снято — модель ведёт себя как умеет сама; поставлено — запрещено. Нужно там, где размышления съедают бюджет ответа и модель возвращает пустой текст">Без размышлений</th>
                     <th style="width: 140px;"></th>
                 </tr>
                 </thead>
                 <tbody id="crudTableBody">
                 <tr>
-                    <td colspan="5" class="crud-empty">Загрузка...</td>
+                    <td colspan="6" class="crud-empty">Загрузка...</td>
                 </tr>
                 </tbody>
             </table>
@@ -975,15 +980,29 @@
     }
 
     /* ===================== IO type chips ===================== */
-    function buildIoChips(inputType, outputType) {
+    function buildIoChips(inputType, outputType, reasoningDisable) {
         const wrap = document.createElement('span');
         wrap.className = 'io-type-chips';
 
         const inputs = (inputType || 'text').split(',').map(s => s.trim()).filter(Boolean);
         const outputs = (outputType || 'text').split(',').map(s => s.trim()).filter(Boolean);
 
+        // Запрет размышлений добавляем до раннего выхода: у обычной text→text
+        // модели пары чипсов нет, а пометка нужна и ей.
+        const noReasoning = () => {
+            if (!Number(reasoningDisable)) return;
+            const chip = document.createElement('span');
+            chip.className = 'io-chip no-reasoning';
+            chip.textContent = 'no reasoning';
+            chip.title = 'Размышления этой модели запрещены настройкой (Управление LLM)';
+            wrap.appendChild(chip);
+        };
+
         // Skip rendering if both are just 'text' (default, not interesting)
-        if (inputs.join(',') === 'text' && outputs.join(',') === 'text') return wrap;
+        if (inputs.join(',') === 'text' && outputs.join(',') === 'text') {
+            noReasoning();
+            return wrap;
+        }
 
         inputs.forEach(t => {
             const chip = document.createElement('span');
@@ -1003,6 +1022,8 @@
             chip.textContent = t;
             wrap.appendChild(chip);
         });
+
+        noReasoning();
 
         return wrap;
     }
@@ -1203,7 +1224,8 @@
             row.appendChild(posCell);
 
             const nameCell = el('td', 'llm-model-name', llm.name);
-            nameCell.appendChild(buildIoChips(llm.input_type, llm.output_type));
+            nameCell.appendChild(buildIoChips(llm.input_type, llm.output_type,
+                                              llm.reasoning_disable));
             if (llm.active) nameCell.appendChild(el('span', 'active-mark', 'активная'));
             row.appendChild(nameCell);
 
@@ -1466,15 +1488,26 @@
         }).join('');
     }
 
+    // Запрет размышлений. Показываем только запрет: разрешение — это умолчание,
+    // и пометка на каждой второй строке была бы шумом.
+    function reasoningBadge(disabled) {
+        if (!Number(disabled)) return '<span style="color:#cbd5e0;font-size:11px;">—</span>';
+        // Подпись та же, что у чипса на «Мониторинге»: одна пометка на двух
+        // вкладках должна читаться как одна, а не как два разных признака.
+        return '<span title="Размышления модели запрещены" '
+             + 'style="background:#dd6b201a;color:#dd6b20;border-radius:3px;'
+             + 'padding:1px 5px;font-size:11px;">no reasoning</span>';
+    }
+
     async function renderCrud() {
-        crudBody.innerHTML = '<tr><td colspan="5" class="crud-empty">Загрузка...</td></tr>';
+        crudBody.innerHTML = '<tr><td colspan="6" class="crud-empty">Загрузка...</td></tr>';
         try {
             const data = await getData('/llm/list');
             const llms = data.result || [];
             crudBody.innerHTML = '';
 
             if (!llms.length && !addRowVisible) {
-                crudBody.innerHTML = '<tr><td colspan="5" class="crud-empty">Моделей пока нет. Нажмите «+ Добавить модель».</td></tr>';
+                crudBody.innerHTML = '<tr><td colspan="6" class="crud-empty">Моделей пока нет. Нажмите «+ Добавить модель».</td></tr>';
             } else {
                 llms.forEach(llm => {
                     crudBody.appendChild(buildCrudRow(llm));
@@ -1487,7 +1520,7 @@
 
             crudLoaded = true;
         } catch (e) {
-            crudBody.innerHTML = `<tr><td colspan="5" class="crud-empty">Ошибка загрузки: ${e.message}</td></tr>`;
+            crudBody.innerHTML = `<tr><td colspan="6" class="crud-empty">Ошибка загрузки: ${e.message}</td></tr>`;
         }
     }
 
@@ -1507,6 +1540,11 @@
         tdOut.className = 'col-output-type';
         tdOut.innerHTML = typeBadge(llm.output_type);
         row.appendChild(tdOut);
+
+        const tdReasoning = document.createElement('td');
+        tdReasoning.className = 'col-reasoning';
+        tdReasoning.innerHTML = reasoningBadge(llm.reasoning_disable);
+        row.appendChild(tdReasoning);
 
         const tdActions = document.createElement('td');
         tdActions.className = 'col-actions';
@@ -1531,6 +1569,7 @@
         const nameCell = row.querySelector('.col-name');
         const inCell = row.querySelector('.col-input-type');
         const outCell = row.querySelector('.col-output-type');
+        const reasoningCell = row.querySelector('.col-reasoning');
         const actionsCell = row.querySelector('.col-actions');
         const originalName = nameCell.textContent;
 
@@ -1550,9 +1589,17 @@
         const outSelect = buildTypeSelect('editOutputType_' + llm.id, llm.output_type);
         outCell.appendChild(outSelect);
 
+        reasoningCell.innerHTML = '';
+        const reasoningBox = document.createElement('input');
+        reasoningBox.type = 'checkbox';
+        reasoningBox.id = 'editReasoning_' + llm.id;
+        reasoningBox.checked = !!Number(llm.reasoning_disable);
+        reasoningBox.title = 'Не передавать модели размышления';
+        reasoningCell.appendChild(reasoningBox);
+
         actionsCell.innerHTML = '';
         const saveBtn = el('button', 'btn-save-edit', 'Сохранить');
-        saveBtn.onclick = () => saveEdit(row, llm, nameInput, inSelect, outSelect, originalName);
+        saveBtn.onclick = () => saveEdit(row, llm, nameInput, inSelect, outSelect, reasoningBox, originalName);
         actionsCell.appendChild(saveBtn);
         const cancelBtn = el('button', 'btn-cancel-edit', 'Отмена');
         cancelBtn.onclick = () => cancelEdit(row, llm, originalName);
@@ -1561,22 +1608,24 @@
         nameInput.focus();
         nameInput.select();
         nameInput.addEventListener('keydown', e => {
-            if (e.key === 'Enter') saveEdit(row, llm, nameInput, inSelect, outSelect, originalName);
+            if (e.key === 'Enter') saveEdit(row, llm, nameInput, inSelect, outSelect, reasoningBox, originalName);
             if (e.key === 'Escape') cancelEdit(row, llm, originalName);
         });
     }
 
-    async function saveEdit(row, llm, nameInput, inSelect, outSelect, originalName) {
+    async function saveEdit(row, llm, nameInput, inSelect, outSelect, reasoningBox, originalName) {
         const name = nameInput.value.trim();
         if (!name) { showNotification('Введите имя модели', 'warning'); return; }
         const input_type = getSelectValues(inSelect);
         const output_type = getSelectValues(outSelect);
+        const reasoning_disable = reasoningBox ? reasoningBox.checked : false;
 
         const saveBtn = row.querySelector('.btn-save-edit');
         if (saveBtn) saveBtn.disabled = true;
 
         try {
-            const res = await putData(`/llm/${llm.id}`, {name, input_type, output_type});
+            const res = await putData(`/llm/${llm.id}`,
+                                      {name, input_type, output_type, reasoning_disable});
             showNotification(`Модель «${res.result.name}» обновлена`, 'success');
             crudLoaded = false;
             await renderCrud();
@@ -1596,6 +1645,8 @@
         if (inCell) inCell.innerHTML = typeBadge(llm.input_type);
         const outCell = row.querySelector('.col-output-type');
         if (outCell) outCell.innerHTML = typeBadge(llm.output_type);
+        const reasoningCell = row.querySelector('.col-reasoning');
+        if (reasoningCell) reasoningCell.innerHTML = reasoningBadge(llm.reasoning_disable);
 
         const actionsCell = row.querySelector('.col-actions');
         actionsCell.innerHTML = '';
@@ -1641,6 +1692,15 @@
         tdOut.appendChild(outSelect);
         row.appendChild(tdOut);
 
+        const tdReasoning = document.createElement('td');
+        tdReasoning.className = 'col-reasoning';
+        const reasoningBox = document.createElement('input');
+        reasoningBox.type = 'checkbox';
+        reasoningBox.id = 'newReasoningDisable';
+        reasoningBox.title = 'Не передавать модели размышления';
+        tdReasoning.appendChild(reasoningBox);
+        row.appendChild(tdReasoning);
+
         const tdActions = document.createElement('td');
         tdActions.className = 'col-actions';
         const saveBtn = el('button', 'btn-save', 'Сохранить');
@@ -1681,7 +1741,7 @@
         if (row) row.remove();
 
         if (!crudBody.querySelector('tr[data-id]')) {
-            crudBody.innerHTML = '<tr><td colspan="5" class="crud-empty">Моделей пока нет. Нажмите «+ Добавить модель».</td></tr>';
+            crudBody.innerHTML = '<tr><td colspan="6" class="crud-empty">Моделей пока нет. Нажмите «+ Добавить модель».</td></tr>';
         }
     }
 
@@ -1696,12 +1756,14 @@
         const outSelect = document.getElementById('newOutputType');
         const input_type = inSelect ? getSelectValues(inSelect) : 'text';
         const output_type = outSelect ? getSelectValues(outSelect) : 'text';
+        const reasoningBox = document.getElementById('newReasoningDisable');
+        const reasoning_disable = reasoningBox ? reasoningBox.checked : false;
 
         const saveBtn = crudBody.querySelector('#addRow .btn-save');
         if (saveBtn) saveBtn.disabled = true;
 
         try {
-            const res = await postData('/llm', {name, input_type, output_type});
+            const res = await postData('/llm', {name, input_type, output_type, reasoning_disable});
             showNotification(`Модель «${res.result.name}» добавлена`, 'success');
             addRowVisible = false;
             btnShowAddRow.disabled = false;

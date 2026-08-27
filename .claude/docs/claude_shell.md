@@ -93,7 +93,7 @@ result = await claude_shell_call(
 
 ## 3. Очередь `ai_claude_session` и фазы
 
-Таблица общая с чатом Mini App (`migrations/0001.sql`). Ключевое поле для инструмента —
+Таблица общая с чатом Mini App (`migrations/20260101000000_initial_schema.sql`). Ключевое поле для инструмента —
 `status ENUM('queued','delivered','answered','failed')`, константы в
 `src/tool/claude_/claude_.py` (`CLAUDE_MESSAGE_STATUS_*`).
 

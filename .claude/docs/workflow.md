@@ -2,7 +2,7 @@
 
 > Составлено по результатам анализа кода: редактор (`data/uvicorn/template/admin/agent_workflow.html`,
 > `node_variable.html`), API (`src/uvicorn/routers/workflow/*`), схема БД
-> (`migrations/0001.sql` — единственная миграция), движок выполнения (`src/ai/framework/agent/ai_framework_manager.py`, `src/ai/ai_workflow.py`),
+> (`migrations/20260101000000_initial_schema.sql` — единственная миграция), движок выполнения (`src/ai/framework/agent/ai_framework_manager.py`, `src/ai/ai_workflow.py`),
 > журнал выполнения (`src/ai/ai_workflow_trace.py`, роутер `workflow_trace.py`, страница `admin/workflow_trace.html`).
 
 ## Описания конкретных workflow

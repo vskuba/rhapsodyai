@@ -63,7 +63,7 @@ async def subtask_id():
 class TestLateRoundGuard:
     """`unless_done` — щит закрытой подзадачи от итога опоздавшего круга."""
 
-    async def test_итог_круга_не_трогает_закрытую(self, subtask_id: int):
+    async def test_task_state_late_round_skips_closed_subtask(self, subtask_id: int):
         from src.project.task.task_state import task_state_subtask_get, task_state_subtask_set
 
         await task_state_subtask_set(subtask_id, 'done')
@@ -74,7 +74,7 @@ class TestLateRoundGuard:
         assert row['pipeline_state'] == 'done'
         assert not row['pipeline_error'], 'замечание опоздавшего круга не должно записаться'
 
-    async def test_без_флага_переход_проходит(self, subtask_id: int):
+    async def test_task_state_transition_passes_without_guard(self, subtask_id: int):
         """Человеческие переходы флаг не ставят: «Перезапустить» вправе вернуть закрытую."""
         from src.project.task.task_state import task_state_subtask_get, task_state_subtask_set
 
@@ -84,7 +84,7 @@ class TestLateRoundGuard:
         row = await task_state_subtask_get(subtask_id)
         assert row['pipeline_state'] == 'planned'
 
-    async def test_незакрытую_щит_не_держит(self, subtask_id: int):
+    async def test_task_state_guard_lets_open_subtask_through(self, subtask_id: int):
         from src.project.task.task_state import task_state_subtask_get, task_state_subtask_set
 
         await task_state_subtask_set(subtask_id, 'developing')
@@ -93,7 +93,7 @@ class TestLateRoundGuard:
         row = await task_state_subtask_get(subtask_id)
         assert row['pipeline_state'] == 'failed_qa'
 
-    async def test_провал_круга_щит_ставит(self, subtask_id: int):
+    async def test_task_state_failed_round_raises_guard(self, subtask_id: int):
         """`task_state_subtask_fail` — тот самый писатель итога, ради которого щит и заводился."""
         from src.project.task.task_state import (task_state_subtask_fail, task_state_subtask_get,
                                                  task_state_subtask_set)
@@ -123,7 +123,7 @@ class TestTickGoalsFinish:
                              (goals, state, subtask_id))
             await db.connection.commit()
 
-    async def test_закрывает_строку_с_закрытыми_целями(self, subtask_id: int):
+    async def test_task_state_tick_closes_row_with_all_goals_done(self, subtask_id: int):
         from src.project.task.task_pipeline import _subtasks_goals_finish
         from src.project.task.task_state import task_state_subtask_get
 
@@ -132,7 +132,7 @@ class TestTickGoalsFinish:
         assert await _subtasks_goals_finish() >= 1
         assert (await task_state_subtask_get(subtask_id))['pipeline_state'] == 'done'
 
-    async def test_не_трогает_незакрытые_цели(self, subtask_id: int):
+    async def test_task_state_tick_keeps_row_with_open_goals(self, subtask_id: int):
         from src.project.task.task_pipeline import _subtasks_goals_finish
         from src.project.task.task_state import task_state_subtask_get
 
@@ -141,7 +141,7 @@ class TestTickGoalsFinish:
         await _subtasks_goals_finish()
         assert (await task_state_subtask_get(subtask_id))['pipeline_state'] == 'planned'
 
-    async def test_не_трогает_занятую_строку(self, subtask_id: int):
+    async def test_task_state_tick_keeps_busy_row(self, subtask_id: int):
         """Идущий круг закрывать нельзя: его итог придёт своим путём."""
         from mysql_.mysql_ import mysql_get_db_async
         from src.project.task.task_pipeline import _subtasks_goals_finish
@@ -196,7 +196,7 @@ class TestShellBlockedByPermission:
             await db.execute("DELETE FROM ai_claude_session_registry WHERE id = %s", (row_id,))
             await db.connection.commit()
 
-    async def test_запертая_не_попадает_в_живые(self):
+    async def test_task_state_blocked_shell_is_not_live(self):
         from src.project.task.task_role import (TASK_ROLE_PROJECT_NONE,
                                                 task_role_shell_live_by_project)
 
@@ -207,7 +207,7 @@ class TestShellBlockedByPermission:
         finally:
             await self._session_drop(row_id)
 
-    async def test_занятая_ходом_остаётся_живой(self):
+    async def test_task_state_busy_shell_stays_live(self):
         """`turn` — это работа, а не ожидание человека: такую оболочку не трогаем."""
         from src.project.task.task_role import (TASK_ROLE_PROJECT_NONE,
                                                 task_role_shell_live_by_project)
@@ -253,7 +253,7 @@ class TestRunningRowsFromTrace:
             await db.execute("DELETE FROM agent_workflow_trace WHERE id = %s", (row_id,))
             await db.connection.commit()
 
-    async def test_зависшая_трасса_не_делает_строку_работающей(self, subtask_id: int):
+    async def test_task_state_stale_trace_does_not_mark_row_running(self, subtask_id: int):
         from src.project.task.task_log import task_log_rows_running
         from src.project.task.task_state import task_state_subtask_set
 
@@ -264,7 +264,7 @@ class TestRunningRowsFromTrace:
         finally:
             await self._trace_drop(trace_id)
 
-    async def test_настоящая_работа_видна(self, subtask_id: int):
+    async def test_task_state_real_work_is_visible(self, subtask_id: int):
         from src.project.task.task_log import task_log_rows_running
         from src.project.task.task_state import task_state_subtask_set
 
@@ -275,7 +275,7 @@ class TestRunningRowsFromTrace:
         finally:
             await self._trace_drop(trace_id)
 
-    async def test_закрытая_строка_не_работает(self, subtask_id: int):
+    async def test_task_state_closed_row_is_not_running(self, subtask_id: int):
         from src.project.task.task_log import task_log_rows_running
         from src.project.task.task_state import task_state_subtask_set
 
@@ -297,28 +297,28 @@ class TestDirtyLines:
     слияния, потому что ветка отошла раньше, чем шаблон попал в `.gitignore`.
     """
 
-    def test_журнал_не_мешает(self):
+    def test_task_state_dirty_ignores_own_journal(self):
         from src.project.task.task_worktree import _dirty_lines
 
         status = '?? .task-log.md\n?? .task-state.md\n'
 
         assert _dirty_lines('/tmp', status) == []
 
-    def test_работа_мешает(self):
+    def test_task_state_dirty_counts_real_changes(self):
         from src.project.task.task_worktree import _dirty_lines
 
         status = ' M src/project/task/task_pipeline.py\n?? src/project/task/task_pipeline_run.py\n'
 
         assert len(_dirty_lines('/tmp', status)) == 2
 
-    def test_журнал_среди_работы_не_прячет_её(self):
+    def test_task_state_dirty_journal_does_not_hide_changes(self):
         from src.project.task.task_worktree import _dirty_lines
 
         status = '?? .task-log.md\n M src/app.py\n?? .task-state.md\n'
 
         assert _dirty_lines('/tmp', status) == [' M src/app.py']
 
-    def test_похожее_имя_не_путаем(self):
+    def test_task_state_dirty_similar_name_not_confused(self):
         """`.taskrc` и `.task-log.txt` журналом не являются."""
         from src.project.task.task_worktree import _dirty_lines
 
@@ -337,26 +337,26 @@ class TestWorktreeOwner:
     каталоге, в его файле `.git`.
     """
 
-    def test_читает_обратную_ссылку(self, tmp_path):
+    def test_task_state_worktree_owner_reads_backlink(self, tmp_path):
         from src.project.task.task_worktree import _worktree_owner
 
         (tmp_path / '.git').write_text('gitdir: /app/.git/worktrees/feature_task_42\n')
 
         assert _worktree_owner(str(tmp_path)) == '/app'
 
-    def test_путь_хоста(self, tmp_path):
+    def test_task_state_worktree_owner_host_path(self, tmp_path):
         from src.project.task.task_worktree import _worktree_owner
 
         (tmp_path / '.git').write_text('gitdir: /home/vasyl/proj/.git/worktrees/feature_task_7')
 
         assert _worktree_owner(str(tmp_path)) == '/home/vasyl/proj'
 
-    def test_нет_файла(self, tmp_path):
+    def test_task_state_worktree_owner_no_file(self, tmp_path):
         from src.project.task.task_worktree import _worktree_owner
 
         assert _worktree_owner(str(tmp_path)) == ''
 
-    def test_чужой_формат(self, tmp_path):
+    def test_task_state_worktree_owner_foreign_format(self, tmp_path):
         """Обычный репозиторий: `.git` — каталог, а не ссылка."""
         from src.project.task.task_worktree import _worktree_owner
 
@@ -368,7 +368,7 @@ class TestWorktreeOwner:
 class TestTreeDescendants:
     """Строка и всё, что уйдёт с ней каскадом, — собирается до удаления."""
 
-    async def test_родитель_и_ребёнок(self, subtask_id: int):
+    async def test_task_state_tree_parent_and_child(self, subtask_id: int):
         from mysql_.mysql_ import mysql_get_db_async
         from src.project.task.task_tree import task_tree_descendants
 
@@ -380,7 +380,7 @@ class TestTreeDescendants:
         assert found[0] == parent
         assert subtask_id in found
 
-    async def test_лист_сам_по_себе(self, subtask_id: int):
+    async def test_task_state_tree_leaf_alone(self, subtask_id: int):
         from mysql_.mysql_ import mysql_get_db_async
         from src.project.task.task_tree import task_tree_descendants
 
@@ -424,7 +424,7 @@ class TestSessionReplaced:
             await db.execute("DELETE FROM ai_claude_session_registry WHERE id = %s", (row_id,))
             await db.connection.commit()
 
-    async def test_своя_сессия_не_смена(self):
+    async def test_task_state_own_session_is_not_replacement(self):
         from src.tool.claude_shell.claude_shell import _session_replaced
 
         row_id = await self._session_add('__pytest_shell', 'uuid-первый')
@@ -433,7 +433,7 @@ class TestSessionReplaced:
         finally:
             await self._session_drop(row_id)
 
-    async def test_чужая_сессия_это_смена(self):
+    async def test_task_state_foreign_session_is_replacement(self):
         from src.tool.claude_shell.claude_shell import _session_replaced
 
         row_id = await self._session_add('__pytest_shell', 'uuid-второй')
@@ -442,7 +442,7 @@ class TestSessionReplaced:
         finally:
             await self._session_drop(row_id)
 
-    async def test_пропавшая_сессия_сменой_не_считается(self):
+    async def test_task_state_missing_session_is_not_replacement(self):
         """Оболочку могли на секунду потерять по пингу — на это есть таймаут."""
         from src.tool.claude_shell.claude_shell import _session_replaced
 
@@ -462,41 +462,41 @@ class TestShellWorkDirAddressing:
     до незапускаемого состояния.
     """
 
-    def test_адрес_проекта_даёт_оба_варианта(self):
+    def test_task_state_shell_dir_project_gives_both_forms(self):
         from src.tool.claude_shell.claude_shell import _work_dir_variants
 
         variants = _work_dir_variants('/srv/app')
 
         assert variants == ['/srv/app', '/srv/app/.claude/worktrees']
 
-    def test_адрес_выкладок_не_удваивается(self):
+    def test_task_state_shell_dir_worktree_not_doubled(self):
         """Иначе получился бы `worktrees/worktrees`, которого нет."""
         from src.tool.claude_shell.claude_shell import _work_dir_variants
 
         assert _work_dir_variants('/srv/app/.claude/worktrees') == ['/srv/app/.claude/worktrees']
 
-    def test_хвостовой_слеш_не_мешает(self):
+    def test_task_state_shell_dir_trailing_slash_ignored(self):
         from src.tool.claude_shell.claude_shell import _work_dir_variants
 
         assert _work_dir_variants('/srv/app/')[0] == '/srv/app'
 
-    def test_пустой_адрес(self):
+    def test_task_state_shell_dir_empty_path(self):
         from src.tool.claude_shell.claude_shell import _work_dir_variants
 
         assert _work_dir_variants('') == []
 
-    def test_проект_по_адресу_выкладок(self):
+    def test_task_state_shell_dir_project_from_worktree_path(self):
         from src.project.task.task_role import _shell_project_dir
 
         assert _shell_project_dir('/srv/app/.claude/worktrees') == '/srv/app'
 
-    def test_проект_по_адресу_корня(self):
+    def test_task_state_shell_dir_project_from_root_path(self):
         """Старая расстановка обязана работать по-прежнему."""
         from src.project.task.task_role import _shell_project_dir
 
         assert _shell_project_dir('/srv/app') == '/srv/app'
 
-    def test_похожий_хвост_не_срезаем(self):
+    def test_task_state_shell_dir_similar_tail_kept(self):
         from src.project.task.task_role import _shell_project_dir
 
         assert _shell_project_dir('/srv/worktrees') == '/srv/worktrees'
@@ -512,32 +512,32 @@ class TestTeamLaunchCommand:
     корень, вся защита обойдётся одним `cd`.
     """
 
-    def test_ведёт_в_выкладки(self):
+    def test_task_state_launch_command_leads_to_worktree(self):
         from src.project.team.team_project import _command_build
 
         cmd = _command_build('claude-shell --developer', '/srv/app')
 
         assert cmd == 'cd /srv/app/.claude/worktrees && claude-shell --developer'
 
-    def test_адрес_выкладок_не_удваивается(self):
+    def test_task_state_launch_command_worktree_not_doubled(self):
         from src.project.team.team_project import _command_build
 
         cmd = _command_build('claude-shell --qa', '/srv/app/.claude/worktrees')
 
         assert cmd == 'cd /srv/app/.claude/worktrees && claude-shell --qa'
 
-    def test_без_каталога_только_команда(self):
+    def test_task_state_launch_command_without_dir(self):
         """Проект без каталога: подставлять путь из ниоткуда нельзя."""
         from src.project.team.team_project import _command_build
 
         assert _command_build('claude-shell --manager', '') == 'claude-shell --manager'
 
-    def test_без_команды_пусто(self):
+    def test_task_state_launch_command_empty_without_command(self):
         from src.project.team.team_project import _command_build
 
         assert _command_build('', '/srv/app') == ''
 
-    def test_хвостовой_слеш(self):
+    def test_task_state_launch_command_trailing_slash(self):
         from src.project.team.team_project import _command_build
 
         cmd = _command_build('claude-shell --qa', '/srv/app/')
@@ -573,7 +573,7 @@ class TestBackupOrder:
 
         return [f['name'] for f in backup._backup_list()]
 
-    def test_свежие_сверху_вопреки_алфавиту(self, tmp_path, monkeypatch):
+    def test_task_state_backup_newest_first_not_alphabetical(self, tmp_path, monkeypatch):
         path = self._dir(tmp_path, {
             'aaa_старый.sql.gz':  1_000_000,
             'zzz_свежий.sql.gz':  3_000_000,
@@ -583,7 +583,7 @@ class TestBackupOrder:
         assert self._list(monkeypatch, path) == [
             'zzz_свежий.sql.gz', 'mmm_средний.sql.gz', 'aaa_старый.sql.gz']
 
-    def test_одинаковое_время_упорядочено_именем(self, tmp_path, monkeypatch):
+    def test_task_state_backup_same_time_ordered_by_name(self, tmp_path, monkeypatch):
         """Иначе строки прыгали бы при каждом обновлении страницы."""
         path = self._dir(tmp_path, {
             'б_вторая.sql.gz': 2_000_000,
@@ -595,7 +595,7 @@ class TestBackupOrder:
         assert self._list(monkeypatch, path) == [
             'в_третья.sql.gz', 'б_вторая.sql.gz', 'а_первая.sql.gz']
 
-    def test_чужие_расширения_не_попадают(self, tmp_path, monkeypatch):
+    def test_task_state_backup_foreign_extensions_skipped(self, tmp_path, monkeypatch):
         path = self._dir(tmp_path, {
             'копия.sql.gz': 2_000_000,
             'заметка.txt':  3_000_000,
@@ -603,7 +603,7 @@ class TestBackupOrder:
 
         assert self._list(monkeypatch, path) == ['копия.sql.gz']
 
-    def test_каталога_нет(self, tmp_path, monkeypatch):
+    def test_task_state_backup_missing_directory(self, tmp_path, monkeypatch):
         assert self._list(monkeypatch, str(tmp_path / 'нет-такого')) == []
 
 
@@ -617,25 +617,25 @@ class TestSubtaskVolume:
     Менеджер теперь оценивает объём и помечает неделимо-крупные `split_more`.
     """
 
-    def test_обычная_идёт_к_разработчику(self):
+    def test_task_state_subtask_normal_goes_to_developer(self):
         from src.project.task.task_state import _subtask_state
 
         assert _subtask_state({'title': 'правка'}) == 'planned'
 
-    def test_крупная_идёт_на_планирование(self):
+    def test_task_state_subtask_big_goes_to_planning(self):
         """`new` — состояние, из которого работу забирает планирование."""
         from src.project.task.task_state import _subtask_state
 
         assert _subtask_state({'split_more': True}) == 'new'
 
-    def test_оценка_объёма_сохраняется(self):
+    def test_task_state_subtask_context_lines_kept(self):
         import json
 
         from src.project.task.task_state import _subtask_metadata
 
         assert json.loads(_subtask_metadata({'context_lines': 800})) == {'context_lines': 800}
 
-    def test_крупная_помечена_в_мешке(self):
+    def test_task_state_subtask_big_marked_in_metadata(self):
         import json
 
         from src.project.task.task_state import _subtask_metadata
@@ -643,7 +643,7 @@ class TestSubtaskVolume:
         data = json.loads(_subtask_metadata({'split_more': True, 'context_lines': 4200}))
         assert data == {'split_more': True, 'context_lines': 4200}
 
-    def test_приёмка_и_объём_вместе(self):
+    def test_task_state_subtask_final_and_volume_together(self):
         import json
 
         from src.project.task.task_state import _subtask_metadata
@@ -651,16 +651,83 @@ class TestSubtaskVolume:
         data = json.loads(_subtask_metadata({'final': True, 'context_lines': 300}))
         assert data == {'final': True, 'context_lines': 300}
 
-    def test_обычная_не_копит_пустых_пометок(self):
+    def test_task_state_subtask_no_empty_marks(self):
         """Ключа нет — пометки нет, как у флажков фаз."""
         from src.project.task.task_state import _subtask_metadata
 
         assert _subtask_metadata({'title': 'x', 'final': False, 'split_more': False}) is None
 
-    def test_мусор_в_оценке_отбрасываем(self):
+    def test_task_state_subtask_garbage_estimate_dropped(self):
         """Менеджер живой и вместо числа присылает «много» или ноль."""
         from src.project.task.task_state import _subtask_metadata
 
         assert _subtask_metadata({'context_lines': 'много'}) is None
         assert _subtask_metadata({'context_lines': 0}) is None
         assert _subtask_metadata({'context_lines': -5}) is None
+
+
+class TestSubtaskPlanPhaseType:
+    """
+    Тип подзадачи, ушедшей в планирование.
+
+    Подзадача рождается типом `dev` (`task_state_subtasks_create`), а планирование
+    берёт её двумя дорогами: пометка «дробить дальше» и возврат из тупика
+    (`task_goal_replan`). Роль-планировщик выбирается по типу (`task_role_by_type`),
+    поэтому без перевода в `plan` план подзадачи пишет карточка разработчика.
+
+    Поймано живьём на #1628: в отчёте «Задача взята в планирование (Разработчик)».
+    """
+
+    async def test_task_state_type_to_plan_covers_subtask(self, subtask_id):
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_state import task_state_type_to_plan
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "UPDATE project_task "
+                "   SET task_type_id = (SELECT id FROM project_task_type WHERE name = 'dev') "
+                " WHERE id = %s", (subtask_id,))
+            await db.connection.commit()
+
+        assert await task_state_type_to_plan(subtask_id) is True
+        assert await _type_name(subtask_id) == 'plan'
+
+    async def test_task_state_planned_subtask_belongs_to_manager(self, subtask_id):
+        """Смысл перевода: роль выбирается по типу, и после него это менеджер."""
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_role import task_role_of_task
+        from src.project.task.task_state import (task_state_subtask_get,
+                                                 task_state_type_to_plan)
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "UPDATE project_task "
+                "   SET task_type_id = (SELECT id FROM project_task_type WHERE name = 'dev') "
+                " WHERE id = %s", (subtask_id,))
+            await db.connection.commit()
+
+        assert await task_role_of_task(await task_state_subtask_get(subtask_id)) == 'developer'
+        await task_state_type_to_plan(subtask_id)
+        assert await task_role_of_task(await task_state_subtask_get(subtask_id)) == 'manager'
+
+    async def test_task_state_type_to_dev_covers_subtask(self, subtask_id):
+        """Парность обязательна: иначе подзадача осталась бы на «Планировании»."""
+        from src.project.task.task_state import (task_state_type_to_dev,
+                                                 task_state_type_to_plan)
+
+        await task_state_type_to_plan(subtask_id)
+        assert await task_state_type_to_dev(subtask_id) is True
+        assert await _type_name(subtask_id) == 'dev'
+
+
+async def _type_name(task_id: int) -> str:
+    """Имя типа задачи — по нему выбирается роль и вкладка страницы."""
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT y.name FROM project_task t '
+            '  JOIN project_task_type y ON y.id = t.task_type_id WHERE t.id = %s', (task_id,))
+        row = await db.fetchone()
+
+    return (row or {}).get('name') or ''

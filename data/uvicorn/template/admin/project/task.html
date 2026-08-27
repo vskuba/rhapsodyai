@@ -1122,6 +1122,105 @@
     .pipe-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
                     letter-spacing: .04em; margin: 10px 0 4px; }
 
+    /* Разбиение, предложенное планировщиком: строк ещё нет, они появятся после
+       «Утвердить». Пунктир и приглушённый фон — чтобы намерение не путалось с
+       заведённой подзадачей, у которой есть состояние и попытки. */
+    .pipe-planned {
+        border-left: 2px dashed #cbd5e1; padding: 5px 6px 5px 10px; margin-left: 2px;
+        line-height: 1.45;
+    }
+    .pipe-planned + .pipe-planned { margin-top: 2px; }
+    .pipe-planned-head { display: flex; align-items: baseline; gap: 8px; }
+    .pipe-planned-title { flex: 1; font-weight: 600; word-break: break-word; }
+    .pipe-planned-desc { color: #64748b; font-size: 12px; margin-top: 2px; word-break: break-word; }
+    /* Объём контекста — главный критерий разбиения: по нему видно, влезает ли
+       подзадача в окно исполнителя. Порог сжатия ~2300 строк, отсюда и подсветка. */
+    .pipe-planned-lines {
+        font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+        white-space: nowrap; flex-shrink: 0; background: #f1f5f9; color: #64748b;
+        font-variant-numeric: tabular-nums;
+    }
+    .pipe-planned-lines.over { background: #ffedd5; color: #c2410c; }
+    .pipe-planned-mark {
+        font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+        white-space: nowrap; flex-shrink: 0; background: #ede9fe; color: #6d28d9;
+    }
+    .pipe-planned-note { color: #94a3b8; font-size: 11px; margin: 2px 0 6px; }
+
+
+    /* ─── Вкладка «Статистика» ──────────────────────────────────
+       Накопленные замеры работы ролей: объём контекста против времени, токенов и
+       правок. Таблицы плотные и числовые, поэтому моноширинные цифры и выравнивание
+       по правому краю — колонку чисел читают сверху вниз, а не по строкам. */
+    .stat-pane { padding: 10px;flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
+    .stat-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .stat-title { font-size: 14px; font-weight: 700; color: #0f172a; }
+    .stat-scope { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .stat-refresh {
+        margin-left: auto; font-size: 12px; padding: 4px 12px; cursor: pointer;
+        border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155;
+    }
+    .stat-refresh:hover { background: #f8fafc; }
+
+    /* Итоги — крупные числа в ряд: их читают первыми и по ним решают, есть ли
+       вообще о чём говорить (пять замеров — ещё нет). */
+    .stat-totals { display: flex; gap: 10px; flex-wrap: wrap; }
+    .stat-card {
+        border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 14px; background: #fff; min-width: 116px;
+    }
+    .stat-card-v { font-size: 19px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .stat-card-k { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .03em; }
+
+    .stat-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; }
+
+    /* Переключатель таблиц. Повторяет общий `.page-tab`, но мельче: это вкладки
+       внутри вкладки, и в один рост с верхними они спорили бы за главную роль. */
+    .stat-tabs { display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; margin-top: 2px; }
+    .stat-tab {
+        padding: 6px 14px; font-size: 12px; font-weight: 600; color: #718096;
+        cursor: pointer; border: none; background: none;
+        border-bottom: 2px solid transparent; margin-bottom: -2px;
+        transition: color .15s, border-color .15s;
+    }
+    .stat-tab.active { color: #2c3e50; border-bottom-color: #3498db; }
+    .stat-tab:hover:not(.active) { color: #4a5568; }
+    .stat-tab-n { font-size: 11px; color: #a0aec0; font-variant-numeric: tabular-nums; }
+    .stat-tab.active .stat-tab-n { color: inherit; opacity: .75; }
+    .stat-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
+    .stat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .stat-table th {
+        text-align: left; padding: 6px 10px; font-size: 11px; font-weight: 700; color: #64748b;
+        border-bottom: 1px solid #e2e8f0; white-space: nowrap; background: #f8fafc;
+    }
+    .stat-table td { padding: 5px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+    .stat-table tr:last-child td { border-bottom: none; }
+    .stat-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Полосы группировки: соседние строки одной задачи (в «замерах») или одной
+       роли (в «средних») лежат на общем фоне. Читают эти таблицы сверху вниз, и
+       без полос граница группы теряется — номер строки меняется, а глазом это
+       не ловится.
+
+       Цвет в обеих таблицах один: группы там разные по смыслу, но роль у полосы
+       одна, и два оттенка читались бы как разные сущности. Оттенок едва заметный —
+       он размечает, а не выделяет: выделять в этих таблицах нужно числа. */
+    .stat-table tr.band-b td { background: #f8fafc; }
+    .stat-table tr.band-a td { background: #fff; }
+    /* Первая строка новой группы: тонкая черта сверху. Одного фона мало, когда
+       две соседние группы случайно попали на один оттенок. */
+    .stat-table tr.band-start td { border-top: 1px solid #e2e8f0; }
+    .stat-table tr.band-start:first-child td { border-top: none; }
+    /* Столбец, ради которого таблица и заведена: сколько секунд стоит тысяча
+       строк контекста. По нему и подбирают порог разбиения. */
+    .stat-table .rate { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: #1d4ed8; }
+    .stat-empty { padding: 14px; color: #94a3b8; font-size: 12px; }
+    /* Замер задачи, которой уже нет: статистика её переживает, и об этом надо
+       сказать — иначе номер выглядит опечаткой. */
+    .stat-gone { color: #94a3b8; font-style: italic; }
+    .stat-del {
+        border: none; background: none; cursor: pointer; color: #cbd5e1; font-size: 13px; padding: 0 4px;
+    }
+    .stat-del:hover { color: #b91c1c; }
 
     /* ─── Вкладка «Журналы» ─────────────────────────────────────
        Журнал работы агента по строке: `.task-log.md` (хронология) и
@@ -1283,6 +1382,15 @@
     .log-line.log-shell { border-left-color: #ddd6fe; background: #faf8ff; }
     .log-line.log-shell .log-text { color: #4c1d95; }
     .log-line.log-shell:hover { background: #f4efff; }
+
+    /* Вопрос роли и ответ человека: единственные строки, где действовал не агент.
+       Янтарный — тот же, которым помечены разрывы во времени: и там, и тут работа
+       стояла. Полоса слева заметнее, чем у оболочки: таких строк единицы, и они
+       объясняют, почему круги вокруг них пошли по-разному. */
+    .log-line.log-ask { border-left-color: #f59e0b; background: #fffbeb; }
+    .log-line.log-ask .log-text { color: #78350f; }
+    .log-line.log-ask:hover { background: #fef3c7; }
+    .log-kw-ask { color: #b45309; }
 
     /* Разрыв во времени: где круг надолго замолчал. Ради этого и нужны отметки
        времени — простой виден до чтения самого текста. */
@@ -1540,6 +1648,10 @@
         <!-- Журналы не фаза задачи, а другой взгляд на тот же проект: показывают,
              чем агенты заняты прямо сейчас. Живут, пока жив каталог строки. -->
         <button class="page-tab" data-tab="logs">📜 Журналы <span class="page-tab-n" id="tabCount-logs"></span></button>
+        <!-- Статистика тоже не фаза: это накопленные замеры работы ролей — объём
+             контекста против времени, токенов и правок. Задачи удаляют, а замеры
+             остаются, поэтому вкладка живёт отдельно от дерева задач. -->
+        <button class="page-tab" data-tab="stats">📊 Статистика <span class="page-tab-n" id="tabCount-stats"></span></button>
     </div>
 
     <!-- Toolbar: title, filters, add -->
@@ -1595,6 +1707,32 @@
 
     <!-- Вкладка «Журналы»: слева строки проекта, у которых есть журнал, справа
          состояние и хронология выбранной. Скрыта, пока вкладка не выбрана. -->
+    <!-- Вкладка «Статистика»: сводка по ролям и шагам, итоги и последние замеры.
+         Данные — `/api/task/metric`, механика — `src/project/task/task_metric.py`. -->
+    <div class="stat-pane" id="statPane" style="display:none">
+        <div class="stat-head">
+            <span class="stat-title">Замеры работы ролей</span>
+            <label class="stat-scope">
+                разрез:
+                <select id="statScope" onchange="statLoad()">
+                    <option value="0">все задачи</option>
+                </select>
+            </label>
+            <button class="stat-refresh" onclick="statLoad()">Обновить</button>
+        </div>
+        <div class="stat-totals" id="statTotals"></div>
+        <!-- Две таблицы вкладками, а не одна под другой: смотрят в них по
+             очереди — сначала «сколько это обычно стоит», потом «а что было в
+             конкретном круге», — и вторая таблица под первой только уводила
+             прокрутку от карточек итогов. -->
+        <div class="stat-tabs" id="statTabs">
+            <button class="stat-tab active" data-stat="summary">Средние по роли и шагу</button>
+            <button class="stat-tab" data-stat="rows">Последние замеры <span class="stat-tab-n" id="statTabRowsN"></span></button>
+        </div>
+        <div class="stat-table-wrap" id="statPaneSummary"><table class="stat-table" id="statSummary"></table></div>
+        <div class="stat-table-wrap" id="statPaneRows" style="display:none"><table class="stat-table" id="statRows"></table></div>
+    </div>
+
     <div class="log-pane" id="logPane" style="display:none">
         <!-- Левая колонка в два ряда: сверху строки с журналом, снизу состояние
              выбранной. Состояние ушло сюда из правой колонки, чтобы журнал шёл
@@ -1610,8 +1748,9 @@
                 </div>
             </div>
 
+            <!-- Имя ветки подставится при выборе строки: до него называть нечего. -->
             <div class="log-side-block log-state empty" id="logState">
-                <div class="log-side-head"><span>Состояние</span></div>
+                <div class="log-side-head"><span>Состояние ветки</span></div>
                 <pre>Выберите строку слева.</pre>
             </div>
         </div>
@@ -2130,6 +2269,7 @@ const PHASE_KEY = 'task_phase';
 // на проект, и в отборе строк таблицы он не участвует. Поэтому проверка на
 // живую вкладку пропускает его отдельно.
 const PHASE_LOGS = 'logs';
+const PHASE_STATS = 'stats';
 let _phaseFilter = (PHASE_TYPE_NAMES[localStorage.getItem(PHASE_KEY)]
                     || localStorage.getItem(PHASE_KEY) === PHASE_LOGS)
     ? localStorage.getItem(PHASE_KEY) : 'development';
@@ -2140,17 +2280,23 @@ function selectPhase(btn, phase) {
     phaseTabsSync();
     phasePanesSync();
     if (phase === PHASE_LOGS) logListLoad();
+    else if (phase === PHASE_STATS) statLoad();
     else renderTable();
 }
 
 // Журналы занимают место таблицы целиком: панель фильтров и кнопка «Добавить»
 // к ним не относятся, а оставленные сверху читались бы как управление журналом.
 function phasePanesSync() {
-    const logs = _phaseFilter === PHASE_LOGS;
-    document.querySelector('.task-toolbar').style.display = logs ? 'none' : '';
-    document.querySelector('.task-scroll').style.display = logs ? 'none' : '';
-    document.getElementById('taskAddForm').style.display = logs ? 'none' : '';
+    const logs  = _phaseFilter === PHASE_LOGS;
+    const stats = _phaseFilter === PHASE_STATS;
+    // Обе вкладки занимают место таблицы целиком: панель фильтров и «Добавить»
+    // к ним не относятся, а оставленные сверху читались бы как управление ими.
+    const bare = logs || stats;
+    document.querySelector('.task-toolbar').style.display = bare ? 'none' : '';
+    document.querySelector('.task-scroll').style.display = bare ? 'none' : '';
+    document.getElementById('taskAddForm').style.display = bare ? 'none' : '';
     document.getElementById('logPane').style.display = logs ? 'flex' : 'none';
+    document.getElementById('statPane').style.display = stats ? 'flex' : 'none';
 }
 
 function phaseTabsSync() {
@@ -3693,14 +3839,64 @@ function _pipelineRender(taskId, data, body, actions) {
         }).join('');
     } else if (isBug) {
         html += `<span class="task-pipeline-muted">${esc(BUG_PIPE_NOTE[state] || BUG_PIPE_NOTE._other)}</span>`;
+    } else if ((data.plan_subtasks || []).length) {
+        // Разбиение показываем до утверждения, а не после: «Утвердить» — это
+        // решение как раз про него, и раньше человек нажимал кнопку вслепую. Строк
+        // ещё нет, поэтому ни состояний, ни попыток тут не бывает.
+        html += _plannedSubtasksHtml(data.plan_subtasks, state);
     } else if (state === 'plan_approval') {
-        html += '<span class="task-pipeline-muted">План ждёт утверждения — подзадачи появятся после «Утвердить».</span>';
+        html += '<span class="task-pipeline-muted">План ждёт утверждения, но разбиения в нём нет — '
+              + 'утверждать нечего. Нажмите «Обновить план», чтобы планировщик написал его заново.</span>';
     } else if (!data.plan_text) {
         html += '<span class="task-pipeline-muted">Оркестратор ещё не дошёл до этой задачи.</span>';
     }
 
     if (data.error) html += `<div class="pipe-error">${esc(data.error)}</div>`;
     body.innerHTML = html;
+}
+
+// Порог автосжатия контекста в строках: подзадача крупнее идёт вслепую — исполнитель
+// упрётся в сжатие и продолжит по пересказу. Замер по вкладке «Статистика»
+// (~17 токенов на строку при окне 131072), тот же ориентир, что в `role_manager.md`.
+const PLAN_LINES_LIMIT = 2300;
+
+// Разбиение, предложенное планировщиком, — то, что появится строками после
+// «Утвердить». Показываем именно то, по чему принимается решение: заголовок,
+// описание, объём контекста и две пометки, меняющие судьбу строки.
+function _plannedSubtasksHtml(planned, state) {
+    const pending = state === 'plan_approval';
+    const note = pending
+        ? 'Строк ещё нет — они заведутся после «Утвердить». Так это разложил планировщик:'
+        : 'Разбиение из плана. Строки по нему ещё не заведены.';
+
+    return '<div class="pipe-section">Разбиение из плана</div>'
+        + `<div class="pipe-planned-note">${esc(note)}</div>`
+        + planned.map((s, i) => {
+            // Объём подсвечиваем, когда он за порогом: такую подзадачу раздробят
+            // ещё раз, и знать об этом до утверждения важнее, чем после.
+            const over  = s.context_lines > PLAN_LINES_LIMIT;
+            const lines = s.context_lines
+                ? `<span class="pipe-planned-lines${over ? ' over' : ''}" title="${
+                    over
+                        ? `Оценка объёма чтения: ${s.context_lines} строк — больше порога сжатия (${PLAN_LINES_LIMIT}). Исполнитель упрётся в автосжатие и продолжит вслепую`
+                        : `Оценка объёма чтения: ${s.context_lines} строк, порог сжатия — ${PLAN_LINES_LIMIT}`
+                  }">${s.context_lines} стр</span>`
+                : '';
+            const marks =
+                (s.split_more ? '<span class="pipe-planned-mark" title="Планировщик считает подзадачу крупной — её разложат ещё раз, отдельным заходом">раздробят</span>' : '')
+              + (s.final ? '<span class="pipe-planned-mark" title="Подзадача-приёмка: в работу пойдёт только после того, как закроются соседи">приёмка</span>' : '');
+            const desc = s.description
+                ? `<div class="pipe-planned-desc">${esc(s.description)}</div>` : '';
+
+            return `<div class="pipe-planned">
+                        <div class="pipe-planned-head">
+                            <span class="pipe-subtask-pos">${i + 1}.</span>
+                            <span class="pipe-planned-title">${esc(s.title)}</span>
+                            ${lines}${marks}
+                        </div>
+                        ${desc}
+                    </div>`;
+        }).join('');
 }
 
 // Почему кнопка заблокирована — по состояниям, в которых сервер откажет.
@@ -4074,6 +4270,227 @@ setInterval(teamMiniLeftTick, 1000);
 // показывать без перезагрузки страницы.
 setInterval(taskProgressRefresh, TASK_PROGRESS_REFRESH_MS);
 
+// ─── Вкладка «Статистика» ──────────────────────────────────────────────────
+// Накопленные замеры работы ролей: сколько строк агенту дали прочесть, сколько он
+// работал, сколько токенов сгенерировала модель и сколько кода круг изменил.
+//
+// Зачем это на странице задач. Порог разбиения по объёму и таймауты ролей —
+// числа, взятые из головы, и проверить их можно только накопленными фактами.
+// Отсюда главный столбец таблицы — «с/1000»: сколько секунд стоит тысяча строк
+// контекста. По нему и подбирают порог.
+//
+// Замеры задачу переживают: план сбрасывают, подзадачи удаляют пачками, а строки
+// остаются. Поэтому у удалённой задачи показываем сохранённое название с
+// пометкой — иначе голый номер выглядел бы опечаткой.
+
+async function statLoad() {
+    const scope = document.getElementById('statScope');
+    const parent = Number(scope && scope.value) || 0;
+
+    let data;
+    try {
+        const resp = await fetch(`/api/task/metric?parent_id=${parent}`);
+        data = await resp.json();
+    } catch (e) {
+        document.getElementById('statTotals').innerHTML =
+            `<div class="stat-empty">Статистика не загрузилась: ${esc(String(e))}</div>`;
+        return;
+    }
+
+    statScopeFill(data.parents || []);
+    statRenderTotals(data.totals || {});
+    statRenderSummary(data.summary || []);
+    statRenderRows(data.rows || []);
+
+    // Число замеров прямо во вкладке: по нему видно, есть ли смысл туда идти, —
+    // не открывая её. Та же логика, что у счётчиков в верхних вкладках.
+    const n = document.getElementById('statTabRowsN');
+    if (n) n.textContent = (data.rows || []).length ? `(${(data.rows || []).length})` : '';
+}
+
+// Переключение таблиц. Выбранная вкладка не запоминается между открытиями: на
+// статистику заходят за средними, и возвращать человека в «последние замеры»
+// только потому, что он туда однажды заглянул, значило бы прятать главное.
+function statTabSelect(name) {
+    document.querySelectorAll('#statTabs .stat-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.stat === name);
+    });
+    document.getElementById('statPaneSummary').style.display = name === 'summary' ? '' : 'none';
+    document.getElementById('statPaneRows').style.display = name === 'rows' ? '' : 'none';
+}
+
+document.querySelectorAll('#statTabs .stat-tab').forEach(tab => {
+    tab.addEventListener('click', () => statTabSelect(tab.dataset.stat));
+});
+
+// Список задач для разреза приходит от сервера вместе с данными, и строится он по
+// самой таблице замеров, а не по дереву задач на странице.
+//
+// Две причины. Дерево зависит от выбранного проекта и на свежей вкладке пусто —
+// разрез тогда предлагал бы одну строку «все задачи». И главное: замеры задачу
+// переживают, а удалённая задача обязана остаться в выборе — накопленное по ней
+// никуда не делось, а посмотреть его иначе будет нельзя.
+//
+// Выбранное значение сохраняем при перестроении: список обновляется на каждой
+// загрузке, и без этого разрез сбрасывался бы в «все задачи» на каждом обновлении.
+function statScopeFill(parents) {
+    const select = document.getElementById('statScope');
+    if (!select) return;
+
+    const want = select.value;
+    select.innerHTML = '<option value="0">все задачи</option>'
+        + (parents || []).map(p => `<option value="${p.parent_id}">`
+            + `#${p.parent_id} ${esc(String(p.title || '').slice(0, 36))}`
+            + `${p.gone ? ' (удалена)' : ''} · ${p.runs}</option>`).join('');
+    if ([...select.options].some(o => o.value === want)) select.value = want;
+}
+
+// Карточки итогов. Подпись у каждой в два слова, поэтому что именно посчитано —
+// в подсказке: цифры отсюда читают первыми и по ним решают, есть ли вообще о чём
+// говорить (пять замеров — ещё нет).
+function statRenderTotals(t) {
+    const cards = [
+        ['замеров', t.runs || 0,
+         'Сколько шагов замерено. Замеряются только шаги, ходившие к агенту: служебные '
+         + 'короче 20 секунд и в статистику не идут. По одному-двум замерам выводов не делают'],
+        ['времени', statMinutes(t.ms_total || 0),
+         'Сумма времени всех замеренных шагов. Не время работы человека и не время задачи '
+         + 'целиком — только то, что агенты провели за работой'],
+        ['токенов', statNum(t.tokens_total || 0),
+         'Сколько модель сгенерировала суммарно. Считается дельтой счётчиков llama.cpp вокруг '
+         + 'хода агента; шаги с недоступными счётчиками входят сюда нулём'],
+        ['строк кода', statNum(t.lines_changed_total || 0),
+         'Сколько строк кода изменено суммарно по всем кругам. Каждый круг учитывается один '
+         + 'раз, а не по числу его шагов'],
+        ['средний объём', t.lines_avg ? `${statNum(t.lines_avg)} стр` : '—',
+         'Средний размер подзадачи в строках контекста — сколько агенту нужно прочесть. Оценка '
+         + 'менеджера при разбиении, а не размер правки. По ней и подбирают порог дробления'],
+        ['скорость', t.speed_avg ? `${t.speed_avg} ток/с` : '—',
+         'Средняя скорость модели по замерам, где счётчики читались. Проседает, когда модель '
+         + 'занята соседней работой, — по ней видно, время шага ушло на объём или на ожидание'],
+    ];
+    document.getElementById('statTotals').innerHTML = cards.map(([k, v, hint]) =>
+        `<div class="stat-card" title="${esc(hint)}">`
+      + `<div class="stat-card-v">${esc(String(v))}</div>`
+      + `<div class="stat-card-k">${esc(k)}</div></div>`).join('');
+}
+
+function statRenderSummary(rows) {
+    const table = document.getElementById('statSummary');
+    if (!rows.length) {
+        table.innerHTML = '<tr><td class="stat-empty">Замеров пока нет — они появятся по концу первого круга</td></tr>';
+        return;
+    }
+    // «макс» рядом со «средним» намеренно: таймаут ставят не по среднему, а по
+    // хвосту — круг, уложившийся в среднее, никогда и не срывался.
+    // Подписи короткие, потому что колонок девять и таблица числовая. Что стоит за
+    // каждой — в подсказке: числа тут читают, чтобы принимать решения (какой ставить
+    // таймаут, где порог разбиения), и догадываться о смысле колонки нельзя.
+    const head = [
+        ['роль',    'Кто выполнял шаг: manager, developer, qa или bugfixer'],
+        ['шаг',     'Шаг workflow. Считаются только шаги, ходившие к агенту, — служебные (сборка промпта, счётчики) короче 20 секунд и в замеры не идут'],
+        ['кругов',  'Сколько раз этот шаг замерялся. Одна-две строки — ещё не среднее, а отдельный случай'],
+        ['строк',   'Средний объём контекста подзадачи: сколько строк агенту нужно прочесть. Оценка менеджера при разбиении, а не размер правки'],
+        ['сек',     'Среднее время шага'],
+        ['макс',    'Самый долгий замер. Таймаут ставят по нему, а не по среднему: срываются длинные круги, а уложившийся в среднее не срывался никогда'],
+        ['токенов', 'Сколько модель сгенерировала за шаг. Ноль означает, что счётчики были недоступны, а не что модель молчала'],
+        ['ток/с',   'Скорость модели в окне шага: токены, делённые на время генерации. Показывает, шёл ли шаг долго из-за объёма работы или из-за занятой модели'],
+        ['с/1000',  'Сколько секунд стоит тысяча строк контекста. Главный столбец: по нему подбирают порог разбиения и оценивают срок подзадачи'],
+    ];
+    table.innerHTML = '<tr>' + head.map(([h, hint], i) =>
+        `<th class="${i >= 2 ? 'num' : ''}" title="${esc(hint)}">${esc(h)}</th>`).join('') + '</tr>'
+      + rows.map((r, i) => `<tr class="${statBand(rows, i, x => x.role)}">`
+          + `<td>${esc(r.role || '—')}</td>`
+          + `<td>${esc(r.step_title || '—')}</td>`
+          + `<td class="num">${r.runs || 0}</td>`
+          + `<td class="num">${statNum(r.lines_avg || 0)}</td>`
+          + `<td class="num">${statNum(r.sec_avg || 0)}</td>`
+          + `<td class="num">${statNum(r.sec_max || 0)}</td>`
+          + `<td class="num">${statNum(r.tokens_avg || 0)}</td>`
+          + `<td class="num">${r.speed_avg || '—'}</td>`
+          + `<td class="rate">${statNum(r.sec_per_1k || 0)}</td>`
+        + '</tr>').join('');
+}
+
+function statRenderRows(rows) {
+    const table = document.getElementById('statRows');
+    if (!rows.length) {
+        table.innerHTML = '<tr><td class="stat-empty">Пусто</td></tr>';
+        return;
+    }
+    const head = [
+        ['строка',  'Номер подзадачи. Замеры её переживают: строку могли удалить вместе с планом'],
+        ['задача',  'Название подзадачи. У удалённой показывается сохранённая копия с пометкой'],
+        ['роль',    'Кто выполнял шаг: manager, developer, qa или bugfixer'],
+        ['шаг',     'Шаг workflow, на котором сделан замер'],
+        ['круг',    'Номер круга Developer → QA по этой подзадаче. Ноль — первый круг'],
+        ['строк',   'Объём контекста подзадачи: сколько строк нужно прочесть. Оценка менеджера при разбиении'],
+        ['код',     'Сколько строк кода изменил круг целиком. Стоит один раз на круг, на последнем его шаге, — иначе сумма считала бы одну правку несколько раз'],
+        ['сек',     'Сколько шёл шаг'],
+        ['токенов', 'Сгенерировано моделью за шаг. Несоразмерно большое число на коротком шаге — признак сжатия контекста'],
+        ['ток/с',   'Скорость модели в окне шага. Прочерк — счётчики были недоступны'],
+        ['',        'Убрать все замеры этой подзадачи. Накопленное не восстановить'],
+    ];
+    table.innerHTML = '<tr>' + head.map(([h, hint], i) =>
+        `<th class="${i >= 4 ? 'num' : ''}" title="${esc(hint)}">${esc(h)}</th>`).join('') + '</tr>'
+      + rows.map((r, i) => `<tr class="${statBand(rows, i, x => x.task_id)}">`
+          + `<td class="num">#${r.task_id}</td>`
+          + `<td class="${r.task_gone ? 'stat-gone' : ''}" title="${r.task_gone ? 'задача удалена, замер сохранён' : ''}">`
+          + `${esc(String(r.title || '—').slice(0, 40))}${r.task_gone ? ' (удалена)' : ''}</td>`
+          + `<td>${esc(r.role || '—')}</td>`
+          + `<td>${esc(String(r.step_title || '—').slice(0, 30))}</td>`
+          + `<td class="num">${r.attempt_no}</td>`
+          + `<td class="num">${statNum(r.context_lines || 0)}</td>`
+          + `<td class="num">${r.lines_changed ? statNum(r.lines_changed) : '—'}</td>`
+          + `<td class="num">${Math.round((r.duration_ms || 0) / 1000)}</td>`
+          + `<td class="num">${statNum(r.tokens_output || 0)}</td>`
+          + `<td class="num">${r.tokens_per_sec > 0 ? r.tokens_per_sec : '—'}</td>`
+          + `<td><button class="stat-del" title="Убрать замеры этой строки"`
+          + ` onclick="statDelete(${r.task_id})">✕</button></td>`
+        + '</tr>').join('');
+}
+
+// Удаление — по строке целиком, а не по одному замеру: замеры круга без соседей
+// бессмысленны, разбор без реализации ничего не описывает. Пересчитывать средние
+// после этого не нужно — их считает запрос по оставшимся строкам.
+async function statDelete(taskId) {
+    if (!confirm(`Убрать все замеры строки #${taskId}? Накопленное не восстановить.`)) return;
+    try {
+        await fetch(`/api/task/metric?task_id=${taskId}`, {method: 'DELETE'});
+    } catch (e) {
+        alert(`Не удалось убрать замеры: ${e}`);
+        return;
+    }
+    statLoad();
+}
+
+// Класс полосы для строки: чередуем фон при смене группы, а не через строку.
+// Через строку — это зебра, она размечает единицы; здесь размечаются группы, и
+// полоса обязана держаться, пока группа не кончилась.
+//
+// `key` — чем группа определяется: задачей в «замерах», ролью в «средних».
+// Обе выборки приходят уже отсортированными по этому ключу (`task_metric`:
+// замеры — по номеру строки убыванием, средние — по роли), поэтому достаточно
+// сравнить с предыдущей строкой, не собирая группы заранее.
+function statBand(rows, i, key) {
+    let band = 0;
+    for (let n = 1; n <= i; n++) {
+        if (key(rows[n]) !== key(rows[n - 1])) band++;
+    }
+    const start = i === 0 || key(rows[i]) !== key(rows[i - 1]);
+
+    return `${band % 2 ? 'band-b' : 'band-a'}${start ? ' band-start' : ''}`;
+}
+
+function statNum(v) {
+    return Math.round(Number(v) || 0).toLocaleString('ru-RU');
+}
+
+function statMinutes(ms) {
+    const min = Math.round((Number(ms) || 0) / 60000);
+    return min >= 60 ? `${Math.floor(min / 60)} ч ${min % 60} мин` : `${min} мин`;
+}
+
 // ─── Вкладка «Журналы» ────────────────────────────────────────────────────────
 // Агент по ходу работы пишет в каталог своей строки два файла: `.task-log.md`
 // (хронология, только дописывается) и `.task-state.md` (сделано/осталось/затыки,
@@ -4089,12 +4506,16 @@ setInterval(taskProgressRefresh, TASK_PROGRESS_REFRESH_MS);
 // закрывается только когда вызов кончился, и без этих двух отметок нельзя было
 // сказать, где потерялся ответ — в оболочке или по дороге к движку.
 const LOG_KEYWORDS = ['старт', 'сделал', 'осталось', 'коммит', 'затык', 'готово',
-                      'запрос', 'ответ'];
+                      'запрос', 'ответ', 'вопрос', 'решение'];
 // Класс подсветки на ключевое слово: в CSS кириллицы в именах классов избегаем.
 const LOG_KW_CLASS = {
     'старт': 'log-kw-start', 'сделал': 'log-kw-done', 'осталось': 'log-kw-left',
     'коммит': 'log-kw-commit', 'затык': 'log-kw-block', 'готово': 'log-kw-done',
     'запрос': 'log-kw-shell', 'ответ': 'log-kw-shell',
+    // Вопрос роли и ответ человека — единственные строки в ленте, где действовал
+    // не агент. Свой цвет и фон: по ним видно, где работа остановилась и чем
+    // именно её сдвинули (`task_log_decision`).
+    'вопрос': 'log-kw-ask', 'решение': 'log-kw-ask',
 };
 const LOG_ROLES = ['manager', 'developer', 'qa', 'bugfixer'];
 // Порог разрыва: меньше трёх минут — обычный ход работы. Ниже опускать не стоит,
@@ -4302,12 +4723,19 @@ function logBodyRender() {
         // только у неё (`task_log_shell`). Сорвавшийся вызов приходит со словом
         // `затык` и красную заливку сохраняет — по ней и ищут, где встало.
         const shell = e.kw === 'запрос' || e.kw === 'ответ';
-        html += `<div class="log-line${e.kw === 'затык' ? ' log-blocked' : ''}${shell ? ' log-shell' : ''}">`
+        const ask = e.kw === 'вопрос' || e.kw === 'решение';
+        html += `<div class="log-line${e.kw === 'затык' ? ' log-blocked' : ''}${shell ? ' log-shell' : ''}${ask ? ' log-ask' : ''}">`
              + `<span class="log-time">${esc(e.time)}</span>`
              + `<span class="log-kw ${LOG_KW_CLASS[e.kw] || ''}">${esc(e.kw)}</span>`
              + `<span class="log-text">${esc(e.text)}</span></div>`;
     });
     body.innerHTML = html;
+}
+
+// Имя ветки строки. Шаблон тот же, что у `TASK_WORKTREE_BRANCH_TEMPLATE` в
+// `task_worktree.py`: разойдись они — заголовок называл бы ветку, которой нет.
+function logBranch(taskId) {
+    return `feature/task_${taskId}`;
 }
 
 async function logOpen(taskId) {
@@ -4329,7 +4757,10 @@ async function logOpen(taskId) {
 
     const box = document.getElementById('logState');
     box.classList.toggle('empty', !data.state);
-    box.innerHTML = '<div class="log-side-head"><span>Состояние</span></div><pre>'
+    // Имя ветки в заголовке, потому что состояние — про неё: что закоммичено, что
+    // осталось в рабочем дереве. Без имени неясно, к чему относится текст, когда
+    // строк в списке слева несколько.
+    box.innerHTML = `<div class="log-side-head"><span>Состояние ветки ${esc(logBranch(taskId))}</span></div><pre>`
         + (data.state ? esc(data.state) : 'Появится, когда закончится первый круг.') + '</pre>';
 
     _logEntries = logParse(data.log);

@@ -19,6 +19,8 @@ from datetime_.datetime_ import datetime_now
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
+from src.project.task.task_metric_gx10 import (task_metric_gx10_delta,
+                                                task_metric_gx10_snapshot)
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_SHELL_ACK,
     TASK_SETTING_TIMEOUT_SHELL_BUSY,
@@ -70,7 +72,8 @@ CLAUDE_SHELL_AGENT_MARKER = '[[agent]]'
 
 # Ключи ответа инструмента: их нельзя перетереть полями payload.
 CLAUDE_SHELL_RESULT_KEYS = ('status', 'response', 'payload_json', 'error',
-                            'session_uuid', 'inbox_id', 'elapsed')
+                            'session_uuid', 'inbox_id', 'elapsed',
+                            'tokens_out', 'tokens_prompt', 'tokens_sec')
 
 CLAUDE_SHELL_STATUS_ANSWERED = 'answered'
 CLAUDE_SHELL_STATUS_NO_SESSION = 'no_session'
@@ -156,6 +159,11 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
             session_uuid=str(session['session_uuid']), elapsed=_elapsed(started))
 
     session_uuid = str(session['session_uuid'])
+    # Счётчики модели снимаем здесь, а не в начале функции: до этой строки шло
+    # ожидание освобождения агента, и токены за это время потратил предыдущий ход,
+    # а не наш. Замер вспомогательный — недоступные счётчики дают пустой снимок,
+    # и в ответ уйдут нули (см. `task_metric_gx10`).
+    tokens_before = task_metric_gx10_snapshot()
     inbox = await claude_message_user(
         prompt_user=f'{CLAUDE_SHELL_AGENT_MARKER}\n{prompt}',
         session_uuid=session_uuid,
@@ -173,7 +181,8 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
         return _result_build(
             CLAUDE_SHELL_STATUS_ACK_TIMEOUT,
             error=f'Оболочка {role} не подтвердила доставку за {ack_timeout}с',
-            session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started))
+            session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started),
+            tokens=_tokens_since(tokens_before))
 
     # Фаза 2: ответ агента. Отсчёт — от доставки: агент начинает думать над
     # заданием только сейчас, и время, потраченное на ожидание его освобождения,
@@ -186,20 +195,23 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
         return _result_build(
             CLAUDE_SHELL_STATUS_TIMEOUT,
             error=f'Агент {role} не ответил за {timeout}с',
-            session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started))
+            session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started),
+            tokens=_tokens_since(tokens_before))
 
     response = str(row.get('response') or '')
     if row['status'] == CLAUDE_MESSAGE_STATUS_FAILED:
         return _result_build(
             CLAUDE_SHELL_STATUS_FAILED, response=response,
             error=response or f'Оболочка {role} сообщила об ошибке',
-            session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started))
+            session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started),
+            tokens=_tokens_since(tokens_before))
 
     payload = _payload_parse(response)
     return _result_build(
         CLAUDE_SHELL_STATUS_ANSWERED, response=response, payload=payload,
         error='' if payload else _error_no_payload(response),
-        session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started))
+        session_uuid=session_uuid, inbox_id=inbox_id, elapsed=_elapsed(started),
+        tokens=_tokens_since(tokens_before))
 
 
 async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT,
@@ -509,14 +521,20 @@ def _json_balance(text: str) -> str:
 
 def _result_build(status: str, response: str = '', payload: dict | list | None = None,
                   error: str = '', session_uuid: str = '', inbox_id: int = 0,
-                  elapsed: int = 0) -> dict:
+                  elapsed: int = 0, tokens: dict | None = None) -> dict:
     """Ответ инструмента: служебные поля плюс поля разобранного JSON.
 
     Вложенные объекты и массивы тоже поднимаем наверх: движок workflow сам
     сериализует их в JSON-строку, и шаг умеет подставить её в следующий промпт.
     Ответ-массив наверх раскладывать нечего — он целиком лежит в payload_json.
+
+    `tokens` — что модель сделала за этот ход (`task_metric_gx10`). Кладём в ответ,
+    а не считаем потом: только здесь известны обе границы хода, а после него
+    счётчики уже уехали на чужую работу. Нули означают «замер не состоялся» —
+    модель недоступна или счётчики не читаются.
     """
     payload = payload if payload else {}
+    tokens = tokens or {}
     result = {
         'status': status,
         'response': response,
@@ -525,6 +543,9 @@ def _result_build(status: str, response: str = '', payload: dict | list | None =
         'session_uuid': session_uuid,
         'inbox_id': inbox_id,
         'elapsed': elapsed,
+        'tokens_out': int(tokens.get('tokens_output') or 0),
+        'tokens_prompt': int(tokens.get('tokens_prompt') or 0),
+        'tokens_sec': float(tokens.get('tokens_per_sec') or 0.0),
     }
 
     if isinstance(payload, dict):
@@ -535,6 +556,15 @@ def _result_build(status: str, response: str = '', payload: dict | list | None =
             result[key] = value
 
     return result
+
+
+def _tokens_since(before: dict) -> dict:
+    """Что модель сделала с момента снимка `before` до сейчас.
+
+    Второй снимок берём здесь, а не заранее: ход только что кончился, и позже
+    счётчики уже уедут на чужую работу.
+    """
+    return task_metric_gx10_delta(before, task_metric_gx10_snapshot())
 
 
 def _error_no_payload(response: str) -> str:

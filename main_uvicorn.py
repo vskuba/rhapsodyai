@@ -46,6 +46,8 @@ from src.uvicorn.routers.project import (
     project_document,
     project_task,
     project_task_pipeline,
+    project_task_metric,
+    project_task_migration,
     project_task_question,
     project_phase_source,
     project as project_admin,
@@ -76,8 +78,7 @@ from src.uvicorn.routers.playwright import playwright
 from src.uvicorn.routers.stt import stt
 from src.uvicorn.routers.blog import blog as blog_router
 from src.uvicorn.routers.browser import (browser_author, browser_error, browser_proxy,
-                                         browser_record, browser_scenario, browser_site,
-                                         browser_workflow)
+                                         browser_record, browser_scenario, browser_site)
 
 
 @asynccontextmanager
@@ -472,6 +473,8 @@ app.include_router(project_prototype_router.router, include_in_schema=False)
 app.include_router(project_document.router, include_in_schema=False)
 app.include_router(project_task.router, include_in_schema=False)
 app.include_router(project_task_pipeline.router, include_in_schema=False)
+app.include_router(project_task_metric.router, include_in_schema=False)
+app.include_router(project_task_migration.router, include_in_schema=False)
 app.include_router(project_task_question.router, include_in_schema=False)
 app.include_router(project_phase_source.router, include_in_schema=False)
 app.include_router(project_admin.router, include_in_schema=False)
@@ -489,10 +492,14 @@ app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)
 app.include_router(project_team_router.router, include_in_schema=False)
 app.include_router(playwright.router, include_in_schema=False)
-app.include_router(browser_proxy.router, include_in_schema=False)
-app.include_router(browser_scenario.router, include_in_schema=False)
+# Браузер наружу: этими точками работает DatingAi — заводит сессию, гоняет по ней
+# сценарии, снимает `storage_state`. Скрытыми они были по недосмотру: документация
+# показывала картину, обратную настоящей.
+app.include_router(browser_proxy.router)
+app.include_router(browser_scenario.router)
+app.include_router(browser_site.router)
+app.include_router(browser_error.router)
+# Запись сценария и его переписывание агентом — работа со страницы `/admin/browser`,
+# руками человека. Наружу их никто не зовёт, в документации они были бы шумом.
 app.include_router(browser_author.router, include_in_schema=False)
 app.include_router(browser_record.router, include_in_schema=False)
-app.include_router(browser_site.router)
-app.include_router(browser_workflow.router)
-app.include_router(browser_error.router)
