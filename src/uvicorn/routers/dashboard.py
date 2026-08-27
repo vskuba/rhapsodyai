@@ -243,7 +243,7 @@ async def dashboard_browser_page(request: Request, user: AuthSession = Depends(d
 
 
 @router.get("/admin/browser/site", response_class=HTMLResponse)
-async def browser_site_page(request: Request, user: AuthSession = Depends(require_auth)):
+async def dashboard_browser_site_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     """
     Работа по одному сайту: сессии, сценарии, workflow, ошибки.
 
