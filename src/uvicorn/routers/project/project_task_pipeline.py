@@ -310,7 +310,7 @@ async def project_task_pipeline_resume(task_id: int, user=Depends(AuthChecker([A
 
 
 @router.post('/task/{task_id}/worktree/merge')
-async def project_task_worktree_merge(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def project_task_pipeline_worktree_merge(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """
     Влить ветку подзадачи в главную ветку проекта и снять её рабочий каталог.
 
@@ -370,7 +370,7 @@ async def project_task_worktree_merge(task_id: int, user=Depends(AuthChecker([Au
 
 
 @router.get('/task/{task_id}/diff')
-async def project_task_diff(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_task_pipeline_diff(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """
     Разница главной ветки проекта и ветки подзадачи — чем занят `task_diff.py`.
 
@@ -408,7 +408,7 @@ async def project_task_diff(task_id: int, user=Depends(AuthChecker([AuthPermissi
 
 
 @router.get('/task/{task_id}/plan/revisions')
-async def project_task_plan_revisions(task_id: int, limit: int = TASK_REVISION_LIMIT,
+async def project_task_pipeline_plan_revisions(task_id: int, limit: int = TASK_REVISION_LIMIT,
                                       user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """
     Ревизии плана от свежих к старым. Самая свежая совпадает с текущим планом.
@@ -421,7 +421,7 @@ async def project_task_plan_revisions(task_id: int, limit: int = TASK_REVISION_L
 
 
 @router.get('/task/{task_id}/plan/revision/{revision_no}')
-async def project_task_plan_revision(task_id: int, revision_no: int,
+async def project_task_pipeline_plan_revision(task_id: int, revision_no: int,
                                      user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Одна ревизия целиком — для чипсов за пределами отданного списком окна."""
     revision = await task_revision_get(task_id, revision_no)
@@ -431,7 +431,7 @@ async def project_task_plan_revision(task_id: int, revision_no: int,
 
 
 @router.post('/task/{task_id}/plan/revision/{revision_no}/restore')
-async def project_task_plan_revision_restore(task_id: int, revision_no: int,
+async def project_task_pipeline_plan_revision_restore(task_id: int, revision_no: int,
                                              user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """
     Вернуть план из ревизии.
@@ -466,7 +466,7 @@ async def project_task_plan_revision_restore(task_id: int, revision_no: int,
 
 
 @router.delete('/task/{task_id}/plan/reset')
-async def project_task_plan_reset(task_id: int,
+async def project_task_pipeline_plan_reset(task_id: int,
                                   user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """
     Очистить план и цели, вернуть задачу в начало конвейера.
@@ -507,7 +507,7 @@ async def project_task_plan_reset(task_id: int,
 
 
 @router.delete('/task/{task_id}/plan/revision/{revision_no}')
-async def project_task_plan_revision_delete(task_id: int, revision_no: int,
+async def project_task_pipeline_plan_revision_delete(task_id: int, revision_no: int,
                                             user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """
     Удалить одну ревизию плана.
@@ -534,7 +534,7 @@ async def _task_row(task_id: int) -> dict | None:
 
 
 @router.get('/task/logs/{project_id}')
-async def project_task_logs(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_task_pipeline_logs(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """
     Живые журналы проекта: что показывать на вкладке «Журналы» страницы задач.
 
@@ -604,7 +604,7 @@ async def project_task_logs(project_id: int, user=Depends(AuthChecker([AuthPermi
 
 
 @router.get('/task/{task_id}/log')
-async def project_task_log(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_task_pipeline_log(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """
     Журнал и состояние строки: чем агент занят сейчас и докуда дошёл.
 

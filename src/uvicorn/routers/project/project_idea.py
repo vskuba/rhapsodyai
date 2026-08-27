@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.post('/planning/ideas/generate')
-async def planning_ideas_generate(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def project_idea_planning_ideas_generate(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     """Генерирует 7 идей продуктов по заданной нише через AI."""
     from json_.json_ import json_from_string
     import ast
@@ -94,7 +94,7 @@ async def planning_ideas_generate(request: Request, data: dict, user=Depends(Aut
 
 
 @router.post('/planning/ideas/bulk-create')
-async def planning_ideas_bulk_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def project_idea_planning_ideas_bulk_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     """Создаёт несколько проектов из списка идей."""
     ideas = data.get('ideas') or []
     if not ideas:
