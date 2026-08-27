@@ -71,6 +71,10 @@ TASK_WORKTREE_GIT_TIMEOUT = 180
 # Каталог, в котором делается слияние, когда главная ветка нигде не выкачена. Живёт
 # там же, где каталоги подзадач, и снимается сразу после слияния — имя с подчёркиванием,
 # чтобы не спутать его со строкой задачи (`feature_task_<id>`).
+# Сколько текста файла отдаём странице при разборе помехи. Больше в глаза всё равно
+# не берут, а конфликт в сгенерированном файле бывает на мегабайт.
+TASK_WORKTREE_DIFF_MAX = 40000
+
 TASK_WORKTREE_MERGE_DIR = '_merge'
 
 # Чем подписать коммит слияния, если в репозитории не настроен автор. В контейнере
@@ -495,6 +499,126 @@ async def task_worktree_merge(repo_dir: str, subtask_id) -> dict:
     return result
 
 
+async def task_worktree_collect(repo_dir: str, levels) -> dict:
+    """
+    Собрать ветки подзадач лесенкой: снизу вверх, каждый уровень в своего родителя.
+
+    Зачем. Ветки подзадач режутся от главной и живут порознь: их работа нигде не
+    сложена вместе. Пока конфликта нет, это неважно — человек вливает их в главную по
+    одной. Но стоит двум подзадачам тронуть один файл, и разбирать конфликт негде:
+    сливать в главную нельзя (там чужой чекаут и правки человека), а в ветке подзадачи
+    чужой работы нет.
+
+    Почему лесенкой, а не всё в одну кучу. Дерево задачи бывает глубже одного уровня:
+    подзадачу дробят дальше, когда она не влезает в память исполнителя, и работа уходит
+    внукам. Свалив все ветки в одну сборную, мы бы стянули в неё и работу внуков, и
+    работу их родителей — а конфликт между двумя внуками одной подзадачи там разбирался
+    бы вперемешку с чужими. Поэтому внуки вливаются в ветку своей подзадачи, та со
+    своей работой — в ветку задачи, и каждый конфликт встречается на своём уровне,
+    рядом с той работой, из-за которой возник.
+
+    Конфликт останавливает сборку, но **каталог остаётся в состоянии слияния**, и
+    человек разбирает его руками — обычным `git status`, правкой файлов и `git commit`.
+    Дальше сборку повторяют: влитое git пропустит сам, остаток доедет.
+
+    Чем это не `task_worktree_merge`. Тот вливает в **главную** ветку и на конфликте
+    делает `merge --abort`: главная обязана оставаться чистой, разбирать в ней нечего.
+    Здесь наоборот — незавершённое слияние и есть результат, ради которого звали.
+
+    Каталогов подзадач не трогаем и веток не удаляем: сборка ничего не заканчивает,
+    работа по-прежнему в своих ветках, и повторить её можно сколько угодно раз.
+
+    Args:
+        repo_dir: каталог основного чекаута проекта.
+        levels: пары `(номер родителя, [номера детей])` **в порядке снизу вверх** —
+            глубокие узлы первыми. Порядок строит вызывающий: дерево живёт в базе.
+
+    Returns:
+        `{'ok', 'error', 'branch', 'base', 'dir', 'merged', 'skipped', 'conflicts', 'output'}`.
+        `merged` — что влилось этим заходом, парами «ребёнок → родитель», `skipped` —
+        что уже было на месте, `conflicts` — файлы, на которых встали. `ok: False` при
+        конфликте — это не поломка, а приглашение разобрать: путь лежит в `dir`.
+    """
+    result = {'ok': False, 'error': '', 'branch': '', 'base': '', 'dir': '',
+              'merged': [], 'skipped': [], 'conflicts': [], 'output': ''}
+
+    repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
+    if not repo_dir:
+        result['error'] = 'не хватает адреса: нет каталога проекта'
+        return result
+    if not os.path.isdir(repo_dir):
+        result['error'] = (f'каталог проекта {repo_dir} не виден — проверьте монтирования '
+                           f'(docker-compose.override.yml)')
+        return result
+    if not levels:
+        result['error'] = 'у задачи нет подзадач с ветками — собирать нечего'
+        return result
+
+    base = await task_worktree_base_branch(repo_dir)
+    result['base'] = base
+    result['branch'] = task_worktree_branch(levels[-1][0])
+
+    for parent_id, child_ids in levels:
+        parent_branch = task_worktree_branch(parent_id)
+        kids = [int(i) for i in (child_ids or []) if int(i or 0) > 0 and int(i) != int(parent_id)]
+        if not kids:
+            continue
+
+        path, error = await _collect_host(repo_dir, parent_id, parent_branch, base)
+        if error:
+            result['error'] = error
+            return result
+        result['dir'] = path
+
+        # Незавершённое слияние с прошлого захода: продолжать поверх него нельзя — git
+        # откажется, а человек получил бы невнятное «cannot merge». Говорим прямо, что
+        # разбор не доведён, и где.
+        _, state = await task_worktree_git(path, 'status', '--porcelain')
+        if any(line.startswith(('UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD'))
+               for line in (state or '').split('\n')):
+            _, unmerged = await task_worktree_git(path, 'diff', '--name-only', '--diff-filter=U')
+            result['conflicts'] = [f for f in (unmerged or '').split('\n') if f.strip()]
+            result['error'] = (f'в каталоге сборки остался неразобранный конфликт: {path}. '
+                               f'Разберите его и закоммитьте, потом соберите снова')
+            return result
+
+        identity = await _identity(path)
+        for child_id in kids:
+            child_branch = task_worktree_branch(child_id)
+            if not await _branch_exists(repo_dir, child_branch):
+                continue
+
+            # Уже в ветке родителя — пропускаем молча: подзадача могла влиться прошлым
+            # заходом, и второй `merge` на ней всё равно ничего бы не сделал.
+            code, _ = await task_worktree_git(path, 'merge-base', '--is-ancestor',
+                                              child_branch, 'HEAD')
+            if not code:
+                result['skipped'].append(f'{child_branch} → {parent_branch}')
+                continue
+
+            code, out = await task_worktree_git(
+                path, *identity, 'merge', '--no-ff', child_branch,
+                '-m', f'Merge {child_branch} into {parent_branch}')
+            result['output'] += out
+            if code:
+                # Не `--abort`: незавершённое слияние здесь и есть то, за чем пришли.
+                _, unmerged = await task_worktree_git(path, 'diff', '--name-only',
+                                                      '--diff-filter=U')
+                result['conflicts'] = [f for f in (unmerged or '').split('\n') if f.strip()]
+                result['error'] = (f'слияние {child_branch} в {parent_branch} встало на '
+                                   f'конфликте — разберите его в {path} и соберите снова')
+                logger_info(f'task_worktree: сборка {parent_branch} встала на {child_branch}')
+                return result
+
+            result['merged'].append(f'{child_branch} → {parent_branch}')
+
+    result['ok'] = True
+    logger_info(f'task_worktree: собрано {len(result["merged"])} веток, '
+                f'пропущено {len(result["skipped"])}')
+
+    return result
+
+
 async def task_worktree_merge_check(repo_dir: str, subtask_id) -> dict:
     """
     Пройдёт ли слияние ветки подзадачи в главную — до самого слияния.
@@ -578,6 +702,269 @@ async def task_worktree_merge_check(repo_dir: str, subtask_id) -> dict:
         return result
 
     result['can_merge'] = True
+
+    return result
+
+
+async def task_worktree_trouble(repo_dir: str, task_ids) -> list[dict]:
+    """
+    Каталоги задачи, из-за которых сборка и слияние встанут: грязные и недомёрженные.
+
+    Зачем. Обе операции отказывают по состоянию каталога, а не по содержимому работы:
+    слияние не тронет каталог с несохранёнными правками (они не в ветке и пропали бы),
+    сборка не пойдёт поверх неразобранного конфликта. Человеку при этом видно только
+    «не прошло» — а причина лежит в каталоге, куда из браузера не заглянешь.
+
+    Здесь собран ровно тот список, по которому страница может предложить выход:
+    закоммитить, отбросить или отменить слияние.
+
+    Чистые каталоги в ответ не попадают: список — это перечень помех, и пустой он
+    значит «всё в порядке», а не «ничего не нашли».
+
+    Returns: `[{'id', 'branch', 'dir', 'dirty', 'merging', 'files', 'conflicts'}]`,
+        где `files` — несохранённые правки, `conflicts` — файлы неразобранного слияния.
+    """
+    repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
+    if not repo_dir or not os.path.isdir(repo_dir):
+        return []
+
+    out = []
+    for task_id in (task_ids or []):
+        path = task_worktree_path(repo_dir, task_id)
+        if not os.path.isdir(path):
+            continue
+
+        _, status = await task_worktree_git(path, 'status', '--porcelain', '-uall',
+                                            '--ignore-submodules=all')
+        conflicts = [line[3:].strip() for line in (status or '').split('\n')
+                     if line[:2] in ('UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD')]
+        dirty = _dirty_lines(path, status)
+        # Незавершённое слияние опознаём по `MERGE_HEAD`, а не по конфликтам: разбор
+        # мог быть уже сделан (`git add`), а коммита ещё нет — и сборка всё равно
+        # откажется идти дальше.
+        _, merge_head = await task_worktree_git(path, 'rev-parse', '--verify', '-q', 'MERGE_HEAD')
+        merging = bool((merge_head or '').strip())
+
+        if not dirty and not merging:
+            continue
+
+        out.append({
+            'id': int(task_id),
+            'branch': task_worktree_branch(task_id),
+            'dir': path,
+            'dirty': bool(dirty),
+            'merging': merging,
+            'files': dirty[:20],
+            'conflicts': conflicts[:20],
+        })
+
+    return out
+
+
+async def task_worktree_trouble_diff(repo_dir: str, task_id, path_name: str = '') -> dict:
+    """
+    Что именно поменялось в каталоге подзадачи — построчно, готовое к показу.
+
+    Зачем. Список имён файлов не отвечает на вопрос, который человек задаёт, глядя на
+    помеху: что там за правки и можно ли их выбросить. Решать вслепую он не станет —
+    и пойдёт в терминал, ради чего страница и затевалась.
+
+    Для конфликтного файла отдаём **три стороны**: `ours` — как в собираемой ветке,
+    `theirs` — как во вливаемой, `merged` — рабочая копия с маркерами. По ним страница
+    показывает выбор «взять свою / взять их», не заставляя читать `<<<<<<<`.
+
+    Для обычной правки отдаём `diff` против `HEAD` — то, что пропадёт при отбрасывании.
+
+    Args:
+        repo_dir: каталог основного чекаута проекта.
+        task_id: номер подзадачи или задачи — из него каталог.
+        path_name: путь файла внутри каталога; пусто — свод по всем.
+
+    Returns: `{'ok', 'error', 'dir', 'files': [{'path', 'conflict', 'diff',
+        'ours', 'theirs', 'cut'}]}`.
+    """
+    result = {'ok': False, 'error': '', 'dir': '', 'files': []}
+    repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
+    path = task_worktree_path(repo_dir, task_id) if repo_dir else ''
+    result['dir'] = path
+    if not path or not os.path.isdir(path):
+        result['error'] = f'каталога подзадачи #{task_id} нет'
+        return result
+
+    _, status = await task_worktree_git(path, 'status', '--porcelain', '-uall',
+                                        '--ignore-submodules=all')
+    wanted = str(path_name or '').strip()
+    for line in (status or '').split('\n'):
+        if len(line) < 4:
+            continue
+        code, name = line[:2], line[3:].strip().strip('"')
+        if wanted and name != wanted:
+            continue
+        if _dirty_is_log(line):
+            continue
+
+        conflict = code in ('UU', 'AA', 'DD', 'AU', 'UA', 'DU', 'UD')
+        item = {'path': name, 'conflict': conflict, 'code': code.strip(),
+                'diff': '', 'ours': '', 'theirs': '', 'cut': False}
+
+        if conflict:
+            # `:2:` и `:3:` — стороны слияния в индексе git: наша и вливаемая.
+            # Читаем оттуда, а не из рабочей копии: в ней они уже перемешаны
+            # маркерами, и разделить их обратно можно только разбором текста.
+            blobs = {}
+            for stage, key in (('2', 'ours'), ('3', 'theirs')):
+                _, text = await task_worktree_git(path, 'show', f':{stage}:{name}')
+                item[key] = (text or '')[:TASK_WORKTREE_DIFF_MAX]
+                item['cut'] = item['cut'] or len(text or '') > TASK_WORKTREE_DIFF_MAX
+                _, blob = await task_worktree_git(path, 'rev-parse', f':{stage}:{name}')
+                blobs[key] = (blob or '').strip()
+
+            # Разница между сторонами, а не два файла целиком. Конфликт бывает в
+            # трёх строках файла на пятьдесят килобайт: показав обе стороны
+            # полностью, мы не отвечаем на вопрос «чем они отличаются» — человек
+            # листает два одинаковых на вид текста и не находит ничего.
+            if blobs.get('ours') and blobs.get('theirs'):
+                _, sides = await task_worktree_git(path, 'diff', blobs['ours'], blobs['theirs'])
+                item['diff'] = (sides or '')[:TASK_WORKTREE_DIFF_MAX]
+        else:
+            # `HEAD --` без `--cached`, потому что интересует всё несохранённое разом:
+            # и проиндексированное, и нет — пропадёт при отбрасывании и то и другое.
+            _, text = await task_worktree_git(path, 'diff', 'HEAD', '--', name)
+            if not (text or '').strip():
+                # Новый файл: против HEAD его нет вовсе, показываем содержимое.
+                text = _read_head(os.path.join(path, name))
+            item['diff'] = (text or '')[:TASK_WORKTREE_DIFF_MAX]
+            item['cut'] = len(text or '') > TASK_WORKTREE_DIFF_MAX
+
+        result['files'].append(item)
+
+    result['ok'] = True
+
+    return result
+
+
+async def task_worktree_file_fix(repo_dir: str, task_id, path_name: str, action: str) -> dict:
+    """
+    Точечное решение по одному файлу: чью сторону взять или откатить правку.
+
+    Зачем отдельно от `task_worktree_fix`. Тот работает каталогом целиком —
+    «закоммитить всё», «отбросить всё». Но конфликт почти никогда не однороден: в
+    одном файле верна наша сторона, в другом — их, а третий надо править руками.
+    Кнопка «всё или ничего» заставляет либо потерять нужное, либо идти в терминал.
+
+    Действия:
+
+    * `ours` / `theirs` — взять сторону целиком (`git checkout --ours/--theirs`) и
+      пометить файл разобранным (`git add`). Разбор остальных это не трогает.
+    * `restore` — вернуть файл к `HEAD`, выбросив несохранённую правку. Необратимо,
+      но ровно в границах одного файла.
+
+    Returns: `{'ok', 'error', 'path', 'action', 'output'}`.
+    """
+    result = {'ok': False, 'error': '', 'path': str(path_name or ''), 'action': action, 'output': ''}
+    repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
+    path = task_worktree_path(repo_dir, task_id) if repo_dir else ''
+    name = str(path_name or '').strip()
+    if not path or not os.path.isdir(path):
+        result['error'] = f'каталога подзадачи #{task_id} нет'
+        return result
+    if not name or name.startswith('/') or '..' in name.split('/'):
+        # Путь приходит из браузера: без проверки он увёл бы git за пределы каталога.
+        result['error'] = 'недопустимый путь файла'
+        return result
+
+    if action in ('ours', 'theirs'):
+        code, out = await task_worktree_git(path, 'checkout', f'--{action}', '--', name)
+        result['output'] = out
+        if code:
+            result['error'] = f'не вышло взять сторону {action}: {out}'
+            return result
+        code, out = await task_worktree_git(path, 'add', '--', name)
+        if code:
+            result['error'] = f'git add не прошёл: {out}'
+            return result
+
+    elif action == 'restore':
+        code, out = await task_worktree_git(path, 'checkout', 'HEAD', '--', name)
+        result['output'] = out
+        if code:
+            result['error'] = f'откат файла не прошёл: {out}'
+            return result
+
+    else:
+        result['error'] = f'неизвестное действие: {action}'
+        return result
+
+    result['ok'] = True
+    logger_info(f'task_worktree: {action} по файлу {name} в {path}')
+
+    return result
+
+
+async def task_worktree_fix(repo_dir: str, task_id, action: str, message: str = '') -> dict:
+    """
+    Разобрать помеху в каталоге подзадачи: закоммитить, отбросить или отменить слияние.
+
+    Три действия, и все три — то, что человек иначе делал бы в терминале:
+
+    * `commit` — сохранить всё, что в каталоге, одним коммитом. Годится и как
+      завершение разбора конфликта: `git add -A` заберёт и разрешённые файлы.
+    * `discard` — вернуть каталог к последнему коммиту (`reset --hard` + очистка
+      неотслеживаемого). **Необратимо**: несохранённая работа пропадёт.
+    * `abort` — откатить незавершённое слияние (`merge --abort`). Работа самой ветки
+      остаётся, отменяется только начатое вливание.
+
+    Отбрасывание не трогает то, что лежит в ветке, и не трогает чужие каталоги: всё
+    ограничено каталогом одной подзадачи.
+
+    Returns: `{'ok', 'error', 'branch', 'dir', 'output'}`.
+    """
+    result = {'ok': False, 'error': '', 'branch': task_worktree_branch(task_id), 'dir': '', 'output': ''}
+    repo_dir = os.path.abspath(str(repo_dir or '')) if repo_dir else ''
+    path = task_worktree_path(repo_dir, task_id) if repo_dir else ''
+    result['dir'] = path
+    if not path or not os.path.isdir(path):
+        result['error'] = f'каталога подзадачи #{task_id} нет — разбирать нечего'
+        return result
+
+    identity = await _identity(path)
+    if action == 'abort':
+        code, out = await task_worktree_git(path, 'merge', '--abort')
+        result['output'] = out
+        if code:
+            result['error'] = f'отмена слияния не прошла: {out}'
+            return result
+
+    elif action == 'discard':
+        code, out = await task_worktree_git(path, 'reset', '--hard')
+        result['output'] = out
+        if code:
+            result['error'] = f'откат не прошёл: {out}'
+            return result
+        # Неотслеживаемое `reset` не трогает, а сборке мешает и оно. `-d` без `-x`:
+        # игнорируемое (venv, кэш) оставляем — его не человек писал.
+        _, clean = await task_worktree_git(path, 'clean', '-fd')
+        result['output'] += clean
+
+    elif action == 'commit':
+        code, out = await task_worktree_git(path, 'add', '-A')
+        if code:
+            result['error'] = f'git add не прошёл: {out}'
+            return result
+        text = str(message or '').strip() or f'task/{task_id}: сохранено со страницы разбора'
+        code, out = await task_worktree_git(path, *identity, 'commit', '-m', text)
+        result['output'] = out
+        # «нечего коммитить» — не отказ: каталог мог быть чист, и цель уже достигнута.
+        if code and 'nothing to commit' not in (out or ''):
+            result['error'] = f'коммит не прошёл: {out}'
+            return result
+
+    else:
+        result['error'] = f'неизвестное действие: {action}'
+        return result
+
+    result['ok'] = True
+    logger_info(f'task_worktree: {action} в {path}')
 
     return result
 
@@ -955,3 +1342,42 @@ async def _shared_names(repo_dir: str) -> list[str]:
         names.append(name)
 
     return names
+
+
+async def _collect_host(repo_dir: str, task_id, branch: str, base: str) -> tuple[str, str]:
+    """
+    Каталог сборной ветки: свой, постоянный, готовый принять конфликт.
+
+    Returns: `(путь, ошибка)`.
+
+    Постоянный, в отличие от каталога слияния в главную (`_merge_host`): там временный
+    снимают сразу, а здесь в каталоге остаётся незавершённое слияние, которое разбирает
+    человек. Сняв его, мы бы выбросили ровно то, ради чего сборку и звали.
+
+    Ветку заводим от главной, если её ещё нет. Есть — берём как есть: в ней уже лежит
+    собранное прошлым заходом, и пересоздание стёрло бы разобранные конфликты.
+    """
+    path = task_worktree_path(repo_dir, task_id)
+    if os.path.isdir(path):
+        return path, ''
+
+    if await _branch_exists(repo_dir, branch):
+        code, out = await task_worktree_git(repo_dir, 'worktree', 'add', path, branch)
+    else:
+        code, out = await task_worktree_git(repo_dir, 'worktree', 'add', '-b', branch, path, base)
+    if code:
+        return '', f'каталог сборки не завёлся: {out}'
+
+    await task_worktree_git(path, 'submodule', 'update', '--init', '--recursive')
+    logger_info(f'task_worktree: каталог сборки {path} (ветка {branch} от {base})')
+
+    return path, ''
+
+
+def _read_head(path: str) -> str:
+    """Начало файла текстом. Двоичное и нечитаемое отдаём пустым, а не падаем."""
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            return f.read(TASK_WORKTREE_DIFF_MAX)
+    except OSError:
+        return ''

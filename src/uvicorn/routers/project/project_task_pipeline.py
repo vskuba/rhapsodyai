@@ -40,7 +40,9 @@ from src.project.task.task_revision import (
     task_revision_get,
     task_revision_list,
 )
-from src.project.task.task_worktree import task_worktree_merge
+from src.project.task.task_worktree import (task_worktree_collect, task_worktree_file_fix,
+                                            task_worktree_fix, task_worktree_merge,
+                                            task_worktree_trouble, task_worktree_trouble_diff)
 
 # Состояния, в которых план можно трогать: конвейер над ним не работает и подзадач
 # по нему ещё (или уже) нет. `approved`/`processing` сюда не входят намеренно — план там
@@ -309,6 +311,131 @@ async def project_task_pipeline_resume(task_id: int, user=Depends(AuthChecker([A
     return {'ok': True, 'resumed': resumed, 'task': await _task_row(task_id)}
 
 
+@router.get('/task/{task_id}/worktree/trouble/{subtask_id}')
+async def project_task_worktree_trouble_diff(task_id: int, subtask_id: int, path: str = '',
+                                             user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """
+    Что поменялось в каталоге подзадачи — построчно, для раскрытия во вкладке «Ветки».
+
+    Отдельным запросом, а не вместе с разницей: содержимое конфликтных файлов бывает
+    на десятки килобайт, и тянуть его на каждую загрузку страницы ради вкладки,
+    которую чаще всего не открывают, — впустую.
+    """
+    work_dir, subtask_ids, _ = await _diff_target(task_id)
+    if subtask_id not in [int(i) for i in subtask_ids] and subtask_id != task_id:
+        raise HTTPException(status_code=400, detail=f'подзадача #{subtask_id} не из этой задачи')
+
+    return await task_worktree_trouble_diff(work_dir, subtask_id, path)
+
+
+@router.post('/task/{task_id}/worktree/file')
+async def project_task_worktree_file(task_id: int, data: dict,
+                                     user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Точечное решение по одному файлу: взять свою сторону, их сторону или откатить.
+
+    Кнопки у каждого файла во вкладке «Ветки». Отдельно от `worktree/fix`, который
+    работает каталогом целиком: конфликт почти никогда не однороден — в одном файле
+    верна наша сторона, в другом их, — и «всё или ничего» заставляет либо терять
+    нужное, либо идти в терминал.
+    """
+    work_dir, subtask_ids, _ = await _diff_target(task_id)
+
+    subtask_id = int(data.get('subtask_id') or 0)
+    if subtask_id not in [int(i) for i in subtask_ids] and subtask_id != task_id:
+        raise HTTPException(status_code=400, detail=f'подзадача #{subtask_id} не из этой задачи')
+
+    result = await task_worktree_file_fix(work_dir, subtask_id,
+                                          str(data.get('path') or ''),
+                                          str(data.get('action') or ''))
+    if not result['ok']:
+        raise HTTPException(status_code=400, detail=result['error'])
+
+    return result
+
+
+@router.post('/task/{task_id}/worktree/fix')
+async def project_task_worktree_fix(task_id: int, data: dict,
+                                    user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Разобрать помеху в каталоге подзадачи: закоммитить, отбросить или отменить слияние.
+
+    Кнопки во вкладке «Ветки» на странице разбора. Нужны потому, что сборка и слияние
+    отказывают по состоянию каталога — несохранённые правки, неразобранный конфликт, —
+    а причина лежит там, куда из браузера не заглянешь. Раньше выход был один: идти в
+    терминал.
+
+    `subtask_id` обязателен и обязан принадлежать этой задаче: действия необратимые
+    (`discard` стирает несохранённое), и промах по номеру стоил бы чужой работы.
+
+    Отбрасывание подтверждает страница, а не сервер: здесь мы уже знаем, что человек
+    решил, — и повторный вопрос ничего бы не добавил.
+    """
+    work_dir, subtask_ids, task = await _diff_target(task_id)
+
+    subtask_id = int(data.get('subtask_id') or 0)
+    action = str(data.get('action') or '').strip()
+    if subtask_id not in [int(i) for i in subtask_ids] and subtask_id != task_id:
+        raise HTTPException(status_code=400,
+                            detail=f'подзадача #{subtask_id} не из этой задачи')
+
+    result = await task_worktree_fix(work_dir, subtask_id, action, str(data.get('message') or ''))
+    if not result['ok']:
+        raise HTTPException(status_code=400, detail=result['error'])
+
+    await task_report_write(
+        subtask_id,
+        f'{user.username} со страницы разбора: '
+        + {'commit': 'сохранил правки каталога коммитом',
+           'discard': 'отбросил несохранённые правки каталога',
+           'abort': 'отменил незавершённое слияние'}.get(action, action))
+
+    return result
+
+
+@router.post('/task/{task_id}/worktree/collect')
+async def project_task_worktree_collect(task_id: int,
+                                        user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Собрать ветки подзадач в одну ветку задачи — место, где разбирают конфликт.
+
+    Кнопка «Собрать ветки» на странице разницы. Нужна, когда две подзадачи тронули
+    один файл: сливать такое в главную нельзя (там чекаут человека), а в ветке
+    подзадачи чужой работы нет — разбирать конфликт негде. Сборная ветка и есть это
+    «где»: все коммиты подзадач в одном дереве.
+
+    Конфликт здесь — **успех наполовину, а не отказ**: каталог остаётся в состоянии
+    слияния, и человек разбирает его руками. Поэтому отвечаем 200 с `ok: false` и
+    путём, а не ошибкой: 4xx означал бы «сделать не вышло», тогда как сделано ровно
+    то, о чём просили, — конфликт вынесен туда, где его можно взять.
+
+    Ничего не заканчивает: ветки подзадач и их каталоги остаются, влить собранное в
+    главную — по-прежнему отдельное решение человека.
+    """
+    work_dir, _, task = await _diff_target(task_id)
+    if task['parent_id']:
+        raise HTTPException(status_code=400,
+                            detail='собирать нечего: у подзадачи одна своя ветка, '
+                                   'сборка нужна задаче с деревом')
+
+    levels = await _collect_levels(task_id)
+    result = await task_worktree_collect(work_dir, levels)
+
+    if result['error'] and not result['conflicts'] and not result['merged']:
+        # Сборка не началась вовсе — нет каталога, нет подзадач, чужой конфликт с
+        # прошлого захода. Это отказ, и текст от git человеку полезнее общей фразы.
+        raise HTTPException(status_code=400, detail=result['error'])
+
+    if result['merged']:
+        await task_report_write(
+            task_id, f'{user.username} собрал ветки подзадач в {result["branch"]}: '
+                     f'{", ".join(result["merged"])}'
+                     + (f' (конфликт на {result["conflicts"][0]} — разбор в {result["dir"]})'
+                        if result['conflicts'] else ''))
+
+    return {'ok': result['ok'], **result}
+
+
 @router.post('/task/{task_id}/worktree/merge')
 async def project_task_worktree_merge(task_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """
@@ -401,6 +528,16 @@ async def project_task_diff(task_id: int, user=Depends(AuthChecker([AuthPermissi
     if not merged and (result.get('merge') or {}).get('merged'):
         merged = {'base': result['merge'].get('base') or result.get('base') or ''}
     result['merged'] = merged or None
+
+    # Каталоги, из-за которых сборка и слияние встанут: грязные и недомёрженные.
+    # Отдаём вместе с разницей, а не отдельным запросом: страница показывает их
+    # вкладкой рядом с diff, и второй поход за тем же деревом только растянул бы
+    # загрузку. Пустой список — «помех нет», и вкладки тогда не будет.
+    # Саму задачу проверяем тоже: сборка веток идёт в её каталоге
+    # (`feature/task_<номер>`), и неразобранный конфликт остаётся именно там —
+    # среди подзадач его нет, а он и есть самая частая помеха.
+    result['trouble'] = await task_worktree_trouble(
+        work_dir, list(dict.fromkeys([*subtask_ids, task_id])))
 
     # Пустой ответ — не ошибка HTTP: «ветки ещё нет» и «в ветке ничего нет» страница
     # показывает сама и текстом понятнее, чем красная плашка от 400.
@@ -645,10 +782,15 @@ async def _diff_target(task_id: int) -> tuple[str, list, dict]:
     Один помощник на страницу разницы и на кнопку слияния: они обязаны понимать номер
     одинаково, иначе кнопка вольёт не то, что человек посмотрел.
 
-    Номер подзадачи — это она сама, одна ветка. Номер разложенной задачи — все её
-    подзадачи по порядку: своей ветки у неё нет, вся работа лежит в ветках плана.
-    Задача без подзадач — снова одна ветка, своя: конвейер отдаёт разработку листу,
-    а лист бывает и верхнего уровня.
+    Номер подзадачи — это она сама, одна ветка. Номер разложенной задачи — **всё её
+    поддерево**: дети, внуки и дальше вглубь, каждый в порядке плана. Своей ветки у
+    такой задачи нет, вся работа лежит в ветках потомков. Задача без подзадач — снова
+    одна ветка, своя: конвейер отдаёт разработку листу, а лист бывает и верхнего уровня.
+
+    Вглубь, а не только по детям: подзадачу дробят дальше, когда она не влезает в
+    память исполнителя (`split_more`), и работа тогда уходит внукам. Собирая одних
+    детей, мы показывали бы человеку неполную разницу и вливали половину задачи —
+    молча, потому что у самих детей веток может не быть вовсе.
 
     Returns: `(рабочий каталог, номера подзадач, строка задачи)`. Отказ — HTTP.
     """
@@ -666,16 +808,95 @@ async def _diff_target(task_id: int) -> tuple[str, list, dict]:
 
         subtask_ids = [task_id]
         if not task['parent_id']:
-            await db.execute(
-                "SELECT id FROM project_task WHERE parent_id = %s ORDER BY position, id", (task_id,))
             # Пустой список — не отказ: у нераспланированной задачи ветка своя.
-            subtask_ids = [row['id'] for row in (await db.fetchall() or [])] or [task_id]
+            subtask_ids = await _subtree_ids(db, task_id) or [task_id]
 
     work_dir = await task_role_project_work_dir(task['project_id'])
     if not work_dir:
         raise HTTPException(status_code=400, detail='у проекта не задан рабочий каталог (карточка проекта)')
 
     return work_dir, subtask_ids, task
+
+
+async def _collect_levels(task_id: int) -> list:
+    """
+    Пары «родитель → его дети» в порядке сборки: снизу вверх, глубокие узлы первыми.
+
+    Порядок именно такой, потому что сборка идёт лесенкой: внуки вливаются в ветку
+    своей подзадачи, та со своей работой — в ветку задачи. Соберись верхний уровень
+    первым, в него уехала бы подзадача **без** работы своих детей: их ветки к тому
+    моменту ещё не влиты, и получилась бы наполовину пустая сборка, о которой никто
+    не предупредил.
+
+    Узлы без детей в список не попадают: вливать в них нечего, а заводить им каталог
+    ради пустого прохода — лишняя работа с диском.
+
+    Returns: `[(номер родителя, [номера детей]), ...]`, самый глубокий уровень первым.
+    """
+    async with mysql_get_db_async() as db:
+        kids_of, level, seen = {}, [task_id], {task_id}
+        depth = {task_id: 0}
+        while level:
+            await db.execute(
+                "SELECT id, parent_id FROM project_task "
+                f" WHERE parent_id IN ({', '.join(['%s'] * len(level))}) "
+                " ORDER BY position, id",
+                tuple(level),
+            )
+            nxt = []
+            for row in await db.fetchall() or []:
+                # Защита от кольца: `parent_id` правится руками через API, и цикл в
+                # дереве подвесил бы обход навсегда.
+                if row['id'] in seen:
+                    continue
+                seen.add(row['id'])
+                kids_of.setdefault(row['parent_id'], []).append(row['id'])
+                depth[row['id']] = depth.get(row['parent_id'], 0) + 1
+                nxt.append(row['id'])
+            level = nxt
+
+    # Глубокие первыми; на одной глубине — в порядке плана, как их вернул запрос.
+    return sorted(kids_of.items(), key=lambda pair: -depth.get(pair[0], 0))
+
+
+async def _subtree_ids(db, task_id: int) -> list:
+    """
+    Номера всего поддерева задачи, вглубь и в порядке плана.
+
+    Спускаемся уровнями, а не одним рекурсивным SQL: MySQL умеет `WITH RECURSIVE`, но
+    читается он хуже, а глубина здесь — единицы уровней (задача → подзадачи → их
+    дробление). Цикл по уровням даёт тот же ответ и понятен без объяснений.
+
+    Порядок — обход в глубину по `position`: ребёнок идёт сразу за своим родителем,
+    и ветки вливаются в том же порядке, в каком человек читает план.
+
+    Защита от цикла — `seen`: `parent_id` правится руками через API, и кольцо в дереве
+    подвесило бы обход навсегда.
+    """
+    order, seen, level = [], {task_id}, [task_id]
+    while level:
+        await db.execute(
+            "SELECT id, parent_id FROM project_task "
+            f" WHERE parent_id IN ({', '.join(['%s'] * len(level))}) "
+            " ORDER BY position, id",
+            tuple(level),
+        )
+        rows = await db.fetchall() or []
+        kids = {}
+        for row in rows:
+            if row['id'] in seen:
+                continue
+            seen.add(row['id'])
+            kids.setdefault(row['parent_id'], []).append(row['id'])
+
+        # Вставляем детей сразу за родителем — так порядок остаётся «в глубину».
+        for parent, ids in kids.items():
+            at = order.index(parent) + 1 if parent in order else len(order)
+            order[at:at] = ids
+
+        level = [i for ids in kids.values() for i in ids]
+
+    return order
 
 
 async def _plan_editable_task(task_id: int) -> dict:
