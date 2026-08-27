@@ -23,7 +23,7 @@ import sys
 from logging_.logging_ import logger_info, logging_init
 from src.cronicle.cronicle_log import (CRONICLE_LOG_KEEP_DAYS, cronicle_log_prune,
                                        cronicle_log_report, cronicle_log_sizes)
-from src.telegram_.telegram_notify import telegram_send_owner
+from src.telegram_.telegram_notify import telegram_notify_send_owner
 
 
 async def main():
@@ -43,7 +43,7 @@ async def main():
     # `notify: false` в metadata — прогон вручную, без сообщения владельцу.
     if metadata.get('notify', True):
         try:
-            await telegram_send_owner(report)
+            await telegram_notify_send_owner(report)
         except Exception as e:
             # Уборка уже состоялась, и молчащий Telegram её не отменяет: пишем
             # в лог и выходим успешно, иначе Cronicle отметит job провалившимся

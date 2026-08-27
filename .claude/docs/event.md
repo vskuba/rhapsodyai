@@ -24,7 +24,7 @@
 
 * `_event_log_persist` — кладёт событие в `event_log` (`type='system'`,
   `payload` = `json` с дописанным `event_type`).
-* `_telegram_notify_login` — шлёт `telegram_send_owner(...)` владельцу, но
+* `_telegram_notify_login` — шлёт `telegram_notify_send_owner(...)` владельцу, но
   **пропускает** полноправные роли (`auth_role_is_full(role)`) — `admin` и `qa`
   логируются постоянно, уведомления только шум.
 

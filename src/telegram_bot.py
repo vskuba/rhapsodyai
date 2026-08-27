@@ -9,7 +9,7 @@ from src.ai.ai_llm import ai_llm_node_get
 from config.config import config_get
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
-from src.faster_whisper.faster_whisper_model import faster_whisper_create_model
+from src.faster_whisper.faster_whisper_model import faster_whisper_model_create_model
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
 from src.mysql_.repository.agent_repository import AgentRepository
@@ -20,7 +20,7 @@ agent_manager = AiFrameworkAgentManager()
 TELEGRAM_BOT_USER_ID = 1
 
 
-async def init_telegram_bot(agent_name: str):
+async def telegram_bot_init(agent_name: str):
     bot = Bot(token=config_get('TELEGRAM_TOKEN_SOKO'))
     dp = Dispatcher()
 
@@ -64,7 +64,7 @@ async def init_telegram_bot(agent_name: str):
             file_path = f"temp_{file_id}.ogg"
             await message.bot.download_file(file.file_path, file_path)
 
-            segments, info = (await faster_whisper_create_model()).transcribe(
+            segments, info = (await faster_whisper_model_create_model()).transcribe(
                 file_path,
                 beam_size=5,
                 best_of=5,

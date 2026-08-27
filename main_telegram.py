@@ -11,7 +11,7 @@ from ai.ai_thread import ai_thread_framework_run
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
-from src.telegram_bot import init_telegram_bot
+from src.telegram_bot import telegram_bot_init
 from state.state import state_set
 from thread_.thread_ import thread_with_callback
 
@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     #========== Soko Telegram Bot ==========
 
-    telegram_bot_agent_soko = partial(init_telegram_bot, agent_name='soko')
+    telegram_bot_agent_soko = partial(telegram_bot_init, agent_name='soko')
     thread_with_callback(
         init_func=telegram_bot_agent_soko,
         callback_func=lambda res: print(f"Telegram bot Soko status: {res}")

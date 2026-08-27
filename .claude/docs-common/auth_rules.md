@@ -29,7 +29,7 @@ class AuthChecker:
         self.required_permissions = required_permissions
 
     async def __call__(self, request) -> Session:
-        current_user = await get_current_user(request)
+        current_user = await auth_get_current_user(request)
         user_permissions = auth_role_permissions(current_user.role)
         for perm in self.required_permissions:
             if perm not in user_permissions:

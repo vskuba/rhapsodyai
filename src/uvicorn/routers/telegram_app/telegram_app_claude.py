@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, HTTPException
 from datetime_.datetime_ import datetime_now
 from mysql_.mysql_ import mysql_get_db_async
 from setting_.setting_ import setting_get
-from src.telegram_.telegram_notify import telegram_send_owner
+from src.telegram_.telegram_notify import telegram_notify_send_owner
 from src.tool.claude_.claude_ import (
     CLAUDE_MESSAGE_STATUS_DELIVERED,
     claude_message_cloud,
@@ -77,7 +77,7 @@ async def telegram_app_claude_respond(request: Request, data: dict):
     )
 
     if response and data.get("notify", True):
-        await telegram_send_owner(response)
+        await telegram_notify_send_owner(response)
 
     return {"result": {"ok": True}}
 

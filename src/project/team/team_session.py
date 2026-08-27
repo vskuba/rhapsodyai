@@ -29,7 +29,7 @@ from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_RESTART_READY,
     TASK_SETTING_TIMEOUT_RESTART_SETTLE,
     task_setting_timeout_get)
-from src.telegram_.telegram_notify import telegram_send_owner
+from src.telegram_.telegram_notify import telegram_notify_send_owner
 from src.tool.claude_.claude_ import claude_message_user
 from src.tool.claude_shell.claude_shell import (CLAUDE_SHELL_AGENT_STATUS_READY,
                                                 claude_shell_session_status)
@@ -217,7 +217,7 @@ async def _telegram_notify(row: dict, status: dict) -> None:
     Сбой уведомления не должен ронять запрос — перезапуск уже поставлен в очередь.
     """
     try:
-        await telegram_send_owner(
+        await telegram_notify_send_owner(
             f"🔄 Перезапуск процессов сессии со страницы «Команда»\n"
             f"Сессия: {row.get('project_label')} / {row.get('role')}\n"
             f"watch alive: {'да' if status['watch_alive'] else 'нет'}"

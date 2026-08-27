@@ -8,7 +8,7 @@ from setting_.setting_ import setting_get
 _model_cache: dict[str, WhisperModel] = {}
 
 
-async def faster_whisper_create_model(model_name: str | None = None) -> WhisperModel:
+async def faster_whisper_model_create_model(model_name: str | None = None) -> WhisperModel:
     """
     Возвращает Whisper модель для распознавания речи, создавая ее лениво и
     переиспользуя между запросами (загрузка весов с диска - самая дорогая
@@ -31,7 +31,7 @@ async def faster_whisper_create_model(model_name: str | None = None) -> WhisperM
     return _model_cache[model_name]
 
 
-async def faster_whisper_transcribe(
+async def faster_whisper_model_transcribe(
     file_path: str,
     model_name: str | None = None,
     language: str | None = None,
@@ -58,15 +58,15 @@ async def faster_whisper_transcribe(
 
     Умолчания оставлены прежними: старые вызовы работают как работали.
 
-    Возвращает ТОЛЬКО текст — обёртка над `faster_whisper_detect()`. Нужен ещё
+    Возвращает ТОЛЬКО текст — обёртка над `faster_whisper_model_detect()`. Нужен ещё
     и определённый язык (авторежим диктовки) — зовите её напрямую.
     """
-    detected = await faster_whisper_detect(file_path, model_name, language, beam_size)
+    detected = await faster_whisper_model_detect(file_path, model_name, language, beam_size)
 
     return detected["text"]
 
 
-async def faster_whisper_detect(
+async def faster_whisper_model_detect(
     file_path: str,
     model_name: str | None = None,
     language: str | None = None,
@@ -87,7 +87,7 @@ async def faster_whisper_detect(
     `probability` отдаём вместе с языком: на коротком чанке уверенность бывает
     низкой, и решать, верить ли ответу, должен вызывающий — здесь порога нет.
     """
-    model = await faster_whisper_create_model(model_name)
+    model = await faster_whisper_model_create_model(model_name)
 
     return await asyncio.to_thread(
         _transcribe_blocking, model, file_path, beam_size, language)
