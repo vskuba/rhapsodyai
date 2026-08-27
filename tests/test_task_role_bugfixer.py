@@ -152,19 +152,20 @@ class TestPipelineStateEnum:
     следующий тик — NULL или `new`, и пустую строку не видит ни один.
 
     Читаем сам DDL, а не INFORMATION_SCHEMA: тест обязан ловить расхождение с
-    `migrations/0001.sql` — источником схемы, — а не с той базой, где его запустили.
-    Живая база может быть догнана вручную и скрыть забытую правку файла.
+    `migrations/20260101000000_initial_schema.sql` — источником схемы, — а не с той
+    базой, где его запустили. Живая база может быть догнана вручную и скрыть забытую
+    правку файла.
     """
 
     def _enum_values(self) -> set:
         import re
         from pathlib import Path
 
-        ddl = Path(__file__).resolve().parent.parent / 'migrations' / '0001.sql'
+        ddl = Path(__file__).resolve().parent.parent / 'migrations' / '20260101000000_initial_schema.sql'
         text = ddl.read_text(encoding='utf-8')
         # Объявление растянуто на несколько строк, поэтому берём его целиком до `)`.
         match = re.search(r'`pipeline_state`\s+ENUM\s*\((.*?)\)\s', text, re.S)
-        assert match, 'в migrations/0001.sql не найдено объявление pipeline_state'
+        assert match, 'в 20260101000000_initial_schema.sql не найдено объявление pipeline_state'
 
         return set(re.findall(r"'([^']+)'", match.group(1)))
 

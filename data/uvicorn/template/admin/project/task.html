@@ -1748,8 +1748,9 @@
                 </div>
             </div>
 
+            <!-- Имя ветки подставится при выборе строки: до него называть нечего. -->
             <div class="log-side-block log-state empty" id="logState">
-                <div class="log-side-head"><span>Состояние</span></div>
+                <div class="log-side-head"><span>Состояние ветки</span></div>
                 <pre>Выберите строку слева.</pre>
             </div>
         </div>
@@ -4731,6 +4732,12 @@ function logBodyRender() {
     body.innerHTML = html;
 }
 
+// Имя ветки строки. Шаблон тот же, что у `TASK_WORKTREE_BRANCH_TEMPLATE` в
+// `task_worktree.py`: разойдись они — заголовок называл бы ветку, которой нет.
+function logBranch(taskId) {
+    return `feature/task_${taskId}`;
+}
+
 async function logOpen(taskId) {
     _logTaskId = taskId;
     document.querySelectorAll('.log-item').forEach(el => {
@@ -4750,7 +4757,10 @@ async function logOpen(taskId) {
 
     const box = document.getElementById('logState');
     box.classList.toggle('empty', !data.state);
-    box.innerHTML = '<div class="log-side-head"><span>Состояние</span></div><pre>'
+    // Имя ветки в заголовке, потому что состояние — про неё: что закоммичено, что
+    // осталось в рабочем дереве. Без имени неясно, к чему относится текст, когда
+    // строк в списке слева несколько.
+    box.innerHTML = `<div class="log-side-head"><span>Состояние ветки ${esc(logBranch(taskId))}</span></div><pre>`
         + (data.state ? esc(data.state) : 'Появится, когда закончится первый круг.') + '</pre>';
 
     _logEntries = logParse(data.log);
