@@ -22,7 +22,7 @@
         width: 100%;
         height: 100%;
         min-height: 0;
-        padding: 16px;
+        padding: 16px 0;
         display: flex;
         gap: 16px;
         align-items: stretch;
@@ -99,10 +99,73 @@
         text-align: left;
     }
 
+    /* Цель сценария и кнопка запуска — одной строкой: кнопка относится именно к
+       этой карточке, и отдельная полоса под ней только удлиняла список. */
     .browser-session-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         font-size: 10px;
         color: #9ca3af;
         margin-top: 3px;
+    }
+
+    .browser-session-meta-text {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Иконка вместо подписи: в карточке шириной с колонку слово «Запустить»
+       занимало треть строки. Размер кнопки держим пальцевым — 24px. */
+    .browser-session-run {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        background: #fff;
+        color: #16a34a;
+        cursor: pointer;
+        transition: background .12s, color .12s, border-color .12s;
+    }
+
+    .browser-session-run:hover:not(:disabled) {
+        background: #f0fdf4;
+        border-color: #86efac;
+    }
+
+    /* Прогон идёт: кнопка показывает квадрат «стоп» и не нажимается — остановить
+       начатый прогон нечем, контейнер доводит сценарий до конца сам. Форма всё
+       равно меняется: по ней видно, что карточка занята. */
+    .browser-session-run.busy {
+        color: #c2410c;
+        border-color: #fed7aa;
+        background: #fff7ed;
+    }
+
+    /* Нечего запускать — кнопка серая, а не приглушённо-зелёная: зелёный обещает
+       действие, и полупрозрачный он читается как «сейчас нажму», хотя подстановки
+       ещё не введены. Серый говорит «пока нельзя» без обещания. */
+    .browser-session-run:disabled {
+        cursor: default;
+        color: #cbd5e1;
+        border-color: #e5e7eb;
+        background: #f8fafc;
+    }
+
+    /* Кроме случая, когда прогон уже идёт: там кнопка тоже не нажимается, но
+       оранжевый квадрат несёт другое — «занято», а не «не хватает данных». */
+    .browser-session-run.busy:disabled {
+        color: #c2410c;
+        border-color: #fed7aa;
+        background: #fff7ed;
     }
 
     .browser-empty {
@@ -155,43 +218,183 @@
         50% { opacity: .25; }
     }
 
-    /* Запуск сценария — вторая полоса действий, под записью: записанное здесь же
-       и проигрывается, в той самой сессии, которую человек видит в окне. */
-    .browser-session-play {
+
+    /* ---------- Колонка сценариев: список сверху, подстановки снизу ----------
+
+       Одна раскладка на обе вкладки — «Сессии» и «Сценарии». Раньше поля
+       подстановок жили внутри карточек: колонка узкая, и карточка с тремя ключами
+       занимала пол-экрана, а соседние уезжали под прокрутку. Теперь поля общие и
+       показывают выбранный сценарий — на экране всегда один их набор. */
+    .browser-side-split {
         display: flex;
-        gap: 6px;
-        align-items: center;
-        margin-top: 8px;
-        padding-top: 8px;
-        border-top: 1px solid #e5e7eb;
+        flex-direction: column;
+        min-height: 0;
+        gap: 8px;
+        overflow: hidden;
     }
 
-    .browser-session-play select {
+    /* Список отдаёт место полям, а не наоборот. `flex-shrink: 1` у полей сжимал
+       их до девяти пикселей — не влезала даже одна строка ввода, потому что
+       список с `flex: 1 1 auto` забирал всю высоту себе. Теперь поля не
+       сжимаются вовсе, а список ужимается до своего минимума и прокручивается. */
+    .browser-side-rows {
         flex: 1 1 auto;
-        min-width: 0;
-        padding: 4px 6px;
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        font-size: 12px;
+        min-height: 96px;
+        overflow-y: auto;
     }
 
-    .browser-session-play .browser-btn {
+    /* Ручки: между рядами колонки и между колонкой и окном. Приём тот же, что у
+       журналов задач (`logSplitter`), — ширину и высоту подбирают под экран и
+       задачу, и выбор запоминается. Полоса широкая на ощупь (7px) и невидимая,
+       пока на неё не навели: рамка между рядами и так есть. */
+    .browser-grip-row {
         flex: 0 0 auto;
-        min-height: 26px;
-        padding: 4px 10px;
-        font-size: 12px;
+        height: 7px;
+        margin: -4px 0;
+        cursor: row-resize;
+        border-radius: 4px;
+        background: transparent;
+        transition: background .12s;
     }
 
-    /* Подстановки выбранного сценария — теми же строками, что и на вкладке
-       сценариев, только уже: в карточке на имя ключа места вдвое меньше. */
-    .browser-session-play-keys {
+    .browser-grip-col {
+        flex: 0 0 auto;
+        width: 7px;
+        align-self: stretch;
+        cursor: col-resize;
+        border-radius: 4px;
+        background: transparent;
+        transition: background .12s;
+    }
+
+    .browser-grip-row:hover, .browser-grip-row.is-drag,
+    .browser-grip-col:hover, .browser-grip-col.is-drag { background: #c7d2fe; }
+
+    /* Пока тянут, выделение текста мешает: курсор уезжает в подсветку строк
+       вместо перетаскивания. */
+    .browser-container.is-drag { user-select: none; }
+    .browser-container.is-drag-col { cursor: col-resize; }
+    .browser-container.is-drag-row { cursor: row-resize; }
+
+    .browser-side-keys {
+        flex: 0 0 auto;
+        /* Три-четыре поля видно сразу, дальше прокрутка внутри самой панели:
+           колонка не должна превращаться в форму, список сценариев тоже нужен. */
+        max-height: 45%;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-top: 1px solid #e5e7eb;
+        padding-top: 8px;
+    }
+
+    .browser-side-keys-head {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        flex: 0 0 auto;
+        margin-bottom: 6px;
+        font-size: 11px;
+        color: #6b7280;
+        font-weight: 600;
+    }
+
+    .browser-side-keys-head .browser-side-keys-title {
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .browser-side-keys-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
         display: flex;
         flex-direction: column;
         gap: 4px;
-        margin-top: 6px;
+        /* Поле ввода не сжимаем: в узкой колонке строка и так на пределе, а
+           сплющенная до нечитаемости она хуже прокрутки. */
+        padding-right: 2px;
     }
 
-    .browser-session-play-keys .scenario-key-name { flex: 0 0 88px; }
+    .browser-side-keys-list .scenario-key { flex: 0 0 auto; }
+
+    .browser-side-keys-empty {
+        font-size: 11px;
+        color: #9ca3af;
+        line-height: 1.5;
+    }
+
+    /* Имя ключа уже, чем в редакторе: колонка узкая, а значение важнее подписи. */
+    .browser-side-keys-list .scenario-key-name { flex: 0 0 88px; }
+
+    /* ---------- Вкладка «Журналы»: прогоны сценариев ---------- */
+
+    /* Раскладка та же, что у журналов задач (`/admin/task`): слева выбор, справа
+       содержимое во всю высоту. Приём один и тот же — список короткий и
+       постоянный, а журнал длинный и меняется, — поэтому и вид повторяем. */
+    .runlog-pane {
+        display: flex;
+        gap: 14px;
+        min-height: 0;
+        flex: 1 1 auto;
+        padding: 16px;
+        box-sizing: border-box;
+    }
+
+    .runlog-side {
+        width: 290px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        overflow: hidden;
+    }
+
+    .runlog-side-head {
+        padding: 8px 12px;
+        border-bottom: 1px solid #eef2f6;
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .runlog-side-list { flex: 1; overflow-y: auto; }
+
+    /* Карточка журнала — та же `.scenario-session`, что на соседних вкладках:
+       один и тот же сценарий должен выглядеть одинаково, где бы его ни показывали.
+       Здесь у неё только отбивка: список идёт сплошным столбцом внутри рамки. */
+    .runlog-item { margin: 0 6px 6px; }
+    .runlog-item:first-child { margin-top: 6px; }
+    .runlog-item-meta { font-size: 11px; color: #94a3b8; display: flex; gap: 8px; }
+    .runlog-side-empty { padding: 14px 12px; color: #94a3b8; font-size: 12.5px; line-height: 1.5; }
+
+    .runlog-main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+    }
+
+    .runlog-body {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        padding: 12px 14px;
+    }
+
+    .runlog-empty { color: #94a3b8; font-size: 12.5px; padding: 10px 0; }
 
     /* ---------- Правая колонка: окно ---------- */
 
@@ -423,28 +626,6 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-
-    /* Крестик виден только под мышью: в списке из десятка сценариев ряд красных
-       крестов читается как «здесь всё сломано», а нужен он раз в месяц. */
-    .scenario-del {
-        display: flex;
-        align-items: center;
-        border: none;
-        background: none;
-        padding: 0;
-        color: #d1d5db;
-        cursor: pointer;
-        opacity: 0;
-        transition: opacity .15s, color .15s;
-    }
-
-    .scenario-session:hover .scenario-del {
-        opacity: 1;
-    }
-
-    .scenario-del:hover {
-        color: #b91c1c;
     }
 
     .scenario-form {
@@ -717,49 +898,6 @@
 
     .scenario-trace-row.bad { color: #b91c1c; }
     .browser-status.bad { color: #b91c1c; }
-
-    /* Подзаголовок списка сценариев в колонке. Кнопкой он был, пока рядом жили
-       цепочки и списки сворачивались по очереди; список остался один — сворачивать
-       нечего, но отбивка и счётчик нужны. */
-    .browser-side-sub {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        width: 100%;
-        margin: 10px 0 6px;
-        padding: 4px 2px;
-        border: 0;
-        border-bottom: 1px solid #f1f5f9;
-        background: none;
-        font-size: 11px;
-        font-weight: 700;
-        font-family: inherit;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: .04em;
-        text-align: left;
-        cursor: pointer;
-    }
-
-    .browser-side-sub:hover { color: #64748b; }
-    .browser-side-sub.open { color: #4338ca; border-bottom-color: #c7d2fe; }
-
-    .browser-side-caret {
-        display: inline-block;
-        font-size: 9px;
-        transition: transform .15s;
-    }
-
-    .browser-side-sub.open .browser-side-caret { transform: rotate(90deg); }
-
-    /* Счётчик у заголовка: закрытая секция всё равно должна говорить, сколько
-       в ней лежит, — иначе непонятно, стоит ли её открывать. */
-    .browser-side-n {
-        margin-left: auto;
-        font-weight: 400;
-        letter-spacing: 0;
-        text-transform: none;
-    }
 
     /* ---------- Шаги сценария ---------- */
 
@@ -1505,6 +1643,7 @@
     {% if browser_page == 'site' %}
     <button class="page-tab active" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
     <button class="page-tab" data-tab="scenario">Сценарии <span class="page-tab-n" id="tabCount-scenario"></span></button>
+    <button class="page-tab" data-tab="runlog">Журналы <span class="page-tab-n" id="tabCount-runlog"></span></button>
     <button class="page-tab" data-tab="error">Ошибки <span class="page-tab-n" id="tabCount-error"></span></button>
     {% else %}
     <button class="page-tab active" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
@@ -1531,7 +1670,7 @@
 
 <div class="browser-container">
 
-    <div class="browser-side">
+    <div class="browser-side browser-side-split">
         <!-- Запись нового сценария — над шапкой колонки: это не один из сценариев
              списка, а способ завести следующий. -->
         <div class="browser-record">
@@ -1540,11 +1679,20 @@
         </div>
         <!-- Список один, поэтому и аккордеона нет: сворачивать нечего. Заголовок
              оставлен ради счётчика — по нему видно, сколько сценариев у сайта. -->
-        <div class="browser-side-sub browser-side-sub-static">
-            Сценарии<span class="browser-side-n" id="sessionScenarioN"></span>
+        <div class="browser-side-rows" id="sessionScenarioList"></div>
+        <div class="browser-grip-row" id="sessionRowGrip" title="Потянуть, чтобы изменить высоту"></div>
+        <!-- Подстановки выбранного сценария. Общие на всю колонку: в карточке они
+             занимали столько же места, сколько сама карточка, и список уезжал под
+             прокрутку. Здесь их всегда ровно один набор — того, что выбран. -->
+        <div class="browser-side-keys" id="sessionScenarioKeysBox" style="display:none">
+            <div class="browser-side-keys-head">
+                <span class="browser-side-keys-title" id="sessionScenarioKeysTitle">Подстановки</span>
+            </div>
+            <div class="browser-side-keys-list" id="sessionScenarioKeys"></div>
         </div>
-        <div id="sessionScenarioList"></div>
     </div>
+
+    <div class="browser-grip-col" id="sessionColGrip" title="Потянуть, чтобы изменить ширину"></div>
 
     <div class="browser-view">
         <div class="browser-bar">
@@ -1611,14 +1759,27 @@
 
 <div class="browser-container">
 
-    <div class="browser-side">
+    <div class="browser-side browser-side-split">
         <div class="browser-side-head">
             <span class="browser-side-title">Сценарии</span>
             <button type="button" class="browser-btn primary" id="scenarioNewBtn">+</button>
         </div>
-        <div class="browser-stat" id="scenarioStat">—</div>
-        <div id="scenarioList"></div>
+        <div class="browser-side-rows" id="scenarioList"></div>
+        <div class="browser-grip-row" id="scenarioRowGrip" title="Потянуть, чтобы изменить высоту"></div>
+        <!-- Подстановки выбранного сценария. Общие на всю колонку: в карточке они
+             занимали столько же места, сколько сама карточка, и список уезжал под
+             прокрутку. Здесь их всегда ровно один набор — того, что выбран. -->
+        <div class="browser-side-keys" id="scenarioSideKeysBox" style="display:none">
+            <div class="browser-side-keys-head">
+                <span class="browser-side-keys-title" id="scenarioSideKeysTitle">Подстановки</span>
+                <button type="button" class="scenario-keys-add" id="scenarioKeyAddBtn"
+                        title="Ключ, которого ещё нет в шагах — например, логин для автора">+ ключ</button>
+            </div>
+            <div class="browser-side-keys-list scenario-keys" id="scenarioKeys"></div>
+        </div>
     </div>
+
+    <div class="browser-grip-col" id="scenarioColGrip" title="Потянуть, чтобы изменить ширину"></div>
 
     <div class="browser-view">
         <div class="browser-bar">
@@ -1626,6 +1787,12 @@
             <button type="button" class="browser-btn primary" id="scenarioSaveBtn">Сохранить</button>
             <button type="button" class="browser-btn" id="scenarioAuthorBtn"
                     title="LLM напишет шаги сама, глядя на страницу">Написать по цели</button>
+            <!-- Удаление здесь, а не крестиком в карточке: в списке крестик стоял
+                 рядом с выбором и попадал под палец, а стирает он сценарий вместе
+                 с журналом прогонов. В полосе действий он рядом с «Сохранить» —
+                 обе кнопки про открытый сценарий, и обе видны только когда он открыт. -->
+            <button type="button" class="browser-btn danger" id="scenarioDeleteBtn"
+                    title="Удалить открытый сценарий вместе с журналом прогонов">Удалить</button>
         </div>
 
         <div class="scenario-form">
@@ -1658,15 +1825,7 @@
 
             <div class="scenario-col">
                 <div class="scenario-run">
-                    <button type="button" class="browser-btn primary" id="scenarioRunBtn">Запустить</button>
-                    <button type="button" class="browser-btn" id="scenarioLogBtn">Журнал</button>
                 </div>
-                <div class="scenario-keys-head">
-                    <div class="scenario-label">Подстановки — ключи из шагов; пустые в базу не попадут</div>
-                    <button type="button" class="scenario-keys-add" id="scenarioKeyAddBtn"
-                            title="Ключ, которого ещё нет в шагах — например, логин для автора">+ ключ</button>
-                </div>
-                <div class="scenario-keys" id="scenarioKeys"></div>
                 <div class="scenario-label">Трасса</div>
                 <div class="scenario-out" id="scenarioOut"></div>
             </div>
@@ -1676,6 +1835,37 @@
     </div>
 
 </div>
+</div>
+
+<!-- Журнал прогонов: слева сценарии сайта, справа их прогоны. Раньше это была
+     кнопка «Журнал» в редакторе — она показывала прогоны прямо в поле вывода, и
+     чтобы посмотреть чужой журнал, приходилось открывать чужой сценарий, теряя
+     набранные подстановки. -->
+<div class="tab-panel" id="tab-runlog">
+
+<div class="runlog-pane">
+    <div class="runlog-side">
+        <div class="runlog-side-head">
+            <span>Сценарии сайта</span>
+            <span id="runlogCount" class="runlog-item-meta"></span>
+        </div>
+        <div class="runlog-side-list" id="runlogList">
+            <div class="runlog-side-empty">Загрузка…</div>
+        </div>
+    </div>
+
+    <div class="runlog-main">
+        <div class="scenario-head">
+            <span class="scenario-head-label" id="runlogTitle">Журнал прогонов</span>
+            <button type="button" class="browser-btn" id="runlogReloadBtn">Обновить</button>
+            <span class="scenario-head-hint" id="runlogHint"></span>
+        </div>
+        <div class="runlog-body" id="runlogBody">
+            <div class="runlog-empty">Выберите сценарий слева, чтобы увидеть его прогоны.</div>
+        </div>
+    </div>
+</div>
+
 </div>
 
 <div class="tab-panel" id="tab-error">
@@ -1783,6 +1973,12 @@
         // Список сайтов правят и из соседней вкладки браузера — перечитываем на входе,
         // а не держим то, что пришло при загрузке страницы.
         if (name === 'site') sitesLoad();
+        if (name === 'runlog') {
+            // Список сценариев общий с соседней вкладкой: он уже загружен, второго
+            // запроса за теми же именами не делаем.
+            scenariosLoad();
+            runlogListRender();
+        }
         if (name === 'error') errorsLoad();
 
         // Вкладка сессий без окна бесполезна: страница живёт в контейнере и после
@@ -2044,6 +2240,14 @@
         playValues.clear();
         try { localStorage.removeItem(PLAY_VALUES_KEY); } catch (e) {}
         sessionScenariosRender();
+        // Панель ключей списком не рисуется: она общая на колонку и осталась бы
+        // стоять с прежними значениями, хотя забыть просили именно их.
+        playSelected = '';
+        const keysBox = document.getElementById('sessionScenarioKeysBox');
+        if (keysBox) keysBox.style.display = 'none';
+        // Соседняя вкладка берёт значения из того же хранилища — перерисовываем и её.
+        scenarioKeyDraft = {};
+        scenarioKeysRender();
         showNotification('Введённые значения забыты', 'success');
     }
 
@@ -2063,7 +2267,6 @@
             ? scenarios.filter(row => !row.site_id || Number(row.site_id) === site.id)
             : scenarios;
 
-        document.getElementById('sessionScenarioN').textContent = mine.length || '';
         root.innerHTML = '';
         if (!mine.length) {
             root.innerHTML = '<div class="browser-empty">сценариев нет — запишите первый сверху</div>';
@@ -2092,34 +2295,86 @@
             `<div class="browser-session-name"><span>${_escape(name)}</span>` +
             (status ? `<span class="scenario-mark ${_escape(status)}">${_escape(status)}</span>` : '') +
             '</div>' +
-            `<div class="browser-session-meta">${_escape(meta)}</div>` +
-            '<div class="browser-session-play">' +
-            '<button class="browser-btn primary">Запустить</button></div>' +
-            '<div class="browser-session-play-keys"></div>';
+            '<div class="browser-session-meta">' +
+            `<span class="browser-session-meta-text">${_escape(meta)}</span>` +
+            '<button type="button" class="browser-session-run"></button></div>';
 
-        el.querySelector('.browser-session-play button')
+        el.dataset.playKey = `${kind}:${id}`;
+        // Клик по карточке — выбор: подстановки показываются внизу колонки, а не
+        // в самой карточке. Кнопку запуска исключаем, иначе выбор и прогон
+        // случались бы одним нажатием.
+        el.addEventListener('click', (event) => {
+            if (event.target.closest('.browser-session-run')) return;
+            playSelect(kind, id);
+        });
+        el.querySelector('.browser-session-run')
           .addEventListener('click', () => playRun(el, kind, id));
-        playKeysRender(el, kind, id);
+        // Кнопка рождается пустой: разметку и состояние ей ставит `playButtonSync`.
+        // Раньше его звал `playKeysRender` прямо отсюда, но ключи уехали в общую
+        // панель — и на свежей странице кнопки оставались белыми квадратами.
+        playButtonSync(el, kind, id);
 
         return el;
     }
 
     // Поля подстановок раскрыты сразу: сценарию нужны логин и пароль — значит,
     // спрашиваем их здесь же, а не после неудачного прогона.
-    async function playKeysRender(el, kind, id) {
-        const keysEl = el.querySelector('.browser-session-play-keys');
+    // Выбранный сценарий колонки: его подстановки показывает нижний ряд.
+    let playSelected = '';
+
+    function playSelect(kind, id) {
+        playSelected = `${kind}:${id}`;
+        playCardsSync();
+        playKeysRender(kind, id);
+    }
+
+    // Подсветка выбранной карточки и вид кнопок — одним проходом: выбор меняет
+    // и то и другое, а карточки перерисовываются раздельно от панели ключей.
+    function playCardsSync() {
+        for (const el of document.querySelectorAll('#sessionScenarioList .browser-session')) {
+            const key = el.dataset.playKey || '';
+            el.classList.toggle('active', key === playSelected);
+            const [kind, id] = key.split(':');
+            if (kind) playButtonSync(el, kind, Number(id));
+        }
+    }
+
+    // Подстановки выбранного сценария — в общий ряд под списком. Раньше они жили
+    // в карточке: колонка узкая, и сценарий с тремя ключами занимал пол-экрана,
+    // а соседние уезжали под прокрутку.
+    async function playKeysRender(kind, id) {
+        const box = document.getElementById('sessionScenarioKeysBox');
+        const keysEl = document.getElementById('sessionScenarioKeys');
+        if (!box || !keysEl) return;
+
         const key = `${kind}:${id}`;
         const detail = await playDetail(kind, id);
         const values = playValues.get(key) || {};
         playValues.set(key, values);
 
+        // Выбор мог смениться, пока ходили за подробностями: рисовать уже не то,
+        // что выбрано, — значит показать чужие поля под чужой карточкой.
+        if (playSelected !== key) return;
+
+        const row = scenarios.find(item => item.id === Number(id));
+        document.getElementById('sessionScenarioKeysTitle').textContent =
+            row ? `Подстановки: ${row.name}` : 'Подстановки';
+        box.style.display = '';
+
         keysEl.innerHTML = '';
+        if (!detail.used.length) {
+            keysEl.innerHTML = '<div class="browser-side-keys-empty">'
+                             + 'Этот сценарий ничего не спрашивает — можно запускать.</div>';
+            playCardsSync();
+            return;
+        }
+
         for (const name of detail.used) {
             // Признак тот же, что и на вкладке сценариев: есть значение по
             // умолчанию — переменная, ей место в журнале; нет — секрет.
             const known = Object.prototype.hasOwnProperty.call(detail.defaults, name);
-            const row = document.createElement('div');
-            row.className = 'scenario-key' + (known ? '' : ' secret');
+            const line = document.createElement('div');
+            line.className = 'scenario-key' + (known ? '' : ' secret');
 
             const label = document.createElement('span');
             label.className = 'scenario-key-name';
@@ -2142,26 +2397,56 @@
             input.addEventListener('input', () => {
                 values[name] = input.value;
                 playValuesSave();
-                playButtonSync(el, kind, id);
+                playCardsSync();
             });
 
-            row.appendChild(label);
-            row.appendChild(input);
-            keysEl.appendChild(row);
+            line.appendChild(label);
+            line.appendChild(input);
+            keysEl.appendChild(line);
         }
 
-        playButtonSync(el, kind, id);
+        playCardsSync();
     }
 
     // Кнопка серая, пока заполнено не всё: прогон с пустым паролем стоит человеку
     // тех же минут, что и настоящий, и оставляет в журнале сломанный сценарий.
-    function playButtonSync(el, kind, id) {
-        const button = el.querySelector('.browser-session-play button');
-        const inputs = [...el.querySelectorAll('.browser-session-play-keys input[data-key]')];
-        const busy = playBusy.has(`${kind}:${id}`);
+    // Треугольник «пуск» и квадрат «стоп» — той же формы, что у плеера: подпись
+    // тут не помещается, а знак читается без неё.
+    const PLAY_ICON_RUN = '<svg width="11" height="11" viewBox="0 0 10 10" fill="currentColor">'
+                        + '<path d="M2 1l7 4-7 4z"/></svg>';
+    const PLAY_ICON_BUSY = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">'
+                         + '<rect x="1" y="1" width="8" height="8" rx="1"/></svg>';
 
-        button.disabled = busy || !inputs.every(input => input.value.trim() !== '');
-        button.textContent = busy ? 'Идёт…' : 'Запустить';
+    function playButtonSync(el, kind, id) {
+        const button = el.querySelector('.browser-session-run');
+        const key = `${kind}:${id}`;
+        const busy = playBusy.has(key);
+        const mine = playSelected === key;
+
+        // Готовность считаем по данным, а не по полям на экране. Поля рисуются
+        // после похода за подробностями сценария, и в промежутке их нет вовсе —
+        // а пустой список «заполнен» по любой проверке, и кнопка загоралась бы
+        // раньше, чем человек успел что-то ввести.
+        //
+        // Невыбранную карточку не запускаем по той же причине: подстановки берутся
+        // из общей панели, а она показывает чужой сценарий.
+        const detail = playDetails.get(key);
+        const values = playValues.get(key) || {};
+        const ready = mine && !!detail
+                   && (detail.used || []).every(name => String(values[name] || '').trim() !== '');
+
+
+        // Кнопка остаётся кнопкой и во время прогона, но нажать её нельзя:
+        // остановить начатый прогон нечем — контейнер доводит сценарий до конца
+        // сам, а ручки отмены у него нет. Квадрат тут признак занятости, а не
+        // обещание остановить.
+        button.disabled = busy || !ready;
+        button.innerHTML = busy ? PLAY_ICON_BUSY : PLAY_ICON_RUN;
+        button.classList.toggle('busy', busy);
+        button.title = busy ? 'Прогон идёт — остановить его нельзя, дождитесь конца'
+                            : (ready ? 'Запустить сценарий в этой сессии'
+                                     : (mine ? 'Заполните подстановки под списком'
+                                             : 'Выберите сценарий, чтобы задать подстановки'));
     }
 
     async function playDetail(kind, id) {
@@ -2236,7 +2521,7 @@
         const variables = {};
         const secrets = {};
 
-        for (const input of el.querySelectorAll('.browser-session-play-keys input[data-key]')) {
+        for (const input of document.querySelectorAll('#sessionScenarioKeys input[data-key]')) {
             if (input.value === '') continue;
             if (Object.prototype.hasOwnProperty.call(defaults, input.dataset.key)) {
                 variables[input.dataset.key] = input.value;
@@ -2747,7 +3032,6 @@
     // ---------- Сценарии ----------
 
     const scenarioListEl = document.getElementById('scenarioList');
-    const scenarioStatEl = document.getElementById('scenarioStat');
     const scenarioNameEl = document.getElementById('scenarioName');
     const scenarioGoalEl = document.getElementById('scenarioGoal');
     const scenarioUrlEl = document.getElementById('scenarioStartUrl');
@@ -2763,9 +3047,28 @@
     // 0 — новый, ещё не сохранённый сценарий: у него нет ни журнала, ни запуска.
     let scenarioId = 0;
 
-    // Значения подстановок живут только в форме: ключи пересобираются из шагов на
-    // каждой правке, и набранное между перерисовками терять нельзя.
-    let scenarioKeyValues = {};
+    // Значения подстановок живут в том же хранилище, что и у карточек сессий
+    // (`playValues`, ключ «scenario:номер»). Раньше это был отдельный объект,
+    // который `scenarioOpen` обнулял на каждом открытии: набранный пароль пропадал,
+    // стоило заглянуть в соседний сценарий и вернуться. Хранилище одно, потому что
+    // сценарий один: что ввели на «Сессиях», должно стоять и здесь.
+    //
+    // У несохранённого сценария номера ещё нет — его значения держим отдельно и в
+    // хранилище не пишем: писать их некуда, ключ появится только после «Сохранить».
+    let scenarioKeyDraft = {};
+
+    function scenarioKeyValuesGet() {
+        if (!scenarioId) return scenarioKeyDraft;
+
+        const key = 'scenario:' + scenarioId;
+        if (!playValues.has(key)) playValues.set(key, {});
+
+        return playValues.get(key);
+    }
+
+    function scenarioKeyValuesSave() {
+        if (scenarioId) playValuesSave();
+    }
 
     // Ключи, которых в шагах ещё нет: автору сценария логин с паролем нужны
     // до того, как появится первый шаг с подстановкой `username`.
@@ -2849,20 +3152,21 @@
         try {
             data = await getData('/api/browser/scenario' + browserSiteQuery());
         } catch (e) {
-            scenarioStatEl.textContent = 'список не пришёл: ' + e.message;
+            // Сообщаем в список, а не в счётчик: счётчика больше нет, а молчащая
+            // колонка выглядела бы как «сценариев нет», хотя запрос просто упал.
+            scenarioListEl.innerHTML =
+                `<div class="browser-empty">список не пришёл: ${_escape(e.message)}</div>`;
             return;
         }
 
         const rows = data.result || [];
         countSet('scenario', rows.length);
-        scenarioStatEl.innerHTML =
-            `сценариев ${rows.length}<br>` +
-            `сломанных ${rows.filter(row => row.status === 'broken').length}`;
 
         // Список нужен и соседней вкладке: селект запуска в карточке сессии собран
         // из него же — второго запроса на те же имена не делаем.
         scenarios = rows;
         sessionScenariosRender();
+        runlogListRender();
         if (rows.length === 0) {
             scenarioListEl.innerHTML = '<div class="browser-empty">сценариев нет</div>';
             return;
@@ -2872,27 +3176,30 @@
         for (const row of rows) {
             const el = document.createElement('div');
             el.className = 'scenario-session' + (row.id === scenarioId ? ' active' : '');
+            el.dataset.scenarioId = row.id;
             el.innerHTML =
                 `<div class="browser-session-name"><span>${_escape(row.name)}</span>` +
-                `<span class="scenario-mark ${_escape(row.status)}">${_escape(row.status)}</span>` +
-                '<button type="button" class="scenario-del" title="Удалить сценарий">' +
-                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
-                ' stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>' +
-                `<div class="browser-session-meta">${_escape(row.goal || 'цель не записана')}</div>`;
+                `<span class="scenario-mark ${_escape(row.status)}">${_escape(row.status)}</span></div>` +
+                '<div class="browser-session-meta">' +
+                `<span class="browser-session-meta-text">${_escape(row.goal || 'цель не записана')}</span>` +
+                '<button type="button" class="browser-session-run"></button></div>';
             el.addEventListener('click', () => scenarioOpen(row.id));
-            // Крестик внутри карточки: без остановки всплытия клик по нему заодно
-            // открыл бы сценарий, который через миг перестанет существовать.
-            el.querySelector('.scenario-del').addEventListener('click', (event) => {
+            // Запуск гонит то, что открыто в форме справа: подстановки, сессия и
+            // «оставить сессию» берутся оттуда. Поэтому у чужих карточек кнопка
+            // приглушена — она бы запустила не тот сценарий, что показан рядом.
+            const runBtn = el.querySelector('.browser-session-run');
+            runBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                scenarioDelete(row.id, row.name);
+                scenarioRun();
             });
+            scenarioRunButtonSync(runBtn, row.id);
             scenarioListEl.appendChild(el);
         }
     }
 
-    // Удаление живёт в карточке, а не в форме: чтобы стереть чужой сценарий, его
-    // пришлось бы сперва открыть — и открытый в форме тут же перестал бы совпадать
-    // с тем, что человек правил.
+    // Удаляем только открытый сценарий: кнопка стоит рядом с «Сохранить», и обе
+    // они про то, что показано в форме. Крестик в карточке стоял вплотную к выбору
+    // и попадал под палец, а стирает он сценарий вместе с журналом прогонов.
     async function scenarioDelete(id, name) {
         if (!confirm(`Удалить сценарий «${name}» вместе с журналом прогонов?`)) return;
 
@@ -2929,9 +3236,9 @@
         scenarioVarsSet(row.variables || {});
         scenarioOutEl.innerHTML = '';
 
-        // Набранные значения к прошлому сценарию и не относятся: перенести чужой
-        // пароль в чужую форму хуже, чем набрать его заново.
-        scenarioKeyValues = {};
+        // Значения не трогаем: они лежат в хранилище под номером сценария, и
+        // открытие соседнего их не смешает. Обнулять здесь значило бы терять
+        // набранный пароль на каждом переключении карточки.
         scenarioKeyExtra = new Set();
         scenarioKeysRender();
 
@@ -2953,7 +3260,7 @@
         scenarioStepsSet(SCENARIO_SAMPLE);
         scenarioVarsSet({});
         scenarioOutEl.innerHTML = '';
-        scenarioKeyValues = {};
+        scenarioKeyDraft = {};
         scenarioKeyExtra = new Set();
         scenarioKeysRender();
         scenarioSay('новый сценарий: впишите имя и шаги, затем «Сохранить»');
@@ -2971,6 +3278,11 @@
             } else {
                 const data = await postData('/api/browser/scenario', body);
                 scenarioId = data.result;
+                // Черновик набранных значений переносим под свежий номер: до
+                // сохранения хранить их было негде, а человек их уже ввёл.
+                playValues.set('scenario:' + scenarioId, {...scenarioKeyDraft});
+                scenarioKeyDraft = {};
+                playValuesSave();
             }
         } catch (e) {
             // Шаги проверяет та же схема, что и на прогоне: несуществующее действие
@@ -2988,6 +3300,36 @@
         scenariosLoad();
     }
 
+    // Идёт ли прогон со вкладки «Сценарии». Свой флаг, а не общий `playBusy`:
+    // там ключом «вид:номер» помечены карточки колонки сессий, и один и тот же
+    // сценарий можно гонять с обеих вкладок.
+    let scenarioBusy = false;
+
+    // Вид кнопки в карточке списка: треугольник у открытого сценария, квадрат на
+    // время прогона. Иконки те же, что у карточек сессий, — одно действие должно
+    // выглядеть одинаково на обеих вкладках.
+    function scenarioRunButtonSync(button, id) {
+        const mine = id === scenarioId;
+        const busy = scenarioBusy && mine;
+
+        button.disabled = !mine || busy;
+        button.innerHTML = busy ? PLAY_ICON_BUSY : PLAY_ICON_RUN;
+        button.classList.toggle('busy', busy);
+        button.title = busy ? 'Прогон идёт — остановить его нельзя, дождитесь конца'
+                            : (mine ? 'Запустить этот сценарий'
+                                    : 'Откройте сценарий, чтобы запустить его');
+    }
+
+    // Перерисовать кнопки всех карточек: прогон меняет вид только у своей, но
+    // открытие сценария переключает активную с одной на другую.
+    function scenarioRunButtonsSync() {
+        for (const el of scenarioListEl.querySelectorAll('.scenario-session')) {
+            const button = el.querySelector('.browser-session-run');
+            const id = Number(el.dataset.scenarioId || 0);
+            if (button) scenarioRunButtonSync(button, id);
+        }
+    }
+
     async function scenarioRun() {
         if (!scenarioId) {
             scenarioSay('сначала сохраните сценарий — гоняется то, что лежит в базе', true);
@@ -2998,6 +3340,8 @@
 
         scenarioSay('гоню сценарий…');
         scenarioOutEl.innerHTML = '';
+        scenarioBusy = true;
+        scenarioRunButtonsSync();
 
         let data;
         try {
@@ -3010,6 +3354,11 @@
         } catch (e) {
             scenarioSay('прогон не состоялся: ' + e.message, true);
             return;
+        } finally {
+            // В `finally`, а не после `try`: неудачный запрос выходит раньше, и
+            // без этого кнопка осталась бы квадратом навсегда.
+            scenarioBusy = false;
+            scenarioRunButtonsSync();
         }
 
         // Упавший сценарий — это удачный запрос с `status: "error"`: HTTP-код
@@ -3029,31 +3378,182 @@
         scenariosLoad();
     }
 
-    async function scenarioLog() {
-        if (!scenarioId) {
-            scenarioSay('журнал ведётся по сохранённому сценарию', true);
+    // ---------- Ручки: ширина колонки и высота её рядов ----------
+
+    // Одна механика на четыре ручки — по паре на каждую вкладку. Ширина колонки и
+    // высота полей подстановок зависят от того, чем сейчас занят человек: у
+    // сценария с пятью ключами нужны поля, при разборе списка — сам список.
+    //
+    // Выбор помним в `localStorage` рядом с остальными настройками страницы. Ключ
+    // общий на обе вкладки: колонки там одинаковые, и разъехавшиеся ширины
+    // читались бы как сбой, а не как настройка.
+    const BROWSER_SIDE_W_KEY = 'browser_side_px';
+    const BROWSER_KEYS_H_KEY = 'browser_side_keys_px';
+    const BROWSER_SIDE_MIN = 240;
+    const BROWSER_KEYS_MIN = 56;
+
+    function browserGripInit(gripId, keysId) {
+        const grip = document.getElementById(gripId);
+        if (!grip) return;
+
+        const pane = grip.closest('.browser-container');
+        // Ручка стоит сразу за тем, чей размер меняет: колонку двигает ручка между
+        // колонкой и окном, ряд полей — ручка над ним. Искать по id незачем, а
+        // ошибиться в нём легко: у списка внутри колонки id похожий.
+        const vertical = !!keysId;
+        const target = vertical ? document.getElementById(keysId) : grip.previousElementSibling;
+        if (!pane || !target) return;
+        let dragging = false;
+
+        grip.addEventListener('mousedown', (event) => {
+            dragging = true;
+            grip.classList.add('is-drag');
+            pane.classList.add('is-drag', vertical ? 'is-drag-row' : 'is-drag-col');
+            event.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (event) => {
+            if (!dragging) return;
+
+            if (vertical) {
+                // Считаем от низа панели вверх: тянут границу между списком и
+                // полями, и «сколько осталось полям» — то, что человек и видит.
+                const box = target.getBoundingClientRect();
+                const height = box.bottom - event.clientY;
+                const limit = Math.max(BROWSER_KEYS_MIN,
+                                       Math.min(height, pane.clientHeight * 0.7));
+                target.style.maxHeight = limit + 'px';
+                target.style.flexBasis = limit + 'px';
+            } else {
+                // От левого края панели, а не по смещению курсора: при быстром
+                // движении курсор убегает вперёд, и колонка отстаёт от него.
+                const width = event.clientX - pane.getBoundingClientRect().left;
+                const limit = Math.max(BROWSER_SIDE_MIN,
+                                       Math.min(width, pane.clientWidth * 0.7));
+                target.style.flex = `0 0 ${limit}px`;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            grip.classList.remove('is-drag');
+            pane.classList.remove('is-drag', 'is-drag-row', 'is-drag-col');
+            browserGripSave(vertical, target);
+        });
+
+        // Двойной щелчок возвращает умолчание: подобранный руками размер иногда
+        // оказывается неудачным, а тянуть обратно на глаз неудобно.
+        grip.addEventListener('dblclick', () => {
+            if (vertical) {
+                target.style.maxHeight = '';
+                target.style.flexBasis = '';
+                localStorage.removeItem(BROWSER_KEYS_H_KEY);
+            } else {
+                target.style.flex = '';
+                localStorage.removeItem(BROWSER_SIDE_W_KEY);
+            }
+            browserGripApply();
+        });
+    }
+
+    function browserGripSave(vertical, target) {
+        const value = vertical
+            ? parseInt(target.style.maxHeight, 10)
+            : Math.round(target.getBoundingClientRect().width);
+        if (!value) return;
+
+        localStorage.setItem(vertical ? BROWSER_KEYS_H_KEY : BROWSER_SIDE_W_KEY, String(value));
+        browserGripApply();
+    }
+
+    // Размер один на обе вкладки, поэтому применяем его всем колонкам разом:
+    // соседняя вкладка нарисована заранее и без этого осталась бы прежней.
+    function browserGripApply() {
+        const width = parseInt(localStorage.getItem(BROWSER_SIDE_W_KEY) || '0', 10);
+        const height = parseInt(localStorage.getItem(BROWSER_KEYS_H_KEY) || '0', 10);
+
+        for (const el of document.querySelectorAll('.browser-side-split')) {
+            el.style.flex = width >= BROWSER_SIDE_MIN ? `0 0 ${width}px` : '';
+        }
+        for (const el of document.querySelectorAll('.browser-side-keys')) {
+            el.style.maxHeight = height >= BROWSER_KEYS_MIN ? `${height}px` : '';
+            el.style.flexBasis = height >= BROWSER_KEYS_MIN ? `${height}px` : '';
+        }
+    }
+
+    // ---------- Вкладка «Журналы» ----------
+
+    // Свой выбор, не общий с редактором: журнал смотрят, чтобы понять, отчего упал
+    // чужой сценарий, — и открывать его в форме ради этого незачем, там могут
+    // лежать набранные подстановки.
+    let runlogId = 0;
+
+    function runlogListRender() {
+        const root = document.getElementById('runlogList');
+        if (!root) return;
+
+        document.getElementById('runlogCount').textContent = scenarios.length || '';
+        countSet('runlog', scenarios.length);
+
+        if (!scenarios.length) {
+            root.innerHTML = '<div class="runlog-side-empty">У сайта нет сценариев — журналу неоткуда взяться.</div>';
+            return;
+        }
+
+        root.innerHTML = '';
+        for (const row of scenarios) {
+            const el = document.createElement('div');
+            // Карточка та же, что на «Сценариях» и «Сессиях», только без кнопки
+            // запуска: здесь смотрят прошлые прогоны, а не заводят новые.
+            el.className = 'scenario-session runlog-item' + (row.id === runlogId ? ' active' : '');
+            el.innerHTML =
+                `<div class="browser-session-name"><span>${_escape(row.name)}</span>` +
+                `<span class="scenario-mark ${_escape(row.status)}">${_escape(row.status)}</span></div>` +
+                '<div class="browser-session-meta">' +
+                `<span class="browser-session-meta-text">${_escape(row.goal || 'цель не записана')}</span></div>`;
+            el.addEventListener('click', () => runlogOpen(row.id));
+            root.appendChild(el);
+        }
+    }
+
+    async function runlogOpen(id) {
+        runlogId = Number(id) || 0;
+        runlogListRender();
+
+        const body = document.getElementById('runlogBody');
+        const hint = document.getElementById('runlogHint');
+        const row = scenarios.find(item => item.id === runlogId);
+        document.getElementById('runlogTitle').textContent =
+            row ? `Журнал: ${row.name}` : 'Журнал прогонов';
+
+        if (!runlogId) {
+            body.innerHTML = '<div class="runlog-empty">Выберите сценарий слева, чтобы увидеть его прогоны.</div>';
+            hint.textContent = '';
             return;
         }
 
         let data;
         try {
-            data = await getData(`/api/browser/scenario/${scenarioId}/run`);
+            data = await getData(`/api/browser/scenario/${runlogId}/run`);
         } catch (e) {
-            scenarioSay('журнал не пришёл: ' + e.message, true);
+            body.innerHTML = '<div class="runlog-empty">Журнал не пришёл: ' + _escape(e.message) + '</div>';
+            hint.textContent = '';
             return;
         }
 
         const rows = data.result || [];
-        if (rows.length === 0) {
-            scenarioOutEl.innerHTML = '<div class="browser-empty">прогонов не было</div>';
-            scenarioSay('журнал пуст');
+        hint.textContent = rows.length ? `прогонов: ${rows.length}` : '';
+        if (!rows.length) {
+            body.innerHTML = '<div class="runlog-empty">Прогонов не было.</div>';
             return;
         }
 
-        scenarioOutEl.innerHTML = rows.map(row =>
-            scenarioRunHead({...row, duration_ms: row.duration_ms}) + scenarioTrace(row.trace || [])
+        // Тот же вид, что у прогона в редакторе: шапка с итогом и трасса шагов.
+        // Собирается теми же функциями — второй их экземпляр разошёлся бы с этим.
+        body.innerHTML = rows.map(run =>
+            scenarioRunHead(run) + scenarioTrace(run.trace || [])
         ).join('');
-        scenarioSay('прогонов в журнале: ' + rows.length);
     }
 
     async function scenarioAuthor() {
@@ -3129,6 +3629,12 @@
 
         while ((found = pattern.exec(JSON.stringify(scenarioStepsGet()))) !== null) names.add(found[1]);
         for (const name of scenarioKeyExtra) names.add(name);
+        // Ключи, под которыми уже что-то набрано, но которых в шагах нет: их добавили
+        // руками в прошлый заход. Без этого запомненное значение осталось бы в
+        // хранилище невидимым — строка под него не рисуется, а убрать его нечем.
+        for (const [name, value] of Object.entries(scenarioKeyValuesGet())) {
+            if (String(value || '') !== '') names.add(name);
+        }
 
         return [...names];
     }
@@ -3136,6 +3642,21 @@
     function scenarioKeysRender() {
         const defaults = scenarioVarsGet();
         const names = scenarioKeysUsed();
+        const values = scenarioKeyValuesGet();
+
+        // Панель показываем только под открытым сценарием: пустая рамка с
+        // заголовком «Подстановки» под списком выглядела бы как сбой загрузки.
+        // Удаление касается сохранённого сценария: у нового кнопке нечего делать.
+        const delBtn = document.getElementById('scenarioDeleteBtn');
+        if (delBtn) delBtn.style.display = scenarioId ? '' : 'none';
+
+        const box = document.getElementById('scenarioSideKeysBox');
+        const title = document.getElementById('scenarioSideKeysTitle');
+        if (box) box.style.display = scenarioId || names.length ? '' : 'none';
+        if (title) {
+            const row = scenarios.find(item => item.id === scenarioId);
+            title.textContent = row ? `Подстановки: ${row.name}` : 'Подстановки';
+        }
 
         scenarioKeysEl.innerHTML = '';
         if (names.length === 0) {
@@ -3164,10 +3685,19 @@
             input.autocomplete = 'off';
             input.dataset.key = name;
             input.placeholder = known ? String(defaults[name]) : 'значение на этот прогон';
-            input.value = scenarioKeyValues[name] !== undefined
-                ? scenarioKeyValues[name]
+            // Набранное раньше важнее умолчания: умолчание — то, с чего начинают,
+            // а введённое руками человек подбирал под свой стенд.
+            input.value = values[name] !== undefined
+                ? values[name]
                 : (known ? String(defaults[name]) : '');
-            input.addEventListener('input', () => { scenarioKeyValues[name] = input.value; });
+            // Умолчание тоже кладём в хранилище: иначе поле выглядит заполненным, а
+            // запуск отсюда собирает значения по инпутам, и вид с содержимым разошлись бы.
+            values[name] = input.value;
+            scenarioKeyValuesSave();
+            input.addEventListener('input', () => {
+                values[name] = input.value;
+                scenarioKeyValuesSave();
+            });
 
             row.appendChild(label);
             row.appendChild(input);
@@ -3181,7 +3711,10 @@
                 drop.title = 'убрать ключ';
                 drop.addEventListener('click', () => {
                     scenarioKeyExtra.delete(name);
-                    delete scenarioKeyValues[name];
+                    // Из хранилища тоже: иначе строку вернёт обратно тот же обход
+                    // запомненных значений, который её и показал.
+                    delete values[name];
+                    scenarioKeyValuesSave();
                     scenarioKeysRender();
                 });
                 row.appendChild(drop);
@@ -3934,6 +4467,7 @@
         + 'title="Забыть введённые значения подстановок">🧹</button>');
     document.getElementById('playForgetBtn').addEventListener('click', playValuesForget);
 
+    document.getElementById('runlogReloadBtn').addEventListener('click', () => runlogOpen(runlogId));
     document.getElementById('errorReloadBtn').addEventListener('click', errorsLoad);
     document.getElementById('errorClearBtn').addEventListener('click', errorsClear);
     document.getElementById('errorSource').addEventListener('change', errorsLoad);
@@ -3959,8 +4493,16 @@
 
     document.getElementById('scenarioNewBtn').addEventListener('click', scenarioNew);
     document.getElementById('scenarioSaveBtn').addEventListener('click', scenarioSave);
-    document.getElementById('scenarioRunBtn').addEventListener('click', scenarioRun);
-    document.getElementById('scenarioLogBtn').addEventListener('click', scenarioLog);
+    // Удаляем то, что открыто: имя берём из формы, а не из списка — в списке
+    // выбранная карточка и открытый сценарий совпадают, но полагаться на это
+    // значит стереть не то, если совпадение однажды разойдётся.
+    document.getElementById('scenarioDeleteBtn').addEventListener('click', () => {
+        if (!scenarioId) {
+            scenarioSay('сначала откройте сценарий — удалять нечего', true);
+            return;
+        }
+        scenarioDelete(scenarioId, (scenarioNameEl.value || '').trim());
+    });
     document.getElementById('scenarioAuthorBtn').addEventListener('click', scenarioAuthor);
 
     // Поля подстановок идут за шагами: дописали подстановку — строка появилась сразу.
@@ -4003,6 +4545,12 @@
 
     scenarioKeysRender();
     scenarioActionsLoad();
+
+    browserGripInit('sessionColGrip');
+    browserGripInit('scenarioColGrip');
+    browserGripInit('sessionRowGrip', 'sessionScenarioKeysBox');
+    browserGripInit('scenarioRowGrip', 'scenarioSideKeysBox');
+    browserGripApply();
 
     // Порядок важен: выбор сайта заполняется первым, и только после него грузятся
     // списки — иначе первый запрос ушёл бы без фильтра и на мгновение показал
