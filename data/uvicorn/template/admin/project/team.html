@@ -92,6 +92,38 @@
         background: rgba(239, 68, 68, 0.08);
     }
 
+    /* Конфигурация оболочки: чем и с каким окном поднимать роли этого проекта.
+       Стоит рядом с Parallel LLM — это тоже настройка запуска, а не состояние. */
+    .project-block-shell {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #6b7280;
+        white-space: nowrap;
+    }
+
+    .project-block-shell select {
+        font-size: 12px;
+        padding: 2px 4px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        background: #fff;
+        color: #374151;
+        max-width: 220px;
+    }
+
+    /* Значение не по умолчанию видно, не наводя мышь: конфигурация запуска молча
+       разошлась бы с той, которую человек считает текущей. */
+    .project-block-shell select.custom { border-color: #c7d2fe; color: #4338ca; }
+
+    .project-block-shell label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+    }
+
     .project-block-count {
         font-size: 12px;
         color: #6b7280;
@@ -621,6 +653,10 @@
     // и вместе с ним поле, в которое человек сейчас печатает.
     const timeoutOpen = new Set();
 
+    // Последние отрисованные блоки. Нужны, чтобы перерисовать страницу после смены
+    // конфигурации оболочки, не дожидаясь автообновления и не ходя в сеть заново.
+    let lastBlocks = [];
+
     // Варианты «Parallel LLM» приходят вместе с блоками, значение по умолчанию —
     // первый из них: список задан на сервере (`task_setting_parallel`).
     let parallelOptions = [1];
@@ -635,7 +671,8 @@
         // Открытый список селекта из JS не виден, но фокус на нём — да: пока
         // человек выбирает значение, блок не перерисовываем.
         const active = document.activeElement;
-        if (active && active.closest && active.closest('.project-block-parallel')) return;
+        if (active && active.closest
+            && active.closest('.project-block-parallel, .project-block-shell')) return;
         const btn = document.getElementById('refreshBtn');
         if (showSpinner) btn.classList.add('loading');
         try {
@@ -652,6 +689,7 @@
     }
 
     function renderProjects(blocks) {
+        lastBlocks = blocks;
         const root = document.getElementById('teamProjects');
         if (!blocks.length) {
             root.innerHTML = '<div class="team-empty">Проектов нет</div>';
@@ -673,6 +711,7 @@
                     <span class="project-block-title">${escapeHtml(block.title)}</span>
                     ${dir}
                     ${renderParallel(block)}
+                    ${renderShellConfig(block)}
                     <span class="project-block-count${activeCount ? '' : ' empty'}">
                         активных <b>${activeCount}</b> из ${cards.length}
                     </span>
@@ -700,6 +739,155 @@
                         onchange="saveParallel(this)">${options}</select>
             </span>
         `;
+    }
+
+    // ── Конфигурация оболочки: модель, окно контекста, подробный лог ──────────
+    //
+    // Зачем на странице. Команду запуска роли копируют отсюда, а её флаги до сих
+    // пор приходилось править руками в скопированной строке. Теперь конфигурация
+    // собирается селектами, и кнопка отдаёт уже готовую команду.
+    //
+    // Хранится в браузере, а не в базе: это выбор человека под сегодняшний прогон
+    // (дешёвая модель на разведку, большое окно на разбор), а не свойство проекта.
+    // Ключ включает номер проекта — у разных проектов конфигурация своя.
+    //
+    // Умолчания совпадают с тем, что подставляет сервер: пока человек ничего не
+    // трогал, кнопка отдаёт ровно ту команду, что и раньше.
+    const SHELL_LLM_DEFAULT = 'gx10/qwen-large';
+    const SHELL_CONTEXT_DEFAULT = '125k';
+
+    // Окна автосжатия. `auto` отдаёт решение самому Claude Code; остальные —
+    // ручной порог. Значения те же, что принимает `--autocompact` у оболочки:
+    // разойдись они — флаг молча превратился бы в «не передан».
+    const SHELL_CONTEXT_OPTIONS = ['auto', '50k', '80k', '125k', '150k', '900k'];
+
+    // Список моделей — из каталога самой оболочки
+    // (`claude-shell/src/litellm/llm_models.yaml`), а не из справочника `llm`:
+    // справочник шире, и селект обещал бы модели, под которые прокси не описан, —
+    // отказ человек увидел бы уже в терминале. Пока не загрузился, показываем
+    // умолчание: пустой селект читается как поломка страницы.
+    let shellModels = [SHELL_LLM_DEFAULT];
+
+    function shellConfigKey(projectId) {
+        return `team_shell_config_${projectId}`;
+    }
+
+    function shellConfigGet(projectId) {
+        const fallback = {llm: SHELL_LLM_DEFAULT, context: SHELL_CONTEXT_DEFAULT, verbose: false};
+        try {
+            const raw = JSON.parse(localStorage.getItem(shellConfigKey(projectId)) || '{}');
+            return {
+                llm: raw.llm || fallback.llm,
+                context: raw.context || fallback.context,
+                verbose: raw.verbose === true,
+            };
+        } catch (e) {
+            return fallback;
+        }
+    }
+
+    function shellConfigSet(projectId, patch) {
+        const next = Object.assign(shellConfigGet(projectId), patch);
+        try {
+            localStorage.setItem(shellConfigKey(projectId), JSON.stringify(next));
+        } catch (e) {
+            // Хранилище переполнено или запрещено — команда всё равно соберётся,
+            // просто выбор не переживёт перезагрузку.
+        }
+        return next;
+    }
+
+    function renderShellConfig(block) {
+        const projectId = Number(block.project_id || 0);
+        const cfg = shellConfigGet(projectId);
+
+        // Выбранной модели может не быть в справочнике: её удалили, а выбор в
+        // браузере остался. Дописываем её в список, иначе селект молча
+        // переключился бы на первую попавшуюся и человек скопировал бы не то.
+        const names = shellModels.includes(cfg.llm) ? shellModels : [cfg.llm].concat(shellModels);
+        const llmOptions = names.map(name =>
+            `<option value="${escapeHtml(name)}"${name === cfg.llm ? ' selected' : ''}>${escapeHtml(name)}</option>`).join('');
+        const ctxOptions = SHELL_CONTEXT_OPTIONS.map(value =>
+            `<option value="${value}"${value === cfg.context ? ' selected' : ''}>${value}</option>`).join('');
+
+        return `
+            <span class="project-block-shell">
+                Модель
+                <select data-project="${projectId}" data-field="llm"
+                        class="${cfg.llm === SHELL_LLM_DEFAULT ? '' : 'custom'}"
+                        title="${escapeHtml(shellModelsProblem || 'Флаг --llm у оболочки. Список — каталог claude-shell: ровно те модели, под которые он умеет поднять прокси')}"
+                        onchange="saveShellConfig(this)">${llmOptions}</select>
+                Контекст
+                <select data-project="${projectId}" data-field="context"
+                        class="${cfg.context === SHELL_CONTEXT_DEFAULT ? '' : 'custom'}"
+                        title="Флаг --autocompact: на каком объёме Claude Code начнёт сжимать разговор"
+                        onchange="saveShellConfig(this)">${ctxOptions}</select>
+                <label title="Флаг --verbose: оболочка пишет логи в .claude-shell/logs. Без него не пишется ничего">
+                    <input type="checkbox" data-project="${projectId}" data-field="verbose"
+                           ${cfg.verbose ? 'checked' : ''} onchange="saveShellConfig(this)">лог
+                </label>
+            </span>
+        `;
+    }
+
+    function saveShellConfig(el) {
+        const projectId = Number(el.dataset.project || 0);
+        const field = el.dataset.field;
+        const value = el.type === 'checkbox' ? el.checked : el.value;
+        shellConfigSet(projectId, {[field]: value});
+
+        if (el.tagName === 'SELECT') {
+            const isDefault = field === 'llm'
+                ? value === SHELL_LLM_DEFAULT
+                : value === SHELL_CONTEXT_DEFAULT;
+            el.classList.toggle('custom', !isDefault);
+        }
+        // Перерисовываем блоки: команды на кнопках собираются из конфигурации, и
+        // без этого кнопка отдавала бы прежние флаги до ближайшего автообновления.
+        renderProjects(lastBlocks);
+    }
+
+    // Собрать команду под выбранную конфигурацию. Правим готовую строку, а не
+    // строим заново: в ней есть роль, каталог и то, что человек мог дописать сам
+    // в `project_team.command`, — пересборка это потеряла бы.
+    function shellCommandApply(command, projectId) {
+        const cfg = shellConfigGet(projectId);
+        let out = String(command || '');
+        if (!out) return out;
+
+        out = /--llm(?:[= ]\S+)?/.test(out)
+            ? out.replace(/--llm(?:[= ]\S+)?/, `--llm ${cfg.llm}`)
+            : out.replace(/\bclaude-shell\b/, `claude-shell --llm ${cfg.llm}`);
+
+        out = /--autocompact(?:[= ]\S+)?/.test(out)
+            ? out.replace(/--autocompact(?:[= ]\S+)?/, `--autocompact ${cfg.context}`)
+            : out + ` --autocompact ${cfg.context}`;
+
+        // `--verbose` только добавляем и убираем: значения у него нет, и повторный
+        // флаг в строке выглядел бы как ошибка копирования.
+        const hasVerbose = /\s--verbose\b/.test(out);
+        if (cfg.verbose && !hasVerbose) out += ' --verbose';
+        if (!cfg.verbose && hasVerbose) out = out.replace(/\s--verbose\b/, '');
+
+        return out;
+    }
+
+    // Причина, по которой список моделей взять не удалось. Показываем её у селекта:
+    // молча укороченный список человек прочтёт как «моделей всего одна», а не как
+    // «каталог оболочки не смонтирован».
+    let shellModelsProblem = '';
+
+    async function loadShellModels() {
+        try {
+            const response = await fetch('/api/team/llm');
+            const data = await response.json();
+            const result = data.result || {};
+            const names = (result.models || []).filter(Boolean);
+            if (names.length) shellModels = names;
+            shellModelsProblem = String(result.problem || '');
+        } catch (e) {
+            shellModelsProblem = 'список моделей не пришёл: ' + (e.message || e);
+        }
     }
 
     async function saveParallel(select) {
@@ -746,9 +934,12 @@
         // кавычки для inline-обработчика.
         // В `title` — сама команда: кнопка копирует её вслепую, и до наведения не
         // видно ни роли, ни флагов, с которыми поднимется оболочка.
-        const copy = card.command && !card.active
-            ? `<button class="team-card-copy" data-command="${escapeHtml(card.command)}"
-                       title="${escapeHtml(card.command)}" onclick="copyCommand(this)">📋 Команда запуска</button>`
+        // Флаги подставляем из селектов блока: в базе лежит заготовка, а чем и с
+        // каким окном поднимать роль — выбор человека, сделанный на этой странице.
+        const command = shellCommandApply(card.command, Number(block.project_id || 0));
+        const copy = command && !card.active
+            ? `<button class="team-card-copy" data-command="${escapeHtml(command)}"
+                       title="${escapeHtml(command)}" onclick="copyCommand(this)">📋 Команда запуска</button>`
             : '';
 
         const uuid = card.session_uuid
@@ -1059,7 +1250,9 @@
     document.addEventListener('DOMContentLoaded', async () => {
         // Сначала таймауты: карточки рисуются один раз, и блок сроков должен
         // попасть в первую же отрисовку, а не появиться через 15 секунд.
-        await loadTimeouts();
+        // Справочник моделей — по той же причине: без него селект нарисовался бы
+        // с одним умолчанием и подменился бы под руками через полсекунды.
+        await Promise.all([loadTimeouts(), loadShellModels()]);
         loadTeamProjects();
         refreshTimer = setInterval(loadTeamProjects, TEAM_REFRESH_MS);
     });

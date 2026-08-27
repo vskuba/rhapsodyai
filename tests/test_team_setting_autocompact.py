@@ -19,7 +19,7 @@
 
 import pytest
 
-CMD = 'claude-shell --gx10 --developer --autocompact 115k'
+CMD = 'claude-shell --llm gx10/qwen-large --developer --autocompact 115k'
 
 
 @pytest.fixture(autouse=True)
@@ -82,7 +82,7 @@ class TestCommandSubstitution:
         """
         Команда без флага — осознанный случай, а не недосмотр.
 
-        Так выглядит оболочка без `--gx10` (ходит в облако, там своё окно) и
+        Так выглядит оболочка без `--llm` (ходит в облако, там своё окно) и
         команда, которую человек правил руками, сознательно убрав автосжатие.
         """
         from src.project.team.team_project import _autocompact_replace
@@ -95,7 +95,7 @@ class TestCommandSubstitution:
         """Флаг пишут и через пробел, и через `=` — оба варианта наши."""
         from src.project.team.team_project import _autocompact_replace
 
-        result = _autocompact_replace('claude-shell --gx10 --qa --autocompact=200k', '90k')
+        result = _autocompact_replace('claude-shell --llm gx10/qwen-large --qa --autocompact=200k', '90k')
 
         assert result.count('--autocompact') == 1
         assert '90k' in result and '200k' not in result

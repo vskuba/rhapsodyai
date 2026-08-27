@@ -8,6 +8,8 @@
 определяет — её выбирают парой «роль + проект», а `project_id IS NULL` остаётся
 для карточек, заведённых до этого разделения.
 """
+import re
+
 from datetime_.datetime_ import datetime_utc_now
 
 from src.mysql_.repository.project.project_repository import PlanningProjectRepository
@@ -40,12 +42,48 @@ TEAM_MEMBER_WORKTREES_DIR = '.claude/worktrees'
 # странице он ничего не решает (ряд сортируется по `TEAM_PROJECT_ROLE_ORDER`), но
 # держим его тем же, чтобы id и ряд не расходились: менеджер, разработчик, QA,
 # багфиксер.
+#
+# Модель — тоже заготовка, и по той же причине. Оболочка больше не знает булева
+# `--gx10`: у gx10 модель одна, а у маршрутизатора вроде OpenRouter их десятки, и
+# флаг несёт имя целиком (`--llm <провайдер>/<модель>`). Что именно подставится в
+# кнопку, решает селект на странице команды.
 TEAM_MEMBER_ROLE_CARD = {
-    'manager':   ('Manager',   'claude-shell --gx10 --manager --autocompact 115k'),
-    'developer': ('Developer', 'claude-shell --gx10 --developer --autocompact 115k'),
-    'qa':        ('QA',        'claude-shell --gx10 --qa --autocompact 115k'),
-    'bugfixer':  ('Bugfixer',  'claude-shell --gx10 --bugfixer --autocompact 115k'),
+    'manager':   ('Manager',   'claude-shell --llm gx10/qwen-large --manager --autocompact 115k'),
+    'developer': ('Developer', 'claude-shell --llm gx10/qwen-large --developer --autocompact 115k'),
+    'qa':        ('QA',        'claude-shell --llm gx10/qwen-large --qa --autocompact 115k'),
+    'bugfixer':  ('Bugfixer',  'claude-shell --llm gx10/qwen-large --bugfixer --autocompact 115k'),
 }
+
+
+# Флаг выбора модели у оболочки и модель по умолчанию для команды запуска.
+# Имя — из каталога оболочки (`claude-shell/llm_models.yaml`), тот же
+# словарь, что в мониторинге LLM.
+TEAM_MEMBER_LLM_FLAG = '--llm'
+TEAM_MEMBER_LLM_DEFAULT = 'gx10/qwen-large'
+
+
+def team_member_command_llm_normalize(command: str) -> str:
+    """
+    Привести выбор модели в команде к нынешнему флагу оболочки.
+
+    Оболочка больше не знает булева `--gx10`: у gx10 модель одна, а у
+    маршрутизатора вроде OpenRouter их десятки, и флаг несёт имя целиком.
+    Заготовки уже переписаны, но в `project_team.command` лежат строки, заведённые
+    до этого, — и правит их показ, а не миграция. Причина та же, что у порога
+    автосжатия: команда переживает правку, и одноразовая замена не дошла бы до
+    карточек, созданных позже со старой заготовкой.
+
+    Зовётся из обоих мест, где команда уходит наружу, — плоского списка
+    (`/api/team`) и карточки блока (`team_project._command_build`). Разойдись они,
+    страница показывала бы один флаг, а API отдавал другой; на этом и попался тест
+    `test_copy_button_carries_command`.
+    """
+    command = str(command or '')
+    if TEAM_MEMBER_LLM_FLAG in command:
+        return command
+
+    return re.sub(r'--gx10\b', f'{TEAM_MEMBER_LLM_FLAG} {TEAM_MEMBER_LLM_DEFAULT}',
+                  command, count=1)
 
 
 def team_member_role_work_dir(project_dir) -> str:

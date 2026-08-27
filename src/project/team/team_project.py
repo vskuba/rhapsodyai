@@ -14,6 +14,7 @@ from src.mysql_.repository.project.team_repository import ProjectTeamRepository
 from src.project.team.team_setting_autocompact import (
     TEAM_SETTING_AUTOCOMPACT_FLAG, team_setting_autocompact_get)
 from src.project.team.team_agent import team_agent_by_role
+from src.project.team.team_member import team_member_command_llm_normalize
 from src.project.team.team_queue import (TEAM_QUEUE_PREVIEW_LIMIT, TEAM_QUEUE_PROJECT_NONE,
                                          team_queue_by_project)
 from src.project.task.task_setting_parallel import (
@@ -437,6 +438,7 @@ def _command_build(command, work_dir, autocompact: str = '') -> str:
     # лежит в `project_team.command` и переживает правку настройки. Подставь мы
     # значение один раз — смена настройки не дошла бы до уже созданных карточек,
     # и человек копировал бы кнопкой старое число, не подозревая об этом.
+    command = team_member_command_llm_normalize(command)
     if autocompact:
         command = _autocompact_replace(command, autocompact)
 

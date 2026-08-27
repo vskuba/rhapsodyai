@@ -5,7 +5,9 @@ from pydantic import BaseModel
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.project.team.team_member import (team_member_activate, team_member_deactivate,
+from src.project.team.team_member import (team_member_activate,
+                                          team_member_command_llm_normalize,
+                                          team_member_deactivate,
                                           team_member_get, team_member_get_by_role,
                                           team_member_list, team_member_ping)
 from src.project.team.team_project import (team_project_blocks_get,
@@ -13,6 +15,8 @@ from src.project.team.team_project import (team_project_blocks_get,
                                            team_project_session_work_dir_sync)
 from src.project.team.team_session import team_session_restart
 from src.project.team.team_task_type import team_task_type_list
+from src.project.team.team_llm_catalog import team_llm_catalog_models
+from src.project.team.team_setting_autocompact import team_setting_autocompact_apply
 from src.project.task.task_setting_parallel import (
     TASK_SETTING_PARALLEL_OPTIONS,
     task_setting_parallel_set)
@@ -91,7 +95,16 @@ async def project_team_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VI
     Отдаёт work_dir, pid и session_uuid, поэтому требует авторизации — в отличие
     от POST-ов /ping, /activate, /deactivate, которые дёргает внешняя оболочка.
     """
+    # Команду отдаём в том же виде, что и карточка блока: с приведённым флагом
+    # модели и подставленным порогом автосжатия. В колонке лежит заготовка, и
+    # сырой она врала бы дважды — старым флагом и старым числом. Расхождение
+    # ловится только глазами; на нём и попался `test_copy_button_carries_command`,
+    # где кнопка показывала подставленное значение, а этот список — заготовку.
     members = await team_member_list()
+    for member in members:
+        command = team_member_command_llm_normalize(member.get('command'))
+        member['command'] = await team_setting_autocompact_apply(command) if command else command
+
     return members
 
 
@@ -139,6 +152,21 @@ async def project_team_task_types_list(user=Depends(AuthChecker([AuthPermission.
     """Получить все типы задач."""
     types = await team_task_type_list()
     return types
+
+
+@router.get('/llm')
+async def project_team_llm_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """
+    Модели для селекта в шапке блока — из каталога самой оболочки.
+
+    Не из справочника `llm`: там модели, которые умеет вызывать этот проект, и он
+    шире каталога оболочки. Селект, обещающий больше, чем `claude-shell` умеет
+    поднять, приводит к отказу уже в терминале — а там его никто не ждёт.
+
+    `problem` непустой, когда каталог не прочитан. Страницу это не роняет: селект
+    остаётся с умолчанием, но человек видит причину, а не молча укороченный список.
+    """
+    return {'result': await team_llm_catalog_models()}
 
 
 @router.get('/timeout')
