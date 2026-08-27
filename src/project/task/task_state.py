@@ -544,7 +544,7 @@ async def task_state_task_finalize() -> tuple[int, str] | None:
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT t.id, t.pipeline_state, "
-            "       SUM(c.pipeline_state NOT IN ('done','blocked','failed')) AS pending_cnt, "
+            "       SUM(c.pipeline_state NOT IN ('done','no_code_for_testing','blocked','failed')) AS pending_cnt, "
             "       SUM(c.pipeline_state IN ('blocked','failed')) AS blocked_cnt "
             "  FROM project_task t "
             "  JOIN project_task c ON c.parent_id = t.id AND c.pipeline_from_plan = 1 "
@@ -569,6 +569,67 @@ async def task_state_task_finalize() -> tuple[int, str] | None:
         return None
     logger_info(f'[task] task#{row["id"]} -> {final}')
     return int(row['id']), final
+
+
+async def task_state_task_revive() -> tuple[int, str] | None:
+    """
+    failed -> processing | testing | done, когда среди подзадач не осталось упавших.
+    Returns: (task_id, new_state) либо None, если возвращать нечего.
+
+    Зачем. Финализация закрывает задачу по **мгновенному** состоянию детей: хватает
+    одного ребёнка в `blocked`/`failed`, чтобы вся задача стала `failed`. Но ребёнок
+    из этих состояний возвращается — его перезапускает человек, оживляет ответ на
+    вопрос, забирает следующий круг. Родитель при этом оставался закрытым навсегда:
+    финализация ищет только `processing`/`testing` и мимо `failed` уже не проходит.
+
+    Поймано живьём на #1027: восемь подзадач из девяти готовы, девятая на минуту
+    упала, задачу закрыли как провалившуюся — а через четверть часа подзадача
+    отчиталась `ok` и продолжила работу под «заблокированной» задачей.
+
+    Куда возвращаем. Дети ещё работают — в рабочее состояние; все закрылись, пока
+    родитель лежал, — сразу в `done`, иначе задача осталась бы `failed` при всех
+    готовых детях, и закрыть её было бы уже некому.
+
+    Рабочее состояние берём **из типа задачи**, а не угадываем: на вкладку
+    «Тестирование» задачу переводит `task_state_task_testing` вместе со сменой
+    `task_type_id`, и вернуть `processing` строке с типом `test` значило бы
+    рассогласовать состояние с вкладкой, на которой она видна.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT t.id, "
+            "       (t.task_type_id = (SELECT id FROM project_task_type WHERE name = 'test')) AS is_test, "
+            "       SUM(c.pipeline_state NOT IN ('done','no_code_for_testing','blocked','failed')) AS pending_cnt, "
+            "       SUM(c.pipeline_state IN ('blocked','failed')) AS blocked_cnt "
+            "  FROM project_task t "
+            "  JOIN project_task c ON c.parent_id = t.id AND c.pipeline_from_plan = 1 "
+            " WHERE t.pipeline_state = 'failed' "
+            " GROUP BY t.id HAVING blocked_cnt = 0 LIMIT 1"
+        )
+        row = await db.fetchone()
+        if not row:
+            return None
+
+        if int(row['pending_cnt'] or 0):
+            state = 'testing' if int(row['is_test'] or 0) else 'processing'
+        else:
+            state = 'done'
+
+        kanban_sql, kanban_params = task_state_kanban_sql(state)
+        # `pipeline_state = 'failed'` в условии — та же защита от гонки, что и у
+        # финализации: пока мы считали, строку мог тронуть человек кнопкой.
+        await db.execute(
+            f"UPDATE project_task SET pipeline_state = %s, {kanban_sql}, pipeline_error = '' "
+            " WHERE id = %s AND pipeline_state = 'failed'",
+            [state] + kanban_params + [row['id']],
+        )
+        claimed = db.rowcount
+        await db.connection.commit()
+
+    if not claimed:
+        return None
+    logger_info(f'[task] task#{row["id"]} failed -> {state} (упавших подзадач не осталось)')
+    return int(row['id']), state
 
 
 async def task_state_subtask_set(subtask_id: int, state: str, last_error: str | None = None,
@@ -601,7 +662,11 @@ async def task_state_subtask_set(subtask_id: int, state: str, last_error: str | 
         params.append(attempt_count)
     params.append(subtask_id)
 
-    guard = " AND pipeline_state <> 'done'" if unless_done else ''
+    # Терминальных состояний два, и оба защищаем: круг, оборвавшийся по таймауту,
+    # возвращается с ответом уже после того, как строку закрыли, — и без этого
+    # воскресил бы работу, которой не было.
+    guard = (" AND pipeline_state NOT IN ('done','no_code_for_testing')"
+             if unless_done else '')
     async with mysql_get_db_async() as db:
         await db.execute(
             f"UPDATE project_task SET {', '.join(s for s in sets if s)} "
@@ -694,5 +759,10 @@ _TASK_STATE_KANBAN = {
     'failed_qa':        'queued',
     'blocked':          'blocked',
     'done':             'done',
+    # Проверять было нечего — для человека это тот же «Готово»: работа
+    # закрыта, разница только в том, чем она закрыта, и она видна в
+    # состоянии конвейера. Отдельного kanban-статуса под это нет и не нужно:
+    # колонок на доске и так больше, чем человек различает на глаз.
+    'no_code_for_testing': 'done',
     'failed':           'blocked',
 }

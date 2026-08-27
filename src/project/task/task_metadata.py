@@ -252,7 +252,7 @@ def task_metadata_final_wait_sql(column: str = 'metadata') -> str:
             "                   AND _sib.id <> project_task.id "
             f"                   AND NOT COALESCE(JSON_EXTRACT(IF(JSON_VALID(_sib.metadata), "
             f"                       _sib.metadata, '{{}}'), '$.{TASK_METADATA_KEY_FINAL}') = TRUE, FALSE) "
-            "                   AND COALESCE(_sib.pipeline_state, '') <> 'done'))")
+            "                   AND COALESCE(_sib.pipeline_state, '') NOT IN ('done','no_code_for_testing')))")
 
 
 def task_metadata_row_apply(row) -> dict:

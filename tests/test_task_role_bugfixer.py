@@ -152,7 +152,8 @@ class TestPipelineStateEnum:
     следующий тик — NULL или `new`, и пустую строку не видит ни один.
 
     Читаем сам DDL, а не INFORMATION_SCHEMA: тест обязан ловить расхождение с
-    `migrations/0001.sql` — источником схемы, — а не с той базой, где его запустили.
+    `migrations/20260101000000_initial_schema.sql` — источником схемы, — а не с той базой,
+    где его запустили.
     Живая база может быть догнана вручную и скрыть забытую правку файла.
     """
 
@@ -160,11 +161,12 @@ class TestPipelineStateEnum:
         import re
         from pathlib import Path
 
-        ddl = Path(__file__).resolve().parent.parent / 'migrations' / '0001.sql'
+        ddl = (Path(__file__).resolve().parent.parent
+               / 'migrations' / '20260101000000_initial_schema.sql')
         text = ddl.read_text(encoding='utf-8')
         # Объявление растянуто на несколько строк, поэтому берём его целиком до `)`.
         match = re.search(r'`pipeline_state`\s+ENUM\s*\((.*?)\)\s', text, re.S)
-        assert match, 'в migrations/0001.sql не найдено объявление pipeline_state'
+        assert match, 'в начальной схеме не найдено объявление pipeline_state'
 
         return set(re.findall(r"'([^']+)'", match.group(1)))
 
@@ -180,6 +182,36 @@ class TestPipelineStateEnum:
                 | set(TASK_CLAIM_SUBTASK_STATE_RECLAIM) | set(TASK_CLAIM_SUBTASK_STATE_RECLAIM.values()))
         missing = used - self._enum_values()
         assert not missing, f'состояния есть в коде, но не в ENUM схемы: {sorted(missing)}'
+
+    def test_no_code_for_testing_declared(self):
+        """
+        `no_code_for_testing` объявлено в схеме.
+
+        Без него MySQL в нестрогом режиме молча пишет в ENUM пустую строку: подзадача
+        выглядит закрытой, а финализация её не видит — ни как готовую, ни как упавшую.
+        """
+        assert 'no_code_for_testing' in self._enum_values()
+
+    def test_no_code_for_testing_is_last(self):
+        """
+        Новое значение — в конце списка.
+
+        ENUM хранится числом: вставь его в середину, и состояния уже существующих
+        строк переписались бы молча.
+        """
+        # Свой разбор, а не `_enum_values`: тот отдаёт множество, а здесь важен
+        # именно порядок — в множестве его нет.
+        import re
+        from pathlib import Path
+
+        ddl = (Path(__file__).resolve().parent.parent
+               / 'migrations' / '20260101000000_initial_schema.sql')
+        match = re.search(r'`pipeline_state`\s+ENUM\s*\((.*?)\)\s',
+                          ddl.read_text(encoding='utf-8'), re.S)
+        values = re.findall(r"'([^']+)'", match.group(1))
+
+        assert values[-1] == 'no_code_for_testing', \
+            f'новое значение должно быть последним, а список кончается на {values[-1]!r}'
 
     def test_bugfixing_declared(self):
         assert 'bugfixing' in self._enum_values()
@@ -335,7 +367,7 @@ class TestTeamBugfixerCard:
         from src.project.team.team_member import TEAM_MEMBER_ROLE_CARD
         name, command = TEAM_MEMBER_ROLE_CARD['bugfixer']
         assert name == 'Bugfixer'
-        assert command == 'claude-shell --gx10 --bugfixer --autocompact 115k'
+        assert command == 'claude-shell --llm gx10/qwen-large --bugfixer --autocompact 115k'
 
     def test_agent_bound_to_role(self):
         from src.project.team.team_agent import TEAM_AGENT_BY_ROLE

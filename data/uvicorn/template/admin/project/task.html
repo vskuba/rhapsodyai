@@ -3382,14 +3382,26 @@ const TASK_META_KEY_STOP = 'stopped';
 // бы тот же выключатель столько раз, сколько строк в плане, и создавал ложное
 // впечатление, что их можно остановить порознь.
 //
+// Исключение — подзадача, которая уже остановлена. Страница её остановить не даёт, а
+// API даёт: `POST /task/{id}/pipeline/stop` на `parent_id` не смотрит. Такая строка
+// оказывалась в состоянии без выхода — `stopped: true`, отбор её не видит, а снять
+// пометку нечем: флажка нет ни на одной вкладке. Поэтому у остановленной подзадачи
+// флажок показываем всегда, независимо от вкладки и статуса, и только снятым:
+// единственное действие, которое здесь нужно, — вернуть её в работу.
+//
 // Хранится, как и раньше, отклонение от умолчания: `stopped: true` пишет остановка,
 // снятая остановка ключ стирает. Отсюда `!== true` — «ключа нет» значит «работаем».
 const TASK_RUN_FLAG_STATUS = ['active', 'queued', 'pending'];
 
 function renderRunFlag(t, status) {
-    if (t.parent_id) return '';
-    if (_phaseFilter !== 'development' || !TASK_RUN_FLAG_STATUS.includes(status)) return '';
     const on = (t.metadata || {})[TASK_META_KEY_STOP] !== true;
+    if (t.parent_id) {
+        if (on) return '';
+        return _taskFlagHtml(t.id, 'в разработку', false, 'toggleRunFlag',
+            'Подзадача остановлена. Вернуть галку — её снова видно отбору, работу отдаст'
+            + ' ближайший тик оркестратора с того же места');
+    }
+    if (_phaseFilter !== 'development' || !TASK_RUN_FLAG_STATUS.includes(status)) return '';
     const title = on
         ? 'Задача в конвейере. Снять — работа прекратится: агента погасим, строку вернём в очередь,'
           + ' задачу — в «Ожидает». Сделанное не пропадёт'
@@ -3536,11 +3548,15 @@ function renderPipeAsk(t) {
 // Условие повторяет серверное: приёмка среди соседей себя не считает, и другие
 // приёмки тоже — иначе две такие подзадачи ждали бы друг друга насмерть.
 function renderPipeWait(t) {
-    if (!t.metadata?.final || ['done', 'blocked', 'failed'].includes(t.pipeline_state)) return '';
+    if (!t.metadata?.final
+        || ['done', 'no_code_for_testing', 'blocked', 'failed'].includes(t.pipeline_state)) return '';
 
     const siblings = _tasks.filter(x => x.parent_id === t.parent_id && x.id !== t.id
                                         && !x.metadata?.final);
-    const left = siblings.filter(x => x.pipeline_state !== 'done');
+    // Закрытая без проверки — тоже закрытая: приёмке нечего от неё ждать. Условие
+    // повторяет серверное (`task_metadata_final_wait_sql`); разойдись они — страница
+    // писала бы «ждём соседа», которого конвейер уже не ждёт.
+    const left = siblings.filter(x => !['done', 'no_code_for_testing'].includes(x.pipeline_state));
     if (!left.length) return '';
 
     const names = left.slice(0, 5).map(x => `#${x.id} ${x.title || ''} — ${x.pipeline_state || 'без состояния'}`);
@@ -3761,7 +3777,8 @@ async function planReview(taskId) {
 // до готовой ветки одним прогоном багфиксера.
 const BUG_PIPE_NOTE = {
     new:       'Баг ждёт багфиксера — работу отдаст ближайший тик оркестратора.',
-    bugfixing: 'Багфиксер работает: воспроизводит баг, ищет причину, правит код и проверяет.'
+    bugfixing: 'Багфиксер работает: воспроизводит баг, ищет причину, правит код и проверяет.',
+    no_code_for_testing: 'Проверять было нечего: в ветке подзадачи нет ни коммитов, ни правок. Круг QA не запускался — так закрывается подзадача, чья работа уже в master.'
              + ' Плана и подзадач у бага нет — вся работа идёт одним прогоном.',
     done:      'Баг починен. Посмотрите разницу веток кнопкой «diff» и влейте её в главную.',
     failed:    'Багфиксер не смог починить баг — причина ниже.'

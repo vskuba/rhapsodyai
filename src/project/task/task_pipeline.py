@@ -128,6 +128,7 @@ from src.project.task.task_state import (
     task_state_task_done,
     task_state_task_fail,
     task_state_task_finalize,
+    task_state_task_revive,
     task_state_task_get,
     task_state_task_requeue,
     task_state_type_to_plan,
@@ -136,6 +137,7 @@ from src.project.task.task_goal_replan import (task_goal_replan_needed,
                                                task_goal_replan_send)
 from src.project.task.task_log import TASK_LOG_OUTCOME_OK, task_log_write_run
 from src.project.task.task_metric import task_metric_collect
+from src.tool.project.task_worktree_state import task_worktree_state
 from src.project.task.task_worktree import (task_worktree_base_branch,
                                             task_worktree_ensure,
                                             task_worktree_git,
@@ -648,6 +650,33 @@ async def _run_qa(action: dict) -> str | None:
     work_dir = await task_role_project_work_dir((task or {}).get('project_id'))
     subtask_dir = await _subtask_dir(work_dir, subtask['id'])
 
+    # Проверять нечего и по второй причине: разработчик не написал кода. В ветке нет
+    # ни коммитов, ни незакоммиченных правок — так бывает, когда работа подзадачи уже
+    # лежит в master: её сделала соседняя подзадача, прошлый круг или человек руками.
+    #
+    # Смотрим до запуска агента, а не спрашиваем его. Три команды git детерминированы
+    # и стоят секунды, а круг QA — это оболочка, двадцать минут и попытка. Раньше их
+    # тратили впустую: QA видел пустой `master..HEAD`, читал это как «работа не
+    # сделана» и возвращал подзадачу разработчику, которому нечего было делать.
+    #
+    # Состояние своё, а не `done`: «проверено и принято» и «проверять было нечего» —
+    # разные факты, и склеив их, мы потеряли бы второй.
+    #
+    # Каталог обязан существовать. `done_has = no` инструмент отдаёт на два разных
+    # случая — «ветка чиста» и «каталога нет вовсе», — а это не одно и то же:
+    # пропавший каталог значит сломанную среду, и закрыть по нему подзадачу как
+    # «кода нет» означало бы выдать поломку стенда за законный итог работы. Такую
+    # строку отдаём обычному кругу: он упрётся в проверку среды и уйдёт в повтор.
+    state = await task_worktree_state(subtask['id'], work_dir=work_dir)
+    worktree_dir = str(state.get('done_dir') or '')
+    if str(state.get('done_has') or '') == 'no' and worktree_dir and os.path.isdir(worktree_dir):
+        await task_state_subtask_set(subtask['id'], 'no_code_for_testing', last_error='',
+                                     attempt_count=int(subtask['pipeline_attempt_count']))
+        await _subtask_report(
+            subtask, 'кода в ветке нет — проверять нечего, круг QA не запускался')
+        logger_info(f"[task] subtask#{subtask['id']}: пустая ветка -> no_code_for_testing")
+        return f"subtask#{subtask['id']} qa -> no_code_for_testing (кода нет)"
+
     try:
         result = await task_agent_qa_run(
             task, subtask, str(subtask.get('pipeline_error') or ''),
@@ -754,7 +783,25 @@ async def _run_bugfix(action: dict) -> str | None:
 
 
 async def _run_finalize(action: dict) -> str | None:
-    """processing -> done | failed, когда все подзадачи в терминальном состоянии."""
+    """
+    Свести состояние задачи с состоянием её подзадач — в обе стороны.
+
+    Сперва возврат, потом закрытие, и порядок не случаен. Закрытие смотрит на
+    мгновенное состояние детей: одного упавшего хватает, чтобы задача стала `failed`.
+    Ребёнок оттуда возвращается — его перезапускает человек, оживляет ответ на
+    вопрос, забирает следующий круг, — и задача обязана вернуться вместе с ним.
+    Идя вторым, возврат разбирал бы то, что закрытие только что поставило в этом же
+    тике; идя первым, он чинит хвост прошлых тиков, а закрытие работает по свежему.
+    """
+    revived = await task_state_task_revive()
+    if revived:
+        task_id, state = revived
+        summary = await task_report_subtasks_summary(task_id)
+        await task_report_write(
+            task_id,
+            f'Задача снова в работе: заблокированных подзадач не осталось ({summary})')
+        return f'task#{task_id} failed -> {state}'
+
     finalized = await task_state_task_finalize()
     if not finalized:
         return None

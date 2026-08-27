@@ -588,9 +588,13 @@ CREATE TABLE `project_task` (
     -- пишет в неё пустую строку вместо неизвестного значения — молча, без ошибки.
     -- Захваченная строка тогда залипает навсегда: ни реклейм (ищет `bugfixing`), ни
     -- следующий тик (ищет NULL или `new`) её больше не видят.
+    -- `no_code_for_testing` — терминальное и **успешное**: QA не нашёл в ветке ни
+    -- коммитов, ни правок, и проверять было нечего. Не `done`, чтобы «проверено и
+    -- принято» не путалось с «проверять было нечего»; не `failed`, потому что это
+    -- не сбой — так закрывается подзадача, чья работа уже лежит в master.
     `pipeline_state` ENUM('new','planning','plan_approval','reviewing','approved','processing',
                           'testing','planned','developing','qa_pending','failed_qa','blocked',
-                          'done','failed','bugfixing') DEFAULT NULL,
+                          'done','failed','bugfixing','no_code_for_testing') DEFAULT NULL,
     `pipeline_plan` MEDIUMTEXT NOT NULL,
     `pipeline_error` TEXT NOT NULL,
     -- Сколько кругов Developer -> QA уже прошла подзадача. У родителя всегда 0:
