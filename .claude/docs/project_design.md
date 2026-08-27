@@ -17,7 +17,7 @@
 | `data/uvicorn/public/js/project/design.js` | Вся логика фронтенда (2466 строк) |
 | `data/uvicorn/public/css/design.css` | Стили страницы (~52 KB) |
 | `src/uvicorn/routers/dashboard.py` | Роут `/admin/design` (`dashboard.py:209`) |
-| `migrations/0001.sql` | Схема — секция дизайна, строки 723-870 |
+| `migrations/20260101000000_initial_schema.sql` | Схема — секция дизайна, строки 723-870 |
 
 Все четыре роутера подключены в `main_uvicorn.py` без префикса и с
 `include_in_schema=False` — в `/docs` эндпоинтов дизайна нет.
@@ -132,7 +132,7 @@ Playwright-сессия на проект: открыть URL, кликать, �
 
 ## Схема БД
 
-Полный DDL — `migrations/0001.sql`, строки 723-870.
+Полный DDL — `migrations/20260101000000_initial_schema.sql`, строки 723-870.
 
 | Таблица | Назначение |
 |---------|-----------|

@@ -1138,7 +1138,7 @@
         flex: 0 0 auto;
         align-items: center;
         gap: 12px;
-        padding: 0 16px 8px;
+        padding: 10px 16px 8px;
         min-width: 0;
     }
 
@@ -1464,34 +1464,65 @@
         color: #b91c1c;
         font-size: 12px;
     }
+
+    /* Шапка страницы сайта: выбор, к которому относятся все её вкладки. Стоит
+       над вкладками, а не внутри них: он общий, и место внутри вкладки означало
+       бы, что у каждой свой сайт — ровно та путаница, из-за которой списки и
+       показывали чужое. */
+    .browser-site-head {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 25px 0; background: #fff;
+    }
+    .browser-site-label { font-size: 12px; color: #718096; font-weight: 600; }
+    #browserSiteSelect {
+        font-size: 13px; padding: 5px 10px; border: 1px solid #cbd5e1;
+        border-radius: 6px; background: #fff; color: #1e293b; max-width: 220px;
+    }
+    .browser-site-back {
+        margin-left: auto; font-size: 12px; color: #64748b; text-decoration: none;
+    }
+    .browser-site-back:hover { color: #2c3e50; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="browser-page">
 
+{# Две страницы на одном шаблоне: `sites` — список того, что заведено, `site` —
+   работа по одному выбранному. Копией их разделять нельзя: страница на четыре
+   тысячи строк, и второй экземпляр разошёлся бы с первым при первой правке. #}
+{% set browser_page = browser_page | default('sites') %}
+
+{% if browser_page == 'site' %}
+<!-- Селект сайта — единственный источник того, чьи сценарии, workflow и ошибки
+     показаны. Раньше выбор был на каждой вкладке своим и ни на что не влиял:
+     списки приходили без фильтра, и при смене сайта оставались чужие строки. -->
+<div class="browser-site-head">
+    <span class="browser-site-label">Сайт</span>
+    <select id="browserSiteSelect" onchange="browserSiteSelect(+this.value)"></select>
+    <a class="browser-site-back" href="/admin/browser">← ко всем сайтам</a>
+</div>
+{% endif %}
+
 <div class="page-tabs" id="browserTabs">
-    <button class="page-tab active" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
-    <button class="page-tab" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
+    {% if browser_page == 'site' %}
+    <button class="page-tab active" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
     <button class="page-tab" data-tab="scenario">Сценарии <span class="page-tab-n" id="tabCount-scenario"></span></button>
     <button class="page-tab" data-tab="workflow">Workflow <span class="page-tab-n" id="tabCount-workflow"></span></button>
     <button class="page-tab" data-tab="error">Ошибки <span class="page-tab-n" id="tabCount-error"></span></button>
+    {% else %}
+    <button class="page-tab active" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
+    {% endif %}
 </div>
 
-<div class="tab-panel active" id="tab-site">
+<div class="tab-panel{% if browser_page != 'site' %} active{% endif %}" id="tab-site">
 
 <div class="site-cards" id="siteCards"></div>
 
 </div>
 
 
-<div class="tab-panel" id="tab-session">
-
-<div class="scenario-head">
-    <span class="scenario-head-label">Сайт</span>
-    <select id="siteSelectSession" title="Адрес закладки подставится в строку адреса"></select>
-    <span class="scenario-head-hint" id="siteSelectSessionHint"></span>
-</div>
+<div class="tab-panel{% if browser_page == 'site' %} active{% endif %}" id="tab-session">
 
 <!-- Сессии — вкладки второго уровня: одна страница на вкладку, «+» заводит ещё
      одну. Список карточек и живое окно под ними принадлежат выбранной сессии. -->
@@ -1578,8 +1609,6 @@
 <div class="tab-panel" id="tab-scenario">
 
 <div class="scenario-head">
-    <span class="scenario-head-label">Сайт</span>
-    <select id="siteSelectScenario" title="Адрес закладки подставится в «Старт» сценария"></select>
     <span class="scenario-head-label">Сессия</span>
     <select id="scenarioSession" title="В какой сессии гнать шаги"></select>
     <label><input type="checkbox" id="scenarioKeep" checked> оставить сессию</label>
@@ -1658,8 +1687,6 @@
 <div class="tab-panel" id="tab-workflow">
 
 <div class="scenario-head">
-    <span class="scenario-head-label">Сайт</span>
-    <select id="siteSelectWorkflow" title="К какому сайту относится цепочка"></select>
     <span class="scenario-head-hint">цепочка гонит сценарии по порядку в одной сессии</span>
 </div>
 
@@ -2016,7 +2043,7 @@
         try {
             data = await postData(`/api/browser/session/${session.session_id}/record/stop`,
                                   {name: (input.value || '').trim(),
-                                   site_id: (siteCurrent() || {}).id || null});
+                                   site_id: _browserSiteId || null});
         } catch (e) {
             showNotification('Сценарий не записан: ' + e.message, 'error');
             await sessionsLoad();
@@ -2585,7 +2612,7 @@
                 url: url || '',
                 // Метка сайта: по ней полоса вкладок отбирает страницы этой закладки.
                 // В базу она не уезжает — сессия живёт в памяти контейнера.
-                site_id: (siteCurrent() || {}).id || 0,
+                site_id: _browserSiteId || 0,
             });
             showNotification('Сессия заведена', 'success');
             await sessionsLoad();
@@ -2876,10 +2903,73 @@
         {action: 'extract', selector: 'h1', name: 'title'},
     ];
 
+    // ─── Выбор сайта ───────────────────────────────────────────────────────
+    // Сценарии и workflow принадлежат сайту (`site_id` в строке), и до появления
+    // этого выбора списки приходили без фильтра: заведёшь новый сайт — а на его
+    // вкладках чужие сценарии. Выбор один на страницу, а не свой на каждой
+    // вкладке: иначе вкладки показывали бы разные сайты одновременно.
+    const BROWSER_SITE_KEY = 'browser_site_id';
+    let _browserSiteId = 0;
+
+    // Ноль — «сайт не выбран»: тогда списки приходят целиком, как раньше. Это
+    // состояние страницы до первой загрузки и при пустом списке сайтов.
+    function browserSiteQuery() {
+        return _browserSiteId ? `?site_id=${_browserSiteId}` : '';
+    }
+
+    async function browserSiteFill() {
+        const sel = document.getElementById('browserSiteSelect');
+        if (!sel) return;
+        let rows = [];
+        try {
+            rows = (await getData('/api/browser/site')).result || [];
+        } catch (e) {
+            sel.innerHTML = '<option value="0">список сайтов не пришёл</option>';
+            return;
+        }
+        if (!rows.length) {
+            sel.innerHTML = '<option value="0">Сайтов нет</option>';
+            return;
+        }
+        sel.innerHTML = rows.map(r =>
+            `<option value="${r.id}">${_escape(r.name || r.url || ('#' + r.id))}</option>`).join('');
+        // Сайт из прошлого захода мог быть удалён — сверяем со списком и молча
+        // берём первый, иначе страница показывала бы пустоту без объяснения.
+        const saved = localStorage.getItem(BROWSER_SITE_KEY);
+        sel.value = [...sel.options].some(o => o.value === saved) ? saved : String(rows[0].id);
+        browserSiteSelect(+sel.value, true);
+    }
+
+    window.browserSiteSelect = function (id, silent) {
+        _browserSiteId = id || 0;
+        localStorage.setItem(BROWSER_SITE_KEY, String(_browserSiteId));
+        if (silent) return;
+        // Перегружаем всё, что принадлежит сайту, а не только открытую вкладку:
+        // в заголовках вкладок стоят счётчики, и без этого они врали бы до
+        // перехода на вкладку.
+        if (typeof scenariosLoad === 'function') scenariosLoad();
+        if (typeof workflowsLoad === 'function') workflowsLoad();
+
+        // Сессии, сценарии и цепочки вкладки «Сессии» отбираются по тому же
+        // выбору — раньше это делал её собственный селект, теперь он один.
+        // Рисуем из уже загруженного, запроса за этим нет.
+        sessionTabsRender();
+        sessionScenariosRender();
+        sessionWorkflowsRender();
+
+        // Адрес закладки подставляем в строку адреса, но никуда не идём:
+        // «Открыть» человек жмёт сам, а выбор сайта — ещё не команда открыть.
+        const site = siteCurrent();
+        if (site && urlEl) {
+            urlEl.value = site.url;
+            urlEdited = true;
+        }
+    };
+
     async function scenariosLoad() {
         let data;
         try {
-            data = await getData('/api/browser/scenario');
+            data = await getData('/api/browser/scenario' + browserSiteQuery());
         } catch (e) {
             scenarioStatEl.textContent = 'список не пришёл: ' + e.message;
             return;
@@ -2982,7 +3072,10 @@
         scenarioId = 0;
         scenarioNameEl.value = '';
         scenarioGoalEl.value = '';
-        scenarioUrlEl.value = '';
+        // «Старт» заполняем адресом выбранного сайта: сценарий всё равно будет
+        // приписан ему, и набирать тот же адрес руками незачем. Раньше это делал
+        // селект закладок на вкладке — его убрали, подстановка осталась.
+        scenarioUrlEl.value = (siteCurrent() || {}).url || '';
         scenarioStepsSet(SCENARIO_SAMPLE);
         scenarioVarsSet({});
         scenarioOutEl.innerHTML = '';
@@ -3242,7 +3335,7 @@
     async function workflowsLoad() {
         let data;
         try {
-            data = await getData('/api/browser/workflow');
+            data = await getData('/api/browser/workflow' + browserSiteQuery());
         } catch (e) {
             workflowStatEl.textContent = 'список не пришёл: ' + e.message;
             return;
@@ -3305,10 +3398,6 @@
         workflowNameEl.value = row.name || '';
         workflowSteps = (row.steps || []).map(step => Number(step.scenario_id));
         workflowOutEl.innerHTML = '';
-        // Сайт цепочки — тот же селект, что и у сценариев: правка не должна
-        // сбрасывать привязку только потому, что человек её не трогал.
-        const select = document.getElementById('siteSelectWorkflow');
-        if (row.site_id) select.value = String(row.site_id);
         workflowStepsRender();
         workflowSay(data.variables_used?.length
             ? 'цепочка ждёт подстановки: ' + data.variables_used.join(', ')
@@ -3393,7 +3482,9 @@
 
         const body = {
             name,
-            site_id: Number(document.getElementById('siteSelectWorkflow').value || 0) || null,
+            // Как и у сценариев: сайт берём из выбора в шапке страницы,
+            // отдельного селекта у вкладки нет.
+            site_id: _browserSiteId || null,
             scenario_ids: workflowSteps,
         };
 
@@ -3852,9 +3943,14 @@
         }
 
         return {
-            // Сайт берём из селекта этой вкладки: сценарий принадлежит закладке,
-            // и без поля правка сбрасывала бы привязку в NULL на каждом «Сохранить».
-            site_id: Number(document.getElementById('siteSelectScenario').value || 0) || null,
+            // Сайт — тот, что выбран в шапке страницы: список сценариев отобран
+            // по нему же, значит правка не может относиться к другому. Своего
+            // селекта у вкладки нет — два независимых выбора расходились.
+            //
+            // Берём id из выбора, а не через `siteCurrent`: та ищет по списку
+            // сайтов, и пока он не пришёл, вернула бы null — сохранение в этот
+            // момент сбросило бы привязку.
+            site_id: _browserSiteId || null,
             name: scenarioNameEl.value.trim(),
             goal: scenarioGoalEl.value.trim(),
             start_url: urlNormalize(scenarioUrlEl.value),
@@ -3944,47 +4040,10 @@
         sites = data.result || [];
         countSet('site', sites.length);
         siteCardsRender();
-        siteSelectsFill();
-    }
 
-    // Закладки нужны и соседним вкладкам: на «Сессиях» адрес уходит в строку
-    // адреса, на «Сценариях» — в «Старт». Селект собирается из того же ответа,
-    // которым живёт вкладка сайтов, — второго запроса за те же адреса нет.
-    function siteSelectsFill() {
-        for (const [id, target] of [['siteSelectSession', urlEl],
-                                    ['siteSelectScenario', scenarioUrlEl],
-                                    ['siteSelectWorkflow', null]]) {
-            const select = document.getElementById(id);
-            if (!select) continue;
-
-            // Значение опции — id сайта, а не адрес: сайт стал контекстом работы,
-            // по нему отбираются вкладки сессий и сценарии колонки. Выбранное
-            // держим по нему же: список перечитывается после каждой правки, и
-            // порядок в нём меняется вместе с именем.
-            const chosen = select.value;
-            select.innerHTML = '<option value="">— выбрать сайт —</option>' +
-                sites.map(row =>
-                    `<option value="${row.id}">${_escape(row.name)} — ${_escape(row.url)}</option>`
-                ).join('');
-            select.value = sites.some(row => String(row.id) === chosen) ? chosen : '';
-
-            // Поле уже заполнено адресом одной из закладок — покажем это выбором.
-            const known = target && sites.find(row => row.url === target.value);
-            if (!select.value && known) {
-                select.value = String(known.id);
-                continue;
-            }
-
-            // Иначе предлагаем первый сайт раскладки: порядок карточек человек
-            // задал сам, и верхняя — та, с которой он чаще всего и начинает.
-            if (!select.value && sites.length) {
-                select.value = String(sites[0].id);
-                // Адрес подставляем только в пустое поле: в строке адреса живого
-                // окна стоит адрес открытой сессии, и затирать его нельзя.
-                if (target && !target.value) target.value = sites[0].url;
-            }
-        }
-
+        // Отбор по сайту держится на этом списке: пока он не пришёл, `siteCurrent`
+        // отдаёт null, и полоса вкладок показывает сессии всех сайтов сразу.
+        // Перерисовываем по приходу, иначе чужое висело бы до следующего опроса.
         sessionTabsRender();
         sessionScenariosRender();
         sessionWorkflowsRender();
@@ -3992,30 +4051,13 @@
 
     // Выбранный сайт — контекст работы: его сессии показывает полоса вкладок, его
     // сценарии — колонка слева, к нему же привязывается всё заведённое здесь.
+    //
+    // Источник выбора один на страницу — селект в шапке. Свои селекты сайта были
+    // на каждой вкладке; их убрали, потому что они расходились между собой и с
+    // отбором списков: вкладки показывали разные сайты одновременно, а сохранение
+    // могло приписать сценарий не тому сайту, чьи сценарии человек видел.
     function siteCurrent() {
-        const id = Number(document.getElementById('siteSelectSession').value || 0);
-
-        return sites.find(row => row.id === id) || null;
-    }
-
-    // Подставляем адрес, но никуда не идём: «Открыть» и «Запустить» человек жмёт
-    // сам, а выбор из списка — ещё не команда открыть.
-    function siteSelectApply(select, target, hintId) {
-        const site = sites.find(row => String(row.id) === select.value);
-        const hint = document.getElementById(hintId);
-
-        if (site) {
-            target.value = site.url;
-            if (target === urlEl) urlEdited = true;
-            if (hint) hint.textContent = 'адрес подставлен — нажмите «Открыть»';
-        } else if (hint) {
-            hint.textContent = '';
-        }
-
-        // Сменился сайт — сменились и его вкладки сессий, и его сценарии с цепочками.
-        sessionTabsRender();
-        sessionScenariosRender();
-        sessionWorkflowsRender();
+        return sites.find(row => row.id === _browserSiteId) || null;
     }
 
     function siteCardsRender() {
@@ -4134,7 +4176,6 @@
         // Рисуем сразу, ответ ждём молча: перетаскивание обязано выглядеть
         // мгновенным, а порядок всё равно перечитается следующим `sitesLoad`.
         siteCardsRender();
-        siteSelectsFill();
 
         try {
             await postData('/api/browser/site/order', {ids: sites.map(row => row.id)});
@@ -4276,11 +4317,6 @@
     document.getElementById('inspectClose').addEventListener('click', inspectHide);
     document.getElementById('recordBtn').addEventListener('click', recordToggle);
 
-    document.getElementById('siteSelectSession').addEventListener('change', (event) =>
-        siteSelectApply(event.target, urlEl, 'siteSelectSessionHint'));
-    document.getElementById('siteSelectScenario').addEventListener('change', (event) =>
-        siteSelectApply(event.target, scenarioUrlEl, ''));
-
     document.getElementById('siteSaveBtn').addEventListener('click', siteSave);
     document.getElementById('siteCancelBtn').addEventListener('click', siteModalClose);
     document.getElementById('siteModalClose').addEventListener('click', siteModalClose);
@@ -4336,14 +4372,28 @@
     // Первая вкладка — она же по умолчанию: с сайтов работа и начинается, сессию
     // заводят с их карточки. Запомненный выбор всё равно старше умолчания, а
     // неизвестное значение (осталось от прошлой раскладки) откатывается сюда же.
-    const TAB_KNOWN = ['site', 'session', 'scenario', 'workflow', 'error'];
-    tabSelect(TAB_KNOWN.includes(localStorage.getItem(TAB_KEY)) ? localStorage.getItem(TAB_KEY) : 'site');
+    // Набор вкладок теперь разный на двух страницах, и запомненная вкладка с
+    // соседней страницы сюда не годится: на «Сайтах» её просто нет в разметке.
+    // Поэтому сверяем не со списком всех известных, а с тем, что реально есть.
+    const TAB_PRESENT = [...document.querySelectorAll('#browserTabs .page-tab')]
+        .map(t => t.dataset.tab);
+    const TAB_SAVED = localStorage.getItem(TAB_KEY);
+    tabSelect(TAB_PRESENT.includes(TAB_SAVED) ? TAB_SAVED : TAB_PRESENT[0]);
+
     scenarioKeysRender();
     sideSectionApply();
     scenarioActionsLoad();
-    workflowsLoad();
+
+    // Порядок важен: выбор сайта заполняется первым, и только после него грузятся
+    // списки — иначе первый запрос ушёл бы без фильтра и на мгновение показал
+    // чужие сценарии.
+    (async () => {
+        await browserSiteFill();
+        workflowsLoad();
+        scenariosLoad();
+    })();
+
     sessionsLoad();
-    scenariosLoad();
     sitesLoad();
     setInterval(sessionsLoad, 10000);
 </script>

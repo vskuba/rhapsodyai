@@ -1,5 +1,11 @@
-CREATE DATABASE IF NOT EXISTS `project` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `project`;
+-- Схема проекта: единственный DDL-файл (см. .claude/docs/migration.md).
+--
+-- Имени базы здесь нет намеренно. Раньше во второй строке стоял `USE `project``,
+-- и файл сам выбирал базу — из-за этого прогон «в песочницу» вида
+-- `mysql ... schema_check < 0001.sql` молча переключался на рабочую и сносил её.
+-- Имя базы задаёт подключение: yoyo берёт его из `MYSQL_DATABASE`, создаёт базу и
+-- применяет файл уже внутри неё (`mysql_migration_up`), а ручной прогон получает
+-- имя аргументом. Одно место вместо двух, и песочница перестала быть ловушкой.
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -531,6 +537,15 @@ CREATE TABLE `event_log` (
 
 -- ─── Project Task ──────────────────────────────────────────────────────────────
 
+CREATE TABLE `project_task_type` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(50) NOT NULL COMMENT 'dev, bug, test, research, plan',
+    `title` VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Отображаемое название',
+    `description` TEXT DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_task_type_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `project_task` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `project_id` INT DEFAULT NULL,
@@ -944,15 +959,6 @@ CREATE TABLE `project_design_token` (
 
 -- ─── Project Team ──────────────────────────────────────────────────────────────
 
-CREATE TABLE `project_task_type` (
-    `id` INT NOT NULL AUTO_INCREMENT,
-    `name` VARCHAR(50) NOT NULL COMMENT 'dev, bug, test, research, plan',
-    `title` VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Отображаемое название',
-    `description` TEXT DEFAULT NULL,
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_task_type_name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE `project_team` (
     `id` INT NOT NULL AUTO_INCREMENT,
     `project_id` INT DEFAULT NULL COMMENT 'Проект карточки; NULL — карточка вне проектов',
@@ -1111,3 +1117,4 @@ CREATE TABLE `browser_scenario_run` (
     INDEX `idx_bsr_scenario` (`scenario_id`, `id`),
     CONSTRAINT `fk_bsr_scenario` FOREIGN KEY (`scenario_id`) REFERENCES `browser_scenario` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

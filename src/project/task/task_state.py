@@ -129,9 +129,19 @@ async def task_state_type_to_plan(task_id: int) -> bool:
     `dev`. А по типу выбирается роль-планировщик (`task_role_by_type`), и план такой
     задачи писала карточка разработчика вместо менеджера.
 
-    Меняем только корневые задачи. У подзадачи обратного перехода нет:
-    `task_state_type_to_dev` берёт лишь `parent_id IS NULL`, и подзадача, переведённая
-    в `plan`, застряла бы этим типом навсегда.
+    Подзадачи переводим наравне с корневыми. Планирование берёт не только их:
+    подзадача уходит туда двумя дорогами — помеченная менеджером «дробить дальше»
+    (`_subtask_state`) и возвращённая из тупика (`task_goal_replan`). Рождается она
+    всегда типом `dev` (`task_state_subtasks_create`), и без перевода её план писала
+    бы карточка разработчика — ровно та подмена роли, от которой уводит эта функция.
+    Поймано живьём на #1628: «Задача взята в планирование (Разработчик)».
+
+    Раньше подзадачи здесь исключались из опасения, что тип `plan` останется на них
+    навсегда. Опасение снято с двух сторон: обратный перевод (`task_state_type_to_dev`)
+    теперь тоже берёт подзадачи, а работу они получают не по типу вовсе —
+    `task_claim_subtask_developable` и `task_claim_subtask_testable` отбирают по
+    состоянию и проекту. То есть даже застрявший тип не остановил бы конвейер, он
+    показал бы строку не на той вкладке.
 
     `bug` не трогаем: багфиксер плана не пишет вовсе (`TASK_ROLE_PLANNERS`), и перевод
     увёл бы баг с его собственного пути. Сюда он попасть и не может — отбор
@@ -142,14 +152,14 @@ async def task_state_type_to_plan(task_id: int) -> bool:
     и строка не обновилась бы, хотя ей-то тип как раз и нужен.
 
     Returns:
-        True — тип сменён. False — задача уже `plan`, это баг, подзадача или строки
-        типа `plan` в установке нет; это норма, а не ошибка.
+        True — тип сменён. False — задача уже `plan`, это баг или строки типа `plan`
+        в установке нет; это норма, а не ошибка.
     """
     async with mysql_get_db_async() as db:
         await db.execute(
             "UPDATE project_task "
             "   SET task_type_id = (SELECT id FROM project_task_type WHERE name = 'plan') "
-            " WHERE id = %s AND parent_id IS NULL "
+            " WHERE id = %s "
             "   AND COALESCE(task_type_id, 0) NOT IN "
             "       (SELECT id FROM project_task_type WHERE name IN ('plan', 'bug')) "
             "   AND EXISTS (SELECT 1 FROM project_task_type WHERE name = 'plan')",
@@ -224,6 +234,11 @@ async def task_state_type_to_dev(task_id: int) -> bool:
     Наличие типа `dev` проверяем отдельно: без строки типа подзапрос дал бы NULL и
     задача пропала бы со всех вкладок.
 
+    Подзадачи переводим наравне с корневыми — иначе разложенная подзадача осталась бы
+    типом `plan` и висела на вкладке «Планирование», хотя её дети уже пишут код.
+    Парность обязательна: вход в планирование (`task_state_type_to_plan`) подзадачи
+    берёт, и односторонний перевод оставлял бы их с типом фазы, которая закончилась.
+
     Returns:
         True — тип сменён. False — задача уже не `plan` (утвердили дважды, тип сменила
         пометка); это норма, а не ошибка.
@@ -232,7 +247,7 @@ async def task_state_type_to_dev(task_id: int) -> bool:
         await db.execute(
             "UPDATE project_task "
             "   SET task_type_id = (SELECT id FROM project_task_type WHERE name = 'dev') "
-            " WHERE id = %s AND parent_id IS NULL "
+            " WHERE id = %s "
             "   AND task_type_id = (SELECT id FROM project_task_type WHERE name = 'plan') "
             "   AND EXISTS (SELECT 1 FROM project_task_type WHERE name = 'dev')",
             (task_id,),
@@ -348,53 +363,6 @@ async def task_state_subtasks_create(task_id: int, subtasks: list) -> int:
         )
         await db.connection.commit()
     return len(subtasks)
-
-
-def _subtask_state(item: dict) -> str:
-    """
-    Состояние новой подзадачи: обычная — `planned`, крупная — `new`.
-
-    Тут и включается дробление в глубину. `planned` — начало круга
-    Developer → QA, туда идёт подзадача, помещающаяся в память исполнителя.
-    А `new` — состояние, из которого работу забирает планирование
-    (`task_claim_task_unplanned`: нет своих подзадач, состояние `new`, сама не
-    родитель). Никакой отдельной ветки для рекурсии не нужно — подзадача,
-    помеченная `split_more`, просто попадает менеджеру как обычная задача, и
-    он раскладывает её своим заходом.
-
-    Глубина от этого не ограничена: разложенная подзадача может снова
-    оказаться крупной, снова получить `new` и уехать на планирование ещё раз.
-    Останавливает это не счётчик уровней, а сам объём — дробить бесконечно
-    нечего, куски кончаются.
-    """
-    return 'new' if item.get('split_more') else 'planned'
-
-
-def _subtask_metadata(item: dict) -> str | None:
-    """
-    Мешок новой подзадачи из строки плана менеджера. Пусто — `None`.
-
-    Три пометки, и все три ставит менеджер при разбиении:
-
-    * `final` — приёмка, ждёт закрытия соседей;
-    * `split_more` — не влезает в память исполнителя, дробить дальше;
-    * `context_lines` — его оценка объёма чтения, для разбора провалов.
-
-    Ложь и ноль не пишем: ключа нет — пометки нет, как у флажков фаз. Иначе
-    в мешке копился бы след от каждой подзадачи, которую менеджер посмотрел
-    и признал обычной.
-    """
-    data = {}
-    if item.get('final'):
-        data[TASK_METADATA_KEY_FINAL] = True
-    if item.get('split_more'):
-        data[TASK_METADATA_KEY_SPLIT_MORE] = True
-
-    lines = item.get('context_lines')
-    if isinstance(lines, (int, float)) and lines > 0:
-        data[TASK_METADATA_KEY_CONTEXT] = int(lines)
-
-    return json.dumps(data, ensure_ascii=False) if data else None
 
 
 async def task_state_task_fail(task_id: int, error: str) -> None:
@@ -622,6 +590,53 @@ async def task_state_attempt_log(subtask_id: int, attempt_no: int, role: str,
              int((time.monotonic() - started) * 1000)),
         )
         await db.connection.commit()
+
+
+def _subtask_state(item: dict) -> str:
+    """
+    Состояние новой подзадачи: обычная — `planned`, крупная — `new`.
+
+    Тут и включается дробление в глубину. `planned` — начало круга
+    Developer → QA, туда идёт подзадача, помещающаяся в память исполнителя.
+    А `new` — состояние, из которого работу забирает планирование
+    (`task_claim_task_unplanned`: нет своих подзадач, состояние `new`, сама не
+    родитель). Никакой отдельной ветки для рекурсии не нужно — подзадача,
+    помеченная `split_more`, просто попадает менеджеру как обычная задача, и
+    он раскладывает её своим заходом.
+
+    Глубина от этого не ограничена: разложенная подзадача может снова
+    оказаться крупной, снова получить `new` и уехать на планирование ещё раз.
+    Останавливает это не счётчик уровней, а сам объём — дробить бесконечно
+    нечего, куски кончаются.
+    """
+    return 'new' if item.get('split_more') else 'planned'
+
+
+def _subtask_metadata(item: dict) -> str | None:
+    """
+    Мешок новой подзадачи из строки плана менеджера. Пусто — `None`.
+
+    Три пометки, и все три ставит менеджер при разбиении:
+
+    * `final` — приёмка, ждёт закрытия соседей;
+    * `split_more` — не влезает в память исполнителя, дробить дальше;
+    * `context_lines` — его оценка объёма чтения, для разбора провалов.
+
+    Ложь и ноль не пишем: ключа нет — пометки нет, как у флажков фаз. Иначе
+    в мешке копился бы след от каждой подзадачи, которую менеджер посмотрел
+    и признал обычной.
+    """
+    data = {}
+    if item.get('final'):
+        data[TASK_METADATA_KEY_FINAL] = True
+    if item.get('split_more'):
+        data[TASK_METADATA_KEY_SPLIT_MORE] = True
+
+    lines = item.get('context_lines')
+    if isinstance(lines, (int, float)) and lines > 0:
+        data[TASK_METADATA_KEY_CONTEXT] = int(lines)
+
+    return json.dumps(data, ensure_ascii=False) if data else None
 
 
 # Родители, у которых разработка по плану закончена и всё упёрлось в проверку: есть

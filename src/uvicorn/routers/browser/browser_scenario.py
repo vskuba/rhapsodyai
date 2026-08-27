@@ -76,12 +76,24 @@ async def browser_scenario_action_list(user=Depends(AuthChecker([AuthPermission.
 
 
 @router.get('')
-async def browser_scenario_list(user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
-    """Все сценарии, свежие сверху."""
+async def browser_scenario_list(site_id: int = 0,
+                                user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
+    """
+    Сценарии сайта, свежие сверху.
+
+    `site_id` — чьи сценарии. Ноль означает «все»: так список открывается там, где
+    сайт ещё не выбран, и так же он вёл себя раньше.
+
+    Фильтр обязателен на странице сайта: сценарии принадлежат сайту (`site_id` в
+    строке), и без отбора при выборе нового сайта показывались бы чужие — ровно
+    это и происходило, пока параметра не было.
+    """
+    where, params = ('WHERE site_id = %s', [int(site_id)]) if site_id else ('', [])
+
     async with mysql_get_db_async() as db:
         await db.execute(
             'SELECT id, site_id, name, goal, start_url, status, created_at, updated_at '
-            'FROM browser_scenario ORDER BY id DESC'
+            f'FROM browser_scenario {where} ORDER BY id DESC', params
         )
         rows = await db.fetchall()
 

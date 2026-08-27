@@ -1,7 +1,7 @@
 # Database — репозитории, схема, миграции
 
 > Список репозиториев `src/mysql_/repository/`, группы таблиц, порядок создания с учётом
-> FK и правила правки схемы. Схема живёт в единственном файле `migrations/0001.sql`;
+> FK и правила правки схемы. Схема живёт в единственном файле `migrations/20260101000000_initial_schema.sql`;
 > механика прогона и сидов — `migration.md`.
 
 ## Repositories (`src/mysql_/repository/`)
@@ -35,7 +35,7 @@ Migrations apply automatically on Uvicorn startup via `mysql_migration_up()`. Fi
 
 | File | Purpose |
 |------|---------|
-| `0001.sql` | DDL schema — CREATE TABLE, FK, indexes for ALL tables; includes DROP TABLE IF EXISTS at the top for clean recreation |
+| `20260101000000_initial_schema.sql` | DDL schema — CREATE TABLE, FK, indexes for ALL tables; includes DROP TABLE IF EXISTS at the top for clean recreation |
 
 Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is managed through the **Seed UI** at `/admin/seed`, not via SQL files. See `seed.md`.
 
@@ -181,8 +181,8 @@ Kill it when done: `pkill -f 'ssh.*rhapsody-prod-db'`.
 
 ### Cautions
 
-- **Never pipe `0001.sql` at prod.** It starts with `USE \`project\`` plus `DROP TABLE IF EXISTS` — it self-selects the live database and wipes it regardless of which host or DB name you thought you were targeting.
-- **`0001.sql` never re-applies on prod** (yoyo already marked it applied). Schema changes reach prod only as hand-written `ALTER TABLE` / `RENAME TABLE` / `CREATE TABLE`, applied through Route A. Keep the same change in `0001.sql` so a fresh install still matches.
+- **Never pipe the initial schema at prod.** It starts with `DROP TABLE IF EXISTS` for every table. The old `USE \`project\`` line is gone (the DB name now comes from the connection), so the file no longer self-selects the live database — but piping it at a live DB still wipes it.
+- **The initial schema is frozen** and never re-applies (yoyo marked it applied). New tables and `ALTER TABLE` go into their own timestamped migration in `migrations/` — yoyo applies it on the next start, on every install alike. Editing the frozen file would change an already-applied migration: live DBs would never see it, fresh installs would.
 - **Don't run ad-hoc `mysql_pool_get()` scripts against prod** without a guaranteed pool close — leaked connections accumulate on the server.
 - Data (not schema) goes through the Seed UI `/admin/seed`; a full dump is `/admin/backup`.
 

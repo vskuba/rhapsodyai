@@ -79,7 +79,7 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
     _require_claude_secret(request)
 
     # Колонки role в ai_claude_session_registry и project_team — NOT NULL
-    # DEFAULT 'developer' (migrations/0001.sql), поэтому None вставлять нельзя.
+    # DEFAULT 'developer' (migrations/20260101000000_initial_schema.sql), поэтому None вставлять нельзя.
     role_given = str(data.get("role") or "").strip()
     role = role_given or ""
     project_label = str(data.get("project_label") or "").strip()

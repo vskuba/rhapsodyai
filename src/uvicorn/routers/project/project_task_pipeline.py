@@ -88,7 +88,7 @@ async def project_task_pipeline_get(task_id: int, user=Depends(AuthChecker([Auth
         )
         attempts = await db.fetchall()
 
-    plan_text, _ = task_plan_parse(task['pipeline_plan'] or '')
+    plan_text, planned = task_plan_parse(task['pipeline_plan'] or '')
     return {
         'pipeline_state': task['pipeline_state'],
         'plan_text':      plan_text,
@@ -97,6 +97,12 @@ async def project_task_pipeline_get(task_id: int, user=Depends(AuthChecker([Auth
         'goals':          task_plan_goals_get(task['pipeline_plan'] or ''),
         'error':          task['pipeline_error'],
         'subtasks':       [dict(r) for r in (subtasks or [])],
+        # Разбиение из плана — то, что появится строками после «Утвердить». Отдаём
+        # отдельным полем, а не подмешиваем к `subtasks`: у настоящих подзадач есть
+        # номер, состояние и попытки, а у этих — только предложение, и панель
+        # рисует их иначе. Без него человек утверждал бы разбиение вслепую: строк
+        # ещё нет, и на экране про них не было ни слова.
+        'plan_subtasks':  _plan_subtasks(planned),
         'attempts':       [dict(r) for r in (attempts or [])],
     }
 
@@ -760,3 +766,32 @@ async def _pipeline_state_set(task_id: int, expected: str | None | list, new_sta
 
 def _states_label(states: list) -> str:
     return ' / '.join(s if s else 'вне конвейера' for s in states)
+
+
+def _plan_subtasks(planned: list) -> list[dict]:
+    """
+    Разбиение из плана — в вид, пригодный для показа: заголовок, описание, оценка
+    объёма и две пометки менеджера.
+
+    Берём только то, что человеку нужно на решении «утверждать или нет». Полный план
+    каждой подзадачи и её цели сюда не идут: они у неё свои и появятся на строке,
+    когда она заведётся, а в панели родителя дали бы простыню на несколько экранов.
+
+    `context_lines` показываем, потому что это главный критерий разбиения (см.
+    `role_manager.md`): по нему видно, влезает ли подзадача в окно исполнителя.
+    `split_more` — «раздробят дальше», `final` — «ждёт закрытия соседей»; и то и
+    другое меняет судьбу строки, и узнать об этом после утверждения поздно.
+    """
+    rows = []
+    for item in planned or []:
+        if not isinstance(item, dict):
+            continue
+        lines = item.get('context_lines')
+        rows.append({
+            'title':         str(item.get('title') or ''),
+            'description':   str(item.get('description') or ''),
+            'context_lines': int(lines) if isinstance(lines, int) and lines > 0 else 0,
+            'split_more':    bool(item.get('split_more')),
+            'final':         bool(item.get('final')),
+        })
+    return rows

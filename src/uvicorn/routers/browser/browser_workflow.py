@@ -100,15 +100,23 @@ class BrowserWorkflowRun(BaseModel):
                 '`X-API-KEY` с токеном доступа пользователя, имеющего право `BROWSER_VIEW`.',
     response_description='Успешный ответ со списком цепочек',
 )
-async def browser_workflow_list(user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
-    """Цепочки в порядке раскладки, с числом звеньев."""
+async def browser_workflow_list(site_id: int = 0,
+                                user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
+    """
+    Цепочки сайта в порядке раскладки, с числом звеньев.
+
+    `site_id` — чьи цепочки. Ноль означает «все»: так список вёл себя до появления
+    параметра, и так он открывается там, где сайт не выбран.
+    """
+    where, params = ('WHERE w.site_id = %s', [int(site_id)]) if site_id else ('', [])
+
     async with mysql_get_db_async() as db:
         await db.execute(
             'SELECT w.id, w.site_id, w.name, w.position, w.created_at, w.updated_at, '
             '       COUNT(s.id) AS steps '
             '  FROM browser_workflow w '
             '  LEFT JOIN browser_workflow_step s ON s.workflow_id = w.id '
-            ' GROUP BY w.id ORDER BY w.position, w.id'
+            f' {where} GROUP BY w.id ORDER BY w.position, w.id', params
         )
         rows = await db.fetchall()
 

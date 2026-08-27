@@ -71,7 +71,8 @@ async def llm_status(node_id: int | None = None, reset_seconds: int | None = Non
         # Порядок отображения — приоритет (position), как настроено в node_llm
         await db.execute(
             """
-            SELECT l.id, l.name, nl.position, nl.rate_limit_at, nl.code_error
+            SELECT l.id, l.name, l.input_type, l.output_type, l.reasoning_disable,
+                   nl.position, nl.rate_limit_at, nl.code_error
             FROM node_llm nl
             JOIN llm l ON l.id = nl.llm_id
             WHERE nl.node_id = %s
@@ -147,6 +148,11 @@ async def llm_status(node_id: int | None = None, reset_seconds: int | None = Non
                 'id': row['id'],
                 'name': row['name'],
                 'provider': ai_llm_provider(row['name']),
+                'input_type': row['input_type'],
+                'output_type': row['output_type'],
+                # Мониторинг помечает такие модели чипсом: размышления влияют и на
+                # время ответа, и на расход токенов, а обе эти цифры тут же рядом.
+                'reasoning_disable': int(row['reasoning_disable'] or 0),
                 'position': row['position'],
                 'rate_limit_at': str(row['rate_limit_at']) if row['rate_limit_at'] else None,
                 'code_error': row['code_error'],
@@ -265,9 +271,16 @@ async def llm_usage_stats_delete(user=Depends(AuthChecker([AuthPermission.LLM_DE
 @router.put("/llm/{llm_id}")
 async def llm_update(llm_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.LLM_UPDATE]))):
     """Обновляет поля LLM-модели. Обновляются только переданные поля:
-    name, input_type, output_type, chunk_size (JSON), chunk_size_refresh_at."""
-    allowed_keys = ("name", "input_type", "output_type", "chunk_size", "chunk_size_refresh_at")
+    name, input_type, output_type, reasoning_disable, chunk_size (JSON),
+    chunk_size_refresh_at."""
+    allowed_keys = ("name", "input_type", "output_type", "reasoning_disable",
+                    "chunk_size", "chunk_size_refresh_at")
     update_data = {key: data[key] for key in allowed_keys if key in data}
+    # Чекбокс приезжает булевым, а колонка — TINYINT(1). Приводим здесь, а не
+    # полагаемся на драйвер: строка «false» из чужого клиента дошла бы до базы
+    # непустой и легла бы единицей, то есть запретом вместо разрешения.
+    if 'reasoning_disable' in update_data:
+        update_data['reasoning_disable'] = 1 if _flag_true(update_data['reasoning_disable']) else 0
 
     if not update_data:
         raise HTTPException(status_code=400, detail="Нет полей для обновления")
@@ -379,3 +392,19 @@ async def _llm_node_last_used_get(db, nodes: list[dict]) -> int:
     if row and row['node_id'] in node_ids:
         return row['node_id']
     return nodes[0]['id']
+
+
+def _flag_true(value) -> bool:
+    """
+    Значение флажка из тела запроса — в булево.
+
+    Чекбокс со страницы приезжает настоящим `true`/`false`, но тело ручки — это
+    свободный `dict`, и тот же вызов делают из curl и из соседних сервисов.
+    Оттуда флаг приходит строкой, и `bool('false')` дал бы истину: модель молча
+    получила бы запрет вместо разрешения, а по журналу это выглядело бы как
+    «модель перестала думать сама по себе».
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in ('true', '1', 'yes', 'on', 'да')
+
+    return bool(value)

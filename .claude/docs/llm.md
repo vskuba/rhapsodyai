@@ -17,7 +17,7 @@
 | `src/uvicorn/routers/llm/llm.py` | REST API страницы /admin/llm (статистика, список моделей, управление) |
 | `data/uvicorn/template/admin/llm.html` | Фронт мониторинга LLM |
 | `py_modules/queue_/queue_.py` | `queue_get(name)` — простая in-memory `queue.Queue` |
-| `migrations/0001.sql` | Схема таблиц `llm`, `node_llm`, `llm_request`, `node` (включая `llm_parallel_per_agent_max`) |
+| `migrations/20260101000000_initial_schema.sql` | Схема таблиц `llm`, `node_llm`, `llm_request`, `node` (включая `llm_parallel_per_agent_max`) |
 
 ## Схема таблиц
 
@@ -153,7 +153,7 @@ HTTP-клиент: `httpx.AsyncClient(timeout=60s, connect=10s)` с хуками
 
 ### Настройка
 
-- Колонка `node.llm_parallel_per_agent_max` (1–5, DEFAULT 1) — в `migrations/0001.sql`
+- Колонка `node.llm_parallel_per_agent_max` (1–5, DEFAULT 1) — в `migrations/20260101000000_initial_schema.sql`
 - UI: select 1–5 в форме редактирования ноды (`/admin/node`)
 - `ai_llm_parallel_per_agent_max_get(node_id)` в `src/ai/ai_llm.py` читает значение ноды; если `node_id=None` — берёт is_catchall-ноду
 

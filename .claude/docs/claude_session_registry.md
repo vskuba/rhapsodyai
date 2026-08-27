@@ -9,10 +9,10 @@
 
 ## 1. Что уже есть и переиспользуется
 
-`ai_claude_session` (`migrations/0001.sql`) — это **очередь сообщений**, не реестр: каждая строка —
+`ai_claude_session` (`migrations/20260101000000_initial_schema.sql`) — это **очередь сообщений**, не реестр: каждая строка —
 одно сообщение, ключуется по `session_uuid` (`content`/`response`/`handled`/`status`). Уже поддерживает
 сколько угодно параллельных `session_uuid` — сейчас используется только один (статичный агент
-"Claude", id 34 в `agent_workflow`/`agent`; вся схема — `migrations/0001.sql`).
+"Claude", id 34 в `agent_workflow`/`agent`; вся схема — `migrations/20260101000000_initial_schema.sql`).
 
 - `claude_message_user(prompt_user, session_uuid)` (`src/tool/claude_/claude_.py`) — кладёт
   сообщение пользователя в очередь.
@@ -31,7 +31,7 @@
 прямо в реестр в момент закрытия сессии (см. §5), когда LLM и так активна для финальной уборки;
 отдельный Workflow/fact-пайплайн для этого избыточен на первую версию.
 
-Добавляется прямо в `migrations/0001.sql` (без сидовых данных, это чистая DDL-миграция):
+Добавляется прямо в `migrations/20260101000000_initial_schema.sql` (без сидовых данных, это чистая DDL-миграция):
 
 ```sql
 CREATE TABLE ai_claude_session_registry (
@@ -291,7 +291,7 @@ auto-resume (§3) и поднимет `watch` с нуля.
 
 ## 8. Открытые вопросы / TODO
 
-- [x] Миграция для `ai_claude_session_registry` — добавлена в `migrations/0001.sql`, применена
+- [x] Миграция для `ai_claude_session_registry` — добавлена в `migrations/20260101000000_initial_schema.sql`, применена
       вручную к локальной dev БД.
 - [x] Эндпоинты из §7 — реализованы в `src/uvicorn/routers/telegram_app/telegram_app.py`, репозиторий
       `src/mysql_/repository/ai_claude_session_registry_repository.py`. Проверено: синтаксис, импорт,

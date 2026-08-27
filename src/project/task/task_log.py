@@ -48,6 +48,7 @@ QA видит, что делал разработчик, и наоборот.
 import ast
 import json
 import os
+import re
 from datetime import datetime
 
 from datetime_.datetime_ import datetime_offset_apply
@@ -74,7 +75,14 @@ TASK_STATE_FILE = '.task-state.md'
 # увидеть, на чьей стороне затык, и на странице оба файла сливаются по времени.
 TASK_SHELL_FILE = '.task-shell.md'
 
-TASK_LOG_FILES = (TASK_LOG_FILE, TASK_STATE_FILE, TASK_SHELL_FILE)
+# Вопросы ролей и ответы человека (`task_log_decision`). Тоже отдельно, и по той
+# же причине: решение уходит в промпт готовым блоком, и второй его экземпляр
+# посреди хронологии роль читала бы как ещё одно требование. Человеку же оно
+# нужно на своём месте во времени — между кругом, который упёрся в развилку, и
+# кругом, который пошёл дальше.
+TASK_DECISION_FILE = '.task-decision.md'
+
+TASK_LOG_FILES = (TASK_LOG_FILE, TASK_STATE_FILE, TASK_SHELL_FILE, TASK_DECISION_FILE)
 
 # Каталог и префикс имени берём у `task_worktree`: перебор каталогов обязан
 # находить ровно то, что тот создаёт. Префикс — шаблон без подстановки, до
@@ -113,6 +121,16 @@ TASK_LOG_STATES_IN_FLIGHT = ('planning', 'reviewing', 'developing', 'testing', '
 # ответе API — отдаём хвост, а не весь файл.
 TASK_LOG_READ_MAX_CHARS = 40000
 
+# Потолок для хронологии оболочки — свой и больше общего. Ответы оболочки в неё
+# кладутся целиком (`TASK_LOG_SHELL_ANSWER_MAX`), и одна строка там весит не
+# двести символов, а тысячи: с общим потолком в хвост влезал бы последний круг, а
+# предыдущие вытеснялись бы — при том, что смотрят в этот файл как раз чтобы
+# сравнить круги между собой.
+#
+# Роль от этого не толстеет: файл идёт только на страницу (`task_log_read`), а
+# промпт следующего круга собирается из `TASK_LOG_FILE`, у которого потолок общий.
+TASK_LOG_READ_SHELL_MAX_CHARS = 150000
+
 # Под каким ключом в наборе пересказов лежит итог круга. Шаги нумеруются с нуля, и
 # отрицательное число с ними не столкнётся.
 TASK_LOG_SUMMARY_OUTCOME_KEY = -1
@@ -138,10 +156,11 @@ async def task_log_read(repo_dir: str, task_id) -> dict:
     Задвоения не будет: живьём показываем только незакрытые трассы, а закрытая
     приходит из файла.
 
-    Хронологию оболочки (`.task-shell.md`) подмешиваем здесь же и только здесь: в
-    общий журнал ей нельзя — его целиком читает следующий круг, — а человеку она
-    нужна ровно на своём месте по времени. Блоки в обоих файлах подписаны одним и
-    тем же заголовком круга, по нему и сходятся.
+    Хронологию оболочки (`.task-shell.md`) и решения человека (`.task-decision.md`)
+    подмешиваем здесь же и только здесь: в общий журнал им нельзя — его целиком
+    читает следующий круг, — а человеку они нужны ровно на своём месте по времени.
+    Блоки круга и его оболочки подписаны одним заголовком и сходятся построчно;
+    решение приходит между кругами и встаёт по дате своего заголовка.
 
     Returns:
         `{'log': str, 'state': str, 'dir': str, 'running': bool}` — пустые строки,
@@ -150,7 +169,9 @@ async def task_log_read(repo_dir: str, task_id) -> dict:
     """
     directory = task_log_dir(repo_dir, task_id)
     log = _blocks_merge(_read_tail(os.path.join(directory, TASK_LOG_FILE)),
-                        _read_tail(os.path.join(directory, TASK_SHELL_FILE)))
+                        _read_tail(os.path.join(directory, TASK_SHELL_FILE),
+                                   TASK_LOG_READ_SHELL_MAX_CHARS),
+                        _read_tail(os.path.join(directory, TASK_DECISION_FILE)))
 
     live = await _live_block(task_id)
     if live:
@@ -162,105 +183,6 @@ async def task_log_read(repo_dir: str, task_id) -> dict:
         'dir': directory,
         'running': bool(live),
     }
-
-
-async def _live_block(task_id) -> str:
-    """
-    Шаги прогонов строки, которые идут прямо сейчас.
-
-    Собираются из трассы, а не из файла: файл пишется по концу круга, а увидеть,
-    чем агент занят, человек хочет пока тот занят. Смещение читаем то же, что и
-    у записанного, иначе живой блок разъехался бы с остальным журналом на часы.
-
-    Здесь же — события оболочки, и ради идущего прогона они и заводились. Шаг
-    `claude_shell_call` появляется в трассе только когда кончится, и всё это время
-    журнал молчал; строка «задание ушло» без пары «ответ получен» показывает, что
-    ждём агента, а пара без последующего шага — что ответ до движка не доехал.
-    """
-    if not await _row_in_flight(task_id):
-        return ''
-
-    runs = await _runs_active(task_id)
-    if not runs:
-        return ''
-
-    offset = await setting_get('timezone', '+0')
-    blocks = []
-    for run in runs:
-        steps = await _trace_steps(str(run.get('session_uuid') or ''))
-        # Конец окна открыт: прогон идёт, и ответ может прийти в любую секунду.
-        shell = await task_log_shell_events(str(run.get('role') or ''),
-                                            str(run.get('work_dir') or ''),
-                                            run.get('started_at'))
-        for item in (*steps, *shell):
-            item['created_at'] = datetime_offset_apply(item.get('created_at'), offset)
-
-        started = datetime_offset_apply(run.get('started_at'), offset)
-        lines = [f"\n## идёт сейчас · {run.get('role') or 'агент'} · "
-                 f"{started.strftime('%Y-%m-%d %H:%M') if started else ''}\n"]
-        lines += _lines_merge([step for step in steps if not _step_skip(step)], shell)
-        # Шагов может не быть вовсе: прогон только начался. Сам заголовок при этом
-        # новость — по нему видно, что строка не брошена, а в работе.
-        blocks.append(''.join(lines))
-
-    return ''.join(blocks)
-
-
-async def _row_in_flight(task_id) -> bool:
-    """
-    Строка действительно в работе — по состоянию конвейера, а не по трассе.
-
-    Трасса оборванного прогона навсегда остаётся в `running`: закрыть её некому,
-    процесс умер. Без этой сверки журнал показывал бы «идёт сейчас» на прогоне,
-    который встал час назад, — и человек ждал бы результата, которого не будет.
-    Состояние строки ведёт сам конвейер, и оно тут единственный честный признак.
-    """
-    async with mysql_get_db_async() as db:
-        await db.execute("SELECT pipeline_state FROM project_task WHERE id = %s",
-                         (int(task_id or 0),))
-        row = await db.fetchone()
-
-    return str((row or {}).get('pipeline_state') or '') in TASK_LOG_STATES_IN_FLIGHT
-
-
-async def _runs_active(task_id) -> list[dict]:
-    """
-    Незакрытые трассы строки и чья это роль.
-
-    Ищем по переменным прогона: у подзадачи это `subtask_id`, у задачи под
-    менеджером — `task_id`. Разделять обязательно: в трассе подзадачи лежит и
-    номер её родителя, и без второго условия задача забирала бы себе прогоны
-    всех своих подзадач.
-
-    Роль берём из тех же переменных (`task_shell_role`) — в самой трассе её нет.
-    """
-    task_id = int(task_id or 0)
-    if not task_id:
-        return []
-
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT session_uuid, started_at, variables_start "
-            "  FROM agent_workflow_trace "
-            " WHERE status = 'running' "
-            "   AND (variables_start LIKE %s "
-            "        OR (variables_start LIKE %s AND variables_start NOT LIKE %s)) "
-            " ORDER BY id",
-            (f'%"subtask_id": "{task_id}"%',
-             f'%"task_id": "{task_id}"%', '%"subtask_id": "%'))
-        rows = await db.fetchall() or []
-
-    runs = []
-    for row in rows:
-        variables = _dict_parse(str(row.get('variables_start') or '')) or {}
-        runs.append({'session_uuid': row.get('session_uuid'),
-                     'started_at': row.get('started_at'),
-                     'role': str(variables.get('task_shell_role') or ''),
-                     # Второй половиной адреса оболочки: роли в командах разных
-                     # проектов зовутся одинаково (`task_agent_manager`).
-                     'work_dir': str(variables.get('task_shell_work_dir') or '')})
-
-    return runs
 
 
 def task_log_list(repo_dir: str) -> list[dict]:
@@ -431,6 +353,105 @@ async def task_log_write_run(repo_dir: str, task_id, session_uuid: str,
     await _state_write(directory, task_id, role, attempt_no, outcome, steps)
 
     return len(lines) - 1
+
+
+async def _live_block(task_id) -> str:
+    """
+    Шаги прогонов строки, которые идут прямо сейчас.
+
+    Собираются из трассы, а не из файла: файл пишется по концу круга, а увидеть,
+    чем агент занят, человек хочет пока тот занят. Смещение читаем то же, что и
+    у записанного, иначе живой блок разъехался бы с остальным журналом на часы.
+
+    Здесь же — события оболочки, и ради идущего прогона они и заводились. Шаг
+    `claude_shell_call` появляется в трассе только когда кончится, и всё это время
+    журнал молчал; строка «задание ушло» без пары «ответ получен» показывает, что
+    ждём агента, а пара без последующего шага — что ответ до движка не доехал.
+    """
+    if not await _row_in_flight(task_id):
+        return ''
+
+    runs = await _runs_active(task_id)
+    if not runs:
+        return ''
+
+    offset = await setting_get('timezone', '+0')
+    blocks = []
+    for run in runs:
+        steps = await _trace_steps(str(run.get('session_uuid') or ''))
+        # Конец окна открыт: прогон идёт, и ответ может прийти в любую секунду.
+        shell = await task_log_shell_events(str(run.get('role') or ''),
+                                            str(run.get('work_dir') or ''),
+                                            run.get('started_at'))
+        for item in (*steps, *shell):
+            item['created_at'] = datetime_offset_apply(item.get('created_at'), offset)
+
+        started = datetime_offset_apply(run.get('started_at'), offset)
+        lines = [f"\n## идёт сейчас · {run.get('role') or 'агент'} · "
+                 f"{started.strftime('%Y-%m-%d %H:%M') if started else ''}\n"]
+        lines += _lines_merge([step for step in steps if not _step_skip(step)], shell)
+        # Шагов может не быть вовсе: прогон только начался. Сам заголовок при этом
+        # новость — по нему видно, что строка не брошена, а в работе.
+        blocks.append(''.join(lines))
+
+    return ''.join(blocks)
+
+
+async def _row_in_flight(task_id) -> bool:
+    """
+    Строка действительно в работе — по состоянию конвейера, а не по трассе.
+
+    Трасса оборванного прогона навсегда остаётся в `running`: закрыть её некому,
+    процесс умер. Без этой сверки журнал показывал бы «идёт сейчас» на прогоне,
+    который встал час назад, — и человек ждал бы результата, которого не будет.
+    Состояние строки ведёт сам конвейер, и оно тут единственный честный признак.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT pipeline_state FROM project_task WHERE id = %s",
+                         (int(task_id or 0),))
+        row = await db.fetchone()
+
+    return str((row or {}).get('pipeline_state') or '') in TASK_LOG_STATES_IN_FLIGHT
+
+
+async def _runs_active(task_id) -> list[dict]:
+    """
+    Незакрытые трассы строки и чья это роль.
+
+    Ищем по переменным прогона: у подзадачи это `subtask_id`, у задачи под
+    менеджером — `task_id`. Разделять обязательно: в трассе подзадачи лежит и
+    номер её родителя, и без второго условия задача забирала бы себе прогоны
+    всех своих подзадач.
+
+    Роль берём из тех же переменных (`task_shell_role`) — в самой трассе её нет.
+    """
+    task_id = int(task_id or 0)
+    if not task_id:
+        return []
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT session_uuid, started_at, variables_start "
+            "  FROM agent_workflow_trace "
+            " WHERE status = 'running' "
+            "   AND (variables_start LIKE %s "
+            "        OR (variables_start LIKE %s AND variables_start NOT LIKE %s)) "
+            " ORDER BY id",
+            (f'%"subtask_id": "{task_id}"%',
+             f'%"task_id": "{task_id}"%', '%"subtask_id": "%'))
+        rows = await db.fetchall() or []
+
+    runs = []
+    for row in rows:
+        variables = _dict_parse(str(row.get('variables_start') or '')) or {}
+        runs.append({'session_uuid': row.get('session_uuid'),
+                     'started_at': row.get('started_at'),
+                     'role': str(variables.get('task_shell_role') or ''),
+                     # Второй половиной адреса оболочки: роли в командах разных
+                     # проектов зовутся одинаково (`task_agent_manager`).
+                     'work_dir': str(variables.get('task_shell_work_dir') or '')})
+
+    return runs
 
 
 async def _state_write(directory: str, task_id, role: str, attempt_no: int,
@@ -634,33 +655,57 @@ def _shell_write(directory: str, head: str, shell: list) -> None:
         logger_info(f'task_log: хронология оболочки не дописана: {type(e).__name__}: {e}')
 
 
-def _blocks_merge(log: str, shell: str) -> str:
+def _blocks_merge(*sources: str) -> str:
     """
-    Свести журнал круга с хронологией его оболочки в одну ленту по времени.
+    Свести несколько файлов журнала в одну ленту: по блокам, блоки — по времени.
 
-    Оба файла разбиты на блоки одинаковыми заголовками (`## круг N · роль · дата`),
-    и склеиваем поблочно, а не файл к файлу: строка несёт только `ЧЧ:ММ:СС`, дата
+    Файлов у строки три, и у каждого своя причина жить отдельно: круги пишет
+    конвейер и читает следующий круг, хронологию оболочки читает только человек,
+    решения человека приходят между кругами. Показывать их надо вместе.
+
+    Склеиваем поблочно, а не файл к файлу: строка несёт только `ЧЧ:ММ:СС`, дата
     живёт в заголовке — за пределами своего блока такую метку не с чем сравнивать.
+    Блоки с одинаковым заголовком (круг и его же оболочка) сливаются построчно.
 
-    Блок оболочки без пары (журнал не записался) добавляем в конец: терять его
-    незачем, а без заголовка-близнеца встать ему некуда.
+    Порядок блоков — по дате в заголовке, а не по порядку файлов. Решение
+    человека случается между кругами, и приписать его в конец значило бы сказать,
+    что отвечали после всей работы, — а по нему как раз и видно, что круг после
+    ответа пошёл иначе. Заголовок без даты (обрезанный хвост файла) держим
+    первым: он про то, что было раньше всего показанного.
     """
-    if not shell.strip():
-        return log
-    if not log.strip():
-        return shell
+    blocks: list[tuple[str, list[str]]] = []
+    for source in sources:
+        if not source or not source.strip():
+            continue
+        for head, lines in _blocks_split(source):
+            same = next((item for item in blocks if item[0] == head and head), None)
+            if same:
+                same[1].extend(lines)
+            else:
+                blocks.append((head, list(lines)))
 
-    shell_blocks = _blocks_split(shell)
-    parts = []
-    for head, lines in _blocks_split(log):
-        extra = [item for item in shell_blocks if item[0] == head]
-        for item in extra:
-            shell_blocks.remove(item)
-        parts.append(_block_join(head, lines + [line for _, block in extra for line in block]))
+    blocks.sort(key=lambda item: _block_time(item[0]))
 
-    parts += [_block_join(head, lines) for head, lines in shell_blocks]
+    return ''.join(_block_join(head, lines) for head, lines in blocks)
 
-    return ''.join(parts)
+
+def _block_time(head: str) -> str:
+    """
+    Дата и время из заголовка блока — ключ сортировки. Нет их — пустая строка.
+
+    Пустая сортируется первой, и это верно: заголовка без даты не бывает у
+    записанного блока, он остаётся только у обрезанного хвоста файла.
+
+    Сравниваем строкой, а не датой: формат `ГГГГ-ММ-ДД ЧЧ:ММ` при лексическом
+    сравнении и так идёт по возрастанию, а разбор дал бы лишний способ уронить
+    показ журнала из-за опечатки в заголовке.
+    """
+    found = _BLOCK_TIME_RE.search(head or '')
+
+    return found.group(0) if found else ''
+
+
+_BLOCK_TIME_RE = re.compile(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}')
 
 
 def _blocks_split(text: str) -> list[tuple[str, list[str]]]:
@@ -745,6 +790,16 @@ def _step_failed(step: dict) -> bool:
     отведённое время — это `timeout`, мёртвая оболочка — `failed` или
     `no_session`. Для движка шаг при этом успешен, инструмент же отработал; для
     журнала — затык, и человек ищет в журнале именно его.
+
+    **`ok: false` сам по себе затыком не считается.** Роль отвечает так и когда
+    работала честно: «переименовал девять функций, но остановился на развилке» —
+    это состоявшийся ход с содержанием, и помечать его наравне с мёртвой
+    оболочкой значит врать. Отрицательный исход круга и так виден отдельной
+    строкой «итог круга» в конце блока.
+
+    Затык здесь только у шага-заглушки «роль недоступна»: она возвращает тот же
+    `ok: false`, но без содержания — пустой отчёт и текст ошибки вместо работы.
+    По содержанию их и различаем.
     """
     if str(step.get('status') or '') == 'error':
         return True
@@ -755,9 +810,46 @@ def _step_failed(step: dict) -> bool:
            for bad in ('timeout', 'failed', 'no_session', 'busy')):
         return True
 
-    # Шаг-заглушка «роль недоступна» возвращает готовый отчёт с `ok: false`:
-    # для движка это успешная подстановка, для работы — несостоявшийся прогон.
-    return "'ok': false" in output.lower() or '"ok": false' in output.lower()
+    if "'ok': false" not in output.lower() and '"ok": false' not in output.lower():
+        return False
+
+    return not _answer_has_substance(output)
+
+
+def _answer_has_substance(output: str) -> bool:
+    """
+    В ответе есть работа, а не только признание, что её не было.
+
+    Смотрим на ключи смысла (`TASK_LOG_ANSWER_KEYS`) — тот же список, по которому
+    журнал достаёт суть ответа. Есть непустой `summary` или `report` — роль что-то
+    сделала и рассказала об этом; нет ничего, кроме `error`, — это заглушка
+    несостоявшегося прогона.
+
+    `error` из списка исключаем намеренно: он есть и у заглушки, и по нему как раз
+    ничего не отличить.
+    """
+    text = _answer_text(output)
+    if not text:
+        return False
+
+    data = _dict_parse(str(output or '').removeprefix('json:').strip())
+    if data is None:
+        return bool(text)
+
+    # Спускаемся сквозь обёртку из одного ключа: роли отвечают
+    # `{"dev_report_json": {...}}`, и содержание лежит внутри, а не снаружи. Тот
+    # же спуск делает `_inner_text`, когда достаёт из ответа человеческий текст.
+    while isinstance(data, dict) and len(data) == 1:
+        inner = next(iter(data.values()))
+        if not isinstance(inner, dict):
+            break
+        data = inner
+
+    if isinstance(data.get('report'), dict):
+        data = data['report']
+
+    return any(str((data or {}).get(key) or '').strip()
+               for key in TASK_LOG_ANSWER_KEYS if key != 'error')
 
 
 def _answer_text(output) -> str:
@@ -930,15 +1022,26 @@ def _one_line(text) -> str:
     return ' '.join(str(text or '').replace('\\n', ' ').replace('\\t', ' ').split())
 
 
-def _read_tail(path: str) -> str:
-    """Хвост файла до потолка. Нет файла или не читается — пустая строка."""
+def _read_tail(path: str, limit: int = TASK_LOG_READ_MAX_CHARS) -> str:
+    """
+    Хвост файла до потолка. Нет файла или не читается — пустая строка.
+
+    Потолок параметром, потому что у хронологии оболочки он свой: строки там
+    длиннее на порядок, а читает её только человек.
+
+    Обрезаем по границе строки, а не по символу: разрезанное посередине событие
+    теряет метку времени, и `_blocks_merge` уносит его огрызок сортировкой в
+    случайное место блока — читается это как чужой обрывок текста.
+    """
     try:
         with open(path, encoding='utf-8', errors='replace') as fh:
             text = fh.read()
     except OSError:
         return ''
 
-    if len(text) <= TASK_LOG_READ_MAX_CHARS:
+    if len(text) <= limit:
         return text
 
-    return '…начало журнала обрезано…\n' + text[-TASK_LOG_READ_MAX_CHARS:]
+    tail = text[-limit:]
+
+    return '…начало журнала обрезано…\n' + tail[tail.find('\n') + 1:]

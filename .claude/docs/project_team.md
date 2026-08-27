@@ -25,7 +25,7 @@
 | `src/mysql_/repository/project/task_type_repository.py` | Репозиторий `project_task_type` |
 | `data/uvicorn/template/admin/project/team.html` | Страница `/admin/team` — карточки, авто-обновление |
 | `src/uvicorn/routers/dashboard.py` | Роут `/admin/team` (`require_auth`) |
-| `migrations/0001.sql` | Схема `project_team`, `project_task_type`, FK `project_task.task_type_id` |
+| `migrations/20260101000000_initial_schema.sql` | Схема `project_team`, `project_task_type`, FK `project_task.task_type_id` |
 | `tests/test_team_ping.py` | Интеграционные тесты API (`pytest.mark.integration`) |
 
 Сама оболочка `claude-shell` живёт **вне этого репозитория** — в проекте нет кода, который
@@ -94,7 +94,7 @@
 
 ## Схема БД
 
-Полный DDL — `migrations/0001.sql`, секция `-- ─── Project Team ───`.
+Полный DDL — `migrations/20260101000000_initial_schema.sql`, секция `-- ─── Project Team ───`.
 
 ### `project_team`
 
@@ -430,7 +430,7 @@ API-запросы идут через `page.request` / `context.request` — о
 - Истории пингов нет — хранится только последнее время.
 - Уведомления о потере активности нет.
 - `project_team` и `project_task_type` наполняются только из дампа `data/seeds/*.sql`; в
-  `0001.sql` их данных нет (там только схема). Если карточек в дампе не оказалось, после
+  `20260101000000_initial_schema.sql` их данных нет (там только схема). Если карточек в дампе не оказалось, после
   сброса БД таблицы нужно наполнить заново через `/admin/seed` (`seed.md`). Пустой
   `project_task_type` = селект типов на `/admin/task` состоит из одной опции «Не указан».
 - Карточки в дампе идут после `project`: у `project_team.project_id` внешний ключ на
