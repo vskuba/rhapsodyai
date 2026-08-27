@@ -441,7 +441,10 @@ CREATE TABLE `ai_claude_session_registry` (
     `role` VARCHAR(50) NOT NULL DEFAULT 'developer',
     `project_label` VARCHAR(255) NOT NULL,
     `status` ENUM('active','closing','inactive') NOT NULL DEFAULT 'active',
-    `server_llm` ENUM('anthropic','gx10') NOT NULL DEFAULT 'anthropic',
+    -- Имя модели целиком (`openrouter/deepseek/…`), а не перечисление: моделей у
+    -- маршрутизатора десятки, и каждая новая требовала бы миграции ENUM. Пустое
+    -- значение недопустимо — умолчание `anthropic` значит «штатный облачный бэкенд».
+    `server_llm` VARCHAR(100) NOT NULL DEFAULT 'anthropic',
     `summary` VARCHAR(500) NULL,
     `work_dir` VARCHAR(500) NULL COMMENT 'Абсолютный путь, в котором запущена shell-оболочка',
     `agent_status` ENUM('unknown','ready','busy') NOT NULL DEFAULT 'unknown' COMMENT 'Готов ли агент принять сообщение прямо сейчас; приходит с heartbeat оболочки',

@@ -20,6 +20,12 @@ from src.uvicorn.routers.telegram_app.telegram_app_common import (
     QUOTA_CHECK_MARKER,
 )
 
+# Потолок имени модели в реестре — длина колонки `server_llm`
+# (`migrations/20260827130000`). Режем здесь, чтобы MySQL не обрезал молча: имя
+# двухуровневое, и обрезанное посередине оно выглядело бы как другая модель.
+SESSION_SERVER_LLM_MAX = 100
+
+
 router = APIRouter()
 
 # Готовность агента приходит с heartbeat оболочки: 'ready' — сообщение будет
@@ -83,9 +89,12 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
     role_given = str(data.get("role") or "").strip()
     role = role_given or ""
     project_label = str(data.get("project_label") or "").strip()
-    server_llm = str(data.get("server_llm") or "anthropic").strip()
-    if server_llm not in ("anthropic", "gx10"):
-        server_llm = "anthropic"
+    # Имя модели целиком (`openrouter/deepseek/…`) — белого списка здесь нет и быть
+    # не может: моделей у маршрутизатора десятки, и каждая новая требовала бы правки
+    # кода. Раньше список был, и всё незнакомое он приводил к `anthropic` — карточка
+    # команды показывала облачный бэкенд у оболочки, поднятой на чужой модели.
+    # Ограничиваем только длиной колонки, чтобы MySQL не обрезал молча.
+    server_llm = str(data.get("server_llm") or "anthropic").strip()[:SESSION_SERVER_LLM_MAX] or "anthropic"
     work_dir = str(data.get("work_dir") or "").strip()
     if not project_label:
         raise HTTPException(status_code=400, detail="project_label required")
@@ -134,9 +143,9 @@ async def telegram_app_claude_session_resume(request: Request, data: dict):
     if not session_uuid:
         raise HTTPException(status_code=400, detail="session_uuid required")
 
-    server_llm = str(data.get("server_llm") or "").strip()
-    if server_llm not in ("anthropic", "gx10"):
-        server_llm = None
+    # Пусто — не трогаем колонку: пинг без поля не должен затирать то, что записала
+    # регистрация.
+    server_llm = str(data.get("server_llm") or "").strip()[:SESSION_SERVER_LLM_MAX]
 
     repo = AiClaudeSessionRegistryRepository()
     row = await repo.find_one_by({"session_uuid": session_uuid})
