@@ -50,9 +50,8 @@ async def project_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNING_VI
 async def project_tasks_list(project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     # project_id = 0 — это «Без проекта» в селекте. В колонке «без проекта» — всегда
     # NULL: ноль означал бы проект №0, которого не бывает. Чтение остаётся терпимым к
-    # нулю ради установок, где старые строки ещё не переведены скриптом
-    # `data/migration_manual/2026-08-13_task_project_id_null.sql`: иначе такая задача
-    # не показалась бы ни под одним пунктом селекта.
+    # нулю ради установок, где старые строки на ноль ещё не переведены: иначе такая
+    # задача не показалась бы ни под одним пунктом селекта.
     where = "project_id = 0 OR project_id IS NULL" if project_id == 0 else "project_id = %s"
     params = () if project_id == 0 else (project_id,)
 

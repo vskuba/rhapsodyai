@@ -65,7 +65,7 @@ asyncio.run(telegram_send_owner('your message'))
 | `src/auth/auth.py` | `AuthChecker`, `get_current_user` |
 | `src/cronjob/` | Cron job entry points |
 | `src/worker/` | Все воркеры (Redis/rq): `project/task_worker.py` — очередь `default`, `project/planning_worker.py` — очередь `planning` |
-| `migrations/*.sql` | Миграции yoyo, имя — метка времени; начальная схема заморожена |
+| `migrations/*.sql` | Миграции yoyo, имя — метка времени; начальная схема заморожена. **И схема, и данные** — отдельного пути для данных нет, `data/migration_manual/` упразднена |
 
 ## Docs Reference
 

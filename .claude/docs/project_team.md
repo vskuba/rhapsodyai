@@ -39,10 +39,51 @@
 
 | project_id | name | role | command |
 |------------|------|------|---------|
-| N | Manager | `manager` | `claude-shell --gx10 --manager --autocompact 115k` |
-| N | Developer | `developer` | `claude-shell --gx10 --developer --autocompact 115k` |
-| N | QA | `qa` | `claude-shell --gx10 --qa --autocompact 115k` |
-| N | Bugfixer | `bugfixer` | `claude-shell --gx10 --bugfixer --autocompact 115k` |
+| N | Manager | `manager` | `claude-shell --llm gx10/qwen-large --manager --autocompact 115k` |
+| N | Developer | `developer` | `claude-shell --llm gx10/qwen-large --developer --autocompact 115k` |
+| N | QA | `qa` | `claude-shell --llm gx10/qwen-large --qa --autocompact 115k` |
+| N | Bugfixer | `bugfixer` | `claude-shell --llm gx10/qwen-large --bugfixer --autocompact 115k` |
+
+> В базе это **заготовка**, а не то, что копирует кнопка. Значения флагов подставляются
+> при показе: окно контекста — из настройки `gx10_autocompact_limit`, модель и подробный
+> лог — из селектов в шапке блока (см. «Конфигурация оболочки»). Строки, заведённые до
+> перехода на `--llm`, нормализует `_llm_flag_normalize` — тем же приёмом, что и порог
+> автосжатия, и по той же причине: одноразовая замена не дошла бы до карточек, созданных
+> позже со старой заготовкой.
+
+## Конфигурация оболочки в шапке блока
+
+В `.project-block-head` рядом с «Parallel LLM» стоят три органа управления. Они не
+настройка проекта, а выбор человека под сегодняшний прогон, поэтому живут в
+`localStorage` браузера с ключом `team_shell_config_<project_id>`, а не в базе:
+
+| Орган | Флаг | Умолчание |
+|---|---|---|
+| Модель | `--llm <провайдер>/<модель>` | `gx10/qwen-large` |
+| Контекст | `--autocompact` | `115k` |
+| лог | `--verbose` | снят |
+
+Список моделей приходит из **каталога самой оболочки** —
+`claude-shell/llm_models.yaml` (`GET /api/team/llm`,
+`src/project/team/team_llm_catalog.py`). Это ровно те модели, под которые оболочка умеет
+поднять LiteLLM: дописали строку в каталог и положили ключ провайдера — селект подхватил,
+без правок здесь и без рестарта.
+
+Справочник `llm` для этого не годится, хотя словарь имён у них общий: он шире и содержит
+модели, под которые прокси не описан. Селект обещал бы больше, чем оболочка умеет, и отказ
+человек увидел бы уже в терминале.
+
+Каталог лежит в чужом репозитории, а uvicorn работает в контейнере, поэтому репозиторий
+оболочки смонтирован только на чтение: `${CLAUDE_SHELL_HOST_DIR}:/opt/claude-shell:ro`
+в `docker-compose.yml`, путь внутри — переменной `CLAUDE_SHELL_DIR`. На установке без
+оболочки (прод) каталог не найдётся: селект остаётся с одной моделью, а причина видна в
+его подсказке — `problem` в ответе эндпоинта. Пустого селекта не бывает: его человек
+прочтёт как поломку страницы, а не как «каталог не смонтирован».
+
+Значение не по умолчанию подсвечивается рамкой: иначе конфигурация запуска молча
+разошлась бы с той, которую человек считает текущей. Команда собирается правкой готовой
+строки (`shellCommandApply`), а не сборкой заново — в ней есть роль, каталог и то, что
+человек мог дописать руками в `project_team.command`.
 
 > **Порядок ряда — по конвейеру: менеджер → разработчик → QA → багфиксер**
 > (`TEAM_PROJECT_ROLE_ORDER`). Багфиксер четвёртый, потому что он вне цепочки задачи:
@@ -60,9 +101,8 @@
 > Значение разбирает `set_autocompact` в репозитории `claude-shell` (`shell.py`).
 >
 > Таблица выше — заготовка для **новых** проектов (`team_member_cards_ensure`). Уже
-> заведённым карточкам флаг дописывает
-> `data/migration_manual/2026-08-24_team_card_autocompact.sql`: seed их не обновит,
-> он применяется через `INSERT IGNORE`.
+> заведённым карточкам флаг дописывает миграция: seed их не обновит, он применяется
+> через `INSERT IGNORE`.
 
 > Флаг `--bugfixer` живёт в отдельном репозитории `claude-shell` (`src/cli.py`,
 > `cli_role_resolve`): роль оболочка знает из флага запуска и сообщает её в реестр
@@ -79,7 +119,7 @@
 `project_id IS NULL` — карточка вне проектов; такие строки питают блок «Без проекта» на
 `/admin/team` (в питон-словарях этот ключ — `0`, константа `TEAM_PROJECT_NO_PROJECT`).
 
-`claude-shell --gx10` без флага роли — «безролевая» оболочка: она регистрируется только
+`claude-shell --llm gx10/qwen-large` без флага роли — «безролевая» оболочка: она регистрируется только
 в `ai_claude_session_registry` и `project_team` не трогает (`claude_session_registry.md`).
 
 ### Какому проекту принадлежит пинг
@@ -205,7 +245,7 @@ curl -X POST http://localhost:8011/api/team/ping \
 curl -s http://localhost:8011/api/team | python3 -m json.tool
 # [
 #   {"id": 1, "name": "Manager", "role": "manager",
-#    "command": "claude-shell --gx10 --manager", "work_dir": "",
+#    "command": "claude-shell --llm gx10/qwen-large --manager", "work_dir": "",
 #    "status": "inactive", "last_ping_at": "2026-08-10T12:59:54",
 #    "pid": 3256, "session_uuid": "fddbbdf7-db88-4ea2-a5a7-2f84e392addc"},
 #   ...
