@@ -3,7 +3,7 @@ import re
 from mysql_.mysql_ import mysql_get_db_async
 
 
-async def mysql_tables_find(tables: list) -> dict:
+async def tables_mysql_find(tables: list) -> dict:
     """
     Проверяет существование таблиц базы данных по точным именам (массив имен,
     например из text_split). Одиночная строка вместо массива тоже принимается.

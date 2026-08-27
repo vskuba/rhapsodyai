@@ -21,7 +21,7 @@
 
 Правила именования — общие для проекта (`architecture_rules.md`): имя функции
 начинается с префикса, совпадающего с именем файла. Для инструментов это обычно
-означает и совпадение с папкой: `src/tool/mysql/mysql_.py` → `mysql_tables_find`.
+означает и совпадение с папкой: `src/tool/mysql/tables_.py` → `tables_mysql_find`.
 
 Реальный пример — `src/tool/env/env_.py`:
 
@@ -56,7 +56,7 @@ async def env_is_prod() -> dict:
 6. **Ключи результата описаны в docstring** (секция `Returns:`) — иначе UI и Output Mapping
    не узнают, что вернёт инструмент (см. ниже).
 7. **Инструменты узкие и составные.** Вместо одного «умного» — цепочка простых, соединяемых
-   через переменные: `mysql_tables_find(tables)` даёт `tables_str`, который идёт на вход
+   через переменные: `tables_mysql_find(tables)` даёт `tables_str`, который идёт на вход
    `mysql_export_to_migration(tables, migration_file)`.
 8. **Валидация всего, что уходит в SQL/shell/пути.** Аргументы приходят от LLM
    (см. очистку имён таблиц в `src/tool/mysql/tables_.py`).
@@ -71,7 +71,7 @@ async def env_is_prod() -> dict:
 `Args:` или `Examples:`.
 
 ```python
-async def mysql_tables_find(tables: list) -> dict:
+async def tables_mysql_find(tables: list) -> dict:
     """
     Проверяет существование таблиц базы данных по точным именам.
     Returns:
@@ -225,7 +225,7 @@ workflow не перетирают друг друга. Вложенные `dict
 | `dict/`, `list/`, `text/` | `Dict`, `List`, `Text` | преобразование переменных |
 | `env/` | `Env` | `env_is_prod` |
 | `github/` | `Github` | репозитории, коммиты, PR |
-| `mysql/` | `Mysql` | `mysql_tables_find`, экспорт в миграцию |
+| `mysql/` | `Mysql` | `tables_mysql_find`, экспорт в миграцию |
 | `project/`, `project/planning/` | `Project`, `Planning` | `project_planning.md` |
 | `weather/`, `web/` | `Weather`, `Web` | внешние запросы, скриншоты |
 

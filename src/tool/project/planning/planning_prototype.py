@@ -579,7 +579,7 @@ async def planning_prototype_pages_patch(project_id: int, html_pages_patch_json:
     return {'saved': 1, 'page_count': count}
 
 
-async def planning_pages_check(project_id: int) -> dict:
+async def planning_prototype_pages_check(project_id: int) -> dict:
     """
     Проверяет соответствие HTML-файлов в папке проекта карте страниц из дизайн-документа.
     Returns:
@@ -795,7 +795,7 @@ async def planning_prototype_qa_scan(project_id: int, version: int = 0) -> dict:
     }
 
 
-async def planning_image_save(project_id: int, image_b64: str, filename: str = '') -> dict:
+async def planning_prototype_image_save(project_id: int, image_b64: str, filename: str = '') -> dict:
     """
     Сохраняет base64-изображение в data/planning/{project_id}/public/images/.
      - project_id: ID проекта
@@ -840,7 +840,7 @@ async def planning_image_save(project_id: int, image_b64: str, filename: str = '
     return {'saved': 1, 'file_path': file_path, 'url_path': url_path}
 
 
-async def planning_blocks_component_map(
+async def planning_prototype_blocks_component_map(
     project_id: int,
     blocks_sections_json: str,
     page_blocks_raw_json: str = '',
@@ -908,7 +908,7 @@ async def planning_blocks_component_map(
     return {'blocks': json.dumps(blocks_out2, ensure_ascii=False)}
 
 
-async def planning_sitemap_check(project_id: int) -> dict:
+async def planning_prototype_sitemap_check(project_id: int) -> dict:
     """
     Проверяет покрытие sitemap: находит дыры, orphan-страницы, непокрытые роли/сущности.
      - project_id: ID проекта
