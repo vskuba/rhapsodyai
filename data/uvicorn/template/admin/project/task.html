@@ -974,9 +974,9 @@
         line-height: 1.2;
         white-space: nowrap;
         text-decoration: none;
-        color: #4b5563;
-        background: #f3f4f6;
-        border: 1px solid #d1d5db;
+        color: #146c2e;
+        background: #e7f6ec;
+        border: 1px solid #a7d8b6;
         border-radius: 5px;
         vertical-align: middle;
     }
@@ -993,7 +993,20 @@
     }
     .pipe-log::before { content: '📜'; font-size: 9px; opacity: .8; }
     .pipe-log:hover { background: #e0e7ff; border-color: #a5b4fc; }
-    .pipe-diff:hover { background: #e5e7eb; border-color: #9ca3af; }
+    .pipe-diff:hover { background: #d6efdf; border-color: #74c48f; }
+    /* «влито» — пометка, а не кнопка: слияние уехало на страницу разбора, а строке
+       осталось сказать, что работа уже в главной. Серая и неактивная: сообщение, на
+       которое не нажимают. */
+    .pipe-merged {
+        display: inline-flex; align-items: center; gap: 3px;
+        margin-left: 4px; padding: 2px 6px;
+        font-size: 10px; font-weight: 700; line-height: 1.2; white-space: nowrap;
+        color: #6b7280; background: #f3f4f6;
+        border: 1px solid #e5e7eb; border-radius: 5px; vertical-align: middle;
+        cursor: default;
+    }
+    .pipe-merged::before { content: '✓'; font-size: 9px; opacity: .8; }
+
     /* «Влить в главную и снять каталог» — стоит вплотную к ссылке MR, потому что это
        её следующий шаг: посмотрел работу — принял. Зелёный, но приглушённый: действие
        завершающее, а не опасное, и рвать им взгляд по всей таблице незачем. Пока идёт
@@ -3626,12 +3639,19 @@ function renderPipeLog(t) {
          + ` title="Журнал работы агента: что сделано, что осталось, где были затыки">лог</button>`;
 }
 
+// Единственная кнопка приёмки в строке — и она **никуда не вливает**, а открывает
+// страницу разбора. Слияние отсюда убрано намеренно: у кнопки в плотной таблице
+// слишком легко промахнуться, а стоит она главной ветки. Смотреть работу и принимать
+// её — один и тот же шаг, и делается он там, где видно, что именно принимаешь.
+//
+// Зелёная, потому что это и есть штатный путь приёмки готовой задачи, а не опасное
+// действие: страница только показывает — вливает уже кнопка на ней, после просмотра.
 function renderPipeDiff(t) {
     if (t.parent_id || t.pipeline_state !== 'done') return '';
     return `<a class="pipe-diff" href="/admin/task/diff?task=${t.id}" target="_blank" rel="noopener"`
          + ` onclick="event.stopPropagation()"`
-         + ` title="Разница веток задачи и локальной главной ветки — без чужих коммитов,`
-         + ` которые показывает merge request">diff</a>`;
+         + ` title="Открыть разбор работы: разница веток задачи и главной, миграции,`
+         + ` сборка веток и слияние — всё на одной странице">merge_request_review</a>`;
 }
 
 // «Влить в главную ветку и снять каталог» — ручное завершение работы над задачей.
@@ -3653,25 +3673,22 @@ function renderPipeDiff(t) {
 // Каталога подзадачи может уже не быть (сняли руками) — сервер ответит понятной
 // ошибкой, прятать кнопку из-за этого не за чем: состояние каталогов странице не
 // известно.
-// Влитую задачу показываем той же кнопкой, только серой и мёртвой: второго слияния
-// не бывает — ветки в главной, каталоги сняты, и нажатие вернуло бы ошибку про
-// пропавшую ветку. Отметку ставит сервер (`metadata.merged`), а не страница: git
-// влитую ветку от невлитой не отличает и на повтор отвечает «уже актуально».
+// Влито ли — показываем пометкой, а не кнопкой: вливать отсюда больше нельзя, а знать,
+// что работа уже в главной, по-прежнему нужно — иначе непонятно, зачем открывать разбор.
+// Отметку ставит сервер (`metadata.merged`), а не страница: git влитую ветку от невлитой
+// не отличает и на повтор отвечает «уже актуально».
 function renderPipeMerge(t) {
     if (t.parent_id || t.pipeline_state !== 'done') return '';
 
     const merged = (t.metadata || {})[TASK_META_KEY_MERGED];
-    if (merged) {
-        const at = merged.at ? `, ${merged.at}` : '';
-        const by = merged.by ? ` — ${merged.by}` : '';
-        return `<button class="pipe-merge merged" disabled onclick="event.stopPropagation()"`
-             + ` title="Работа влита в ${esc(merged.base || 'главную ветку')}${esc(by)}${esc(at)}.`
-             + ` Рабочие каталоги подзадач сняты">mr2master&amp;rm_worktree</button>`;
-    }
+    if (!merged) return '';
 
-    return `<button class="pipe-merge" onclick="event.stopPropagation();worktreeMerge(${t.id},this)"`
-         + ` title="Влить ветки подзадач этой задачи в главную ветку проекта`
-         + ` (локально, без push) и снять их рабочие каталоги">mr2master&amp;rm_worktree</button>`;
+    const at = merged.at ? `, ${merged.at}` : '';
+    const by = merged.by ? ` — ${merged.by}` : '';
+
+    return `<span class="pipe-merged" onclick="event.stopPropagation()"`
+         + ` title="Работа влита в ${esc(merged.base || 'главную ветку')}${esc(by)}${esc(at)}.`
+         + ` Рабочие каталоги подзадач сняты">влито</span>`;
 }
 
 // Состояния подзадачи от «ещё не начата» к «готова». Порядок нужен, чтобы выбрать
