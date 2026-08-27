@@ -44,7 +44,7 @@ class ChatMessagesJsonRequest(BaseModel):
 
 
 @router.post("/chat/ask")
-async def ask_ai(
+async def chat_ask_ai(
         request: Request,
         json_request: ChatAskJsonRequest,
         db=Depends(mysql_get_db_async),
@@ -245,7 +245,7 @@ async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest,
 
 
 @router.post("/chat/voice", include_in_schema=False)
-async def voice_to_text(file: UploadFile = File(...)):
+async def chat_voice_to_text(file: UploadFile = File(...)):
     temp_file = f"temp_{file.filename}.wav"
 
     # Асинхронно читаем и записываем
