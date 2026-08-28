@@ -259,10 +259,28 @@ class TestReadySql:
 
 
 async def _drop() -> None:
-    """Снести тестовый проект; задачи и связи уходят каскадом по FK."""
+    """
+    Снести тестовый проект вместе с его задачами.
+
+    Задачи удаляем явно: FK от `project_task.project_id` к `project` в схеме нет —
+    есть только связь с родительской строкой. Каскада, на который тут раньше
+    надеялись, не существует, и задачи оставались сиротами: 624 штуки за один день
+    прогонов, пока это не заметили.
+
+    Порядок обратный созданию: сначала дети (`parent_id IS NOT NULL`), потом
+    родители. Связи `project_task_depend` уходят сами — там каскад настоящий.
+    """
     from mysql_.mysql_ import mysql_get_db_async
 
     async with mysql_get_db_async() as db:
+        await db.execute(
+            'DELETE FROM project_task WHERE parent_id IS NOT NULL AND project_id IN '
+            '  (SELECT id FROM (SELECT id FROM project WHERE title = %s) AS p)',
+            (TEST_PROJECT_TITLE,))
+        await db.execute(
+            'DELETE FROM project_task WHERE project_id IN '
+            '  (SELECT id FROM (SELECT id FROM project WHERE title = %s) AS p)',
+            (TEST_PROJECT_TITLE,))
         await db.execute('DELETE FROM project WHERE title = %s', (TEST_PROJECT_TITLE,))
         await db.connection.commit()
 

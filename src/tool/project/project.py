@@ -121,6 +121,12 @@ async def project_delete(project_id: int) -> dict:
         )
         await db.execute('DELETE FROM project_planning_phase WHERE project_id = %s', (project_id,))
         await db.execute('DELETE FROM project_planning_document WHERE project_id = %s', (project_id,))
+        # Задачи проекта — явно: FK на `project` у `project_task` нет, только на
+        # родительскую строку. Иначе задачи остаются числиться за удалённым проектом
+        # и не попадают ни в один разрез страницы, которая строится от списка проектов.
+        await db.execute('DELETE FROM project_task WHERE parent_id IS NOT NULL AND project_id = %s',
+                         (project_id,))
+        await db.execute('DELETE FROM project_task WHERE project_id = %s', (project_id,))
         await db.execute('DELETE FROM project WHERE id = %s', (project_id,))
         await db.connection.commit()
 

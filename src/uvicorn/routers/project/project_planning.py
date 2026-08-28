@@ -166,6 +166,14 @@ async def project_planning_delete(request: Request, project_id: int, user=Depend
     async with mysql_get_db_async() as db:
         await db.execute("DELETE FROM project_planning_phase    WHERE project_id = %s", (project_id,))
         await db.execute("DELETE FROM project_planning_document WHERE project_id = %s", (project_id,))
+        # Задачи удаляем явно: FK от `project_task.project_id` к `project` в схеме
+        # нет — есть только связь с родительской строкой. Без этого задачи удалённого
+        # проекта оставались сиротами: числятся за проектом, которого нет, и не видны
+        # ни в одном разрезе страницы, потому что та строится от списка проектов.
+        # Сначала дети, потом родители — обратно порядку создания.
+        await db.execute("DELETE FROM project_task WHERE parent_id IS NOT NULL AND project_id = %s",
+                         (project_id,))
+        await db.execute("DELETE FROM project_task WHERE project_id = %s", (project_id,))
         await db.execute("DELETE FROM project  WHERE id = %s",         (project_id,))
         await db.connection.commit()
     project_dir = f'/app/data/planning/{project_id}'
