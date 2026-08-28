@@ -571,6 +571,305 @@ html, body {
 .quick-cmd-item:last-child { border-bottom: none; }
 .quick-cmd-item:active { background: #edf2f7; }
 
+/* --- Tasks tab --- */
+#tab-tasks { padding: 0; }
+
+.tasks-list-view, .tasks-detail-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+/* Внутренние вкладки фаз — шапка списка, по образцу stat-tabs админки */
+.task-phase-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #edf2f7;
+    margin-bottom: 12px;
+    overflow-x: auto;
+}
+
+.task-phase-tab {
+    border: none;
+    background: transparent;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    white-space: nowrap;
+    font-family: inherit;
+}
+
+.task-phase-tab.active {
+    color: #2c3e50;
+    border-bottom-color: #007bff;
+    font-weight: 600;
+}
+
+.task-phase-n {
+    font-size: 11px;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+
+.task-phase-tab.active .task-phase-n { color: inherit; opacity: .75; }
+
+/* Карточка задачи — та же панель, что у events-карточек */
+.task-card {
+    background: #ffffff;
+    color: #2c3e50;
+    border: 1px solid #edf2f7;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+
+.task-card.done { opacity: .62; }
+
+.task-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.task-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.task-card-btn {
+    border: none;
+    background: #007bff;
+    color: #ffffff;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    font-size: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.task-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.task-status-chip, .task-pipe-chip {
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+.task-status-chip {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.task-pipe-chip {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
+.task-pipe-chip.pipe-plan_approval {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.task-pipe-chip.pipe-failed {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.task-pipe-chip.pipe-done {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.task-pipe-chip.pipe-blocked {
+    background: #f3e8ff;
+    color: #7e22ce;
+}
+
+.task-pipe-chip.pipe-processing, .task-pipe-chip.pipe-approved, .task-pipe-chip.pipe-testing {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+/* Прогресс целей — полоса + счётчик */
+.task-goals-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.task-goals-bar {
+    flex: 1;
+    height: 5px;
+    border-radius: 999px;
+    background: #edf2f7;
+    overflow: hidden;
+}
+
+.task-goals-fill {
+    height: 100%;
+    background: #007bff;
+    border-radius: 999px;
+}
+
+.task-goals-count {
+    font-size: 11px;
+    color: #64748b;
+    white-space: nowrap;
+}
+
+/* Панель деталей */
+.task-detail-title {
+    font-size: 17px;
+    font-weight: bold;
+    margin-bottom: 12px;
+    word-break: break-word;
+}
+
+.task-detail-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.task-detail-section {
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 12px;
+}
+
+.task-detail-section.task-detail-plan, .task-detail-desc {
+    background: #f8fafc;
+    border: 1px solid #edf2f7;
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.task-detail-muted {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.task-detail-error {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    margin-bottom: 10px;
+    word-break: break-word;
+}
+
+.task-goal {
+    padding: 3px 0;
+}
+
+.task-goal.done { color: #94a3b8; text-decoration: line-through; }
+
+.task-detail-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
+.task-action-btn {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.task-action-btn.ok { background: #dcfce7; color: #166534; }
+.task-action-btn.no { background: #fee2e2; color: #b91c1c; }
+.task-action-btn.primary { background: #007bff; color: #ffffff; }
+
+.task-action-btn:disabled { opacity: .55; cursor: default; }
+
+/* Вопрос агента */
+.task-question {
+    background: #fff8e6;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.task-question-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #92400e;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: 6px;
+}
+
+.task-question-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 8px;
+}
+
+.task-question-option {
+    display: block;
+    padding: 4px 0;
+    cursor: pointer;
+}
+
+.task-question-hint {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-left: 20px;
+}
+
+.task-question-note {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    margin: 8px 0;
+    resize: vertical;
+}
+
+.task-question-err {
+    color: #b91c1c;
+    font-size: 12px;
+    margin-top: 6px;
+}
+
+.task-question-decision {
+    font-size: 12px;
+    color: #334155;
+    background: #f8fafc;
+    border: 1px solid #edf2f7;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    word-break: break-word;
+}
+
 /* --- Plans tab --- */
 #tab-plans { padding: 0; }
 
