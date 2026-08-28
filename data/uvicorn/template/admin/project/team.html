@@ -10,6 +10,19 @@
         overflow-x: hidden;
     }
 
+    /* Напоминание над блоками: как завести роли ещё одну оболочку. Спокойный синий,
+       а не жёлтый: это устройство страницы, а не предупреждение о неполадке. */
+    .team-hint {
+        font-size: 12px;
+        line-height: 1.55;
+        color: #3730a3;
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        border-radius: 10px;
+        padding: 9px 12px;
+        margin-bottom: 14px;
+    }
+
     /* ---------- Блок проекта ---------- */
 
     /* Блок занимает всю ширину: карточки внутри задают свою ширину сами,
@@ -47,82 +60,92 @@
         word-break: break-all;
     }
 
-    /* Предел одновременных прогонов агента у проекта. Стоит перед счётчиком
-       активных, у того margin-left:auto — селект остаётся у названия слева. */
-    .project-block-parallel {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        color: #6b7280;
-        white-space: nowrap;
-        margin-left: auto;
+    /* Тело блока: карточки слева, настройки справа. На узком экране колонка
+       настроек уходит под карточки — она уже и переносится без потерь.
+
+       Панель прижата к верху и ростом в одну карточку: высоту ей задаёт JS
+       (`shellBoxHeightSync`) по фактической высоте первой карточки ряда. Растяни её
+       на всю колонку — при двух рядах карточек она вытянулась бы вдвое выше любой из
+       них, а настраивать столько же места, сколько занимает вся команда, ей незачем. */
+    .project-block-body { display: flex; gap: 16px; align-items: flex-start; }
+    .project-cards { flex: 1 1 auto; min-width: 0; }
+    .project-block-side { flex: 0 0 312px; display: flex; }
+    @media (max-width: 1100px) {
+        .project-block-body { flex-direction: column; }
+        .project-block-side { flex: 1 1 auto; width: 100%; }
     }
 
-    .project-block-parallel select {
-        padding: 2px 4px;
-        border: 1px solid #e5e7eb;
-        border-radius: 4px;
-        background: #fff;
-        color: #4b5563;
-        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-        font-size: 11px;
-        cursor: pointer;
+    /* Панель «чем работают роли»: пул моделей, окно контекста, подробный лог.
+       Это настройки запуска, а не состояние команды, — поэтому отдельной колонкой,
+       а не строкой в шапке, где они спорили за место со счётчиком активных. */
+    /* Колонка: список моделей растёт, а селекты под ним остаются на своих местах
+       у нижнего края — иначе список отдал бы им половину высоты панели. */
+    .shell-box {
+        border: 1px solid #e5e7eb; border-radius: 10px; background: #fafbfc;
+        padding: 10px 12px;
+        flex: 1 1 auto; min-width: 0;
+        display: flex; flex-direction: column;
     }
 
-    .project-block-parallel select:focus {
-        outline: none;
-        border-color: #6366f1;
+    .shell-head {
+        font-size: 11px; font-weight: 700; color: #6b7280;
+        text-transform: uppercase; letter-spacing: .04em; margin-bottom: 7px;
     }
 
-    /* Значение, отличающееся от заводского, — видно, что его правили руками. */
-    .project-block-parallel select.custom {
-        border-color: #c7d2fe;
-        color: #4338ca;
-        font-weight: 600;
+    /* Список моделей: галка «в пуле» и своё окно контекста напротив каждой. Растёт на
+       всю свободную высоту панели, а та ростом в одну карточку. Не поместилось —
+       прокрутка внутри списка: панель от этого выше не становится. */
+    .llm-list {
+        flex: 1 1 auto; min-height: 66px; overflow-y: auto;
+        border: 1px solid #e5e7eb; border-radius: 8px; background: #fff;
+        padding: 2px;
     }
 
-    .project-block-parallel select.saved {
-        border-color: #10b981;
-        background: rgba(16, 185, 129, 0.08);
+    /* Строка модели — grid, а не flex: в колонке шириной 260px flex схлопывал имя и
+       галку в ноль, отдавая всю ширину селекту окна. Здесь три колонки заданы явно:
+       галка по содержимому, имя тянется и обрезается, окно фиксированной ширины. */
+    .llm-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) 62px;
+        align-items: center; gap: 6px;
+        padding: 3px 5px; border-radius: 6px;
     }
+    /* Выбранная видна и без наведения: по ней считается предел параллельности. */
+    .llm-row.on { background: #eef2ff; }
 
-    .project-block-parallel select.failed {
-        border-color: #ef4444;
-        background: rgba(239, 68, 68, 0.08);
+    .llm-pick {
+        display: grid; grid-template-columns: auto minmax(0, 1fr);
+        align-items: center; gap: 5px; cursor: pointer;
+        grid-column: 1 / 3; min-width: 0;
     }
-
-    /* Конфигурация оболочки: чем и с каким окном поднимать роли этого проекта.
-       Стоит рядом с Parallel LLM — это тоже настройка запуска, а не состояние. */
-    .project-block-shell {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        color: #6b7280;
-        white-space: nowrap;
-    }
-
-    .project-block-shell select {
-        font-size: 12px;
-        padding: 2px 4px;
-        border: 1px solid #e5e7eb;
-        border-radius: 6px;
-        background: #fff;
+    .llm-name {
+        min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace; font-size: 11px;
         color: #374151;
-        max-width: 220px;
     }
+    .llm-row.on .llm-name { color: #4338ca; font-weight: 600; }
 
-    /* Значение не по умолчанию видно, не наводя мышь: конфигурация запуска молча
-       разошлась бы с той, которую человек считает текущей. */
-    .project-block-shell select.custom { border-color: #c7d2fe; color: #4338ca; }
-
-    .project-block-shell label {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        cursor: pointer;
+    .llm-ctx {
+        grid-column: 3; width: 100%; box-sizing: border-box;
+        font-size: 11px; padding: 1px 2px;
+        border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; color: #6b7280;
     }
+    .llm-ctx:disabled { opacity: .45; }
+    .llm-row.on .llm-ctx { color: #4338ca; border-color: #c7d2fe; }
+
+    .shell-note { font-size: 11px; color: #6b7280; margin: 6px 0 10px; }
+    .shell-note b { color: #111827; }
+
+    .shell-row {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 12px; color: #6b7280; margin-top: 6px;
+    }
+    .shell-row select {
+        font-size: 12px; padding: 2px 4px; border: 1px solid #e5e7eb;
+        border-radius: 6px; background: #fff; color: #374151;
+    }
+    /* Значение не по умолчанию видно, не наводя мышь. */
+    .shell-row select.custom { border-color: #c7d2fe; color: #4338ca; }
 
     .project-block-count {
         font-size: 12px;
@@ -138,16 +161,20 @@
         color: #9ca3af;
     }
 
-    /* Карточки в один ряд: базис под шесть штук, узкий экран переносит остаток. */
+    /* Карточки в один ряд: базис под шесть штук с прибавкой в четверть — ряд ролей
+       у проекта четыре, и шире карточка читается лучше, чем пустое место справа.
+       Длинные значения меты (имя модели, название workflow) при этом перестают
+       переноситься. Узкий экран переносит остаток. */
     .project-cards {
         display: flex;
         flex-wrap: wrap;
         gap: 12px;
+        align-content: flex-start;
     }
 
     .team-card {
-        flex: 0 1 calc((100% - 60px) / 6);
-        min-width: 168px;
+        flex: 0 1 calc((100% - 60px) / 6 * 1.265);
+        min-width: 213px;
         box-sizing: border-box;
         background: #f9fafb;
         border: 1px solid #e5e7eb;
@@ -343,9 +370,51 @@
         gap: 6px;
     }
 
+    /* Подпись строки не переносится: `word-break: break-all` выше рвёт длинные
+       значения, но заодно разрывал и её саму — «Workflo/w» через всю карточку. */
+    .team-card-meta .row span:first-child { white-space: nowrap; }
+
     .team-card-meta .row span:last-child {
         font-family: 'SF Mono', Monaco, 'Courier New', monospace;
         color: #6b7280;
+    }
+
+    /* Модель — единственная строка меты, отвечающая на вопрос «чем роль работает
+       прямо сейчас», поэтому она чип, а не такой же серый текст, как соседние.
+       Имя двухуровневое (`openrouter/deepseek/…`) и в карточку не влезает: при
+       `word-break: break-all` оно расползалось на три строки — обрезаем, целиком
+       имя остаётся в подсказке. */
+    .team-card-meta .llm-value {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 10px;
+        font-weight: 600;
+        color: #92400e;
+        background: #fde68a;
+        border: 1px solid #f59e0b;
+        border-radius: 999px;
+        padding: 1px 7px;
+    }
+
+    /* Облачный бэкенд при живом пуле — круг идёт мимо него, за платные токены.
+       Тот же чип, но красный: это не «чем работает», а «работает не тем», и
+       заметить это человек должен, не вчитываясь в имя модели. */
+    /* Модели нет — роль между кругами. Плашка бледная и без заливки: это не
+       состояние работы, а её отсутствие, и кричать о нём незачем. */
+    .team-card-meta .llm-value.idle {
+        color: #9ca3af; background: transparent; border-color: #e5e7eb; font-weight: 400;
+    }
+
+    .team-card-meta .llm-value.cloud {
+        color: #7f1d1d; background: #fecaca; border-color: #ef4444;
+    }
+
+    /* Модели нет — роль между кругами. Плашка бледная и без заливки: это не
+       состояние работы, а её отсутствие, и кричать о нём незачем. */
+    .team-card-meta .llm-value.idle {
+        color: #9ca3af; background: transparent; border-color: #e5e7eb; font-weight: 400;
     }
 
     /* Ссылки на агента и workflow: в мелком мета-блоке подчёркивание всех строк
@@ -377,6 +446,11 @@
         background: #f3f4f6;
         color: #374151;
     }
+
+    /* У работающей карточки кнопка бледнее: там она не «как запустить роль», а
+       «поднять ещё одну оболочку» — действие нечастое, и спорить за внимание с
+       состоянием работающего агента ей незачем. */
+    .team-card-copy.extra { border-style: dashed; color: #9ca3af; }
 
     .team-summary {
         margin-top: 8px;
@@ -608,6 +682,13 @@
 
 {% block content %}
 <div class="team-container">
+    <!-- Откуда берутся карточки. Вопрос возникает первым: кнопки «добавить» на
+         странице нет и быть не должно — карточка это отражение живой оболочки, а не
+         запись, которую заводят руками. Была такая кнопка, и она сбивала с толку:
+         заведённая ею строка рисовала серую карточку-двойника рядом с работающей. -->
+    <div class="team-hint">
+        Для запуска дополнительной карточки выполнить 'Команда запуска' в новом терминале
+    </div>
     <div id="teamProjects"></div>
 </div>
 
@@ -657,29 +738,19 @@
     // конфигурации оболочки, не дожидаясь автообновления и не ходя в сеть заново.
     let lastBlocks = [];
 
-    // Варианты «Parallel LLM» приходят вместе с блоками, значение по умолчанию —
-    // первый из них: список задан на сервере (`task_setting_parallel`).
-    let parallelOptions = [1];
-    const PARALLEL_DEFAULT = 1;
-
-    // Проекты, чей предел сейчас записывается. Как и раскрытые таймауты,
-    // останавливают автообновление: селект под руками заменять нельзя.
-    const parallelBusy = new Set();
-
     async function loadTeamProjects(showSpinner = false) {
-        if (restartBusy || timeoutOpen.size || parallelBusy.size) return;
+        if (restartBusy || timeoutOpen.size) return;
         // Открытый список селекта из JS не виден, но фокус на нём — да: пока
         // человек выбирает значение, блок не перерисовываем.
         const active = document.activeElement;
         if (active && active.closest
-            && active.closest('.project-block-parallel, .project-block-shell')) return;
+            && active.closest('.project-block-side')) return;
         const btn = document.getElementById('refreshBtn');
         if (showSpinner) btn.classList.add('loading');
         try {
             const response = await fetch('/api/team/projects');
             if (!response.ok) throw new Error('HTTP ' + response.status);
             const data = await response.json();
-            parallelOptions = (data.result && data.result.parallel_options) || parallelOptions;
             renderProjects((data.result && data.result.blocks) || []);
         } catch (e) {
             console.error('Ошибка загрузки команды:', e);
@@ -696,7 +767,28 @@
             return;
         }
         root.innerHTML = blocks.map(renderBlock).join('');
+        shellBoxHeightSync();
     }
+
+    // Панель пула ростом в одну карточку. CSS такого не умеет: `stretch` тянет её на
+    // всю колонку, то есть на все ряды карточек сразу, а фиксированное число разошлось
+    // бы с карточкой при первой же новой строке меты. Поэтому высоту берём измерением
+    // — у первой карточки блока, после отрисовки.
+    //
+    // Карточек нет вовсе (проект без ролей) — высоту не трогаем: панель встанет по
+    // своему содержимому, а подгонять её не подо что.
+    function shellBoxHeightSync() {
+        document.querySelectorAll('.project-block').forEach(block => {
+            const card = block.querySelector('.team-card');
+            const box = block.querySelector('.shell-box');
+            if (!card || !box) return;
+            box.style.height = card.getBoundingClientRect().height + 'px';
+        });
+    }
+
+    // Ширина карточек резиновая, и на смене размера окна их высота меняется — панель
+    // обязана поехать следом, иначе останется с высотой от прошлой раскладки.
+    window.addEventListener('resize', shellBoxHeightSync);
 
     function renderBlock(block) {
         const cards = block.cards || [];
@@ -705,41 +797,35 @@
             ? `<span class="project-block-dir">${escapeHtml(block.work_dir)}</span>`
             : '';
 
+        // Две колонки: слева карточки ролей, справа настройки запуска. Раньше селекты
+        // стояли в шапке и на узком экране переносились под название, разрывая строку
+        // пополам. Настройки — это про то, чем работать, а карточки — про то, кто
+        // работает; рядом, но не вперемешку.
         return `
             <div class="project-block">
                 <div class="project-block-head">
                     <span class="project-block-title">${escapeHtml(block.title)}</span>
                     ${dir}
-                    ${renderParallel(block)}
-                    ${renderShellConfig(block)}
                     <span class="project-block-count${activeCount ? '' : ' empty'}">
                         активных <b>${activeCount}</b> из ${cards.length}
                     </span>
                 </div>
-                <div class="project-cards">
-                    ${cards.map(card => renderCard(card, block)).join('')}
+                <div class="project-block-body">
+                    <div class="project-cards">
+                        ${cards.map(card => renderCard(card, block)).join('')}
+                    </div>
+                    <div class="project-block-side">
+                        ${renderShellConfig(block)}
+                    </div>
                 </div>
             </div>
         `;
     }
 
-    // Предел одновременных прогонов агента у проекта: пока он выбран, лишние
-    // задачи проекта ждут очереди, а не перебивают друг друга в одной оболочке.
-    function renderParallel(block) {
-        const value = Number(block.parallel || PARALLEL_DEFAULT);
-        const options = parallelOptions.map(option =>
-            `<option value="${option}"${option === value ? ' selected' : ''}>${option}</option>`).join('');
-
-        return `
-            <span class="project-block-parallel">
-                Parallel LLM
-                <select data-project="${Number(block.project_id || 0)}"
-                        data-value="${value}"
-                        class="${value === PARALLEL_DEFAULT ? '' : 'custom'}"
-                        onchange="saveParallel(this)">${options}</select>
-            </span>
-        `;
-    }
+    // Селекта «Parallel LLM» больше нет: предел выводится из размера пула моделей —
+    // работать разом можно ровно настолько, насколько их хватает, и держать это
+    // вторым числом значило бы позволить им разойтись. Сам предел никуда не делся,
+    // его считает `team_llm_pool_parallel`, и очередь работает как раньше.
 
     // ── Конфигурация оболочки: модель, окно контекста, подробный лог ──────────
     //
@@ -800,68 +886,130 @@
     function renderShellConfig(block) {
         const projectId = Number(block.project_id || 0);
         const cfg = shellConfigGet(projectId);
+        const pool = block.llm_pool || [];
+        const busy = block.llm_busy || [];
 
-        // Выбранной модели может не быть в справочнике: её удалили, а выбор в
-        // браузере остался. Дописываем её в список, иначе селект молча
-        // переключился бы на первую попавшуюся и человек скопировал бы не то.
-        const names = shellModels.includes(cfg.llm) ? shellModels : [cfg.llm].concat(shellModels);
-        const llmOptions = names.map(name =>
-            `<option value="${escapeHtml(name)}"${name === cfg.llm ? ' selected' : ''}>${escapeHtml(name)}</option>`).join('');
-        const ctxOptions = SHELL_CONTEXT_OPTIONS.map(value =>
-            `<option value="${value}"${value === cfg.context ? ' selected' : ''}>${value}</option>`).join('');
+        // Выбранного в пуле может не быть в каталоге: модель убрали из
+        // `llm_models.yaml`, а настройка осталась. Показываем всё равно — иначе она
+        // молча выпала бы из списка, и человек не понял бы, почему пул стал меньше.
+        const inPool = Object.fromEntries(pool.map(i => [i.name, i.context]));
+        const names = [...new Set([...pool.map(i => i.name), ...shellModels])];
 
-        return `
-            <span class="project-block-shell">
-                Модель
-                <select data-project="${projectId}" data-field="llm"
-                        class="${cfg.llm === SHELL_LLM_DEFAULT ? '' : 'custom'}"
-                        title="${escapeHtml(shellModelsProblem || 'Флаг --llm у оболочки. Список — каталог claude-shell: ровно те модели, под которые он умеет поднять прокси')}"
-                        onchange="saveShellConfig(this)">${llmOptions}</select>
-                Контекст
-                <select data-project="${projectId}" data-field="context"
-                        class="${cfg.context === SHELL_CONTEXT_DEFAULT ? '' : 'custom'}"
-                        title="Флаг --autocompact: на каком объёме Claude Code начнёт сжимать разговор"
-                        onchange="saveShellConfig(this)">${ctxOptions}</select>
-                <label title="Флаг --verbose: оболочка пишет логи в .claude-shell/logs. Без него не пишется ничего">
-                    <input type="checkbox" data-project="${projectId}" data-field="verbose"
-                           ${cfg.verbose ? 'checked' : ''} onchange="saveShellConfig(this)">лог
+        // Строка на модель: галка «в пуле» и своё окно контекста. Окно у каждой своё —
+        // у локального qwen одно, у чужой через маршрутизатор другое, — и общее на
+        // проект врало ровно с того дня, как моделей стало больше одной.
+        //
+        // Кто держит модель, здесь не пишем: это свойство роли, а не пула, и на
+        // карточке роли оно и так стоит строкой `llm`. Дублируя его сюда, страница
+        // отвечала на один вопрос в двух местах и мешала настройку с состоянием.
+        // Счётчик занятых остался в подписи под списком — там он про пул целиком.
+        const rows = names.map(name => {
+            const on = name in inPool;
+            const ctx = inPool[name] || SHELL_CONTEXT_DEFAULT;
+            const opts = SHELL_CONTEXT_OPTIONS.map(v =>
+                `<option value="${v}"${v === ctx ? ' selected' : ''}>${v}</option>`).join('');
+
+            return `<div class="llm-row${on ? ' on' : ''}">
+                <label class="llm-pick" title="${escapeHtml(name)}">
+                    <input type="checkbox" data-name="${escapeHtml(name)}"
+                           ${on ? 'checked' : ''} onchange="saveLlmPool(this)">
+                    <span class="llm-name">${escapeHtml(name)}</span>
                 </label>
-            </span>
+                <select class="llm-ctx" data-name="${escapeHtml(name)}" ${on ? '' : 'disabled'}
+                        title="Окно автосжатия для этой модели (--autocompact)"
+                        onchange="saveLlmPool(this)">${opts}</select>
+            </div>`;
+        }).join('') || '<div class="shell-note">каталог оболочки пуст</div>';
+
+        // Предел параллельности — длина пула, а не отдельная настройка: работать
+        // разом можно ровно настолько, насколько хватает моделей, и два числа об
+        // одном и том же непременно разошлись бы.
+        return `
+            <div class="shell-box" data-project="${projectId}">
+                <div class="shell-head" title="${escapeHtml(shellModelsProblem
+                        || 'Пул моделей проекта. Роль берёт первую свободную, когда начинает круг')}">
+                    Пул LLM команды
+                </div>
+                <div class="llm-list">${rows}</div>
+                <div class="shell-note">
+                    ${pool.length
+                        ? `всего: <b>${pool.length}</b>${busy.length ? ` · занято ${busy.length}` : ''}`
+                        : 'пул пуст — роли пойдут напрямую в Anthropic, по одной'}
+                </div>
+                <label class="shell-row" title="Флаг --verbose: оболочка пишет логи в .claude-shell/logs. Без него не пишется ничего">
+                    <input type="checkbox" data-project="${projectId}" data-field="verbose"
+                           ${cfg.verbose ? 'checked' : ''} onchange="saveShellConfig(this)">
+                    <span>включить лог</span>
+                </label>
+            </div>
         `;
     }
 
-    function saveShellConfig(el) {
+    window.saveLlmPool = async function(el) {
+        const box = el.closest('.shell-box');
+        const projectId = Number(box.dataset.project || 0);
+
+        // Собираем весь пул целиком, а не правим одну строку: сервер хранит его одной
+        // настройкой, и присылать «добавь эту» значило бы заводить второй способ
+        // сказать то же самое.
+        const items = [...box.querySelectorAll('.llm-row')]
+            .filter(row => row.querySelector('input[type=checkbox]').checked)
+            .map(row => ({
+                name: row.querySelector('input[type=checkbox]').dataset.name,
+                context: row.querySelector('.llm-ctx').value,
+            }));
+
+        // Пока запрос идёт, панель заперта: второй клик по соседней галке отправил бы
+        // список, собранный до ответа на первый, и один из них потерялся бы.
+        box.querySelectorAll('input,select').forEach(i => i.disabled = true);
+        try {
+            const response = await fetch('/api/team/llm/pool', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({project_id: projectId, names: items}),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || ('HTTP ' + response.status));
+        } catch (e) {
+            // Чаще всего это 409: модель уже в пуле другого проекта. Текст с сервера
+            // называет, чья именно, — своей формулировкой мы бы это потеряли.
+            alert(e.message || 'Пул не сохранён');
+        }
+        await loadTeamProjects();
+    };
+
+    // Подробный лог — выбор человека под сегодняшний прогон, а не свойство проекта:
+    // живёт в localStorage браузера и в базу не уезжает. Перерисовываем блоки из
+    // памяти: команда запуска на карточках собирается с учётом этого флага.
+    window.saveShellConfig = function(el) {
         const projectId = Number(el.dataset.project || 0);
         const field = el.dataset.field;
         const value = el.type === 'checkbox' ? el.checked : el.value;
         shellConfigSet(projectId, {[field]: value});
-
-        if (el.tagName === 'SELECT') {
-            const isDefault = field === 'llm'
-                ? value === SHELL_LLM_DEFAULT
-                : value === SHELL_CONTEXT_DEFAULT;
-            el.classList.toggle('custom', !isDefault);
-        }
-        // Перерисовываем блоки: команды на кнопках собираются из конфигурации, и
-        // без этого кнопка отдавала бы прежние флаги до ближайшего автообновления.
         renderProjects(lastBlocks);
-    }
+    };
 
     // Собрать команду под выбранную конфигурацию. Правим готовую строку, а не
     // строим заново: в ней есть роль, каталог и то, что человек мог дописать сам
     // в `project_team.command`, — пересборка это потеряла бы.
-    function shellCommandApply(command, projectId) {
+    function shellCommandApply(command, projectId, pool) {
         const cfg = shellConfigGet(projectId);
         let out = String(command || '');
         if (!out) return out;
 
-        out = /--llm(?:[= ]\S+)?/.test(out)
-            ? out.replace(/--llm(?:[= ]\S+)?/, `--llm ${cfg.llm}`)
-            : out.replace(/\bclaude-shell\b/, `claude-shell --llm ${cfg.llm}`);
+        // `--litellm` без значения: модель оболочка получает не при старте, а когда
+        // берёт круг, — из пула проекта, первую свободную. Имени в команде поэтому
+        // нет и быть не может, в отличие от прежнего `--llm <модель>`.
+        //
+        // Пул пуст — флага нет вовсе: оболочка идёт напрямую в Anthropic.
+        out = out.replace(/\s--llm(?:[= ]\S+)?/g, '').replace(/\s--litellm\b/g, '');
+        if ((pool || []).length) out = out.replace(/\bclaude-shell\b/, 'claude-shell --litellm');
 
-        out = /--autocompact(?:[= ]\S+)?/.test(out)
-            ? out.replace(/--autocompact(?:[= ]\S+)?/, `--autocompact ${cfg.context}`)
-            : out + ` --autocompact ${cfg.context}`;
+        // `--autocompact` в команде нужен, только пока пула нет: с пулом окно живёт
+        // при модели, а модель оболочка получает в момент взятия круга — окно
+        // приезжает вместе с ней, и зашитое в команду число ей противоречило бы.
+        out = out.replace(/\s--autocompact(?:[= ]\S+)?/g, '');
+        if (!(pool || []).length) out += ` --autocompact ${cfg.context}`;
 
         // `--verbose` только добавляем и убираем: значения у него нет, и повторный
         // флаг в строке выглядел бы как ошибка копирования.
@@ -890,36 +1038,6 @@
         }
     }
 
-    async function saveParallel(select) {
-        const projectId = Number(select.dataset.project || 0);
-        const value = Number(select.value);
-        // Пока запрос в полёте, автообновление молчит: перерисовка блоков заменила
-        // бы селект новым, и откатывать при ошибке было бы уже нечего.
-        parallelBusy.add(projectId);
-        select.classList.remove('saved', 'failed');
-        try {
-            const response = await fetch('/api/team/parallel', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({project_id: projectId, value: value}),
-            });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.detail || ('HTTP ' + response.status));
-
-            select.dataset.value = String(data.result.value);
-            select.value = String(data.result.value);
-            select.classList.toggle('custom', data.result.value !== PARALLEL_DEFAULT);
-            select.classList.add('saved');
-            setTimeout(() => select.classList.remove('saved'), 1500);
-        } catch (e) {
-            select.value = select.dataset.value;
-            select.classList.add('failed');
-            select.title = String(e.message || e);
-            setTimeout(() => select.classList.remove('failed'), 2500);
-        } finally {
-            parallelBusy.delete(projectId);
-        }
-    }
 
     function renderCard(card, block) {
         // Класс роли только для известных ролей — иначе в CSS попадёт мусор из БД.
@@ -929,24 +1047,53 @@
             ? `активна · ${formatTimeAgo(card.seconds_ago)}`
             : (card.session_uuid ? `нет пинга${card.seconds_ago !== null ? ' · ' + formatTimeAgo(card.seconds_ago) : ''}` : 'сессия не запущена');
 
-        // Команда запуска нужна только серым карточкам: активную оболочку запускать
-        // повторно не надо. Передаём через dataset — escapeHtml не экранирует
-        // кавычки для inline-обработчика.
-        // В `title` — сама команда: кнопка копирует её вслепую, и до наведения не
-        // видно ни роли, ни флагов, с которыми поднимется оболочка.
+        // Команда запуска есть у любой карточки, включая работающую. Раньше её
+        // показывали только серым — «активную оболочку запускать повторно не надо», —
+        // но с параллельностью по оболочкам это стало неверным: вторую и третью
+        // поднимают той же командой, и прятать её у работающей роли значит заставлять
+        // человека искать строку руками вместо кнопки.
+        //
+        // Передаём через dataset — escapeHtml не экранирует кавычки для
+        // inline-обработчика. В `title` — сама команда: кнопка копирует её вслепую, и
+        // до наведения не видно ни роли, ни флагов, с которыми поднимется оболочка.
         // Флаги подставляем из селектов блока: в базе лежит заготовка, а чем и с
         // каким окном поднимать роль — выбор человека, сделанный на этой странице.
-        const command = shellCommandApply(card.command, Number(block.project_id || 0));
-        const copy = command && !card.active
-            ? `<button class="team-card-copy" data-command="${escapeHtml(command)}"
-                       title="${escapeHtml(command)}" onclick="copyCommand(this)">📋 Команда запуска</button>`
+        const command = shellCommandApply(card.command, Number(block.project_id || 0),
+                                          block.llm_pool || []);
+        const copy = command
+            ? `<button class="team-card-copy${card.active ? ' extra' : ''}"
+                       data-command="${escapeHtml(command)}"
+                       title="${escapeHtml(command)}" onclick="copyCommand(this)">📋 ${card.active ? 'Ещё оболочка' : 'Команда запуска'}</button>`
             : '';
 
         const uuid = card.session_uuid
             ? `<div class="row"><span>сессия</span><span>${escapeHtml(String(card.session_uuid).slice(0, 8))}</span></div>`
             : '';
-        const llm = card.server_llm
-            ? `<div class="row"><span>llm</span><span>${escapeHtml(card.server_llm)}</span></div>`
+        // Модель — та, которой оболочка работает **сейчас**: имя пишет выдача из пула
+        // на круг, а поправляет его пинг самой оболочки. Раньше здесь стоял режим
+        // запуска, и он не отвечал на единственный интересный вопрос — чем роль
+        // работает.
+        //
+        // `litellm` — оболочка поднята под пул, но круга ещё не брала: модель выдаётся
+        // не при старте, а когда роль берёт работу. Пишем это словами, потому что имя
+        // режима на месте модели читается как модель по имени «litellm».
+        //
+        // `anthropic` при непустом пуле подсвечиваем: значит, круг идёт мимо пула, за
+        // облачные токены. Без пула это норма и подсветки не заслуживает.
+        // Пусто — круга нет: сервер отдаёт модель только пока она захвачена
+        // (`_card_llm`), между кругами роль ничем не работает. Раньше здесь
+        // оставалось имя прошлой модели, и та же модель «работала» сразу в двух
+        // карточках — в той, что держит её сейчас, и в той, что просто помнит.
+        const hasPool = (block.llm_pool || []).length;
+        const cloud = card.server_llm === 'anthropic' && hasPool;
+        const pending = !card.server_llm && hasPool;
+        const llmText = pending ? 'не выбрана' : (card.server_llm || 'не выбрана');
+        const llmHint = pending
+            ? 'Роль между кругами: модель выдаётся из пула проекта, когда она берёт работу'
+            : card.server_llm + (cloud ? ' — круг идёт мимо пула проекта' : '');
+        const llm = (card.server_llm || hasPool)
+            ? `<div class="row"><span>llm</span><span class="llm-value${cloud ? ' cloud' : ''}${pending ? ' idle' : ''}"
+                   title="${escapeHtml(llmHint)}">${escapeHtml(llmText)}</span></div>`
             : '';
 
         // Агент и его workflow — то, чем роль на самом деле работает. Ролям без

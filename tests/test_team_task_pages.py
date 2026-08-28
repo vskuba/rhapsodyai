@@ -10,6 +10,7 @@
 """
 
 import os
+import re
 
 import pytest
 from dotenv import load_dotenv
@@ -121,8 +122,14 @@ class TestTeamPage:
         # проекта подставляет к ней каталог: `cd <work_dir> && <команда>`
         # (`team_project._command_build`). Поэтому сверяем хвост, а не строку целиком —
         # у карточки проекта без каталога префикса не будет, и подходят оба вида.
-        commands = [str(m['command']).strip() for m in page.request.get(f'{BASE_URL}/api/team').json()]
-        command = command.strip()
+        #
+        # Флаги выбора модели и окна сверять нечем: их ставит сама страница по пулу
+        # проекта (`shellCommandApply`), и в `project_team.command` их нет — там лежит
+        # заготовка. Сравнивать с ней имеет смысл то, что страница не трогает: имя
+        # оболочки и роль.
+        commands = [_command_flags_drop(m['command']) for m in
+                    page.request.get(f'{BASE_URL}/api/team').json()]
+        command = _command_flags_drop(command)
         assert any(command == c or command.endswith(f'&& {c}') for c in commands), \
             f'Команда на кнопке не совпадает ни с одной командой из /api/team: {command!r}'
 
@@ -200,17 +207,18 @@ class TestTaskPage:
         В подписи таба, кроме названия фазы, живёт счётчик задач (`.page-tab-n`),
         поэтому сверяется название без него: число зависит от содержимого базы.
 
-        Вкладок четыре: баги уехали с «Тестирования» на свою вместе с владельцем —
-        тип `bug` принадлежит роли `bugfixer`, а тестирование осталось за QA.
+        Фаз четыре: баги уехали с «Тестирования» на свою вместе с владельцем —
+        тип `bug` принадлежит роли `bugfixer`, а тестирование осталось за QA. Рядом с
+        ними в том же ряду живут «Журналы» и «Статистика» — это не фазы задачи, а
+        другой взгляд на проект, и сверяем мы порядок фаз, а не длину ряда.
         """
         page.goto(f'{BASE_URL}/admin/task')
         page.wait_for_selector('#phaseTabs .page-tab', state='visible', timeout=5000)
 
         tabs = page.locator('#phaseTabs .page-tab')
-        assert tabs.count() == 4, f'Ожидается 4 таба фаз, получено {tabs.count()}'
-
         labels = [_tab_label(tabs.nth(i)) for i in range(tabs.count())]
-        assert labels == ['Планирование', 'Разработка', 'Тестирование', 'Баги']
+        assert labels[:4] == ['Планирование', 'Разработка', 'Тестирование', 'Баги'], \
+            f'Не тот порядок фаз: {labels}'
         assert page.locator('#phaseTabs .page-tab.active').count() == 1
 
     def test_bugs_tab_filters_by_bug_type(self, page: Page):
@@ -368,6 +376,21 @@ def _tab_label(tab) -> str:
     count = tab.locator('.page-tab-n').text_content().strip()
 
     return text[:len(text) - len(count)].strip() if count else text
+
+
+def _command_flags_drop(command) -> str:
+    """Команда без флагов, которые страница ставит сама (`shellCommandApply`).
+
+    Модель, окно контекста и подробный лог зависят от пула проекта и от выбора
+    человека в браузере — в `project_team.command` их нет, там заготовка. Сравнивать
+    осмысленно то, что страница не трогает: имя оболочки и роль.
+    """
+    out = str(command or '').strip()
+    for pattern in (r'\s--llm(?:[= ]\S+)?', r'\s--litellm\b',
+                    r'\s--autocompact(?:[= ]\S+)?', r'\s--verbose\b'):
+        out = re.sub(pattern, '', out)
+
+    return ' '.join(out.split())
 
 
 def _login(page: Page) -> None:

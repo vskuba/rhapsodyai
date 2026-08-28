@@ -41,9 +41,16 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
     """Очереди ролей в разрезе проектов.
 
     Returns:
-        {project_id: {role: {'waiting_count': int, 'waiting': [item], 'current': item|None}}}
+        {project_id: {role: {'waiting_count': int, 'waiting': [item],
+                             'current': item|None, 'running': [item]}}}
         где item — {'task_id', 'subtask_id', 'title', 'task_title', 'state',
         'left_seconds', 'left_title'}.
+
+    `running` — все идущие круги роли, а не один: оболочек у роли столько, сколько
+    терминалов открыл человек, и кругов она ведёт столько же. Раскладывает их по
+    карточкам `team_project._cards_queue_attach` — по тому, какая оболочка какую
+    задачу держит (`team_shell_lock`). `current` оставлен первым из них: им пользуется
+    код, которому карточка не важна.
     """
     queues: dict[int, dict[str, dict]] = {}
 
@@ -79,8 +86,11 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
             slot = _slot_get(queues, row.get('project_id'), role)
             item = _item_build(row, timeout, timeout_key, progress)
             if int(row.get('busy') or 0):
-                # Воркеров может быть несколько, но карточка роли одна: показываем
-                # первую по порядку захвата — остальные видны в списке задач.
+                # Кругов у роли столько, сколько у неё оболочек: копим все, а по
+                # карточкам их разложит `_cards_queue_attach` — по захвату оболочки.
+                # Раньше здесь брался только первый, и обе карточки менеджера
+                # показывали одну и ту же задачу, хотя работали над разными.
+                slot['running'].append(item)
                 if slot['current'] is None:
                     slot['current'] = item
                 continue
@@ -188,7 +198,7 @@ def _slot_get(queues: dict, project_id, role: str) -> dict:
     key = int(project_id or TEAM_QUEUE_PROJECT_NONE)
 
     return queues.setdefault(key, {}).setdefault(
-        role, {'waiting_count': 0, 'waiting': [], 'current': None})
+        role, {'waiting_count': 0, 'waiting': [], 'current': None, 'running': []})
 
 
 def _item_build(row: dict, timeout: int, timeout_key: str, progress: dict) -> dict:

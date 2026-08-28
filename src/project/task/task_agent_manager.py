@@ -45,7 +45,8 @@ MANAGER_USER_ID = 1  # только для атрибуции session/log
 
 async def task_agent_manager_plan(task: dict, revise: bool = False,
                                   role: str = TASK_ROLE_DEFAULT,
-                                  work_dir: str = '', task_dir: str = '') -> dict:
+                                  work_dir: str = '', task_dir: str = '',
+                                  shell_session: str = '') -> dict:
     """
     Разложить глобальную задачу на план, подзадачи и цели.
 
@@ -123,6 +124,12 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
         # «в чьём проекте»: карточки заведены на каждый проект, и роли у них
         # одинаковые.
         'task_shell_work_dir': str(work_dir or ''),
+        # Третья часть адреса — конкретная оболочка. У роли их бывает несколько, по
+        # одной на открытый терминал, и круг держит свою на всё время работы: шаги
+        # ходят в один и тот же Claude Code, иначе следующий шаг не увидит того, что
+        # нашёл предыдущий. Пусто — захвата не было, оболочку выберет сам инструмент
+        # (самую свежую по пингу), как было до `team_shell_pool`.
+        'task_shell_session': str(shell_session or ''),
         # Где вести журнал. Пустая строка ложна для `%if%` — блок про журнал
         # тогда не раскроется, и менеджер отработает как раньше.
         'task_work_dir':     str(task_dir or ''),
@@ -132,7 +139,9 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
     # Ровно один перезапуск на прогон и до первого шага: дочерний Claude Code
     # поднимается заново, и разговор предыдущей задачи не попадает в контекст
     # этой. Между шагами перезапускать нельзя — они продолжают один разговор.
-    await team_session_restart_role(role, work_dir)
+    # Перезапускаем свою оболочку, а не «оболочку роли»: у роли их несколько,
+    # и маркер, ушедший соседу, снёс бы его ход посреди работы.
+    await team_session_restart_role(role, work_dir, session_uuid=shell_session)
 
     loop   = asyncio.get_running_loop()
     future = loop.create_future()

@@ -14,6 +14,9 @@ from src.mysql_.repository.project.team_repository import ProjectTeamRepository
 from src.project.team.team_setting_autocompact import (
     TEAM_SETTING_AUTOCOMPACT_FLAG, team_setting_autocompact_get)
 from src.project.team.team_agent import team_agent_by_role
+from src.project.team.team_llm_pool import (team_llm_pool_all, team_llm_pool_locks,
+                                            team_llm_pool_sessions)
+from src.project.team.team_shell_pool import team_shell_pool_tasks
 from src.project.team.team_member import team_member_command_llm_normalize
 from src.project.team.team_queue import (TEAM_QUEUE_PREVIEW_LIMIT, TEAM_QUEUE_PROJECT_NONE,
                                          team_queue_by_project)
@@ -89,9 +92,26 @@ async def team_project_blocks_get() -> list[dict]:
     agents = await team_agent_by_role()
     now = await datetime_now()
     stale_seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_PING_STALE)
-    # Пределы «Parallel LLM» — тоже одним запросом на сборку: селект есть в шапке
-    # каждого блока (`task_setting_parallel`).
+    # Предел одновременных прогонов. У проекта с пулом это его длина, у проекта без
+    # пула — прежняя настройка (`task_setting_parallel`): он идёт напрямую в облачный
+    # Anthropic, и считать там нечего.
     parallel = await task_setting_parallel_all()
+    # Пулы и живые захваты — одним чтением на сборку блоков, как и пределы: карточек
+    # на странице десятки, и запрос на каждую был бы запросом на пустом месте.
+    pools = await team_llm_pool_all()
+    # Какая оболочка какую задачу держит: по этому идущие круги ложатся на свои
+    # карточки, а не все на первую (`_cards_queue_attach`). Одним чтением на сборку.
+    shell_tasks = await team_shell_pool_tasks()
+    # Чем какая оболочка занята прямо сейчас. Реестр сессий помнит последнюю модель
+    # навсегда, и после круга карточка показывала её как свою — при том, что модель
+    # уже отдана соседу. Захват гаснет вместе с кругом, и по нему видно текущее.
+    llm_by_session = await team_llm_pool_sessions()
+    locks = {}
+    for lock in await team_llm_pool_locks():
+        locks.setdefault(int(lock.get('project_id') or 0), []).append({
+            'llm': lock.get('llm_name'), 'role': lock.get('role'),
+            'task_id': lock.get('task_id'),
+        })
 
     members_by_project = _members_by_project(members)
     # Оболочка без роли — обычная рабочая сессия claude-shell, к команде она
@@ -120,11 +140,15 @@ async def team_project_blocks_get() -> list[dict]:
             'project_id': project.get('id'),
             'title': str(project.get('title') or f"Проект #{project.get('id')}"),
             'work_dir': str(project.get('work_dir') or ''),
-            'parallel': int(parallel.get(project_id, TASK_SETTING_PARALLEL_DEFAULT)),
+            'parallel': _parallel_of(project_id, parallel, pools),
+            # Пул задаёт и чем работать, и сколько работ разом: предел — его длина.
+            'llm_pool': pools.get(project_id, []),
+            'llm_busy': locks.get(project_id, []),
             'cards': _cards_build(project_sessions, members_by_project.get(project_id, {}),
                                   str(project.get('work_dir') or ''), now, stale_seconds,
                                   queues=queues.get(project_id, {}), agents=agents,
-                                  autocompact=autocompact),
+                                  autocompact=autocompact, shell_tasks=shell_tasks,
+                                  llm_by_session=llm_by_session, pool=pools.get(project_id, [])),
         })
 
     orphans = [row for row in sessions_shown if row['id'] not in matched_ids]
@@ -133,11 +157,15 @@ async def team_project_blocks_get() -> list[dict]:
             'project_id': 0,
             'title': 'Без проекта',
             'work_dir': '',
-            'parallel': int(parallel.get(TEAM_PROJECT_NO_PROJECT, TASK_SETTING_PARALLEL_DEFAULT)),
+            'parallel': _parallel_of(TEAM_PROJECT_NO_PROJECT, parallel, pools),
+            'llm_pool': pools.get(TEAM_PROJECT_NO_PROJECT, []),
+            'llm_busy': locks.get(TEAM_PROJECT_NO_PROJECT, []),
             'cards': _cards_build(orphans, members_by_project.get(TEAM_PROJECT_NO_PROJECT, {}),
                                   '', now, stale_seconds, placeholders=False,
                                   queues=queues.get(TEAM_QUEUE_PROJECT_NONE, {}), agents=agents,
-                                  autocompact=autocompact),
+                                  autocompact=autocompact, shell_tasks=shell_tasks,
+                                  llm_by_session=llm_by_session,
+                                  pool=pools.get(TEAM_PROJECT_NO_PROJECT, [])),
         })
 
     return blocks
@@ -189,12 +217,32 @@ async def team_project_session_work_dir_sync(session_uuid: str, work_dir: str) -
     return True
 
 
+def _parallel_of(project_id: int, parallel: dict, pools: dict) -> int:
+    """
+    Сколько прогонов проект ведёт одновременно.
+
+    Пул есть — его длина: работать разом можно ровно настолько, насколько хватает
+    моделей. Пула нет — прежняя настройка: проект идёт напрямую в облачный Anthropic,
+    и делить там нечего.
+
+    Правило то же, что у отбора работы (`task_pipeline._parallel_limits`), — разойдись
+    они, страница обещала бы одно число, а конвейер работал по другому.
+    """
+    pool = pools.get(project_id) or []
+
+    return len(pool) or int(parallel.get(project_id, TASK_SETTING_PARALLEL_DEFAULT))
+
+
 def _members_by_project(members: list[dict]) -> dict[int, dict]:
     """Карточки команды, разложенные по проекту и роли: {project_id: {role: row}}.
 
-    Две карточки одной роли в одном проекте — данные кривые, а не рабочий случай:
-    UNIQUE по (project_id, name) их не ловит, имена-то разные. Берём первую по id,
-    как и раньше брала выборка по одной роли.
+    Строка на роль одна: `project_team` описывает роль проекта — её имя и команду
+    запуска, — а не запущенную оболочку. Оболочек у роли бывает несколько, и все они
+    берут описание из этой строки; сами карточки на странице растут из реестра сессий
+    (`_card_from_session`), а не отсюда.
+
+    Две строки одной роли в одном проекте — данные кривые, а не рабочий случай: UNIQUE
+    по (project_id, name) их не ловит, имена-то разные. Берём первую по id.
     """
     by_project: dict[int, dict] = {}
     for row in members:
@@ -231,9 +279,18 @@ def _project_sessions_select(project: dict, sessions: list[dict]) -> list[dict]:
 def _cards_build(sessions: list[dict], member_by_role: dict, work_dir: str,
                  now: datetime, stale_seconds: int, placeholders: bool = True,
                  queues: dict | None = None, agents: dict | None = None,
-                 autocompact: str = '') -> list[dict]:
-    """Собрать карточки блока: сессии плюс серые заглушки на роли без сессии."""
-    cards = [_card_from_session(row, member_by_role, work_dir, now, stale_seconds, autocompact)
+                 autocompact: str = '', shell_tasks: dict | None = None,
+                 llm_by_session: dict | None = None, pool: list | None = None) -> list[dict]:
+    """
+    Собрать карточки блока: сессии плюс серые заглушки на роли без сессии.
+
+    Карточка растёт из живой оболочки, а не из строки `project_team`: подняли роли
+    вторую оболочку — на странице появилась вторая карточка, погасили — исчезла.
+    Заглушка нужна ровно для обратного случая: роль есть в заготовке, а оболочки под
+    ней нет ни одной, и человеку неоткуда взять команду запуска.
+    """
+    cards = [_card_from_session(row, member_by_role, work_dir, now, stale_seconds, autocompact,
+                                llm_by_session or {}, bool(pool))
              for row in sessions]
     cards = _cards_stale_drop(cards)
 
@@ -243,7 +300,7 @@ def _cards_build(sessions: list[dict], member_by_role: dict, work_dir: str,
             if role not in roles_present:
                 cards.append(_card_placeholder(role, member_by_role, work_dir, autocompact))
 
-    _cards_queue_attach(cards, queues or {})
+    _cards_queue_attach(cards, queues or {}, shell_tasks)
     _cards_agent_attach(cards, agents or {})
 
     cards.sort(key=lambda card: (
@@ -255,12 +312,22 @@ def _cards_build(sessions: list[dict], member_by_role: dict, work_dir: str,
     return cards
 
 
-def _cards_queue_attach(cards: list[dict], queues: dict) -> None:
-    """Положить на каждую карточку очередь её роли по этому проекту.
+def _cards_queue_attach(cards: list[dict], queues: dict, shell_tasks: dict | None = None) -> None:
+    """Положить на каждую карточку очередь её роли и её собственный идущий круг.
 
-    Очередь принадлежит роли, а не сессии: если одну роль держат две оболочки,
-    обе карточки покажут одну и ту же очередь — конвейер разбирает её общей.
-    Заглушке роли очередь тоже нужна: именно она объясняет, почему задачи стоят.
+    Ожидающая очередь принадлежит роли, а не оболочке: конвейер разбирает её общей,
+    и все карточки роли показывают одну и ту же. Заглушке роли она тоже нужна —
+    именно очередь объясняет, почему задачи стоят.
+
+    А вот **«в работе» у каждой оболочки своё**: их у роли столько, сколько
+    терминалов открыл человек, и круги идут в них параллельно. Кто какую задачу
+    держит, знает захват (`team_shell_lock`, здесь — `shell_tasks`), по нему круг и
+    ложится на свою карточку. Раньше сюда клался общий первый по захвату, и обе
+    карточки менеджера показывали одну задачу, хотя работали над разными.
+
+    Круг, чью оболочку сопоставить не вышло (захвата нет — прогон запустили мимо
+    конвейера, или строку уже сняли), достаётся первой карточке роли без своего
+    круга: показать его надо, а точного адреса у нас нет.
 
     «В работе» показываем только тогда, когда работает сама оболочка роли.
     Блокировка в БД принадлежит воркеру конвейера, а не оболочке, и переживает
@@ -274,11 +341,12 @@ def _cards_queue_attach(cards: list[dict], queues: dict) -> None:
     между захватом и запуском шага покажет задачу первой в очереди — это ближе к
     правде, чем «в работе» у агента, который к ней ещё не приступил.
     """
-    for card in cards:
+    running_by_card = _running_split(cards, queues, shell_tasks or {})
+    for index, card in enumerate(cards):
         slot = queues.get(card['role']) or {}
         waiting = list(slot.get('waiting') or [])
         count = int(slot.get('waiting_count') or 0)
-        current = slot.get('current')
+        current = running_by_card.get(index)
 
         idle = not card['active'] or card.get('agent_status') == 'ready'
         if current and idle:
@@ -289,6 +357,54 @@ def _cards_queue_attach(cards: list[dict], queues: dict) -> None:
         card['queue_count'] = count
         card['queue'] = waiting[:TEAM_QUEUE_PREVIEW_LIMIT]
         card['queue_current'] = current
+
+
+def _running_split(cards: list[dict], queues: dict, shell_tasks: dict) -> dict[int, dict]:
+    """
+    Разложить идущие круги роли по её карточкам: `{индекс карточки: круг}`.
+
+    Сопоставление идёт через захват оболочки: `shell_tasks` — это
+    `{session_uuid: task_id}` из `team_shell_lock`, а у карточки есть свой
+    `session_uuid`. Совпало — круг её.
+
+    Что не совпало, раздаём по порядку оставшимся карточкам роли: круг мог идти мимо
+    конвейера, а показать его всё равно нужно — иначе работающая карточка выглядела
+    бы простаивающей.
+    """
+    out: dict[int, dict] = {}
+    by_role: dict[str, list[int]] = {}
+    for index, card in enumerate(cards):
+        by_role.setdefault(card['role'], []).append(index)
+
+    for role, indexes in by_role.items():
+        running = list((queues.get(role) or {}).get('running') or [])
+        if not running:
+            continue
+
+        # Сперва точные попадания: круг задачи, которую держит оболочка этой карточки.
+        free_indexes = []
+        for index in indexes:
+            session_uuid = str(cards[index].get('session_uuid') or '')
+            task_id = shell_tasks.get(session_uuid)
+            item = next((r for r in running if task_id and _item_task_id(r) == int(task_id)), None)
+            if item is None:
+                free_indexes.append(index)
+                continue
+            running.remove(item)
+            out[index] = item
+
+        # Остаток — по порядку: адреса у этих кругов нет, но они идут.
+        for index in free_indexes:
+            if not running:
+                break
+            out[index] = running.pop(0)
+
+    return out
+
+
+def _item_task_id(item: dict) -> int:
+    """Номер задачи строки очереди. У подзадачи это её родитель — им и живёт захват."""
+    return int(item.get('task_id') or 0)
 
 
 def _cards_agent_attach(cards: list[dict], agents: dict) -> None:
@@ -339,6 +455,46 @@ def _cards_stale_drop(cards: list[dict]) -> list[dict]:
     return kept
 
 
+def _card_name(row: dict, member: dict, role: str) -> str:
+    """
+    Имя карточки с номером оболочки: `Developer`, `Developer 2`, `Developer 3`.
+
+    Номер приходит из реестра (`role_index`) — его назначил сервер при регистрации,
+    и ровно он стоит в заголовке терминала. Совпадение обязательно: иначе три
+    одинаковые карточки «Developer» не сопоставить с тремя одинаковыми окнами, и
+    непонятно, в каком из них идёт та задача, что видна на странице.
+
+    Первая оболочка остаётся без номера: пока роль держит один терминал, номер
+    только шумит, а именно так выглядит обычная установка.
+    """
+    base = str(member.get('name') or TEAM_PROJECT_ROLE_TITLE.get(role, role))
+    index = int(row.get('role_index') or 0)
+
+    return f'{base} {index}' if index > 1 else base
+
+
+def _card_llm(row: dict, llm_by_session: dict, has_pool: bool) -> str:
+    """
+    Чем оболочка работает **сейчас**. Пусто — ничем, круга нет.
+
+    Реестр сессий помнит последнюю модель навсегда: её записали, отправляя
+    `__SWITCH_LLM__`, и после круга значение остаётся. Карточка показывала его как
+    текущее — и выходило, что одна модель занята двумя оболочками разом: одна её и
+    правда держит, а вторая просто помнит.
+
+    Поэтому у проекта с пулом верим только живому захвату (`team_llm_lock`): он
+    гаснет вместе с кругом. Нет захвата — роль между кругами, и честный ответ
+    «модель не выбрана», а не имя прошлой.
+
+    Пул пуст — правило не работает: захватывать нечего, оболочка идёт облачным
+    бэкендом, и `server_llm` реестра там единственный источник.
+    """
+    if not has_pool:
+        return str(row.get('server_llm') or '')
+
+    return str(llm_by_session.get(str(row.get('session_uuid') or '')) or '')
+
+
 def _card_freshness(card: dict) -> int:
     """Ключ сортировки «сначала свежие»: карточка без пинга уходит в самый конец."""
     seconds_ago = card.get('seconds_ago')
@@ -347,7 +503,8 @@ def _card_freshness(card: dict) -> int:
 
 
 def _card_from_session(row: dict, member_by_role: dict, work_dir: str, now: datetime,
-                       stale_seconds: int, autocompact: str = '') -> dict:
+                       stale_seconds: int, autocompact: str = '',
+                       llm_by_session: dict | None = None, has_pool: bool = False) -> dict:
     """Карточка живой (или недавно живой) сессии реестра.
 
     Роль здесь всегда заполнена — сессии без роли отфильтрованы выше.
@@ -360,7 +517,12 @@ def _card_from_session(row: dict, member_by_role: dict, work_dir: str, now: date
     return {
         'role': role,
         'role_title': TEAM_PROJECT_ROLE_TITLE.get(role, role),
-        'name': str(member.get('name') or TEAM_PROJECT_ROLE_TITLE.get(role, role)),
+        # Имя с номером оболочки: `Developer`, `Developer 2`, `Developer 3`. Номер
+        # тот же, что в заголовке терминала (`role_index`), — по нему карточка и
+        # окно сопоставляются. Первая остаётся без номера: пока роль держит один
+        # терминал, номер только шумит.
+        'name': _card_name(row, member, role),
+        'role_index': int(row.get('role_index') or 0),
         'command': _command_build(member.get('command'), work_dir or row.get('work_dir'),
                                   autocompact),
         'session_id': row.get('id'),
@@ -371,7 +533,7 @@ def _card_from_session(row: dict, member_by_role: dict, work_dir: str, now: date
         # протухшего пинга это последнее известное значение, а не текущее.
         'agent_status': str(row.get('agent_status') or '') if active else '',
         'agent_status_reason': str(row.get('agent_status_reason') or '') if active else '',
-        'server_llm': str(row.get('server_llm') or ''),
+        'server_llm': _card_llm(row, llm_by_session or {}, has_pool),
         'summary': str(row.get('summary') or ''),
         'work_dir': str(row.get('work_dir') or ''),
         'project_label': str(row.get('project_label') or ''),
@@ -383,13 +545,15 @@ def _card_from_session(row: dict, member_by_role: dict, work_dir: str, now: date
 
 def _card_placeholder(role: str, member_by_role: dict, work_dir: str,
                       autocompact: str = '') -> dict:
-    """Серая карточка роли, у которой нет зарегистрированной сессии."""
+    """Серая карточка роли, у которой нет ни одной запущенной оболочки."""
     member = member_by_role.get(role, {})
 
     return {
         'role': role,
         'role_title': TEAM_PROJECT_ROLE_TITLE.get(role, role),
         'name': str(member.get('name') or TEAM_PROJECT_ROLE_TITLE.get(role, role)),
+        # У заглушки номера нет: она описывает роль, а не запущенную оболочку.
+        'role_index': 0,
         'command': _command_build(member.get('command'), work_dir, autocompact),
         'session_id': None,
         'session_uuid': None,

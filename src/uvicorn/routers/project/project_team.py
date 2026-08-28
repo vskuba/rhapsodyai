@@ -16,6 +16,7 @@ from src.project.team.team_project import (team_project_blocks_get,
 from src.project.team.team_session import team_session_restart
 from src.project.team.team_task_type import team_task_type_list
 from src.project.team.team_llm_catalog import team_llm_catalog_models
+from src.project.team.team_llm_pool import (team_llm_pool_conflicts, team_llm_pool_set)
 from src.project.team.team_setting_autocompact import team_setting_autocompact_apply
 from src.project.task.task_setting_parallel import (
     TASK_SETTING_PARALLEL_OPTIONS,
@@ -145,6 +146,35 @@ async def project_team_parallel_set(parallel_request: TeamParallelRequest,
         raise HTTPException(status_code=422, detail=str(error))
 
     return {'result': {'project_id': parallel_request.project_id, 'value': value}}
+
+
+@router.post('/llm/pool')
+async def project_team_llm_pool_set(data: dict,
+                                    user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Записать пул моделей проекта — мультиселект в шапке блока.
+
+    Пул задаёт, чем работают роли этого проекта и сколько их работает разом: предел
+    параллельности выводится из его размера, отдельной настройки под это больше нет.
+
+    Модель, занятая пулом другого проекта, отклоняется с 409: модели общие на машину,
+    и две роли разных проектов, взявшие одну, поделили бы один прокси. Отказ, а не
+    молчаливое исключение из списка: человек выбрал её осознанно и должен узнать,
+    почему она не сохранилась.
+    """
+    project_id = int(data.get('project_id') or 0)
+    names = data.get('names')
+    if not isinstance(names, list):
+        raise HTTPException(status_code=422, detail='names должен быть списком имён моделей')
+
+    taken = await team_llm_pool_conflicts(project_id, names)
+    if taken:
+        where = ', '.join(f'{name} — у проекта #{pid}' for name, pid in taken.items())
+        raise HTTPException(status_code=409, detail=f'модели уже заняты: {where}')
+
+    saved = await team_llm_pool_set(project_id, names)
+
+    return {'result': {'project_id': project_id, 'names': saved, 'parallel': len(saved) or 1}}
 
 
 @router.get('/types')

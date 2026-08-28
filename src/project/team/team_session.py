@@ -81,7 +81,8 @@ async def team_session_restart(session_uuid: str) -> dict | None:
     return status
 
 
-async def team_session_restart_role(role: str, work_dir: str = '', wait: bool = True) -> dict:
+async def team_session_restart_role(role: str, work_dir: str = '', wait: bool = True,
+                                    session_uuid: str = '') -> dict:
     """
     Перезапустить агента в оболочке с указанной ролью и дождаться готовности.
 
@@ -100,6 +101,12 @@ async def team_session_restart_role(role: str, work_dir: str = '', wait: bool = 
             одинаково, и без каталога перезапуск снёс бы контекст менеджера
             соседнего проекта — того самого, что сейчас работает над своей
             задачей. Пустая строка — адресация только по роли.
+        session_uuid: конкретная оболочка. У роли их бывает несколько — по одной на
+            открытый терминал, — и круг обязан перезапускать свою: маркер, ушедший
+            соседу, сносит его ход посреди работы. Живьём это выглядело как
+            «Оболочка перезапущена, ответ на сообщение потерян» у круга, который
+            никто не трогал. Пустая строка — прежний путь: самая свежая оболочка
+            роли (перезапуск мимо конвейера, ручной повтор задачи).
         wait: дожидаться ли поднявшегося агента. False — маркер уходит, и на этом
             всё: так зовёт ручной повтор задачи (`task_pipeline_shells_restart`),
             где ждать некому — это HTTP-запрос человека, а не воркер. Прогон,
@@ -117,7 +124,7 @@ async def team_session_restart_role(role: str, work_dir: str = '', wait: bool = 
     role = str(role or '').strip()
     started = time.monotonic()
 
-    session = await claude_shell_session_status(role, work_dir)
+    session = await claude_shell_session_status(role, work_dir, session_uuid=session_uuid)
     session_uuid = str(session.get('session_uuid') or '')
     if not session_uuid:
         logger_info(f'[team] restart {role}: живой оболочки нет, перезапуск пропущен')
@@ -133,8 +140,11 @@ async def team_session_restart_role(role: str, work_dir: str = '', wait: bool = 
         return _restart_result(role, session_uuid, False, False, TEAM_SESSION_RESTART_NO_ACK, started)
 
     await asyncio.sleep(await task_setting_timeout_get(TASK_SETTING_TIMEOUT_RESTART_SETTLE))
+    # Готовности ждём у той же оболочки, которую перезапускали: у роли их несколько,
+    # и соседняя, свободная, отвечала бы «готов» за нашу — та в это время ещё
+    # поднимает свой Claude Code.
     ready = await _agent_ready_wait(role, await task_setting_timeout_get(TASK_SETTING_TIMEOUT_RESTART_READY),
-                                    work_dir)
+                                    work_dir, session_uuid=session_uuid)
 
     result = _restart_result(role, session_uuid, True, ready,
                              '' if ready else TEAM_SESSION_RESTART_NOT_READY, started)
@@ -189,17 +199,21 @@ async def _inbox_handled_wait(inbox_id: int, timeout: float) -> bool:
         await asyncio.sleep(TEAM_SESSION_RESTART_POLL_SECONDS)
 
 
-async def _agent_ready_wait(role: str, timeout: float, work_dir: str = '') -> bool:
+async def _agent_ready_wait(role: str, timeout: float, work_dir: str = '',
+                            session_uuid: str = '') -> bool:
     """
     Дождаться поднявшегося агента: свежий пинг сессии плюс статус `ready`.
 
     Пока новый дочерний процесс печатает свой запуск, оболочка отдаёт `busy`.
     Не дождались — не страшно: сообщение всё равно встанет в очередь оболочки,
     просто время доставки перестаёт быть предсказуемым.
+
+    `session_uuid` — ждём именно её: у роли оболочек несколько, и свободная соседка
+    ответила бы «готов» за ту, которая ещё поднимается.
     """
     deadline = time.monotonic() + max(float(timeout), 0.0)
     while True:
-        session = await claude_shell_session_status(role, work_dir)
+        session = await claude_shell_session_status(role, work_dir, session_uuid=session_uuid)
         if str(session.get('agent_status') or '') == CLAUDE_SHELL_AGENT_STATUS_READY:
             return True
         if time.monotonic() >= deadline:

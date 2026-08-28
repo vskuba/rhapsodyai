@@ -85,7 +85,8 @@ CLAUDE_SHELL_STATUS_FAILED = 'failed'
 
 async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
                             timeout: int = 0,
-                            work_dir: str = '') -> dict:
+                            work_dir: str = '',
+                            session: str = '') -> dict:
     """
     Отправляет сообщение агенту claude-shell с указанной ролью и ждёт ответа.
 
@@ -106,6 +107,11 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
                  поэтому одной роли мало: без каталога сообщение уйдёт в любую
                  живую оболочку с этой ролью, в том числе чужого проекта.
                  Пустая строка - адресация только по роли.
+        session: UUID конкретной оболочки. У роли их бывает несколько - по одной
+                 на открытый терминал, - и круг конвейера держит свою на всё
+                 время работы: её Claude Code помнит предыдущие шаги того же
+                 круга. Пустая строка - взять самую свежую по пингу оболочку
+                 роли, как было до появления захвата (`team_shell_pool`).
 
     Returns:
         dict:
@@ -144,7 +150,12 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     # оставалось, и шаг сдавался с «не ответил за 600с» — при том, что агент как
     # раз отвечал, просто на минуту позже. Потолок всему прогону ставит не этот
     # инструмент, а таймаут роли (`timeout_developer_run` и соседние).
-    session, problem = await _session_ready_wait(role, busy_timeout, work_dir)
+    # Адрес круга приезжает переменной прогона: захват оболочки живёт весь круг, и
+    # все его шаги обязаны идти в один и тот же Claude Code — иначе шаг плана не
+    # увидит того, что нашла разведка. Пусто — берём свежайшую оболочку роли.
+    session_wanted = str(session or '').strip()
+    session, problem = await _session_ready_wait(role, busy_timeout, work_dir,
+                                                 session_wanted)
     if problem == CLAUDE_SHELL_STATUS_NO_SESSION:
         return _result_build(
             CLAUDE_SHELL_STATUS_NO_SESSION,
@@ -215,7 +226,8 @@ async def claude_shell_call(prompt: str, role: str = CLAUDE_SHELL_ROLE_DEFAULT,
 
 
 async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT,
-                                      work_dir: str = '') -> dict:
+                                      work_dir: str = '',
+                                      session_uuid: str = '') -> dict:
     """
     Готов ли агент claude-shell с указанной ролью принять сообщение.
 
@@ -225,6 +237,10 @@ async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT,
     Args:
         role: Роль агента в команде проекта: manager, developer, qa.
         work_dir: Каталог проекта; пустая строка - любая оболочка с этой ролью.
+        session_uuid: Конкретная оболочка. У роли их бывает несколько - по одной на
+                 открытый терминал, - и спрашивать «готова ли роль» бессмысленно:
+                 ответит свободная соседка, а работать будет не она. Пустая
+                 строка - самая свежая по пингу, прежний путь.
 
     Returns:
         dict:
@@ -235,7 +251,8 @@ async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT,
             seconds_ago (int): сколько секунд назад был пинг, -1 если сессии нет.
     """
     session = await _session_find(str(role or CLAUDE_SHELL_ROLE_DEFAULT).strip(),
-                                  _path_normalize(work_dir))
+                                  _path_normalize(work_dir),
+                                  str(session_uuid or '').strip())
     if not session:
         return {'ready': 0, 'agent_status': '', 'agent_status_reason': '',
                 'session_uuid': '', 'seconds_ago': -1}
@@ -254,12 +271,17 @@ async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT,
 
 
 async def _session_ready_wait(role: str, timeout: float,
-                              work_dir: str = '') -> tuple[dict | None, str]:
+                              work_dir: str = '',
+                              session_uuid: str = '') -> tuple[dict | None, str]:
     """Живая сессия с ролью, готовая принять сообщение.
 
     Возвращает (сессия, проблема). Проблема пустая — можно слать; no_session —
     живой оболочки нет и ждать нечего; busy — агент за отведённое время так и не
     освободился, вызов нужно повторить позже.
+
+    `session_uuid` задан — ждём именно её: круг захватил эту оболочку, и уйти в
+    соседнюю нельзя, там другой контекст. Она умерла — это `no_session`, и подменять
+    её живой соседкой тем более нельзя: круг продолжился бы с чистого листа, молча.
 
     Ждём именно занятость: соседние шаги workflow шлют сообщения одному и тому же
     менеджеру подряд, и на следующем шаге он ещё дописывает предыдущий ход. Отказ
@@ -267,7 +289,7 @@ async def _session_ready_wait(role: str, timeout: float,
     """
     deadline = time.monotonic() + max(float(timeout), 0.0)
     while True:
-        session = await _session_find(role, work_dir)
+        session = await _session_find(role, work_dir, session_uuid)
         if not session:
             return None, CLAUDE_SHELL_STATUS_NO_SESSION
         if str(session.get('agent_status') or '') != CLAUDE_SHELL_AGENT_STATUS_BUSY:
@@ -278,8 +300,13 @@ async def _session_ready_wait(role: str, timeout: float,
         await asyncio.sleep(CLAUDE_SHELL_POLL_SECONDS)
 
 
-async def _session_find(role: str, work_dir: str = '') -> dict | None:
+async def _session_find(role: str, work_dir: str = '',
+                        session_uuid: str = '') -> dict | None:
     """Живая сессия реестра с нужной ролью — самая свежая по пингу.
+
+    `session_uuid` сужает поиск до одной оболочки: её выдал захват круга
+    (`team_shell_pool`), и остальные условия — роль, каталог, свежесть — остаются в
+    силе. Умерла или сменила роль — здесь `None`, то есть `no_session`.
 
     Каталог сужает поиск до одного проекта: роли в командах разных проектов
     называются одинаково, и без каталога «самая свежая по пингу» отдала бы
@@ -293,6 +320,10 @@ async def _session_find(role: str, work_dir: str = '') -> dict | None:
     stale_seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_SHELL_STALE)
     stale_before = await datetime_now() - timedelta(seconds=stale_seconds)
     placeholders = ','.join(['%s'] * len(CLAUDE_SHELL_SESSION_STATUS_SHOWN))
+    session_sql, session_params = '', []
+    if session_uuid:
+        session_sql = 'AND session_uuid = %s '
+        session_params = [str(session_uuid)]
     work_dir_sql, work_dir_params = '', []
     if work_dir:
         # Оболочка роли поднимается не в корне проекта, а в каталоге его рабочих
@@ -310,11 +341,12 @@ async def _session_find(role: str, work_dir: str = '') -> dict | None:
             f"""
             SELECT * FROM `ai_claude_session_registry`
             WHERE role = %s AND status IN ({placeholders}) AND last_seen_at >= %s
-            {work_dir_sql}
+            {session_sql}{work_dir_sql}
             ORDER BY last_seen_at DESC
             LIMIT 1
             """,
-            (role, *CLAUDE_SHELL_SESSION_STATUS_SHOWN, stale_before, *work_dir_params)
+            (role, *CLAUDE_SHELL_SESSION_STATUS_SHOWN, stale_before,
+             *session_params, *work_dir_params)
         )
         rows = await db.fetchall()
 
@@ -368,16 +400,37 @@ async def _row_wait(inbox_id: int, statuses: tuple, timeout: float,
 
 async def _session_replaced(role: str, work_dir: str, session_uuid: str) -> bool:
     """
-    У роли живёт другая сессия, не та, в которую ушло сообщение.
+    Нашу оболочку сменила новая: терминал перезапустили, ждать ответа некому.
 
-    Пропавшая сессия сменой не считается: оболочку могли на секунду потерять по
-    пингу, и объявлять прогон сорванным из-за этого рано — на то есть таймаут.
-    Уверенный признак один: сессия есть, и она другая.
+    Проверяем именно нашу сессию, а не «самую свежую у роли»: оболочек у роли бывает
+    несколько, и соседняя, пингующая чаще, оказывалась бы «самой свежей» постоянно —
+    круг срывался бы сразу после первого же вопроса агенту.
+
+    Пропавшая сессия сменой не считается сама по себе: оболочка молчит несколько
+    секунд на каждом перезапуске дочернего Claude Code, и объявлять прогон сорванным
+    из-за этого рано — на то есть таймаут.
+
+    Смена — это когда нашей сессии нет, а у роли появилась **новее нашей**: только
+    так выглядит перезапущенный человеком терминал. Сравнение по `created_at`
+    обязательно: без него соседняя оболочка, поднятая раньше нашей и всё это время
+    мирно простаивавшая, засчитывалась бы за замену — и круг срывался бы каждый раз,
+    когда наша молчит дольше порога свежести.
     """
-    session = await _session_find(role, work_dir)
-    found = str((session or {}).get('session_uuid') or '')
+    if await _session_find(role, work_dir, session_uuid):
+        return False
 
-    return bool(found) and found != session_uuid
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT created_at FROM ai_claude_session_registry WHERE session_uuid = %s',
+            (session_uuid,))
+        ours = await db.fetchone()
+
+    newer = await _session_find(role, work_dir)
+    if not newer or not ours:
+        return False
+
+    return bool(newer.get('created_at') and ours.get('created_at')
+                and newer['created_at'] > ours['created_at'])
 
 
 def _payload_parse(response: str) -> dict | list:

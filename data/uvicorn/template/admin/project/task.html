@@ -1175,6 +1175,15 @@
     }
     .stat-refresh:hover { background: #f8fafc; }
 
+    /* Сброс — необратимое действие, и выглядит соответственно: спокойный до
+       наведения, красный под курсором. Кричать красным постоянно незачем — жмут
+       его редко, а рядом стоит «Обновить», которым пользуются часто. */
+    .stat-reset {
+        margin-left: 8px; font-size: 12px; padding: 4px 12px; cursor: pointer;
+        border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #94a3b8;
+    }
+    .stat-reset:hover { border-color: #fca5a5; background: #fef2f2; color: #b91c1c; }
+
     /* Итоги — крупные числа в ряд: их читают первыми и по ним решают, есть ли
        вообще о чём говорить (пять замеров — ещё нет). */
     .stat-totals { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -1227,6 +1236,17 @@
        строк контекста. По нему и подбирают порог разбиения. */
     .stat-table .rate { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: #1d4ed8; }
     .stat-empty { padding: 14px; color: #94a3b8; font-size: 12px; }
+
+    /* Подзаголовок между двумя таблицами вкладки «По моделям»: без него вторая
+       читалась бы продолжением первой, а это другой разрез тех же замеров. */
+    .stat-subhead {
+        margin: 18px 0 8px; font-size: 11px; font-weight: 700; color: #6b7280;
+        text-transform: uppercase; letter-spacing: .04em;
+    }
+
+    /* Ненулевая доля сбоев — то, ради чего в таблицу и смотрят: быстрая модель,
+       роняющая каждый третий круг, дороже медленной и надёжной. */
+    .stat-table td.stat-bad { color: #b91c1c; font-weight: 600; }
     /* Замер задачи, которой уже нет: статистика её переживает, и об этом надо
        сказать — иначе номер выглядит опечаткой. */
     .stat-gone { color: #94a3b8; font-style: italic; }
@@ -1576,9 +1596,13 @@
     /* Мини-карточки команды проекта — тот же ряд, что и селектор проекта.
        Полные карточки живут на /admin/team; здесь нужен только ответ на вопрос
        «кто из ролей сейчас жив и что держит», поэтому карточка — одна строка. */
+    /* Перенос, а не горизонтальная прокрутка: оболочек у роли столько, сколько
+       терминалов открыл человек, и ряд уезжал за край экрана — плашки за ним просто
+       не существовало для того, кто не догадался прокрутить. Свободные при этом
+       свёрнуты в счётчик (`teamMiniRowHtml`), так что строк редко больше двух. */
     .team-mini-row {
         display: flex; align-items: center; gap: 6px;
-        flex-wrap: nowrap; overflow-x: auto; min-width: 0;
+        flex-wrap: wrap; min-width: 0; row-gap: 5px;
         font-family: system-ui, sans-serif;
     }
     .team-mini {
@@ -1614,13 +1638,21 @@
         padding: 0 5px; border-radius: 8px; cursor: pointer;
         background: #dbeafe; color: #1e40af; font-weight: 700;
     }
-    /* Название ближайшего таймаута — шаг оболочки или потолок прогона. Длинные
-       имена шагов режем многоточием: ряд карточек горизонтальный, и «Ответ JSON:
-       разбиение» целиком выдавил бы соседей за край. Полное имя — в подсказке. */
+    /* Название ближайшего таймаута — шаг оболочки или потолок прогона. Режем
+       коротко: плашек в ряду теперь много, и «Разработчик: р…» съедало место, ничего
+       толком не сообщая — обрезанное имя шага всё равно не прочесть. Полное — в
+       подсказке всей плашки, вместе с номером шага и задачей. */
     .team-mini-left-name {
-        max-width: 92px; overflow: hidden; text-overflow: ellipsis;
+        max-width: 62px; overflow: hidden; text-overflow: ellipsis;
         white-space: nowrap; font-size: 11px; color: #64748b;
     }
+
+    /* Счётчик свёрнутых оболочек роли: «×3». Приглушён — это не состояние, а
+       количество, и спорить за внимание с работающими плашками ему незачем. */
+    .team-mini-n {
+        font-size: 11px; color: #94a3b8; font-variant-numeric: tabular-nums;
+    }
+    .team-mini-on .team-mini-n { color: #4d7c5f; }
     /* Остаток до ближайшего таймаута. Моноширинный, чтобы плашка не дёргалась в
        ряду при каждом тике: цифры разной ширины двигают соседние карточки. */
     .team-mini-left {
@@ -1732,6 +1764,14 @@
                 </select>
             </label>
             <button class="stat-refresh" onclick="statLoad()">Обновить</button>
+            <!-- Сброс справа и отдельным видом: средние тянут за собой прошлое —
+                 сменили пул, поправили max_tokens, починили канал, — и старые замеры
+                 показывают погоду позавчерашнего дня. После сброса видно ровно то,
+                 что происходит с текущими настройками. -->
+            <button class="stat-reset" onclick="statReset()"
+                    title="Удалить все накопленные замеры и начать счёт заново. Отменить нельзя">
+                Сбросить статистику
+            </button>
         </div>
         <div class="stat-totals" id="statTotals"></div>
         <!-- Две таблицы вкладками, а не одна под другой: смотрят в них по
@@ -1739,10 +1779,20 @@
              конкретном круге», — и вторая таблица под первой только уводила
              прокрутку от карточек итогов. -->
         <div class="stat-tabs" id="statTabs">
-            <button class="stat-tab active" data-stat="summary">Средние по роли и шагу</button>
+            <button class="stat-tab active" data-stat="llm">По моделям</button>
+            <button class="stat-tab" data-stat="summary">Средние по роли и шагу</button>
             <button class="stat-tab" data-stat="rows">Последние замеры <span class="stat-tab-n" id="statTabRowsN"></span></button>
         </div>
-        <div class="stat-table-wrap" id="statPaneSummary"><table class="stat-table" id="statSummary"></table></div>
+        <!-- «По моделям» первой: с пулом проекта круги идут на разных моделях, и
+             первый вопрос к статистике теперь — чем работать выгоднее, а не сколько
+             стоит шаг. Внутри две таблицы: итог по модели и разбивка по ролям —
+             одна и та же модель ведёт себя на разведке и на прогоне QA по-разному. -->
+        <div class="stat-table-wrap" id="statPaneLlm">
+            <table class="stat-table" id="statLlm"></table>
+            <div class="stat-subhead">Та же модель в разрезе ролей</div>
+            <table class="stat-table" id="statLlmRole"></table>
+        </div>
+        <div class="stat-table-wrap" id="statPaneSummary" style="display:none"><table class="stat-table" id="statSummary"></table></div>
         <div class="stat-table-wrap" id="statPaneRows" style="display:none"><table class="stat-table" id="statRows"></table></div>
     </div>
 
@@ -1895,10 +1945,69 @@ async function loadTeamRow() {
         const data = await taskFetch('/api/team/projects');
         const blocks = data.result?.blocks || [];
         const block = blocks.find(b => (b.project_id || 0) === _taskProjectId);
-        row.innerHTML = (block?.cards || []).map(teamMiniCardHtml).join('');
+        row.innerHTML = teamMiniRowHtml(block?.cards || []);
     } catch(e) {
         row.innerHTML = '';
     }
+}
+
+// Ряд целиком. Работающие оболочки — каждая своей плашкой, свободные роли —
+// одной со счётчиком.
+//
+// Зачем сворачивать. Оболочек у роли теперь столько, сколько терминалов открыл
+// человек (`team_shell_pool`), и ряд из одинаковых «Manager», «Manager»,
+// «Developer», «Developer», «Developer» уезжал за край экрана, не сообщая ничего:
+// свободная оболочка отвечает только на вопрос «она есть», а на него хватает числа.
+// Работающая — другое дело: у неё своя задача, свой таймер и свой процент, и её
+// сворачивать нельзя.
+//
+// Порядок ролей сохраняем тот, в котором их прислал сервер (по конвейеру:
+// менеджер → разработчик → QA → багфиксер), а внутри роли работающие идут первыми.
+function teamMiniRowHtml(cards) {
+    const byRole = new Map();
+    for (const card of cards) {
+        if (!byRole.has(card.role)) byRole.set(card.role, []);
+        byRole.get(card.role).push(card);
+    }
+
+    const out = [];
+    for (const [, group] of byRole) {
+        const busy = group.filter(c => c.active && c.queue_current);
+        const idle = group.filter(c => !(c.active && c.queue_current));
+        out.push(...busy.map(teamMiniCardHtml));
+        if (idle.length) out.push(teamMiniIdleHtml(idle));
+    }
+
+    return out.join('');
+}
+
+// Плашка свободных оболочек роли: имя и, если их больше одной, счётчик.
+//
+// Живые и погасшие в одной плашке не смешиваем — это разные состояния: у первых
+// зелёная точка, у вторых серая. Роль, где есть и те и другие, даёт две плашки, и
+// это честно: «две свободны, одна не запущена» — ровно то, что человеку нужно знать,
+// чтобы решить, поднимать ли ещё терминал.
+function teamMiniIdleHtml(cards) {
+    const alive = cards.filter(c => c.active);
+    const dead  = cards.filter(c => !c.active);
+
+    return [alive, dead].filter(g => g.length).map(group => {
+        const card = group[0];
+        const n = group.length > 1 ? `<span class="team-mini-n">×${group.length}</span>` : '';
+        const state = card.active ? 'свободн' + (group.length > 1 ? 'ы' : 'а') : 'не запущен' + (group.length > 1 ? 'ы' : 'а');
+        const title = `${esc(card.role_title)} · ${group.length} ${group.length > 1 ? 'оболочки' : 'оболочка'} · ${state}`;
+
+        return `<div class="team-mini${card.active ? ' team-mini-on' : ''}" title="${title}">
+            <span class="team-mini-dot"></span>
+            <span class="team-mini-name">${esc(teamMiniRoleName(card))}</span>${n}
+        </div>`;
+    }).join('');
+}
+
+// Имя для свёрнутой плашки — роль, а не имя карточки: у второй и третьей оболочки
+// имена совпадают («Manager»), и показывать их по отдельности незачем.
+function teamMiniRoleName(card) {
+    return card.name || card.role_title || card.role || '—';
 }
 
 function teamMiniCardHtml(card) {
@@ -4344,6 +4453,8 @@ async function statLoad() {
 
     statScopeFill(data.parents || []);
     statRenderTotals(data.totals || {});
+    statRenderLlm(data.by_llm || []);
+    statRenderLlmRole(data.by_llm_role || []);
     statRenderSummary(data.summary || []);
     statRenderRows(data.rows || []);
 
@@ -4353,6 +4464,22 @@ async function statLoad() {
     if (n) n.textContent = (data.rows || []).length ? `(${(data.rows || []).length})` : '';
 }
 
+// Сброс накопленного. Спрашиваем дважды — числом замеров в вопросе: «удалить всё»
+// здесь необратимо, а копится оно кругами по сорок минут.
+async function statReset() {
+    const n = Number(document.querySelector('#statTotals .stat-card b')?.textContent?.replace(/\D/g, '')) || 0;
+    if (!confirm(`Удалить все замеры${n ? ` (${n})` : ''} и начать счёт с нуля?\n\nОтменить это нельзя.`)) return;
+
+    try {
+        const resp = await fetch('/api/task/metric?reset=1', {method: 'DELETE'});
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+    } catch (e) {
+        alert('Статистика не сброшена: ' + (e.message || e));
+    }
+    await statLoad();
+}
+
 // Переключение таблиц. Выбранная вкладка не запоминается между открытиями: на
 // статистику заходят за средними, и возвращать человека в «последние замеры»
 // только потому, что он туда однажды заглянул, значило бы прятать главное.
@@ -4360,6 +4487,7 @@ function statTabSelect(name) {
     document.querySelectorAll('#statTabs .stat-tab').forEach(tab => {
         tab.classList.toggle('active', tab.dataset.stat === name);
     });
+    document.getElementById('statPaneLlm').style.display = name === 'llm' ? '' : 'none';
     document.getElementById('statPaneSummary').style.display = name === 'summary' ? '' : 'none';
     document.getElementById('statPaneRows').style.display = name === 'rows' ? '' : 'none';
 }
@@ -4418,6 +4546,77 @@ function statRenderTotals(t) {
         `<div class="stat-card" title="${esc(hint)}">`
       + `<div class="stat-card-v">${esc(String(v))}</div>`
       + `<div class="stat-card-k">${esc(k)}</div></div>`).join('');
+}
+
+// Итог по модели: главная таблица вкладки. Отвечает на вопрос «чем работать
+// выгоднее» — по накопленным кругам, а не по обещаниям провайдера.
+//
+// Доля сбоев рядом со скоростью намеренно: быстрая модель, роняющая каждый третий
+// круг, обходится дороже медленной и надёжной — круг приходится повторять целиком.
+function statRenderLlm(rows) {
+    const table = document.getElementById('statLlm');
+    if (!rows.length) {
+        table.innerHTML = '<tr><td class="stat-empty">Замеров пока нет — они появятся по концу первого круга</td></tr>';
+        return;
+    }
+    const head = [
+        ['модель',  'Модель из пула проекта, которой шёл круг. «не записана» — замер сделан до появления пула либо круг шёл облачным бэкендом напрямую'],
+        ['кругов',  'Сколько шагов замерено. Одна-две строки — ещё не среднее, а отдельный случай'],
+        ['задач',   'По скольким разным строкам накоплено: пять кругов по одной задаче говорят меньше, чем пять по разным'],
+        ['сек',     'Среднее время шага на этой модели'],
+        ['макс',    'Самый долгий замер — по нему видно хвост, а таймауты ставят именно по хвосту'],
+        ['всего',   'Сколько секунд суммарно отработала модель: цена её присутствия в пуле'],
+        ['токенов', 'Сколько модель наговаривает за шаг в среднем. Болтливая дороже при той же скорости'],
+        ['ток/с',   'Скорость генерации. Прямое сравнение моделей между собой'],
+        ['сбоев %', 'Доля шагов, завершившихся не успехом. Считается и по оборванным кругам: их замеры тоже пишутся'],
+        ['с/1000',  'Секунд на тысячу строк контекста — цена объёма на этой модели'],
+    ];
+    table.innerHTML = '<tr>' + head.map(([h, hint], i) =>
+        `<th class="${i >= 1 ? 'num' : ''}" title="${esc(hint)}">${esc(h)}</th>`).join('') + '</tr>'
+      + rows.map(r => `<tr>`
+          + `<td>${esc(r.llm_name || 'не записана')}</td>`
+          + `<td class="num">${r.runs || 0}</td>`
+          + `<td class="num">${r.tasks || 0}</td>`
+          + `<td class="num">${statNum(r.sec_avg || 0)}</td>`
+          + `<td class="num">${statNum(r.sec_max || 0)}</td>`
+          + `<td class="num">${statNum(r.sec_total || 0)}</td>`
+          + `<td class="num">${statNum(r.tokens_avg || 0)}</td>`
+          + `<td class="num">${r.speed_avg || '—'}</td>`
+          + `<td class="num${Number(r.fail_share) > 0 ? ' stat-bad' : ''}">${r.fail_share || 0}</td>`
+          + `<td class="num">${statNum(r.sec_per_1k || 0)}</td>`
+          + `</tr>`).join('');
+}
+
+// Модель против роли: разведка менеджера и прогон QA — разная работа, и средняя по
+// модели их смешивает. По этой таблице решают, какую модель какой роли отдать.
+function statRenderLlmRole(rows) {
+    const table = document.getElementById('statLlmRole');
+    if (!rows.length) {
+        table.innerHTML = '<tr><td class="stat-empty">Нет данных</td></tr>';
+        return;
+    }
+    const head = [
+        ['модель',  'Модель из пула проекта'],
+        ['роль',    'Кто выполнял шаг: manager, developer, qa или bugfixer'],
+        ['кругов',  'Сколько шагов замерено для этой пары'],
+        ['сек',     'Среднее время шага'],
+        ['макс',    'Самый долгий замер пары'],
+        ['токенов', 'Средний объём ответа модели на этой роли'],
+        ['ток/с',   'Скорость генерации на этой роли'],
+        ['сбоев %', 'Доля шагов, завершившихся не успехом'],
+    ];
+    table.innerHTML = '<tr>' + head.map(([h, hint], i) =>
+        `<th class="${i >= 2 ? 'num' : ''}" title="${esc(hint)}">${esc(h)}</th>`).join('') + '</tr>'
+      + rows.map((r, i) => `<tr class="${statBand(rows, i, x => x.llm_name)}">`
+          + `<td>${esc(r.llm_name || 'не записана')}</td>`
+          + `<td>${esc(r.role || '—')}</td>`
+          + `<td class="num">${r.runs || 0}</td>`
+          + `<td class="num">${statNum(r.sec_avg || 0)}</td>`
+          + `<td class="num">${statNum(r.sec_max || 0)}</td>`
+          + `<td class="num">${statNum(r.tokens_avg || 0)}</td>`
+          + `<td class="num">${r.speed_avg || '—'}</td>`
+          + `<td class="num${Number(r.fail_share) > 0 ? ' stat-bad' : ''}">${r.fail_share || 0}</td>`
+          + `</tr>`).join('');
 }
 
 function statRenderSummary(rows) {

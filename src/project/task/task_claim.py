@@ -19,7 +19,8 @@ from src.project.task.task_metadata import (
     task_metadata_stop_free_sql,
     task_metadata_test_free_sql,
 )
-from src.project.task.task_role import (TASK_ROLE_BUGFIXER, task_role_project_sql,
+from src.project.task.task_role import (TASK_ROLE_BUGFIXER, task_role_by_type,
+                                        task_role_project_sql,
                                         task_role_project_type_sql, task_role_type_sql)
 from src.project.task.task_state import task_state_kanban_sql, task_state_subtask_set
 from src.project.task.task_setting_timeout import (
@@ -369,11 +370,14 @@ async def task_claim_inflight_by_project() -> dict[int, int]:
     """
     Сколько прогонов агента уже идёт у каждого проекта: `{project_id: число}`.
 
-    Это счётчик для предела «Parallel LLM» (`task_setting_parallel`). Работа в полёте —
-    строка в переходном состоянии (`TASK_CLAIM_INFLIGHT_STATES`) с занятой
-    блокировкой: её захватил тик, за ней стоит job, и агент в оболочке проекта либо
-    уже думает, либо вот-вот начнёт. Считаются и задачи, и подзадачи: подзадача
-    наследует `project_id` родителя, а оболочка у проекта одна на всех.
+    Общий потолок проекта: работа в полёте — строка в переходном состоянии
+    (`TASK_CLAIM_INFLIGHT_STATES`) с занятой блокировкой: её захватил тик, за ней
+    стоит job, и агент в оболочке проекта либо уже думает, либо вот-вот начнёт.
+    Считаются и задачи, и подзадачи: подзадача наследует `project_id` родителя.
+
+    Один этот счётчик предел не задаёт: у проекта на каждую роль ровно одна оболочка,
+    и внутри роли круг может идти только один — за этим следит
+    `task_claim_inflight_by_role`.
 
     Проектов без работы в словаре нет. Ключ 0 — строки вне проектов, тот же
     «Без проекта», что и в блоках команды.
@@ -392,6 +396,52 @@ async def task_claim_inflight_by_project() -> dict[int, int]:
         rows = await db.fetchall()
 
     return {int(row['pid']): int(row['cnt']) for row in rows or []}
+
+
+async def task_claim_inflight_by_role() -> dict[int, set]:
+    """
+    Какие роли каждого проекта заняты прямо сейчас: `{project_id: {role, ...}}`.
+
+    Роль у проекта одна и оболочка у неё одна — а в оболочке живёт один агент. Два
+    круга одной роли не «идут параллельно», они дерутся: второй промпт прилетает
+    агенту посреди чужого хода, а перезапуск оболочки перед новой задачей обрывает
+    ход соседа — тот получает «Оболочка перезапущена, ответ на сообщение потерян».
+    Поэтому занятая роль выпадает из отбора целиком, независимо от того, сколько
+    моделей свободно в пуле: модель это бэкенд, а не вторая оболочка.
+
+    Роль выводится из состояния строки, своей колонки под неё нет:
+
+    | Состояние | Роль |
+    |---|---|
+    | `developing` | `developer` |
+    | `testing` (у подзадачи) | `qa` |
+    | `bugfixing` | `bugfixer` |
+    | `planning`, `reviewing` | планировщик по типу задачи (`task_role_by_type`) |
+
+    `testing` у **корневой** задачи — это фаза «задача на проверке», а не захваченная
+    работа, и роль ею не занята; отличаем по `parent_id`, тем же признаком, каким
+    реклейм выбирает карту возврата.
+    """
+    placeholders = ', '.join(['%s'] * len(TASK_CLAIM_INFLIGHT_STATES))
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT COALESCE(t.project_id, 0) AS pid, t.pipeline_state AS state, "
+            "       t.parent_id AS parent_id, ty.name AS type_name "
+            "  FROM project_task t "
+            "  LEFT JOIN project_task_type ty ON ty.id = t.task_type_id "
+            f" WHERE t.pipeline_state IN ({placeholders}) "
+            "   AND t.pipeline_locked_at IS NOT NULL AND t.pipeline_locked_by <> ''",
+            list(TASK_CLAIM_INFLIGHT_STATES))
+        rows = await db.fetchall()
+
+    busy: dict[int, set] = {}
+    for row in rows or []:
+        role = _inflight_role(str(row.get('state') or ''), row.get('parent_id'),
+                              row.get('type_name'))
+        if role:
+            busy.setdefault(int(row['pid']), set()).add(role)
+
+    return busy
 
 
 async def _task_claim(where: str, params: list, state_to: str, worker: str,
@@ -493,3 +543,26 @@ def _lock_stale_sql(live_ids: set | None, lock_timeout: int) -> tuple[str, list]
         orphan += f" AND id NOT IN ({placeholders})"
         params += sorted(live_ids)
     return f"({stale} OR ({orphan}))", params
+
+
+def _inflight_role(state: str, parent_id, type_name) -> str:
+    """
+    Роль, чья оболочка занята строкой в переходном состоянии. Пусто — ничья.
+
+    Разбор состояний — в докстринге `task_claim_inflight_by_role`. Здесь только
+    отображение, чтобы SQL не разрастался ветками CASE: карту ролей всё равно
+    держит `task_role`, и дублировать её в запросе значило бы завести второе место,
+    где написано, кому принадлежит тип задачи.
+    """
+    state = str(state or '')
+    if state == 'developing':
+        return 'developer'
+    if state == 'bugfixing':
+        return TASK_ROLE_BUGFIXER
+    if state == 'testing':
+        # У корня это фаза «задача на проверке», а не круг QA: роль свободна.
+        return 'qa' if parent_id else ''
+    if state in ('planning', 'reviewing'):
+        return task_role_by_type(type_name)
+
+    return ''

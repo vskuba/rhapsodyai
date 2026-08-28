@@ -986,6 +986,32 @@ CREATE TABLE `project_team` (
     CONSTRAINT `fk_team_project` FOREIGN KEY (`project_id`) REFERENCES `project` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Захват модели ролью на круг работы.
+--
+-- Зачем таблица, а не колонка. Модели раздаются из пула проекта, и двум оболочкам
+-- одна и та же достаться не должна. Первичный ключ по имени модели делает захват
+-- атомарным силами самой базы: `INSERT` либо проходит, либо нет, и гонка двух тиков
+-- разрешается без блокировок в коде.
+--
+-- Захват живёт **круг**, а не задачу: между кругами модель свободна и её берёт другая
+-- работа, иначе она простаивала бы, пока человек смотрит результат. Привязку к задаче
+-- держит `task_id` — на следующем круге той же задаче стараются вернуть ту же модель:
+-- если получилось, агента можно не перезапускать, и его контекст цел.
+--
+-- `locked_at` — срок протухания. Оболочка падает, круг обрывается по таймауту, и без
+-- срока пул опустел бы от мёртвых захватов, которые некому снять.
+CREATE TABLE `team_llm_lock` (
+    `llm_name` VARCHAR(100) NOT NULL COMMENT 'Имя модели из каталога оболочки',
+    `project_id` INT NOT NULL DEFAULT '0' COMMENT 'Чей пул; 0 — «Без проекта»',
+    `task_id` INT DEFAULT NULL COMMENT 'Задача, для которой взяли — по ней прилипание',
+    `role` VARCHAR(50) NOT NULL DEFAULT '' COMMENT 'Роль, которая держит',
+    `session_uuid` CHAR(36) NOT NULL DEFAULT '' COMMENT 'Оболочка, которой отдали',
+    `locked_at` DATETIME DEFAULT NULL COMMENT 'Когда взяли; NULL — свободна',
+    PRIMARY KEY (`llm_name`),
+    INDEX `idx_tll_task` (`task_id`),
+    INDEX `idx_tll_project` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── Browser ───────────────────────────────────────────────────────────────────
 
 -- Сайт — закладка контейнера-браузера: имя и адрес, с которого начинают работу.

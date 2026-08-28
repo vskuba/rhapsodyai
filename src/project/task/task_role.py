@@ -244,9 +244,72 @@ def task_role_planners_only(roles_by_project) -> dict[int, list[str]]:
 TASK_ROLE_SHELL_REASON_BLOCKED = 'permission'
 
 
+async def task_role_shell_session(project_id: int, role: str) -> str:
+    """
+    `session_uuid` живой оболочки роли в проекте. Нет такой — пустая строка.
+
+    Нужен, чтобы адресно сказать оболочке переключить модель (`__SWITCH_LLM__`):
+    маркер кладётся в инбокс конкретной сессии, а не рассылается всем.
+
+    Проект оболочки определяется каталогом запуска, как и в
+    `task_role_shell_live_by_project`: своей копии этого правила заводить нельзя —
+    разойдясь, они дали бы разный ответ на один вопрос.
+
+    Берём самую свежую: у роли бывает несколько записей, если оболочку
+    перезапускали, и старые ещё не протухли.
+    """
+    role = str(role or '').strip()
+    if not role:
+        return ''
+
+    async with mysql_get_db_async() as db:
+        placeholders = ', '.join(['%s'] * len(_TASK_ROLE_SESSION_STATUS_LIVE))
+        await db.execute(
+            'SELECT session_uuid, work_dir FROM ai_claude_session_registry '
+            f" WHERE role = %s AND status IN ({placeholders}) "
+            ' ORDER BY last_seen_at DESC',
+            [role] + list(_TASK_ROLE_SESSION_STATUS_LIVE))
+        rows = await db.fetchall() or []
+        await db.execute('SELECT id, work_dir FROM project')
+        projects = await db.fetchall() or []
+
+    by_dir = {}
+    for project in projects:
+        work_dir = _path_normalize(project.get('work_dir'))
+        if work_dir:
+            by_dir[work_dir] = int(project.get('id') or 0)
+
+    for row in rows:
+        # Каталог оболочки — рабочие выкладки проекта; `_shell_project_dir`
+        # снимает с него хвост и даёт корень, по которому проект и ищут.
+        if by_dir.get(_shell_project_dir(row.get('work_dir'))) == int(project_id or 0):
+            return str(row.get('session_uuid') or '')
+
+    return ''
+
+
 async def task_role_shell_live_by_project() -> dict[int, list[str]]:
     """
     Живые оболочки claude-shell в разрезе проектов: `{project_id: [role]}`.
+
+    Список ролей, без счёта оболочек: столько мест, где он нужен именно таким
+    (условия отбора строятся по именам ролей). Сколько оболочек у роли — отдельным
+    вопросом отвечает `task_role_shell_sessions_by_project`, из которого этот список
+    и собирается: правило «какая оболочка считается живой» одно на оба ответа.
+    """
+    sessions = await task_role_shell_sessions_by_project()
+
+    return {project_id: list(by_role) for project_id, by_role in sessions.items()}
+
+
+async def task_role_shell_sessions_by_project() -> dict[int, dict[str, list[str]]]:
+    """
+    Живые оболочки с их сессиями: `{project_id: {role: [session_uuid, ...]}}`.
+
+    Оболочек у роли бывает несколько — их поднимают одной командой запуска в новых
+    терминалах, и каждая свой процесс Claude Code со своим контекстом. Конвейер
+    раздаёт им работу поштучно (`team_shell_pool`), поэтому ему мало знать, что роль
+    жива: нужно, кому именно слать и сколько таких адресатов вообще есть.
 
     Без живой оболочки шаг workflow всё равно сорвётся, а задача уйдёт в `failed`
     и потребует человека. Поэтому такие задачи лучше не захватывать вовсе — на
@@ -266,6 +329,9 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
     рисуется по карточкам, и захват работы, которую ни одна карточка не показывает,
     сделал бы происходящее невидимым для человека.
 
+    Порядок сессий внутри роли — по свежести пинга, самая свежая первой: при прочих
+    равных работу разумнее отдать той оболочке, о которой мы знаем более свежее.
+
     Свежесть считаем в Python, а не через `NOW()`: `last_seen_at` пишется временем
     приложения, и сравнение с временем MySQL дало бы вечно живую либо мгновенно
     мёртвую оболочку.
@@ -273,9 +339,10 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
     async with mysql_get_db_async() as db:
         placeholders = ', '.join(['%s'] * len(_TASK_ROLE_SESSION_STATUS_LIVE))
         await db.execute(
-            'SELECT role, work_dir, last_seen_at, agent_status_reason '
+            'SELECT role, session_uuid, work_dir, last_seen_at, agent_status_reason '
             '  FROM ai_claude_session_registry '
-            f" WHERE role <> '' AND status IN ({placeholders})",
+            f" WHERE role <> '' AND status IN ({placeholders}) "
+            ' ORDER BY last_seen_at DESC',
             list(_TASK_ROLE_SESSION_STATUS_LIVE),
         )
         rows = await db.fetchall()
@@ -294,11 +361,12 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
 
     now = await datetime_now()
     stale_seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_PING_STALE)
-    live: dict[int, list[str]] = {}
+    live: dict[int, dict[str, list[str]]] = {}
     for row in (rows or []):
         role = str(row.get('role') or '').strip()
+        session_uuid = str(row.get('session_uuid') or '').strip()
         last_seen_at = row.get('last_seen_at')
-        if not role or not last_seen_at:
+        if not role or not session_uuid or not last_seen_at:
             continue
         if (now - last_seen_at).total_seconds() >= stale_seconds:
             continue
@@ -317,9 +385,9 @@ async def task_role_shell_live_by_project() -> dict[int, list[str]]:
                                         TASK_ROLE_PROJECT_NONE)
         if project_id and (project_id, role) not in card_roles:
             continue
-        roles = live.setdefault(project_id, [])
-        if role not in roles:
-            roles.append(role)
+        sessions = live.setdefault(project_id, {}).setdefault(role, [])
+        if session_uuid not in sessions:
+            sessions.append(session_uuid)
 
     return live
 

@@ -46,7 +46,8 @@ DEVELOPER_USER_ID = 1  # только для атрибуции session/log
 
 async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = '',
                                    role: str = TASK_DEVELOPER_ROLE,
-                                   work_dir: str = '', subtask_dir: str = '') -> dict:
+                                   work_dir: str = '', subtask_dir: str = '',
+                                   shell_session: str = '') -> dict:
     """
     Выполнить одну подзадачу плана силами оболочки разработчика.
 
@@ -135,6 +136,12 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
         'subtask_decisions': task_question_decisions_text(subtask),
         'task_shell_role':   role,
         'task_shell_work_dir': str(work_dir or ''),
+        # Третья часть адреса — конкретная оболочка. У роли их бывает несколько, по
+        # одной на открытый терминал, и круг держит свою на всё время работы: шаги
+        # ходят в один и тот же Claude Code, иначе следующий шаг не увидит того, что
+        # нашёл предыдущий. Пусто — захвата не было, оболочку выберет сам инструмент
+        # (самую свежую по пингу), как было до `team_shell_pool`.
+        'task_shell_session': str(shell_session or ''),
         # Где работать. Каталог уже создан конвейером, ветка в нём выкачена —
         # промпту остаётся сказать «перейди туда», а не «заведи ветку». Пустая
         # строка ложна для `%if%`: блок про переход не раскроется, и разработчик
@@ -158,7 +165,9 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
     task_id      = int(subtask.get('parent_id') or (task or {}).get('id') or 0)
     task_id_last = await _shell_task_id_last(role, (task or {}).get('project_id'))
     if not task_id or task_id != task_id_last or await _shell_busy(role, work_dir):
-        await team_session_restart_role(role, work_dir)
+        # Перезапускаем свою оболочку, а не «оболочку роли»: у роли их несколько,
+        # и маркер, ушедший соседу, снёс бы его ход посреди работы.
+        await team_session_restart_role(role, work_dir, session_uuid=shell_session)
 
     loop   = asyncio.get_running_loop()
     future = loop.create_future()

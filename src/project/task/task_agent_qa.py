@@ -51,7 +51,8 @@ QA_USER_ID = 1  # только для атрибуции session/log
 
 async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
                             role: str = TASK_QA_ROLE,
-                            work_dir: str = '', subtask_dir: str = '') -> dict:
+                            work_dir: str = '', subtask_dir: str = '',
+                            shell_session: str = '') -> dict:
     """
     Проверить одну выполненную подзадачу силами оболочки QA.
 
@@ -132,6 +133,12 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         'subtask_decisions': task_question_decisions_text(subtask),
         'task_shell_role':   role,
         'task_shell_work_dir': str(work_dir or ''),
+        # Третья часть адреса — конкретная оболочка. У роли их бывает несколько, по
+        # одной на открытый терминал, и круг держит свою на всё время работы: шаги
+        # ходят в один и тот же Claude Code, иначе следующий шаг не увидит того, что
+        # нашёл предыдущий. Пусто — захвата не было, оболочку выберет сам инструмент
+        # (самую свежую по пингу), как было до `team_shell_pool`.
+        'task_shell_session': str(shell_session or ''),
         # Где проверять. Каталог тот же, что был у разработчика, ветка в нём уже
         # выкачена — переключать её QA не нужно и не должен. Пустая строка ложна
         # для `%if%`: блок про переход не раскроется.
@@ -151,7 +158,9 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
     # заново, и проверка предыдущей подзадачи не попадает в контекст этой. Между
     # шагами перезапускать нельзя — они продолжают один разговор, и вердикт
     # опирается на прогон, сделанный шагом раньше.
-    await team_session_restart_role(role, work_dir)
+    # Перезапускаем свою оболочку, а не «оболочку роли»: у роли их несколько,
+    # и маркер, ушедший соседу, снёс бы его ход посреди работы.
+    await team_session_restart_role(role, work_dir, session_uuid=shell_session)
 
     loop   = asyncio.get_running_loop()
     future = loop.create_future()

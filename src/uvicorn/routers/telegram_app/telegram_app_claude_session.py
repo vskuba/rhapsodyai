@@ -39,6 +39,10 @@ TELEGRAM_CLAUDE_AGENT_STATUS_DEFAULT = 'unknown'
 # Причина занятости — только для диагностики, длина по колонке VARCHAR(32).
 TELEGRAM_CLAUDE_AGENT_STATUS_REASON_MAX = 32
 
+# Сессии, чьи окна могут быть открыты: их номера заняты и новой оболочке не
+# достаются. 'inactive' — завершённая, её номер свободен.
+TELEGRAM_CLAUDE_SESSION_STATUS_LIVE = ('active', 'closing')
+
 
 @router.get("/telegram-app/claude/session/inbox")
 async def telegram_app_claude_session_inbox(request: Request, session_uuid: str):
@@ -101,12 +105,17 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
 
     session_uuid = str(uuid.uuid4())
     now = await datetime_now()
+    # Номер оболочки внутри роли: по нему заголовок терминала и карточка на
+    # `/admin/team` показывают одно и то же — иначе три окна «Developer» и три
+    # одинаковые карточки не сопоставить.
+    role_index = await _role_index_next(role_given, work_dir) if role_given else 0
     repo = AiClaudeSessionRegistryRepository()
     # created_at пишем явно: DEFAULT CURRENT_TIMESTAMP взял бы часовой пояс MySQL,
     # и в одной строке created_at и last_seen_at оказались бы в разных поясах
     await repo.add({
         "session_uuid": session_uuid,
         "role": role,
+        "role_index": role_index,
         "project_label": project_label,
         "status": "active",
         "server_llm": server_llm,
@@ -128,7 +137,41 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
         except Exception as error:
             logger_info(f"claude_session_register: work_dir update failed: {error}")
 
-    return {"result": {"session_uuid": session_uuid}}
+    return {"result": {"session_uuid": session_uuid, "role_index": role_index}}
+
+
+async def _role_index_next(role: str, work_dir: str, exclude: str = '') -> int:
+    """
+    Наименьший свободный номер оболочки для этой роли. 1 — первая, основная.
+
+    Считаем по живым сессиям того же каталога: роли в командах разных проектов
+    называются одинаково, и без каталога менеджер соседнего проекта отбирал бы номер.
+
+    Свободный, а не «следующий по счёту»: терминалы закрывают и открывают заново, и
+    сквозная нумерация довела бы до «Developer 14» при двух открытых окнах.
+
+    Свежесть здесь ни при чём — берём все незакрытые сессии (`status`), даже
+    молчащие: пока строка не помечена завершённой, её окно может быть открыто, и
+    отдавать её номер новой оболочке нельзя.
+
+    `exclude` — не считать эту сессию: нужен дозаполнению на пинге, где строка уже
+    в реестре и без исключения соревновалась бы сама с собой.
+    """
+    async with mysql_get_db_async() as db:
+        placeholders = ", ".join(["%s"] * len(TELEGRAM_CLAUDE_SESSION_STATUS_LIVE))
+        exclude_sql = "AND session_uuid <> %s " if exclude else ""
+        exclude_params = (str(exclude),) if exclude else ()
+        await db.execute(
+            "SELECT role_index FROM ai_claude_session_registry "
+            f" WHERE role = %s AND work_dir = %s AND status IN ({placeholders}) {exclude_sql}",
+            (str(role), str(work_dir), *TELEGRAM_CLAUDE_SESSION_STATUS_LIVE, *exclude_params))
+        taken = {int(row["role_index"] or 0) for row in await db.fetchall() or []}
+
+    number = 1
+    while number in taken:
+        number += 1
+
+    return number
 
 
 @router.post("/telegram-app/claude/session/resume")
@@ -185,6 +228,12 @@ async def telegram_app_claude_session_heartbeat(request: Request, data: dict):
         raise HTTPException(status_code=400, detail="session_uuid required")
 
     work_dir = str(data.get("work_dir") or "").strip()
+    # Модель, на которой агент работает **сейчас**. С пулом проекта она меняется от
+    # круга к кругу, и регистрация знает только режим запуска (`litellm` против
+    # `anthropic`) — чем роль работает на самом деле, знает одна оболочка. Пусто —
+    # колонку не трогаем: пинг без поля приходит от оболочек, которые о нём ещё не
+    # знают, и затирать им запись регистрации нечем.
+    server_llm = str(data.get("server_llm") or "").strip()[:SESSION_SERVER_LLM_MAX]
 
     repo = AiClaudeSessionRegistryRepository()
     row = await repo.find_one_by({"session_uuid": session_uuid})
@@ -197,6 +246,14 @@ async def telegram_app_claude_session_heartbeat(request: Request, data: dict):
     # зарегистрированные до появления колонки, дозаполняют её на первом же пинге.
     if work_dir and not row.get("work_dir"):
         update_data["work_dir"] = work_dir
+    # Номер оболочки дозаполняем на первом же пинге: сессии, зарегистрированные до
+    # появления колонки, иначе остались бы безымянными до перезапуска терминала — а
+    # перезапуск стоит агенту всего накопленного контекста.
+    if str(row.get("role") or "").strip() and not int(row.get("role_index") or 0):
+        update_data["role_index"] = await _role_index_next(
+            str(row["role"]), str(row.get("work_dir") or work_dir), exclude=session_uuid)
+    if server_llm and server_llm != str(row.get("server_llm") or ""):
+        update_data["server_llm"] = server_llm
     await repo.update(row["id"], update_data)
 
     return {"result": {"status": row["status"],

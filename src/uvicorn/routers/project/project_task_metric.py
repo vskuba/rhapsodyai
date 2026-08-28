@@ -21,7 +21,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.project.task.task_metric import (task_metric_delete, task_metric_parents,
+from src.project.task.task_metric import (task_metric_by_llm, task_metric_by_llm_role,
+                                          task_metric_delete, task_metric_parents,
                                           task_metric_rows, task_metric_summary,
                                           task_metric_totals)
 
@@ -45,6 +46,10 @@ async def project_task_metric_list(parent_id: int = 0,
 
     return {
         'summary': await task_metric_summary(parent),
+        # Разрез по моделям: с пулом проекта круги идут на разных, и вопрос
+        # «чем работать выгоднее» отвечается только этими двумя сводками.
+        'by_llm': await task_metric_by_llm(parent),
+        'by_llm_role': await task_metric_by_llm_role(parent),
         'totals':  await task_metric_totals(parent),
         'rows':    await task_metric_rows(parent),
         # Список разрезов строим по самим замерам: дерево задач на странице
@@ -56,23 +61,29 @@ async def project_task_metric_list(parent_id: int = 0,
 
 
 @router.delete('/api/task/metric')
-async def project_task_metric_remove(task_id: int = 0, parent_id: int = 0,
+async def project_task_metric_remove(task_id: int = 0, parent_id: int = 0, reset: int = 0,
                                      user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """
-    Убрать замеры одной строки или всего дерева задачи.
+    Убрать замеры одной строки, дерева задачи или всей таблицы.
 
     Пересчитывать после удаления нечего: средние нигде не хранятся, их считает
     запрос по оставшимся строкам. Поэтому в ответ сразу отдаём новые итоги — по
     ним видно, что именно изменилось.
 
-    Без номера не делаем ничего, и это осознанно: «удалить всё» здесь неуместно.
-    Накопленное не восстановить — оно копится кругами по сорок минут.
+    `reset=1` — сброс всего накопленного: сравнение моделей идёт по средним, а те
+    тянут за собой прошлое, и после смены пула или починки канала старые замеры
+    показывают погоду позавчерашнего дня. Отдельным параметром, а не «вызовом без
+    номеров»: обнулить всё случайно нельзя — накопленное не восстановить.
+
+    Без номера и без флага — 400: пустой запрос молчаливо ничего не делал бы, и
+    человек решил бы, что удаление не работает.
     """
-    if not task_id and not parent_id:
+    if not task_id and not parent_id and not reset:
         raise HTTPException(status_code=400,
-                            detail='Укажите строку или задачу: удаление всей статистики не предусмотрено')
+                            detail='Укажите строку, задачу или reset=1 для полного сброса')
 
     removed = await task_metric_delete(task_id=int(task_id) or None,
-                                       parent_id=int(parent_id) or None)
+                                       parent_id=int(parent_id) or None,
+                                       reset_all=bool(reset))
 
     return {'ok': True, 'removed': removed, 'totals': await task_metric_totals()}

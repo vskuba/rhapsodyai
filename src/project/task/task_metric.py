@@ -38,7 +38,8 @@ TASK_METRIC_LIST_MAX = 200
 
 async def task_metric_collect(task_id: int, parent_id, role: str, attempt_no: int,
                               session_uuid: str, context_lines: int,
-                              task_title: str = '', lines_changed: int = 0) -> int:
+                              task_title: str = '', lines_changed: int = 0,
+                              llm_name: str = '') -> int:
     """
     Переложить замеры прогона из трассы в таблицу. Returns: сколько строк записали.
 
@@ -54,6 +55,11 @@ async def task_metric_collect(task_id: int, parent_id, role: str, attempt_no: in
     `lines_changed` — правка круга целиком, и она ставится **на одну строку**, на
     последний шаг. Повтори мы её на каждом шаге, сумма по задаче считала бы одну и
     ту же работу столько раз, сколько в круге было шагов.
+
+    `llm_name` — модель, которой шёл круг: её выдал пул проекта (`team_llm_pool`).
+    Пишем копией, как и заголовок: пул меняют, модель из него убирают, а замер
+    остаётся — и по нему потом читают, чего эта модель стоила. Пусто — круг шёл до
+    появления пула или облачным бэкендом напрямую.
 
     Ошибку глотаем: круг состоялся, и незаписанная статистика его не отменяет.
     """
@@ -74,7 +80,7 @@ async def task_metric_collect(task_id: int, parent_id, role: str, attempt_no: in
 
         last = len(steps) - 1
         rows = [(int(task_id), int(parent_id) if parent_id else None,
-                 str(task_title or '')[:255], str(role or ''),
+                 str(task_title or '')[:255], str(role or ''), str(llm_name or '')[:100],
                  str(step['step_title'] or '')[:190], int(attempt_no or 0),
                  int(context_lines or 0), int(lines_changed or 0) if number == last else 0,
                  int(step['duration_ms'] or 0),
@@ -85,10 +91,10 @@ async def task_metric_collect(task_id: int, parent_id, role: str, attempt_no: in
         async with mysql_get_db_async() as db:
             await db.executemany(
                 "INSERT INTO project_task_metric "
-                "  (task_id, parent_id, task_title, role, step_title, attempt_no, "
+                "  (task_id, parent_id, task_title, role, llm_name, step_title, attempt_no, "
                 "   context_lines, lines_changed, duration_ms, tokens_output, "
                 "   tokens_prompt, tokens_per_sec, status) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", rows)
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", rows)
             await db.connection.commit()
     except Exception as e:
         logger_info(f'task_metric: замеры строки {task_id} не записаны: {type(e).__name__}: {e}')
@@ -97,7 +103,7 @@ async def task_metric_collect(task_id: int, parent_id, role: str, attempt_no: in
     return len(rows)
 
 
-async def task_metric_delete(task_id=None, parent_id=None) -> int:
+async def task_metric_delete(task_id=None, parent_id=None, reset_all: bool = False) -> int:
     """
     Убрать замеры руками. Returns: сколько строк удалили.
 
@@ -106,22 +112,33 @@ async def task_metric_delete(task_id=None, parent_id=None) -> int:
     без него. Хранимые агрегаты пришлось бы чинить отдельно, и они разошлись бы с
     сырыми данными при первом же сбое.
 
-    Без обоих номеров не делаем ничего. Удаление всей таблицы одним нажатием —
-    не та операция, которую стоит уметь: накопленное здесь не восстановить, оно
-    копится кругами по сорок минут.
+    `reset_all` — начать накопление с нуля. Отдельным флагом, а не «пустыми
+    номерами»: обнулить всё случайным вызовом без аргументов нельзя, накопленное
+    здесь не восстановить — оно копится кругами по сорок минут.
+
+    Зачем такое вообще нужно. Сравнение моделей идёт по средним, а средние тянут за
+    собой прошлое: сменили пул, поправили `max_tokens`, починили канал — и старые
+    замеры смешиваются с новыми, показывая погоду позавчерашнего дня. Сброс делает
+    ответ чистым: дальше видно ровно то, что происходит после правки.
+
+    Без номеров и без флага не делаем ничего.
     """
-    if not task_id and not parent_id:
+    if not task_id and not parent_id and not reset_all:
         return 0
 
-    where, params = ('task_id = %s', [int(task_id)]) if task_id else ('parent_id = %s', [int(parent_id)])
+    if reset_all:
+        where, params = ('1 = 1', [])
+    else:
+        where, params = ('task_id = %s', [int(task_id)]) if task_id else ('parent_id = %s', [int(parent_id)])
 
     async with mysql_get_db_async() as db:
         await db.execute(f'DELETE FROM project_task_metric WHERE {where}', params)
         removed = db.rowcount
         await db.connection.commit()
 
-    logger_info(f'task_metric: удалено замеров {removed} '
-                f"({'строка ' + str(task_id) if task_id else 'дерево ' + str(parent_id)})")
+    scope = ('сброс всей статистики' if reset_all
+             else ('строка ' + str(task_id) if task_id else 'дерево ' + str(parent_id)))
+    logger_info(f'task_metric: удалено замеров {removed} ({scope})')
 
     return removed
 
@@ -154,6 +171,83 @@ async def task_metric_summary(parent_id=None) -> list[dict]:
             # складывается. Внутри роли самый долгий шаг всё равно первый, и
             # главный вопрос «на что уходит круг» читается сразу.
             " GROUP BY role, step_title ORDER BY role, AVG(duration_ms) DESC", params)
+
+        return [dict(row) for row in (await db.fetchall() or [])]
+
+
+async def task_metric_by_llm(parent_id=None) -> list[dict]:
+    """
+    То же накопленное, но в разрезе моделей: чем работать выгоднее.
+
+    Вопрос, на который отвечает таблица, сменился вместе с появлением пула. Пока
+    модель у проекта была одна, спрашивали «сколько стоит круг этой роли». Теперь
+    моделей несколько, круги идут на разных — и спрашивают, какая из них лучше
+    справляется: быстрее отвечает, реже срывается, меньше тратит времени на тот же
+    объём.
+
+    Что отдаём и почему именно это:
+
+    | Поле | Зачем |
+    |---|---|
+    | `runs`, `tasks` | сколько замеров и по скольким задачам — вес выводов |
+    | `sec_avg`, `sec_max` | среднее и хвост: срываются длинные круги, не средние |
+    | `speed_avg` | токенов в секунду — прямое сравнение моделей |
+    | `tokens_avg` | сколько модель наговаривает: болтливая дороже при той же скорости |
+    | `fail_share` | доля шагов не в статусе `success` — надёжность |
+    | `sec_per_1k` | секунд на тысячу строк контекста: цена объёма |
+
+    Доля сбоев считается по `status`, а не по отсутствию строк: сорвавшийся круг
+    свои замеры **пишет** (см. `task_metric_collect` — трасса берётся и у оборванного
+    прогона), и именно поэтому по ним видно, какая модель не доводит работу до конца.
+
+    Замеры без модели в отдельной группе с пустым именем — страница подписывает её
+    «не записана». Растворять их в чужих средних нельзя: это круги до появления пула,
+    и они шли неизвестно чем.
+    """
+    where, params = ('WHERE parent_id = %s', [parent_id]) if parent_id else ('', [])
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT llm_name, COUNT(*) AS runs, COUNT(DISTINCT task_id) AS tasks, "
+            "       ROUND(AVG(duration_ms) / 1000) AS sec_avg, "
+            "       ROUND(MAX(duration_ms) / 1000) AS sec_max, "
+            "       ROUND(SUM(duration_ms) / 1000) AS sec_total, "
+            "       ROUND(AVG(tokens_output)) AS tokens_avg, "
+            "       SUM(tokens_output) AS tokens_total, "
+            "       ROUND(AVG(NULLIF(tokens_per_sec, 0)), 1) AS speed_avg, "
+            "       ROUND(100 * SUM(status <> 'success') / COUNT(*)) AS fail_share, "
+            "       ROUND(AVG(duration_ms) / 1000 / GREATEST(AVG(context_lines), 1) * 1000) AS sec_per_1k "
+            f"  FROM project_task_metric {where} "
+            # По числу замеров: сверху та модель, о которой мы знаем больше всего, —
+            # её средним и стоит верить в первую очередь.
+            " GROUP BY llm_name ORDER BY runs DESC", params)
+
+        return [dict(row) for row in (await db.fetchall() or [])]
+
+
+async def task_metric_by_llm_role(parent_id=None) -> list[dict]:
+    """
+    Модель против роли: одна и та же модель ведёт себя на разных ролях по-разному.
+
+    Разведка менеджера и прогон QA — разная работа: первая читает проект и много
+    рассуждает, вторая гоняет команды и ждёт. Средняя по модели их смешивает, и
+    решение «эту модель — разработчику, ту — менеджеру» по ней не принять.
+
+    Строк тут больше, поэтому пустые пересечения не выдумываем: пара «модель + роль»,
+    которой не было, в таблице просто не появится.
+    """
+    where, params = ('WHERE parent_id = %s', [parent_id]) if parent_id else ('', [])
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT llm_name, role, COUNT(*) AS runs, "
+            "       ROUND(AVG(duration_ms) / 1000) AS sec_avg, "
+            "       ROUND(MAX(duration_ms) / 1000) AS sec_max, "
+            "       ROUND(AVG(tokens_output)) AS tokens_avg, "
+            "       ROUND(AVG(NULLIF(tokens_per_sec, 0)), 1) AS speed_avg, "
+            "       ROUND(100 * SUM(status <> 'success') / COUNT(*)) AS fail_share "
+            f"  FROM project_task_metric {where} "
+            " GROUP BY llm_name, role ORDER BY llm_name, runs DESC", params)
 
         return [dict(row) for row in (await db.fetchall() or [])]
 

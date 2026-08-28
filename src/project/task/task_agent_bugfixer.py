@@ -44,7 +44,8 @@ BUGFIXER_USER_ID = 1  # только для атрибуции session/log
 
 
 async def task_agent_bugfixer_run(task: dict, role: str = TASK_BUGFIXER_ROLE,
-                                  work_dir: str = '', task_dir: str = '') -> dict:
+                                  work_dir: str = '', task_dir: str = '',
+                                  shell_session: str = '') -> dict:
     """
     Починить один баг силами оболочки багфиксера.
 
@@ -96,6 +97,12 @@ async def task_agent_bugfixer_run(task: dict, role: str = TASK_BUGFIXER_ROLE,
         'task_trace_meta':  _trace_meta_text(task.get('trace_meta')),
         'task_shell_role':  role,
         'task_shell_work_dir': str(work_dir or ''),
+        # Третья часть адреса — конкретная оболочка. У роли их бывает несколько, по
+        # одной на открытый терминал, и круг держит свою на всё время работы: шаги
+        # ходят в один и тот же Claude Code, иначе следующий шаг не увидит того, что
+        # нашёл предыдущий. Пусто — захвата не было, оболочку выберет сам инструмент
+        # (самую свежую по пингу), как было до `team_shell_pool`.
+        'task_shell_session': str(shell_session or ''),
         # Где править код. Ветка в каталоге уже выкачена конвейером — переключать её
         # багфиксеру не нужно и не должно.
         'task_work_dir':    str(task_dir or ''),
@@ -110,7 +117,9 @@ async def task_agent_bugfixer_run(task: dict, role: str = TASK_BUGFIXER_ROLE,
     # Ровно один перезапуск на прогон и до первого шага: оболочка поднимается заново, и
     # прошлый баг не попадает в контекст этого. Между шагами перезапускать нельзя — они
     # продолжают один разговор, и вердикт опирается на проверку, сделанную шагом раньше.
-    await team_session_restart_role(role, work_dir)
+    # Перезапускаем свою оболочку, а не «оболочку роли»: у роли их несколько,
+    # и маркер, ушедший соседу, снёс бы его ход посреди работы.
+    await team_session_restart_role(role, work_dir, session_uuid=shell_session)
 
     loop   = asyncio.get_running_loop()
     future = loop.create_future()
