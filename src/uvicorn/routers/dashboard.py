@@ -242,6 +242,28 @@ async def dashboard_browser_page(request: Request, user: AuthSession = Depends(d
     )
 
 
+@router.get("/admin/browser/error", response_class=HTMLResponse)
+async def dashboard_browser_error_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
+    """
+    Ошибки браузера — своей страницей, а не вкладкой внутри сайта.
+
+    Ошибки к сайту не привязаны: их шлют клиенты — соседние проекты, которые ходят в
+    браузер и сценарии по API. Сайт в такой записи бывает, но бывает и нет, и внутри
+    страницы одного сайта они выглядели как «ошибки этого сайта», хотя фильтра по
+    нему там никогда не было.
+
+    Ход выполнения сценария живёт не здесь, а на вкладке «Журналы»: там трасса по
+    шагам, а здесь — то, о чём сообщил чужой проект.
+
+    Шаблон тот же, что у сайтов, — разделён параметром, а не копией.
+    """
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/project/browser.html",
+        {"browser_page": "error"},
+    )
+
+
 @router.get("/admin/browser/site", response_class=HTMLResponse)
 async def dashboard_browser_site_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     """

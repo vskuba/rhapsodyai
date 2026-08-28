@@ -118,13 +118,21 @@ async def browser_error_list(limit: int = BROWSER_ERROR_PAGE, source: str = '',
 @router.post('', status_code=201, include_in_schema=False)
 async def browser_error_create(data: BrowserErrorSave,
                                user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
-    """Записывает ошибку. Открыт странице: её собственный сбой видно только ей.
+    """Записывает ошибку. Открыт странице админки и клиентам — соседним проектам.
 
     Право на запись то же, что на чтение (`BROWSER_VIEW`): это журнал для отладки,
-    а не действие над данными, и человек, который видит ошибку, должен уметь её
-    сохранить.
+    а не действие над данными, и тот, кто видит ошибку, должен уметь её сохранить.
+
+    **Кто сообщил — пишем сами, а не берём из тела.** Учётка приходит из сессии, и
+    подделать её в запросе нельзя. Без неё журнал клиентских ошибок отвечал на
+    «что сломалось», но не на «у кого»: `source` клиент ставит себе сам, и два проекта
+    вполне могут прислать одно и то же слово. Разбор чужого сбоя начинается с вопроса,
+    чей он.
     """
-    await browser_error_write(data.source, data.message, data.session_id, data.url, data.context)
+    context = dict(data.context or {})
+    context['reported_by'] = getattr(user, 'username', '') or ''
+
+    await browser_error_write(data.source, data.message, data.session_id, data.url, context)
 
     return {'status': 'success'}
 

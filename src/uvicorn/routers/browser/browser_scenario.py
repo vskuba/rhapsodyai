@@ -26,7 +26,6 @@ from src.browser.browser_scenario import (BROWSER_SCENARIO_ACTIONS,
                                           browser_scenario_variables_used)
 from src.mysql_.repository.browser.scenario_repository import BrowserScenarioRepository
 from src.uvicorn.routers.browser.browser_site_variable import browser_site_variable_values
-from src.uvicorn.routers.browser.browser_error import browser_error_write
 from src.uvicorn.routers.browser.browser_upstream import (
     BROWSER_UPSTREAM_SCENARIO_TIMEOUT,
     browser_upstream_request,
@@ -228,14 +227,16 @@ async def browser_scenario_run_one(scenario_id: int, session_id: str, variables:
 
     await _run_save(scenario_id, result)
 
-    # Упавший шаг — в журнал ошибок: трасса лежит в `browser_scenario_run`, но её
-    # надо сначала найти, а вкладка «Ошибки» показывает всё сломавшееся разом.
-    if result.get('status') == 'error':
-        await browser_error_write(
-            'scenario', str(result.get('error') or 'сценарий не прошёл'),
-            session_id=str(result.get('session_id') or ''),
-            context={'scenario_id': scenario_id, 'name': row.get('name', ''),
-                     'step_no': result.get('step_no', 0)})
+    # Упавший прогон в журнал ошибок больше не дублируется. Всё, что о нём писалось
+    # — текст ошибки, номер шага, сессия, — `_run_save` только что положил в
+    # `browser_scenario_run` вместе с трассой по шагам, и вкладка «Журналы» показывает
+    # это на месте, рядом с самим сценарием. Вторая запись о том же событии в другой
+    # таблице заставляла сверять два списка и вводила в заблуждение счётчиком: одна
+    # поломка считалась дважды.
+    #
+    # Страница ошибок теперь про другое — про то, о чём сообщили клиенты, соседние
+    # проекты, ходящие в браузер и сценарии по API. У них своего журнала здесь нет, и
+    # рассказать о сбое им больше негде.
 
     # Сломанный сценарий помечается сразу: по метке видно, что чинить, без чтения журнала.
     status = 'broken' if result.get('status') == 'error' else 'active'

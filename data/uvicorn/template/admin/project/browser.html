@@ -1623,6 +1623,14 @@
        по всей панели, как только их станет меньше, чем в неё влезает. */
     #tab-variable .var-table { align-self: flex-start; }
 
+    /* Пояснение к странице ошибок: что здесь бывает, а чего искать не стоит.
+       Без него журнал выглядит как «все ошибки браузера», хотя прогоны сценариев
+       ушли в свою вкладку. */
+    .error-note {
+        padding: 10px 16px 0; font-size: 12px; color: #94a3b8; line-height: 1.5;
+        max-width: 900px;
+    }
+
     .var-head {
         display: flex; align-items: center; gap: 12px;
         padding: 12px 16px 0; margin-bottom: 10px;
@@ -1710,13 +1718,14 @@
     <button class="page-tab" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
     <button class="page-tab" data-tab="scenario">Сценарии <span class="page-tab-n" id="tabCount-scenario"></span></button>
     <button class="page-tab" data-tab="runlog">Журналы <span class="page-tab-n" id="tabCount-runlog"></span></button>
-    <button class="page-tab" data-tab="error">Ошибки <span class="page-tab-n" id="tabCount-error"></span></button>
+    {% elif browser_page == 'error' %}
+    <button class="page-tab active" data-tab="error">Ошибки <span class="page-tab-n" id="tabCount-error"></span></button>
     {% else %}
     <button class="page-tab active" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
     {% endif %}
 </div>
 
-<div class="tab-panel{% if browser_page != 'site' %} active{% endif %}" id="tab-site">
+<div class="tab-panel{% if browser_page == 'sites' %} active{% endif %}" id="tab-site">
 
 <div class="site-cards" id="siteCards"></div>
 
@@ -1963,20 +1972,36 @@
 
 </div>
 
-<div class="tab-panel" id="tab-error">
+<!-- Ошибки — своя страница (`/admin/browser/error`), а не вкладка сайта: их шлют
+     клиенты, соседние проекты, ходящие в браузер и сценарии по API. К сайту такая
+     запись привязана не всегда, а внутри страницы одного сайта выглядела как «ошибки
+     этого сайта» — хотя фильтра по нему здесь никогда и не было.
+
+     Ход выполнения сценария сюда не попадает: он на вкладке «Журналы» рядом с трассой
+     по шагам. -->
+<div class="tab-panel{% if browser_page == 'error' %} active{% endif %}" id="tab-error">
 
 <div class="scenario-head">
     <span class="scenario-head-label">Откуда</span>
+    <!-- Свои источники перечислены, чужие клиент ставит сам: `source` приходит в теле
+         запроса, и соседний проект называет его как ему удобно. Поэтому список не
+         закрытый — «все» показывает и то, чего здесь не перечислено. -->
     <select id="errorSource" title="Сузить журнал до одного происхождения">
         <option value="">все</option>
         <option value="view">живое окно</option>
-        <option value="scenario">сценарии</option>
         <option value="proxy">прокси</option>
         <option value="page">страница админки</option>
+        <option value="scenario">сценарии (старые записи)</option>
     </select>
     <button type="button" class="browser-btn" id="errorReloadBtn">Обновить</button>
     <button type="button" class="browser-btn danger" id="errorClearBtn">Очистить журнал</button>
     <span class="scenario-head-hint" id="errorHint"></span>
+</div>
+
+<div class="error-note">
+    Сюда попадает то, о чём сообщили клиенты — соседние проекты, которые ходят в браузер
+    и сценарии по API, — и сбои живого окна. Ход выполнения сценария живёт не здесь,
+    а на вкладке «Журналы» страницы сайта: там трасса по шагам рядом с самим сценарием.
 </div>
 
 <div class="error-list" id="errorList"></div>
@@ -4883,17 +4908,28 @@
     // Порядок важен: выбор сайта заполняется первым, и только после него грузятся
     // списки — иначе первый запрос ушёл бы без фильтра и на мгновение показал
     // чужие сценарии.
-    (async () => {
-        await browserSiteFill();
-        scenariosLoad();
-        // Переменные тоже ждут выбранного сайта: `browserSiteFill` заканчивает
-        // «тихим» выбором (silent), который списков не трогает, — иначе первый
-        // запрос ушёл бы без `site_id` и вернул чужие строки.
-        varsLoad();
-    })();
+    // Какая из трёх страниц открыта: `sites`, `site` или `error`. Шаблон один на все
+    // три, но грузить им нужно разное — страница ошибок читает только свой журнал из
+    // базы, и живой контейнер ей не нужен вовсе.
+    const BROWSER_PAGE = '{{ browser_page }}';
 
-    sessionsLoad();
-    sitesLoad();
-    setInterval(sessionsLoad, 10000);
+    if (BROWSER_PAGE === 'error') {
+        // Только журнал. Без этого страница опрашивала бы контейнер-браузер каждые
+        // десять секунд ради счётчика сессий, которого на ней нет.
+        errorsLoad();
+    } else {
+        (async () => {
+            await browserSiteFill();
+            scenariosLoad();
+            // Переменные тоже ждут выбранного сайта: `browserSiteFill` заканчивает
+            // «тихим» выбором (silent), который списков не трогает, — иначе первый
+            // запрос ушёл бы без `site_id` и вернул чужие строки.
+            varsLoad();
+        })();
+
+        sessionsLoad();
+        sitesLoad();
+        setInterval(sessionsLoad, 10000);
+    }
 </script>
 {% endblock %}
