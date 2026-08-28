@@ -38,22 +38,37 @@ class TaskMigrationApply(BaseModel):
 
 
 @router.get('/api/task/{task_id}/migration')
-async def project_task_migration_list(task_id: int,
+async def project_task_migration_list(task_id: int, all: int = 0,
                                       user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """
-    Миграции, лежащие в ветке подзадачи, с их состоянием.
+    Миграции, **написанные этой задачей**, с их состоянием.
+
+    Каталог подзадачи — полный чекаут репозитория, и без фильтра список отдавал все
+    два десятка файлов проекта: свои одна-две тонули среди чужих, а рядом с каждой
+    строкой стоит кнопка «Применить» — то есть чужую старую миграцию можно было
+    прокатить по рабочей базе одним нажатием. Поэтому по умолчанию показываем только
+    то, что ветка добавила поверх главной.
+
+    `all=1` — показать все файлы каталога: изредка нужно посмотреть, что вообще
+    лежит в ветке, и прятать это совсем было бы перегибом.
 
     Состояние — последняя запись журнала по каждому файлу: применяли ли, чем
     кончилось, сколько строк затронуло. Плюс признак `ddl`: у такого файла сухой
     прогон недоступен, и кнопку проверки страница прячет заранее, а не показывает
     отказ после нажатия.
+
+    `own_unknown` — сравнить не с чем (каталог не ветка, git недоступен): список
+    тогда полный, и страница об этом говорит, а не выдаёт чужие файлы за свои.
     """
     directory = await _task_dir(task_id)
+    migrations = await migration_file_list(directory, own_only=not all)
 
     return {
-        'migrations': await migration_file_list(directory),
+        'migrations': migrations,
         'database': await migration_file_database(),
         'dir': directory,
+        'own_unknown': any(m.get('own') is None for m in migrations),
+        'all': bool(all),
     }
 
 

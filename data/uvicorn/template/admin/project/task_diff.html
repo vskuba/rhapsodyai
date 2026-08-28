@@ -407,6 +407,15 @@
     .stat-table th.num, .stat-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .stat-empty { padding: 16px; color: #94a3b8; font-size: 12px; }
 
+    /* Переключатель «все файлы каталога». Неяркий: вкладка отвечает на вопрос «что
+       добавила эта задача», а полный список нужен изредка. */
+    .mig-toggle { margin: 12px 0 4px; }
+    .mig-toggle button {
+        font-size: 11px; padding: 3px 10px; cursor: pointer; color: #64748b;
+        border: 1px dashed #cbd5e1; border-radius: 6px; background: #fff;
+    }
+    .mig-toggle button:hover { color: #334155; border-color: #94a3b8; }
+
     .page-tab.active { color: #2c3e50; border-bottom-color: #3498db; }
     .page-tab:hover:not(.active) { color: #4a5568; }
 
@@ -516,8 +525,6 @@
     <div class="page-tabs" id="diffTabs">
         <button class="page-tab active" data-pane="diff">Изменения</button>
         <button class="page-tab" data-pane="migration">Миграции <span class="tab-n" id="tabMigrationN"></span></button>
-        <!-- Появляется только когда есть чему мешать: пустая вкладка «Ветки» на
-             здоровой задаче заставляла бы искать проблему там, где её нет. -->
         <button class="page-tab" data-pane="stat">Статистика</button>
         <!-- Появляется только когда есть чему мешать: пустая вкладка «Ветки» на
              здоровой задаче заставляла бы искать проблему там, где её нет. -->
@@ -1103,29 +1110,62 @@
     }
 
     let _migLoaded = false;
+    // Показывать ли весь каталог. Изредка нужно посмотреть, что вообще лежит в
+    // ветке, — но по умолчанию вкладка отвечает на вопрос «что добавила эта задача».
+    let _migAll = false;
+
+    window.migAllToggle = function() {
+        _migAll = !_migAll;
+        migLoad(true);
+    };
 
     async function migLoad(force) {
         if (_migLoaded && !force) return;
         const list = document.getElementById('migList');
         try {
-            const d = await getData(`/api/task/${taskId}/migration`);
+            // По умолчанию — только миграции этой задачи. Каталог подзадачи это
+            // полный чекаут репозитория, и без фильтра список отдавал все два
+            // десятка файлов проекта: свои одна-две тонули среди чужих, а рядом с
+            // каждой строкой стоит «Применить» — то есть чужую старую миграцию
+            // можно было прокатить по рабочей базе одним нажатием.
+            const d = await getData(`/api/task/${taskId}/migration${_migAll ? '?all=1' : ''}`);
             document.getElementById('migDb').textContent = d.database || '—';
             document.getElementById('tabMigrationN').textContent =
                 (d.migrations || []).length ? `(${d.migrations.length})` : '';
-            migRender(d.migrations || []);
+            migRender(d.migrations || [], d);
             _migLoaded = true;
         } catch (e) {
             list.innerHTML = `<div class="note note-error">Миграции не загрузились: ${esc(e.message)}</div>`;
         }
     }
 
-    function migRender(items) {
+    function migRender(items, meta) {
         const list = document.getElementById('migList');
+        meta = meta || {};
+        // Переключатель внизу списка, а не сверху: он нужен редко, а место над
+        // списком принадлежит тому, ради чего вкладку открыли.
+        const toggle = `<div class="mig-toggle">`
+            + `<button onclick="migAllToggle()">`
+            + (_migAll ? '← только миграции этой задачи' : 'показать все файлы каталога')
+            + `</button></div>`;
+
         if (!items.length) {
-            list.innerHTML = '<div class="empty-msg">В ветке нет файлов миграций</div>';
+            list.innerHTML = (_migAll
+                ? '<div class="empty-msg">В каталоге нет файлов миграций</div>'
+                : '<div class="empty-msg">Эта задача миграций не добавляла.<br>'
+                  + 'Показаны только файлы, которых нет в главной ветке — '
+                  + 'остальное пришло из неё и к задаче отношения не имеет.</div>')
+                + toggle;
             return;
         }
-        list.innerHTML = items.map(m => {
+
+        // Сравнить не с чем: каталог не ветка либо git недоступен. Список тогда
+        // полный, и об этом надо сказать — иначе чужие файлы сойдут за свои.
+        const warn = meta.own_unknown
+            ? '<div class="note">Ветку определить не вышло — показаны все файлы каталога, '
+              + 'включая пришедшие из главной ветки.</div>'
+            : '';
+        list.innerHTML = warn + items.map(m => {
             const lg = m.log;
             const state = !lg ? 'none' : (lg.status === 'error' ? 'error' : lg.status);
             const cls = !lg ? '' : (lg.status === 'error' ? 'fail' : (lg.status === 'ok' ? 'done' : ''));
@@ -1152,7 +1192,7 @@
                  + `<pre class="mig-sql" data-name="${esc(m.name)}" style="display:none">`
                  + `${esc(m.sql || '')}${m.sql_cut ? '\n\n… файл длиннее, показано начало' : ''}</pre>`
                  + `</div>`;
-        }).join('');
+        }).join('') + toggle;
     }
 
     window.migToggle = function(name, el) {

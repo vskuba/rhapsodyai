@@ -55,7 +55,8 @@ MIGRATION_FILE_DDL = ('alter table', 'create table', 'drop table', 'truncate',
                         'drop database', 'alter database')
 
 
-async def migration_file_list(repo_dir: str, database: str = '') -> list[dict]:
+async def migration_file_list(repo_dir: str, database: str = '',
+                              own_only: bool = False) -> list[dict]:
     """
     Файлы миграций с их состоянием: применяли ли, чем кончилось, менялся ли файл.
 
@@ -63,10 +64,16 @@ async def migration_file_list(repo_dir: str, database: str = '') -> list[dict]:
         repo_dir: корень репозитория или каталог подзадачи — миграция лежит в
             ветке рядом с кодом, который её требует.
         database: для какой базы смотреть журнал. Пусто — текущая рабочая.
+        own_only: оставить только миграции **этой ветки** — те, которых нет в
+            главной. Каталог подзадачи содержит весь репозиторий, и без фильтра
+            список отдаёт все два десятка файлов проекта: свои одна-две тонут
+            среди чужих, а рядом с каждой стоит кнопка «Применить». Не ветка (в
+            каталоге нет git) — фильтр молча не срабатывает, и список остаётся
+            полным: это честнее пустого экрана.
 
-    Returns: `[{'name', 'bytes', 'sha1', 'ddl', 'statements', 'log': {...} | None}]`,
+    Returns: `[{'name', 'bytes', 'sha1', 'ddl', 'statements', 'own', 'log': …}]`,
         свежие файлы первыми (имя начинается с даты, поэтому обратный порядок имени
-        и есть обратный порядок времени).
+        и есть обратный порядок времени). `own` — файл написан в этой ветке.
     """
     directory = os.path.join(str(repo_dir or '').rstrip('/'), MIGRATION_FILE_DIR)
     if not os.path.isdir(directory):
@@ -76,6 +83,12 @@ async def migration_file_list(repo_dir: str, database: str = '') -> list[dict]:
                    reverse=True)
     if not names:
         return []
+
+    own = await _branch_own_names(repo_dir)
+    if own_only and own is not None:
+        names = [name for name in names if name in own]
+        if not names:
+            return []
 
     log = await _log_last(names, database or await migration_file_database())
     applied = await _yoyo_applied(names)
@@ -103,6 +116,10 @@ async def migration_file_list(repo_dir: str, database: str = '') -> list[dict]:
             # при старте приложения. Наш журнал помнит проверки, а не применения.
             'applied': name[:-4] in applied,
             'applied_at': applied.get(name[:-4]),
+            # Написана в этой ветке или пришла из главной. `None` — сравнить не с
+            # чем (каталог не ветка), и тогда поле честно говорит «неизвестно», а
+            # не выдаёт чужой файл за свой.
+            'own': None if own is None else (name in own),
             'log': log.get(name),
         })
 
@@ -336,3 +353,43 @@ def _read(path: str) -> str:
 
 def _sha1(text: str) -> str:
     return hashlib.sha1(text.encode('utf-8')).hexdigest()
+
+
+async def _branch_own_names(repo_dir: str) -> set | None:
+    """
+    Имена миграций, написанных в этой ветке. `None` — сравнить не с чем.
+
+    Каталог подзадачи — полный чекаут репозитория, и `os.listdir` по нему отдаёт все
+    файлы проекта, а не только свои. Отличает их git: `diff --name-only base...HEAD`
+    показывает ровно то, что ветка добавила поверх главной.
+
+    Три точки, а не две: нас интересует «что появилось в ветке», а не «чем ветка
+    отличается от главной сейчас». Двухточечная форма показала бы ещё и файлы,
+    добавленные в главную после ответвления, — они к задаче отношения не имеют.
+
+    `None` возвращается, когда сравнивать не с чем: каталог не репозиторий, git
+    недоступен, главной ветки не нашлось. Тогда вызывающий показывает список целиком
+    — пустой экран на рабочем проекте хуже, чем лишние строки.
+    """
+    repo_dir = str(repo_dir or '').strip().rstrip('/')
+    if not repo_dir or not os.path.exists(os.path.join(repo_dir, '.git')):
+        return None
+
+    try:
+        # Импорт внутри: `task_worktree` тянет цепочку модулей конвейера задач, а
+        # этот модуль зовут и оттуда — прямой импорт замкнул бы кольцо.
+        from src.project.task.task_worktree import task_worktree_base_branch, task_worktree_git
+
+        base = await task_worktree_base_branch(repo_dir)
+        if not base:
+            return None
+
+        code, out = await task_worktree_git(
+            repo_dir, 'diff', '--name-only', f'{base}...HEAD', '--', MIGRATION_FILE_DIR)
+        if code:
+            return None
+
+        return {os.path.basename(line.strip()) for line in (out or '').splitlines()
+                if line.strip().endswith('.sql')}
+    except Exception:
+        return None
