@@ -1,6 +1,8 @@
 import re
 
 from mysql_.mysql_ import mysql_get_db_async
+from src.project.team.team_llm_pool import team_llm_pool_forget
+from src.project.team.team_shell_pool import team_shell_pool_forget
 
 _PHASES_CONTEXT_RECENT_COUNT = 2
 _PHASES_CONTEXT_OLDER_MAX_CHARS = 1500
@@ -124,11 +126,18 @@ async def project_delete(project_id: int) -> dict:
         # Задачи проекта — явно: FK на `project` у `project_task` нет, только на
         # родительскую строку. Иначе задачи остаются числиться за удалённым проектом
         # и не попадают ни в один разрез страницы, которая строится от списка проектов.
+        # Номера собираем до удаления: по ним снимаем захваты модели и оболочки —
+        # каскад про них не знает (см. `team_llm_pool_forget`).
+        await db.execute('SELECT id FROM project_task WHERE project_id = %s', (project_id,))
+        task_ids = [int(row['id']) for row in await db.fetchall() or []]
         await db.execute('DELETE FROM project_task WHERE parent_id IS NOT NULL AND project_id = %s',
                          (project_id,))
         await db.execute('DELETE FROM project_task WHERE project_id = %s', (project_id,))
         await db.execute('DELETE FROM project WHERE id = %s', (project_id,))
         await db.connection.commit()
+
+    await team_llm_pool_forget(task_ids)
+    await team_shell_pool_forget(task_ids)
 
     return {'deleted': 1, 'project_id': project_id, 'title': title}
 

@@ -177,6 +177,59 @@ class TestPrune:
         assert await _lock_sessions() == [TEST_SHELL_A]
 
 
+class TestForget:
+    """Удалённая задача не должна числиться за оболочкой."""
+
+    async def test_forget_clears_lock_and_binding(self):
+        """
+        Освобождение оставляет номер задачи ради прилипания — на следующем круге она
+        вернётся в ту же оболочку с прогретым контекстом. Удалённой возвращаться
+        некуда, и номер уходит вместе с ней.
+        """
+        from src.project.team.team_shell_pool import (team_shell_pool_acquire,
+                                                      team_shell_pool_forget)
+
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 4242, [TEST_SHELL_A])
+
+        assert await team_shell_pool_forget([4242]) == 1
+
+        row = await _lock_row(TEST_SHELL_A)
+        assert row['locked_at'] is None
+        assert row['task_id'] is None, 'номер удалённой задачи остался за оболочкой'
+
+    async def test_empty_list_touches_nothing(self):
+        """«Забыть ничего» не должно означать «забыть всё»."""
+        from src.project.team.team_shell_pool import (team_shell_pool_acquire,
+                                                      team_shell_pool_forget)
+
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 4242, [TEST_SHELL_A])
+
+        assert await team_shell_pool_forget([]) == 0
+        assert (await _lock_row(TEST_SHELL_A))['task_id'] == 4242
+
+    async def test_other_tasks_untouched(self):
+        from src.project.team.team_shell_pool import (team_shell_pool_acquire,
+                                                      team_shell_pool_forget)
+
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 4242, [TEST_SHELL_A])
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 4243,
+                                      [TEST_SHELL_A, TEST_SHELL_B])
+
+        assert await team_shell_pool_forget([4242]) == 1
+        assert (await _lock_row(TEST_SHELL_B))['task_id'] == 4243
+
+
+async def _lock_row(session_uuid: str) -> dict:
+    """Строка захвата целиком — по ней видно и замок, и привязку."""
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT * FROM team_shell_lock WHERE session_uuid = %s',
+                         (session_uuid,))
+
+        return await db.fetchone() or {}
+
+
 async def _lock_sessions() -> list:
     """Сессии в строках захвата тестового проекта."""
     from mysql_.mysql_ import mysql_get_db_async

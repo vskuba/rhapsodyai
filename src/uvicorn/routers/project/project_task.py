@@ -31,7 +31,8 @@ from src.project.task.task_report import task_report_write
 from src.project.task.task_revision import task_revision_add
 from src.project.task.task_state import task_state_dev_to_testing, task_state_plan_to_development
 from src.project.task.task_stop import task_stop_clear
-from src.project.task.task_role import task_role_project_work_dir
+from src.project.team.team_llm_pool import team_llm_pool_forget
+from src.project.team.team_shell_pool import team_shell_pool_forget
 from src.project.task.task_tree import (task_tree_descendants, task_tree_parent_check,
                                         task_tree_position_next)
 from src.project.task.task_worktree import task_worktree_remove_tree
@@ -332,6 +333,16 @@ async def project_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermis
     Порядок важен: сначала база, потом диск. Не снявшийся каталог — это мусор,
     который уберут потом; а снятый каталог при неудавшемся удалении строки был бы
     работающей подзадачей без места работы.
+
+    Захваты модели и оболочки снимаем следом: они лежат в своих таблицах, каскад про
+    них не знает, и после удаления строки привязка оставалась висеть за номером, за
+    которым больше никого нет. Держалась она вечно — освобождение по концу круга сюда
+    не приходит, а протухание `locked_at` строку с уже пустым `locked_at` не трогает.
+    Работу это не блокировало (свободной считается и пустая, и протухшая), но панель
+    пула показывала занятой модель, за которой никого нет.
+
+    После базы, а не до: снимать захват у задачи, которую не удалось удалить, значило
+    бы отобрать модель у идущего круга.
     """
     async with mysql_get_db_async() as db:
         await db.execute("SELECT id, project_id FROM project_task WHERE id = %s", (task_id,))
@@ -342,6 +353,9 @@ async def project_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermis
         removed_ids = await task_tree_descendants(db, task_id)
         await db.execute("DELETE FROM project_task WHERE id = %s", (task_id,))
         await db.connection.commit()
+
+    await team_llm_pool_forget(removed_ids)
+    await team_shell_pool_forget(removed_ids)
 
     work_dir = await task_role_project_work_dir(task.get('project_id'))
     worktrees = await task_worktree_remove_tree(work_dir, removed_ids)

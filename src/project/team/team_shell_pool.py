@@ -137,6 +137,35 @@ async def team_shell_pool_release(session_uuid: str = '', task_id: int = 0,
     return count
 
 
+async def team_shell_pool_forget(task_ids) -> int:
+    """
+    Забыть удалённые задачи: снять захват и стереть привязку. Returns: снятых строк.
+
+    Зеркало `team_llm_pool_forget` и по той же причине. Освобождение
+    (`team_shell_pool_release`) номер задачи оставляет намеренно — на следующем круге
+    та же задача вернётся в ту же оболочку, где уже прогрет её контекст. Удалённой
+    задаче возвращаться некуда, и привязка остаётся мусором.
+
+    Пустой список — ноль без запроса: `IN ()` синтаксически неверен, а «забыть ничего»
+    не должно означать «забыть всё».
+    """
+    ids = [int(i) for i in (task_ids or []) if int(i or 0)]
+    if not ids:
+        return 0
+
+    placeholders = ', '.join(['%s'] * len(ids))
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            f'UPDATE team_shell_lock SET locked_at = NULL, task_id = NULL '
+            f' WHERE task_id IN ({placeholders})', tuple(ids))
+        count = db.rowcount
+        await db.connection.commit()
+
+    if count:
+        logger_info(f'[team] пул оболочек: снято {count} захват(ов) удалённых задач')
+    return count
+
+
 async def team_shell_pool_busy(project_id: int | None = None) -> dict[int, dict[str, int]]:
     """
     Сколько оболочек занято прямо сейчас: `{project_id: {role: число}}`.

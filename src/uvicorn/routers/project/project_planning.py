@@ -13,6 +13,8 @@ from py_modules.setting_.setting_ import setting_get
 from src.project.team.team_member import team_member_cards_ensure
 from src.worker.project.planning_worker import planning_worker_enqueue
 from src.uvicorn.routers.project.project_common import _CRONICLE_SCHEDULE_FILE
+from src.project.team.team_llm_pool import team_llm_pool_forget
+from src.project.team.team_shell_pool import team_shell_pool_forget
 
 router = APIRouter()
 
@@ -171,11 +173,19 @@ async def project_planning_delete(request: Request, project_id: int, user=Depend
         # проекта оставались сиротами: числятся за проектом, которого нет, и не видны
         # ни в одном разрезе страницы, потому что та строится от списка проектов.
         # Сначала дети, потом родители — обратно порядку создания.
+        # Номера собираем до удаления: по ним снимаем захваты модели и оболочки.
+        # Каскад про них не знает, и привязка пережила бы весь проект (см.
+        # `team_llm_pool_forget`).
+        await db.execute("SELECT id FROM project_task WHERE project_id = %s", (project_id,))
+        task_ids = [int(row['id']) for row in await db.fetchall() or []]
         await db.execute("DELETE FROM project_task WHERE parent_id IS NOT NULL AND project_id = %s",
                          (project_id,))
         await db.execute("DELETE FROM project_task WHERE project_id = %s", (project_id,))
         await db.execute("DELETE FROM project  WHERE id = %s",         (project_id,))
         await db.connection.commit()
+
+    await team_llm_pool_forget(task_ids)
+    await team_shell_pool_forget(task_ids)
     project_dir = f'/app/data/planning/{project_id}'
     if os.path.isdir(project_dir):
         shutil.rmtree(project_dir, ignore_errors=True)

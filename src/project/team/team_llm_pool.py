@@ -379,6 +379,45 @@ async def team_llm_pool_release(llm_name: str = '', task_id: int = 0, role: str 
     return count
 
 
+async def team_llm_pool_forget(task_ids) -> int:
+    """
+    Забыть удалённые задачи: снять захват и стереть привязку. Returns: снятых строк.
+
+    Отличие от `team_llm_pool_release` — в `task_id`. Освобождение гасит только
+    `locked_at`, а номер задачи оставляет намеренно: круг кончился, но задача жива, и
+    на следующем ей стараются вернуть ту же модель — тогда агента можно не
+    перезапускать, его контекст цел. Здесь возвращать некому: строки больше нет, и
+    привязка превращается в мусор, который держится вечно и врёт в панели пула.
+
+    Живьём: захват `gx10/qwen-large` за задачей #2438 провисел три часа после её
+    удаления, а `deepseek-...-1` — с `locked_at IS NULL`, то есть не истёк бы никогда.
+    Работу они не блокировали (свободной считается и строка с пустым `locked_at`, и
+    протухшая), но панель показывала занятыми модели, за которыми никого нет.
+
+    Саму строку не удаляем: она — слот модели в пуле, а не запись о задаче. Захват
+    заводит её `INSERT ... ON DUPLICATE KEY`, так что удаление пережилось бы, но
+    лишний оборот здесь ни к чему.
+
+    Пустой список — ноль без запроса: `IN ()` синтаксически неверен, а «забыть
+    ничего» не должно означать «забыть всё».
+    """
+    ids = [int(i) for i in (task_ids or []) if int(i or 0)]
+    if not ids:
+        return 0
+
+    placeholders = ', '.join(['%s'] * len(ids))
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            f"UPDATE team_llm_lock SET locked_at = NULL, session_uuid = '', task_id = NULL "
+            f" WHERE task_id IN ({placeholders})", tuple(ids))
+        count = db.rowcount
+        await db.connection.commit()
+
+    if count:
+        logger_info(f'[team] пул моделей: снято {count} захват(ов) удалённых задач')
+    return count
+
+
 async def team_llm_pool_parallel(project_id: int) -> int:
     """
     Предел одновременной работы проекта — размер его пула.

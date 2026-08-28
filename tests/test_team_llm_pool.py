@@ -334,6 +334,79 @@ class TestConflicts:
         assert await team_llm_pool_conflicts(TEST_PROJECT_ID, [TEST_LLM_A, TEST_LLM_B]) == {}
 
 
+class TestForget:
+    """Удалённая задача не должна числиться за моделью."""
+
+    async def test_forget_clears_lock_and_binding(self):
+        """
+        Освобождение (`release`) номер задачи оставляет намеренно — прилипание. Здесь
+        задачи больше нет, и номер обязан уйти вместе с ней, иначе строка врёт вечно.
+        """
+        from src.project.team.team_llm_pool import (team_llm_pool_acquire,
+                                                    team_llm_pool_forget,
+                                                    team_llm_pool_set)
+
+        await team_llm_pool_set(TEST_PROJECT_ID, [TEST_LLM_A])
+        await team_llm_pool_acquire(TEST_PROJECT_ID, 4242, 'developer', 'sess-a')
+
+        assert await team_llm_pool_forget([4242]) == 1
+
+        row = await _lock_row(TEST_LLM_A)
+        assert row['locked_at'] is None
+        assert row['task_id'] is None, 'номер удалённой задачи остался за моделью'
+        assert row['session_uuid'] == ''
+
+    async def test_forgotten_model_is_acquirable_again(self):
+        """Слот модели остаётся в пуле: строку мы гасим, а не сносим."""
+        from src.project.team.team_llm_pool import (team_llm_pool_acquire,
+                                                    team_llm_pool_forget,
+                                                    team_llm_pool_set)
+
+        await team_llm_pool_set(TEST_PROJECT_ID, [TEST_LLM_A])
+        await team_llm_pool_acquire(TEST_PROJECT_ID, 4242, 'developer', 'sess-a')
+        await team_llm_pool_forget([4242])
+
+        assert await team_llm_pool_acquire(TEST_PROJECT_ID, 77, 'qa', 'sess-b') == TEST_LLM_A
+
+    async def test_empty_list_touches_nothing(self):
+        """
+        «Забыть ничего» не должно означать «забыть всё»: пустой список выходит нулём
+        и до запроса не доходит — `IN ()` синтаксически неверен.
+        """
+        from src.project.team.team_llm_pool import (team_llm_pool_acquire,
+                                                    team_llm_pool_forget,
+                                                    team_llm_pool_set)
+
+        await team_llm_pool_set(TEST_PROJECT_ID, [TEST_LLM_A])
+        await team_llm_pool_acquire(TEST_PROJECT_ID, 4242, 'developer', 'sess-a')
+
+        assert await team_llm_pool_forget([]) == 0
+        assert (await _lock_row(TEST_LLM_A))['task_id'] == 4242
+
+    async def test_other_tasks_untouched(self):
+        """Снимаем только названные номера — соседний круг продолжается."""
+        from src.project.team.team_llm_pool import (team_llm_pool_acquire,
+                                                    team_llm_pool_forget,
+                                                    team_llm_pool_set)
+
+        await team_llm_pool_set(TEST_PROJECT_ID, [TEST_LLM_A, TEST_LLM_B])
+        await team_llm_pool_acquire(TEST_PROJECT_ID, 4242, 'developer', 'sess-a')
+        await team_llm_pool_acquire(TEST_PROJECT_ID, 4243, 'qa', 'sess-b')
+
+        assert await team_llm_pool_forget([4242]) == 1
+        assert (await _lock_row(TEST_LLM_B))['task_id'] == 4243
+
+
+async def _lock_row(llm_name: str) -> dict:
+    """Строка захвата целиком — по ней видно и замок, и привязку."""
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT * FROM team_llm_lock WHERE llm_name = %s', (llm_name,))
+
+        return await db.fetchone() or {}
+
+
 async def _lock_names() -> list:
     """Имена строк захвата тестового проекта — и свободных, и занятых."""
     from mysql_.mysql_ import mysql_get_db_async
