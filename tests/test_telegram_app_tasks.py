@@ -14,9 +14,12 @@ Telegram Mini App tasks endpoints tests.
 """
 import os
 
+import asyncio
 import httpx
 import pytest
 from typing import AsyncGenerator
+
+from tests.constants import TEST_AUTH
 
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
@@ -101,38 +104,41 @@ class TestTelegramAppTasksPipeline:
     """Переходы конвейера из мини-приложения — на временной задаче, без вреда живым."""
 
     @pytest.fixture
-    async def temp_task(self, telegram_client: httpx.AsyncClient) -> AsyncGenerator[int, None]:
+    async def admin_client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        """Клиент админки: CRUD задач открыт AuthChecker-сессией (ход источника)."""
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=15.0) as client:
+            login = await client.post("/auth/login", json=TEST_AUTH)
+            assert login.status_code == 200, f"login failed: {login.status_code} {login.text}"
+            yield client
+
+    @pytest.fixture
+    async def temp_task(self, admin_client: httpx.AsyncClient) -> AsyncGenerator[int, None]:
         """Корневая задача вне проекта (project_id NULL), убранная после теста."""
-        created = await telegram_client.post(
+        created = await admin_client.post(
             "/tasks/0", json={"title": "task/2465 test task", "task_type_id": 5})
         assert created.status_code == 200, f"create failed: {created.status_code} {created.text}"
         task_id = created.json()["task"]["id"]
         try:
             yield task_id
         finally:
-            await telegram_client.delete(f"/task/{task_id}")
+            await admin_client.delete(f"/task/{task_id}")
 
     async def test_approve_moves_plan_approval_to_approved(
             self, telegram_client: httpx.AsyncClient, temp_task: int):
         # Отправить в конвейер: менеджер в прогоне напишет план и поставит
-        # `plan_approval` (в тестовом окружении тик может не успеть) — поэтому
+        # `plan_approval` (в тестовом окружении тик может не всегда успеть) — поэтому
         # состояние ставим прямо в `plan_approval` тем же переходом, что конвейер.
         start = await telegram_client.post(
             f"/telegram-app/task/{temp_task}/pipeline/start", json={})
         assert start.status_code == 200
         assert start.json()["task"]["pipeline_state"] == "new"
 
-        from mysql_.mysql_ import mysql_get_db_async
-        async with mysql_get_db_async() as db:
-            await db.execute(
-                "UPDATE project_task SET pipeline_state = 'plan_approval' WHERE id = %s",
-                (temp_task,))
-            await db.connection.commit()
+        await _telegram_app_task_set_state(temp_task, 'plan_approval')
 
         approve = await telegram_client.post(
             f"/telegram-app/task/{temp_task}/pipeline/approve", json={})
         assert approve.status_code == 200
-        assert approve.json()["task"]["pipeline_state"] == "approved"
+        assert approve.json()["pipeline_state"] == "approved"
 
         # approve ожидает `plan_approval`; повторного нажатия быть не может — 409.
         second = await telegram_client.post(
@@ -143,12 +149,7 @@ class TestTelegramAppTasksPipeline:
             self, telegram_client: httpx.AsyncClient, temp_task: int):
         await telegram_client.post(f"/telegram-app/task/{temp_task}/pipeline/start", json={})
 
-        from mysql_.mysql_ import mysql_get_db_async
-        async with mysql_get_db_async() as db:
-            await db.execute(
-                "UPDATE project_task SET pipeline_state = 'plan_approval' WHERE id = %s",
-                (temp_task,))
-            await db.connection.commit()
+        await _telegram_app_task_set_state(temp_task, 'plan_approval')
 
         reject = await telegram_client.post(
             f"/telegram-app/task/{temp_task}/pipeline/reject", json={})
@@ -157,20 +158,74 @@ class TestTelegramAppTasksPipeline:
 
 
 class TestTelegramAppTasksQuestion:
-    """Чтение вопроса и ответ — тот же механизм, что на админской странице."""
+    """Чтение вопроса и ответ — тот же механизм, что на админской странице.
 
-    async def test_question_returns_shape(self, telegram_client: httpx.AsyncClient):
-        response = await telegram_client.get("/telegram-app/task/1/question")
+    Работаем на временной задаче (создана и снята в тесте): у неё нет вопроса, но
+    контракт ответа проверяется, а поток «ответ на вопрос» валидируется на пустом
+    ответе (отказ), не трогая живые подзадачи конвейера.
+    """
+
+    @pytest.fixture
+    async def admin_client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        """Клиент админки: CRUD задач открыт AuthChecker-сессией (ход источника)."""
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=15.0) as client:
+            login = await client.post("/auth/login", json=TEST_AUTH)
+            assert login.status_code == 200, f"login failed: {login.status_code} {login.text}"
+            yield client
+
+    @pytest.fixture
+    async def temp_task(self, admin_client: httpx.AsyncClient) -> AsyncGenerator[int, None]:
+        created = await admin_client.post(
+            "/tasks/0", json={"title": "task/2465 question test"})
+        assert created.status_code == 200, f"create failed: {created.status_code} {created.text}"
+        task_id = created.json()["task"]["id"]
+        try:
+            yield task_id
+        finally:
+            await admin_client.delete(f"/task/{task_id}")
+
+    async def test_question_returns_shape(
+            self, telegram_client: httpx.AsyncClient, temp_task: int):
+        response = await telegram_client.get(f"/telegram-app/task/{temp_task}/question")
         assert response.status_code == 200
         data = response.json()
         for key in ("question", "decisions", "goals", "attempts", "state", "error", "title"):
             assert key in data
 
-    async def test_question_empty_answer_rejected(self, telegram_client: httpx.AsyncClient):
+    async def test_question_empty_answer_rejected(
+            self, telegram_client: httpx.AsyncClient, temp_task: int):
         # Без выбранного варианта и без текста отвечать нечего: строка не трогается.
         response = await telegram_client.post(
-            "/telegram-app/task/1/question", json={"answers": [], "note": ""})
+            f"/telegram-app/task/{temp_task}/question", json={"answers": [], "note": ""})
         assert response.status_code in (400, 409)
+
+
+async def _telegram_app_task_set_state(task_id: int, pipeline_state: str) -> None:
+    """Поставить строке конвейерное состояние напрямую, без живого менеджера.
+
+    Вызывается из async-тестов, поэтому работает в текущем цикле pytest-asyncio:
+    пул `mysql_` привязан к циклу, в котором создан, и живёт вместе с ним.
+    Паттерн для синхронного контекста (фикстуры `conftest.py`) — свой цикл с
+    `mysql_pool_close()`; здесь этого не нужно.
+    """
+    from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
+
+    await _telegram_app_task_db_update(
+        "UPDATE project_task SET pipeline_state = %s WHERE id = %s",
+        (pipeline_state, task_id))
+    # Пул модульный и живёт один на процесс: созданный в цикле этого теста, он
+    # переиспользовался бы следующим тестом из своего цикла и падал на release
+    # («Event loop is closed»). Закрываем в том же цикле — тогда следующий вызов
+    # заведёт пул заново в своём.
+    await mysql_pool_close()
+
+
+async def _telegram_app_task_db_update(statement: str, params) -> None:
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute(statement, params)
+        await db.connection.commit()
 
 
 if __name__ == "__main__":
