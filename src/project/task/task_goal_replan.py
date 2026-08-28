@@ -58,9 +58,21 @@ async def task_goal_replan_send(subtask: dict) -> dict:
                 'error': 'Эту строку уже возвращали на планирование — второй раз нужен человек'}
 
     async with mysql_get_db_async() as db:
+        # Тип меняем вместе с состоянием: у строки сменился владелец — её забрал
+        # менеджер, и на вкладке разработчика ей больше не место. Это тот самый
+        # разрешённый случай, когда тип ребёнка расходится с типом родителя:
+        # остальная ветка спокойно разрабатывается, а эта строка разбирается заново
+        # (см. исключение в `task_state_type_cascade`). Назад её вернёт утверждение
+        # собственного плана — `task_state_type_to_dev` подзадачи берёт наравне с
+        # корневыми.
+        #
+        # Наличие типа `plan` проверяем отдельно: без строки типа подзапрос дал бы
+        # NULL и подзадача пропала бы со всех вкладок.
         await db.execute(
             "UPDATE project_task "
             "   SET pipeline_state = %s, pipeline_attempt_count = 0, "
+            "       task_type_id = COALESCE("
+            "           (SELECT id FROM project_task_type WHERE name = 'plan'), task_type_id), "
             "       pipeline_locked_at = NULL, pipeline_locked_by = '' "
             " WHERE id = %s AND parent_id IS NOT NULL",
             (TASK_GOAL_REPLAN_STATE, subtask_id))

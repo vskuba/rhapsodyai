@@ -130,10 +130,11 @@ async def task_state_type_to_plan(task_id: int) -> bool:
 
     Подзадачи переводим наравне с корневыми. Планирование берёт не только их:
     подзадача уходит туда двумя дорогами — помеченная менеджером «дробить дальше»
-    (`_subtask_state`) и возвращённая из тупика (`task_goal_replan`). Рождается она
-    всегда типом `dev` (`task_state_subtasks_create`), и без перевода её план писала
-    бы карточка разработчика — ровно та подмена роли, от которой уводит эта функция.
-    Поймано живьём на #1628: «Задача взята в планирование (Разработчик)».
+    (`_subtask_state`) и возвращённая из тупика (`task_goal_replan`). Рождается она с
+    типом родителя (`task_state_subtasks_create`), то есть обычно `dev`, и без
+    перевода её план писала бы карточка разработчика — ровно та подмена роли, от
+    которой уводит эта функция. Поймано живьём на #1628: «Задача взята в планирование
+    (Разработчик)».
 
     Раньше подзадачи здесь исключались из опасения, что тип `plan` останется на них
     навсегда. Опасение снято с двух сторон: обратный перевод (`task_state_type_to_dev`)
@@ -168,6 +169,8 @@ async def task_state_type_to_plan(task_id: int) -> bool:
         await db.connection.commit()
 
     if moved:
+        # Ветку пересматривают целиком: дети идут за родителем на планирование.
+        await task_state_type_cascade(task_id)
         logger_info(f'[task] task#{task_id} взята в планирование: тип -> plan')
     return moved
 
@@ -211,6 +214,7 @@ async def task_state_plan_to_development(task_id: int) -> bool:
         await db.connection.commit()
 
     if moved:
+        await task_state_type_cascade(task_id)
         logger_info(f'[task] task#{task_id} по пометке «в разработку»: тип -> dev, состояние -> approved')
     return moved
 
@@ -255,6 +259,7 @@ async def task_state_type_to_dev(task_id: int) -> bool:
         await db.connection.commit()
 
     if moved:
+        await task_state_type_cascade(task_id)
         logger_info(f'[task] task#{task_id} план утверждён человеком: тип -> dev')
     return moved
 
@@ -305,7 +310,64 @@ async def task_state_dev_to_testing(task_id: int) -> bool:
         await db.connection.commit()
 
     if moved:
+        # Все подзадачи дошли до QA — иначе перевод бы не случился, — значит и владелец
+        # у них теперь тот же. Без этого ветка расползалась: родитель на «Тестировщике»,
+        # дети на «Разработчике».
+        await task_state_type_cascade(task_id)
         logger_info(f'[task] task#{task_id} по пометке «в тестирование»: тип -> test, состояние -> testing')
+    return moved
+
+
+async def task_state_type_cascade(task_id: int) -> int:
+    """
+    Подтянуть тип подзадач к типу родителя. Returns: сколько строк сменили тип.
+
+    Тип задачи — это её нынешний владелец, а не род занятий: `plan` значит «сейчас у
+    менеджера», `dev` — «у разработчика», `test` — «у QA». Владелец у ветки один:
+    пока родитель на планировании, подзадачи тоже на планировании — разрабатывать
+    нечего, план ещё пишется. Поэтому всякий перевод родителя тянет за собой детей, и
+    зовётся эта функция из каждого такого перевода.
+
+    Без каскада тип детей застывал на том, что был при их создании, и ветка
+    расползалась по вкладкам: родитель ушёл на проверку, дети остались у разработчика,
+    и одна и та же работа значилась в двух руках сразу.
+
+    **Исключение — ребёнок, ушедший на планирование в одиночку.** Подзадача, которая
+    не идёт (`task_goal_replan_send`), возвращается менеджеру на разбиение, пока
+    остальная ветка спокойно разрабатывается: родитель `dev`, ребёнок `plan`. Это не
+    рассогласование, а разрешённый случай — у этой строки владелец действительно
+    другой. Такие не трогаем: назад их вернёт собственное утверждение плана
+    (`task_state_type_to_dev`), а каскад отобрал бы строку у менеджера посреди работы.
+
+    Наоборот, когда на планирование уходит сам родитель, дети идут за ним — там
+    исключения нет: пересматривают всю ветку.
+
+    Внуков не трогаем. Каскад на один уровень, потому что зовут его из переводов, а
+    перевод у ребёнка свой: разложенная подзадача сама позовёт каскад для своих детей,
+    когда сменит тип. Рекурсия здесь означала бы обход дерева на каждом тике.
+
+    Тип родителя читаем производной таблицей — MySQL 1093 запрещает читать в UPDATE
+    ту же таблицу, которую пишет.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "UPDATE project_task kid "
+            "  JOIN (SELECT task_type_id FROM project_task WHERE id = %s) AS parent "
+            "   SET kid.task_type_id = parent.task_type_id "
+            " WHERE kid.parent_id = %s "
+            "   AND kid.task_type_id <> parent.task_type_id "
+            "   AND parent.task_type_id IS NOT NULL "
+            # Ребёнок на отдельном планировании: владелец у него свой. Пропускаем,
+            # кроме случая, когда на планирование ушёл и сам родитель.
+            "   AND (kid.task_type_id <> (SELECT id FROM project_task_type WHERE name = 'plan') "
+            "        OR parent.task_type_id = (SELECT id FROM project_task_type WHERE name = 'plan'))",
+            (task_id, task_id),
+        )
+        moved = db.rowcount
+        await db.connection.commit()
+
+    if moved:
+        logger_info(f'[task] task#{task_id}: тип подтянут у {moved} подзадач(и)')
     return moved
 
 
@@ -313,10 +375,20 @@ async def task_state_subtasks_create(task_id: int, subtasks: list) -> int:
     """
     Материализовать утверждённый план и снять блокировку с задачи.
 
-    Подзадача — строка того же дерева: `project_id` и вкладку берём у родителя одним
-    `INSERT ... SELECT`, чтобы ребёнок не оказался в другом проекте, если родителя
-    переносят параллельно. Тип фиксируем `dev`: круг по подзадаче всегда
-    Developer → QA, каким бы ни был тип родителя.
+    Подзадача — строка того же дерева: `project_id`, вкладку и тип берём у родителя
+    одним `INSERT ... SELECT`, чтобы ребёнок не оказался в другом проекте, если
+    родителя переносят параллельно.
+
+    Тип наследуем, а не фиксируем `dev`. Тип — это нынешний владелец строки, и у ветки
+    он один: пока родитель на планировании, подзадачи тоже на планировании, а не в
+    разработке — разрабатывать нечего, план ещё пишется. Прежнее жёсткое `dev`
+    объяснялось тем, что круг по подзадаче всегда Developer → QA; это верно про
+    исполнителя, но тип отвечает не на «кто будет делать», а на «у кого она сейчас»,
+    и подзадача под задачей планирования оказывалась сразу на двух вкладках.
+
+    Работу это не роняет: `task_claim_subtask_developable` и
+    `task_claim_subtask_testable` отбирают подзадачи по состоянию и проекту, тип они
+    не смотрят вовсе.
 
     `pipeline_from_plan = 1` — метка происхождения. По ней сброс и пересмотр плана
     находят свои строки и не сносят подзадачи, которые человек завёл руками.
@@ -349,7 +421,7 @@ async def task_state_subtasks_create(task_id: int, subtasks: list) -> int:
                 "        position, status, task_type_id, pipeline_state, pipeline_from_plan, "
                 "        metadata) "
                 "SELECT t.project_id, t.id, %s, %s, %s, %s, %s, %s, "
-                "       (SELECT id FROM project_task_type WHERE name = 'dev'), %s, 1, %s "
+                "       t.task_type_id, %s, 1, %s "
                 "  FROM project_task t WHERE t.id = %s",
                 (str(item.get('title') or ''), str(item.get('description') or ''),
                  json.dumps(goals, ensure_ascii=False) if goals else '',
