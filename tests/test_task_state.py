@@ -400,18 +400,33 @@ class TestSessionReplaced:
     при свободной роли.
     """
 
-    async def _session_add(self, role: str, uuid_value: str, work_dir: str = '/tmp/pytest_shell'):
-        from datetime_.datetime_ import datetime_now
+    async def _session_add(self, role: str, uuid_value: str, work_dir: str = '/tmp/pytest_shell',
+                           seen_ago: int = 0, created_ago: int = 0):
+        """
+        Строка реестра. `seen_ago` и `created_ago` — на сколько секунд состарить.
+
+        Возраст задаётся явно, потому что «замена» — про две метки сразу: наша
+        оболочка должна быть уже не живой по пингу, а сменившая её — новее по
+        `created_at`. Со всеми строками «сейчас» такой расклад не выразить.
+
+        Время берём в UTC: реестр хранит его так (`datetime_utc_now`), и проверка
+        свежести сравнивает с тем же источником. Возьми мы местное — строка легла бы
+        на три часа в будущее и «протухшая» осталась бы живой.
+        """
+        from datetime import timedelta
+
+        from datetime_.datetime_ import datetime_utc_now
         from mysql_.mysql_ import mysql_get_db_async
 
-        seen = await datetime_now()
+        now = datetime_utc_now()
         async with mysql_get_db_async() as db:
             await db.execute(
                 "INSERT INTO ai_claude_session_registry "
                 "       (session_uuid, role, work_dir, status, agent_status, agent_status_reason, "
-                "        last_seen_at) "
-                "VALUES (%s, %s, %s, 'active', 'ready', 'idle', %s)",
-                (uuid_value, role, work_dir, seen))
+                "        created_at, last_seen_at) "
+                "VALUES (%s, %s, %s, 'active', 'ready', 'idle', %s, %s)",
+                (uuid_value, role, work_dir,
+                 now - timedelta(seconds=created_ago), now - timedelta(seconds=seen_ago)))
             row_id = db.lastrowid
             await db.connection.commit()
 
@@ -434,13 +449,42 @@ class TestSessionReplaced:
             await self._session_drop(row_id)
 
     async def test_task_state_foreign_session_is_replacement(self):
+        """
+        Замена — это две вещи разом: нашей оболочки среди живых нет, а у роли есть
+        поднятая **позже** нашей. Так выглядит перезапущенный человеком терминал.
+
+        Одного «нашей не видно» мало: соседняя оболочка, поднятая раньше и всё это
+        время простаивавшая, засчитывалась бы за замену, и круг срывался бы каждый
+        раз, когда наша молчит дольше порога свежести.
+        """
         from src.tool.claude_shell.claude_shell import _session_replaced
 
-        row_id = await self._session_add('__pytest_shell', 'uuid-второй')
+        ours = await self._session_add('__pytest_shell', 'uuid-первый',
+                                       seen_ago=86400, created_ago=86400)
+        newer = await self._session_add('__pytest_shell', 'uuid-второй', created_ago=60)
         try:
-            assert await _session_replaced('__pytest_shell', '/tmp/pytest_shell', 'uuid-первый') is True
+            assert await _session_replaced(
+                '__pytest_shell', '/tmp/pytest_shell', 'uuid-первый') is True
         finally:
-            await self._session_drop(row_id)
+            await self._session_drop(ours)
+            await self._session_drop(newer)
+
+    async def test_task_state_older_neighbour_is_not_replacement(self):
+        """
+        Соседка старше нашей — не замена, а простаивавшая рядом оболочка. Без сверки
+        по `created_at` круг срывался бы на каждой паузе в пинге.
+        """
+        from src.tool.claude_shell.claude_shell import _session_replaced
+
+        ours = await self._session_add('__pytest_shell', 'uuid-первый',
+                                       seen_ago=86400, created_ago=60)
+        older = await self._session_add('__pytest_shell', 'uuid-второй', created_ago=86400)
+        try:
+            assert await _session_replaced(
+                '__pytest_shell', '/tmp/pytest_shell', 'uuid-первый') is False
+        finally:
+            await self._session_drop(ours)
+            await self._session_drop(older)
 
     async def test_task_state_missing_session_is_not_replacement(self):
         """Оболочку могли на секунду потерять по пингу — на это есть таймаут."""
@@ -643,13 +687,22 @@ class TestSubtaskVolume:
         data = json.loads(_subtask_metadata({'split_more': True, 'context_lines': 4200}))
         assert data == {'split_more': True, 'context_lines': 4200}
 
-    def test_task_state_subtask_final_and_volume_together(self):
+    def test_task_state_subtask_final_dropped_volume_kept(self):
+        """
+        `final` не переживает разбиение, что бы менеджер ни прислал.
+
+        Подзадача-приёмка проверяла сумму работы соседей, а суммы не существует ни в
+        одном дереве: ветки режутся от главной, вливает их человек уже после
+        конвейера. Такая строка не могла закрыться никогда (#1631). Промпт это
+        запрещает словами, а `_subtask_metadata` — делом; оценка объёма рядом с ней
+        при этом должна уцелеть.
+        """
         import json
 
         from src.project.task.task_state import _subtask_metadata
 
         data = json.loads(_subtask_metadata({'final': True, 'context_lines': 300}))
-        assert data == {'final': True, 'context_lines': 300}
+        assert data == {'context_lines': 300}
 
     def test_task_state_subtask_no_empty_marks(self):
         """Ключа нет — пометки нет, как у флажков фаз."""

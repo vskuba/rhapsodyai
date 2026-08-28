@@ -226,11 +226,16 @@ class TestTaskAgentBugfixer:
         assert TASK_BUGFIXER_ROLE == 'bugfixer'
 
     def test_run_signature(self):
+        """
+        `shell_session` в подписи обязателен: у роли оболочек несколько, и круг
+        адресуется той, которую ему выделил пул (`team_shell_pool`). Без неё вопрос
+        уходил бы в самую свежую сессию роли — то есть в соседний круг.
+        """
         import inspect
         from src.project.task.task_agent_bugfixer import task_agent_bugfixer_run
         assert inspect.iscoroutinefunction(task_agent_bugfixer_run)
         assert list(inspect.signature(task_agent_bugfixer_run).parameters) == [
-            'task', 'role', 'work_dir', 'task_dir']
+            'task', 'role', 'work_dir', 'task_dir', 'shell_session']
 
     def test_result_parse_plain_json(self):
         from src.project.task.task_agent_bugfixer import _result_parse
