@@ -1609,6 +1609,71 @@
         padding: 10px 25px 0; background: #fff;
     }
     .browser-site-label { font-size: 12px; color: #718096; font-weight: 600; }
+    /* ─── Переменные сайта ──────────────────────────────────
+       Таблица, а не карточки: у переменной три коротких поля, и читают их
+       столбцами — глазами по именам сверху вниз. Карточка на такую строку
+       тратила бы вчетверо больше места. */
+    /* Панель вкладки — колонка с прокруткой. Общее правило `.tab-panel.active`
+       (design.css) ставит `display: flex` без направления, то есть строкой: шапка
+       уезжала влево, таблица вставала соседним столбцом и растягивала свои строки
+       на всю высоту экрана — между двумя переменными получалось полтысячи пустых
+       пикселей. Соседние вкладки этого не замечают, у них внутри свои flex-колонки. */
+    #tab-variable { flex-direction: column; overflow: auto; }
+    /* Таблица не тянется по высоте: `align-items: stretch` растаскивал бы строки
+       по всей панели, как только их станет меньше, чем в неё влезает. */
+    #tab-variable .var-table { align-self: flex-start; }
+
+    .var-head {
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 16px 0; margin-bottom: 10px;
+    }
+    .var-note { flex: 1 1 auto; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+    .var-note.var-note-warn { color: #b45309; }
+    .var-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .var-table th {
+        text-align: left; padding: 6px 12px; font-size: 11px; font-weight: 600;
+        color: #94a3b8; text-transform: uppercase; letter-spacing: .04em;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .var-table td { padding: 7px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .var-col-name { width: 200px; }
+    .var-col-value { width: 42%; }
+    .var-col-act { width: 100px; text-align: right; }
+    .var-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #1e293b; }
+    /* Имя показываем так же, как оно встречается в шаге сценария: скобки — часть
+       того, что человек ищет глазами, когда сверяет шаг со списком. */
+    .var-name-braces { color: #cbd5e1; }
+    .var-value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #334155;
+        word-break: break-all;
+    }
+    .var-value-secret { color: #94a3b8; letter-spacing: .12em; }
+    .var-desc { color: #64748b; font-size: 12px; }
+    .var-empty { padding: 22px 16px; color: #94a3b8; font-size: 13px; }
+    .var-btn {
+        border: none; background: none; cursor: pointer; color: #94a3b8;
+        font-size: 13px; padding: 2px 5px; border-radius: 5px;
+    }
+    .var-btn:hover { background: #f1f5f9; color: #475569; }
+    .var-btn-del:hover { background: #fef2f2; color: #dc2626; }
+    /* Форма правки — строкой под записью, а не окном: полей три, и окно ради них
+       перекрывало бы список, по которому человек и сверяет имена. */
+    .var-form td { background: #f8fafc; }
+    .var-form-grid {
+        display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 0;
+    }
+    .var-form-grid input[type=text], .var-form-grid input[type=password] {
+        padding: 5px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;
+    }
+    .var-form-name { width: 170px; font-family: ui-monospace, Menlo, monospace; }
+    .var-form-value { flex: 1 1 240px; font-family: ui-monospace, Menlo, monospace; }
+    .var-form-desc { flex: 1 1 200px; }
+    .var-form-secret {
+        display: flex; align-items: center; gap: 5px; font-size: 12px; color: #475569;
+        white-space: nowrap; cursor: pointer;
+    }
+    .var-form-err { color: #dc2626; font-size: 12px; flex-basis: 100%; }
+
     #browserSiteSelect {
         font-size: 13px; padding: 5px 10px; border: 1px solid #cbd5e1;
         border-radius: 6px; background: #fff; color: #1e293b; max-width: 220px;
@@ -1641,7 +1706,8 @@
 
 <div class="page-tabs" id="browserTabs">
     {% if browser_page == 'site' %}
-    <button class="page-tab active" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
+    <button class="page-tab active" data-tab="variable">Переменные <span class="page-tab-n" id="tabCount-variable"></span></button>
+    <button class="page-tab" data-tab="session">Сессии <span class="page-tab-n" id="tabCount-session"></span></button>
     <button class="page-tab" data-tab="scenario">Сценарии <span class="page-tab-n" id="tabCount-scenario"></span></button>
     <button class="page-tab" data-tab="runlog">Журналы <span class="page-tab-n" id="tabCount-runlog"></span></button>
     <button class="page-tab" data-tab="error">Ошибки <span class="page-tab-n" id="tabCount-error"></span></button>
@@ -1657,7 +1723,36 @@
 </div>
 
 
-<div class="tab-panel{% if browser_page == 'site' %} active{% endif %}" id="tab-session">
+{% if browser_page == 'site' %}
+<!-- Переменные сайта: то, что подставляется в шаги сценариев вместо `{{ '{{login}}' }}`.
+     Заводятся один раз на сайт, а не в каждом сценарии: у сайта сценариев несколько,
+     и логин со стенда переписывался в каждый из них.
+
+     Селект сайта у вкладки общий со всей страницей (`browser-site-head` выше) — он
+     один на страницу намеренно, иначе вкладки показывали бы разные сайты сразу. -->
+<div class="tab-panel active" id="tab-variable">
+
+<div class="var-head">
+    <div class="var-note" id="varNote"></div>
+    <button type="button" class="browser-btn" onclick="varAdd()">+ Переменная</button>
+</div>
+
+<table class="var-table">
+    <thead>
+        <tr>
+            <th class="var-col-name">Имя</th>
+            <th class="var-col-value">Значение</th>
+            <th class="var-col-desc">Зачем</th>
+            <th class="var-col-act"></th>
+        </tr>
+    </thead>
+    <tbody id="varRows"></tbody>
+</table>
+
+</div>
+{% endif %}
+
+<div class="tab-panel" id="tab-session">
 
 <!-- Сессии — вкладки второго уровня: одна страница на вкладку, «+» заводит ещё
      одну. Список карточек и живое окно под ними принадлежат выбранной сессии. -->
@@ -1972,6 +2067,9 @@
         }
         // Список сайтов правят и из соседней вкладки браузера — перечитываем на входе,
         // а не держим то, что пришло при загрузке страницы.
+        // Переменные правит и соседняя вкладка браузера, и они же меняются при
+        // смене сайта — перечитываем на входе, а не держим загруженное однажды.
+        if (name === 'variable') varsLoad();
         if (name === 'site') sitesLoad();
         if (name === 'runlog') {
             // Список сценариев общий с соседней вкладкой: он уже загружен, второго
@@ -3131,6 +3229,9 @@
         // в заголовках вкладок стоят счётчики, и без этого они врали бы до
         // перехода на вкладку.
         if (typeof scenariosLoad === 'function') scenariosLoad();
+        // Переменные принадлежат сайту целиком: у чужого сайта это чужие логины,
+        // и оставить их на экране после смены — худшая из ошибок этой страницы.
+        if (typeof varsLoad === 'function') varsLoad();
 
         // Сессии и сценарии вкладки «Сессии» отбираются по тому же
         // выбору — раньше это делал её собственный селект, теперь он один.
@@ -3667,24 +3768,39 @@
             return;
         }
 
+        // Что закрывает сайт своими переменными: их подставит сервер, и требовать
+        // их здесь незачем — иначе пароль пришлось бы набирать на каждый прогон,
+        // ради чего вкладку «Переменные» и заводили.
+        const fromSite = varsBySite();
+
         for (const name of names) {
             const known = Object.prototype.hasOwnProperty.call(defaults, name);
+            const site = fromSite[name];
             const row = document.createElement('div');
-            row.className = 'scenario-key' + (known ? '' : ' secret');
+            row.className = 'scenario-key' + (known || site ? '' : ' secret');
 
             const label = document.createElement('span');
             label.className = 'scenario-key-name';
             label.textContent = name;
-            label.title = known
-                ? 'значение по умолчанию из переменных — уйдёт в базу и журнал'
-                : 'в переменных значения нет: уйдёт секретом — ни в базу, ни в журнал';
+            label.title = site
+                ? (site.is_secret
+                    ? 'переменная сайта, секретная: подставит сервер, в журнал не попадёт'
+                    : 'переменная сайта: подставит сервер')
+                : known
+                    ? 'значение по умолчанию из переменных — уйдёт в базу и журнал'
+                    : 'в переменных значения нет: уйдёт секретом — ни в базу, ни в журнал';
 
             const input = document.createElement('input');
             input.type = 'text';
             input.spellcheck = false;
             input.autocomplete = 'off';
             input.dataset.key = name;
-            input.placeholder = known ? String(defaults[name]) : 'значение на этот прогон';
+            // Значение сайта в поле не подставляем, только называем: набранное здесь
+            // уходит на сервер и перекрыло бы сохранённое, а секретное вдобавок
+            // засветилось бы в поле ввода.
+            input.placeholder = site
+                ? (site.is_secret ? 'из переменных сайта (секрет)' : `из переменных сайта: ${site.value}`)
+                : known ? String(defaults[name]) : 'значение на этот прогон';
             // Набранное раньше важнее умолчания: умолчание — то, с чего начинают,
             // а введённое руками человек подбирал под свой стенд.
             input.value = values[name] !== undefined
@@ -4065,6 +4181,15 @@
 
     // Две корзины по одному признаку: есть значение по умолчанию — это переменная,
     // ей место в журнале; нет — значит секрет, и в базе ему делать нечего.
+    // Переменные текущего сайта по имени. Читаем уже загруженный список вкладки
+    // «Переменные» (`_vars`) — второго запроса за теми же строками не делаем.
+    function varsBySite() {
+        const out = {};
+        for (const v of (_vars || [])) out[v.name] = v;
+
+        return out;
+    }
+
     function scenarioSubstitutions() {
         const defaults = scenarioVarsGet();
         const variables = {};
@@ -4166,6 +4291,209 @@
         const el = document.getElementById('tabCount-' + name);
         if (el) el.textContent = value === '' ? '' : `(${value})`;
     }
+
+    // ---------- Переменные сайта ----------
+
+    // То, что подставляется в шаги сценариев вместо двойных скобок с именем: логин,
+    // пароль, адрес кабинета. Заводятся на сайт, а не в сценарии: у сайта
+    // сценариев несколько, и одно значение приходилось переписывать в каждый.
+    //
+    // Секретные значения в базе зашифрованы, а список их не отдаёт вовсе — приходит
+    // маска. Сырое значение спрашивается поштучно (`/reveal`) и по отдельному праву:
+    // список перерисовывается на каждой смене сайта, и отдавать пароли пачкой в
+    // ответ, который осядет в журналах, незачем.
+    // Двойные фигурные скобки в этом файле нельзя писать литералом — даже в
+    // комментарии: страница это шаблон Jinja, и он разбирает такую пару как начало
+    // выражения ещё до того, как файл станет JavaScript. Собираем из половинок; тем
+    // же способом обходит это соседний разбор подстановок, экранируя их в регулярке.
+    const VAR_OPEN = '{' + '{';
+    const VAR_CLOSE = '}' + '}';
+
+    let _vars = [];
+    let _varEditId = null;   // какая строка сейчас в форме; 0 — форма создания
+    let _varSecretReady = true;
+
+    async function varsLoad() {
+        const box = document.getElementById('varRows');
+        if (!box) return;
+        if (!_browserSiteId) {
+            box.innerHTML = '<tr><td colspan="4" class="var-empty">Сайт не выбран</td></tr>';
+            countSet('variable', '');
+            return;
+        }
+        let data;
+        try {
+            data = await getData('/api/browser/variable?site_id=' + _browserSiteId);
+        } catch (e) {
+            box.innerHTML = `<tr><td colspan="4" class="var-empty">список не пришёл: ${_escape(e.message)}</td></tr>`;
+            countSet('variable', '');
+            return;
+        }
+        _vars = data.items || [];
+        _varSecretReady = data.secret_ready !== false;
+        countSet('variable', _vars.length);
+        varNoteRender();
+        varRowsRender();
+        // Панель подстановок на соседней вкладке считает по этому же списку, какие
+        // ключи закрывает сайт. Без перерисовки она осталась бы с прежним сайтом и
+        // просила бы вводить руками то, что сервер и так подставит.
+        if (typeof scenarioKeysRender === 'function') scenarioKeysRender();
+    }
+
+    // Без ключа секрет завести нельзя, и сказать об этом надо до того, как человек
+    // заполнит форму и получит отказ на сохранении: из текста «ключ не задан» посреди
+    // формы неочевидно, что чинить.
+    function varNoteRender() {
+        const el = document.getElementById('varNote');
+        if (!el) return;
+        if (_varSecretReady) {
+            el.className = 'var-note';
+            el.textContent = 'Секретные значения хранятся в базе зашифрованными; '
+                + 'ключ лежит в окружении установки.';
+        } else {
+            el.className = 'var-note var-note-warn';
+            el.textContent = 'BROWSER_SECRET_KEY не задан — секретные переменные заводить нельзя. '
+                + 'Обычные работают как обычно.';
+        }
+    }
+
+    function varRowsRender() {
+        const box = document.getElementById('varRows');
+        if (!box) return;
+        if (!_vars.length && _varEditId === null) {
+            box.innerHTML = '<tr><td colspan="4" class="var-empty">'
+                + 'Переменных нет. Заводятся один раз на сайт, а в шагах сценария '
+                + `пишутся как <code>${VAR_OPEN}имя${VAR_CLOSE}</code>.</td></tr>`;
+            return;
+        }
+        const rows = _vars.map(v => _varEditId === v.id ? varFormHtml(v) : varRowHtml(v));
+        if (_varEditId === 0) rows.push(varFormHtml(null));
+        box.innerHTML = rows.join('');
+    }
+
+    function varRowHtml(v) {
+        // Значение секретной строки приходит маской. Кнопка «показать» спрашивает
+        // сырое отдельным запросом — и только она, не перерисовка списка.
+        const value = v.is_secret
+            ? `<span class="var-value var-value-secret" id="varVal-${v.id}">${_escape(v.value)}</span>`
+              + ` <button class="var-btn" onclick="varReveal(${v.id})" title="Показать значение">👁</button>`
+            : `<span class="var-value">${_escape(v.value)}</span>`;
+
+        return `<tr>
+            <td><span class="var-name"><span class="var-name-braces">${VAR_OPEN}</span>${_escape(v.name)}<span class="var-name-braces">${VAR_CLOSE}</span></span></td>
+            <td>${value}</td>
+            <td><span class="var-desc">${_escape(v.description || '')}</span></td>
+            <td class="var-col-act">
+                <button class="var-btn" onclick="varEdit(${v.id})" title="Изменить">✎</button>
+                <button class="var-btn var-btn-del" onclick="varDelete(${v.id})" title="Удалить">✕</button>
+            </td>
+        </tr>`;
+    }
+
+    // Строка правки — под записью, а не окном: полей три, и окно перекрыло бы список,
+    // по которому человек сверяет имена соседних переменных.
+    function varFormHtml(v) {
+        const isNew = !v;
+        const secret = v ? v.is_secret : false;
+        // У секретной строки поле значения пустое, а не с маской: маска, отправленная
+        // как есть, стала бы паролем. Пустое поле означает «значение не менять» —
+        // ровно так его понимает и сервер.
+        const holder = secret ? (isNew ? 'значение' : 'оставить прежнее') : 'значение';
+
+        return `<tr class="var-form"><td colspan="4">
+            <div class="var-form-grid">
+                <input type="text" class="var-form-name" id="varFName" maxlength="100"
+                       placeholder="имя" spellcheck="false" value="${_escape(v ? v.name : '')}">
+                <input type="${secret ? 'password' : 'text'}" class="var-form-value" id="varFValue"
+                       maxlength="4000" placeholder="${holder}" spellcheck="false"
+                       autocomplete="new-password" value="${_escape(secret ? '' : (v ? v.value : ''))}">
+                <input type="text" class="var-form-desc" id="varFDesc" maxlength="255"
+                       placeholder="зачем нужна" value="${_escape(v ? v.description : '')}">
+                <label class="var-form-secret" title="${_varSecretReady ? 'Значение шифруется в базе и замазывается в журналах' : 'Ключ шифрования не задан'}">
+                    <input type="checkbox" id="varFSecret" ${secret ? 'checked' : ''}
+                           ${_varSecretReady ? '' : 'disabled'} onchange="varSecretToggle(this.checked)">
+                    секрет
+                </label>
+                <button type="button" class="browser-btn" onclick="varSave()">Сохранить</button>
+                <button type="button" class="var-btn" onclick="varCancel()">Отмена</button>
+                <div class="var-form-err" id="varFErr"></div>
+            </div>
+        </td></tr>`;
+    }
+
+    // Тип поля идёт за флажком: снял «секрет» — значение должно быть видно, поставил —
+    // скрыто. Иначе человек правит пароль вслепую или, наоборот, показывает его соседу
+    // по кабинету, ничего для этого не сделав.
+    window.varSecretToggle = function (checked) {
+        const el = document.getElementById('varFValue');
+        if (el) el.type = checked ? 'password' : 'text';
+    };
+
+    window.varAdd = function () {
+        if (!_browserSiteId) { alert('Сначала выберите сайт'); return; }
+        _varEditId = 0;
+        varRowsRender();
+        document.getElementById('varFName')?.focus();
+    };
+
+    window.varEdit = function (id) { _varEditId = id; varRowsRender(); };
+    window.varCancel = function () { _varEditId = null; varRowsRender(); };
+
+    window.varReveal = async function (id) {
+        const el = document.getElementById('varVal-' + id);
+        if (!el) return;
+        try {
+            const data = await getData(`/api/browser/variable/${id}/reveal`);
+            el.textContent = data.value || '';
+            el.classList.remove('var-value-secret');
+        } catch (e) {
+            // 403 здесь — законный ответ, а не сбой: право на показ секретов своё, и
+            // у служебных учёток его нет.
+            el.textContent = e.message && e.message.includes('403')
+                ? 'нет права на показ' : `не показать: ${e.message}`;
+        }
+    };
+
+    window.varSave = async function () {
+        const err = document.getElementById('varFErr');
+        const name = (document.getElementById('varFName')?.value || '').trim();
+        const value = document.getElementById('varFValue')?.value || '';
+        const description = (document.getElementById('varFDesc')?.value || '').trim();
+        const isSecret = !!document.getElementById('varFSecret')?.checked;
+
+        if (!name) { err.textContent = 'Имя обязательно'; return; }
+        if (!/^[A-Za-z0-9_-]+$/.test(name.replace(/[{}]/g, ''))) {
+            err.textContent = 'В имени только латиница, цифры, дефис и подчёркивание — '
+                + 'по нему шаг сценария ищет подстановку';
+            return;
+        }
+        // Пустое значение у новой записи бессмысленно: подставится пустота, и сценарий
+        // упадёт на пустом поле формы, а не на понятной ошибке.
+        if (_varEditId === 0 && !value) { err.textContent = 'Значение обязательно'; return; }
+
+        const body = {site_id: _browserSiteId, name, value, is_secret: isSecret, description};
+        try {
+            if (_varEditId) await putData('/api/browser/variable/' + _varEditId, body);
+            else await postData('/api/browser/variable', body);
+        } catch (e) {
+            err.textContent = e.message || 'не сохранить';
+            return;
+        }
+        _varEditId = null;
+        varsLoad();
+    };
+
+    window.varDelete = async function (id) {
+        const v = _vars.find(x => x.id === id);
+        if (!confirm(`Удалить переменную «${v ? v.name : id}»? Шаги, которые на неё ссылаются, останутся без значения.`)) return;
+        try {
+            await deleteData('/api/browser/variable/' + id);
+        } catch (e) {
+            alert(e.message || 'не удалить');
+            return;
+        }
+        varsLoad();
+    };
 
     // ---------- Сайты ----------
 
@@ -4558,6 +4886,10 @@
     (async () => {
         await browserSiteFill();
         scenariosLoad();
+        // Переменные тоже ждут выбранного сайта: `browserSiteFill` заканчивает
+        // «тихим» выбором (silent), который списков не трогает, — иначе первый
+        // запрос ушёл бы без `site_id` и вернул чужие строки.
+        varsLoad();
     })();
 
     sessionsLoad();

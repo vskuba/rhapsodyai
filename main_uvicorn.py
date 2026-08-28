@@ -78,7 +78,8 @@ from src.uvicorn.routers.playwright import playwright
 from src.uvicorn.routers.stt import stt
 from src.uvicorn.routers.blog import blog as blog_router
 from src.uvicorn.routers.browser import (browser_author, browser_error, browser_proxy,
-                                         browser_record, browser_scenario, browser_site)
+                                         browser_record, browser_scenario, browser_site,
+                                         browser_site_variable)
 
 
 @asynccontextmanager
@@ -498,6 +499,7 @@ app.include_router(playwright.router, include_in_schema=False)
 app.include_router(browser_proxy.router)
 app.include_router(browser_scenario.router)
 app.include_router(browser_site.router)
+app.include_router(browser_site_variable.router)
 app.include_router(browser_error.router)
 # Запись сценария и его переписывание агентом — работа со страницы `/admin/browser`,
 # руками человека. Наружу их никто не зовёт, в документации они были бы шумом.

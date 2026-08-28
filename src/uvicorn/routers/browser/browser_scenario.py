@@ -25,6 +25,7 @@ from src.browser.browser_scenario import (BROWSER_SCENARIO_ACTIONS,
                                           BrowserScenario,
                                           browser_scenario_variables_used)
 from src.mysql_.repository.browser.scenario_repository import BrowserScenarioRepository
+from src.uvicorn.routers.browser.browser_site_variable import browser_site_variable_values
 from src.uvicorn.routers.browser.browser_error import browser_error_write
 from src.uvicorn.routers.browser.browser_upstream import (
     BROWSER_UPSTREAM_SCENARIO_TIMEOUT,
@@ -193,13 +194,32 @@ async def browser_scenario_run_one(scenario_id: int, session_id: str, variables:
     row = await _scenario_row(scenario_id)
     scenario = _scenario_load(row)
 
+    # Переменные сайта — общий запас для всех его сценариев: логин и пароль заводятся
+    # один раз на сайт, а не переписываются в каждый сценарий (`browser_site_variable`).
+    # Сценарий без сайта (`site_id IS NULL`) получает пустые сумки и работает как
+    # раньше — такие есть, связь с сайтом появилась позже самих сценариев.
+    site_plain, site_secret = ({}, {})
+    if row.get('site_id'):
+        site_plain, site_secret = await browser_site_variable_values(int(row['site_id']))
+
     payload = {
         'scenario': scenario.model_dump(),
         'session_id': session_id,
-        # Значения сценария — основа, переданные при запуске перекрывают их:
-        # адрес стенда в базе, а на проверке хочется другой.
-        'variables': {**_variables_default(row), **(variables or {})},
-        'secrets': secrets or {},
+        # Три слоя, от общего к частному: переменные сайта, свои значения сценария,
+        # переданные на запуск. Побеждает более частное — обычное правило настроек.
+        #
+        # Почему сайт снизу, а не сверху. Значения сценария заводили руками до
+        # появления этой таблицы, и они у сценариев уже есть; окажись сайт выше, любой
+        # такой сценарий молча сменил бы поведение на первом же прогоне. Снизу он
+        # закрывает то, чего у сценария нет, и ничего не ломает. Хочется
+        # централизации — значение в сценарии чистят, и остаётся сайтовое.
+        'variables': {**site_plain, **_variables_default(row), **_filled(variables)},
+        # Секреты — отдельной сумкой, и это не формальность: контейнер замазывает их
+        # в трассе и в тексте ошибок, а `variables` попадают в журнал как есть
+        # (`browser_scenario_mask`). Пароль, положенный не в ту сумку, уехал бы в
+        # `browser_scenario_run.trace` открытым текстом — то самое, от чего его здесь
+        # и шифруют.
+        'secrets': {**site_secret, **_filled(secrets)},
         'keep_session': keep_session,
     }
 
@@ -279,6 +299,23 @@ async def _scenario_row(scenario_id: int) -> dict:
         raise HTTPException(status_code=404, detail='сценарий не найден')
 
     return row
+
+
+def _filled(values: dict | None) -> dict:
+    """
+    Переданные значения без пустых. Пустое не должно стирать значение сайта.
+
+    Пустая строка не бывает осмысленным паролем: приходит она от незаполненного поля,
+    а не от намерения. Пропусти мы её наверх — она перекрыла бы сохранённое значение
+    сайта, и прогон упал бы на пустом поле формы вместо понятного «переменная не
+    задана». Страница пустые поля и так не шлёт (`scenarioSubstitutions`), но ручка
+    публичная, и полагаться на аккуратность вызывающего здесь не за что.
+
+    Настоящее отсутствие переменной ловится не здесь, а проверкой контейнера
+    (`browser_scenario_variables_missing`): она смотрит, что все `{{имена}}` шагов
+    закрыты, и отвечает 422 со списком недостающих.
+    """
+    return {name: value for name, value in (values or {}).items() if str(value or '') != ''}
 
 
 def _variables_default(row: dict) -> dict:
