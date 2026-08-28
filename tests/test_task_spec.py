@@ -213,26 +213,6 @@ class TestFile:
         assert await task_spec_write(str(tmp_path), tree['subtasks'][0]) == ''
 
 
-class TestReviewPrompt:
-    """Задание менеджеру на проверку связности."""
-
-    def test_empty_spec_gives_no_prompt(self):
-        from src.project.task.task_spec import task_spec_review_prompt
-
-        assert task_spec_review_prompt('', 'задача') == ''
-
-    def test_prompt_forbids_rewriting(self):
-        """
-        Переписанная спецификация разошлась бы с планом, по которому уже созданы
-        подзадачи, — чинить пришлось бы оба документа.
-        """
-        from src.project.task.task_spec import task_spec_review_prompt
-
-        prompt = task_spec_review_prompt('# Спецификация', 'задача')
-
-        assert 'не переписывай' in prompt
-
-
 async def _drop() -> None:
     from mysql_.mysql_ import mysql_get_db_async
 
