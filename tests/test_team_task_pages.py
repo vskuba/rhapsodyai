@@ -202,30 +202,37 @@ class TestTaskPage:
         assert page.locator('.task-toolbar-title').first.text_content().strip() == 'Задачи'
 
     def test_phase_tabs_display(self, page: Page):
-        """Задачи фильтруются по фазе; типы задач — это select в строке, а не табы.
+        """Вкладки названы по ролям: фильтруют они по типу, а тип — это исполнитель.
 
-        В подписи таба, кроме названия фазы, живёт счётчик задач (`.page-tab-n`),
-        поэтому сверяется название без него: число зависит от содержимого базы.
+        Прежние «Планирование» и «Разработка» читались как этапы, и подзадача типа
+        `dev` под задачей типа `plan` выглядела противоречием. Подзадачи плана всегда
+        `dev` — их делает разработчик, каким бы ни был тип родителя, — так что
+        противоречия не было, было имя, которое обещало не то.
 
-        Фаз четыре: баги уехали с «Тестирования» на свою вместе с владельцем —
-        тип `bug` принадлежит роли `bugfixer`, а тестирование осталось за QA. Рядом с
-        ними в том же ряду живут «Журналы» и «Статистика» — это не фазы задачи, а
-        другой взгляд на проект, и сверяем мы порядок фаз, а не длину ряда.
+        В подписи таба, кроме имени роли, живёт счётчик задач (`.page-tab-n`),
+        поэтому сверяется имя без него: число зависит от содержимого базы.
+
+        Ролей четыре: баги уехали с вкладки QA на свою вместе с владельцем — тип
+        `bug` принадлежит роли `bugfixer`. Рядом в том же ряду живут «Журналы» и
+        «Статистика» — это не роли, а другой взгляд на проект, и сверяем мы порядок
+        первых четырёх, а не длину ряда.
         """
         page.goto(f'{BASE_URL}/admin/task')
         page.wait_for_selector('#phaseTabs .page-tab', state='visible', timeout=5000)
 
         tabs = page.locator('#phaseTabs .page-tab')
         labels = [_tab_label(tabs.nth(i)) for i in range(tabs.count())]
-        assert labels[:4] == ['Планирование', 'Разработка', 'Тестирование', 'Баги'], \
-            f'Не тот порядок фаз: {labels}'
+        assert labels[:4] == ['Менеджер', 'Разработчик', 'Тестировщик', 'Багфиксер'], \
+            f'Не тот порядок ролей: {labels}'
         assert page.locator('#phaseTabs .page-tab.active').count() == 1
 
     def test_bugs_tab_filters_by_bug_type(self, page: Page):
-        """Вкладка «Баги» — своя фаза со своим типом и своим счётчиком.
+        """Вкладка «Багфиксер» — своя роль со своим типом и своим счётчиком.
 
         Разметку сверяем по атрибутам, а не по содержимому таблицы: список задач
-        зависит от базы, а контракт вкладки — нет.
+        зависит от базы, а контракт вкладки — нет. Ключ `bugs` остался прежним: по
+        нему живёт сохранённый выбор вкладки в localStorage, и переименование его
+        сбросило бы человеку выбор без всякой пользы.
         """
         page.goto(f'{BASE_URL}/admin/task')
         page.wait_for_selector('#phaseTabs .page-tab', state='visible', timeout=5000)
@@ -307,6 +314,73 @@ class TestTaskPage:
         finally:
             page.request.delete(f'{BASE_URL}/task/{task_id}')
 
+    def test_foreign_tab_subtask_is_a_stub(self, page: Page):
+        """Задача показывается полной строкой только на вкладке своего типа.
+
+        Тип — это нынешний владелец строки, а не род занятий: `task_state.py` гоняет
+        его `plan` -> `dev` -> `test` по мере того, как задача переходит из рук в руки.
+        Владелец один, значит и полная строка одна.
+
+        Ветку это не рвёт: подзадача под задачей планирования на вкладке менеджера
+        остаётся видна — иначе раскрытая задача выглядела бы бездетной, — но одной
+        строкой-указателем: номер, название и куда идти. Ни описания, ни статуса, ни
+        удаления: они принадлежат вкладке, где у задачи есть владелец.
+
+        Раньше такая подзадача выходила полной строкой на обеих вкладках сразу, и с
+        обеих её можно было удалить.
+        """
+        page.goto(f'{BASE_URL}/admin/task')
+        page.wait_for_selector('#taskProjectSelect option', state='attached', timeout=5000)
+        project_id = page.locator('#taskProjectSelect').input_value() or '0'
+
+        types = {t['name']: t['id']
+                 for t in page.request.get(f'{BASE_URL}/api/team/types').json()}
+
+        parent = page.request.post(f'{BASE_URL}/tasks/{project_id}',
+                                   data={'title': f'{TASK_TEMP_TITLE}_parent',
+                                         'description': 'родитель на планировании',
+                                         'task_type_id': types['plan']})
+        assert parent.status == 200, parent.text()
+        parent_id = parent.json()['task']['id']
+
+        child = page.request.post(f'{BASE_URL}/tasks/{project_id}',
+                                  data={'title': f'{TASK_TEMP_TITLE}_child',
+                                        'description': 'подзадача разработки',
+                                        'task_type_id': types['dev'],
+                                        'parent_id': parent_id})
+        assert child.status == 200, child.text()
+        child_id = child.json()['task']['id']
+
+        try:
+            page.goto(f'{BASE_URL}/admin/task')
+            page.wait_for_selector('#phaseTabs .page-tab', state='visible', timeout=5000)
+
+            # Вкладка менеджера: родитель — полная строка, ребёнок — заглушка.
+            page.click('#phaseTabs .page-tab[data-tab="planning"]')
+            page.locator(f'#tr-{parent_id}').wait_for(state='visible', timeout=5000)
+            assert 'tree-stub' not in (page.locator(f'#tr-{parent_id}')
+                                       .get_attribute('class') or '')
+
+            stub = page.locator(f'#tr-{child_id}')
+            stub.wait_for(state='visible', timeout=5000)
+            assert 'tree-stub' in (stub.get_attribute('class') or ''), \
+                'подзадача чужой вкладки показана полной строкой'
+            assert stub.locator('.btn-row-del').count() == 0, 'заглушка предлагает удаление'
+            assert stub.locator('[data-col="desc"]').count() == 0, 'у заглушки есть описание'
+            assert 'Разработчик' in stub.inner_text(), 'заглушка не говорит, где искать задачу'
+
+            # Вкладка разработчика: зеркально — ребёнок полный, родителя нет вовсе.
+            page.click('#phaseTabs .page-tab[data-tab="development"]')
+            row = page.locator(f'#tr-{child_id}')
+            row.wait_for(state='visible', timeout=5000)
+            assert 'tree-stub' not in (row.get_attribute('class') or '')
+            assert row.locator('.btn-row-del').count() == 1
+            assert page.locator(f'#tr-{parent_id}').count() == 0, \
+                'задача планирования попала на вкладку разработчика'
+        finally:
+            page.request.delete(f'{BASE_URL}/task/{child_id}')
+            page.request.delete(f'{BASE_URL}/task/{parent_id}')
+
     def test_progress_column_refreshes_without_reload(self, page: Page):
         """Колонка «Прогресс» догоняет состояние сама, без перезагрузки страницы.
 
@@ -371,7 +445,7 @@ class TestIntegration:
 
 
 def _tab_label(tab) -> str:
-    """Название таба без счётчика задач: «Планирование (3)» → «Планирование»."""
+    """Название таба без счётчика задач: «Разработчик (3)» → «Разработчик»."""
     text = tab.text_content().strip()
     count = tab.locator('.page-tab-n').text_content().strip()
 

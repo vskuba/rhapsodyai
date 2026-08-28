@@ -364,6 +364,13 @@
     /* Предок, показанный только как контекст для найденной подзадачи. */
     .tree-ghost > td { opacity: .5; }
     .tree-ghost:hover > td { opacity: 1; }
+    /* Заглушка чужой вкладки: строка-указатель, не строка-задача. Тише обычной и без
+       наведения — нажимать в ней нечего, кроме каретки раскрытия. */
+    .tree-stub > td { padding: 4px 10px; background: #fafafa; }
+    .tree-stub .tree-num { color: #94a3b8; }
+    .tree-stub .stub-name { color: #64748b; margin-left: 4px; }
+    .tree-stub .stub-where { color: #94a3b8; font-size: 11px; margin-left: 8px;
+                             border: 1px solid #e2e8f0; border-radius: 8px; padding: 1px 7px; }
 
     /* ── Баннер «подзадача к …» в форме добавления ── */
     .add-parent-banner {
@@ -486,7 +493,7 @@
     /* Окно спецификации. Документ читают целиком, поэтому широкое и с прокруткой
        внутри: обрезать его многоточием было бы бессмысленно. */
     .spec-modal {
-        position: fixed; inset: 0; z-index: 900; display: flex;
+        position: fixed; inset: 0; z-index: var(--z-modal); display: flex;
         align-items: center; justify-content: center;
         background: rgba(15, 23, 42, .45); padding: 30px;
     }
@@ -1541,7 +1548,7 @@
     /* ─── Help modal ──────────────────────────────────────── */
     .modal-overlay {
         display: none; position: fixed; inset: 0;
-        background: rgba(0, 0, 0, 0.45); z-index: 1000;
+        background: rgba(0, 0, 0, 0.45); z-index: var(--z-modal);
         align-items: center; justify-content: center; cursor: pointer;
     }
     .modal-overlay.visible { display: flex; }
@@ -1783,10 +1790,24 @@
 
     <!-- Page Tabs: Phase filter -->
     <div class="page-tabs" id="phaseTabs">
-        <button class="page-tab active" data-tab="planning">Планирование <span class="page-tab-n" id="tabCount-planning"></span></button>
-        <button class="page-tab" data-tab="development">Разработка <span class="page-tab-n" id="tabCount-development"></span></button>
-        <button class="page-tab" data-tab="testing">Тестирование <span class="page-tab-n" id="tabCount-testing"></span></button>
-        <button class="page-tab" data-tab="bugs">Баги <span class="page-tab-n" id="tabCount-bugs"></span></button>
+        <!-- Вкладки названы по ролям, а не по фазам, потому что фильтруют они по типу
+             задачи, а тип означает исполнителя: `plan` — менеджер, `dev` —
+             разработчик, `test` — QA, `bug` — багфиксер. Прежние «Планирование» и
+             «Разработка» читались как этапы, и подзадача типа `dev` под задачей типа
+             `plan` выглядела противоречием — «почему у неё разработка, если задача в
+             планировании». Подзадачи плана всегда `dev`: их делает разработчик,
+             каким бы ни был тип родителя.
+
+             Ключи (`planning`, `development`, …) оставлены прежними: по ним живёт
+             сохранённый выбор вкладки в localStorage и карта `PHASE_TYPE_NAMES`. -->
+        <button class="page-tab active" data-tab="planning"
+                title="Задачи типов «Планирование» и «Исследование» — их разбирает менеджер">Менеджер <span class="page-tab-n" id="tabCount-planning"></span></button>
+        <button class="page-tab" data-tab="development"
+                title="Задачи типа «Разработка», включая все подзадачи плана: их делает разработчик, проверяет QA">Разработчик <span class="page-tab-n" id="tabCount-development"></span></button>
+        <button class="page-tab" data-tab="testing"
+                title="Задачи типа «Тестирование», а также всё завершённое — любого типа">Тестировщик <span class="page-tab-n" id="tabCount-testing"></span></button>
+        <button class="page-tab" data-tab="bugs"
+                title="Задачи типа «Баг» — их чинит багфиксер">Багфиксер <span class="page-tab-n" id="tabCount-bugs"></span></button>
         <!-- Журналы не фаза задачи, а другой взгляд на тот же проект: показывают,
              чем агенты заняты прямо сейчас. Живут, пока жив каталог строки. -->
         <button class="page-tab" data-tab="logs">📜 Журналы <span class="page-tab-n" id="tabCount-logs"></span></button>
@@ -1964,6 +1985,15 @@ let _taskTypes = [];
 // Реальные данные: dev=1, bug=2, test=3, research=4, plan=5
 // `bug` уехал с «Тестирования» на свою вкладку вместе с владельцем: тип принадлежит
 // роли `bugfixer` (см. src/project/task/task_role.py), а тестирование осталось за QA.
+// Подписи вкладок — по ролям, теми же словами, что в разметке. Держим рядом с картой
+// типов: заглушка чужой строки должна называть вкладку так же, как она подписана.
+const PHASE_TAB_TITLES = {
+    planning:    'Менеджер',
+    development: 'Разработчик',
+    testing:     'Тестировщик',
+    bugs:        'Багфиксер',
+};
+
 const PHASE_TYPE_NAMES = {
     planning:    ['research', 'plan'],   // 4, 5
     development: ['dev'],                // 1
@@ -2439,7 +2469,13 @@ function treeRows() {
         const kin = id => (byParent.get(id) || []).forEach(k => {
             if (show.has(k.id)) return;
             show.add(k.id);
-            hit.add(k.id);   // не «призрак»: подзадача — часть найденной ветки, а не контекст
+            // Своя вкладка — полноценная строка, чужая — только заглушка (`stub` ниже).
+            // Здесь стояло безусловное `hit.add`, и подзадача типа `dev` под задачей
+            // типа `plan` выходила полной строкой сразу на двух вкладках — у менеджера
+            // и у разработчика, с описанием, статусом и крестиком удаления в обеих.
+            // Тип задачи — это её нынешний владелец (`task_state.py` переключает его
+            // plan -> dev -> test), а владелец у строки один.
+            if (phaseOk.get(k.id)) hit.add(k.id);
             kin(k.id);
         });
         Array.from(hit).forEach(kin);
@@ -2478,6 +2514,10 @@ function treeRows() {
                 kidsDone:  kidsAll.filter(k => k.status === 'done').length,
                 kidsFull:  kidsObj,
                 ghost:     !hit.has(t.id),
+                // Задача живёт на другой вкладке: показываем одной строкой, ради
+                // связности дерева. Отличается от `ghost` — тот бывает и своим,
+                // просто не подошедшим под поиск, и остаётся полностью рабочим.
+                stub:      !phaseOk.get(t.id),
             });
             // При активном фильтре свёрнутость игнорируем — иначе найденное
             // спряталось бы внутри свёрнутого родителя и поиск бы врал.
@@ -2915,7 +2955,37 @@ function dependPill(t) {
          + `ждёт ${links}</span>`;
 }
 
+// Подпись вкладки, на которой задача живёт по-настоящему. Нужна заглушке: строка
+// показывает не «тут ничего нет», а «смотреть здесь».
+function taskPhaseLabel(t) {
+    const typeName = getTaskTypeNameById(t.task_type_id) || 'dev';
+    if (taskIsDone(t)) return typeName === 'bug' ? 'Багфиксер' : 'Тестировщик';
+    const key = Object.keys(PHASE_TYPE_NAMES).find(k => PHASE_TYPE_NAMES[k].includes(typeName));
+
+    return key ? (PHASE_TAB_TITLES[key] || '') : '';
+}
+
+// Задача с чужой вкладки — одной строкой: номер, название и куда идти. Ни типа, ни
+// прогресса, ни описания, ни даты, ни удаления: всё это принадлежит той вкладке, где
+// у задачи есть владелец. Раскрытие оставляем — иначе ветку под ней не свернуть.
+//
+// Редактирования тоже нет (`onclick` не вешаем): правка отсюда открывала бы форму
+// задачи, которой на этой вкладке не место, и человек правил бы чужую фазу вслепую.
+function renderStubRow(row) {
+    const t = row.t;
+    const where = taskPhaseLabel(t);
+
+    return `
+        <tr class="task-row tree-stub" id="tr-${t.id}">
+            <td class="td-stub" colspan="7">
+                <div class="tree-title">${treeIndent(row)}${treeCaret(row)}<span class="tree-num">#${t.id}</span><span class="stub-name">${esc(t.title)}</span>${where ? `<span class="stub-where">на вкладке «${esc(where)}»</span>` : ''}</div>
+            </td>
+        </tr>`;
+}
+
 function renderRow(row, index, hasParent) {
+    if (row.stub) return renderStubRow(row);
+
     const t = row.t;
     const status = taskRowStatus(row);
     const dateStr = t.created_at ? t.created_at.substring(0, 10) : '';
@@ -3017,6 +3087,11 @@ const STATUS_ACCENT = {
 function toggleEdit(id) {
     const row = document.getElementById(`ter-${id}`);
     const tr  = document.getElementById(`tr-${id}`);
+    // Формы у строки может не быть: задача с чужой вкладки нарисована заглушкой
+    // (`renderStubRow`), и редактировать её отсюда нечем. Зовут `toggleEdit` не
+    // только по клику в строку — например, после создания задачи, — поэтому
+    // молча выходим, а не падаем.
+    if (!row || !tr) return;
     const isOpen = row.classList.contains('open');
     document.querySelectorAll('.task-edit-row.open').forEach(r => r.classList.remove('open'));
     document.querySelectorAll('.task-table tbody tr.expanded').forEach(r => r.classList.remove('expanded'));
@@ -3419,7 +3494,7 @@ async function taskProgressRefresh() {
 // обновление и есть работа этого опроса.
 function _progressRowsSignature() {
     return Array.from(_rowById.values())
-        .map(r => `${r.t.id}:${r.depth}:${r.ghost ? 1 : 0}`).join(',');
+        .map(r => `${r.t.id}:${r.depth}:${r.ghost ? 1 : 0}:${r.stub ? 1 : 0}`).join(',');
 }
 
 function _progressCellSync(row) {
