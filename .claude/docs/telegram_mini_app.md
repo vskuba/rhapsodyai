@@ -17,8 +17,9 @@
 | `data/uvicorn/public/js/telegram_app/sidebar.js` | Навигация, переключение групп иконок |
 | `data/uvicorn/public/js/telegram_app/input_bar.js` | Фабрики `createInputBar()` / `createMicOnlyBar()` |
 | `data/uvicorn/public/js/telegram_app/events.js` | Вкладка Events: загрузка, рендер, форматтеры |
-| `data/uvicorn/public/js/telegram_app/chat.js` | Вкладка Chat |
+| `data/uvicorn/public/js/telegram_app/chat.js` | Чат-подсистема (модуль сохранён, вкладка убрана) |
 | `data/uvicorn/public/js/telegram_app/claude.js` | Вкладка Claude: сессии, polling, управление |
+| `data/uvicorn/public/js/telegram_app/tasks.js` | Вкладка Tasks: список по фазам, детали, действия |
 | `data/uvicorn/public/js/telegram_app/plans.js` | Вкладка Plans: CRUD, рендер Markdown |
 | `data/uvicorn/public/js/telegram_app/utils.js` | `escapeHtml`, `linkify`, `confirmDialog`, `appendBubble` |
 | `data/uvicorn/public/js/telegram_app/voice.js` | Фабрика `createVoiceRecorder()` |
@@ -28,7 +29,7 @@
 | Файл | Назначение |
 |------|------------|
 | `src/uvicorn/routers/telegram_app/telegram_app.py` | Аутентификация, ping, агенты |
-| `src/uvicorn/routers/telegram_app/telegram_app_chat.py` | Chat: ask + voice |
+| `src/uvicorn/routers/telegram_app/telegram_app_chat.py` | Chat: ask + voice (модуль сохранён, вкладка убрана) |
 | `src/uvicorn/routers/telegram_app/telegram_app_claude.py` | Claude: ask, messages, sessions/active, respond |
 | `src/uvicorn/routers/telegram_app/telegram_app_claude_session.py` | Session registry: register, heartbeat, inbox, finalize, delete |
 | `src/uvicorn/routers/telegram_app/telegram_app_plan.py` | Plans: CRUD + AI-редактирование |
@@ -95,7 +96,7 @@ export const state = {
 ```
 
 **Input bars** создаются программно в `app.js` через фабрики и аппендятся в `.app-wrapper`:
-- `createInputBar({ id, progressId, placeholder, hasQuickCmd })` — для Claude, Chat, Plan
+- `createInputBar({ id, progressId, placeholder, hasQuickCmd })` — для Claude и Plan
 - `createMicOnlyBar({ id, progressId })` — для создания нового плана голосом
 
 **Sidebar callbacks**: чтобы избежать циклических зависимостей (`sidebar.js` ↔ `claude.js`/`plans.js`), коллбэки `onTabChange` и `onGoHome` передаются в `initSidebar()` из `app.js`.
@@ -108,7 +109,7 @@ SPA с иконочным сайдбаром (60px) и контент-панел
 |---------|--------|------------|
 | Events  | 🔔     | Лента системных событий |
 | Claude  | ☁️     | Чат с терминальными сессиями Claude Code |
-| Chat    | 💬     | Чат с AI-ассистентом (`telegram_assistant`) |
+| Tasks   | ✅     | Задачи конвейера по фазам + взаимодействие |
 | Plans   | 📋     | Список планов, создание и редактирование |
 
 **Группы иконок в сайдбаре** — переключаются через `.active-group`:
@@ -122,9 +123,10 @@ SPA с иконочным сайдбаром (60px) и контент-панел
 
 **Видимость input-баров** управляется `updateInputBarsVisibility()` в `sidebar.js`:
 - `#claudeInputBar` — только вкладка Claude, сессия открыта
-- `#chatInputBar` — только вкладка Chat
 - `#planInputBar` — только вкладка Plans, план открыт
 - `#planCreateBar` — только вкладка Plans, список (создание голосом)
+
+Вкладка Tasks своего input bar не имеет: создание задач остаётся админке, здесь только чтение и кнопки над карточкой.
 
 **Home-кнопка** (`#homeIconBtn`) пульсирует красным при ≥2 пропущенных ping'ах подряд.
 
@@ -173,18 +175,27 @@ SPA с иконочным сайдбаром (60px) и контент-панел
 - `🧹 очистить` — `POST /telegram-app/claude/session/clear-messages`
 - `🗑 удалить` — `POST /telegram-app/claude/session/delete-request`
 
-## Вкладка Chat
+## Вкладка Tasks
 
-Чат с агентом `telegram_assistant`. Каждое сообщение — новый HTTP-запрос. Сессия сохраняется в `state.chatSessionUuid`.
+Задачи конвейера, разбитые по фазам «Планирование / Разработка / Тестирование / Баги», с мини-взаимодействием. Бэкенд — отдельный owner-роутер `src/uvicorn/routers/telegram_app/telegram_app_task.py` (доступ через `_require_telegram_owner`).
 
-**Константы** (в `telegram_app_common.py`):
-```python
-TELEGRAM_CHAT_USER_ID = 1
-TELEGRAM_CHAT_AGENT_NAME = 'telegram_assistant'
-TELEGRAM_CHAT_COMPANION_ID = 3
-```
+**Список** (`GET /telegram-app/tasks` — все строки `project_task` без фильтра проекта, у мини-приложения выбора проекта нет; `GET /telegram-app/task-types` — справочник типов):
+- Разбиение по фазам повторяет `PHASE_TYPE_NAMES` со страницы `/admin/task` (`tasks.js`): готовая работа уходит с вкладки своего типа на «Тестирование», у бага инстанция своя («Баги»).
+- Карточка: название, статус, чип состояния конвейера, прогресс целей (полоса + счётчик).
+- Внутренние вкладки фаз — по образцу stat-tabs из `/admin/task`.
 
-Запрос через `AiFrameworkAgentManager` (`asyncio.wait_for`, timeout 60 сек).
+**Детальный вид** (тап по карточке): цели, текст плана, описание и блок вопросов агента.
+
+**Действия** (`POST /telegram-app/task/{id}/pipeline/{approve|reject|start|retry}`) — те же переходы, что на админской странице, теми же функциями (`project_task_pipeline`, `task_stop`):
+- `approve` / `reject` — утвердить или отклонить план задачи, ожидающей утверждения (`plan_approval`);
+- `start` — отправить задачу в конвейер (ждёт плана менеджера);
+- `retry` — перезапустить сорвавшуюся (`failed`).
+
+`review` (обновить план), `stop` и `resume` в мини-приложение не вынесены — это инструменты админки.
+
+**Вопрос агента** (`GET/POST /telegram-app/task/{id}/question`) — тот же механизм, что строит попап вопроса на админской странице (`task_question`, `task_shell_dialog`): ответ записывается в решения и возвращает строку в работу.
+
+**Подсистема чата сохранена.** Агент `telegram_assistant`, `telegram_app_chat.py` и таблица `ai_claude_session` остаются в коде — из интерфейса убрана только сама вкладка, сменившаяся вкладкой Tasks.
 
 ## Вкладка Plans
 
@@ -208,7 +219,7 @@ Markdown-планы с AI-созданием и редактированием.
 
 ## Голосовой ввод
 
-Фабрика `createVoiceRecorder({ micBtn, cancelBtn, progressEl, onError, onTranscript })` — изолированный экземпляр для каждого микрофона (Claude, Chat, Plan-edit, Plan-create).
+Фабрика `createVoiceRecorder({ micBtn, cancelBtn, progressEl, onError, onTranscript })` — изолированный экземпляр для каждого микрофона (Claude, Plan-edit, Plan-create).
 
 1. Тап → запрашивает микрофон, начинает запись, кнопка пульсирует
 2. ✕ `micCancel` — отмена без отправки
@@ -279,10 +290,19 @@ Markdown-планы с AI-созданием и редактированием.
 |-------|-----|------------|
 | `POST` | `/event-log` | Добавить событие (типы: system/github/claude_session/agent/llm) |
 
-### Chat (owner session)
+### Chat (owner session) — подсистема сохранена
 | Метод | URL | Назначение |
 |-------|-----|------------|
 | `POST` | `/telegram-app/chat/ask` | Сообщение ассистенту |
+
+### Tasks (owner session)
+| Метод | URL | Назначение |
+|-------|-----|------------|
+| `GET` | `/telegram-app/tasks` | Все строки конвейера (фазы на фронте) |
+| `GET` | `/telegram-app/task-types` | Справочник типов задач |
+| `POST` | `/telegram-app/task/{id}/pipeline/{approve\|reject\|start\|retry}` | Действие над конвейером |
+| `GET` | `/telegram-app/task/{id}/question` | Вопрос агента + цели/решения |
+| `POST` | `/telegram-app/task/{id}/question` | Ответ — возвращает строку в работу |
 | `POST` | `/telegram-app/chat/voice` | Транскрипция аудио (Whisper) |
 
 ### Claude (owner session)
