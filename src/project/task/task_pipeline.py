@@ -79,6 +79,7 @@ from src.project.task.task_agent_bugfixer import TASK_BUGFIXER_ROLE, task_agent_
 from src.project.task.task_agent_developer import TASK_DEVELOPER_ROLE, task_agent_developer_run
 from src.project.task.task_agent_manager import task_agent_manager_plan
 from src.project.task.task_agent_qa import TASK_QA_ROLE, task_agent_qa_run
+from src.project.task.task_spec import task_spec_write
 from src.project.task.task_depend import (task_depend_apply,
                                           task_depend_merge_upstream,
                                           task_depend_plan_links)
@@ -1475,7 +1476,14 @@ async def _subtask_dir(work_dir: str, subtask_id: int) -> str:
         return ''
 
     try:
-        return await task_worktree_ensure(work_dir, subtask_id)
+        path = await task_worktree_ensure(work_dir, subtask_id)
+        # Спецификация ложится рядом с журналом, в тот же каталог: её читает агент, а
+        # он живёт в каталоге и читает файлы, а не таблицы. Перезаписываем на каждом
+        # круге — план и зависимости меняются пересмотром, и вчерашний документ увёл
+        # бы исполнителя по старому плану.
+        await task_spec_write(work_dir, subtask_id)
+
+        return path
     except Exception as e:
         logger_info(f'[task] subtask#{subtask_id}: рабочий каталог не создан ({e}), '
                     f'работаем в каталоге проекта')

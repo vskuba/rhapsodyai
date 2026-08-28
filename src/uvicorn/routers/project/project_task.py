@@ -13,6 +13,8 @@ from src.auth.auth_permission import AuthPermission
 from logging_.logging_ import logger_info
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_depend import TASK_DEPEND_DONE_STATES, task_depend_of
+from src.project.task.task_role import task_role_project_work_dir
+from src.project.task.task_spec import task_spec_read
 from src.project.task.task_metadata import (
     TASK_METADATA_KEY_DEV,
     TASK_METADATA_KEY_TEST,
@@ -212,6 +214,44 @@ async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker
                                 author_kind='user', author_id=user.user_id, author_name=user.username)
 
     return {'task': task_metadata_row_apply(task)}
+
+
+@router.get('/api/task/{task_id}/spec')
+async def project_task_spec_get(task_id: int,
+                                user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """
+    Спецификация строки: что требуется сделать и чем это считается сделанным.
+
+    У задачи с подзадачами — сводная: их цели, порядок выполнения и зависимости в
+    одном документе. У листа — своя, короткая. Различаем по наличию детей, а не по
+    типу: подзадача с внуками — тот же родитель для них.
+
+    Отдаём то, что лежит файлом в каталоге строки, — именно это читал агент.
+    Пересобранная на лету спецификация отличалась бы от той, по которой работали, и
+    разбор «почему сделано не так» шёл бы по чужому документу. Файла нет (каталог не
+    заведён либо снят после слияния) — собираем сейчас и честно помечаем `stored`.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT id, project_id, parent_id, title FROM project_task '
+                         ' WHERE id = %s', (task_id,))
+        row = await db.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail='task not found')
+
+    work_dir = await task_role_project_work_dir(row.get('project_id'))
+    spec = await task_spec_read(work_dir, task_id)
+
+    return {'result': {**spec, 'task_id': task_id, 'title': str(row.get('title') or ''),
+                       'is_parent': bool(await _has_kids(task_id))}}
+
+
+async def _has_kids(task_id: int) -> bool:
+    """Есть ли у строки подзадачи — по этому спецификация сводная, а не своя."""
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT 1 FROM project_task WHERE parent_id = %s LIMIT 1', (task_id,))
+
+        return bool(await db.fetchone())
 
 
 @router.post('/task/{task_id}/metadata')

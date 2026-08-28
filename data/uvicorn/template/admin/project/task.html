@@ -474,6 +474,46 @@
         font-size: 10px; font-weight: 600; white-space: nowrap;
         font-variant-numeric: tabular-nums;
     }
+    /* Кнопка спецификации в строке: рядом с удалением, но спокойнее — её жмут
+       чаще, а удаление должно оставаться заметнее. */
+    .btn-row-spec {
+        border: none; background: none; cursor: pointer; opacity: .35;
+        font-size: 13px; padding: 2px 4px; border-radius: 4px;
+    }
+    .task-row:hover .btn-row-spec { opacity: .8; }
+    .btn-row-spec:hover { opacity: 1; background: #eef2ff; }
+
+    /* Окно спецификации. Документ читают целиком, поэтому широкое и с прокруткой
+       внутри: обрезать его многоточием было бы бессмысленно. */
+    .spec-modal {
+        position: fixed; inset: 0; z-index: 900; display: flex;
+        align-items: center; justify-content: center;
+        background: rgba(15, 23, 42, .45); padding: 30px;
+    }
+    .spec-box {
+        background: #fff; border-radius: 12px; width: min(900px, 100%);
+        max-height: 85vh; display: flex; flex-direction: column;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, .22);
+    }
+    .spec-head {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 14px;
+    }
+    .spec-head b { flex: 1 1 auto; color: #1e293b; }
+    .spec-close {
+        border: none; background: none; cursor: pointer; color: #94a3b8; font-size: 15px;
+    }
+    .spec-close:hover { color: #dc2626; }
+    .spec-body {
+        flex: 1 1 auto; overflow: auto; margin: 0; padding: 16px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px; line-height: 1.55; color: #334155; white-space: pre-wrap;
+    }
+    .spec-note {
+        padding: 8px 16px; border-top: 1px solid #f1f5f9;
+        font-size: 11px; color: #94a3b8; word-break: break-all;
+    }
+
     .depend-pill.wait { color: #92400e; background: #fde68a; border: 1px solid #f59e0b; }
     .depend-pill.done { color: #94a3b8; background: #f1f5f9; border: 1px solid #e2e8f0; font-weight: 400; }
 
@@ -1770,7 +1810,20 @@
          состояние и хронология выбранной. Скрыта, пока вкладка не выбрана. -->
     <!-- Вкладка «Статистика»: сводка по ролям и шагам, итоги и последние замеры.
          Данные — `/api/task/metric`, механика — `src/project/task/task_metric.py`. -->
-    <div class="stat-pane" id="statPane" style="display:none">
+    <!-- Спецификация строки. Модальным окном, а не панелью: её открывают, читают и
+     закрывают, а место на странице принадлежит таблице задач. -->
+<div class="spec-modal" id="specModal" style="display:none" onclick="if(event.target===this)specHide()">
+    <div class="spec-box">
+        <div class="spec-head">
+            <b id="specHead">Спецификация</b>
+            <button class="spec-close" onclick="specHide()" title="Закрыть">✕</button>
+        </div>
+        <pre class="spec-body" id="specBody"></pre>
+        <div class="spec-note" id="specNote"></div>
+    </div>
+</div>
+
+<div class="stat-pane" id="statPane" style="display:none">
         <div class="stat-head">
             <span class="stat-title">Замеры работы ролей</span>
             <label class="stat-scope">
@@ -2684,6 +2737,40 @@ function renderProgressCell(row) {
 //
 // Связей нет вовсе — ничего не рисуем: у большинства подзадач их не бывает, и пустая
 // плашка в каждой строке только зашумила бы таблицу.
+// Спецификация строки — в модальном окне. У задачи с подзадачами сводная (их цели,
+// порядок и зависимости в одном документе), у листа своя, короткая.
+//
+// Показываем то, что лежит файлом в каталоге строки: именно это читал агент.
+// Пересобранная на лету спецификация отличалась бы от той, по которой работали, и
+// разбор «почему сделано не так» шёл бы по чужому документу. Файла нет — сервер
+// соберёт сейчас и пометит это в ответе.
+window.specShow = async function(taskId) {
+    const box = document.getElementById('specModal');
+    const body = document.getElementById('specBody');
+    const head = document.getElementById('specHead');
+    head.textContent = `Спецификация #${taskId}`;
+    body.textContent = 'Загрузка…';
+    box.style.display = 'flex';
+
+    try {
+        const d = (await taskFetch(`/api/task/${taskId}/spec`)).result || {};
+        head.textContent = (d.is_parent ? 'Сводная спецификация ' : 'Спецификация ')
+                         + `#${taskId} — ${d.title || ''}`;
+        body.textContent = d.text || 'Спецификация пуста: у строки нет ни плана, ни целей.';
+        // Собрана сейчас, а не прочитана из каталога: агент её в этом виде не видел.
+        // Сказать об этом надо — иначе разбор пойдёт по документу, которого не было.
+        document.getElementById('specNote').textContent = d.stored
+            ? d.path || ''
+            : 'Файла в каталоге нет — документ собран сейчас. Агент работал не по нему.';
+    } catch (e) {
+        body.textContent = 'Спецификация не загрузилась: ' + (e.message || e);
+    }
+};
+
+window.specHide = function() {
+    document.getElementById('specModal').style.display = 'none';
+};
+
 function dependPill(t) {
     const blocked = t.depend_blocked || [];
     const all = t.depends_on || [];
@@ -2728,6 +2815,7 @@ function renderRow(row, index, hasParent) {
             <td class="td-desc" data-col="desc"><div class="task-desc-preview">${esc(t.description)}</div></td>
             <td class="td-date" data-col="date">${dateStr}</td>
             <td class="td-act" data-col="act">
+                <button class="btn-row-spec" onclick="event.stopPropagation();specShow(${t.id})" title="${row.hasKids ? 'Сводная спецификация: все подзадачи, порядок и зависимости' : 'Спецификация: что сделать и чем это считается сделанным'}">📋</button>
                 <button class="btn-row-del" onclick="event.stopPropagation();deleteTask(${t.id})" title="Удалить">✕</button>
             </td>
         </tr>
