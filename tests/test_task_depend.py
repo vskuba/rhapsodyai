@@ -241,6 +241,32 @@ class TestReadySql:
 
         assert ids == set(tree['subtasks'])
 
+    async def test_condition_works_inside_update(self, tree):
+        """
+        Условие обязано работать в `UPDATE`, а не только в `SELECT`.
+
+        Захват работы — это `UPDATE project_task SET pipeline_state = …`, и MySQL
+        запрещает читать в подзапросе ту же таблицу, которую пишет: ошибка 1093, «You
+        can't specify target table for update in FROM clause». Прямой `JOIN
+        project_task` внутри условия валил весь тик оркестратора — конвейер вставал
+        целиком, ни одна задача не бралась в работу.
+
+        Прошлая версия теста проверяла условие через `SELECT` и этого не видела.
+        """
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_depend import task_depend_ready_sql, task_depend_set
+
+        first, second, _ = tree['subtasks']
+        await task_depend_set(second, [first])
+
+        async with mysql_get_db_async() as db:
+            # Присваиваем то же значение: важно, что запрос выполняется, а не что
+            # меняет. Упадёт на 1093 — тест провалится с текстом ошибки.
+            await db.execute(f'UPDATE project_task SET position = position '
+                             f' WHERE parent_id = %s AND {task_depend_ready_sql()}',
+                             (tree['parent'],))
+            await db.connection.commit()
+
     async def test_waiting_subtask_is_filtered_out(self, tree):
         from mysql_.mysql_ import mysql_get_db_async
         from src.project.task.task_depend import task_depend_ready_sql, task_depend_set

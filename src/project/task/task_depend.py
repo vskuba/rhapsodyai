@@ -57,11 +57,19 @@ def task_depend_ready_sql(column: str = 'project_task.id') -> str:
     """
     states = ', '.join(f"'{state}'" for state in TASK_DEPEND_DONE_STATES)
 
+    # Обёртка в производную таблицу (`AS dep_open`) обязательна: захват — это
+    # `UPDATE project_task`, а MySQL запрещает читать в подзапросе ту же таблицу,
+    # которую пишет (ошибка 1093). Прямой `JOIN project_task` здесь валил весь тик
+    # оркестратора, и конвейер вставал целиком — ни одна задача не бралась в работу.
+    # Тем же приёмом обходят 1093 соседние запросы отбора (`_SPLIT_PARENTS_SQL`).
     return (
         f'NOT EXISTS (SELECT 1 FROM project_task_depend dep '
-        f'             JOIN project_task dep_p ON dep_p.id = dep.depends_on_id '
         f'            WHERE dep.task_id = {column} '
-        f'              AND COALESCE(dep_p.pipeline_state, \'\') NOT IN ({states}))'
+        f'              AND dep.depends_on_id IN ('
+        f'                  SELECT open_id FROM ('
+        f'                      SELECT id AS open_id FROM project_task '
+        f'                       WHERE COALESCE(pipeline_state, \'\') NOT IN ({states})'
+        f'                  ) AS dep_open))'
     )
 
 
