@@ -509,6 +509,47 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 12px; line-height: 1.55; color: #334155; white-space: pre-wrap;
     }
+    /* Переключатель вида: две иконки в шапке окна. Активная подсвечена — иначе не
+       понять, что сейчас на экране, разметка или исходник. */
+    .spec-view { display: flex; gap: 2px; }
+    .spec-view-btn {
+        border: 1px solid transparent; background: none; cursor: pointer;
+        font-size: 12px; padding: 3px 7px; border-radius: 6px; color: #94a3b8;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .spec-view-btn:hover { background: #f1f5f9; color: #475569; }
+    .spec-view-btn.active { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
+
+    /* Разметка: обычный текст страницы, а не моноширинный. Спецификацию читают
+       глазами, и заголовки со списками должны выглядеть заголовками и списками. */
+    .spec-md {
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 13px; line-height: 1.6; color: #334155; white-space: normal;
+    }
+    .spec-md h2 { font-size: 17px; margin: 0 0 10px; color: #1e293b; }
+    .spec-md h3 {
+        font-size: 13px; margin: 20px 0 8px; color: #6b7280;
+        text-transform: uppercase; letter-spacing: .04em;
+    }
+    .spec-md h4 {
+        font-size: 14px; margin: 16px 0 6px; color: #1e293b;
+        padding-top: 10px; border-top: 1px solid #f1f5f9;
+    }
+    .spec-md p { margin: 0 0 10px; }
+    .spec-md ul, .spec-md ol { margin: 0 0 12px; padding-left: 22px; }
+    .spec-md li { margin: 3px 0; }
+    .spec-md code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px; background: #f1f5f9; padding: 1px 5px; border-radius: 4px;
+        color: #0f766e;
+    }
+
+    /* Критерии приёмки — не обычный список: по ним QA принимает работу, и выглядеть
+       они должны как то, что отмечают галочкой. */
+    .spec-md .spec-checks { list-style: none; padding-left: 2px; }
+    .spec-md .spec-checks li { color: #334155; }
+    .spec-md .spec-checks li.done { color: #94a3b8; text-decoration: line-through; }
+
     .spec-note {
         padding: 8px 16px; border-top: 1px solid #f1f5f9;
         font-size: 11px; color: #94a3b8; word-break: break-all;
@@ -1816,9 +1857,20 @@
     <div class="spec-box">
         <div class="spec-head">
             <b id="specHead">Спецификация</b>
+            <!-- Два вида одного документа. Разметка — по умолчанию: спецификацию
+                 читают, а не правят, и заголовки со списками читаются вчетверо
+                 быстрее решёток и дефисов. Исходник нужен, когда текст копируют
+                 целиком или сверяют с тем, что видел агент. -->
+            <div class="spec-view">
+                <button class="spec-view-btn active" id="specViewMd"
+                        onclick="specView('md')" title="Как разметку">📄</button>
+                <button class="spec-view-btn" id="specViewRaw"
+                        onclick="specView('raw')" title="Исходный текст">&lt;/&gt;</button>
+            </div>
             <button class="spec-close" onclick="specHide()" title="Закрыть">✕</button>
         </div>
-        <pre class="spec-body" id="specBody"></pre>
+        <div class="spec-body spec-md" id="specMd"></div>
+        <pre class="spec-body" id="specBody" style="display:none"></pre>
         <div class="spec-note" id="specNote"></div>
     </div>
 </div>
@@ -2756,7 +2808,10 @@ window.specShow = async function(taskId) {
         const d = (await taskFetch(`/api/task/${taskId}/spec`)).result || {};
         head.textContent = (d.is_parent ? 'Сводная спецификация ' : 'Спецификация ')
                          + `#${taskId} — ${d.title || ''}`;
-        body.textContent = d.text || 'Спецификация пуста: у строки нет ни плана, ни целей.';
+        const text = d.text || 'Спецификация пуста: у строки нет ни плана, ни целей.';
+        body.textContent = text;
+        document.getElementById('specMd').innerHTML = specMarkdown(text);
+        specView('md');
         // Собрана сейчас, а не прочитана из каталога: агент её в этом виде не видел.
         // Сказать об этом надо — иначе разбор пойдёт по документу, которого не было.
         document.getElementById('specNote').textContent = d.stored
@@ -2766,6 +2821,78 @@ window.specShow = async function(taskId) {
         body.textContent = 'Спецификация не загрузилась: ' + (e.message || e);
     }
 };
+
+// Переключение вида. Разметка по умолчанию — так документ читают; исходник нужен,
+// когда его копируют целиком или сверяют с тем, что лежит в каталоге.
+window.specView = function(mode) {
+    const md = mode !== 'raw';
+    document.getElementById('specMd').style.display = md ? '' : 'none';
+    document.getElementById('specBody').style.display = md ? 'none' : '';
+    document.getElementById('specViewMd').classList.toggle('active', md);
+    document.getElementById('specViewRaw').classList.toggle('active', !md);
+};
+
+// Свой разбор markdown вместо библиотеки: документ собираем мы сами
+// (`task_spec.py`), и набор разметки в нём закрытый — заголовки, списки, чекбоксы,
+// код в обратных кавычках, курсив подчёркиванием. Тянуть ради этого библиотеку в
+// страницу, где всё локально, значило бы завести зависимость под пять правил.
+//
+// Экранируем **до** разбора: текст приходит из планов и целей, писанных LLM, и
+// угловая скобка в имени функции не должна становиться тегом.
+function specMarkdown(text) {
+    const lines = esc(String(text || '')).split('\n');
+    const out = [];
+    let list = null;
+
+    const inline = (s) => s
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+        .replace(/_([^_]+)_/g, '<i>$1</i>');
+
+    const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+
+    for (const raw of lines) {
+        const line = raw.trimEnd();
+
+        const head = line.match(/^(#{1,4})\s+(.*)$/);
+        if (head) {
+            closeList();
+            const level = head[1].length + 1;
+            out.push(`<h${level}>${inline(head[2])}</h${level}>`);
+            continue;
+        }
+
+        // Чекбокс — это критерий приёмки, и выглядеть он должен как критерий, а не
+        // как строка «- [ ] текст».
+        const box = line.match(/^[-*]\s+\[( |x|X)\]\s+(.*)$/);
+        if (box) {
+            if (list !== 'ul') { closeList(); out.push('<ul class="spec-checks">'); list = 'ul'; }
+            const done = box[1].toLowerCase() === 'x';
+            out.push(`<li class="${done ? 'done' : ''}">${done ? '☑' : '☐'} ${inline(box[2])}</li>`);
+            continue;
+        }
+
+        const item = line.match(/^[-*]\s+(.*)$/);
+        if (item) {
+            if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+            out.push(`<li>${inline(item[1])}</li>`);
+            continue;
+        }
+
+        const num = line.match(/^(\d+)\.\s+(.*)$/);
+        if (num) {
+            if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+            out.push(`<li>${inline(num[2])}</li>`);
+            continue;
+        }
+
+        closeList();
+        if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+    }
+    closeList();
+
+    return out.join('');
+}
 
 window.specHide = function() {
     document.getElementById('specModal').style.display = 'none';
