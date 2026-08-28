@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.project.task.task_metric import (task_metric_by_llm, task_metric_by_llm_role,
+                                          task_metric_task_summary,
                                           task_metric_delete, task_metric_parents,
                                           task_metric_rows, task_metric_summary,
                                           task_metric_totals)
@@ -58,6 +59,22 @@ async def project_task_metric_list(parent_id: int = 0,
         'parents': await task_metric_parents(),
         'parent_id': parent or 0,
     }
+
+
+@router.get('/api/task/{task_id}/metric')
+async def project_task_metric_task(task_id: int,
+                                   user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """
+    Что стоила одна задача: вкладка «Статистика» на странице разбора.
+
+    Дерево целиком — сама строка и её подзадачи: на странице разбора человек смотрит
+    на задачу как на одно целое, и «сколько это стоило» для него включает работу всех
+    исполнителей, а не только менеджера.
+
+    Пустой ответ — не ошибка: замеров может не быть вовсе (задача старше таблицы либо
+    круг ещё не кончился), и страница про это так и пишет.
+    """
+    return {'result': await task_metric_task_summary(task_id)}
 
 
 @router.delete('/api/task/metric')

@@ -464,6 +464,22 @@
         opacity: 0; transition: opacity .12s, color .12s, background .12s;
     }
     .task-row:hover .btn-row-sub { opacity: 1; }
+
+    /* Отметка зависимости в строке задачи. Жёлтая — предшественник ещё не закрыт, и
+       это причина, по которой подзадача стоит; серая — связь была, но больше не
+       держит. Разный вид намеренно: первое требует внимания, второе только
+       объясняет порядок работы. */
+    .depend-pill {
+        margin-left: 7px; padding: 1px 6px; border-radius: 999px;
+        font-size: 10px; font-weight: 600; white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .depend-pill.wait { color: #92400e; background: #fde68a; border: 1px solid #f59e0b; }
+    .depend-pill.done { color: #94a3b8; background: #f1f5f9; border: 1px solid #e2e8f0; font-weight: 400; }
+
+    /* Номер предшественника — ссылка-якорь: его строка есть в этой же таблице. */
+    .depend-link { cursor: pointer; text-decoration: underline dotted; }
+    .depend-link:hover { color: #b45309; }
     .btn-row-sub:hover { background: #eef2ff; color: #4f46e5; }
     .btn-row-sub:focus-visible { opacity: 1; outline: 2px solid #c7d2fe; }
 
@@ -2659,6 +2675,32 @@ function renderProgressCell(row) {
         : renderInlineGoals(t, false));
 }
 
+// Отметка зависимости в строке задачи: от кого она ждёт кода.
+//
+// Показываем два состояния по-разному, потому что это разные новости. Незакрытый
+// предшественник — причина, по которой подзадача стоит: её видно жёлтым и с номерами,
+// по клику можно перейти к тому, кого ждём. Все закрыты — связь была, но больше не
+// держит: серым, чтобы порядок работы оставался виден, но глаз за него не цеплялся.
+//
+// Связей нет вовсе — ничего не рисуем: у большинства подзадач их не бывает, и пустая
+// плашка в каждой строке только зашумила бы таблицу.
+function dependPill(t) {
+    const blocked = t.depend_blocked || [];
+    const all = t.depends_on || [];
+    if (!all.length) return '';
+
+    if (!blocked.length) {
+        return `<span class="depend-pill done" title="Зависит от ${all.map(n => '#' + n).join(', ')} — все закрыты">`
+             + `после ${all.map(n => '#' + n).join(', ')}</span>`;
+    }
+
+    const links = blocked.map(n =>
+        `<span class="depend-link" onclick="event.stopPropagation();scrollToTask(${n})">#${n}</span>`).join(', ');
+
+    return `<span class="depend-pill wait" title="Работа не начнётся, пока не закрыты: ${blocked.map(n => '#' + n).join(', ')}">`
+         + `ждёт ${links}</span>`;
+}
+
 function renderRow(row, index, hasParent) {
     const t = row.t;
     const status = taskRowStatus(row);
@@ -2681,7 +2723,7 @@ function renderRow(row, index, hasParent) {
             <td class="td-task-type" data-col="task_type">${taskTypeSelect(t.id, t.task_type_id)}</td>
             <td class="td-goals" data-col="goals" onclick="event.stopPropagation()">${progressContent}</td>
             <td class="td-title" data-col="title">
-                <div class="tree-title">${treeIndent(row)}${kidsPill}${treeCaret(row)}<span class="tree-num">#${t.id} </span><span class="tree-name">${esc(t.title)}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
+                <div class="tree-title">${treeIndent(row)}${kidsPill}${treeCaret(row)}<span class="tree-num">#${t.id} </span><span class="tree-name">${esc(t.title)}${dependPill(t)}<button class="btn-row-sub" onclick="event.stopPropagation();subtaskAdd(${t.id})" title="Добавить подзадачу">＋</button></span></div>
             </td>
             <td class="td-desc" data-col="desc"><div class="task-desc-preview">${esc(t.description)}</div></td>
             <td class="td-date" data-col="date">${dateStr}</td>

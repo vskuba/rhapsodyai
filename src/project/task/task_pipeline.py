@@ -79,6 +79,9 @@ from src.project.task.task_agent_bugfixer import TASK_BUGFIXER_ROLE, task_agent_
 from src.project.task.task_agent_developer import TASK_DEVELOPER_ROLE, task_agent_developer_run
 from src.project.task.task_agent_manager import task_agent_manager_plan
 from src.project.task.task_agent_qa import TASK_QA_ROLE, task_agent_qa_run
+from src.project.task.task_depend import (task_depend_apply,
+                                          task_depend_merge_upstream,
+                                          task_depend_plan_links)
 from src.project.task.task_claim import (
     TASK_CLAIM_LOCK_TOUCH_SEC,
     task_claim_inflight_by_project,
@@ -562,9 +565,18 @@ async def _run_plan_split(action: dict) -> str | None:
         return f"task#{task['id']} processing -> failed"
 
     created = await task_state_subtasks_create(task['id'], subtasks)
+    # Зависимости — сразу после создания строк: в плане они позиционные («вторая
+    # ждёт первую»), а связать можно только уже существующие номера. Подзадача,
+    # опирающаяся на соседнюю, не уйдёт в работу, пока та не закрыта
+    # (`task_depend_ready_sql`); всё остальное идёт параллельно, как и раньше.
+    links = task_depend_plan_links(subtasks)
+    await task_depend_apply(task['id'], links)
+
+    tail = f', зависимостей {sum(len(v) for v in links.values())}' if links else ''
     await task_report_write(
-        task['id'], f'План утверждён и разложен на {created} {_task_plural_sub(created)} — выполнение началось')
-    logger_info(f'[task] task#{task["id"]} -> processing ({created} подзадач)')
+        task['id'], f'План утверждён и разложен на {created} {_task_plural_sub(created)}{tail}'
+                    ' — выполнение началось')
+    logger_info(f'[task] task#{task["id"]} -> processing ({created} подзадач{tail})')
     return f"task#{task['id']} processing -> {created} подзадач"
 
 
@@ -618,6 +630,21 @@ async def _run_developer(action: dict) -> str | None:
     # ждала при прежнем пределе «Parallel LLM», только считается он теперь по размеру
     # пула. Пул пуст — `assign` ничего не захватывает, и роль идёт штатным облачным
     # бэкендом, как до появления пулов.
+    # Код предшественников — в ветку подзадачи, до начала работы. Зависимость это про
+    # код: ждать закрытия соседа мало, его работа лежит в его ветке, а не в master, и
+    # исполнитель увидел бы пустое место там, где рассчитывал на готовое.
+    #
+    # Конфликт слияния круг не начинает: две подзадачи, поправившие одно место, —
+    # ошибка разбиения, и чинит её менеджер, а не разработчик посреди круга.
+    merge = await task_depend_merge_upstream(work_dir, subtask['id'])
+    if merge.get('conflict'):
+        await _subtask_report(
+            subtask, f"ветка {merge['conflict']} не влилась: конфликт с кодом предшественника — "
+                     f"нужно переразбить план", ok=False)
+        await task_state_subtask_set(subtask['id'], 'blocked',
+                                     last_error=f"конфликт слияния с {merge['conflict']}")
+        return f"subtask#{subtask['id']} developer -> blocked (конфликт с предшественником)"
+
     shell_session = await _shell_assign(action, task, TASK_DEVELOPER_ROLE)
     if action.get('shell_wait'):
         return f"subtask#{subtask['id']} developer ждёт свободной оболочки"

@@ -10,7 +10,9 @@ from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from logging_.logging_ import logger_info
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.project.task.task_depend import TASK_DEPEND_DONE_STATES, task_depend_of
 from src.project.task.task_metadata import (
     TASK_METADATA_KEY_DEV,
     TASK_METADATA_KEY_TEST,
@@ -58,7 +60,50 @@ async def project_task_tasks_list(project_id: int, user=Depends(AuthChecker([Aut
     async with mysql_get_db_async() as db:
         await db.execute(f"SELECT * FROM project_task WHERE {where} ORDER BY position, id", params)
         rows = await db.fetchall()
-    return {'tasks': [task_metadata_row_apply(r) for r in rows]}
+
+    tasks = [task_metadata_row_apply(r) for r in rows]
+    # Зависимости — тем же ответом, а не вторым запросом со страницы: строк на
+    # странице сотни, и запрос на каждую был бы запросом на пустом месте. Два поля:
+    # `depends_on` — что назвал менеджер, `depend_blocked` — кто из них ещё не закрыт.
+    # Второе и есть ответ на вопрос «почему подзадача стоит»: связь может быть, а
+    # предшественник давно закрыт, и тогда работа просто ждёт очереди.
+    await _tasks_depend_attach(tasks)
+
+    return {'tasks': tasks}
+
+
+async def _tasks_depend_attach(tasks: list) -> None:
+    """
+    Положить на каждую строку её зависимости. Сбой связей список не роняет.
+
+    Одним запросом на всю выдачу: `task_depend_of` берёт сразу все номера. Строкам
+    без связей кладём пустые списки, а не отсутствие ключей, — фронтенду не придётся
+    различать «связей нет» и «поле забыли положить».
+    """
+    for task in tasks:
+        task['depends_on'] = []
+        task['depend_blocked'] = []
+
+    ids = [int(t['id']) for t in tasks if t.get('id')]
+    if not ids:
+        return
+
+    try:
+        links = await task_depend_of(ids)
+        if not links:
+            return
+
+        # Кто из предшественников ещё не закрыт — считаем по той же выдаче, без
+        # похода в базу: состояния всех строк дерева уже здесь.
+        state_by_id = {int(t['id']): str(t.get('pipeline_state') or '') for t in tasks}
+        for task in tasks:
+            deps = links.get(int(task['id']), [])
+            task['depends_on'] = deps
+            task['depend_blocked'] = [
+                dep for dep in deps
+                if state_by_id.get(dep, '') not in TASK_DEPEND_DONE_STATES]
+    except Exception as error:
+        logger_info(f'project_task: зависимости не приложены: {type(error).__name__}: {error}')
 
 
 @router.post('/tasks/{project_id}')

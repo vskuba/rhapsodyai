@@ -252,6 +252,65 @@ async def task_metric_by_llm_role(parent_id=None) -> list[dict]:
         return [dict(row) for row in (await db.fetchall() or [])]
 
 
+async def task_metric_task_summary(task_id: int) -> dict:
+    """
+    Что стоила одна задача: итог, разбивка по моделям и по ролям.
+
+    Считаем по дереву целиком — сама строка плюс её подзадачи: человек на странице
+    разбора смотрит на задачу как на одно целое, и «сколько это стоило» для него
+    включает работу всех исполнителей, а не только менеджера.
+
+    Три разреза, потому что вопроса три: сколько всего (`totals`), чем работали и
+    почём (`by_llm`), кто сколько занял (`by_role`). Один общий список строк на них
+    не отвечает — по нему пришлось бы считать глазами.
+
+    Пусто — замеров нет: задача из тех, что заводились до появления таблицы, либо
+    круг ещё не кончился. Это не ошибка, и страница показывает так и говорит.
+    """
+    task_id = int(task_id or 0)
+    if not task_id:
+        return {'totals': {}, 'by_llm': [], 'by_role': []}
+
+    # Дерево: сама строка и её дети. Внуков в конвейере не бывает — подзадачи плоские,
+    # — но условие писано по `parent_id`, и появись они, попадут сюда сами.
+    where = '(task_id = %s OR parent_id = %s)'
+    params = [task_id, task_id]
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT COUNT(*) AS runs, COUNT(DISTINCT task_id) AS tasks, '
+            '       ROUND(SUM(duration_ms) / 1000) AS sec_total, '
+            '       SUM(tokens_output) AS tokens_out, SUM(tokens_prompt) AS tokens_prompt, '
+            '       SUM(lines_changed) AS lines_changed, '
+            '       ROUND(AVG(NULLIF(tokens_per_sec, 0)), 1) AS speed_avg, '
+            '       ROUND(100 * SUM(status <> \'success\') / GREATEST(COUNT(*), 1)) AS fail_share '
+            f'  FROM project_task_metric WHERE {where}', tuple(params))
+        totals = dict(await db.fetchone() or {})
+
+        await db.execute(
+            'SELECT llm_name, COUNT(*) AS runs, '
+            '       ROUND(SUM(duration_ms) / 1000) AS sec_total, '
+            '       ROUND(AVG(duration_ms) / 1000) AS sec_avg, '
+            '       SUM(tokens_output) AS tokens_out, '
+            '       ROUND(AVG(NULLIF(tokens_per_sec, 0)), 1) AS speed_avg, '
+            '       ROUND(100 * SUM(status <> \'success\') / COUNT(*)) AS fail_share '
+            f'  FROM project_task_metric WHERE {where} '
+            ' GROUP BY llm_name ORDER BY sec_total DESC', tuple(params))
+        by_llm = [dict(r) for r in await db.fetchall() or []]
+
+        await db.execute(
+            'SELECT role, COUNT(*) AS runs, COUNT(DISTINCT task_id) AS tasks, '
+            '       ROUND(SUM(duration_ms) / 1000) AS sec_total, '
+            '       SUM(tokens_output) AS tokens_out, '
+            '       SUM(lines_changed) AS lines_changed, '
+            '       ROUND(100 * SUM(status <> \'success\') / COUNT(*)) AS fail_share '
+            f'  FROM project_task_metric WHERE {where} '
+            ' GROUP BY role ORDER BY sec_total DESC', tuple(params))
+        by_role = [dict(r) for r in await db.fetchall() or []]
+
+    return {'totals': totals, 'by_llm': by_llm, 'by_role': by_role}
+
+
 async def task_metric_rows(parent_id=None, limit: int = TASK_METRIC_LIST_MAX) -> list[dict]:
     """Последние замеры по одному на шаг — сырьё, по которому видно разброс."""
     where, params = ('WHERE m.parent_id = %s', [parent_id]) if parent_id else ('', [])

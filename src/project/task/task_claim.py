@@ -19,6 +19,7 @@ from src.project.task.task_metadata import (
     task_metadata_stop_free_sql,
     task_metadata_test_free_sql,
 )
+from src.project.task.task_depend import task_depend_ready_sql
 from src.project.task.task_role import (TASK_ROLE_BUGFIXER, task_role_by_type,
                                         task_role_project_sql,
                                         task_role_project_type_sql, task_role_type_sql)
@@ -247,7 +248,13 @@ async def task_claim_subtask_developable(worker: str, roles_by_project, max_atte
     role_sql, role_params = task_role_project_sql(roles_by_project, 'developer')
     # Подзадача-приёмка ждёт закрытия соседей: до их готовности её вердикт всегда
     # «не сошлось», а круги при этом жгутся (см. `task_metadata_final_wait_sql`).
-    where = ' AND '.join(part for part in (role_sql, task_metadata_final_wait_sql()) if part)
+    #
+    # Зависимости — второе условие того же рода: подзадача, опирающаяся на соседнюю,
+    # не начинается, пока та не закрыта. Разработчик иначе писал бы поверх кода,
+    # которого ещё нет, и круг заведомо не сошёлся бы (`task_depend`). Строки без
+    # связей условие проходят всегда — плоские планы работают как прежде.
+    where = ' AND '.join(part for part in (role_sql, task_metadata_final_wait_sql(),
+                                           task_depend_ready_sql()) if part)
     for state_from in ('planned', 'failed_qa'):
         subtask = await task_claim_subtask(state_from, 'developing', worker, where, role_params)
         if not subtask:

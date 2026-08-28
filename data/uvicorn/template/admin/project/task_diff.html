@@ -378,6 +378,35 @@
         transition: color .15s, border-color .15s;
     }
 
+    /* Вкладка «Статистика»: карточки итогов сверху, две таблицы под ними. Числа
+       читают, чтобы понять, чего стоила задача, — поэтому крупные итоги первыми, а
+       разрезы по моделям и ролям следом. */
+    .stat-cards { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 4px; }
+    .stat-card {
+        border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 14px;
+        background: #fff; min-width: 108px;
+    }
+    .stat-card b {
+        display: block; font-size: 19px; color: #2c3e50; font-variant-numeric: tabular-nums;
+    }
+    .stat-card span {
+        font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em;
+    }
+
+    .stat-subhead {
+        margin: 18px 0 8px; font-size: 11px; font-weight: 700; color: #6b7280;
+        text-transform: uppercase; letter-spacing: .04em;
+    }
+
+    .stat-table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; }
+    .stat-table th {
+        text-align: left; padding: 6px 10px; border-bottom: 1px solid #e2e8f0;
+        font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .stat-table td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .stat-table th.num, .stat-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .stat-empty { padding: 16px; color: #94a3b8; font-size: 12px; }
+
     .page-tab.active { color: #2c3e50; border-bottom-color: #3498db; }
     .page-tab:hover:not(.active) { color: #4a5568; }
 
@@ -489,9 +518,18 @@
         <button class="page-tab" data-pane="migration">Миграции <span class="tab-n" id="tabMigrationN"></span></button>
         <!-- Появляется только когда есть чему мешать: пустая вкладка «Ветки» на
              здоровой задаче заставляла бы искать проблему там, где её нет. -->
+        <button class="page-tab" data-pane="stat">Статистика</button>
+        <!-- Появляется только когда есть чему мешать: пустая вкладка «Ветки» на
+             здоровой задаче заставляла бы искать проблему там, где её нет. -->
         <button class="page-tab tab-trouble" data-pane="trouble" id="tabTrouble" style="display:none">
             Ветки <span class="tab-n" id="tabTroubleN"></span></button>
     </div>
+
+    <!-- Чего стоила задача: время, токены и надёжность в разрезе моделей и ролей.
+         Здесь, а не на общей странице замеров, потому что вопрос другой: там
+         «какая модель лучше вообще», здесь — «чем сделана вот эта работа, которую
+         я сейчас принимаю». -->
+    <div id="paneStat" style="display:none"></div>
 
     <div id="paneTrouble" style="display:none"></div>
 
@@ -1059,7 +1097,9 @@
         document.getElementById('paneDiff').style.display = name === 'diff' ? '' : 'none';
         document.getElementById('paneMigration').style.display = name === 'migration' ? '' : 'none';
         document.getElementById('paneTrouble').style.display = name === 'trouble' ? '' : 'none';
+        document.getElementById('paneStat').style.display = name === 'stat' ? '' : 'none';
         if (name === 'migration') migLoad();
+        if (name === 'stat') statLoad();
     }
 
     let _migLoaded = false;
@@ -1144,6 +1184,92 @@
 
     function migSize(b) {
         return b > 1024 ? `${Math.round(b / 1024)} КБ` : `${b} Б`;
+    }
+
+    // ── Статистика задачи ───────────────────────────────────────────────────
+    //
+    // Чего стоила эта работа: время, токены и надёжность по дереву задачи целиком —
+    // сама строка и её подзадачи. Считает сервер (`/api/task/<id>/metric`), здесь
+    // только показ.
+
+    let _statLoaded = false;
+
+    async function statLoad(force) {
+        if (_statLoaded && !force) return;
+        const pane = document.getElementById('paneStat');
+        pane.innerHTML = '<div class="stat-empty">Загрузка…</div>';
+        try {
+            const d = (await getData(`/api/task/${taskId}/metric`)).result || {};
+            pane.innerHTML = statHtml(d);
+            _statLoaded = true;
+        } catch (e) {
+            pane.innerHTML = `<div class="stat-empty">Статистика не загрузилась: ${esc(String(e))}</div>`;
+        }
+    }
+
+    function statHtml(d) {
+        const t = d.totals || {};
+        if (!Number(t.runs)) {
+            return '<div class="stat-empty">Замеров по этой задаче нет — они появятся '
+                 + 'по концу первого круга. Задачи, заведённые до появления замеров, '
+                 + 'останутся без статистики.</div>';
+        }
+
+        const cards = [
+            [t.runs, 'кругов', 'Сколько шагов агентов замерено по задаче и её подзадачам'],
+            [statDur(t.sec_total), 'времени', 'Суммарное время работы агентов'],
+            [statNum(t.tokens_out), 'токенов', 'Сгенерировано моделями за все круги'],
+            [statNum(t.lines_changed), 'строк кода', 'Правка по всем подзадачам'],
+            [t.speed_avg || '—', 'ток/с', 'Средняя скорость генерации'],
+            [(t.fail_share || 0) + '%', 'сбоев', 'Доля шагов, завершившихся не успехом'],
+        ].map(([v, label, hint]) =>
+            `<div class="stat-card" title="${esc(hint)}"><b>${v}</b><span>${label}</span></div>`).join('');
+
+        return `<div class="stat-cards">${cards}</div>`
+             + '<div class="stat-subhead">Чем работали</div>'
+             + statTable(d.by_llm || [], [
+                 ['модель', r => esc(r.llm_name || 'не записана'), ''],
+                 ['кругов', r => r.runs, 'num'],
+                 ['всего', r => statDur(r.sec_total), 'num'],
+                 ['сек/шаг', r => statNum(r.sec_avg), 'num'],
+                 ['токенов', r => statNum(r.tokens_out), 'num'],
+                 ['ток/с', r => r.speed_avg || '—', 'num'],
+                 ['сбоев %', r => r.fail_share || 0, 'num'],
+               ])
+             + '<div class="stat-subhead">Кто работал</div>'
+             + statTable(d.by_role || [], [
+                 ['роль', r => esc(r.role || '—'), ''],
+                 ['кругов', r => r.runs, 'num'],
+                 ['строк', r => r.tasks, 'num'],
+                 ['всего', r => statDur(r.sec_total), 'num'],
+                 ['токенов', r => statNum(r.tokens_out), 'num'],
+                 ['правка', r => statNum(r.lines_changed), 'num'],
+                 ['сбоев %', r => r.fail_share || 0, 'num'],
+               ]);
+    }
+
+    function statTable(rows, cols) {
+        if (!rows.length) return '<div class="stat-empty">Нет данных</div>';
+        const head = cols.map(([h, , cls]) => `<th class="${cls}">${esc(h)}</th>`).join('');
+        const body = rows.map(r =>
+            '<tr>' + cols.map(([, get, cls]) => `<td class="${cls}">${get(r)}</td>`).join('') + '</tr>'
+        ).join('');
+
+        return `<table class="stat-table"><tr>${head}</tr>${body}</table>`;
+    }
+
+    // Секунды в человеческий вид: часы у длинных прогонов, минуты у коротких —
+    // «22761 с» не читается, а «6 ч 19 мин» отвечает на вопрос сразу.
+    function statDur(sec) {
+        sec = Number(sec) || 0;
+        if (sec < 60) return sec + ' с';
+        if (sec < 3600) return Math.round(sec / 60) + ' мин';
+
+        return Math.floor(sec / 3600) + ' ч ' + Math.round((sec % 3600) / 60) + ' мин';
+    }
+
+    function statNum(n) {
+        return (Number(n) || 0).toLocaleString('ru-RU');
     }
 
     document.querySelectorAll('#diffTabs .page-tab').forEach(t => {
