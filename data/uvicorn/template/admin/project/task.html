@@ -1794,6 +1794,9 @@
              контекста против времени, токенов и правок. Задачи удаляют, а замеры
              остаются, поэтому вкладка живёт отдельно от дерева задач. -->
         <button class="page-tab" data-tab="stats">📊 Статистика <span class="page-tab-n" id="tabCount-stats"></span></button>
+        <!-- «Зависимости» — каркас вкладки: сейчас только своя панель-заглушка,
+             наполнение придёт следующей подзадачей. -->
+        <button class="page-tab" data-tab="depend">🔗 Зависимости</button>
     </div>
 
     <!-- Toolbar: title, filters, add -->
@@ -1945,6 +1948,27 @@
             <div class="log-filters" id="logFilters"></div>
             <div class="log-body" id="logBody">
                 <div class="log-empty">Выберите строку слева, чтобы увидеть её журнал.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Вкладка «Зависимости»: каркас. Показывает порядок подзадач — зависимые
+         идут друг за другом, независимые параллельно. Заглушка: наполнение —
+         отдельной подзадачей. Скрыта, пока вкладка не выбрана. -->
+    <div class="log-pane" id="depPane" style="display:none">
+        <div class="log-side">
+            <div class="log-side-block">
+                <div class="log-side-head">
+                    <span>Подзадачи</span>
+                </div>
+                <div class="log-side-list">
+                    <div class="log-side-empty">Загрузка…</div>
+                </div>
+            </div>
+        </div>
+        <div class="log-main">
+            <div class="log-body">
+                <div class="log-empty">Здесь будет порядок подзадач: зависимые — по очереди, независимые — параллельно.</div>
             </div>
         </div>
     </div>
@@ -2524,8 +2548,10 @@ const PHASE_KEY = 'task_phase';
 // живую вкладку пропускает его отдельно.
 const PHASE_LOGS = 'logs';
 const PHASE_STATS = 'stats';
+const PHASE_DEP = 'depend';
 let _phaseFilter = (PHASE_TYPE_NAMES[localStorage.getItem(PHASE_KEY)]
-                    || localStorage.getItem(PHASE_KEY) === PHASE_LOGS)
+                    || localStorage.getItem(PHASE_KEY) === PHASE_LOGS
+                    || localStorage.getItem(PHASE_KEY) === PHASE_DEP)
     ? localStorage.getItem(PHASE_KEY) : 'development';
 
 function selectPhase(btn, phase) {
@@ -2535,6 +2561,7 @@ function selectPhase(btn, phase) {
     phasePanesSync();
     if (phase === PHASE_LOGS) logListLoad();
     else if (phase === PHASE_STATS) statLoad();
+    else if (phase === PHASE_DEP) { /* каркас: наполнение придёт следом */ }
     else renderTable();
 }
 
@@ -2543,14 +2570,16 @@ function selectPhase(btn, phase) {
 function phasePanesSync() {
     const logs  = _phaseFilter === PHASE_LOGS;
     const stats = _phaseFilter === PHASE_STATS;
-    // Обе вкладки занимают место таблицы целиком: панель фильтров и «Добавить»
+    const dep   = _phaseFilter === PHASE_DEP;
+    // Эти вкладки занимают место таблицы целиком: панель фильтров и «Добавить»
     // к ним не относятся, а оставленные сверху читались бы как управление ими.
-    const bare = logs || stats;
+    const bare = logs || stats || dep;
     document.querySelector('.task-toolbar').style.display = bare ? 'none' : '';
     document.querySelector('.task-scroll').style.display = bare ? 'none' : '';
     document.getElementById('taskAddForm').style.display = bare ? 'none' : '';
     document.getElementById('logPane').style.display = logs ? 'flex' : 'none';
     document.getElementById('statPane').style.display = stats ? 'flex' : 'none';
+    document.getElementById('depPane').style.display = dep ? 'flex' : 'none';
 }
 
 function phaseTabsSync() {
