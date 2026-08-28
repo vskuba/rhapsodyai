@@ -15,7 +15,7 @@ import json
 import time
 from datetime import timedelta
 
-from datetime_.datetime_ import datetime_now
+from datetime_.datetime_ import datetime_utc_now
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
@@ -258,7 +258,7 @@ async def claude_shell_session_status(role: str = CLAUDE_SHELL_ROLE_DEFAULT,
                 'session_uuid': '', 'seconds_ago': -1}
 
     agent_status = str(session.get('agent_status') or '')
-    now = await datetime_now()
+    now = datetime_utc_now()
     last_seen_at = session.get('last_seen_at')
 
     return {
@@ -313,12 +313,12 @@ async def _session_find(role: str, work_dir: str = '',
     менеджера соседнего проекта. Хвостовой слеш у обеих сторон снимаем —
     '/srv/app' и '/srv/app/' это один каталог.
 
-    Порог свежести считаем через datetime_now(): last_seen_at пишется в поясе из
+    Порог свежести считаем через datetime_utc_now(): last_seen_at хранится в UTC, как
     настройки timezone, а NOW() отдал бы пояс MySQL — сессия оказалась бы либо
     вечно живой, либо мгновенно мёртвой.
     """
     stale_seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_SHELL_STALE)
-    stale_before = await datetime_now() - timedelta(seconds=stale_seconds)
+    stale_before = datetime_utc_now() - timedelta(seconds=stale_seconds)
     placeholders = ','.join(['%s'] * len(CLAUDE_SHELL_SESSION_STATUS_SHOWN))
     session_sql, session_params = '', []
     if session_uuid:

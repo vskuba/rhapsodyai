@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Request, HTTPException
 
-from datetime_.datetime_ import datetime_now
+from datetime_.datetime_ import datetime_utc_now
 from mysql_.mysql_ import mysql_get_db_async
 from setting_.setting_ import setting_get
 from src.telegram_.telegram_notify import telegram_notify_send_owner
@@ -113,13 +113,13 @@ async def telegram_app_claude_sessions_active(request: Request):
     Сессии для иконок во вкладке Cloud Mini App - видимость решает только
     staleness heartbeat: 60с без пинга = терминал закрылся.
 
-    Порог считаем в Python через datetime_now(): NOW() дал бы время часового пояса
-    MySQL, а last_seen_at пишется в поясе из настройки timezone — при расхождении
+    Порог считаем в Python через datetime_utc_now(): NOW() дал бы время часового пояса
+    MySQL, а last_seen_at пишется приложением — при расхождении
     поясов сессии либо не пропадают никогда, либо исчезают сразу.
     """
     _require_telegram_owner(request)
 
-    stale_before = await datetime_now() - timedelta(seconds=60)
+    stale_before = datetime_utc_now() - timedelta(seconds=60)
 
     async with mysql_get_db_async() as db:
         await db.execute(

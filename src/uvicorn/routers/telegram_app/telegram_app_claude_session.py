@@ -3,7 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Request, HTTPException
 
-from datetime_.datetime_ import datetime_now
+from datetime_.datetime_ import datetime_utc_now
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
@@ -104,7 +104,7 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
         raise HTTPException(status_code=400, detail="project_label required")
 
     session_uuid = str(uuid.uuid4())
-    now = await datetime_now()
+    now = datetime_utc_now()
     # Номер оболочки внутри роли: по нему заголовок терминала и карточка на
     # `/admin/team` показывают одно и то же — иначе три окна «Developer» и три
     # одинаковые карточки не сопоставить.
@@ -195,7 +195,7 @@ async def telegram_app_claude_session_resume(request: Request, data: dict):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    now = await datetime_now()
+    now = datetime_utc_now()
     update_data = {"status": "active", "last_seen_at": now}
     if server_llm:
         update_data["server_llm"] = server_llm
@@ -240,7 +240,7 @@ async def telegram_app_claude_session_heartbeat(request: Request, data: dict):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    update_data = {"last_seen_at": await datetime_now(),
+    update_data = {"last_seen_at": datetime_utc_now(),
                    **_agent_status_parse(data)}
     # По work_dir карточки на /admin/team привязываются к проекту. Сессии,
     # зарегистрированные до появления колонки, дозаполняют её на первом же пинге.
@@ -277,7 +277,7 @@ async def telegram_app_claude_session_finalize(request: Request, data: dict):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    update_data = {"status": "inactive", "closed_at": await datetime_now()}
+    update_data = {"status": "inactive", "closed_at": datetime_utc_now()}
     if summary:
         update_data["summary"] = str(summary)[:500]
     await repo.update(row["id"], update_data)
@@ -395,7 +395,7 @@ async def telegram_app_claude_session_process_status(request: Request, session_u
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    return {"result": _compute_process_status(row, await datetime_now())}
+    return {"result": _compute_process_status(row, datetime_utc_now())}
 
 
 @router.post("/telegram-app/claude/session/restart-processes")
@@ -417,7 +417,7 @@ async def telegram_app_claude_session_restart_processes(request: Request, data: 
 
     await claude_message_user(RESTART_WATCH_MARKER, session_uuid, dynamic=1)
 
-    status = _compute_process_status(row, await datetime_now())
+    status = _compute_process_status(row, datetime_utc_now())
     status["restart_sent"] = True
 
     # Telegram-уведомление как fallback-канал на случай если watch мёртв
@@ -453,7 +453,7 @@ def _agent_status_parse(data: dict) -> dict:
 
 
 def _compute_process_status(row: dict, now: datetime) -> dict:
-    """`now` приходит из datetime_now(): last_seen_at записан в том же поясе."""
+    """`now` приходит из datetime_utc_now(): last_seen_at хранится в UTC."""
     last_seen_at = row.get("last_seen_at")
     seconds_ago = None
     watch_alive = False

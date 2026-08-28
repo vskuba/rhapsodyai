@@ -6,7 +6,7 @@ claude-shell. Записью статусов членов команды зан
 import re
 from datetime import datetime
 
-from datetime_.datetime_ import datetime_now
+from datetime_.datetime_ import datetime_utc_now
 
 from src.mysql_.repository.ai_claude_session_registry_repository import AiClaudeSessionRegistryRepository
 from src.mysql_.repository.project.project_repository import PlanningProjectRepository
@@ -90,7 +90,7 @@ async def team_project_blocks_get() -> list[dict]:
     sessions = await AiClaudeSessionRegistryRepository().find_by({}, order_by='id ASC')
     queues = await team_queue_by_project()
     agents = await team_agent_by_role()
-    now = await datetime_now()
+    now = datetime_utc_now()
     stale_seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_PING_STALE)
     # Предел одновременных прогонов. У проекта с пулом это его длина, у проекта без
     # пула — прежняя настройка (`task_setting_parallel`): он идёт напрямую в облачный
@@ -632,7 +632,7 @@ def _command_work_dir(work_dir) -> str:
 def _seconds_ago(last_seen_at, now: datetime):
     """Свежесть пинга в секундах.
 
-    ``last_seen_at`` реестра пишется через ``datetime_now()``, поэтому сравнивать
+    ``last_seen_at`` реестра хранится в UTC (``datetime_utc_now()``), поэтому сравнивать
     его можно только со временем оттуда же: время контейнера и NOW() в MySQL дадут
     свои часовые пояса, и сессия окажется либо вечно живой, либо мгновенно мёртвой.
     """

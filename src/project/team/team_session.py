@@ -19,7 +19,7 @@ import asyncio
 import time
 from datetime import datetime
 
-from datetime_.datetime_ import datetime_now
+from datetime_.datetime_ import datetime_utc_now
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
@@ -74,7 +74,7 @@ async def team_session_restart(session_uuid: str) -> dict | None:
 
     await claude_message_user(TEAM_SESSION_RESTART_MARKER, session_uuid, dynamic=1)
 
-    status = _status_build(row, await datetime_now())
+    status = _status_build(row, datetime_utc_now())
     status['restart_sent'] = True
     await _telegram_notify(row, status)
 
@@ -155,8 +155,9 @@ async def team_session_restart_role(role: str, work_dir: str = '', wait: bool = 
 
 def _status_build(row: dict, now: datetime) -> dict:
     """
-    Свежесть пинга сессии. `now` берётся из `datetime_now()`: `last_seen_at`
-    записан в том же поясе, и сравнивать его с временем контейнера нельзя.
+    Свежесть пинга сессии. `now` берётся из `datetime_utc_now()`: `last_seen_at`
+    хранится в UTC, и сравнивать его с временем контейнера нельзя: пояс образа
+    совпадает с UTC по совпадению настроек, а не по замыслу.
     """
     last_seen_at = row.get('last_seen_at')
     seconds_ago = int((now - last_seen_at).total_seconds()) if last_seen_at else None

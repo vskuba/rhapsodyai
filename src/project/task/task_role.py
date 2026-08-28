@@ -28,7 +28,7 @@ Developer, а проверяет QA. План уже разложен, спор�
 без владельца задача выпала бы из конвейера совсем.
 """
 from config.config import config_get
-from datetime_.datetime_ import datetime_now
+from datetime_.datetime_ import datetime_utc_now
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_PING_STALE,
@@ -359,7 +359,7 @@ async def task_role_shell_sessions_by_project() -> dict[int, dict[str, list[str]
     card_roles = {(int(card.get('project_id') or TASK_ROLE_PROJECT_NONE),
                    str(card.get('role') or '').strip()) for card in (cards or [])}
 
-    now = await datetime_now()
+    now = datetime_utc_now()
     stale_seconds = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_PING_STALE)
     live: dict[int, dict[str, list[str]]] = {}
     for row in (rows or []):
