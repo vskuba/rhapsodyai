@@ -19,7 +19,7 @@ class TranslateJsonRequest(BaseModel):
 
 
 @router.post("/translate")
-async def translate(
+async def translate_translate(
         request: Request,
         json_request: TranslateJsonRequest,
         user=Depends(AuthChecker([]))

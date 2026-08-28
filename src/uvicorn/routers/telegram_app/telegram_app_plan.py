@@ -23,7 +23,7 @@ TELEGRAM_PLAN_CREATOR_AGENT_NAME = 'plan_creator'
 
 
 @router.get("/telegram-app/plans")
-async def telegram_app_plans_list(request: Request):
+async def telegram_app_plan_plans_list(request: Request):
     _require_telegram_owner(request)
 
     async with mysql_get_db_async() as db:

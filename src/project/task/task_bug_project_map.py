@@ -2,14 +2,14 @@
 Определение project_id по workflow_id для авто-создания баг-задач.
 
 Публичные функции:
-    task_bug_project_for_workflow — lookup project_id по workflow_id
+    task_bug_project_map_for_workflow — lookup project_id по workflow_id
 """
 import json
 
 from config.config import config_get
 
 
-def task_bug_project_for_workflow(workflow_id: int) -> int:
+def task_bug_project_map_for_workflow(workflow_id: int) -> int:
     """
     Определяет project_id по workflow_id.
 

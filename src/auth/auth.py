@@ -11,7 +11,7 @@ class AuthChecker:
         self.required_permissions = required_permissions
 
     async def __call__(self, request: Request) -> AuthSession:
-        current_user = await get_current_user(request)
+        current_user = await auth_get_current_user(request)
 
         logger_info('🔒 Текущий пользователь: ' + str(current_user))
 
@@ -28,7 +28,7 @@ class AuthChecker:
         return current_user
 
 
-async def get_current_user(request: Request) -> AuthSession:
+async def auth_get_current_user(request: Request) -> AuthSession:
     """Пользователь запроса: сессия админки либо токен доступа.
 
     Токен принимается двумя заголовками — `Authorization: Bearer <token>` и

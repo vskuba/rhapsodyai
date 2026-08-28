@@ -3,9 +3,9 @@ import { state } from './state.js';
 import { createInputBar, createMicOnlyBar } from './input_bar.js';
 import { initSidebar, setSidebarPageMode, updateInputBarsVisibility } from './sidebar.js';
 import { loadEvents } from './events.js';
-import { initChat } from './chat.js';
 import { initClaude, loadClaudeSessionList, updateClaudePolling, updateClaudeStatusPolling, closeClaudeSessionView } from './claude.js';
 import { initPlans, loadPlans, closePlanDetail } from './plans.js';
+import { initTasks, loadTasks, closeTaskDetail } from './tasks.js';
 
 const tg = window.Telegram?.WebApp;
 
@@ -27,12 +27,11 @@ async function init() {
     const appWrapper = document.querySelector('.app-wrapper');
 
     const claudeBar     = createInputBar({ id: 'claudeInputBar',  progressId: 'claudeProgress',  placeholder: 'Сообщение для Claude Code...', hasQuickCmd: true });
-    const chatBar       = createInputBar({ id: 'chatInputBar',    progressId: 'chatProgress',    placeholder: 'Сообщение...' });
     const planBar       = createInputBar({ id: 'planInputBar',    progressId: 'planProgress',    placeholder: 'Инструкция по правке...' });
     const planCreateBar = createMicOnlyBar({ id: 'planCreateBar', progressId: 'planCreateProgress' });
 
     // progress вставляется перед bar (анимация над полем ввода)
-    for (const { progress, bar } of [claudeBar, chatBar, planBar, planCreateBar]) {
+    for (const { progress, bar } of [claudeBar, planBar, planCreateBar]) {
         appWrapper.appendChild(progress);
         appWrapper.appendChild(bar);
     }
@@ -41,7 +40,6 @@ async function init() {
 
     const inputBars = {
         claude:     { bar: claudeBar.bar,     progress: claudeBar.progress },
-        chat:       { bar: chatBar.bar,       progress: chatBar.progress },
         plan:       { bar: planBar.bar,       progress: planBar.progress },
         planCreate: { bar: planCreateBar.bar, progress: planCreateBar.progress },
     };
@@ -49,6 +47,7 @@ async function init() {
     initSidebar({
         inputBars,
         onTabChange(tab) {
+            if (tab === 'tasks') loadTasks();
             if (tab === 'plans') loadPlans();
             if (tab === 'claude' && !state.claude.sessionUuid) loadClaudeSessionList();
             updateClaudePolling();
@@ -57,7 +56,7 @@ async function init() {
         onGoHome: goHome,
     });
 
-    initChat(chatBar);
+    initTasks();
     initClaude(claudeBar);
     initPlans({ ...planBar, createBar: planCreateBar });
     initHomePing();
@@ -68,6 +67,7 @@ async function init() {
 
 function goHome() {
     if (state.currentPlanId !== null) closePlanDetail();
+    if (state.currentTaskId !== null) closeTaskDetail();
     if (state.claude.sessionUuid !== null) closeClaudeSessionView();
 
     document.querySelectorAll('.icon-btn[data-tab]').forEach(b => b.classList.remove('active'));

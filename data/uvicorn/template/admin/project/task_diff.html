@@ -42,6 +42,216 @@
     /* Кнопка слияния тут же, где diff: решение «влить» принимают, посмотрев на правки,
        а не по названию ветки в списке задач. Выключенной она остаётся ровно тогда,
        когда предварительная проверка сказала, что слияние не пройдёт. */
+    /* Разбор по веткам внутри плашки: строк бывает под десяток, и сплошным текстом
+       они не читаются. */
+    .note-sub {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(0, 0, 0, .12);
+        font-size: 12.5px;
+        line-height: 1.65;
+    }
+
+    /* Сборка — действие до слияния, поэтому спокойнее зелёной кнопки: она не меняет
+       главную ветку и её можно повторять сколько угодно. */
+    /* Вкладка помех: красная, потому что пока она есть, ни сборка, ни слияние не
+       пройдут — это не справка, а то, что нужно разобрать. */
+    .trouble-box {
+        border: 1px solid #f3c0bb;
+        border-radius: 10px;
+        background: #fff6f5;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+    }
+
+    .trouble-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .trouble-branch { font-family: 'SF Mono', Monaco, monospace; font-size: 14px; font-weight: 700; color: #7a271a; }
+    .trouble-why { font-size: 12.5px; color: #b42318; }
+    .trouble-dir { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; color: #98a2b3; word-break: break-all; }
+
+    .trouble-files {
+        margin: 8px 0 12px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: #fff;
+        border: 1px solid #f0d6d3;
+        font-family: 'SF Mono', Monaco, monospace;
+        font-size: 11.5px;
+        line-height: 1.7;
+        max-height: 200px;
+        overflow: auto;
+    }
+
+    /* ─── Разбор помех: рабочий экран во всю ширину ───────────────────────
+       Слева содержимое файла, справа выбор ветки и файла. Обратный обычному
+       порядок — так просил человек: глаз держится на коде, а список остаётся
+       периферией. Высота от окна, прокрутка внутри колонок: сравнивать нужно
+       длинные куски, и страница не должна для этого уезжать. */
+    .tr-layout {
+        display: flex; gap: 14px; align-items: stretch;
+        height: calc(100vh - 300px); min-height: 420px;
+    }
+
+    .tr-main {
+        flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column;
+        border: 1px solid #e4e7ec; border-radius: 10px; background: #fff; overflow: hidden;
+    }
+
+    .tr-main-head {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 8px 12px; border-bottom: 1px solid #e4e7ec; background: #f9fafb;
+    }
+    .tr-main-path {
+        flex: 1 1 auto; min-width: 0; word-break: break-all;
+        font-family: 'SF Mono', Monaco, monospace; font-size: 12px; font-weight: 700; color: #344054;
+    }
+    .tr-main-acts { flex: 0 0 auto; display: flex; gap: 6px; }
+    .tr-main-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px; }
+
+    .tr-side {
+        flex: 0 0 320px; overflow-y: auto;
+        display: flex; flex-direction: column; gap: 10px;
+    }
+
+    .tr-branch {
+        border: 1px solid #f3c0bb; border-radius: 10px; background: #fff6f5; padding: 10px 12px;
+    }
+    .tr-branch-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .tr-branch-dir {
+        font-family: 'SF Mono', Monaco, monospace; font-size: 10px; color: #98a2b3;
+        word-break: break-all; margin: 2px 0 8px;
+    }
+
+    .tr-files { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+
+    .tr-file {
+        display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+        padding: 4px 7px; border-radius: 6px; cursor: pointer;
+    }
+    .tr-file:hover { background: #fff; }
+    /* Выбранный виден и без наведения: он определяет, что показано слева. */
+    .tr-file.on { background: #fff; box-shadow: inset 0 0 0 1px #f3c0bb; }
+
+    .tr-file-name {
+        font-family: 'SF Mono', Monaco, monospace; font-size: 11.5px; color: #344054; font-weight: 600;
+    }
+    .tr-file-dir {
+        flex: 1 1 auto; min-width: 0; font-size: 10px; color: #98a2b3;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+    }
+
+    /* Две стороны конфликта: одинаковой высоты, каждая со своей прокруткой. */
+    .sbs-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+    .sbs-pre {
+        margin: 0; padding: 8px 10px; background: #fff; color: #1f2937;
+        font-family: 'SF Mono', Monaco, monospace; font-size: 11px; line-height: 1.55;
+        max-height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    }
+    .sbs-two .sbs-pre + .sbs-pre { border-left: 1px solid #e4e7ec; }
+
+    /* Правка в две колонки: слева файл как в коммите, справа с изменениями.
+       Светлый фон, в отличие от `.tf-pre`: тут читают код построчно и сравнивают
+       глазами, а тёмная тема на длинных сравнениях утомляет быстрее. */
+    .sbs-wrap {
+        border: 1px solid #e4e7ec; border-radius: 8px; background: #fff; overflow: hidden;
+    }
+
+    .sbs-heads {
+        display: grid; grid-template-columns: 1fr 1fr;
+        font-size: 10.5px; font-weight: 700; color: #667085;
+        text-transform: uppercase; letter-spacing: .03em;
+        background: #f9fafb; border-bottom: 1px solid #e4e7ec;
+    }
+    .sbs-heads span { padding: 5px 10px; }
+    .sbs-heads span + span { border-left: 1px solid #e4e7ec; }
+
+    .sbs {
+        width: 100%; border-collapse: collapse; table-layout: fixed;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 11px; line-height: 1.55;
+        display: block; overflow: visible;
+    }
+    .sbs tbody { display: table; width: 100%; table-layout: fixed; }
+
+    /* Номер строки узкий и невыделяемый: копировать нужно код, а не нумерацию. */
+    /* Номер строки — часть своей колонки, а не отдельная: с рамкой по обе стороны
+       таблица читалась как четыре колонки вместо двух. Разделяем только стороны. */
+    .sbs-n {
+        width: 44px; min-width: 44px; text-align: right; padding: 0 7px;
+        color: #b0b8c1; background: transparent;
+        user-select: none; vertical-align: top;
+    }
+    .sbs-t {
+        padding: 0 8px; white-space: pre-wrap; word-break: break-word; vertical-align: top;
+    }
+    /* Вторая колонка отделена рамкой — иначе на длинных строках теряется, где чья. */
+    .sbs tr td:nth-child(3) { border-left: 2px solid #d0d5dd; }
+
+    .sbs-d { background: #ffebe9; }
+    .sbs-a { background: #e6ffec; }
+    .sbs-empty { background: #fafbfc; }
+
+    /* Строка, на которую увели стрелки: рамка слева, чтобы взгляд её нашёл сразу
+       после прокрутки, но фон правки при этом остался виден. */
+    .sbs-here td { box-shadow: inset 0 2px 0 #f59e0b, inset 0 -2px 0 #f59e0b; }
+
+    .tr-nav { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; }
+    .tr-nav-at { font-size: 11px; color: #667085; min-width: 62px; text-align: center; }
+    .tr-nav-btn {
+        width: 24px; height: 24px; padding: 0; border-radius: 6px;
+        border: 1px solid #d0d5dd; background: #fff; color: #344054;
+        font-size: 13px; line-height: 1; cursor: pointer;
+    }
+    .tr-nav-btn:hover { background: #f9fafb; }
+
+    .sbs-hunk td {
+        background: #f1f8ff; color: #57606a; padding: 2px 10px;
+        border-top: 1px solid #e4e7ec; border-bottom: 1px solid #e4e7ec;
+    }
+
+    .tf-pre {
+        margin: 0; padding: 8px 10px; border-radius: 8px;
+        background: #0f172a; color: #e2e8f0;
+        font-family: 'SF Mono', Monaco, monospace; font-size: 11px; line-height: 1.55;
+        max-height: 340px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    }
+    .tf-pre .dl-a { color: #86efac; }
+    .tf-pre .dl-d { color: #fca5a5; }
+    .tf-pre .dl-h { color: #93c5fd; }
+
+    .trouble-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .trouble-btn {
+        padding: 6px 12px;
+        border-radius: 8px;
+        border: 1px solid #d0d5dd;
+        background: #fff;
+        color: #344054;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .trouble-btn:hover:not(:disabled) { background: #f9fafb; }
+    .trouble-btn:disabled { opacity: .5; cursor: not-allowed; }
+    /* Необратимое — отдельным цветом: `discard` стирает несохранённую работу. */
+    .trouble-btn.danger { color: #b42318; border-color: #f3c0bb; }
+    .trouble-btn.danger:hover:not(:disabled) { background: #fff6f5; }
+
+    .btn-collect {
+        padding: 6px 14px;
+        border: 1px solid #c7d2fe;
+        border-radius: 8px;
+        background: #eef2ff;
+        color: #4338ca;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .btn-collect:hover:not(:disabled) { background: #e0e7ff; }
+    .btn-collect:disabled { color: #9aa4b2; border-color: #e5e7eb; background: #f8fafc; cursor: not-allowed; }
+
     .btn-merge {
         background: #1a7f37; color: #fff; border: none; padding: 6px 14px;
         border-radius: 4px; cursor: pointer; font-size: 12.5px;
@@ -138,6 +348,45 @@
     /* ─── Вкладка «Миграции» ───────────────────────────────────
        Список файлов с состоянием и двумя кнопками: сухой прогон и применение.
        Плотный, но не таблица: у строки два уровня — сам файл и что с ним было. */
+    /* ─── Вкладки страницы ────────────────────────────────────────────────
+       Своих стилей у страницы не было вовсе — вкладки рисовались голыми кнопками.
+       Берём тот же вид, что на остальных страницах админки (`llm.html`): полоса с
+       подчёркиванием активной. Одна и та же сущность на разных страницах должна
+       выглядеть одинаково, иначе человек каждый раз заново ищет, где переключаться. */
+    .page-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 2px solid #e2e8f0;
+        margin: 4px 0 14px;
+        flex-shrink: 0;
+    }
+
+    .page-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 18px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        color: #718096;
+        cursor: pointer;
+        border: none;
+        background: none;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        transition: color .15s, border-color .15s;
+    }
+
+    .page-tab.active { color: #2c3e50; border-bottom-color: #3498db; }
+    .page-tab:hover:not(.active) { color: #4a5568; }
+
+    /* Вкладка помех — красная и в активном состоянии тоже: пока она есть, ни сборка,
+       ни слияние не пройдут, и приглушать это до «просто ещё одной вкладки» нельзя. */
+    .page-tab.tab-trouble { color: #d92d20; }
+    .page-tab.tab-trouble.active { color: #b42318; border-bottom-color: #d92d20; }
+    .page-tab.tab-trouble:hover:not(.active) { color: #b42318; }
+
     .tab-n { font-size: 11px; color: #a0aec0; font-variant-numeric: tabular-nums; }
     .page-tab.active .tab-n { color: inherit; opacity: .75; }
 
@@ -150,6 +399,31 @@
         border-left: 3px solid #e2e8f0; padding-left: 10px;
     }
     .mig-note code { background: #f1f5f9; border-radius: 3px; padding: 0 4px; font-size: 11.5px; }
+
+    /* Раскрытое содержимое миграции: моноширинно и с прокруткой — файл бывает
+       длинным, а вкладка не должна из-за этого уезжать на три экрана. */
+    .mig-toggle { cursor: pointer; }
+    .mig-toggle:hover { text-decoration: underline; }
+    .mig-toggle::before { content: '▸ '; color: #94a3b8; }
+    .mig-toggle.open::before { content: '▾ '; }
+
+    .mig-sql {
+        /* Во всю ширину строки: `.mig-item` — flex с переносом, и базис 100%
+           отправляет блок на собственную строку под кнопками. */
+        flex: 1 0 100%;
+        margin: 8px 0 0;
+        padding: 10px 12px;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 8px;
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-size: 11.5px;
+        line-height: 1.6;
+        max-height: 420px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
 
     .mig-list { display: flex; flex-direction: column; gap: 6px; padding-bottom: 16px; }
     .mig-item {
@@ -193,6 +467,11 @@
         <span class="range" id="diffRange">…</span>
         <span class="subtitle" id="diffStat"></span>
         <button class="btn-reload" id="btnReload" onclick="loadDiff()">Обновить</button>
+        <!-- Сборка идёт перед слиянием: она складывает работу подзадач в одну ветку,
+             где конфликт можно взять руками. Кнопка видна только у задачи с
+             подзадачами — у одной ветки собирать нечего. -->
+        <button class="btn-collect" id="btnCollect" onclick="collectBranches()" style="display:none"
+                title="Собрать ветки подзадач в одну ветку задачи — там, где разбирают конфликт">Собрать ветки</button>
         <button class="btn-merge" id="btnMerge" onclick="mergeBranch()" disabled
                 title="Проверяем, пройдёт ли слияние…">Merge</button>
         <a class="btn-back" href="/admin/task">← к задачам</a>
@@ -208,7 +487,13 @@
     <div class="page-tabs" id="diffTabs">
         <button class="page-tab active" data-pane="diff">Изменения</button>
         <button class="page-tab" data-pane="migration">Миграции <span class="tab-n" id="tabMigrationN"></span></button>
+        <!-- Появляется только когда есть чему мешать: пустая вкладка «Ветки» на
+             здоровой задаче заставляла бы искать проблему там, где её нет. -->
+        <button class="page-tab tab-trouble" data-pane="trouble" id="tabTrouble" style="display:none">
+            Ветки <span class="tab-n" id="tabTroubleN"></span></button>
     </div>
+
+    <div id="paneTrouble" style="display:none"></div>
 
     <div class="layout" id="paneDiff">
         <div class="side">
@@ -342,10 +627,27 @@
         // Про конфликты говорим отдельной плашкой и с перечнем файлов: «кнопка серая»
         // человеку ничего не объясняет, а разбирать конфликт всё равно ему.
         if (merge.conflicts?.length) {
+            // У корневой задачи веток столько, сколько подзадач, и конфликт бывает не
+            // во всех. «Влейте master в ветку» тогда не отвечает на главный вопрос —
+            // в какую именно: имена лежат в `merge.error`, разобранные по веткам,
+            // и раньше на экран не выводились вовсе.
+            const many = String(d.branch || '').includes(',');
+            const where = many
+                ? `<div class="note-sub">Разбор по веткам:<br>`
+                  + esc(String(merge.error || '')).split('; ').map(s => `• ${s}`).join('<br>')
+                  + `</div>`
+                : ` Влейте <b>${esc(d.base)}</b> в <b>${esc(d.branch)}</b> и разберите конфликт `
+                  + `в каталоге подзадачи.`;
             notes.push(`<div class="note note-error">Слияние не пройдёт: git не сведёт сам `
                      + `<b>${merge.conflicts.length}</b> файлов — `
-                     + `<code>${esc(merge.conflicts.slice(0, 10).join('; '))}</code>. `
-                     + `Влейте <b>${esc(d.base)}</b> в ветку и разберите конфликт в каталоге подзадачи.</div>`);
+                     + `<code>${esc(merge.conflicts.slice(0, 10).join('; '))}</code>.`
+                     + where
+                     + (many
+                        ? `<div class="note-sub">Чинить так: в каталоге конфликтной подзадачи `
+                          + `<code>git merge ${esc(d.base)}</code>, разобрать конфликт, закоммитить. `
+                          + `Ветки без конфликта вливаются кнопкой на своей подзадаче.</div>`
+                        : '')
+                     + `</div>`);
         } else if (d.ok && !merge.can_merge && merge.error) {
             notes.push(`<div class="note note-warn">Слияние сейчас недоступно: ${esc(merge.error)}</div>`);
         }
@@ -363,6 +665,12 @@
         const merge = d.merge || {};
         const branch = merge.branch || d.branch || '';
         const merged = d.merged;
+
+        // Сборку показываем задаче с несколькими ветками и только пока она не влита:
+        // у одной ветки собирать нечего, у влитой — уже поздно. Признак — запятая в
+        // списке веток: его собирает сервер из подзадач.
+        const collect = document.getElementById('btnCollect');
+        collect.style.display = (!merged && String(branch).includes(',')) ? '' : 'none';
 
         btn.classList.toggle('merged', !!merged);
         if (merged) {
@@ -397,6 +705,287 @@
         await loadDiff();
     };
 
+    // Помехи в каталогах: пока они есть, ни сборка, ни слияние не пройдут. Показываем
+    // каждую своей карточкой — с веткой, причиной, файлами и выходами.
+    // Разбор помех — не аккордеон, а рабочий экран: слева файл во всю ширину, справа
+    // выбор ветки и файла. Список короткий и постоянный, содержимое длинное и
+    // меняется, — тот же приём, что у журналов задач. Аккордеон здесь не годился:
+    // раскрытое окно выходило в несколько строк, и сравнивать в нём было нечего.
+    let _troubleList = [];
+    let _troublePick = null;   // {id, path} — что показываем слева
+
+    function renderTrouble(list) {
+        _troubleList = list || [];
+        const tab = document.getElementById('tabTrouble');
+        const pane = document.getElementById('paneTrouble');
+        const n = document.getElementById('tabTroubleN');
+
+        tab.style.display = _troubleList.length ? '' : 'none';
+        n.textContent = _troubleList.length ? `(${_troubleList.length})` : '';
+        if (!_troubleList.length) {
+            pane.innerHTML = '';
+            _troublePick = null;
+            // Помеха могла быть разобрана — тогда вкладка исчезает, и оставаться на
+            // ней некуда: возвращаем человека к изменениям.
+            if (document.querySelector('#diffTabs .page-tab.active')?.dataset.pane === 'trouble') migTab('diff');
+            return;
+        }
+
+        // Выбор переживает перезагрузку списка: после действия по файлу страница
+        // перечитывает всё, и сбрасывай мы выбор — человек каждый раз возвращался бы
+        // к пустому экрану. Пропал сам файл (разобрали) — берём первый оставшийся.
+        const all = _troubleFiles();
+        if (!_troublePick || !all.some(f => f.id === _troublePick.id && f.path === _troublePick.path)) {
+            _troublePick = all.length ? {id: all[0].id, path: all[0].path} : null;
+        }
+
+        pane.innerHTML = `<div class="tr-layout">
+            <div class="tr-main" id="trMain"></div>
+            <div class="tr-side">${_troubleSideHtml()}</div>
+        </div>`;
+        _troubleShow();
+    }
+
+    // Плоский список всех файлов всех помех — по нему ищут выбранный и рисуют дерево.
+    function _troubleFiles() {
+        const out = [];
+        for (const x of _troubleList) {
+            const seen = new Set(x.conflicts);
+            for (const f of x.conflicts) out.push({id: x.id, branch: x.branch, path: f, conflict: true});
+            for (const f of x.files) {
+                const path = _pathOf(f);
+                if (!seen.has(path)) out.push({id: x.id, branch: x.branch, path, conflict: false});
+            }
+        }
+        return out;
+    }
+
+    // В `files` строки приходят как из `git status`: «M путь» или просто путь.
+    // Отделяем путь, иначе кнопки уедут в git с кодом состояния вместо имени.
+    function _pathOf(line) {
+        const s = String(line || '').trim();
+        return /^[A-Z?! ]{1,2}\s/.test(s) ? s.replace(/^[A-Z?! ]{1,2}\s+/, '') : s;
+    }
+
+    function _troubleSideHtml() {
+        return _troubleList.map(x => {
+            const why = [];
+            if (x.merging) why.push('незавершённое слияние');
+            if (x.dirty) why.push('несохранённые правки');
+
+            const files = _troubleFiles().filter(f => f.id === x.id).map(f => {
+                const on = _troublePick && _troublePick.id === f.id && _troublePick.path === f.path;
+                const short = f.path.split('/').pop();
+                return `<div class="tr-file${on ? ' on' : ''}" title="${esc(f.path)}"
+                             onclick="troublePick(${f.id}, '${esc(f.path)}')">
+                    <span class="tr-file-name">${esc(short)}</span>
+                    <span class="tr-file-dir">${esc(f.path.split('/').slice(0, -1).join('/'))}</span>
+                    ${f.conflict ? '<span class="tf-badge conflict">конфликт</span>'
+                                 : '<span class="tf-badge">правка</span>'}
+                </div>`;
+            }).join('') || '<div class="empty-msg">файлов нет</div>';
+
+            // Действия по ветке целиком — под её файлами: они про каталог, а не про
+            // выбранный файл, и путать их с точечными нельзя.
+            const acts = (x.merging
+                    ? `<button class="tf-btn" onclick="troubleFix(${x.id},'commit',this)">Закоммитить разбор</button>`
+                      + `<button class="tf-btn danger" onclick="troubleFix(${x.id},'abort',this)">Отменить слияние</button>`
+                    : `<button class="tf-btn" onclick="troubleFix(${x.id},'commit',this)">Закоммитить всё</button>`)
+                + `<button class="tf-btn danger" onclick="troubleFix(${x.id},'discard',this)">Отбросить правки</button>`;
+
+            return `<div class="tr-branch">
+                <div class="tr-branch-head">
+                    <span class="trouble-branch">${esc(x.branch)}</span>
+                    <span class="trouble-why">${esc(why.join(' и '))}</span>
+                </div>
+                <div class="tr-branch-dir">${esc(x.dir)}</div>
+                <div class="tr-files">${files}</div>
+                <div class="trouble-actions">${acts}</div>
+            </div>`;
+        }).join('');
+    }
+
+    window.troublePick = function(id, path) {
+        _troublePick = {id, path};
+        document.querySelector('.tr-side').innerHTML = _troubleSideHtml();
+        _troubleShow();
+    };
+
+    async function _troubleShow() {
+        const main = document.getElementById('trMain');
+        if (!main) return;
+        if (!_troublePick) { main.innerHTML = '<div class="empty-msg">Выберите файл справа</div>'; return; }
+
+        const {id, path} = _troublePick;
+        const meta = _troubleFiles().find(f => f.id === id && f.path === path) || {};
+        main.innerHTML = `<div class="tr-main-head">
+                <span class="tr-main-path">${esc(path)}</span>
+                <!-- Прыжки по изменениям: в файле на тысячу строк правки разбросаны,
+                     и искать их прокруткой — то же, что читать весь файл. -->
+                <span class="tr-nav">
+                    <button class="tr-nav-btn" onclick="sbsJump(-1)" title="Предыдущее изменение">↑</button>
+                    <span class="tr-nav-at" id="sbsAt">—</span>
+                    <button class="tr-nav-btn" onclick="sbsJump(1)" title="Следующее изменение">↓</button>
+                </span>
+                <span class="tr-main-acts" id="trActs"></span>
+            </div>
+            <div class="tr-main-body"><div class="empty-msg">Загрузка…</div></div>`;
+
+        const acts = meta.conflict
+            ? `<button class="tf-btn" onclick="troubleFile(${id},'${esc(path)}','ours',this)"
+                       title="Оставить как в собираемой ветке">← взять нашу</button>`
+              + `<button class="tf-btn" onclick="troubleFile(${id},'${esc(path)}','theirs',this)"
+                       title="Взять из вливаемой ветки">взять их →</button>`
+            : `<button class="tf-btn danger" onclick="troubleFile(${id},'${esc(path)}','restore',this)"
+                       title="Вернуть файл к последнему коммиту — правка пропадёт">откатить файл</button>`;
+        document.getElementById('trActs').innerHTML = acts;
+
+        const body = main.querySelector('.tr-main-body');
+        _sbsAt = -1;
+        try {
+            const d = await getData(`/task/${taskId}/worktree/trouble/${id}`
+                                  + `?path=${encodeURIComponent(path)}`);
+            const f = (d.files || [])[0];
+            if (!f) { body.innerHTML = '<div class="empty-msg">Файл уже разобран</div>'; return; }
+
+            // И конфликт, и правка показываются разницей: два полных файла рядом не
+            // отвечают на вопрос «чем они отличаются» — в `task_state.py` стороны
+            // были по 37 000 символов, различий 175 строк, и найти их глазами
+            // невозможно. Разницу сторон считает git (`diff blob blob`).
+            body.innerHTML = sideBySide(
+                f.diff,
+                f.conflict ? ['наша — в ветке сборки', 'их — вливаемая ветка']
+                           : ['origin — как в последнем коммите', 'с правками']);
+            const chg = body.querySelectorAll('.sbs-chg').length;
+            const at = document.getElementById('sbsAt');
+            if (at) at.textContent = chg ? `0 из ${chg}` : 'нет изменений';
+        } catch (e) {
+            body.innerHTML = `<div class="empty-msg">Не загрузилось: ${esc(e.message || e)}</div>`;
+        }
+    }
+
+    // Unified diff в две колонки: слева файл как в последнем коммите, справа — с
+    // правками. Сплошной `-`/`+` читается плохо: чтобы понять, что изменилось в
+    // строке, глаз должен сам найти её пару где-то ниже. Рядом это видно сразу.
+    //
+    // Разбираем на странице, а не на сервере: unified diff у нас уже есть, и второй
+    // формат ради того же содержимого только добавил бы, чему разойтись.
+    function sideBySide(text, heads) {
+        const src = String(text || '');
+        if (!src.trim()) return '<div class="empty-msg">Изменений нет</div>';
+
+        const rows = [];
+        let ln = 0, rn = 0, del = [], add = [];
+
+        // Накопленные `-` и `+` сопоставляем попарно: правка строки — это её удаление
+        // и добавление подряд, и показать их надо друг напротив друга. Остаток, если
+        // сторон неравное число, уходит против пустоты — так бывает при переносе
+        // блока, когда удаление и добавление стоят в разных местах файла.
+        const flush = () => {
+            for (let i = 0; i < Math.max(del.length, add.length); i++) {
+                rows.push({ l: del[i], r: add[i],
+                            lc: del[i] ? 'd' : '', rc: add[i] ? 'a' : '' });
+            }
+            del = []; add = [];
+        };
+
+        for (const line of src.split('\n')) {
+            if (line.startsWith('@@')) {
+                flush();
+                const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)/);
+                if (m) { ln = +m[1]; rn = +m[2]; }
+                rows.push({ hunk: line });
+                continue;
+            }
+            // Служебные строки заголовка (---, +++, diff, index) в колонки не идут:
+            // они про файл целиком, а не про его строки.
+            if (/^(diff |index |--- |\+\+\+ |new file|deleted file|similarity |rename )/.test(line)) continue;
+
+            if (line[0] === '-')      { del.push({ n: ln++, text: line.slice(1) }); }
+            else if (line[0] === '+') { add.push({ n: rn++, text: line.slice(1) }); }
+            else {
+                flush();
+                const body = line.startsWith(' ') ? line.slice(1) : line;
+                rows.push({ l: { n: ln++, text: body }, r: { n: rn++, text: body } });
+            }
+        }
+        flush();
+
+        const cell = (side, cls) => side
+            ? `<td class="sbs-n">${side.n}</td><td class="sbs-t ${cls ? 'sbs-' + cls : ''}">${esc(side.text)}</td>`
+            : '<td class="sbs-n sbs-empty"></td><td class="sbs-t sbs-empty"></td>';
+
+        // Строку с изменением помечаем: по этой метке стрелки в шапке прыгают от
+        // правки к правке — иначе в файле на тысячу строк их искать прокруткой.
+        const body = rows.map(r => r.hunk
+            ? `<tr class="sbs-hunk"><td colspan="4">${esc(r.hunk)}</td></tr>`
+            : `<tr${(r.lc || r.rc) ? ' class="sbs-chg"' : ''}>${cell(r.l, r.lc)}${cell(r.r, r.rc)}</tr>`).join('');
+
+        const [hl, hr] = heads || ['origin — как в последнем коммите', 'с правками'];
+
+        return `<div class="sbs-wrap">
+            <div class="sbs-heads"><span>${esc(hl)}</span><span>${esc(hr)}</span></div>
+            <table class="sbs" id="sbsTable"><tbody>${body}</tbody></table>
+        </div>`;
+    }
+
+    // Текущее изменение при переходе стрелками. Своё на каждый показанный файл:
+    // переключили файл — счёт начинается заново.
+    let _sbsAt = -1;
+
+    window.sbsJump = function(step) {
+        const rows = [...document.querySelectorAll('#sbsTable .sbs-chg')];
+        const at = document.getElementById('sbsAt');
+        if (!rows.length) { if (at) at.textContent = 'нет изменений'; return; }
+
+        // По кругу: дойдя до конца, следующее нажатие возвращает к первому — иначе
+        // кнопка просто перестаёт отвечать, и непонятно, кончился файл или сломалось.
+        _sbsAt = (_sbsAt + step + rows.length) % rows.length;
+        const row = rows[_sbsAt];
+        rows.forEach(r => r.classList.remove('sbs-here'));
+        row.classList.add('sbs-here');
+        row.scrollIntoView({block: 'center', behavior: 'smooth'});
+        if (at) at.textContent = `${_sbsAt + 1} из ${rows.length}`;
+    };
+
+    window.troubleFile = async function(subtaskId, path, action, btn) {
+        if (action === 'restore'
+            && !confirm(`Вернуть ${path} к последнему коммиту?\n\nПравка пропадёт — это необратимо.`)) return;
+
+        btn?.closest('.tr-main-acts')?.querySelectorAll('button').forEach(b => b.disabled = true);
+        try {
+            await postData(`/task/${taskId}/worktree/file`, { subtask_id: subtaskId, path, action });
+        } catch (e) {
+            alert(e.message || 'Не вышло');
+        }
+        await loadDiff();
+    };
+
+    window.collectBranches = async function() {
+        const btn = document.getElementById('btnCollect');
+        btn.disabled = true;
+        try {
+            const r = await postData(`/task/${taskId}/worktree/collect`, {});
+            const lines = [];
+            if (r.merged?.length) lines.push(`Собрано в ${r.branch}: ${r.merged.join(', ')}`);
+            if (r.skipped?.length) lines.push(`Уже было: ${r.skipped.join(', ')}`);
+            if (r.conflicts?.length) {
+                // Конфликт — это результат, а не отказ: работа сложена в одном дереве,
+                // и разбирать её человеку теперь есть где. Путь говорим первым делом.
+                lines.push(`\nКонфликт: ${r.conflicts.slice(0, 10).join('; ')}`);
+                lines.push(`\nРазберите в каталоге:\n${r.dir}\n`
+                         + `git status → правка → git add → git commit, затем «Собрать ветки» снова.`);
+            } else if (r.ok) {
+                lines.push(`\nКонфликтов нет. Ветка ${r.branch} готова: в ней работа всех подзадач.`);
+            }
+            alert(lines.join('\n') || 'Собирать нечего');
+        } catch (e) {
+            alert(e.message || 'Сборка не прошла');
+        }
+        btn.disabled = false;
+        await loadDiff();
+    };
+
     window.loadDiff = async function() {
         const btn = document.getElementById('btnReload');
         const wrap = document.getElementById('diffWrap');
@@ -417,6 +1006,7 @@
             document.getElementById('diffStat').textContent = d.stat || '';
             document.getElementById('diffNotes').innerHTML = renderNotes(d);
             renderMerge(d);
+            renderTrouble(d.trouble || []);
 
             if (!d.ok) {
                 wrap.innerHTML = `<div class="note note-error">${esc(d.error)}</div>`;
@@ -447,6 +1037,7 @@
             wrap.innerHTML = `<div class="note note-error">Ошибка загрузки: ${esc(e.message)}</div>`;
             // Ответа нет — состояние слияния неизвестно, и кнопка обязана молчать.
             renderMerge({merge: {error: 'разница не загрузилась'}});
+            renderTrouble([]);
         } finally {
             btn.disabled = false;
         }
@@ -467,6 +1058,7 @@
         });
         document.getElementById('paneDiff').style.display = name === 'diff' ? '' : 'none';
         document.getElementById('paneMigration').style.display = name === 'migration' ? '' : 'none';
+        document.getElementById('paneTrouble').style.display = name === 'trouble' ? '' : 'none';
         if (name === 'migration') migLoad();
     }
 
@@ -505,8 +1097,11 @@
                 : lg.status === 'dry' ? `проверена ${migWhen(lg.created_at)} · затронет ${lg.rows_affected}`
                 : `ошибка ${migWhen(lg.created_at)}`;
 
+            // Имя — кнопка раскрытия: решение «применять или нет» принимают по
+            // содержимому, а имя и число команд о нём не говорят ничего.
             return `<div class="mig-item ${cls}">`
-                 + `<span class="mig-name">${esc(m.name)}</span>`
+                 + `<span class="mig-name mig-toggle" onclick="migToggle('${esc(m.name)}', this)"`
+                 + ` title="Показать содержимое файла">${esc(m.name)}</span>`
                  + `<span class="mig-meta">${m.statements} команд · ${migSize(m.bytes)}</span>`
                  + (m.ddl ? '<span class="mig-ddl" title="Транзакция такое не откатит — сухой прогон недоступен">DDL</span>' : '')
                  + (moved ? '<span class="mig-ddl" title="Файл изменён после прогона">файл менялся</span>' : '')
@@ -514,9 +1109,19 @@
                  + (m.ddl ? '' : `<button class="mig-btn" onclick="migRun('${esc(m.name)}', true, this)">Проверить</button>`)
                  + `<button class="mig-btn apply" onclick="migRun('${esc(m.name)}', false, this)">Применить</button>`
                  + (lg && lg.error ? `<div class="mig-error">${esc(lg.error)}</div>` : '')
+                 + `<pre class="mig-sql" data-name="${esc(m.name)}" style="display:none">`
+                 + `${esc(m.sql || '')}${m.sql_cut ? '\n\n… файл длиннее, показано начало' : ''}</pre>`
                  + `</div>`;
         }).join('');
     }
+
+    window.migToggle = function(name, el) {
+        const pre = document.querySelector(`.mig-sql[data-name="${CSS.escape(name)}"]`);
+        if (!pre) return;
+        const open = pre.style.display === 'none';
+        pre.style.display = open ? '' : 'none';
+        el.classList.toggle('open', open);
+    };
 
     window.migRun = async function (name, dry, btn) {
         if (!dry && !confirm(`Применить ${name} к базе? Изменение данных необратимо — снимите бэкап, если его нет.`)) return;

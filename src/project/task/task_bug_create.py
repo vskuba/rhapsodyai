@@ -8,12 +8,12 @@ import hashlib
 import json
 
 from src.project.task.task_bug_format import (
-    task_bug_run_description,
-    task_bug_run_title,
-    task_bug_step_description,
-    task_bug_step_title,
+    task_bug_format_run_description,
+    task_bug_format_run_title,
+    task_bug_format_step_description,
+    task_bug_format_step_title,
 )
-from src.project.task.task_bug_project_map import task_bug_project_for_workflow
+from src.project.task.task_bug_project_map import task_bug_project_map_for_workflow
 
 
 async def task_bug_create(error_data: dict) -> int | None:
@@ -36,12 +36,12 @@ async def task_bug_create(error_data: dict) -> int | None:
 
     # 1. Формируем title / description
     if result_type == 'run':
-        title = task_bug_run_title(
+        title = task_bug_format_run_title(
             workflow_title=workflow_title,
             error=error,
             duration_ms=error_data.get('duration_ms'),
         )
-        description = task_bug_run_description(
+        description = task_bug_format_run_description(
             workflow_title=workflow_title,
             agent_name=error_data.get('agent_name'),
             error=error,
@@ -51,13 +51,13 @@ async def task_bug_create(error_data: dict) -> int | None:
         )
         trace_meta = json.dumps(_build_run_meta(error_data), ensure_ascii=False)
     else:
-        title = task_bug_step_title(
+        title = task_bug_format_step_title(
             workflow_title=workflow_title,
             step_title=error_data.get('step_title') or '',
             step_type=error_data.get('step_type') or '',
             error=error,
         )
-        description = task_bug_step_description(
+        description = task_bug_format_step_description(
             workflow_title=workflow_title,
             step_title=error_data.get('step_title') or '',
             step_type=error_data.get('step_type') or '',
@@ -69,7 +69,7 @@ async def task_bug_create(error_data: dict) -> int | None:
 
     # 2. Определяем project_id. Ноль из конфигурации значит «без проекта» — в колонку
     # он идёт как NULL, иначе строка ссылалась бы на несуществующий проект №0.
-    project_id = task_bug_project_for_workflow(workflow_id) or None
+    project_id = task_bug_project_map_for_workflow(workflow_id) or None
 
     # 3. Вставляем задачу
     return await _task_bug_insert(

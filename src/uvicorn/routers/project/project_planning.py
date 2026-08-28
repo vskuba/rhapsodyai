@@ -18,19 +18,19 @@ router = APIRouter()
 
 
 @router.get('/planning/project/list')
-async def project_list(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_planning_list(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     repo = PlanningProjectRepository()
     return {'result': await repo.find_by({}, 'position ASC, id DESC')}
 
 
 @router.get('/planning/project/{project_id}')
-async def project_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_planning_get(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     repo = PlanningProjectRepository()
     return {'result': await repo.find(project_id)}
 
 
 @router.post('/planning/project')
-async def project_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
+async def project_planning_create(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     repo = PlanningProjectRepository()
     title = str(data.get('title') or '').strip()
     idea = str(data.get('idea') or '').strip()
@@ -57,7 +57,7 @@ async def project_create(request: Request, data: dict, user=Depends(AuthChecker(
 
 
 @router.put('/planning/project/reorder')
-async def project_reorder(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def project_planning_reorder(request: Request, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     ids = data.get('ids') or []
     if not ids or not isinstance(ids, list):
         return {'error': 'ids required'}
@@ -68,7 +68,7 @@ async def project_reorder(request: Request, data: dict, user=Depends(AuthChecker
 
 
 @router.put('/planning/project/{project_id}')
-async def project_update(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def project_planning_update(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     repo = PlanningProjectRepository()
     update = {}
     if 'title' in data:
@@ -83,7 +83,7 @@ async def project_update(request: Request, project_id: int, data: dict, user=Dep
 
 
 @router.post('/planning/project/{project_id}/retry')
-async def project_retry(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def project_planning_retry(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Полный сброс: удаляет все фазы и документы проекта, запускает с нуля."""
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -109,7 +109,7 @@ async def project_retry(request: Request, project_id: int, user=Depends(AuthChec
 
 
 @router.post('/planning/project/{project_id}/phase/{phase}/retry')
-async def project_phase_retry(
+async def project_planning_phase_retry(
     request: Request, project_id: int, phase: str,
     user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))
 ):
@@ -161,7 +161,7 @@ async def project_phase_retry(
 
 
 @router.delete('/planning/project/{project_id}')
-async def project_delete(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_DELETE]))):
+async def project_planning_delete(request: Request, project_id: int, user=Depends(AuthChecker([AuthPermission.PLANNING_DELETE]))):
     import shutil
     async with mysql_get_db_async() as db:
         await db.execute("DELETE FROM project_planning_phase    WHERE project_id = %s", (project_id,))
@@ -175,7 +175,7 @@ async def project_delete(request: Request, project_id: int, user=Depends(AuthChe
 
 
 @router.get('/planning/cronicle/schedule')
-async def planning_cronicle_schedule(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def project_planning_cronicle_schedule(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Возвращает минуты запуска каждой planning-фазы из файла расписания Cronicle."""
     try:
         with open(_CRONICLE_SCHEDULE_FILE) as f:

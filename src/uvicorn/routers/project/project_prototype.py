@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 @router.post('/planning/prototype/{project_id}/refine')
-async def planning_prototype_refine(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def project_prototype_planning_prototype_refine(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Дорабатывает HTML-страницу прототипа по запросу пользователя через LLM."""
     from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
     from src.ai.ai_llm import ai_llm_node_get
@@ -120,7 +120,7 @@ async def planning_prototype_refine(request: Request, project_id: int, data: dic
 
 
 @router.post('/planning/prototype/{project_id}/patch')
-async def planning_prototype_patch(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+async def project_prototype_planning_prototype_patch(request: Request, project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """Сохраняет HTML страницы прототипа напрямую (без LLM) — для delete/move операций."""
     page_name = str(data.get('page_name') or 'index.html').strip('/')
     html = str(data.get('html') or '').strip()

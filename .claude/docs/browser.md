@@ -607,7 +607,7 @@ curl -s -X POST http://127.0.0.1:8011/api/browser/scenario/1/run \
 роутера в `main_uvicorn.py` — он перекрывает настройку отдельных маршрутов.
 
 Права не ослаблены: обе ручки закрыты `BROWSER_VIEW`. Авторизация — либо кука сессии
-админки, либо заголовок `X-API-KEY` с токеном из `user_access_token` (`get_current_user`);
+админки, либо заголовок `X-API-KEY` с токеном из `user_access_token` (`auth_get_current_user`);
 без того и другого — `401`.
 
 ## 6. Снимок страницы для LLM

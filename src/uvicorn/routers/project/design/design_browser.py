@@ -14,7 +14,7 @@ _BROWSER_TTL = 300
 
 
 @router.get('/design/browser/history/{project_id}')
-async def planning_browser_history_get(request: Request, project_id: int,
+async def design_browser_planning_browser_history_get(request: Request, project_id: int,
                                        user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -27,7 +27,7 @@ async def planning_browser_history_get(request: Request, project_id: int,
 
 
 @router.post('/design/browser/navigate')
-async def planning_browser_navigate(request: Request, data: dict,
+async def design_browser_planning_browser_navigate(request: Request, data: dict,
                                     user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Загружает URL в Playwright-браузере и возвращает скриншот."""
     url = str(data.get('url') or '').strip()
@@ -53,7 +53,7 @@ async def planning_browser_navigate(request: Request, data: dict,
 
 
 @router.post('/design/browser/click')
-async def planning_browser_click(request: Request, data: dict,
+async def design_browser_planning_browser_click(request: Request, data: dict,
                                  user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Кликает по координатам в браузере (навигация по ссылкам) и возвращает скриншот."""
     action = data.get('action', '')
@@ -93,7 +93,7 @@ async def planning_browser_click(request: Request, data: dict,
 
 
 @router.post('/design/browser/pick')
-async def planning_browser_pick(request: Request, data: dict,
+async def design_browser_planning_browser_pick(request: Request, data: dict,
                                 user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Извлекает HTML+CSS элемента по координатам выделения (в пикселях скриншота 1280×800)."""
     x, y = int(data.get('x', 0)), int(data.get('y', 0))
@@ -109,7 +109,7 @@ async def planning_browser_pick(request: Request, data: dict,
 
 
 @router.post('/design/browser/close')
-async def planning_browser_close(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+async def design_browser_planning_browser_close(request: Request, user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
     """Закрывает браузерную сессию пользователя."""
     await _browser_session_close(user.user_id)
     return {'result': 'ok'}

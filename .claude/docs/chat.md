@@ -58,7 +58,7 @@
 
 ## 6. ⚠ `/chat/voice` без авторизации
 
-`voice_to_text` не имеет `Depends(AuthChecker)` и зарегистрирован с
+`chat_voice_to_text` не имеет `Depends(AuthChecker)` и зарегистрирован с
 `include_in_schema=False` — эндпоинт принимает любой wav и возвращает текст,
 проверки нет. Временный файл `temp_{filename}.wav` в рабочей папке (не
 `tempfile.mkstemp`) — см. грабли в `stt.md` про имена из загруженных файлов.

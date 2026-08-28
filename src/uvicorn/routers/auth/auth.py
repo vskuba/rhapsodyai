@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.post("/auth/guest")
-async def guest_login(request: Request):
+async def auth_guest_login(request: Request):
     """
     Анонимная guest-сессия для публичных PWA (например /play/detective) - без
     формы логина. Идемпотентно: если в сессии уже есть валидный user_id,
@@ -51,7 +51,7 @@ async def guest_login(request: Request):
 
 
 @router.post("/auth/login")
-async def login(request: Request, data: dict):
+async def auth_login(request: Request, data: dict):
     username = data.get("username")
     password = data.get("password")
 
@@ -98,13 +98,13 @@ async def login(request: Request, data: dict):
 
 
 @router.post("/auth/logout")
-async def logout(request: Request):
+async def auth_logout(request: Request):
     request.session.clear()
     return {"message": "Сессия успешно завершена."}
 
 
 @router.get("/auth/me")
-async def me(request: Request):
+async def auth_me(request: Request):
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -124,7 +124,7 @@ async def me(request: Request):
 
 
 @router.get("/auth/me/languages")
-async def me_languages(request: Request):
+async def auth_me_languages(request: Request):
     """Языки, доступные текущему пользователю по его нодам, и его текущий выбор."""
     user_id = request.session.get("user_id")
     if not user_id:
@@ -139,7 +139,7 @@ async def me_languages(request: Request):
 
 
 @router.put("/auth/me/password")
-async def update_me_password(request: Request, data: dict):
+async def auth_update_me_password(request: Request, data: dict):
     """Смена пароля текущим пользователем: требует действующий пароль."""
     user_id = request.session.get("user_id")
     if not user_id:
@@ -169,7 +169,7 @@ async def update_me_password(request: Request, data: dict):
 
 
 @router.put("/auth/me")
-async def update_me(request: Request, data: dict):
+async def auth_update_me(request: Request, data: dict):
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")

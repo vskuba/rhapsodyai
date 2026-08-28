@@ -40,7 +40,7 @@
 
 ## 3. Настройки внутри
 
-`faster_whisper_transcribe()` получил параметры `model_name`, `language`,
+`faster_whisper_model_transcribe()` получил параметры `model_name`, `language`,
 `beam_size`; умолчания прежние, старые вызовы работают как работали.
 
 * **язык задаётся явно** (`ru`): автоопределение гоняет модель по началу каждого

@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { loadConfig } from './config.js';
 
-const PAGE_TITLES = { events: 'События', claude: 'Claude', chat: 'Чат', plans: 'Планы' };
+const PAGE_TITLES = { events: 'События', claude: 'Claude', tasks: 'Задачи', plans: 'Планы' };
 
 const tg = window.Telegram?.WebApp;
 
@@ -73,12 +73,11 @@ export function setSidebarPlanMode(isPlanOpen) {
 }
 
 export function updateInputBarsVisibility() {
-    const { chat, claude, plan, planCreate } = _inputBars;
+    const { claude, plan, planCreate } = _inputBars;
     const tab = state.currentTab;
 
-    const isChatTab = tab === 'chat';
-    chat.bar.classList.toggle('chat-visible', isChatTab);
-    chat.progress.classList.toggle('chat-visible', isChatTab);
+    // Вкладка задач своего input bar не имеет: создание задач остаётся админке,
+    // здесь только чтение и кнопки над карточкой.
 
     const isClaudeOpen = tab === 'claude' && state.claude.sessionUuid !== null;
     claude.bar.classList.toggle('chat-visible', isClaudeOpen);

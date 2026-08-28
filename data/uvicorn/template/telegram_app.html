@@ -32,7 +32,7 @@
                         <circle cx="12" cy="12" r="2.4" fill="#D97757"/>
                     </svg>
                 </button>
-                <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
+                <button class="icon-btn" id="tabBtnTasks" data-tab="tasks" title="Задачи">✅</button>
                 <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
                 <button class="icon-btn" id="dasboardRemote" title="Открыть сайт">🌐</button>
                 <button class="icon-btn" id="dasboardLocal" title="Открыть сайт">💻</button>
@@ -70,8 +70,12 @@
                     <div class="chat-messages" id="claudeMessages" style="display:none;"></div>
                 </div>
 
-                <div class="tab-view" id="tab-chat">
-                    <div class="chat-messages" id="chatMessages"></div>
+                <div class="tab-view" id="tab-tasks">
+                    <div class="tasks-list-view" id="tasksListView"></div>
+                    <div class="tasks-detail-view" id="tasksDetailView" style="display:none;">
+                        <div class="task-detail-title" id="taskDetailTitle"></div>
+                        <div class="task-detail-body" id="taskDetailBody"></div>
+                    </div>
                 </div>
 
                 <div class="tab-view" id="tab-plans">

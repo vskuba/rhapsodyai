@@ -23,7 +23,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_variables_global_get
 from src.auth.auth import AuthChecker
 from src.auth.auth_session import AuthSession
-from src.faster_whisper.faster_whisper_model import faster_whisper_transcribe
+from src.faster_whisper.faster_whisper_model import faster_whisper_model_transcribe
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.user_repository import UserRepository
 
@@ -44,7 +44,7 @@ class ChatMessagesJsonRequest(BaseModel):
 
 
 @router.post("/chat/ask")
-async def ask_ai(
+async def chat_ask_ai(
         request: Request,
         json_request: ChatAskJsonRequest,
         db=Depends(mysql_get_db_async),
@@ -245,7 +245,7 @@ async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest,
 
 
 @router.post("/chat/voice", include_in_schema=False)
-async def voice_to_text(file: UploadFile = File(...)):
+async def chat_voice_to_text(file: UploadFile = File(...)):
     temp_file = f"temp_{file.filename}.wav"
 
     # Асинхронно читаем и записываем
@@ -253,7 +253,7 @@ async def voice_to_text(file: UploadFile = File(...)):
     with open(temp_file, "wb") as buffer:
         buffer.write(content)
 
-    text = await faster_whisper_transcribe(temp_file)
+    text = await faster_whisper_model_transcribe(temp_file)
 
     os.remove(temp_file)
 

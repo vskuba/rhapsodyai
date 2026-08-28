@@ -6,7 +6,7 @@ router = APIRouter()
 
 
 @router.post("/cronjob")
-async def default(json_request: CronjobJsonRequest):
+async def cronjob_default(json_request: CronjobJsonRequest):
     result = await Cronjob(json_request).execute()
 
     if result.status == "error":
