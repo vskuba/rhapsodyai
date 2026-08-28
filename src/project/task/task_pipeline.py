@@ -152,7 +152,8 @@ from src.tool.project.task_worktree_state import task_worktree_state
 from src.project.task.task_worktree import (task_worktree_base_branch,
                                             task_worktree_ensure,
                                             task_worktree_git,
-                                            task_worktree_path)
+                                            task_worktree_path,
+                                            task_worktree_prune)
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_parallel import (
     TASK_SETTING_PARALLEL_DEFAULT,
@@ -230,6 +231,12 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
     # целью, круг которой не оставил кода, ждать очереди не должна — ей в этой
     # очереди делать нечего, пока охват не переразложат.
     stats['replanned'] = await _subtasks_replan_stuck()
+
+    # Каталоги, которым больше некому принадлежать. Тем же местом и тем же правилом,
+    # что и возврат брошенных захватов: уборка, которую надо помнить, не делается.
+    # Ошибку глушим — тик не должен вставать из-за не снявшейся папки.
+    with suppress(Exception):
+        stats['worktrees_pruned'] = await _worktrees_prune()
 
     for _ in range(max(1, int(max_actions))):
         action = await _action_claim(worker)
@@ -1236,6 +1243,42 @@ async def _subtasks_goals_finish() -> int:
         closed += 1
 
     return closed
+
+
+async def _worktrees_prune() -> int:
+    """
+    Снять каталоги подзадач, которым больше некому принадлежать. Returns: снятых.
+
+    Каталоги убираются в двух штатных местах — при удалении задачи и после слияния
+    кнопкой. Любой шаг в сторону оставляет папку: задачу удалили запросом мимо ручки,
+    ветку влили руками, снятие отказало из-за правок и никто не вернулся. Живьём на
+    рабочей установке скопилось пять таких, три из них — от задач, которых уже нет:
+    по списку каталогов стало не видно, что в работе.
+
+    Решает, что снимать, `task_worktree_prune`: строки задачи нет либо задача
+    закрыта и её ветка целиком в главной. Ветку не трогаем никогда — по ней работает
+    и просмотр диффа, и кнопка слияния, так что снятый каталог ничего не отнимает.
+
+    Ходим по проектам с известным каталогом: у задач без проекта своего чекаута нет.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT id, work_dir FROM project WHERE COALESCE(work_dir, '') <> ''")
+        projects = await db.fetchall() or []
+        await db.execute('SELECT id, project_id, pipeline_state FROM project_task')
+        tasks = await db.fetchall() or []
+
+    by_project: dict[int, dict] = {}
+    for task in tasks:
+        by_project.setdefault(int(task.get('project_id') or 0), {})[int(task['id'])] = \
+            task.get('pipeline_state')
+
+    total = 0
+    for project in projects:
+        result = await task_worktree_prune(str(project['work_dir']),
+                                           by_project.get(int(project['id']), {}))
+        total += len(result.get('removed') or [])
+
+    return total
 
 
 async def _subtasks_replan_stuck() -> int:

@@ -82,6 +82,11 @@ TASK_WORKTREE_MERGE_DIR = '_merge'
 # где никакого `.gitconfig` нет — без подписи git отказывается коммитить вовсе.
 TASK_WORKTREE_MERGE_IDENTITY = ('task pipeline', 'task-pipeline@local')
 
+# Состояния, после которых задача уже ничего не делает. Каталог такой задачи
+# нужен только до слияния ветки; повторяем список `task_depend`, а не ссылаемся
+# на него, чтобы `task_worktree` не тянул за собой соседний модуль ради кортежа.
+TASK_WORKTREE_TERMINAL_STATES = ('done', 'no_code_for_testing')
+
 
 def task_worktree_branch(subtask_id) -> str:
     """Имя ветки подзадачи. Нет номера — нет и ветки, возвращаем пустую строку."""
@@ -821,6 +826,87 @@ async def task_worktree_fix(repo_dir: str, task_id, action: str, message: str = 
     return result
 
 
+async def task_worktree_prune(repo_dir: str, task_states: dict) -> dict:
+    """
+    Снять каталоги, которым больше некому принадлежать.
+
+    Args:
+        repo_dir: каталог основного чекаута проекта.
+        task_states: `{номер: pipeline_state}` по **существующим** строкам задач.
+            Чего в словаре нет — того нет и в базе.
+
+    Returns:
+        `{'removed': [номера], 'kept': [{'id', 'why'}]}` — что снято и почему
+        остальное осталось. Второе важнее первого: молчаливая уборка не даёт понять,
+        отчего каталог держится месяцами.
+
+    **Зачем это вообще.** Каталоги снимаются в двух местах — при удалении задачи
+    (`task_worktree_remove_tree`) и после слияния кнопкой (`task_worktree_merge`).
+    Оба пути штатные, и каталог переживает любой шаг в сторону: задачу удалили
+    запросом мимо ручки, ветку влили руками через `git merge`, снятие отказало из-за
+    несохранённых правок и никто не вернулся. Каждый такой случай оставляет каталог
+    рабочей копии, и они копятся: на рабочей установке набралось пять, три из них — от
+    задач, которых в базе уже нет. Дело не в занятом месте (общее у них по ссылкам, на
+    пятерых вышло 15 МБ), а в том, что по каталогам больше нельзя понять, что идёт в
+    работе. Отдельная команда уборки делу не помогает: её надо вспомнить.
+
+    **Снимаем только в двух случаях, и оба безопасны.**
+
+    Первый — строки задачи в базе нет. Каталог не принадлежит никому, показать его
+    негде: страница задач строится от списка задач.
+
+    Второй — задача терминальна (`done`, `no_code_for_testing`) и её ветка уже целиком
+    в главной. Тогда в каталоге нет ничего, чего нет в главной ветке.
+
+    Незавершённую задачу не трогаем, даже если каталог выглядит заброшенным: круг
+    мог оборваться и продолжиться следующим тиком, а каталог — его рабочее место.
+    Терминальную с невлитой веткой тоже: её ещё будут смотреть и вливать.
+
+    **Ветку не удаляем никогда** — ни здесь, ни в `task_worktree_remove`. Всё, что
+    сделала задача, остаётся в ней: `/admin/task/diff` сравнивает `base...branch`
+    из основного чекаута, кнопка слияния работает оттуда же. То есть снятый каталог
+    не мешает ни посмотреть работу, ни влить её — теряются только служебные файлы
+    (`.task-log.md`, `.task-spec.md`), которые и так живут ровно столько, сколько
+    каталог.
+
+    **Несохранённые правки — стоп.** `task_worktree_remove` без `force` каталог с
+    ними не снимает, и мы его не форсируем: уборщик работает сам, без человека, и
+    права стирать чью-то незакоммиченную работу у него нет. Такой каталог попадёт в
+    `kept` с причиной, и человек снимет его руками.
+    """
+    base_dir = os.path.join(repo_dir, TASK_WORKTREE_BASE_DIR)
+    if not os.path.isdir(base_dir):
+        return {'removed': [], 'kept': []}
+
+    base = await task_worktree_base_branch(repo_dir)
+    removed, kept = [], []
+
+    for name in sorted(os.listdir(base_dir)):
+        subtask_id = _dir_task_id(name)
+        if not subtask_id:
+            continue
+
+        state = task_states.get(subtask_id)
+        if state is None:
+            why = 'строки задачи нет'
+        elif str(state) not in TASK_WORKTREE_TERMINAL_STATES:
+            kept.append({'id': subtask_id, 'why': f'задача в работе ({state})'})
+            continue
+        elif not await _branch_merged(repo_dir, task_worktree_branch(subtask_id), base):
+            kept.append({'id': subtask_id, 'why': 'ветка не влита в главную'})
+            continue
+        else:
+            why = f'задача закрыта ({state}), ветка влита'
+
+        if await task_worktree_remove(repo_dir, subtask_id):
+            logger_info(f'task_worktree: убран каталог подзадачи {subtask_id} — {why}')
+            removed.append(subtask_id)
+        else:
+            kept.append({'id': subtask_id, 'why': 'не снялся: несохранённые правки'})
+
+    return {'removed': removed, 'kept': kept}
+
+
 async def task_worktree_list(repo_dir: str) -> list[dict]:
     """Каталоги репозитория: `[{'path', 'branch', 'head'}]`, включая основной."""
     code, out = await task_worktree_git(repo_dir, 'worktree', 'list', '--porcelain')
@@ -1265,6 +1351,40 @@ async def _identity(cwd: str) -> tuple[str, ...]:
     name, email = TASK_WORKTREE_MERGE_IDENTITY
 
     return ('-c', f'user.name={name}', '-c', f'user.email={email}')
+
+
+def _dir_task_id(name: str) -> int:
+    """
+    Номер подзадачи из имени каталога. Ноль — имя не наше, каталог не трогаем.
+
+    Разбираем по тому же шаблону, каким имя и составлено
+    (`TASK_WORKTREE_DIR_TEMPLATE`), а не «всё после последнего подчёркивания»:
+    рядом лежит служебный `_merge`, и вольный разбор посчитал бы его подзадачей.
+    """
+    prefix = TASK_WORKTREE_DIR_TEMPLATE.split('{', 1)[0]
+    if not name.startswith(prefix):
+        return 0
+    tail = name[len(prefix):]
+
+    return int(tail) if tail.isdigit() else 0
+
+
+async def _branch_merged(repo_dir: str, branch: str, base: str) -> bool:
+    """
+    Ветка целиком внутри главной: `merge-base --is-ancestor`.
+
+    Ветки нет — считаем влитой: коммитов не было вовсе либо ветку уже удалили
+    руками, и держать каталог не за чем.
+
+    Именно предок, а не сравнение вершин: после `merge --no-ff` вершина главной
+    ветки другая, но все коммиты ветки в ней есть — а это и есть «влито».
+    """
+    if not await _branch_exists(repo_dir, branch):
+        return True
+
+    code, _ = await task_worktree_git(repo_dir, 'merge-base', '--is-ancestor', branch, base)
+
+    return code == 0
 
 
 async def _branch_exists(repo_dir: str, branch: str) -> bool:
