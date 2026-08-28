@@ -76,17 +76,33 @@ async def project_task_migration_list(task_id: int, all: int = 0,
 async def project_task_migration_apply(task_id: int, body: TaskMigrationApply,
                                        user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
     """
-    Прогнать одну миграцию: сухим прогоном или по-настоящему.
+    Сухой прогон одной миграции: выполнить в транзакции и откатить.
+
+    Настоящее применение отсюда убрано. Миграции применяет yoyo при старте uvicorn
+    (`mysql_migration_up`), и после слияния ветки файл уезжает в master, где его
+    прокатит ближайший деплой. Эта же точка гнала SQL мимо yoyo и писала результат в
+    свой журнал — тот, про который в `_yoyo_applied` сказано «помнит проверки, а не
+    применения». База менялась, yoyo об этом не знал и применял файл повторно при
+    следующем старте: идемпотентная миграция это переживала, обычная падала или
+    задваивала данные.
+
+    `dry: false` теперь отвергается, а не игнорируется молча: запрос осмысленный, но
+    делать этого больше нельзя, и человек (или чужой скрипт) должен об этом узнать.
 
     Ошибку выполнения возвращаем ответом, а не исключением: упавший запрос — это
-    результат операции, о котором человеку надо прочитать, а не сбой приложения.
-    Отказ (404, 400) остаётся исключением — там читать нечего.
+    результат операции, о котором надо прочитать, а не сбой приложения. Отказ
+    (404, 400) остаётся исключением — там читать нечего.
     """
-    directory = await _task_dir(task_id)
-    result = await migration_file_apply(directory, body.name, dry=body.dry,
-                                          by=user.username)
+    if not body.dry:
+        raise HTTPException(
+            status_code=400,
+            detail='Применение убрано: миграции прокатывает yoyo при старте uvicorn '
+                   'после слияния ветки. Здесь доступен только сухой прогон')
 
-    return {**result, 'migrations': await migration_file_list(directory)}
+    directory = await _task_dir(task_id)
+    result = await migration_file_apply(directory, body.name, dry=True, by=user.username)
+
+    return {**result, 'migrations': await migration_file_list(directory, own_only=True)}
 
 
 async def _task_dir(task_id: int) -> str:

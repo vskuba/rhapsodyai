@@ -1092,10 +1092,18 @@
     // Файлы берутся из каталога подзадачи, а не из master: миграция лежит в ветке
     // рядом с кодом, который её требует, и до слияния в master её нет.
     //
-    // Две кнопки на файл. «Проверить» — сухой прогон: всё в транзакции и откат,
-    // показывает, сколько строк затронет и не упадёт ли. У файла с DDL её нет
-    // вовсе: MySQL коммитит DDL неявно, и такая «проверка» изменила бы базу
-    // по-настоящему. «Применить» — как есть, с подтверждением.
+    // Одна кнопка на файл — «Проверить»: сухой прогон, всё в транзакции и откат.
+    // Показывает, не упадёт ли SQL и сколько строк затронет, базу при этом не меняя.
+    // У файла с DDL её нет вовсе: MySQL коммитит DDL неявно, и такая «проверка»
+    // изменила бы базу по-настоящему.
+    //
+    // Кнопки «Применить» здесь больше нет, и это осознанно. Миграции применяет yoyo
+    // при старте uvicorn (`mysql_migration_up`), и после слияния ветки файл уезжает
+    // в master, где его прокатит ближайший деплой. Кнопка же гнала SQL мимо yoyo и
+    // писала результат в свой журнал — тот самый, про который в `_yoyo_applied`
+    // сказано «помнит проверки, а не применения». База менялась, yoyo об этом не
+    // знал и применял файл повторно при следующем старте: идемпотентная миграция
+    // это переживала, обычная — падала или задваивала данные.
 
     function migTab(name) {
         document.querySelectorAll('#diffTabs .page-tab').forEach(t => {
@@ -1186,8 +1194,7 @@
                  + (m.ddl ? '<span class="mig-ddl" title="Транзакция такое не откатит — сухой прогон недоступен">DDL</span>' : '')
                  + (moved ? '<span class="mig-ddl" title="Файл изменён после прогона">файл менялся</span>' : '')
                  + `<span class="mig-state ${state}">${esc(stateText)}</span>`
-                 + (m.ddl ? '' : `<button class="mig-btn" onclick="migRun('${esc(m.name)}', true, this)">Проверить</button>`)
-                 + `<button class="mig-btn apply" onclick="migRun('${esc(m.name)}', false, this)">Применить</button>`
+                 + (m.ddl ? '' : `<button class="mig-btn" onclick="migRun('${esc(m.name)}', this)">Проверить</button>`)
                  + (lg && lg.error ? `<div class="mig-error">${esc(lg.error)}</div>` : '')
                  + `<pre class="mig-sql" data-name="${esc(m.name)}" style="display:none">`
                  + `${esc(m.sql || '')}${m.sql_cut ? '\n\n… файл длиннее, показано начало' : ''}</pre>`
@@ -1203,14 +1210,15 @@
         el.classList.toggle('open', open);
     };
 
-    window.migRun = async function (name, dry, btn) {
-        if (!dry && !confirm(`Применить ${name} к базе? Изменение данных необратимо — снимите бэкап, если его нет.`)) return;
+    // Только сухой прогон: выполнить в транзакции и откатить. Кнопки «Применить»
+    // здесь нет намеренно — см. пояснение над списком.
+    window.migRun = async function (name, btn) {
         const buttons = [...document.querySelectorAll('.mig-btn')];
         buttons.forEach(b => b.disabled = true);
-        btn.textContent = dry ? 'Проверяю…' : 'Применяю…';
+        btn.textContent = 'Проверяю…';
         try {
-            const d = await postData(`/api/task/${taskId}/migration/apply`, {name, dry});
-            migRender(d.migrations || []);
+            const d = await postData(`/api/task/${taskId}/migration/apply`, {name, dry: true});
+            migRender(d.migrations || [], {own_unknown: false});
             if (!d.ok) alert(`Не прошло: ${d.error}`);
         } catch (e) {
             alert(`Сбой запроса: ${e.message}`);
