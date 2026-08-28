@@ -2,7 +2,7 @@ import { postData } from '/static/js/api.js';
 import { state } from './state.js';
 import { createInputBar, createMicOnlyBar } from './input_bar.js';
 import { initSidebar, setSidebarPageMode, updateInputBarsVisibility } from './sidebar.js';
-import { loadEvents } from './events.js';
+import { loadEvents, shouldReloadEvents } from './events.js';
 import { initChat } from './chat.js';
 import { initClaude, loadClaudeSessionList, updateClaudePolling, updateClaudeStatusPolling, closeClaudeSessionView } from './claude.js';
 import { initPlans, loadPlans, closePlanDetail } from './plans.js';
@@ -63,7 +63,9 @@ async function init() {
     initHomePing();
 
     await loadEvents();
-    setInterval(loadEvents, 5000);
+    // После очистки событий (events.js) обновление приостанавливается на 30 секунд —
+    // иначе новые записи event_log мгновенно возвращают список на экран.
+    setInterval(() => { if (shouldReloadEvents()) loadEvents(); }, 5000);
 }
 
 function goHome() {

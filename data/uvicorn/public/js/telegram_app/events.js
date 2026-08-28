@@ -14,6 +14,16 @@ export async function loadEvents() {
     }
 }
 
+let reloadPausedUntil = 0;
+
+export function pauseEventsReload(seconds) {
+    reloadPausedUntil = Date.now() + seconds * 1000;
+}
+
+export function shouldReloadEvents() {
+    return Date.now() >= reloadPausedUntil;
+}
+
 function renderEvents(events) {
     const eventsHtml = events.length
         ? events.map(e => {
@@ -41,10 +51,16 @@ function renderEvents(events) {
         if (!confirmed) return;
         try {
             await deleteData('/events');
-            renderEvents([]);
-        } catch {
-            eventsTab.insertAdjacentHTML('beforeend', '<div class="denied-state">⚠️ Не удалось очистить события</div>');
+        } catch (err) {
+            eventsTab.insertAdjacentHTML('beforeend',
+                `<div class="denied-state">⚠️ Не удалось очистить события${err && err.message ? `: ${escapeHtml(err.message)}` : ''}</div>`);
+            return;
         }
+        renderEvents([]);
+        // После очистки приостанавливаем автозагрузку, чтобы список не оживал мгновенно
+        // из-за новых записей в event_log (логины при перезапуске и т.п.). Через 30 секунд
+        // снова разрешаем обновление.
+        pauseEventsReload(30);
     });
 }
 
