@@ -153,7 +153,8 @@ from src.project.task.task_worktree import (task_worktree_base_branch,
                                             task_worktree_ensure,
                                             task_worktree_git,
                                             task_worktree_path,
-                                            task_worktree_prune)
+                                            task_worktree_prune,
+                                            task_worktree_refresh)
 from src.project.team.team_session import team_session_restart_role
 from src.project.task.task_setting_parallel import (
     TASK_SETTING_PARALLEL_DEFAULT,
@@ -972,6 +973,15 @@ async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str
     # для каталога достаточно, а `task_worktree_ensure` идемпотентен — на пересмотре
     # плана каталог просто найдётся готовым.
     task_dir = await _subtask_dir(work_dir, int(task['id']))
+
+    # Каталог подтягиваем к master перед разведкой. Он режется один раз и дальше
+    # стоит: для подзадачи это верно, её работа привязана к состоянию среза, а для
+    # менеджера нет — он планирует по коду, и вчерашний срез даёт план, который
+    # разошёлся с действительностью ещё до начала работы. Живьём каталог задачи
+    # #4798 отстал от master на два коммита за сутки.
+    if task_dir:
+        logger_info(f"[task] task#{task['id']} каталог менеджера: "
+                    f'{await task_worktree_refresh(work_dir, int(task["id"]))}')
 
     # Модель на круг — из пула проекта, тем же порядком, что у разработчика и QA.
     # Планирование ходит в ту же оболочку и стоит тех же токенов: оставь мы менеджера
