@@ -35,6 +35,10 @@ BROWSER_SCENARIO_ACTIONS = {
     'wait_ms':     ('value',),
     'scroll':      ('value',),
     'extract':     ('selector', 'name'),
+    # Построчный сбор: `selector` — строка списка, `fields` — что взять внутри неё.
+    # Отдельным действием, а не режимом `extract`, потому что возвращает другое:
+    # `extract` даёт строку, этот — список записей.
+    'extract_rows': ('selector', 'name', 'fields'),
     'assert_text': ('selector', 'value'),
 }
 
@@ -58,6 +62,47 @@ BROWSER_SCENARIO_MASK_MIN_LEN = 4
 # не достать: у `<img>` текста нет, и шаг вернул бы пустую строку.
 BROWSER_SCENARIO_ATTR_MARK = '@'
 
+# Предел вложенности полей у `extract_rows`. Вложенность нужна для списка внутри
+# записи — фотографии анкеты, метки карточки, — и двух уровней на это хватает.
+# Ограничение не от жадности: каждый уровень умножает число запросов к странице на
+# число найденных строк, и дерево вглубь превращает один шаг в тысячи обращений.
+BROWSER_SCENARIO_FIELDS_DEPTH = 3
+
+# Сколько строк берём из одного `extract_rows`. Список на сайте бывает бесконечным
+# (лента с подгрузкой), и без предела шаг утащил бы всю ленту в один ответ.
+BROWSER_SCENARIO_ROWS_LIMIT = 500
+
+
+class BrowserScenarioField(BaseModel):
+    """
+    Одно поле записи у `extract_rows`: что взять внутри строки списка.
+
+    Селектор здесь **относительный** — ищется внутри своей строки, а не по всей
+    странице. В этом вся суть построчного сбора: сшивка полей получается
+    структурной, а не позиционной. Отдельными шагами `extract` она позиционная —
+    имена и города приходят двумя списками, которые клиент сшивает по номеру, и
+    пустое значение в одном из них сдвигает всё, что после, без единой ошибки.
+
+    `attribute` — снять атрибут вместо текста (`href`, `src`). У `extract` для этого
+    служит `@`-метка в значении; здесь поле отдельное, потому что описание поля и так
+    структура, и прятать смысл в префиксе строки незачем.
+
+    `mandatory` — строка без этого поля записью не считается и в ответ не попадает.
+    Нужно, чтобы отсеивать то, что подошло под селектор строки по совпадению:
+    заголовок таблицы, разделитель, рекламный блок. Без такого признака они
+    приезжали бы записями с пустыми полями, и отличить их от настоящих было бы
+    нельзя.
+
+    `fields` — вложенный список: поле само по себе список записей (фотографии
+    анкеты, метки карточки). Глубина ограничена `BROWSER_SCENARIO_FIELDS_DEPTH`.
+    """
+
+    name: str = Field(min_length=1, max_length=50)
+    selector: str = Field(min_length=1, max_length=500)
+    attribute: str = Field('', max_length=50, description='Снять атрибут вместо текста')
+    mandatory: bool = Field(False, description='Нет значения — строка не запись')
+    fields: list['BrowserScenarioField'] = Field(default_factory=list)
+
 
 class BrowserScenarioStep(BaseModel):
     """Один шаг. Поля общие на все действия, обязательные — по таблице выше."""
@@ -71,6 +116,8 @@ class BrowserScenarioStep(BaseModel):
     name: str = Field('', max_length=50, description='Под каким именем сложить результат extract')
     timeout_ms: int = Field(BROWSER_SCENARIO_STEP_TIMEOUT_MS, ge=100, le=120000)
     optional: bool = Field(False, description='Шаг может не сработать — прогон продолжится')
+    fields: list[BrowserScenarioField] = Field(
+        default_factory=list, description='Только у extract_rows: что брать внутри строки')
 
     @field_validator('action')
     @classmethod
@@ -82,10 +129,22 @@ class BrowserScenarioStep(BaseModel):
     @model_validator(mode='after')
     def _fields_check(self):
         for field in BROWSER_SCENARIO_ACTIONS.get(self.action, ()):
-            if not str(getattr(self, field, '')).strip():
+            value = getattr(self, field, '')
+            # Списки проверяем как списки. Через `str()` пустой список даёт «[]» —
+            # непустую строку, — и обязательное поле `fields` считалось бы
+            # заполненным: `extract_rows` без единого поля проходил бы схему и
+            # возвращал записи без содержимого.
+            empty = not value if isinstance(value, list) else not str(value).strip()
+            if empty:
                 raise ValueError(f'{self.action}: не заполнено поле {field}')
         if self.action in ('wait_ms', 'scroll') and not self.value.strip().lstrip('-').isdigit():
             raise ValueError(f'{self.action}: value должно быть числом')
+        # Поля только у своего действия: у соседних они молча ничего не делали бы, а
+        # автор сценария думал бы, что сбор настроен.
+        if self.fields and self.action != 'extract_rows':
+            raise ValueError(f'{self.action}: поля fields бывают только у extract_rows')
+        if self.action == 'extract_rows':
+            _fields_depth_check(self.fields, BROWSER_SCENARIO_FIELDS_DEPTH)
         return self
 
 
@@ -96,6 +155,23 @@ class BrowserScenario(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     goal: str = Field('', max_length=255)
     steps: list[BrowserScenarioStep] = Field(..., min_length=1, max_length=BROWSER_SCENARIO_STEP_LIMIT)
+
+
+def _fields_depth_check(fields: list, left: int) -> None:
+    """
+    Вложенность полей не глубже отведённого. Иначе — отказ схемы, а не молчание.
+
+    Считаем при разборе, а не на прогоне: сценарий с деревом полей вглубь прошёл бы
+    сохранение и упал бы только у клиента, посреди сбора. Каждый уровень умножает
+    число обращений к странице на число найденных строк, и глубина здесь — не вкус, а
+    предел, за которым один шаг превращается в тысячи запросов.
+    """
+    if not fields:
+        return
+    if left <= 0:
+        raise ValueError(f'extract_rows: поля вложены глубже {BROWSER_SCENARIO_FIELDS_DEPTH} уровней')
+    for field in fields:
+        _fields_depth_check(getattr(field, 'fields', None) or [], left - 1)
 
 
 def browser_scenario_variables_used(scenario: BrowserScenario) -> list[str]:
@@ -127,6 +203,25 @@ def browser_scenario_render(text: str, values: dict) -> str:
         return text
 
     return BROWSER_SCENARIO_VAR_RE.sub(lambda m: str(values.get(m.group(1), m.group(0))), text)
+
+
+def browser_scenario_mask_data(data, secrets: dict):
+    """
+    То же замазывание, но по дереву записей `extract_rows`.
+
+    Нужно потому, что страница вполне может показать то, что мы в неё же и ввели:
+    логин в шапке кабинета, адрес почты в поле профиля. Без обхода вглубь секрет
+    уехал бы в `browser_scenario_run.extract` открытым текстом — мимо той защиты,
+    ради которой значения шифруются в базе.
+    """
+    if isinstance(data, str):
+        return browser_scenario_mask(data, secrets)
+    if isinstance(data, list):
+        return [browser_scenario_mask_data(item, secrets) for item in data]
+    if isinstance(data, dict):
+        return {key: browser_scenario_mask_data(value, secrets) for key, value in data.items()}
+
+    return data
 
 
 def browser_scenario_mask(text: str, secrets: dict) -> str:

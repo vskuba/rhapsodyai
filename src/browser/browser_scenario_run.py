@@ -25,9 +25,12 @@ from src.browser.browser_pool import (
 )
 from src.browser.browser_scenario import (
     BROWSER_SCENARIO_ATTR_MARK,
+    BROWSER_SCENARIO_FIELDS_DEPTH,
+    BROWSER_SCENARIO_ROWS_LIMIT,
     BrowserScenario,
     BrowserScenarioStep,
     browser_scenario_mask,
+    browser_scenario_mask_data,
     browser_scenario_render,
     browser_scenario_step_target,
     browser_scenario_variables_missing,
@@ -38,6 +41,11 @@ router = APIRouter()
 # Текст ошибки шага в трассе. Сообщения Playwright многострочные и с «call log»
 # на полсотни строк — в журнале от него пользы нет, причина всегда в первых строках.
 BROWSER_SCENARIO_RUN_ERROR_LIMIT = 500
+
+# Сколько ждать чтения одного поля внутри уже найденной строки. Секунды хватает с
+# запасом: узел в дереве есть — наличие проверено счётом, — и остаётся прочитать.
+# Общий таймаут шага здесь не годится: он умножился бы на число строк.
+BROWSER_SCENARIO_RUN_FIELD_TIMEOUT_MS = 1000
 
 # Набор текста посимвольно: 20 мс между клавишами. Мгновенный ввод не замечают
 # поля с обработчиком на каждое нажатие — автодополнение, маска телефона.
@@ -100,7 +108,7 @@ async def browser_scenario_run(scenario: BrowserScenario, session_id: str = '',
     page = entry['page']
     started = time.monotonic()
     steps: list[dict] = []
-    extract: dict[str, str] = {}
+    extract: dict = {}   # строка у `extract`, список записей у `extract_rows`
     status = 'ok'
     error = ''
     failed_no = 0
@@ -112,7 +120,11 @@ async def browser_scenario_run(scenario: BrowserScenario, session_id: str = '',
             steps.append(record)
 
             if record['name'] and record['ok']:
-                extract[record['name']] = record['value']
+                # `data` есть только у построчного сбора — там записи, а в `value`
+                # лежит их счёт для трассы. У прочих шагов данных нет, и в ход идёт
+                # само значение.
+                extract[record['name']] = (record['data'] if record['data'] is not None
+                                           else record['value'])
 
             if not record['ok']:
                 status = 'error'
@@ -141,6 +153,85 @@ async def browser_scenario_run(scenario: BrowserScenario, session_id: str = '',
         'extract': extract,
         'duration_ms': round((time.monotonic() - started) * 1000),
     }
+
+
+async def _rows_collect(rows, fields, timeout: int, depth: int) -> list:
+    """
+    Список записей: по строке на совпадение `rows`, поля ищутся внутри строки.
+
+    В этом и весь смысл действия. Отдельными шагами `extract` поля приходят
+    параллельными списками, и сшивать их клиенту приходится по номеру — а
+    пропущенное значение сдвигает всё, что после, молча и необратимо. Здесь поле
+    привязано к своей строке разметкой, и пропуск остаётся пустым значением в своей
+    записи, никого не двигая.
+
+    Ждём появления первой строки, а не каждой: список либо отрисован, либо нет, и
+    ожидание по каждому элементу растянуло бы шаг на таймаут за строкой.
+
+    Пустой список — не ошибка: «анкет нет» такой же ответ, как «анкет тринадцать»,
+    и падать здесь значило бы заставлять клиента отличать сбой от пустоты по тексту.
+    """
+    try:
+        await rows.first.wait_for(timeout=timeout)
+    except Exception:
+        return []
+
+    total = min(await rows.count(), BROWSER_SCENARIO_ROWS_LIMIT)
+    out = []
+    for index in range(total):
+        row = rows.nth(index)
+        record, keep = {}, True
+        for field in fields:
+            value = await _field_value(row, field, timeout, depth)
+            # Обязательное поле пусто — строка подошла под селектор по совпадению:
+            # шапка таблицы, разделитель, рекламный блок. Записью её не считаем,
+            # иначе отличить такую от настоящей было бы нечем.
+            if field.mandatory and not value:
+                keep = False
+                break
+            record[field.name] = value
+        if keep:
+            out.append(record)
+
+    return out
+
+
+async def _field_value(row, field, timeout: int, depth: int):
+    """
+    Значение одного поля внутри строки: текст, атрибут или вложенный список.
+
+    **Внутри строки ничего не ждём.** Строку мы уже дождались, разметка отрисована;
+    поля, которого нет сейчас, не будет и через десять секунд. Ожидание здесь не
+    просто бесполезно — оно складывается: отсутствующее поле, умноженное на число
+    строк, даёт шаг длиной в часы. Поймано на живой странице: пробный сбор с широким
+    селектором строки не уложился и в две минуты. Поэтому наличие проверяем счётом, а
+    читаем с коротким сроком — узел уже в дереве.
+
+    Отсутствие элемента — пустая строка, а не отказ: у поля без пометки
+    `mandatory` пропуск законен, и половина карточек в списке обычно чем-нибудь да
+    отличается от другой половины.
+
+    Глубину считаем и здесь, хотя схема её уже проверила: `_rows_collect` вызывается
+    и рекурсивно, и второй счётчик стоит дешевле, чем доверие к тому, что наверху
+    ничего не поменяется.
+    """
+    if field.fields and depth > 0:
+        return await _rows_collect(row.locator(field.selector), field.fields, timeout, depth - 1)
+
+    found = row.locator(field.selector)
+    try:
+        if await found.count() == 0:
+            return ''
+
+        target = found.first
+        if field.attribute:
+            return (await target.get_attribute(
+                field.attribute, timeout=BROWSER_SCENARIO_RUN_FIELD_TIMEOUT_MS) or '').strip()
+
+        return (await target.inner_text(
+            timeout=BROWSER_SCENARIO_RUN_FIELD_TIMEOUT_MS)).strip()
+    except Exception:
+        return ''
 
 
 async def _session_take(session_id: str, name: str) -> tuple[dict, bool]:
@@ -175,6 +266,13 @@ async def _step_run(page, step: BrowserScenarioStep, index: int, values: dict, s
         ok = bool(step.optional)
         error = browser_scenario_mask(str(e), secrets).strip()[:BROWSER_SCENARIO_RUN_ERROR_LIMIT]
 
+    # Трасса и собранные данные — врозь. Оба поля уезжают в базу, но в разные
+    # колонки (`trace` и `extract`), и список из пятисот записей, положенный в оба,
+    # задвоил бы объём строки журнала. В трассе остаётся счёт записей: по нему видно,
+    # сработал шаг или вернул пусто, а сами записи лежат рядом, в `extract`.
+    data = value if isinstance(value, list) else None
+    shown = f'записей: {len(value)}' if isinstance(value, list) else value
+
     return {
         'index': index,
         'action': step.action,
@@ -184,7 +282,8 @@ async def _step_run(page, step: BrowserScenarioStep, index: int, values: dict, s
         'ok': ok,
         'optional': step.optional,
         'error': error,
-        'value': browser_scenario_mask(value, secrets),
+        'value': browser_scenario_mask(shown, secrets),
+        'data': browser_scenario_mask_data(data, secrets),
         'ms': round((time.monotonic() - started) * 1000),
     }
 
@@ -274,6 +373,10 @@ async def _step_apply(page, step: BrowserScenarioStep, values: dict) -> str:
         texts = [text.strip() for text in await page.locator(selector).all_inner_texts()]
 
         return '\n'.join(text for text in texts if text)
+
+    if action == 'extract_rows':
+        return await _rows_collect(page.locator(selector), step.fields, timeout,
+                                   BROWSER_SCENARIO_FIELDS_DEPTH)
 
     if action == 'assert_text':
         text = (await page.locator(selector).inner_text(timeout=timeout)).strip()

@@ -100,6 +100,50 @@ async def browser_scenario_list(site_id: int = 0,
     return {'result': rows}
 
 
+@router.get('/parser')
+async def browser_scenario_parser_list(site_id: int = 0,
+                                       user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
+    """
+    Сценарии, которые возвращают данные, — с описанием того, что именно вернут.
+
+    Это ответ на вопрос клиента «что я вообще могу отсюда получить». Соседний
+    проект не должен знать ни селекторов, ни разметки: он берёт отсюда список,
+    выбирает нужный номер и зовёт обычный `POST /{id}/run`. Разметка чужого сайта
+    меняется — правится сценарий здесь, клиента это не касается и выкладки не
+    требует.
+
+    Отдельной ручкой, а не полем общего списка: там строки без шагов, и разбирать
+    их у каждого сценария ради признака «отдаёт ли он данные» значило бы читать
+    `steps` всей таблицы на каждый показ страницы.
+
+    В `fields` — плоские имена полей записи, с точкой на вложенности
+    (`фото.адрес`). Клиенту нужен состав записи, а не дерево селекторов: селекторы
+    — наше внутреннее дело, и показывать их наружу значило бы снова привязать
+    клиента к разметке, от которой мы его и уводим.
+
+    Путь объявлен до `/{scenario_id}`: иначе FastAPI разобрал бы `parser` как номер
+    сценария и ответил 422 про непарсящееся число.
+    """
+    where, params = ('WHERE site_id = %s', [int(site_id)]) if site_id else ('', [])
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT id, site_id, name, goal, status, steps '
+            f'FROM browser_scenario {where} ORDER BY id DESC', params)
+        rows = await db.fetchall() or []
+
+    result = []
+    for row in rows:
+        models = _parser_models(row.get('steps'))
+        if not models:
+            continue
+        result.append({'id': int(row['id']), 'site_id': row.get('site_id'),
+                       'name': row.get('name'), 'goal': row.get('goal'),
+                       'status': row.get('status'), 'returns': models})
+
+    return {'result': result}
+
+
 @router.post('', status_code=201)
 async def browser_scenario_create(data: BrowserScenarioSave,
                                   user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
@@ -317,6 +361,43 @@ def _filled(values: dict | None) -> dict:
     закрыты, и отвечает 422 со списком недостающих.
     """
     return {name: value for name, value in (values or {}).items() if str(value or '') != ''}
+
+
+def _parser_models(steps) -> list[dict]:
+    """
+    Что вернёт сценарий: `[{'name', 'kind', 'fields'}]`. Пусто — данных не отдаёт.
+
+    Смотрим шаги, а не отдельную таблицу: сбор данных и есть шаг сценария, и второй
+    источник правды разошёлся бы с ним на первой же правке шагов.
+
+    `kind` различает две формы ответа, потому что разбирать их клиенту по-разному:
+    `rows` — список записей, `text` — строка (у неё несколько совпадений склеены
+    переносами, это старое поведение `extract`).
+    """
+    out = []
+    for step in _json_load(steps, []) or []:
+        if not isinstance(step, dict) or not step.get('name'):
+            continue
+        if step.get('action') == 'extract_rows':
+            out.append({'name': step['name'], 'kind': 'rows',
+                        'fields': _field_names(step.get('fields') or [])})
+        elif step.get('action') == 'extract':
+            out.append({'name': step['name'], 'kind': 'text', 'fields': []})
+
+    return out
+
+
+def _field_names(fields, prefix: str = '') -> list[str]:
+    """Имена полей записи, вложенные — через точку: `фото.адрес`."""
+    out = []
+    for field in fields:
+        if not isinstance(field, dict) or not field.get('name'):
+            continue
+        name = prefix + str(field['name'])
+        nested = field.get('fields') or []
+        out.extend(_field_names(nested, name + '.') if nested else [name])
+
+    return out
 
 
 def _variables_default(row: dict) -> dict:
