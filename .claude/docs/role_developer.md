@@ -37,13 +37,30 @@
 .venv/bin/python3 -m pytest tests/test_<что_трогал>.py -q
 ```
 
-**5. Коммить и пушь.** Ветка твоя — `feature/task_<номер>`, она уже выкачена.
+**5. Убедись, что ты в worktree.** Все изменения делаются в worktree,
+а не в основном репозитории. Перед коммитом проверь контекст:
+
+```bash
+git rev-parse --show-toplevel
+# Ожидается: /home/vasyl/PycharmProjects/RhapsodyAi/.claude/worktrees/feature_task_<номер>
+```
+
+Если ты в основном репо, переключись:
+
+```bash
+cd .claude/worktrees/feature_task_<номер>
+```
+
+**6. Коммить и пушь.** Ветка твоя — `feature/task_<номер>`, она уже выкачена.
 
 ```bash
 git add <файлы>            # перечисляй пути, не `git add -A`
 git commit -m "..."
 git push -u origin HEAD
 ```
+
+**Никогда не коммить в master напрямую.** Если `git branch --show-current` показывает
+`master` или `main` — это ошибка, переключись на feature-ветку.
 
 Незакоммиченная работа для следующего круга **не существует**: он прочитает журнал,
 но не увидит кода — и начнёт заново.
