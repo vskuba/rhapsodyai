@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { loadConfig } from './config.js';
 
-const PAGE_TITLES = { events: 'События', claude: 'Claude', chat: 'Чат', plans: 'Планы' };
+const PAGE_TITLES = { events: 'События', claude: 'Claude', chat: 'Чат', tasks: 'Задачи' };
 
 const tg = window.Telegram?.WebApp;
 

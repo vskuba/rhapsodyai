@@ -33,7 +33,7 @@
                     </svg>
                 </button>
                 <button class="icon-btn" id="tabBtnChat" data-tab="chat" title="Чат">💬</button>
-                <button class="icon-btn" id="tabBtnPlans" data-tab="plans" title="Планы">📋</button>
+                <button class="icon-btn" id="tabBtnTasks" data-tab="tasks" title="Задачи">📝</button>
                 <button class="icon-btn" id="dasboardRemote" title="Открыть сайт">🌐</button>
                 <button class="icon-btn" id="dasboardLocal" title="Открыть сайт">💻</button>
                 <button class="icon-btn" id="deepseekHarness" title="DeepSeek">🐋</button>
@@ -41,11 +41,6 @@
 
             <div class="icon-sidebar-group" id="sidebarPageIcons">
                 <button class="icon-btn" id="pageBackIconBtn" title="Назад к меню">🔙</button>
-            </div>
-
-            <div class="icon-sidebar-group" id="sidebarPlanIcons">
-                <button class="icon-btn" id="planBackIconBtn" title="Назад к списку планов">🔙</button>
-                <button class="icon-btn icon-btn-danger" id="planDeleteIconBtn" title="Удалить план">🗑</button>
             </div>
 
             <div class="icon-sidebar-group" id="sidebarClaudeIcons">
@@ -74,12 +69,8 @@
                     <div class="chat-messages" id="chatMessages"></div>
                 </div>
 
-                <div class="tab-view" id="tab-plans">
-                    <div class="plans-list-view" id="plansListView"></div>
-                    <div class="plans-detail-view" id="plansDetailView" style="display:none;">
-                        <div class="plan-title" id="planDetailTitle"></div>
-                        <div class="plan-content" id="planDetailContent"></div>
-                    </div>
+                <div class="tab-view" id="tab-tasks">
+                    <div class="task-list-view" id="tasksListView"></div>
                 </div>
 
             </div>
