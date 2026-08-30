@@ -34,6 +34,11 @@ TEST_PROJECT_ID = 987655
 TEST_LLM_LIVE = 'test_ping/model-live'
 TEST_LLM_DEAD = 'test_ping/model-dead'
 
+# Имя для проверок сетевых сбоев: запись каталога у них настоящая (по ней выбирается
+# стратегия провайдера), а имя обязано быть тестовым — под ним пинг пишет результат
+# в `setting`, и с боевым именем тест выводил бы рабочую модель из выдачи.
+TEST_LLM_NETWORK = 'test_ping/network'
+
 
 @pytest.fixture(autouse=True)
 async def ping_cleanup():
@@ -375,6 +380,16 @@ async def _ping_with_transport_error(error: Exception) -> dict:
     смонтирован — это чужой репозиторий) и `httpx.AsyncClient.post`. Всё, что между
     ними, настоящее: выбор стратегии по имени, адрес из `.env`, сборка тела. Заглуши
     мы весь пинг, тест подтверждал бы только сам себя.
+
+    **Имя модели тестовое, хотя запись каталога настоящая.** `team_llm_ping_one`
+    пишет результат в `setting` — в ту же таблицу, по которой конвейер решает, кому
+    выдавать круги. С настоящим именем тест оставлял бы боевой модели фиктивный
+    отказ и выводил бы её из работы; поймано живьём: в базе висело
+    `team_llm_ping_deepseek-v4-flash-0731-1` со словами «ReadTimeout: молчит» —
+    текстом из этого самого теста.
+
+    `target` при этом настоящий: по нему выбирается стратегия провайдера, а её выбор
+    мы и проверяем. Подменять его значило бы проверять заглушку.
     """
     from unittest.mock import patch
 
@@ -382,7 +397,7 @@ async def _ping_with_transport_error(error: Exception) -> dict:
 
     import src.project.team.team_llm_ping as ping_module
 
-    entry = {'name': 'deepseek-v4-flash-0731-1',
+    entry = {'name': TEST_LLM_NETWORK,
              'target': 'openrouter/deepseek/deepseek-v4-flash-0731',
              'key_env': 'OPENROUTER_API_KEY', 'url_env': '', 'port': 4001}
 
@@ -426,9 +441,10 @@ async def _cleanup() -> None:
     async with mysql_get_db_async() as db:
         await db.execute('DELETE FROM setting WHERE `key` = %s',
                          (f'{TEAM_LLM_POOL_KEY_PREFIX}{TEST_PROJECT_ID}',))
-        await db.execute('DELETE FROM setting WHERE `key` IN (%s, %s)',
+        await db.execute('DELETE FROM setting WHERE `key` IN (%s, %s, %s)',
                          (f'{TEAM_LLM_PING_KEY_PREFIX}{TEST_LLM_LIVE}',
-                          f'{TEAM_LLM_PING_KEY_PREFIX}{TEST_LLM_DEAD}'))
+                          f'{TEAM_LLM_PING_KEY_PREFIX}{TEST_LLM_DEAD}',
+                          f'{TEAM_LLM_PING_KEY_PREFIX}{TEST_LLM_NETWORK}'))
         await db.execute('DELETE FROM team_llm_lock WHERE llm_name IN (%s, %s)',
                          (TEST_LLM_LIVE, TEST_LLM_DEAD))
         await db.connection.commit()

@@ -99,6 +99,15 @@ TEAM_LLM_PING_DEAD_SECONDS = 900
 # получать круги.
 TEAM_LLM_PING_TIMEOUT = 15.0
 
+# Отдельно срок на установку соединения. Он всегда короче общего: не дозвонились —
+# это про нашу сеть, и ждать тут нечего.
+#
+# Но и жадничать нельзя: канал до провайдера деградирует, и TCP-рукопожатие до
+# OpenRouter измерено в 4 секунды при живом сервисе. С прежними пятью проверка
+# упиралась в собственный лимит и объявляла «не дозвонились» там, где связь была,
+# просто медленная. Десять — вдвое больше худшего измеренного.
+TEAM_LLM_PING_CONNECT_TIMEOUT = 10.0
+
 
 async def team_llm_ping_one(name: str) -> dict:
     """
@@ -182,7 +191,9 @@ async def team_llm_ping_one(name: str) -> dict:
 
     started = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(TEAM_LLM_PING_TIMEOUT, connect=5.0)) as client:
+        timeout = httpx.Timeout(TEAM_LLM_PING_TIMEOUT,
+                                connect=TEAM_LLM_PING_CONNECT_TIMEOUT)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, headers=headers, json=payload)
         ping['ms'] = int((time.monotonic() - started) * 1000)
         ping['http_status'] = str(response.status_code)
