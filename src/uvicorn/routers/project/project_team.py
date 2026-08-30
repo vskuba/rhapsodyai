@@ -14,6 +14,7 @@ from src.project.team.team_project import (team_project_blocks_get,
                                            team_project_id_by_work_dir,
                                            team_project_session_work_dir_sync)
 from src.project.team.team_session import team_session_restart
+from src.project.team.team_session_cleanup import cleanup_inactive_sessions
 from src.project.team.team_task_type import team_task_type_list
 from src.project.team.team_llm_catalog import team_llm_catalog_models
 from src.project.team.team_llm_pool import (team_llm_pool_conflicts, team_llm_pool_set)
@@ -254,6 +255,16 @@ async def project_team_session_restart(session_request: TeamSessionRequest,
         raise HTTPException(status_code=404, detail='Session not found')
 
     return {'result': status}
+
+
+@router.post('/cleanup-sessions')
+async def project_team_cleanup_sessions(user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """Ручной запуск очистки orphaned сессий: inactive старше 7 дней.
+
+    Удаляет связанные записи в agent_session и ai_claude_session.
+    """
+    result = await cleanup_inactive_sessions()
+    return {'result': result}
 
 
 @router.post('/activate')

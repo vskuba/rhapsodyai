@@ -10,6 +10,7 @@ from src.mysql_.repository.ai_claude_session_registry_repository import AiClaude
 from src.mysql_.repository.project.team_repository import ProjectTeamRepository
 from src.project.team.team_member import team_member_get_by_role
 from src.project.team.team_project import team_project_id_by_work_dir
+from src.project.team.team_session_cleanup import cleanup_inactive_sessions
 from src.telegram_.telegram_notify import telegram_notify_send_owner
 from src.tool.claude_.claude_ import claude_message_user
 from src.uvicorn.routers.telegram_app.telegram_app_common import (
@@ -136,6 +137,19 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
                 await ProjectTeamRepository().update(member['id'], {'work_dir': work_dir})
         except Exception as error:
             logger_info(f"claude_session_register: work_dir update failed: {error}")
+
+    # Автоматическая очистка orphaned сессий при регистрации новой
+    try:
+        cleanup_result = await cleanup_inactive_sessions()
+        if cleanup_result["registry_deleted"] > 0:
+            logger_info(
+                f"claude_session_register: cleaned up orphaned sessions: "
+                f"registry={cleanup_result['registry_deleted']}, "
+                f"agent_session={cleanup_result['agent_session_deleted']}, "
+                f"ai_claude_session={cleanup_result['ai_claude_session_deleted']}"
+            )
+    except Exception as error:
+        logger_info(f"claude_session_register: cleanup_inactive_sessions failed: {error}")
 
     return {"result": {"session_uuid": session_uuid, "role_index": role_index}}
 
