@@ -16,7 +16,7 @@ from src.project.task.task_goal_scope import (
     task_goal_scope_drop,
     task_goal_scope_split,
 )
-from src.project.task.task_metadata import task_metadata_parse, task_metadata_row_apply, task_metadata_update
+from src.project.task.task_metadata import task_metadata_row_apply, task_metadata_update
 from src.project.task.task_question import (
     TASK_QUESTION_ACTION_DROP,
     TASK_QUESTION_ACTION_PLAN,
@@ -64,7 +64,7 @@ async def telegram_app_task_question_get(request: Request, task_id: int):
     decisions = task_question_decisions(subtask)
 
     # Автовопрос конвейера — если задача встала, но агент не спросил.
-    attempt_list = _read_attempts(subtask)
+    attempt_list = await _read_attempts(task_id)
     auto_q = task_question_auto(subtask, attempt_list)
 
     return {
@@ -154,18 +154,16 @@ async def _get_task_for_scope(task_id: int) -> dict | None:
     return subtask
 
 
-def _read_attempts(subtask: dict) -> list:
-    """Извлечь журнал попыток (attempts). Формат зависит от записи — пытаемся оба варианта."""
-    err = subtask.get('pipeline_error') or ''
-    if isinstance(err, list):
-        return [a for a in err if isinstance(a, dict)]
-    try:
-        parsed = json.loads(str(err))
-        if isinstance(parsed, list):
-            return [a for a in parsed if isinstance(a, dict)]
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return []
+async def _read_attempts(task_id: int) -> list:
+    """Прочитать журнал попыток из таблицы project_task_attempt."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT attempt_no, role, status, output, error, duration_ms "
+            "FROM project_task_attempt WHERE task_id = %s ORDER BY attempt_no",
+            (task_id,),
+        )
+        rows = await db.fetchall()
+    return [dict(r) for r in (rows or [])]
 
 
 # ===================================================================
