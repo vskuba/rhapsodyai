@@ -17,6 +17,7 @@ from src.project.team.team_session import team_session_restart
 from src.project.team.team_session_cleanup import cleanup_inactive_sessions
 from src.project.team.team_task_type import team_task_type_list
 from src.project.team.team_llm_catalog import team_llm_catalog_models
+from src.project.team.team_llm_ping import team_llm_ping_all, team_llm_ping_map
 from src.project.team.team_llm_pool import (team_llm_pool_conflicts, team_llm_pool_set)
 from src.project.team.team_setting_autocompact import team_setting_autocompact_apply
 from src.project.task.task_setting_parallel import (
@@ -196,8 +197,34 @@ async def project_team_llm_list(user=Depends(AuthChecker([AuthPermission.PLANNIN
 
     `problem` непустой, когда каталог не прочитан. Страницу это не роняет: селект
     остаётся с умолчанием, но человек видит причину, а не молча укороченный список.
+
+    Вместе со списком отдаём последний пинг каждой модели (`pings`): по нему страница
+    показывает, какие из них отвечают, а какие выведены из выдачи, — иначе неотвечающая
+    модель выглядит в списке ровно как рабочая.
     """
-    return {'result': await team_llm_catalog_models()}
+    catalog = await team_llm_catalog_models()
+    catalog['pings'] = await team_llm_ping_map(catalog.get('models') or [])
+
+    return {'result': catalog}
+
+
+@router.post('/llm/ping')
+async def project_team_llm_ping(data: dict = None,
+                                user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Пропинговать модели пула: названные в `names` либо все, что стоят в пулах.
+
+    Права на изменение, а не на просмотр: пинг ходит к провайдеру и переписывает
+    состояние, по которому конвейер решает, кому отдавать круги. Кнопка «Ping» на
+    странице команды зовёт ровно эту ручку — ту же, что опрашивает по расписанию
+    (`_run_llm_ping` в конвейере, раз в две минуты), чтобы результат руками и по
+    таймеру считался одинаково.
+    """
+    names = (data or {}).get('names')
+    if names is not None and not isinstance(names, list):
+        raise HTTPException(status_code=422, detail='names должен быть списком имён моделей')
+
+    return {'result': await team_llm_ping_all(names)}
 
 
 @router.get('/timeout')

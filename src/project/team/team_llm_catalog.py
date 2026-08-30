@@ -58,14 +58,53 @@ async def team_llm_catalog_models() -> dict:
         logger_info(f'[team] каталог моделей оболочки не прочитан: {e}')
         return _fallback(path, f'каталог оболочки не разобран: {e}')
 
-    names = [str(item.get('name') or '').strip()
-             for item in (data.get('models') or []) if isinstance(item, dict)]
-    names = [name for name in names if name]
-    if not names:
+    entries = [_entry(item) for item in (data.get('models') or []) if isinstance(item, dict)]
+    entries = [item for item in entries if item['name']]
+    if not entries:
         return _fallback(path, 'в каталоге оболочки нет ни одной модели')
 
-    return {'models': names, 'source': path, 'problem': ''}
+    return {'models': [item['name'] for item in entries], 'entries': entries,
+            'source': path, 'problem': ''}
+
+
+async def team_llm_catalog_entry(name: str) -> dict:
+    """
+    Запись каталога по имени модели: `{name, target, key_env, url_env, port}`.
+
+    Нужна пингу: чтобы постучаться в модель, мало её имени — адрес провайдера и ключ
+    названы в самой записи (`key_env`/`url_env`), и брать их по префиксу имени
+    нельзя. У `deepseek-v4-flash-0731-2` префикса нет вовсе: имя различает две записи
+    на одну модель, а куда они ведут, говорит только `target`.
+
+    Записи нет — пустой `dict`: модель могли убрать из каталога, а в пуле проекта
+    оставить, и падать здесь незачем — пинг скажет об этом словами.
+    """
+    for item in (await team_llm_catalog_models()).get('entries') or []:
+        if item['name'] == str(name or '').strip():
+            return item
+
+    return {}
+
+
+def _entry(item: dict) -> dict:
+    """
+    Запись каталога в том виде, в каком её читает остальной код.
+
+    `target` по умолчанию равен имени — то же правило, что у самой оболочки
+    (`config_build.py`): поле пишут только там, где у провайдера имя своё.
+    """
+    name = str(item.get('name') or '').strip()
+
+    return {
+        'name': name,
+        'target': str(item.get('target') or name).strip(),
+        'key_env': str(item.get('key_env') or '').strip(),
+        'url_env': str(item.get('url_env') or '').strip(),
+        'port': int(item.get('port') or 0),
+    }
 
 
 def _fallback(path: str, problem: str) -> dict:
-    return {'models': [TEAM_LLM_CATALOG_FALLBACK], 'source': path, 'problem': problem}
+    return {'models': [TEAM_LLM_CATALOG_FALLBACK],
+            'entries': [_entry({'name': TEAM_LLM_CATALOG_FALLBACK})],
+            'source': path, 'problem': problem}
