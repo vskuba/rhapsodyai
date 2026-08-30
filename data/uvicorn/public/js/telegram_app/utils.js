@@ -12,8 +12,17 @@ export function linkify(text) {
 
 export function confirmDialog(message) {
     return new Promise(resolve => {
-        if (tg?.showConfirm) tg.showConfirm(message, resolve);
-        else resolve(window.confirm(message));
+        if (tg?.showConfirm) {
+            // Вне Telegram showConfirm бросает WebAppMethodUnsupported (showPopup
+            // недоступен) — ловим и падаем на нативный confirm, как в else.
+            try {
+                tg.showConfirm(message, resolve);
+            } catch {
+                resolve(window.confirm(message));
+            }
+        } else {
+            resolve(window.confirm(message));
+        }
     });
 }
 
