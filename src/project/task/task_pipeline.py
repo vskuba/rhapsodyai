@@ -207,7 +207,7 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
     # действие — при max_actions=1 каждый тик уходил бы на скан, а задачи стояли бы в
     # очереди.
     #
-    # Пинг ставится не каждый тик: его ключ single-flight живёт две минуты и работает
+    # Пинг ставится не каждый тик: его ключ single-flight живёт пять минут и работает
     # расписанием (`TASK_WORKER_FLIGHT_PERIOD`), а не защитой от дублей.
     for kind in TASK_WORKER_SINGLE_FLIGHT:
         if kind == 'bug_scan' and not BUG_TASK_SCAN_ENABLED:
@@ -525,7 +525,7 @@ async def _run_llm_ping(action: dict) -> str | None:
 
     В воркере, а не в тике: опрос ходит к провайдерам и на медленной локальной модели
     занимает секунды на каждую, а тик обязан укладываться в секунды целиком. Интервал
-    даёт ключ single-flight (`TASK_WORKER_FLIGHT_PERIOD`) — раз в две минуты.
+    даёт ключ single-flight (`TASK_WORKER_FLIGHT_PERIOD`) — раз в пять минут.
 
     Отдельного события планировщика для этого нет намеренно: Cronicle заводят руками
     на каждой инсталляции, и правило «конвейер не выдаёт мёртвую модель» не должно

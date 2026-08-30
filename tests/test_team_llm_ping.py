@@ -119,6 +119,30 @@ class TestPingDead:
         assert await team_llm_ping_dead([TEST_LLM_DEAD]) == set()
 
 
+    async def test_stale_error_expires(self):
+        """
+        Отказ протухает. Занятую кругом модель не опрашивают вовсе, и её последняя
+        запись бывает какой угодно давности; держи мы старый отказ бессрочно,
+        освободившаяся модель не получила бы ни одного круга, хотя проверять её
+        никто больше не пытался. Поймано живьём на `gx10/qwen-large`.
+        """
+        from src.project.team.team_llm_ping import (TEAM_LLM_PING_DEAD_SECONDS,
+                                                    team_llm_ping_dead)
+
+        await _ping_write(TEST_LLM_DEAD, 'error',
+                          age_seconds=TEAM_LLM_PING_DEAD_SECONDS + 60)
+
+        assert await team_llm_ping_dead([TEST_LLM_DEAD]) == set()
+
+    async def test_fresh_error_still_counts(self):
+        """Обратная половина: свежий отказ обязан выводить, иначе проверка ни о чём."""
+        from src.project.team.team_llm_ping import team_llm_ping_dead
+
+        await _ping_write(TEST_LLM_DEAD, 'error', age_seconds=30)
+
+        assert await team_llm_ping_dead([TEST_LLM_DEAD]) == {TEST_LLM_DEAD}
+
+
 class TestPoolSkipsDead:
     """Ради чего всё заведено: неотвечающая модель не получает кругов."""
 
@@ -186,8 +210,134 @@ class TestPoolSkipsDead:
         assert got == TEST_LLM_LIVE
 
 
+class TestPingNetworkFailure:
+    """Граница «наша сеть» / «модель»: не дозвонились — не приговор."""
+
+    async def test_connect_failure_is_unknown(self):
+        """
+        Пропади интернет у этой установки — приговор получили бы разом все сетевые
+        модели, и конвейер остался бы без работы по причине, к ним не относящейся.
+        Поймано живьём: три модели дали `ConnectTimeout` ровно за 5 секунд — столько
+        стоит `connect`, и совпадение до миллисекунд выдало общую причину.
+        """
+        import httpx
+
+        from src.project.team.team_llm_ping import TEAM_LLM_PING_UNKNOWN
+
+        ping = await _ping_with_transport_error(httpx.ConnectTimeout('нет сети'))
+
+        assert ping['status'] == TEAM_LLM_PING_UNKNOWN
+        assert 'не дозвонились' in ping['error']
+
+    async def test_read_timeout_is_error(self):
+        """
+        Обратная половина: соединение установилось, ответа нет — это про модель.
+        Запрос принят, справиться не удалось; такую выводим из выдачи.
+        """
+        import httpx
+
+        ping = await _ping_with_transport_error(httpx.ReadTimeout('молчит'))
+
+        assert ping['status'] == 'error'
+        assert 'ReadTimeout' in ping['error']
+
+
+class TestPingSkipsLocal:
+    """Локальную модель не пингуем: проверка отняла бы у неё карту."""
+
+    async def test_local_model_is_marked_skipped(self):
+        """
+        Запрос не уходит вовсе, а в записи стоит `skipped` — не `error` и не `unknown`.
+
+        Разница существенна: `skipped` это наше решение, а не неудача, и на странице
+        оно читается иначе.
+
+        Каталог подменяем: на хосте, где идут тесты, он не смонтирован — это чужой
+        репозиторий, — и `team_llm_catalog_models` отдаёт запасную запись. Она сейчас
+        как раз локальная, так что тест был бы зелёным и без проверяемого правила:
+        совпадение, на которое опираться нельзя.
+        """
+        from unittest.mock import patch
+
+        import src.project.team.team_llm_ping as ping_module
+
+        async def _entry(name):
+            return {'name': 'gx10/qwen-large', 'target': 'openai/qwen3.6',
+                    'key_env': 'GX10_API_KEY', 'url_env': 'GX10_URL', 'port': 4000}
+
+        with patch.object(ping_module, 'team_llm_catalog_entry', _entry):
+            ping = await ping_module.team_llm_ping_one('gx10/qwen-large')
+
+        assert ping['status'] == ping_module.TEAM_LLM_PING_SKIPPED
+        assert ping['ms'] is None, 'запрос не отправлялся — замеру взяться неоткуда'
+
+    async def test_skipped_model_is_not_dead(self):
+        """Пропущенная получает круги как обычно: мы её не проверяли, а не забраковали."""
+        from src.project.team.team_llm_ping import (TEAM_LLM_PING_SKIPPED,
+                                                    team_llm_ping_dead)
+
+        await _ping_write(TEST_LLM_DEAD, TEAM_LLM_PING_SKIPPED)
+
+        assert await team_llm_ping_dead([TEST_LLM_DEAD]) == set()
+
+    def test_local_is_decided_by_strategy(self):
+        """
+        Кто локальный — знает стратегия провайдера, а не список имён в пинге.
+
+        Иначе новая локальная модель молча попала бы под опрос и начала делиться
+        картой с проверкой.
+        """
+        from src.project.team.team_llm_ping import team_llm_ping_skipped
+
+        assert team_llm_ping_skipped({'name': 'gx10/qwen-large', 'target': 'openai/qwen3.6'})
+        assert not team_llm_ping_skipped(
+            {'name': 'deepseek-v4-flash-0731-2',
+             'target': 'openrouter/deepseek/deepseek-v4-flash-0731'})
+
+    def test_unknown_service_is_not_treated_as_local(self):
+        """
+        Неопознанный сервис скорее сетевой: ошибиться безопаснее в сторону лишнего
+        запроса, чем непроверенной модели.
+        """
+        from src.project.team.team_llm_ping import team_llm_ping_skipped
+
+        assert not team_llm_ping_skipped({'name': 'что-то', 'target': 'вообще-непонятно'})
+
+
+class TestPingSkipsBusy:
+    """Занятую кругом модель не пингуем: она и так доказала, что работает."""
+
+    async def test_busy_model_is_skipped(self):
+        """
+        Пинг встаёт в очередь за кругом роли. Локальная модель, занятая кругом QA, не
+        ответила и за 100 секунд — работая при этом безупречно; пометь её проверка
+        «не отвечает», конвейер лишился бы ровно той модели, которая делает работу.
+        """
+        from src.project.team.team_llm_ping import team_llm_ping_all
+        from src.project.team.team_llm_pool import team_llm_pool_acquire, team_llm_pool_set
+
+        await team_llm_pool_set(TEST_PROJECT_ID, [TEST_LLM_DEAD])
+        got = await team_llm_pool_acquire(TEST_PROJECT_ID, task_id=0, role='developer')
+        assert got == TEST_LLM_DEAD, 'модель должна быть захвачена — иначе тест ни о чём'
+
+        result = await team_llm_ping_all([TEST_LLM_DEAD])
+
+        assert result == {}, 'занятая модель в опрос не попадает'
+
+    async def test_free_model_is_pinged(self):
+        """Обратная половина: свободную опрашиваем — иначе пропуск съел бы проверку целиком."""
+        from src.project.team.team_llm_ping import team_llm_ping_all
+        from src.project.team.team_llm_pool import team_llm_pool_set
+
+        await team_llm_pool_set(TEST_PROJECT_ID, [TEST_LLM_DEAD])
+
+        result = await team_llm_ping_all([TEST_LLM_DEAD])
+
+        assert set(result) == {TEST_LLM_DEAD}
+
+
 class TestPingSchedule:
-    """Периодичность: пинг идёт раз в две минуты, а не каждый тик."""
+    """Периодичность: пинг идёт раз в пять минут, а не каждый тик."""
 
     def test_ping_is_a_sweeper(self):
         """
@@ -203,12 +353,12 @@ class TestPingSchedule:
     def test_period_key_is_not_released(self):
         """
         Ключ пинга — расписание, а не защита от дублей, и снимать его по завершении
-        работы нельзя: тик идёт каждую минуту, и снятый ключ дал бы опрос вдвое чаще
-        заявленного.
+        работы нельзя: тик идёт каждую минуту, и снятый ключ дал бы опрос впятеро
+        чаще заявленного.
         """
         from src.worker.project.task_worker import TASK_WORKER_FLIGHT_PERIOD
 
-        assert TASK_WORKER_FLIGHT_PERIOD.get('llm_ping') == 120
+        assert TASK_WORKER_FLIGHT_PERIOD.get('llm_ping') == 300
 
     def test_runner_registered(self):
         """Без записи в карте раннеров job'ы пинга уходили бы в отказ «неизвестный вид»."""
@@ -217,13 +367,53 @@ class TestPingSchedule:
         assert 'llm_ping' in _RUNNERS
 
 
-async def _ping_write(name: str, status: str) -> None:
-    """Записать пинг напрямую, не ходя к провайдеру: проверяем правило, а не запрос."""
+async def _ping_with_transport_error(error: Exception) -> dict:
+    """
+    Пропинговать сетевую модель, подменив каталог оболочки и транспорт.
+
+    Подменяем ровно два внешних куска: файл каталога (на хосте, где идут тесты, он не
+    смонтирован — это чужой репозиторий) и `httpx.AsyncClient.post`. Всё, что между
+    ними, настоящее: выбор стратегии по имени, адрес из `.env`, сборка тела. Заглуши
+    мы весь пинг, тест подтверждал бы только сам себя.
+    """
+    from unittest.mock import patch
+
+    import httpx
+
+    import src.project.team.team_llm_ping as ping_module
+
+    entry = {'name': 'deepseek-v4-flash-0731-1',
+             'target': 'openrouter/deepseek/deepseek-v4-flash-0731',
+             'key_env': 'OPENROUTER_API_KEY', 'url_env': '', 'port': 4001}
+
+    async def _entry(name):
+        return entry
+
+    async def _raise(*args, **kwargs):
+        raise error
+
+    with patch.object(ping_module, 'team_llm_catalog_entry', _entry), \
+         patch.object(httpx.AsyncClient, 'post', _raise):
+        return await ping_module.team_llm_ping_one(entry['name'])
+
+
+async def _ping_write(name: str, status: str, age_seconds: int = 0) -> None:
+    """
+    Записать пинг напрямую, не ходя к провайдеру: проверяем правило, а не запрос.
+
+    `age_seconds` — насколько состарить отметку. Время берётся тем же способом, что и
+    в самом пинге (UTC): разойдись они, «свежий» отказ уезжал бы на целый пояс, и
+    тест на протухание проверял бы разницу часовых поясов, а не срок.
+    """
+    from datetime import timedelta
+
+    from datetime_.datetime_ import datetime_utc_now
     from setting_.setting_ import setting_set
     from src.project.team.team_llm_ping import TEAM_LLM_PING_KEY_PREFIX
 
+    at = (datetime_utc_now() - timedelta(seconds=age_seconds)).strftime('%Y-%m-%d %H:%M:%S')
     ping = {'status': status, 'http_status': '200' if status == 'ok' else '503',
-            'ms': 10, 'at': '2026-08-30 12:00:00', 'error': None}
+            'ms': 10, 'at': at, 'error': None}
     await setting_set(f'{TEAM_LLM_PING_KEY_PREFIX}{name}',
                       json.dumps(ping, ensure_ascii=False), dynamic=1)
 
