@@ -110,7 +110,8 @@ from src.project.task.task_plan import (
     task_plan_parse,
     task_plan_serialize,
 )
-from src.project.task.task_question import task_question_parse, task_question_set
+from src.project.task.task_question import (task_question_parse, task_question_set,
+                                            task_question_set_many)
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
 from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree, task_retry_take
 from src.project.team.team_llm_pool import (team_llm_pool_all, team_llm_pool_assign,
@@ -1041,6 +1042,19 @@ async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str
     question = result.get('question') or {}
     if question:
         await task_question_set(task['id'], question, role)
+
+    # Развилки разведки — те, что менеджер не смог закрыть по коду. Раньше они не
+    # доезжали никуда: перевод разведки в машинный вид забирал два поля, `task_done` и
+    # `task_size`, а вопросы оставались текстом в контексте агента и человек их не
+    # видел никогда. Единственной дверью был ключ `question` в плане — ровно один
+    # вопрос и только если менеджер о нём вспомнит.
+    #
+    # Задачу они, как и одиночный вопрос, не держат: план написан по допущению,
+    # допущение названо вслух, ответ придёт к пересмотру.
+    questions = result.get('questions') or []
+    if questions:
+        taken = await task_question_set_many(task['id'], questions, role)
+        logger_info(f"[task] task#{task['id']}: разведка оставила {taken} вопрос(ов) человеку")
 
     # Пометка «в разработку» — заранее данное человеком согласие: план готов, ждать
     # ещё и нажатия «Утвердить» не за чем. Задача сама меняет тип на `dev` и уходит

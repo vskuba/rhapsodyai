@@ -35,7 +35,9 @@ from src.project.task.task_question import (TASK_QUESTION_ACTION_DROP,
                                             TASK_QUESTION_ACTION_PLAN,
                                             TASK_QUESTION_ACTION_RETRY,
                                             TASK_QUESTION_ACTION_SPLIT, task_question_answer,
-                                            task_question_auto, task_question_decisions,
+                                            task_question_auto, task_question_batch,
+                                            task_question_batch_answer,
+                                            task_question_decisions,
                                             task_question_get, task_question_plan_append)
 from src.project.task.task_report import task_report_write
 from src.project.task.task_setting_timeout import (TASK_SETTING_TIMEOUT_ATTEMPT_MAX,
@@ -59,6 +61,10 @@ class TaskQuestionAnswer(BaseModel):
     answers: list[str] = []
     note: str = ''
     goal_indexes: list[int] = []
+    # Какой вопрос пачки. `None` — одиночный вопрос роли, прежний путь. Отдельным
+    # полем, а не «первый без ответа»: порядок ответов свободный, и человек
+    # возвращается к уже отвеченным, чтобы их поправить.
+    index: int | None = None
 
 
 @router.get('/task/{task_id}/question')
@@ -88,6 +94,10 @@ async def project_task_question_get(task_id: int,
 
     return {
         'question':  question,
+        # Пачка вопросов разведки: у каждого свой черновик ответа. Отдаём целиком,
+        # потому что попап даёт переключаться между ними и править уже отвеченные —
+        # ответ на третий вопрос нередко меняет ответ на первый.
+        'questions': task_question_batch(subtask),
         'decisions': task_question_decisions(subtask),
         'goals':     task_plan_goals_normalize(subtask.get('goals')),
         'attempts':  attempts,
@@ -121,6 +131,29 @@ async def project_task_question_answer(task_id: int, body: TaskQuestionAnswer,
     subtask = await _subtask_row(task_id)
     if not subtask:
         raise HTTPException(status_code=404, detail='task not found')
+
+    # Пачка вопросов разведки — свой путь. Ответ на один её вопрос ложится черновиком
+    # и задачу не отпускает: пока остаётся хоть одна нерешённая развилка, исполнитель
+    # вернулся бы ровно в то, из-за чего встал. Действия над целями сюда не идут —
+    # вопросы менеджера про замысел, а не про охват подзадачи.
+    if body.index is not None:
+        result = await task_question_batch_answer(task_id, subtask, int(body.index),
+                                                  body.answers, body.note, user.username)
+        if not result:
+            raise HTTPException(status_code=400,
+                                detail='Ответ пустой или вопроса с таким номером нет')
+        if not result['done']:
+            return {'ok': True, 'left': result['left'], 'done': False}
+
+        # Пачка закрылась — дальше как у одиночного вопроса: показать решения и
+        # вернуть задачу в работу.
+        for decision in result['decisions']:
+            await _answer_show(task_id, subtask, decision, {})
+        state = await _answer_after(subtask, task_id, user.username,
+                                    result['decisions'][-1], {}, '')
+
+        return {'ok': True, 'left': 0, 'done': True,
+                'decisions': result['decisions'], 'state': state}
 
     # Вопрос берём тот же, что показывали: у автовопроса в мешке ничего не лежит, и
     # без него в решение попал бы голый ключ `goals_split` вместо подписи варианта.

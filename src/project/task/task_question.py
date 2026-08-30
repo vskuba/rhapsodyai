@@ -38,6 +38,18 @@ from src.project.task.task_metadata import task_metadata_parse, task_metadata_up
 # Ключи в мешке `project_task.metadata`.
 TASK_QUESTION_KEY = 'question'
 TASK_QUESTION_KEY_DECISIONS = 'decisions'
+# Пачка вопросов разведки: список со своими черновиками ответов.
+#
+# Отдельный ключ, а не список в `question`. Одиночный вопрос роли — другая механика:
+# спросил, получил ответ, пошёл дальше. Здесь развилок сразу несколько, отвечают на
+# них не подряд, и до последнего ответа ни одна не считается решённой: человек
+# переключается между вопросами и правит уже данные ответы, потому что ответ на
+# третий вопрос нередко меняет ответ на первый.
+#
+# Поэтому черновик, а не решение. В `decisions` пачка уезжает целиком и разом — когда
+# отвечены все: половина развилок, поданная роли как решённая, хуже, чем ни одной, —
+# она примет её за полный ответ и спланирует по нему.
+TASK_QUESTION_KEY_QUEUE = 'questions'
 
 # Сколько вариантов ответа берём у агента. Больше — не выбор, а анкета: человек
 # идёт в кнопку, чтобы решить за десять секунд, и десять вариантов эту задачу
@@ -56,6 +68,11 @@ TASK_QUESTION_ANSWER_MAX = 2000
 # два десятка раз, чтобы список не вытеснил из промпта саму работу. Обрезаем
 # старые: свежие решения точнее описывают текущую развилку.
 TASK_QUESTION_DECISIONS_MAX = 20
+
+# Сколько вопросов принимаем за раз. Разведка формулирует до пяти, и столько же
+# берём: пачка длиннее означает, что агент не разведал, а переложил работу на
+# человека — на такое отвечать не станут, и задача встанет насовсем.
+TASK_QUESTION_QUEUE_MAX = 5
 
 # Состояния, в которых конвейер спрашивает сам. Общее у них одно: строка стоит и
 # сама не сдвинется. `failed_qa` сюда входит намеренно, хотя попытки ещё есть, —
@@ -126,6 +143,110 @@ async def task_question_set(subtask_id: int, question: dict, role: str = '') -> 
         return
 
     await task_metadata_update(int(subtask_id), {TASK_QUESTION_KEY: {**question, 'role': str(role or '')}})
+
+
+async def task_question_set_many(subtask_id: int, questions: list, role: str = '') -> int:
+    """
+    Положить пачку вопросов разведки. Returns: сколько принято.
+
+    Ответов у них пока нет — они появятся черновиками, по мере того как человек будет
+    отвечать. Пустые и бестекстовые отбрасываем тем же разбором, что и одиночный
+    вопрос: пустой попап хуже отсутствующего.
+
+    Одиночный вопрос роли этим не затрагивается: у него свой ключ и свой путь.
+    """
+    clean = []
+    for item in (questions or [])[:TASK_QUESTION_QUEUE_MAX]:
+        parsed = task_question_parse({TASK_QUESTION_KEY: item})
+        if parsed:
+            clean.append({**parsed, 'role': str(role or ''), 'answer': None})
+
+    if not subtask_id or not clean:
+        return 0
+
+    await task_metadata_update(int(subtask_id), {TASK_QUESTION_KEY_QUEUE: clean})
+
+    return len(clean)
+
+
+def task_question_batch(subtask: dict | None) -> list:
+    """Пачка вопросов с черновиками ответов. Нет пачки — пустой список."""
+    meta = task_metadata_parse((subtask or {}).get('metadata'))
+    batch = meta.get(TASK_QUESTION_KEY_QUEUE)
+
+    return [q for q in batch if isinstance(q, dict) and q.get('text')] if isinstance(batch, list) else []
+
+
+def task_question_batch_left(subtask: dict | None) -> int:
+    """Сколько вопросов пачки ещё без ответа. Ноль — либо пачки нет, либо всё отвечено."""
+    return sum(1 for q in task_question_batch(subtask) if not (q.get('answer') or {}).get('text'))
+
+
+async def task_question_batch_answer(subtask_id: int, subtask: dict, index: int,
+                                     answers: list | None, note: str = '',
+                                     by: str = '') -> dict:
+    """
+    Ответ на один вопрос пачки — черновиком. Отвечены все — пачка уходит в решения.
+
+    Args:
+        index: какой вопрос пачки. Порядок свободный: человек отвечает как ему удобно
+            и возвращается к уже отвеченным, потому что ответ на третий вопрос нередко
+            меняет ответ на первый.
+
+    Returns:
+        `{'left': сколько без ответа, 'done': отвечены ли все, 'decisions': [...]}`.
+        `decisions` непусты только в момент, когда пачка закрылась.
+
+    Черновик перезаписывается молча: правка ответа — обычное дело, пока пачка открыта,
+    и хранить историю черновиков незачем — в решения уедет последний.
+
+    В решения пачка уезжает разом и только целиком. До этого ответы — черновики, и
+    роль их не видит: половина развилок, поданная как решённая, хуже, чем ни одной, —
+    агент принял бы её за полный ответ и спланировал по нему.
+
+    Задачу это не держит: вопрос менеджера её и не останавливал (план пишется по
+    допущению, ответ приходит к пересмотру), а держать её ради ответов значило бы
+    остановить работу, которая идёт.
+    """
+    batch = task_question_batch(subtask)
+    if not batch or not 0 <= int(index) < len(batch):
+        return {}
+
+    question = batch[int(index)]
+    labels = _answer_labels(question, answers)
+    free = str(note or '').strip()[:TASK_QUESTION_ANSWER_MAX]
+    text = '; '.join([*labels, free] if free else labels)
+    if not text:
+        return {}
+
+    # В черновике держим и разобранный текст, и то, чем человек его набрал: вернувшись
+    # к отвеченному вопросу, он должен увидеть свой выбор отмеченным, а не пустую форму.
+    # Без ключей и заметки попап показал бы «ответ есть», но чем именно — неизвестно, и
+    # правка превратилась бы в ответ заново.
+    batch[int(index)] = {**question, 'answer': {
+        'text': text,
+        'keys': [str(a) for a in (answers or [])],
+        'note': free,
+        'at': _now(),
+        'by': str(by or ''),
+    }}
+    left = sum(1 for q in batch if not (q.get('answer') or {}).get('text'))
+
+    if left:
+        await task_metadata_update(int(subtask_id), {TASK_QUESTION_KEY_QUEUE: batch})
+        return {'left': left, 'done': False, 'decisions': []}
+
+    # Пачка закрылась — черновики становятся решениями разом и в порядке вопросов.
+    fresh = [{'at': q['answer']['at'], 'question': str(q.get('text') or '').strip(),
+              'answer': q['answer']['text'], 'by': q['answer'].get('by') or ''}
+             for q in batch]
+    decisions = [*task_question_decisions(subtask), *fresh][-TASK_QUESTION_DECISIONS_MAX:]
+    await task_metadata_update(int(subtask_id), {
+        TASK_QUESTION_KEY_QUEUE: None,
+        TASK_QUESTION_KEY_DECISIONS: decisions,
+    })
+
+    return {'left': 0, 'done': True, 'decisions': fresh}
 
 
 def task_question_get(subtask: dict | None) -> dict:

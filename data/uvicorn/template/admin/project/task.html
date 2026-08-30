@@ -987,6 +987,19 @@
     }
     .pipe-ask.quiet:hover { background: #f1f5f9; color: #475569; }
     /* ─── Попап вопроса ─────────────────────────────────────── */
+    /* Полоса вопросов пачки: номера с галочкой у отвеченных. Не «шаг 1 из 5», а
+       именно полоса — по ней видно разом, сколько развилок принесли и куда можно
+       вернуться, а вернуться человек хочет часто: ответ на третью меняет первую. */
+    .ask-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+    .ask-tab {
+        min-width: 34px; padding: 5px 9px; cursor: pointer; font-size: 12px;
+        border: 1px solid #e2e8f0; border-radius: 7px; background: #fff; color: #64748b;
+    }
+    .ask-tab:hover { border-color: #cbd5e1; color: #334155; }
+    .ask-tab.done { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+    .ask-tab.current { border-color: #6366f1; color: #4338ca; box-shadow: 0 0 0 2px #e0e7ff; }
+    .ask-hint { margin-top: 10px; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+
     .ask-question {
         background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
         padding: 12px 14px; margin-bottom: 14px; color: #78350f;
@@ -3983,7 +3996,9 @@ function renderPipeChip(t, row) {
 const ASK_STUCK_STATES = ['blocked', 'failed_qa', 'failed'];
 
 function renderPipeAsk(t) {
-    const asked = !!t.metadata?.question?.text;
+    // Пачка вопросов разведки — такой же повод показать кнопку, как одиночный
+    // вопрос роли: без неё человек не узнал бы, что его о чём-то спрашивают.
+    const asked = !!t.metadata?.question?.text || !!t.metadata?.questions?.length;
     // У задачи целиком автовопроса не бывает: его варианты дробят и сокращают цели
     // подзадачи, а цели задачи ведёт план. Зато спросить может менеджер — разведка
     // упирается в развилку, которую решает заказчик, а не код.
@@ -4590,10 +4605,14 @@ function taskVoiceToggle() { _voice.toggle(); }
 
 let _askTaskId = 0;
 let _askData = null;
+// Какой вопрос пачки открыт. Порядок ответов свободный: человек ходит между
+// вопросами и правит уже отвеченные — ответ на третий нередко меняет ответ на первый.
+let _askIndex = 0;
 
 async function askOpen(taskId) {
     _askTaskId = taskId;
     _askData = null;
+    _askIndex = 0;
     document.getElementById('askModal').classList.add('visible');
     document.getElementById('askBody').innerHTML = '<div class="ask-empty">Загружаю…</div>';
     try {
@@ -4618,10 +4637,19 @@ const ASK_GOAL_ACTIONS = ['goals_split', 'goals_drop'];
 
 function askRender() {
     const data = _askData || {};
-    const q = data.question || {};
-    document.getElementById('askTitle').textContent = `Вопрос по подзадаче #${_askTaskId}`;
+    const batch = data.questions || [];
+    // Пачка вопросов разведки — свой вид: полоса переключения и счётчик. Одиночный
+    // вопрос роли рисуется как прежде, у него другая механика: спросил — ответили —
+    // пошёл дальше, переключаться не между чем.
+    const q = batch.length ? (batch[_askIndex] || batch[0] || {}) : (data.question || {});
+    const left = batch.filter(item => !item.answer?.text).length;
+    document.getElementById('askTitle').textContent = batch.length > 1
+        ? `Вопросы по задаче #${_askTaskId}: ${batch.length - left} из ${batch.length}`
+        : `Вопрос по подзадаче #${_askTaskId}`;
 
     const parts = [];
+
+    if (batch.length) parts.push(askTabsHtml(batch));
 
     if (!q.text) {
         parts.push('<div class="ask-empty">Вопросов по этой подзадаче нет — она идёт своим ходом.</div>');
@@ -4654,12 +4682,28 @@ function askRender() {
              + '<textarea class="ask-note" id="askNote" placeholder="'
              + (options.length ? 'Необязательно: условие или оговорка к выбранному варианту'
                                : 'Ответ своими словами')
-             + '"></textarea>');
+             + `">${esc(q.answer?.note || '')}</textarea>`);
 
-    parts.push('<div class="ask-actions">'
-             + '<button class="ask-btn plain" onclick="askClose()">Отмена</button>'
-             + '<button class="ask-btn primary" id="askSend" onclick="askSend()">'
-             + 'Ответить и вернуть в работу</button></div>');
+    if (batch.length) {
+        // Кнопка одна и говорит, что произойдёт: пока развилки остались — «сохранить и
+        // перейти», на последней — «принять решения». Две разные кнопки заставляли бы
+        // выбирать между ними, хотя выбора нет: порядок действий тут единственный.
+        const last = left <= 1 && !!q.answer?.text === false || left === 1 && !q.answer?.text;
+        parts.push('<div class="ask-actions">'
+                 + '<button class="ask-btn plain" onclick="askClose()">Закрыть</button>'
+                 + '<button class="ask-btn primary" id="askSend" onclick="askSend()">'
+                 + (last ? 'Ответить на всё и принять решения' : 'Сохранить ответ')
+                 + '</button></div>');
+        if (left) {
+            parts.push(`<div class="ask-hint">Без ответа: ${left} из ${batch.length}. `
+                     + 'Решения запишутся, когда ответите на все — до этого ответы можно менять.</div>');
+        }
+    } else {
+        parts.push('<div class="ask-actions">'
+                 + '<button class="ask-btn plain" onclick="askClose()">Отмена</button>'
+                 + '<button class="ask-btn primary" id="askSend" onclick="askSend()">'
+                 + 'Ответить и вернуть в работу</button></div>');
+    }
 
     const kept = data.decisions || [];
     if (kept.length) {
@@ -4671,7 +4715,41 @@ function askRender() {
     }
 
     document.getElementById('askBody').innerHTML = parts.join('');
+
+    // Черновик возвращаем в поля: человек вернулся к отвеченному вопросу и должен
+    // увидеть, что выбрал, а не пустую форму — иначе правка превращается в ответ заново.
+    const picked = q.answer?.keys || [];
+    if (picked.length) {
+        picked.forEach(key => {
+            const input = document.querySelector(`#askBody input[name="askOpt"][value="${key}"]`);
+            if (input) input.checked = true;
+        });
+        askPick();
+    }
 }
+
+// Полоса вопросов: номер, признак ответа и переключение. Показываем все сразу, а не
+// «следующий по очереди»: человек должен видеть, сколько развилок ему принесли, и
+// вернуться к любой — ответ на третью нередко меняет ответ на первую.
+function askTabsHtml(batch) {
+    return '<div class="ask-tabs">' + batch.map((item, n) => {
+        const done = !!item.answer?.text;
+        const cls = 'ask-tab' + (n === _askIndex ? ' current' : '') + (done ? ' done' : '');
+
+        return `<button class="${cls}" onclick="askGo(${n})" title="${esc(item.text || '')}">`
+             + `${done ? '✓' : ''}${n + 1}</button>`;
+    }).join('') + '</div>';
+}
+
+// Переключение между вопросами пачки. Ответ текущего сохраняем в черновик перед
+// уходом: набранное не должно пропадать от того, что человек посмотрел соседний
+// вопрос, — иначе к нему страшно возвращаться.
+window.askGo = async function (index) {
+    if (index === _askIndex) return;
+    await askDraftSave();
+    _askIndex = index;
+    askRender();
+};
 
 function askGoalsHtml(goals) {
     if (!goals.length) return '<div class="ask-empty">Целей у подзадачи нет — делить нечего.</div>';
@@ -4701,8 +4779,70 @@ function askPick() {
     }, 0);
 }
 
+// Что набрано в форме прямо сейчас.
+function askFormRead() {
+    return {
+        answers: [...document.querySelectorAll('#askBody input[name="askOpt"]:checked')].map(i => i.value),
+        note: (document.getElementById('askNote')?.value || '').trim(),
+    };
+}
+
+// Сохранить черновик текущего вопроса пачки. Молча: это не действие человека, а
+// сопровождение переключения, и ошибка здесь не повод показывать окно — набранное
+// останется в форме, а сохранить его можно кнопкой.
+async function askDraftSave() {
+    const batch = (_askData || {}).questions || [];
+    if (!batch.length) return;
+
+    const form = askFormRead();
+    if (!form.answers.length && !form.note) return;
+
+    try {
+        await taskFetch(`/task/${_askTaskId}/question/answer`, {
+            method: 'POST',
+            body: JSON.stringify({ ...form, index: _askIndex }),
+        });
+        _askData = await taskFetch(`/task/${_askTaskId}/question`);
+    } catch (e) { /* черновик не сохранился — набранное остаётся в форме */ }
+}
+
 async function askSend() {
     const button = document.getElementById('askSend');
+    const batch = (_askData || {}).questions || [];
+
+    if (batch.length) {
+        const form = askFormRead();
+        if (!form.answers.length && !form.note) { alert('Выберите вариант или напишите ответ'); return; }
+
+        button.disabled = true;
+        button.textContent = 'Сохраняю…';
+        let result;
+        try {
+            result = await taskFetch(`/task/${_askTaskId}/question/answer`, {
+                method: 'POST',
+                body: JSON.stringify({ ...form, index: _askIndex }),
+            });
+        } catch (e) {
+            alert(e.message || 'Не отправилось');
+            button.disabled = false;
+            return askRender();
+        }
+
+        if (result.done) {
+            askClose();
+            await loadTasks();
+            return;
+        }
+
+        // Ответили не на всё — открываем первый оставшийся: так человек идёт по
+        // пачке, не выбирая каждый раз, куда нажать дальше.
+        _askData = await taskFetch(`/task/${_askTaskId}/question`);
+        const rest = (_askData.questions || []).findIndex(item => !item.answer?.text);
+        _askIndex = rest >= 0 ? rest : _askIndex;
+        askRender();
+        return;
+    }
+
     const answers = [...document.querySelectorAll('#askBody input[name="askOpt"]:checked')].map(i => i.value);
     const goalIndexes = [...document.querySelectorAll('#askBody input[name="askGoal"]:checked')]
         .map(i => parseInt(i.value, 10));
