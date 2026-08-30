@@ -151,6 +151,11 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         # ветки подзадачи. Нет каталога подзадачи — нет и своего сервера.
         'subtask_server_url': await task_role_project_server_url(
             (task or {}).get('project_id')) if subtask_dir else '',
+        # Режим проверки Lite или Full, записанный на странице задач; по умолчанию lite,
+        # если ключ отсутствует или значение пустое — это значит, что администратор ещё не
+        # менял настройку. Lite — только проверка кода и документации без тестов.
+        # Full — те же проверки плюс запуск всех тестов.
+        'subtask_qa_mode': str((task.get('metadata') or {}).get('qa_mode') or 'lite'),
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
 
