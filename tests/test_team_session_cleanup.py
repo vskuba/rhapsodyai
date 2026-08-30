@@ -118,6 +118,50 @@ class TestCleanupReport:
         assert report['silent_closed'] >= 1
 
 
+class TestSweepRunsOnSchedule:
+    """
+    Уборка идёт по расписанию, а не только при регистрации оболочки.
+
+    Дефект был живой. Уборка звалась из одного места — регистрации новой сессии, — а
+    её не происходит, пока человек не откроет терминал. Между перезапусками мёртвые
+    строки копились и висели на `/admin/team` живыми карточками: после обрыва сети их
+    набралось шесть при восьми работающих, и команда выглядела так, будто роли
+    отваливаются пачками.
+    """
+
+    def test_sweep_is_registered_as_runner(self):
+        """Без записи в карте раннеров job уборки уходил бы в отказ «неизвестный вид»."""
+        from src.project.task.task_pipeline import _RUNNERS
+
+        assert 'session_sweep' in _RUNNERS
+
+    def test_sweep_is_a_periodic_sweeper(self):
+        """
+        Подметальщик: без захвата строки и вне бюджета действий, раз в пять минут.
+
+        Считайся он действием, при `max_actions=1` тик уходил бы на уборку, а задачи
+        стояли бы в очереди.
+        """
+        from src.worker.project.task_worker import (TASK_WORKER_FLIGHT_PERIOD,
+                                                    TASK_WORKER_SINGLE_FLIGHT)
+
+        assert 'session_sweep' in TASK_WORKER_SINGLE_FLIGHT
+        assert TASK_WORKER_FLIGHT_PERIOD.get('session_sweep') == 300
+
+    async def test_sweep_closes_silent_session(self):
+        """
+        Тот самый случай целиком: молчащая строка гаснет прогоном подметальщика, без
+        всякой регистрации новой оболочки.
+        """
+        from src.project.task.task_pipeline import _run_session_sweep
+
+        uuid = await _session_create('sweep', seen_minutes_ago=90)
+
+        await _run_session_sweep({'kind': 'session_sweep'})
+
+        assert await _status(uuid) == 'inactive'
+
+
 async def _session_create(suffix: str, seen_minutes_ago: int | None,
                           created_minutes_ago: int = 0) -> str:
     """Завести `active`-сессию с нужной давностью heartbeat. Returns: её uuid."""

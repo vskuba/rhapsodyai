@@ -115,6 +115,7 @@ from src.project.task.task_question import (task_question_parse, task_question_s
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
 from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree, task_retry_take
 from src.project.team.team_llm_ping import team_llm_ping_all
+from src.project.team.team_session_cleanup import cleanup_inactive_sessions
 from src.project.team.team_llm_pool import (team_llm_pool_all, team_llm_pool_assign,
                                             team_llm_pool_get, team_llm_pool_release)
 from src.project.team.team_shell_pool import (team_shell_pool_acquire, team_shell_pool_busy,
@@ -518,6 +519,31 @@ def _action_label(action: dict, job_id: str) -> str:
 
 
 # ─── Шаги конвейера: что делает воркер ─────────────────────────────────────────
+
+async def _run_session_sweep(action: dict) -> str | None:
+    """
+    Погасить и убрать сессии оболочек, которых больше нет.
+
+    Уборка звалась только при регистрации новой оболочки — а её не происходит, пока
+    человек не откроет терминал. Между перезапусками мёртвые строки копились и висели
+    на `/admin/team` живыми карточками: после обрыва сети их набралось шесть при
+    восьми работающих, и команда выглядела так, будто роли отваливаются.
+
+    Здесь, подметальщиком тика, потому что это уборка по времени, а не по событию:
+    оболочка умирает молча, и узнать об этом можно только не дождавшись её пинга.
+
+    Порог — час без heartbeat (`TEAM_SESSION_CLEANUP_SILENT_MINUTES`), много больше
+    порога свежести карточки: тот решает, как рисовать живую строку при заминке сети,
+    а этот — когда списать её совсем.
+    """
+    result = await cleanup_inactive_sessions()
+    closed = int(result.get('silent_closed') or 0)
+    deleted = int(result.get('registry_deleted') or 0)
+    if not closed and not deleted:
+        return None
+
+    return f'сессии: погашено {closed}, удалено {deleted}'
+
 
 async def _run_llm_ping(action: dict) -> str | None:
     """
@@ -1724,6 +1750,7 @@ def _task_plural(n: int, one: str, few: str, many: str) -> str:
 _RUNNERS = {
     'bug_scan':       _run_bug_scan,
     'llm_ping':       _run_llm_ping,
+    'session_sweep':  _run_session_sweep,
     'manager_review': _run_manager_review,
     'manager_plan':   _run_manager_plan,
     'plan_split':     _run_plan_split,
