@@ -185,6 +185,72 @@ class TestGuards:
         assert await task_question_set_many(task, [{'text': ''}, 'просто спросил']) == 1
 
 
+class TestBothKinds:
+    """Пачка разведки и одиночный вопрос роли на одной строке."""
+
+    async def test_manager_can_leave_both(self, task):
+        """
+        Менеджер кладёт и то, и другое: развилки разведки пачкой и вопрос из плана
+        отдельным ключом. Ключи разные, и один другого не затирает.
+        """
+        from src.project.task.task_question import (task_question_batch, task_question_get,
+                                                    task_question_set)
+
+        await task_question_set(task, {'text': 'Вопрос из плана', 'options': ['А', 'Б']},
+                                role='manager')
+
+        assert task_question_get(await _row(task))['text'] == 'Вопрос из плана'
+        assert len(task_question_batch(await _row(task))) == 3, 'пачка должна уцелеть'
+
+    async def test_answering_one_leaves_the_other(self, task):
+        """
+        Ответ на вопрос плана снимает его и не трогает пачку: у них разные механики —
+        одиночный отвечается разом, пачка копится черновиками до последнего ответа.
+        """
+        from src.project.task.task_question import (task_question_answer, task_question_batch,
+                                                    task_question_get, task_question_set)
+
+        await task_question_set(task, {'text': 'Вопрос из плана', 'options': ['А', 'Б']},
+                                role='manager')
+        row = await _row(task)
+        await task_question_answer(task, row, ['1'], '', by='tester')
+
+        assert task_question_get(await _row(task)) == {}
+        assert len(task_question_batch(await _row(task))) == 3
+
+    async def test_options_are_normalized_on_write(self, task):
+        """
+        Варианты приводятся к `{key, label}` при записи, а не при чтении.
+
+        Раньше клали как дали, и список строк доживал до ответа человека: там
+        `_answer_labels` зовёт у варианта `.get()` и падал с «'str' object has no
+        attribute 'get'». Ошибка вылезала не при записи, а при ответе, и по тексту к
+        причине не сводилась.
+        """
+        from src.project.task.task_question import task_question_get, task_question_set
+
+        await task_question_set(task, {'text': 'Вопрос', 'options': ['А', 'Б']}, role='manager')
+        options = task_question_get(await _row(task))['options']
+
+        assert all(isinstance(o, dict) and o.get('key') and o.get('label') for o in options)
+
+    async def test_extra_marks_survive_normalization(self, task):
+        """
+        Пометки вне общей формы переносятся: по `dialog` и `back_state` конвейер
+        решает, куда вернуть строку после ответа. Потеряв их, он оставил бы задачу
+        лежать там, откуда её сняли.
+        """
+        from src.project.task.task_question import task_question_get, task_question_set
+
+        await task_question_set(task, {'text': 'Оболочка встала', 'options': [],
+                                       'dialog': True, 'back_state': 'reviewing'},
+                                role='manager')
+        stored = task_question_get(await _row(task))
+
+        assert stored['dialog'] is True
+        assert stored['back_state'] == 'reviewing'
+
+
 async def _row(task_id: int) -> dict:
     """Строка задачи целиком — механизм читает мешок из уже прочитанной строки."""
     from mysql_.mysql_ import mysql_get_db_async
@@ -211,3 +277,72 @@ async def _drop() -> None:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '--tb=short'])
+
+
+class TestAutoQuestionFacts:
+    """
+    Автовопрос конвейера: по каким прогонам он делает вывод о причине.
+
+    Вопрос собирается из статистики попыток, и статистику легко отравить. Живьём:
+    подзадача #5219 набрала шесть срывов по 7–26 секунд, когда миграция сломала JSON
+    промпта и движок слал агенту пустоту. Автовопрос увидел «8 прогонов, 6 оборвалось»
+    и объявил неподъёмным охват — предложил дробить работу, к которой поломка не имела
+    отношения. Ответь человек «раздробить» — подзадачу разрезали бы впустую.
+    """
+
+    def test_instant_runs_are_not_attempts(self):
+        """
+        Прогон короче минуты — поломка установки, а не работа агента: настоящий круг
+        идёт минутами. В вывод о причине такие не входят.
+        """
+        from src.project.task.task_question import _attempts_facts
+
+        facts = _attempts_facts([
+            {'error': 'прогон не состоялся — Разработчик не ответил', 'duration_ms': 7000},
+            {'error': 'прогон не состоялся — Разработчик не ответил', 'duration_ms': 26000},
+        ])
+
+        assert facts['broken'] == 0, 'мгновенные срывы не считаются оборванными кругами'
+        assert facts['instant'] == 2
+        assert facts['runs'] == 2, 'из счёта прогонов они не исчезают — человек вправе знать'
+
+    def test_long_timeouts_still_count(self):
+        """Настоящий таймаут — это круг, который шёл и не дошёл. Он остаётся уликой."""
+        from src.project.task.task_question import _attempts_facts
+
+        facts = _attempts_facts([
+            {'error': 'прогон не состоялся — Разработчик не ответил', 'duration_ms': 900000},
+            {'error': 'timeout', 'duration_ms': 600000},
+        ])
+
+        assert facts['broken'] == 2
+        assert facts['instant'] == 0
+
+    def test_verdict_is_not_scope_after_instant_failures(self):
+        """
+        Главное. Шесть мгновенных срывов не должны давать вывод «объём не влезает»:
+        охват тут ни при чём, и предлагать дробление — вредный совет.
+        """
+        from src.project.task.task_question import task_question_auto
+
+        runs = [{'error': 'прогон не состоялся — Разработчик не ответил', 'duration_ms': 8000}
+                for _ in range(6)]
+        runs.append({'error': 'Цели не подтверждены', 'duration_ms': 700000})
+
+        text = task_question_auto({'pipeline_state': 'failed_qa', 'pipeline_attempt_count': 1,
+                                   'goals': '[]'}, runs, 3)['text']
+
+        assert 'объём не влезает' not in text
+        assert 'оборвались за секунды' in text, 'о срывах человеку сказать надо'
+
+    def test_missing_duration_counts_as_real(self):
+        """
+        Без длительности прогон считаем настоящим: молча выкидывать из статистики то,
+        о чём ничего не известно, — худший вид догадки.
+        """
+        from src.project.task.task_question import _attempts_facts
+
+        facts = _attempts_facts([{'error': 'прогон не состоялся', 'duration_ms': None}])
+
+        assert facts['broken'] == 1
+        assert facts['instant'] == 0

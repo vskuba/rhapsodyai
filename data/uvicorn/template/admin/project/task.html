@@ -4637,15 +4637,25 @@ const ASK_GOAL_ACTIONS = ['goals_split', 'goals_drop'];
 
 function askRender() {
     const data = _askData || {};
-    const batch = data.questions || [];
-    // Пачка вопросов разведки — свой вид: полоса переключения и счётчик. Одиночный
-    // вопрос роли рисуется как прежде, у него другая механика: спросил — ответили —
-    // пошёл дальше, переключаться не между чем.
-    const q = batch.length ? (batch[_askIndex] || batch[0] || {}) : (data.question || {});
+    // Все вопросы строки в одном списке. Их бывает два вида сразу: менеджер кладёт и
+    // развилки разведки пачкой, и вопрос из плана — по отдельному ключу. Показывали
+    // только пачку, и вопрос плана висел невидимым до её закрытия, а счётчик врал:
+    // «0 из 2» при трёх вопросах.
+    //
+    // Механики у них разные и остаются разными — отвечает за это `askSend`, различая
+    // их по признаку `single`. Здесь только показ: человеку всё равно, каким ключом
+    // вопрос лежит в базе, ему нужно ответить на все.
+    const batch = askQuestionsAll(data);
+    const q = batch.length ? (batch[_askIndex] || batch[0] || {}) : {};
     const left = batch.filter(item => !item.answer?.text).length;
+    // Кто спрашивает — в заголовке, а не только внутри карточки вопроса. Вопрос
+    // разработчика, вопрос QA и вопрос конвейера означают разное: первые два — про
+    // развилку в работе, третий — про то, что работа не идёт. Человек решает, стоит
+    // ли открывать попап, ещё до того, как прочтёт сам вопрос.
     document.getElementById('askTitle').textContent = batch.length > 1
-        ? `Вопросы по задаче #${_askTaskId}: ${batch.length - left} из ${batch.length}`
-        : `Вопрос по подзадаче #${_askTaskId}`;
+        ? `${_askAsker(q)} спрашивает по задаче #${_askTaskId}: `
+          + `${batch.length - left} из ${batch.length}`
+        : `${_askAsker(q || data.question || {})} спрашивает по задаче #${_askTaskId}`;
 
     const parts = [];
 
@@ -4685,15 +4695,16 @@ function askRender() {
              + `">${esc(q.answer?.note || '')}</textarea>`);
 
     if (batch.length) {
-        // Кнопка одна и говорит, что произойдёт: пока развилки остались — «сохранить и
-        // перейти», на последней — «принять решения». Две разные кнопки заставляли бы
-        // выбирать между ними, хотя выбора нет: порядок действий тут единственный.
-        const last = left <= 1 && !!q.answer?.text === false || left === 1 && !q.answer?.text;
+        // Кнопка одна и говорит, что произойдёт. У одиночного вопроса роли черновиков
+        // нет — ответ на него сразу решение, и обещать «сохранить» было бы неправдой.
+        // У пачки: пока развилки остались — «сохранить и перейти», на последней —
+        // «принять решения».
+        const last = left === 1 && !q.answer?.text;
+        const label = q.single ? 'Ответить и вернуть в работу'
+                               : (last ? 'Ответить на всё и принять решения' : 'Сохранить ответ');
         parts.push('<div class="ask-actions">'
                  + '<button class="ask-btn plain" onclick="askClose()">Закрыть</button>'
-                 + '<button class="ask-btn primary" id="askSend" onclick="askSend()">'
-                 + (last ? 'Ответить на всё и принять решения' : 'Сохранить ответ')
-                 + '</button></div>');
+                 + `<button class="ask-btn primary" id="askSend" onclick="askSend()">${label}</button></div>`);
         if (left) {
             parts.push(`<div class="ask-hint">Без ответа: ${left} из ${batch.length}. `
                      + 'Решения запишутся, когда ответите на все — до этого ответы можно менять.</div>');
@@ -4726,6 +4737,16 @@ function askRender() {
         });
         askPick();
     }
+}
+
+// Все вопросы строки: пачка разведки плюс одиночный вопрос роли, если он есть.
+// Одиночный идёт последним и помечен `single` — по этой пометке `askSend` шлёт его
+// своим путём, без номера в пачке.
+function askQuestionsAll(data) {
+    const batch = (data.questions || []).map((item, n) => ({...item, index: n}));
+    const one = data.question || {};
+
+    return one.text ? [...batch, {...one, single: true}] : batch;
 }
 
 // Полоса вопросов: номер, признак ответа и переключение. Показываем все сразу, а не
@@ -4791,8 +4812,13 @@ function askFormRead() {
 // сопровождение переключения, и ошибка здесь не повод показывать окно — набранное
 // останется в форме, а сохранить его можно кнопкой.
 async function askDraftSave() {
-    const batch = (_askData || {}).questions || [];
-    if (!batch.length) return;
+    const all = askQuestionsAll(_askData || {});
+    const current = all[_askIndex];
+    // Черновики есть только у пачки. Одиночный вопрос отвечается разом и насовсем:
+    // ответ на него сразу становится решением и возвращает строку в работу, поэтому
+    // сохранять его «на потом» нельзя — уход на соседнюю вкладку не должен закрывать
+    // развилку.
+    if (!current || current.single || current.index === undefined) return;
 
     const form = askFormRead();
     if (!form.answers.length && !form.note) return;
@@ -4800,7 +4826,7 @@ async function askDraftSave() {
     try {
         await taskFetch(`/task/${_askTaskId}/question/answer`, {
             method: 'POST',
-            body: JSON.stringify({ ...form, index: _askIndex }),
+            body: JSON.stringify({ ...form, index: current.index }),
         });
         _askData = await taskFetch(`/task/${_askTaskId}/question`);
     } catch (e) { /* черновик не сохранился — набранное остаётся в форме */ }
@@ -4808,7 +4834,11 @@ async function askDraftSave() {
 
 async function askSend() {
     const button = document.getElementById('askSend');
-    const batch = (_askData || {}).questions || [];
+    const all = askQuestionsAll(_askData || {});
+    const current = all[_askIndex] || {};
+    // Одиночный вопрос роли идёт прежним путём — без номера в пачке. Он отвечается
+    // разом: ответ становится решением и возвращает строку в работу.
+    const batch = current.single ? [] : all.filter(item => !item.single);
 
     if (batch.length) {
         const form = askFormRead();
@@ -4820,7 +4850,7 @@ async function askSend() {
         try {
             result = await taskFetch(`/task/${_askTaskId}/question/answer`, {
                 method: 'POST',
-                body: JSON.stringify({ ...form, index: _askIndex }),
+                body: JSON.stringify({ ...form, index: current.index }),
             });
         } catch (e) {
             alert(e.message || 'Не отправилось');
@@ -4835,9 +4865,9 @@ async function askSend() {
         }
 
         // Ответили не на всё — открываем первый оставшийся: так человек идёт по
-        // пачке, не выбирая каждый раз, куда нажать дальше.
+        // списку, не выбирая каждый раз, куда нажать дальше.
         _askData = await taskFetch(`/task/${_askTaskId}/question`);
-        const rest = (_askData.questions || []).findIndex(item => !item.answer?.text);
+        const rest = askQuestionsAll(_askData).findIndex(item => !item.answer?.text);
         _askIndex = rest >= 0 ? rest : _askIndex;
         askRender();
         return;
@@ -4870,6 +4900,12 @@ async function askSend() {
 
 function _askRoleTitle(role) {
     return { developer: 'Разработчик', qa: 'QA', manager: 'Менеджер', bugfixer: 'Багфиксер' }[role] || role;
+}
+
+// Кто задал вопрос. Роли не знаем — «Конвейер»: так выглядит автовопрос, который
+// поднимается сам, когда подзадача встала, и роли за ним нет по определению.
+function _askAsker(q) {
+    return (q || {}).auto || !(q || {}).role ? 'Конвейер' : _askRoleTitle(q.role);
 }
 
 function showHelpModal() {
