@@ -321,7 +321,7 @@ async def team_llm_pool_acquire(project_id: int, task_id: int, role: str,
             await db.execute(
                 "UPDATE team_llm_lock "
                 "   SET project_id = %s, task_id = %s, role = %s, session_uuid = %s, "
-                "       locked_at = NOW() "
+                "       locked_at = NOW(), used_at = NOW() "
                 " WHERE llm_name = %s "
                 "   AND (locked_at IS NULL OR locked_at <= NOW() - INTERVAL %s SECOND)",
                 (int(project_id or 0), int(task_id or 0) or None, str(role or ''),
@@ -563,15 +563,33 @@ async def _session_llm_write(session_uuid: str, llm_name: str) -> None:
 
 
 async def _task_llm_last(task_id: int) -> str:
-    """Модель, на которой задача работала прошлый круг. Нет — пустая строка."""
+    """
+    Модель, на которой задача работала **последний** круг. Нет — пустая строка.
+
+    Свободную и занятую ищем одинаково: занятая тем же `task_id` — это её же круг,
+    который ещё не закрылся, и предпочесть её всё равно правильно.
+
+    Сортировка обязательна. Строк на задачу бывает несколько: строка заводится на
+    модель и живёт дальше, `task_id` в ней остаётся после освобождения — это и есть
+    память о прошлом круге. Отработала задача на двух моделях подряд, и обе помнят её
+    номер. Без `ORDER BY` какую вернуть решал MySQL: живьём задача #4915 числилась
+    разом за `gx10/qwen-large` (шёл круг) и за `qwen/qwen3.7-flash` (след прошлого), и
+    прилипание срабатывало через раз — а его цена как раз в том, чтобы не
+    перезапускать агента и не терять накопленный им контекст.
+
+    По `used_at`, а не по `locked_at`: второй гасится при освобождении, и у свободной
+    строки там NULL — «работала час назад» от «работала вчера» по нему не отличить.
+    Строки без `used_at` (заведённые до появления колонки) идут последними: про них мы
+    не знаем ничего, и ставить их впереди датированных значило бы предпочесть незнание.
+    """
     if not task_id:
         return ''
 
     async with mysql_get_db_async() as db:
-        # Свободную и занятую ищем одинаково: занятая тем же `task_id` — это её же
-        # круг, который ещё не закрылся, и предпочесть её всё равно правильно.
         await db.execute(
-            "SELECT llm_name FROM team_llm_lock WHERE task_id = %s LIMIT 1", (int(task_id),))
+            "SELECT llm_name FROM team_llm_lock WHERE task_id = %s "
+            " ORDER BY used_at IS NULL, used_at DESC, llm_name LIMIT 1",
+            (int(task_id),))
         row = await db.fetchone()
 
     return str((row or {}).get('llm_name') or '')
