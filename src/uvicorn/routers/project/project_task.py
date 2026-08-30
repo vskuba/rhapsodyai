@@ -13,7 +13,7 @@ from src.auth.auth_permission import AuthPermission
 from logging_.logging_ import logger_info
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_depend import TASK_DEPEND_DONE_STATES, task_depend_of
-from src.project.task.task_role import task_role_project_work_dir
+from src.project.task.task_role import task_role_of_state, task_role_project_work_dir
 from src.project.task.task_spec import task_spec_read
 from src.project.task.task_metadata import (
     TASK_METADATA_KEY_DEV,
@@ -48,7 +48,10 @@ async def project_task_tasks_all(user=Depends(AuthChecker([AuthPermission.PLANNI
     async with mysql_get_db_async() as db:
         await db.execute("SELECT * FROM project_task ORDER BY position, id")
         rows = await db.fetchall()
-    return {'tasks': [task_metadata_row_apply(r) for r in rows]}
+    tasks = [task_metadata_row_apply(r) for r in rows]
+    _tasks_role_attach(tasks)
+
+    return {'tasks': tasks}
 
 
 @router.get('/tasks/{project_id}')
@@ -65,6 +68,7 @@ async def project_task_tasks_list(project_id: int, user=Depends(AuthChecker([Aut
         rows = await db.fetchall()
 
     tasks = [task_metadata_row_apply(r) for r in rows]
+    _tasks_role_attach(tasks)
     # Зависимости — тем же ответом, а не вторым запросом со страницы: строк на
     # странице сотни, и запрос на каждую был бы запросом на пустом месте. Два поля:
     # `depends_on` — что назвал менеджер, `depend_blocked` — кто из них ещё не закрыт.
@@ -73,6 +77,26 @@ async def project_task_tasks_list(project_id: int, user=Depends(AuthChecker([Aut
     await _tasks_depend_attach(tasks)
 
     return {'tasks': tasks}
+
+
+def _tasks_role_attach(tasks: list) -> None:
+    """
+    Положить на каждую строку роль, которая работает над ней **сейчас**.
+
+    Вкладки страницы делят задачи по ролям, а делали это по типу задачи — а тип
+    статичен: его ставят при заведении, и он говорит, кто задачу планирует. Работа же
+    переходит из рук в руки. QA вернул подзадачу на доработку, её делает разработчик,
+    а тип так и остался `test` — живьём #5219 висела на вкладке «Тестировщик» в
+    состоянии `developing`.
+
+    Считаем на сервере, а не на странице: карта состояний живёт в `task_role`, и
+    вторая её копия в JS разошлась бы с первой на ближайшем новом состоянии.
+
+    Пустая строка — состояние ничьё (ждёт человека, закрыто). Тогда страница остаётся
+    при типе задачи: закрытую работу ищут там, где заводили.
+    """
+    for task in tasks:
+        task['pipeline_role'] = task_role_of_state(task.get('pipeline_state'))
 
 
 async def _tasks_depend_attach(tasks: list) -> None:
