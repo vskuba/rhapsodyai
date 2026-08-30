@@ -29,6 +29,7 @@ import json
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+from src.project.task.task_depend import task_depend_set
 from src.project.task.task_plan import task_plan_goals_normalize
 from src.project.task.task_state import task_state_kanban_status
 
@@ -54,7 +55,13 @@ async def task_goal_scope_split(subtask: dict, indexes: list) -> dict:
     сироту от снесённого плана.
 
     Позиция — сразу за исходной строкой: дробление даёт продолжение работы, и
-    место ему рядом, а не в конце списка.
+    место ему рядом, а не в конце списка. Соседи ниже сдвигаются, иначе продолжение
+    делит позицию со следующей подзадачей и встаёт не за своей строкой, а за чужой.
+
+    **Продолжение ждёт исходную** (`task_depend_set`). Обе половины — одна работа в
+    одних файлах: пущенные разом, они уходят к двум разработчикам в разные worktree
+    и сходятся конфликтом на слиянии. Живой повод — #5235 и #6439 «Вопросы и ответы
+    в мини-приложении», обе в `planned` и обе доступны к захвату.
 
     Returns: `{ok, moved, kept, subtask_id}`; `subtask_id` — заведённая строка.
         Отмечены все цели или ни одной — `{ok: False}`: в первом случае получилась
@@ -70,6 +77,19 @@ async def task_goal_scope_split(subtask: dict, indexes: list) -> dict:
     description = _split_description(subtask, moved)
 
     async with mysql_get_db_async() as db:
+        # Родителя и позицию читаем строкой, а не подзапросом внутри UPDATE: MySQL
+        # запрещает читать в подзапросе ту же таблицу, которую пишет (ошибка 1093).
+        await db.execute('SELECT parent_id, position FROM project_task WHERE id = %s',
+                         (subtask['id'],))
+        row = await db.fetchone() or {}
+        parent_id, position = row.get('parent_id'), int(row.get('position') or 0)
+
+        # Освобождаем место под продолжение. `<=>` вместо `=`: у строки верхнего
+        # уровня родитель NULL, а `NULL = NULL` не истина — сдвиг не тронул бы никого.
+        await db.execute(
+            'UPDATE project_task SET position = position + 1 '
+            ' WHERE parent_id <=> %s AND position > %s', (parent_id, position))
+
         await db.execute(
             "INSERT INTO project_task "
             "       (project_id, parent_id, title, description, goals, position, status, "
@@ -84,6 +104,8 @@ async def task_goal_scope_split(subtask: dict, indexes: list) -> dict:
         await db.execute("UPDATE project_task SET goals = %s WHERE id = %s",
                          (json.dumps(kept, ensure_ascii=False), subtask['id']))
         await db.connection.commit()
+
+    await task_depend_set(created, [subtask['id']])
 
     logger_info(f"[task] subtask#{subtask['id']}: {len(moved)} целей вынесено в #{created}")
 

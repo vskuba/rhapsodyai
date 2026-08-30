@@ -114,6 +114,7 @@ from src.project.task.task_question import (task_question_parse, task_question_s
                                             task_question_set_many)
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
 from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree, task_retry_take
+from src.project.team.team_llm_ping import team_llm_ping_all
 from src.project.team.team_llm_pool import (team_llm_pool_all, team_llm_pool_assign,
                                             team_llm_pool_get, team_llm_pool_release)
 from src.project.team.team_shell_pool import (team_shell_pool_acquire, team_shell_pool_busy,
@@ -201,9 +202,13 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
     # Одно чтение настройки на тик: её же срок получают и job, и ключ single-flight.
     job_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_WORKER_JOB)
 
-    # Подметальщики (скан багов, финализация) идут вне бюджета действий: захватывать
-    # им нечего, работу они ищут сами уже в воркере. Считайся они за действие — при
-    # max_actions=1 каждый тик уходил бы на скан, а задачи стояли бы в очереди.
+    # Подметальщики (скан багов, финализация, пинг моделей) идут вне бюджета действий:
+    # захватывать им нечего, работу они ищут сами уже в воркере. Считайся они за
+    # действие — при max_actions=1 каждый тик уходил бы на скан, а задачи стояли бы в
+    # очереди.
+    #
+    # Пинг ставится не каждый тик: его ключ single-flight живёт две минуты и работает
+    # расписанием (`TASK_WORKER_FLIGHT_PERIOD`), а не защитой от дублей.
     for kind in TASK_WORKER_SINGLE_FLIGHT:
         if kind == 'bug_scan' and not BUG_TASK_SCAN_ENABLED:
             continue
@@ -513,6 +518,35 @@ def _action_label(action: dict, job_id: str) -> str:
 
 
 # ─── Шаги конвейера: что делает воркер ─────────────────────────────────────────
+
+async def _run_llm_ping(action: dict) -> str | None:
+    """
+    Опросить модели пулов: отвечают ли те, кому конвейер раздаёт круги.
+
+    В воркере, а не в тике: опрос ходит к провайдерам и на медленной локальной модели
+    занимает секунды на каждую, а тик обязан укладываться в секунды целиком. Интервал
+    даёт ключ single-flight (`TASK_WORKER_FLIGHT_PERIOD`) — раз в две минуты.
+
+    Отдельного события планировщика для этого нет намеренно: Cronicle заводят руками
+    на каждой инсталляции, и правило «конвейер не выдаёт мёртвую модель» не должно
+    зависеть от того, вспомнил ли человек завести событие на проде.
+
+    Мёртвых из пула не вычёркиваем — их пропускает захват (`team_llm_pool_acquire`).
+    Здесь только опрос: решение «кому не давать работу» принимается там, где работа и
+    раздаётся, иначе оно разъедется с показом на странице.
+    """
+    pings = await team_llm_ping_all()
+    if not pings:
+        return None
+
+    # Только `error`: `unknown` значит «проверить не смогли» (каталог оболочки не
+    # смонтирован, ключ не назван) — писать про такую модель «не отвечает» значило бы
+    # искать поломку у провайдера, когда она в нашей установке.
+    dead = sorted(name for name, ping in pings.items() if ping.get('status') == 'error')
+
+    return f"пинг пула: {len(pings)}, не отвечают {', '.join(dead)}" if dead \
+        else f'пинг пула: {len(pings)}, все отвечают'
+
 
 async def _run_bug_scan(action: dict) -> str | None:
     """
@@ -1689,6 +1723,7 @@ def _task_plural(n: int, one: str, few: str, many: str) -> str:
 # Карта строится после определения шагов: имена должны быть уже объявлены.
 _RUNNERS = {
     'bug_scan':       _run_bug_scan,
+    'llm_ping':       _run_llm_ping,
     'manager_review': _run_manager_review,
     'manager_plan':   _run_manager_plan,
     'plan_split':     _run_plan_split,
