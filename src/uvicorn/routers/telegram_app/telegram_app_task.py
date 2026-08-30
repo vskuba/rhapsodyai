@@ -1,419 +1,254 @@
-"""Вопросы и ответы задач мини-приложения Telegram.
-
-Эндпоинты чтения вопросов задачи (GET) и отправки ответа (POST).
-Геймим по telegram_owner_id через _require_telegram_owner.
-Парсим action для автовопроса (goals_split / goals_drop / goals_keep / goals_replan),
-разбираем indexes как строку JSON или массив, применяем scope.
-Опираемся на существующие task_question.py + task_goal_scope.py.
 """
-import json
+Ответы человека на вопросы задач мини-приложения Telegram.
+
+Одна точка — POST на вопрос подзадачи. Вопрос роли отвечает только записью;
+вопрос конвейера (подзадача встала) ещё и исполняет: варианты там — действия над
+целями (`task_goal_scope`, `task_goal_replan_send`), и «раздробить» без самого
+дробления было бы обещанием, а не ответом.
+
+Механика та же, что у страницы задач (`routers/project/project_task_question.py`),
+но геймим по `telegram_owner_id` (`_require_telegram_owner`) вместо роли RBAC.
+Чтение самого вопроса — отдельная подзадача (#6439), здесь только ответ.
+"""
+from contextlib import suppress
 
 from fastapi import APIRouter, Request, HTTPException
+from pydantic import BaseModel
 
-from datetime_.datetime_ import datetime_utc_now
+from datetime_.datetime_ import datetime_offset_apply, datetime_utc_now
 from mysql_.mysql_ import mysql_get_db_async
-from src.project.task.task_goal_scope import (
-    task_goal_scope_drop,
-    task_goal_scope_split,
-)
-from src.project.task.task_metadata import task_metadata_row_apply, task_metadata_update
-from src.project.task.task_question import (
-    TASK_QUESTION_ACTION_DROP,
-    TASK_QUESTION_ACTION_PLAN,
-    TASK_QUESTION_ACTION_RETRY,
-    TASK_QUESTION_ACTION_SPLIT,
-    TASK_QUESTION_ANSWER_MAX,
-    TASK_QUESTION_DECISIONS_MAX,
-    TASK_QUESTION_KEY_DECISIONS,
-    TASK_QUESTION_KEY_QUEUE,
-    TASK_QUESTION_KEY as TASK_QUESTION_KEY_Q,
-    task_question_auto,
-    task_question_decisions,
-    task_question_get,
-)
+from setting_.setting_ import setting_get
+from src.project.task.task_goal_replan import TASK_GOAL_REPLAN_STATE, task_goal_replan_send
+from src.project.task.task_goal_scope import task_goal_scope_drop, task_goal_scope_split
+from src.project.task.task_log import task_log_dir
+from src.project.task.task_log_decision import task_log_decision_write
+from src.project.task.task_metadata import task_metadata_row_apply
+from src.project.task.task_role import task_role_project_work_dir
+from src.project.task.task_question import (TASK_QUESTION_ACTION_DROP,
+                                            TASK_QUESTION_ACTION_PLAN,
+                                            TASK_QUESTION_ACTION_SPLIT,
+                                            task_question_answer,
+                                            task_question_auto,
+                                            task_question_batch_answer,
+                                            task_question_get,
+                                            task_question_plan_append)
+from src.project.task.task_report import task_report_write
+from src.project.task.task_setting_timeout import (TASK_SETTING_TIMEOUT_ATTEMPT_MAX,
+                                                   task_setting_timeout_get)
+from src.project.task.task_state import task_state_subtask_set, task_state_task_requeue
 from src.uvicorn.routers.telegram_app.telegram_app_common import _require_telegram_owner
 
 router = APIRouter()
 
+# Куда возвращается подзадача после ответа. `planned` — начало круга Developer → QA:
+# ответ меняет условия работы, и правильный следующий шаг — заново взяться за
+# подзадачу, а не отдать на проверку то, что сделано до развилки.
+TASK_QUESTION_STATE_BACK = 'planned'
 
-def _now() -> str:
-    """UTC метка времени решения."""
-    return datetime_utc_now().strftime('%Y-%m-%d %H:%M:%S')
-
-
-# ===================================================================
-# GET /telegram-app/task/{id}/question
-# ===================================================================
-
-@router.get('/telegram-app/task/{task_id}/question')
-async def telegram_app_task_question_get(request: Request, task_id: int):
-    """Вернуть вопрос задачи: одиночный от роли, пачку разведки, автовопрос и решения."""
-    _require_telegram_owner(request)
-
-    subtask = await _get_subtask(task_id)
-    if not subtask:
-        raise HTTPException(status_code=404, detail='Task not found')
-
-    # Одиночный вопрос роли.
-    role_question = task_question_get(subtask)
-
-    # Пачка вопросов разведки с черновиками ответов.
-    batch = [q for q in subtask.get('_batch') or [] if isinstance(q, dict)]
-
-    # Решения, уже принятые по задаче.
-    decisions = task_question_decisions(subtask)
-
-    # Автовопрос конвейера — если задача встала, но агент не спросил.
-    attempt_list = await _read_attempts(task_id)
-    auto_q = task_question_auto(subtask, attempt_list)
-
-    return {
-        'result': {
-            'id':             subtask['id'],
-            'title':          subtask.get('title'),
-            'status':         subtask.get('status'),
-            'pipeline_state': subtask.get('pipeline_state'),
-            'role_question':  role_question,
-            'batch':          batch,
-            'decisions':      decisions,
-            'auto_question':  auto_q,
-        },
-    }
+# Сколько последних попыток читаем: по ним собирается автовопрос конвейера.
+TASK_QUESTION_ATTEMPTS_MAX = 10
 
 
-# ===================================================================
-# POST /telegram-app/task/{id}/question/answer
-# ===================================================================
+class TaskQuestionAnswer(BaseModel):
+    """Ответ человека: выбранные варианты, отмеченные цели и свободный текст."""
+    answers: list[str] = []
+    note: str = ''
+    goal_indexes: list[int] = []
+    # Номер вопроса пачки разведки. `None` — одиночный вопрос. Отдельным полем, а не
+    # «первый без ответа»: порядок ответов свободный, человек возвращается к уже
+    # отвеченным, чтобы их поправить.
+    index: int | None = None
+
 
 @router.post('/telegram-app/task/{task_id}/question/answer')
-async def telegram_app_task_question_answer(request: Request, task_id: int, data: dict):
-    """Ответить на вопрос задачи: одиночный, пачку или действие над охватом."""
+async def telegram_app_task_question_answer(request: Request, task_id: int,
+                                            body: TaskQuestionAnswer):
+    """
+    Ответить на вопрос подзадачи и вернуть её в работу.
+
+    Действие над целями исполняется до записи решения: дробление и сокращение могут
+    отказать (отмечены все цели, ни одной), и записывать решение о том, чего не
+    произошло, нельзя. Счётчик попыток обнуляется — круги до вопроса потрачены на
+    работу, которая упиралась в нерешённое, считать их неудачами нечестно.
+    """
     _require_telegram_owner(request)
+    by = str(request.session.get("telegram_owner_id") or '')
 
-    action = str(data.get('action') or '').strip()
-
-    # --- Автодействие над целями ---
-    if action == TASK_QUESTION_ACTION_SPLIT:
-        return await _handle_split(task_id, data)
-    if action == TASK_QUESTION_ACTION_DROP:
-        return await _handle_drop(task_id, data)
-    if action == TASK_QUESTION_ACTION_RETRY:
-        return await _handle_retry(task_id)
-    if action == TASK_QUESTION_ACTION_PLAN:
-        return await _handle_replan(task_id)
-
-    # Есть batch_index → пачка разведки.
-    if 'batch_index' in data:
-        return await _handle_batch(task_id, data)
-
-    # Иначе — одиночный ответ.
-    return await _handle_single(task_id, data)
-
-
-# ===================================================================
-# Helpers — чтение данных
-# ===================================================================
-
-async def _get_subtask(task_id: int) -> dict | None:
-    """Прочитать задачу из БД + разобрать metadata (включая _batch)."""
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT id, parent_id, title, status, pipeline_state, pipeline_plan, "
-            "       pipeline_error, goals, metadata, project_id, task_type_id "
-            "FROM project_task WHERE id = %s",
-            (task_id,),
-        )
-        row = await db.fetchone()
-    if not row:
-        return None
-    subtask = task_metadata_row_apply(row)
-    meta = subtask.get('metadata') or {}
-    queue = meta.get(TASK_QUESTION_KEY_QUEUE) or []
-    if not isinstance(queue, list):
-        queue = []
-    subtask['_batch'] = queue
-    return subtask
-
-
-async def _get_task_for_scope(task_id: int) -> dict | None:
-    """Задача с целями — нужно для goal scope операций."""
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT id, parent_id, goals, metadata FROM project_task WHERE id = %s",
-            (task_id,),
-        )
-        row = await db.fetchone()
-    if not row:
-        return None
-    subtask = task_metadata_row_apply(row)
-    meta = subtask.get('metadata') or {}
-    queue = meta.get(TASK_QUESTION_KEY_QUEUE) or []
-    if not isinstance(queue, list):
-        queue = []
-    subtask['_batch'] = queue
-    return subtask
-
-
-async def _read_attempts(task_id: int) -> list:
-    """Прочитать журнал попыток из таблицы project_task_attempt."""
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT attempt_no, role, status, output, error, duration_ms "
-            "FROM project_task_attempt WHERE task_id = %s ORDER BY attempt_no",
-            (task_id,),
-        )
-        rows = await db.fetchall()
-    return [dict(r) for r in (rows or [])]
-
-
-# ===================================================================
-# Single answer — ответить на одиночный вопрос роли или автовопрос
-# ===================================================================
-
-async def _handle_single(task_id: int, data: dict) -> dict:
-    answers_raw = data.get('answers') or data.get('options') or []
-    note = str(data.get('note') or data.get('text') or '').strip()[:TASK_QUESTION_ANSWER_MAX]
-
-    subtask = await _get_subtask(task_id)
+    subtask = await _subtask_row(task_id)
     if not subtask:
         raise HTTPException(status_code=404, detail='Task not found')
 
-    answers = _normalize_answers(answers_raw)
-    labels = _build_labels(subtask, answers)
-    text = '; '.join([*labels, note]) if note else labels
+    # Пачка вопросов разведки — свой путь. Ответ на один её вопрос ложится черновиком
+    # и задачу не отпускает: пока остаётся хоть одна развилка, исполнитель вернулся
+    # бы ровно в то, из-за чего встал. Действия над целями сюда не идут.
+    if body.index is not None:
+        result = await task_question_batch_answer(task_id, subtask, int(body.index),
+                                                  body.answers, body.note, by)
+        if not result:
+            raise HTTPException(status_code=400,
+                                detail='Ответ пустой или вопроса с таким номером нет')
+        if not result['done']:
+            return {'ok': True, 'left': result['left'], 'done': False}
 
-    if not text:
-        return {'error': 'Решение пустое — проверьте ответы'}
+        # Пачка закрылась — дальше как у одиночного вопроса: показать решения и
+        # вернуть задачу в работу.
+        for decision in result['decisions']:
+            await _answer_show(task_id, subtask, decision, {})
+        state = await _answer_after(subtask, task_id, by,
+                                    result['decisions'][-1], {}, '')
 
+        return {'ok': True, 'left': 0, 'done': True,
+                'decisions': result['decisions'], 'state': state}
+
+    # Вопрос берём тот же, что показал бы читатель: у автовопроса в мешке ничего не
+    # лежит, и без него в решение попал бы голый ключ `goals_split` вместо подписи.
     question = task_question_get(subtask)
+    if not question and not subtask.get('parent_id'):
+        # Автовопрос — про охват подзадачи; у корневой задачи цели ведёт план, и
+        # трогать их отсюда нельзя.
+        raise HTTPException(status_code=409,
+                            detail='По задаче целиком вопрос задаёт только менеджер при планировании')
+    if not question:
+        question = task_question_auto(
+            subtask, await _attempts(task_id),
+            await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX))
 
-    decision = {
-        'at':   _now(),
-        'question': str(question.get('text') or '').strip(),
-        'answer': text,
-        'by':   '',
-    }
-    decisions = [*task_question_decisions(subtask), decision][-TASK_QUESTION_DECISIONS_MAX:]
-    await task_metadata_update(task_id, {
-        TASK_QUESTION_KEY_Q: None,
-        TASK_QUESTION_KEY_DECISIONS: decisions,
-    })
+    scope = await _scope_apply(subtask, body)
+    if scope and not scope.get('ok'):
+        raise HTTPException(status_code=400,
+                            detail=scope.get('error') or 'Действие над целями не выполнено')
 
-    return {'result': {'decision': decision}}
+    decision = await task_question_answer(task_id, subtask, body.answers,
+                                          _note_with_scope(body.note, scope), by,
+                                          question=question)
+    if not decision:
+        raise HTTPException(status_code=400,
+                            detail='Ответ пустой: выберите вариант или напишите решение')
 
+    await _answer_show(task_id, subtask, decision, question)
 
-# ===================================================================
-# Batch answer — ответить на один вопрос пачки разведки
-# ===================================================================
+    scope_state = (TASK_GOAL_REPLAN_STATE
+                   if scope.get('subtask_id') and TASK_QUESTION_ACTION_PLAN in {str(a) for a in body.answers}
+                   else '')
+    state = await _answer_after(subtask, task_id, by, decision, question, scope_state)
 
-async def _handle_batch(task_id: int, data: dict) -> dict:
-    index = int(data.get('batch_index', -1))
-    answers_raw = data.get('answers') or []
-    note = str(data.get('note') or '').strip()[:TASK_QUESTION_ANSWER_MAX]
-
-    subtask = await _get_subtask(task_id)
-    if not subtask:
-        raise HTTPException(status_code=404, detail='Task not found')
-
-    answers = _normalize_answers(answers_raw)
-
-    result = await _batch_answer(task_id, subtask, index, answers, note)
-    if not result:
-        return {'error': 'Вопрос с таким индексом не найден'}
-
-    return {
-        'result': {
-            'left':     result.get('left', -1),
-            'done':     bool(result.get('done')),
-            'decisions': result.get('decisions', []),
-        },
-    }
+    return {'ok': True, 'decision': decision, 'state': state, 'scope': scope}
 
 
-async def _batch_answer(subtask_id: int, subtask: dict, index: int,
-                        answers: list, note: str) -> dict:
-    """Ответ на один вопрос пачки — черновиком. Отвечены все — пачка в решения."""
-    batch = subtask.get('_batch') or []
-    if not batch or not 0 <= int(index) < len(batch):
-        return {}
+async def _answer_show(task_id: int, subtask: dict, decision: dict, question: dict) -> None:
+    """
+    Показать решение человеку: в плане подзадачи и в журнале строки.
 
-    question = batch[int(index)]
-    labels = _batch_answer_labels(question, answers)
-    free = note.strip()[:TASK_QUESTION_ANSWER_MAX]
-    text = '; '.join([*labels, free] if free else labels)
-    if not text:
-        return {}
+    Роль получает решение из мешка через промпт; эти две записи — только
+    видимость. Поэтому сбой любой из них ответ не отменяет.
+    """
+    if subtask.get('parent_id'):
+        with suppress(Exception):
+            await task_question_plan_append(task_id, subtask, decision, question)
 
-    batch[int(index)] = {**question, 'answer': {
-        'text': text,
-        'keys': [str(a) for a in answers],
-        'note': free,
-        'at': _now(),
-    }}
-
-    left = sum(1 for q in batch if not (q.get('answer') or {}).get('text'))
-
-    if left:
-        await task_metadata_update(int(subtask_id), {TASK_QUESTION_KEY_QUEUE: batch})
-        return {'left': left, 'done': False, 'decisions': []}
-
-    # Пачка закрылась — черновики становятся решениями разом.
-    fresh = [{'at': q['answer']['at'],
-              'question': str(q.get('text') or '').strip(),
-              'answer': q['answer']['text']}
-             for q in batch]
-    decisions = [*task_question_decisions(subtask), *fresh][-TASK_QUESTION_DECISIONS_MAX:]
-    await task_metadata_update(int(subtask_id), {
-        TASK_QUESTION_KEY_QUEUE: None,
-        TASK_QUESTION_KEY_DECISIONS: decisions,
-    })
-
-    return {'left': 0, 'done': True, 'decisions': fresh}
+    with suppress(Exception):
+        offset = await setting_get('timezone', '+0')
+        task_log_decision_write(
+            task_log_dir(await task_role_project_work_dir(subtask.get('project_id')), task_id),
+            decision, question,
+            datetime_offset_apply(datetime_utc_now(), offset),
+            str(question.get('role') or ''))
 
 
-def _batch_answer_labels(question: dict, answers: list) -> list:
-    """Ключи выбранных вариантов → их подписи для черновика пачки."""
-    if not answers:
-        return []
-    by_key = {str(o.get('key')): str(o.get('label') or '')
-              for o in question.get('options') or []}
-    return [by_key[key] for key in (str(a) for a in answers) if by_key.get(key)]
+async def _answer_after(subtask: dict, task_id: int, by: str, decision: dict,
+                        question: dict, scope_state: str = '') -> str:
+    """
+    Что делать со строкой после ответа. Возвращает её новое состояние.
+
+    Подзадача уходит в `planned` с обнулённым счётчиком. Возврат менеджеру
+    (`scope_state`) уже поставил строке своё состояние `new`, и общий `planned`
+    его перебил бы — строка ушла бы не на планирование, а в круг с тем же
+    неподъёмным охватом.
+    """
+    if not subtask.get('parent_id'):
+        back = str((question or {}).get('back_state') or '') if (question or {}).get('dialog') else ''
+        if back:
+            await task_state_task_requeue(task_id, back, '')
+        await task_report_write(
+            task_id,
+            f"Решение принято ({by}) — {decision['answer']}"
+            + (f'. Задача возвращена в работу ({back})' if back else ''),
+            ok=True)
+        return back or str(subtask.get('pipeline_state') or '')
+
+    if str(scope_state or '') == TASK_GOAL_REPLAN_STATE:
+        await task_report_write(
+            int(subtask['parent_id']),
+            f"Подзадача #{task_id}: решение принято ({by}) — {decision['answer']}. "
+            f"Возвращена менеджеру на разбиение", ok=True)
+        return TASK_GOAL_REPLAN_STATE
+
+    await task_state_subtask_set(task_id, TASK_QUESTION_STATE_BACK, last_error='', attempt_count=0)
+    title = str(subtask.get('title') or '').strip()
+    label = f'Подзадача #{task_id}' + (f' «{title}»' if title else '')
+    await task_report_write(int(subtask['parent_id']),
+                            f"{label}: решение принято ({by}) — {decision['answer']}. "
+                            f"Возвращена в работу, попытки обнулены", ok=True)
+
+    return TASK_QUESTION_STATE_BACK
 
 
-# ===================================================================
-# Auto-actions — раздробить / сократить / перезапустить / спланировать
-# ===================================================================
+async def _scope_apply(subtask: dict, body: TaskQuestionAnswer) -> dict:
+    """
+    Исполнить действие над целями, если оно выбрано. Нечего делать — `{}`.
 
-async def _handle_split(task_id: int, data: dict) -> dict:
-    subtask = await _get_task_for_scope(task_id)
-    if not subtask:
-        raise HTTPException(status_code=404, detail='Task not found')
+    Ключи действий приходят только из автовопроса; ответ на вопрос роли их не
+    содержит, и проверять тип вопроса отдельно не нужно.
+    """
+    picked = {str(a) for a in (body.answers or [])}
 
-    indexes = _parse_indexes(data.get('indexes'))
-    result = await task_goal_scope_split(subtask, indexes)
-    if not result.get('ok'):
-        return {'error': result.get('error', 'Не удалось раздробить')}
+    if TASK_QUESTION_ACTION_SPLIT in picked:
+        return await task_goal_scope_split(subtask, body.goal_indexes)
+    if TASK_QUESTION_ACTION_DROP in picked:
+        return await task_goal_scope_drop(subtask, body.goal_indexes)
+    # Возврат менеджеру — не действие над целями, а признание, что охват задали
+    # неподъёмный: строка уходит в `new`, откуда её забирает планирование.
+    if TASK_QUESTION_ACTION_PLAN in picked:
+        return await task_goal_replan_send(subtask)
 
-    # Записать решение в decisions.
-    decision = {
-        'at': _now(),
-        'question': 'Раздробить цели',
-        'answer': _ACTION_LABELS[TASK_QUESTION_ACTION_SPLIT],
-        'by': '',
-    }
-    decisions = [*task_question_decisions(subtask), decision][-TASK_QUESTION_DECISIONS_MAX:]
-    await task_metadata_update(task_id, {
-        TASK_QUESTION_KEY_DECISIONS: decisions,
-    })
-
-    return {'result': result}
+    # `goals_keep` — осознанный отказ менять охват: он запишется решением, но
+    # делать по нему нечего.
+    return {}
 
 
-async def _handle_drop(task_id: int, data: dict) -> dict:
-    subtask = await _get_task_for_scope(task_id)
-    if not subtask:
-        raise HTTPException(status_code=404, detail='Task not found')
+def _note_with_scope(note: str, scope: dict) -> str:
+    """Дописать к ответу, что именно случилось с целями — роль прочтёт следующим кругом."""
+    text = str(note or '').strip()
+    if not scope or not scope.get('ok'):
+        return text
 
-    indexes = _parse_indexes(data.get('indexes'))
-    result = await task_goal_scope_drop(subtask, indexes)
-    if not result.get('ok'):
-        return {'error': result.get('error', 'Не удалось сократить')}
+    if scope.get('moved_text'):
+        done = (f"вынесено в подзадачу #{scope['subtask_id']}: "
+                + '; '.join(scope['moved_text']))
+    elif scope.get('dropped_text'):
+        done = 'убраны цели: ' + '; '.join(scope['dropped_text'])
+    else:
+        return text
 
-    decision = {
-        'at': _now(),
-        'question': 'Сократить цели',
-        'answer': _ACTION_LABELS[TASK_QUESTION_ACTION_DROP],
-        'by': '',
-    }
-    decisions = [*task_question_decisions(subtask), decision][-TASK_QUESTION_DECISIONS_MAX:]
-    await task_metadata_update(task_id, {
-        TASK_QUESTION_KEY_DECISIONS: decisions,
-    })
-
-    return {'result': result}
+    return f'{text} ({done})' if text else done
 
 
-async def _handle_retry(task_id: int) -> dict:
-    """Перезапустить как есть."""
-    subtask = await _get_subtask(task_id)
-    if not subtask:
-        raise HTTPException(status_code=404, detail='Task not found')
+async def _attempts(task_id: int) -> list:
+    """Последние попытки подзадачи, старые первыми — по ним собирается автовопрос."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT attempt_no, role, status, error, duration_ms, created_at "
+            "  FROM project_task_attempt WHERE task_id = %s ORDER BY id DESC LIMIT %s",
+            (task_id, TASK_QUESTION_ATTEMPTS_MAX))
+        rows = await db.fetchall()
 
-    decision = {
-        'at': _now(),
-        'question': 'Перезапустить как есть',
-        'answer': _ACTION_LABELS[TASK_QUESTION_ACTION_RETRY],
-        'by': '',
-    }
-    decisions = [*task_question_decisions(subtask), decision][-TASK_QUESTION_DECISIONS_MAX:]
-    await task_metadata_update(task_id, {
-        TASK_QUESTION_KEY_DECISIONS: decisions,
-    })
-
-    return {'result': {'ok': True}}
+    return list(reversed(rows))
 
 
-async def _handle_replan(task_id: int) -> dict:
-    """Вернуть задачу менеджеру на разбиение."""
-    subtask = await _get_subtask(task_id)
-    if not subtask:
-        raise HTTPException(status_code=404, detail='Task not found')
+async def _subtask_row(task_id: int) -> dict | None:
+    """Строка подзадачи с разобранным `metadata`. Нет строки — None."""
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
+        row = await db.fetchone()
 
-    decision = {
-        'at': _now(),
-        'question': 'Отправить на планирование',
-        'answer': _ACTION_LABELS[TASK_QUESTION_ACTION_PLAN],
-        'by': '',
-    }
-    decisions = [*task_question_decisions(subtask), decision][-TASK_QUESTION_DECISIONS_MAX:]
-    await task_metadata_update(task_id, {
-        TASK_QUESTION_KEY_DECISIONS: decisions,
-        'replanned': True,
-    })
-
-    return {'result': {'ok': True}}
-
-
-# ===================================================================
-# Utility helpers
-# ===================================================================
-
-def _parse_indexes(raw) -> list:
-    """Парсим indexes: список чисел или JSON-строка '[0,2]'."""
-    if isinstance(raw, list):
-        return [int(i) for i in raw if str(i).lstrip('-').isdigit()]
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                return [int(i) for i in parsed if str(i).lstrip('-').isdigit()]
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return []
-
-
-def _normalize_answers(raw) -> list:
-    """Преобразуем answers [] -> список строк-ключей."""
-    result = []
-    for item in (raw or []):
-        if isinstance(item, dict):
-            result.append(str(item.get('key', '')))
-        elif isinstance(item, (str, int)):
-            result.append(str(item))
-    return result
-
-
-def _build_labels(subtask: dict, answers: list) -> list:
-    """Для одиночного ответа: ключи вариантов -> их подписи."""
-    pending = task_question_get(subtask) or {}
-    by_key = {str(o.get('key')): str(o.get('label') or '')
-              for o in pending.get('options') or []}
-    return [by_key[key] for key in (str(a) for a in answers) if by_key.get(key)]
-
-
-_ACTION_LABELS = {
-    TASK_QUESTION_ACTION_SPLIT: 'Раздробить: цель(ли) вынесены в новую подзадачу',
-    TASK_QUESTION_ACTION_DROP: 'Сократить: цель(ли) убраны из охвата',
-    TASK_QUESTION_ACTION_RETRY: 'Перезапустить как есть',
-    TASK_QUESTION_ACTION_PLAN: 'Отправить на планирование: разложить на подзадачи',
-}
+    return task_metadata_row_apply(row) if row else None
