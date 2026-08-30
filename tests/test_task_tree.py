@@ -9,6 +9,20 @@ from src.project.task.task_tree import MAX_DEPTH
 from tests.constants import TEST_AUTH
 from tests.test_task_pipeline import _pipeline, _tick_until
 
+
+@pytest.fixture(autouse=True)
+async def _db_pool_release():
+    """
+    Закрыть пул MySQL после теста: он привязан к циклу, а цикл у каждого теста свой.
+
+    Понадобилось, когда `_tick_until` перестал ждать живого воркера и начал гонять
+    конвейер в процессе теста: до этого файл ходил только по HTTP и своего соединения
+    с базой не открывал.
+    """
+    yield
+    from mysql_.mysql_ import mysql_pool_close
+    await mysql_pool_close()
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_TITLE = "__pytest_tree__"
 
