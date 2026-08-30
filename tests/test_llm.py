@@ -345,3 +345,96 @@ class TestProviderStrategy:
         model = self._build('openrouter/deepseek/deepseek-v4-flash-0731')
 
         assert isinstance(model._provider, OpenRouterProvider)
+
+
+class TestProviderRawCall:
+    """
+    Сырой путь стратегии: адрес и тело для запроса **мимо pydantic-ai**.
+
+    Зачем он есть. Пинг моделей пула (`team_llm_ping`) не собирает модель — ему нужно
+    одно: постучаться и посмотреть код ответа. Но особенности сервисов от этого никуда
+    не деваются, и знать их обязана стратегия, а не вызывающий: разбирай пинг `.env`
+    и способы гасить размышления сам, у проекта появилось бы второе место, знающее про
+    сервисы, — и разошлось бы оно на первой же новой модели.
+
+    Главное здесь — **запрет размышлений**. Модель, ушедшая в рассуждение, тратит на
+    него весь бюджет ответа: `qwen3.7-flash` с `max_tokens: 1` не уложился в 45 секунд
+    и вернул `content: null` при полном `reasoning`. Проверка объявила бы мёртвой
+    прекрасно работающую модель — и отобрала бы её у конвейера.
+    """
+
+    @staticmethod
+    def _provider(name):
+        from ai.provider.ai_provider_registry import ai_provider_registry_get
+
+        return ai_provider_registry_get(name)
+
+    def test_llm_provider_raw_unknown_service_is_none_not_raise(self):
+        """
+        Незнакомый сервис — `None`, а не исключение, в отличие от сборки модели.
+
+        Решение принимает вызывающий: пинг помечает такую модель «проверить не
+        смогли», а не «мертва», — и она продолжает получать круги.
+        """
+        for bad in ('vseti/model-1', 'просто-имя', '', 'openrouter/'):
+            assert self._provider(bad) is None
+
+    def test_llm_provider_raw_gx10_disables_thinking_by_template(self):
+        """
+        У llama.cpp размышления гасит аргумент шаблона чата, а не поле запроса, и
+        передавать его нужно явно: у шаблона своё умолчание, «не передали» означает
+        не «выключено», а «как решит модель».
+        """
+        body = self._provider('gx10/qwen-large').raw_body_no_thinking()
+
+        assert body == {'chat_template_kwargs': {'enable_thinking': False}}
+
+    def test_llm_provider_raw_openrouter_disables_thinking_by_field(self):
+        """
+        У маршрутизатора своё поле `reasoning`. Не `reasoning_effort`: в него единый
+        ключ переводит pydantic-ai, а сырой запрос идёт мимо неё.
+        """
+        body = self._provider('openrouter/deepseek/deepseek-v4-flash-0731').raw_body_no_thinking()
+
+        assert body == {'reasoning': {'enabled': False}}
+
+    def test_llm_provider_raw_unknown_way_stays_empty(self):
+        """
+        Сервис, чей способ нам неизвестен, не получает выдуманного поля.
+
+        Оно хуже отсутствующего: сервис ответит 400, и живая модель попадёт в мёртвые
+        по вине самой проверки.
+        """
+        assert self._provider('gemini/gemini-3-flash-preview').raw_body_no_thinking() == {}
+
+    def test_llm_provider_local_flag_marks_own_hardware(self):
+        """
+        Локальность — свойство сервиса, и объявляет его стратегия.
+
+        Признак нельзя держать в атрибутах строки `llm`: моделей пула там попросту
+        нет — из четырёх в справочнике заведена одна, остальные живут только в
+        каталоге оболочки. А ставь мы флаг руками на каждую модель, забытая галочка
+        означала бы, что пинг снова отбирает карту у работающей модели.
+        """
+        assert self._provider('gx10/qwen-large').local is True
+        assert self._provider('ollama/qwen2.5:14b').local is True
+
+    def test_llm_provider_network_services_are_not_local(self):
+        """
+        Обратная половина: у сетевых наш запрос один из многих, и проверять их можно
+        свободно. Пометь мы локальными всех — пинг не проверял бы никого.
+        """
+        for name in ('openrouter/deepseek/deepseek-v4-flash-0731',
+                     'gemini/gemini-3-flash-preview', 'openai/gpt-5'):
+            assert self._provider(name).local is False, name
+
+    def test_llm_provider_raw_gx10_address_depends_on_size(self):
+        """
+        Тем же правилом, что и при сборке модели: у локальной адрес свой на каждый
+        размер. Сырому вызову он нужен не меньше — он идёт обычным HTTP.
+        """
+        large, key = self._provider('gx10/qwen-large').raw_endpoint('qwen-large')
+        medium, _ = self._provider('gx10/qwen-medium').raw_endpoint('qwen-medium')
+
+        assert large and medium and large != medium, 'размер модели не влияет на адрес'
+        assert key, 'ключ один на все размеры — машина одна'

@@ -106,10 +106,14 @@ TASK_SETTING_TIMEOUT_ITEMS = (
      'group': TASK_SETTING_TIMEOUT_GROUP_PIPELINE, 'role': '', 'unit': 'с',
      'title': 'Блокировка строки',
      'hint': 'Через это время задачу заберёт следующий тик, даже если воркер молчит.'},
-    {'key': TASK_SETTING_TIMEOUT_PING_STALE, 'default': 30, 'min': 5, 'max': 3600,
+    # 90 секунд — это 45 пропущенных пингов подряд (оболочка шлёт каждые две). Такой
+    # запас нужен не оболочке, а сети: heartbeat идёт на публичный адрес установки, и
+    # короткий провал канала гасил карточки пачкой, хотя все они прекрасно работали.
+    # Прежние 30 секунд переживали 15 пингов и на такой провал не рассчитывали.
+    {'key': TASK_SETTING_TIMEOUT_PING_STALE, 'default': 90, 'min': 5, 'max': 3600,
      'group': TASK_SETTING_TIMEOUT_GROUP_PIPELINE, 'role': '', 'unit': 'с',
      'title': 'Свежесть карточки',
-     'hint': 'Пинг старше — карточка гаснет. Меньше 15с карточка начнёт мигать на сетевой заминке.'},
+     'hint': 'Пинг старше — карточка гаснет. Оболочка шлёт каждые 2с; меньше 30с карточки мигают на сетевой заминке.'},
 
     {'key': TASK_SETTING_TIMEOUT_RETRY_MAX, 'default': 3, 'min': 1, 'max': 10,
      'group': TASK_SETTING_TIMEOUT_GROUP_RETRY, 'role': '', 'unit': 'раз',

@@ -1,3 +1,5 @@
+import contextlib
+import hashlib
 import uuid
 from datetime import datetime
 
@@ -43,6 +45,18 @@ TELEGRAM_CLAUDE_AGENT_STATUS_REASON_MAX = 32
 # Сессии, чьи окна могут быть открыты: их номера заняты и новой оболочке не
 # достаются. 'inactive' — завершённая, её номер свободен.
 TELEGRAM_CLAUDE_SESSION_STATUS_LIVE = ('active', 'closing')
+
+# Сколько ждём замок на выдачу номера оболочки. Под ним одно чтение и одна вставка —
+# миллисекунды, так что двух секунд хватает на очередь из десятка терминалов.
+#
+# Больше ставить нельзя, и причина не в скорости. Ожидающий держит соединение из
+# пула (`maxsize=10`), а из того же пула пьют heartbeat оболочек и весь конвейер:
+# всплеск регистраций с длинным ожиданием отобрал бы соединения у них, и карточки
+# начали бы гаснуть — ровно тот дефект, который здесь и чинится.
+#
+# Не дождались — регистрируем без замка: дубль номера портит подпись карточки, а
+# отказ оставил бы оболочку без строки в реестре, то есть вовсе без работы.
+ROLE_INDEX_LOCK_WAIT_SEC = 2
 
 
 @router.get("/telegram-app/claude/session/inbox")
@@ -106,24 +120,35 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
 
     session_uuid = str(uuid.uuid4())
     now = datetime_utc_now()
+
     # Номер оболочки внутри роли: по нему заголовок терминала и карточка на
     # `/admin/team` показывают одно и то же — иначе три окна «Developer» и три
     # одинаковые карточки не сопоставить.
-    role_index = await _role_index_next(role_given, work_dir) if role_given else 0
-    repo = AiClaudeSessionRegistryRepository()
-    # created_at пишем явно: DEFAULT CURRENT_TIMESTAMP взял бы часовой пояс MySQL,
-    # и в одной строке created_at и last_seen_at оказались бы в разных поясах
-    await repo.add({
-        "session_uuid": session_uuid,
-        "role": role,
-        "role_index": role_index,
-        "project_label": project_label,
-        "status": "active",
-        "server_llm": server_llm,
-        "work_dir": work_dir,
-        "created_at": now,
-        "last_seen_at": now,
-    })
+    #
+    # Выдача и запись — под замком роли. Между «посмотреть занятые» и «записать
+    # свой» есть окно, и в него влезает соседний терминал: человек перезапускает
+    # команду одной командой, оболочки стартуют разом, обе читают один и тот же
+    # список занятых и обе берут единицу. Живьём так и вышло — две сессии QA,
+    # зарегистрированные в одну секунду, получили `role_index = 1`, и на странице
+    # появились две карточки «QA», неотличимые друг от друга.
+    #
+    # Замок именованный, а не транзакция: строки, которую можно было бы запереть
+    # `FOR UPDATE`, ещё не существует — мы её как раз заводим. Ключ включает роль и
+    # каталог, чтобы менеджер соседнего проекта не ждал нашего разработчика.
+    async with _role_index_lock(role_given, work_dir) as db:
+        role_index = await _role_index_next(role_given, work_dir, db=db) if role_given else 0
+        # Вставка тем же соединением, что держит замок, и по той же причине: второе
+        # соединение под удержанием исчерпало бы пул при одновременных запусках.
+        #
+        # created_at пишем явно: DEFAULT CURRENT_TIMESTAMP взял бы часовой пояс MySQL,
+        # и в одной строке created_at и last_seen_at оказались бы в разных поясах.
+        await db.execute(
+            "INSERT INTO ai_claude_session_registry "
+            "       (session_uuid, role, role_index, project_label, status, "
+            "        server_llm, work_dir, created_at, last_seen_at) "
+            "VALUES (%s, %s, %s, %s, 'active', %s, %s, %s, %s)",
+            (session_uuid, role, role_index, project_label, server_llm, work_dir, now, now))
+        await db.connection.commit()
 
     # work_dir пишем в project_team только когда роль и путь пришли непустыми:
     # пустая строка затирала бы уже сохранённый путь на карточке /admin/team.
@@ -154,7 +179,41 @@ async def telegram_app_claude_session_register(request: Request, data: dict):
     return {"result": {"session_uuid": session_uuid, "role_index": role_index}}
 
 
-async def _role_index_next(role: str, work_dir: str, exclude: str = '') -> int:
+@contextlib.asynccontextmanager
+async def _role_index_lock(role: str, work_dir: str):
+    """
+    Замок на выдачу номера оболочки роли: один запуск за раз.
+
+    Именованный замок MySQL (`GET_LOCK`), а не транзакция: запирать нечего — строки,
+    которой выдаётся номер, ещё не существует. Замок живёт в самой базе, поэтому
+    работает и между процессами uvicorn, и между воркерами.
+
+    Ключ — роль и каталог: запуск менеджера соседнего проекта не должен ждать нашего
+    разработчика. Каталог кладём хэшем, потому что имя замка ограничено 64 байтами, а
+    путь бывает длиннее.
+
+    Не дождались — работаем без замка. Номер может выйти занятым (две одинаковые
+    карточки), но это лучше отказа в регистрации: без строки в реестре оболочка не
+    получит ни одного круга, а дубль номера всего лишь портит подпись.
+
+    **Соединение отдаётся наружу, и работать под замком нужно именно им.** Замок
+    MySQL живёт на соединении, поэтому оно занято всё время удержания; возьми
+    вызывающий второе из пула — десять одновременных регистраций попросили бы
+    двадцать соединений при `maxsize=10`, и пул встал бы намертво. Поймано тестом
+    гонки: он не падал, а висел.
+    """
+    key = f'claude_role_index:{role}:{hashlib.md5(str(work_dir).encode()).hexdigest()[:16]}'
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT GET_LOCK(%s, %s) AS got', (key, ROLE_INDEX_LOCK_WAIT_SEC))
+        got = int((await db.fetchone() or {}).get('got') or 0)
+        try:
+            yield db
+        finally:
+            if got:
+                await db.execute('SELECT RELEASE_LOCK(%s)', (key,))
+
+
+async def _role_index_next(role: str, work_dir: str, exclude: str = '', db=None) -> int:
     """
     Наименьший свободный номер оболочки для этой роли. 1 — первая, основная.
 
@@ -170,8 +229,13 @@ async def _role_index_next(role: str, work_dir: str, exclude: str = '') -> int:
 
     `exclude` — не считать эту сессию: нужен дозаполнению на пинге, где строка уже
     в реестре и без исключения соревновалась бы сама с собой.
+
+    `db` — работать этим соединением, а не брать своё. Под замком роли это
+    обязательно: замок держит соединение, и второе из пула привело бы к тупику при
+    нескольких одновременных запусках.
     """
-    async with mysql_get_db_async() as db:
+    async with contextlib.AsyncExitStack() as stack:
+        db = db or await stack.enter_async_context(mysql_get_db_async())
         placeholders = ", ".join(["%s"] * len(TELEGRAM_CLAUDE_SESSION_STATUS_LIVE))
         exclude_sql = "AND session_uuid <> %s " if exclude else ""
         exclude_params = (str(exclude),) if exclude else ()
