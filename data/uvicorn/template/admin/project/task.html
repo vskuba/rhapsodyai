@@ -4127,7 +4127,14 @@ function renderPipeLog(t) {
 // соответствие спецификации без тестов. Full — то же + все тесты и полный чеклист QA.
 // По умолчанию lite. Свитчер рядом с кнопкой лог; при щелчке гасим на время запроса
 // (`.busy`) и после успеха обновляем задачу из списка.
+//
+// Только у корневой задачи. Режим — свойство задачи целиком: QA-агент читает его из
+// metadata родителя (`task_agent_qa_run`, `task_metadata_parse(task.metadata)`), а не
+// из metadata подзадачи. Свитчер на подзадачной строке писал бы в чужой мешок, и режим
+// никогда не попал бы в `subtask_qa_mode` — поэтому на детях он не рисуется, как у
+// флажков «в разработку» / «в тестирование» выше.
 function renderQaModeSwitcher(t) {
+    if (t.parent_id) return '';
     const mode = (t.metadata || {})[TASK_META_KEY_QA_MODE] || 'lite';
     return `<span class="qa-mode-switcher" data-mode="${mode}" onclick="event.stopPropagation();toggleQaMode(${t.id}, this)">
                 <input type="checkbox" ${mode === 'full' ? 'checked' : ''}>
