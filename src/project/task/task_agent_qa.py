@@ -26,6 +26,7 @@ from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_agent_result import task_agent_result_provider_error
+from src.project.task.task_metadata import task_metadata_parse
 from src.project.task.task_plan import task_plan_goals_text, task_plan_parse
 from src.project.task.task_question import task_question_decisions_text, task_question_parse
 from src.project.task.task_role import task_role_project_server_url
@@ -155,7 +156,11 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         # если ключ отсутствует или значение пустое — это значит, что администратор ещё не
         # менял настройку. Lite — только проверка кода и документации без тестов.
         # Full — те же проверки плюс запуск всех тестов.
-        'subtask_qa_mode': str((task.get('metadata') or {}).get('qa_mode') or 'lite'),
+        # `metadata` в строке задачи — JSON-строка (сборка идёт от `task_state_task_get`),
+        # поэтому разбираем через `task_metadata_parse`: вызов `.get` по строке упирался
+        # в AttributeError и ронял каждый прогон QA до самого вердикта.
+        'subtask_qa_mode': str(
+            task_metadata_parse((task or {}).get('metadata')).get('qa_mode') or 'lite'),
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
 
