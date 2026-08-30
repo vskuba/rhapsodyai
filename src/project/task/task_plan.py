@@ -23,11 +23,67 @@ from difflib import SequenceMatcher
 TASK_PLAN_GOAL_SIMILAR_RATIO = 0.85
 
 
-def task_plan_serialize(plan_text: str, subtasks: list, goals: list | None = None) -> str:
+def task_plan_serialize(plan_text: str, subtasks: list, goals: list | None = None,
+                        repo_dir: str = '') -> str:
+    """
+    План в JSON. `repo_dir` — привести пути к корню репозитория.
+
+    Зачем приведение. План читает исполнитель, а работает он в своей выкладке —
+    отдельном каталоге репозитория. Абсолютный путь уводит его оттуда: файл ложится в
+    основной чекаут, а коммит идёт следом за файлом. Так подзадача #4799 попала в
+    главную ветку, и это не было небрежностью — путь стоял прямо в плане, исполнитель
+    сделал написанное.
+
+    Промпт менеджера теперь требует относительных путей (миграция `20260830120000`),
+    но требование в промпте держится ровно до первой невнимательности модели. Здесь —
+    то же правило делом: через эту функцию проходит каждая запись плана, чья бы она ни
+    была, поэтому чинится и то, что напишет человек руками.
+
+    Переписываем молча, а не отвергаем: путь однозначен — `<repo>/src/x.py` при корне
+    `<repo>` означает `src/x.py` и ничего другого. Отказ ронял бы круг планирования
+    (15–25 минут работы) ради того, что чинится подстановкой.
+
+    Без `repo_dir` ничего не трогаем: у части вызывающих корня под рукой нет, и
+    гадать, что здесь абсолютный путь проекта, а что — путь из чужой системы, нельзя.
+    """
+    if repo_dir:
+        plan_text = task_plan_paths_relative(plan_text, repo_dir)
+        subtasks = [
+            {**item, 'plan': task_plan_paths_relative(str(item.get('plan') or ''), repo_dir)}
+            if isinstance(item, dict) and item.get('plan') else item
+            for item in (subtasks or [])
+        ]
+
     return json.dumps(
         {'plan_text': plan_text, 'subtasks': subtasks, 'goals': goals or []},
         ensure_ascii=False,
     )
+
+
+def task_plan_paths_relative(text: str, repo_dir: str) -> str:
+    """
+    Абсолютные пути проекта — в пути от корня репозитория.
+
+    Два вида приставок, и порядок важен. Сначала каталог выкладки
+    (`<repo>/.claude/worktrees/feature_task_<N>/`) — он длиннее и содержит в себе
+    корень, так что снятый первым корень оставил бы от него бессмысленный хвост
+    `.claude/worktrees/feature_task_5/src/x.py`. Потом сам корень.
+
+    Выкладка попадает в план, когда менеджер ведёт разведку у себя: путь, который он
+    там видит, ведёт в его собственный каталог, а исполнитель работает в другом —
+    и такой путь не лучше, чем путь в основной чекаут.
+
+    Чужие абсолютные пути не трогаем: `/etc/hosts` и `/var/log/…` — это не про наш
+    репозиторий, и обрезать их значило бы испортить осмысленный текст.
+    """
+    text = str(text or '')
+    root = str(repo_dir or '').rstrip('/')
+    if not text or not root:
+        return text
+
+    text = re.sub(re.escape(root) + r'/\.claude/worktrees/feature_task_\d+/', '', text)
+
+    return text.replace(root + '/', '')
 
 
 def task_plan_parse(raw: str) -> tuple[str, list]:

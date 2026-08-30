@@ -1018,7 +1018,9 @@ async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str
     goals_json = task_plan_goals_merge(task.get('goals'), goals)
     await task_state_plan_save(
         task['id'],
-        task_plan_serialize(plan_text, subtasks, goals),
+        # `work_dir` — чтобы пути легли от корня репозитория: исполнитель работает в
+        # своей выкладке, и абсолютный путь увёл бы его в чужой каталог (#4799).
+        task_plan_serialize(plan_text, subtasks, goals, repo_dir=work_dir),
         goals_json=goals_json,
     )
     # Ревизию пишем здесь, а не внутри `task_state_plan_save`: там один UPDATE без

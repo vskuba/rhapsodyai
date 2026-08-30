@@ -176,14 +176,24 @@ async def project_task_update(task_id: int, data: dict, user=Depends(AuthChecker
         # подзадачи и цели менеджера сохраняем, иначе ручная правка их снесёт.
         revision: dict | None = None
         if 'plan_text' in data:
-            await db.execute("SELECT pipeline_plan, goals FROM project_task WHERE id = %s", (task_id,))
+            # Каталог проекта берём тем же запросом, а не отдельным вызовом: он нужен
+            # только чтобы привести пути к корню репозитория, и второе соединение
+            # внутри уже открытого ради одной колонки не окупается.
+            await db.execute(
+                'SELECT t.pipeline_plan, t.goals, p.work_dir '
+                '  FROM project_task t LEFT JOIN project p ON p.id = t.project_id '
+                ' WHERE t.id = %s', (task_id,))
             row = await db.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail='task not found')
             _, subtasks = task_plan_parse(row['pipeline_plan'] or '')
             goals_plan  = task_plan_goals_get(row['pipeline_plan'] or '')
             plan_text   = str(data.get('plan_text') or '').strip()
-            updates['pipeline_plan'] = task_plan_serialize(plan_text, subtasks, goals_plan) if plan_text else ''
+            # Правку человека приводим наравне с планом менеджера: исполнителю
+            # безразлично, кто написал абсолютный путь, — он уведёт из выкладки одинаково.
+            updates['pipeline_plan'] = task_plan_serialize(
+                plan_text, subtasks, goals_plan,
+                repo_dir=str(row.get('work_dir') or '')) if plan_text else ''
             # В ревизию идут живые цели задачи, а не копия из плана: чипс ревизии
             # подменяет на странице именно тот список с чекбоксами, который человек
             # видит и правит.
