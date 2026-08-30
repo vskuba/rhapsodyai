@@ -25,6 +25,7 @@ from src.browser.browser_pool import (
 )
 from src.browser.browser_scenario import (
     BROWSER_SCENARIO_ATTR_MARK,
+    BROWSER_SCENARIO_ATTR_VALUE,
     BROWSER_SCENARIO_FIELDS_DEPTH,
     BROWSER_SCENARIO_ROWS_LIMIT,
     BrowserScenario,
@@ -224,6 +225,11 @@ async def _field_value(row, field, timeout: int, depth: int):
             return ''
 
         target = found.first
+        if field.attribute == BROWSER_SCENARIO_ATTR_VALUE:
+            # Значение поля формы, а не атрибут разметки: см. пояснение у константы.
+            return (await target.input_value(
+                timeout=BROWSER_SCENARIO_RUN_FIELD_TIMEOUT_MS) or '').strip()
+
         if field.attribute:
             return (await target.get_attribute(
                 field.attribute, timeout=BROWSER_SCENARIO_RUN_FIELD_TIMEOUT_MS) or '').strip()
@@ -363,10 +369,16 @@ async def _step_apply(page, step: BrowserScenarioStep, values: dict) -> str:
 
         # `@src` в значении — снять атрибут, а не текст. Без этого адрес картинки
         # не достать: у `<img>` текста нет, и extract вернул бы пустоту.
+        #
+        # `@value` — особый случай: читаем свойство, а не атрибут. У поля, заполненного
+        # скриптом, атрибута в разметке нет вовсе, и `getAttribute` возвращает пусто,
+        # хотя значение на экране видно (`_field_value`, та же развилка).
         if value.startswith(BROWSER_SCENARIO_ATTR_MARK):
             name = value[len(BROWSER_SCENARIO_ATTR_MARK):].strip()
             found = await page.locator(selector).evaluate_all(
-                '(els, name) => els.map(e => e.getAttribute(name) || "")', name)
+                '(els, name) => els.map(e => (name === "value" ? (e.value ?? "")'
+                '                                              : (e.getAttribute(name) || "")))',
+                name)
 
             return '\n'.join(item.strip() for item in found if item and item.strip())
 

@@ -85,6 +85,31 @@ class TestSchema:
         assert BrowserScenarioStep(action='extract', selector='h1', name='титул').fields == []
 
 
+class TestFormValues:
+    """Чтение полей формы: значение, а не атрибут разметки."""
+
+    def test_value_attribute_is_special(self):
+        """
+        `value` в поле `attribute` означает «текущее значение», а не
+        `getAttribute('value')`. У поля, заполненного скриптом, атрибута в разметке
+        нет вовсе: карточка анкеты LadaDate показывает «Diana», а `getAttribute`
+        отдаёт пусто — сбор молча возвращал пустые строки. Текста у `<input>` тоже
+        нет, так что без этой ветки значения формы не достать ничем.
+        """
+        from src.browser.browser_scenario import BROWSER_SCENARIO_ATTR_VALUE
+
+        assert BROWSER_SCENARIO_ATTR_VALUE == 'value'
+
+    def test_field_accepts_value_attribute(self):
+        from src.browser.browser_scenario import BrowserScenarioStep
+
+        step = BrowserScenarioStep(
+            action='extract_rows', selector='.input-group', name='поля',
+            fields=[{'name': 'значение', 'selector': 'input', 'attribute': 'value'}])
+
+        assert step.fields[0].attribute == 'value'
+
+
 class TestMasking:
     """Секрет не должен уехать в собранные данные."""
 
