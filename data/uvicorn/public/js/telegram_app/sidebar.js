@@ -67,13 +67,8 @@ export function setSidebarPageMode(isInPage) {
         isClaudeOpen ? state.claude.sessionLabel : (PAGE_TITLES[state.currentTab] || '');
 }
 
-export function setSidebarPlanMode(isPlanOpen) {
-    document.getElementById('sidebarPageIcons').classList.toggle('active-group', !isPlanOpen);
-    document.getElementById('sidebarPlanIcons').classList.toggle('active-group', isPlanOpen);
-}
-
 export function updateInputBarsVisibility() {
-    const { chat, claude, plan, planCreate } = _inputBars;
+    const { chat, claude, task } = _inputBars;
     const tab = state.currentTab;
 
     const isChatTab = tab === 'chat';
@@ -84,11 +79,7 @@ export function updateInputBarsVisibility() {
     claude.bar.classList.toggle('chat-visible', isClaudeOpen);
     claude.progress.classList.toggle('chat-visible', isClaudeOpen);
 
-    const isPlanDetail = tab === 'plans' && state.currentPlanId !== null;
-    plan.bar.classList.toggle('chat-visible', isPlanDetail);
-    plan.progress.classList.toggle('chat-visible', isPlanDetail);
-
-    const isPlansList = tab === 'plans' && state.currentPlanId === null;
-    planCreate.bar.classList.toggle('chat-visible', isPlansList);
-    planCreate.progress.classList.toggle('chat-visible', isPlansList);
+    const isTasksTab = tab === 'tasks';
+    task.bar.classList.toggle('chat-visible', isTasksTab);
+    task.progress.classList.toggle('chat-visible', isTasksTab);
 }
