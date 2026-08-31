@@ -339,6 +339,16 @@ function _showGoals(on) {
     if (goals) goals.style.display = on ? '' : 'none';
 }
 
+/**
+    Есть ли чем отметить цель: закрытые (`disabled`) не считаются.
+
+    Нужен там, где решение зависит от наличия выбора. Спросить «отметь цель»,
+    когда панель не получила целей, — то же самое, что отказать в ответе.
+    */
+function _goalChoices() {
+    return !!_barEl && _barEl.querySelectorAll('[name="askGoal"]:not(:disabled)').length > 0;
+}
+
 // Сохранить черновик текущего вопроса пачки
 async function askDraftSave() {
     const batch = (_askData || {}).questions || [];
@@ -390,8 +400,11 @@ window.askSend = async function() {
     const note = _noteValue();
     if (!answers.length && !note) { alert('Выберите вариант или напишите ответ'); return; }
     // Ответ «раздробить/убрать» без отмеченных целей не о чём: роль получила бы ключ
-    // действия и гадала бы, о какой цели речь.
-    if (answers.some(k => ASK_GOAL_ACTIONS.includes(k)) && !goalIndexes.length) {
+    // действия и гадала бы, о какой цели речь. Но требовать отметку можно, только
+    // когда отмечать вообще чем: список целей приходит с GET вопроса, а панель
+    // рисуется и из строки списка, где целей нет. Запрет на пустом списке запер бы
+    // вопрос — человек жал бы «Ответить» и получал предупреждение вместо ответа.
+    if (_goalChoices() && answers.some(k => ASK_GOAL_ACTIONS.includes(k)) && !goalIndexes.length) {
         alert('Отметьте цели, которых касается ответ'); return;
     }
 
