@@ -51,7 +51,10 @@ TASK_SETTING_TIMEOUT_GROUP_RETRY = 'Повторы'
 # границы здравого смысла: ноль means «не ждать вовсе», а сутки в ожидании
 # подтверждения доставки означают, что конвейер встал молча.
 TASK_SETTING_TIMEOUT_ITEMS = (
-    {'key': TASK_SETTING_TIMEOUT_MANAGER_RUN, 'default': 3600, 'min': 60, 'max': 86400,
+    # Умолчания ролей — те же числа, что стоят в рабочей установке: иначе свежая
+    # копия проекта поднимается с потолками, на которых конвейер уже спотыкался,
+    # а карточка команды помечает рабочие значения как «правленые руками».
+    {'key': TASK_SETTING_TIMEOUT_MANAGER_RUN, 'default': 6400, 'min': 60, 'max': 86400,
      'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'manager', 'unit': 'с',
      'title': 'Ответ менеджера',
      'hint': 'Сколько ждать разбиение задачи на подзадачи. Должно быть меньше job воркера.'},
@@ -68,11 +71,17 @@ TASK_SETTING_TIMEOUT_ITEMS = (
      'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'developer', 'unit': 'с',
      'title': 'Ответ разработчика',
      'hint': 'Весь прогон целиком, включая круги доработки. Должно быть меньше job воркера.'},
-    {'key': TASK_SETTING_TIMEOUT_QA_RUN, 'default': 3600, 'min': 60, 'max': 86400,
+    # Два часа с небольшим: QA идёт одним заходом, но обходит цели по одной, и на
+    # семи целях один только обход занимает под двадцать минут (#5237). Прежние
+    # 3600 не покрывали и суммы шагов workflow #57.
+    {'key': TASK_SETTING_TIMEOUT_QA_RUN, 'default': 7400, 'min': 60, 'max': 86400,
      'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'qa', 'unit': 'с',
      'title': 'Ответ тестировщика',
      'hint': 'Сколько ждать проверку подзадачи. Должно быть меньше job воркера.'},
-    {'key': TASK_SETTING_TIMEOUT_BUGFIX_RUN, 'default': 3600, 'min': 60, 'max': 86400,
+    # Столько же, сколько QA, и по той же причине: один заход без кругов доработки.
+    # Замеров по роли пока нет вовсе, поэтому берём по родству workflow, а не из
+    # данных; при 3600 четыре шага #59 по своим срокам в потолок не влезали.
+    {'key': TASK_SETTING_TIMEOUT_BUGFIX_RUN, 'default': 7400, 'min': 60, 'max': 86400,
      'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'bugfixer', 'unit': 'с',
      'title': 'Ответ багфиксера',
      'hint': 'Сколько ждать починку бага. Должно быть меньше job воркера.'},

@@ -138,6 +138,107 @@ class TestPipelineRoles:
                         f"workflow {step['workflow_id']}, шаг {step['id']}: промпт пуст")
 
 
+class TestStepTimeouts:
+    """
+    Срок шага не должен обрывать работу — это дело потолка роли.
+
+    У каждого обращения к оболочке свой срок, литералом `_const_N` в `inputs_map`, и
+    он срабатывает раньше потолка прогона. Поставь его ниже, чем такой ход занимает на
+    самом деле, — и шаг рвёт работу посреди дела, конвейер ставит прогон заново, круг
+    повторяется. Живьём: подняли `timeout_developer_run` до четырёх часов, а обрывы
+    продолжились с прежней формулировкой и другой цифрой — «не ответил за 1200с».
+
+    Глазами это не видно: в трейсе шаг выглядит как «долгий», а не как «обрезанный».
+    Отличает их одно — максимум упирается в срок до секунды.
+    """
+
+    ROLE_WORKFLOWS = (55, 56, 57, 59)
+
+    # Потолки прогона по ролям (`task_setting_timeout.py`). Ключ — workflow роли.
+    WORKFLOW_CEILING_KEY = {
+        55: 'timeout_manager_run',
+        56: 'timeout_developer_run',
+        57: 'timeout_qa_run',
+        59: 'timeout_bugfix_run',
+    }
+
+    async def test_step_timeout_below_role_ceiling(self):
+        """
+        Ни один шаг не длиннее потолка своей роли.
+
+        Такой шаг не может отработать никогда: потолок оборвёт прогон раньше, чем
+        истечёт срок шага. Роль при этом выглядит рабочей — она просто всегда падает.
+        """
+        from src.project.task.task_setting_timeout import (
+            TASK_SETTING_TIMEOUT_ITEMS, task_setting_timeout_all)
+        from src.project.task.task_setting_step import task_setting_step_timeout_of
+
+        values = {item['key']: item['value'] for item in await task_setting_timeout_all()}
+        defaults = {item['key']: item['default'] for item in TASK_SETTING_TIMEOUT_ITEMS}
+
+        over = []
+        for step in await _live_steps():
+            workflow_id = int(step['workflow_id'])
+            key = self.WORKFLOW_CEILING_KEY.get(workflow_id)
+            if not key:
+                continue
+
+            seconds = task_setting_step_timeout_of(json.loads(step['metadata'] or '{}'))
+            if not seconds:
+                continue
+
+            ceiling = int(values.get(key) or defaults.get(key) or 0)
+            if ceiling and seconds >= ceiling:
+                over.append(f"шаг {step['id']} «{step['step_title']}»: "
+                            f'{seconds}с при потолке {key} = {ceiling}с')
+
+        assert not over, ('шаги, которые не успеют отработать до потолка роли:\n'
+                          + '\n'.join(over))
+
+    async def test_step_timeout_above_observed_work(self):
+        """
+        Срок шага выше того, что этот шаг занимал на самом деле.
+
+        Замеры живые (`project_task_metric`), поэтому проверка растёт вместе с
+        проектом: сегодня она молчит, а стоит какому-то шагу упереться в свой срок —
+        краснеет с именем шага. Ровно этого не хватало, когда обрывы искали глазами
+        по трейсам.
+
+        Метрик нет вовсе (свежая база) — проверять нечего, и это не повод падать.
+        """
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_setting_step import task_setting_step_timeout_of
+
+        limits = {}
+        for step in await _live_steps():
+            if int(step['workflow_id']) not in self.ROLE_WORKFLOWS:
+                continue
+            seconds = task_setting_step_timeout_of(json.loads(step['metadata'] or '{}'))
+            if seconds:
+                limits[str(step['step_title'])] = seconds
+
+        if not limits:
+            pytest.skip('шагов со сроком не нашлось')
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT step_title, ROUND(MAX(duration_ms) / 1000) AS max_s '
+                '  FROM project_task_metric '
+                ' WHERE duration_ms IS NOT NULL GROUP BY step_title')
+            observed = {str(r['step_title']): int(r['max_s'] or 0)
+                        for r in await db.fetchall() or []}
+
+        if not observed:
+            pytest.skip('замеров ещё нет — сравнивать не с чем')
+
+        walls = [f'«{title}»: доходил до {observed[title]}с при сроке {limit}с'
+                 for title, limit in limits.items()
+                 if observed.get(title, 0) >= limit]
+
+        assert not walls, ('шаги упирались в собственный срок — работу режет шаг, а не '
+                           'потолок роли:\n' + '\n'.join(walls))
+
+
 class TestMigrationNames:
     """
     Метка времени миграции — до секунд, и она не должна повторяться.
