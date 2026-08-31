@@ -200,6 +200,24 @@ class TestSelfCheckLoop:
     него тратились — шесть минут работы агента.
     """
 
+    # Замеры по 41 прогону разработчика (`project_task_metric`, секунды):
+    #
+    #            разбор  реализация  отчёт  самопроверка  ответ
+    #   среднее     481        1169    240           355     53
+    #   худшее     1226        4807   1207          1240    106
+    #
+    # Первый круг дороже последующих на разбор — он не повторяется.
+    #
+    # Порог составной, и это не произвол. **Первый круг берём по худшим замерам**:
+    # именно долгие прогоны рвались по таймауту, а по средним всё укладывалось и в
+    # прежние 7000с — проверка по среднему прошла бы на сломанной конфигурации, то
+    # есть не проверяла бы ничего. **Доработки — по средним**: три круга по худшим
+    # это 6.5 часа, и покрывать их потолком нельзя намеренно (см. миграцию
+    # 20260831221943) — оболочка в проекте одна, и висящая подзадача останавливает
+    # всю очередь.
+    ROUND_FIRST_SEC = 8586      # худший первый круг: 1226+4807+1207+1240+106
+    ROUND_REWORK_SEC = 1817     # средняя доработка: 1169+240+355+53
+
     async def test_dev_iterations_allow_rework(self):
         """
         Лимит больше единицы — иначе шаг самопроверки бесполезен по построению.
@@ -216,6 +234,52 @@ class TestSelfCheckLoop:
         assert int(row['default']) >= 2, (
             'при лимите 1 круг самопроверки не может сработать: условие лимита '
             'проверяется раньше, чем dev_ok != yes')
+
+    async def test_timeout_covers_all_rework_rounds(self):
+        """
+        Потолок прогона обязан покрывать все разрешённые круги доработки.
+
+        Разойдись они — разработчик получает право на три круга и обрывается на
+        третьем по таймауту. Именно это и происходило: у #5219 семь из десяти
+        последних попыток кончились «не ответил за 4800с», и каждая ставилась заново,
+        сжигая по восемьдесят минут работы агента.
+
+        Считаем по замерам, а не по догадке: первый круг дороже последующих на
+        разбор, который не повторяется.
+        """
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_setting_timeout import (
+            TASK_SETTING_TIMEOUT_DEVELOPER_RUN, task_setting_timeout_get)
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT `default` FROM agent_workflow_variable WHERE name = %s',
+                ('max_dev_iterations',))
+            rounds = int((await db.fetchone() or {}).get('default') or 0)
+
+        timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN)
+        need = self.ROUND_FIRST_SEC + self.ROUND_REWORK_SEC * (rounds - 1)
+
+        assert timeout >= need, (
+            f'{rounds} кругов требуют ~{need}с (медленный первый + средние доработки), '
+            f'а timeout_developer_run = {timeout}с: круги оборвутся по таймауту, '
+            f'и каждый оборванный прогон будет ставиться заново')
+
+    async def test_timeout_ladder_holds(self):
+        """
+        Лестница «прогон агента < job воркера < блокировка строки» цела.
+
+        Поднимая потолок агента, легко забыть про соседей: тогда воркера убьют
+        раньше, чем прогон сорвётся сам, либо соседний тик заберёт строку, над
+        которой ещё работают, — и оба исхода выглядят как «агент не ответил».
+        """
+        from src.project.task.task_setting_timeout import (
+            task_setting_timeout_all, task_setting_timeout_ladder_problem)
+
+        rows = await task_setting_timeout_all()
+        values = {item['key']: item.get('value') for item in rows}
+
+        assert not task_setting_timeout_ladder_problem(values)
 
     async def test_rework_step_returns_to_implementation(self):
         """

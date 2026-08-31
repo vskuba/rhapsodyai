@@ -55,10 +55,19 @@ TASK_SETTING_TIMEOUT_ITEMS = (
      'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'manager', 'unit': 'с',
      'title': 'Ответ менеджера',
      'hint': 'Сколько ждать разбиение задачи на подзадачи. Должно быть меньше job воркера.'},
-    {'key': TASK_SETTING_TIMEOUT_DEVELOPER_RUN, 'default': 3600, 'min': 60, 'max': 86400,
+    # Четыре часа — потолок на весь прогон, а не на шаг. Разработчику разрешено три
+    # круга доработки по своим замечаниям (`max_dev_iterations`), и по замерам это 99
+    # минут: первый круг 38, каждый следующий 30 (разбор не повторяется). Запас вдвое
+    # покрывает медленные прогоны, а патология обрывается, не заняв оболочку на
+    # полсуток — в проекте она пока в одном экземпляре, и висящая подзадача
+    # останавливает всю очередь.
+    #
+    # Прежние 7000с рвали третий круг на середине: у #5219 семь из десяти попыток
+    # кончились «не ответил за 4800с», и каждая ставилась заново.
+    {'key': TASK_SETTING_TIMEOUT_DEVELOPER_RUN, 'default': 14400, 'min': 60, 'max': 86400,
      'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'developer', 'unit': 'с',
      'title': 'Ответ разработчика',
-     'hint': 'Сколько ждать выполнение подзадачи. Должно быть меньше job воркера.'},
+     'hint': 'Весь прогон целиком, включая круги доработки. Должно быть меньше job воркера.'},
     {'key': TASK_SETTING_TIMEOUT_QA_RUN, 'default': 3600, 'min': 60, 'max': 86400,
      'group': TASK_SETTING_TIMEOUT_GROUP_AGENT, 'role': 'qa', 'unit': 'с',
      'title': 'Ответ тестировщика',
@@ -98,11 +107,14 @@ TASK_SETTING_TIMEOUT_ITEMS = (
      'title': 'Готовность после перезапуска',
      'hint': 'Холодный старт Claude Code с большим CLAUDE.md — десятки секунд.'},
 
-    {'key': TASK_SETTING_TIMEOUT_WORKER_JOB, 'default': 3900, 'min': 60, 'max': 86400,
+    # Следом за самым долгим агентом, с запасом на постановку в очередь и уборку:
+    # лестница `агент < job < блокировка` обязана держаться, иначе воркера убьют
+    # раньше, чем прогон сорвётся сам (`task_setting_timeout_ladder_problem`).
+    {'key': TASK_SETTING_TIMEOUT_WORKER_JOB, 'default': 15000, 'min': 60, 'max': 86400,
      'group': TASK_SETTING_TIMEOUT_GROUP_PIPELINE, 'role': '', 'unit': 'с',
      'title': 'Job воркера',
      'hint': 'Потолок одного тика конвейера. Между таймаутом агента и блокировкой строки.'},
-    {'key': TASK_SETTING_TIMEOUT_TASK_LOCK, 'default': 4200, 'min': 60, 'max': 86400,
+    {'key': TASK_SETTING_TIMEOUT_TASK_LOCK, 'default': 15600, 'min': 60, 'max': 86400,
      'group': TASK_SETTING_TIMEOUT_GROUP_PIPELINE, 'role': '', 'unit': 'с',
      'title': 'Блокировка строки',
      'hint': 'Через это время задачу заберёт следующий тик, даже если воркер молчит.'},
