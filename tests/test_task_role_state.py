@@ -18,6 +18,10 @@ import os
 
 import pytest
 
+# Проект, которого нет: под ним заводятся строки теста типов.
+TEST_TYPE_PROJECT_ID = 987680
+_PARENT_ID = 0
+
 
 class TestRoleOfState:
     """Каждое рабочее состояние принадлежит ровно одной роли."""
@@ -117,6 +121,89 @@ class TestStateMapConsistency:
         assert set(TASK_ROLE_STATES) == set(TASK_ROLE_TYPES)
 
 
+class TestSubtaskTypeFollowsState:
+    """
+    Тип подзадачи идёт за её собственной работой, а не за типом родителя.
+
+    Тип — это нынешний владелец строки (`plan` — у менеджера, `dev` — у разработчика,
+    `test` — у QA). Каскад от родителя держит ветку в одних руках, пока работа общая,
+    но у подзадач она расходится: родитель ушёл в `testing` и стал `test`, а ребёнок
+    в это время вернулся к разработчику.
+
+    Живьём #5219: строка в `developing`, вкладка «Разработчик», а в колонке типа —
+    «Тестирование». И #5235: ушла к менеджеру, вернулась в работу, дошла до QA — а тип
+    так и остался `plan`, то есть «планирование» у Тестировщика.
+    """
+
+    async def test_developing_makes_type_dev(self):
+        """Тот самый случай #5219: строка у разработчика — значит тип `dev`."""
+        from src.project.task.task_state import _subtask_type_follow_state
+
+        subtask_id = await _subtask_create(type_name='test')
+        await _subtask_type_follow_state(subtask_id, 'developing')
+
+        assert await _type_of(subtask_id) == 'dev'
+
+    async def test_qa_pending_makes_type_test(self):
+        from src.project.task.task_state import _subtask_type_follow_state
+
+        subtask_id = await _subtask_create(type_name='dev')
+        await _subtask_type_follow_state(subtask_id, 'qa_pending')
+
+        assert await _type_of(subtask_id) == 'test'
+
+    async def test_plan_type_changes_when_work_resumes(self):
+        """
+        Случай #5235: строка вернулась с планирования в работу — тип обязан смениться.
+
+        Пока она у менеджера, состояние `new` — ничьё, и до смены типа дело не
+        доходит. Забрала работа — владелец сменился по-настоящему.
+        """
+        from src.project.task.task_state import _subtask_type_follow_state
+
+        subtask_id = await _subtask_create(type_name='plan')
+        await _subtask_type_follow_state(subtask_id, 'qa_pending')
+
+        assert await _type_of(subtask_id) == 'test'
+
+    async def test_ownerless_state_keeps_type(self):
+        """
+        Состояния без владельца тип не трогают: над ними никто не работает, и менять
+        владельца не на кого. Строка на планировании (`new`) остаётся у менеджера.
+        """
+        from src.project.task.task_state import _subtask_type_follow_state
+
+        for state in ('new', 'plan_approval', 'done', 'blocked'):
+            subtask_id = await _subtask_create(type_name='plan')
+            await _subtask_type_follow_state(subtask_id, state)
+
+            assert await _type_of(subtask_id) == 'plan', state
+
+    async def test_root_task_is_not_touched(self):
+        """
+        Корневым типом распоряжаются свои переходы (`task_state_type_to_*`), и лезть
+        в них отсюда нельзя: у задачи целиком владелец считается иначе.
+        """
+        from src.project.task.task_state import _subtask_type_follow_state
+
+        task_id = await _subtask_create(type_name='test', root=True)
+        await _subtask_type_follow_state(task_id, 'developing')
+
+        assert await _type_of(task_id) == 'test'
+
+    async def test_state_set_applies_type(self):
+        """
+        Тип правится самим переходом состояния, а не отдельным вызовом: иначе о нём
+        пришлось бы помнить в каждом месте, где состояние меняется.
+        """
+        from src.project.task.task_state import task_state_subtask_set
+
+        subtask_id = await _subtask_create(type_name='test')
+        await task_state_subtask_set(subtask_id, 'developing')
+
+        assert await _type_of(subtask_id) == 'dev'
+
+
 class TestApiCarriesRole:
     """Роль приезжает на страницу с сервера, а не считается в JS второй копией карты."""
 
@@ -146,6 +233,86 @@ class TestApiCarriesRole:
 
         for task in tasks:
             assert task['pipeline_role'] == task_role_of_state(task.get('pipeline_state'))
+
+
+async def _subtask_create(type_name: str, root: bool = False) -> int:
+    """
+    Завести строку нужного типа. `root` — задача целиком, без родителя.
+
+    Строка настоящая: проверяемый код пишет в базу, и выдуманный номер молча ничего
+    бы не обновил — тест был бы зелёным при любом состоянии кода.
+    """
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'INSERT INTO project_task (project_id, parent_id, title, description, goals, '
+            '                          position, status, task_type_id, pipeline_state) '
+            "SELECT %s, %s, 'type-follow-test', '', '[]', 0, 'queued', id, 'planned' "
+            '  FROM project_task_type WHERE name = %s',
+            (TEST_TYPE_PROJECT_ID, None if root else await _parent_id(), type_name))
+        task_id = db.lastrowid
+        await db.connection.commit()
+
+    return task_id
+
+
+async def _parent_id() -> int:
+    """Родитель для подзадач теста: заводится один раз на прогон."""
+    global _PARENT_ID
+    if _PARENT_ID:
+        return _PARENT_ID
+
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'INSERT INTO project_task (project_id, title, description, goals, position, '
+            "                          status, task_type_id, pipeline_state) "
+            "SELECT %s, 'type-follow-parent', '', '[]', 0, 'queued', id, 'processing' "
+            '  FROM project_task_type WHERE name = %s',
+            (TEST_TYPE_PROJECT_ID, 'dev'))
+        _PARENT_ID = db.lastrowid
+        await db.connection.commit()
+
+    return _PARENT_ID
+
+
+async def _type_of(task_id: int) -> str:
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT tt.name FROM project_task t '
+            '  LEFT JOIN project_task_type tt ON tt.id = t.task_type_id '
+            ' WHERE t.id = %s', (task_id,))
+
+        return str((await db.fetchone() or {}).get('name') or '')
+
+
+@pytest.fixture(autouse=True)
+async def type_test_cleanup():
+    """Снести тестовые строки — до теста и после."""
+    global _PARENT_ID
+
+    await _type_cleanup()
+    _PARENT_ID = 0
+    yield
+    await _type_cleanup()
+    _PARENT_ID = 0
+
+    from mysql_.mysql_ import mysql_pool_close
+    await mysql_pool_close()
+
+
+async def _type_cleanup() -> None:
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute('DELETE FROM project_task WHERE project_id = %s AND parent_id IS NOT NULL',
+                         (TEST_TYPE_PROJECT_ID,))
+        await db.execute('DELETE FROM project_task WHERE project_id = %s', (TEST_TYPE_PROJECT_ID,))
+        await db.connection.commit()
 
 
 if __name__ == '__main__':

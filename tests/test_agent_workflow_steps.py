@@ -136,6 +136,182 @@ class TestPipelineRoles:
                         f"workflow {step['workflow_id']}, шаг {step['id']}: промпт пуст")
 
 
+class TestMigrationNames:
+    """
+    Метка времени миграции — до секунд, и она не должна повторяться.
+
+    Правило `YYYYMMDDHHMMSS` записано давно, но большая часть меток в проекте
+    «круглая» (`...150000`, `...140500`): их писали руками, округляя до минуты. Роль
+    копирует то, что видит, и две работы одного часа берут один номер — вся
+    уникальность метки пропадает.
+
+    Живьём: подзадача #5219 собиралась завести `20260831150000_wf57_qa_mode.sql`, а
+    такой номер за четверть часа до неё занял соседний файл. Два файла на одну метку
+    yoyo применит в неопределённом порядке, а при слиянии веток это конфликт.
+
+    Старые метки не трогаем: они уже применены, и переименование сдвинуло бы журнал
+    yoyo без всякой пользы. Проверяем только то, что дубликатов нет — это и есть
+    свойство, ради которого метка времени выбрана.
+    """
+
+    MIGRATION_DIR = 'migrations'
+
+    def test_no_duplicate_timestamps(self):
+        """
+        Двух миграций с одной меткой быть не должно: порядок их применения не
+        определён, а при слиянии веток одна молча потеряется.
+        """
+        import os
+        from collections import Counter
+
+        stamps = Counter(name.split('_', 1)[0]
+                         for name in os.listdir(self.MIGRATION_DIR)
+                         if name.endswith('.sql'))
+        doubled = {stamp: count for stamp, count in stamps.items() if count > 1}
+
+        assert not doubled, f'метки повторяются: {doubled}'
+
+    def test_timestamps_are_full_length(self):
+        """
+        Метка — ровно `YYYYMMDDHHMMSS`, четырнадцать цифр. Короче — это не время, и
+        сортировка файлов перестанет совпадать с хронологией.
+        """
+        import os
+
+        bad = [name for name in sorted(os.listdir(self.MIGRATION_DIR))
+               if name.endswith('.sql')
+               and not (name.split('_', 1)[0].isdigit() and len(name.split('_', 1)[0]) == 14)]
+
+        assert not bad, f'метка не похожа на YYYYMMDDHHMMSS: {bad}'
+
+
+class TestSelfCheckLoop:
+    """
+    Круг самопроверки разработчика должен иметь возможность сработать.
+
+    Дефект был тихий. Переходы шага «Ответ JSON: самопроверка» проверяются по
+    порядку, и условие лимита (`dev_iteration >= max_dev_iterations`) стоит раньше,
+    чем `dev_ok != yes`. При лимите в единицу первый же круг его достигает: рецензент
+    находит замечания, выносит `dev_ok: no` — и работа всё равно уходит к QA как есть.
+
+    Живьём #5235: три замечания (185 продублированных строк, контракт ответа не по
+    правилам, потерянные докстринги) написаны, прочитаны человеком в журнале и
+    выброшены. Шаг существовал в режиме, где не мог сработать ни разу, а токены на
+    него тратились — шесть минут работы агента.
+    """
+
+    async def test_dev_iterations_allow_rework(self):
+        """
+        Лимит больше единицы — иначе шаг самопроверки бесполезен по построению.
+        """
+        from mysql_.mysql_ import mysql_get_db_async
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT `default` FROM agent_workflow_variable WHERE name = %s',
+                ('max_dev_iterations',))
+            row = await db.fetchone()
+
+        assert row, 'переменная max_dev_iterations не заведена'
+        assert int(row['default']) >= 2, (
+            'при лимите 1 круг самопроверки не может сработать: условие лимита '
+            'проверяется раньше, чем dev_ok != yes')
+
+    async def test_rework_step_returns_to_implementation(self):
+        """
+        Цикл замкнут: шаг замечаний возвращает на реализацию, а не в никуда.
+
+        Без этого перехода поднятый лимит ничего не дал бы — замечания записались бы
+        в переменную, и работа всё равно ушла бы дальше.
+        """
+        import json
+
+        from mysql_.mysql_ import mysql_get_db_async
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "SELECT id, title, metadata FROM agent_workflow_step "
+                " WHERE workflow_id = 56 AND title LIKE %s", ('%Замечания%',))
+            rows = await db.fetchall() or []
+
+        assert rows, 'шага «Замечания на доработку» в workflow разработчика нет'
+
+        step = dict(rows[0])
+        data = json.loads(step['metadata'] or '{}')
+        targets = {str(t.get('step_id')) for t in data.get('transitions_after') or []}
+
+        assert targets, f"шаг {step['id']} никуда не ведёт — замечания повиснут"
+
+
+
+    """
+    Миграции промптов не должны оставлять шаг неразбираемым.
+
+    Соседние тесты проверяют базу — и краснеют уже после применения, то есть когда
+    конвейер сломан и роли получают пустые промпты. Здесь проверка идёт по файлам:
+    каждую миграцию, правящую `metadata`, прогоняем через тот же разбор, что и живой
+    шаг, и смотрим, переживёт ли он её.
+
+    Дефект повторяется, и в этом всё дело. Первый раз пример `grep -ril "<имя>"`
+    оборвал JSON шага 433: пять подзадач легли в `blocked`, четыре задачи ушли в
+    `failed`. Второй — пример тела запроса вида {"name": ...} в шаге 435, спустя два
+    дня и в другой миграции. Оба раза кавычки выглядели безобидно: это же просто
+    пример в тексте.
+
+    Причина — три уровня вложенности. Текст промпта лежит внутри JSON-строки колонки
+    `metadata`, та внутри SQL-строки миграции, и незаэкранированная кавычка обрывает
+    JSON молча: SQL отработает, шаг перестанет разбираться, а в журнале это выглядит
+    как «агент не ответил».
+    """
+
+    async def test_applied_migrations_left_steps_parseable(self):
+        """
+        Каждый шаг, который трогали миграции промптов, разбирается сейчас.
+
+        Проверка по базе, а не по тексту файлов: правило «кавычек в тексте быть не
+        должно» слишком грубое — законных кавычек в миграциях полно (`CHAR(92)`,
+        экранированный JSON внутри промпта, значения колонок). Важно не наличие
+        кавычки, а то, читается ли шаг после неё.
+
+        Номера шагов берём из самих файлов: какие правили, те и смотрим. Так тест
+        растёт вместе с миграциями и не требует правки при каждой новой.
+        """
+        import json
+        import os
+        import re
+
+        from mysql_.mysql_ import mysql_get_db_async
+
+        touched = set()
+        for name in sorted(os.listdir('migrations')):
+            if not name.endswith('.sql'):
+                continue
+            text = open(os.path.join('migrations', name), encoding='utf-8').read()
+            if 'agent_workflow_step' not in text:
+                continue
+            for chunk in re.findall(r'`id`\s*(?:=|IN)\s*\(?([\d,\s]+)\)?', text):
+                touched.update(int(n) for n in re.findall(r'\d+', chunk))
+
+        assert touched, 'миграций, правящих шаги, не нашлось — проверять нечего'
+
+        async with mysql_get_db_async() as db:
+            placeholders = ', '.join(['%s'] * len(touched))
+            await db.execute(
+                f'SELECT id, title, metadata FROM agent_workflow_step '
+                f' WHERE id IN ({placeholders})', sorted(touched))
+            rows = await db.fetchall() or []
+
+        broken = []
+        for row in rows:
+            try:
+                json.loads(row['metadata'] or '{}')
+            except Exception as error:
+                broken.append(f"шаг {row['id']} «{row['title']}»: {error}")
+
+        assert not broken, (
+            'шаги, которые правили миграции, перестали разбираться:\n' + '\n'.join(broken))
+
+
 async def _live_steps() -> list:
     """
     Шаги workflow, которые заведены агентам, — то есть тех, что грузит движок.
