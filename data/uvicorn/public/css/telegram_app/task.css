@@ -1,0 +1,427 @@
+/* ===== Task list ===== */
+
+#tab-tasks {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+}
+
+#tab-tasks.active {
+    display: flex;
+}
+
+.task-phase-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 10px 16px 0;
+    overflow-x: auto;
+    flex-shrink: 0;
+    border-bottom: 1px solid #edf2f7;
+    background: #fff;
+}
+
+.task-phase-tab {
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid #e2e8f0;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    background: #f7fafc;
+    color: #4a5568;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+
+.task-phase-tab:hover {
+    background: #edf2f7;
+}
+
+.task-phase-tab.active {
+    background: #fff;
+    border-color: #cbd5e0;
+    border-bottom: 1px solid #fff;
+    margin-bottom: -1px;
+}
+
+.task-phase-tab[data-phase="planning"].active   { color: #805ad5; border-color: #d6bcfa; }
+.task-phase-tab[data-phase="development"].active { color: #2b6cb0; border-color: #90cdf4; }
+.task-phase-tab[data-phase="testing"].active     { color: #276749; border-color: #9ae6b4; }
+.task-phase-tab[data-phase="bugs"].active        { color: #c53030; border-color: #feb2b2; }
+
+/* Селектор проекта над вкладками фаз */
+.task-project-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px 0;
+    background: #fff;
+}
+
+.task-project-row label {
+    font-size: 12px;
+    color: #718096;
+    white-space: nowrap;
+}
+
+.task-project-select {
+    font-size: 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    padding: 3px 8px;
+    background: #fff;
+}
+
+.task-list-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+}
+
+.task-card {
+    background: #fff;
+    border: 1px solid #edf2f7;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    cursor: pointer;
+    transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.task-card:hover {
+    border-color: #cbd5e0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+
+.task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.task-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a202c;
+    line-height: 1.3;
+    flex: 1;
+    min-width: 0;
+}
+
+.task-badges {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: 8px;
+}
+
+.task-status-chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #edf2f7;
+    color: #4a5568;
+    white-space: nowrap;
+}
+
+.task-state-chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #ebf4ff;
+    color: #3182ce;
+    white-space: nowrap;
+}
+
+.task-pipeline-chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #fefcbf;
+    color: #975a16;
+    white-space: nowrap;
+}
+
+.task-subtask {
+    display: block;
+    font-size: 11px;
+    color: #a0aec0;
+    margin-bottom: 4px;
+}
+
+.task-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.task-actions:empty {
+    display: none;
+}
+
+.task-body {
+    font-size: 13px;
+    color: #718096;
+    line-height: 1.4;
+    margin-bottom: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.task-btn {
+    font-size: 12px;
+    padding: 4px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f7fafc;
+    color: #4a5568;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+
+.task-btn:hover {
+    background: #edf2f7;
+}
+
+.task-btn-primary {
+    background: #3182ce;
+    color: #fff;
+    border-color: #3182ce;
+}
+
+.task-btn-primary:hover {
+    background: #2b6cb0;
+}
+
+.task-btn-primary:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.task-flags {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #f7fafc;
+}
+
+.task-flag {
+    font-size: 12px;
+    color: #4a5568;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.task-flag.task-flag-busy {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.task-flag input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: #3182ce;
+    cursor: pointer;
+}
+
+/* ===== Task question panel ===== */
+
+.task-bar {
+    flex-shrink: 0;
+    border-top: 1px solid #edf2f7;
+    background: #fff;
+    display: none;
+}
+
+.task-bar.chat-visible {
+    display: block;
+}
+
+.task-question-panel {
+    padding: 12px 16px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.task-question-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 6px;
+}
+
+.task-question-role {
+    font-size: 11px;
+    color: #718096;
+    background: #f7fafc;
+    padding: 2px 8px;
+    border-radius: 999px;
+    display: inline-block;
+    margin-bottom: 4px;
+}
+
+.task-question-text {
+    font-size: 13px;
+    color: #2d3748;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.task-question-options {
+    margin: 8px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.task-option-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #2d3748;
+    padding: 6px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.task-option-label:hover {
+    background: #f7fafc;
+    border-color: #cbd5e0;
+}
+
+.task-option-label.picked {
+    background: #ebf4ff;
+    border-color: #90cdf4;
+}
+
+.task-option-hint {
+    font-size: 11px;
+    color: #a0aec0;
+    margin-left: 4px;
+}
+
+.task-question-note {
+    width: 100%;
+    border: 1px solid #cbd5e0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 50px;
+    outline: none;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.task-question-note:focus {
+    border-color: #3182ce;
+    box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.15);
+}
+
+.task-question-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.task-question-actions .task-btn {
+    padding: 6px 16px;
+    font-size: 13px;
+}
+
+.task-question-actions .task-btn-primary {
+    background: #3182ce;
+    color: #fff;
+    border-color: #3182ce;
+}
+
+.task-question-batch-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.task-question-batch-tab {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: #f7fafc;
+    color: #4a5568;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.task-question-batch-tab.current {
+    background: #3182ce;
+    color: #fff;
+    border-color: #3182ce;
+}
+
+.task-question-batch-tab.done::after {
+    content: '✓';
+    margin-left: 2px;
+}
+
+.task-decisions {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #edf2f7;
+}
+
+.task-decision {
+    font-size: 12px;
+    color: #4a5568;
+    padding: 4px 0;
+    line-height: 1.4;
+}
+
+.task-decision b {
+    color: #2d3748;
+}
+
+.task-decision-meta {
+    font-size: 11px;
+    color: #a0aec0;
+    float: right;
+}
+
+.task-no-questions {
+    font-size: 13px;
+    color: #a0aec0;
+    text-align: center;
+    padding: 20px 16px;
+}
+
+/* ===== Flag indicator ===== */
+
+.task-flag-on {
+    color: #38a169;
+}
+
+.task-flag-off {
+    color: #a0aec0;
+}
