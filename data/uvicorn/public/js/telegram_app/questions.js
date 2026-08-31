@@ -20,7 +20,7 @@ const API_ANSWER = (id) => `/telegram-app/task/${id}/question/answer`;
 
 // --- Состояние панели ---
 
-let _barEl = null;              // taskQuestionBar в HTML
+let _barEl = null;              // taskQuestionPanel в шаблоне вкладки, заводим сами, если его нет
 let _askTaskId = null;
 let _askData = null;            // сырой ответ от сервера
 let _askIndex = 0;              // индекс текущего вопроса в пачке
@@ -28,16 +28,47 @@ let _askIndex = 0;              // индекс текущего вопроса 
 // Глобальные callback-и для вызова из HTML-строк шаблонов
 window._qnsCallbacks = {};
 
+// Кнопки панели рисуются строкой (`onclick="askSend()"`), поэтому обработчики живут на
+// window. `closeQuestionPanel` — экспорт модуля, сама по себе глобальной не является:
+// без этой строки «Закрыть» жал бы ReferenceError на каждом нажатии.
+window.closeQuestionPanel = closeQuestionPanel;
+
 /** Зарегистрировать коллбек для загрузки вопросов извне (вызывается из tasks.js) */
 export function registerLoadCallback(cb) {
     window._qnsCallbacks.loadFromOutside = cb;
 }
 
+/**
+    Полоса вопросов: внешний слой `.task-bar` (им переключается видимость),
+    отступы — внутреннему `.task-question-panel`.
+    */
+function ensureBar() {
+    if (_barEl && _barEl.isConnected) return _barEl;
+
+    _barEl = document.getElementById('taskQuestionPanel') || document.getElementById('taskQuestionBar');
+    if (!_barEl) {
+        // Шаблона с панелью может и не быть — вкладку рисует соседняя подзадача, а
+        // панель обязана появиться на любом каркасе: вставляем её в оболочку сами.
+        _barEl = document.createElement('div');
+        _barEl.id = 'taskQuestionPanel';
+        (document.querySelector('.app-shell') || document.body).appendChild(_barEl);
+    }
+    _barEl.classList.add('task-bar');
+    _barEl.classList.remove('task-question-panel');   // отступы належат внутреннему слою
+    return _barEl;
+}
+
+/** Положить разметку в панель: одним движением, чтобы старый вопрос не мигал под новым */
+function renderBar(inner) {
+    const bar = ensureBar();
+    if (!bar) return;
+    bar.innerHTML = `<div class="task-question-panel">${inner}</div>`;
+    bar.classList.add('chat-visible');
+}
+
 // Вызов из задач.js при клике на карточку
 export async function openQuestionPanel(taskId) {
-    if (!_barEl) {
-        _barEl = document.getElementById('taskQuestionBar');
-    }
+    ensureBar();
     _askTaskId = taskId;
     _askData = null;
     _askIndex = 0;
@@ -61,19 +92,16 @@ export function closeQuestionPanel() {
 // --- Рендер панели ---
 
 function showLoading() {
-    if (!_barEl) return;
-    _barEl.innerHTML = '<div class="task-no-questions">Загружаю…</div>';
-    _barEl.classList.add('chat-visible');
+    renderBar('<div class="task-no-questions">Загружаю…</div>');
 }
 
 function showError(message) {
-    if (!_barEl) return;
-    _barEl.innerHTML = `<div class="task-no-questions">⚠️ ${esc(message)}</div>`;
-    _barEl.classList.add('chat-visible');
+    renderBar(`<div class="task-no-questions">⚠️ ${esc(message)}</div>`);
 }
 
 function hideBar() {
-    if (_barEl) _barEl.classList.remove('chat-visible');
+    if (!_barEl || !_barEl.isConnected) return;
+    _barEl.classList.remove('chat-visible');
     _barEl.innerHTML = '';
 }
 
@@ -115,7 +143,7 @@ function renderAsk() {
     // Нет вопросов
     if (!q.text) {
         parts.push('<div class="task-no-questions">Вопросов по этой задаче нет — она идёт своим ходом.</div>');
-        _barEl.innerHTML = parts.join('');
+        renderBar(parts.join(''));
         return;
     }
 
@@ -170,7 +198,7 @@ function renderAsk() {
         parts.push(decHtml);
     }
 
-    _barEl.innerHTML = parts.join('');
+    renderBar(parts.join(''));
 
     // Восстанавливаем выбранные варианты
     const picked = q.answer?.keys || [];
@@ -211,6 +239,7 @@ window.askGo = async function(index) {
 // Подсветка выбранного варианта
 window.askPick = function() {
     setTimeout(() => {
+        if (!_barEl || !_barEl.isConnected) return;
         _barEl.querySelectorAll('.task-option-label').forEach(label => {
             const input = label.querySelector('input');
             if (input) {
