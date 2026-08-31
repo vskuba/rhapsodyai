@@ -18,6 +18,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.browser
+
 TEST_SITE_NAME = '__pytest_variable_site'
 TEST_SCENARIO_NAME = '__pytest_variable_scenario'
 

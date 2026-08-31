@@ -6,7 +6,9 @@
 сессионные фикстуры `conftest.py`. Импорт на уровне модуля случился бы раньше них.
 """
 
+import pytest
 
+pytestmark = pytest.mark.pipeline
 class TestTaskRoleBugfixer:
 
     def test_bug_type_belongs_to_bugfixer(self):
@@ -96,9 +98,26 @@ class TestTaskSettingTimeoutBugfix:
             TASK_SETTING_TIMEOUT_BUGFIX_RUN, TASK_SETTING_TIMEOUT_ITEMS)
         item = next(i for i in TASK_SETTING_TIMEOUT_ITEMS
                     if i['key'] == TASK_SETTING_TIMEOUT_BUGFIX_RUN)
-        assert item['default'] == 3600
         assert item['role'] == 'bugfixer'
         assert item['group'] == 'Агент'
+
+    def test_bugfix_ceiling_covers_its_own_steps(self):
+        """Потолок роли не ниже суммы шагов её workflow.
+
+        Проверяем не число, а отношение: числа правятся с карточки команды и
+        миграциями, а вот потолок ниже суммы шагов — это неработающая роль. Прогон
+        рвётся на середине починки, баг ставится заново, и так по кругу. Ровно так
+        жил багфиксер с потолком 3600 при четырёх шагах по 2400.
+        """
+        from src.project.task.task_setting_timeout import (
+            TASK_SETTING_TIMEOUT_BUGFIX_RUN, TASK_SETTING_TIMEOUT_ITEMS)
+        ceiling = next(i['default'] for i in TASK_SETTING_TIMEOUT_ITEMS
+                       if i['key'] == TASK_SETTING_TIMEOUT_BUGFIX_RUN)
+
+        # Один заход без кругов доработки: хватить должно на самый долгий шаг с
+        # запасом, иначе шаг и потолок обрывают прогон наперегонки.
+        assert ceiling >= 2400 * 2, (
+            f'Потолок багфиксера {ceiling}с не покрывает и двух его шагов по 2400с')
 
     def test_ladder_counts_bugfix_timeout(self):
         from src.project.task.task_setting_timeout import (

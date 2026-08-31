@@ -209,8 +209,13 @@ async def planning_phase_document_save(project_id: int, doc_type: str, title: st
         return {'saved': 0, 'doc_id': 0}
 
     async with mysql_get_db_async() as db:
+        # Тем же порядком, что и чтение (`ORDER BY id DESC` во всех местах выше):
+        # правим ровно тот документ, который потом прочитают. Разойдись они —
+        # обновление легло бы в одну строку, а фазы читали бы другую, и работа
+        # предыдущего шага стала бы невидимой без единой ошибки в логах.
         await db.execute(
-            'SELECT id FROM project_planning_document WHERE project_id = %s AND doc_type = %s LIMIT 1',
+            'SELECT id FROM project_planning_document '
+            ' WHERE project_id = %s AND doc_type = %s ORDER BY id DESC LIMIT 1',
             (project_id, doc_type)
         )
         existing = await db.fetchone()

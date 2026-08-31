@@ -18,23 +18,23 @@ import {getData, postData} from '/static/js/api.js';
 import {showNotification} from '/static/js/notification.js';
 
 // Замечание с экрана — это заявка на изменение в самой системе, поэтому задача
-// заводится в проекте системы с типом «plan»: тип решает, какой роли она достанется
-// в конвейере, а с экрана редко видно, баг это или недоделанная задумка — решать
-// это менеджеру на планировании, а не тому, кто ткнул пальцем.
+// заводится в проекте системы с типом «bug»: по умолчанию её берёт багфиксер, а
+// чекбокс в окошке даёт выбрать, куда она уйдёт — в конвейер багфикса или в план.
 // Проект и тип ищем по имени, а не по числовому id: id зависят от установки, а
 // имена одинаковы везде, где эта админка развёрнута.
 const FIXER_PROJECT_TITLE   = 'RhapsodyAi';
-const FIXER_TASK_TYPE_NAME  = 'plan';
+const FIXER_TASK_TYPE_NAME  = 'bug';
 const FIXER_PROJECT_LIST_URL = '/project/list';
 const FIXER_TYPE_LIST_URL    = '/api/team/types';
 const FIXER_TASK_URL         = '/tasks/{project_id}';
 const FIXER_VOICE_URL        = '/chat/voice';
 
-// Пометка «в планирование» — тот же ключ, что у флажка на `/admin/task` (см.
-// `TASK_METADATA_KEY_PLAN` в src/project/task/task_metadata.py). Хранится наизнанку:
+// Пометки флажков — те же ключи, что у флажков на `/admin/task` (см.
+// `TASK_METADATA_KEY_*` в src/project/task/task_metadata.py). Оба хранятся наизнанку:
 // включено — это отсутствие ключа, и снятый флажок отправляется явным `false`. Поэтому
-// в обычном случае metadata не шлём вовсе.
-const FIXER_META_KEY_PLAN = 'to_planning';
+// metadata шлём только если какой-то флажок снят, в обычном случае — не шлём вовсе.
+const FIXER_META_KEY_PLAN   = 'to_planning';
+const FIXER_META_KEY_BUGFIX = 'to_bugfix';
 
 // Разметка выбранного элемента уходит в описание целиком, но не безразмерно: в
 // неё бывает завёрнут весь список строк таблицы, а задача с мегабайтом HTML
@@ -359,8 +359,11 @@ function _popupOpen(el) {
             <textarea class="fixer-pop-text" placeholder="Что поправить?"></textarea>
             <button type="button" class="fixer-pop-send">Отправить</button>
         </div>
-        <label class="fixer-pop-flag" title="Отдать задачу менеджеру за планом. Снять — задача заведётся и будет ждать, плана для неё писать не будут">
-            <input type="checkbox" class="fixer-pop-plan" checked>в планирование
+        <label class="fixer-pop-flag" title="Отдать задачу менеджеру за планом. По умолчанию не стоит — задача уходит багфиксеру">
+            <input type="checkbox" class="fixer-pop-plan">в планирование
+        </label>
+        <label class="fixer-pop-flag" title="Отдать задачу багфиксеру. По умолчанию стоит — снять, и задача заведётся, но будет ждать">
+            <input type="checkbox" class="fixer-pop-bugfix" checked>bug fix
         </label>`;
     document.body.appendChild(_pop);
 
@@ -399,7 +402,8 @@ function _popupPlace(el) {
 async function _send(btn) {
     const path = _pop.querySelector('.fixer-pop-path').value.trim();
     const text = _pop.querySelector('.fixer-pop-text').value.trim();
-    const plan = _pop.querySelector('.fixer-pop-plan').checked;
+    const plan   = _pop.querySelector('.fixer-pop-plan').checked;
+    const bugfix = _pop.querySelector('.fixer-pop-bugfix').checked;
     if (!text) {
         showNotification('Опишите, что поправить', 'warning');
         return;
@@ -428,11 +432,20 @@ async function _send(btn) {
         // Флажок снят — пишем пометку сразу при заведении, а не отдельным запросом:
         // между созданием задачи и вторым вызовом успевает пройти тик оркестратора, и
         // менеджер забрал бы её как раз в тот промежуток.
-        if (!plan) body.metadata = {[FIXER_META_KEY_PLAN]: false};
+        const meta = {};
+        if (!plan) meta[FIXER_META_KEY_PLAN] = false;
+        if (!bugfix) meta[FIXER_META_KEY_BUGFIX] = false;
+        if (Object.keys(meta).length) body.metadata = meta;
         await postData(FIXER_TASK_URL.replace('{project_id}', target.project_id), body);
+        // Тип всегда «bug», но куда её возьмут решает флажок: оба сняты — ждёт,
+        // снят planning — багфиксер, снят bugfix — планирование.
+        const suffix = plan && bugfix ? ''
+            : (!plan && bugfix) ? ' (багфиксер)'
+            : (plan && !bugfix) ? ' (без багфикса)'
+            : ' (ждёт)';
         showNotification(
-            `Задача создана — проект «${FIXER_PROJECT_TITLE}», тип «Планирование»`
-            + (plan ? '' : ' (без планирования)'), 'success');
+            `Задача создана — проект «${FIXER_PROJECT_TITLE}», тип «Багфиксер»${suffix}`,
+            'success');
         _modeOff();
     } catch (err) {
         showNotification(`Не удалось создать задачу: ${err.message}`, 'error');

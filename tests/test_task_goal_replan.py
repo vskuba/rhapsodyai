@@ -19,6 +19,9 @@
 `MYSQL_HOST` на импорте, а подмена хоста живёт в фикстурах `conftest.py`.
 """
 
+import pytest
+
+pytestmark = pytest.mark.pipeline
 STUCK = {'id': 1628, 'parent_id': 1027, 'pipeline_state': 'failed_qa', 'metadata': '{}'}
 ONE_GOAL = [{'text': 'перенести приватные функции вниз', 'done': False}]
 

@@ -12,6 +12,11 @@
 
 import pytest
 
+# Группа ставится файлу целиком, а не каждому классу (см. `.claude/docs/testing.md`).
+# Правил роль конвейера — значит `pipeline`, хотя задеты и промпты workflow: контракт,
+# который стережёт этот файл, — «режим доезжает до QA-агента», а он конвейерный.
+pytestmark = pytest.mark.pipeline
+
 LITE_STEPS = (445, 447, 516, 451)
 
 
@@ -29,7 +34,6 @@ async def db_pool_release():
     await mysql_pool_close()
 
 
-@pytest.mark.pipeline
 class TestTaskQaMode:
     """Режим читается из metadata родителя и остаётся `lite` при любом мусоре."""
 
@@ -80,7 +84,6 @@ class TestTaskQaMode:
         assert TASK_METADATA_KEY_QA_MODE == 'qa_mode'
 
 
-@pytest.mark.pipeline
 class TestTaskQaModeReachesWorkflow:
     """
     Выбор доходит до workflow: `wf_vars` собираются настоящим входом QA-агента.
@@ -157,7 +160,6 @@ class TestTaskQaModeReachesWorkflow:
         assert 'РЕЖИМ ПРОВЕРКИ: full' in rendered['full'][445]
 
 
-@pytest.mark.pipeline
 class TestTaskQaModePromptsMigrated:
     """
     Шаги #57 подставляют переменную — миграция `20260831*_wf57_qa_mode.sql` применена.

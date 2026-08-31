@@ -26,6 +26,7 @@ from src.project.task.task_plan import (
     task_plan_serialize,
 )
 from src.project.task.task_report import task_report_write
+from src.project.task.task_role import task_role_of_state
 
 
 def task_state_kanban_sql(pipeline_state: str | None) -> tuple[str, list]:
@@ -656,6 +657,11 @@ async def task_state_task_revive() -> tuple[int, str] | None:
     return int(row['id']), state
 
 
+# Тип задачи по роли, которая над ней работает. Имена — ключи `project_task_type.name`.
+# Багфиксера здесь нет намеренно: у бага подзадач не бывает, он идёт одной строкой.
+_TASK_STATE_ROLE_TYPE = {'manager': 'plan', 'developer': 'dev', 'qa': 'test'}
+
+
 async def task_state_subtask_set(subtask_id: int, state: str, last_error: str | None = None,
                                  attempt_count: int | None = None,
                                  unless_done: bool = False) -> None:
@@ -699,17 +705,98 @@ async def task_state_subtask_set(subtask_id: int, state: str, last_error: str | 
         )
         await db.connection.commit()
 
+    # Тип — подпись на строке, а не её состояние: сбой здесь не должен отменять
+    # переход, который уже записан. Иначе упавший запрос к справочнику типов ронял бы
+    # круг конвейера ради колонки, которую человек читает глазами.
+    try:
+        await _subtask_type_follow_state(subtask_id, state)
+    except Exception as error:
+        logger_info(f'[task] subtask#{subtask_id}: тип не поправлен ({state}): {error}')
 
-async def task_state_subtask_fail(subtask_id: int, attempt_no: int, error: str, max_attempts: int) -> str:
+
+async def _subtask_type_follow_state(subtask_id: int, state: str) -> None:
+    """
+    Тип подзадачи идёт за её собственной работой, а не за типом родителя.
+
+    Тип — это нынешний владелец строки (`plan` — у менеджера, `dev` — у разработчика,
+    `test` — у QA), и у подзадачи владелец свой. Каскад от родителя
+    (`task_state_type_cascade`) держит ветку в одних руках, пока работа общая, но у
+    подзадач она расходится: родитель ушёл в `testing` и стал `test`, а его ребёнок в
+    это время вернулся к разработчику — тип у него остался чужой.
+
+    Живьём #5219: строка в `developing`, вкладка «Разработчик» (роль считается по
+    состоянию), а в колонке типа — «Тестирование». Одна строка отвечала на вопрос
+    «чья работа» двумя разными способами, и они расходились.
+
+    Состояния без владельца (`new`, `plan_approval`, `done`, `blocked`) тип не
+    трогают: над ними никто не работает, и менять владельца не на кого. Их и не
+    называет `task_role_of_state`.
+
+    Строку на отдельном планировании это не задевает: пока она у менеджера, состояние
+    у неё `new` (`TASK_GOAL_REPLAN_STATE`) — ничьё, и сюда мы вовсе не доходим.
+    Заберёт её работа — `developing` или `qa_pending`, — вот тогда тип и сменится,
+    потому что владелец действительно сменился. Живьём #5235: строка ушла к
+    менеджеру, вернулась в работу, разработчик её доделал и отдал QA, а тип так и
+    остался `plan`; она числилась «планированием» у Тестировщика.
+
+    Проверка типа `plan` в каскаде (`task_state_type_cascade`) остаётся и нужна: там
+    речь о родителе, который тянет за собой детей, и строку у менеджера отбирать
+    нельзя. Здесь же меняет тип её собственный переход, а не чужой.
+    """
+    role = task_role_of_state(state)
+    type_name = _TASK_STATE_ROLE_TYPE.get(role)
+    if not type_name:
+        return
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "UPDATE project_task "
+            "   SET task_type_id = (SELECT id FROM project_task_type WHERE name = %s) "
+            " WHERE id = %s AND parent_id IS NOT NULL "
+            "   AND task_type_id <> (SELECT id FROM project_task_type WHERE name = %s) "
+            "   AND EXISTS (SELECT 1 FROM project_task_type WHERE name = %s)",
+            (type_name, subtask_id, type_name, type_name),
+        )
+        moved = db.rowcount > 0
+        await db.connection.commit()
+
+    if moved:
+        logger_info(f'[task] subtask#{subtask_id}: тип -> {type_name} (состояние {state})')
+
+
+async def task_state_subtask_fail(subtask_id: int, attempt_no: int, error: str,
+                                  max_attempts: int, worked: bool = False) -> str:
     """
     Провал круга Developer/QA. Исчерпанные попытки уводят подзадачу в `blocked` —
     дальше её никто не берёт, нужен человек.
 
+    `worked` — круг оставил код в ветке. Тогда попытка не считается последней:
+    строка возвращается в работу, даже если счётчик уже исчерпан.
+
+    Зачем различать. «Не доделал, вот что осталось» и «прогон провалился» — разные
+    исходы, а конвейер хоронил их одинаково. Живьём подзадача #5219: три прогона
+    подряд не состоялись (оболочка молчала — эти попытку не жгут), а четвёртый
+    отработал честно: разобрался, написал код, сделал пять коммитов и сам назвал
+    недоделанное — «нужен следующий круг: записать миграцию, сделать push и MR».
+    Этот содержательный ответ сжёг последнюю попытку и увёл строку в `blocked`,
+    хотя работа шла и оставалось её на один заход.
+
+    Признак объективный — коммиты в ветке (`_lines_changed`), а не слова агента:
+    отчёт пишет он сам, и «я почти закончил» стало бы способом крутить круги
+    бесконечно. Кода нет — прежнее поведение, попытки жгутся как раньше.
+
+    Бесконечности это не даёт: круг без нового кода попытку тратит, и подряд
+    идущие пустые прогоны упрутся в предел. Продолжается только та работа, которая
+    видимо двигается.
+
     Returns: новое состояние подзадачи.
     """
-    state = 'blocked' if attempt_no >= max_attempts else 'failed_qa'
+    state = 'blocked' if attempt_no >= max_attempts and not worked else 'failed_qa'
     await task_state_subtask_set(subtask_id, state, last_error=error, attempt_count=attempt_no,
                                  unless_done=True)
+    if worked and attempt_no >= max_attempts:
+        logger_info(f'[task] subtask#{subtask_id}: попытки исчерпаны, но круг оставил код — '
+                    f'возвращаем в работу вместо blocked')
     logger_info(f'[task] subtask#{subtask_id} -> {state} (попытка {attempt_no}): {error}')
     return state
 

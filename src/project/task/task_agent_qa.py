@@ -273,6 +273,19 @@ async def _developer_report(subtask_id: int) -> str:
     QA проверяет то, что до него дошло. Нет строки (например, подзадачу отдали на
     проверку вручную) — пустая строка, и промпт раскроет ветку «изменения ищи
     сам».
+
+    **Последняя — по номеру строки, а не по номеру попытки.** `attempt_no` считает
+    попытки внутри круга и сбрасывается, когда QA возвращает работу на доработку:
+    после `failed_qa` следующий круг снова начинается с первой. Сортировка по нему
+    навсегда закрепляла победу за самым неудачным кругом — тем, где попыток вышло
+    больше всего.
+
+    Живьём: у подзадачи #5219 QA читал отчёт девятичасовой давности с `attempt_no = 3`
+    вместо свежего с `attempt_no = 1`. В том старом отчёте стояла ошибка провайдера
+    («This request requires more credits»), то есть QA проверял работу по описанию
+    круга, который не состоялся, — при готовой и лежащей рядом работе.
+
+    `id` монотонен и не сбрасывается ничем, поэтому сортируем по нему.
     """
     if not subtask_id:
         return ''
@@ -281,7 +294,7 @@ async def _developer_report(subtask_id: int) -> str:
         await db.execute(
             "SELECT output FROM project_task_attempt "
             "WHERE task_id = %s AND role = 'developer' AND status = 'ok' "
-            "ORDER BY attempt_no DESC, id DESC LIMIT 1",
+            "ORDER BY id DESC LIMIT 1",
             (subtask_id,),
         )
         row = await db.fetchone()

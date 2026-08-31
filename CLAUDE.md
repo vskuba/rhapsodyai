@@ -65,7 +65,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `src/auth/auth.py` | `AuthChecker`, `auth_get_current_user` |
 | `src/cronjob/` | Cron job entry points |
 | `src/worker/` | Все воркеры (Redis/rq): `project/task_worker.py` — очередь `default`, `project/planning_worker.py` — очередь `planning` |
-| `migrations/*.sql` | Миграции yoyo, имя — метка времени; начальная схема заморожена. **И схема, и данные** — отдельного пути для данных нет, `data/migration_manual/` упразднена |
+| `migrations/*.sql` | Миграции yoyo, имя — метка времени `date +%Y%m%d%H%M%S` (секунды обязательны); начальная схема заморожена. **И схема, и данные** — отдельного пути для данных нет, `data/migration_manual/` упразднена |
 
 ## Docs Reference
 
@@ -99,6 +99,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | File | Contents |
 |------|---------|
 | `quickstart.md` | Запуск через Docker, порты, тесты, переменные `.env` |
+| `testing.md` | Группы тестов по подсистемам: что запускать под свою правку, как делить новые |
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |

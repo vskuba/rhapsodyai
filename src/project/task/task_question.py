@@ -103,6 +103,13 @@ TASK_QUESTION_ACTION_PLAN = 'goals_replan'
 # — уже свойство подзадачи.
 TASK_QUESTION_TIMEOUT_HINT = 2
 
+# Короче этого прогон не считается попыткой: столько не длится даже самый быстрый круг
+# агента — он читает проект, думает и пишет, это минуты. Уложившийся в минуту прогон
+# кончился поломкой: не собрался промпт, оболочка не ответила, круг упал на первом шаге.
+#
+# Минута с запасом: живьём такие срывы укладывались в 7–26 секунд.
+TASK_QUESTION_INSTANT_RUN_MS = 60000
+
 
 def task_question_parse(report: dict | None) -> dict:
     """
@@ -138,11 +145,32 @@ def task_question_parse(report: dict | None) -> dict:
 
 
 async def task_question_set(subtask_id: int, question: dict, role: str = '') -> None:
-    """Положить вопрос в мешок подзадачи. Пустой вопрос ничего не делает."""
+    """
+    Положить вопрос в мешок подзадачи. Пустой вопрос ничего не делает.
+
+    Вопрос приводим к канону тем же разбором, что и на входе от роли
+    (`task_question_parse`): варианты становятся объектами `{key, label}`, текст
+    обрезается по пределу.
+
+    Раньше клали как дали. Пути, идущие через конвейер, приносят уже разобранный
+    вопрос, и работало это годами — но всякий, кто позовёт функцию со списком строк в
+    `options`, положит в мешок строки, а `_answer_labels` при ответе зовёт у них
+    `.get()` и падает с `'str' object has no attribute 'get'`. Ошибка вылезает не при
+    записи, а при ответе человека, и по тексту не сводится к причине.
+    """
     if not subtask_id or not question:
         return
 
-    await task_metadata_update(int(subtask_id), {TASK_QUESTION_KEY: {**question, 'role': str(role or '')}})
+    parsed = task_question_parse({TASK_QUESTION_KEY: question})
+    if not parsed:
+        return
+
+    # Пометки, которых нет в общей форме, переносим как есть: `auto`, `dialog`,
+    # `back_state` — по ним `_answer_after` решает, куда вернуть строку.
+    extra = {k: v for k, v in question.items() if k not in parsed}
+
+    await task_metadata_update(int(subtask_id),
+                               {TASK_QUESTION_KEY: {**extra, **parsed, 'role': str(role or '')}})
 
 
 async def task_question_set_many(subtask_id: int, questions: list, role: str = '') -> int:
@@ -427,18 +455,55 @@ def _attempts_facts(attempts: list) -> dict:
     Оборванный прогон отличаем по тексту ошибки, а не по статусу: в журнале
     попыток у него тот же `error`, что и у честной неудачи, — конвейер разделяет
     их флагом `env_ok`, которого здесь уже нет.
+
+    **Мгновенные срывы за попытки не считаем.** Прогон короче минуты — это не работа
+    агента, а поломка установки: не собрался промпт, оболочка не ответила, круг упал
+    на первом шаге. Настоящий круг столько не длится, он идёт минутами.
+
+    Считать их наравне с работой опасно тем, что вывод о причине делается по их числу.
+    Живьём: подзадача #5219 набрала шесть срывов по 7–26 секунд, когда миграция сломала
+    JSON промпта и движок слал агенту пустоту. Автовопрос увидел «8 прогонов, 6
+    оборвалось, 19 минут» и объявил неподъёмным охват — то есть предложил дробить
+    работу, к которой поломка не имела никакого отношения. Ответь человек «раздробить»
+    — и подзадача была бы разрезана впустую.
+
+    В счёт прогонов такие срывы всё же входят: они были, и человек вправе о них знать.
+    Из них не строится только вывод о причине.
     """
     runs = [a for a in (attempts or []) if isinstance(a, dict)]
-    broken = [a for a in runs if _run_broken(a)]
+    broken = [a for a in runs if _run_broken(a) and not _run_instant(a)]
     real   = [a for a in runs if not _run_broken(a)]
+    instant = [a for a in runs if _run_broken(a) and _run_instant(a)]
 
     return {
         'runs':     len(runs),
         'broken':   len(broken),
         'real':     len(real),
+        'instant':  len(instant),
         'last':     str((real[-1] if real else runs[-1] if runs else {}).get('error') or '').strip(),
         'minutes':  sum(int(a.get('duration_ms') or 0) for a in runs) // 60000,
     }
+
+
+def _run_instant(attempt: dict) -> bool:
+    """
+    Прогон кончился быстрее, чем агент успел бы что-то сделать.
+
+    Порог сравниваем строго: прогон ровно в минуту — уже спорный случай, и относить
+    его к поломке значило бы прятать пограничную работу от разбора.
+
+    Без длительности вовсе (старая запись, сбой замера) считаем прогон настоящим:
+    молча выкидывать из статистики то, о чём ничего не известно, — худший вид
+    догадки.
+    """
+    duration = attempt.get('duration_ms')
+    if duration in (None, ''):
+        return False
+
+    try:
+        return int(duration) < TASK_QUESTION_INSTANT_RUN_MS
+    except (TypeError, ValueError):
+        return False
 
 
 def _run_broken(attempt: dict) -> bool:
@@ -461,10 +526,19 @@ def _stuck_text(subtask: dict, facts: dict, max_attempts: int) -> str:
     limit = f' из {max_attempts}' if max_attempts else ''
     lines = [f'Подзадача встала: кругов потрачено {used}{limit}, прогонов {facts["runs"]}'
              + (f', из них оборвалось по таймауту {facts["broken"]}' if facts['broken'] else '')
+             + (f', сорвалось мгновенно {facts["instant"]}' if facts.get('instant') else '')
              + (f', времени ушло {facts["minutes"]} мин' if facts['minutes'] else '') + '.']
 
     if facts['last']:
         lines.append(f'Последний итог: {facts["last"][:600]}')
+
+    # Мгновенные срывы называем отдельной строкой: они в счёт прогонов входят, но
+    # вывод о причине по ним не делается, и человек не должен гадать, почему цифры
+    # не сходятся с выводом.
+    if facts.get('instant'):
+        lines.append(f'Из них {facts["instant"]} прогон(ов) оборвались за секунды — так '
+                     f'выглядит не работа, а поломка установки: не собрался промпт, не '
+                     f'ответила оболочка. В выводе о причине они не учитывались.')
 
     if facts['broken'] >= TASK_QUESTION_TIMEOUT_HINT:
         lines.append('Похоже, объём не влезает в круг: работа каждый раз начинается, '

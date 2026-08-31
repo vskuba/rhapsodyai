@@ -114,6 +114,8 @@ from src.project.task.task_question import (task_question_parse, task_question_s
                                             task_question_set_many)
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
 from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree, task_retry_take
+from src.project.team.team_llm_ping import team_llm_ping_all
+from src.project.team.team_session_cleanup import cleanup_inactive_sessions
 from src.project.team.team_llm_pool import (team_llm_pool_all, team_llm_pool_assign,
                                             team_llm_pool_get, team_llm_pool_release)
 from src.project.team.team_shell_pool import (team_shell_pool_acquire, team_shell_pool_busy,
@@ -148,7 +150,7 @@ from src.project.task.task_state import (
 from src.project.task.task_goal_replan import (task_goal_replan_needed,
                                                task_goal_replan_send)
 from src.project.task.task_log import TASK_LOG_OUTCOME_OK, task_log_write_run
-from src.project.task.task_metric import task_metric_collect
+from src.project.task.task_metric import task_metric_collect, task_metric_lines_advanced
 from src.tool.project.task_worktree_state import task_worktree_state
 from src.project.task.task_worktree import (task_worktree_base_branch,
                                             task_worktree_ensure,
@@ -201,9 +203,13 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
     # Одно чтение настройки на тик: её же срок получают и job, и ключ single-flight.
     job_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_WORKER_JOB)
 
-    # Подметальщики (скан багов, финализация) идут вне бюджета действий: захватывать
-    # им нечего, работу они ищут сами уже в воркере. Считайся они за действие — при
-    # max_actions=1 каждый тик уходил бы на скан, а задачи стояли бы в очереди.
+    # Подметальщики (скан багов, финализация, пинг моделей) идут вне бюджета действий:
+    # захватывать им нечего, работу они ищут сами уже в воркере. Считайся они за
+    # действие — при max_actions=1 каждый тик уходил бы на скан, а задачи стояли бы в
+    # очереди.
+    #
+    # Пинг ставится не каждый тик: его ключ single-flight живёт пять минут и работает
+    # расписанием (`TASK_WORKER_FLIGHT_PERIOD`), а не защитой от дублей.
     for kind in TASK_WORKER_SINGLE_FLIGHT:
         if kind == 'bug_scan' and not BUG_TASK_SCAN_ENABLED:
             continue
@@ -514,6 +520,60 @@ def _action_label(action: dict, job_id: str) -> str:
 
 # ─── Шаги конвейера: что делает воркер ─────────────────────────────────────────
 
+async def _run_session_sweep(action: dict) -> str | None:
+    """
+    Погасить и убрать сессии оболочек, которых больше нет.
+
+    Уборка звалась только при регистрации новой оболочки — а её не происходит, пока
+    человек не откроет терминал. Между перезапусками мёртвые строки копились и висели
+    на `/admin/team` живыми карточками: после обрыва сети их набралось шесть при
+    восьми работающих, и команда выглядела так, будто роли отваливаются.
+
+    Здесь, подметальщиком тика, потому что это уборка по времени, а не по событию:
+    оболочка умирает молча, и узнать об этом можно только не дождавшись её пинга.
+
+    Порог — час без heartbeat (`TEAM_SESSION_CLEANUP_SILENT_MINUTES`), много больше
+    порога свежести карточки: тот решает, как рисовать живую строку при заминке сети,
+    а этот — когда списать её совсем.
+    """
+    result = await cleanup_inactive_sessions()
+    closed = int(result.get('silent_closed') or 0)
+    deleted = int(result.get('registry_deleted') or 0)
+    if not closed and not deleted:
+        return None
+
+    return f'сессии: погашено {closed}, удалено {deleted}'
+
+
+async def _run_llm_ping(action: dict) -> str | None:
+    """
+    Опросить модели пулов: отвечают ли те, кому конвейер раздаёт круги.
+
+    В воркере, а не в тике: опрос ходит к провайдерам и на медленной локальной модели
+    занимает секунды на каждую, а тик обязан укладываться в секунды целиком. Интервал
+    даёт ключ single-flight (`TASK_WORKER_FLIGHT_PERIOD`) — раз в пять минут.
+
+    Отдельного события планировщика для этого нет намеренно: Cronicle заводят руками
+    на каждой инсталляции, и правило «конвейер не выдаёт мёртвую модель» не должно
+    зависеть от того, вспомнил ли человек завести событие на проде.
+
+    Мёртвых из пула не вычёркиваем — их пропускает захват (`team_llm_pool_acquire`).
+    Здесь только опрос: решение «кому не давать работу» принимается там, где работа и
+    раздаётся, иначе оно разъедется с показом на странице.
+    """
+    pings = await team_llm_ping_all()
+    if not pings:
+        return None
+
+    # Только `error`: `unknown` значит «проверить не смогли» (каталог оболочки не
+    # смонтирован, ключ не назван) — писать про такую модель «не отвечает» значило бы
+    # искать поломку у провайдера, когда она в нашей установке.
+    dead = sorted(name for name, ping in pings.items() if ping.get('status') == 'error')
+
+    return f"пинг пула: {len(pings)}, не отвечают {', '.join(dead)}" if dead \
+        else f'пинг пула: {len(pings)}, все отвечают'
+
+
 async def _run_bug_scan(action: dict) -> str | None:
     """
     run/step-level ошибка → баг-задача через Task Orchestrator.
@@ -703,12 +763,41 @@ async def _run_developer(action: dict) -> str | None:
     if await _question_hold(subtask, result, 'developer', attempt_no):
         return f"subtask#{subtask['id']} developer -> blocked (вопрос человеку)"
 
-    # Развалился сам разработчик — попытка засчитана, круг закрываем как провал.
+    # Круг кончился без `ok`. Исходов здесь два, и хоронить их одинаково нельзя.
+    #
+    # «Не доделал, вот что осталось» — работа шла: агент разобрался, написал код,
+    # закоммитил и сам назвал недоделанное. «Провалился» — работы не вышло вовсе.
+    # Раньше оба сжигали попытку и на последней уводили строку в `blocked`. Живьём
+    # подзадача #5219: три прогона подряд не состоялись (оболочка молчала, попытку
+    # они не жгут), а четвёртый отработал честно, сделал пять коммитов и написал
+    # «нужен следующий круг: записать миграцию, сделать push и MR» — и этим сжёг
+    # последнюю попытку.
+    #
+    # Различаем по коду в ветке, а не по словам агента: отчёт пишет он сам, и «я
+    # почти закончил» стало бы способом крутить круги бесконечно. Причём мало того,
+    # что код есть — он остаётся от прошлых кругов; смотрим, **прибавился** ли он
+    # (`task_metric_lines_advanced`). Строка, которая топчется на месте, попытки
+    # жжёт как раньше и до предела дойдёт.
     error = str(result.get('error') or 'ошибка разработчика')
     max_attempts = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX)
-    state = await task_state_subtask_fail(subtask['id'], attempt_no, error, max_attempts)
-    await _subtask_report(subtask, f'разработчик сорвался (попытка {attempt_no} из {max_attempts}): {error}',
-                          ok=False, blocked=state == 'blocked')
+
+    lines_now = await _lines_changed(work_dir, subtask['id'])
+    # Номер круга передаём, чтобы его собственный замер не попал в сравнение:
+    # `_log_run` выше уже записал его, и без этого сравнивали бы с самим собой.
+    advanced = await task_metric_lines_advanced(subtask['id'], lines_now or 0, attempt_no)
+
+    state = await task_state_subtask_fail(subtask['id'], attempt_no, error, max_attempts,
+                                          worked=advanced)
+    if advanced and attempt_no >= max_attempts:
+        await _subtask_report(
+            subtask,
+            f'круг {attempt_no} не закончил работу, но код в ветке прибавился '
+            f'({lines_now} строк) — даём ещё круг вместо остановки: {error}',
+            ok=False)
+    else:
+        await _subtask_report(subtask, f'разработчик сорвался (попытка {attempt_no} из {max_attempts}): {error}',
+                              ok=False, blocked=state == 'blocked')
+
     return f"subtask#{subtask['id']} developer -> {state}"
 
 
@@ -1689,6 +1778,8 @@ def _task_plural(n: int, one: str, few: str, many: str) -> str:
 # Карта строится после определения шагов: имена должны быть уже объявлены.
 _RUNNERS = {
     'bug_scan':       _run_bug_scan,
+    'llm_ping':       _run_llm_ping,
+    'session_sweep':  _run_session_sweep,
     'manager_review': _run_manager_review,
     'manager_plan':   _run_manager_plan,
     'plan_split':     _run_plan_split,

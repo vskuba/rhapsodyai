@@ -15,6 +15,8 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
+pytestmark = pytest.mark.ai
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_COLL_PREFIX = "test_coll_"
 

@@ -43,7 +43,20 @@ TASK_WORKER_QUEUE_NAME = 'default'
 TASK_WORKER_RESULT_TTL = 3600
 
 # Действия без захвата строки: от дубликатов их защищает только ключ single-flight.
-TASK_WORKER_SINGLE_FLIGHT = ('bug_scan', 'finalize')
+TASK_WORKER_SINGLE_FLIGHT = ('bug_scan', 'finalize', 'llm_ping', 'session_sweep')
+
+# Действия, которые идут не при каждой возможности, а по расписанию: сколько секунд
+# ждать до следующего запуска.
+#
+# Пинг моделей пула — раз в пять минут. Каждый опрос это настоящий запрос к каждой
+# модели, а локальная отвечает секунд десять и считает его на той же карте, что и
+# работу ролей: частый пинг отнимал бы у круга то самое время, ради которого он
+# заведён. Круг роли идёт минутами, так что мёртвая модель успеет испортить один
+# круг, а не десять, — этого достаточно.
+#
+# Уборка сессий — раз в пять минут по той же причине: оболочка умирает молча, и
+# заметить это можно только не дождавшись пинга. Чаще незачем — порог списания час.
+TASK_WORKER_FLIGHT_PERIOD = {'llm_ping': 300, 'session_sweep': 300}
 
 # Сколько времени строка имеет право быть заблокированной без job'а в очереди.
 # Тик сперва блокирует строку и только следующим шагом кладёт сообщение — в этот
@@ -126,15 +139,29 @@ def task_worker_flight_acquire(kind: str, job_timeout: int) -> bool:
     False — такое действие уже в очереди или выполняется, ставить второе нельзя.
     Ключ живёт не дольше самого job'а (`job_timeout`, настройка `timeout_worker_job`):
     умерший воркер не должен запереть тип действия навсегда.
+
+    У периодических действий (`TASK_WORKER_FLIGHT_PERIOD`) ключ живёт свой срок и
+    работает не защитой от дублей, а расписанием: тик идёт каждую минуту, а пинг
+    моделей нужен раз в пять — ключ на 300 секунд и даёт этот интервал, не требуя
+    заводить отдельное событие планировщика на каждой инсталляции.
     """
     if kind not in TASK_WORKER_SINGLE_FLIGHT:
         return True
-    return bool(redis_conn_get().set(f'{_FLIGHT_KEY}{kind}', '1', nx=True, ex=int(job_timeout)))
+
+    seconds = TASK_WORKER_FLIGHT_PERIOD.get(kind) or int(job_timeout)
+
+    return bool(redis_conn_get().set(f'{_FLIGHT_KEY}{kind}', '1', nx=True, ex=seconds))
 
 
 def task_worker_flight_release(kind: str) -> None:
-    """Освободить single-flight. Повторный вызов безвреден."""
-    if kind in TASK_WORKER_SINGLE_FLIGHT:
+    """
+    Освободить single-flight. Повторный вызов безвреден.
+
+    Периодические действия не освобождаем: их ключ — это интервал до следующего
+    запуска, и сняв его по завершении работы, мы получили бы запуск каждый тик,
+    то есть каждую минуту вместо пяти.
+    """
+    if kind in TASK_WORKER_SINGLE_FLIGHT and kind not in TASK_WORKER_FLIGHT_PERIOD:
         redis_conn_get().delete(f'{_FLIGHT_KEY}{kind}')
 
 

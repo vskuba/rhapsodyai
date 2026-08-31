@@ -18,6 +18,8 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
+pytestmark = pytest.mark.telegram
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 # Seeded access token for admin user (user_id=1) — inserted in migration 0002.sql

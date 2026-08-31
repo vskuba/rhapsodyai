@@ -16,6 +16,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 REPO = '/home/vasyl/PycharmProjects/RhapsodyAi'
 
 

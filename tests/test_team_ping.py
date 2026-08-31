@@ -25,7 +25,7 @@ load_dotenv()
 
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.team, pytest.mark.integration]
 
 
 @pytest.fixture

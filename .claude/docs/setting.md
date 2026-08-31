@@ -109,9 +109,10 @@ now    = await datetime_now()                                # «сейчас» 
 
 | Ключ | Умолчание | Что обрывает |
 |------|-----------|--------------|
-| `timeout_manager_run` | 3600 с | прогон агента Manager |
-| `timeout_developer_run` | 3600 с | прогон агента Developer |
-| `timeout_qa_run` | 3600 с | прогон агента QA |
+| `timeout_manager_run` | 6400 с | прогон агента Manager |
+| `timeout_developer_run` | 14400 с | прогон агента Developer, включая круги доработки |
+| `timeout_qa_run` | 7400 с | прогон агента QA |
+| `timeout_bugfix_run` | 7400 с | прогон агента Bugfixer |
 | `timeout_shell_call` | 300 с | вызов `claude_shell_call` целиком |
 | `timeout_shell_ack` | 120 с | подтверждение доставки сообщения оболочке |
 | `timeout_shell_busy` | 300 с | ожидание, пока агент освободится |

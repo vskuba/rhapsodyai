@@ -16,6 +16,8 @@ from typing import AsyncGenerator
 
 from tests.constants import TEST_AUTH, TEST_AUTH_ROLE
 
+pytestmark = pytest.mark.auth
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 

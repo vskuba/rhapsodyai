@@ -2,13 +2,15 @@
 import os
 import asyncio
 import json
-import time
 from typing import AsyncGenerator
 
 import httpx
 import pytest
 
 from tests.constants import TEST_AUTH
+from tests.pipeline_mock import pipeline_agents_mocked, pipeline_drive, pipeline_tick
+
+pytestmark = pytest.mark.pipeline
 
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_TASK_TITLE = "__pytest_pipeline_task__"
@@ -20,10 +22,25 @@ CRONJOB_PATH = "src/cronjob/task_orchestrator.py"
 # Работу делает контейнер `worker_task`, поэтому потолок тика — секунды, а не минуты.
 TICK_TIMEOUT = 60
 CLIENT_TIMEOUT = TICK_TIMEOUT + 30
-# Ждать приходится не тик, а воркера: шаг менеджера — это живая shell-оболочка Claude Code,
-# которая читает проект и думает минутами. Потолок здесь про «воркер завис или его нет».
-WAIT_TIMEOUT = 900
-POLL_INTERVAL = 5
+# Ожидания больше нет: агенты в тестах подменены (`tests/pipeline_mock.py`), и конвейер
+# гоняется в процессе теста. Прежние `WAIT_TIMEOUT = 900` и `POLL_INTERVAL` держали
+# опрос живой установки — восемнадцать тестов упирались в дедлайн, когда оболочек в
+# нужной корзине не было, и давали часы прогона вместо секунд.
+
+
+@pytest.fixture(autouse=True)
+async def _db_pool_release():
+    """
+    Закрыть пул MySQL после теста: он привязан к циклу, а цикл у каждого теста свой.
+
+    Понадобилось, когда тесты перестали ждать живого воркера и начали гонять конвейер
+    сами: до этого файл ходил только по HTTP и своего соединения с базой не открывал.
+    Без закрытия второй тест получает соединения, заведённые в чужом, уже закрытом
+    цикле — «got Future attached to a different loop».
+    """
+    yield
+    from mysql_.mysql_ import mysql_pool_close
+    await mysql_pool_close()
 
 
 async def _tick(client: httpx.AsyncClient, max_actions: int = 1) -> dict:
@@ -75,28 +92,25 @@ async def _task_row_read(task_id: int) -> dict:
         return await db.fetchone()
 
 
-async def _tick_until(client: httpx.AsyncClient, task_id: int, states: tuple,
-                      wait_sec: int = WAIT_TIMEOUT) -> dict:
+async def _tick_until(client: httpx.AsyncClient, task_id: int, states: tuple) -> dict:
     """
-    Дёргать тики, пока задача не дойдёт до одного из `states`, но не дольше `wait_sec`.
+    Прогнать конвейер, пока задача не дойдёт до одного из `states`.
 
-    Ждём здесь воркера, а не тик: тик только ставит сообщение в очередь и сразу выходит,
-    состояние меняется потом и в другом процессе. Тик на каждой итерации безвреден —
-    задачу в переходном состоянии он не захватит, а вот следующее её действие поставит
-    в очередь сразу, как воркер закончит предыдущее.
+    **Агенты подменены, в LLM не ходим.** Проверяется маршрутизация — какое действие
+    достанется задаче и куда она перейдёт после него; что именно напишет модель, к
+    этому отношения не имеет.
 
-    Ограничение по времени, а не по числу тиков: план пишется всем задачам без плана,
-    и бюджет действий тика может уйти на чужую строку из общей базы.
+    Раньше здесь был опрос живой установки: HTTP → тик → Redis → контейнер воркера →
+    Claude Code → LLM, с потолком `wait_sec` в 900 секунд на тест. Это ловило не
+    дефекты, а состояние машины: подними человек оболочки в проекте — и восемнадцать
+    тестов, заводящих задачи через `/tasks/0`, ждали в пустой корзине до дедлайна.
+    Шесть часов прогона против секунд.
+
     """
-    deadline = time.monotonic() + wait_sec
-    while True:
-        data = await _pipeline(client, task_id)
-        if data["pipeline_state"] in states:
-            return data
-        if time.monotonic() >= deadline:
-            return data
-        await _tick(client)
-        await asyncio.sleep(POLL_INTERVAL)
+    async with pipeline_agents_mocked():
+        await pipeline_drive(task_id, states)
+
+    return await _pipeline(client, task_id)
 
 
 async def _tick_until_planned(client: httpx.AsyncClient, task_id: int) -> dict:
@@ -105,14 +119,13 @@ async def _tick_until_planned(client: httpx.AsyncClient, task_id: int) -> dict:
     менеджера, а что происходит с планом дальше.
 
     Отдельно от `_tick_until`, где `failed` — законная точка остановки: без этой проверки
-    сорвавшийся менеджер всплывал бы позже и не там. Мёртвая shell-оболочка выглядела бы как
-    400 «Плана нет» от `/pipeline/review`, хотя пересмотр тут ни при чём.
+    сорвавшийся круг всплывал бы позже и не там.
     """
     data = await _tick_until(client, task_id, ("plan_approval", "failed"))
     assert data["pipeline_state"] == "plan_approval" and data["plan_text"], (
-        f"менеджер не выдал план (состояние: {data['pipeline_state']}, ошибка: {data.get('error')!r}); "
-        f"причину смотреть в трассе workflow #55 — обычно это незапущенная shell-оболочка "
-        f"менеджера или неразобранная Redis-очередь (нет контейнера worker)"
+        f"план не записан (состояние: {data['pipeline_state']}, ошибка: {data.get('error')!r}); "
+        f"агент подменён, значит дело в самом конвейере — смотреть переходы "
+        f"`task_state_plan_save` и отбор `_action_claim`"
     )
     return data
 
@@ -197,7 +210,7 @@ class TestTaskPipeline:
         await client.post(f"/task/{task_id}/pipeline/approve")
 
         # processing + по два действия на подзадачу + финализация — каждое отдельным job'ом.
-        data = await _tick_until(client, task_id, ("done", "failed"), wait_sec=WAIT_TIMEOUT * 2)
+        data = await _tick_until(client, task_id, ("done", "failed"))
         assert data["pipeline_state"] == "done", data
         assert data["subtasks"], "после разбора плана должны появиться подзадачи"
         assert all(s["state"] == "done" for s in data["subtasks"]), data["subtasks"]
@@ -209,24 +222,28 @@ class TestTaskPipeline:
             assert (s["id"], "qa") in roles
 
     async def test_parallel_ticks_do_not_double_process(self, client: httpx.AsyncClient, task_id: int):
-        """Кроновые запуски накладываются — сообщение в очередь должно уйти ровно одно."""
+        """
+        Кроновые запуски накладываются — сообщение в очередь должно уйти ровно одно.
+
+        Дубликат ловится захватом: первый тик переводит строку в `planning`, и второй
+        её уже не видит. Проверяем именно это, а не итоговое состояние: дойдёт ли
+        задача до плана — предмет соседних тестов, а здесь важно, сколько раз работа
+        поставлена в очередь.
+
+        Тики настоящие, в этом же процессе. Через HTTP они ушли бы в живой Redis, и
+        задачу забрал бы контейнер воркера — с настоящим агентом, мимо заглушек.
+        """
         await client.post(f"/task/{task_id}/pipeline/start")
 
-        # Считаем job'ы именно по своей задаче: в общей базе тик может уйти на чужую.
-        # Дубликат ловится на захвате: строка уже в `planning`, и второй тик её не увидит.
         marker = f"manager_plan task#{task_id} "
-        queued = 0
-        deadline = time.monotonic() + WAIT_TIMEOUT
-        while True:
-            stats = await asyncio.gather(_tick(client), _tick(client))
-            queued += sum(1 for s in stats for job in s.get("jobs", []) if job.startswith(marker))
-            state = (await _pipeline(client, task_id))["pipeline_state"]
-            if state == "plan_approval" or time.monotonic() >= deadline:
-                break
-            await asyncio.sleep(POLL_INTERVAL)
+        async with pipeline_agents_mocked():
+            stats = await asyncio.gather(pipeline_tick(), pipeline_tick())
 
-        assert state == "plan_approval"
+        queued = sum(1 for s in stats for job in s.get("jobs", []) if job.startswith(marker))
+
         assert queued == 1, f"планирование задачи поставлено в очередь {queued} раз(а)"
+        assert (await _pipeline(client, task_id))["pipeline_state"] == "planning", \
+            "захват обязан отметить строку, иначе второй тик возьмёт её снова"
 
 
 class TestTaskPlanRevision:
@@ -304,7 +321,7 @@ class TestTaskPlanRevision:
         await _tick_until_planned(client, task_id)
         await client.post(f"/task/{task_id}/pipeline/approve")
 
-        data = await _tick_until(client, task_id, ("done", "failed"), wait_sec=WAIT_TIMEOUT * 2)
+        data = await _tick_until(client, task_id, ("done", "failed"))
         if data["pipeline_state"] != "done":
             pytest.skip(f"задача не дошла до done: {data['pipeline_state']}")
         assert data["subtasks"], "после разбора плана должны быть подзадачи"

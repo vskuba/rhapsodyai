@@ -4,6 +4,9 @@
 руками — она не видит репозитория и назвала модуль наугад.
 """
 from src.setting.setting_config import SETTING_CONFIG_PUBLIC_KEYS, setting_config_public
+import pytest
+
+pytestmark = pytest.mark.core
 
 
 def test_all_keys_present(monkeypatch):

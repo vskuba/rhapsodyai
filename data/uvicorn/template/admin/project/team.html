@@ -113,9 +113,11 @@
     /* Выбранная видна и без наведения: по ней считается предел параллельности. */
     .llm-row.on { background: #eef2ff; }
 
+    /* flex, а не grid: элементов в строке то два, то три — у моделей пула между
+       галкой и именем встаёт точка пинга. Жёсткие колонки пришлось бы описывать
+       дважды, по одной на каждый случай. */
     .llm-pick {
-        display: grid; grid-template-columns: auto minmax(0, 1fr);
-        align-items: center; gap: 5px; cursor: pointer;
+        display: flex; align-items: center; gap: 5px; cursor: pointer;
         grid-column: 1 / 3; min-width: 0;
     }
     .llm-name {
@@ -132,6 +134,34 @@
     }
     .llm-ctx:disabled { opacity: .45; }
     .llm-row.on .llm-ctx { color: #4338ca; border-color: #c7d2fe; }
+
+    /* Точка пинга: отвечает модель или нет. Стоит перед именем, а не после, — глаз
+       читает столбец точек сверху вниз, не гоняясь за ними по разной длине имён. */
+    .llm-ping {
+        width: 7px; height: 7px; border-radius: 50%; flex: none;
+        background: #d1d5db;
+    }
+    .llm-ping.ok { background: #10b981; }
+    .llm-ping.error { background: #ef4444; }
+    /* Проверить не смогли — жёлтая: это про установку (каталог не смонтирован, нет
+       ключа), а не про модель, и круги ей выдаются как обычно. */
+    .llm-ping.unknown { background: #f59e0b; }
+    /* Не проверяем намеренно (локальная) — серая с обводкой: отличается от «не
+       пинговали ни разу» тем, что и не будем. */
+    .llm-ping.skipped { background: #fff; border: 1px solid #9ca3af; }
+    /* Не отвечает — имя гасим: строка остаётся в пуле (человек её выбрал), но круги
+       ей не достаются, и выглядеть как рабочая она не должна. */
+    .llm-row.dead .llm-name { color: #b91c1c; text-decoration: line-through; }
+
+    .llm-head {
+        display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .btn-ping-pool {
+        font-size: 11px; padding: 1px 8px; cursor: pointer;
+        border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #374151;
+    }
+    .btn-ping-pool:hover:not(:disabled) { background: #f3f4f6; }
+    .btn-ping-pool:disabled { opacity: .5; cursor: default; }
 
     .shell-note { font-size: 11px; color: #6b7280; margin: 6px 0 10px; }
     .shell-note b { color: #111827; }
@@ -748,7 +778,14 @@
         const btn = document.getElementById('refreshBtn');
         if (showSpinner) btn.classList.add('loading');
         try {
-            const response = await fetch('/api/team/projects');
+            // Пинги обновляем тем же кругом: опрос идёт по расписанию, раз в две
+            // минуты, и без перечитывания страница показывала бы состояние на момент
+            // загрузки — то есть могла бы часами держать зелёную точку у мёртвой
+            // модели. Ходка дешёвая: это чтение настроек, а не сам пинг.
+            const [response] = await Promise.all([
+                fetch('/api/team/projects'),
+                loadShellPings(),
+            ]);
             if (!response.ok) throw new Error('HTTP ' + response.status);
             const data = await response.json();
             renderProjects((data.result && data.result.blocks) || []);
@@ -909,10 +946,19 @@
             const opts = SHELL_CONTEXT_OPTIONS.map(v =>
                 `<option value="${v}"${v === ctx ? ' selected' : ''}>${v}</option>`).join('');
 
-            return `<div class="llm-row${on ? ' on' : ''}">
-                <label class="llm-pick" title="${escapeHtml(name)}">
+            // Пинг показываем только у моделей пула: остальные не пингуются вовсе,
+            // и серая точка у них означала бы «не отвечает», а не «не спрашивали».
+            const ping = on ? (shellPings[name] || {}) : null;
+            // Три состояния, не два: `unknown` («проверить не смогли») отличается от
+            // `error` («постучались, не ответила») — из выдачи выводит только второе.
+            const pingClass = ping && ping.at ? String(ping.status || '') : '';
+            const dead = pingClass === 'error';
+
+            return `<div class="llm-row${on ? ' on' : ''}${dead ? ' dead' : ''}">
+                <label class="llm-pick" title="${escapeHtml(pingTitle(name, ping))}">
                     <input type="checkbox" data-name="${escapeHtml(name)}"
                            ${on ? 'checked' : ''} onchange="saveLlmPool(this)">
+                    ${on ? `<span class="llm-ping ${pingClass}"></span>` : ''}
                     <span class="llm-name">${escapeHtml(name)}</span>
                 </label>
                 <select class="llm-ctx" data-name="${escapeHtml(name)}" ${on ? '' : 'disabled'}
@@ -926,9 +972,11 @@
         // одном и том же непременно разошлись бы.
         return `
             <div class="shell-box" data-project="${projectId}">
-                <div class="shell-head" title="${escapeHtml(shellModelsProblem
+                <div class="shell-head llm-head" title="${escapeHtml(shellModelsProblem
                         || 'Пул моделей проекта. Роль берёт первую свободную, когда начинает круг')}">
-                    Пул LLM команды
+                    <span>Пул LLM команды</span>
+                    <button type="button" class="btn-ping-pool" onclick="pingLlmPool(this)"
+                            title="Проверить, отвечают ли модели пула. Опрос идёт и сам, раз в пять минут">Ping</button>
                 </div>
                 <div class="llm-list">${rows}</div>
                 <div class="shell-note">
@@ -1025,6 +1073,10 @@
     // «каталог оболочки не смонтирован».
     let shellModelsProblem = '';
 
+    // Последний пинг каждой модели: `{имя: {status, ms, at, error}}`. Приходит вместе
+    // с каталогом — отдельным запросом это была бы вторая ходка за тем же экраном.
+    let shellPings = {};
+
     async function loadShellModels() {
         try {
             const response = await fetch('/api/team/llm');
@@ -1032,11 +1084,80 @@
             const result = data.result || {};
             const names = (result.models || []).filter(Boolean);
             if (names.length) shellModels = names;
+            shellPings = result.pings || {};
             shellModelsProblem = String(result.problem || '');
         } catch (e) {
             shellModelsProblem = 'список моделей не пришёл: ' + (e.message || e);
         }
     }
+
+    // Только пинги, без перечитывания каталога: каталог — файл на диске, он не
+    // меняется между обновлениями страницы, а пинги переписываются раз в пять минут.
+    async function loadShellPings() {
+        try {
+            const response = await fetch('/api/team/llm');
+            const data = await response.json();
+            shellPings = (data.result || {}).pings || {};
+        } catch (e) {
+            // Молча: пинги — дополнение к странице, и ронять из-за них обновление
+            // карточек команды незачем. Останутся прежние, метка «проверено» стареет
+            // на глазах и сама говорит, что данные несвежие.
+        }
+    }
+
+    // Подсказка строки модели: состояние, задержка и когда проверяли. Ошибку
+    // показываем текстом провайдера — своей формулировкой мы потеряли бы причину
+    // («модель снята с раздачи» против «кончился ключ» лечатся по-разному).
+    function pingTitle(name, ping) {
+        if (!ping || !ping.at) return name;
+        // «Сколько назад», а не абсолютное время: на странице нет пояса пользователя
+        // (`tz.js` тут не подключён), и метка UTC читалась бы как местная — а её
+        // сверяют с часами на стене. Относительное время от пояса не зависит вовсе.
+        const when = pingAgo(ping.at);
+        if (ping.status === 'ok') return `${name}\nотвечает · ${ping.ms} мс · проверено ${when}`;
+        if (ping.status === 'skipped') {
+            return `${name}\nлокальная — не пингуем: проверка отняла бы у неё ту самую\n`
+                 + `карту, на которой она считает работу ролей`;
+        }
+        if (ping.status === 'unknown') {
+            return `${name}\nпроверить не удалось — круги выдаются как обычно\n`
+                 + `${ping.error || ''}\nпроверено ${when}`;
+        }
+
+        return `${name}\nне отвечает — круги ей не выдаются\n${ping.error || ''}\nпроверено ${when}`;
+    }
+
+    // Отметка пинга приходит строкой UTC (`2026-08-30 13:20:00`). Без `Z` браузер
+    // прочёл бы её как местное время и показал расхождение в целый пояс.
+    function pingAgo(at) {
+        const ms = Date.parse(String(at).replace(' ', 'T') + 'Z');
+        if (isNaN(ms)) return String(at);
+
+        return formatTimeAgo(Math.max(0, Math.round((Date.now() - ms) / 1000)));
+    }
+
+    // Ручной пинг. Той же ручкой, что и опрос по расписанию: расходись они, кнопка
+    // показывала бы одно, а конвейер решал по другому.
+    window.pingLlmPool = async function(button) {
+        button.disabled = true;
+        button.textContent = '…';
+        try {
+            const response = await fetch('/api/team/llm/ping', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({}),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || ('HTTP ' + response.status));
+            shellPings = data.result || {};
+            await loadTeamProjects();
+        } catch (e) {
+            alert('Пинг не прошёл: ' + (e.message || e));
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Ping';
+        }
+    };
 
 
     function renderCard(card, block) {

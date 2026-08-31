@@ -245,6 +245,18 @@ async def team_llm_pool_acquire(project_id: int, task_id: int, role: str,
     Порядок попыток: сначала модель, на которой эта задача работала прошлый круг
     (прилипание — агента не придётся перезапускать), затем остальные по порядку пула.
 
+    **Не отвечающие на пинг пропускаются** (`team_llm_ping_dead`). Модель, отвалившаяся
+    у провайдера, продолжала выдаваться ролям: круг уходил в неё, падал, тратил
+    попытку — и так каждый тик. Из настройки пула её при этом не убираем: провайдер
+    оживёт, и следующий пинг вернёт её в работу сам.
+
+    Пинга нет вовсе (не опрашивали ни разу) — модель выдаётся как прежде: молчание
+    значит «не знаем», а не «мертва», иначе на свежей установке пул был бы пуст.
+
+    Мёртвыми оказались все — работаем по полному списку. Пустой пул означал бы, что
+    роли не берут работу вовсе; лучше отправить круг в модель, которая может ответить
+    вопреки пингу, чем остановить конвейер по данным одной проверки.
+
     Атомарность даёт `UPDATE ... WHERE свободна`: InnoDB выполняет его под замком
     строки, и `rowcount` честно говорит, досталась ли она нам. Два тика оркестратора
     не могут захватить одну модель — второй увидит `rowcount = 0`.
@@ -253,7 +265,17 @@ async def team_llm_pool_acquire(project_id: int, task_id: int, role: str,
     if not pool:
         return None
 
-    order = list(pool)
+    # Импорт внутри функции: `team_llm_ping` читает каталог и пул, и на уровне модуля
+    # это дало бы круговую зависимость между двумя файлами.
+    from src.project.team.team_llm_ping import team_llm_ping_dead
+
+    dead = await team_llm_ping_dead(pool)
+    alive = [name for name in pool if name not in dead]
+    if dead and alive:
+        logger_info(f"[team] пул проекта {project_id}: пропускаем по пингу "
+                    f"{', '.join(sorted(dead))}")
+
+    order = list(alive or pool)
     sticky = await _task_llm_last(task_id)
     if sticky in order:
         order.remove(sticky)
@@ -299,7 +321,7 @@ async def team_llm_pool_acquire(project_id: int, task_id: int, role: str,
             await db.execute(
                 "UPDATE team_llm_lock "
                 "   SET project_id = %s, task_id = %s, role = %s, session_uuid = %s, "
-                "       locked_at = NOW() "
+                "       locked_at = NOW(), used_at = NOW() "
                 " WHERE llm_name = %s "
                 "   AND (locked_at IS NULL OR locked_at <= NOW() - INTERVAL %s SECOND)",
                 (int(project_id or 0), int(task_id or 0) or None, str(role or ''),
@@ -541,15 +563,33 @@ async def _session_llm_write(session_uuid: str, llm_name: str) -> None:
 
 
 async def _task_llm_last(task_id: int) -> str:
-    """Модель, на которой задача работала прошлый круг. Нет — пустая строка."""
+    """
+    Модель, на которой задача работала **последний** круг. Нет — пустая строка.
+
+    Свободную и занятую ищем одинаково: занятая тем же `task_id` — это её же круг,
+    который ещё не закрылся, и предпочесть её всё равно правильно.
+
+    Сортировка обязательна. Строк на задачу бывает несколько: строка заводится на
+    модель и живёт дальше, `task_id` в ней остаётся после освобождения — это и есть
+    память о прошлом круге. Отработала задача на двух моделях подряд, и обе помнят её
+    номер. Без `ORDER BY` какую вернуть решал MySQL: живьём задача #4915 числилась
+    разом за `gx10/qwen-large` (шёл круг) и за `qwen/qwen3.7-flash` (след прошлого), и
+    прилипание срабатывало через раз — а его цена как раз в том, чтобы не
+    перезапускать агента и не терять накопленный им контекст.
+
+    По `used_at`, а не по `locked_at`: второй гасится при освобождении, и у свободной
+    строки там NULL — «работала час назад» от «работала вчера» по нему не отличить.
+    Строки без `used_at` (заведённые до появления колонки) идут последними: про них мы
+    не знаем ничего, и ставить их впереди датированных значило бы предпочесть незнание.
+    """
     if not task_id:
         return ''
 
     async with mysql_get_db_async() as db:
-        # Свободную и занятую ищем одинаково: занятая тем же `task_id` — это её же
-        # круг, который ещё не закрылся, и предпочесть её всё равно правильно.
         await db.execute(
-            "SELECT llm_name FROM team_llm_lock WHERE task_id = %s LIMIT 1", (int(task_id),))
+            "SELECT llm_name FROM team_llm_lock WHERE task_id = %s "
+            " ORDER BY used_at IS NULL, used_at DESC, llm_name LIMIT 1",
+            (int(task_id),))
         row = await db.fetchone()
 
     return str((row or {}).get('llm_name') or '')

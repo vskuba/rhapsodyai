@@ -16,6 +16,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 TEST_PROJECT_TITLE = '__pytest_task_depend'
 
 
