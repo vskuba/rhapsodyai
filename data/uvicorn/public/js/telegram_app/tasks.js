@@ -6,6 +6,13 @@
  *   PHASE_TYPE_NAMES = {planning:['research','plan'], development:['dev'], testing:['test'], bugs:['bug']}
  *   PIPELINE_STATE_LABELS для чипса состояния конвейера
  *   STATUS_LABELS     для чипса статуса
+ *
+ * Строка задачи приходит из `task_metadata_row_apply`, которая разбирает `metadata`
+ * и ничего про имена типов не знает: в выдаче есть `task_type_id`, а имени типа нет.
+ * Поэтому вкладки сверяются по номеру типа — `PHASE_TYPE_IDS`, та же карта, что
+ * задокументирована комментарием к `PHASE_TYPE_NAMES` в task.html:2010-2015
+ * (dev=1, bug=2, test=3, research=4, plan=5). Имя оставлено запасным путём: если
+ * роутер когда-нибудь начнёт отдавать `task_type_name`, список не ослепнет.
  */
 
 import { getData } from '/static/js/api.js';
@@ -28,6 +35,16 @@ const PHASE_TYPE_NAMES = {
     development: ['dev'],
     testing:     ['test'],
     bugs:        ['bug'],
+};
+
+// Номера типов из `project_task_type` — те же строки, что комментарий к
+// `PHASE_TYPE_NAMES` в task.html:2010-2015. Сверка по ним, а не по имени: у строки
+// задачи имени типа нет, а номер есть всегда (см. шапку файла).
+const PHASE_TYPE_IDS = {
+    planning:    [4, 5],
+    development: [1],
+    testing:     [3],
+    bugs:        [2],
 };
 
 const STATUS_LABELS = {
@@ -65,15 +82,17 @@ const API_TASKS = '/telegram-app/tasks';
 // --- Состояние ---
 
 let _listEl = null;
-let _headEl = null;         // вкладки фаз + селектор проекта (выше списка)
+let _headEl = null;         // вкладки фаз + селектора проекта (выше списка)
 let _currentPhase = 'planning';
 let _projectFilter = '';    // '' = все задачи
 let _projects = [];         // [{id, name}]
+let _allTasks = [];         // что пришла от роутера: фильтр по фазе и проекту — на клиенте
 let _selectedTaskId = null; // задача с открытой панелью вопросов
 
 export function initTasks() {
-    _listEl = document.getElementById('taskListView');
-    if (!_listEl) return;   // контейнер вкладывает шаблон — см. telegram_app.html
+    // Контейнер рисует шаблон вкладки (`tasksListView`), имя из плана задачи.
+    _listEl = document.getElementById('tasksListView');
+    if (!_listEl) return;   // нет контейнера — вкладка не заведена, молча выходим
 
     // Вкладки и селектор живут в отдельном div над списком: он не перекрашивается
     // при каждой перезагрузке, и при клике по вкладке не нужно пересобирать его заново.
@@ -148,11 +167,18 @@ function renderPhaseTabs() {
 export async function loadTasks() {
     _listEl.innerHTML = '<div class="empty-state">Загрузка...</div>';
     try {
-        const url = `${API_TASKS}${_projectFilter ? `?project_id=${_projectFilter}` : ''}`;
-        const res = await getData(url);
-        const tasks = (res.result || []).map(normalizeTaskRow);
-        _projects = dedupeProjects(res.result || []);
-        renderTaskList(tasks);
+        const res = await getData(API_TASKS);
+        // Роутер отдаёт задачи вложенно — `{'result': {'tasks': [...]}}`; плоский
+        // `{'result': [...]}` остаётся запасным путём на случай, если точку решат
+        // упростить. Гадать по одному полю нельзя: `result.tasks` бывает и списком.
+        const raw = (res.result && Array.isArray(res.result.tasks)) ? res.result.tasks
+                  : Array.isArray(res.result) ? res.result : [];
+        const tasks = raw.map(normalizeTaskRow);
+        _projects = dedupeProjects(tasks);
+        // Проектов в выдаче сотни, а тащат они за собой только номер: отсекаем
+        // здесь же, где фильтруем вкладки, — второго запроса на селектор нет.
+        _allTasks = tasks;
+        renderTaskList();
     } catch (e) {
         _listEl.innerHTML = `<div class="denied-state">⚠️ Не удалось загрузить задачи${e.message ? ': ' + escapeHtml(e.message) : ''}</div>`;
     }
@@ -166,7 +192,8 @@ function normalizeTaskRow(row) {
         status: row.status || 'pending',
         pipeline_state: row.pipeline_state || 'none',
         metadata: row.metadata || {},
-        task_type_name: row.task_type_name || 'dev',
+        task_type_id: row.task_type_id ?? null,
+        task_type_name: row.task_type_name || null,
         parent_id: row.parent_id || null,
         // Дополнительные поля, которые может отдать роутер
         project_id: row.project_id,
@@ -185,10 +212,8 @@ function dedupeProjects(tasks) {
 
 // --- Рендер списка ---
 
-function renderTaskList(tasks) {
-    // Фильтр по фазе через PHASE_TYPE_NAMES
-    const typeNames = PHASE_TYPE_NAMES[_currentPhase] || [];
-    const filtered = tasks.filter(t => typeNames.includes(t.task_type_name));
+export function renderTaskList() {
+    const filtered = _allTasks.filter(taskInPhase).filter(taskInProject);
 
     // Без проекта — в начало
     const withNoProject = filtered.filter(t => !t.project_id);
@@ -211,6 +236,25 @@ function renderTaskList(tasks) {
             openTaskDetail(Number(card.dataset.id));
         });
     });
+
+    // Список перерисован с нуля — кнопка «Утвердить» прежней задачи снеслась вместе
+    // с карточкой: возвращаем её, если открытая задача всё ещё на этой вкладке.
+    renderApprovalButton();
+}
+
+// Задача на активной вкладке: номер типа, а имя — запасной путь.
+function taskInPhase(t) {
+    const ids = PHASE_TYPE_IDS[_currentPhase] || [];
+    if (ids.includes(Number(t.task_type_id))) return true;
+    // Тип без номера (задача заведена до справочника или строка после `ON DELETE SET
+    // NULL`) достаётся менеджеру — см. `TASK_ROLE_DEFAULT` в task_role.py:97.
+    if (t.task_type_id === null && _currentPhase === 'planning') return true;
+    return !!t.task_type_name && (PHASE_TYPE_NAMES[_currentPhase] || []).includes(t.task_type_name);
+}
+
+function taskInProject(t) {
+    if (!_projectFilter) return true;
+    return String(t.project_id || '') === String(_projectFilter);
 }
 
 /** Открыть панель вопроса для задачи */
