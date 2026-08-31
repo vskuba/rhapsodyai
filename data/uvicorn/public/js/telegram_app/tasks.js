@@ -1,4 +1,3 @@
-import { getData } from '/static/js/api.js';
 import { state } from './state.js';
 
 let _listEl = null;
@@ -7,14 +6,10 @@ export function initTasks() {
     _listEl = document.getElementById('tasksListView');
 }
 
-export async function loadTasks() {
-    _listEl.innerHTML = '<div class="empty-state">Загрузка...</div>';
-    try {
-        const res = await getData('/telegram-app/tasks');
-        renderTasksList(res.result || []);
-    } catch {
-        _listEl.innerHTML = '<div class="denied-state">⚠️ Не удалось загрузить задачи</div>';
-    }
+// Каркас вкладки: роутер /telegram-app/tasks и загрузка списка — отдельная
+// подзадача, здесь рисуем пустое состояние без запроса несуществующего эндпоинта.
+export function loadTasks() {
+    renderTasksList([]);
 }
 
 function renderTasksList(tasks) {
