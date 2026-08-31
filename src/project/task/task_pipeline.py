@@ -150,7 +150,7 @@ from src.project.task.task_state import (
 from src.project.task.task_goal_replan import (task_goal_replan_needed,
                                                task_goal_replan_send)
 from src.project.task.task_log import TASK_LOG_OUTCOME_OK, task_log_write_run
-from src.project.task.task_metric import task_metric_collect
+from src.project.task.task_metric import task_metric_collect, task_metric_lines_advanced
 from src.tool.project.task_worktree_state import task_worktree_state
 from src.project.task.task_worktree import (task_worktree_base_branch,
                                             task_worktree_ensure,
@@ -763,12 +763,41 @@ async def _run_developer(action: dict) -> str | None:
     if await _question_hold(subtask, result, 'developer', attempt_no):
         return f"subtask#{subtask['id']} developer -> blocked (вопрос человеку)"
 
-    # Развалился сам разработчик — попытка засчитана, круг закрываем как провал.
+    # Круг кончился без `ok`. Исходов здесь два, и хоронить их одинаково нельзя.
+    #
+    # «Не доделал, вот что осталось» — работа шла: агент разобрался, написал код,
+    # закоммитил и сам назвал недоделанное. «Провалился» — работы не вышло вовсе.
+    # Раньше оба сжигали попытку и на последней уводили строку в `blocked`. Живьём
+    # подзадача #5219: три прогона подряд не состоялись (оболочка молчала, попытку
+    # они не жгут), а четвёртый отработал честно, сделал пять коммитов и написал
+    # «нужен следующий круг: записать миграцию, сделать push и MR» — и этим сжёг
+    # последнюю попытку.
+    #
+    # Различаем по коду в ветке, а не по словам агента: отчёт пишет он сам, и «я
+    # почти закончил» стало бы способом крутить круги бесконечно. Причём мало того,
+    # что код есть — он остаётся от прошлых кругов; смотрим, **прибавился** ли он
+    # (`task_metric_lines_advanced`). Строка, которая топчется на месте, попытки
+    # жжёт как раньше и до предела дойдёт.
     error = str(result.get('error') or 'ошибка разработчика')
     max_attempts = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX)
-    state = await task_state_subtask_fail(subtask['id'], attempt_no, error, max_attempts)
-    await _subtask_report(subtask, f'разработчик сорвался (попытка {attempt_no} из {max_attempts}): {error}',
-                          ok=False, blocked=state == 'blocked')
+
+    lines_now = await _lines_changed(work_dir, subtask['id'])
+    # Номер круга передаём, чтобы его собственный замер не попал в сравнение:
+    # `_log_run` выше уже записал его, и без этого сравнивали бы с самим собой.
+    advanced = await task_metric_lines_advanced(subtask['id'], lines_now or 0, attempt_no)
+
+    state = await task_state_subtask_fail(subtask['id'], attempt_no, error, max_attempts,
+                                          worked=advanced)
+    if advanced and attempt_no >= max_attempts:
+        await _subtask_report(
+            subtask,
+            f'круг {attempt_no} не закончил работу, но код в ветке прибавился '
+            f'({lines_now} строк) — даём ещё круг вместо остановки: {error}',
+            ok=False)
+    else:
+        await _subtask_report(subtask, f'разработчик сорвался (попытка {attempt_no} из {max_attempts}): {error}',
+                              ok=False, blocked=state == 'blocked')
+
     return f"subtask#{subtask['id']} developer -> {state}"
 
 

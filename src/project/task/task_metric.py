@@ -442,3 +442,57 @@ def _tokens_parse(output: str) -> dict:
                     'tokens_sec': float(data.get('tokens_sec') or 0.0)}
 
     return empty
+
+
+async def task_metric_lines_advanced(task_id: int, lines_now: int,
+                                     attempt_no: int = 0) -> bool:
+    """
+    Сдвинулась ли работа за этот круг: стало ли в ветке больше кода, чем было.
+
+    Нужна там, где решают, дать ли подзадаче ещё один круг после исчерпанных
+    попыток (`task_state_subtask_fail`). Голого «код в ветке есть» для этого мало:
+    код остаётся от прошлых кругов, и строка, которая топчется на месте, получала бы
+    попытки бесконечно.
+
+    Сравниваем с последним замером, а не с нулём. Живьём у подзадачи #5219 это
+    выглядело так: 79 строк четыре круга подряд — работа стояла, — а на пятом стало
+    125, и вот он сдвинулся. Первый ответ — «нет, топчется», второй — «да, идёт».
+
+    `attempt_no` — номер текущего круга, и его замеры из сравнения исключаются.
+    Иначе сравнение идёт с самим собой: журнал круга (`_log_run`) пишется раньше,
+    чем принимается решение о повторе, и «сейчас» уже лежит в таблице последней
+    строкой. Ответ выходил бы всегда «нет», то есть проверка молча не работала бы.
+
+    Замеров ещё нет — считаем сдвигом любой непустой код: первый круг сравнивать не
+    с чем, а отказать ему значило бы наказать за то, что он первый.
+
+    Ошибку глушим намеренно: это подсказка для решения о повторе, и упавший запрос
+    к метрикам не должен ронять круг. Не смогли посчитать — отвечаем «нет», то есть
+    ведём себя как до появления этой проверки.
+    """
+    lines_now = int(lines_now or 0)
+    if lines_now <= 0:
+        return False
+
+    where = ['task_id = %s', 'lines_changed > 0']
+    params = [int(task_id)]
+    if attempt_no:
+        where.append('attempt_no < %s')
+        params.append(int(attempt_no))
+
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT lines_changed FROM project_task_metric '
+                f" WHERE {' AND '.join(where)} ORDER BY id DESC LIMIT 1",
+                tuple(params))
+            row = await db.fetchone()
+    except Exception as error:
+        logger_info(f'[task] метрики строк не прочитаны для #{task_id}: {error}')
+
+        return False
+
+    if not row:
+        return True
+
+    return lines_now > int(row.get('lines_changed') or 0)

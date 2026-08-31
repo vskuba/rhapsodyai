@@ -2106,7 +2106,12 @@
 
         // Вкладка сессий без окна бесполезна: страница живёт в контейнере и после
         // перезагрузки админки, поэтому показываем первую живую сразу.
-        if (name === 'session' && !currentId && sessions.length) {
+        //
+        // Кроме случая, когда вкладку открыли кнопкой «Открыть» на карточке сайта:
+        // там человек назвал сайт, а первая живая сессия может быть от другого — и
+        // её адрес затирал строку. Открывали LadaDate, в строке оставался
+        // goldenbride.net. Такое открытие доводит до конца сам `siteOpen`.
+        if (name === 'session' && !currentId && sessions.length && !_siteOpening) {
             viewOpen(sessions[0].session_id, sessions[0].url);
         }
     }
@@ -3246,7 +3251,7 @@
         browserSiteSelect(+sel.value, true);
     }
 
-    window.browserSiteSelect = function (id, silent) {
+    window.browserSiteSelect = function (id, silent, siteUrl) {
         _browserSiteId = id || 0;
         localStorage.setItem(BROWSER_SITE_KEY, String(_browserSiteId));
         if (silent) return;
@@ -3266,9 +3271,16 @@
 
         // Адрес закладки подставляем в строку адреса, но никуда не идём:
         // «Открыть» человек жмёт сам, а выбор сайта — ещё не команда открыть.
+        //
+        // Адрес берём переданный, если он есть. Списков сайтов на странице два:
+        // селект в шапке грузит свой (`browserSiteFill`), а `siteCurrent` смотрит в
+        // тот, что набивают карточки вкладки «Сайты», — и на других вкладках он
+        // пуст. Тогда `siteCurrent()` возвращал прошлый выбор, и строка адреса
+        // оставалась от чужого сайта: открыли LadaDate, в строке goldenbride.net.
         const site = siteCurrent();
-        if (site && urlEl) {
-            urlEl.value = site.url;
+        const url = siteUrl || (site ? site.url : '');
+        if (url && urlEl) {
+            urlEl.value = url;
             urlEdited = true;
         }
     };
@@ -4795,18 +4807,49 @@
     // новую с именем сайта: закладку жмут, чтобы оказаться на странице, а не чтобы
     // узнать, что сессию сперва надо создать самому.
     async function siteOpen(row) {
-        tabSelect('session');
+        // Сначала переключаем сайт, потом всё остальное. Открытие карточки — это и
+        // есть выбор сайта: дальше по нему отбираются сессии, сценарии, переменные и
+        // журналы. Без этой строки страница показывала адрес открытой карточки, а
+        // работала с сайтом из прошлого захода (`localStorage`): выбрал LadaDate —
+        // в шапке Goldenbride, и его же переменные с чужими логинами.
+        //
+        // Селект синхронизируем руками: значение ему ставит человек мышью, а здесь
+        // выбор пришёл из карточки, и `onchange` сам собой не случится.
+        if (typeof browserSiteSelect === 'function' && row.id) {
+            const sel = document.getElementById('browserSiteSelect');
+            if (sel) sel.value = String(row.id);
+            // Адрес отдаём свой: карточка знает его точно, а списки сайтов на
+            // странице разные и на этой вкладке могут быть ещё не загружены.
+            browserSiteSelect(+row.id, false, row.url);
+        }
+
+        _siteOpening = true;
+        try {
+            tabSelect('session');
+        } finally {
+            _siteOpening = false;
+        }
         urlEl.value = row.url;
-        urlEdited = false;
+        urlEdited = true;
 
         if (!currentId || !socket || socket.readyState !== WebSocket.OPEN) {
             await sessionCreate(row.url, row.name);
             return;
         }
 
+        // Кадры живой сессии несут свой адрес и перетирают строку (`message.url`),
+        // пока `urlEdited` не выставлен. Открытие карточки — это намерение человека,
+        // и оно должно пережить кадр от прежней страницы: иначе на экране остаётся
+        // адрес того сайта, где сессия была до нажатия.
+        urlEdited = true;
         statusSet('открываю ' + row.url);
         send({type: 'goto', url: row.url});
     }
+
+    // Идёт открытие сайта с карточки. Флаг держит `tabSelect` от самодеятельности:
+    // тот при переходе на «Сессии» открывает первую живую сессию, а она бывает от
+    // другого сайта — и её адрес затирал бы тот, который человек только что выбрал.
+    let _siteOpening = false;
 
     function siteSay(text) {
         siteErrorEl.textContent = text || '';
