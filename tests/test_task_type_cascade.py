@@ -19,6 +19,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 TEST_PROJECT_TITLE = '__pytest_type_cascade'
 
 

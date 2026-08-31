@@ -6,6 +6,8 @@ import uuid
 import subprocess
 from typing import AsyncGenerator
 
+pytestmark = pytest.mark.telegram
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 

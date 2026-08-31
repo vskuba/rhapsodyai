@@ -12,6 +12,9 @@
 на импорте, а подмена хоста живёт в фикстурах `conftest.py`.
 """
 import json
+import pytest
+
+pytestmark = pytest.mark.pipeline
 
 
 class TestQuestionParse:

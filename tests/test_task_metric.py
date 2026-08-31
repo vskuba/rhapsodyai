@@ -17,6 +17,9 @@
 `MYSQL_HOST` на импорте, а подмена хоста живёт в фикстурах `conftest.py`.
 """
 
+import pytest
+
+pytestmark = pytest.mark.pipeline
 # Ответ `/metrics` в том виде, в каком его отдаёт llama.cpp: комментарии `# HELP`
 # содержат те же имена, что и сами счётчики, — на этом ломается разбор регуляркой.
 METRICS_BODY = """# HELP llamacpp:prompt_tokens_total Number of prompt tokens processed.

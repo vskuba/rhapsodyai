@@ -14,6 +14,8 @@ Chromium, и подменять их значило бы проверять за
 
 import pytest
 
+pytestmark = pytest.mark.browser
+
 
 class TestSchema:
     """Что схема шага принимает, а что отвергает — до всякого прогона."""

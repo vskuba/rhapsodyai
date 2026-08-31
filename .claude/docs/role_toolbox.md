@@ -30,11 +30,36 @@
 Сьюта интеграционная: тесты ходят по HTTP в **запущенный** сервер, а не поднимают
 своё приложение. Поэтому сервер должен работать, иначе всё падает на подключении.
 
+**Гоняй группу, а не всё.** Полный набор — три с половиной минуты, и платишь ты их
+на каждом круге, даже поправив одну строку. Тесты разбиты по подсистемам:
+
+```bash
+.venv/bin/python3 -m pytest -m pipeline -q               # конвейер задач,  ~60 с
+.venv/bin/python3 -m pytest -m team -q                   # команда, оболочки, ~43 с
+.venv/bin/python3 -m pytest -m browser -q                # контейнер-браузер, ~29 с
+.venv/bin/python3 -m pytest -m ai -q                     # LLM, workflow, агенты, ~37 с
+.venv/bin/python3 -m pytest -m auth -q                   # доступ и права, ~55 с
+.venv/bin/python3 -m pytest -m core -q                   # настройки, cron, ~37 с
+.venv/bin/python3 -m pytest -m telegram -q               # мини-приложение, ~5 с
+```
+
+Группу выбирай по тому, что тронул: правил `src/project/task/` — `pipeline`,
+`src/project/team/` — `team`, и так далее. Задел общее (`py_modules/`, роутеры,
+`conftest.py`, схема БД) или не уверен — гони всё.
+
+**Перед merge request полный набор обязателен**, как бы мала ни была правка: группы
+экономят время внутри круга, а связи между подсистемами не видят.
+
+Ещё способы:
+
 ```bash
 .venv/bin/python3 -m pytest tests/ -q                    # весь набор
+.venv/bin/python3 -m pytest -m "team and not slow" -q    # без браузерных: 13 с вместо 38
 .venv/bin/python3 -m pytest tests/test_task_log.py -q    # один файл
 .venv/bin/python3 -m pytest tests/ -q -k "metric"        # по имени
 ```
+
+Подробности, включая правило деления новых тестов, — `.claude/docs/testing.md`.
 
 Адрес сервера — в `BASE_URL`, по умолчанию `http://localhost:8011` (общий стенд).
 Свой сервер задачи поднимается на `:8013`:

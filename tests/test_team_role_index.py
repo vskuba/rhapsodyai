@@ -23,6 +23,8 @@ import uuid
 
 import pytest
 
+pytestmark = pytest.mark.team
+
 # Каталог, которого не существует: по нему выдача номеров изолирована от настоящих
 # оболочек установки — номера считаются в пределах каталога.
 TEST_WORK_DIR = '/tmp/role-index-test'

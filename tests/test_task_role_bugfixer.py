@@ -6,7 +6,9 @@
 сессионные фикстуры `conftest.py`. Импорт на уровне модуля случился бы раньше них.
 """
 
+import pytest
 
+pytestmark = pytest.mark.pipeline
 class TestTaskRoleBugfixer:
 
     def test_bug_type_belongs_to_bugfixer(self):

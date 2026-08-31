@@ -19,6 +19,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 TEST_TITLE = '__pytest_question_batch'
 
 

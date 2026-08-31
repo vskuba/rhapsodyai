@@ -17,6 +17,8 @@ GX10 отвечал объектом `exceed_context_size_error`, у котор�
 """
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 # Ответ провайдера как есть — llama.cpp, переполненный контекст.
 PROVIDER_ERROR = {
     'code': 400,

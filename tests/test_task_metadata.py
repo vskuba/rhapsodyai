@@ -14,6 +14,8 @@ import pytest
 
 from tests.constants import TEST_AUTH
 
+pytestmark = pytest.mark.pipeline
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_TITLE = "__pytest_metadata__"
 

@@ -26,6 +26,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.ai
+
 
 @pytest.fixture(autouse=True)
 async def db_pool_release():

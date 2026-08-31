@@ -14,6 +14,8 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
+pytestmark = pytest.mark.core
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 ADMIN_ACCESS_TOKEN = "a0000000-1111-4444-bbbb-000000000001"
 
