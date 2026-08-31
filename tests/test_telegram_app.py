@@ -117,6 +117,13 @@ class TestTelegramAppProtectedEndpoints:
         )
         assert response.status_code == 403
 
+    async def test_task_answer_requires_auth(self, anon_client: httpx.AsyncClient):
+        response = await anon_client.post(
+            "/telegram-app/task/1/question/answer",
+            json={"answers": ["goals_keep"]},
+        )
+        assert response.status_code == 403
+
 
 @pytest.fixture
 async def telegram_client() -> AsyncGenerator[httpx.AsyncClient, None]:
@@ -236,6 +243,25 @@ class TestTelegramAppClaude:
             assert "session_uuid" in session
             assert "role" in session
             assert "project_label" in session
+
+
+class TestTelegramAppTaskQuestion:
+    """Ответ на вопрос задачи: точка смонтирована и отвечает под сессией владельца."""
+
+    async def test_answer_route_is_mounted(self, telegram_client: httpx.AsyncClient):
+        """
+        Просроченная дата ответа — 404 «нет такой задачи», а не 404 «нет такого маршрута».
+
+        Точка не раз закругом отвечала 404: роутер не был подключён в `main_uvicorn.py`,
+        и записать ответ в рантайме было нечем. Проверка отличает одно от другого по
+        тексту — маршрут жив, просто строки нет.
+        """
+        response = await telegram_client.post(
+            "/telegram-app/task/999999/question/answer",
+            json={"answers": ["цель оставить"], "note": ""},
+        )
+        assert response.status_code == 404
+        assert "task not found" in response.json()["detail"].lower()
 
 
 if __name__ == "__main__":
