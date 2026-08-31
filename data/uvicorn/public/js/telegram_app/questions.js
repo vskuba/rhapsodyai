@@ -66,20 +66,50 @@ function renderBar(inner) {
     bar.classList.add('chat-visible');
 }
 
-// Вызов из задач.js при клике на карточку
-export async function openQuestionPanel(taskId) {
+/**
+    Вызов из задач.js при клике на карточку.
+
+    `taskRow` — строка задачи из уже загруженного списка. С ней панель показывает
+    вопрос сразу: сам вопрос живёт в `metadata`, а список (`/telegram-app/tasks`)
+    отдаёт его разобранным — иными словами материал для панели уже в руках.
+    GET `/telegram-app/task/{id}/question` — уточнение, а не единственный источник:
+    он дорисовывает принятые решения и попытки, но без него панель остаётся рабочей,
+    потому что ответ уходит на POST, который от GET не зависит.
+    */
+export async function openQuestionPanel(taskId, taskRow = null) {
     ensureBar();
     _askTaskId = taskId;
-    _askData = null;
+    _askData = questionFromRow(taskRow);
     _askIndex = 0;
 
-    showLoading();
-    try {
-        _askData = await getData(API_QUESTION(taskId));
+    if (_askData) {
         renderAsk();
-    } catch (e) {
-        showError(e.message || 'Не удалось открыть вопрос');
+    } else {
+        showLoading();
     }
+    try {
+        const fresh = await getData(API_QUESTION(taskId));
+        if (_askTaskId === taskId) {
+            _askData = fresh;
+            renderAsk();
+        }
+    } catch (e) {
+        // Уже показали вопрос из списка — показывать поверх него ошибку смысла нет:
+        // ответ всё равно уходит на POST и дойдёт.
+        if (!_askData || _askTaskId !== taskId) showError(e.message || 'Не удалось открыть вопрос');
+    }
+}
+
+/** Вопрос из строки списка: те же ключи, что отдаёт GET, только взятые из `metadata` */
+function questionFromRow(row) {
+    const meta = row && typeof row.metadata === 'object' && row.metadata ? row.metadata : null;
+    if (!meta) return null;
+
+    return {
+        question: meta.question || null,
+        questions: Array.isArray(meta.questions) ? meta.questions : [],
+        decisions: Array.isArray(meta.decisions) ? meta.decisions : [],
+    };
 }
 
 export function closeQuestionPanel() {
@@ -147,14 +177,17 @@ function renderAsk() {
         return;
     }
 
-    // Текст вопроса
-    parts.push(`<div class="task-question-text"><span class="task-question-role">Спрашивает: ${_roleTitle(q.role, q.auto)}</span>${esc(q.text)}</div>`);
+    // Текст вопроса. Кто спрашивает — отдельной строкой над ним, как в `task.html:4663`:
+    // роль отвечает за смысл развилки, а не за формулировку, и в одном потоке с текстом
+    // она читалась бы началом вопроса.
+    parts.push(`<div class="task-question-role">Спрашивает: ${esc(_roleTitle(q.role, q.auto))}</div>`);
+    parts.push(`<div class="task-question-text">${esc(q.text)}</div>`);
 
     // Варианты ответа
     const options = q.options || [];
     if (options.length) {
         const type = q.multi ? 'checkbox' : 'radio';
-        let optHtml = '<div class="task-question-options">';
+        let optHtml = '<div class="task-question-label">Варианты ответа</div><div class="task-question-options">';
         options.forEach(o => {
             optHtml += `<label class="task-option-label" onclick="askPick()">`
                 + `<input type="${type}" name="askOpt" value="${esc(o.key)}">`
@@ -165,8 +198,13 @@ function renderAsk() {
         parts.push(optHtml);
     }
 
-    // Поле уточнения
-    parts.push(`<textarea class="task-question-note" id="askNote"`
+    // Цели спрятаны, пока не выбрано действие над ними: список чекбоксов, показанный
+    // сразу, читается как «отметь цели», хотя ответ может быть и не про них.
+    // Скрыт до выбора действия над целями — см. `task.html:4678`
+    parts.push(`<div class="task-question-goals" id="askGoals" style="display:none">${askGoalsHtml(data.goals || [])}</div>`);
+
+    parts.push('<div class="task-question-label">Уточнение</div>'
+        + `<textarea class="task-question-note" id="askNote"`
         + ` placeholder="${options.length ? 'Необязательно: условие или оговорка к выбранному варианту' : 'Ответ своими словами'}"`
         + `>${esc(q.answer?.note || '')}</textarea>`);
 
@@ -176,7 +214,7 @@ function renderAsk() {
 
     let hint = '';
     if (batch.length && left) {
-        hint = `<div style="font-size:11px;color:#a0aec0;margin-top:6px;">Без ответа: ${left} из ${batch.length}. Решения запишутся, когда ответите на все.</div>`;
+        hint = `<div class="task-question-hint">Без ответа: ${left} из ${batch.length}. Решения запишутся, когда ответите на все.</div>`;
     }
 
     parts.push(`<div class="task-question-actions">
@@ -188,14 +226,14 @@ function renderAsk() {
     // Принятые решения
     const kept = data.decisions || [];
     if (kept.length) {
-        let decHtml = '<div style="margin-top:12px;padding-top:8px;border-top:1px solid #edf2f7;">';
-        decHtml += '<div style="font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Принятые решения (' + kept.length + ')</div>';
-        kept.slice().reverse().forEach(d => {
-            decHtml += `<div class="task-decision"><b>${esc(d.question || '')}</b><br>${esc(d.answer)}`
-                + `<span class="task-decision-meta">${esc(d.at || '')}${d.by ? ' · ' + esc(d.by) : ''}</span></div>`;
-        });
-        decHtml += '</div>';
-        parts.push(decHtml);
+        // Классы те же, что в админке (`ask-decision`), только под своим префиксом:
+        // порядок обратный — свежие решения выше, как их оставил `task.html:4710`.
+        parts.push('<div class="task-decisions">'
+            + `<div class="task-question-label">Принятые решения (${kept.length})</div>`
+            + kept.slice().reverse().map(d => `<div class="task-decision">`
+                + (d.question ? `<b>${esc(d.question)}</b><br>` : '')
+                + `${esc(d.answer)}<span class="task-decision-meta">${esc(d.at || '')}${d.by ? ' · ' + esc(d.by) : ''}</span></div>`).join('')
+            + '</div>');
     }
 
     renderBar(parts.join(''));
@@ -205,7 +243,9 @@ function renderAsk() {
     if (picked.length) {
         setTimeout(() => {
             picked.forEach(key => {
-                const input = _barEl.querySelector(`#askBody input[name="askOpt"][value="${key}"], [name="askOpt"][value="${key}"]`);
+                // Ищем внутри панели, а не по `#askBody` страницы: в мини-приложении
+                // своим контейнером она не обзаводится.
+                const input = _barEl.querySelector(`input[name="askOpt"][value="${key}"]`);
                 if (input) input.checked = true;
             });
             askPick();
@@ -249,7 +289,7 @@ window.askPick = function() {
         // Показ/скрытие списка целей при действиях над ними
         const pickedKeys = [..._barEl.querySelectorAll('[name="askOpt"]:checked')]
             .map(i => i.value);
-        const hasGoalAction = pickedKeys.some(k => ASK_GOAL_ACTIONS.includes(k));
+        _showGoals(pickedKeys.some(k => ASK_GOAL_ACTIONS.includes(k)));
     }, 0);
 };
 
@@ -257,8 +297,46 @@ window.askPick = function() {
 function askFormRead() {
     return {
         answers: [...(_barEl?.querySelectorAll('[name="askOpt"]:checked') || [])].map(i => i.value),
-        note: ((_barEl?.getElementById('askNote'))?.value || '').trim(),
+        note: _noteValue(),
     };
+}
+
+/**
+    Набранное в поле уточнения.
+
+    `getElementById` ищет по всему документу и есть только у самого документа: у
+    узла панели его нет, а `?.` на отсутствующий метод не спасает. Ищем по
+    документу и проверяем, что поле принадлежит панели — иначе взяли бы чужое,
+    когда на странице заведётся второе `askNote`.
+    */
+function _noteValue() {
+    if (!_barEl || !_barEl.isConnected) return '';
+    const note = document.getElementById('askNote');
+    return (note && _barEl.contains(note) ? note.value : '').trim();
+}
+
+/**
+    Список целей под задачей — по образцу `askGoalsHtml` из task.html:4753.
+
+    Номер цели — её место в списке, им же ответ уходит на сервер (`goal_indexes`),
+    поэтому отмечать приходится чекбоксом, а не кликом по тексту. Закрытую цель
+    оставить нельзя: вычеркнуть уже принятую работу значит потерять то, что подтвердил QA.
+    */
+function askGoalsHtml(goals) {
+    if (!goals.length) return '<div class="task-no-questions">Целей у задачи нет — делить нечего.</div>';
+
+    return '<div class="task-question-label">Какие цели</div><div class="task-question-options">'
+        + goals.map((g, n) => `<label class="task-option-label${g.done ? ' task-option-done' : ''}">`
+            + `<input type="checkbox" name="askGoal" value="${n}"${g.done ? ' disabled' : ''}>`
+            + `<span>${esc(g.text)}`
+            + `${g.done ? '<span class="task-option-hint">закрыта — не трогаем</span>' : ''}</span></label>`).join('')
+        + '</div>';
+}
+
+/** Показать или убрать список целей: он нужен только действиям над ними */
+function _showGoals(on) {
+    const goals = _barEl && _barEl.querySelector('#askGoals');
+    if (goals) goals.style.display = on ? '' : 'none';
 }
 
 // Сохранить черновик текущего вопроса пачки
@@ -307,13 +385,20 @@ window.askSend = async function() {
 
     // Одиночный вопрос — тоже читаем форму заново
     const answers = [...(_barEl?.querySelectorAll('[name="askOpt"]:checked') || [])].map(i => i.value);
-    const note = ((_barEl?.getElementById('askNote'))?.value || '').trim();
+    const goalIndexes = [...(_barEl?.querySelectorAll('[name="askGoal"]:checked') || [])]
+        .map(i => parseInt(i.value, 10));
+    const note = _noteValue();
     if (!answers.length && !note) { alert('Выберите вариант или напишите ответ'); return; }
+    // Ответ «раздробить/убрать» без отмеченных целей не о чём: роль получила бы ключ
+    // действия и гадала бы, о какой цели речь.
+    if (answers.some(k => ASK_GOAL_ACTIONS.includes(k)) && !goalIndexes.length) {
+        alert('Отметьте цели, которых касается ответ'); return;
+    }
 
     btn.disabled = true;
     btn.textContent = 'Отправляю…';
     try {
-        await postData(API_ANSWER(_askTaskId), { answers, note, goal_indexes: [] });
+        await postData(API_ANSWER(_askTaskId), { answers, note, goal_indexes: goalIndexes });
         closeQuestionPanel();
         await loadTasks();
     } catch (e) {

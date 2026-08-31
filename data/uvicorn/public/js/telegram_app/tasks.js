@@ -263,7 +263,8 @@ export function openTaskDetail(taskId) {
     state.taskCurrentQuestionId = taskId;
     renderApprovalButton();
     closeQuestionPanel();   // закрыть панель прежней задачи, прежде чем открывать новую
-    openQuestionPanel(taskId);
+    // Строку из уже отрисованного списка — панель покажет вопрос сразу, не дожидаясь ответа
+    openQuestionPanel(taskId, _allTasks.find(t => Number(t.id) === taskId) || null);
 }
 
 /** Кнопка «Утвердить план» — в карточке задачи при pipeline_state=plan_approval */

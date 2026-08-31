@@ -20,6 +20,10 @@
 | `data/uvicorn/public/js/telegram_app/chat.js` | Вкладка Chat |
 | `data/uvicorn/public/js/telegram_app/claude.js` | Вкладка Claude: сессии, polling, управление |
 | `data/uvicorn/public/js/telegram_app/plans.js` | Вкладка Plans: CRUD, рендер Markdown |
+| `data/uvicorn/public/js/telegram_app/tasks.js` | Вкладка Tasks: список задач, вкладки фаз, чипсы статуса |
+| `data/uvicorn/public/js/telegram_app/questions.js` | Панель вопросов задачи: свой DOM-слой, ответ на вопрос |
+| `data/uvicorn/public/js/telegram_app/flags.js` | Флаги фаз корневой задачи: `to_planning` / `to_development` / `to_testing` |
+| `data/uvicorn/public/css/telegram_app/task.css` | Сили вкладок фаз, карточек, чипсов, флагов и панели вопросов |
 | `data/uvicorn/public/js/telegram_app/utils.js` | `escapeHtml`, `linkify`, `confirmDialog`, `appendBubble` |
 | `data/uvicorn/public/js/telegram_app/voice.js` | Фабрика `createVoiceRecorder()` |
 

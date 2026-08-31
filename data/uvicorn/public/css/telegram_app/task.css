@@ -318,6 +318,21 @@
     margin-left: 4px;
 }
 
+/* Закрытую цель снять нельзя, и вид должен говорить об этом, а не только disabled */
+.task-option-label.task-option-done {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.task-question-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #718096;
+    margin: 10px 0 4px;
+}
+
 .task-question-note {
     width: 100%;
     border: 1px solid #cbd5e0;
@@ -352,6 +367,13 @@
     background: #3182ce;
     color: #fff;
     border-color: #3182ce;
+}
+
+/* О недосказанных вопросах пачки: тоньше подписи, чтобы не спорить с самим вопросом */
+.task-question-hint {
+    font-size: 11px;
+    color: #a0aec0;
+    margin-top: 6px;
 }
 
 .task-question-batch-tabs {
