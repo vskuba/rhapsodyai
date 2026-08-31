@@ -18,6 +18,8 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 # Проект, которого нет: под ним заводятся строки теста типов.
 TEST_TYPE_PROJECT_ID = 987680
 _PARENT_ID = 0

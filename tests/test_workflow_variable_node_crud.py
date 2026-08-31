@@ -3,6 +3,8 @@ from tests.constants import TEST_AUTH
 import pytest
 from httpx import AsyncClient
 
+pytestmark = pytest.mark.ai
+
 # Замените URL на ваш адрес сервера для тестирования
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 

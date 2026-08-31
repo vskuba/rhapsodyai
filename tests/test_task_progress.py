@@ -22,6 +22,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 # Подзадача, которой нет: замеры пишутся под её номером и удаляются по нему же.
 TEST_TASK_ID = 987670
 

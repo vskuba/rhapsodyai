@@ -22,6 +22,8 @@ from datetime import timedelta
 
 import pytest
 
+pytestmark = pytest.mark.team
+
 # Префикс тестовых сессий: по нему их видно в реестре и по нему же сносит уборка.
 # Настоящие `session_uuid` — обычные UUID4, так что пересечься не с чем.
 TEST_UUID_PREFIX = 'test-cleanup-'

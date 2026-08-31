@@ -21,7 +21,7 @@ load_dotenv()
 
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.browser, pytest.mark.integration]
 
 # Имя уникально в базе, поэтому тестовое берём заведомо своё.
 SITE_NAME = 'test_browser_site'

@@ -17,6 +17,8 @@
 """
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 # Тот же префикс, по которому сессионная уборка `conftest` сносит следы тестов.
 TASK_STATE_TEST_TITLE = '__pytest_task_state'
 

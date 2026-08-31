@@ -9,6 +9,8 @@ from src.project.task.task_tree import MAX_DEPTH
 from tests.constants import TEST_AUTH
 from tests.test_task_pipeline import _pipeline, _tick_until
 
+pytestmark = pytest.mark.pipeline
+
 
 @pytest.fixture(autouse=True)
 async def _db_pool_release():

@@ -13,6 +13,8 @@ import time
 
 import pytest
 
+pytestmark = pytest.mark.core
+
 KEEP_DAYS = 3
 DAY = 86400
 

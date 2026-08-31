@@ -10,6 +10,8 @@ import pytest
 from tests.constants import TEST_AUTH
 from tests.pipeline_mock import pipeline_agents_mocked, pipeline_drive, pipeline_tick
 
+pytestmark = pytest.mark.pipeline
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_TASK_TITLE = "__pytest_pipeline_task__"
 # Замечание QA для теста перезапуска: узнаваемая строка, чтобы отличить сохранённое

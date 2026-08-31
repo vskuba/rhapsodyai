@@ -17,6 +17,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 # Живые оболочки проекта: у менеджера две (два открытых терминала), у остальных по
 # одной. Формат — то, что отдаёт `task_role_shell_sessions_by_project`.
 LIVE = {2: {'manager': ['s-mgr-1', 's-mgr-2'],

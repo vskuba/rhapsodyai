@@ -15,6 +15,8 @@ from fastapi import FastAPI
 from src.uvicorn.routers import gx10
 from src.auth.auth_session import AuthSession
 
+pytestmark = pytest.mark.ai
+
 # Формат одного снапшота, который shell-сниппет отдаёт с GX10:
 #   S <unit> <state> <enabled> <memory_bytes|->  (printf на каждый юнит)
 #   + сырой вывод `free -b`, строка `Mem:` — total/used/free

@@ -26,6 +26,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.team
+
 # Номер проекта, которого в базе нет: пул пишется под ним, и уборка сносит ровно его.
 TEST_PROJECT_ID = 987655
 

@@ -19,6 +19,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.team
+
 CMD = 'claude-shell --llm gx10/qwen-large --developer --autocompact 115k'
 
 

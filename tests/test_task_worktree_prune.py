@@ -23,6 +23,8 @@ import subprocess
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 
 @pytest.fixture
 def repo(tmp_path):

@@ -1,6 +1,8 @@
 import pytest
 from src.tool.datetime_.datetime_ import datetime_current_get
 
+pytestmark = pytest.mark.ai
+
 
 @pytest.mark.asyncio
 async def test_datetime_current_get():

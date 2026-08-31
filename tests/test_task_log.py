@@ -13,6 +13,8 @@ from datetime import datetime
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 # Ответ вызова оболочки как есть: служебных полей больше, чем полезных.
 SHELL_OK = ("{'status': 'answered', 'response': 'Разбор подзадачи: правила 1 и 3', "
             "'payload_json': '', 'error': '', 'session_uuid': 'abc', 'elapsed': 266}")

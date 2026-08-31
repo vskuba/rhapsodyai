@@ -19,7 +19,9 @@
 `MYSQL_HOST` на импорте, а подмена хоста живёт в фикстурах `conftest.py`.
 """
 
+import pytest
 
+pytestmark = pytest.mark.pipeline
 def _worktree_dir(tmp_path, subtask_id=1028):
     """Пустой каталог подзадачи по тому же адресу, что строит `task_worktree_path`."""
     from src.project.task.task_worktree import TASK_WORKTREE_BASE_DIR, TASK_WORKTREE_DIR_TEMPLATE

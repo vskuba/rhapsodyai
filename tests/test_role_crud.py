@@ -3,6 +3,8 @@ import pytest
 import requests
 from tests.conftest import BASE_URL
 
+pytestmark = pytest.mark.auth
+
 @pytest.fixture
 def session():
     """Create an authenticated session for tests."""

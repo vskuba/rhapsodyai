@@ -21,6 +21,8 @@ import uuid
 
 import pytest
 
+pytestmark = pytest.mark.pipeline
+
 # Проект, которого нет: под ним заводится тестовая подзадача, и уборка сносит ровно её.
 TEST_PROJECT_ID = 987661
 

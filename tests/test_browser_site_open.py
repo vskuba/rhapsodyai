@@ -27,7 +27,7 @@ load_dotenv()
 
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.browser, pytest.mark.integration, pytest.mark.slow]
 
 # Ключ, под которым страница помнит выбранный сайт между заходами.
 SITE_KEY = 'browser_site_id'

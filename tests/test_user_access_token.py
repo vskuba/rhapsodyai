@@ -14,6 +14,8 @@ import pytest
 import httpx
 from typing import AsyncGenerator
 
+pytestmark = pytest.mark.auth
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 
