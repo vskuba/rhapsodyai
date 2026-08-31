@@ -4135,17 +4135,31 @@ function renderPipeLog(t) {
 // флажков «в разработку» / «в тестирование» выше.
 function renderQaModeSwitcher(t) {
     if (t.parent_id) return '';
-    const mode = (t.metadata || {})[TASK_META_KEY_QA_MODE] || 'lite';
-    return `<span class="qa-mode-switcher" data-mode="${mode}" onclick="event.stopPropagation();toggleQaMode(${t.id}, this)">
+    // Значение приводим к двум состояниям, а не рисуем то, что лежит в мешке.
+    // `POST /task/{id}/metadata` принимает любой патч как есть — ключ могут исподники
+    // подставить и не отсюда (им правят и воркеры, и человек через API), и тогда
+    // сырое значение ушло бы прямо в атрибут `data-mode`: кавычка — выход из атрибута.
+    // Читатель на стороне движка (`task_agent_qa_mode`) нормализован уже; здесь та же
+    // норма на месте, и атрибут получает только `lite` или `full`.
+    const mode = _qaModeNormalize((t.metadata || {})[TASK_META_KEY_QA_MODE]);
+    return `<span class="qa-mode-switcher" data-mode="${esc(mode)}" onclick="event.stopPropagation();toggleQaMode(${t.id}, this)">
                 <input type="checkbox" ${mode === 'full' ? 'checked' : ''}>
                 <span class="qa-dot"></span>QA ${mode === 'full' ? 'Full' : 'Lite'}
             </span>`;
 }
 
+// Режим бывает ровно двум состояниям, всё остальное — Lite. Эту же норму держит
+// читатель на стороне движка (`task_agent_qa_mode` в `task_agent_qa.py`): промпт и
+// свитчер обязаны показывать одно и то же, иначе человек переключает одно, а агент
+// проверяет другое.
+function _qaModeNormalize(value) {
+    return String(value || '').trim().toLowerCase() === 'full' ? 'full' : 'lite';
+}
+
 async function toggleQaMode(id, el) {
     const sw = el.closest('.qa-mode-switcher');
     if (!sw) return;
-    const current = sw.dataset.mode;
+    const current = _qaModeNormalize(sw.dataset.mode);
     const next = current === 'full' ? 'lite' : 'full';
     sw.classList.add('busy');
     try {
