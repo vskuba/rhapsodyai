@@ -32,6 +32,7 @@
 | `src/uvicorn/routers/telegram_app/telegram_app_claude.py` | Claude: ask, messages, sessions/active, respond |
 | `src/uvicorn/routers/telegram_app/telegram_app_claude_session.py` | Session registry: register, heartbeat, inbox, finalize, delete |
 | `src/uvicorn/routers/telegram_app/telegram_app_plan.py` | Plans: CRUD + AI-редактирование |
+| `src/uvicorn/routers/telegram_app/telegram_app_task.py` | Tasks: ответ на вопрос подзадачи, действия над охватом целей |
 | `src/uvicorn/routers/telegram_app/telegram_app_common.py` | Shared: `_require_telegram_owner`, `_require_claude_secret`, constants |
 | `src/uvicorn/routers/event/event.py` | Events: GET /events, DELETE /events, POST /event-log |
 
@@ -317,6 +318,11 @@ Markdown-планы с AI-созданием и редактированием.
 | `POST` | `/telegram-app/plans` | Создать план (AI) |
 | `DELETE` | `/telegram-app/plans/{id}` | Удалить план |
 | `POST` | `/telegram-app/plans/{id}/edit` | Редактировать план (AI) |
+
+### Tasks (owner session)
+| Метод | URL | Назначение |
+|-------|-----|------------|
+| `POST` | `/telegram-app/task/{id}/question/answer` | Ответ на вопрос подзадачи: `{answers, note, goal_indexes, index}`. Выбранное действие над охватом исполняется (`task_goal_scope`/`task_goal_replan_send`), решение пишется в `decisions`, подзадача в `planned` с обнулённым счётчиком попыток. `index` задан — ответ на вопрос пачки разведки (черновик, задачу не отпускает). Пустой ответ → `400`, нет вопроса для корневой задачи → `409` |
 
 ## Добавление нового функционала
 
