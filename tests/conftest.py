@@ -4,6 +4,7 @@ import pytest
 import asyncio
 import httpx
 import uuid
+from contextlib import suppress
 from typing import AsyncGenerator
 
 from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH, TEST_AUTH_ROLE
@@ -147,6 +148,11 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
 # любой один символ, и без экранирования шаблон подошёл бы к чужому заголовку.
 TEST_TASK_TITLE_LIKE = r'\_\_pytest%'
 
+# Сайт, чьи вкладки открывает `test_browser_site_open`: кнопка «Открыть» берёт имя
+# из закладки. Только их и подметаем — чужую мёртвую страницу мог оставить человек,
+# и она его, а не наша.
+BROWSER_TEST_SITE_NAME = 'Админка RhapsodyAi'
+
 
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_test_tasks():
@@ -186,6 +192,49 @@ def cleanup_test_tasks():
     _run()
     yield
     _run()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_browser_sessions():
+    """
+    Погасить страницы, забытые прерванным прогоном, — до и после сюиты.
+
+    Тот же повод, что у `cleanup_test_tasks`, и то же ограничение: фикстура теста
+    убирает за собой сама, но убитый pytest (Ctrl-C, SIGKILL) хвост не выполняет.
+    Проверено: сессия пережила SIGINT. У контейнера-браузера TTL нет вовсе — она
+    живёт до явного DELETE или до его перезапуска, а пул общий и мал (25 мест).
+    Переполни его — и работать перестанет уже не тест, а человек в админке.
+
+    **Гасим только мёртвые страницы своего сайта.** Признак — `chrome-error://`:
+    переход не удался, показывать там нечего, и такая сессия никому не нужна. Живую
+    не трогаем никогда: рядом работает человек, у него может быть открыта
+    авторизованная страница под сценарий, и снести её значило бы отобрать работу.
+    Сайт сверяем по `name`, чтобы не задеть чужие вкладки с той же бедой.
+
+    Контейнер не отвечает или порт не проброшен — молчим: браузерные тесты и так
+    пропускаются, а ронять из-за уборки всю сюиту незачем.
+    """
+    def _sweep() -> None:
+        with suppress(Exception):
+            headers = ({'X-Browser-Token': os.getenv('BROWSER_API_TOKEN', '')}
+                       if os.getenv('BROWSER_API_TOKEN', '') else {})
+            base = os.getenv('BROWSER_TEST_URL', 'http://127.0.0.1:8014')
+
+            response = httpx.get(f'{base}/browser/session', timeout=10.0, headers=headers)
+            response.raise_for_status()
+
+            for row in response.json().get('sessions') or []:
+                if not str(row.get('url') or '').startswith('chrome-error://'):
+                    continue
+                if str(row.get('name') or '') != BROWSER_TEST_SITE_NAME:
+                    continue
+                with suppress(Exception):
+                    httpx.delete(f"{base}/browser/session/{row['session_id']}",
+                                 timeout=10.0, headers=headers)
+
+    _sweep()
+    yield
+    _sweep()
 
 
 @pytest.fixture(scope="session", autouse=True)
