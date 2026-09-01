@@ -8,6 +8,12 @@
 Модули проекта импортируются внутри тестов, а не сверху файла: они тянут `mysql_`,
 который читает `MYSQL_HOST` один раз при импорте, а подмену хоста на `localhost`
 ставят сессионные фикстуры `conftest.py`.
+
+Восстановление после перезагрузки страницы доказывается **до разметки, а не до DOM**:
+значение в базе, настоящая строка `GET /tasks`, `data-mode` и подпись кнопки, значение
+для движка. Состояние страницы после живого щелчка (`toggleQaMode`, гашение `.busy`,
+галочка `input`, увеличение точки) здесь не проверяется — ему нужен браузерный прогон
+с логином, под маркер `slow`.
 """
 
 import os
@@ -171,6 +177,25 @@ class TestQaModeNormalizationAgreesBothBanks:
         found = re.search(r'data-mode="([^"]*)"', markup)
         assert found, f'свитчер не отдал `data-mode`: {markup!r}'
         return found.group(1)
+
+    def test_front_half_actually_ran(self):
+        """
+        Половина страницы взята наяву, а не провалась молча.
+
+        Без `node` весь класс пропускается (`_front_rows` даёт skip) — пропуск видно в
+        отчёте, но не он здесь страшен. Страшно другое: если ряды придут пустыми или
+        `data-mode` вырвётся не оттуда, сравнение норм станет пустым и зелёным. Поэтому
+        первым — проверка, что разметка настоящих строк получена и непустая.
+        """
+        rows = self._front_rows([{'id': 1, 'parent_id': None, 'metadata': {'qa_mode': 'full'}},
+                                 {'id': 2, 'parent_id': None, 'metadata': {}}])
+        assert len(rows) == 2, f'node вернул другой счёт рядов: {rows!r}'
+        assert 'qa-mode-switcher' in rows[0], f'ряд без свитчера: {rows[0]!r}'
+        assert self._data_mode(rows[0]) == 'full', rows[0]
+        # Ряд без ключа тоже обязан отдать кнопку: отсутствие разметки и отсутствие
+        # значения — разные вещи, и по пустому ответу норму не сверить.
+        assert 'qa-mode-switcher' in rows[1], f'ряд без ключа остался без кнопки: {rows[1]!r}'
+        assert self._data_mode(rows[1]) == 'lite', rows[1]
 
     def test_both_banks_agree_on_every_value(self):
         """Одинаковый вход — одинаковый режим; расхождение хотя бы по одному значению проваливает тест."""
@@ -356,6 +381,8 @@ class TestTaskQaModeRoundTrip:
     стенде**. Уборка соседа по общей базе сносит строку между её созданием и первым
     щелчком, и тест падает на `404 task not found` там, где правка ни при чём. Перед
     прогоном — `pgrep -af "pytest tests/"` (подробнее в `.claude/docs/testing.md`).
+    Зависимость от свободного стенда из сюжеты не выведена: чинится со стороны уборки
+    (`tests/conftest.py`), а не этого файла, поэтому осталась и снята порядком прогонов.
     """
 
     # Признак, а не догадка: класс единственный в файлу ходит по HTTP и зависит от того,
@@ -473,6 +500,12 @@ class TestTaskQaModeRoundTrip:
         значение в базе `full`, а на кнопке Lite. Поэтому разметка берется наяву из
         настоящей строки `GET /tasks` — тем же вырыванием из шаблона, что и паритет
         норм (`TestQaModeNormalizationAgreesBothBanks`), без копии функции.
+
+        Доказано **до разметки, а не до DOM**: сверяется `data-mode`, подпись и чтение
+        движком. Обработчик щелчка (`toggleQaMode`: гашение `.busy`, запись
+        `dataset.mode`, подпись) и CSS-состояние точки остаются за кадром — им нужен
+        браузерный прогон с логином (`slow`), а расходятся они только с тем же
+        нормализованным значением, которое здесь проверяется.
         """
         from src.project.task.task_agent_qa import QA_MODE_FULL, QA_MODE_LITE, task_agent_qa_mode
 
@@ -482,7 +515,8 @@ class TestTaskQaModeRoundTrip:
 
             row = await self._row(client, task["id"])
             markup = TestQaModeNormalizationAgreesBothBanks._front_rows([row])[0]
-            assert markup, f'свитчер не отрисован для корневой задачи {task["id"]}'
+            assert markup, (f'свитчер не отрисован для корневой задачи {task["id"]}: проверять '
+                            f'нечего, а выглядит как доказанное состояние')
             rendered = TestQaModeNormalizationAgreesBothBanks._data_mode(markup)
             # Атрибут обязан совпасть с перечитанным мешком, движком и подписью на кнопке.
             assert rendered == mode, (f'после перезагрузки кнопка показывает {rendered}, '
