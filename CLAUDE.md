@@ -29,6 +29,7 @@ See the documentation files in `.claude/docs/` for detailed patterns:
 - **New Protected Endpoint** → `.claude/docs/auth.md`
 - **Workflow** → `.claude/docs/workflow.md`
 - **Team / Ping System** → `.claude/docs/project_team.md`
+- **DeepSeek Harness: включение ролей со страницы команды** → `.claude/docs/dsh.md`
 - **Settings/Config** → `.claude/docs/setting.md`
 
 **Telegram Notification:**
@@ -145,6 +146,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `role_bugfixer.md` | Инструкция Bugfixer: воспроизвести → причина → минимальная правка |
 | `role_manager.md` | Инструкция Manager: разведка, цели, разбиение по объёму контекста |
 | `project_team.md` | Члены команды, `/admin/team`, heartbeat `/api/team/ping`, типы задач |
+| `dsh.md` | Включатель ролей DeepSeek Harness: пульты `ds-shell --service`, `/api/team/dsh/*`, кнопки на карточках |
 
 **API соседей и подсистемы `src/`**
 

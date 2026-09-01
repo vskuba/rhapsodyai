@@ -5,6 +5,10 @@ from pydantic import BaseModel
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
+from src.project.team.team_dsh import TeamDshError, team_dsh_state, team_dsh_switch
+from src.project.team.team_dsh_card import team_dsh_card_add, team_dsh_card_drop
+from src.project.team.team_dsh_project import (team_dsh_project_attach,
+                                               team_dsh_project_detach)
 from src.project.team.team_member import (team_member_activate,
                                           team_member_command_llm_normalize,
                                           team_member_deactivate,
@@ -77,6 +81,54 @@ class TeamParallelRequest(BaseModel):
 
     project_id: int
     value: int
+
+
+class TeamDshRequest(BaseModel):
+    """Кнопка «включить/выключить» на карточке роли DeepSeek Harness.
+
+    Роль, а не id карточки: карточку заводит и архивирует сам пульт, а её id — его
+    внутреннее дело. Страница знает роль и то, чего от неё хотят.
+
+    `project` — корень каталога проекта, чья это роль. Пультов столько же, сколько
+    проектов, и роли у них одноимённые: без проекта «включить developer» не адресовано
+    никому. Адрес пульта страница не присылает намеренно — сервер находит его сам,
+    иначе браузер выбирал бы, к кому в сети сходить.
+    """
+
+    project: str
+    role: str
+    enabled: bool
+
+
+class TeamDshCardRequest(BaseModel):
+    """Кнопка «+» рядом с выключателем и крестик на добавочной карточке роли.
+
+    `card_id` пуст при добавлении — номер новой карточки выбирает пульт: между показом
+    блока и нажатием кнопки карточки могли завестись и уйти в архив. При удалении он
+    обязателен и называет карточку целиком: перезавод поколения меняет id, а страница
+    показывает состояние прошлой сверки.
+    """
+
+    project: str
+    role: str
+    card_id: str = ''
+
+
+class TeamDshProjectRequest(BaseModel):
+    """Кнопка «подключить/отключить проект» в шапке блока.
+
+    `project` — корень каталога, и берёт его страница из самого блока (`work_dir`), а не
+    из поля ввода: путь у блока уже есть, а набранный руками означал бы, что каталог на
+    машине разработчика выбирает браузер.
+
+    `force` — ответ на уже заданный человеку вопрос: отключение гасит работающие роли и
+    отправляет их карточки в архив, обрывая переписку. Без него пульт откажет, назвав
+    роли, — и страница спросит.
+    """
+
+    project: str
+    attached: bool
+    force: bool = False
 
 
 class TeamStatusResponse(BaseModel):
@@ -225,6 +277,122 @@ async def project_team_llm_ping(data: dict = None,
         raise HTTPException(status_code=422, detail='names должен быть списком имён моделей')
 
     return {'result': await team_llm_ping_all(names)}
+
+
+@router.get('/dsh')
+async def project_team_dsh_state(user=Depends(AuthChecker([AuthPermission.PLANNING_VIEW]))):
+    """
+    Роли DeepSeek Harness: какие включены, где он сам и жив ли его хост.
+
+    Отдельной ручкой, а не вместе с блоками (`/projects`): пульты живут на ноутбуке
+    разработчика, и их молчание не должно задерживать обновление карточек. По той же
+    причине неудача приходит полем `problem`, а не кодом ошибки, — страница показывает
+    её словами и продолжает работать.
+
+    `projects` — ответы всех пультов, разложенные по корню каталога проекта: по нему
+    страница находит блок, чьи это роли. Один пульт обслуживает несколько проектов, а
+    роли у них одноимённые, так что без этого ключа кнопки встали бы на чужие карточки.
+
+    `panels` — сами пульты. Блок, чьего проекта в `projects` нет, показывает кнопку
+    «подключить», и по списку пультов страница отличает «проект не подключён» от «пульта
+    на этой установке нет вовсе».
+    """
+    return {'result': await team_dsh_state()}
+
+
+@router.post('/dsh/switch')
+async def project_team_dsh_switch(dsh_request: TeamDshRequest,
+                                  user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Включить или выключить роль Harness — кнопка на её карточке.
+
+    Включение заводит в Harness новую сессию, выключение отправляет её в архив.
+    Карточка сессии и есть состояние роли, поэтому отдельного флага мы не пишем: то,
+    что видно в браузере на хосте Harness, и есть правда.
+
+    Роль адресуется парой «проект + имя»: пультов столько же, сколько проектов, и
+    нужный сервер находится по корню каталога уже здесь, на стороне сервера.
+
+    Права на изменение, а не на просмотр: действие поднимает и гасит агента.
+    Повтор безвреден — обе ручки пульта идемпотентны, `changed` скажет, было ли что
+    менять.
+    """
+    try:
+        result = await team_dsh_switch(dsh_request.project, dsh_request.role,
+                                       dsh_request.enabled)
+    except TeamDshError as error:
+        raise HTTPException(status_code=error.status, detail=str(error))
+
+    return {'result': result}
+
+
+@router.post('/dsh/card/add')
+async def project_team_dsh_card_add(card_request: TeamDshCardRequest,
+                                    user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Добавить роли ещё одну карточку Harness — кнопка «+» рядом с выключателем.
+
+    Роль от этого берёт больше кругов сразу: карточек у неё столько, сколько оболочек
+    поднимет сервис. Номер новой выбирает пульт — первый свободный, а не следующий по
+    счёту, чтобы дыра от убранной карточки заполнялась, а не росла.
+
+    Права на изменение: действие поднимает ещё одного агента.
+    """
+    try:
+        result = await team_dsh_card_add(card_request.project, card_request.role)
+    except TeamDshError as error:
+        raise HTTPException(status_code=error.status, detail=str(error))
+
+    return {'result': result}
+
+
+@router.post('/dsh/card/drop')
+async def project_team_dsh_card_drop(card_request: TeamDshCardRequest,
+                                     user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Убрать добавочную карточку роли — крестик в её углу. Сессия уходит в архив.
+
+    Базовую карточку так не убрать: это выключение роли, и на него есть `/dsh/switch`.
+    Пульт откажет с 422, даже если крестик каким-то образом нажали на ней.
+
+    Права на изменение: действие гасит агента.
+    """
+    try:
+        result = await team_dsh_card_drop(card_request.project, card_request.role,
+                                          card_request.card_id)
+    except TeamDshError as error:
+        raise HTTPException(status_code=error.status, detail=str(error))
+
+    return {'result': result}
+
+
+@router.post('/dsh/project')
+async def project_team_dsh_project(project_request: TeamDshProjectRequest,
+                                   user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Подключить проект к пульту ролей или отключить — кнопка в шапке блока.
+
+    До этой ручки новый проект получал роли только руками: ещё один systemd-экземпляр на
+    свой порт, правка `DSH_CONTROL_URL`, перезапуск. Теперь список обслуживаемых проектов
+    хранит сам пульт, и меняет его нажатие кнопки.
+
+    Какому пульту отдать проект, решает не страница: подключение пробуют у всех, кто
+    ответил, и берёт его тот, у кого этот каталог существует. Адрес пульта в запросе
+    означал бы, что браузер выбирает, к кому серверу сходить в сети.
+
+    Права на изменение: подключение поднимает проекту оболочки, отключение гасит его
+    роли — их карточки уходят в архив, и переписка обрывается.
+    """
+    try:
+        if project_request.attached:
+            result = await team_dsh_project_attach(project_request.project)
+        else:
+            result = await team_dsh_project_detach(project_request.project,
+                                                   project_request.force)
+    except TeamDshError as error:
+        raise HTTPException(status_code=error.status, detail=str(error))
+
+    return {'result': result}
 
 
 @router.get('/timeout')

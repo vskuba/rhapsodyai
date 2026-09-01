@@ -23,6 +23,50 @@
         margin-bottom: 14px;
     }
 
+    /* Ссылка на DeepSeek Harness над блоками. Там тот же список ролей, но живьём:
+       карточки сессий и поток событий их кругов. Спокойный голубой — это указатель,
+       а не состояние команды. Точка слева — жив ли хост Harness. */
+    .team-harness {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-size: 12px;
+        line-height: 1.55;
+        color: #075985;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 10px;
+        padding: 9px 12px;
+        margin-bottom: 10px;
+    }
+
+    .team-harness a {
+        color: #0369a1;
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    .team-harness a:hover {
+        text-decoration: underline;
+    }
+
+    .team-harness .dot {
+        flex: 0 0 8px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #d1d5db;
+    }
+
+    .team-harness .dot.alive {
+        background: #10b981;
+    }
+
+    .team-harness .problem {
+        color: #b45309;
+    }
+
     /* ---------- Блок проекта ---------- */
 
     /* Блок занимает всю ширину: карточки внутри задают свою ширину сами,
@@ -59,6 +103,58 @@
         color: #9ca3af;
         word-break: break-all;
     }
+
+    /* Полоска пульта ролей в шапке блока: отвечает ли пульт этого проекта, по какому
+       адресу, и кнопка «подключить/отключить». Здесь, а не в верхней полоске: пульт у
+       каждого проекта свой, и молчание одного ничего не говорит про остальные — раньше
+       все причины сваливались в общую строку наверху и читались как общая беда.
+
+       Счётчика ролей тут намеренно нет. Рядом уже стоит «активных N из M» по карточкам
+       реестра, и второе число в той же строке читалось бы как уточнение первого, хотя
+       считает другое: карточки реестра — это все живые оболочки проекта, включая
+       обычные терминалы, а роль их может держать несколько. Что включено, а что нет,
+       показывают кнопки на самих карточках. */
+    .project-block-dsh {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        font-size: 11px;
+        color: #6b7280;
+    }
+
+    .project-block-dsh .dot {
+        flex: 0 0 7px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #d1d5db;
+    }
+
+    .project-block-dsh .dot.alive { background: #10b981; }
+
+    .project-block-dsh .panel-url {
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        color: #9ca3af;
+    }
+
+    .project-block-dsh .problem { color: #b45309; }
+
+    /* Кнопка подключения — не выключатель роли: она про то, обслуживает ли пульт этот
+       проект вообще. Поэтому спокойная серая, а не зелёная с красной, как на карточках:
+       цветом там сказано, работает роль или нет, и третий цвет о другом сбивал бы. */
+    .btn-dsh-project {
+        font-size: 11px;
+        padding: 1px 8px;
+        cursor: pointer;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        background: #fff;
+        color: #374151;
+    }
+
+    .btn-dsh-project:hover:not(:disabled) { background: #f3f4f6; }
+    .btn-dsh-project:disabled { opacity: .5; cursor: default; }
 
     /* Тело блока: карточки слева, настройки справа. На узком экране колонка
        настроек уходит под карточки — она уже и переносится без потерь.
@@ -308,6 +404,40 @@
         animation: rotate 1s linear infinite;
     }
 
+    /* Крестик добавочной карточки Harness — в том же правом углу, что и перезапуск.
+       У базовой карточки роли его нет: убрать её значит выключить роль, а на это есть
+       выключатель внизу карточки. Отступ авто — только когда перезапуска рядом нет:
+       два auto-поля подряд растащили бы кнопки по краям свободного места. */
+    .team-card-remove {
+        margin-left: auto;
+        flex: 0 0 24px;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: #9ca3af;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .team-card-restart + .team-card-remove {
+        margin-left: 0;
+    }
+
+    .team-card-remove:hover {
+        background: #fef2f2;
+        color: #b91c1c;
+    }
+
+    .team-card-remove:disabled {
+        cursor: default;
+        color: #b91c1c;
+    }
+
     .team-card-name .name {
         font-size: 13px;
         font-weight: 600;
@@ -481,6 +611,68 @@
        «поднять ещё одну оболочку» — действие нечастое, и спорить за внимание с
        состоянием работающего агента ей незачем. */
     .team-card-copy.extra { border-style: dashed; color: #9ca3af; }
+
+    /* Включатель роли DeepSeek Harness. Не «запустить процесс»: процесс там общий на
+       все роли и живёт постоянно. Кнопка заводит роли сессию либо отправляет её в
+       архив — живая карточка сессии и есть состояние роли, другого нигде нет.
+       Зелёная предлагает включить, красная — выключить работающую. */
+    .team-dsh {
+        width: 100%;
+        margin-top: 8px;
+        padding: 5px;
+        border: 1px solid #a7f3d0;
+        border-radius: 6px;
+        background: #ecfdf5;
+        color: #047857;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .team-dsh:hover { background: #d1fae5; }
+
+    .team-dsh.on {
+        border-color: #fecaca;
+        background: #fef2f2;
+        color: #b91c1c;
+    }
+
+    .team-dsh.on:hover { background: #fee2e2; }
+
+    .team-dsh:disabled { opacity: 0.6; cursor: default; }
+
+    /* Выключатель роли и «+» одной строкой. «+» заводит роли ещё одну карточку —
+       второй круг той же ролью, — и потому стоит вплотную к выключателю, а не отдельной
+       кнопкой где-то ниже. У выключенной роли его не показываем: добавлять не к чему. */
+    .team-dsh-row {
+        display: flex;
+        gap: 4px;
+        margin-top: 8px;
+    }
+
+    .team-dsh-row .team-dsh {
+        flex: 1 1 auto;
+        width: auto;
+        margin-top: 0;
+    }
+
+    .team-dsh-add {
+        flex: 0 0 28px;
+        padding: 5px 0;
+        border: 1px solid #c7d2fe;
+        border-radius: 6px;
+        background: #eef2ff;
+        color: #4f46e5;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    .team-dsh-add:hover { background: #e0e7ff; }
+
+    .team-dsh-add:disabled { opacity: 0.6; cursor: default; }
 
     .team-summary {
         margin-top: 8px;
@@ -712,6 +904,11 @@
 
 {% block content %}
 <div class="team-container">
+    <!-- DeepSeek Harness — тот же список ролей, но живьём: карточки сессий и поток
+         событий их кругов. Стоит первым, над карточками: страница показывает роли
+         с нашей стороны, а по этой ссылке видно, что происходит у них.
+         Содержимое рисует JS: адрес и живость приходят от пульта сервиса. -->
+    <div class="team-harness" id="teamHarness" hidden></div>
     <!-- Откуда берутся карточки. Вопрос возникает первым: кнопки «добавить» на
          странице нет и быть не должно — карточка это отражение живой оболочки, а не
          запись, которую заводят руками. Была такая кнопка, и она сбивала с толку:
@@ -739,6 +936,11 @@
     // которую завели в `TEAM_MEMBER_ROLE_CARD`, но оформить ещё не успели.
     const ROLE_ICONS = { manager: '👔', developer: '💻', bugfixer: '🔧', qa: '🔍' };
     const ROLE_KNOWN = ['manager', 'developer', 'bugfixer', 'qa'];
+
+    // Номер базовой карточки роли в Harness — той, которой распоряжается выключатель и
+    // которая отвечает на вопрос «работает ли роль». Карточки с бо́льшим номером
+    // добавочные: их заводит «+» и убирает крестик в углу самой карточки.
+    const DSH_CARD_BASE = 1;
 
     // Подписи готовности агента; причина занятости уходит в title бейджа.
     const AGENT_STATUS_TITLE = {
@@ -768,8 +970,34 @@
     // конфигурации оболочки, не дожидаясь автообновления и не ходя в сеть заново.
     let lastBlocks = [];
 
+    // ── DeepSeek Harness: ссылка наверху и включатели ролей на карточках ──────
+    //
+    // Состояние роли там — её карточка сессии, и другого состояния нет нигде: живая
+    // карточка значит «роль работает», карточка в архиве — «не работает». Поэтому
+    // кнопка не запускает процесс (он там общий на все роли и живёт постоянно), а
+    // заводит сессию либо отправляет её в архив.
+    //
+    // Ходим не в сам Harness, а в пульт постоянно живущего `ds-shell --service`
+    // (`/api/team/dsh`): хост Harness слушает петлю ноутбука и CORS-заголовков не
+    // шлёт — из браузера до него не дотянуться ни по адресу, ни по правилам.
+    //
+    // Пульт обслуживает несколько проектов сразу, но пультов может быть несколько — по
+    // одному на машину. Поэтому роли приходят не плоским списком, а разложенными по
+    // корню каталога проекта — `projects[work_dir]`. Имена ролей у всех блоков
+    // одинаковые, и без этого ключа кнопка одного проекта переключала бы роль другого.
+    //
+    // `panels` — сами пульты, отдельно от проектов: адрес, жив ли, причина молчания и
+    // домашний проект. Нужен он блокам, чьего проекта в `projects` нет вовсе: там стоит
+    // кнопка «подключить», и без списка пультов страница не отличила бы «проект не
+    // подключён» от «пульта нет совсем».
+    let dshState = { harness_url: '', alive: false, panels: [], projects: {}, problem: '' };
+
+    // Пока идёт переключение, автообновление не трогает DOM — по той же причине, что
+    // и при перезапуске: renderProjects пересобирает карточки целиком.
+    let dshBusy = false;
+
     async function loadTeamProjects(showSpinner = false) {
-        if (restartBusy || timeoutOpen.size) return;
+        if (restartBusy || dshBusy || timeoutOpen.size) return;
         // Открытый список селекта из JS не виден, но фокус на нём — да: пока
         // человек выбирает значение, блок не перерисовываем.
         const active = document.activeElement;
@@ -782,9 +1010,13 @@
             // минуты, и без перечитывания страница показывала бы состояние на момент
             // загрузки — то есть могла бы часами держать зелёную точку у мёртвой
             // модели. Ходка дешёвая: это чтение настроек, а не сам пинг.
+            // Состояние Harness тем же кругом и отдельной ручкой: пульт живёт на
+            // ноутбуке, и его молчание не должно задерживать карточки. Ждём обоих —
+            // renderProjects рисует кнопки по уже обновлённому состоянию.
             const [response] = await Promise.all([
                 fetch('/api/team/projects'),
                 loadShellPings(),
+                loadDshState(),
             ]);
             if (!response.ok) throw new Error('HTTP ' + response.status);
             const data = await response.json();
@@ -830,6 +1062,11 @@
     function renderBlock(block) {
         const cards = block.cards || [];
         const activeCount = cards.filter(card => card.active).length;
+        // Где в блоке какие кнопки Harness: выключатель роли на базовой карточке,
+        // крестик — на добавочных. Считаем разом по всему блоку, а не по одной
+        // карточке: у роли их несколько, и выключатель должен достаться той самой,
+        // которой он распоряжается.
+        const dshPlan = dshLayout(cards, block);
         const dir = block.work_dir
             ? `<span class="project-block-dir">${escapeHtml(block.work_dir)}</span>`
             : '';
@@ -846,10 +1083,11 @@
                     <span class="project-block-count${activeCount ? '' : ' empty'}">
                         активных <b>${activeCount}</b> из ${cards.length}
                     </span>
+                    ${renderDshProject(block)}
                 </div>
                 <div class="project-block-body">
                     <div class="project-cards">
-                        ${cards.map(card => renderCard(card, block)).join('')}
+                        ${cards.map((card, at) => renderCard(card, block, dshPlan.get(at))).join('')}
                     </div>
                     <div class="project-block-side">
                         ${renderShellConfig(block)}
@@ -1160,7 +1398,7 @@
     };
 
 
-    function renderCard(card, block) {
+    function renderCard(card, block, dsh) {
         // Класс роли только для известных ролей — иначе в CSS попадёт мусор из БД.
         const roleClass = ROLE_KNOWN.includes(card.role) ? 'role-' + card.role : '';
         const icon = ROLE_ICONS[card.role] || '🧩';
@@ -1265,6 +1503,7 @@
                         <div class="role">${escapeHtml(card.role_title)}</div>
                     </div>
                     ${restart}
+                    ${renderDshRemove(card, block, dsh)}
                 </div>
                 <div class="team-status">
                     <span class="status-indicator"></span>
@@ -1280,6 +1519,7 @@
                     ${workflowLink}
                 </div>
                 ${summary}
+                ${renderDshSwitch(card, block, dsh)}
                 ${copy}
             </div>
         `;
@@ -1466,6 +1706,325 @@
         if (seconds < 3600) return Math.floor(seconds / 60) + ' мин назад';
         if (seconds < 86400) return Math.floor(seconds / 3600) + ' ч назад';
         return Math.floor(seconds / 86400) + ' дн назад';
+    }
+
+    // ── DeepSeek Harness ──────────────────────────────────────────────────────
+
+    async function loadDshState() {
+        try {
+            const response = await fetch('/api/team/dsh');
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const data = await response.json();
+            // Неудачу пульта сервер отдаёт полем `problem`, а не кодом ошибки:
+            // выключенный ноутбук — обычное состояние установки, и страница про
+            // команду от него падать не должна.
+            if (data.result) dshState = data.result;
+        } catch (e) {
+            console.error('Ошибка состояния DeepSeek Harness:', e);
+        }
+        renderHarness();
+    }
+
+    function renderHarness() {
+        const box = document.getElementById('teamHarness');
+        if (!box) return;
+        const url = dshState.harness_url || '';
+        if (!url) {
+            box.hidden = true;
+            return;
+        }
+
+        // Ссылку показываем и когда пульты молчат: адрес хоста известен и без них, а
+        // нужен он человеку ровно тогда, когда что-то не работает.
+        //
+        // Счётчик — по всем проектам сразу: хост Harness один на всех, и человек
+        // смотрит сюда, чтобы узнать, сколько агентов сейчас поднято вообще.
+        let enabled = 0;
+        Object.values(dshState.projects || {}).forEach(item => {
+            enabled += Object.values(item.roles || {}).filter(role => role.enabled).length;
+        });
+
+        // Про пульты здесь только счёт — без адресов и причин. Причина у каждого своя
+        // и относится к своему проекту, а в общей строке она читалась бы как беда всей
+        // команды: молчит один ноутбук, а выглядит, будто не работает ничего. Кому
+        // именно не отвечает пульт, написано в шапке его блока.
+        //
+        // И это не предупреждение, а сводка: ноутбуки включают и выключают, и пульт,
+        // которого сейчас нет, — обычное состояние, а не поломка.
+        const panels = dshState.panels || [];
+        const live = panels.filter(item => !item.problem).length;
+        const tail = panels.length
+            ? `<span>работает пультов: <b>${live}</b> из ${panels.length}</span>`
+            : '';
+        box.innerHTML = `
+            <span class="dot${dshState.alive ? ' alive' : ''}"></span>
+            <span>DeepSeek Harness</span>
+            <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
+            <span>включено ролей: <b>${enabled}</b></span>
+            ${tail}
+        `;
+        box.hidden = false;
+    }
+
+    // Пульт блока — тот, что назвал его каталог. Сверяем по каталогу проекта: другого
+    // общего признака у страницы и пульта нет, номера проекта пульт не знает. Блок,
+    // на проекте которого пульта не подняли, кнопок не получает вовсе.
+    function dshPanel(block) {
+        const project = pathNorm(block.work_dir);
+        return (project && (dshState.projects || {})[project]) || null;
+    }
+
+    function pathNorm(path) {
+        return String(path || '').trim().replace(/\/+$/, '');
+    }
+
+    // Полоска пульта в шапке блока: отвечает ли пульт этого проекта, по какому адресу и
+    // кнопка «подключить/отключить». Проект попадает в список пульта нажатием отсюда —
+    // раньше за этим шли на машину: ставили ещё один systemd-экземпляр на свой порт,
+    // правили `DSH_CONTROL_URL`, перезапускали, — и до тех пор новый проект ролей не
+    // получал вовсе.
+    function renderDshProject(block) {
+        const project = pathNorm(block.work_dir);
+        // Без каталога проект не адресуется: и выбор пульта, и тело запроса называют
+        // корень. Пультов нет вовсе — полоски нет: показывать нечего и нажимать некуда.
+        if (!project || !(dshState.panels || []).length) return '';
+
+        const panel = dshPanel(block);
+        return panel ? dshProjectAttached(project, panel) : dshProjectFree(project);
+    }
+
+    // Проект подключён: адрес его пульта и кнопка отключения. Домашнему её не даём —
+    // сервис подняли в его каталоге и живёт он его секретом; отключить домашний значит
+    // остановить сам пульт, и на это есть машина, а не страница.
+    //
+    // Точка здесь про хост Harness, а не про пульт: пульт по этому проекту заведомо
+    // ответил, иначе проекта в списке бы не было, — а вот хост мог и не подняться.
+    function dshProjectAttached(project, panel) {
+        const alive = !!panel.alive;
+        const hint = alive
+            ? 'Пульт ролей отвечает, хост DeepSeek Harness жив'
+            : 'Пульт ролей отвечает, но хост DeepSeek Harness молчит — роли не поднимутся';
+        const tail = panel.home
+            ? `<span title="Сервис подняли в каталоге этого проекта: его секретом он и живёт">домашний</span>`
+            : `<button class="btn-dsh-project"
+                       data-project="${escapeHtml(project)}"
+                       title="Отключить проект от пульта: его роли погаснут"
+                       onclick="detachDshProject(this)">Отключить</button>`;
+
+        return `
+            <span class="project-block-dsh">
+                <span class="dot${alive ? ' alive' : ''}" title="${escapeHtml(hint)}"></span>
+                <span>пульт ролей</span>
+                <span class="panel-url">${escapeHtml(dshHostPort(panel.url))}</span>
+                ${tail}
+            </span>
+        `;
+    }
+
+    // Проект не числится ни у одного пульта — кнопка «подключить». Какому пульту он
+    // достанется, страница не выбирает и адреса не шлёт: сервер пробует всех, кто
+    // ответил, и берёт проект тот, у кого этот каталог есть на диске.
+    //
+    // Молчащий пульт мог обслуживать этот проект как раз сейчас: по молчанию «не
+    // подключён» от «не спросили» не отличить. Поэтому причину пишем рядом с кнопкой,
+    // а не вместо неё — нажатие получит от сервера честный ответ.
+    function dshProjectFree(project) {
+        const silent = (dshState.panels || []).filter(item => item.problem);
+        // Свой пульт — тот, чей домашний проект этот же блок: его молчание объясняет
+        // пропажу ролей прямо, а чужое лишь предупреждает, что список неполон.
+        const own = silent.filter(item => item.home === project);
+        const problem = (own[0] || silent[0] || {}).problem || '';
+
+        return `
+            <span class="project-block-dsh">
+                <span class="dot"></span>
+                <span>роли не подключены</span>
+                <button class="btn-dsh-project"
+                        data-project="${escapeHtml(project)}"
+                        title="Подключить проект к пульту ролей: сервис поднимет ему оболочки"
+                        onclick="attachDshProject(this)">Подключить</button>
+                ${problem ? `<span class="problem">⚠️ ${escapeHtml(problem)}</span>` : ''}
+            </span>
+        `;
+    }
+
+    // Адрес пульта коротко: в шапке блока он опознаёт машину, а не ведёт по ссылке —
+    // ходит туда сервер, из браузера пульт может быть и не виден.
+    function dshHostPort(url) {
+        return String(url || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    }
+
+    function attachDshProject(btn) {
+        const project = btn.dataset.project || '';
+        if (!project || dshBusy) return;
+
+        btn.textContent = '…';
+        dshRequest(btn, '/api/team/dsh/project', { project: project, attached: true },
+                   'Ошибка подключения проекта к пульту ролей:');
+    }
+
+    function detachDshProject(btn) {
+        const project = btn.dataset.project || '';
+        if (!project || dshBusy) return;
+
+        // Отключение гасит роли: карточки уходят в архив, и включённая заново роль
+        // начнёт следующее поколение с чистой сессией. Поэтому у живых ролей сначала
+        // спрашиваем, и `force` — ответ на заданный вопрос, а не «молчи». Пульт
+        // проверит то же самое сам: страница показывает состояние прошлой сверки, и
+        // роль могли включить с неё между обновлениями.
+        const panel = (dshState.projects || {})[project] || {};
+        const live = Object.values(panel.roles || {}).filter(role => role.enabled);
+        const names = live.map(role => role.title);
+        if (live.length && !confirm(
+                `У проекта работают роли: ${names.join(', ')}.\n\n`
+                + 'Отключение погасит их — карточки уйдут в архив, и переписка оборвётся: '
+                + 'включённая заново роль начнёт с чистой сессии.\n\nОтключать?')) return;
+
+        btn.textContent = '…';
+        dshRequest(btn, '/api/team/dsh/project',
+                   { project: project, attached: false, force: live.length > 0 },
+                   'Ошибка отключения проекта от пульта ролей:');
+    }
+
+    // Раскладка кнопок Harness по карточкам блока: `номер карточки в списке → что на
+    // ней рисовать`. Отдельным проходом, потому что решение про одну карточку зависит
+    // от остальных: выключатель у роли один, и достаться он должен базовой карточке.
+    //
+    // Какая карточка блока какой карточке Harness соответствует, говорит `sessions`
+    // пульта — по `session_uuid`. Номера у двух сторон свои: у карточки блока его
+    // выдал реестр при регистрации, у карточки Harness это её место в проекте.
+    function dshLayout(cards, block) {
+        const plan = new Map();
+        const panel = dshPanel(block);
+        if (!panel) return plan;
+
+        const sessions = panel.sessions || {};
+        const base = new Map();
+        (cards || []).forEach((card, at) => {
+            const harness = sessions[card.session_uuid || ''] || null;
+            if (harness && harness.index > DSH_CARD_BASE) {
+                plan.set(at, { kind: 'drop', card_id: harness.card_id });
+                return;
+            }
+
+            // Место выключателя — базовая карточка Harness. Карточка без сессии годится
+            // лишь пока такой не нашлось: у выключенной роли карточек в Harness нет
+            // вовсе, а у только что включённой оболочка ещё не отметилась в реестре, —
+            // и без запасного места включать роль было бы нечем.
+            const exact = !!harness && harness.index === DSH_CARD_BASE;
+            const known = base.get(card.role);
+            if (!known || (exact && !known.exact)) base.set(card.role, { at: at, exact: exact });
+        });
+
+        base.forEach((item, role) => plan.set(item.at, { kind: 'switch', role: role }));
+        return plan;
+    }
+
+    function renderDshSwitch(card, block, dsh) {
+        if (!dsh || dsh.kind !== 'switch') return '';
+        const panel = dshPanel(block);
+        const role = panel && (panel.roles || {})[card.role];
+        if (!role) return '';
+
+        const label = role.enabled ? '⏹ Выключить' : '▶ Включить';
+        const hint = role.enabled
+            ? 'Заархивировать сессии роли в DeepSeek Harness'
+            : 'Завести роли новую сессию в DeepSeek Harness';
+        // `data-project` обязателен: на странице несколько блоков с одноимёнными
+        // ролями, и без каталога сервер не поймёт, чей developer имелся в виду.
+        const toggle = `<button class="team-dsh${role.enabled ? ' on' : ''}"
+                        data-project="${escapeHtml(pathNorm(block.work_dir))}"
+                        data-role="${escapeHtml(card.role)}"
+                        data-enabled="${role.enabled ? '1' : '0'}"
+                        title="${escapeHtml(hint)}" onclick="switchDshRole(this)">${label}</button>`;
+
+        // «+» только у включённой роли: у выключенной добавлять не к чему, и первым
+        // нажатием там должно быть «включить», а не «дать второй круг».
+        const add = role.enabled
+            ? `<button class="team-dsh-add"
+                       data-project="${escapeHtml(pathNorm(block.work_dir))}"
+                       data-role="${escapeHtml(card.role)}"
+                       title="Добавить роли ещё одну карточку в DeepSeek Harness"
+                       onclick="addDshCard(this)">+</button>`
+            : '';
+
+        return `<div class="team-dsh-row">${toggle}${add}</div>`;
+    }
+
+    function renderDshRemove(card, block, dsh) {
+        if (!dsh || dsh.kind !== 'drop') return '';
+
+        // Карточку называем по её имени в Harness, а не по номеру: перезавод поколения
+        // меняет имя (`…-2` → `…-2-g2`), а страница показывает состояние прошлой сверки.
+        return `<button class="team-card-remove"
+                        data-project="${escapeHtml(pathNorm(block.work_dir))}"
+                        data-role="${escapeHtml(card.role)}"
+                        data-card="${escapeHtml(dsh.card_id)}"
+                        title="Убрать добавочную карточку роли — сессия уйдёт в архив"
+                        onclick="dropDshCard(this)">×</button>`;
+    }
+
+    function switchDshRole(btn) {
+        const project = btn.dataset.project || '';
+        const role = btn.dataset.role || '';
+        if (!project || !role || dshBusy) return;
+        // Нажали — просим противоположное тому, что нарисовано.
+        const enabled = btn.dataset.enabled !== '1';
+
+        btn.textContent = enabled ? 'Включаем…' : 'Выключаем…';
+        dshRequest(btn, '/api/team/dsh/switch', { project: project, role: role, enabled: enabled },
+                   'Ошибка переключения роли DeepSeek Harness:');
+    }
+
+    function addDshCard(btn) {
+        const project = btn.dataset.project || '';
+        const role = btn.dataset.role || '';
+        if (!project || !role || dshBusy) return;
+
+        btn.textContent = '…';
+        dshRequest(btn, '/api/team/dsh/card/add', { project: project, role: role },
+                   'Ошибка добавления карточки DeepSeek Harness:');
+    }
+
+    function dropDshCard(btn) {
+        const project = btn.dataset.project || '';
+        const role = btn.dataset.role || '';
+        const cardId = btn.dataset.card || '';
+        if (!project || !role || !cardId || dshBusy) return;
+
+        btn.textContent = '…';
+        dshRequest(btn, '/api/team/dsh/card/drop',
+                   { project: project, role: role, card_id: cardId },
+                   'Ошибка удаления карточки DeepSeek Harness:');
+    }
+
+    // Общее для выключателя, «+» и крестика: все три меняют карточки в Harness, и
+    // отвечать на нажатие обязаны одинаково — отметкой на самой кнопке и перечиткой.
+    async function dshRequest(btn, path, payload, complaint) {
+        dshBusy = true;
+        btn.disabled = true;
+        try {
+            const response = await fetch(path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || ('HTTP ' + response.status));
+            btn.textContent = '✅';
+        } catch (e) {
+            console.error(complaint, e);
+            btn.textContent = '⚠️';
+            btn.title = String(e.message || e);
+        } finally {
+            // Состояние перечитываем у пульта, а не выводим из ответа: карточки в
+            // Harness заводит и архивирует не только эта страница, и правда — там.
+            setTimeout(async () => {
+                dshBusy = false;
+                await loadDshState();
+                renderProjects(lastBlocks);
+            }, 1200);
+        }
     }
 
     async function restartSession(btn) {
