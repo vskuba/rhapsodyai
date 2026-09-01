@@ -351,6 +351,11 @@ class TestTaskQaModeRoundTrip:
     с живой оболочкой вне проектов она уйдёт планироваться — ровно поэтому сессионная
     уборка и сносит её после прогона. Дерево выкладки при этом не трогается: у задачи
     без проекта `task_role_project_work_dir` пустой, сносить нечего.
+
+    Отсюда и второй сюжет, который класс не стерпит: **два прогона сюиты на одном
+    стенде**. Уборка соседа по общей базе сносит строку между её созданием и первым
+    щелчком, и тест падает на `404 task not found` там, где правка ни при чём. Перед
+    прогоном — `pgrep -af "pytest tests/"` (подробнее в `.claude/docs/testing.md`).
     """
 
     # Признак, а не догадка: класс единственный в файлу ходит по HTTP и зависит от того,
@@ -457,6 +462,34 @@ class TestTaskQaModeRoundTrip:
         row = await self._row(client, task["id"])
         assert TASK_METADATA_KEY_QA_MODE not in row["metadata"], "ключ не удалён патчем null"
         assert task_agent_qa_mode(row) == QA_MODE_LITE
+
+    async def test_restored_row_renders_switcher_in_same_state(self, client):
+        """
+        Перечитанная строка рисует свитчер в том же состоянии, что был до перезагрузки.
+
+        Предыдущие тесты смыкают базу с движком, а цель сформулирована глазами: человек
+        после перезагрузки видит выбранную глубину. Между списком и кнопкой стоит
+        `renderQaModeSwitcher`, и разрыв в нём — тот же промах, что разошедшаяся норма:
+        значение в базе `full`, а на кнопке Lite. Поэтому разметка берется наяву из
+        настоящей строки `GET /tasks` — тем же вырыванием из шаблона, что и паритет
+        норм (`TestQaModeNormalizationAgreesBothBanks`), без копии функции.
+        """
+        from src.project.task.task_agent_qa import QA_MODE_FULL, QA_MODE_LITE, task_agent_qa_mode
+
+        task = await self._create(client, "render")
+        for mode in (QA_MODE_FULL, QA_MODE_LITE):
+            await self._switch(client, task["id"], mode)
+
+            row = await self._row(client, task["id"])
+            markup = TestQaModeNormalizationAgreesBothBanks._front_rows([row])[0]
+            assert markup, f'свитчер не отрисован для корневой задачи {task["id"]}'
+            rendered = TestQaModeNormalizationAgreesBothBanks._data_mode(markup)
+            # Атрибут обязан совпасть с перечитанным мешком, движком и подписью на кнопке.
+            assert rendered == mode, (f'после перезагрузки кнопка показывает {rendered}, '
+                                      f'а записано {mode}: {markup!r}')
+            assert task_agent_qa_mode(row) == rendered, (
+                f'кнопка говорит {rendered}, движок читает {task_agent_qa_mode(row)}')
+            assert f'QA {rendered.capitalize()}' in markup
 
     async def test_shared_keys_survive_mode_patch(self, client):
         """
