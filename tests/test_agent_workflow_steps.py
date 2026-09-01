@@ -535,39 +535,39 @@ class TestSelfCheckScope:
     будет меняться, а вот исчезнуть молча он не должен — вернулись бы круги ни о чём.
     """
 
-    # Шаг «Промпт: самопроверка» (WF56). Он единственный, где рецензент получает
-    # задание искать недостатки, — граница нужна ровно здесь.
-    SELF_CHECK_STEP_ID = 439
+    # Шаги, где роль ищет недостатки и может завернуть работу назад. Их два, и цена
+    # заворота у них разная: самокритика крутит круг внутри прогона разработчика,
+    # а `qa_ok=no` сжигает подзадаче попытку из трёх и при исчерпании ведёт в blocked.
+    #
+    # Остальные шаги ролей границу имеют и без правки: 435 («делаешь только свою
+    # подзадачу»), 445 («git diff относительно origin/master»), 447 («работа ничего
+    # из описанного не меняла — пункт не применим»), 516 (ограничен одной целью).
+    # Самопроверка багфиксера (559) вердикта не выносит и круга не заворачивает.
+    SCOPED_STEPS = {
+        439: ('самопроверка разработчика', 'ОХВАТ САМОПРОВЕРКИ', 'master...HEAD'),
+        451: ('вердикт QA', 'ОХВАТ ВЕРДИКТА', 'origin/master...HEAD'),
+    }
 
-    # Заголовок блока и слова, без которых он теряет смысл. Не весь текст: сверять
-    # промпт дословно значило бы ронять тест на каждой правке формулировки.
-    SCOPE_MARKS = (
-        'ОХВАТ САМОПРОВЕРКИ',
-        'git diff master...HEAD',
-        'цели подзадачи',
-    )
+    # Слова, без которых блок теряет смысл. Не весь текст: сверять промпт дословно
+    # значило бы ронять тест на каждой правке формулировки.
+    SCOPE_MARKS = ('цели подзадачи',)
 
-    async def test_self_check_prompt_names_its_scope(self):
-        """Блок охвата на месте и называет обе границы."""
-        from mysql_.mysql_ import mysql_get_db_async
+    async def test_judging_prompts_name_their_scope(self):
+        """У каждого судящего шага назван охват и граница диффом."""
+        missing = []
+        for step_id, (name, title, diff_cmd) in self.SCOPED_STEPS.items():
+            prompt = await _step_prompt(step_id)
+            assert prompt, f'у шага {step_id} ({name}) пустой промпт'
 
-        async with mysql_get_db_async() as db:
-            await db.execute('SELECT metadata FROM agent_workflow_step WHERE id = %s',
-                             (self.SELF_CHECK_STEP_ID,))
-            row = await db.fetchone()
-
-        assert row, f'шага {self.SELF_CHECK_STEP_ID} нет'
-
-        prompt = _prompt_text(json.loads(row['metadata'] or '{}'))
-        assert prompt, 'у шага самопроверки пустой промпт'
-
-        missing = [mark for mark in self.SCOPE_MARKS if mark not in prompt]
+            for mark in (title, diff_cmd) + self.SCOPE_MARKS:
+                if mark not in prompt:
+                    missing.append(f'{name} (шаг {step_id}): нет «{mark}»')
 
         assert not missing, (
-            'промпт самопроверки потерял границу охвата — рецензент снова уйдёт '
-            f'в соседние файлы: не нашлось {missing}')
+            'судящий промпт потерял границу охвата — роль снова уйдёт в чужие '
+            'файлы:\n' + '\n'.join(missing))
 
-    async def test_self_check_prompt_allows_out_of_scope_findings(self):
+    async def test_judging_prompts_allow_out_of_scope_findings(self):
         """
         У замеченного вне охвата есть выход, и он не круг доработки.
 
@@ -575,24 +575,29 @@ class TestSelfCheckScope:
         не велено — он рецензент, ему сказано искать, — значит выберет заворот, и
         запрет останется на бумаге.
         """
-        from mysql_.mysql_ import mysql_get_db_async
+        mute = []
+        for step_id, (name, _, _) in self.SCOPED_STEPS.items():
+            prompt = await _step_prompt(step_id)
+            if 'в отчёт' not in prompt:
+                mute.append(f'{name} (шаг {step_id})')
 
-        async with mysql_get_db_async() as db:
-            await db.execute('SELECT metadata FROM agent_workflow_step WHERE id = %s',
-                             (self.SELF_CHECK_STEP_ID,))
-            row = await db.fetchone()
-
-        prompt = _prompt_text(json.loads((row or {}).get('metadata') or '{}'))
-
-        assert 'в отчёт' in prompt, (
+        assert not mute, (
             'промпт запрещает заворачивать круг вне охвата, но не говорит, куда девать '
-            'замеченное, — запрет без выхода не работает')
+            f'замеченное, — запрет без выхода не работает: {mute}')
 
 
-def _prompt_text(metadata: dict) -> str:
+async def _step_prompt(step_id: int) -> str:
     """Текст, который шаг кладёт в переменную промпта роли."""
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT metadata FROM agent_workflow_step WHERE id = %s',
+                         (step_id,))
+        row = await db.fetchone()
+
     parts = []
-    for item in (metadata or {}).get('variable_conversion') or []:
+    for item in (json.loads((row or {}).get('metadata') or '{}')
+                 .get('variable_conversion') or []):
         if isinstance(item, dict) and str(item.get('variable') or '').endswith('_prompt'):
             parts.append(str(item.get('text') or ''))
 
