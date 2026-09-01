@@ -71,6 +71,16 @@ TEAM_LLM_POOL_STALE_SECONDS = 7400
 # `telegram_app_claude_session.SESSION_SERVER_LLM_MAX`.
 TEAM_LLM_POOL_NAME_MAX = 100
 
+# Оболочка, поднятая **без** `--litellm`: работает родным облачным агентом Claude
+# Code. Значение пишет в реестр она сама — при регистрации и каждым пингом
+# (`claude-shell/shell.py`, `_llm_mode`), — и другого признака режима у нас нет:
+# колонка `server_llm` одна на режим и на имя модели.
+#
+# Признак держится ровно потому, что модель такой оболочке не выдают
+# (`team_llm_pool_shell_cloud` ниже и её проверка в `_llm_assign`): выдай мы её
+# однажды, оболочка начала бы слать имя модели, и режим запуска пропал бы навсегда.
+TEAM_LLM_POOL_MODE_CLOUD = 'anthropic'
+
 
 async def team_llm_pool_get(project_id: int) -> list[str]:
     """Имена моделей пула. Пусто — пул не задан, работать через LiteLLM нечем."""
@@ -231,6 +241,42 @@ async def team_llm_pool_sessions() -> dict[str, str]:
         rows = await db.fetchall() or []
 
     return {str(row['session_uuid']): str(row['llm_name']) for row in rows}
+
+
+async def team_llm_pool_shell_cloud(session_uuid: str) -> bool:
+    """
+    Оболочка поднята без `--litellm`? Тогда модель из пула ей не выдают.
+
+    Такую оболочку человек запускает ровно затем, чтобы она работала родным агентом
+    Claude Code: выдай ей модель — и `__SWITCH_LLM__` молча переведёт её на пул
+    (`shell.py:_switch_llm` режима запуска не спрашивает), перезапустив агента и
+    потеряв его контекст. Получилось бы, что флаг ни на что не влияет.
+
+    Заодно это бережёт сам признак: режим и имя модели лежат в одной колонке
+    `server_llm`, и первая же выдача затёрла бы «anthropic» именем модели — отличить
+    облачную оболочку от пуловой стало бы нечем.
+
+    Пустой адрес — `False`: оболочки у роли не нашлось, и решает это не эта функция, а
+    вызывающий (`_shell_assign`). Сбой чтения — тоже `False`: пул как работал, так и
+    работает, а тихо лишить круг модели значило бы отправить его на облачные токены
+    из-за заминки в базе.
+    """
+    session_uuid = str(session_uuid or '').strip()
+    if not session_uuid:
+        return False
+
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT server_llm FROM ai_claude_session_registry WHERE session_uuid = %s',
+                (session_uuid,))
+            row = await db.fetchone()
+    except Exception as e:
+        logger_info(f'[team] режим оболочки {session_uuid[:8]} не прочитан: {e}')
+
+        return False
+
+    return str((row or {}).get('server_llm') or '') == TEAM_LLM_POOL_MODE_CLOUD
 
 
 async def team_llm_pool_acquire(project_id: int, task_id: int, role: str,

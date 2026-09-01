@@ -110,6 +110,7 @@ from src.project.task.task_plan import (
     task_plan_parse,
     task_plan_serialize,
 )
+from src.project.task.task_merge_request import task_merge_request_open
 from src.project.task.task_question import (task_question_parse, task_question_set,
                                             task_question_set_many)
 from src.project.task.task_report import task_report_subtasks_summary, task_report_write
@@ -117,7 +118,8 @@ from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree,
 from src.project.team.team_llm_ping import team_llm_ping_all
 from src.project.team.team_session_cleanup import cleanup_inactive_sessions
 from src.project.team.team_llm_pool import (team_llm_pool_all, team_llm_pool_assign,
-                                            team_llm_pool_get, team_llm_pool_release)
+                                            team_llm_pool_get, team_llm_pool_release,
+                                            team_llm_pool_shell_cloud)
 from src.project.team.team_shell_pool import (team_shell_pool_acquire, team_shell_pool_busy,
                                               team_shell_pool_release)
 from src.project.task.task_role import (TASK_ROLE_DEFAULT, TASK_ROLE_MANAGER,
@@ -1040,12 +1042,42 @@ async def _run_finalize(action: dict) -> str | None:
         # те отметки, которые QA уже подтвердил ниже по дереву.
         await task_state_goals_inherit(task_id)
         await task_report_write(task_id, f'Задача выполнена успешно: все подзадачи готовы ({summary})')
+        # Merge request заводится здесь и только здесь: это первый момент, когда работа
+        # задачи полна — QA закрыл последнюю подзадачу. Роли к нему отношения не имеют,
+        # это функциональная операция над готовым результатом (`task_merge_request`).
+        #
+        # Итог всегда идёт в отчёт, удачный и нет: не заведённый merge request человек
+        # иначе обнаружит, только не найдя его на GitHub. Конфликт тоже сюда — его
+        # разбирает человек, и узнать о нём он должен на странице задачи.
+        await _merge_request_open(task_id)
     else:
         # Не через `task_state_task_fail`: та ставит состояние сама, а его уже
         # выставила финализация — второй UPDATE только затёр бы блокировки.
         await task_report_write(
             task_id, f'Задача завершена со сбоем: часть подзадач заблокирована ({summary})', ok=False)
     return f"task#{task_id} -> {final}"
+
+
+async def _merge_request_open(task_id: int) -> None:
+    """
+    Завести merge request по закрытой задаче и записать итог в её отчёт.
+
+    Отдельной функцией, а не строкой в `_run_finalize`: там разбирается состояние
+    задачи, а здесь — работа с чужим сервисом, у которой свои исходы. Смешав их, мы
+    получили бы шаг, где половина кода про GitHub.
+
+    Сбой не поднимаем наверх: задача уже принята, и merge request её судьбы не меняет.
+    В отчёт он попадает в любом случае — по нему человек видит, свести ветки ему самому
+    или ссылка уже есть.
+    """
+    project_id = int((await task_state_task_get(int(task_id)) or {}).get('project_id') or 0)
+    work_dir = await task_role_project_work_dir(project_id)
+    if not work_dir:
+        return
+
+    result = await task_merge_request_open(int(task_id), work_dir)
+    await task_report_write(task_id, result['message'], ok=result['ok'] or None)
+    logger_info(f"[task] task#{task_id}: {result['message']}")
 
 
 async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str | None:
@@ -1866,6 +1898,11 @@ async def _llm_assign(action: dict, task: dict, role: str) -> dict:
     Пул пуст — ничего не захватываем и `wait` не ставим: проект работает облачным
     Anthropic, где предел прежний.
 
+    **Оболочка без `--litellm` пула не касается** — и по той же причине не ждёт
+    очереди: работать ей есть чем, у неё родной облачный агент Claude Code. Это и есть
+    смысл флага; выдай мы ей модель, `__SWITCH_LLM__` перевёл бы её на пул, перезапустив
+    агента, и запуск без флага ничем не отличался бы от запуска с ним.
+
     Сбой захвата круг не срывает: без модели роль пошла бы на штатный бэкенд, а это
     хуже ожидания — счёт за чужой прогон человек увидит уже постфактум. Поэтому любая
     неожиданность здесь тоже даёт `wait`.
@@ -1887,6 +1924,16 @@ async def _llm_assign(action: dict, task: dict, role: str) -> dict:
         # свежайшую, как было до появления `team_shell_pool`.
         session_uuid = (str(action.get('shell') or '')
                         or await task_role_shell_session(project_id, role))
+
+        # Облачная оболочка идёт мимо пула — и мимо ожидания: занятый пул её не
+        # держит, у неё свой бэкенд. Проверяем после выбора адреса, потому что режим
+        # это свойство конкретной оболочки, а не роли: у одной роли рядом бывают и
+        # пуловые, и облачные терминалы.
+        if await team_llm_pool_shell_cloud(session_uuid):
+            logger_info(f'[task] {role}: оболочка {session_uuid[:8]} поднята без --litellm, '
+                        f'круг идёт облачным агентом мимо пула')
+            return {'llm': '', 'context': '', 'wait': False}
+
         given = await team_llm_pool_assign(project_id, int((task or {}).get('id') or 0),
                                            role, session_uuid)
         if not given['llm']:
