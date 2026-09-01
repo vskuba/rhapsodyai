@@ -248,6 +248,12 @@ export function renderTaskList() {
         });
     });
 
+    // Кнопка вопроса останавливает всплытие (иначе сработал бы клик карточки), поэтому
+    // открывается сама. Её рисует та же строка, что и флажки, — материал тот же.
+    _listEl.querySelectorAll('[data-ask]').forEach(btn => {
+        btn.addEventListener('click', () => openTaskDetail(Number(btn.dataset.ask)));
+    });
+
     // Список перерисован с нуля — кнопка «Утвердить» прежней задачи снеслась вместе
     // с карточкой: возвращаем её, если открытая задача всё ещё на этой вкладке.
     renderApprovalButton();
@@ -345,6 +351,11 @@ function renderTaskCard(t) {
     const statusChip = statusChipHtml(t.status);
     const stateChip = pipelineChipHtml(t.pipeline_state);
     const subtask = t.parent_id ? `<span class="task-subtask">подзадача #${t.parent_id}</span>` : '';
+    // Кнопка вопроса — только там, где спрашивают: план обещает кнопку, а вешать её на
+    // каждую строку означало бы тыкать человеком в «вопросов нет» на большинстве карточек.
+    const askBtn = taskHasQuestion(t)
+        ? `<button class="task-btn task-btn-ask" data-ask="${t.id}" onclick="event.stopPropagation()">❓ Вопрос</button>`
+        : '';
 
     return `<div class="task-card" data-id="${t.id}">
         <div class="task-header">
@@ -352,9 +363,22 @@ function renderTaskCard(t) {
             <div class="task-badges">${statusChip}${stateChip}</div>
         </div>
         ${subtask}
-        <div class="task-actions"></div>
+        <div class="task-actions">${askBtn}</div>
         <div class="task-flags">${rootFlagsHtml(t)}</div>
     </div>`;
+}
+
+/**
+    Есть ли у задачи открытый вопрос — из строки списка, не спрашивая сервера.
+
+    Вопрос живёт в `metadata` и приходит разобранным вместе со списком: и одиночный
+    (`metadata.question`), и пачка разведки (`metadata.questions`). Принятые решения
+    не считаем — они отвечены как раз для того, чтобы вопроса больше не было.
+    */
+function taskHasQuestion(t) {
+    const meta = t?.metadata || {};
+    if (Array.isArray(meta.questions) && meta.questions.some(q => !q?.answer?.text)) return true;
+    return !!meta.question && !meta.question.answer?.text;
 }
 
 /** Обёртка над renderRootFlags — локальная, чтобы не мешать глобальному namespace */

@@ -21,7 +21,6 @@
 
 import { getData, postData } from '/static/js/api.js';
 import { escapeHtml as esc } from './utils.js';
-import { loadTasks } from './tasks.js';
 
 const API_QUESTION = (id) => `/telegram-app/task/${id}/question`;
 const API_ANSWER = (id) => `/telegram-app/task/${id}/question/answer`;
@@ -42,6 +41,11 @@ window.closeQuestionPanel = closeQuestionPanel;
 /**
     Полоса вопросов: внешний слой `.task-bar` (им переключается видимость),
     отступы — внутреннему `.task-question-panel`.
+
+    Слой вставляем в `.content-panel`, а не в `.app-shell`: последняя — горизонтальный
+    flex (`telegram_app.css:15`), и полоса стала бы боковой колонкой справа от списка,
+    а не полосой под ним. `.content-panel` — колонка, `.tab-views` в ней тянется,
+    поэтому Append кладёт панель под вкладку, там, где её ждут.
     */
 function ensureBar() {
     if (_barEl && _barEl.isConnected) return _barEl;
@@ -49,10 +53,11 @@ function ensureBar() {
     _barEl = document.getElementById('taskQuestionPanel') || document.getElementById('taskQuestionBar');
     if (!_barEl) {
         // Шаблона с панелью может и не быть — вкладку рисует соседняя подзадача, а
-        // панель обязана появиться на любом каркасе: вставляем её в оболочку сами.
+        // панель обязана появиться на любом каркасе: заводим её сами.
         _barEl = document.createElement('div');
         _barEl.id = 'taskQuestionPanel';
-        (document.querySelector('.app-shell') || document.body).appendChild(_barEl);
+        (document.querySelector('.content-panel') || document.querySelector('.app-shell') || document.body)
+            .appendChild(_barEl);
     }
     _barEl.classList.add('task-bar');
     _barEl.classList.remove('task-question-panel');   // отступы належат внутреннему слою
@@ -442,19 +447,23 @@ window.askSend = async function() {
         btn.textContent = 'Сохраняю…';
         try {
             const result = await postData(API_ANSWER(_askTaskId), { ...form, index: _askIndex });
-            if (result.done) {
+            if (result && result.done) {
                 closeQuestionPanel();
-                await loadTasks();
+                await _reloadTasks();
                 return;
             }
-            // Ответили не на всё — переключаемся на первый неотвеченный
-            _askData = _withRowGoals(await getData(API_QUESTION(_askTaskId)));
+            // Ответили не на всё — переключаемся на первый неотвеченный. Точку GET
+            // рисует соседняя подзадача: пока её нет, ответ всё равно принят и сидит в
+            // `metadata`, а вопрос забирается оттуда же, откуда панель открывалась.
+            // Упереться в алерт на полпути пачки — значит показать человеку отказ там,
+            // где сервер уже согласился.
+            const fresh = await getData(API_QUESTION(_askTaskId)).catch(() => null);
+            _askData = fresh ? _withRowGoals(fresh) : _markAnswered(_askData, _askIndex, form);
             const rest = (_askData.questions || []).findIndex(item => !item.answer?.text);
             _askIndex = rest >= 0 ? rest : _askIndex;
             renderAsk();
         } catch (e) {
             alert(e.message || 'Не отправилось');
-            btn.disabled = false;
         }
         return;
     }
@@ -479,10 +488,41 @@ window.askSend = async function() {
     try {
         await postData(API_ANSWER(_askTaskId), { answers, note, goal_indexes: goalIndexes });
         closeQuestionPanel();
-        await loadTasks();
+        await _reloadTasks();
     } catch (e) {
         alert(e.message || 'Не отправилось');
         btn.disabled = false;
         btn.textContent = 'Ответить и вернуть в работу';
     }
 };
+
+/**
+    Перезагрузить список задач после принятого ответа.
+
+    Панель не импортирует `tasks.js`: список тянет панель (`openQuestionPanel`), а
+    обратный импорт закрутил бы кольцо. ES-модули кольцо переживают, но порядок
+    инициализации в нём непостоянен, а панель обязана открываться и без списка — она
+    заводит свой слой сама, когда вкладку ещё не нарисовали. Поэтому список объявляет
+    себя сам: `initTasks` вешает коллбек на window (`flags.js` ходит тем же путём), а
+    без него принятый ответ просто остаётся принятым — панель не вправе требовать,
+    чтобы снаружи кто-то был заведён.
+    */
+function _reloadTasks() {
+    return Promise.resolve(window._tg_reload_tasks?.()).catch(() => {});
+}
+
+/**
+    Записать ответ в свой мешок, когда переспросить не у кого.
+
+    Нужен только пути пачки без точки GET: сервер ответ принял, а состояние на клиенте
+    обновить всё равно чем-то. Правим ту же структуру, что держали, — `answer.text`
+    по ключу `note`: именно на него смотрит подсчёт неотвеченных (`left`) и галочка
+    на вкладке пачки.
+    */
+function _markAnswered(data, index, form) {
+    const batch = ((data || {}).questions || []).slice();
+    const item = batch[index];
+    if (!item) return data;
+    batch[index] = { ...item, answer: { ...item.answer, text: form.note || (form.answers || []).join(', ') } };
+    return { ...data, questions: batch };
+}
