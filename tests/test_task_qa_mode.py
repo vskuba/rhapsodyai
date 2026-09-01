@@ -214,6 +214,26 @@ class TestTaskQaModeAtWorkerClaim:
         assert captured['variables']['subtask_id'] == str(captured['subtask_id'])
         assert captured['variables']['subtask_qa_mode'] == 'full'
 
+    async def test_round_does_not_restart_a_live_shell(self):
+        """
+        Круг теста не трогает чужую оболочку.
+
+        Проверка про сам стенд, а не про режим QA, и потому она здесь: прогон
+        обрывается после сборки переменных, `_run_qa` считает это срывом и уводит
+        строку в `_retry_subtask`, а тот перезапускает оболочку роли. Каталога у
+        выдуманного проекта нет, адрес выходит «роль `qa`, каталог любой» — маркер
+        уходит в живую оболочку QA на стенде и сносит ей ход посреди работы.
+
+        Сторож держится на записи заглушки: снимут подмену
+        `pipeline.team_session_restart_role` — записывать станет некому, список
+        окажется пустым, и тест упадёт здесь, а не молчком перезапустит соседа.
+        """
+        captured = await _claim_and_capture(None)
+
+        assert captured.get('restarts') == [{'role': 'qa', 'work_dir': ''}], \
+            ('перезапуск оболочки прошёл мимо заглушки — круг ушёл в живую оболочку QA; '
+             'см. `_claim_and_capture`')
+
 
 class _QaStop(Exception):
     """Сигнал «переменные пойманы, дальше не надо»: движок прогона подменён."""
