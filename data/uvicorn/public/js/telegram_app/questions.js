@@ -108,8 +108,34 @@ function questionFromRow(row) {
     return {
         question: meta.question || null,
         questions: Array.isArray(meta.questions) ? meta.questions : [],
+        // Цели — колонка задачи, а не ключ metadata: без них ответ «раздробить/убрать»
+        // упирался бы в запрет отметить цель, которой панель не видела (см. _goalChoices).
+        goals: _goalsFromRow(row),
         decisions: Array.isArray(meta.decisions) ? meta.decisions : [],
     };
+}
+
+/**
+    Цели строки списка — к тому же виду `[{text, done}]`, что отдаёт GET вопроса.
+
+    Колонка `goals` приезжает то списком словарей, то списком строк, то JSON-строкой —
+    как её ни отдай, панель получает одно и то же. Закрытая цель остаётся `disabled`:
+    вычеркнуть принятую работу нельзя.
+    */
+function _goalsFromRow(row) {
+    let raw = row && row.goals;
+    if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw || '[]'); } catch { return []; }
+    }
+    if (raw && !Array.isArray(raw) && Array.isArray(raw.goals)) raw = raw.goals;
+    if (!Array.isArray(raw)) return [];
+
+    // Пустые формулировки отбрасываются до нумерации: сервер (`task_plan_goals_normalize`)
+    // делает то же самое, и номер цели в ответе обязан совпасть с её местом в списке.
+    return raw
+        .filter(g => String((g && g.text) || g || '').trim())
+        .map(g => (typeof g === 'string' ? { text: g, done: false }
+                                                 : { text: String(g.text), done: !!(g && g.done) }));
 }
 
 export function closeQuestionPanel() {

@@ -8,6 +8,10 @@
     <link rel="stylesheet" href="/static/css/common.css">
     <link rel="stylesheet" href="/static/css/notification.css">
     <link rel="stylesheet" href="/static/css/telegram_app.css">
+    <!-- Вкладка задач рисует свои карточки, флажки фаз и панель вопросов: без этого
+         файла она выходит неокрашенной. Файл свой, подключается отдельно —
+         telegram_app.css описывает оболочки вкладок, а не содержимое задачи. -->
+    <link rel="stylesheet" href="/static/css/telegram_app/task.css">
 </head>
 <body>
 <div class="app-wrapper">

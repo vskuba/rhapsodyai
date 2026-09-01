@@ -178,6 +178,9 @@ export async function loadTasks() {
         // Проектов в выдаче сотни, а тащат они за собой только номер: отсекаем
         // здесь же, где фильтруем вкладки, — второго запроса на селектор нет.
         _allTasks = tasks;
+        // Селектор строится до первой загрузки — на пустом списке, поэтому options
+        // приходится наполнять здесь: иначе в нём навеки остаётся один пункт.
+        renderPhaseTabs();
         renderTaskList();
     } catch (e) {
         _listEl.innerHTML = `<div class="denied-state">⚠️ Не удалось загрузить задачи${e.message ? ': ' + escapeHtml(e.message) : ''}</div>`;
@@ -195,6 +198,9 @@ function normalizeTaskRow(row) {
         task_type_id: row.task_type_id ?? null,
         task_type_name: row.task_type_name || null,
         parent_id: row.parent_id || null,
+        // Цели — колонка задачи, не metadata: панель вопросов рисует их из строки
+        // списка, чтобы ответ о целях не ждал ответа на GET вопроса.
+        goals: row.goals ?? null,
         // Дополнительные поля, которые может отдать роутер
         project_id: row.project_id,
     };
@@ -221,7 +227,8 @@ export function renderTaskList() {
 
     const sorted = [...withNoProject, ...withProject].sort(sortByStatus);
 
-    // #taskListView — сам контейнер-скролл (.task-list-container); карточки кладём внутрь
+    // #tasksListView — сам контейнер-скролл (.task-list-view, его рисует шаблон вкладки);
+    // карточки кладём внутрь
     if (!sorted.length) {
         _listEl.innerHTML = `<div class="empty-state">Нет задач на «${escapeHtml(phaseTabTitle(_currentPhase))}»</div>`;
         return;

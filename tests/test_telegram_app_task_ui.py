@@ -138,6 +138,63 @@ class TestTaskFlags:
 class TestTaskQuestionPanel:
     """Панель вопросов: открывается на карточке, показывает вопрос, принимает ответ."""
 
+    def test_goals_open_with_the_action_that_needs_them(self, browser: Browser):
+        """«Раздробить/убрать» отмечает цели: список открывается на таком варианте и уходит индексом.
+
+        Цели — колонка задачи, а не ключ `metadata`: панель, собранная из строки
+        списка, обязана их видеть — иначе ответ о целях упирался бы в запрет
+        отмечать то, чего не показали.
+        """
+        with_goals = {**TASK_FLAGGED, 'metadata': {**TASK_FLAGGED['metadata'], 'question': {
+            'text': 'Раздробить подзадачу?', 'role': 'manager',
+            'options': [{'key': 'goals_split', 'label': 'Раздробить'},
+                        {'key': 'as_is', 'label': 'Оставить как есть'}],
+        }}, 'goals': ['Две первые цели', 'Третья цель']}
+        ui = _open_mini_app(browser, tasks=[with_goals])
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askSendBtn')
+        assert not ui.locator('#askGoals').is_visible(), 'список целей показан до выбора действия'
+
+        ui.click('.task-question-options input[value="goals_split"]')
+        ui.wait_for_selector('#askGoals input[name="askGoal"]', state='visible')
+        assert ui.locator('#askGoals input[name="askGoal"]').count() == 2
+        ui.locator('#askGoals input[name="askGoal"]').nth(1).check()
+        ui.click('#askSendBtn')
+
+        ui.wait_for_function("() => (window.__answered || []).length > 0")
+        assert json.loads(ui.evaluate('window.__answered')[0]['body'])['goal_indexes'] == [1]
+
+    def test_goal_action_without_marks_is_refused_only_when_choice_exists(self, browser: Browser):
+        """Отметка требуется, когда отмечать чем; на пустом списке вопрос не запирается."""
+        no_goals = {**TASK_FLAGGED, 'metadata': {**TASK_FLAGGED['metadata'], 'question': {
+            'text': 'Раздробить подзадачу?', 'role': 'manager',
+            'options': [{'key': 'goals_drop', 'label': 'Убрать цель'}],
+        }}}
+        ui = _open_mini_app(browser, tasks=[no_goals])
+
+        ui.locator('.task-card').first.click()
+        ui.click('.task-question-options input[value="goals_drop"]')
+        ui.click('#askSendBtn')
+
+        ui.wait_for_function("() => (window.__answered || []).length > 0")
+        assert json.loads(ui.evaluate('window.__answered')[0]['body'])['answers'] == ['goals_drop']
+
+    def test_closed_goal_stays_unchecked(self, browser: Browser):
+        """Принятую цель не вычеркнуть: она нарисована снятой и недоступной."""
+        with_done = {**TASK_FLAGGED, 'metadata': {**TASK_FLAGGED['metadata'], 'question': {
+            'text': 'Что убрать?', 'role': 'developer',
+            'options': [{'key': 'goals_drop', 'label': 'Убрать цель'}],
+        }}, 'goals': [{'text': 'Закрытая', 'done': True}, {'text': 'Открытая', 'done': False}]}
+        ui = _open_mini_app(browser, tasks=[with_done])
+
+        ui.locator('.task-card').first.click()
+        ui.click('.task-question-options input[value="goals_drop"]')
+
+        flags = ui.eval_on_selector_all(
+            '#askGoals input[name="askGoal"]', 'els => els.map(e => [e.disabled, e.checked])')
+        assert flags == [[True, False], [False, False]]
+
     def test_panel_opens_question_from_list_row(self, browser: Browser):
         """Вопрос видно сразу — из `metadata` строки списка, без ответа на GET вопроса.
 
