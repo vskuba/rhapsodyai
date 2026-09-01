@@ -9,6 +9,13 @@
  *   { question: { text, role, auto, options: [{key,label,hint}], answer: {text,keys} } }
  *   { questions: [...], answers: [...] }          — пачка (batch)
  *   { goals: [] }, decisions: [], attempts: {}
+ *
+ * Нумерация целей. `goal_indexes` — место цели в списке, и сервер применяет их к
+ * списку, ещё раз прогнанному через `task_plan_goals_normalize`
+ * (`task_goal_scope.py:63` и `:103`), а не к тому, что принесли с карточки. Поэтому
+ * отметка цели берётся только из GET-а вопроса: он отдаёт уже схлопнутый список,
+ * и его номер совпадает с серверным до строки. Цели строки списка — материал для
+ * показа до ответа на вопрос (`_goalChoices`); они же чекбоксами не отмечают.
  */
 
 import { getData, postData } from '/static/js/api.js';
@@ -23,6 +30,7 @@ const API_ANSWER = (id) => `/telegram-app/task/${id}/question/answer`;
 let _barEl = null;              // taskQuestionPanel в шаблоне вкладки, заводим сами, если его нет
 let _askTaskId = null;
 let _askData = null;            // сырой ответ от сервера
+let _askRowGoals = [];          // цели строки списка: подстраховка показа, не для отметки
 let _askIndex = 0;              // индекс текущего вопроса в пачке
 
 // Глобальные callback-и для вызова из HTML-строк шаблонов
@@ -79,6 +87,7 @@ function renderBar(inner) {
 export async function openQuestionPanel(taskId, taskRow = null) {
     ensureBar();
     _askTaskId = taskId;
+    _askRowGoals = _goalsFromRow(taskRow);
     _askData = questionFromRow(taskRow);
     _askIndex = 0;
 
@@ -90,7 +99,7 @@ export async function openQuestionPanel(taskId, taskRow = null) {
     try {
         const fresh = await getData(API_QUESTION(taskId));
         if (_askTaskId === taskId) {
-            _askData = fresh;
+            _askData = _withRowGoals(fresh);
             renderAsk();
         }
     } catch (e) {
@@ -115,12 +124,30 @@ function questionFromRow(row) {
     };
 }
 
+/** Свернуть панель: состояние сбрасываем, чтобы следующий клик открыл свою задачу */
+export function closeQuestionPanel() {
+    _askTaskId = null;
+    _askData = null;
+    _askRowGoals = [];
+    _askIndex = 0;
+    hideBar();
+}
+
 /**
     Цели строки списка — к тому же виду `[{text, done}]`, что отдаёт GET вопроса.
 
-    Колонка `goals` приезжает то списком словарей, то списком строк, то JSON-строкой —
-    как её ни отдай, панель получает одно и то же. Закрытая цель остаётся `disabled`:
-    вычеркнуть принятую работу нельзя.
+    Колонка `goals` приезжает то списком словарей, то списком строк, то JSON-строкой
+    (из MySQL — именно строкой): как её ни отдай, панель получает одно и то же.
+    Закрытая цель остаётся `disabled`: вычеркнуть принятую работу нельзя.
+
+    Здесь только показ до ответа на вопрос, а не список для отметки, поэтому цели и не
+    схлопываются: сервер перед применением `goal_indexes` прогоняет колонку через
+    `task_plan_goals_normalize` (`task_plan.py:101`, порог похожести 0.85), и повторять
+    норму на клиенте значило бы завести второй источник истины, разъезжающийся при
+    каждом изменении Python-функции. Нумерация — серверная, см. `_withRowGoals`.
+
+    Текст берётся из словаря по ключу, а не через `String(item)`: иначе `{}` или
+    `{done: true}` под номером рисовали бы `[object Object]` с подписью `undefined`.
     */
 function _goalsFromRow(row) {
     let raw = row && row.goals;
@@ -130,19 +157,26 @@ function _goalsFromRow(row) {
     if (raw && !Array.isArray(raw) && Array.isArray(raw.goals)) raw = raw.goals;
     if (!Array.isArray(raw)) return [];
 
-    // Пустые формулировки отбрасываются до нумерации: сервер (`task_plan_goals_normalize`)
-    // делает то же самое, и номер цели в ответе обязан совпасть с её местом в списке.
     return raw
-        .filter(g => String((g && g.text) || g || '').trim())
-        .map(g => (typeof g === 'string' ? { text: g, done: false }
-                                                 : { text: String(g.text), done: !!(g && g.done) }));
+        .map(item => ({
+            text: String((item && typeof item === 'object' ? item.text : item) ?? '').trim(),
+            done: !!(item && typeof item === 'object' && item.done),
+        }))
+        .filter(g => g.text);
 }
 
-export function closeQuestionPanel() {
-    _askTaskId = null;
-    _askData = null;
-    _askIndex = 0;
-    hideBar();
+/**
+    Ответ GET, дополненный целями строки списка — только когда своих нет.
+
+    `goal_indexes` сервер применяет к своему списку целей, поэтому отметка ведётся по
+    серверной нумерации: GET-овские цели имеют приоритет, а цели карточки подставляются
+    лишь когда ответа нет или он их не принёс. Иначе панель рисовала бы отметку по
+    собственному счёту ровно там, где сервер пересчитывает список.
+    */
+function _withRowGoals(fresh) {
+    const data = (fresh && typeof fresh === 'object') ? { ...fresh } : {};
+    if (!Array.isArray(data.goals) || !data.goals.length) data.goals = _askRowGoals;
+    return data;
 }
 
 // --- Рендер панели ---
@@ -408,7 +442,7 @@ window.askSend = async function() {
                 return;
             }
             // Ответили не на всё — переключаемся на первый неотвеченный
-            _askData = await getData(API_QUESTION(_askTaskId));
+            _askData = _withRowGoals(await getData(API_QUESTION(_askTaskId)));
             const rest = (_askData.questions || []).findIndex(item => !item.answer?.text);
             _askIndex = rest >= 0 ? rest : _askIndex;
             renderAsk();
