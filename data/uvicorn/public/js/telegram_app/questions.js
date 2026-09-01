@@ -277,7 +277,7 @@ function renderAsk() {
     parts.push('<div class="task-question-label">Уточнение</div>'
         + `<textarea class="task-question-note" id="askNote"`
         + ` placeholder="${options.length ? 'Необязательно: условие или оговорка к выбранному варианту' : 'Ответ своими словами'}"`
-        + `>${esc(q.answer?.note || '')}</textarea>`);
+        + `>${esc(_noteSeed(q))}</textarea>`);
 
     // Кнопки
     const last = (left <= 1 && !!q.answer?.text === false) || (left === 1 && !q.answer?.text);
@@ -384,6 +384,49 @@ function _noteValue() {
     if (!_barEl || !_barEl.isConnected) return '';
     const note = document.getElementById('askNote');
     return (note && _barEl.contains(note) ? note.value : '').trim();
+}
+
+/**
+    Чем наполнить поле уточнения при открытии уже отмеченного вопроса.
+
+    Сервер кладёт в черновик два вида одного ответа: `note` — вольный текст,
+    `text` — подпись выбранного варианта плюс тот же вольный текст через `; `
+    (`task_question._answer_labels`). Поэтому `note` без `text` — редкость: у
+    ответа кликом его нет вовсе, а есть только собранное решение, и поле
+    открывалось бы пустым там, где человек уже ответил.
+
+    Собираем остаток тем же разбором, каким сервер его сложил: делим по `; ` и
+    снимаем ведущие части, равные подписям отмеченных вариантов. Сравнение по
+    равенству, не по вхождению: иначе ответ «Да» стёр бы половину собственного
+    «Да, но позже». Хвост — ровно то, что человек дописал от себя.
+    */
+function _noteSeed(q) {
+    const answer = (q && q.answer) || {};
+    const free = String(answer.note ?? '');
+    if (free.trim()) return free;
+
+    const text = String(answer.text ?? '');
+    if (!text.trim()) return '';
+
+    const labels = _chosenLabels(q);
+    const parts = text.split('; ');
+    let cut = 0;
+    // Ведущие части — подписи вариантов, в порядке, которым их сложил сервер;
+    // вольный текст идёт за ними и остаётся целиком, даже если внутри есть `; `.
+    while (cut < parts.length && labels.includes(parts[cut])) cut++;
+    return parts.slice(cut).join('; ').trim();
+}
+
+/** Подписи отмеченных вариантов: по ключам ответа, а всего списка — не по всем ключам */
+function _chosenLabels(q) {
+    const options = (q && q.options) || [];
+    const keys = ((q && q.answer && q.answer.keys) || []).map(String);
+    if (!keys.length) return [];
+    const byKey = {};
+    options.forEach(o => {
+        if (o && o.key !== undefined) byKey[String(o.key)] = String(o.label ?? '').trim();
+    });
+    return keys.map(k => byKey[k]).filter(Boolean);
 }
 
 /**
