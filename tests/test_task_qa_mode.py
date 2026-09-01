@@ -10,6 +10,8 @@
 ставят сессионные фикстуры `conftest.py`.
 """
 
+import contextlib
+
 import pytest
 
 # Группа ставится файлу целиком, а не каждому классу (см. `.claude/docs/testing.md`).
@@ -19,15 +21,20 @@ pytestmark = pytest.mark.pipeline
 
 LITE_STEPS = (445, 447, 516, 451)
 
-# Строки для проверки автоматического захвата. Заводятся без проекта: отбор берёт
-# подзадачу только там, где жива оболочка роли, а подмена конвейера
-# (`tests/pipeline_mock.py`) держит оболочки в корзине «без проекта». Заодно это
-# отсекает настоящие задачи установки — они принадлежат проектам и в отбор не попадут.
+# Строки для проверки автоматического захвата.
 QA_MODE_ROW_TITLE = '__pytest_qa_mode__'
 QA_MODE_SUBTASK_GOALS = '[{"text": "цель подзадачи", "done": false}]'
-# Сколько отборов подряд смотрим в поисках своей строки. Рядом крутятся чужие
-# project-less строки других тестов, и первый же захват не обязан быть нашим.
-QA_MODE_CLAIM_STEPS = 10
+# Проект, которого нет, — как в `tests/test_task_role_state.py`. Отбор берёт подзадачу
+# только там, где жива оболочка роли (`task_role_project_sql`), и свой номер проекта
+# сужает выбор до наших строк: чужие в него не попадают вовсе.
+#
+# Корзина «без проекта» для этого не годится, хотя подмена конвейера держит оболочки
+# именно в ней. Предел одновременных прогонов корзины — единица
+# (`TASK_SETTING_PARALLEL_DEFAULT`), а в полёте числится любая заблокированная строка
+# в переходном состоянии (`task_claim_inflight_by_project`): одна чужая строка,
+# оставленная соседним тестом, закрывала бы отбор целиком, и проверка падала бы не на
+# режиме QA, а на пустом захвате.
+QA_MODE_PROJECT_ID = 987733
 
 
 @pytest.fixture(autouse=True)
@@ -170,10 +177,11 @@ class TestTaskQaModeAtWorkerClaim:
     `metadata` пропадёт из выборки, родителем окажется чужая строка, — и на странице
     режим будет стоять `full`, а проверка пойдёт лёгкая, ничего об этом не сказав.
 
-    Поэтому путь берётся целиком и настоящий: отбор `_action_claim`, раннер `_run_qa`,
-    сборка `wf_vars` тем же `task_agent_qa_run`. Подменены только выходы наружу —
-    прогон агента, выкладка подзадачи и осмотр её ветки: они ходят в git и в живой
-    Claude Code, а проверяем мы не их.
+    Поэтому путь берётся целиком и настоящий, одним проходом: отбор `_action_claim`,
+    раннер `_run_qa`, вход агента `task_agent_qa_run` — и переменные ловятся на том же
+    прогоне, который начал воркер. Подменены только выходы наружу — движок прогона,
+    выкладка подзадачи и осмотр её ветки: они ходят в LLM, в git и в живой Claude Code,
+    а проверяем мы не их.
     """
 
     async def test_full_mode_reaches_variables_after_claim(self):
@@ -181,34 +189,65 @@ class TestTaskQaModeAtWorkerClaim:
         captured = await _claim_and_capture('{"qa_mode": "full"}')
 
         assert captured['action']['kind'] == 'qa', 'подзадачу отобрали не как работу QA'
-        variables = await _wf_vars_capture(captured['task'], captured['subtask'])
-        assert variables['variables']['subtask_qa_mode'] == 'full'
-        assert variables['variables']['subtask_qa_full'] == 'yes'
+        assert captured['variables']['subtask_qa_mode'] == 'full'
+        assert captured['variables']['subtask_qa_full'] == 'yes'
 
     async def test_default_mode_reaches_variables_after_claim(self):
         """Ключа в мешке нет — тот же путь обязан дать `lite`, а не пустое значение."""
         captured = await _claim_and_capture(None)
 
-        variables = await _wf_vars_capture(captured['task'], captured['subtask'])
-        assert variables['variables']['subtask_qa_mode'] == 'lite'
-        assert variables['variables']['subtask_qa_full'] == ''
+        assert captured['variables']['subtask_qa_mode'] == 'lite'
+        assert captured['variables']['subtask_qa_full'] == ''
 
-    async def test_claim_hands_the_parent_not_the_subtask(self):
+    async def test_claim_reads_the_mode_from_the_parent(self):
         """
-        Родителем в прогон уходит именно родитель.
+        Режим приезжает из мешка родителя, а не подзадачи.
 
-        Режим лежит в его мешке, и подсунутая вместо него подзадача (её `metadata`
-        пишет конвейер — ветка, merge request) молча вернула бы `lite` при любом
-        выборе человека.
+        Проверяем по самим переменным прогона: `task_id` в них — это родитель,
+        `subtask_id` — проверяемая строка. Подсунутая вместо родителя подзадача (её
+        `metadata` пишет конвейер — ветка, merge request) молча вернула бы `lite` при
+        любом выборе человека, и обе переменные стали бы одним номером.
         """
-        from src.project.task.task_agent_qa import task_agent_qa_mode
-
         captured = await _claim_and_capture('{"qa_mode": "full"}')
 
-        assert captured['task']['id'] == captured['subtask']['parent_id']
-        assert task_agent_qa_mode(captured['task']) == 'full'
-        assert task_agent_qa_mode(captured['subtask']) == 'lite', \
-            'у подзадачи своего режима нет — иначе читатель смотрит не в тот мешок'
+        assert captured['variables']['task_id'] == str(captured['parent_id'])
+        assert captured['variables']['subtask_id'] == str(captured['subtask_id'])
+        assert captured['variables']['subtask_qa_mode'] == 'full'
+
+
+class _QaStop(Exception):
+    """Сигнал «переменные пойманы, дальше не надо»: движок прогона подменён."""
+
+
+@contextlib.contextmanager
+def _qa_engine_stubbed(captured: dict):
+    """
+    Подменить движок прогона QA-агента: `wf_vars` ловим, в LLM и в оболочку не идём.
+
+    Кладёт в `captured` ключи `variables` и `steps`, после чего роняет прогон `_QaStop`.
+    Ставится и вокруг прямого вызова `task_agent_qa_run`, и вокруг круга конвейера —
+    подмена одна на оба пути, иначе они разъехались бы в том, что именно заглушено.
+    """
+    import asyncio
+
+    import src.project.task.task_agent_qa as qa
+
+    class _Manager:
+        async def framework_model_create(self, params, *args, **kwargs):
+            captured['variables'] = params['workflow_variables']
+            captured['steps'] = params['workflow_steps']
+            return params
+
+        def framework_workflow_run(self, model, future, loop):
+            raise _QaStop()
+
+    original_manager, original_restart = qa.AiFrameworkAgentManager, qa.team_session_restart_role
+    qa.AiFrameworkAgentManager = _Manager
+    qa.team_session_restart_role = lambda *a, **k: asyncio.sleep(0)
+    try:
+        yield
+    finally:
+        qa.AiFrameworkAgentManager, qa.team_session_restart_role = original_manager, original_restart
 
 
 async def _wf_vars_capture(parent: dict, subtask: dict) -> dict:
@@ -218,34 +257,11 @@ async def _wf_vars_capture(parent: dict, subtask: dict) -> dict:
     Returns: `{'variables': ..., 'steps': ...}` — переменные прогона и шаги workflow,
     как их получил бы движок.
     """
-    import asyncio
-
     import src.project.task.task_agent_qa as qa
 
-    captured = {}
-
-    class _Stop(Exception):
-        pass
-
-    class _Manager:
-        async def framework_model_create(self, params, *args, **kwargs):
-            captured['variables'] = params['workflow_variables']
-            captured['steps'] = params['workflow_steps']
-            return params
-
-        def framework_workflow_run(self, model, future, loop):
-            raise _Stop()
-
-    original_manager, original_restart = qa.AiFrameworkAgentManager, qa.team_session_restart_role
-    qa.AiFrameworkAgentManager = _Manager
-    qa.team_session_restart_role = lambda *a, **k: asyncio.sleep(0)
-    try:
-        try:
-            await qa.task_agent_qa_run(parent, subtask)
-        except _Stop:
-            pass
-    finally:
-        qa.AiFrameworkAgentManager, qa.team_session_restart_role = original_manager, original_restart
+    captured: dict = {}
+    with _qa_engine_stubbed(captured), contextlib.suppress(_QaStop):
+        await qa.task_agent_qa_run(parent, subtask)
 
     return captured
 
@@ -257,30 +273,31 @@ async def _claim_and_capture(metadata: str | None) -> dict:
     Args:
         metadata: мешок родителя — то, что записал бы свитчер на странице задач.
 
-    Returns: `{'action', 'task', 'subtask', 'outcome'}` — отобранное действие, его
-        аргументы и итог круга.
+    Returns: `{'action', 'variables', 'steps', 'outcome', 'parent_id', 'subtask_id'}` —
+        отобранное действие, переменные его прогона и итог круга.
 
     Отбор настоящий (`pipeline_claim` -> `_action_claim`), потому что проверяется он.
-    Чужие строки, попавшие в тот же отбор, пропускаем: рядом крутятся project-less
-    задачи других тестов, и первое действие не обязано быть нашим.
+    Захват один, без перебора: оболочки заведены на свой номер проекта, а круг QA идёт
+    в отборе первым, и чужой строке взяться неоткуда.
 
-    Подменяем три выхода наружу. Сам агент — иначе круг уйдёт в LLM. Выкладку
-    подзадачи (`_subtask_dir`) и осмотр её ветки (`task_worktree_state`) — они зовут
-    git по выдуманному номеру: первый завёл бы каталог, второй прочёл бы «кода нет»
-    и закрыл бы подзадачу, не дойдя до QA вовсе.
+    Подменяем три выхода наружу. Движок прогона (`_qa_engine_stubbed`) — иначе круг
+    уйдёт в LLM, а `task_agent_qa_run` при этом остаётся настоящим, и переменные
+    собирает он. Выкладку подзадачи (`_subtask_dir`) и осмотр её ветки
+    (`task_worktree_state`) — они зовут git по выдуманному номеру: первый завёл бы
+    каталог, второй прочёл бы «кода нет» и закрыл бы подзадачу, не дойдя до QA вовсе.
+
+    Прогон обрывается `_QaStop` уже после сборки переменных; `_run_qa` считает это
+    сорвавшимся кругом и уводит подзадачу в повтор — на проверяемое это не влияет,
+    строки всё равно удаляются следом.
     """
     from unittest.mock import patch
 
     import src.project.task.task_pipeline as pipeline
+    from src.project.task.task_agent_qa import task_agent_qa_run
     from src.project.task.task_pipeline import task_pipeline_action_run
-    from tests.pipeline_mock import PIPELINE_MOCK_QA, pipeline_agents_mocked, pipeline_claim
+    from tests.pipeline_mock import pipeline_agents_mocked, pipeline_claim
 
     captured: dict = {}
-
-    async def _qa(task, subtask, *args, **kwargs):
-        captured['task'], captured['subtask'] = task, subtask
-
-        return dict(PIPELINE_MOCK_QA)
 
     async def _dir(work_dir, subtask_id):
         return ''
@@ -289,26 +306,26 @@ async def _claim_and_capture(metadata: str | None) -> dict:
         return {'done_has': 'yes'}
 
     parent_id, subtask_id = await _rows_create(metadata)
+    captured['parent_id'], captured['subtask_id'] = parent_id, subtask_id
     try:
-        async with pipeline_agents_mocked():
-            with patch.object(pipeline, 'task_agent_qa_run', _qa), \
+        async with pipeline_agents_mocked(roles={QA_MODE_PROJECT_ID: {'qa': ['mock-qa']}}):
+            # Подмену самого агента снимаем: общая заглушка конвейера отвечает за него
+            # готовым вердиктом и до сборки переменных не доходит вовсе, а проверяем мы
+            # именно её. Вместо агента заглушен движок его прогона.
+            with patch.object(pipeline, 'task_agent_qa_run', task_agent_qa_run), \
+                 _qa_engine_stubbed(captured), \
                  patch.object(pipeline, '_subtask_dir', _dir), \
                  patch.object(pipeline, 'task_worktree_state', _worktree):
-                for _ in range(QA_MODE_CLAIM_STEPS):
-                    action = await pipeline_claim()
-                    if not action:
-                        break
-                    if int(action.get('subtask_id') or 0) != subtask_id:
-                        continue
-                    captured['action'] = action
-                    captured['outcome'] = await task_pipeline_action_run(action)
-                    break
+                action = await pipeline_claim()
+                assert action and int(action.get('subtask_id') or 0) == subtask_id, \
+                    f'отбор взял не нашу подзадачу, а {action!r} — проверять нечего'
+                captured['action'] = action
+                captured['outcome'] = await task_pipeline_action_run(action)
     finally:
         await _rows_drop(parent_id)
 
-    assert 'action' in captured, ('подзадача в `qa_pending` не отобралась к QA — '
-                                 'проверять нечего, дело в отборе, а не в режиме')
-    assert 'task' in captured, f"круг QA не дошёл до агента: {captured.get('outcome')!r}"
+    assert 'variables' in captured, \
+        f"круг QA не дошёл до сборки переменных: {captured.get('outcome')!r}"
 
     return captured
 
@@ -322,6 +339,10 @@ async def _rows_create(metadata: str | None) -> tuple[int, int]:
 
     Состояние родителя `processing` — «дети работают»: в нём его не отберут ни к
     планированию, ни к пересмотру, и в отборе останется одна наша подзадача.
+
+    Проект — `QA_MODE_PROJECT_ID`, которого нет: он и сужает отбор до этих двух строк.
+    Каталога у такого проекта не найдётся, и `task_role_project_work_dir` честно вернёт
+    пустую строку — адресация останется только по роли, как у задач без проекта.
     """
     from mysql_.mysql_ import mysql_get_db_async
 
@@ -330,17 +351,17 @@ async def _rows_create(metadata: str | None) -> tuple[int, int]:
             'INSERT INTO project_task (project_id, parent_id, title, description, goals, report, '
             '                          position, status, task_type_id, pipeline_state, '
             '                          pipeline_plan, pipeline_error, pipeline_from_plan, metadata) '
-            "SELECT NULL, NULL, %s, '', '[]', '', 0, 'queued', id, 'processing', '', '', 0, %s "
+            "SELECT %s, NULL, %s, '', '[]', '', 0, 'queued', id, 'processing', '', '', 0, %s "
             "  FROM project_task_type WHERE name = 'dev'",
-            (QA_MODE_ROW_TITLE, metadata))
+            (QA_MODE_PROJECT_ID, QA_MODE_ROW_TITLE, metadata))
         parent_id = db.lastrowid
         await db.execute(
             'INSERT INTO project_task (project_id, parent_id, title, description, goals, report, '
             '                          position, status, task_type_id, pipeline_state, '
             '                          pipeline_plan, pipeline_error, pipeline_from_plan) '
-            "SELECT NULL, %s, %s, '', %s, '', 0, 'queued', id, 'qa_pending', '', '', 1 "
+            "SELECT %s, %s, %s, '', %s, '', 0, 'queued', id, 'qa_pending', '', '', 1 "
             "  FROM project_task_type WHERE name = 'test'",
-            (parent_id, QA_MODE_ROW_TITLE, QA_MODE_SUBTASK_GOALS))
+            (QA_MODE_PROJECT_ID, parent_id, QA_MODE_ROW_TITLE, QA_MODE_SUBTASK_GOALS))
         subtask_id = db.lastrowid
         await db.connection.commit()
 
