@@ -17,6 +17,7 @@ QA конвейера задач: проверяет одну выполненн
 их и уводит подзадачу в `failed_qa`, воркер от этого не падает.
 """
 import asyncio
+import math
 import uuid
 
 from json_.json_ import json_from_string
@@ -224,8 +225,20 @@ def task_agent_qa_mode(task: dict) -> str:
 
     Значение нормализуем: в мешке случаются `false`, число и мусор от ручной правки,
     а промпту нужна одна из двух строк — на них ветвится глубина проверки.
+
+    Норма одна на два берега и обязана совпадать со свитчером на странице
+    (`_qaModeNormalize` в `admin/project/task.html`): человек глядит на кнопку, а
+    глубину проверки выбирает этот читатель. Расхождение выглядело бы так, что
+    свитчер показывает `Full`, а агент идёт по `lite`, — поэтому рядовые значения
+    (`true`, `1`, `['full']`, `null`, `' FULL '` и мусор) сверяет тестом
+    `TestQaModeNormalizationAgreesBothBanks`, а саму норму менять можно только в двух
+    местах сразу. Правило, записанное здесь и там: значение сначала становится строкой
+    (`_mode_text` здесь, `String(value || '')` там), затем обрезка пробелов, нижний
+    регистр, и `full` только при точном совпадении — всё остальное `lite`. Сверка
+    держит рядовые мусорные значения, а не всё пространство значений: экзотики вроде
+    `1e+21` в мешке не бывает, и тестом она не покрыта.
     """
-    mode = str(task_metadata_parse((task or {}).get('metadata')).get(TASK_METADATA_KEY_QA_MODE) or '')
+    mode = _mode_text(task_metadata_parse((task or {}).get('metadata')).get(TASK_METADATA_KEY_QA_MODE))
     return mode.strip().lower() if mode.strip().lower() == QA_MODE_FULL else QA_MODE_LITE
 
 
@@ -371,3 +384,47 @@ def _report_text(report: dict) -> str:
             lines.append(f'{title}: {value}')
 
     return '\n'.join(lines)
+
+
+def _mode_text(value) -> str:
+    """
+    Строка из произвольного значения режима — так, как её делает браузер.
+
+    `task_agent_qa_mode` принимает то, что лежит в мешке `metadata`, а там бывает
+    `null`, число, флажок и список: ключ правят и воркеры, и человек через API. На
+    другом берегу — свитчер страницы — тот же мусор приводит к строке выражением
+    `String(value || '')` (`_qaModeNormalize` в `admin/project/task.html`), и Python
+    обязан приводить одинаково: иначе одно и то же значение покажет на кнопке `Full`,
+    а агенту отдаст `lite`.
+
+    Поэтому правила повторяются за JS, а не берутся поудобнее:
+
+    - ложное (`None`, `False`, `0`, `0.0`, `-0.0`, `NaN`, `''`, пустой список) —
+      пустая строка. В Python `0.0 == 0` истино, а `NaN == 0` — нет, поэтому ноль и
+      NaN проверяются раздельно;
+    - `True` — `'true'`, а не `'True'`, как дал бы `str`;
+    - число — как его печатает JS: целое без `.0` и хвостовых нулей, дробное — обычным
+      `repr` (одинаковые оба для `1.5`, `0.1`, `-2.25`);
+    - объект — `[object Object]`;
+    - список — элементы через запятую, каждый по этому же правилу.
+
+    Экспоненциальную запись целых (`1e+21`) JS печатает иначе; в мешке её не бывает,
+    тестом не покрыто.
+    """
+    if value is None or value is False or value == '':
+        return ''
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and (
+            value == 0 or math.isnan(float(value))):
+        return ''
+    if isinstance(value, (list, tuple)) and not value:
+        return ''
+    if isinstance(value, bool):
+        return 'true'
+    if isinstance(value, (list, tuple)):
+        return ','.join(_mode_text(item) for item in value)
+    if isinstance(value, dict):
+        return '[object Object]'
+    if isinstance(value, float):
+        return 'nan' if math.isnan(value) else (
+            f'{value:.20f}'.rstrip('0').rstrip('.') if value.is_integer() else repr(value))
+    return str(value)
