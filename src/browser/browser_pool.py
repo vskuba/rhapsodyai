@@ -200,6 +200,10 @@ def _session_info(entry: dict) -> dict:
         'url': page.url,
         'alive': not page.is_closed(),
         'uptime_sec': round(now - entry['created_at']),
+        # Календарное время открытия, помимо `uptime_sec`. Это не дубль: «жива
+        # 17 часов» отвечает на вопрос «давно ли», а «открыта в 06:27» — на вопрос
+        # «когда», и по нему вкладку сопоставляют с тем, что тогда делали.
+        'opened_at': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(entry['created_at'])),
         'idle_sec': round(now - entry['used_at']),
         # Запись живёт прямо в записи сессии (кладёт её `browser_record`): так она
         # гаснет вместе с сессией сама и не заводит второй реестр, который пришлось

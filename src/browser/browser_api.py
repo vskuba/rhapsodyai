@@ -24,6 +24,7 @@ from src.browser.browser_pool import (
     browser_pool_stat,
     browser_pool_storage_state,
 )
+from src.browser.browser_thumb import browser_thumb_forget, browser_thumb_get
 
 router = APIRouter()
 
@@ -112,7 +113,25 @@ async def browser_api_session_create(data: BrowserSessionCreate):
 async def browser_api_session_delete(session_id: str):
     """Гасит сессию. Повторный вызов не ошибка: результат тот же — сессии нет."""
     closed = await browser_pool_session_close(session_id)
+    browser_thumb_forget(session_id)
     return {'session_id': session_id, 'closed': closed}
+
+
+@router.get('/browser/session/{session_id}/thumb', dependencies=browser_api_auth)
+async def browser_api_session_thumb(session_id: str, fresh: bool = False):
+    """Миниатюра страницы сессии — узнать вкладку в лицо.
+
+    Кадр снимается по запросу и кэшируется: он стоит полного рендера страницы, а
+    карточек в колонке до двух с половиной десятков.
+
+    Неудачный снимок приходит с кодом 200 и текстом в `error`: страница могла
+    зависнуть на своём JavaScript — ровно такие в списке и интересны, — и ронять
+    из-за неё весь список нечем.
+    """
+    try:
+        return await browser_thumb_get(session_id, fresh=fresh)
+    except KeyError:
+        raise HTTPException(status_code=404, detail='сессия не найдена')
 
 
 @router.post('/browser/session/{session_id}/goto', dependencies=browser_api_auth)

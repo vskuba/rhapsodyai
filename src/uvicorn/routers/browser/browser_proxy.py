@@ -70,6 +70,18 @@ async def browser_proxy_session_goto(session_id: str, data: dict,
     return await browser_upstream_request('POST', f'/browser/session/{session_id}/goto', data)
 
 
+@router.get('/session/{session_id}/thumb')
+async def browser_proxy_session_thumb(session_id: str, fresh: bool = False,
+                                      user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):
+    """Миниатюра страницы сессии — строкой `data:` внутри JSON.
+
+    Картинкой её не отдаём намеренно: прокси переносит JSON и код ответа как есть,
+    и бинарный ответ потребовал бы отдельного пути ради двадцати килобайт.
+    """
+    return await browser_upstream_request(
+        'GET', f'/browser/session/{session_id}/thumb?fresh={"true" if fresh else "false"}')
+
+
 @router.get('/session/{session_id}/storage_state')
 async def browser_proxy_storage_state(session_id: str,
                                       user=Depends(AuthChecker([AuthPermission.BROWSER_VIEW]))):

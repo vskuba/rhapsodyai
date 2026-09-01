@@ -1370,6 +1370,168 @@
         flex-direction: column;
     }
 
+    /* Закладки и пул рядом, 40 на 60.
+       Доли, а не пиксели: на широком мониторе фиксированная колонка пула оставляла
+       бы слева пустое поле, а на узком — душила бы карточки сайтов. Ширина при
+       этом перетаскивается и запоминается, тоже долей — тогда подогнанная на
+       большом экране раскладка не разъедется на маленьком. */
+    .browser-split {
+        display: flex;
+        min-height: 0;
+        flex: 1 1 auto;
+        --pool-left: 40%;
+    }
+    .browser-split > .site-cards { flex: 0 0 var(--pool-left); }
+
+    .pool-col {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        border-left: 1px solid #e5e7eb;
+        background: #f8fafc;
+    }
+
+    /* Пока тянут, выделение текста мешает: курсор уезжает в подсветку карточек
+       вместо перетаскивания. То же правило, что у колонок страницы сайта. */
+    .browser-split.is-drag { user-select: none; cursor: col-resize; }
+
+    .pool-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+        padding: 16px 14px 10px;
+    }
+    .pool-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+    /* Сколько занято из предела. Числом «занято из предела», а не одним занятым:
+       предел общий на весь контейнер, и «19» без «из 25» не говорит, много это
+       или мало. Красным — когда мест почти не осталось: следующая сессия получит
+       отказ, и узнать об этом лучше до того, как она понадобилась. */
+    .pool-count { font-size: 11px; font-weight: 700; color: #4f46e5; }
+    .pool-count.low { color: #dc2626; }
+
+    .pool-reload {
+        margin-left: auto;
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: #94a3b8;
+        font-size: 14px;
+        line-height: 1;
+        padding: 0 2px;
+    }
+    .pool-reload:hover { color: #4f46e5; }
+    .pool-reload:disabled { opacity: .4; cursor: default; }
+
+    /* Сетка, а не столбец: колонка занимает больше половины экрана, и карточка во
+       всю её ширину растянула бы превью до полутысячи пикселей — один снимок на
+       весь экран вместо списка. `minmax` заодно избавляет от правил под каждую
+       ширину: сузили колонку разделителем — карточки перестроились сами. */
+    .pool-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0 14px 16px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: 10px;
+        align-content: start;
+    }
+    .pool-empty { grid-column: 1 / -1; }
+
+    .pool-card {
+        position: relative;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        overflow: hidden;
+    }
+    .pool-card:hover { border-color: #c7d2fe; }
+
+    /* Превью держит место до того, как кадр придёт: карточки иначе прыгали бы по
+       мере загрузки картинок. Пропорции — окна браузера (1280×800). */
+    .pool-shot {
+        position: relative;
+        aspect-ratio: 1280 / 800;
+        background: #f1f5f9;
+        cursor: pointer;
+        display: block;
+        width: 100%;
+    }
+    .pool-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .pool-shot-empty {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #cbd5e1;
+        font-size: 10px;
+        text-align: center;
+        padding: 6px;
+    }
+
+    /* Крестик в красном кружке — поверх превью, в углу. Он гасит страницу в
+       контейнере, а не прячет карточку, поэтому и выглядит опаснее прочих кнопок
+       страницы. Виден всегда, а не по наведению: в списке из двух десятков вкладок
+       ищут именно его. */
+    .pool-kill {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        width: 20px;
+        height: 20px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(220, 38, 38, .9);
+        color: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, .3);
+    }
+    .pool-kill:hover { background: #b91c1c; }
+    .pool-kill:disabled { opacity: .5; cursor: default; }
+
+    .pool-info { padding: 8px 10px 10px; }
+    .pool-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: #1f2937;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    /* Адрес переносим по символам: у ссылок нет пробелов, и без этого длинный
+       адрес растянул бы колонку вместо того, чтобы перенестись. */
+    .pool-url {
+        font-size: 10px;
+        color: #6b7280;
+        margin-top: 2px;
+        overflow-wrap: anywhere;
+        max-height: 26px;
+        overflow: hidden;
+    }
+    .pool-url.bad { color: #dc2626; }
+    .pool-when { font-size: 10px; color: #9ca3af; margin-top: 4px; }
+
+    .pool-empty {
+        color: #9ca3af;
+        font-size: 11px;
+        text-align: center;
+        padding: 20px 8px;
+    }
+
     /* Сетка карточек, а не список: у сайта два поля, и колонка в пол-экрана
        оставляла бы справа пустоту. Ширина в `minmax` — чтобы на узком окне
        карточки перестраивались сами, без правил под каждую ширину. */
@@ -1727,7 +1889,29 @@
 
 <div class="tab-panel{% if browser_page == 'sites' %} active{% endif %}" id="tab-site">
 
+{# Две колонки: слева закладки — что мы умеем открывать, справа пул — что открыто
+   прямо сейчас. Рядом, а не разными страницами: заводя сессию по закладке, человек
+   тут же должен видеть, сколько мест в пуле осталось. Раньше это лежало на вкладке
+   «Сессии» внутри выбранного сайта, то есть было видно только тому, кто уже выбрал
+   сайт, — а предел общий на все. #}
+<div class="browser-split" id="browserSplit">
+
 <div class="site-cards" id="siteCards"></div>
+
+<div class="browser-grip-col" id="poolGrip" title="Потянуть, чтобы изменить ширину;
+двойной щелчок вернёт 40/60"></div>
+
+<aside class="pool-col">
+    <div class="pool-head">
+        <span class="pool-title">Открытые страницы</span>
+        <span class="pool-count" id="poolCount"></span>
+        <button type="button" class="pool-reload" id="poolReload"
+                title="Перечитать список и снять превью заново">⟳</button>
+    </div>
+    <div class="pool-body" id="poolCards"></div>
+</aside>
+
+</div>
 
 </div>
 
@@ -2133,24 +2317,30 @@
         try {
             data = await getData('/api/browser/session');
         } catch (e) {
-            statEl.textContent = 'контейнер-браузер недоступен';
+            if (statEl) statEl.textContent = 'контейнер-браузер недоступен';
             sessions = [];
             sessionSelectFill();
             sessionTabsRender();
+            poolRender({});
             countSet('session', '');
             return;
         }
 
         const pool = data.pool || {};
         const memory = data.memory || {};
-        statEl.textContent =
-            `Chromium ${pool.version || '—'} · сессий ${pool.sessions || 0} из ${pool.session_limit || 0}`
-            + ` · память ${memory.container_mb || 0} / ${memory.container_limit_mb || 0} МБ`;
+        // Строки состояния на странице закладок нет — она принадлежит экрану
+        // сессии. Колонка пула показывает то же самое своим заголовком.
+        if (statEl) {
+            statEl.textContent =
+                `Chromium ${pool.version || '—'} · сессий ${pool.sessions || 0} из ${pool.session_limit || 0}`
+                + ` · память ${memory.container_mb || 0} / ${memory.container_limit_mb || 0} МБ`;
+        }
 
         sessions = data.sessions || [];
         countSet('session', sessions.length);
         sessionSelectFill();
         sessionTabsRender();
+        poolRender(pool);
         sessionScenariosRender();
         recordSync();
 
@@ -4921,6 +5111,224 @@
         scenarioKeysRender();
     });
 
+
+    // ── Пул открытых страниц ─────────────────────────────────────────────────
+    //
+    // Колонка справа от закладок: что открыто в контейнере прямо сейчас. Список
+    // тот же, что кормит вкладку «Сессии» (`sessionsLoad`), поэтому своего круга
+    // опроса здесь нет — рисуем на том же ответе.
+    //
+    // ⚠ **Превью живут отдельно от списка.** Список приходит целиком за один
+    // запрос, а кадр — по запросу на страницу, и каждый стоит полного рендера.
+    // Круг обновления кадры не трогает вовсе: они снимаются один раз на карточку
+    // и заново — только по кнопке.
+    const poolCardsEl = document.getElementById('poolCards');
+    const poolCountEl = document.getElementById('poolCount');
+
+    // Снятые кадры: `session_id` → строка `data:`. Переживают перерисовку списка,
+    // иначе каждый круг гасил бы картинки и просил их заново.
+    const poolShots = new Map();
+
+    // Очередь на съёмку. По одному кадру за раз: два десятка одновременных
+    // скриншотов — это два десятка полных рендеров в одном Chromium, и все
+    // страницы пула замирают разом.
+    let poolQueue = [];
+    let poolBusy = false;
+
+    // Порог, за которым счётчик краснеет: мест почти нет, и следующая сессия
+    // получит отказ. Три — это ровно один сценарий с запасом.
+    const POOL_LOW_LEFT = 3;
+
+    function poolRender(pool) {
+        if (!poolCardsEl) return;
+
+        const limit = Number(pool.session_limit || 0);
+        poolCountEl.textContent = limit ? `${sessions.length} из ${limit}` : `${sessions.length}`;
+        poolCountEl.classList.toggle('low', limit > 0 && limit - sessions.length <= POOL_LOW_LEFT);
+
+        if (!sessions.length) {
+            poolCardsEl.innerHTML = '<div class="pool-empty">Открытых страниц нет</div>';
+            return;
+        }
+
+        // Свежие сверху: только что открытая страница — та, ради которой сюда и
+        // смотрят, а долгожители внизу никуда не денутся.
+        const rows = [...sessions].sort((a, b) => (a.uptime_sec || 0) - (b.uptime_sec || 0));
+
+        poolCardsEl.innerHTML = rows.map(poolCard).join('');
+        poolBind();
+        poolShotsQueue(rows.filter(row => !poolShots.has(row.session_id)).map(r => r.session_id));
+    }
+
+    function poolCard(row) {
+        const shot = poolShots.get(row.session_id) || '';
+        // `chrome-error://` — не адрес, а признак того, что переход не удался:
+        // страница висит пустой ошибкой. Такие в пуле и копятся, поэтому их видно
+        // сразу, а не после вглядывания в ссылку.
+        const broken = String(row.url || '').startsWith('chrome-error');
+
+        return `<div class="pool-card" data-id="${_escape(row.session_id)}">`
+            + '<div class="pool-shot" title="Открыть страницу в живом окне">'
+            + (shot ? `<img src="${shot}" alt="">`
+                    : '<div class="pool-shot-empty">снимаю…</div>')
+            + '<button type="button" class="pool-kill" title="Погасить страницу">'
+            + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+            + ' stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>'
+            + '</button>'
+            + '</div>'
+            + '<div class="pool-info">'
+            + `<div class="pool-name">${_escape(row.name || 'без имени')}</div>`
+            + `<div class="pool-url${broken ? ' bad' : ''}">`
+            + `${_escape(broken ? 'страница не открылась' : (row.url || 'адрес не задан'))}</div>`
+            + `<div class="pool-when">открыта ${_escape(poolWhen(row))}</div>`
+            + '</div>'
+            + '</div>';
+    }
+
+    // «Открыта в 06:27 · 17 ч назад». Обе половины нужны: по часам вкладку
+    // сопоставляют с тем, что тогда делали, а «17 ч назад» сразу выдаёт забытую.
+    function poolWhen(row) {
+        const at = String(row.opened_at || '').slice(11, 16);
+        const sec = Number(row.uptime_sec || 0);
+        const ago = sec < 60 ? 'только что'
+            : sec < 3600 ? `${Math.round(sec / 60)} мин назад`
+            : `${Math.round(sec / 360) / 10} ч назад`;
+
+        return at ? `${at} · ${ago}` : ago;
+    }
+
+    function poolBind() {
+        poolCardsEl.querySelectorAll('.pool-card').forEach(card => {
+            const id = card.dataset.id;
+            const row = sessions.find(s => s.session_id === id) || {};
+
+            card.querySelector('.pool-kill').addEventListener('click', async () => {
+                await sessionKill(id, row.name || id);
+                poolShots.delete(id);
+            });
+        });
+    }
+
+    // Ставит страницы в очередь на съёмку и запускает её, если она стоит.
+    function poolShotsQueue(ids, fresh = false) {
+        poolQueue = poolQueue.concat(ids.map(id => ({id, fresh})));
+        if (!poolBusy) poolShotsRun();
+    }
+
+    async function poolShotsRun() {
+        poolBusy = true;
+        while (poolQueue.length) {
+            const {id, fresh} = poolQueue.shift();
+            try {
+                const data = await getData(`/api/browser/session/${id}/thumb`
+                                           + (fresh ? '?fresh=true' : ''));
+                if (data.thumb) poolShots.set(id, data.thumb);
+                else poolShots.set(id, '');
+            } catch (e) {
+                // Кадр не пришёл — карточка останется с подписью вместо картинки.
+                // Ронять из-за этого колонку нечем: адрес и время в ней уже есть.
+                poolShots.set(id, '');
+            }
+            poolShotPaint(id);
+        }
+        poolBusy = false;
+    }
+
+    // Ставим картинку на место, не перерисовывая колонку: перерисовка сбросила бы
+    // прокрутку у того, кто листает список из двух десятков карточек.
+    function poolShotPaint(id) {
+        if (!poolCardsEl) return;
+
+        const box = poolCardsEl.querySelector(`.pool-card[data-id="${CSS.escape(id)}"] .pool-shot`);
+        if (!box) return;
+
+        const shot = poolShots.get(id);
+        const old = box.querySelector('img, .pool-shot-empty');
+        const el = shot
+            ? Object.assign(document.createElement('img'), {src: shot, alt: ''})
+            : Object.assign(document.createElement('div'),
+                            {className: 'pool-shot-empty', textContent: 'снимок не вышел'});
+
+        if (old) old.replaceWith(el); else box.prepend(el);
+    }
+
+    // Разделитель колонок. Свой, а не общий `browserGripInit`: тот хранит ширину
+    // в ключе, который делят колонки страницы сайта, и подгонка здесь двигала бы
+    // колонку сценариев там. Заодно он меряет в пикселях, а тут нужны доли.
+    const POOL_SPLIT_KEY = 'browser.pool.split';
+    const POOL_SPLIT_DEFAULT = 40;
+    const POOL_SPLIT_MIN = 20;
+    const POOL_SPLIT_MAX = 75;
+
+    function poolSplitInit() {
+        const grip = document.getElementById('poolGrip');
+        const split = document.getElementById('browserSplit');
+        if (!grip || !split) return;
+
+        poolSplitApply(Number(localStorage.getItem(POOL_SPLIT_KEY)) || POOL_SPLIT_DEFAULT);
+
+        let dragging = false;
+
+        grip.addEventListener('mousedown', (event) => {
+            dragging = true;
+            grip.classList.add('is-drag');
+            split.classList.add('is-drag');
+            event.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (event) => {
+            if (!dragging) return;
+
+            // От левого края обоймы, а не по смещению курсора: при быстром
+            // движении курсор убегает вперёд, и колонка отстаёт от него.
+            const box = split.getBoundingClientRect();
+            poolSplitApply((event.clientX - box.left) / box.width * 100);
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            grip.classList.remove('is-drag');
+            split.classList.remove('is-drag');
+            localStorage.setItem(POOL_SPLIT_KEY, String(poolSplitNow()));
+        });
+
+        // Двойной щелчок возвращает 40/60: подобранная руками ширина иногда
+        // оказывается неудачной, а тянуть обратно на глаз неудобно.
+        grip.addEventListener('dblclick', () => {
+            localStorage.removeItem(POOL_SPLIT_KEY);
+            poolSplitApply(POOL_SPLIT_DEFAULT);
+        });
+    }
+
+    function poolSplitApply(percent) {
+        const split = document.getElementById('browserSplit');
+        const value = Math.round(Math.min(POOL_SPLIT_MAX, Math.max(POOL_SPLIT_MIN, percent)));
+        split.style.setProperty('--pool-left', value + '%');
+    }
+
+    function poolSplitNow() {
+        const raw = document.getElementById('browserSplit').style.getPropertyValue('--pool-left');
+
+        return parseInt(raw, 10) || POOL_SPLIT_DEFAULT;
+    }
+
+    poolSplitInit();
+
+    if (document.getElementById('poolReload')) {
+        document.getElementById('poolReload').addEventListener('click', async (event) => {
+            const btn = event.currentTarget;
+            btn.disabled = true;
+            try {
+                await sessionsLoad();
+                // Кнопка обновляет и кадры: список без них перечитывается сам
+                // кругом, и отдельная кнопка ради него не нужна.
+                poolShotsQueue(sessions.map(s => s.session_id), true);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    }
 
     function _escape(value) {
         const el = document.createElement('div');
