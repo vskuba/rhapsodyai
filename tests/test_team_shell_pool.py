@@ -13,6 +13,14 @@
 Тесты работают на живой базе и убирают за собой: строки заводятся под проектом
 `TEST_PROJECT_ID`, которого в базе нет.
 
+**Множество живых для `prune` собирается из самой таблицы, а не из тестовых сессий.**
+`prune` сносит всё, чего в этом множестве нет, — а рядом лежат захваты работающих
+ролей. Собранное из одних тестовых имён, оно снесло бы их все: `pytest -m team` по
+рабочей базе оставлял идущие круги без строки захвата, и страница команды теряла
+работающую оболочку — круг прыгал по карточкам роли, а занятая выглядела свободной.
+Поэтому в `prune` идёт `_alive_except(...)`: живые как есть, минус те, чью гибель
+тест и проверяет.
+
 Модули импортируются внутри тестов: они тянут `mysql_`, который читает `MYSQL_HOST` на
 импорте, а подмена хоста живёт в фикстурах `conftest.py`.
 """
@@ -24,6 +32,11 @@ pytestmark = pytest.mark.team
 # Проект, которого в базе нет: под ним заводятся захваты тестов, и уборка сносит ровно
 # их, не задевая работающий конвейер.
 TEST_PROJECT_ID = 987657
+
+# Второй такой же — им играет «сосед, круг которого сносить нельзя». Отдельный проект,
+# а не отдельная роль: `prune` смотрит только на сессию, и сосед обязан отличаться от
+# проверяемого всем, чем отличается живой конвейер.
+TEST_PROJECT_ID_NEIGHBOUR = TEST_PROJECT_ID + 1
 
 # Сессии тестовые: попади сюда настоящий uuid — тест отнял бы оболочку у живой роли.
 TEST_SHELL_A = 'test-shell-aaaa-0001'
@@ -145,12 +158,20 @@ class TestPrune:
     """Строки закрытых оболочек не копятся."""
 
     async def test_dead_shell_row_is_removed(self):
-        """Терминал закрыли — сессия больше не появится, и строка ни к чему."""
+        """
+        Терминал закрыли — сессия больше не появится, и строка ни к чему.
+
+        Сосед в захвате обязателен: без него множество живых окажется пустым, а на
+        пустое `prune` по своему же правилу не трогает ничего — проверять было бы
+        нечего. Заодно это ровно та обстановка, в которой он и работает: рядом всегда
+        есть чужие живые оболочки.
+        """
         from src.project.team.team_shell_pool import (team_shell_pool_acquire,
                                                       team_shell_pool_prune)
 
+        await team_shell_pool_acquire(TEST_PROJECT_ID_NEIGHBOUR, 'developer', 1, [TEST_SHELL_B])
         await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 1, [TEST_SHELL_A])
-        await team_shell_pool_prune({TEST_SHELL_B})
+        await team_shell_pool_prune(await _alive_except(TEST_SHELL_A))
 
         assert await _lock_sessions() == []
 
@@ -159,9 +180,26 @@ class TestPrune:
                                                       team_shell_pool_prune)
 
         await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 1, [TEST_SHELL_A])
-        await team_shell_pool_prune({TEST_SHELL_A, TEST_SHELL_B})
+        await team_shell_pool_prune(await _alive_except())
 
         assert await _lock_sessions() == [TEST_SHELL_A]
+
+    async def test_live_rounds_are_not_touched(self):
+        """
+        Захваты соседей `prune` не трогает — ни живого конвейера, ни чужих тестов.
+
+        Сторож на ту самую ошибку, ради которой множество живых собирается из
+        таблицы: назови тест живыми только свои сессии, и этот захват исчез бы
+        вместе с кругами работающих ролей.
+        """
+        from src.project.team.team_shell_pool import (team_shell_pool_acquire,
+                                                      team_shell_pool_prune)
+
+        await team_shell_pool_acquire(TEST_PROJECT_ID_NEIGHBOUR, 'developer', 1, [TEST_SHELL_B])
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 1, [TEST_SHELL_A])
+        await team_shell_pool_prune(await _alive_except(TEST_SHELL_A))
+
+        assert await _lock_row(TEST_SHELL_B), 'prune снёс захват соседнего круга'
 
     async def test_empty_alive_set_clears_nothing(self):
         """
@@ -243,11 +281,34 @@ async def _lock_sessions() -> list:
         return [row['session_uuid'] for row in await db.fetchall() or []]
 
 
+async def _alive_except(*dead: str) -> set:
+    """
+    Живые оболочки установки, кроме названных: множество для `team_shell_pool_prune`.
+
+    Живые берём из самой таблицы, а не из тестовых имён. `prune` сносит всё, чего в
+    множестве нет, и множество из одних тестовых сессий означало бы «живых больше
+    никого» — под нож ушли бы захваты работающих ролей. Так и было: после
+    `pytest -m team` идущий круг оставался без строки, и страница команды показывала
+    работающую оболочку свободной.
+
+    Названные исключаются — это и есть «оболочку закрыли», гибель которой проверяет
+    тест.
+    """
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT session_uuid FROM team_shell_lock')
+        rows = await db.fetchall() or []
+
+    return {row['session_uuid'] for row in rows} - set(dead)
+
+
 async def _cleanup() -> None:
     from mysql_.mysql_ import mysql_get_db_async
 
     async with mysql_get_db_async() as db:
-        await db.execute('DELETE FROM team_shell_lock WHERE project_id = %s', (TEST_PROJECT_ID,))
+        await db.execute('DELETE FROM team_shell_lock WHERE project_id IN (%s, %s)',
+                         (TEST_PROJECT_ID, TEST_PROJECT_ID_NEIGHBOUR))
         await db.connection.commit()
 
 

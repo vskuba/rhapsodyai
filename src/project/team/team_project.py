@@ -14,8 +14,8 @@ from src.mysql_.repository.project.team_repository import ProjectTeamRepository
 from src.project.team.team_setting_autocompact import (
     TEAM_SETTING_AUTOCOMPACT_FLAG, team_setting_autocompact_get)
 from src.project.team.team_agent import team_agent_by_role
-from src.project.team.team_llm_pool import (team_llm_pool_all, team_llm_pool_locks,
-                                            team_llm_pool_sessions)
+from src.project.team.team_llm_pool import (TEAM_LLM_POOL_MODE_CLOUD, team_llm_pool_all,
+                                            team_llm_pool_locks, team_llm_pool_sessions)
 from src.project.team.team_shell_pool import team_shell_pool_tasks
 from src.project.team.team_member import team_member_command_llm_normalize
 from src.project.team.team_queue import (TEAM_QUEUE_PREVIEW_LIMIT, TEAM_QUEUE_PROJECT_NONE,
@@ -482,17 +482,34 @@ def _card_llm(row: dict, llm_by_session: dict, has_pool: bool) -> str:
     текущее — и выходило, что одна модель занята двумя оболочками разом: одна её и
     правда держит, а вторая просто помнит.
 
-    Поэтому у проекта с пулом верим только живому захвату (`team_llm_lock`): он
-    гаснет вместе с кругом. Нет захвата — роль между кругами, и честный ответ
-    «модель не выбрана», а не имя прошлой.
+    Поэтому у проекта с пулом имени модели верим только из живого захвата
+    (`team_llm_lock`): он гаснет вместе с кругом. Нет захвата — роль между кругами, и
+    честный ответ «модель не выбрана», а не имя прошлой.
 
-    Пул пуст — правило не работает: захватывать нечего, оболочка идёт облачным
-    бэкендом, и `server_llm` реестра там единственный источник.
+    **Но режим запуска — не имя модели, и выбрасывать его нельзя.** В `server_llm`
+    оболочка пишет либо модель, либо то, чем поднялась: `anthropic` — без
+    `--litellm`, родным облачным агентом Claude Code. Это не память о прошлом круге, а
+    свойство самой оболочки, и врать оно не может: модель из пула ей не выдают
+    (`team_llm_pool_shell_cloud`), а значит и затереть этот признак некому. Пока
+    правило было общим на все значения, такая оболочка в проекте с пулом показывала
+    «не выбрана» с подсказкой «роль между кругами» — то есть выглядела ждущей модель из
+    пула, хотя ждать ей нечего и работает она за облачные токены. Заодно это делало
+    мёртвой подсветку `cloud` на самой странице: `anthropic` до неё больше не доходил.
+
+    `litellm` наверх не отдаём: оболочка поднята под пул и круга ещё не брала —
+    это и есть «модель не выбрана». Имя режима на месте модели читается как модель по
+    имени «litellm».
+
+    Пул пуст — разбирать нечего: захватывать нечего, и `server_llm` реестра
+    единственный источник.
     """
+    registry = str(row.get('server_llm') or '')
     if not has_pool:
-        return str(row.get('server_llm') or '')
+        return registry
 
-    return str(llm_by_session.get(str(row.get('session_uuid') or '')) or '')
+    captured = str(llm_by_session.get(str(row.get('session_uuid') or '')) or '')
+
+    return captured or (registry if registry == TEAM_LLM_POOL_MODE_CLOUD else '')
 
 
 def _card_freshness(card: dict) -> int:
