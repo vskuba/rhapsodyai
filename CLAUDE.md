@@ -162,6 +162,17 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `translator.md` | `src/translator/`: сканер папок MD-перевода, подсистема без вызовов |
 | `parser.md` | `src/parser/`: YAML-конфиги парсеров (`html/json/md`→json/qdrant/fact), без вызовов |
 
+**Базовые сущности движка**
+
+| File | Contents |
+|------|---------|
+| `agent.md` | `/agent/*`: две дороги заведения — записью и «workflow заводит сам» |
+| `role.md` | `/role/*`: CRUD ролей, право на каждое действие, привязка агентов через `agent_role` |
+| `user.md` | `/user/*`: админский CRUD, bcrypt-хеш, токены доступа, привязка нод |
+| `session.md` | `/session/*`: чтение журнала `agent_session` — список, последняя, диалог по `session_uuid` |
+| `fact.md` | `/fact/*` и `/fact/collection/*`: факты и коллекции, пересинк в Qdrant |
+| `companion.md` | `/companion/*`: справочник собеседников на две точки, get-or-create |
+
 **Telegram и Claude Code**
 
 | File | Contents |

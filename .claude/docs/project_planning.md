@@ -324,24 +324,32 @@ clamp([PHASE_TIMEOUT_MIN=900s, PHASE_TIMEOUT_MAX=3600s])
 
 В UI: кнопка ↻ в строке фазы (кроме статуса `running`).
 
-## 11. Структура router'а (`src/uvicorn/routers/planning/`)
+## 11. Структура router'а (`src/uvicorn/routers/project/`)
 
-Planning router разбит на подфайлы (аналогично `src/uvicorn/routers/telegram_app/`):
+Роутер планирования разбит на подфайлы. Каталога `routers/planning/` **нет**: файлы
+живут в `routers/project/` с префиксом `project_`, а пути эндпоинтов остались
+прежними — `/planning/...`. Соседний `routers/plan/plan.py` к планированию отношения
+не имеет: это справочник планов под правом `PLAN_VIEW`.
 
-| Файл | Назначение |
-|------|-----------|
-| `planning.py` | Тонкий агрегатор: `router.include_router(sub.router)` для каждого подфайла |
-| `planning_common.py` | Общие константы (`_PROTOTYPE_DIR`, `_WIDGET_SCRIPT`, `_MIME_MAP`) и утилиты (`_tools_load`, `_doc_filename`, `_markdown_to_pdf`) |
-| `planning_project.py` | Проекты, идеи, фазы, cronicle-расписание |
-| `planning_document.py` | Документы: просмотр, скачивание, preview статики |
-| `planning_prototype.py` | Прототипы: refine (LLM), patch (прямое сохранение) |
-| `planning_browser.py` | Сессия Playwright-браузера + история URL |
+| Файл | Ручек | Назначение |
+|------|-------|-----------|
+| `project.py` | 5 | Проекты: список, чтение, создание, правка, удаление (`/project/*`) |
+| `project_common.py` | — | Общие константы и утилиты, своих эндпоинтов не имеет |
+| `project_planning.py` | 11 | Фазы, запуск и перезапуск, cronicle-расписание (`/planning/project/*`) |
+| `project_document.py` | 8 | Документы: разделы фаз, просмотр, скачивание, preview статики |
+| `project_prototype.py` | 2 | Прототипы: refine (LLM), patch (прямое сохранение) |
+| `project_idea.py` | 2 | Генерация идей (`/planning/ideas/*`) |
+| `project_phase_source.py` | 5 | Источники фазы: список, добавление, удаление, чтение документа |
 
-`main_uvicorn.py` регистрирует только `planning.py` — подфайлы подключаются внутри него.
+Каждый подфайл регистрируется в `main_uvicorn.py` отдельно — общего агрегатора нет.
+
+> Прежняя редакция описывала каталог `routers/planning/` и шесть файлов `planning_*.py`,
+> включая `planning_browser.py`. Ни каталога, ни файлов давно нет: работа с браузером
+> уехала в отдельный контейнер (`browser.md`), остальное переименовано при переезде.
 
 ## 12. API Endpoints
 
-### Проекты (`planning_project.py`)
+### Проекты (`project_planning.py`)
 
 | Метод | Путь | Назначение |
 |-------|------|-----------|
@@ -357,14 +365,14 @@ Planning router разбит на подфайлы (аналогично `src/uv
 | `GET`  | `/planning/project/{id}/documents` | Список документов |
 | `GET`  | `/planning/cronicle/schedule` | Минуты запуска фаз из файла расписания Cronicle |
 
-### Генерация идей (`planning_project.py`)
+### Генерация идей (`project_idea.py`)
 
 | Метод | Путь | Назначение |
 |-------|------|-----------|
 | `POST` | `/planning/ideas/generate` | Генерирует 7 идей по нише (`{niche}`), агент `planning_idea_generator`, таймаут 90s |
 | `POST` | `/planning/ideas/bulk-create` | Создаёт проекты из списка (`{ideas: [{title, idea}]}`), ставит все в очередь |
 
-### Документы (`planning_document.py`)
+### Документы (`project_document.py`)
 
 | Метод | Путь | Назначение |
 |-------|------|-----------|
@@ -374,7 +382,7 @@ Planning router разбит на подфайлы (аналогично `src/uv
 | `GET` | `/planning/document/{doc_id}/download/pdf` | Скачать `.pdf` (fpdf2, рендер таблиц и code blocks) |
 | `GET` | `/planning/preview/{project_id}/{path}` | Статика прототипа из `/app/data/planning/{id}/`; для `.html` инжектирует `prototype-editor-widget.js` |
 
-### Прототипы (`planning_prototype.py`)
+### Прототипы (`project_prototype.py`)
 
 | Метод | Путь | Назначение |
 |-------|------|-----------|
@@ -383,17 +391,15 @@ Planning router разбит на подфайлы (аналогично `src/uv
 
 Оба endpoint'а удаляют инжектированный `__PROTO_WIDGET__` скрипт из HTML перед записью.
 
-### Браузер (`planning_browser.py`)
+### Браузер — уехал в design
 
-| Метод | Путь | Назначение |
-|-------|------|-----------|
-| `GET`  | `/planning/browser/history/{project_id}` | Последние 15 URL для проекта (DESC по `used_at`) |
-| `POST` | `/planning/browser/navigate` | Загрузить URL (`{url, project_id, viewW, viewH}`), возвращает screenshot + scroll info |
-| `POST` | `/planning/browser/click` | Клик/scroll/back (`{action, x, y, deltaX, deltaY, ...}`), возвращает screenshot |
-| `POST` | `/planning/browser/pick` | Извлечь HTML+CSS элемента по области (`{x, y, w, h}`) |
-| `POST` | `/planning/browser/close` | Закрыть Playwright-сессию пользователя |
+Ручек `/planning/browser/*` больше нет. Тот же браузер референсов живёт под
+`/design/browser/*` (`routers/project/design/design_browser.py`) и описан в
+`project_design.md`; механика прежняя — один Playwright Chromium на `user_id`, TTL
+300 с, скриншоты через CDP `Page.captureScreenshot`.
 
-**Сессии браузера:** один Playwright Chromium на `user_id`, TTL 300s, хранятся в `_browser_sessions: dict[int, dict]`. Скриншоты делаются через CDP `Page.captureScreenshot` (обходит зависание на `document.fonts.ready`), с fallback на `page.screenshot()`.
+Не путать с контейнером-браузером (`browser.md`): тот отдельный сервис на своём порту
+с пулом сессий, а этот — Chromium внутри uvicorn под один экран сбора референсов.
 
 **История URL** сохраняется при успешном `navigate` через `asyncio.ensure_future(_browser_history_save(...))` — не блокирует ответ. Trim до 15 записей выполняется в той же транзакции.
 

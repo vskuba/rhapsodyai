@@ -43,7 +43,7 @@ Developer (роль `developer`, каталог проекта задачи) в�
 ## 2. Страница `/admin/task`
 
 Шаблон: `data/uvicorn/template/admin/project/task.html` (extends `base.html`).
-Маршрут: `src/uvicorn/routers/dashboard.py` → `task_page()`.
+Маршрут: `src/uvicorn/routers/dashboard.py` → `dashboard_task_page()`.
 
 ### Панель инструментов
 

@@ -58,6 +58,12 @@ docker restart uvicorn
 | opensearch-dashboards | 5601 | | |
 | cronicle | 3012 | | планировщик |
 | gatus | 8090 | 8080 | health-мониторинг |
+| caddy_local | 44153 / 80 | 44152 | profile `on_local_only`: локальный HTTPS для Mini App |
+
+`caddy_local` поднимается только профилем `on_local_only` и берёт на хосте **44153**, а
+внутри слушает 44152: локальный 44152 занят системным Apache, а адрес сайта должен
+совпадать с портом в URL — роутер пробрасывает внешний 44152 на 44153. Порт 80 нужен
+ему только под ACME-челлендж.
 | caddy | 80 / 443 | | profile `on_prod_only` |
 
 Профили: `telegram` и `caddy` — только `on_prod_only`, `uvicorn_green` — `green`.

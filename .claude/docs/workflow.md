@@ -37,8 +37,8 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 | `agent` | workflow_id (FK) + workflow_variable (JSON-инициализация) |
 | `session.metadata` | Персистентное состояние: `workflow_step_current_index` для continue_workflow |
 | `agent_session` | История: user-prompt / response-final / tool-call / system-prompt |
-| `agent_workflow_run` | Журнал: один запуск workflow — status running/success/error, prompt, result/error, `variables_start` (снапшот на старте), duration_ms; вложенность sub-workflow через `parent_run_id`/`parent_step_id`/`depth` |
-| `agent_workflow_run_step` | Журнал: выполненный шаг — `exec_index` (порядок выполнения, не position), `metadata_rendered` (вход), `variables_changed` (дифф), `output`, `transition`, status success/error/retry, duration_ms; каскадное удаление с запуском |
+| `agent_workflow_trace` | Журнал: один запуск workflow — status running/success/error, prompt, result/error, `variables_start` (снапшот на старте), duration_ms; вложенность sub-workflow через `parent_run_id`/`parent_step_id`/`depth` |
+| `agent_workflow_trace_step` | Журнал: выполненный шаг — `exec_index` (порядок выполнения, не position), `metadata_rendered` (вход), `variables_changed` (дифф), `output`, `transition`, status success/error/retry, duration_ms; каскадное удаление с запуском |
 
 ## 3. Типы переменных и приоритет инициализации
 
@@ -421,7 +421,7 @@ continue_workflow, если не были возвращены пользова�
    `ai_framework_manager.py:83`, ссылка на task нигде не сохраняется) продолжает выполнять шаги,
    жечь LLM-токены и писать в журнал/сессию.
 10. **Зависшие `status='running'` в журнале** — при рестарте сервера посреди запуска записи
-    `agent_workflow_run` остаются running навсегда (нужен janitor при старте или в крон-чистке).
+    `agent_workflow_trace` остаются running навсегда (нужен janitor при старте или в крон-чистке).
 11. **Рендер раскрывает плейсхолдеры внутри подставленных значений** —
     `ai_workflow_variables_render` продолжает замену по уже обновленной строке: если значение
     переменной само содержит `%other%`, оно тоже раскроется. Следствие — инъекция через
@@ -451,7 +451,7 @@ continue_workflow, если не были возвращены пользова�
 - ✅ Добавлены операторы переходов: `>=`, `<=`, `exists`, `empty`, `not_contains`, `regex`
   (движок `_transition_condition_check` + селекты в редакторе переходов).
 - ✅ **Журнал выполнения (execution trace)** — реализован, описание — `workflow_trace.md`:
-  - таблицы `agent_workflow_run` / `agent_workflow_run_step` (0001.sql): снапшот переменных в шапке
+  - таблицы `agent_workflow_trace` / `agent_workflow_trace_step` (0001.sql): снапшот переменных в шапке
     запуска + диффы по шагам, значения >20 КБ обрезаются с пометкой `...[truncated]`;
   - модуль `src/ai/ai_workflow_trace.py` — сбой записи не роняет workflow, выключатель
     `WORKFLOW_TRACE_ENABLED`;
@@ -471,7 +471,7 @@ continue_workflow, если не были возвращены пользова�
   битый граф по-прежнему можно — нужна серверная проверка в PUT).
 - Персистентность переменных при `continue_workflow`: сохранять снапшот `workflow_variables` в
   `session.metadata` рядом с индексом шага (снапшот на старте уже пишется в журнал —
-  `agent_workflow_run.variables_start` — его же можно использовать для восстановления).
+  `agent_workflow_trace.variables_start` — его же можно использовать для восстановления).
 
 ### 9.2 Sub-workflow (главное направление)
 Цель: workflow вызывает другой workflow как шаг, передает входящие переменные, получает результат, продолжает.
@@ -535,7 +535,7 @@ UI и БД тоже готовы: тип шага id=6 (сиды), виджет 
   workflow (проверка правок на реальных входных данных); история и continue_workflow-индекс пишутся
   в новую сессию (оригинальная переписка не засоряется); LLM — пользователя запуска, с фолбэком на
   текущего; replay-запуск сам попадает в журнал и автоматически открывается в списке.
-- **Метрики из журнала** — агрегаты по `agent_workflow_run_step`: среднее/максимальное время шага,
+- **Метрики из журнала** — агрегаты по `agent_workflow_trace_step`: среднее/максимальное время шага,
   доля ошибок и ретраев по workflow — готовая витрина «какой шаг тормозит сценарий».
 
 ### 9.4 Производительность
@@ -546,11 +546,11 @@ UI и БД тоже готовы: тип шага id=6 (сиды), виджет 
   перебирает ВСЕ переменные (O(строк × переменных)); замена на один проход
   `re.sub(r'%(\w+)%', lookup)` быстрее и заодно закрывает инъекцию §8.11 (значения не ресканируются).
 - **Запись журнала вне критического пути** — каждый шаг ждет INSERT в
-  `agent_workflow_run_step` (плюс COMMIT); при выключенном пуле это заметная добавка к каждому шагу.
+  `agent_workflow_trace_step` (плюс COMMIT); при выключенном пуле это заметная добавка к каждому шагу.
   Вариант: fire-and-forget (`asyncio.create_task`) или буфер с батч-вставкой при завершении запуска.
 - **COUNT(*)-подзапросы в `/workflow_trace/run/list`** (`steps_qty`, `children_qty`) — на больших
   объемах журнала заменить на LEFT JOIN с GROUP BY или денормализованные счетчики в шапке запуска.
-- **Крон-чистка журнала** — без TTL таблицы `agent_workflow_run*` растут неограниченно
+- **Крон-чистка журнала** — без TTL таблицы `agent_workflow_trace*` растут неограниченно
   (LONGTEXT-поля); заодно janitor для зависших `status='running'` старше часа (§8.10).
 
 ## 10. Чек-лист задачи «создать новый workflow»

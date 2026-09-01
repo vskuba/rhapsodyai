@@ -8,16 +8,16 @@
 
 | Файл | Роль |
 |------|------|
-| `src/ai/ai_workflow_trace.py` | Модуль записи: `workflow_trace_run_start/finish`, `workflow_trace_step`, `workflow_trace_runs_stale_close` |
+| `src/ai/ai_workflow_trace.py` | Модуль записи: `ai_workflow_trace_run_start/finish`, `ai_workflow_trace_step`, `ai_workflow_trace_runs_stale_close` |
 | `src/ai/framework/agent/ai_framework_manager.py` | Вызывает трейс-функции из `_framework_workflow_run` и `_workflow_steps_run` |
 | `src/uvicorn/routers/workflow/workflow_trace.py` | REST API: list, detail, replay, stop, delete |
 | `data/uvicorn/template/admin/workflow_trace.html` | Страница `/admin/workflow_trace` |
 | `src/auth/auth_permission.py` | `WORKFLOW_TRACE_VIEW/DELETE/REPLAY/STOP` |
-| `migrations/20260101000000_initial_schema.sql` | DDL: `agent_workflow_run`, `agent_workflow_run_step` |
+| `migrations/20260101000000_initial_schema.sql` | DDL: `agent_workflow_trace`, `agent_workflow_trace_step` |
 
 ## Схема данных
 
-### `agent_workflow_run` — один запуск workflow
+### `agent_workflow_trace` — один запуск workflow
 ```
 id, run_uuid (CHAR36 UNIQUE)
 parent_run_id INT NULL FK→self   -- sub-workflow ссылается на родителя (CASCADE DELETE)
@@ -37,9 +37,9 @@ duration_ms INT NULL
 
 Индексы: `run_uuid` (unique), `(workflow_id, started_at)`, `session_uuid`, `parent_run_id`.
 
-### `agent_workflow_run_step` — выполненный шаг
+### `agent_workflow_trace_step` — выполненный шаг
 ```
-id, run_id FK→agent_workflow_run (CASCADE DELETE)
+id, run_id FK→agent_workflow_trace (CASCADE DELETE)
 exec_index INT                   -- порядковый номер выполнения (не position; петли/переходы дают exec_index > шагов)
 step_id INT NULL                 -- id шага (NULL если шаг удалён из workflow)
 step_title CHAR(100), step_type CHAR(50)  -- снапшот на момент запуска
@@ -62,11 +62,11 @@ tokens_output INT NULL           -- исходящие токены LLM-шага
 
 Три публичных функции — каждая обёрнута в `try/except(logger_info)`: **сбой трейса никогда не роняет workflow**.
 
-- **`workflow_trace_run_start(...) → int | None`** — создаёт строку запуска (status=running), возвращает `run_id`. Проверяет `WORKFLOW_TRACE_ENABLED`.
-- **`workflow_trace_run_finish(run_id, status, result, error, duration_ms)`** — закрывает запуск.
-- **`workflow_trace_step(run_id, exec_index, step, ..., llm_id, tokens_input, tokens_output)`** — пишет шаг. Значения длиннее `TRACE_VALUE_MAX_LEN = 20_000` символов обрезаются `...[truncated]`.
-- **`workflow_trace_runs_stale_close()`** — вызывается на старте uvicorn, переводит `status=running` в `stopped` (прерваны рестартом).
-- **`workflow_trace_variables_diff(before, after)`** — утилита: только изменённые/новые ключи.
+- **`ai_workflow_trace_run_start(...) → int | None`** — создаёт строку запуска (status=running), возвращает `run_id`. Проверяет `WORKFLOW_TRACE_ENABLED`.
+- **`ai_workflow_trace_run_finish(run_id, status, result, error, duration_ms)`** — закрывает запуск.
+- **`ai_workflow_trace_step(run_id, exec_index, step, ..., llm_id, tokens_input, tokens_output)`** — пишет шаг. Значения длиннее `TRACE_VALUE_MAX_LEN = 20_000` символов обрезаются `...[truncated]`.
+- **`ai_workflow_trace_runs_stale_close()`** — вызывается на старте uvicorn, переводит `status=running` в `stopped` (прерваны рестартом).
+- **`ai_workflow_trace_variables_diff(before, after)`** — утилита: только изменённые/новые ключи.
 
 ### Включение/выключение
 
@@ -77,15 +77,15 @@ tokens_output INT NULL           -- исходящие токены LLM-шага
 ```
 _framework_workflow_run():
   run_uuid = uuid4()
-  trace_run_id = workflow_trace_run_start(run_uuid, workflow_id, agent_id, ...)
+  trace_run_id = ai_workflow_trace_run_start(run_uuid, workflow_id, agent_id, ...)
   workflow_runs_active[run_uuid] = asyncio.current_task()   ← для кнопки «Стоп»
   try:
     result = await _workflow_steps_run(model, ..., trace_run_id=trace_run_id)
-    workflow_trace_run_finish(trace_run_id, 'success', result, duration_ms)
+    ai_workflow_trace_run_finish(trace_run_id, 'success', result, duration_ms)
   except CancelledError:
-    workflow_trace_run_finish(trace_run_id, 'stopped', ...)
+    ai_workflow_trace_run_finish(trace_run_id, 'stopped', ...)
   except Exception:
-    workflow_trace_run_finish(trace_run_id, 'error', error=traceback, ...)
+    ai_workflow_trace_run_finish(trace_run_id, 'error', error=traceback, ...)
   finally:
     workflow_runs_active.pop(run_uuid)
 
@@ -101,10 +101,10 @@ _workflow_steps_run():
   trace_tokens_output = model.tokens_output
 
   # workflow_invoke (sub-workflow):
-  child_run_id = workflow_trace_run_start(..., parent_run_id=trace_run_id, depth=depth+1)
+  child_run_id = ai_workflow_trace_run_start(..., parent_run_id=trace_run_id, depth=depth+1)
   # → рекурсивный вызов _workflow_steps_run(..., trace_run_id=child_run_id)
 
-  await workflow_trace_step(trace_run_id, trace_exec_index, current_step,
+  await ai_workflow_trace_step(trace_run_id, trace_exec_index, current_step,
       metadata_rendered, variables_changed, output, transition,
       status, error, duration_ms, llm_id, tokens_input, tokens_output)
 ```
@@ -220,5 +220,5 @@ WORKFLOW_TRACE_STOP   = "workflow_trace:stop"
   только сам, поймав отмену, — но журнал врёт, а ради ухода от этого функцию и писали.
   Связь держит `TestStaleTracesClosed` в `tests/test_task_pipeline.py`: берёт максимум
   из живых workflow, а не число из памяти.
-- **Каскадное удаление**: `agent_workflow_run_step` → FK `ON DELETE CASCADE`. Дочерние `agent_workflow_run` → FK `ON DELETE CASCADE` (self-referencing).
+- **Каскадное удаление**: `agent_workflow_trace_step` → FK `ON DELETE CASCADE`. Дочерние `agent_workflow_trace` → FK `ON DELETE CASCADE` (self-referencing).
 - **Крон-чистка**: не реализована. При необходимости — DELETE запусков старше N дней (каскад подчистит шаги).

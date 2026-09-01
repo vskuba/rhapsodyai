@@ -408,7 +408,7 @@ per-method ключ в `startswith` полностью перекрыл бы о�
 
 ### Идентификация: `member_id` или `role`
 
-`team_member_resolve()` принимает любой из двух:
+`_member_resolve()` принимает любой из двух:
 
 - `member_id` — так делает страница `/admin/team`, она знает id карточки;
 - `role` — так делает оболочка: ей известен только флаг запуска (`--manager` / `--developer`
@@ -458,7 +458,7 @@ curl -s http://localhost:8011/api/team | python3 -m json.tool
 `UPDATE` только если непустые (`TeamService._session_data`) — пинг без `pid` не затирает
 уже записанный PID.
 
-`team_deactivate()` намеренно чистит `pid` и `session_uuid` (процесса больше нет, иначе на
+`team_member_deactivate()` намеренно чистит `pid` и `session_uuid` (процесса больше нет, иначе на
 карточке они читаются как живая сессия), но **не** чистит `work_dir` — это настройка члена
 команды, а не след процесса.
 
