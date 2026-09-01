@@ -34,18 +34,10 @@ let _askData = null;            // сырой ответ от сервера
 let _askRowGoals = [];          // цели строки списка: подстраховка показа, не для отметки
 let _askIndex = 0;              // индекс текущего вопроса в пачке
 
-// Глобальные callback-и для вызова из HTML-строк шаблонов
-window._qnsCallbacks = {};
-
 // Кнопки панели рисуются строкой (`onclick="askSend()"`), поэтому обработчики живут на
 // window. `closeQuestionPanel` — экспорт модуля, сама по себе глобальной не является:
 // без этой строки «Закрыть» жал бы ReferenceError на каждом нажатии.
 window.closeQuestionPanel = closeQuestionPanel;
-
-/** Зарегистрировать коллбек для загрузки вопросов извне (вызывается из tasks.js) */
-export function registerLoadCallback(cb) {
-    window._qnsCallbacks.loadFromOutside = cb;
-}
 
 /**
     Полоса вопросов: внешний слой `.task-bar` (им переключается видимость),
@@ -110,13 +102,26 @@ export async function openQuestionPanel(taskId, taskRow = null) {
     }
 }
 
-/** Вопрос из строки списка: те же ключи, что отдаёт GET, только взятые из `metadata` */
+/**
+    Открытый вопрос задачи — тем же видом, что кладёт в мешок `task_question_ask`
+    (`task_question.py:39`, ключ `question`), и таким, каким его рисует GET вопроса.
+
+    Список задач отдаёт вопрос прямо в `metadata` строки, поэтому панель открывается
+    сразу, не дожидаясь второго запроса: до него человек видит вопрос, пачку разведки
+    и принятые решения. GET дублирует то же самое — и когда он не успел, и когда его
+    нет вовсе, карточка обязана оставаться рабочей, а не пустой.
+
+    Вызывается до `openQuestionPanel` и из неё самой, поэтому export-а нет: снаружи
+    вопрос открывают одной точкой — `openQuestionPanel`.
+    */
 function questionFromRow(row) {
     const meta = row && typeof row.metadata === 'object' && row.metadata ? row.metadata : null;
     if (!meta) return null;
 
     return {
         question: meta.question || null,
+        // Пачка разведки живёт отдельным ключом (`TASK_QUESTION_KEY_QUEUE`), черновики
+        // ответов едут внутри неё — панель по ней листает вопросы.
         questions: Array.isArray(meta.questions) ? meta.questions : [],
         // Цели — колонка задачи, а не ключ metadata: без них ответ «раздробить/убрать»
         // упирался бы в запрет отметить цель, которой панель не видела (см. _goalChoices).

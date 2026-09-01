@@ -87,6 +87,10 @@ TASK_DONE_BUG = {**TASK_PLAIN, 'id': 7007, 'title': 'pytest: закрытый б
                  'pipeline_state': 'done', 'task_type_id': 2, 'metadata': {}}
 # Та же dev-работа, но не закрытая — на ней проверяется, что прежнее сверки по типу не сломалось.
 TASK_DEV_OPEN = {**TASK_PLAIN, 'id': 7008, 'title': 'pytest: разработка идёт', 'task_type_id': 1}
+# План уже утверждён — второй конец проверки кнопки приёмки: на приёмке она одна задача,
+# и у этой её быть нечем (`task.html` рисует приёмку ровно на состоянии plan_approval).
+TASK_PLAN_PASSED = {**TASK_PLAIN, 'id': 7009, 'title': 'pytest: план утверждён',
+                    'pipeline_state': 'qa_pending'}
 
 
 @pytest.fixture(scope='module')
@@ -431,7 +435,7 @@ class TestTaskListContract:
         assert _cards_named(ui, TASK_DEV_OPEN['title']) == 0, 'открытая задача ушла к тестировщику'
 
     def test_done_bug_stays_on_bug_tab(self, browser: Browser):
-        """У бага инстанция своя: вкладка «Баги» — полный цикл, уводить закрытый некуда."""
+        """У бага инстанция своя: вкладка «Багфиксер» — полный цикл, уводить закрытый некуда."""
         ui = _open_mini_app(browser, tasks=[TASK_FLAGGED, TASK_DONE_BUG])
 
         ui.click('.task-phase-tab[data-phase="bugs"]')
@@ -462,6 +466,53 @@ class TestTaskUiStyle:
 
         assert _style(ui, '.task-question-panel', 'padding-left') != '0px'
         assert _style(ui, '#taskQuestionPanel', 'display') == 'block'
+
+    def test_head_does_not_share_height_with_the_list(self, browser: Browser):
+        """Шапка (селектор проекта + вкладки фаз) не отдаёт высоту списку.
+
+        Она стоит в той же flex-колонке, что и прокручиваемый список, и со значением
+        `flex-shrink` по умолчанию сжимается вместе с ним: вкладки фаз уезжают за
+        экран, а именно вкладкой определяется, какую половину задач человек видит.
+        """
+        ui = _open_mini_app(browser, tasks=[
+            {**TASK_FLAGGED, 'id': 7100 + n, 'title': f'pytest: задача {n}'} for n in range(30)
+        ])
+
+        assert _style(ui, '.task-head', 'flex-shrink') == '0', 'шапка сожмётся длинным списком'
+
+    def test_goals_block_is_set_apart_from_the_options(self, browser: Browser):
+        """Цели рисуются теми же `.task-question-options`, что варианты ответа над ними,
+        и без отрыва слипаются с ними в одну простыню: чекбоксы ниже — про цели.
+
+        Проверяем на скрытом блоке: видимостью правит `_setGoalsVisible`, и править её
+        в CSS значило бы спорить с кодом, поэтому стиль сверяется не с видимостью.
+        """
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED])
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askGoals', state='attached')
+
+        assert _style(ui, '.task-question-goals', 'border-left-width') != '0px'
+
+    def test_approve_button_follows_the_opened_card(self, browser: Browser):
+        """Кнопка приёмки плана живёт в карточке открытой задачи и только при `plan_approval`.
+
+        Флажки фаз без неё работают впустую: `to_development` — триггер того же перехода
+        (`flags.js:51`), а план, который нечем утвердить, до разработки не доводит.
+        """
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED, TASK_PLAN_PASSED])
+
+        card = ui.locator(f'.task-card[data-id="{TASK_FLAGGED["id"]}"]')
+        card.click()
+        ui.wait_for_selector('.task-approve-btn')
+        assert 'Утвердить план' in card.inner_text()
+
+        # Соседняя карточка — не на приёмке: кнопка рисуется в открытой, а не во всех сразу
+        assert ui.locator(f'.task-card[data-id="{TASK_PLAN_PASSED["id"]}"] .task-approve-btn').count() == 0
+
+        # Открыли ту, что уже прошла приёмку, — кнопка снимается, а не остаётся висеть
+        ui.locator(f'.task-card[data-id="{TASK_PLAN_PASSED["id"]}"]').click()
+        ui.wait_for_function("() => !document.querySelector('.task-approve-btn')")
 
 
 def _open_mini_app(browser: Browser, tasks: list, *, flat: bool = False, question=None,
