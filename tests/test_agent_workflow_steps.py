@@ -195,14 +195,35 @@ class TestStepTimeouts:
         assert not over, ('шаги, которые не успеют отработать до потолка роли:\n'
                           + '\n'.join(over))
 
+    # Доля прогонов, упёршихся в срок, за которой это уже не предохранитель, а стена.
+    #
+    # Ноль здесь не годится. Шаговый таймаут **обязан** иногда срабатывать — за тем и
+    # поставлен: оболочка зависает, и рвать такой ход нужно, не дожидаясь потолка
+    # роли. Требуй тест полного отсутствия обрывов, он краснел бы от каждого
+    # зависания и предлагал лечить симптом ростом лимита.
+    #
+    # Живьём: «Ответ JSON: отчёт» — 46 прогонов, среднее 261с, и **один** доходил до
+    # 1808с при сроке 1800. Это сработавший предохранитель, а не тесный лимит.
+    # Систематическая стена выглядит иначе: у разбора разработчика до правки было
+    # 6 из 50, у прогона QA — 8 из 29.
+    STEP_WALL_SHARE = 0.10
+
+    # Меньше этого числа прогонов — судить не о чем: один обрыв из двух ничего не
+    # значит, а долю даёт пугающую.
+    STEP_WALL_MIN_RUNS = 8
+
     async def test_step_timeout_above_observed_work(self):
         """
-        Срок шага выше того, что этот шаг занимал на самом деле.
+        Шаг не упирается в свой срок систематически.
 
         Замеры живые (`project_task_metric`), поэтому проверка растёт вместе с
-        проектом: сегодня она молчит, а стоит какому-то шагу упереться в свой срок —
-        краснеет с именем шага. Ровно этого не хватало, когда обрывы искали глазами
-        по трейсам.
+        проектом: сегодня она молчит, а стоит какому-то шагу начать биться в свой
+        срок — краснеет с именем шага и долей. Ровно этого не хватало, когда обрывы
+        искали глазами по трейсам.
+
+        Считаем **долю, а не факт**: одиночный обрыв — это работа таймаута, и
+        краснеть на нём значит требовать лимита, в который никогда ничего не
+        упрётся. Смысл проверки в другом: заметить, когда обрыв стал нормой.
 
         Метрик нет вовсе (свежая база) — проверять нечего, и это не повод падать.
         """
@@ -222,21 +243,38 @@ class TestStepTimeouts:
 
         async with mysql_get_db_async() as db:
             await db.execute(
-                'SELECT step_title, ROUND(MAX(duration_ms) / 1000) AS max_s '
-                '  FROM project_task_metric '
-                ' WHERE duration_ms IS NOT NULL GROUP BY step_title')
-            observed = {str(r['step_title']): int(r['max_s'] or 0)
-                        for r in await db.fetchall() or []}
+                'SELECT step_title, duration_ms FROM project_task_metric '
+                ' WHERE duration_ms IS NOT NULL')
+            rows = await db.fetchall() or []
 
-        if not observed:
+        if not rows:
             pytest.skip('замеров ещё нет — сравнивать не с чем')
 
-        walls = [f'«{title}»: доходил до {observed[title]}с при сроке {limit}с'
-                 for title, limit in limits.items()
-                 if observed.get(title, 0) >= limit]
+        runs, hits = {}, {}
+        for row in rows:
+            title = str(row['step_title'])
+            limit = limits.get(title)
+            if not limit:
+                continue
+            runs[title] = runs.get(title, 0) + 1
+            # Секунда допуска: длительность пишется в миллисекундах, а срок задан
+            # целыми секундами — ход, обрубленный ровно по лимиту, приходит то как
+            # 1799.4с, то как 1800.6с.
+            if int(row['duration_ms']) >= (limit - 1) * 1000:
+                hits[title] = hits.get(title, 0) + 1
 
-        assert not walls, ('шаги упирались в собственный срок — работу режет шаг, а не '
-                           'потолок роли:\n' + '\n'.join(walls))
+        walls = []
+        for title, hit in sorted(hits.items()):
+            total = runs.get(title, 0)
+            if total < self.STEP_WALL_MIN_RUNS:
+                continue
+            share = hit / total
+            if share >= self.STEP_WALL_SHARE:
+                walls.append(f'«{title}»: {hit} из {total} прогонов ({share:.0%}) '
+                             f'упёрлись в срок {limits[title]}с')
+
+        assert not walls, ('шаги упираются в собственный срок систематически — работу '
+                           'режет шаг, а не потолок роли:\n' + '\n'.join(walls))
 
 
 class TestMigrationNames:
