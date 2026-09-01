@@ -11,9 +11,12 @@
 оба конца каждой цели: чекбокс, включённый по умолчанию, и чекбокс, снятый; вопрос
 роли и вопрос, снятый с задачи.
 
-Сознательно не подменяется GET `/telegram-app/task/{id}/question`: его рисует
-соседняя подзадача, а панель обязана открывать вопрос и без него — материал лежит
-в `metadata` строки списка. Ответ же уходит на POST, который от того GET не зависит.
+GET `/telegram-app/task/{id}/question` подменяется двояко. По умолчанию он отвечает
+404 — как если бы его ещё не нарисовали (его рисует соседняя подзадача), и панель
+обязана открыть вопрос из `metadata` строки списка. В тестах про цели (`question=`)
+отвечает живым списком: `goal_indexes` сервер применяет к своей нормализованной
+колонке, поэтому отметка ведётся по серверной нумерации, а цели карточки остаются
+подстраховкой показа. Ответ же уходит на POST, который от того GET не зависит.
 Здесь же, заодно, проверяется, что модули не разъехались с эндпоинтами: список
 роутера отдаёт `{'result': {'tasks': [...]}}`, а панель читает вложенность.
 
@@ -26,7 +29,9 @@ import re
 
 import pytest
 
-from playwright.sync_api import Browser, Page, sync_playwright
+pytest.importorskip('playwright', reason='проверка нарисованного требует chromium')
+
+from playwright.sync_api import Browser, Page, sync_playwright  # noqa: E402
 
 PUBLIC_DIR = os.path.join('data', 'uvicorn', 'public')
 MODULES = ('tasks.js', 'questions.js', 'flags.js')
@@ -70,6 +75,18 @@ TASK_FLAGGED = {
 # Та же задача без флажка «в разработку» и без вопроса — второй конец проверок.
 TASK_PLAIN = {**TASK_FLAGGED, 'id': 7002, 'title': 'pytest: флажок по умолчанию',
               'metadata': {}}
+
+# Готовая работа по обеим осям закрытия (`task.html:2329`): человеческое «Готово» и
+# конвейерный done. Обе уходят с вкладки своего типа тестировщику, баг — остаётся у себя.
+TASK_DONE_DEV = {**TASK_PLAIN, 'id': 7005, 'title': 'pytest: готова dev', 'status': 'done',
+                 'pipeline_state': 'resolved', 'task_type_id': 1, 'metadata': {}}
+TASK_DONE_PIPELINE = {**TASK_PLAIN, 'id': 7006, 'title': 'pytest: закрыл конвейер',
+                      'status': 'active', 'pipeline_state': 'done', 'task_type_id': 1,
+                      'metadata': {}}
+TASK_DONE_BUG = {**TASK_PLAIN, 'id': 7007, 'title': 'pytest: закрытый баг', 'status': 'done',
+                 'pipeline_state': 'done', 'task_type_id': 2, 'metadata': {}}
+# Та же dev-работа, но не закрытая — на ней проверяется, что прежнее сверки по типу не сломалось.
+TASK_DEV_OPEN = {**TASK_PLAIN, 'id': 7008, 'title': 'pytest: разработка идёт', 'task_type_id': 1}
 
 
 @pytest.fixture(scope='module')
@@ -243,6 +260,107 @@ class TestTaskQuestionPanel:
 
         assert 'Вопросов по этой задаче нет' in ui.locator('.task-no-questions').inner_text()
 
+    def test_answer_is_not_lost_when_the_question_call_fails(self, browser: Browser):
+        """404 на GET — не беда: панель открыта со строки списка и ответ уходит."""
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED])   # GET отвечает 404
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askSendBtn')
+        ui.locator('.task-question-options label').first.click()
+        ui.click('#askSendBtn')
+
+        ui.wait_for_function("() => (window.__answered || []).length > 0")
+
+    def test_goals_as_json_string_from_database(self, browser: Browser):
+        """Колонку `goals` MySQL отдаёт строкой — список целей должен собраться и из неё."""
+        as_string = _goal_question({**TASK_FLAGGED, 'goals': json.dumps(
+            [{'text': 'Цель из строки', 'done': False}, 'Просто строкой'], ensure_ascii=False)})
+        ui = _open_mini_app(browser, tasks=[as_string])
+
+        ui.locator('.task-card').first.click()
+        ui.click('.task-question-options input[value="goals_drop"]')
+        ui.wait_for_selector('#askGoals input[name="askGoal"]', state='visible')
+
+        html = ui.locator('#askGoals').inner_html()
+        assert 'Цель из строки' in html and 'Просто строкой' in html
+        assert ui.locator('#askGoals input[name="askGoal"]').count() == 2
+
+    def test_garbage_goal_entry_is_not_numbered(self, browser: Browser):
+        """`{}` и `{done: true}` без текста — не цель: под номером не должно быть `[object Object]`."""
+        junk = _goal_question({**TASK_FLAGGED, 'goals': [{}, {'done': True}, {'text': 'Настоящая цель'}]})
+        ui = _open_mini_app(browser, tasks=[junk])
+
+        ui.locator('.task-card').first.click()
+        ui.click('.task-question-options input[value="goals_drop"]')
+        ui.wait_for_selector('#askGoals input[name="askGoal"]', state='visible')
+
+        assert ui.locator('#askGoals input[name="askGoal"]').count() == 1
+        assert 'object Object' not in ui.locator('#askGoals').inner_html()
+
+    def test_server_goals_are_the_numbering_the_answer_uses(self, browser: Browser):
+        """Отметка ведётся по серверному списку целей: к нему сервер и применит индексы.
+
+        Карточка принесла три цели, GET — две (схлопнутые `task_plan_goals_normalize`).
+        Нумерация с карточки отправила бы индекс мимо цели, поэтому панель обязана
+        перерисоваться серверным списком.
+        """
+        row = {**TASK_FLAGGED, 'goals': ['Цель карточки раз', 'Цель карточки два',
+                                         'Цель карточки три']}
+        server = {'question': {'text': 'Как поступить с целями?', 'role': 'manager',
+                               'options': [{'key': 'goals_drop', 'label': 'Убрать цель'}]},
+                  'goals': [{'text': 'Цель сервера раз', 'done': False},
+                            {'text': 'Цель сервера два', 'done': False}],
+                  'decisions': []}
+        ui = _open_mini_app(browser, tasks=[_goal_question(row)], question=lambda task: server)
+
+        ui.locator('.task-card').first.click()
+        # Ответ GET доезжает асинхронно: панель сначала собрана с карточки (три цели)
+        ui.wait_for_function(
+            "() => (document.querySelector('#askGoals') || {}).textContent"
+                "?.includes('Цель сервера два')")
+        assert 'Цель карточки' not in ui.locator('#askGoals').inner_text(), \
+            'цели карточки остались под серверным списком'
+
+        ui.click('.task-question-options input[value="goals_drop"]')
+        ui.locator('#askGoals input[name="askGoal"]').nth(1).check()
+        ui.click('#askSendBtn')
+
+        ui.wait_for_function("() => (window.__answered || []).length > 0")
+        body = json.loads(ui.evaluate('window.__answered')[0]['body'])
+        assert body['goal_indexes'] == [1], 'индекс считается по целям карточки, а не сервера'
+
+    def test_row_goals_stand_in_when_the_question_sends_none(self, browser: Browser):
+        """GET без целей — панель остаётся с целями карточки: пустой список запирал бы ответ."""
+        row = {**TASK_FLAGGED, 'goals': ['Цель из карточки']}
+        ui = _open_mini_app(browser, tasks=[row], question={'question': {'text': 'Что-то', 'role': 'manager',
+                                                                         'options': [{'key': 'goals_drop',
+                                                                                    'label': 'Убрать'}]},
+                                                           'goals': []})
+
+        ui.locator('.task-card').first.click()
+        ui.click('.task-question-options input[value="goals_drop"]')
+        ui.wait_for_selector('#askGoals input[name="askGoal"]', state='visible')
+
+        assert ui.locator('#askGoals input[name="askGoal"]').count() == 1
+        assert 'Цель из карточки' in ui.locator('#askGoals').inner_text()
+
+    def test_decisions_from_the_question_are_shown(self, browser: Browser):
+        """Принятые решения дорисовывает GET — из строки списка их не взять."""
+        ui = _open_mini_app(browser, tasks=[TASK_PLAIN], question={
+            'question': {'text': 'Уточнить объём?', 'role': 'tester', 'options': []},
+            'decisions': [{'question': 'Брать ли правку?', 'answer': 'Брать целиком', 'at': '2026-09-01'}],
+        })
+
+        ui.locator('.task-card').first.click()
+        # Задача была без вопроса — панель сначала говорит «вопросов нет», ответ GET доезжает следом
+        ui.wait_for_selector('.task-decision')
+
+        # Сверка без учёта регистра: `.task-question-label` тянет `text-transform: uppercase`,
+        # и `inner_text` возвращает уже поднятые буквы — регистр здесь не про смысл
+        panel = ui.locator('.task-question-panel').inner_text().lower()
+        assert 'принятые решения (1)' in panel
+        assert 'Брать целиком' in ui.locator('.task-decision').first.inner_text()
+
 
 class TestTaskListContract:
     """Список: контейнер из шаблона вкладки, ответ роутера и фильтр по фазе."""
@@ -252,6 +370,18 @@ class TestTaskListContract:
         ui = _open_mini_app(browser, tasks=[TASK_FLAGGED, TASK_PLAIN])
 
         assert ui.locator('.task-card').count() == 2
+
+    def test_every_module_actually_loads(self, browser: Browser):
+        """Каждый модуль вкладки запрошен страницей.
+
+        Мёртвый файл — тот, который никто не импортирует: он не участвует ни в одной
+        проверке, но читателю обещает поведение, которого нет. Поэтому `MODULES`
+        сверяется с фактическими запросами, а не остаётся списком «для порядка».
+        """
+        seen: list = []
+        _open_mini_app(browser, tasks=[TASK_FLAGGED], scripts=seen)
+
+        assert set(MODULES) <= set(seen), f'модули не загружаются: {set(MODULES) - set(seen)}'
 
     def test_nested_answer_is_read_as_router_sends_it(self, browser: Browser):
         """`{'result': {'tasks': [...]}}` — как отдаёт роутер мини-приложения.
@@ -280,6 +410,36 @@ class TestTaskListContract:
         ui.wait_for_function("() => document.querySelectorAll('.task-card').length === 1")
         assert 'pytest: флажок по умолчанию' in ui.locator('.task-card').first.inner_text()
 
+    @pytest.mark.parametrize('task', [TASK_DONE_DEV, TASK_DONE_PIPELINE],
+                            ids=['готово руками', 'закрыл конвейер'])
+    def test_done_task_leaves_its_own_phase_for_testing(self, browser: Browser, task: dict):
+        """Готовая работа — одна вкладка: тестировщик, а не «своя по типу» и не обе сразу.
+
+        Закрытую задачу принимают именно там; у разработки кнопок приёмки нет, поэтому
+        строка, оставшаяся на «Разработке», висела бы непринятой. Рядом лежит открытая
+        работа того же типа — она-то на разработке и должна остаться.
+        """
+        # TASK_FLAGGED — якорь: без задачи на вкладке по умолчанию страница не считается открытой
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED, TASK_DEV_OPEN, task])
+
+        ui.click('.task-phase-tab[data-phase="development"]')
+        ui.wait_for_function(_card_counter(TASK_DEV_OPEN['title'], 1))
+        assert _cards_named(ui, task['title']) == 0, 'готовая dev-задача осталась на разработке'
+
+        ui.click('.task-phase-tab[data-phase="testing"]')
+        ui.wait_for_function(_card_counter(task['title'], 1))
+        assert _cards_named(ui, TASK_DEV_OPEN['title']) == 0, 'открытая задача ушла к тестировщику'
+
+    def test_done_bug_stays_on_bug_tab(self, browser: Browser):
+        """У бага инстанция своя: вкладка «Баги» — полный цикл, уводить закрытый некуда."""
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED, TASK_DONE_BUG])
+
+        ui.click('.task-phase-tab[data-phase="bugs"]')
+        ui.wait_for_function(_card_counter(TASK_DONE_BUG['title'], 1))
+
+        ui.click('.task-phase-tab[data-phase="testing"]')
+        ui.wait_for_function(_card_counter(TASK_DONE_BUG['title'], 0))
+
 
 class TestTaskUiStyle:
     """Стили вкладки доезжают до страницы: task.css подключён, карточка окрашена."""
@@ -304,9 +464,14 @@ class TestTaskUiStyle:
         assert _style(ui, '#taskQuestionPanel', 'display') == 'block'
 
 
-def _open_mini_app(browser: Browser, tasks: list, *, flat: bool = False,
-                   metadata_handler=None, styles: list | None = None) -> Page:
-    """Открыть мини-приложение на подставных ответах; вернуть страницу с загруженным списком."""
+def _open_mini_app(browser: Browser, tasks: list, *, flat: bool = False, question=None,
+                   metadata_handler=None, styles: list | None = None,
+                   scripts: list | None = None) -> Page:
+    """Открыть мини-приложение на подставных ответах; вернуть страницу с загруженным списком.
+
+    `question` — ответ GET вопроса: словарь или функция от строки задачи. По умолчанию
+    None — точка отвечает 404 («её ещё не нарисовали»), и панель работает со строки списка.
+    """
     context = browser.new_context()
     page = context.new_page()
     # `Failed to load resource` — сообщение о статусе ответа, а не о поломке кода:
@@ -315,15 +480,16 @@ def _open_mini_app(browser: Browser, tasks: list, *, flat: bool = False,
     page.on('console', lambda msg: pytest.fail(f"ошибка в консоли: {msg.text}")
             if msg.type == 'error' and 'Failed to load resource' not in msg.text else None)
     page.on('pageerror', lambda err: pytest.fail(f"непойманная ошибка скрипта: {err}"))
-    _attach_routes(page, tasks, flat=flat, metadata_handler=metadata_handler, styles=styles)
+    _attach_routes(page, tasks, flat=flat, question=question,
+                   metadata_handler=metadata_handler, styles=styles, scripts=scripts)
 
     page.goto('http://mini.test/telegram-app')
     page.wait_for_selector('.task-card')
     return page
 
 
-def _attach_routes(page: Page, tasks: list, *, flat: bool, metadata_handler=None,
-                   styles: list | None = None) -> None:
+def _attach_routes(page: Page, tasks: list, *, flat: bool, question=None, metadata_handler=None,
+                   styles: list | None = None, scripts: list | None = None) -> None:
     """Подменить ответы сервера: статика — с диска, задачи и сохранения — из аргументов."""
     saved, answered, asked = [], [], []
 
@@ -340,9 +506,15 @@ def _attach_routes(page: Page, tasks: list, *, flat: bool, metadata_handler=None
             payload = {'result': tasks if flat else {'tasks': tasks}}
             route.fulfill(status=200, content_type='application/json', body=json.dumps(payload))
         elif re.search(r'/task/\d+/question$', path):
-            asked.append(path)          # как если бы точку ещё не нарисовали
-            route.fulfill(status=404, content_type='application/json',
-                          body=json.dumps({'detail': 'вопрос рисует соседняя подзадача'}))
+            asked.append(path)
+            # По умолчанию 404 — «точку ещё не нарисовали». Тесты про цели подкладывают
+            # живой ответ: он и есть источник серверной нумерации `goal_indexes`.
+            if question is None:
+                route.fulfill(status=404, content_type='application/json',
+                              body=json.dumps({'detail': 'вопрос рисует соседняя подзадача'}))
+            else:
+                payload = question(tasks[0]) if callable(question) else question
+                route.fulfill(status=200, content_type='application/json', body=json.dumps(payload))
         elif re.search(r'/task/\d+/metadata$', path):
             body = json.loads(route.request.post_data or '{}')
             saved.append({'path': path, 'body': route.request.post_data})
@@ -359,6 +531,10 @@ def _attach_routes(page: Page, tasks: list, *, flat: bool, metadata_handler=None
             route.fulfill(status=404, content_type='application/json',
                           body=json.dumps({'detail': f'нет точки {path}'}))
 
+        if scripts is not None and path.endswith('.js'):
+            # Имя файла, а не путь: так проверка сверяется с MODULES, а не с тем,
+            # в какую подпапку статики модуль переедет.
+            scripts.append(path.rsplit('/', 1)[-1])
         if styles is not None and path.endswith('.css'):
             styles.append(path)
 
@@ -381,6 +557,15 @@ def _attach_routes(page: Page, tasks: list, *, flat: bool, metadata_handler=None
     return page
 
 
+def _goal_question(task: dict) -> dict:
+    """Задача с вопросом, ответом на который правят цели: только такой список и открывается."""
+    meta = dict(task.get('metadata') or {})
+    meta['question'] = {'text': 'Как поступить с целями?', 'role': 'manager',
+                        'options': [{'key': 'goals_drop', 'label': 'Убрать цель'},
+                                    {'key': 'as_is', 'label': 'Оставить как есть'}]}
+    return {**task, 'metadata': meta}
+
+
 def _route_static(route, rel: str) -> None:
     """Отдать файл статики с диска — как это делает сервер, а не заглушку."""
     full = os.path.abspath(os.path.join(PUBLIC_DIR, rel))
@@ -396,6 +581,21 @@ def _route_static(route, rel: str) -> None:
 
 def _flag_state(page: Page, flag: str):
     return page.locator(f'.task-flag[data-flag="{flag}"] input').is_checked()
+
+
+def _cards_named(page: Page, title: str) -> int:
+    """Сколько карточек с таким заголовком на текущей вкладке.
+
+    Счёт по тексту, а не по общему числу карточек: на вкладке лежит и якорная задача,
+    и иначе «карточка ушла» было бы неотличимо от «карточка появилась».
+    """
+    return page.locator(f'.task-card:has-text("{title}")').count()
+
+
+def _card_counter(title: str, expected: int) -> str:
+    """JS-условие для `wait_for_function`: переключение вкладки перезагружает список."""
+    return ("() => [...document.querySelectorAll('.task-card')]"
+            f".filter(el => el.textContent.includes({json.dumps(title)})).length === {expected}")
 
 
 def _style(page: Page, selector: str, prop: str) -> str:
