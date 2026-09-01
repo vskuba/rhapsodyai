@@ -1,14 +1,15 @@
 """
-Ответы человека на вопросы задач мини-приложения Telegram.
+Вопросы задач в мини-приложении Telegram: чтение и ответ человека.
 
-Одна точка — POST на вопрос подзадачи. Вопрос роли отвечает только записью;
-вопрос конвейера (подзадача встала) ещё и исполняет: варианты там — действия над
-целями (`task_goal_scope`, `task_goal_replan_send`), и «раздробить» без самого
-дробления было бы обещанием, а не ответом.
+Две точки на один вопрос — прочитать и ответить. Вопрос роли отвечает только
+записью; вопрос конвейера (подзадача встала) ещё и исполняет: варианты там —
+действия над целями (`task_goal_scope`, `task_goal_replan_send`), и «раздробить»
+без самого дробления было бы обещанием, а не ответом.
 
 Механика та же, что у страницы задач (`routers/project/project_task_question.py`),
-но геймим по `telegram_owner_id` (`_require_telegram_owner`) вместо роли RBAC.
-Чтение самого вопроса — отдельная подзадача (#6439), здесь только ответ.
+и ответ читателя собран теми же ключами — панель вопроса в мини-приложении рисует
+то же, что попап админки. Разница одна: пускаем по `telegram_owner_id`
+(`_require_telegram_owner`), а не по роли RBAC.
 """
 from contextlib import suppress
 
@@ -23,13 +24,16 @@ from src.project.task.task_goal_scope import task_goal_scope_drop, task_goal_sco
 from src.project.task.task_log import task_log_dir
 from src.project.task.task_log_decision import task_log_decision_write
 from src.project.task.task_metadata import task_metadata_row_apply
+from src.project.task.task_plan import task_plan_goals_normalize
 from src.project.task.task_role import task_role_project_work_dir
 from src.project.task.task_question import (TASK_QUESTION_ACTION_DROP,
                                             TASK_QUESTION_ACTION_PLAN,
                                             TASK_QUESTION_ACTION_SPLIT,
                                             task_question_answer,
                                             task_question_auto,
+                                            task_question_batch,
                                             task_question_batch_answer,
+                                            task_question_decisions,
                                             task_question_get,
                                             task_question_plan_append)
 from src.project.task.task_report import task_report_write
@@ -58,6 +62,48 @@ class TaskQuestionAnswer(BaseModel):
     # «первый без ответа»: порядок ответов свободный, человек возвращается к уже
     # отвеченным, чтобы их поправить.
     index: int | None = None
+
+
+@router.get('/telegram-app/task/{task_id}/question')
+async def telegram_app_task_question_get(request: Request, task_id: int):
+    """
+    Вопрос по подзадаче, её цели и уже принятые решения.
+
+    Вопрос роли имеет приоритет над вопросом конвейера: роль спросила о конкретной
+    развилке, и подменять её вопрос общим «что делаем с целями» значит потерять то,
+    ради чего прогон вообще остановился.
+
+    Автовопрос собирается только по подзадаче: его варианты дробят и сокращают
+    цели, а у задачи целиком цели ведёт план менеджера — там охват меняют не так.
+    Цели и попытки отдаём всегда: отвечающий на вопрос роли тоже смотрит, чем
+    подзадачу примут и обрывались ли прогоны.
+    """
+    _require_telegram_owner(request)
+
+    subtask = await _subtask_row(task_id)
+    if not subtask:
+        raise HTTPException(status_code=404, detail='task not found')
+
+    attempts = await _attempts(task_id)
+    question = task_question_get(subtask)
+    if not question and subtask.get('parent_id'):
+        question = task_question_auto(
+            subtask, attempts,
+            await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX))
+
+    return {
+        'question':  question,
+        # Пачка вопросов разведки: у каждого свой черновик ответа. Отдаём целиком —
+        # человек переключается между ними и правит уже отвеченные, потому что
+        # ответ на третий вопрос нередко меняет ответ на первый.
+        'questions': task_question_batch(subtask),
+        'decisions': task_question_decisions(subtask),
+        'goals':     task_plan_goals_normalize(subtask.get('goals')),
+        'attempts':  attempts,
+        'state':     subtask.get('pipeline_state') or '',
+        'error':     subtask.get('pipeline_error') or '',
+        'title':     subtask.get('title') or '',
+    }
 
 
 @router.post('/telegram-app/task/{task_id}/question/answer')
