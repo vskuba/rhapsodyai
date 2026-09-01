@@ -94,6 +94,142 @@ class TestTaskQaMode:
         assert TASK_METADATA_KEY_QA_MODE == 'qa_mode'
 
 
+class TestQaModeNormalizationAgreesBothBanks:
+    """
+    Что показывает свитчер и что выбирает движок — одно и то же значение.
+
+    Глубину проверки выбирает `task_agent_qa_mode`, а человек судит по кнопке. Разойдись
+    нормы — человек смотрит на `Full`, агент проверяет по `lite`, и по одному берегу
+    расхождения не увидеть: список из одной строки `['full']` фронт читал как `full`,
+    движок — как `lite`.
+
+    Поэтому половина страницы берется наяву: из шаблона вырываются `esc`,
+    `TASK_META_KEY_QA_MODE`, `_qaModeNormalize` и `renderQaModeSwitcher`, их исполняет
+    node, и сравнивается `data-mode` настоящей разметки. Держать копию функции дешевле,
+    но копия пропустила бы правку шаблона молча — а она и есть половина нормы. Рядом
+    проверяется подпись на кнопке: она выведена из того же значения и, расходясь с
+    атрибутом, врёт человеку.
+
+    Покрыто рядовое содержимое мешка — ручная правка, ответы LLM, старые записи.
+    Экзотика вроде `NaN` или `1e+21` в metadata не бывает и тестом не держится.
+    """
+
+    CORPUS = [None, '', '   ', 'full', 'FULL', ' full ', '\tfull\n', 'fulllite', 'lite',
+              'Lite', 'полный', 'true', 'null', '0', True, False, 0, -0.0, 1, 2, 1.0,
+              '0.0', [], ['full'], ['FULL'], ['full', 'lite'], ['  full  '], [None],
+              [0], [True], {}, {'mode': 'full'}, {'qa_mode': 'full'}]
+
+    @staticmethod
+    def _front_rows(rows: list) -> list:
+        """
+        Отдать разметку свитчера для готовых строк задачи — так, как её делает браузер.
+        """
+        import json
+        import re
+        import shutil
+        import subprocess
+        from pathlib import Path
+
+        # Нет node — нет и второй половины: пропускаем со внятной причиной, а не падим
+        # сюиту чужой для теста средой. Шаги конвейера и страница живут на этой машине,
+        # где node есть, поэтому пропуск виден глазами, а не прячется.
+        if not shutil.which('node'):
+            pytest.skip('node недоступен — норму фронтенда проверить нечем')
+        page = Path('data/uvicorn/template/admin/project/task.html').read_text(encoding='utf-8')
+        parts = []
+        for pattern, name in (
+                (r"\nconst TASK_META_KEY_QA_MODE = 'qa_mode';", 'ключ режима'),
+                (r'\nfunction esc\(s\)\s*\{.*?\n\}', '`esc`'),
+                (r'\nfunction _qaModeNormalize\(value\)\s*\{.*?\n\}', '`_qaModeNormalize`'),
+                (r'\nfunction renderQaModeSwitcher\(t\)\s*\{.*?\n\}', '`renderQaModeSwitcher`')):
+            found = re.search(pattern, page, re.DOTALL)
+            assert found, (f'{name} в шаблоне не найдена: страницу переписали, и тест больше '
+                           f'не сторожит норму — править его вместе с шаблоном')
+            parts.append(found.group(0))
+        script = ('let buf = "";\n'
+                  'process.stdin.on("data", c => buf += c);\n'
+                  'process.stdin.on("end", () => {\n'
+                  + '\n'.join(parts) + '\n'
+                  '  const rows = JSON.parse(buf);\n'
+                  '  process.stdout.write(JSON.stringify(rows.map(t => renderQaModeSwitcher(t))));\n'
+                  '});\n')
+        done = subprocess.run(['node', '-e', script], input=json.dumps(rows, ensure_ascii=False),
+                              capture_output=True, text=True, timeout=30)
+        assert done.returncode == 0, f'node: {done.stderr}'
+        return json.loads(done.stdout)
+
+    @classmethod
+    def _front_markup(cls, values: list) -> list:
+        """Разметка свитчера для каждого значения мешка — ряд без проекта и без родителя."""
+        return cls._front_rows([{'id': 1, 'parent_id': None, 'metadata': {'qa_mode': value}}
+                                for value in values])
+
+    @staticmethod
+    def _data_mode(markup: str) -> str:
+        """Значение из `data-mode` — его читает `toggleQaMode` при следующем щелчке."""
+        import re
+        found = re.search(r'data-mode="([^"]*)"', markup)
+        assert found, f'свитчер не отдал `data-mode`: {markup!r}'
+        return found.group(1)
+
+    def test_both_banks_agree_on_every_value(self):
+        """Одинаковый вход — одинаковый режим; расхождение хотя бы по одному значению проваливает тест."""
+        from src.project.task.task_agent_qa import task_agent_qa_mode
+
+        markup = self._front_markup(self.CORPUS)
+        assert len(markup) == len(self.CORPUS), 'node вернул другой счёт — сравнивать нечего'
+        diverged = [(value, self._data_mode(html), task_agent_qa_mode({'metadata': {'qa_mode': value}}))
+                    for value, html in zip(self.CORPUS, markup)
+                    if self._data_mode(html) != task_agent_qa_mode({'metadata': {'qa_mode': value}})]
+        assert not diverged, (f'нормы разошлись (значение, фронт, движок): {diverged} — '
+                              f'править нужно обе половины: `_qaModeNormalize` и `task_agent_qa_mode`')
+
+    def test_button_label_matches_its_mode(self):
+        """Подпись на кнопке говорит то же, что заложенный в неё режим."""
+        markup = self._front_markup(self.CORPUS)
+        lied = [(value, self._data_mode(html), html) for value, html in zip(self.CORPUS, markup)
+                if f'QA {self._data_mode(html).capitalize()}' not in html]
+        assert not lied, f'подпись расходится с режимом (значение, атрибут, разметка): {lied}'
+
+    def test_junk_never_reaches_the_markup(self):
+        """
+        Мусорное значение не уезжает в атрибут как есть.
+
+        Патч принимает что угодно, ключ правят и воркеры, и человек через API; кавычка в
+        значении вышла бы из `data-mode` прямо в разметку строки задачи.
+        """
+        hostile = ['full" onclick="alert(1)', "full'><b>", '<script>full</script>']
+        markup = self._front_markup(self.CORPUS + hostile)
+        for value, html in zip(self.CORPUS + hostile, markup):
+            assert self._data_mode(html) in ('lite', 'full'), (f'значение {value!r} прошло в '
+                                                               f'атрибут как есть: {html!r}')
+        # Отдельно и по существу: ни одного чужого тега или обработчика ряд не содержит.
+        assert not [html for html in markup if 'alert(1)' in html or '<b>' in html or '<script>' in html]
+
+    def test_subtask_row_shows_no_switcher(self):
+        """
+        У подзадачи свитчера нет: режим пишется родителю.
+
+        Кнопка на ребёнке обещала бы менять проверку именно этого ребёнка, а меняла бы
+        чужой режим — поэтому ряд с `parent_id` обязан оставаться пустым.
+        """
+        markup = self._front_rows([
+            {'id': 2, 'parent_id': None, 'metadata': {'qa_mode': 'full'}},
+            {'id': 3, 'parent_id': 2, 'metadata': {'qa_mode': 'full'}},
+        ])
+        assert 'qa-mode-switcher' in markup[0], 'у родителя свитчера нет — проверять нечего'
+        assert markup[1] == '', f'подзадача получила свитчер: {markup[1]!r}'
+
+    def test_mode_word_full_only_after_trim_and_lower(self):
+        """`full` достигается только точным совпадением после обрезки пробелов и регистра."""
+        from src.project.task.task_agent_qa import QA_MODE_FULL, QA_MODE_LITE, task_agent_qa_mode
+
+        for value, expected in (('full', QA_MODE_FULL), (' FULL ', QA_MODE_FULL),
+                                ('full ', QA_MODE_FULL), ('fulllite', QA_MODE_LITE),
+                                ('fully', QA_MODE_LITE), (' полный', QA_MODE_LITE)):
+            assert task_agent_qa_mode({'metadata': {'qa_mode': value}}) == expected
+
+
 class TestTaskQaModeReachesWorkflow:
     """
     Выбор доходит до workflow: `wf_vars` собираются настоящим входом QA-агента.
@@ -204,8 +340,22 @@ class TestTaskQaModeRoundTrip:
     закрыта тогда, когда значение в базе, в списке и в `subtask_qa_mode` одно.
 
     Задача заводится в «Без проекта» и с префиксом `__pytest` — под сессионную уборку
-    `conftest.py`; в конвейер она не уйдёт: плана нет, ключ `to_planning` не ставится.
+    `conftest.py`, поэтому за собой её не сносим: `DELETE /task/{id}` вдобавок дёргает
+    освобождение пулов (`team_llm_pool_forget`, `team_shell_pool_forget`) и снимает
+    дерево выкладки, а ни того, ни другого эта строка в пуле не держала.
+
+    Что задача не уйдёт в конвейер — не гарантируется, а зависит от окружения: отсутствия
+    плана для отбора Менеджеру довольно (`task_claim_task_unplanned` берёт задачи именно
+    без плана), и удерживает её только фильтр по живой карточке. Без живых оболочек
+    `task_role_project_type_sql` даёт `1 = 0` и задача висит в очереди «Без проекта»;
+    с живой оболочкой вне проектов она уйдёт планироваться — ровно поэтому сессионная
+    уборка и сносит её после прогона. Дерево выкладки при этом не трогается: у задачи
+    без проекта `task_role_project_work_dir` пустой, сносить нечего.
     """
+
+    # Признак, а не догадка: класс единственный в файлу ходит по HTTP и зависит от того,
+    # чей код поднят на `BASE_URL` (см. `.claude/docs/testing.md`).
+    pytestmark = [pytest.mark.pipeline, pytest.mark.integration]
 
     TEST_TITLE = "__pytest_qa_mode__"
 
@@ -215,25 +365,16 @@ class TestTaskQaModeRoundTrip:
             await client.post("/auth/login", json=TEST_AUTH)
             yield client
 
-    @pytest.fixture
-    async def created(self, client: httpx.AsyncClient) -> AsyncGenerator[list, None]:
-        """Собирает id созданного, чтобы тест убрал за собой даже упав."""
-        ids: list[int] = []
-        yield ids
-        for task_id in reversed(ids):
-            await client.delete(f"/task/{task_id}")
-
-    async def _create(self, client, created, suffix: str) -> dict:
+    async def _create(self, client, suffix: str) -> dict:
+        """Новая задача теста; убирается сессией, поэтому id не возвращается."""
         resp = await client.post("/tasks/0", json={
             "title": f"{self.TEST_TITLE}{suffix}",
             "description": "временная задача теста режима QA",
         })
         assert resp.status_code == 200, resp.text
-        task = resp.json()["task"]
-        created.append(task["id"])
-        return task
+        return resp.json()["task"]
 
-    async def _switch(self, client, task_id: int, mode) -> None:
+    async def _switch(self, client, task_id: int, mode: str) -> None:
         """Один щелчок свитчера — тот же запрос, что шлёт `_taskFlagSave`."""
         from src.project.task.task_metadata import TASK_METADATA_KEY_QA_MODE
 
@@ -241,20 +382,39 @@ class TestTaskQaModeRoundTrip:
                                  json={"patch": {TASK_METADATA_KEY_QA_MODE: mode}})
         assert resp.status_code == 200, resp.text
 
+    async def _drop_mode(self, client, task_id: int) -> None:
+        """
+        Удалить ключ режима, а не переключить его.
+
+        Свитчер так не делает — он всегда пишет строку. Отдельный шаг нужен потому, что
+        удаление (`null` в патче) — третье состояние мешка, в которое свитчер не
+        заходит, а движок обязано читать тем же Lite, что и явное `lite`.
+        """
+        from src.project.task.task_metadata import TASK_METADATA_KEY_QA_MODE
+
+        resp = await client.post(f"/task/{task_id}/metadata",
+                                 json={"patch": {TASK_METADATA_KEY_QA_MODE: None}})
+        assert resp.status_code == 200, resp.text
+
     async def _row(self, client, task_id: int) -> dict:
-        """Перечитать список: этим же фронт восстанавливает состояние после перезагрузки."""
+        """
+        Перечитать список: этим же фронт восстанавливает состояние после перезагрузки.
+
+        Список поднимается целиком, а не одна строка, — именно так и делает страница,
+        и иначе мы проверяли бы endpoint, которого свитчер не вызывает.
+        """
         resp = await client.get("/tasks/0")
         assert resp.status_code == 200, resp.text
         rows = {t["id"]: t for t in resp.json()["tasks"]}
         assert task_id in rows, f"задача {task_id} исчезла из списка — проверять нечего"
         return rows[task_id]
 
-    async def test_full_mode_survives_reload(self, client, created):
+    async def test_full_mode_survives_reload(self, client):
         """Полный режим записан, перечитан и понятен движку — свитчер вернётся в то же состояние."""
         from src.project.task.task_agent_qa import QA_MODE_FULL, task_agent_qa_mode
         from src.project.task.task_metadata import TASK_METADATA_KEY_QA_MODE
 
-        task = await self._create(client, created, "full")
+        task = await self._create(client, "full")
         await self._switch(client, task["id"], QA_MODE_FULL)
 
         row = await self._row(client, task["id"])
@@ -263,30 +423,42 @@ class TestTaskQaModeRoundTrip:
         # а в `subtask_qa_mode` уезжает другое.
         assert task_agent_qa_mode(row) == QA_MODE_FULL
 
-    async def test_back_to_lite_is_the_restored_default(self, client, created):
+    async def test_back_to_lite_is_the_restored_default(self, client):
         """
-        Возврат в Lite перечитывается Lite — и на явном значении, и на удалённом ключе.
+        Возврат в Lite перечитывается Lite.
 
-        Фронт пишет возврат явно `lite`, а не удалением; движок держит ту же норму на
-        обоих состояниях. Разойдутся — человек переключил одно, а агент проверяет
-        другое, и по одному концу этого не увидеть.
+        Так делает свитчер: возврат пишется явно `lite`, а не удалением ключа.
+        Разойдётся с движком — человек переключил одно, а агент проверяет другое.
         """
         from src.project.task.task_agent_qa import QA_MODE_FULL, QA_MODE_LITE, task_agent_qa_mode
-        from src.project.task.task_metadata import TASK_METADATA_KEY_QA_MODE
 
-        task = await self._create(client, created, "back")
+        task = await self._create(client, "back")
         await self._switch(client, task["id"], QA_MODE_FULL)
         await self._switch(client, task["id"], QA_MODE_LITE)
 
         row = await self._row(client, task["id"])
         assert task_agent_qa_mode(row) == QA_MODE_LITE
 
-        await self._switch(client, task["id"], None)   # удаление ключа — то же умолчание
+    async def test_dropped_key_restores_lite_default(self, client):
+        """
+        Удалённый ключ читается тем же Lite, что и явное `lite`.
+
+        Свитчер до удаления не доходит — доходит человек, правящий мешок руками, или
+        сосед, которому ключ больше не нужен. Значение не должно остаться `full`:
+        иначе режим пережил не перезагрузку страницы, а чужую запись в тот же мешок.
+        """
+        from src.project.task.task_agent_qa import QA_MODE_FULL, QA_MODE_LITE, task_agent_qa_mode
+        from src.project.task.task_metadata import TASK_METADATA_KEY_QA_MODE
+
+        task = await self._create(client, "drop")
+        await self._switch(client, task["id"], QA_MODE_FULL)
+        await self._drop_mode(client, task["id"])
+
         row = await self._row(client, task["id"])
-        assert TASK_METADATA_KEY_QA_MODE not in row["metadata"]
+        assert TASK_METADATA_KEY_QA_MODE not in row["metadata"], "ключ не удалён патчем null"
         assert task_agent_qa_mode(row) == QA_MODE_LITE
 
-    async def test_shared_keys_survive_mode_patch(self, client, created):
+    async def test_shared_keys_survive_mode_patch(self, client):
         """
         Запись режима не уносит чужие ключи мешка.
 
@@ -300,7 +472,7 @@ class TestTaskQaModeRoundTrip:
                                                     TASK_METADATA_KEY_RETRY,
                                                     task_metadata_update)
 
-        task = await self._create(client, created, "coexist")
+        task = await self._create(client, "coexist")
         await task_metadata_update(task["id"], {TASK_METADATA_KEY_BRANCH: "task/6438",
                                                 TASK_METADATA_KEY_RETRY: {"count": 2}})
 
