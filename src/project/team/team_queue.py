@@ -19,6 +19,7 @@ Developer/QA — это самосоединение: ребёнок даёт р
 «сколько задач этого проекта ждут роль», а не «сколько всего работы у роли».
 """
 from mysql_.mysql_ import mysql_get_db_async
+from src.project.task.task_depend import task_depend_ready_sql
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_ATTEMPT_MAX,
     TASK_SETTING_TIMEOUT_BUGFIX_RUN,
@@ -162,7 +163,13 @@ async def _developer_rows() -> list[dict]:
         " WHERE (s.pipeline_state = 'developing' AND s.pipeline_locked_by <> '') "
         "    OR (s.pipeline_state IN ('planned', 'failed_qa') "
         "        AND (s.pipeline_locked_at IS NULL OR s.pipeline_locked_by = '') "
-        "        AND s.pipeline_attempt_count < %s) "
+        "        AND s.pipeline_attempt_count < %s "
+        # Ждущие предшественника в очередь не идут: захват их не возьмёт, пока сосед не
+        # закрыт (`task_claim_subtask_developable`), и на карточке они читались как
+        # работа, до которой у роли не доходят руки. Живьём выходило хуже: карточка
+        # показывала свободного разработчика с очередью, и это выглядело простоем
+        # конвейера, хотя брать было нечего.
+        f"        AND {task_depend_ready_sql('s.id')}) "
         " ORDER BY claim_order, s.parent_id, s.position, s.id"
     )
 

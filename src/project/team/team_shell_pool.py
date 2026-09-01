@@ -35,14 +35,25 @@ from mysql_.mysql_ import mysql_get_db_async
 
 # Сколько живёт захват без подтверждения. Оболочку закрыли посреди круга, воркер убили
 # по таймауту job'а — без срока роль осталась бы без оболочек навсегда, а снять захват
-# было бы некому. Значение то же, что у захвата модели (`TEAM_LLM_POOL_STALE_SECONDS`),
-# и по той же причине: досрочно отобранная оболочка хуже лишнего получаса ожидания —
-# прогон при этом уходит в никуда.
-TEAM_SHELL_POOL_STALE_SECONDS = 7400
+# было бы некому.
+#
+# **Срок короткий, потому что живой круг подтверждает себя сам.** Пока идёт работа, job
+# раз в `TASK_CLAIM_LOCK_TOUCH_SEC` подновляет захват (`team_shell_pool_touch` из
+# `_lock_hold`) — тем же ударом сердца, каким держит свою строку в `project_task`. Значит
+# состарившийся захват означает ровно одно: держать его больше некому.
+#
+# Раньше здесь стояло 7400 секунд, и это была не осторожность, а цена незнания: захват
+# снимал только `finally` своего job'а, а убитый воркер его не выполняет. Живьём круг,
+# умерший при перезапуске воркера, держал оболочку и единственную модель проекта целый
+# час: на странице команды роль «работала», конвейер считал модель занятой, и соседняя
+# роль голодала, не имея чем работать.
+#
+# Запас — шесть с лишним пропущенных подтверждений: одна заминка круг не отбирает.
+TEAM_SHELL_POOL_STALE_SECONDS = 300
 
 
 async def team_shell_pool_acquire(project_id: int, role: str, task_id: int,
-                                  sessions: list) -> str | None:
+                                  sessions: list, sticky_within: list | None = None) -> str | None:
     """
     Захватить свободную оболочку роли. Возвращает `session_uuid` или `None`.
 
@@ -57,14 +68,24 @@ async def team_shell_pool_acquire(project_id: int, role: str, task_id: int,
 
     Порядок попыток: сначала оболочка, в которой эта задача работала прошлый круг
     (прилипание — её агент помнит ход), затем остальные по порядку списка.
+
+    `sticky_within` ограничивает прилипание: продвинуть вперёд можно только оболочку из
+    этого списка. Нужно там, где порядок задан не предпочтением, а правилом, и ломать
+    его прилипанием нельзя. Так с локальными моделями против облачного агента: пока
+    свободна модель пула, круг обязан идти в пуловую оболочку, и «задача прошлый раз
+    работала в облачной» этого не отменяет — иначе прилипание раз за разом уводило бы
+    работу за облачные токены мимо простаивающей локальной модели.
+
+    `None` (умолчание) — прилипание работает по всему списку, как и раньше.
     """
     sessions = [str(s).strip() for s in (sessions or []) if str(s).strip()]
     if not sessions:
         return None
 
     order = list(sessions)
+    allowed = order if sticky_within is None else [str(s).strip() for s in sticky_within]
     sticky = await _task_shell_last(task_id)
-    if sticky in order:
+    if sticky in order and sticky in allowed:
         order.remove(sticky)
         order.insert(0, sticky)
 
@@ -98,6 +119,34 @@ async def team_shell_pool_acquire(project_id: int, role: str, task_id: int,
                 return session_uuid
 
     return None
+
+
+async def team_shell_pool_touch(session_uuid: str) -> bool:
+    """
+    Подтвердить захват оболочки: «круг идёт, оболочка моя». Returns: подтвердили ли.
+
+    Зовёт сам работающий job раз в `TASK_CLAIM_LOCK_TOUCH_SEC` (`_lock_hold`), тем же
+    ударом сердца, каким держит свою строку задачи. На этом и держится короткий срок
+    протухания (`TEAM_SHELL_POOL_STALE_SECONDS`): захват, который никто не подтверждает,
+    свободен — держать его больше некому.
+
+    `False` — подтверждать нечего: захват уже сняли (освобождение, протухание, уборка).
+    Для зовущего это сигнал прекратить, а не повод завести строку заново: оболочка
+    больше не его, и ставить на неё свежую метку значило бы отнять её у нового круга.
+    """
+    session_uuid = str(session_uuid or '').strip()
+    if not session_uuid:
+        return False
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'UPDATE team_shell_lock SET locked_at = NOW() '
+            ' WHERE session_uuid = %s AND locked_at IS NOT NULL',
+            (session_uuid,))
+        touched = db.rowcount
+        await db.connection.commit()
+
+    return bool(touched)
 
 
 async def team_shell_pool_release(session_uuid: str = '', task_id: int = 0,

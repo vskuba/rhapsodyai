@@ -15,7 +15,8 @@ from src.project.team.team_setting_autocompact import (
     TEAM_SETTING_AUTOCOMPACT_FLAG, team_setting_autocompact_get)
 from src.project.team.team_agent import team_agent_by_role
 from src.project.team.team_llm_pool import (TEAM_LLM_POOL_MODE_CLOUD, team_llm_pool_all,
-                                            team_llm_pool_locks, team_llm_pool_sessions)
+                                            team_llm_pool_cloud_items, team_llm_pool_locks,
+                                            team_llm_pool_sessions)
 from src.project.team.team_shell_pool import team_shell_pool_tasks
 from src.project.team.team_member import team_member_command_llm_normalize
 from src.project.team.team_queue import (TEAM_QUEUE_PREVIEW_LIMIT, TEAM_QUEUE_PROJECT_NONE,
@@ -23,6 +24,7 @@ from src.project.team.team_queue import (TEAM_QUEUE_PREVIEW_LIMIT, TEAM_QUEUE_PR
 from src.project.task.task_setting_parallel import (
     TASK_SETTING_PARALLEL_DEFAULT,
     task_setting_parallel_all)
+from src.project.task.task_role import task_role_shell_sessions_by_project
 from src.project.task.task_setting_timeout import (
     TASK_SETTING_TIMEOUT_PING_STALE,
     task_setting_timeout_get)
@@ -106,6 +108,13 @@ async def team_project_blocks_get() -> list[dict]:
     # навсегда, и после круга карточка показывала её как свою — при том, что модель
     # уже отдана соседу. Захват гаснет вместе с кругом, и по нему видно текущее.
     llm_by_session = await team_llm_pool_sessions()
+    # Записи пула на живые облачные оболочки: каждая добавляет проекту круг, и человек
+    # обязан видеть их в пуле — иначе предел на странице необъясним. Живые оболочки
+    # берём у отбора работы, а не считаем сами: правило «какая оболочка живая» одно,
+    # и вторая его копия разошлась бы с первой.
+    shells_by_project = await task_role_shell_sessions_by_project()
+    cloud_by_project = {project_id: await team_llm_pool_cloud_items(by_role)
+                        for project_id, by_role in shells_by_project.items()}
     locks = {}
     for lock in await team_llm_pool_locks():
         locks.setdefault(int(lock.get('project_id') or 0), []).append({
@@ -140,9 +149,11 @@ async def team_project_blocks_get() -> list[dict]:
             'project_id': project.get('id'),
             'title': str(project.get('title') or f"Проект #{project.get('id')}"),
             'work_dir': str(project.get('work_dir') or ''),
-            'parallel': _parallel_of(project_id, parallel, pools),
-            # Пул задаёт и чем работать, и сколько работ разом: предел — его длина.
+            'parallel': _parallel_of(project_id, parallel, pools, cloud_by_project),
+            # Пул задаёт и чем работать, и сколько работ разом: предел — его длина
+            # плюс записи облачных оболочек, которые моделей не берут.
             'llm_pool': pools.get(project_id, []),
+            'llm_cloud': cloud_by_project.get(project_id, []),
             'llm_busy': locks.get(project_id, []),
             'cards': _cards_build(project_sessions, members_by_project.get(project_id, {}),
                                   str(project.get('work_dir') or ''), now, stale_seconds,
@@ -157,8 +168,9 @@ async def team_project_blocks_get() -> list[dict]:
             'project_id': 0,
             'title': 'Без проекта',
             'work_dir': '',
-            'parallel': _parallel_of(TEAM_PROJECT_NO_PROJECT, parallel, pools),
+            'parallel': _parallel_of(TEAM_PROJECT_NO_PROJECT, parallel, pools, cloud_by_project),
             'llm_pool': pools.get(TEAM_PROJECT_NO_PROJECT, []),
+            'llm_cloud': cloud_by_project.get(TEAM_PROJECT_NO_PROJECT, []),
             'llm_busy': locks.get(TEAM_PROJECT_NO_PROJECT, []),
             'cards': _cards_build(orphans, members_by_project.get(TEAM_PROJECT_NO_PROJECT, {}),
                                   '', now, stale_seconds, placeholders=False,
@@ -217,20 +229,22 @@ async def team_project_session_work_dir_sync(session_uuid: str, work_dir: str) -
     return True
 
 
-def _parallel_of(project_id: int, parallel: dict, pools: dict) -> int:
+def _parallel_of(project_id: int, parallel: dict, pools: dict, cloud: dict | None = None) -> int:
     """
     Сколько прогонов проект ведёт одновременно.
 
-    Пул есть — его длина: работать разом можно ровно настолько, насколько хватает
-    моделей. Пула нет — прежняя настройка: проект идёт напрямую в облачный Anthropic,
-    и делить там нечего.
+    Пул есть — его длина плюс живые облачные оболочки: те модели не берут, у них свой
+    бэкенд, и в предел по моделям их круги не попадают. Пула нет — прежняя настройка:
+    проект идёт напрямую в облачный Anthropic, и делить там нечего.
 
     Правило то же, что у отбора работы (`task_pipeline._parallel_limits`), — разойдись
     они, страница обещала бы одно число, а конвейер работал по другому.
     """
     pool = pools.get(project_id) or []
+    if not pool:
+        return int(parallel.get(project_id, TASK_SETTING_PARALLEL_DEFAULT))
 
-    return len(pool) or int(parallel.get(project_id, TASK_SETTING_PARALLEL_DEFAULT))
+    return len(pool) + len((cloud or {}).get(project_id) or [])
 
 
 def _members_by_project(members: list[dict]) -> dict[int, dict]:

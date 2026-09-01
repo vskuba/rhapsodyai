@@ -61,9 +61,19 @@ TEAM_LLM_POOL_CONTEXT_DEFAULT = '115k'
 
 # Сколько живёт захват без подтверждения. Оболочка падает, круг обрывается по
 # таймауту — без срока пул опустел бы от мёртвых захватов, снять которые некому.
-# Значение с запасом от таймаута круга роли: досрочно отобранная модель хуже, чем
-# лишние полчаса ожидания, — прогон при этом уходит в никуда.
-TEAM_LLM_POOL_STALE_SECONDS = 7400
+#
+# **Срок короткий, потому что живой круг подтверждает себя сам** — раз в
+# `TASK_CLAIM_LOCK_TOUCH_SEC` (`team_llm_pool_touch` из `_lock_hold`). Состарившийся
+# захват означает ровно одно: держать его больше некому.
+#
+# Прежние 7400 секунд опирались на то, что захват снимает `finally` своего job'а. Убитый
+# воркер его не выполняет, и живьём мёртвый круг держал единственную модель проекта час:
+# конвейер считал её занятой, роль без своей модели голодала, а на странице команды
+# «работала» оболочка, в которой давно ничего не происходило.
+#
+# Значение то же, что у захвата оболочки (`TEAM_SHELL_POOL_STALE_SECONDS`): круг держит
+# и то, и другое, и разъехавшиеся сроки дали бы полукруг с моделью без оболочки.
+TEAM_LLM_POOL_STALE_SECONDS = 300
 
 # Потолок имени модели в реестре сессий — длина колонки `server_llm`. Режем здесь,
 # чтобы MySQL не обрезал молча: имя двухуровневое, и обрезанное посередине оно
@@ -80,6 +90,11 @@ TEAM_LLM_POOL_NAME_MAX = 100
 # (`team_llm_pool_shell_cloud` ниже и её проверка в `_llm_assign`): выдай мы её
 # однажды, оболочка начала бы слать имя модели, и режим запуска пропал бы навсегда.
 TEAM_LLM_POOL_MODE_CLOUD = 'anthropic'
+
+# Как зовётся в пуле запись облачной оболочки. Не имя модели: модели за ней нет, за
+# ней стоит родной агент Claude Code, и прокси под неё не поднимается. Имя видно
+# человеку на странице команды рядом с именем карточки, которой запись принадлежит.
+TEAM_LLM_POOL_CLOUD_NAME = 'Claude Code Agent'
 
 
 async def team_llm_pool_get(project_id: int) -> list[str]:
@@ -279,6 +294,88 @@ async def team_llm_pool_shell_cloud(session_uuid: str) -> bool:
     return str((row or {}).get('server_llm') or '') == TEAM_LLM_POOL_MODE_CLOUD
 
 
+async def team_llm_pool_cloud_items(sessions_by_role: dict | None) -> list[dict]:
+    """
+    Виртуальные записи пула на живые облачные оболочки проекта.
+
+    Зачем. Предел параллельности проекта равен размеру пула: разом работает столько
+    кругов, на сколько хватает моделей. Оболочка без `--litellm` модели из пула не
+    берёт — у неё свой бэкенд, — и в этом счёте её не было вовсе: открой хоть три
+    таких карточки, проект с пулом из одной модели вёл один круг, а карточки стояли.
+
+    Поэтому каждая живая облачная оболочка добавляет к пулу свою запись. Это не модель
+    и прокси за ней нет: запись означает «ещё один круг может идти, вот в этой
+    оболочке».
+
+    **Запись именная и чужой роли не достаётся.** Она привязана к `session_uuid`
+    конкретной оболочки, и взять её может только та же оболочка: пуловая роль ходит за
+    моделью в `team_llm_lock`, где облачных строк нет вовсе, а облачная за моделью не
+    ходит совсем (`_llm_assign`). Исключительность даёт захват самой оболочки
+    (`team_shell_pool`): круг в ней может идти только один, значит и запись занята
+    ровно им.
+
+    `sessions_by_role` — живые оболочки проекта, `{role: [session_uuid]}` из
+    `task_role_shell_sessions_by_project`. Список приходит снаружи, а не читается
+    здесь: правило «какая оболочка живая» уже описано там — свежесть пинга, карточка
+    роли, каталог проекта, незапертость на диалоге разрешений, — и вторая его копия
+    разошлась бы с первой.
+
+    Returns: `[{'name', 'context', 'session_uuid', 'role', 'role_index', 'cloud'}]`.
+    Порядок — по роли и номеру оболочки, чтобы список на странице не прыгал между
+    перерисовками.
+    """
+    wanted = [str(uuid).strip()
+              for sessions in (sessions_by_role or {}).values()
+              for uuid in (sessions or []) if str(uuid or '').strip()]
+    if not wanted:
+        return []
+
+    placeholders = ', '.join(['%s'] * len(wanted))
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT session_uuid, role, role_index FROM ai_claude_session_registry '
+            f' WHERE session_uuid IN ({placeholders}) AND server_llm = %s '
+            ' ORDER BY role, role_index',
+            (*wanted, TEAM_LLM_POOL_MODE_CLOUD))
+        rows = await db.fetchall() or []
+
+    return [{'name': TEAM_LLM_POOL_CLOUD_NAME,
+             'context': TEAM_LLM_POOL_CONTEXT_DEFAULT,
+             'session_uuid': str(row['session_uuid']),
+             'role': str(row['role'] or ''),
+             'role_index': int(row['role_index'] or 0),
+             'cloud': True}
+            for row in rows]
+
+
+async def team_llm_pool_free_names(project_id: int) -> list[str]:
+    """
+    Модели пула, свободные прямо сейчас. Порядок — как в пуле.
+
+    Нужен выбору оболочки на круг (`_shell_assign`): пока свободна локальная модель,
+    круг обязан идти в пуловую оболочку, а не в облачную. Иначе гонку выигрывает кто
+    успел, и случалось так, что круг уходил за облачные токены, пока локальная модель
+    простаивала.
+
+    Ответ мгновенный и устаревает сразу: между «посмотреть» и «захватить» модель может
+    уйти соседнему тику. Это не страшно — здесь он служит порядком предпочтения, а не
+    обещанием; промахнувшийся круг просто подождёт очереди, как ждал бы и раньше.
+    """
+    items = await team_llm_pool_items(project_id)
+    if not items:
+        return []
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT llm_name FROM team_llm_lock '
+            ' WHERE project_id = %s AND locked_at IS NOT NULL '
+            '   AND locked_at > NOW() - INTERVAL %s SECOND',
+            (int(project_id or 0), TEAM_LLM_POOL_STALE_SECONDS))
+        busy = {str(row['llm_name']) for row in await db.fetchall() or []}
+
+    return [item['name'] for item in items if item['name'] not in busy]
+
+
 async def team_llm_pool_acquire(project_id: int, task_id: int, role: str,
                                 session_uuid: str = '') -> str | None:
     """
@@ -411,6 +508,42 @@ async def team_llm_pool_assign(project_id: int, task_id: int, role: str,
         logger_info(f'[team] {role} получила {llm} (окно {context}) для задачи #{task_id}')
 
     return {'llm': llm, 'context': context, 'switched': switched}
+
+
+async def team_llm_pool_touch(llm_name: str, task_id: int = 0, role: str = '') -> bool:
+    """
+    Подтвердить захват модели: «круг идёт, модель моя». Returns: подтвердили ли.
+
+    Зовёт работающий job раз в `TASK_CLAIM_LOCK_TOUCH_SEC` (`_lock_hold`) — тем же
+    ударом сердца, каким держит строку задачи и захват оболочки. На этом держится
+    короткий `TEAM_LLM_POOL_STALE_SECONDS`.
+
+    Подтверждаем ровно свой захват — по тройке «модель + задача + роль», той же, по
+    которой его и снимают (`team_llm_pool_release`). Пока круг шёл, модель могла
+    протухнуть и уйти другой работе, и подновить её значило бы отобрать чужое.
+
+    `False` — подтверждать нечего: захват уже не наш. Заводить его заново нельзя.
+    """
+    llm_name = str(llm_name or '').strip()
+    if not llm_name:
+        return False
+
+    where = ['llm_name = %s', 'locked_at IS NOT NULL']
+    params = [llm_name]
+    if task_id:
+        where.append('task_id = %s')
+        params.append(int(task_id))
+    if role:
+        where.append('role = %s')
+        params.append(str(role))
+
+    async with mysql_get_db_async() as db:
+        await db.execute(f"UPDATE team_llm_lock SET locked_at = NOW() WHERE {' AND '.join(where)}",
+                         tuple(params))
+        touched = db.rowcount
+        await db.connection.commit()
+
+    return bool(touched)
 
 
 async def team_llm_pool_release(llm_name: str = '', task_id: int = 0, role: str = '') -> int:

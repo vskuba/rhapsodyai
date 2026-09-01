@@ -154,6 +154,66 @@ class TestBusyCount:
         assert await team_shell_pool_busy(TEST_PROJECT_ID) == {}
 
 
+class TestTouch:
+    """
+    Захват живёт, пока круг его подтверждает.
+
+    На этом держится короткий срок протухания. Раньше он был два часа, потому что снять
+    захват мог только `finally` своего job'а, а убитый воркер его не выполняет: круг,
+    погибший при перезапуске, час держал оболочку и единственную модель проекта — на
+    странице команды роль «работала», а соседняя роль голодала, не имея чем работать.
+    """
+
+    async def test_touch_refreshes_the_lock(self):
+        from src.project.team.team_shell_pool import (team_shell_pool_acquire,
+                                                      team_shell_pool_touch)
+
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 1, [TEST_SHELL_A])
+        await _lock_age(TEST_SHELL_A, seconds=1000)
+
+        assert await team_shell_pool_touch(TEST_SHELL_A) is True
+        assert (await _lock_row(TEST_SHELL_A))['locked_at'] is not None
+        assert await _lock_age_seconds(TEST_SHELL_A) < 60, 'отметка не обновилась'
+
+    async def test_free_lock_is_not_revived(self):
+        """
+        Освобождённый захват подтверждением не поднимается.
+
+        Иначе опоздавший удар сердца отобрал бы оболочку у круга, который взял её
+        следом: строка одна на оболочку, и свежая метка на ней означала бы чужую работу.
+        """
+        from src.project.team.team_shell_pool import (team_shell_pool_acquire,
+                                                      team_shell_pool_release,
+                                                      team_shell_pool_touch)
+
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 1, [TEST_SHELL_A])
+        await team_shell_pool_release(session_uuid=TEST_SHELL_A)
+
+        assert await team_shell_pool_touch(TEST_SHELL_A) is False
+        assert (await _lock_row(TEST_SHELL_A))['locked_at'] is None
+
+    async def test_unknown_shell_is_not_an_error(self):
+        from src.project.team.team_shell_pool import team_shell_pool_touch
+
+        assert await team_shell_pool_touch('no-such-shell') is False
+        assert await team_shell_pool_touch('') is False
+
+    async def test_stale_lock_is_free_for_the_next_round(self):
+        """
+        Круг умер и подтверждать перестал — оболочка достаётся следующему.
+
+        Это и есть замена `finally`, которого у убитого job'а не бывает.
+        """
+        from src.project.team.team_shell_pool import (TEAM_SHELL_POOL_STALE_SECONDS,
+                                                      team_shell_pool_acquire)
+
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 1, [TEST_SHELL_A])
+        await _lock_age(TEST_SHELL_A, seconds=TEAM_SHELL_POOL_STALE_SECONDS + 60)
+
+        assert await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 2,
+                                             [TEST_SHELL_A]) == TEST_SHELL_A
+
+
 class TestPrune:
     """Строки закрытых оболочек не копятся."""
 
@@ -279,6 +339,30 @@ async def _lock_sessions() -> list:
                          ' ORDER BY session_uuid', (TEST_PROJECT_ID,))
 
         return [row['session_uuid'] for row in await db.fetchall() or []]
+
+
+async def _lock_age(session_uuid: str, seconds: int) -> None:
+    """Состарить захват: отодвинуть его отметку назад на столько секунд."""
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'UPDATE team_shell_lock SET locked_at = NOW() - INTERVAL %s SECOND '
+            ' WHERE session_uuid = %s', (int(seconds), session_uuid))
+        await db.connection.commit()
+
+
+async def _lock_age_seconds(session_uuid: str) -> int:
+    """Сколько секунд назад захват подтверждали."""
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT TIMESTAMPDIFF(SECOND, locked_at, NOW()) AS age FROM team_shell_lock '
+            ' WHERE session_uuid = %s', (session_uuid,))
+        row = await db.fetchone() or {}
+
+    return int(row.get('age') or 0)
 
 
 async def _alive_except(*dead: str) -> set:

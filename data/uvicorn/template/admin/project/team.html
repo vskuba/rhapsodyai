@@ -296,6 +296,18 @@
        ей не достаются, и выглядеть как рабочая она не должна. */
     .llm-row.dead .llm-name { color: #b91c1c; text-decoration: line-through; }
 
+    /* Запись облачного агента: не настройка, а живая оболочка. Своим цветом — чтобы её
+       не искали галкой рядом с моделями, которых она не заменяет. */
+    .llm-row.cloud { background: #fef2f2; }
+    .llm-row.cloud .llm-name { color: #b91c1c; font-weight: 600; }
+    .llm-row.cloud .llm-owner {
+        font-size: 10px;
+        color: #9ca3af;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     .llm-head {
         display: flex; align-items: center; justify-content: space-between; gap: 6px;
     }
@@ -1252,6 +1264,28 @@
             </div>`;
         }).join('') || '<div class="shell-note">каталог оболочки пуст</div>';
 
+        // Записи облачных оболочек. Не модели: прокси за ними нет, за ними стоит родной
+        // агент Claude Code. Каждая добавляет проекту круг, поэтому в пуле они видны —
+        // иначе предел параллельности необъясним: моделей одна, а работ идёт две.
+        //
+        // Без галки и без окна: галкой такую запись не завести и не убрать, она есть
+        // ровно пока открыт её терминал. Имя карточки рядом — потому что запись именная:
+        // взять её может только та оболочка, которой она принадлежит.
+        // Имя карточки берём у самой карточки, по её сессии: `_card_name` уже собрал
+        // его из имени члена команды и номера оболочки, и вторая сборка тех же слов
+        // здесь разошлась бы с первой на первой же правке.
+        const cardBySession = Object.fromEntries(
+            (block.cards || []).filter(c => c.session_uuid).map(c => [c.session_uuid, c.name]));
+        const cloudRows = (block.llm_cloud || []).map(item => {
+            const owner = cardBySession[item.session_uuid] || item.role;
+            return `<div class="llm-row on cloud" title="Оболочка запущена без --litellm: работает родным агентом Claude Code. Запись именная — её берёт только эта карточка, и модели пула ей не выдаются">
+                <span class="llm-pick">
+                    <span class="llm-name">${escapeHtml(item.name)}</span>
+                </span>
+                <span class="llm-owner">только ${escapeHtml(owner)}</span>
+            </div>`;
+        }).join('');
+
         // Предел параллельности — длина пула, а не отдельная настройка: работать
         // разом можно ровно настолько, насколько хватает моделей, и два числа об
         // одном и том же непременно разошлись бы.
@@ -1263,10 +1297,12 @@
                     <button type="button" class="btn-ping-pool" onclick="pingLlmPool(this)"
                             title="Проверить, отвечают ли модели пула. Опрос идёт и сам, раз в пять минут">Ping</button>
                 </div>
-                <div class="llm-list">${rows}</div>
+                <div class="llm-list">${rows}${cloudRows}</div>
                 <div class="shell-note">
                     ${pool.length
-                        ? `всего: <b>${pool.length}</b>${busy.length ? ` · занято ${busy.length}` : ''}`
+                        ? `всего: <b>${pool.length + (block.llm_cloud || []).length}</b>`
+                          + `${(block.llm_cloud || []).length ? ` (моделей ${pool.length} + агентов ${(block.llm_cloud || []).length})` : ''}`
+                          + `${busy.length ? ` · занято ${busy.length}` : ''}`
                         : 'пул пуст — роли пойдут напрямую в Anthropic, по одной'}
                 </div>
                 <label class="shell-row" title="Флаг --verbose: оболочка пишет логи в .claude-shell/logs. Без него не пишется ничего">
@@ -1285,7 +1321,11 @@
         // Собираем весь пул целиком, а не правим одну строку: сервер хранит его одной
         // настройкой, и присылать «добавь эту» значило бы заводить второй способ
         // сказать то же самое.
-        const items = [...box.querySelectorAll('.llm-row')]
+        //
+        // Строки облачных агентов (`.cloud`) сюда не идут: они не настройка, а живые
+        // оболочки — их не заводят галкой и не сохраняют. Чекбокса у них нет вовсе, и
+        // без этого отбора сборка падала бы на первом же сохранении пула.
+        const items = [...box.querySelectorAll('.llm-row:not(.cloud)')]
             .filter(row => row.querySelector('input[type=checkbox]').checked)
             .map(row => ({
                 name: row.querySelector('input[type=checkbox]').dataset.name,

@@ -83,6 +83,81 @@ class TestFreeShellKeepsRole:
         assert set(_roles_by_project_free(LIVE, {}, LIMITS, {})[2]) == set(LIVE[2])
 
 
+class TestStarvedRoleDropsOut:
+    """
+    Свободной оболочке нечем работать — роль выпадает из отбора.
+
+    Живой повод (#5238). Пул проекта — одна модель, её держал круг разработчика. QA
+    каждый тик забирал ход: захватывал подзадачу, доходил до выдачи модели, упирался в
+    занятую и отдавал строку обратно. Работы не было ни секунды, но ход тика тратился —
+    а свободная облачная оболочка разработчика всё это время простаивала, хотя работа
+    для неё была.
+
+    Облачной оболочки это не касается: у неё свой бэкенд, модель ей не нужна.
+    """
+
+    # Одна пуловая оболочка у QA, две у разработчика — вторая облачная.
+    LIVE_MIXED = {2: {'qa': ['s-qa-1'], 'developer': ['s-dev-1', 's-dev-cloud']}}
+    CLOUD = {2: [{'session_uuid': 's-dev-cloud'}]}
+
+    def test_pool_role_drops_when_no_model_free(self):
+        from src.project.task.task_pipeline import _roles_by_project_free
+
+        free = _roles_by_project_free(
+            self.LIVE_MIXED, {}, {2: 2}, {}, busy_sessions={'s-dev-1'},
+            cloud_by_project=self.CLOUD, free_models={2: False})
+
+        assert 'qa' not in free.get(2, []), 'QA взял ход, хотя работать ему нечем'
+
+    def test_cloud_role_stays_without_free_model(self):
+        """Разработчик остаётся: его свободная оболочка облачная, модель ей не нужна."""
+        from src.project.task.task_pipeline import _roles_by_project_free
+
+        free = _roles_by_project_free(
+            self.LIVE_MIXED, {}, {2: 2}, {}, busy_sessions={'s-dev-1'},
+            cloud_by_project=self.CLOUD, free_models={2: False})
+
+        assert 'developer' in free.get(2, [])
+
+    def test_free_model_keeps_everyone(self):
+        """Модель свободна — прежнее поведение, пуловые роли в отборе."""
+        from src.project.task.task_pipeline import _roles_by_project_free
+
+        free = _roles_by_project_free(
+            self.LIVE_MIXED, {}, {2: 2}, {}, busy_sessions=set(),
+            cloud_by_project=self.CLOUD, free_models={2: True})
+
+        assert set(free[2]) == {'qa', 'developer'}
+
+    def test_project_without_pool_is_not_starved(self):
+        """
+        Пула нет — модель никому не выдаётся, и требовать её нельзя.
+
+        Такой проект работает штатным бэкендом, как до появления пулов; выпади роли
+        здесь, конвейер встал бы на ровном месте.
+        """
+        from src.project.task.task_pipeline import _roles_by_project_free
+
+        free = _roles_by_project_free(
+            self.LIVE_MIXED, {}, {2: 2}, {}, busy_sessions={'s-dev-1'},
+            cloud_by_project={}, free_models={})
+
+        assert set(free[2]) == {'qa', 'developer'}
+
+    def test_old_call_shape_still_works(self):
+        """
+        Без новых доводов фильтр судит как раньше — по числу занятых оболочек.
+
+        Так его зовут тесты предела и любой код, которому про модели знать незачем.
+        """
+        from src.project.task.task_pipeline import _roles_by_project_free
+
+        free = _roles_by_project_free(self.LIVE_MIXED, {}, {2: 2}, {2: {'qa': 1}})
+
+        assert 'qa' not in free.get(2, [])
+        assert 'developer' in free.get(2, [])
+
+
 class TestProjectCeiling:
     """Потолок проекта — размер пула: моделей меньше, чем ролей."""
 

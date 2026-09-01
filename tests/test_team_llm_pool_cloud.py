@@ -93,6 +93,70 @@ class TestShellCloud:
         assert await team_llm_pool_shell_cloud('') is False
 
 
+class TestCloudItems:
+    """Записи пула на облачные оболочки: сколько кругов проект может вести."""
+
+    async def test_cloud_shell_adds_entry(self):
+        """Живая облачная оболочка — плюс один круг проекту."""
+        from src.project.team.team_llm_pool import team_llm_pool_cloud_items
+
+        session_uuid = await _session_write('anthropic')
+        items = await team_llm_pool_cloud_items({'developer': [session_uuid]})
+
+        assert [item['session_uuid'] for item in items] == [session_uuid]
+        assert items[0]['cloud'] is True
+
+    async def test_entry_names_its_owner(self):
+        """
+        Запись именная: в ней адрес оболочки, которой она принадлежит.
+
+        По нему страница подписывает «только Developer 3», а конвейер отличает свою
+        оболочку от чужой. Без адреса запись стала бы просто лишним кругом, который
+        может взять кто угодно.
+        """
+        from src.project.team.team_llm_pool import team_llm_pool_cloud_items
+
+        session_uuid = await _session_write('anthropic')
+        item = (await team_llm_pool_cloud_items({'developer': [session_uuid]}))[0]
+
+        assert item['session_uuid'] == session_uuid
+        assert item['role'] == 'developer'
+
+    async def test_pool_shell_adds_nothing(self):
+        """
+        Оболочка под пулом круга не добавляет: она берёт модель, и её круг уже учтён
+        длиной пула. Считай мы её дважды, предел вырос бы на пустом месте.
+        """
+        from src.project.team.team_llm_pool import team_llm_pool_cloud_items
+
+        session_uuid = await _session_write('litellm')
+
+        assert await team_llm_pool_cloud_items({'developer': [session_uuid]}) == []
+
+    async def test_shell_on_model_adds_nothing(self):
+        """Оболочка, работающая моделью пула, — тем более: её модель в пуле и есть."""
+        from src.project.team.team_llm_pool import team_llm_pool_cloud_items
+
+        session_uuid = await _session_write('gx10/qwen-large')
+
+        assert await team_llm_pool_cloud_items({'developer': [session_uuid]}) == []
+
+    async def test_dead_shell_adds_nothing(self):
+        """
+        Оболочки нет в списке живых — нет и записи.
+
+        Список живых приходит снаружи (`task_role_shell_sessions_by_project`), и
+        закрытый терминал в него не попадает. Иначе предел проекта считал бы круги,
+        которым негде идти.
+        """
+        from src.project.team.team_llm_pool import team_llm_pool_cloud_items
+
+        await _session_write('anthropic')
+
+        assert await team_llm_pool_cloud_items({'developer': []}) == []
+        assert await team_llm_pool_cloud_items({}) == []
+
+
 async def _session_write(server_llm: str) -> str:
     """Строка реестра с заданным режимом. Возвращает `session_uuid`."""
     from datetime_.datetime_ import datetime_utc_now
