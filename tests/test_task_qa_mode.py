@@ -280,15 +280,24 @@ async def _claim_and_capture(metadata: str | None) -> dict:
     Захват один, без перебора: оболочки заведены на свой номер проекта, а круг QA идёт
     в отборе первым, и чужой строке взяться неоткуда.
 
-    Подменяем три выхода наружу. Движок прогона (`_qa_engine_stubbed`) — иначе круг
+    Подменяем четыре выхода наружу. Движок прогона (`_qa_engine_stubbed`) — иначе круг
     уйдёт в LLM, а `task_agent_qa_run` при этом остаётся настоящим, и переменные
     собирает он. Выкладку подзадачи (`_subtask_dir`) и осмотр её ветки
     (`task_worktree_state`) — они зовут git по выдуманному номеру: первый завёл бы
     каталог, второй прочёл бы «кода нет» и закрыл бы подзадачу, не дойдя до QA вовсе.
 
-    Прогон обрывается `_QaStop` уже после сборки переменных; `_run_qa` считает это
-    сорвавшимся кругом и уводит подзадачу в повтор — на проверяемое это не влияет,
-    строки всё равно удаляются следом.
+    Четвёртый — перезапуск оболочки, и он здесь не для скорости. Прогон обрывается
+    `_QaStop` уже после сборки переменных, `_run_qa` читает это как сорвавшийся круг и
+    уводит подзадачу в `_retry_subtask`, а тот перезапускает оболочку роли. Каталога у
+    выдуманного проекта нет, и адрес выходит «роль `qa`, каталог любой» — то есть
+    маркер уходит в самую свежую живую оболочку QA на стенде и сносит ей ход посреди
+    работы (см. докстринг `team_session_restart_role`). Под удар попадала и та
+    оболочка, которой потом проверять эту же ветку.
+
+    Подменять надо именно `pipeline.team_session_restart_role`: `_retry_subtask` берёт
+    функцию из своего пространства имён, и подмена в модуле агента (`_qa_engine_stubbed`)
+    туда не достаёт. Замером: с заглушкой круг идёт 0.2 s, без неё — 14.2 s ожидания
+    подтверждения от чужой оболочки.
     """
     from unittest.mock import patch
 
@@ -305,6 +314,12 @@ async def _claim_and_capture(metadata: str | None) -> dict:
     async def _worktree(subtask_id, work_dir='', since=''):
         return {'done_has': 'yes'}
 
+    async def _restart(role, work_dir='', wait=True, session_uuid=''):
+        captured.setdefault('restarts', []).append({'role': role, 'work_dir': work_dir})
+
+        return {'role': role, 'session_uuid': '', 'restarted': False, 'ready': False,
+                'reason': 'no_session', 'elapsed': 0}
+
     parent_id, subtask_id = await _rows_create(metadata)
     captured['parent_id'], captured['subtask_id'] = parent_id, subtask_id
     try:
@@ -314,6 +329,7 @@ async def _claim_and_capture(metadata: str | None) -> dict:
             # именно её. Вместо агента заглушен движок его прогона.
             with patch.object(pipeline, 'task_agent_qa_run', task_agent_qa_run), \
                  _qa_engine_stubbed(captured), \
+                 patch.object(pipeline, 'team_session_restart_role', _restart), \
                  patch.object(pipeline, '_subtask_dir', _dir), \
                  patch.object(pipeline, 'task_worktree_state', _worktree):
                 action = await pipeline_claim()
