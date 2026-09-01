@@ -823,7 +823,7 @@ async def _run_developer(action: dict) -> str | None:
     except Exception as e:
         return await _retry_subtask(subtask, 'developer', 'planned', TASK_DEVELOPER_ROLE,
                                     work_dir, attempt_no, started, f'Developer: {e}',
-                                    llm_name=str(action.get('llm') or ''))
+                                    llm_name=str(action.get('llm') or ''), shell=str(action.get('shell') or ''))
 
     # `env_ok = false` значит «прогона не было» — и причин у этого две. Среда
     # непригодна (сервер подзадачи не поднялся, ветка от сломанного master) —
@@ -839,7 +839,7 @@ async def _run_developer(action: dict) -> str | None:
         return await _retry_subtask(subtask, 'developer', 'planned', TASK_DEVELOPER_ROLE,
                                     work_dir, attempt_no, started,
                                     f"Developer: прогон не состоялся — {result.get('error') or 'сервер подзадачи не отвечает'}",
-                                    llm_name=str(action.get('llm') or ''))
+                                    llm_name=str(action.get('llm') or ''), shell=str(action.get('shell') or ''))
 
     await task_retry_clear(subtask['id'])
     await task_state_attempt_log(subtask['id'], attempt_no, 'developer', result, started)
@@ -975,7 +975,7 @@ async def _run_qa(action: dict) -> str | None:
     except Exception as e:
         return await _retry_subtask(subtask, 'qa', 'qa_pending', TASK_QA_ROLE,
                                     work_dir, attempt_no, started, f'QA: {e}',
-                                    llm_name=str(action.get('llm') or ''))
+                                    llm_name=str(action.get('llm') or ''), shell=str(action.get('shell') or ''))
 
     # `env_ok = false` значит «прогона не было» — и причин у этого две. Среда
     # непригодна (сервер подзадачи не поднялся, ветка от сломанного master) —
@@ -991,7 +991,7 @@ async def _run_qa(action: dict) -> str | None:
         return await _retry_subtask(subtask, 'qa', 'qa_pending', TASK_QA_ROLE,
                                     work_dir, attempt_no, started,
                                     f"QA: прогон не состоялся — {result.get('error') or 'сервер подзадачи не отвечает'}",
-                                    llm_name=str(action.get('llm') or ''))
+                                    llm_name=str(action.get('llm') or ''), shell=str(action.get('shell') or ''))
 
     await task_retry_clear(subtask['id'])
     await task_state_attempt_log(subtask['id'], attempt_no, 'qa', result, started)
@@ -1057,7 +1057,7 @@ async def _run_bugfix(action: dict) -> str | None:
             shell_session=shell_session)
     except Exception as e:
         return await _retry_task(task, 'bugfix', 'new', TASK_BUGFIXER_ROLE,
-                                 work_dir, f'Багфиксер: {e}')
+                                 work_dir, f'Багфиксер: {e}', shell=str(action.get('shell') or ''))
 
     # Среда не пригодна для работы (каталог бага не поднялся, ветка выкачена от
     # сломанного master) — работы не было, и вести баг в `blocked` не за что: его никто
@@ -1066,7 +1066,7 @@ async def _run_bugfix(action: dict) -> str | None:
     if not result.get('env_ok', True):
         return await _retry_task(
             task, 'bugfix', 'new', TASK_BUGFIXER_ROLE, work_dir,
-            f"Багфиксер: прогон не состоялся — {result.get('error') or 'каталог бага не поднялся'}")
+            f"Багфиксер: прогон не состоялся — {result.get('error') or 'каталог бага не поднялся'}", shell=str(action.get('shell') or ''))
 
     await task_retry_clear(task['id'])
     # Попытка всегда первая: круг у бага один, и `pipeline_attempt_count` он не растит.
@@ -1212,12 +1212,13 @@ async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str
                                                work_dir=work_dir, task_dir=task_dir,
                                                shell_session=shell_session)
     except Exception as e:
-        return await _retry_task(task, label, state_retry, role, work_dir, f'Manager: {e}')
+        return await _retry_task(task, label, state_retry, role, work_dir, f'Manager: {e}',
+                                 shell=str(action.get('shell') or ''))
 
     subtasks = result.get('subtasks') or []
     if not subtasks:
         return await _retry_task(task, label, state_retry, role, work_dir,
-                                 'Manager не вернул ни одной подзадачи')
+                                 'Manager не вернул ни одной подзадачи', shell=str(action.get('shell') or ''))
 
     # Прогон состоялся — серия срывов прервана, следующему сбою снова полагаются
     # все повторы.
@@ -1296,7 +1297,7 @@ async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str
 
 
 async def _retry_task(task: dict, label: str, state_retry: str, role: str,
-                      work_dir: str, error: str) -> str:
+                      work_dir: str, error: str, shell: str = '') -> str:
     """
     Прогон менеджера сорвался: перезапустить оболочку и вернуть задачу следующему тику.
 
@@ -1329,14 +1330,22 @@ async def _retry_task(task: dict, label: str, state_retry: str, role: str,
         f'{_role_title(role)} не вернул результат ({error}). Перезапуск оболочки и повтор '
         f'{retry["count"]} из {retry["max"]}',
         ok=None)
-    await team_session_restart_role(role, work_dir)
+    # Перезапускаем **свою** оболочку, а не самую свежую у роли. Оболочек у роли
+    # столько, сколько терминалов открыл человек, и маркер, ушедший соседу, сносит
+    # его ход посреди работы — тот получает «Оболочка перезапущена, ответ на
+    # сообщение потерян». Живьём это выходило петлёй: срыв перезапускал соседа,
+    # сосед срывался, перезапускал следующего, и подзадача #5238 сожгла три повтора
+    # подряд, не сделав ни одной проверки. Адрес известен — его дал захват
+    # (`_shell_assign`); пуст он только там, где оболочки у роли не нашлось вовсе,
+    # и тогда работает прежний путь по роли и каталогу.
+    await team_session_restart_role(role, work_dir, session_uuid=shell)
     await task_state_task_requeue(task['id'], state_retry, error)
     return f"task#{task['id']} {label} -> retry {retry['count']}/{retry['max']}"
 
 
 async def _retry_subtask(subtask: dict, step: str, state_retry: str, role: str, work_dir: str,
                          attempt_no: int, started: float, error: str,
-                         llm_name: str = '') -> str:
+                         llm_name: str = '', shell: str = '') -> str:
     """
     Прогон Developer/QA сорвался: перезапустить оболочку и вернуть подзадачу в очередь.
 
@@ -1387,7 +1396,15 @@ async def _retry_subtask(subtask: dict, step: str, state_retry: str, role: str, 
         f'{_role_title(role)} не вернул результат ({error}). Перезапуск оболочки и повтор '
         f'{retry["count"]} из {retry["max"]}',
         ok=None)
-    await team_session_restart_role(role, work_dir)
+    # Перезапускаем **свою** оболочку, а не самую свежую у роли. Оболочек у роли
+    # столько, сколько терминалов открыл человек, и маркер, ушедший соседу, сносит
+    # его ход посреди работы — тот получает «Оболочка перезапущена, ответ на
+    # сообщение потерян». Живьём это выходило петлёй: срыв перезапускал соседа,
+    # сосед срывался, перезапускал следующего, и подзадача #5238 сожгла три повтора
+    # подряд, не сделав ни одной проверки. Адрес известен — его дал захват
+    # (`_shell_assign`); пуст он только там, где оболочки у роли не нашлось вовсе,
+    # и тогда работает прежний путь по роли и каталогу.
+    await team_session_restart_role(role, work_dir, session_uuid=shell)
     await task_state_subtask_set(subtask['id'], state_retry, unless_done=True)
     return f"subtask#{subtask['id']} {step} -> retry {retry['count']}/{retry['max']}"
 

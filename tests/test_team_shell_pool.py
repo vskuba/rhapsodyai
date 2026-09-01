@@ -21,6 +21,14 @@
 Поэтому в `prune` идёт `_alive_except(...)`: живые как есть, минус те, чью гибель
 тест и проверяет.
 
+Одной этой аккуратности мало, и это выяснилось дорого. Ветки подзадач отрезаны от
+разных срезов master, старая версия файла живёт в них ещё долго, а тесты гоняют сами
+роли конвейера — из своих веток. Пока правка была только здесь, каждый их прогон
+обнулял захваты всего конвейера. Поэтому идущий круг защищает теперь и сам `prune`:
+свежий захват он не сносит, кем бы ни был назван список живых
+(`test_running_round_survives_a_wrong_alive_set`). Здешняя аккуратность осталась как
+второй слой — тест не должен полагаться на защиту, которую проверяет.
+
 Модули импортируются внутри тестов: они тянут `mysql_`, который читает `MYSQL_HOST` на
 импорте, а подмена хоста живёт в фикстурах `conftest.py`.
 """
@@ -221,16 +229,22 @@ class TestPrune:
         """
         Терминал закрыли — сессия больше не появится, и строка ни к чему.
 
+        Захват при этом состарен намеренно: закрытая оболочка перестаёт его
+        подтверждать, и уборка сносит именно такие. Свежий захват она не трогает, кем бы
+        ни был назван список живых, — это идущий круг (`test_running_round_survives...`).
+
         Сосед в захвате обязателен: без него множество живых окажется пустым, а на
         пустое `prune` по своему же правилу не трогает ничего — проверять было бы
         нечего. Заодно это ровно та обстановка, в которой он и работает: рядом всегда
         есть чужие живые оболочки.
         """
-        from src.project.team.team_shell_pool import (team_shell_pool_acquire,
+        from src.project.team.team_shell_pool import (TEAM_SHELL_POOL_STALE_SECONDS,
+                                                      team_shell_pool_acquire,
                                                       team_shell_pool_prune)
 
         await team_shell_pool_acquire(TEST_PROJECT_ID_NEIGHBOUR, 'developer', 1, [TEST_SHELL_B])
         await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 1, [TEST_SHELL_A])
+        await _lock_age(TEST_SHELL_A, seconds=TEAM_SHELL_POOL_STALE_SECONDS + 60)
         await team_shell_pool_prune(await _alive_except(TEST_SHELL_A))
 
         assert await _lock_sessions() == []
@@ -260,6 +274,30 @@ class TestPrune:
         await team_shell_pool_prune(await _alive_except(TEST_SHELL_A))
 
         assert await _lock_row(TEST_SHELL_B), 'prune снёс захват соседнего круга'
+
+    async def test_running_round_survives_a_wrong_alive_set(self):
+        """
+        Идущий круг не сносится, даже если список живых назван неверно.
+
+        Это защита от вызывающего, а не от закрытых терминалов. Живой повод: тесты пула
+        зовут `prune` со своими выдуманными сессиями, то есть заявляют «живых больше
+        никого», — и захваты всего конвейера исчезали. Ветки подзадач отрезаны от
+        разных срезов master, старая версия теста живёт в них ещё долго, и чинить это
+        нужно там, где сносят, а не там, где зовут.
+
+        Живьём: круг разработчика по #5238 шёл, агент работал, а оболочка числилась
+        свободной — следующий тик вправе был послать в неё второй круг посреди чужого
+        хода.
+        """
+        from src.project.team.team_shell_pool import (team_shell_pool_acquire,
+                                                      team_shell_pool_prune)
+
+        await team_shell_pool_acquire(TEST_PROJECT_ID, 'manager', 1, [TEST_SHELL_A])
+
+        # Тот самый неверный вызов: названы только чужие сессии.
+        await team_shell_pool_prune({'someone-else-entirely'})
+
+        assert await _lock_sessions() == [TEST_SHELL_A], 'уборка снесла идущий круг'
 
     async def test_empty_alive_set_clears_nothing(self):
         """

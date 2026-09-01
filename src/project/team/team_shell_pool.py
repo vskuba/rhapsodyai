@@ -279,6 +279,19 @@ async def team_shell_pool_prune(alive: set) -> int:
     сносит: живых нет вовсе — скорее всего, реестр не прочитался, и чистить по такому
     ответу значило бы стереть таблицу на ровном месте.
 
+    **Идущий круг не сносим, кем бы ни был назван список живых.** Раньше уборка верила
+    вызывающему на слово: дали множество — всё остальное под нож. Этого хватило, чтобы
+    один неверный вызов обнулял захваты всего конвейера: тест пула зовёт `prune` со
+    своими выдуманными сессиями, то есть заявляет «живых больше никого», и живые круги
+    оставались без строк. Живьём — круг разработчика по #5238 шёл, агент работал, а
+    оболочка числилась свободной: следующий тик вправе был послать в неё второй круг
+    посреди чужого хода.
+
+    Свежий захват (`locked_at` моложе `TEAM_SHELL_POOL_STALE_SECONDS`) — это работа,
+    идущая прямо сейчас, и знать о ней уборке достаточно из самой таблицы: спрашивать
+    об этом вызывающего незачем, а верить ему в этом — опасно. Мёртвые и свободные
+    строки, ради которых уборку и заводили, условие не задевает.
+
     Сбой уборки ничего не роняет: лишняя строка ничему не мешает — за этим её и
     убирают.
     """
@@ -291,8 +304,9 @@ async def team_shell_pool_prune(alive: set) -> int:
         async with mysql_get_db_async() as db:
             placeholders = ', '.join(['%s'] * len(alive))
             await db.execute(
-                f'DELETE FROM team_shell_lock WHERE session_uuid NOT IN ({placeholders})',
-                tuple(sorted(alive)))
+                f'DELETE FROM team_shell_lock WHERE session_uuid NOT IN ({placeholders}) '
+                '   AND (locked_at IS NULL OR locked_at <= NOW() - INTERVAL %s SECOND)',
+                (*sorted(alive), TEAM_SHELL_POOL_STALE_SECONDS))
             count = db.rowcount
             await db.connection.commit()
 
