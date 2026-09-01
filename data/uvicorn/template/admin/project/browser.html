@@ -1826,6 +1826,9 @@
     }
     .var-btn:hover { background: #f1f5f9; color: #475569; }
     .var-btn-del:hover { background: #fef2f2; color: #dc2626; }
+    /* Копирование — рядом со значением, а не в столбце действий: оно про само
+       значение, а тот столбец про строку целиком (правку и удаление). */
+    .var-btn-copy:hover { background: #eef2ff; color: #4338ca; }
     /* Форма правки — строкой под записью, а не окном: полей три, и окно ради них
        перекрывало бы список, по которому человек и сверяет имена. */
     .var-form td { background: #f8fafc; }
@@ -4601,10 +4604,18 @@
     function varRowHtml(v) {
         // Значение секретной строки приходит маской. Кнопка «показать» спрашивает
         // сырое отдельным запросом — и только она, не перерисовка списка.
+        //
+        // Кнопка копирования стоит у обоих видов, но берёт значение по-разному:
+        // у обычного — из разметки, у секретного — тем же запросом, что и «показать»
+        // (подробности в `varCopy`).
+        const copy = `<button class="var-btn var-btn-copy" onclick="varCopy(${v.id})"`
+            + ' title="Скопировать значение">⧉</button>';
+
         const value = v.is_secret
             ? `<span class="var-value var-value-secret" id="varVal-${v.id}">${_escape(v.value)}</span>`
               + ` <button class="var-btn" onclick="varReveal(${v.id})" title="Показать значение">👁</button>`
-            : `<span class="var-value">${_escape(v.value)}</span>`;
+              + copy
+            : `<span class="var-value" id="varVal-${v.id}">${_escape(v.value)}</span> ${copy}`;
 
         return `<tr>
             <td><span class="var-name"><span class="var-name-braces">${VAR_OPEN}</span>${_escape(v.name)}<span class="var-name-braces">${VAR_CLOSE}</span></span></td>
@@ -4679,6 +4690,54 @@
             el.textContent = e.message && e.message.includes('403')
                 ? 'нет права на показ' : `не показать: ${e.message}`;
         }
+    };
+
+    // Копирует значение переменной в буфер.
+    //
+    // ⚠ **У секретной значение берётся запросом, а не из разметки.** В списке она
+    // приходит маской (`••••••••`), и скопируй мы показанное — в буфер легла бы
+    // строка из точек. Берём той же ручкой, что и «показать» (`/reveal`), и правом
+    // она закрыта тем же: у кого нет права видеть секрет, нет и права его скопировать.
+    //
+    // Уже раскрытую глазом строку не перезапрашиваем: значение лежит в разметке, и
+    // второй поход к серверу ничего не уточнит.
+    window.varCopy = async function (id) {
+        const el = document.getElementById('varVal-' + id);
+        if (!el) return;
+
+        const variable = _vars.find(v => v.id === id) || {};
+        let text = el.textContent || '';
+
+        if (variable.is_secret && el.classList.contains('var-value-secret')) {
+            try {
+                text = (await getData(`/api/browser/variable/${id}/reveal`)).value || '';
+            } catch (e) {
+                // 403 здесь — законный ответ, а не сбой: право на показ секретов своё.
+                showNotification(e.message && e.message.includes('403')
+                    ? 'Нет права смотреть секретные значения'
+                    : 'Не удалось прочитать значение: ' + e.message, 'error');
+                return;
+            }
+        }
+
+        if (!text) {
+            showNotification('Значение пустое — копировать нечего', 'error');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (e) {
+            // Буфер доступен только в защищённом контексте (https или localhost).
+            // Админку открывают и по http на адресе машины — там браузер откажет, и
+            // сказать об этом надо словами, а не молчаливым бездействием.
+            showNotification('Браузер не дал доступ к буферу: ' + e.message, 'error');
+            return;
+        }
+
+        // Значение секрета в уведомлении не показываем — его и прячут затем, чтобы
+        // не читалось через плечо. Для обычного тоже незачем: человек его видит.
+        showNotification(`Значение «${variable.name || ''}» скопировано`, 'success');
     };
 
     window.varSave = async function () {
