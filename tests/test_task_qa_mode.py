@@ -244,6 +244,41 @@ class TestQaModeNormalizationAgreesBothBanks:
         assert 'qa-mode-switcher' in markup[0], 'у родителя свитчера нет — проверять нечего'
         assert markup[1] == '', f'подзадача получила свитчер: {markup[1]!r}'
 
+    def test_switcher_sits_next_to_the_log_button(self):
+        """
+        Соседство с кнопкой «лог» — тоже проверяемая часть цели, а не случайность вёрстки.
+
+        Цель говорит «рядом с кнопкой лог в блоке конвейера». Кнопка, уехавшая в другой
+        контейнер или встать в конец ряда, цели не нарушила бы по факту, но человек ищет
+        переключатель там, где сказал. Сторожим порядок сборки ряда: `renderQaModeSwitcher`
+        идёт сразу за `renderPipeLog`, ничто между ними не вставлено, и оба живут в одном
+        `<div>` — тот же ряд, что отдаёт `renderPipeChip`.
+
+        Проверка по исходнику, а не исполненная: у `renderPipeChip` dependencies на пол-
+        страницы (подсказка, чипсы, дети), выпарить их под `node` дороже, чем стоит
+        проверка, а переставить вызов аргументом — именно тот промах, который тут держится.
+        """
+        import re
+        from pathlib import Path
+
+        page = Path('data/uvicorn/template/admin/project/task.html').read_text(encoding='utf-8')
+        found = re.search(r'\nfunction renderPipeChip\(t, row\)\s*\{.*?\n\}\n', page, re.DOTALL)
+        assert found, '`renderPipeChip` не найден — ряд конвейера собран в другом месте, править тест'
+        body = found.group(0)
+        place = re.search(r'\$\{renderPipeLog\(t\)\}(.*?)\$\{renderQaModeSwitcher\(t\)\}', body)
+        assert place, ('свитчер стоит не сразу за кнопкой «лог»: '
+                       f'между вызовами что-то встало или порядок сменился — {body[-260:]!r}')
+        assert place.group(1) == '', (f'между «логом» и свитчером влез чужой элемент: '
+                                      f'{place.group(1)!r}')
+        # Общий контейнер: оба вызова отдаются одним `<div>` ряда — иначе это разные ячейки.
+        statement = body[body.rfind('return ', 0, place.start()):]
+        assert statement.count('<div>') == 1, (f'в возвращаемом ряду не одна обёртка: {statement!r}')
+        assert statement.count('</div>') == 1, f'обёртка ряда не закрыта одним тегом: {statement!r}'
+        order = (statement.index('<div>'), statement.index('${renderPipeLog(t)}'),
+                 statement.index('${renderQaModeSwitcher(t)}'), statement.index('</div>'))
+        assert list(order) == sorted(order), (f'«лог» и свитчер не внутри одной обёртки ряда, '
+                                              f'порядок разметки такой: {order} — {statement!r}')
+
     def test_mode_word_full_only_after_trim_and_lower(self):
         """`full` достигается только точным совпадением после обрезки пробелов и регистра."""
         from src.project.task.task_agent_qa import QA_MODE_FULL, QA_MODE_LITE, task_agent_qa_mode
