@@ -249,8 +249,23 @@ export function renderTaskList() {
     renderApprovalButton();
 }
 
-// Задача на активной вкладке: номер типа, а имя — запасной путь.
+/**
+    Задача на активной вкладке — по типу, а готовая работа уходит на «Тестировщика».
+
+    Порядок заимствован из `taskMatchesPhase` (`task.html:2348`) и он же причина, по
+    которой одной сверки по типу мало: закрытая задача остаётся висеть на вкладке своего
+    типа, и принять её там нечем — кнопок приёмки у «Разработчика» нет. Тестировщик
+    последняя инстанция и единственное место, где закрытую задачу смотрят и вливают.
+    У бага инстанция своя: вкладка «Баги» — полный цикл от заведения до принятой ветки,
+    уводить закрытый баг от того, кто его завёл, — значит прятать его.
+
+    Имя типа — запасной путь: у строки из роутера имени нет (см. шапку файла), но если
+    появится, список не ослепнет.
+    */
 function taskInPhase(t) {
+    if (taskIsDone(t)) {
+        return _isBugType(t) ? _currentPhase === 'bugs' : _currentPhase === 'testing';
+    }
     const ids = PHASE_TYPE_IDS[_currentPhase] || [];
     if (ids.includes(Number(t.task_type_id))) return true;
     // Тип без номера (задача заведена до справочника или строка после `ON DELETE SET
@@ -359,4 +374,21 @@ function pipelineChipHtml(state) {
     const label = PIPELINE_LABELS[state] || state;
     // data-state — для кнопки «Утвердить план»: сверяем с plan_approval по значению, не по тексту
     return `<span class="task-pipeline-chip" data-state="${esc(state)}">${esc(label)}</span>`;
+}
+
+/**
+    Закрыта ли задача по любой из двух осей — зеркало `taskIsDone` (task.html:2329).
+
+    Человеческое «Готово» ставят руками, конвейерный `done` — сам конвейер, и совпадают
+    они не всегда: строку закрывают в кабинете, не дожидаясь конвейера, и наоборот.
+    Поэтому достаточно одной.
+    */
+function taskIsDone(t) {
+    return t?.status === 'done' || t?.pipeline_state === 'done';
+}
+
+/** Баг ли это: номер 2 из `project_task_type`, имя — запасной путь (см. шапку файла) */
+function _isBugType(t) {
+    return Number(t?.task_type_id) === 2
+        || (!!t?.task_type_name && String(t.task_type_name).toLowerCase() === 'bug');
 }
