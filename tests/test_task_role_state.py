@@ -245,6 +245,127 @@ class TestSubtaskTypeFollowsState:
         assert await _type_of(subtask_id) == 'dev'
 
 
+class TestParentReturnsToDevelopment:
+    """
+    Родитель уходит на «Тестирование», только пока писать больше нечего.
+
+    Условие входа (`task_state_dev_to_testing`) строгое — все ветки плана должны
+    упереться в QA, — но состояние не запирается: у задачи появляются новые
+    подзадачи. QA вернул работу, человек добавил продолжение, менеджер доразбил
+    охват — и родитель на «Тестировании» оказывается с детьми у разработчика.
+
+    Живьём #4915: один ребёнок дошёл до `qa_pending`, задача законно уехала в
+    `testing`, а через четыре часа к ней завели три «продолжения» в `planned`. К
+    вечеру на проверке не было **ни одного** ребёнка — три в разработке, один
+    готов, — а вкладка по-прежнему говорила «Тестирование».
+
+    Функция возвращает по одной задаче за вызов, поэтому зовём её в цикле: в базе
+    живут и настоящие строки, и брать первую попавшуюся тест не вправе.
+    """
+
+    async def test_parent_with_kid_in_development_returns(self):
+        """Тот самый случай #4915: появился ребёнок в разработке — родитель обратно."""
+        from src.project.task.task_state import task_state_testing_to_dev
+
+        parent_id = await _subtask_create(type_name='test', root=True,
+                                          state='testing')
+        await _subtask_create(type_name='test', parent=parent_id,
+                              state='qa_pending', from_plan=True)
+        await _subtask_create(type_name='dev', parent=parent_id,
+                              state='planned', from_plan=True)
+
+        assert parent_id in await _return_all(), 'родитель остался у QA'
+        assert await _state_of(parent_id) == 'processing'
+        assert await _type_of(parent_id) == 'dev'
+
+    async def test_parent_with_all_kids_at_qa_stays(self):
+        """
+        Контрпример: все ветки у QA — задача обязана остаться на «Тестировании».
+
+        Без него тест прошёл бы и на функции, возвращающей всех подряд.
+        """
+        from src.project.task.task_state import task_state_testing_to_dev
+
+        parent_id = await _subtask_create(type_name='test', root=True,
+                                          state='testing')
+        await _subtask_create(type_name='test', parent=parent_id,
+                              state='qa_pending', from_plan=True)
+        await _subtask_create(type_name='test', parent=parent_id,
+                              state='testing', from_plan=True)
+        await _subtask_create(type_name='dev', parent=parent_id,
+                              state='done', from_plan=True)
+
+        assert parent_id not in await _return_all(), 'задачу отобрали у QA зря'
+        assert await _state_of(parent_id) == 'testing'
+
+    async def test_kid_at_qa_keeps_its_type(self):
+        """
+        Ребёнок, который прямо сейчас на проверке, своего типа не теряет.
+
+        Прямой перевод тянет за собой детей каскадом — там у ветки один владелец.
+        Здесь владельцы разошлись, и каскад отобрал бы у QA строку посреди работы.
+        """
+        from src.project.task.task_state import task_state_testing_to_dev
+
+        parent_id = await _subtask_create(type_name='test', root=True,
+                                          state='testing')
+        at_qa = await _subtask_create(type_name='test', parent=parent_id,
+                                      state='testing', from_plan=True)
+        await _subtask_create(type_name='dev', parent=parent_id,
+                              state='developing', from_plan=True)
+
+        assert parent_id in await _return_all()
+        assert await _type_of(at_qa) == 'test', 'у QA отобрали подзадачу'
+
+    async def test_handmade_kids_do_not_return_the_parent(self):
+        """
+        Подзадачи, заведённые человеком (`pipeline_from_plan = 0`), родителя не
+        держат — по той же причине, по какой их не ждёт финализация: они живут
+        своей жизнью, и ветка плана про них ничего не знает.
+        """
+        from src.project.task.task_state import task_state_testing_to_dev
+
+        parent_id = await _subtask_create(type_name='test', root=True,
+                                          state='testing')
+        await _subtask_create(type_name='test', parent=parent_id,
+                              state='qa_pending', from_plan=True)
+        await _subtask_create(type_name='dev', parent=parent_id,
+                              state='planned', from_plan=False)
+
+        assert parent_id not in await _return_all()
+
+    async def test_second_call_does_not_return_it_twice(self):
+        """
+        Возврат одноразовый: строка уже в `processing`, и второй раз её брать
+        неоткуда. Иначе тик писал бы отчёт каждые полминуты.
+        """
+        from src.project.task.task_state import task_state_testing_to_dev
+
+        parent_id = await _subtask_create(type_name='test', root=True,
+                                          state='testing')
+        await _subtask_create(type_name='test', parent=parent_id,
+                              state='qa_pending', from_plan=True)
+        await _subtask_create(type_name='dev', parent=parent_id,
+                              state='planned', from_plan=True)
+
+        assert parent_id in await _return_all()
+        assert parent_id not in await _return_all(), 'задачу вернули дважды'
+
+    async def test_tick_calls_the_return(self):
+        """
+        Возврат живёт в тике, а не в месте создания подзадачи: дорог туда
+        несколько — продолжение от QA, доразбиение менеджером, строка от
+        человека, — и проверка на одной из них молчала бы для остальных.
+        """
+        import inspect
+
+        from src.project.task import task_pipeline
+
+        source = inspect.getsource(task_pipeline.task_pipeline_tick)
+
+        assert 'task_state_testing_to_dev' in source
+
+
 class TestApiCarriesRole:
     """Роль приезжает на страницу с сервера, а не считается в JS второй копией карты."""
 
@@ -276,26 +397,68 @@ class TestApiCarriesRole:
             assert task['pipeline_role'] == task_role_of_state(task.get('pipeline_state'))
 
 
-async def _subtask_create(type_name: str, root: bool = False) -> int:
+async def _subtask_create(type_name: str, root: bool = False, state: str = 'planned',
+                          parent: int | None = None, from_plan: bool = False) -> int:
     """
     Завести строку нужного типа. `root` — задача целиком, без родителя.
 
     Строка настоящая: проверяемый код пишет в базу, и выдуманный номер молча ничего
     бы не обновил — тест был бы зелёным при любом состоянии кода.
+
+    `from_plan` — «подзадача из плана». Умолчание `0` стоит в самой колонке, а
+    ветку плана видят только строки с единицей: возврат родителя и финализация
+    считают детей именно по ней.
     """
     from mysql_.mysql_ import mysql_get_db_async
+
+    if root:
+        parent_id = None
+    elif parent is not None:
+        parent_id = parent
+    else:
+        parent_id = await _parent_id()
 
     async with mysql_get_db_async() as db:
         await db.execute(
             'INSERT INTO project_task (project_id, parent_id, title, description, goals, '
-            '                          position, status, task_type_id, pipeline_state) '
-            "SELECT %s, %s, 'type-follow-test', '', '[]', 0, 'queued', id, 'planned' "
+            '                          position, status, task_type_id, pipeline_state, '
+            '                          pipeline_from_plan) '
+            "SELECT %s, %s, 'type-follow-test', '', '[]', 0, 'queued', id, %s, %s "
             '  FROM project_task_type WHERE name = %s',
-            (TEST_TYPE_PROJECT_ID, None if root else await _parent_id(), type_name))
+            (TEST_TYPE_PROJECT_ID, parent_id, state, 1 if from_plan else 0, type_name))
         task_id = db.lastrowid
         await db.connection.commit()
 
     return task_id
+
+
+async def _return_all(limit: int = 40) -> set:
+    """
+    Все задачи, которые вернул бы возврат из `testing`, — по одной за вызов.
+
+    Функция берёт первую подходящую строку во всей базе, а не только тестовую:
+    рядом живут настоящие задачи, и «вернула не мою» не значит «сломана». Поэтому
+    крутим до опустошения и смотрим на множество.
+    """
+    from src.project.task.task_state import task_state_testing_to_dev
+
+    seen = set()
+    for _ in range(limit):
+        task_id = await task_state_testing_to_dev()
+        if not task_id:
+            break
+        seen.add(int(task_id))
+
+    return seen
+
+
+async def _state_of(task_id: int) -> str:
+    from mysql_.mysql_ import mysql_get_db_async
+
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT pipeline_state FROM project_task WHERE id = %s', (task_id,))
+
+        return str((await db.fetchone() or {}).get('pipeline_state') or '')
 
 
 async def _parent_id() -> int:

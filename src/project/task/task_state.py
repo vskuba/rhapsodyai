@@ -319,6 +319,77 @@ async def task_state_dev_to_testing(task_id: int) -> bool:
     return moved
 
 
+async def task_state_testing_to_dev() -> int | None:
+    """
+    Задача вернулась в разработку: у неё снова есть подзадача, которую пишут.
+    `testing` -> `processing`, тип `test` -> `dev`.
+
+    Обратная сторона `task_state_dev_to_testing`. Условие входа туда строгое — все
+    ветки плана должны упереться в QA, — но состояние это не запирается: у задачи
+    появляются новые подзадачи. QA возвращает работу, человек добавляет продолжение,
+    менеджер доразбивает охват — и родитель, уже стоящий на «Тестировании»,
+    оказывается с детьми у разработчика.
+
+    Обратного перехода не было вовсе, и родитель оставался у QA навсегда. Живьём
+    #4915: один ребёнок (#5219) дошёл до `qa_pending`, задача законно уехала в
+    `testing`, а через четыре часа к ней завели три «продолжения» в `planned`. К
+    вечеру у неё не осталось **ни одного** ребёнка на проверке — три в разработке,
+    один готов, — но вкладка по-прежнему говорила «Тестирование».
+
+    Задача видна там, где идёт работа. Пока хоть одна ветка плана пишется, работает
+    разработчик, и родителю место у него; на «Тестирование» задача уходит, только
+    когда писать больше нечего. Ровно это и проверяет `_KIDS_AWAITING_QA_SQL` — здесь
+    берём его отрицание, чтобы правило было одно, а не два похожих.
+
+    Пометку `to_testing` не трогаем: она означает «на проверку отдавать не спрашивая»
+    и остаётся в силе — доделают ветку, и задача уедет обратно тем же путём. Снятая
+    здесь, она потребовала бы от человека второго нажатия на каждое продолжение.
+
+    **Каскад на детей не зовём** — в отличие от прямого перевода. Туда задача уходит,
+    когда все ветки уже у QA, и тип у детей тот же; сюда — когда ветки разошлись, и
+    единого владельца у них нет. Каскад поставил бы `dev` и тем, кто прямо сейчас на
+    проверке, то есть отобрал бы строку у QA посреди работы. Тип подзадачи и так идёт
+    за её собственным состоянием (`_subtask_type_follow_state`), и расхождение с
+    родителем здесь нормально: у #4996 родитель `dev`, а дети #5235 и #5238 — `test`,
+    потому что они действительно у QA.
+
+    Returns: id задачи либо None, если возвращать нечего.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT id FROM project_task "
+            " WHERE parent_id IS NULL AND pipeline_state = 'testing' "
+            "   AND task_type_id = (SELECT id FROM project_task_type WHERE name = 'test') "
+            "   AND EXISTS (SELECT 1 FROM project_task_type WHERE name = 'dev') "
+            f"   AND id NOT IN {_KIDS_AWAITING_QA_SQL} "
+            " LIMIT 1"
+        )
+        row = await db.fetchone()
+        if not row:
+            return None
+
+        task_id = int(row['id'])
+        kanban_sql, kanban_params = task_state_kanban_sql('processing')
+        # `pipeline_state = 'testing'` в условии — защита от гонки: пока мы выбирали,
+        # строку мог закрыть человек кнопкой или финализация.
+        await db.execute(
+            "UPDATE project_task "
+            "   SET task_type_id = (SELECT id FROM project_task_type WHERE name = 'dev'), "
+            f"       pipeline_state = 'processing'{', ' + kanban_sql if kanban_sql else ''} "
+            " WHERE id = %s AND pipeline_state = 'testing'",
+            kanban_params + [task_id],
+        )
+        claimed = db.rowcount
+        await db.connection.commit()
+
+    if not claimed:
+        return None
+
+    logger_info(f'[task] task#{task_id} снова в разработке: тип -> dev, '
+                f'состояние -> processing (появились подзадачи в работе)')
+    return task_id
+
+
 async def task_state_type_cascade(task_id: int) -> int:
     """
     Подтянуть тип подзадач к типу родителя. Returns: сколько строк сменили тип.

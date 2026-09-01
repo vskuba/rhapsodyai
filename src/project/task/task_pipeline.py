@@ -145,6 +145,7 @@ from src.project.task.task_state import (
     task_state_task_revive,
     task_state_task_get,
     task_state_task_requeue,
+    task_state_testing_to_dev,
     task_state_type_to_plan,
 )
 from src.project.task.task_goal_replan import (task_goal_replan_needed,
@@ -241,6 +242,22 @@ async def task_pipeline_tick(max_actions: int = 1) -> dict:
     # целью, круг которой не оставил кода, ждать очереди не должна — ей в этой
     # очереди делать нечего, пока охват не переразложат.
     stats['replanned'] = await _subtasks_replan_stuck()
+
+    # Родитель, уехавший на «Тестирование», а потом получивший новые подзадачи в
+    # разработку. Тем же местом и правилом: одна запись состояния, ни оболочки, ни LLM.
+    #
+    # В тике, а не в месте создания подзадачи, потому что дорог туда несколько —
+    # продолжение от QA, доразбиение менеджером, строка, заведённая человеком, — и
+    # проверка, повешенная на одну из них, молчала бы для остальных. Возвращаем по
+    # одной задаче за тик: их единицы, а тик не должен разрастаться уборкой.
+    with suppress(Exception):
+        returned = await task_state_testing_to_dev()
+        if returned:
+            stats['returned_to_dev'] = returned
+            await task_report_write(
+                returned,
+                'Появились подзадачи в разработке — задача снова на вкладке '
+                '«Разработка». На проверку вернётся, когда все ветки дойдут до QA')
 
     # Каталоги, которым больше некому принадлежать. Тем же местом и тем же правилом,
     # что и возврат брошенных захватов: уборка, которую надо помнить, не делается.
