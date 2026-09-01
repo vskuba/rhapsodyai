@@ -33,20 +33,23 @@ export function renderRootFlags(task) {
     parts.push(flagChipHtml(
         task.id, 'flag_plan', meta['to_planning'] !== false,
         '_tg_flag_plan',
-        'Задача у менеджера. Снять — планирование прекратится'
+        'Задача у менеджера. Снять — планирование прекратится',
+        _failed[`${task.id}:flag_plan`] || ''
     ));
     // «в разработку» — одноразовый триггер: план утверждать не потребуется,
     // как только он будет готов, задача сменит тип и уйдёт в работу. Умолчание — выключено
     parts.push(flagChipHtml(
         task.id, 'flag_dev', meta['to_development'] === true,
         '_tg_flag_dev',
-        'План утверждать не потребуется: задача сама уйдёт в разработку, когда план будет готов'
+        'План утверждать не потребуется: задача сама уйдёт в разработку, когда план будет готов',
+        _failed[`${task.id}:flag_dev`] || ''
     ));
     // «в тестирование» — умолчание включено; выключенное хранится явным false
     parts.push(flagChipHtml(
         task.id, 'flag_test', meta['to_testing'] !== false,
         '_tg_flag_test',
-        'Готовую работу отправить на QA автоматически'
+        'Готовую работу отправить на QA автоматически',
+        _failed[`${task.id}:flag_test`] || ''
     ));
     return parts.join('');
 }
@@ -96,11 +99,17 @@ function flagLabel(key) {
     }
 }
 
-/** HTML одного флажка: title идёт в атрибут — кавычки экранируем, чтобы не сломать разметку */
-function flagChipHtml(id, key, checked, handler, title) {
-    const safeTitle = (title || '').replace(/"/g, '&quot;');
-    const cls = checked ? '' : 'task-flag-off';
-    return `<label class="task-flag ${cls}" data-flag="${key}" onclick="event.stopPropagation()" title="${safeTitle}">
+/**
+    HTML одного флажка: title идёт в атрибут — кавычки экранируем, чтобы не сломать разметку.
+
+    Причина отказа (`fail`) нарисована здесь, а не подвешена потом к узлу: список
+    перезаписывает карточку целиком, и висящая на узле метка исчезла бы вместе с ним.
+    Отметка переживает перезагрузку списком `_failed`, а не ссылкой на элемент.
+    */
+function flagChipHtml(id, key, checked, handler, title, fail = '') {
+    const safeTitle = (fail || title || '').replace(/"/g, '&quot;');
+    const cls = (checked ? '' : ' task-flag-off') + (fail ? ' task-flag-failed' : '');
+    return `<label class="task-flag${cls}" data-flag="${key}" onclick="event.stopPropagation()" title="${safeTitle}">
         <input type="checkbox" ${checked ? 'checked' : ''}
                onchange="${handler}(this)" data-handler="${handler}">
         <span>${flagLabel(key)}</span>
@@ -127,15 +136,21 @@ async function _writeFlag(inputEl, key) {
     if (!id) return;
 
     inputEl.disabled = true;
+    // Метка отказа — по имени чипа, не по ключу metadata: карточка перерисовывается
+    // именем чипа (`data-flag`), и искать подсветку по `to_planning` было бы нечем.
+    const chip = inputEl.closest('.task-flag')?.dataset.flag || key;
     let error = null;
     try {
         await postData(ENDPOINT(id), { patch: { [key]: _flagValue(key, inputEl.checked) } });
+        delete _failed[`${id}:${chip}`];        // прошлый отказ снят: запись прошла
     } catch (e) {
         error = e;
         inputEl.checked = was;   // сервер ничего не принял — рисуем обратно принятое
+        _failed[`${id}:${chip}`] = _reason(error) || 'Не сохранено';
     }
     await _reloadTasks();
-    if (error) _markFailed(inputEl, error);
+    // Список перезаписал карточку: если он не вернулся (списка нет), подсветить всё равно надо
+    if (error && document.contains(inputEl)) _markFailed(inputEl);
 }
 
 /** Значение ключа по состоянию чекбокса — зеркально админке */
@@ -155,12 +170,22 @@ function _reloadTasks() {
     return Promise.resolve(window._tg_reload_tasks?.()).catch(() => {});
 }
 
-/** Попытка не удалась: гасим чип и кладём причину в его заголовок */
-function _markFailed(inputEl, error) {
+/**
+    Неудачная запись чипа: `{«задача:флажок»: причина}`.
+
+    Живёт отдельно от разметки, потому что карточка после перезагрузки списка
+    собирается заново — на старом узле ничего удержать нельзя. Чистится своей же
+    записью: удалось — ключ сняли.
+    */
+let _failed = {};
+
+/** Тот же чип, что человек не успел потерять: подсветить и положить причину в заголовок */
+function _markFailed(inputEl) {
     const chip = inputEl.closest('.task-flag');
     if (!chip) return;
     chip.classList.add('task-flag-failed');
-    chip.title = _reason(error) || 'Не сохранено';
+    const id = chip.closest('.task-card')?.dataset.id;
+    chip.title = _failed[`${id}:${chip.dataset.flag}`] || 'Не сохранено';
 }
 
 /** Причина человеческой строкой: у 404 своего текста нет, и `e.message` пуст */

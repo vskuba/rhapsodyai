@@ -145,6 +145,27 @@ class TestTaskFlags:
         # Список перезагружается и отвечает тем же состоянием — флажок не «отпускается» обратно
         assert ui.wait_for_selector(f'.task-flag[data-flag="{flag}"] input').is_checked()
 
+    def test_flag_failure_stays_on_the_card_after_reload(self, browser: Browser):
+        """Отказ точки не теряется с перезагрузкой: чип красный, чекбокс — как его принял сервер.
+
+        Список перерисовывает карточку строкой, поэтому подсветка не может висеть на
+        старом узле: иначе отказ вспыхнул бы на миг, а затем карточка делала бы вид,
+        что запись прошла. Взят `to_testing` со `false` в `metadata`: попытка включить
+        её не принята, и оставшийся отмеченным флажок показывал бы состояние,
+        которого в базе нет.
+        """
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED], metadata_status=500)
+
+        ui.locator('.task-flag[data-flag="flag_test"] input').click()
+        ui.wait_for_function("() => (window.__saved || []).length > 0")
+        ui.wait_for_selector('.task-flag-failed')
+
+        chip = ui.locator('.task-flag[data-flag="flag_test"]')
+        assert not _flag_state(ui, 'flag_test'), 'непринятая запись осталась отмечаемой'
+        assert 'не сохран' in chip.get_attribute('title').lower()
+        # Красным залился один чип, а не список: отказ касается одной записи одной задачи
+        assert ui.locator('.task-flag-failed').count() == 1
+
     def test_development_flag_on_switches_off(self, browser: Browser):
         """Обратный ход: снятый триггер «в разработку» уходит как null — ключ стирается."""
         ui = _open_mini_app(browser, tasks=[{**TASK_PLAIN, 'metadata': {'to_development': True}}])
@@ -231,6 +252,60 @@ class TestTaskQuestionPanel:
         assert ui.locator('.task-question-options label').count() == 2
         assert ui.locator('#askSendBtn').is_visible(), 'кнопки ответа нет — ответить нечем'
 
+    def test_question_button_opens_the_panel_by_itself(self, browser: Browser):
+        """Кнопка «Вопрос» в карточке открывает панель: до вопроса тянуться тапом не нужно.
+
+        На мобильной ширине карточка под `max-height` со `overflow: hidden`, и
+        полагаться на клик по всей карточке — значит оставить вопрос недостижимым.
+        Вложенная кнопка останавливает всплытие, поэтому открывается сама.
+        """
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED])
+
+        assert ui.locator('.task-btn-ask').count() == 1
+        ui.click('.task-btn-ask')
+        ui.wait_for_selector('.task-question-panel')
+
+        assert ui.locator('.task-question-text').inner_text().startswith('Раздробить подзадачу')
+
+    def test_task_without_question_gets_no_button(self, browser: Browser):
+        """Кнопка — только там, где спрашивают: на молчаливой задаче она звала бы в «нет вопросов»."""
+        ui = _open_mini_app(browser, tasks=[TASK_PLAIN])
+
+        assert ui.locator('.task-btn-ask').count() == 0
+
+    def test_answered_question_takes_the_button_back(self, browser: Browser):
+        """Отвеченный вопрос снимает кнопку: ответ в `metadata`, и больше звать некуда."""
+        answered = {**TASK_FLAGGED, 'metadata': {
+            'question': {**TASK_FLAGGED['metadata']['question'],
+                         'answer': {'text': 'Закрыть как есть', 'keys': ['drop']}}}}
+        ui = _open_mini_app(browser, tasks=[answered])
+
+        assert ui.locator('.task-btn-ask').count() == 0
+
+    def test_panel_lands_under_the_list_not_beside_it(self, browser: Browser):
+        """Полоса вопросов — под списком, а не боковой колонкой.
+
+        `.app-shell` — горизонтальный flex: вставленной в неё панелью страница
+        разъехалась бы на два столбца, и ответ уехал бы за правый край экрана.
+        """
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED])
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('.task-question-panel')
+        ui.wait_for_function("() => { const p = document.querySelector('#taskQuestionPanel');"
+                             " return p && p.getBoundingClientRect().height > 0; }")
+
+        place = ui.evaluate("""() => {
+            const panel = document.querySelector('#taskQuestionPanel').getBoundingClientRect();
+            const list = document.querySelector('#tasksListView').getBoundingClientRect();
+            return {parent: document.querySelector('#taskQuestionPanel').parentElement.className,
+                    below: panel.top >= list.bottom - 1,
+                    inside: panel.left >= list.left - 1 && panel.right <= list.right + 1};
+        }""")
+        assert 'content-panel' in place['parent'], f"панель приросла к {place['parent']!r}"
+        assert place['below'], 'панель встала над списком'
+        assert place['inside'], 'панель вышла за колонку списка — значит стала боковой'
+
     def test_answer_reaches_the_endpoint(self, browser: Browser):
         """Выбранный вариант и уточнение уходят на question/answer тем самым контрактом."""
         ui = _open_mini_app(browser, tasks=[TASK_FLAGGED])
@@ -245,6 +320,36 @@ class TestTaskQuestionPanel:
         body = json.loads(ui.evaluate('window.__answered')[0]['body'])
         assert body['answers'] == ['split']
         assert body['note'] == 'Раздробить, кроме третьей цели'
+
+    def test_batch_answer_survives_a_missing_question_endpoint(self, browser: Browser):
+        """Пачка не упирается в алерт, когда GET вопроса ещё не нарисован.
+
+        Сервер ответ принял — значит отказ на полпути показал бы человеку ошибку там,
+        где всё сошлось. Панель пересчитывает неотвеченные сама и открывает следующий.
+        """
+        batch = {**TASK_PLAIN, 'metadata': {'questions': [
+            {'text': 'Первый вопрос?', 'role': 'manager',
+             'options': [{'key': 'yes', 'label': 'Да'}]},
+            {'text': 'Второй вопрос?', 'role': 'manager',
+             'options': [{'key': 'no', 'label': 'Нет'}]},
+        ]}}
+        ui = _open_mini_app(browser, tasks=[batch], answer={'done': False, 'left': 1})
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askSendBtn')
+        ui.click('.task-question-options input[value="yes"]')
+        ui.click('#askSendBtn')
+
+        ui.wait_for_function("() => (window.__answered || []).length > 0")
+        assert json.loads(ui.evaluate('window.__answered')[0]['body'])['index'] == 0
+        assert not ui.evaluate('window.__alerts'), f"алерт на принятом ответе: {ui.evaluate('window.__alerts')}"
+        # Следующий вопрос открылся сам: листать пачку руками не приходится
+        ui.wait_for_selector('.task-question-text:text("Второй вопрос?")')
+
+        ui.click('.task-question-options input[value="no"]')
+        ui.click('#askSendBtn')
+        ui.wait_for_function("() => (window.__answered || []).length > 1")
+        assert json.loads(ui.evaluate('window.__answered')[1]['body'])['index'] == 1
 
     def test_close_button_closes_panel(self, browser: Browser):
         """«Закрыть» — обработчик на window; без него кнопка жала бы ReferenceError."""
@@ -517,11 +622,15 @@ class TestTaskUiStyle:
 
 def _open_mini_app(browser: Browser, tasks: list, *, flat: bool = False, question=None,
                    metadata_handler=None, styles: list | None = None,
-                   scripts: list | None = None) -> Page:
+                   scripts: list | None = None, metadata_status: int = 200,
+                   answer=None) -> Page:
     """Открыть мини-приложение на подставных ответах; вернуть страницу с загруженным списком.
 
     `question` — ответ GET вопроса: словарь или функция от строки задачи. По умолчанию
     None — точка отвечает 404 («её ещё не нарисовали»), и панель работает со строки списка.
+    `metadata_status` — код ответа точки сохранения: 500 рисует отказ флажка.
+    `answer` — ответ на POST ответа: по умолчанию «отвечено на всё» (`done: true`);
+    `{'done': False, 'left': 1}` — принят частичный, и панель листает пачку сама.
     """
     context = browser.new_context()
     page = context.new_page()
@@ -532,7 +641,8 @@ def _open_mini_app(browser: Browser, tasks: list, *, flat: bool = False, questio
             if msg.type == 'error' and 'Failed to load resource' not in msg.text else None)
     page.on('pageerror', lambda err: pytest.fail(f"непойманная ошибка скрипта: {err}"))
     _attach_routes(page, tasks, flat=flat, question=question,
-                   metadata_handler=metadata_handler, styles=styles, scripts=scripts)
+                   metadata_handler=metadata_handler, styles=styles, scripts=scripts,
+                   metadata_status=metadata_status, answer=answer)
 
     page.goto('http://mini.test/telegram-app')
     page.wait_for_selector('.task-card')
@@ -540,7 +650,8 @@ def _open_mini_app(browser: Browser, tasks: list, *, flat: bool = False, questio
 
 
 def _attach_routes(page: Page, tasks: list, *, flat: bool, question=None, metadata_handler=None,
-                   styles: list | None = None, scripts: list | None = None) -> None:
+                   styles: list | None = None, scripts: list | None = None,
+                   metadata_status: int = 200, answer=None) -> None:
     """Подменить ответы сервера: статика — с диска, задачи и сохранения — из аргументов."""
     saved, answered, asked = [], [], []
 
@@ -569,6 +680,10 @@ def _attach_routes(page: Page, tasks: list, *, flat: bool, question=None, metada
         elif re.search(r'/task/\d+/metadata$', path):
             body = json.loads(route.request.post_data or '{}')
             saved.append({'path': path, 'body': route.request.post_data})
+            if metadata_status != 200:
+                route.fulfill(status=metadata_status, content_type='application/json',
+                              body=json.dumps({'detail': 'сервер не сохранён'}))
+                return
             if metadata_handler:
                 meta = metadata_handler(body.get('patch') or {})
                 tasks[0] = {**tasks[0], 'metadata': meta}
@@ -577,7 +692,7 @@ def _attach_routes(page: Page, tasks: list, *, flat: bool, question=None, metada
         elif re.search(r'/task/\d+/question/answer$', path):
             answered.append({'path': path, 'body': route.request.post_data})
             route.fulfill(status=200, content_type='application/json',
-                          body=json.dumps({'done': True, 'left': 0}))
+                          body=json.dumps(answer if answer is not None else {'done': True, 'left': 0}))
         else:
             route.fulfill(status=404, content_type='application/json',
                           body=json.dumps({'detail': f'нет точки {path}'}))
@@ -591,7 +706,10 @@ def _attach_routes(page: Page, tasks: list, *, flat: bool, question=None, metada
 
     page.route('**/*', handle)
     page.add_init_script("""
-        window.__saved = []; window.__answered = [];
+        window.__saved = []; window.__answered = []; window.__alerts = [];
+        // alert() на принятом ответе — то же вранье, что и красный чип без причины:
+        // считаем его как событие, а не глушим молча.
+        window.alert = (msg) => { window.__alerts.push(String(msg)); };
         const wrap = (name, bucket) => {
             const real = window.fetch;
             window.fetch = async (input, init) => {
