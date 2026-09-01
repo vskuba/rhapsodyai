@@ -517,6 +517,88 @@ class TestSelfCheckLoop:
             'шаги, которые правили миграции, перестали разбираться:\n' + '\n'.join(broken))
 
 
+class TestSelfCheckScope:
+    """
+    У самопроверки разработчика есть граница охвата, и она названа в промпте.
+
+    Дефект был не в коде, а в молчании промпта. Рецензенту велено искать, что не так,
+    и не сказано, где искать перестать, — он и уходил в соседние файлы. Живьём #6438:
+    задача про свитчер Light/Full, а `dev_ok=no` пришёл с замечаниями «тон
+    документации нарушен» и «вынести правило в другой файл». Круг доработки —
+    полчаса работы агента, и такой заворот повторяется, пока не кончатся круги.
+
+    Тонкость случая: критикуемый абзац разработчик написал **сам** в предыдущем
+    круге. То есть правило «не трогай чужое» его не ловит — работа своя. Ловит только
+    пара признаков: строка изменена этой веткой **и** без замечания не закрыты цели.
+
+    Проверяем присутствие блока, а не его формулировку: текст правится миграциями и
+    будет меняться, а вот исчезнуть молча он не должен — вернулись бы круги ни о чём.
+    """
+
+    # Шаг «Промпт: самопроверка» (WF56). Он единственный, где рецензент получает
+    # задание искать недостатки, — граница нужна ровно здесь.
+    SELF_CHECK_STEP_ID = 439
+
+    # Заголовок блока и слова, без которых он теряет смысл. Не весь текст: сверять
+    # промпт дословно значило бы ронять тест на каждой правке формулировки.
+    SCOPE_MARKS = (
+        'ОХВАТ САМОПРОВЕРКИ',
+        'git diff master...HEAD',
+        'цели подзадачи',
+    )
+
+    async def test_self_check_prompt_names_its_scope(self):
+        """Блок охвата на месте и называет обе границы."""
+        from mysql_.mysql_ import mysql_get_db_async
+
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT metadata FROM agent_workflow_step WHERE id = %s',
+                             (self.SELF_CHECK_STEP_ID,))
+            row = await db.fetchone()
+
+        assert row, f'шага {self.SELF_CHECK_STEP_ID} нет'
+
+        prompt = _prompt_text(json.loads(row['metadata'] or '{}'))
+        assert prompt, 'у шага самопроверки пустой промпт'
+
+        missing = [mark for mark in self.SCOPE_MARKS if mark not in prompt]
+
+        assert not missing, (
+            'промпт самопроверки потерял границу охвата — рецензент снова уйдёт '
+            f'в соседние файлы: не нашлось {missing}')
+
+    async def test_self_check_prompt_allows_out_of_scope_findings(self):
+        """
+        У замеченного вне охвата есть выход, и он не круг доработки.
+
+        Без выхода агент выбирает между «промолчать» и «завернуть». Промолчать ему
+        не велено — он рецензент, ему сказано искать, — значит выберет заворот, и
+        запрет останется на бумаге.
+        """
+        from mysql_.mysql_ import mysql_get_db_async
+
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT metadata FROM agent_workflow_step WHERE id = %s',
+                             (self.SELF_CHECK_STEP_ID,))
+            row = await db.fetchone()
+
+        prompt = _prompt_text(json.loads((row or {}).get('metadata') or '{}'))
+
+        assert 'в отчёт' in prompt, (
+            'промпт запрещает заворачивать круг вне охвата, но не говорит, куда девать '
+            'замеченное, — запрет без выхода не работает')
+
+
+def _prompt_text(metadata: dict) -> str:
+    """Текст, который шаг кладёт в переменную промпта роли."""
+    parts = []
+    for item in (metadata or {}).get('variable_conversion') or []:
+        if isinstance(item, dict) and str(item.get('variable') or '').endswith('_prompt'):
+            parts.append(str(item.get('text') or ''))
+
+    return '\n'.join(parts)
+
+
 async def _live_steps() -> list:
     """
     Шаги workflow, которые заведены агентам, — то есть тех, что грузит движок.
