@@ -10,7 +10,13 @@
 ставят сессионные фикстуры `conftest.py`.
 """
 
+import os
+from typing import AsyncGenerator
+
+import httpx
 import pytest
+
+from tests.constants import TEST_AUTH
 
 # Группа ставится файлу целиком, а не каждому классу (см. `.claude/docs/testing.md`).
 # Правил роль конвейера — значит `pipeline`, хотя задеты и промпты workflow: контракт,
@@ -18,6 +24,10 @@ import pytest
 pytestmark = pytest.mark.pipeline
 
 LITE_STEPS = (445, 447, 516, 451)
+
+# Адрес сервера подменясем окружением — так же, как `tests/test_task_metadata.py`:
+# QA конвейера гоняет сюиту против сервера ветки, а не общего `:8011`.
+BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 
 
 @pytest.fixture(autouse=True)
@@ -181,3 +191,122 @@ class TestTaskQaModePromptsMigrated:
                    if 'subtask_qa_full' not in str(row['metadata'])]
         assert not missing, (f'шаги {missing} не знают про `subtask_qa_full`: '
                              f'миграция wf57_qa_mode не применена')
+
+
+class TestTaskQaModeRoundTrip:
+    """
+    Режим переживает перезагрузку страницы: щелчок, перечитка списка, чтение движком.
+
+    Цель держится на двух концах, и ни один настоящими данными не проверялся. Свитчер
+    шлёт `POST /task/{id}/metadata` патчем одного ключа (`_taskFlagSave`), а после
+    перезагрузки рисует себя заново из того, что вернул `GET /tasks/{project}`
+    (`renderQaModeSwitcher`) — из колонки, а не из памяти страницы. Значит цель
+    закрыта тогда, когда значение в базе, в списке и в `subtask_qa_mode` одно.
+
+    Задача заводится в «Без проекта» и с префиксом `__pytest` — под сессионную уборку
+    `conftest.py`; в конвейер она не уйдёт: плана нет, ключ `to_planning` не ставится.
+    """
+
+    TEST_TITLE = "__pytest_qa_mode__"
+
+    @pytest.fixture
+    async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=90.0) as client:
+            await client.post("/auth/login", json=TEST_AUTH)
+            yield client
+
+    @pytest.fixture
+    async def created(self, client: httpx.AsyncClient) -> AsyncGenerator[list, None]:
+        """Собирает id созданного, чтобы тест убрал за собой даже упав."""
+        ids: list[int] = []
+        yield ids
+        for task_id in reversed(ids):
+            await client.delete(f"/task/{task_id}")
+
+    async def _create(self, client, created, suffix: str) -> dict:
+        resp = await client.post("/tasks/0", json={
+            "title": f"{self.TEST_TITLE}{suffix}",
+            "description": "временная задача теста режима QA",
+        })
+        assert resp.status_code == 200, resp.text
+        task = resp.json()["task"]
+        created.append(task["id"])
+        return task
+
+    async def _switch(self, client, task_id: int, mode) -> None:
+        """Один щелчок свитчера — тот же запрос, что шлёт `_taskFlagSave`."""
+        from src.project.task.task_metadata import TASK_METADATA_KEY_QA_MODE
+
+        resp = await client.post(f"/task/{task_id}/metadata",
+                                 json={"patch": {TASK_METADATA_KEY_QA_MODE: mode}})
+        assert resp.status_code == 200, resp.text
+
+    async def _row(self, client, task_id: int) -> dict:
+        """Перечитать список: этим же фронт восстанавливает состояние после перезагрузки."""
+        resp = await client.get("/tasks/0")
+        assert resp.status_code == 200, resp.text
+        rows = {t["id"]: t for t in resp.json()["tasks"]}
+        assert task_id in rows, f"задача {task_id} исчезла из списка — проверять нечего"
+        return rows[task_id]
+
+    async def test_full_mode_survives_reload(self, client, created):
+        """Полный режим записан, перечитан и понятен движку — свитчер вернётся в то же состояние."""
+        from src.project.task.task_agent_qa import QA_MODE_FULL, task_agent_qa_mode
+        from src.project.task.task_metadata import TASK_METADATA_KEY_QA_MODE
+
+        task = await self._create(client, created, "full")
+        await self._switch(client, task["id"], QA_MODE_FULL)
+
+        row = await self._row(client, task["id"])
+        assert row["metadata"][TASK_METADATA_KEY_QA_MODE] == QA_MODE_FULL
+        # Движок читает перечитанное как полный режим: иначе свитчер показывает одно,
+        # а в `subtask_qa_mode` уезжает другое.
+        assert task_agent_qa_mode(row) == QA_MODE_FULL
+
+    async def test_back_to_lite_is_the_restored_default(self, client, created):
+        """
+        Возврат в Lite перечитывается Lite — и на явном значении, и на удалённом ключе.
+
+        Фронт пишет возврат явно `lite`, а не удалением; движок держит ту же норму на
+        обоих состояниях. Разойдутся — человек переключил одно, а агент проверяет
+        другое, и по одному концу этого не увидеть.
+        """
+        from src.project.task.task_agent_qa import QA_MODE_FULL, QA_MODE_LITE, task_agent_qa_mode
+        from src.project.task.task_metadata import TASK_METADATA_KEY_QA_MODE
+
+        task = await self._create(client, created, "back")
+        await self._switch(client, task["id"], QA_MODE_FULL)
+        await self._switch(client, task["id"], QA_MODE_LITE)
+
+        row = await self._row(client, task["id"])
+        assert task_agent_qa_mode(row) == QA_MODE_LITE
+
+        await self._switch(client, task["id"], None)   # удаление ключа — то же умолчание
+        row = await self._row(client, task["id"])
+        assert TASK_METADATA_KEY_QA_MODE not in row["metadata"]
+        assert task_agent_qa_mode(row) == QA_MODE_LITE
+
+    async def test_shared_keys_survive_mode_patch(self, client, created):
+        """
+        Запись режима не уносит чужие ключи мешка.
+
+        Патч одного ключа — единственная причина, по которой свитчер стоит рядом с
+        оркестратором и воркерами: они пишут в тот же мешок. Замена целиком стёрла бы
+        их ключи, и переключатель режима стал бы опасной кнопкой.
+        """
+        from src.project.task.task_agent_qa import QA_MODE_FULL
+        from src.project.task.task_metadata import (TASK_METADATA_KEY_BRANCH,
+                                                    TASK_METADATA_KEY_QA_MODE,
+                                                    TASK_METADATA_KEY_RETRY,
+                                                    task_metadata_update)
+
+        task = await self._create(client, created, "coexist")
+        await task_metadata_update(task["id"], {TASK_METADATA_KEY_BRANCH: "task/6438",
+                                                TASK_METADATA_KEY_RETRY: {"count": 2}})
+
+        await self._switch(client, task["id"], QA_MODE_FULL)
+
+        row = await self._row(client, task["id"])
+        assert row["metadata"][TASK_METADATA_KEY_BRANCH] == "task/6438"
+        assert row["metadata"][TASK_METADATA_KEY_RETRY] == {"count": 2}
+        assert row["metadata"][TASK_METADATA_KEY_QA_MODE] == QA_MODE_FULL
