@@ -618,18 +618,47 @@ class TestStaleTracesClosed:
     «реализация» ждёт агента до получаса), тик закрывать не должен.
     """
 
-    def test_threshold_outlives_the_longest_step(self):
+    async def test_threshold_outlives_the_longest_step(self):
         """
         Порог молчания обязан быть больше самого долгого шага конвейера.
 
-        Иначе тик гасил бы работу, которая идёт: у шага реализации между записями
-        в трассу проходят десятки минут, и по молчанию он неотличим от мёртвого.
-        """
-        from src.ai.ai_workflow_trace import TRACE_RUN_STALE_SECONDS
+        Иначе уборка штампует «Прерван рестартом сервера» работе, которая идёт:
+        шаг пишет строку трассы, только завершившись, и всё время работы прогон
+        молчит. Прогон при этом не гибнет — движок ставит 'stopped' только сам,
+        поймав отмену, — но журнал начинает врать, а именно от этого функцию и
+        писали.
 
-        # Самый долгий замеренный шаг — реализация, 2517 с (подзадача #1623).
-        assert TRACE_RUN_STALE_SECONDS > 2517, \
-            'порог ниже реального шага — тик начнёт убивать живые прогоны'
+        Максимум берём **из живых workflow**, а не числом из памяти: прежняя
+        проверка сравнивала порог с замером 2517с и осталась зелёной, пока сроки
+        шагов росли до 4800 и 7200, а порог стоял на 3600. Так дефект и дожил до
+        прогона 2470 подзадачи #5238.
+        """
+        import json
+
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.ai.ai_workflow_trace import TRACE_RUN_STALE_SECONDS
+        from src.project.task.task_setting_step import task_setting_step_timeout_of
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT id, title, metadata FROM agent_workflow_step '
+                ' WHERE workflow_id IN '
+                '       (SELECT DISTINCT workflow_id FROM agent WHERE workflow_id IS NOT NULL)')
+            rows = await db.fetchall() or []
+
+        longest, where = 0, ''
+        for row in rows:
+            seconds = task_setting_step_timeout_of(json.loads(row['metadata'] or '{}')) or 0
+            if seconds > longest:
+                longest, where = seconds, f"шаг {row['id']} «{row['title']}»"
+
+        if not longest:
+            pytest.skip('шагов со сроком не нашлось')
+
+        assert TRACE_RUN_STALE_SECONDS > longest, (
+            f'порог молчания {TRACE_RUN_STALE_SECONDS}с не переживает самый долгий '
+            f'шаг ({longest}с, {where}) — уборка начнёт помечать живые прогоны '
+            f'брошенными')
 
     def test_tick_calls_the_closer(self):
         """Уборка должна быть в тике: рестарта сервера можно ждать сутками."""
