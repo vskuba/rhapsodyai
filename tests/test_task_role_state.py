@@ -55,6 +55,24 @@ class TestRoleOfState:
         assert task_role_of_state('planning') == 'manager'
         assert task_role_of_state('reviewing') == 'manager'
 
+    def test_processing_belongs_to_developer(self):
+        """
+        `processing` — состояние родителя, пока его подзадачи пишут код.
+
+        Обманчиво: оно стоит сразу за `approved`, и раньше числилось за менеджером.
+        Но разбор плана (`_run_plan_split`) идёт чистым кодом, без единого обращения
+        к оболочке, и уходит, закончив; строка остаётся в `processing`, пока не
+        закроются дети. Парное ему `testing` (дети на проверке) за QA и числится.
+
+        Живьём #4996: вкладка «Планирование», тип «Разработка». Тип был верен —
+        `task_state_task_testing` меняет его на `test` ровно при переходе
+        `processing → testing`, — врала вкладка.
+        """
+        from src.project.task.task_role import task_role_of_state
+
+        assert task_role_of_state('processing') == 'developer'
+        assert task_role_of_state('approved') == 'manager'
+
     def test_bugfixing_belongs_to_bugfixer(self):
         from src.project.task.task_role import task_role_of_state
 
@@ -112,6 +130,27 @@ class TestStateMapConsistency:
         for role, states in TASK_ROLE_STATES.items():
             for state in states:
                 assert state in _TASK_STATE_KANBAN, f'{role}: {state} нет в карте состояний'
+
+    def test_parent_states_agree_with_the_type_they_carry(self):
+        """
+        Вкладка и колонка типа обязаны говорить одно и то же.
+
+        У родителя два долгих состояния — `processing` (дети пишут код) и `testing`
+        (дети на проверке), и переход между ними меняет тип: `dev` → `test`
+        (`task_state_task_testing`). Значит роль состояния, переведённая в тип, должна
+        давать ровно тот тип, который в строке и стоит. Разойдись они — строка отвечает
+        на вопрос «чья работа» двумя способами, как #4996: «Планирование» + «Разработка».
+        """
+        from src.project.task.task_role import task_role_of_state
+        from src.project.task.task_state import _TASK_STATE_ROLE_TYPE
+
+        pairs = {'processing': 'dev', 'testing': 'test'}
+
+        for state, expected_type in pairs.items():
+            role = task_role_of_state(state)
+            assert _TASK_STATE_ROLE_TYPE.get(role) == expected_type, (
+                f'состояние {state} показывается у роли «{role}», а тип в строке — '
+                f'«{expected_type}»')
 
     def test_roles_match_shell_roles(self):
         """
