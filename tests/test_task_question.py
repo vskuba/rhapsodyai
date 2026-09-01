@@ -147,6 +147,82 @@ class TestDecisionsText:
         assert task_question_decisions_text({'metadata': {'decisions': [{'answer': ''}]}}) == ''
 
 
+class TestDecisionsNoise:
+    """
+    Молчаливый перезапуск в промпт не идёт.
+
+    «Перезапустить как есть» — решение про конвейер, а не про работу: охват прежний,
+    цели те же, делать предстоит ровно то же самое. Указания роли в нём нет ни одного,
+    а места занимает столько же, сколько настоящая развилка, — и копится. Живьём в
+    промпте QA стояло десять одинаковых блоков «кругов потрачено 0, прогонов 0 →
+    Перезапустить как есть» подряд, на две подзадачи — двадцать.
+    """
+
+    RETRY = {'question': 'Подзадача встала: кругов потрачено 0 из 3, прогонов 0.',
+             'answer': 'Перезапустить как есть', 'keys': ['goals_keep'], 'note': ''}
+
+    def _row(self, *decisions):
+        return {'metadata': {'decisions': list(decisions)}}
+
+    def test_silent_retry_is_dropped(self):
+        from src.project.task.task_question import task_question_decisions_text
+
+        assert task_question_decisions_text(self._row(self.RETRY, self.RETRY)) == ''
+
+    def test_legacy_retry_without_keys_is_dropped(self):
+        """
+        Записи, принятые до появления ключей, узнаются по подписи.
+
+        Их в базе большинство, и не глуши мы их — правка не изменила бы ничего там,
+        где мусор уже накопился.
+        """
+        from src.project.task.task_question import task_question_decisions_text
+
+        old = {'question': 'Подзадача встала...', 'answer': 'Перезапустить как есть'}
+
+        assert task_question_decisions_text(self._row(old)) == ''
+
+    def test_retry_with_a_note_survives(self):
+        """Приписал человек оговорку — это уже указание роли, и оно остаётся."""
+        from src.project.task.task_question import task_question_decisions_text
+
+        item = dict(self.RETRY, answer='Перезапустить как есть; сперва обнови ветку',
+                    note='сперва обнови ветку')
+
+        assert 'сперва обнови ветку' in task_question_decisions_text(self._row(item))
+
+    def test_other_actions_survive(self):
+        """Дробление и сокращение меняют работу — они в промпте нужны."""
+        from src.project.task.task_question import task_question_decisions_text
+
+        item = {'question': 'Что делаем?', 'answer': 'Раздробить: часть целей — в новую',
+                'keys': ['goals_split'], 'note': ''}
+
+        assert 'Раздробить' in task_question_decisions_text(self._row(item))
+
+    def test_retry_together_with_another_action_survives(self):
+        """
+        Перезапуск, выбранный вместе с другим действием, не глушим.
+
+        Глушим ровно молчаливое «ничего не меняем»; всё остальное — решение о работе.
+        """
+        from src.project.task.task_question import task_question_decisions_text
+
+        item = {'question': 'Что делаем?', 'answer': 'Раздробить; Перезапустить как есть',
+                'keys': ['goals_split', 'goals_keep'], 'note': ''}
+
+        assert 'Раздробить' in task_question_decisions_text(self._row(item))
+
+    def test_role_question_is_never_touched(self):
+        """Развилка роли к автовопросам отношения не имеет и проходит как была."""
+        from src.project.task.task_question import task_question_decisions_text
+
+        item = {'question': 'Переименовывать ли инструменты?', 'answer': 'Не переименовывать',
+                'keys': ['1'], 'note': ''}
+
+        assert 'Не переименовывать' in task_question_decisions_text(self._row(item))
+
+
 class TestAutoQuestion:
     """
     Вопрос конвейера — когда роль не спросила, а подзадача всё равно встала.

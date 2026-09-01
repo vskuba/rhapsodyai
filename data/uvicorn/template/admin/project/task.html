@@ -4711,9 +4711,13 @@ function askRender() {
     const options = q.options || [];
     if (options.length) {
         const type = q.multi ? 'checkbox' : 'radio';
+        // Вариант по умолчанию отмечаем сразу: у вопросов конвейера это «Перезапустить
+        // как есть» — ответ, который ничего не ломает и чаще всего верен. Пустой набор
+        // радиокнопок заставляет человека выбирать там, где выбирать обычно нечего, и
+        // вопрос лишний раз висит непрочитанным.
         parts.push('<div class="ask-label">Варианты ответа</div><div class="ask-options">'
             + options.map(o => `<label class="ask-option" onclick="askPick()">`
-                + `<input type="${type}" name="askOpt" value="${esc(o.key)}">`
+                + `<input type="${type}" name="askOpt" value="${esc(o.key)}"${o.default ? ' checked' : ''}>`
                 + `<span class="ask-option-label">${esc(o.label)}`
                 + `${o.hint ? `<span class="ask-option-hint">${esc(o.hint)}</span>` : ''}</span></label>`).join('')
             + '</div>');

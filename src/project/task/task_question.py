@@ -98,6 +98,12 @@ TASK_QUESTION_ACTION_RETRY = 'goals_keep'
 # устроена так же (`task_state._subtask_state`).
 TASK_QUESTION_ACTION_PLAN = 'goals_replan'
 
+# Подпись варианта «перезапустить». Вынесена в константу, потому что по ней узнают это
+# решение старые записи: ключей выбранного они не хранят, поле появилось позже
+# (`_decision_is_bookkeeping`). Меняя подпись, оставь совместимость — иначе решения,
+# принятые до правки, снова полезут в промпты ролей.
+TASK_QUESTION_RETRY_LABEL = 'Перезапустить как есть'
+
 # Сколько прогонов подряд считаем оборванными, чтобы говорить «объём не влезает».
 # Один таймаут — случайность (зависла оболочка, упёрлись в контекст), два подряд
 # — уже свойство подзадачи.
@@ -322,6 +328,12 @@ async def task_question_answer(subtask_id: int, subtask: dict, answers: list | N
         'question': str(question.get('text') or '').strip(),
         'answer':   text,
         'by':       str(by or ''),
+        # Ключи выбранного и свободный текст — отдельно от собранной подписи. Подпись
+        # читает человек, а код по ней судить не может: чтобы понять, было ли решение
+        # содержательным, нужно знать, что именно выбрали и приписали ли оговорку
+        # (`task_question_decisions_text`).
+        'keys':     [str(a) for a in (answers or []) if str(a or '').strip()],
+        'note':     free,
     }
     # Список пишем целиком, а не патчем по индексу: JSON_MERGE_PATCH заменяет
     # массив, и дописать в него можно только собранным заново. Гонки тут не
@@ -434,6 +446,8 @@ def task_question_decisions_text(subtask: dict | None) -> str:
 
     lines = []
     for item in decisions:
+        if _decision_is_bookkeeping(item):
+            continue
         question = str(item.get('question') or '').strip()
         answer   = str(item.get('answer') or '').strip()
         if not answer:
@@ -441,6 +455,36 @@ def task_question_decisions_text(subtask: dict | None) -> str:
         lines.append(f'- Вопрос: {question}\n  Решение: {answer}' if question else f'- {answer}')
 
     return '\n'.join(lines)
+
+
+def _decision_is_bookkeeping(item: dict) -> bool:
+    """
+    Решение, которое роли ничего не говорит: «перезапустить как есть».
+
+    Оно не про работу, а про конвейер — охват не меняется, цели те же, делать
+    предстоит ровно то же самое. Роли в нём нет ни одного указания, а места в промпте
+    занимает столько же, сколько настоящая развилка.
+
+    И копится. Каждый затык порождает автовопрос, человек жмёт «перезапустить», и
+    решение ложится в список; живьём в промпте QA стояло десять одинаковых блоков
+    «кругов потрачено 0, прогонов 0 → Перезапустить как есть» подряд. Роль читает их
+    все, тратит на них внимание и не находит в них ничего.
+
+    Оговорку человека это не глушит: приписал он к перезапуску слово — решение
+    содержательное и остаётся. Молчаливое нажатие кнопки — нет.
+
+    Старые записи ключей не хранят (поле появилось позже) — для них судим по подписи.
+    Совпадение точное: «перезапустить как есть, но сперва обнови ветку» это уже другое
+    решение, и глушить его нельзя.
+    """
+    if str(item.get('note') or '').strip():
+        return False
+
+    keys = item.get('keys')
+    if isinstance(keys, list) and keys:
+        return set(keys) == {TASK_QUESTION_ACTION_RETRY}
+
+    return str(item.get('answer') or '').strip() == TASK_QUESTION_RETRY_LABEL
 
 
 def _one_line(text) -> str:
@@ -529,6 +573,18 @@ def _stuck_text(subtask: dict, facts: dict, max_attempts: int) -> str:
              + (f', сорвалось мгновенно {facts["instant"]}' if facts.get('instant') else '')
              + (f', времени ушло {facts["minutes"]} мин' if facts['minutes'] else '') + '.']
 
+    # Причина остановки — первым делом, если конвейер её назвал. Бывает, что круга не
+    # было вовсе: слияние кода предшественника не прошло, и подзадачу заглушили ещё до
+    # вызова роли. Тогда всё остальное в вопросе — нули, и человек читал «кругов
+    # потрачено 0, прогонов 0» без единого слова о том, что случилось. Причина при этом
+    # лежала рядом, в `pipeline_error`, и в вопрос не попадала.
+    error = str(subtask.get('pipeline_error') or '').strip()
+    if error:
+        lines.append(f'Причина остановки: {error[:400]}')
+        if not facts['runs']:
+            lines.append('Круга не было ни одного — роль к работе не приступала, дело не в ней. '
+                         'Пока причина не устранена, повтор упрётся в то же самое.')
+
     if facts['last']:
         lines.append(f'Последний итог: {facts["last"][:600]}')
 
@@ -572,7 +628,8 @@ def _stuck_options(goals: list) -> list:
     варианты про цели были бы кнопками в пустоту: остаётся перезапуск.
     """
     if not goals:
-        return [{'key': TASK_QUESTION_ACTION_RETRY, 'label': 'Перезапустить как есть',
+        return [{'key': TASK_QUESTION_ACTION_RETRY, 'label': TASK_QUESTION_RETRY_LABEL,
+                 'default': True,
                  'hint': 'Охват не меняем, счётчик попыток обнуляется'}]
 
     if len(goals) == 1:
@@ -581,7 +638,8 @@ def _stuck_options(goals: list) -> list:
              'hint': 'Менеджер разберёт эту строку заново и разложит её на несколько мелких. '
                      'Цель одна и неподъёмна — дробить её нечем, а повтор с тем же охватом '
                      'кончится тем же'},
-            {'key': TASK_QUESTION_ACTION_RETRY, 'label': 'Перезапустить как есть',
+            {'key': TASK_QUESTION_ACTION_RETRY, 'label': TASK_QUESTION_RETRY_LABEL,
+             'default': True,
              'hint': 'Охват не меняем, счётчик попыток обнуляется. Имеет смысл, если мешало '
                      'что-то разовое, а не объём'},
         ]
@@ -593,7 +651,7 @@ def _stuck_options(goals: list) -> list:
         {'key': TASK_QUESTION_ACTION_DROP, 'label': 'Сократить: убрать отмеченные цели',
          'hint': 'Цели исчезают из подзадачи вовсе. Берите, когда работа по ним не нужна, '
                  'а не когда она просто не влезает'},
-        {'key': TASK_QUESTION_ACTION_RETRY, 'label': 'Перезапустить как есть',
+        {'key': TASK_QUESTION_ACTION_RETRY, 'label': TASK_QUESTION_RETRY_LABEL,
          'hint': 'Охват не меняем, счётчик попыток обнуляется. Имеет смысл, если мешало '
                  'что-то разовое, а не объём'},
     ]
@@ -643,6 +701,11 @@ def _options_parse(raw) -> list:
             'key':   str(item.get('key') or number),
             'label': label[:TASK_QUESTION_OPTION_MAX],
             'hint':  str(item.get('hint') or item.get('description') or '').strip()[:TASK_QUESTION_OPTION_MAX],
+            # Вариант по умолчанию — тот, что попап отметит сам. Проводим флаг насквозь:
+            # разбор приводит варианты к канону, и всё, чего он не переписал, теряется.
+            # Ставит его конвейер в своих вопросах (`_stuck_options`); от агента флаг
+            # тоже принимаем — если он однажды научится предлагать безопасный ответ.
+            'default': bool(item.get('default')),
         })
         if len(options) >= TASK_QUESTION_OPTIONS_MAX:
             break
