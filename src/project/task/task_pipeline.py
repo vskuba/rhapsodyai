@@ -88,6 +88,7 @@ from src.project.task.task_claim import (
     task_claim_inflight_by_project,
     task_claim_inflight_by_role,
     task_claim_lock_touch,
+    task_claim_release,
     task_claim_locks_reclaim,
     task_claim_subtask_developable,
     task_claim_subtask_testable,
@@ -118,10 +119,13 @@ from src.project.task.task_retry import task_retry_clear, task_retry_reset_tree,
 from src.project.team.team_llm_ping import team_llm_ping_all
 from src.project.team.team_session_cleanup import cleanup_inactive_sessions
 from src.project.team.team_llm_pool import (team_llm_pool_all, team_llm_pool_assign,
-                                            team_llm_pool_get, team_llm_pool_release,
-                                            team_llm_pool_shell_cloud)
+                                            team_llm_pool_cloud_items,
+                                            team_llm_pool_free_names, team_llm_pool_get,
+                                            team_llm_pool_release, team_llm_pool_shell_cloud,
+                                            team_llm_pool_touch)
 from src.project.team.team_shell_pool import (team_shell_pool_acquire, team_shell_pool_busy,
-                                              team_shell_pool_release)
+                                              team_shell_pool_release, team_shell_pool_tasks,
+                                              team_shell_pool_touch)
 from src.project.task.task_role import (TASK_ROLE_DEFAULT, TASK_ROLE_MANAGER,
                                         TASK_ROLE_PROJECT_NONE, TASK_ROLE_TITLE,
                                         task_role_of_task, task_role_planners_only,
@@ -380,11 +384,27 @@ async def _action_claim(worker: str) -> dict | None:
     сделал разработчик, — вычерпав её, тик доходит до разработки, а вычерпав и её,
     до менеджера.
     """
+    # Живые оболочки читаем один раз: их спрашивает и фильтр ролей, и предел проекта —
+    # облачная оболочка добавляет к пулу свою запись, и оба ответа обязаны считаться
+    # по одному и тому же набору, иначе предел разойдётся с тем, кому его применяют.
+    sessions_by_project = await task_role_shell_sessions_by_project()
+    # Кто из оболочек занят поимённо и какие из них облачные: по этому видно не только
+    # «есть ли свободная», но и «есть ли ей чем работать». Пуловая оболочка без
+    # свободной модели круга не начнёт, и отдавать ей ход тика значит отнимать его у
+    # облачной, которой работать есть чем.
+    cloud_by_project = {project_id: await team_llm_pool_cloud_items(by_role)
+                        for project_id, by_role in sessions_by_project.items()}
+    free_models = {project_id: bool(await team_llm_pool_free_names(project_id))
+                   for project_id in sessions_by_project
+                   if await team_llm_pool_get(project_id)}
     roles_by_project = _roles_by_project_free(
-        await task_role_shell_sessions_by_project(),
+        sessions_by_project,
         await task_claim_inflight_by_project(),
-        await _parallel_limits(),
-        await team_shell_pool_busy())
+        await _parallel_limits(sessions_by_project, cloud_by_project),
+        await team_shell_pool_busy(),
+        busy_sessions=set(await team_shell_pool_tasks()),
+        cloud_by_project=cloud_by_project,
+        free_models=free_models)
     for claim in (
         _claim_qa,
         _claim_developer,
@@ -407,7 +427,8 @@ async def _action_claim(worker: str) -> dict | None:
     return None
 
 
-async def _parallel_limits() -> dict[int, int]:
+async def _parallel_limits(sessions_by_project: dict | None = None,
+                           cloud_by_project: dict | None = None) -> dict[int, int]:
     """
     Сколько прогонов проект ведёт одновременно: `{project_id: предел}`.
 
@@ -416,36 +437,58 @@ async def _parallel_limits() -> dict[int, int]:
     одном и том же непременно разошлись бы, а модель, которой нет, всё равно не
     выдалась бы кругу.
 
+    **Живая облачная оболочка добавляет к пулу свою запись** (`team_llm_pool_cloud_items`):
+    она модели не берёт, у неё свой бэкенд, — значит её круг ничьей модели не занимает
+    и в предел по моделям попадать не должен. Без этого открытая карточка без
+    `--litellm` не работала вовсе: проект с пулом из одной модели вёл один круг, а
+    вторая карточка стояла.
+
     Проект без пула идёт напрямую в облачный Anthropic, и для него остаётся прежняя
-    настройка (`task_setting_parallel`): значения, выставленные до пулов, никто не
-    отменял, а по умолчанию она и так единица.
+    настройка (`task_setting_parallel`) — облачные оболочки её не поднимают. Правило
+    намеренно узкое: пул описывает, чем проект работает, и там, где его не заводили,
+    число одновременных кругов остаётся решением человека, а не следствием того,
+    сколько терминалов открыто.
     """
     limits = dict(await task_setting_parallel_all())
     for project_id, items in (await team_llm_pool_all()).items():
-        if items:
-            limits[project_id] = len(items)
+        if not items:
+            continue
+        # Готовый ответ, если его уже посчитал вызывающий: живые оболочки читают и
+        # фильтр ролей, и этот предел, и второй запрос дал бы то же самое.
+        cloud = (cloud_by_project or {}).get(project_id)
+        if cloud is None:
+            cloud = await team_llm_pool_cloud_items((sessions_by_project or {}).get(project_id))
+        limits[project_id] = len(items) + len(cloud)
 
     return limits
 
 
 def _roles_by_project_free(sessions_by_project: dict, inflight: dict, limits: dict,
-                           busy_shells: dict | None = None) -> dict:
+                           busy_shells: dict | None = None, busy_sessions: set | None = None,
+                           cloud_by_project: dict | None = None,
+                           free_models: dict | None = None) -> dict:
     """
-    Оставить в отборе роли, у которых есть свободная оболочка. `{project_id: [role]}`.
+    Оставить в отборе роли, которым есть чем работать. `{project_id: [role]}`.
 
-    Два условия, и они про разное.
+    Три условия, и они про разное.
 
     **У роли заняты все оболочки — выпадает роль.** В оболочке один агент, и два
     круга в одной не идут параллельно, а дерутся: второй промпт прилетает агенту
     посреди чужого хода. Но оболочек у роли столько, сколько терминалов открыл
     человек, — пока есть свободная, роль берёт следующий круг и ведёт их разом
-    (`team_shell_pool`). Свободные модели этого не решают: модель — бэкенд, а не
-    вторая оболочка.
+    (`team_shell_pool`).
 
-    **Проект выбрал потолок — выпадает проект целиком.** Потолок — размер пула
-    моделей: круг занимает модель на всё своё время, и взять работы больше, чем
-    моделей, значит поставить круг ждать (`_llm_assign`), потратив на это захват
-    строки. Терминалов можно открыть сколько угодно, моделей от этого не прибавится.
+    **Свободной оболочке нечем работать — роль тоже выпадает.** Пуловой оболочке нужна
+    свободная модель; нет её — круг захватит строку, дойдёт до `_llm_assign`, вернёт
+    «ждёт свободной модели» и отдаст строку обратно. Сама по себе такая холостая
+    попытка дешева, но тик отдаёт за неё единственный захват: живьём QA каждый тик
+    забирал ход, упирался в занятую модель и уходил ни с чем, а свободная облачная
+    оболочка разработчика всё это время простаивала, хотя работа для неё была.
+    Облачной оболочке модель не нужна — её эта проверка не задевает.
+
+    **Проект выбрал потолок — выпадает проект целиком.** Потолок — размер пула плюс
+    живые облачные оболочки (`_parallel_limits`): круг занимает либо модель, либо
+    оболочку с собственным бэкендом, и взять работы больше значит поставить её ждать.
 
     Фильтруется список ролей, потому что из него строится условие отбора каждого
     шага — так один фильтр закрывает и планирование, и пересмотр, и Developer, и QA.
@@ -455,14 +498,27 @@ def _roles_by_project_free(sessions_by_project: dict, inflight: dict, limits: di
     Проекта нет в `limits` — действует `TASK_SETTING_PARALLEL_DEFAULT`.
     """
     busy_shells = busy_shells or {}
+    busy_sessions = busy_sessions or set()
     free = {}
     for project_id, roles in (sessions_by_project or {}).items():
         limit = int(limits.get(project_id, TASK_SETTING_PARALLEL_DEFAULT))
         if int(inflight.get(project_id, 0)) >= limit:
             continue
         busy = busy_shells.get(project_id, {})
-        idle = [role for role, sessions in roles.items()
-                if int(busy.get(role, 0)) < len(sessions)]
+        cloud = {item['session_uuid'] for item in (cloud_by_project or {}).get(project_id) or []}
+        # Пула у проекта нет — модель никому не выдаётся, и требовать её от оболочки
+        # нельзя: она пойдёт штатным бэкендом, как ходила до появления пулов.
+        has_model = (free_models or {}).get(project_id, True)
+
+        idle = []
+        for role, sessions in roles.items():
+            if int(busy.get(role, 0)) >= len(sessions):
+                continue
+            spare = [uuid for uuid in sessions if uuid not in busy_sessions]
+            # `spare` пуст, а счётчик занятых говорит обратное — захват отстал от
+            # реестра. Верим счётчику: он и раньше решал этот вопрос один.
+            if not spare or has_model or any(uuid in cloud for uuid in spare):
+                idle.append(role)
         if idle:
             free[project_id] = idle
 
@@ -729,19 +785,35 @@ async def _run_developer(action: dict) -> str | None:
     # ошибка разбиения, и чинит её менеджер, а не разработчик посреди круга.
     merge = await task_depend_merge_upstream(work_dir, subtask['id'])
     if merge.get('conflict'):
+        # Конфликт содержимого: две подзадачи правят одно место. Это ошибка разбиения, и
+        # чинит её менеджер, а не разработчик посреди круга. Текст git кладём в отчёт —
+        # без него человек видит «конфликт» и не знает, где именно.
         await _subtask_report(
             subtask, f"ветка {merge['conflict']} не влилась: конфликт с кодом предшественника — "
-                     f"нужно переразбить план", ok=False)
+                     f"нужно переразбить план. {merge.get('error') or ''}".strip(), ok=False)
         await task_state_subtask_set(subtask['id'], 'blocked',
                                      last_error=f"конфликт слияния с {merge['conflict']}")
         return f"subtask#{subtask['id']} developer -> blocked (конфликт с предшественником)"
 
+    if merge.get('failed'):
+        # Слияние не состоялось, но конфликта нет: занят индекс соседним git-ом, каталог
+        # не готов, git не уложился в срок. Работы не было, и глушить подзадачу не за
+        # что — она возвращается в очередь и пойдёт следующим кругом.
+        #
+        # Раньше сюда попадал тот же путь, что и у конфликта: подзадачи гасли пачками
+        # без единого вызова разработчика, а причину никто не видел — текст ошибки в
+        # отчёт не попадал вовсе.
+        logger_info(f"[task] subtask#{subtask['id']}: слияние {merge['failed']} не состоялось, "
+                    f"круг отложен: {merge.get('error') or ''}")
+        return await _wait_resource('subtask', subtask['id'], 'developer',
+                                    f"слияния ветки {merge['failed']}")
+
     shell_session = await _shell_assign(action, task, TASK_DEVELOPER_ROLE)
     if action.get('shell_wait'):
-        return f"subtask#{subtask['id']} developer ждёт свободной оболочки"
+        return await _wait_resource('subtask', subtask['id'], 'developer', 'свободной оболочки')
 
     if (await _llm_assign(action, task, TASK_DEVELOPER_ROLE)).get('wait'):
-        return f"subtask#{subtask['id']} developer ждёт свободной модели"
+        return await _wait_resource('subtask', subtask['id'], 'developer', 'свободной модели')
 
     try:
         result = await task_agent_developer_run(
@@ -890,10 +962,10 @@ async def _run_qa(action: dict) -> str | None:
 
     shell_session = await _shell_assign(action, task, TASK_QA_ROLE)
     if action.get('shell_wait'):
-        return f"subtask#{subtask['id']} qa ждёт свободной оболочки"
+        return await _wait_resource('subtask', subtask['id'], 'qa', 'свободной оболочки')
 
     if (await _llm_assign(action, task, TASK_QA_ROLE)).get('wait'):
-        return f"subtask#{subtask['id']} qa ждёт свободной модели"
+        return await _wait_resource('subtask', subtask['id'], 'qa', 'свободной модели')
 
     try:
         result = await task_agent_qa_run(
@@ -974,10 +1046,10 @@ async def _run_bugfix(action: dict) -> str | None:
 
     shell_session = await _shell_assign(action, task, TASK_BUGFIXER_ROLE)
     if action.get('shell_wait'):
-        return f"task#{task['id']} bugfix ждёт свободной оболочки"
+        return await _wait_resource('task', task['id'], 'bugfix', 'свободной оболочки')
 
     if (await _llm_assign(action, task, TASK_BUGFIXER_ROLE)).get('wait'):
-        return f"task#{task['id']} bugfix ждёт свободной модели"
+        return await _wait_resource('task', task['id'], 'bugfix', 'свободной модели')
 
     try:
         result = await task_agent_bugfixer_run(
@@ -1130,10 +1202,10 @@ async def _manager_plan_write(action: dict, label: str, state_retry: str) -> str
     # оболочку подняли с `--litellm` и она ждёт модель именно отсюда.
     shell_session = await _shell_assign(action, task, role)
     if action.get('shell_wait'):
-        return f"task#{task['id']} {label} ждёт свободной оболочки"
+        return await _wait_resource('task', task['id'], label, 'свободной оболочки')
 
     if (await _llm_assign(action, task, role)).get('wait'):
-        return f"task#{task['id']} {label} ждёт свободной модели"
+        return await _wait_resource('task', task['id'], label, 'свободной модели')
 
     try:
         result = await task_agent_manager_plan(task, revise=revise, role=role,
@@ -1710,10 +1782,27 @@ async def _lock_hold(action: dict) -> None:
     у часового прогона означала снятую блокировку у работающего агента — а следом
     и лишний захват сверх предела «Parallel LLM».
 
+    **Тем же ударом подтверждаются захваты оболочки и модели.** Круг держит три вещи —
+    строку задачи, оболочку и модель, — и умирают они вместе с ним. Раньше первую
+    подновляли, а две другие снимал только `finally`, которого у убитого job'а не
+    бывает: захват висел до протухания, а срок его был два часа. Живьём круг, погибший
+    при перезапуске воркера, час держал оболочку и единственную модель проекта —
+    страница показывала работу, которой не было, а соседняя роль голодала. Теперь
+    подтверждение общее, и срок протухания короткий (`TEAM_SHELL_POOL_STALE_SECONDS`).
+
     Ограничены сроком job: если процесс завис, но не умер, подновление
     прекращается, и дальше работает прежняя страховка по `timeout_task_lock`.
     Отказ `task_claim_lock_touch` — блокировку уже сняли (реклейм, ручной повтор,
-    человек на странице задач); тогда просто уходим, чужую метку не ставим.
+    человек на странице задач); тогда просто уходим, чужую метку не ставим — ни на
+    строку, ни на оболочку с моделью: круг уже не наш.
+
+    **Заминку базы отказом не считаем.** «Сняли блокировку» — это `False`, а не
+    исключение: на исключении удар сердца просто пропускаем и бьём снова через срок.
+    Разница дорогая с обеих сторон. Прекрати мы биться из-за одного сбойного запроса —
+    круг остался бы без подтверждений и через `TEAM_SHELL_POOL_STALE_SECONDS` потерял бы
+    оболочку и модель прямо во время работы. А не поймай мы исключение вовсе — оно
+    всплыло бы из этой задачи в `finally` вызывающего (`await hold`) и подменило бы собой
+    результат уже сделанного круга.
     """
     row_id = int(action.get('task_id') or action.get('subtask_id') or 0)
     if not row_id:
@@ -1722,8 +1811,13 @@ async def _lock_hold(action: dict) -> None:
     deadline = time.monotonic() + await task_setting_timeout_get(TASK_SETTING_TIMEOUT_WORKER_JOB)
     while time.monotonic() < deadline:
         await asyncio.sleep(TASK_CLAIM_LOCK_TOUCH_SEC)
-        if not await task_claim_lock_touch(row_id):
-            return
+        try:
+            if not await task_claim_lock_touch(row_id):
+                return
+        except Exception as e:
+            logger_info(f'[task] удар сердца строки #{row_id} не прошёл, повторим: {e}')
+            continue
+        await _resources_touch(action)
 
 
 async def _dialog_hold(row: dict, role: str, error: str, parent_id, back_state: str) -> bool:
@@ -1861,11 +1955,14 @@ async def _shell_assign(action: dict, task: dict, role: str) -> str:
     project_id = int((task or {}).get('project_id') or 0)
     task_id = int((task or {}).get('id') or 0)
     try:
-        sessions = (await task_role_shell_sessions_by_project()).get(project_id, {}).get(role, [])
+        by_role = (await task_role_shell_sessions_by_project()).get(project_id, {})
+        sessions = by_role.get(role, [])
         if not sessions:
             return ''
 
-        session_uuid = await team_shell_pool_acquire(project_id, role, task_id, sessions)
+        sessions, sticky_within = await _shell_order(project_id, by_role, sessions)
+        session_uuid = await team_shell_pool_acquire(project_id, role, task_id, sessions,
+                                                    sticky_within=sticky_within)
         if not session_uuid:
             logger_info(f'[task] {role}: все оболочки проекта #{project_id} заняты '
                         f'({len(sessions)} шт.)')
@@ -1879,6 +1976,87 @@ async def _shell_assign(action: dict, task: dict, role: str) -> str:
         logger_info(f'[task] захват оболочки для {role} не удался: {e}')
 
         return ''
+
+
+async def _resources_touch(action: dict) -> None:
+    """
+    Подтвердить захваты круга — оболочку и модель. Зовётся ударом сердца `_lock_hold`.
+
+    Адреса берём из самого действия: их положили туда выдачи (`_shell_assign`,
+    `_llm_assign`), и они же нужны освобождению в `finally`. Чего в действии нет, того
+    круг и не захватывал — облачная оболочка идёт без модели, и подтверждать ей нечего.
+
+    Сбой подтверждения круг не роняет: одна пропущенная отметка запаса не съедает
+    (`TEAM_SHELL_POOL_STALE_SECONDS` — это шесть с лишним ударов), а падать в фоновой
+    задаче из-за заминки в базе значило бы уронить работу ради уборки.
+    """
+    with suppress(Exception):
+        session_uuid = str(action.get('shell') or '')
+        if session_uuid:
+            await team_shell_pool_touch(session_uuid)
+
+        llm = str(action.get('llm') or '')
+        if llm:
+            await team_llm_pool_touch(llm, int(action.get('llm_task_id') or 0),
+                                      str(action.get('llm_role') or ''))
+
+
+async def _wait_resource(kind: str, row_id: int, label: str, what: str) -> str:
+    """
+    Круг не начался — ресурс занят. Вернуть строку в очередь и сказать об этом.
+
+    Захват и работа разнесены: тик переводит строку в переходное состояние, а круг
+    начинается позже — и может не начаться, если все оболочки роли заняты или в пуле
+    нет свободной модели. Работы при этом не было ни на секунду.
+
+    Раньше такая строка оставалась захваченной до реклейма, то есть две минуты. И всё
+    это время она мешала дважды: на странице задача числилась «в работе», хотя ею никто
+    не занимался, а её захват занимал место в пределе параллельности проекта — то самое
+    место, на которое могла бы прийти настоящая работа. Живьём #5238 каждые две минуты
+    отбирал круг у свободной облачной оболочки, не делая ничего.
+
+    Попытку не жжём и в журнал задачи не пишем: работы не было, записывать нечего.
+    Ждать строка будет в своём прежнем состоянии, и следующий тик возьмёт её заново —
+    когда ресурс освободится.
+    """
+    state = await task_claim_release(int(row_id or 0))
+
+    return f'{kind}#{row_id} {label} ждёт {what}' + (f' -> {state}' if state else '')
+
+
+async def _shell_order(project_id: int, by_role: dict, sessions: list) -> tuple[list, list]:
+    """
+    Разложить оболочки роли по предпочтению. Возвращает `(порядок, где липнуть)`.
+
+    **Локальная модель всегда вперёд облачного агента.** Пока в пуле свободна модель,
+    круг обязан идти в пуловую оболочку. Без этого порядок решала гонка: освободилась
+    локальная модель, за круг брались обе карточки, и выигрывала любая — сплошь и рядом
+    работа уходила за облачные токены, а оплаченная локальная модель простаивала.
+
+    Когда свободных моделей нет, порядок обратный: пуловой оболочке идти не с чем, она
+    упрётся в «ждёт свободной модели» и потратит на это захват, — а облачная работает
+    своим бэкендом и круг возьмёт.
+
+    Второй возврат — где разрешено прилипание (`team_shell_pool_acquire`). Оно
+    предпочитает оболочку прошлого круга ради прогретого контекста, но правило старше
+    предпочтения: липнуть можно только внутри ведущей группы, иначе «прошлый раз
+    работали в облачной» раз за разом уводило бы круг мимо свободной локальной модели.
+
+    Пул пуст — делить нечего: порядок остаётся прежним, прилипание по всему списку.
+    """
+    order = [str(s).strip() for s in (sessions or []) if str(s).strip()]
+    cloud = {item['session_uuid'] for item in await team_llm_pool_cloud_items(by_role)}
+    if not cloud or not await team_llm_pool_get(project_id):
+        return order, order
+
+    local = [uuid for uuid in order if uuid not in cloud]
+    remote = [uuid for uuid in order if uuid in cloud]
+    if not local or not remote:
+        return order, order
+
+    lead, tail = (local, remote) if await team_llm_pool_free_names(project_id) else (remote, local)
+
+    return lead + tail, lead
 
 
 async def _llm_assign(action: dict, task: dict, role: str) -> dict:

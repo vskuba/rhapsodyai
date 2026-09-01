@@ -319,13 +319,16 @@ async def task_depend_merge_upstream(repo_dir: str, task_id: int) -> dict:
     Returns:
         merged: имена веток, которые влились.
         skipped: те, чья ветка ещё не существует (предшественник не писал кода).
-        conflict: ветка, на которой слияние развернули; пустая строка — конфликта нет.
+        conflict: ветка с конфликтом содержимого; пустая строка — конфликта нет.
+        failed: ветка, слияние которой не состоялось по иной причине (занят индекс,
+            каталог не готов, git не уложился в срок). Это заминка, а не ошибка
+            разбиения: подзадачу за неё глушить не за что, круг просто повторится.
         error: текст ошибки git, если она была.
     """
-    from src.project.task.task_worktree import (task_worktree_branch, task_worktree_git,
-                                                task_worktree_path)
+    from src.project.task.task_worktree import (_identity, task_worktree_branch,
+                                                task_worktree_git, task_worktree_path)
 
-    result = {'merged': [], 'skipped': [], 'conflict': '', 'error': ''}
+    result = {'merged': [], 'skipped': [], 'conflict': '', 'failed': '', 'error': ''}
     path = task_worktree_path(repo_dir, task_id)
     if not path or not os.path.isdir(path):
         return result
@@ -346,8 +349,18 @@ async def task_depend_merge_upstream(repo_dir: str, task_id: int) -> dict:
             result['skipped'].append(branch)
             continue
 
+        # Подпись коммита слияния (`_identity`) обязательна, и это не украшение. В
+        # контейнере воркера git зовётся от uid владельца каталога, а `HOME` уведён в
+        # `/tmp`, где никакого `.gitconfig` нет: без подписи git отказывается коммитить
+        # вовсе — «Committer identity unknown». Слияние в главную ветку и выкладка
+        # подзадачи её ставили, а здесь она была забыта, и каждое слияние
+        # предшественника падало на ровном месте. Хуже того, падение читалось как
+        # конфликт разбиения: подзадачи гасли одна за другой, ни разу не позвав
+        # разработчика, и в отчёте стояло «конфликт с кодом предшественника» — при том,
+        # что то же слияние руками проходило чисто.
         code, out = await task_worktree_git(
-            path, 'merge', '--no-edit', '-m', f'Код подзадачи #{dep_id}', branch)
+            path, *await _identity(path),
+            'merge', '--no-edit', '-m', f'Код подзадачи #{dep_id}', branch)
         if not code:
             result['merged'].append(branch)
             continue
@@ -356,9 +369,23 @@ async def task_depend_merge_upstream(repo_dir: str, task_id: int) -> dict:
         # начнётся, упрётся в отсутствие кода и честно вернёт «не сошлось», а не
         # утонет в конфликтных маркерах посреди файлов.
         await task_worktree_git(path, 'merge', '--abort')
-        result['conflict'] = branch
         result['error'] = str(out or '')[:400]
-        logger_info(f'[task] subtask#{task_id}: ветка {branch} не влилась, конфликт')
+
+        # Конфликт содержимого и «слияние не состоялось» — разные новости, и путать их
+        # дорого. Первое означает ошибку разбиения: две подзадачи правят одно место, и
+        # чинит это менеджер переразбиением — подзадачу глушат до человека. Второе —
+        # заминка: занят индекс соседним git-ом, каталог не готов, git не уложился в
+        # срок. Работы там нет ни на копейку, и глушить за неё подзадачу не за что:
+        # следующий круг пройдёт, как ни в чём не бывало.
+        #
+        # Раньше на любой ненулевой код возвращался `conflict`, и подзадачи гасли
+        # пачками без единого вызова разработчика — по заминке, которую никто не видел:
+        # текст ошибки git оставался здесь и в отчёт не попадал.
+        result['conflict'] = branch if 'CONFLICT' in str(out or '') else ''
+        result['failed'] = '' if result['conflict'] else branch
+        logger_info(f"[task] subtask#{task_id}: ветка {branch} не влилась "
+                    f"({'конфликт' if result['conflict'] else 'слияние не состоялось'}): "
+                    f"{result['error'][:200]}")
         break
 
     if result['merged']:

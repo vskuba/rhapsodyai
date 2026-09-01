@@ -373,6 +373,72 @@ async def task_claim_lock_touch(row_id: int) -> bool:
     return bool(touched)
 
 
+async def task_claim_release(row_id: int, worker: str = '') -> str:
+    """
+    Вернуть захваченную строку назад: круг не начался, работы не было.
+
+    Returns: состояние, в которое вернули; пустая строка — возвращать было нечего.
+
+    Зачем. Захват и работа разнесены: тик переводит строку в переходное состояние
+    (`testing`, `developing`, `planning`), а круг начинается позже и может не начаться
+    вовсе — свободной модели нет, все оболочки роли заняты. Раньше такая строка просто
+    оставалась захваченной, и её подбирал реклейм — но не раньше, чем через
+    `LOCK_ORPHAN_GRACE_SEC`.
+
+    Две минуты она при этом врала дважды. Человек видел на странице «в работе» у
+    задачи, которой никто не занимается: страница считает работой непустой
+    `pipeline_locked_by`, и она права — строка захвачена. И, хуже, захват всё это время
+    числился в пределе параллельности проекта (`task_claim_inflight_by_project`), то
+    есть занимал место, на которое могла бы прийти настоящая работа: живьём #5238
+    каждые две минуты забирал место у свободной облачной оболочки, ничего не делая.
+
+    Поэтому круг, не начавшийся из-за занятого ресурса, отдаёт строку сразу. Это не
+    сбой и не попытка: ни счётчик кругов, ни журнал не трогаем — работы не было, и
+    записывать о ней нечего.
+
+    Состояние берём из карт реклейма (`TASK_CLAIM_STATE_RECLAIM`,
+    `TASK_CLAIM_SUBTASK_STATE_RECLAIM`) — тех же самых: «откуда захватили» и «куда
+    вернуть» описаны там один раз, и вторая их копия разошлась бы с первой на первом же
+    новом состоянии.
+
+    `worker` — вернуть только свой захват. Пустой означает «чей угодно»: вызывающий не
+    всегда знает имя, а строка в переходном состоянии с непустой блокировкой всё равно
+    ничья, кроме как своего job'а.
+    """
+    if not row_id:
+        return ''
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT pipeline_state, parent_id FROM project_task WHERE id = %s', (int(row_id),))
+        row = await db.fetchone()
+        if not row:
+            return ''
+
+        states = (TASK_CLAIM_SUBTASK_STATE_RECLAIM if row.get('parent_id')
+                  else TASK_CLAIM_STATE_RECLAIM)
+        state_to = states.get(str(row.get('pipeline_state') or ''))
+        if not state_to:
+            return ''
+
+        kanban_sql, kanban_params = task_state_kanban_sql(state_to)
+        where = "id = %s AND pipeline_locked_by <> ''"
+        params = [int(row_id)]
+        if worker:
+            where += ' AND pipeline_locked_by = %s'
+            params.append(str(worker))
+        await db.execute(
+            f'UPDATE project_task SET pipeline_state = %s, '
+            f"{kanban_sql + ', ' if kanban_sql else ''}"
+            f"       pipeline_locked_at = NULL, pipeline_locked_by = '' "
+            f' WHERE {where}',
+            [state_to] + kanban_params + params)
+        released = db.rowcount
+        await db.connection.commit()
+
+    return state_to if released else ''
+
+
 async def task_claim_inflight_by_project() -> dict[int, int]:
     """
     Сколько прогонов агента уже идёт у каждого проекта: `{project_id: число}`.
