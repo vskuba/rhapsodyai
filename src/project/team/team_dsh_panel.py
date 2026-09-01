@@ -75,9 +75,16 @@ def team_dsh_panel_urls() -> list:
     return urls
 
 
-async def team_dsh_panel_request(url: str, method: str, path: str, payload: dict = None) -> dict:
+async def team_dsh_panel_request(url: str, method: str, path: str, payload: dict = None,
+                                 timeout: float = 0) -> dict:
     """
     Один запрос к пульту. Любая неудача — `TeamDshError`, наружу httpx не течёт.
+
+    `timeout` — потолок ожидания ответа, ноль означает общий (`TEAM_DSH_PANEL_TIMEOUT`).
+    Отдельным сроком живёт лишь перезапуск хоста: он гасит процесс, ждёт освобождения
+    порта и поднимает заново, и общий потолок оборвал бы его на середине — страница
+    прочла бы это как «пульт не ответил», хотя хост в этот миг как раз поднимался.
+    Дозвон сроком не меняется никогда: пульта либо нет, либо он рядом.
 
     Raises: `TeamDshError`; `status` уже пригоден для ответа наружу (422 — кривой
     запрос от нас, 502 — не дозвонились или пульту плохо).
@@ -88,7 +95,8 @@ async def team_dsh_panel_request(url: str, method: str, path: str, payload: dict
             f'не задан {TEAM_DSH_PANEL_SECRET_KEY}: пульт ролей без секрета не пустит')
 
     address = f"{url.rstrip('/')}{path}"
-    timeout = httpx.Timeout(TEAM_DSH_PANEL_TIMEOUT, connect=TEAM_DSH_PANEL_CONNECT_TIMEOUT)
+    timeout = httpx.Timeout(float(timeout) or TEAM_DSH_PANEL_TIMEOUT,
+                            connect=TEAM_DSH_PANEL_CONNECT_TIMEOUT)
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.request(method, address, json=payload,

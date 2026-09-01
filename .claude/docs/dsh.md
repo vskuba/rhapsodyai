@@ -98,9 +98,10 @@ sudo bash etc/ds-shell-install.sh /home/vasyl/PycharmProjects/RhapsodyAi
 | `src/project/team/team_dsh.py` | Все пульты разом: состояние по проектам, выбор пульта под переключение |
 | `src/project/team/team_dsh_card.py` | Добавочные карточки: «+» (`/roles/add`) и крестик (`/roles/drop`) |
 | `src/project/team/team_dsh_project.py` | Подключение проекта (`/projects/add` перебором пультов) и отключение (`/projects/drop`, `force`) |
-| `src/uvicorn/routers/project/project_team.py` | Ручки `GET /api/team/dsh`, `POST /api/team/dsh/switch`, `POST /api/team/dsh/card/{add,drop}`, `POST /api/team/dsh/project`, модели `TeamDshRequest`, `TeamDshCardRequest`, `TeamDshProjectRequest` |
-| `data/uvicorn/template/admin/project/team.html` | Ссылка на Harness в шапке, полоска пульта в шапке блока и кнопки на карточках (`dshPanel`, `renderDshProject`, `dshLayout`, `renderDshSwitch`, `renderDshRemove`, `dshRequest`) |
-| `tests/test_team_dsh.py` | Тесты клиента: мёртвый пульт среди живых, один пульт на несколько проектов, выбор пульта, подключение перебором, `force` насквозь, отображение кодов, права ручек, соответствие сессий карточкам |
+| `src/project/team/team_dsh_host.py` | Перезапуск хоста Harness (`/host/restart` на всех ответивших пультах разом, свой потолок 90 с) |
+| `src/uvicorn/routers/project/project_team.py` | Ручки `GET /api/team/dsh`, `POST /api/team/dsh/switch`, `POST /api/team/dsh/card/{add,drop}`, `POST /api/team/dsh/project`, `POST /api/team/dsh/restart`, модели `TeamDshRequest`, `TeamDshCardRequest`, `TeamDshProjectRequest` |
+| `data/uvicorn/template/admin/project/team.html` | Ссылка на Harness в шапке, кнопка «Перезапуск» рядом с ней, полоска пульта в шапке блока и кнопки на карточках (`dshPanel`, `renderHarness`, `restartDshHost`, `renderDshProject`, `dshLayout`, `renderDshSwitch`, `renderDshRemove`, `dshRequest`) |
+| `tests/test_team_dsh.py` | Тесты клиента: мёртвый пульт среди живых, один пульт на несколько проектов, выбор пульта, подключение перебором, `force` насквозь, перезапуск хоста на всех машинах разом, отображение кодов, права ручек, соответствие сессий карточкам |
 | `.env` / `.env.dist` | `DSH_CONTROL_URL` — адреса пультов через запятую, по одному на машину |
 
 ## 4. REST API
@@ -112,6 +113,7 @@ sudo bash etc/ds-shell-install.sh /home/vasyl/PycharmProjects/RhapsodyAi
 | POST | `/api/team/dsh/card/add` | `project`, `role` | `PLANNING_UPDATE` | Завести роли добавочную карточку — с первым свободным номером |
 | POST | `/api/team/dsh/card/drop` | `project`, `role`, `card_id` | `PLANNING_UPDATE` | Убрать названную добавочную карточку в архив |
 | POST | `/api/team/dsh/project` | `project`, `attached`, `force` | `PLANNING_UPDATE` | Взять проект под пульт либо отдать обратно: кнопка в шапке блока |
+| POST | `/api/team/dsh/restart` | — | `PLANNING_UPDATE` | Перезапустить хост Harness на всех ответивших пультах: кнопка «Перезапуск» наверху |
 
 ```jsonc
 // GET /api/team/dsh
@@ -159,6 +161,13 @@ sudo bash etc/ds-shell-install.sh /home/vasyl/PycharmProjects/RhapsodyAi
 {"result": {"project": "/home/user/…/DatingAi", "panel": "http://host.docker.internal:8791",
             "attached": false, "changed": true,
             "roles": ["developer"]}}         // кого пришлось погасить
+
+// POST /api/team/dsh/restart  (тела нет: хост один на всё, адресовать нечего)
+{"result": {"panels": [{"url": "http://host.docker.internal:8791", "restarted": true,
+                        "pid": 4242, "problem": ""}],
+            "restarted": 1,                  // сколько машин подняли хост заново
+            "total": 1,                      // сколько пультов вообще отозвалось
+            "problem": ""}}                  // молчавшие и отказавшие — словами
 ```
 
 `panels` — список самих пультов, отдельно от `projects`. Нужен он блокам, чьего проекта

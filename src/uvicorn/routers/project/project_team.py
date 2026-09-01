@@ -7,6 +7,7 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.project.team.team_dsh import TeamDshError, team_dsh_state, team_dsh_switch
 from src.project.team.team_dsh_card import team_dsh_card_add, team_dsh_card_drop
+from src.project.team.team_dsh_host import team_dsh_host_restart
 from src.project.team.team_dsh_project import (team_dsh_project_attach,
                                                team_dsh_project_detach)
 from src.project.team.team_member import (team_member_activate,
@@ -360,6 +361,34 @@ async def project_team_dsh_card_drop(card_request: TeamDshCardRequest,
     try:
         result = await team_dsh_card_drop(card_request.project, card_request.role,
                                           card_request.card_id)
+    except TeamDshError as error:
+        raise HTTPException(status_code=error.status, detail=str(error))
+
+    return {'result': result}
+
+
+@router.post('/dsh/restart')
+async def project_team_dsh_restart(user=Depends(AuthChecker([AuthPermission.PLANNING_UPDATE]))):
+    """
+    Перезапустить хост Harness — кнопка наверху страницы, рядом с его адресом.
+
+    Единственная ручка dsh без тела: хост один на все проекты и все роли, адресовать
+    нечего. Просьба уходит всем ответившим пультам разом — пульт это машина, а хост у
+    машины свой.
+
+    Нужен перезапуск в четырёх случаях: хост умер или завис — и тогда чинить его больше
+    некому, потому что сервис, пока тот молчит, лишь пропускает сверку карточек, и
+    включённые роли не поднимутся никогда; обновился сам `dsh`; сменилась накладка
+    `--patch` (окно контекста, права, набор инструментов) — её настройки достаются тому,
+    кто поднял хост первым; заклинило сессии или поток событий.
+
+    Стоит он только идущих сейчас кругов: карточки, их номера и переписка лежат на диске,
+    а оболочки переподключаются к потоку событий сами. Спрашивает человека страница.
+
+    Права на изменение: действие обрывает работу всех агентов машины разом.
+    """
+    try:
+        result = await team_dsh_host_restart()
     except TeamDshError as error:
         raise HTTPException(status_code=error.status, detail=str(error))
 

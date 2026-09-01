@@ -49,7 +49,7 @@ TEST_DSH_PANEL_B = 'http://panel-b:8792'
 
 # Меняющие пути пульта: на них заглушка отвечает телом `post`, а не состоянием ролей.
 TEST_DSH_PANEL_POSTS = ('/roles/on', '/roles/off', '/roles/add', '/roles/drop',
-                        '/projects/add', '/projects/drop')
+                        '/projects/add', '/projects/drop', '/host/restart')
 
 TEST_DSH_PROJECT_A = '/home/user/PycharmProjects/RhapsodyAi'
 TEST_DSH_PROJECT_B = '/home/user/PycharmProjects/DatingAi'
@@ -925,6 +925,158 @@ class TestDshProject:
         assert 'домашний проект' in str(error.value)
 
 
+class TestDshHostRestart:
+    """
+    Кнопка «Перезапуск» наверху страницы: хост Harness сам собой не поднимается никогда.
+
+    Случай, ради которого кнопку и завели, — хост лёг. Пока он молчит, сервис лишь
+    пропускает сверку карточек, и включённые роли не поднимутся ни через минуту, ни
+    через час: чинить это некому. Отсюда и правила ниже — адресуемся всем машинам разом,
+    молчание одной не отменяет остальных, а полная неудача обязана быть слышной.
+    """
+
+    async def test_restart_goes_to_every_panel(self):
+        """
+        Пульт — это машина, хост у машины свой: перезапускаем на всех ответивших.
+
+        Выбирать машину человеку нечем — адреса пультов страница не видит и видеть не
+        должна, а точка «жив» наверху горит по правилу «жив хоть у кого-то».
+        """
+        result, calls = await _host_restart({TEST_DSH_PANEL_A: DSH_STATE_OK,
+                                             TEST_DSH_PANEL_B: DSH_STATE_B},
+                                            post={'started': True, 'pid': 4242})
+
+        posted = [call for call in calls if call['url'].endswith('/host/restart')]
+        assert [call['url'] for call in posted] == [TEST_DSH_PANEL_A + '/host/restart',
+                                                    TEST_DSH_PANEL_B + '/host/restart']
+        assert result['restarted'] == 2
+        assert result['total'] == 2
+        assert result['problem'] == ''
+
+    async def test_restart_names_no_project(self):
+        """
+        Единственная ручка dsh с пустым телом: хост общий, адресовать нечего.
+
+        Назови мы проект — пульт понял бы это как «перезапусти хост проекта», которого
+        не существует: процесс один на машину, и его перезапуск задевает все проекты.
+        """
+        _, calls = await _host_restart({TEST_DSH_PANEL_A: DSH_STATE_BOTH},
+                                       post={'started': True, 'pid': 4242})
+
+        assert calls[-1]['json'] is None
+
+    async def test_restart_waits_longer_than_the_rest(self):
+        """
+        У перезапуска свой потолок: он гасит процесс, ждёт порт и поднимает заново.
+
+        Общий срок пульта оборвал бы это на середине, и страница сказала бы «пульт не
+        ответил» ровно в тот миг, когда хост как раз поднимался, — а человек нажал бы
+        второй раз и погасил уже поднятый.
+        """
+        from src.project.team.team_dsh_host import TEAM_DSH_HOST_TIMEOUT
+        from src.project.team.team_dsh_panel import (TEAM_DSH_PANEL_CONNECT_TIMEOUT,
+                                                     TEAM_DSH_PANEL_TIMEOUT)
+
+        _, calls = await _host_restart({TEST_DSH_PANEL_A: DSH_STATE_OK},
+                                       post={'started': True, 'pid': 4242})
+
+        assert calls[0]['timeout'].read == TEAM_DSH_PANEL_TIMEOUT, 'опрос ролей — общий срок'
+        assert calls[-1]['timeout'].read == TEAM_DSH_HOST_TIMEOUT
+        # Дозвон сроком не меняется никогда: пульта либо нет, либо он рядом. Раздуй его
+        # перезапуск — выключенный ноутбук держал бы страницу все полторы минуты.
+        assert calls[-1]['timeout'].connect == TEAM_DSH_PANEL_CONNECT_TIMEOUT
+
+    async def test_silent_panel_does_not_stop_the_others(self):
+        """
+        Машины независимы: до одной не дозвонились — вторую всё равно чиним.
+
+        Молчащий пульт в `total` не идёт. Он не машина с лежачим хостом, а машина, про
+        хост которой нам ничего не известно: посчитай мы её, «1 из 2» читалось бы как
+        «на одной не получилось».
+        """
+        result, _ = await _host_restart(
+            {TEST_DSH_PANEL_A: DSH_STATE_OK,
+             TEST_DSH_PANEL_B: httpx.ConnectError('ноутбук выключен')},
+            post={'started': True, 'pid': 4242})
+
+        assert result['restarted'] == 1
+        assert result['total'] == 1, 'молчащий пульт — не машина, у которой не вышло'
+        assert TEST_DSH_PANEL_B in result['problem']
+        assert result['panels'][0]['url'] == TEST_DSH_PANEL_A
+
+    async def test_failed_panel_is_named_but_not_fatal(self):
+        """Один пульт отказал, второй поднял — это успех с причиной в `problem`."""
+        result, _ = await _host_restart(
+            {TEST_DSH_PANEL_A: DSH_STATE_OK, TEST_DSH_PANEL_B: DSH_STATE_B},
+            posts={TEST_DSH_PANEL_A: (502, {'detail': 'порт занят и после остановки'}),
+                   TEST_DSH_PANEL_B: (200, {'started': True, 'pid': 4242})})
+
+        assert result['restarted'] == 1
+        assert result['total'] == 2
+        assert 'порт занят' in result['problem']
+        assert [item['restarted'] for item in result['panels']] == [False, True]
+        assert [item['pid'] for item in result['panels']] == [0, 4242]
+
+    async def test_nobody_restarted_is_an_error(self):
+        """
+        Ни один хост не поднялся — молчаливое «готово» человек прочтёт как сделанное.
+
+        Он вернётся к своим ролям, увидит, что они по-прежнему не берут кругов, и
+        станет искать поломку в них, а не в лежачем хосте.
+        """
+        from src.project.team.team_dsh_panel import TeamDshError
+
+        with pytest.raises(TeamDshError) as error:
+            await _host_restart({TEST_DSH_PANEL_A: DSH_STATE_OK},
+                                post={'detail': 'порт занят и после остановки'},
+                                post_status=502)
+
+        assert error.value.status == 502
+        assert 'порт занят' in str(error.value)
+
+    async def test_all_panels_silent_is_an_error(self):
+        """Все пульты молчат — перезапускать было негде, и сказать об этом обязаны."""
+        from src.project.team.team_dsh_panel import TeamDshError
+
+        with pytest.raises(TeamDshError) as error:
+            await _host_restart({TEST_DSH_PANEL_A: httpx.ConnectError('ноутбук выключен')})
+
+        assert error.value.status == 502
+        assert TEST_DSH_PANEL_A in str(error.value)
+
+    async def test_no_panels_at_all_is_our_own_setup(self):
+        """
+        Адресов нет вовсе — это ненастроенная установка, а не поломка чужой машины.
+
+        Отсюда 422, а не 502: винить нечего, пульта в этой установке никто не заводил.
+        Пустым `DSH_CONTROL_URL` этого не добиться — там умолчание, мост docker; список
+        пустеет от значения из одних разделителей, то есть от вычищенной настройки.
+        """
+        import src.project.team.team_dsh_panel as panel
+        from src.project.team.team_dsh_host import team_dsh_host_restart
+        from src.project.team.team_dsh_panel import TeamDshError
+
+        with patch.object(panel, 'config_get', lambda key, default='': ','):
+            with pytest.raises(TeamDshError) as error:
+                await team_dsh_host_restart()
+
+        assert error.value.status == 422
+        assert 'DSH_CONTROL_URL' in str(error.value)
+
+    async def test_pid_of_a_foreign_process_is_a_number(self):
+        """
+        Пульт — чужой процесс чужого репозитория, и его `pid` для нас входные данные.
+
+        Страница печатает его в сообщении об успехе; приди оттуда строка или `null`,
+        падать посреди удавшегося перезапуска было бы худшим из исходов.
+        """
+        result, _ = await _host_restart({TEST_DSH_PANEL_A: DSH_STATE_OK},
+                                        post={'started': True, 'pid': 'не число'})
+
+        assert result['restarted'] == 1
+        assert result['panels'][0]['pid'] == 0
+
+
 class TestDshRoutes:
     """Ручки страницы команды: права и обязательные поля."""
 
@@ -936,13 +1088,15 @@ class TestDshRoutes:
         тот, кому позволено менять конвейер. Карточки здесь наравне с выключателем:
         «+» поднимает ещё одного агента, крестик гасит работающего. Подключение проекта
         — тоже изменение конвейера, а отключение вдобавок гасит работающие роли.
+        Перезапуск хоста — тем более: он обрывает круги всех ролей всех проектов разом.
         """
         from src.auth.auth import AuthChecker
         from src.auth.auth_permission import AuthPermission
         from src.uvicorn.routers.project import project_team
 
         paths = ('/api/team/dsh', '/api/team/dsh/switch', '/api/team/dsh/project',
-                 '/api/team/dsh/card/add', '/api/team/dsh/card/drop')
+                 '/api/team/dsh/card/add', '/api/team/dsh/card/drop',
+                 '/api/team/dsh/restart')
         checkers = {}
         for route in project_team.router.routes:
             if getattr(route, 'path', '') not in paths:
@@ -957,6 +1111,7 @@ class TestDshRoutes:
         assert checkers['/api/team/dsh/card/add'] == [AuthPermission.PLANNING_UPDATE]
         assert checkers['/api/team/dsh/card/drop'] == [AuthPermission.PLANNING_UPDATE]
         assert checkers['/api/team/dsh/project'] == [AuthPermission.PLANNING_UPDATE]
+        assert checkers['/api/team/dsh/restart'] == [AuthPermission.PLANNING_UPDATE]
 
     def test_switch_request_requires_project(self):
         """
@@ -1056,6 +1211,19 @@ async def _card_drop(answers: dict, answer: dict, project: str, card_id: str,
         return await team_dsh_card_drop(project, TEST_DSH_ROLE, card_id), calls
 
 
+async def _host_restart(answers: dict, post: dict = None, post_status: int = 200,
+                        posts: dict = None) -> tuple:
+    """
+    Нажатие «Перезапуск»: `answers` — ответы на `GET /roles`, `post` — на `/host/restart`.
+
+    Проекта у перезапуска нет, поэтому и аргумента нет: адресуемся всем ответившим
+    пультам разом. `posts` нужен, когда один пульт поднял хост, а другой отказал.
+    """
+    async with _panels(answers, post=post, post_status=post_status, posts=posts) as calls:
+        from src.project.team.team_dsh_host import team_dsh_host_restart
+        return await team_dsh_host_restart(), calls
+
+
 async def _attach(answers: dict, project: str, post: dict = None, post_status: int = 200,
                   posts: dict = None) -> tuple:
     """
@@ -1109,8 +1277,12 @@ class _panels:
         import src.project.team.team_dsh_panel as panel
 
         async def _request(client, method, url, json=None, headers=None, **kwargs):
+            # `timeout` записываем с клиента, а не из аргументов: срок задаётся при его
+            # создании. Отдельным сроком живёт перезапуск хоста, и проверить его иначе
+            # нечем — в самом запросе он не виден.
             self.calls.append({'method': method, 'url': str(url), 'json': json,
-                               'headers': dict(headers or {})})
+                               'headers': dict(headers or {}),
+                               'timeout': getattr(client, 'timeout', None)})
             status, answer = self._answer_for(str(url))
             if isinstance(answer, Exception):
                 raise answer

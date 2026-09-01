@@ -59,12 +59,59 @@
         background: #d1d5db;
     }
 
+    /* Живая точка пульсирует: состояние здесь меняется само, без перезагрузки страницы,
+       и неподвижный кружок неотличим от нарисованного однажды. Пульс — расходящееся
+       кольцо тени, а не рост самой точки: она стоит в строке между текстом, и меняющийся
+       размер дёргал бы соседей. Мёртвая точка неподвижна — это и есть её сообщение. */
+    @keyframes team-harness-pulse {
+        0% {
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+        }
+        70% {
+            box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+        }
+        100% {
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+        }
+    }
+
     .team-harness .dot.alive {
         background: #10b981;
+        animation: team-harness-pulse 1.8s ease-out infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .team-harness .dot.alive {
+            animation: none;
+        }
     }
 
     .team-harness .problem {
         color: #b45309;
+    }
+
+    /* Кнопка перезапуска хоста. Приглушённая и с краю: нужна она редко — хост живёт
+       сам, — а нажатие обрывает круги всех агентов машины разом. Внимание в этой
+       строке принадлежит ссылке, а не ей. */
+    .team-harness .btn-harness-restart {
+        margin-left: auto;
+        font-size: 11px;
+        line-height: 1.4;
+        color: #0369a1;
+        background: #fff;
+        border: 1px solid #bae6fd;
+        border-radius: 6px;
+        padding: 3px 9px;
+        cursor: pointer;
+    }
+
+    .team-harness .btn-harness-restart:hover:not(:disabled) {
+        background: #e0f2fe;
+    }
+
+    .team-harness .btn-harness-restart:disabled {
+        cursor: default;
+        opacity: 0.6;
     }
 
     /* ---------- Блок проекта ---------- */
@@ -1756,14 +1803,49 @@
         const tail = panels.length
             ? `<span>работает пультов: <b>${live}</b> из ${panels.length}</span>`
             : '';
+
+        // Перезапуск — здесь, у адреса хоста, а не в блоке проекта: хост один на все
+        // проекты и все роли, и относится он к этой строке, а не к чьим-то карточкам.
+        // Без ответивших пультов кнопки нет: просить перезапуск не у кого.
+        const restart = live
+            ? `<button class="btn-harness-restart"
+                       title="Поднять хост Harness заново: нужно, когда он молчит или завис, после обновления dsh и при смене накладки --patch. Идущие сейчас круги оборвутся."
+                       onclick="restartDshHost(this)">Перезапуск</button>`
+            : '';
         box.innerHTML = `
             <span class="dot${dshState.alive ? ' alive' : ''}"></span>
             <span>DeepSeek Harness</span>
             <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
             <span>включено ролей: <b>${enabled}</b></span>
             ${tail}
+            ${restart}
         `;
         box.hidden = false;
+    }
+
+    // Перезапуск хоста Harness. Спрашиваем всегда, а не только при работающих ролях:
+    // круг мог идти и у карточки, которую эта страница не показывает, — хост общий на
+    // машину, и что на нём делается прямо сейчас, отсюда не видно.
+    //
+    // Ответа ждём долго: пульт гасит процесс, ждёт освобождения порта, поднимает заново
+    // и сверяет карточки по всем проектам — до полутора минут. Перечитку `dshRequest`
+    // делает сам, и до неё автообновление страницы стоит (`dshBusy`).
+    function restartDshHost(btn) {
+        if (dshBusy) return;
+
+        const enabled = Object.values(dshState.projects || {})
+            .reduce((sum, item) => sum
+                + Object.values(item.roles || {}).filter(role => role.enabled).length, 0);
+        if (!confirm(
+                'Перезапустить хост DeepSeek Harness?\n\n'
+                + `Он один на все проекты и все роли (сейчас включено: ${enabled}). `
+                + 'Круги, идущие в этот миг, оборвутся.\n\n'
+                + 'Карточки, их номера и переписка не пострадают: они лежат на диске, '
+                + 'и оболочки подхватят их сами.')) return;
+
+        btn.textContent = 'Перезапуск…';
+        dshRequest(btn, '/api/team/dsh/restart', {},
+                   'Ошибка перезапуска хоста DeepSeek Harness:');
     }
 
     // Пульт блока — тот, что назвал его каталог. Сверяем по каталогу проекта: другого
