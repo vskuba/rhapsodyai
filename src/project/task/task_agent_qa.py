@@ -26,6 +26,9 @@ from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.mysql_.repository.agent_repository import AgentRepository
 from src.project.task.task_agent_result import task_agent_result_provider_error
+from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_QA_MODE,
+    task_metadata_parse)
 from src.project.task.task_plan import task_plan_goals_text, task_plan_parse
 from src.project.task.task_question import task_question_decisions_text, task_question_parse
 from src.project.task.task_role import task_role_project_server_url
@@ -37,6 +40,14 @@ from src.project.task.task_setting_timeout import (
 
 TASK_QA_AGENT_NAME = 'task_qa_tester'
 TASK_QA_ROLE = 'qa'
+
+# Режимы проверки из metadata задачи (`TASK_METADATA_KEY_QA_MODE`). Lite — код,
+# быстрая сверка документации и соответствия спецификации, ничего не запускаем.
+# Full — то же плюс полный прогон тестов и чеклист QA. Слово `lite` выбрано
+# дефолтом и на фронте, и здесь: расойтись им негде, читатель один —
+# `task_agent_qa_mode`.
+QA_MODE_LITE = 'lite'
+QA_MODE_FULL = 'full'
 
 # Потолок на весь прогон, а не сумма шагов. Шаговые таймауты в workflow — 600s на
 # разбор изменений, 1800s на прогон проверок, 600s на вердикт: в один круг это
@@ -151,6 +162,12 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         # ветки подзадачи. Нет каталога подзадачи — нет и своего сервера.
         'subtask_server_url': await task_role_project_server_url(
             (task or {}).get('project_id')) if subtask_dir else '',
+        # Глубина проверки: `lite` (умолчание) или `full` — свитчер рядом с кнопкой
+        # «лог» на странице задач. Вторя переменная — того же выбора флаг для `%if%`:
+        # непустая строка `lite` была бы для условия истинной, поэтому полный прогон
+        # тестов раскрывает только `subtask_qa_full`. См. `task_agent_qa_mode`.
+        'subtask_qa_mode':   task_agent_qa_mode(task),
+        'subtask_qa_full':   task_agent_qa_mode_full(task),
     }
     ai_workflow_variables_defaults_apply(wf_vars, workflow_data['variables'])
 
@@ -193,6 +210,36 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
     # прогона и перекладывает пройденные шаги в журнал строки. Своего способа
     # добраться до трассы у конвейера нет — сессию заводит эта функция.
     return {**_result_parse(result_text), 'session_uuid': session_uuid}
+
+
+def task_agent_qa_mode(task: dict) -> str:
+    """
+    Режим проверки QA для этой задачи: `'lite'` или `'full'`.
+
+    Ключ `qa_mode` пишет свитчер на странице `/admin/task` в metadata **родительской**
+    задачи — режим свойство задачи целиком, а не отдельной подзадачи, поэтому читаем
+    строку родителя, а не ребёнка. Ключа нет или значение пустое — `lite`: это
+    умолчание задано ещё на фронте, и прогон, у которого никто не спрашивал, обязан
+    оставаться дешёвым.
+
+    Значение нормализуем: в мешке случаются `false`, число и мусор от ручной правки,
+    а промпту нужна одна из двух строк — на них ветвится глубина проверки.
+    """
+    mode = str(task_metadata_parse((task or {}).get('metadata')).get(TASK_METADATA_KEY_QA_MODE) or '')
+    return mode.strip().lower() if mode.strip().lower() == QA_MODE_FULL else QA_MODE_LITE
+
+
+def task_agent_qa_mode_full(task: dict) -> str:
+    """
+    Флаг полного режима для промпта — `'yes'` или `''`.
+
+    Промпту нельзя подставить сам режим и сравнить его с `full`: `%if%` в workflow
+    проверяет только непустоту (`ai_workflow_variable_truthy`), и строка `lite`
+    оказалась бы истинной. Поэтому в промпт едут две переменные: `subtask_qa_mode`
+    говорит человеку и агенту, какой режим выбран, а `subtask_qa_full` — пустая
+    строка в lite — раскрывает блок про запуск всех тестов.
+    """
+    return 'yes' if task_agent_qa_mode(task) == QA_MODE_FULL else ''
 
 
 async def _agent_get() -> dict:

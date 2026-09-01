@@ -939,6 +939,33 @@
         border: 1px solid transparent;
     }
     .pipe-chip::before { content: '⚙'; font-size: 9px; opacity: .7; }
+    /* QA режим переключатель */
+    .qa-mode-switcher {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 5px;
+        margin-top: 4px;
+        white-space: nowrap;
+        letter-spacing: .02em;
+        border: 1px solid transparent;
+        background: #ecfdf5;
+        color: #047857;
+        border-color: #a7f3d0;
+        cursor: pointer;
+        user-select: none;
+    }
+    .qa-mode-switcher:hover { background: #d1fae5; }
+    .qa-mode-switcher.busy { opacity: .5; pointer-events: none; }
+    .qa-mode-switcher input { display: none; }
+    .qa-mode-switcher .qa-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: currentColor; transition: transform .15s;
+    }
+    .qa-mode-switcher[data-mode="full"] .qa-dot { transform: scale(1.3); }
     .pipe-new              { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
     .pipe-planning         { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
     .pipe-reviewing        { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
@@ -3711,6 +3738,7 @@ const PIPELINE_LABEL_NONE = '(нет плана)';
 const TASK_META_KEY_PLAN = 'to_planning';
 const TASK_META_KEY_DEV = 'to_development';
 const TASK_META_KEY_TEST = 'to_testing';
+const TASK_META_KEY_QA_MODE = 'qa_mode';
 // Этот ключ пишет не страница, а сервер — эндпоинт слияния (`worktree/merge`).
 // Странице он нужен только на чтение: по нему кнопка «mr2master&rm_worktree» гаснет.
 const TASK_META_KEY_MERGED = 'merged';
@@ -4017,7 +4045,7 @@ function renderPipeChip(t, row) {
         : taskReportHint(t, row);
     return `<div><span class="pipe-chip pipe-${state}" `
          + `title="${esc(hint)}">${esc(state)}</span>${renderPipeAsk(t)}${renderPipeWait(t)}${retry}${renderPipeRetries(t)}`
-         + `${renderPipeLog(t)}${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
+         + `${renderPipeLog(t)}${renderQaModeSwitcher(t)}${renderPipeDiff(t)}${renderPipeMerge(t)}</div>`;
 }
 
 // Кнопка вопроса у подзадачи.
@@ -4128,6 +4156,58 @@ function renderPipeLog(t) {
     if (!t.pipeline_state) return '';
     return `<button class="pipe-log" onclick="event.stopPropagation();logShowForTask(${t.id})"`
          + ` title="Журнал работы агента: что сделано, что осталось, где были затыки">лог</button>`;
+}
+
+// QA режим: lite / full. Lite — проверка кода, быстрая проверка документации,
+// соответствие спецификации без тестов. Full — то же + все тесты и полный чеклист QA.
+// По умолчанию lite. Свитчер рядом с кнопкой лог; при щелчке гасим на время запроса
+// (`.busy`) и после успеха обновляем задачу из списка.
+//
+// Только у корневой задачи. Режим — свойство задачи целиком: QA-агент читает его из
+// metadata родителя (`task_agent_qa_run`, `task_metadata_parse(task.metadata)`), а не
+// из metadata подзадачи. Свитчер на подзадачной строке писал бы в чужой мешок, и режим
+// никогда не попал бы в `subtask_qa_mode` — поэтому на детях он не рисуется, как у
+// флажков «в разработку» / «в тестирование» выше.
+function renderQaModeSwitcher(t) {
+    if (t.parent_id) return '';
+    // Значение приводим к двум состояниям, а не рисуем то, что лежит в мешке.
+    // `POST /task/{id}/metadata` принимает любой патч как есть — ключ могут исподники
+    // подставить и не отсюда (им правят и воркеры, и человек через API), и тогда
+    // сырое значение ушло бы прямо в атрибут `data-mode`: кавычка — выход из атрибута.
+    // Читатель на стороне движка (`task_agent_qa_mode`) нормализован уже; здесь та же
+    // норма на месте, и атрибут получает только `lite` или `full`.
+    const mode = _qaModeNormalize((t.metadata || {})[TASK_META_KEY_QA_MODE]);
+    return `<span class="qa-mode-switcher" data-mode="${esc(mode)}" onclick="event.stopPropagation();toggleQaMode(${t.id}, this)">
+                <input type="checkbox" ${mode === 'full' ? 'checked' : ''}>
+                <span class="qa-dot"></span>QA ${mode === 'full' ? 'Full' : 'Lite'}
+            </span>`;
+}
+
+// Режим бывает ровно двум состояниям, всё остальное — Lite. Эту же норму держит
+// читатель на стороне движка (`task_agent_qa_mode` в `task_agent_qa.py`): промпт и
+// свитчер обязаны показывать одно и то же, иначе человек переключает одно, а агент
+// проверяет другое.
+function _qaModeNormalize(value) {
+    return String(value || '').trim().toLowerCase() === 'full' ? 'full' : 'lite';
+}
+
+async function toggleQaMode(id, el) {
+    const sw = el.closest('.qa-mode-switcher');
+    if (!sw) return;
+    const current = _qaModeNormalize(sw.dataset.mode);
+    const next = current === 'full' ? 'lite' : 'full';
+    sw.classList.add('busy');
+    try {
+        await _taskFlagSave(id, TASK_META_KEY_QA_MODE, next);
+        sw.dataset.mode = next;
+        sw.querySelector('input').checked = next === 'full';
+        sw.lastChild.textContent = `QA ${next === 'full' ? 'Full' : 'Lite'}`;
+    } catch(e) {
+        alert('Ошибка сохранения режима QA');
+        renderTable();   // вернуть статус из базы
+    } finally {
+        sw.classList.remove('busy');
+    }
 }
 
 // Единственная кнопка приёмки в строке — и она **никуда не вливает**, а открывает
