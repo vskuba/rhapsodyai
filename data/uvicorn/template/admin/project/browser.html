@@ -5195,16 +5195,39 @@
 
     // ── Пул открытых страниц ─────────────────────────────────────────────────
     //
-    // Колонка справа от закладок: что открыто в контейнере прямо сейчас. Список
-    // тот же, что кормит вкладку «Сессии» (`sessionsLoad`), поэтому своего круга
-    // опроса здесь нет — рисуем на том же ответе.
+    // Колонка справа от закладок: что открыто в контейнере прямо сейчас.
+    //
+    // **Свой круг опроса, три секунды.** Страница целиком перечитывается раз в
+    // десять (`sessionsLoad`), и этого мало: пул смотрят как раз тогда, когда
+    // страницы открываются и гаснут прямо сейчас — своим сценарием, тестом,
+    // соседом. Десять секунд ожидания превращают наблюдение в гадание.
+    //
+    // Круг трогает **только эту колонку**: ни селект сессий, ни вкладки, ни
+    // сценарии он не перерисовывает. Иначе UI дёргался бы под руками трижды в
+    // минуту — а перерисовка вкладок посреди работы человека дороже свежести.
+    // Поэтому и `sessions` не переписываем: у пула свой список (`poolRows`).
     //
     // ⚠ **Превью живут отдельно от списка.** Список приходит целиком за один
     // запрос, а кадр — по запросу на страницу, и каждый стоит полного рендера.
     // Круг обновления кадры не трогает вовсе: они снимаются один раз на карточку
-    // и заново — только по кнопке.
+    // и заново — только по кнопке. Оттого частый опрос и дёшев: раз в три секунды
+    // ходит один запрос за списком, а не двадцать за картинками.
     const poolCardsEl = document.getElementById('poolCards');
     const poolCountEl = document.getElementById('poolCount');
+
+    // Три секунды — «тут же» на глаз, но не поток запросов: ответ приходит за
+    // десятки миллисекунд, и круг простаивает почти всё время.
+    const POOL_REFRESH_MS = 3000;
+
+    // Список, по которому нарисована колонка. Свой, а не общий `sessions`:
+    // круг пула не должен менять то, на что смотрят другие части страницы.
+    let poolRows = [];
+    let poolTimer = null;
+
+    // Замок круга: ответ может прийти позже следующего тика (контейнер занят
+    // съёмкой), и без него запросы наложились бы стопкой. Не путать с `poolBusy`
+    // ниже — тот про очередь превью, этот про опрос списка.
+    let poolLoading = false;
 
     // Снятые кадры: `session_id` → строка `data:`. Переживают перерисовку списка,
     // иначе каждый круг гасил бы картинки и просил их заново.
@@ -5220,25 +5243,56 @@
     // получит отказ. Три — это ровно один сценарий с запасом.
     const POOL_LOW_LEFT = 3;
 
-    function poolRender(pool) {
+    // Перечитать список и перерисовать колонку. Зовётся своим кругом раз в три
+    // секунды и кнопкой ⟳.
+    //
+    // Отказ проглатываем молча: контейнер могли перезапускать, а колонка, раз в
+    // три секунды пишущая «недоступен», мешает больше, чем помогает. Строка
+    // состояния о беде скажет на своём, десятисекундном круге.
+    async function poolLoad() {
+        if (!poolCardsEl || poolLoading || document.hidden) return;
+
+        poolLoading = true;
+        try {
+            const data = await getData('/api/browser/session');
+            poolRender(data.pool || {}, data.sessions || []);
+        } catch (e) {
+            // молчим намеренно — см. выше
+        } finally {
+            poolLoading = false;
+        }
+    }
+
+    function poolRender(pool, rows) {
         if (!poolCardsEl) return;
 
-        const limit = Number(pool.session_limit || 0);
-        poolCountEl.textContent = limit ? `${sessions.length} из ${limit}` : `${sessions.length}`;
-        poolCountEl.classList.toggle('low', limit > 0 && limit - sessions.length <= POOL_LOW_LEFT);
+        // Список берём переданный, а при вызове из `sessionsLoad` — общий:
+        // там он только что прочитан тем же запросом, второй раз ходить незачем.
+        poolRows = rows || sessions || [];
 
-        if (!sessions.length) {
+        const limit = Number(pool.session_limit || 0);
+        poolCountEl.textContent = limit ? `${poolRows.length} из ${limit}` : `${poolRows.length}`;
+        poolCountEl.classList.toggle('low', limit > 0 && limit - poolRows.length <= POOL_LOW_LEFT);
+
+        if (!poolRows.length) {
             poolCardsEl.innerHTML = '<div class="pool-empty">Открытых страниц нет</div>';
+            poolShots.clear();
             return;
         }
 
         // Свежие сверху: только что открытая страница — та, ради которой сюда и
         // смотрят, а долгожители внизу никуда не денутся.
-        const rows = [...sessions].sort((a, b) => (a.uptime_sec || 0) - (b.uptime_sec || 0));
+        const ordered = [...poolRows].sort((a, b) => (a.uptime_sec || 0) - (b.uptime_sec || 0));
 
-        poolCardsEl.innerHTML = rows.map(poolCard).join('');
+        // Кадры погасших страниц выбрасываем: страницу мог закрыть не только
+        // человек кнопкой (там `poolShots.delete`), но и сценарий, тест, сосед.
+        // Без этого карта кадров росла бы весь сеанс, держа картинки мертвецов.
+        const live = new Set(ordered.map(row => row.session_id));
+        poolShots.forEach((_, id) => { if (!live.has(id)) poolShots.delete(id); });
+
+        poolCardsEl.innerHTML = ordered.map(poolCard).join('');
         poolBind();
-        poolShotsQueue(rows.filter(row => !poolShots.has(row.session_id)).map(r => r.session_id));
+        poolShotsQueue(ordered.filter(row => !poolShots.has(row.session_id)).map(r => r.session_id));
     }
 
     function poolCard(row) {
@@ -5281,7 +5335,10 @@
     function poolBind() {
         poolCardsEl.querySelectorAll('.pool-card').forEach(card => {
             const id = card.dataset.id;
-            const row = sessions.find(s => s.session_id === id) || {};
+            // Из своего списка, а не из общего `sessions`: тот обновляется раз в
+            // десять секунд, и у страницы, открывшейся секунду назад, имени в нём
+            // ещё нет — подтверждение на закрытие спросило бы про голый номер.
+            const row = poolRows.find(s => s.session_id === id) || {};
 
             card.querySelector('.pool-kill').addEventListener('click', async () => {
                 await sessionKill(id, row.name || id);
@@ -5404,7 +5461,7 @@
                 await sessionsLoad();
                 // Кнопка обновляет и кадры: список без них перечитывается сам
                 // кругом, и отдельная кнопка ради него не нужна.
-                poolShotsQueue(sessions.map(s => s.session_id), true);
+                poolShotsQueue(poolRows.map(s => s.session_id), true);
             } finally {
                 btn.disabled = false;
             }
@@ -5462,6 +5519,21 @@
         sessionsLoad();
         sitesLoad();
         setInterval(sessionsLoad, 10000);
+
+        // Пул — своим кругом и чаще: страницы открываются и гаснут прямо сейчас,
+        // и десять секунд превращают наблюдение за ними в гадание.
+        poolTimer = setInterval(poolLoad, POOL_REFRESH_MS);
+
+        // Скрытая вкладка круг не крутит (`document.hidden` в `poolLoad`), но,
+        // вернувшись к ней, человек ждёт свежего списка сразу, а не через три
+        // секунды: колонка успела устареть настолько, насколько он отвлекался.
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) poolLoad();
+        });
     }
+
+    window.addEventListener('beforeunload', () => {
+        if (poolTimer) clearInterval(poolTimer);
+    });
 </script>
 {% endblock %}
