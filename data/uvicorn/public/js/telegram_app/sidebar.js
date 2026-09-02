@@ -1,6 +1,8 @@
 import { state } from './state.js';
 import { loadConfig } from './config.js';
 
+// Заголовок вкладки берётся отсюда. `plans` убран: иконка Планов уступила место задачам,
+// а вкладка Планов сошла с экрана вместе с ней — заголовок для невидимой вкладки врёт.
 const PAGE_TITLES = { events: 'События', claude: 'Claude', chat: 'Чат', tasks: 'Задачи' };
 
 const tg = window.Telegram?.WebApp;
@@ -68,7 +70,7 @@ export function setSidebarPageMode(isInPage) {
 }
 
 export function updateInputBarsVisibility() {
-    const { chat, claude, task } = _inputBars;
+    const { chat, claude } = _inputBars;
     const tab = state.currentTab;
 
     const isChatTab = tab === 'chat';
@@ -79,7 +81,6 @@ export function updateInputBarsVisibility() {
     claude.bar.classList.toggle('chat-visible', isClaudeOpen);
     claude.progress.classList.toggle('chat-visible', isClaudeOpen);
 
-    const isTasksTab = tab === 'tasks';
-    task.bar.classList.toggle('chat-visible', isTasksTab);
-    task.progress.classList.toggle('chat-visible', isTasksTab);
+    // Плановых баров здесь больше нет: вместе с вкладкой ушли и поля `plan`/`planCreate`,
+    // а ответ на вопрос задачи рисует панель вопросов (`questions.js`) своим слоем.
 }

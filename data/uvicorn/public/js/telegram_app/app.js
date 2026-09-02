@@ -1,11 +1,11 @@
 import { postData } from '/static/js/api.js';
 import { state } from './state.js';
-import { createInputBar, createMicOnlyBar } from './input_bar.js';
+import { createInputBar } from './input_bar.js';
 import { initSidebar, setSidebarPageMode, updateInputBarsVisibility } from './sidebar.js';
 import { loadEvents, shouldReloadEvents } from './events.js';
 import { initChat } from './chat.js';
 import { initClaude, loadClaudeSessionList, updateClaudePolling, updateClaudeStatusPolling, closeClaudeSessionView } from './claude.js';
-import { initTasks, loadTasks, openTaskDetailView, closeTaskDetailView } from './tasks.js';
+import { initTasks, loadTasks } from './tasks.js';
 
 const tg = window.Telegram?.WebApp;
 
@@ -26,12 +26,15 @@ async function init() {
     // --- создаём input bars программно и вешаем на app-wrapper ---
     const appWrapper = document.querySelector('.app-wrapper');
 
-    const claudeBar = createInputBar({ id: 'claudeInputBar',  progressId: 'claudeProgress',  placeholder: 'Сообщение для Claude Code...', hasQuickCmd: true });
-    const chatBar   = createInputBar({ id: 'chatInputBar',    progressId: 'chatProgress',    placeholder: 'Сообщение...' });
-    const taskBar   = createInputBar({ id: 'taskInputBar',    progressId: 'taskProgress',    placeholder: 'Вопрос по задаче...'});
+    const claudeBar     = createInputBar({ id: 'claudeInputBar',  progressId: 'claudeProgress',  placeholder: 'Сообщение для Claude Code...', hasQuickCmd: true });
+    const chatBar       = createInputBar({ id: 'chatInputBar',    progressId: 'chatProgress',    placeholder: 'Сообщение...' });
+
+    // Поле для задач не заводим: ответ на вопрос пишет панель вопросов (`questions.js`),
+    // она же рисует варианты и поле уточнения. Плановое поле с голосовым созданием
+    // плана уехало вместе с вкладкой Планов.
 
     // progress вставляется перед bar (анимация над полем ввода)
-    for (const { progress, bar } of [claudeBar, chatBar, taskBar]) {
+    for (const { progress, bar } of [claudeBar, chatBar]) {
         appWrapper.appendChild(progress);
         appWrapper.appendChild(bar);
     }
@@ -39,9 +42,8 @@ async function init() {
     // --- quick cmd popup тоже вставляем в appWrapper (он уже в HTML, оставляем) ---
 
     const inputBars = {
-        claude: { bar: claudeBar.bar,     progress: claudeBar.progress },
-        chat:   { bar: chatBar.bar,       progress: chatBar.progress },
-        task:   { bar: taskBar.bar,       progress: taskBar.progress },
+        claude:     { bar: claudeBar.bar,     progress: claudeBar.progress },
+        chat:       { bar: chatBar.bar,       progress: chatBar.progress },
     };
 
     initSidebar({
@@ -57,15 +59,10 @@ async function init() {
 
     initChat(chatBar);
     initClaude(claudeBar);
+    // Список задач заводится здесь, а не в шаблоне: импорты модулей вкладки идут через
+    // эту точку, и проверка «модуль загружен страницей» (`test_every_module_actually_loads`)
+    // считает запросы именно отсюда.
     initTasks();
-
-    // click handlers
-    document.getElementById('tasksListView').addEventListener('click', e => {
-        const item = e.target.closest('.task-list-item');
-        if (!item) return;
-        closeTaskDetailView();
-        openTaskDetailView(Number(item.dataset.id));
-    });
     initHomePing();
 
     await loadEvents();
@@ -75,7 +72,6 @@ async function init() {
 }
 
 function goHome() {
-    if (state.currentTaskId !== null) closeTaskDetailView();
     if (state.claude.sessionUuid !== null) closeClaudeSessionView();
 
     document.querySelectorAll('.icon-btn[data-tab]').forEach(b => b.classList.remove('active'));
