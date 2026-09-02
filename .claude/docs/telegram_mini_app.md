@@ -2,7 +2,7 @@
 
 > Встроенное веб-приложение (SPA), открывающееся внутри Telegram через Menu Button бота.
 > Доступно только владельцу бота (`TELEGRAM_OWNER_CHAT_ID`). Вкладки: Events, Claude,
-> Chat, Plans; есть голосовой ввод.
+> Chat, Tasks; есть голосовой ввод.
 
 ## Файловая структура
 
@@ -19,7 +19,7 @@
 | `data/uvicorn/public/js/telegram_app/events.js` | Вкладка Events: загрузка, рендер, форматтеры |
 | `data/uvicorn/public/js/telegram_app/chat.js` | Вкладка Chat |
 | `data/uvicorn/public/js/telegram_app/claude.js` | Вкладка Claude: сессии, polling, управление |
-| `data/uvicorn/public/js/telegram_app/plans.js` | Вкладка Plans: CRUD, рендер Markdown |
+| `data/uvicorn/public/js/telegram_app/plans.js` | Вкладка Plans: CRUD, рендер Markdown. **Экрана больше нет** — иконку заняли задачи; модуль на странице не импортируется |
 | `data/uvicorn/public/js/telegram_app/tasks.js` | Вкладка Tasks: список задач, вкладки фаз, чипсы статуса |
 | `data/uvicorn/public/js/telegram_app/questions.js` | Панель вопросов задачи: свой DOM-слой, ответ на вопрос |
 | `data/uvicorn/public/js/telegram_app/flags.js` | Флаги фаз корневой задачи: `to_planning` / `to_development` / `to_testing` |
@@ -81,8 +81,8 @@ app.js  ──┬── state.js          (shared state object)
           ├── events.js
           ├── chat.js
           ├── claude.js  ──── sidebar.js (setSidebarPageMode)
-          └── plans.js   ──── sidebar.js (setSidebarPlanMode)
-               │
+          └── tasks.js   ─┬── flags.js      (флажки фаз, «Утвердить план»)
+                          └── questions.js  (панель вопросов заводит свой слой в #tab-tasks)
                └── voice.js (createVoiceRecorder)
                └── utils.js (shared helpers)
 ```
@@ -102,7 +102,7 @@ export const state = {
 - `createInputBar({ id, progressId, placeholder, hasQuickCmd })` — для Claude, Chat, Plan
 - `createMicOnlyBar({ id, progressId })` — для создания нового плана голосом
 
-**Sidebar callbacks**: чтобы избежать циклических зависимостей (`sidebar.js` ↔ `claude.js`/`plans.js`), коллбэки `onTabChange` и `onGoHome` передаются в `initSidebar()` из `app.js`.
+**Sidebar callbacks**: чтобы избежать циклических зависимостей (`sidebar.js` ↔ `claude.js`), коллбэки `onTabChange` и `onGoHome` передаются в `initSidebar()` из `app.js`. Через `onTabChange` на вкладке задач вызывается `loadTasks()`.
 
 ## Интерфейс и вкладки
 
@@ -113,7 +113,10 @@ SPA с иконочным сайдбаром (60px) и контент-панел
 | Events  | 🔔     | Лента системных событий |
 | Claude  | ☁️     | Чат с терминальными сессиями Claude Code |
 | Chat    | 💬     | Чат с AI-ассистентом (`telegram_assistant`) |
-| Plans   | 📋     | Список планов, создание и редактирование |
+| Tasks   | 📝     | Задачи проекта: вкладки по ролям, флажки фаз, ответы на вопросы |
+
+Иконка Планов (📋) уступила место задачам: план — промежуточный артефакт, а человек
+возвращается к работе со своими задачами.
 
 **Группы иконок в сайдбаре** — переключаются через `.active-group`:
 
@@ -121,14 +124,17 @@ SPA с иконочным сайдбаром (60px) и контент-панел
 |----|-------------------|
 | `sidebarDefaultIcons` | Главный экран: 4 вкладки + внешние ссылки (🌐 прод, 💻 локальная установка, 🐋 DeepSeek) |
 | `sidebarPageIcons` | Открыта Claude-сессия (`← Назад`) |
-| `sidebarPlanIcons` | Открыт план (`← Назад` + `🗑`) |
 | `sidebarClaudeIcons` | Режим сессии Claude (`← к списку`, `⟳ статус`, `🧹 очистить`, `🗑 удалить`) |
+
+У задач своей группы иконок нет: обратно ведут «Домой» и повторное нажатие на вкладку,
+а удалять задачу из мини-приложения нечем — это право админки.
 
 **Видимость input-баров** управляется `updateInputBarsVisibility()` в `sidebar.js`:
 - `#claudeInputBar` — только вкладка Claude, сессия открыта
 - `#chatInputBar` — только вкладка Chat
-- `#planInputBar` — только вкладка Plans, план открыт
-- `#planCreateBar` — только вкладка Plans, список (создание голосом)
+
+Баров задач нет: ответ на вопрос пишет панель вопросов (`questions.js`) своим слоем, и
+поле на всю вкладку только спорило бы с ним.
 
 **Home-кнопка** (`#homeIconBtn`) пульсирует красным при ≥2 пропущенных ping'ах подряд.
 
@@ -193,7 +199,9 @@ TELEGRAM_CHAT_COMPANION_ID = 3
 
 ## Вкладка Plans
 
-Markdown-планы с AI-созданием и редактированием.
+Markdown-планы с AI-созданием и редактированием. **Экрана больше нет**: иконку в
+сайдбаре заняли задачи, `app.js` не импортирует `plans.js`. Точки
+`/telegram-app/plans*` и сам модуль живы — их судьба за пределами этой правки.
 
 | Агент | Назначение |
 |-------|------------|
@@ -218,15 +226,18 @@ Markdown-планы с AI-созданием и редактированием.
 (подключается отдельной строкой в шаблоне: `telegram_app.css` описывает оболочки
 вкладок, а не содержимое задачи).
 
-**Панели готовы, каркас — за соседней подзадачей.** Вкладка как экран собрана не здесь:
-модули ещё не подключены (`app.js` не импортирует `tasks.js`), в шаблоне нет ни
-контейнера `tasksListView`, ни кнопки в сайдбаре, ни прокси-точек
-`/telegram-app/tasks` и `/telegram-app/task/*` — это пункты плана других подзадач.
-Пока их нет, вкладки на экране не видно; панелям это не помеха: `questions.js` заводит
-свой DOM-слой сам, а карточка переживает отсутствующую точку сохранения — отказ видно на
-чипе, а не в логе. Поэтому панели проверяются без сервера и без живой вкладки: тест
-подкладывает каркас и ответы (`page.route`). Из перечисленного здесь лежит только
-`task.css` — он подключён шаблоном отдельной строкой.
+**Каркас собран, точек прокси ещё нет.** Вкладка — экран: кнопка 📝 в
+`#sidebarDefaultIcons`, контейнер `#tab-tasks` с `#tasksListView` внутри, `initTasks()`
+в `app.js` и `loadTasks()` на открытии. Не хватает прокси-точек `/telegram-app/tasks` и
+`/telegram-app/task/*` — они у соседней подзадачи. Список это переживает: вместо задач
+`loadTasks` рисует заглушку «Не удалось загрузить задачи» и не падает, а `questions.js`
+заводит свой DOM-слой сам. По той же причине панель проверяется без живой точки — тест
+подкладывает каркас и ответы (`page.route`).
+
+Экранность проверяет `tests/test_telegram_app_task_wiring.py`: он грузит настоящий шаблон
+и настоящие модули и жмёт на вкладку, а не подкладывает каркас. Тесты панелей
+(`test_telegram_app_task_ui.py`) собирают каркас руками — без проверки, что он где-то
+есть, и проходили бы на пустой странице.
 
 **Вкладки фаз** — `planning` / `development` / `testing` / `bugs`. Отбор по `task_type_id`
 (1 разработка, 2 баг, 3 тест, 4 исследование, 5 план): `metadata` строки списка
