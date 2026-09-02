@@ -70,7 +70,7 @@ async def task_merge_request_open(task_id: int, work_dir: str) -> dict:
             result['message'] = 'merge request не заведён: у задачи нет ветки'
             return result
 
-        pushed = await _branch_push(work_dir, branch)
+        pushed = await _branch_push(work_dir, branch, repo_name)
         if not pushed['ok']:
             result['message'] = f"merge request не заведён: {pushed['error']}"
             return result
@@ -102,7 +102,7 @@ async def task_merge_request_open(task_id: int, work_dir: str) -> dict:
     return result
 
 
-async def _branch_push(work_dir: str, branch: str) -> dict:
+async def _branch_push(work_dir: str, branch: str, repo_name: str) -> dict:
     """
     Отправить ветку задачи в общий репозиторий. Returns: `{'ok', 'error'}`.
 
@@ -110,12 +110,31 @@ async def _branch_push(work_dir: str, branch: str) -> dict:
     конвейер, локально. Без отправки merge request просить не о чем — GitHub о такой
     ветке не знает.
 
+    **Адрес собираем с токеном, а не берём `origin`.** Разработчик пушит из своей
+    оболочки на машине человека, где `git` давно настроен; конвейер живёт в контейнере,
+    где нет ни `~/.gitconfig`, ни хранилища паролей, — и `git push origin` там упирается
+    в «could not read Username for https://github.com». Токен же в контейнере есть, тем
+    же `GITHUB_TOKEN`, которым ходит API. Живьём это стоило задаче #4996 merge request:
+    работа собралась, ветка была готова, а отправить её не вышло.
+
+    Токен подставляем в адрес одного вызова и никуда не пишем: `git remote set-url`
+    оставил бы его в `.git/config` — то есть в репозитории, который читают люди и
+    оболочки ролей.
+
     Отправляем только вперёд (без `--force`): ветка задачи растёт слияниями принятой
     работы, и переписывать её историю нам нечем и незачем.
     """
+    import os
+
     from src.project.task.task_worktree import task_worktree_git
 
-    code, out = await task_worktree_git(work_dir, 'push', 'origin', f'{branch}:{branch}')
+    token = str(os.getenv('GITHUB_TOKEN') or '').strip()
+    remote = (f'https://x-access-token:{token}@github.com/{repo_name}.git'
+              if token and repo_name else 'origin')
+    code, out = await task_worktree_git(work_dir, 'push', remote, f'{branch}:{branch}')
+    # Токен в тексте ошибки — та же утечка, что и в конфиге: сообщение уходит в отчёт
+    # задачи, а его читают на странице и в Telegram.
+    out = str(out or '').replace(token, '***') if token else out
 
     return {'ok': not code, 'error': str(out or '')[:400] if code else ''}
 
