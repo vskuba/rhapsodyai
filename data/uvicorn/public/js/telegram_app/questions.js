@@ -279,8 +279,10 @@ function renderAsk() {
         + ` placeholder="${options.length ? 'Необязательно: условие или оговорка к выбранному варианту' : 'Ответ своими словами'}"`
         + `>${esc(_noteSeed(q))}</textarea>`);
 
-    // Кнопки
-    const last = (left <= 1 && !!q.answer?.text === false) || (left === 1 && !q.answer?.text);
+    // Кнопки. «Последний» — когда без ответа остался один вопрос и это он: нажатие
+    // закроет пачку целиком. Второе слагаемое здесь стояло зря — `left === 1`
+    // целиком укладывается в `left <= 1`, и условие ничего к нему не добавляло.
+    const last = left <= 1 && !q.answer?.text;
     const btnLabel = batch.length ? (last ? 'Ответить на всё и принять решения' : 'Сохранить ответ') : 'Ответить и вернуть в работу';
 
     let hint = '';
@@ -364,11 +366,19 @@ window.askPick = function() {
     }, 0);
 };
 
-// Форма: что набрано прямо сейчас
+/**
+    Форма: что набрано прямо сейчас — варианты, отмеченные цели и вольный текст.
+
+    Читают её оба пути отправки. Раньше цели читал только одиночный вопрос, своим
+    вторым запросом к DOM, и два места собирали одну и ту же форму по-разному:
+    расходятся такие пары молча — правка одного не видна другому.
+    */
 function askFormRead() {
     return {
         answers: [...(_barEl?.querySelectorAll('[name="askOpt"]:checked') || [])].map(i => i.value),
         note: _noteValue(),
+        goal_indexes: [...(_barEl?.querySelectorAll('[name="askGoal"]:checked') || [])]
+            .map(i => parseInt(i.value, 10)),
     };
 }
 
@@ -459,6 +469,20 @@ function _goalChoices() {
     return !!_barEl && _barEl.querySelectorAll('[name="askGoal"]:not(:disabled)').length > 0;
 }
 
+/**
+    Тело запроса для вопроса пачки: варианты, текст и номер вопроса — без целей.
+
+    Отметки целей сюда не идут намеренно. Ответ с `index` уходит в
+    `task_question_batch_answer` (`project_task_question.py:139-141`), а он берёт
+    только `answers` и `note`: пачку задаёт менеджер про замысел, охват подзадачи
+    ею не меняют, и `_scope_apply` на этом пути не вызывается. Слать номера целей
+    значило бы отправить поле, которое сервер молча выбросит, — а по коду выходило
+    бы, что дробление заказано и исполнено.
+    */
+function _batchBody(form, index) {
+    return { answers: form.answers, note: form.note, index };
+}
+
 // Сохранить черновик текущего вопроса пачки
 async function askDraftSave() {
     const batch = (_askData || {}).questions || [];
@@ -468,7 +492,7 @@ async function askDraftSave() {
     if (!form.answers.length && !form.note) return;
 
     try {
-        await postData(API_ANSWER(_askTaskId), { ...form, index: _askIndex });
+        await postData(API_ANSWER(_askTaskId), _batchBody(form, _askIndex));
         // Обновляем данные, но не перерисовываем — пользователь должен видеть свой текст
     } catch { /* черновик не сохранился — набранное остаётся в форме */ }
 }
@@ -485,7 +509,7 @@ window.askSend = async function() {
         btn.disabled = true;
         btn.textContent = 'Сохраняю…';
         try {
-            const result = await postData(API_ANSWER(_askTaskId), { ...form, index: _askIndex });
+            const result = await postData(API_ANSWER(_askTaskId), _batchBody(form, _askIndex));
             if (result && result.done) {
                 closeQuestionPanel();
                 await _reloadTasks();
@@ -508,10 +532,7 @@ window.askSend = async function() {
     }
 
     // Одиночный вопрос — тоже читаем форму заново
-    const answers = [...(_barEl?.querySelectorAll('[name="askOpt"]:checked') || [])].map(i => i.value);
-    const goalIndexes = [...(_barEl?.querySelectorAll('[name="askGoal"]:checked') || [])]
-        .map(i => parseInt(i.value, 10));
-    const note = _noteValue();
+    const { answers, note, goal_indexes: goalIndexes } = askFormRead();
     if (!answers.length && !note) { alert('Выберите вариант или напишите ответ'); return; }
     // Ответ «раздробить/убрать» без отмеченных целей не о чём: роль получила бы ключ
     // действия и гадала бы, о какой цели речь. Но требовать отметку можно, только
