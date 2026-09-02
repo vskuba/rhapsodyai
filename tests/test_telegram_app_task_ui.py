@@ -536,6 +536,34 @@ class TestTaskQuestionPanel:
         assert ui.locator('.task-question-options input[value="yes"]').is_checked()
         assert ui.locator('.task-question-options input[value="no"]').is_checked()
 
+    def test_stale_answer_key_does_not_cut_deeper_than_the_labels(self, browser: Browser):
+        """Черновик остался от прежнего вопроса — срез останавливается на подписях, не на ключах.
+
+        `answer` собран сервером по вариантам того момента, а подписи `_labelsFor`
+        считает по пришедшим сейчас: ключ, под который варианта нет, остаётся без метки
+        и в префикс `text` не попадает (`_answer_labels`). Значит `keys` их может быть
+        больше, чем меток впереди, — и граница по числу ключей дорезала бы фразу дальше,
+        чем следует. Здесь префикс одна метка «Да», ключей два: при границе по ключам из
+        вольного текста пропало бы его начало.
+        """
+        stale_key = {**TASK_PLAIN, 'metadata': {'questions': [
+            {'text': 'Первый вопрос?', 'role': 'manager',
+             'options': [{'key': 'yes', 'label': 'Да'}, {'key': 'no', 'label': 'Нет'}],
+             # `drop` — ключ прежнего вопроса: вариант не пришёл, метки у него нет.
+             'answer': {'text': 'Да; Да; но не в этой версии',
+                        'keys': ['yes', 'drop'], 'note': ''}},
+        ]}}
+        ui = _open_mini_app(browser, tasks=[stale_key])
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askNote')
+
+        assert ui.input_value('#askNote') == 'Да; но не в этой версии', \
+            'срез ориентировался на число ключей, а не на число меток в префиксе'
+        # Пропущенный ключ не должен стоить и отметок: активным остаётся известный вариант.
+        assert ui.locator('.task-question-options input[value="yes"]').is_checked()
+        assert not ui.locator('.task-question-options input[value="no"]').is_checked()
+
     def test_close_button_closes_panel(self, browser: Browser):
         """«Закрыть» — обработчик на window; без него кнопка жала бы ReferenceError."""
         ui = _open_mini_app(browser, tasks=[TASK_FLAGGED])
