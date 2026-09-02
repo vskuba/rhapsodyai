@@ -2,7 +2,7 @@
 
 > Встроенное веб-приложение (SPA), открывающееся внутри Telegram через Menu Button бота.
 > Доступно только владельцу бота (`TELEGRAM_OWNER_CHAT_ID`). Вкладки: Events, Claude,
-> Chat, Plans; есть голосовой ввод.
+> Chat, Tasks; есть голосовой ввод.
 
 ## Файловая структура
 
@@ -19,7 +19,8 @@
 | `data/uvicorn/public/js/telegram_app/events.js` | Вкладка Events: загрузка, рендер, форматтеры |
 | `data/uvicorn/public/js/telegram_app/chat.js` | Вкладка Chat |
 | `data/uvicorn/public/js/telegram_app/claude.js` | Вкладка Claude: сессии, polling, управление |
-| `data/uvicorn/public/js/telegram_app/plans.js` | Вкладка Plans: CRUD, рендер Markdown |
+| `data/uvicorn/public/js/telegram_app/tasks.js` | Вкладка Tasks: каркас вкладки, пустое состояние (загрузка списка — отдельная подзадача) |
+| `data/uvicorn/public/js/telegram_app/plans.js` | Ветка: файл остался, в `app.js` не подключается (замена на `tasks.js`) |
 | `data/uvicorn/public/js/telegram_app/utils.js` | `escapeHtml`, `linkify`, `confirmDialog`, `appendBubble` |
 | `data/uvicorn/public/js/telegram_app/voice.js` | Фабрика `createVoiceRecorder()` |
 
@@ -78,7 +79,7 @@ app.js  ──┬── state.js          (shared state object)
           ├── events.js
           ├── chat.js
           ├── claude.js  ──── sidebar.js (setSidebarPageMode)
-          └── plans.js   ──── sidebar.js (setSidebarPlanMode)
+          └── tasks.js   ──── sidebar.js (setSidebarPageMode)
                │
                └── voice.js (createVoiceRecorder)
                └── utils.js (shared helpers)
@@ -87,17 +88,15 @@ app.js  ──┬── state.js          (shared state object)
 **Shared state** (`state.js`):
 ```js
 export const state = {
-    currentTab: 'events', currentPlanId: null, chatSessionUuid: null,
-    eventsTimezone: '+0', pingFailCount: 0,
+    currentTab: 'events', currentPlanId: null, currentTaskId: null,
+    chatSessionUuid: null, eventsTimezone: '+0', pingFailCount: 0,
     claude: { sessionUuid, sessionLabel, sessionUnreachable,
               pollTimer, statusPollTimer, renderedUserIds,
               renderedResponses, pendingUserCount, typingBubble },
 };
 ```
 
-**Input bars** создаются программно в `app.js` через фабрики и аппендятся в `.app-wrapper`:
-- `createInputBar({ id, progressId, placeholder, hasQuickCmd })` — для Claude, Chat, Plan
-- `createMicOnlyBar({ id, progressId })` — для создания нового плана голосом
+**Input bars** создаются программно в `app.js` через фабрику `createInputBar({ id, progressId, placeholder, hasQuickCmd })` и аппендятся в `.app-wrapper` — для Claude, Chat, Task.
 
 **Sidebar callbacks**: чтобы избежать циклических зависимостей (`sidebar.js` ↔ `claude.js`/`plans.js`), коллбэки `onTabChange` и `onGoHome` передаются в `initSidebar()` из `app.js`.
 
@@ -110,22 +109,20 @@ SPA с иконочным сайдбаром (60px) и контент-панел
 | Events  | 🔔     | Лента системных событий |
 | Claude  | ☁️     | Чат с терминальными сессиями Claude Code |
 | Chat    | 💬     | Чат с AI-ассистентом (`telegram_assistant`) |
-| Plans   | 📋     | Список планов, создание и редактирование |
+| Tasks   | 📝     | Каркас вкладки задач (загрузка списка — отдельная подзадача) |
 
 **Группы иконок в сайдбаре** — переключаются через `.active-group`:
 
 | ID | Показывается когда |
 |----|-------------------|
 | `sidebarDefaultIcons` | Главный экран: 4 вкладки + внешние ссылки (🌐 прод, 💻 локальная установка, 🐋 DeepSeek) |
-| `sidebarPageIcons` | Открыта Claude-сессия (`← Назад`) |
-| `sidebarPlanIcons` | Открыт план (`← Назад` + `🗑`) |
+| `sidebarPageIcons` | Открыта вкладка (`← Назад`) |
 | `sidebarClaudeIcons` | Режим сессии Claude (`← к списку`, `⟳ статус`, `🧹 очистить`, `🗑 удалить`) |
 
 **Видимость input-баров** управляется `updateInputBarsVisibility()` в `sidebar.js`:
 - `#claudeInputBar` — только вкладка Claude, сессия открыта
 - `#chatInputBar` — только вкладка Chat
-- `#planInputBar` — только вкладка Plans, план открыт
-- `#planCreateBar` — только вкладка Plans, список (создание голосом)
+- `#taskInputBar` — только вкладка Tasks (вопрос по задаче)
 
 **Home-кнопка** (`#homeIconBtn`) пульсирует красным при ≥2 пропущенных ping'ах подряд.
 

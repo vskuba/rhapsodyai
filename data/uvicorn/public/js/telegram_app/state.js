@@ -1,6 +1,7 @@
 export const state = {
     currentTab: 'events',
     currentPlanId: null,
+    currentTaskId: null,
     chatSessionUuid: null,
     eventsTimezone: '+0',
     pingFailCount: 0,

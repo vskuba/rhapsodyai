@@ -5,7 +5,7 @@ import { initSidebar, setSidebarPageMode, updateInputBarsVisibility } from './si
 import { loadEvents, shouldReloadEvents } from './events.js';
 import { initChat } from './chat.js';
 import { initClaude, loadClaudeSessionList, updateClaudePolling, updateClaudeStatusPolling, closeClaudeSessionView } from './claude.js';
-import { initPlans, loadPlans, closePlanDetail } from './plans.js';
+import { initTasks, loadTasks, openTaskDetailView, closeTaskDetailView } from './tasks.js';
 
 const tg = window.Telegram?.WebApp;
 
@@ -26,13 +26,12 @@ async function init() {
     // --- создаём input bars программно и вешаем на app-wrapper ---
     const appWrapper = document.querySelector('.app-wrapper');
 
-    const claudeBar     = createInputBar({ id: 'claudeInputBar',  progressId: 'claudeProgress',  placeholder: 'Сообщение для Claude Code...', hasQuickCmd: true });
-    const chatBar       = createInputBar({ id: 'chatInputBar',    progressId: 'chatProgress',    placeholder: 'Сообщение...' });
-    const planBar       = createInputBar({ id: 'planInputBar',    progressId: 'planProgress',    placeholder: 'Инструкция по правке...' });
-    const planCreateBar = createMicOnlyBar({ id: 'planCreateBar', progressId: 'planCreateProgress' });
+    const claudeBar = createInputBar({ id: 'claudeInputBar',  progressId: 'claudeProgress',  placeholder: 'Сообщение для Claude Code...', hasQuickCmd: true });
+    const chatBar   = createInputBar({ id: 'chatInputBar',    progressId: 'chatProgress',    placeholder: 'Сообщение...' });
+    const taskBar   = createInputBar({ id: 'taskInputBar',    progressId: 'taskProgress',    placeholder: 'Вопрос по задаче...'});
 
     // progress вставляется перед bar (анимация над полем ввода)
-    for (const { progress, bar } of [claudeBar, chatBar, planBar, planCreateBar]) {
+    for (const { progress, bar } of [claudeBar, chatBar, taskBar]) {
         appWrapper.appendChild(progress);
         appWrapper.appendChild(bar);
     }
@@ -40,16 +39,15 @@ async function init() {
     // --- quick cmd popup тоже вставляем в appWrapper (он уже в HTML, оставляем) ---
 
     const inputBars = {
-        claude:     { bar: claudeBar.bar,     progress: claudeBar.progress },
-        chat:       { bar: chatBar.bar,       progress: chatBar.progress },
-        plan:       { bar: planBar.bar,       progress: planBar.progress },
-        planCreate: { bar: planCreateBar.bar, progress: planCreateBar.progress },
+        claude: { bar: claudeBar.bar,     progress: claudeBar.progress },
+        chat:   { bar: chatBar.bar,       progress: chatBar.progress },
+        task:   { bar: taskBar.bar,       progress: taskBar.progress },
     };
 
     initSidebar({
         inputBars,
         onTabChange(tab) {
-            if (tab === 'plans') loadPlans();
+            if (tab === 'tasks') loadTasks();
             if (tab === 'claude' && !state.claude.sessionUuid) loadClaudeSessionList();
             updateClaudePolling();
             updateClaudeStatusPolling();
@@ -59,7 +57,15 @@ async function init() {
 
     initChat(chatBar);
     initClaude(claudeBar);
-    initPlans({ ...planBar, createBar: planCreateBar });
+    initTasks();
+
+    // click handlers
+    document.getElementById('tasksListView').addEventListener('click', e => {
+        const item = e.target.closest('.task-list-item');
+        if (!item) return;
+        closeTaskDetailView();
+        openTaskDetailView(Number(item.dataset.id));
+    });
     initHomePing();
 
     await loadEvents();
@@ -69,7 +75,7 @@ async function init() {
 }
 
 function goHome() {
-    if (state.currentPlanId !== null) closePlanDetail();
+    if (state.currentTaskId !== null) closeTaskDetailView();
     if (state.claude.sessionUuid !== null) closeClaudeSessionView();
 
     document.querySelectorAll('.icon-btn[data-tab]').forEach(b => b.classList.remove('active'));
