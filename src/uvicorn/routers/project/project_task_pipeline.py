@@ -4,7 +4,7 @@
 Сам конвейер крутится в `src/project/task/`; здесь только точки, где в него
 вмешивается пользователь. CRUD задач — в `project_task.py`.
 """
-from datetime import datetime
+from datetime_.datetime_ import datetime_utc_now
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -488,7 +488,11 @@ async def project_task_pipeline_worktree_merge(task_id: int, user=Depends(AuthCh
     # Отметка ставится одна на задачу и только после всех веток: слияние половины
     # плана — это не «влито», и серая кнопка на нём соврала бы. Первый же отказ выше
     # уходит исключением, до сюда не доходя.
-    merged_meta = {'at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'by': user.username,
+    #
+    # Время — строго UTC (`datetime_utc_now`, а не `datetime.now`): отметку читает
+    # фронтенд и сдвигает в пояс настройки сам (`fmtTz` в `task.html`). Контейнер тоже
+    # UTC, но по совпадению образа, а `datetime.now()` к тому же пояс базы обгоняет.
+    merged_meta = {'at': datetime_utc_now().strftime('%Y-%m-%d %H:%M:%S'), 'by': user.username,
                    'base': base, 'branches': merged}
     await task_metadata_update(task_id, {TASK_METADATA_KEY_MERGED: merged_meta})
 
