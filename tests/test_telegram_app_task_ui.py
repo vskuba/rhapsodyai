@@ -495,6 +495,47 @@ class TestTaskQuestionPanel:
 
         assert ui.input_value('#askNote') == 'если QA успеет'
 
+    def test_free_text_starting_with_the_chosen_label_survives_whole(self, browser: Browser):
+        """Человек начал вольный текст с той же подписи, что отметил, — начало не отрезается.
+
+        Соседняя проверка ловит совпадение с чужой подписью; здесь опаснее: ведущие
+        части совпадают с **отмеченными** по одной. Сервер складывает `text` как
+        `метки; вольный текст` (`task_question_batch_answer`), поэтому меток впереди
+        ровно столько, сколько отмечено, — и срез обязан остановиться на этом числе.
+        Без границы «Да; Да; но не в этой версии» разобралось бы как «но не в этой
+        версии»: начало ответа человека уехало бы в мусор, а правка ответа дописала бы
+        его заново.
+        """
+        same_lead = {**TASK_PLAIN, 'metadata': {'questions': [
+            {'text': 'Первый вопрос?', 'role': 'manager',
+             'options': [{'key': 'yes', 'label': 'Да'}, {'key': 'no', 'label': 'Нет'}],
+             'answer': {'text': 'Да; Да; но не в этой версии', 'keys': ['yes'], 'note': ''}},
+            {'text': 'Второй вопрос?', 'role': 'manager', 'multi': True,
+             'options': [{'key': 'yes', 'label': 'Да'}, {'key': 'no', 'label': 'Нет'}],
+             'answer': {'text': 'Да; Нет; Да; Нет; и Да, потом',
+                        'keys': ['yes', 'no'], 'note': ''}},
+        ]}}
+        ui = _open_mini_app(browser, tasks=[same_lead])
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askNote')
+        assert ui.input_value('#askNote') == 'Да; но не в этой версии', \
+            'начало вольного текста срезано вместе с меткой варианта'
+
+        # Две отмеченные метки — срез тоже останавливается на двух, а не идёт по тексту
+        ui.locator('.task-question-batch-tab').nth(1).click()
+        ui.wait_for_selector('.task-question-text:text("Второй вопрос?")')
+        assert ui.input_value('#askNote') == 'Да; Нет; и Да, потом'
+        # Отметки на месте: разбор поля не должен стоить галочек варианта. Галочки
+        # проставляются после вставки разметки (`setTimeout(0)` в `renderAsk`), поэтому
+        # ждём вторую — она ставится только когда ключи ответа прочитаны целиком.
+        ui.wait_for_function("""() => {
+            const no = document.querySelector('.task-question-options input[value="no"]');
+            return !!no && no.checked;
+        }""")
+        assert ui.locator('.task-question-options input[value="yes"]').is_checked()
+        assert ui.locator('.task-question-options input[value="no"]').is_checked()
+
     def test_close_button_closes_panel(self, browser: Browser):
         """«Закрыть» — обработчик на window; без него кнопка жала бы ReferenceError."""
         ui = _open_mini_app(browser, tasks=[TASK_FLAGGED])

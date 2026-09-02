@@ -408,25 +408,16 @@ function _noteSeed(q) {
     const text = String(answer.text ?? '');
     if (!text.trim()) return '';
 
-    const labels = _chosenLabels(q);
+    const labels = _labelsFor(q, (answer.keys || []).map(String));
     const parts = text.split('; ');
     let cut = 0;
-    // Ведущие части — подписи вариантов, в порядке, которым их сложил сервер;
-    // вольный текст идёт за ними и остаётся целиком, даже если внутри есть `; `.
-    while (cut < parts.length && labels.includes(parts[cut])) cut++;
+    // Меток впереди ровно столько, сколько отмечено, — сервер складывает `text`
+    // как `метки; вольный текст`. Без границы по их числу срез шёл бы дальше,
+    // когда человек начал вольный текст с той же подписи, что отметил: из
+    // «Да; Да; но не в этой версии» уезжало бы начало его собственной фразы.
+    // Хвост после меток остаётся целиком, даже если внутри есть `; `.
+    while (cut < parts.length && cut < labels.length && labels.includes(parts[cut])) cut++;
     return parts.slice(cut).join('; ').trim();
-}
-
-/** Подписи отмеченных вариантов: по ключам ответа, а всего списка — не по всем ключам */
-function _chosenLabels(q) {
-    const options = (q && q.options) || [];
-    const keys = ((q && q.answer && q.answer.keys) || []).map(String);
-    if (!keys.length) return [];
-    const byKey = {};
-    options.forEach(o => {
-        if (o && o.key !== undefined) byKey[String(o.key)] = String(o.label ?? '').trim();
-    });
-    return keys.map(k => byKey[k]).filter(Boolean);
 }
 
 /**
@@ -584,7 +575,10 @@ function _markAnswered(data, index, form) {
     Подписи выбранных вариантов — тем же разбором, что `_answer_labels` на сервере.
 
     Неизвестный ключ пропускается: вопрос мог смениться, пока панель была открыта.
-    Только для локального состояния пачки — серверное решение клиент не переписывает.
+    Одно воплощение этой нормы на весь файл: им же пользуются и локальная доводка
+    состояния пачки, и разбор уже принятого ответа (`_noteSeed`). Второе воплощение —
+    второй источник истины, разъезжающийся при первом же изменении серверной сборки.
+    Серверное решение клиент не переписывает: правим только свой мешок.
     */
 function _labelsFor(question, keys) {
     if (!keys.length) return [];
