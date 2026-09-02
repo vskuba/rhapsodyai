@@ -1129,6 +1129,49 @@
     .error-url { flex: 1 1 auto; min-width: 0; color: #6b7280; font-size: 11px;
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+    /* Сайт — главный ответ на «где случилось»: адрес страницы у записей от соседних
+       проектов пуст, а сайт есть. Поэтому он заметнее адреса и стоит сразу за
+       источником. Серая плашка — «сайт неизвестен»: это тоже сведения. */
+    .error-site {
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: #e0f2fe;
+        color: #0369a1;
+        font-size: 10px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .error-site.unknown { background: #f1f5f9; color: #94a3b8; font-weight: 400; }
+
+    /* Теги — род ошибки. В карточке они подпись, на панели сверху — кнопка фильтра;
+       вид общий, чтобы связь читалась без объяснений. */
+    .error-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+
+    .error-tag {
+        padding: 1px 7px;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 10px;
+        white-space: nowrap;
+    }
+
+    .error-tag.clickable { cursor: pointer; }
+    .error-tag.clickable:hover { border-color: #94a3b8; color: #1e293b; }
+    .error-tag.on { background: #0369a1; border-color: #0369a1; color: #fff; }
+
+    .error-filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 0 2px;
+    }
+
+    .error-filters-label { color: #94a3b8; font-size: 11px; margin-right: 2px; }
+
     .error-message {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         color: #0f172a;
@@ -2194,10 +2237,23 @@
         <option value="page">страница админки</option>
         <option value="scenario">сценарии (старые записи)</option>
     </select>
+    <!-- Сайт — второй вопрос после «кто прислал»: у записей от соседних проектов адрес
+         страницы пуст, и без сайта непонятно, где именно сломалось. Список берётся из
+         справочника, а не из самих ошибок: выбирать имеет смысл и тот сайт, по которому
+         ошибок пока нет. -->
+    <span class="scenario-head-label">Сайт</span>
+    <select id="errorSite" title="Сузить журнал до одного сайта">
+        <option value="">все</option>
+    </select>
     <button type="button" class="browser-btn" id="errorReloadBtn">Обновить</button>
     <button type="button" class="browser-btn danger" id="errorClearBtn">Очистить журнал</button>
     <span class="scenario-head-hint" id="errorHint"></span>
 </div>
+
+<!-- Теги — род ошибки, а не её происхождение: под одним `source` лежат и таймауты, и
+     отказы входа. Чипсами, а не ещё одним селектом: их видно все сразу, и щелчок по
+     тегу в карточке ставит тот же фильтр — связь читается без объяснений. -->
+<div class="error-filters" id="errorTags"></div>
 
 <div class="error-note">
     Сюда попадает то, о чём сообщили клиенты — соседние проекты, которые ходят в браузер
@@ -2876,11 +2932,77 @@
     // сессии — по этому её можно повторить, а не угадывать.
     const errorListEl = document.getElementById('errorList');
 
+    // Теги, по которым фильтруется журнал. Список закрытый и совпадает с разметчиком
+    // на сервере (`browser_error_tag.BROWSER_ERROR_TAG_RULES`): чипс, которому не
+    // соответствует ни одна запись, просто ничего не найдёт, а неизвестный серверу тег
+    // не найдёт ничего никогда. Порядок — от частых к редким, как там же.
+    const ERROR_TAGS = [
+        ['auth',     'вход и доступ'],
+        ['timeout',  'таймаут'],
+        ['network',  'сеть и сокет'],
+        ['notfound', 'не найдено'],
+        ['selector', 'селектор'],
+        ['data',     'разбор данных'],
+        ['server',   'ошибка сервера'],
+        ['crash',    'падение'],
+    ];
+
+    // Выбранный тег: один, а не набор. Журнал разбирают по одному роду сбоя за раз, а
+    // пересечение двух тегов — уже поиск, для которого есть текст сообщения.
+    let _errorTag = '';
+
+    function errorTagsRender() {
+        const box = document.getElementById('errorTags');
+        if (!box) return;
+
+        box.innerHTML = '<span class="error-filters-label">Тип ошибки</span>'
+            + `<span class="error-tag clickable${_errorTag ? '' : ' on'}" data-tag="">все</span>`
+            + ERROR_TAGS.map(([tag, title]) =>
+                `<span class="error-tag clickable${_errorTag === tag ? ' on' : ''}" `
+                + `data-tag="${tag}" title="${_escape(title)}">${tag}</span>`).join('');
+
+        box.querySelectorAll('.error-tag').forEach(el => {
+            el.onclick = () => { _errorTag = el.dataset.tag || ''; errorTagsRender(); errorsLoad(); };
+        });
+    }
+
+    // Сайты в селект — из справочника. Тянем один раз: список меняется редко, а
+    // перерисовка журнала идёт на каждый фильтр.
+    let _errorSitesLoaded = false;
+
+    async function errorSitesLoad() {
+        if (_errorSitesLoaded) return;
+
+        const select = document.getElementById('errorSite');
+        if (!select) return;
+
+        try {
+            const data = await getData('/api/browser/site');
+            for (const site of data.result || []) {
+                const opt = document.createElement('option');
+                opt.value = site.id;
+                opt.textContent = site.name || site.url || ('#' + site.id);
+                select.appendChild(opt);
+            }
+            _errorSitesLoaded = true;
+        } catch (e) {
+            // Справочник не пришёл — фильтр по сайту останется с одним «все», а журнал
+            // покажется целиком. Ронять из-за этого страницу незачем.
+        }
+    }
+
     async function errorsLoad() {
+        await errorSitesLoad();
+        const params = new URLSearchParams();
         const source = document.getElementById('errorSource').value;
+        const site = document.getElementById('errorSite').value;
+        if (source) params.set('source', source);
+        if (site) params.set('site_id', site);
+        if (_errorTag) params.set('tag', _errorTag);
+
         let data;
         try {
-            data = await getData('/api/browser/error' + (source ? '?source=' + encodeURIComponent(source) : ''));
+            data = await getData('/api/browser/error' + (params.toString() ? '?' + params : ''));
         } catch (e) {
             errorListEl.innerHTML = '<div class="error-empty">журнал не пришёл: ' + _escape(e.message) + '</div>';
             return;
@@ -2900,18 +3022,34 @@
         for (const row of rows) {
             const el = document.createElement('div');
             el.className = 'error-row';
+            // `site_id` без имени значит, что сайт удалён, а ошибка на нём осталась:
+            // показываем номер, а не пустоту — по нему видно, что сайт был.
+            const siteText = row.site_name || (row.site_id ? '#' + row.site_id : 'сайт неизвестен');
             const ctx = row.context && Object.keys(row.context).length
                 ? Object.entries(row.context).map(([k, v]) => `${k}: ${v}`).join(' · ')
                 : '';
+            const tags = (row.tags || []).map(t =>
+                `<span class="error-tag clickable" data-tag="${_escape(t)}">${_escape(t)}</span>`).join('');
             el.innerHTML =
                 '<div class="error-head">'
                 + `<span class="error-source">${_escape(row.source)}</span>`
+                + `<span class="error-site${row.site_name ? '' : ' unknown'}">${_escape(siteText)}</span>`
                 + `<span class="error-when">${_escape(_when(row.created_at))}</span>`
                 + `<span class="error-url" title="${_escape(row.url || '')}">${_escape(row.url || '')}</span>`
                 + '</div>'
                 + `<div class="error-message">${_escape(row.message)}</div>`
                 + (ctx ? `<div class="error-context">${_escape(ctx)}</div>` : '')
-                + (row.session_id ? `<div class="error-context">сессия ${_escape(row.session_id)}</div>` : '');
+                + (row.session_id ? `<div class="error-context">сессия ${_escape(row.session_id)}</div>` : '')
+                + (tags ? `<div class="error-tags">${tags}</div>` : '');
+            // Щелчок по тегу в карточке ставит тот же фильтр, что чипс наверху: человек
+            // видит род ошибки и хочет увидеть такие же — лишний ход к панели не нужен.
+            el.querySelectorAll('.error-tag').forEach(tagEl => {
+                tagEl.onclick = () => {
+                    _errorTag = tagEl.dataset.tag || '';
+                    errorTagsRender();
+                    errorsLoad();
+                };
+            });
             errorListEl.appendChild(el);
         }
     }
@@ -5138,6 +5276,7 @@
     document.getElementById('errorReloadBtn').addEventListener('click', errorsLoad);
     document.getElementById('errorClearBtn').addEventListener('click', errorsClear);
     document.getElementById('errorSource').addEventListener('change', errorsLoad);
+    document.getElementById('errorSite').addEventListener('change', errorsLoad);
 
     document.getElementById('inspectBtn').addEventListener('click', inspectToggle);
     document.getElementById('inspectClose').addEventListener('click', inspectHide);
@@ -5505,6 +5644,7 @@
     if (BROWSER_PAGE === 'error') {
         // Только журнал. Без этого страница опрашивала бы контейнер-браузер каждые
         // десять секунд ради счётчика сессий, которого на ней нет.
+        errorTagsRender();
         errorsLoad();
     } else {
         (async () => {
