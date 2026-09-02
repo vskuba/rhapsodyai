@@ -873,7 +873,8 @@ class TestTaskUiStyle:
         """Кнопка приёмки плана живёт в карточке открытой задачи и только при `plan_approval`.
 
         Флажки фаз без неё работают впустую: `to_development` — триггер того же перехода
-        (`flags.js:51`), а план, который нечем утвердить, до разработки не доводит.
+        (чип `flag_dev` в `renderRootFlags`), а план, который нечем утвердить, до
+        разработки не доводит.
         """
         ui = _open_mini_app(browser, tasks=[TASK_FLAGGED, TASK_PLAN_PASSED])
 

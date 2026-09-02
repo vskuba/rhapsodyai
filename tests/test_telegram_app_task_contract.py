@@ -31,7 +31,7 @@ TEST_TITLE_ROOT = '__pytest_miniapp_contract_root'
 
 # --- Тела, которые реально отправляет фронтенд ---
 #
-# `flags.js:157` — postData(ENDPOINT(id), {patch: {[key]: _flagValue(key, checked)}}),
+# `_writeFlag` (`flags.js`) — postData(ENDPOINT(id), {patch: {[key]: _flagValue(key, checked)}}),
 # `_flagValue` (там же, ниже публичного) даёт для снятого «в планирование» false, для
 # возвращённого — None (ключ стирается), для «в разработку» — true/null.
 FLAG_BODY_PLAN_OFF = {'patch': {'to_planning': False}}
@@ -39,10 +39,13 @@ FLAG_BODY_PLAN_BACK = {'patch': {'to_planning': None}}
 FLAG_BODY_DEV_ON = {'patch': {'to_development': True}}
 FLAG_BODY_TEST_OFF = {'patch': {'to_testing': False}}
 
-# `questions.js:531` — одиночный вопрос: postData(API_ANSWER(id), {answers, note,
-# goal_indexes}); пачка (`:488`) дописывает index — номер вопроса в ней.
+# Одиночный вопрос — `askSend` (`questions.js`, ветка без пачки): postData(API_ANSWER(id),
+# {answers, note, goal_indexes}). Пачка собирается своим `_batchBody` и целей не несёт:
+# `index` вместо `goal_indexes`, потому что серверный путь пачки их не читает
+# (`project_task_question.py:139-141`). Номеров строк здесь нет намеренно — пин в соседний
+# файл врёт молча при первом же переносе; имена функций переживают перенос.
 ANSWER_BODY_SINGLE = {'answers': ['split'], 'note': 'Кроме третьей цели', 'goal_indexes': []}
-ANSWER_BODY_BATCH_FIRST = {'answers': ['yes'], 'note': '', 'goal_indexes': [], 'index': 0}
+ANSWER_BODY_BATCH_FIRST = {'answers': ['yes'], 'note': '', 'index': 0}
 
 
 @pytest.fixture(autouse=True)
@@ -223,8 +226,8 @@ class TestQuestionContract:
                 'половина развилок ушла в решения — роль спланирует по ней'
 
             second = await client.post(f'/task/{task_id}/question/answer',
-                                       json={'answers': ['no'], 'note': '', 'goal_indexes': [],
-                                             'index': 1})
+                                       json={**ANSWER_BODY_BATCH_FIRST,
+                                             'answers': ['no'], 'index': 1})
             assert second.status_code == 200, second.text
             assert second.json()['done'] is True
             assert len((await _metadata(task_id, full=True)).get('decisions') or []) == 2
@@ -246,6 +249,15 @@ class TestQuestionContract:
         assert 'function _batchBody(form, index)' in source, 'тело пачки собирается не там'
         assert '{ answers: form.answers, note: form.note, index }' in source, \
             'пачка перестала дописывать index или начала слать цели — сверь тело'
+
+        # Ключи константы пачки — ровно те, что собирает `_batchBody`. Подстроки выше
+        # ловят правку фронтенда, а это — правку самой константы: с лишним
+        # `goal_indexes` проверка гоняла бы по живому обработчику тело, которого панель
+        # не производит, и доказывала бы не тот путь, ради которого написана.
+        assert set(ANSWER_BODY_BATCH_FIRST) == {'answers', 'note', 'index'}, \
+            'тело пачки разошлось с _batchBody'
+        assert set(ANSWER_BODY_SINGLE) == {'answers', 'note', 'goal_indexes'}, \
+            'тело одиночного вопроса разошлось с askSend'
 
 
 # --- Служебное ниже публичного ---
