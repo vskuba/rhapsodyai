@@ -94,6 +94,10 @@ class TestTelegramAppProtectedEndpoints:
         response = await anon_client.get("/telegram-app/plans")
         assert response.status_code == 403
 
+    async def test_tasks_list_requires_auth(self, anon_client: httpx.AsyncClient):
+        response = await anon_client.get("/telegram-app/tasks")
+        assert response.status_code == 403
+
     async def test_plans_detail_requires_auth(self, anon_client: httpx.AsyncClient):
         response = await anon_client.get("/telegram-app/plans/1")
         assert response.status_code == 403
@@ -236,6 +240,36 @@ class TestTelegramAppClaude:
             assert "session_uuid" in session
             assert "role" in session
             assert "project_label" in session
+
+
+class TestTelegramAppTasks:
+    """Список задач: вложенный ответ и те же поля, чем собирается карточка.
+
+    Вложенность `{'result': {'tasks': […]}}` — контракт, а не случайность формы:
+    `tasks.js` читает `res.result.tasks`, и на плоский список молча рисует пустой
+    экран. Поведение вкладок и карточек на живом экране держит
+    `test_telegram_app_task_screen.py`.
+    """
+
+    async def test_tasks_list_returns_nested_tasks(self, telegram_client: httpx.AsyncClient):
+        response = await telegram_client.get("/telegram-app/tasks")
+        assert response.status_code == 200, response.text
+        tasks = response.json()["result"]["tasks"]
+        assert isinstance(tasks, list)
+
+    async def test_task_row_carries_the_card_fields(self, telegram_client: httpx.AsyncClient):
+        """Каждая строка годится для карточки: чипсы статуса и состояния, деление по типу."""
+        tasks = (await telegram_client.get("/telegram-app/tasks")).json()["result"]["tasks"]
+        for task in tasks:
+            for field in ('id', 'title', 'status', 'pipeline_state', 'task_type_id'):
+                assert field in task, f'строка #{task.get("id")} без поля {field}'
+
+    async def test_task_row_carries_dependencies(self, telegram_client: httpx.AsyncClient):
+        """Зависимости лежат пустыми списками, а не отсутствием ключей: «нет связей» ≠ «забыли»."""
+        tasks = (await telegram_client.get("/telegram-app/tasks")).json()["result"]["tasks"]
+        for task in tasks:
+            assert isinstance(task['depends_on'], list)
+            assert isinstance(task['depend_blocked'], list)
 
 
 if __name__ == "__main__":

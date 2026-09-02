@@ -36,6 +36,7 @@
 | `src/uvicorn/routers/telegram_app/telegram_app_claude.py` | Claude: ask, messages, sessions/active, respond |
 | `src/uvicorn/routers/telegram_app/telegram_app_claude_session.py` | Session registry: register, heartbeat, inbox, finalize, delete |
 | `src/uvicorn/routers/telegram_app/telegram_app_plan.py` | Plans: CRUD + AI-редактирование |
+| `src/uvicorn/routers/telegram_app/telegram_app_task.py` | Задачи: список для вкладки |
 | `src/uvicorn/routers/telegram_app/telegram_app_common.py` | Shared: `_require_telegram_owner`, `_require_claude_secret`, constants |
 | `src/uvicorn/routers/event/event.py` | Events: GET /events, DELETE /events, POST /event-log |
 
@@ -226,13 +227,15 @@ Markdown-планы с AI-созданием и редактированием. 
 (подключается отдельной строкой в шаблоне: `telegram_app.css` описывает оболочки
 вкладок, а не содержимое задачи).
 
-**Каркас собран, точек прокси ещё нет.** Вкладка — экран: кнопка 📝 в
-`#sidebarDefaultIcons`, контейнер `#tab-tasks` с `#tasksListView` внутри, `initTasks()`
-в `app.js` и `loadTasks()` на открытии. Не хватает прокси-точек `/telegram-app/tasks` и
-`/telegram-app/task/*` — они у соседней подзадачи. Список это переживает: вместо задач
-`loadTasks` рисует заглушку «Не удалось загрузить задачи» и не падает, а `questions.js`
-заводит свой DOM-слой сам. По той же причине панель проверяется без живой точки — тест
-подкладывает каркас и ответы (`page.route`).
+**Точка списка жива.** Вкладка — экран: кнопка 📝 в `#sidebarDefaultIcons`, контейнер
+`#tab-tasks` с `#tasksListView` внутри, `initTasks()` в `app.js` и `loadTasks()` на
+открытии. `GET /telegram-app/tasks` отдаёт строки `project_task` в порядке админской
+выборки (`position, id`) через `task_metadata_row_apply` — тем же разбором, что и
+`/task/list`, поэтому `metadata` в строке уже словарём, а `depends_on`/`depend_blocked`
+доложены списком. Ответ вложенный (`{'result': {'tasks': […]}}`): `tasks.js` читает
+`res.result.tasks`, и плоский список молча дал бы пустой экран. Точек `/telegram-app/task/*`
+по-прежнему нет — они у соседней подзадачи, и панель вопросов проверяется без живой точки:
+тест подкладывает каркас и ответы (`page.route`).
 
 Экранность проверяет `tests/test_telegram_app_task_wiring.py`: он грузит настоящий шаблон
 и настоящие модули и жмёт на вкладку, а не подкладывает каркас. Тесты панелей
@@ -241,7 +244,10 @@ Markdown-планы с AI-созданием и редактированием. 
 
 **Вкладки фаз** — `planning` / `development` / `testing` / `bugs`. Отбор по `task_type_id`
 (1 разработка, 2 баг, 3 тест, 4 исследование, 5 план): `metadata` строки списка
-`task_type_name` не несёт, поэтому фильтр держит номера типов, как и админка.
+`task_type_name` не несёт, поэтому фильтр держит номера типов, как и админка. Строка
+без номера типа (`task_type_id IS NULL` — заведена до справочника или осиротела после
+`ON DELETE SET NULL`) остаётся у разработчика, а не у менеджера: человек держит оба окна
+открытыми, и одна строка на двух вкладках в разных местах быть не должна.
  Подписи вкладок — ролями, теми же словами, что на админской странице
 (`PHASE_TAB_TITLES`, `task.html:2003`): человек переключается между двумя интерфейсами
 и должен видеть одни и те же имена — «Багфиксер», а не «Баги».
@@ -484,6 +490,11 @@ flex, её ребёнком панель легла бы колонкой ряд
 | `POST` | `/telegram-app/plans` | Создать план (AI) |
 | `DELETE` | `/telegram-app/plans/{id}` | Удалить план |
 | `POST` | `/telegram-app/plans/{id}/edit` | Редактировать план (AI) |
+
+### Задачи (owner session)
+| Метод | URL | Назначение |
+|-------|-----|------------|
+| `GET` | `/telegram-app/tasks` | Список задач: `{'result': {'tasks': […]}}`, строкой как на админке |
 
 ## Добавление нового функционала
 

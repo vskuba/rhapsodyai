@@ -276,11 +276,14 @@ function taskInPhase(t) {
     if (taskIsDone(t)) {
         return _isBugType(t) ? _currentPhase === 'bugs' : _currentPhase === 'testing';
     }
+    // Тип без номера (задача заведена до справочника или строка после `ON DELETE SET
+    // NULL`) остаётся у разработчика — ровно как на странице задач
+    // (`taskMatchesPhase`, task.html:2349: `getTaskTypeNameById(...) || 'dev'`).
+    // Человек держит оба окна открытыми, и одна строка на двух вкладках в разных
+    // местах быть не должна: `TASK_ROLE_DEFAULT` — про роль-планировщика, а не про фазу.
+    if (t.task_type_id == null) return _currentPhase === 'development';
     const ids = PHASE_TYPE_IDS[_currentPhase] || [];
     if (ids.includes(Number(t.task_type_id))) return true;
-    // Тип без номера (задача заведена до справочника или строка после `ON DELETE SET
-    // NULL`) достаётся менеджеру — см. `TASK_ROLE_DEFAULT` в task_role.py:97.
-    if (t.task_type_id === null && _currentPhase === 'planning') return true;
     return !!t.task_type_name && (PHASE_TYPE_NAMES[_currentPhase] || []).includes(t.task_type_name);
 }
 
