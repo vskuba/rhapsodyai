@@ -107,7 +107,7 @@ def task_worktree_path(repo_dir: str, subtask_id) -> str:
     return os.path.join(repo_dir, TASK_WORKTREE_BASE_DIR, name)
 
 
-async def task_worktree_ensure(repo_dir: str, subtask_id) -> str:
+async def task_worktree_ensure(repo_dir: str, subtask_id, base_branch: str = '') -> str:
     """
     Каталог подзадачи, готовый к работе: создаёт при первом обращении, дальше отдаёт
     существующий.
@@ -125,6 +125,12 @@ async def task_worktree_ensure(repo_dir: str, subtask_id) -> str:
     Args:
         repo_dir: каталог основного чекаута проекта.
         subtask_id: номер подзадачи — из него и имя каталога, и имя ветки.
+        base_branch: от чего отрезать новую ветку. Пусто — от главной, как было
+            всегда. Подзадача плана режется от ветки своей задачи (`task_branch`):
+            вся принятая работа соседей уже там, и начинать с главной значило бы
+            начинать с пустого места там, где сосед что-то сделал. Названной ветки
+            может не оказаться (план разобран старым кодом, менеджер каталога не
+            заводил) — тогда молча берём главную.
 
     Returns:
         Путь каталога. Пустая строка — адреса не хватило (нет проекта или номера).
@@ -143,6 +149,9 @@ async def task_worktree_ensure(repo_dir: str, subtask_id) -> str:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     branch = task_worktree_branch(subtask_id)
     base = await task_worktree_base_branch(repo_dir)
+    wanted = str(base_branch or '').strip()
+    if wanted and wanted != branch and await _branch_exists(repo_dir, wanted):
+        base = wanted
 
     # Ветка могла остаться от прошлого прогона (каталог сняли, ветку нет) —
     # тогда подключаем её, а не пересоздаём: в ней уже есть коммиты подзадачи.

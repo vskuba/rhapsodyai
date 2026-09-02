@@ -83,6 +83,8 @@ from src.project.task.task_spec import task_spec_write
 from src.project.task.task_depend import (task_depend_apply,
                                           task_depend_merge_upstream,
                                           task_depend_plan_links)
+from src.project.task.task_branch import (task_branch_of, task_branch_pull,
+                                          task_branch_push)
 from src.project.task.task_claim import (
     TASK_CLAIM_LOCK_TOUCH_SEC,
     task_claim_inflight_by_project,
@@ -771,7 +773,7 @@ async def _run_developer(action: dict) -> str | None:
     attempt_no = int(subtask['pipeline_attempt_count']) + 1
     started = time.monotonic()
     work_dir = await task_role_project_work_dir((task or {}).get('project_id'))
-    subtask_dir = await _subtask_dir(work_dir, subtask['id'])
+    subtask_dir = await _subtask_dir(work_dir, subtask['id'], subtask['parent_id'])
 
     # Модель на круг — из пула проекта. Свободных нет: работа ждёт очереди, ровно как
     # ждала при прежнем пределе «Parallel LLM», только считается он теперь по размеру
@@ -815,11 +817,31 @@ async def _run_developer(action: dict) -> str | None:
     if (await _llm_assign(action, task, TASK_DEVELOPER_ROLE)).get('wait'):
         return await _wait_resource('subtask', subtask['id'], 'developer', 'свободной модели')
 
+    # Ветка задачи — в ветку подзадачи, перед каждым кругом. В ней лежит вся принятая
+    # соседями работа, и без этого шага исполнитель увидел бы пустое место там, где
+    # сосед что-то сделал (`task_branch`). Слияние предшественников ниже остаётся: оно
+    # закрывает случай, когда сосед закрыт, но в ветку задачи ещё не влит — так бывает
+    # у планов, разобранных до появления этого правила.
+    pull = await task_branch_pull(work_dir, int(subtask['id']), int(subtask['parent_id'] or 0),
+                                  role=TASK_DEVELOPER_ROLE, session=shell_session)
+    if pull.get('conflict'):
+        await _subtask_report(
+            subtask, f"ветка задачи не влилась в подзадачу: конфликт с общей работой — "
+                     f"нужно переразбить план. {pull.get('error') or ''}".strip(), ok=False)
+        await task_state_subtask_set(subtask['id'], 'blocked',
+                                     last_error='конфликт с веткой задачи')
+        return f"subtask#{subtask['id']} developer -> blocked (конфликт с веткой задачи)"
+
+    if not pull.get('ok'):
+        return await _wait_resource('subtask', subtask['id'], 'developer',
+                                    'слияния ветки задачи')
+
     try:
         result = await task_agent_developer_run(
             task, subtask, str(subtask.get('pipeline_error') or ''),
             role=TASK_DEVELOPER_ROLE, work_dir=work_dir, subtask_dir=subtask_dir,
-            shell_session=shell_session)
+            shell_session=shell_session,
+            shell_task_prev=int(action.get('shell_task_prev') or 0))
     except Exception as e:
         return await _retry_subtask(subtask, 'developer', 'planned', TASK_DEVELOPER_ROLE,
                                     work_dir, attempt_no, started, f'Developer: {e}',
@@ -931,7 +953,7 @@ async def _run_qa(action: dict) -> str | None:
     attempt_no = int(subtask['pipeline_attempt_count']) + 1
     started = time.monotonic()
     work_dir = await task_role_project_work_dir((task or {}).get('project_id'))
-    subtask_dir = await _subtask_dir(work_dir, subtask['id'])
+    subtask_dir = await _subtask_dir(work_dir, subtask['id'], subtask['parent_id'])
 
     # Проверять нечего и по второй причине: разработчик не написал кода. В ветке нет
     # ни коммитов, ни незакоммиченных правок — так бывает, когда работа подзадачи уже
@@ -1003,6 +1025,22 @@ async def _run_qa(action: dict) -> str | None:
         # Цели подзадачи здесь не трогаем: галочки уже проставил сам QA в ходе
         # прогона — по одной, каждую своим ответом (`src/tool/project/task_goal.py`).
         # Закрыть их отсюда значило бы отметить проверенным и то, что он не подтвердил.
+        #
+        # Принятая работа уезжает в ветку задачи: следующая подзадача начнёт круг,
+        # уже видя её. Только принятую — непринятую ещё будут переделывать, и её код
+        # в общей ветке мешал бы соседям (`task_branch`).
+        #
+        # Неудачу слияния подзадаче в вину не ставим и `done` не отменяем: работа
+        # проверена и принята, а не сошедшиеся ветки — это разговор с человеком, и он
+        # уже записан в отчёт. Иначе принятая подзадача возвращалась бы в работу из-за
+        # чужого кода.
+        push = await task_branch_push(work_dir, int(subtask['id']),
+                                      int(subtask['parent_id'] or 0),
+                                      role=TASK_QA_ROLE, session=shell_session)
+        if not push.get('ok'):
+            await _subtask_report(
+                subtask, f"проверку QA прошла, но в ветку задачи не влилась: "
+                         f"{push.get('error') or 'слияние не состоялось'}", ok=None)
         await _subtask_report(subtask, 'проверку QA прошла, подзадача готова')
         return f"subtask#{subtask['id']} qa -> done"
 
@@ -1740,7 +1778,7 @@ async def _lines_changed(work_dir: str, task_id: int) -> int | None:
     return total
 
 
-async def _subtask_dir(work_dir: str, subtask_id: int) -> str:
+async def _subtask_dir(work_dir: str, subtask_id: int, parent_id: int = 0) -> str:
     """
     Рабочий каталог подзадачи — своя выкладка репозитория со своей веткой.
 
@@ -1774,7 +1812,11 @@ async def _subtask_dir(work_dir: str, subtask_id: int) -> str:
         return ''
 
     try:
-        path = await task_worktree_ensure(work_dir, subtask_id)
+        # Отрез от ветки задачи, а не от главной: вся принятая работа соседей уже
+        # там (`task_branch`). Задачи нет (менеджерская выкладка, баг) — прежний
+        # путь, от главной.
+        path = await task_worktree_ensure(work_dir, subtask_id,
+                                          base_branch=await task_branch_of(parent_id))
         # Спецификация ложится рядом с журналом, в тот же каталог: её читает агент, а
         # он живёт в каталоге и читает файлы, а не таблицы. Перезаписываем на каждом
         # круге — план и зависимости меняются пересмотром, и вчерашний документ увёл
@@ -1978,6 +2020,10 @@ async def _shell_assign(action: dict, task: dict, role: str) -> str:
             return ''
 
         sessions, sticky_within = await _shell_order(project_id, by_role, sessions)
+        # Чем оболочка была занята прошлый круг — до захвата: захват перепишет `task_id`
+        # на нынешнюю задачу, и спросить станет уже нечего. По этому числу агент решает,
+        # перезапускать ли себя: задача та же — контекст полезен, другая — вреден.
+        was = await team_shell_pool_tasks(project_id)
         session_uuid = await team_shell_pool_acquire(project_id, role, task_id, sessions,
                                                     sticky_within=sticky_within)
         if not session_uuid:
@@ -1987,6 +2033,7 @@ async def _shell_assign(action: dict, task: dict, role: str) -> str:
             return ''
 
         action['shell'] = session_uuid
+        action['shell_task_prev'] = int(was.get(session_uuid) or 0)
 
         return session_uuid
     except Exception as e:

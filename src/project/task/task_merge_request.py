@@ -1,118 +1,123 @@
 """
-Merge request по закрытой задаче: свести ветки её подзадач и попросить слияние.
+Merge request по закрытой задаче: попросить слияние ветки задачи в главную.
 
 Когда. В момент, когда закрылась последняя подзадача и задача перешла в `done`
 (`task_pipeline._run_finalize`). Раньше нельзя: пока хоть одна подзадача в работе,
 ветка задачи неполна, и merge request показывал бы половину работы.
 
-Почему сборочная ветка, а не merge request с ветки подзадачи. Подзадач у задачи
-несколько, у каждой своя ветка, а merge request нужен один — на задачу, как её и
-заказывал человек. Поэтому от главной отводится ветка `task/<id>`, в неё по очереди
-вливаются ветки подзадач, и уже она просится в главную.
+Сводить здесь нечего — работа собралась по ходу дела. У задачи одна ветка
+(`feature/task_<id>`, её заводит менеджер при планировании), и через неё течёт всё:
+подзадача берётся в работу — ветка задачи вливается в неё, подзадача проходит QA —
+вливается обратно (`task_branch`). К закрытию задачи ветка готова.
 
-Почему на стороне GitHub, а не локально. Ветки подзадач разработчик пушит по ходу
-работы, значит на сервере они уже есть; локальная же выкладка задачи живёт на диске
-машины и в общий репозиторий не смотрит. Сборка на сервере не требует ни push из
-контейнера, ни прав на запись в чужой рабочий каталог.
+Так было не всегда, и прежний порядок стоил задачи #4915. Сборка шла здесь: заводилась
+ветка `task/<id>` от **свежей** главной, и в неё вливались ветки подзадач, отрезанные от
+**старой**. Первая же не сошлась — четыре принятых подзадачи остались без merge request,
+а сборочная ветка так и осталась пустой копией главной.
 
-Конфликт останавливает сборку и **не разрешается**: merge request не заводится, а в
-отчёт задачи уходит имя ветки, которая не сошлась, и ссылка на сравнение. Разбирает
-его человек — это его работа, а не роли (см. `role_developer.md`).
+Остаётся одно дело помимо самого merge request: отправить ветку задачи на сервер.
+Ветки подзадач пушит разработчик своим кругом, а в ветку задачи сливает конвейер —
+локально, и на GitHub её может не быть вовсе.
 
 Сбой здесь задачу не переоткрывает: работа сделана и принята, а merge request —
 удобство поверх неё. Всё, что случилось, попадает в отчёт задачи, и человек сведёт
 ветки руками кнопкой на `/admin/task`.
 """
 from logging_.logging_ import logger_info
-from mysql_.mysql_ import mysql_get_db_async
-
 from src.project.task.task_metadata import TASK_METADATA_KEY_MR, task_metadata_update
 from src.project.task.task_worktree import task_worktree_branch, task_worktree_git
-from src.tool.github.github_merge import (github_merge_branch, github_merge_branch_ensure,
-                                          github_merge_branch_exists,
+from src.tool.github.github_merge import (github_merge_branch_exists,
                                           github_merge_request_create)
 
-# Ветка, в которую сводится работа задачи. Не `feature/...`, как у подзадач: их ветки
-# заводит конвейер под работу, а эта — под сдачу, и по имени должно быть видно, что
-# внутри вся задача, а не один её кусок.
-TASK_MERGE_REQUEST_BRANCH_TEMPLATE = 'task/{task_id}'
-
-# Куда просим слияние. Та же главная, от которой конвейер режет ветки подзадач.
+# Куда просим слияние. Та же главная, от которой конвейер режет ветку задачи.
 TASK_MERGE_REQUEST_BASE = 'master'
-
-# Состояния подзадач, чью ветку берём в сборку. Ровно те, в которых работа считается
-# принятой: `done` — QA принял, `no_code_for_testing` — кода не было вовсе, и ветки у
-# такой подзадачи тоже нет, она отсеется сама.
-TASK_MERGE_REQUEST_DONE_STATES = ('done', 'no_code_for_testing')
 
 
 async def task_merge_request_open(task_id: int, work_dir: str) -> dict:
     """
-    Свести ветки подзадач задачи в одну и завести merge request в главную.
+    Открыть merge request из ветки задачи в главную.
 
-    Returns: `{'ok', 'url', 'branch', 'merged', 'conflict', 'message'}`. `ok = False`
-    при любой заминке — конфликте, отсутствии токена, пустом наборе веток; что именно
-    случилось, сказано словами в `message`, и его пишет в отчёт вызывающий.
+    Сводить здесь уже нечего: работа собиралась по ходу дела. Каждая подзадача,
+    принятая QA, влилась в ветку задачи в тот же момент (`task_branch_push`), а
+    начиналась с того, что ветку задачи влили в неё (`task_branch_pull`). К закрытию
+    задачи ветка готова — остаётся попросить слияние.
+
+    Раньше сборка шла здесь: заводилась ветка `task/<id>` от главной, и в неё по
+    очереди вливались ветки подзадач. Это работало ровно до первого расхождения —
+    ветки резались от старой главной, а сборочная от свежей, и первая же подзадача
+    не сходилась. Живьём #4915: четыре подзадачи приняты, merge request не заведён,
+    сборочная ветка осталась пустой копией главной.
+
+    Ветку задачи нужно ещё и запушить: подзадачи свои ветки пушат сами, а её сливал
+    конвейер локально, и на сервере её может не быть вовсе.
+
+    Returns: `{'ok', 'url', 'branch', 'message'}`. `ok = False` при любой заминке;
+    что именно случилось, сказано словами в `message`, и его пишет в отчёт вызывающий.
 
     Исключений не бросает: merge request — удобство поверх уже принятой работы, и
     ронять из-за него тик конвейера незачем.
     """
-    result = {'ok': False, 'url': '', 'branch': '', 'merged': [], 'conflict': '',
-              'message': ''}
+    result = {'ok': False, 'url': '', 'branch': '', 'message': ''}
     try:
         repo_name = await _repo_name(work_dir)
         if not repo_name:
             result['message'] = 'merge request не заведён: у репозитория нет адреса origin'
             return result
 
-        branches = await _subtask_branches(int(task_id or 0), repo_name)
-        if not branches:
-            result['message'] = ('merge request не нужен: ни одна подзадача не оставила '
-                                 'ветки в репозитории')
-            return result
-
-        branch = TASK_MERGE_REQUEST_BRANCH_TEMPLATE.format(task_id=int(task_id))
+        branch = task_worktree_branch(int(task_id or 0))
         result['branch'] = branch
-
-        ready = await github_merge_branch_ensure(repo_name, branch, TASK_MERGE_REQUEST_BASE)
-        if ready['ready'] != '1':
-            result['message'] = f"merge request не заведён: {ready['message']}"
+        if not branch:
+            result['message'] = 'merge request не заведён: у задачи нет ветки'
             return result
 
-        for item in branches:
-            merged = await github_merge_branch(repo_name, item, branch)
-            if merged['conflict'] == '1':
-                result['conflict'] = item
-                result['message'] = (f'merge request не заведён: ветка {item} не сходится '
-                                     f'с {branch}. Конфликт разбирает человек: {merged["url"]}')
-                return result
-            if merged['merged'] != '1':
-                result['message'] = f"merge request не заведён: {merged['message']}"
-                return result
-            if merged['already'] != '1':
-                result['merged'].append(item)
+        pushed = await _branch_push(work_dir, branch)
+        if not pushed['ok']:
+            result['message'] = f"merge request не заведён: {pushed['error']}"
+            return result
+
+        if (await github_merge_branch_exists(repo_name, branch))['exists'] != '1':
+            result['message'] = (f'merge request не нужен: ветки {branch} нет в репозитории — '
+                                 f'работа задачи никуда не коммитилась')
+            return result
 
         pull = await github_merge_request_create(
             repo_name, branch, TASK_MERGE_REQUEST_BASE,
-            title=f'task/{task_id}: работа задачи',
-            body=_body(int(task_id), branches))
+            title=f'{branch}: работа задачи #{task_id}',
+            body=f'Задача #{task_id}. Работа подзадач собрана в ветке по ходу приёмки QA.')
         if pull['created'] != '1':
             result['message'] = f"merge request не заведён: {pull['message']}"
             return result
 
         result['ok'] = True
         result['url'] = pull['url']
-        result['message'] = (f"{pull['message']}; в ветке {branch} сведены "
-                             f"{len(branches)} ветк(и) подзадач: {pull['url']}")
+        result['message'] = f"{pull['message']}: {pull['url']}"
     except Exception as e:
         result['message'] = f'merge request не заведён: {e}'
-        logger_info(f'[task] task#{task_id}: сборка merge request сорвалась: {e}')
+        logger_info(f'[task] task#{task_id}: merge request не заведён: {e}')
 
         return result
 
     await _mr_url_save(int(task_id), result['url'])
 
     return result
+
+
+async def _branch_push(work_dir: str, branch: str) -> dict:
+    """
+    Отправить ветку задачи в общий репозиторий. Returns: `{'ok', 'error'}`.
+
+    Ветки подзадач пушит разработчик своим кругом, а ветку задачи никто: в неё сливает
+    конвейер, локально. Без отправки merge request просить не о чем — GitHub о такой
+    ветке не знает.
+
+    Отправляем только вперёд (без `--force`): ветка задачи растёт слияниями принятой
+    работы, и переписывать её историю нам нечем и незачем.
+    """
+    from src.project.task.task_worktree import task_worktree_git
+
+    code, out = await task_worktree_git(work_dir, 'push', 'origin', f'{branch}:{branch}')
+
+    return {'ok': not code, 'error': str(out or '')[:400] if code else ''}
 
 
 async def _repo_name(work_dir: str) -> str:
@@ -143,47 +148,6 @@ async def _repo_name(work_dir: str) -> str:
     parts = [chunk for chunk in url.split('/') if chunk]
 
     return '/'.join(parts[-2:]) if len(parts) >= 2 else ''
-
-
-async def _subtask_branches(task_id: int, repo_name: str) -> list[str]:
-    """
-    Ветки принятых подзадач в порядке работы. Только те, что есть на GitHub.
-
-    Порядок — тот же, в котором подзадачи шли по плану (`position`, затем номер):
-    поздняя работа опирается на раннюю, и вливать её первой значит нарываться на
-    конфликт там, где его нет.
-
-    Подзадача без ветки на сервере пропускается молча: так выглядит работа, которой не
-    было (`no_code_for_testing`) или которую не запушили. Первый случай штатный, второй
-    виден в отчёте самой подзадачи.
-    """
-    if not task_id:
-        return []
-
-    placeholders = ', '.join(['%s'] * len(TASK_MERGE_REQUEST_DONE_STATES))
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            'SELECT id FROM project_task '
-            f' WHERE parent_id = %s AND pipeline_state IN ({placeholders}) '
-            ' ORDER BY position, id',
-            (int(task_id), *TASK_MERGE_REQUEST_DONE_STATES))
-        rows = await db.fetchall() or []
-
-    out = []
-    for row in rows:
-        branch = task_worktree_branch(int(row['id']))
-        if branch and (await github_merge_branch_exists(repo_name, branch))['exists'] == '1':
-            out.append(branch)
-
-    return out
-
-
-def _body(task_id: int, branches: list) -> str:
-    """Описание merge request: что за задача и из каких веток она собрана."""
-    lines = [f'Задача #{task_id}. Работа сведена из веток подзадач:', '']
-    lines += [f'- {branch}' for branch in branches]
-
-    return '\n'.join(lines)
 
 
 async def _mr_url_save(task_id: int, url: str) -> None:

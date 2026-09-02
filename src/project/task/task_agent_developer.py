@@ -47,7 +47,8 @@ DEVELOPER_USER_ID = 1  # только для атрибуции session/log
 async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = '',
                                    role: str = TASK_DEVELOPER_ROLE,
                                    work_dir: str = '', subtask_dir: str = '',
-                                   shell_session: str = '') -> dict:
+                                   shell_session: str = '',
+                                   shell_task_prev: int = 0) -> dict:
     """
     Выполнить одну подзадачу плана силами оболочки разработчика.
 
@@ -162,8 +163,14 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
     # только после того, как предыдущий отпустил задачу, поэтому «занят» на старте
     # значит одно: оболочка дожёвывает брошенный ход сорвавшегося прогона. Ждать
     # его бессмысленно — ответит он на позапрошлый вопрос.
+    #
+    # Прошлую задачу берём **у этой оболочки**, а не у роли. Оболочек у роли столько,
+    # сколько терминалов открыл человек, и они ведут разные задачи разом: последний круг
+    # роли мог идти в соседней, и по нему выходило «задача та же» — оболочка оставалась
+    # с чужим контекстом и не перезапускалась, когда брала новую задачу. Номер приходит
+    # из захвата (`_shell_assign`), снятый до того, как захват переписал его на нынешнюю.
     task_id      = int(subtask.get('parent_id') or (task or {}).get('id') or 0)
-    task_id_last = await _shell_task_id_last(role, (task or {}).get('project_id'))
+    task_id_last = int(shell_task_prev or 0)
     if not task_id or task_id != task_id_last or await _shell_busy(role, work_dir):
         # Перезапускаем свою оболочку, а не «оболочку роли»: у роли их несколько,
         # и маркер, ушедший соседу, снёс бы его ход посреди работы.
@@ -224,44 +231,6 @@ async def _tools_load() -> dict:
         await db.execute('SELECT name, path FROM tool WHERE id > 0')
         rows = await db.fetchall()
     return {r['name'].strip(): r['path'].strip() for r in (rows or []) if r.get('name') and r.get('path')}
-
-
-async def _shell_task_id_last(role: str, project_id) -> int:
-    """
-    Задача, над которой оболочка этой роли работала прошлый круг.
-
-    Берём из журнала попыток, а не из отдельной колонки: строка туда пишется на
-    каждый круг разработчика (`task_state_attempt_log`), и это ровно те прогоны,
-    что шли через оболочку. Отдельное поле «последняя задача сессии» пришлось бы
-    держать в согласии с журналом руками, а расходиться оно начнёт на первом же
-    сбое посреди прогона.
-
-    Журнал ведётся по подзадачам, поэтому возвращаем `parent_id` подзадачи —
-    сравнивать надо задачи, а не подзадачи: смена подзадачи внутри одной задачи
-    перезапуска как раз не требует.
-
-    Область — проект: оболочка `developer` заведена на каждый проект своя, и
-    прогон в соседнем проекте ничего не говорит о контексте этой. Сравнение
-    NULL-безопасное: задачи без проекта живут в одной общей оболочке, и их
-    прогоны сходятся между собой, а не с проектными.
-
-    Returns: id задачи или 0 — попыток ещё не было. Ноль зовущий трактует как
-        «задача другая» и оболочку перезапускает: чистый контекст в сомнительном
-        случае безопаснее чужого.
-    """
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT s.parent_id AS task_id "
-            "  FROM project_task_attempt a "
-            "  JOIN project_task s ON s.id = a.task_id "
-            "  JOIN project_task p ON p.id = s.parent_id "
-            " WHERE a.role = %s AND p.project_id <=> %s "
-            " ORDER BY a.id DESC LIMIT 1",
-            (role, project_id),
-        )
-        row = await db.fetchone()
-
-    return int((row or {}).get('task_id') or 0)
 
 
 async def _shell_busy(role: str, work_dir: str) -> bool:
