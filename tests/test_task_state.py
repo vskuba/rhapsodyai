@@ -158,6 +158,26 @@ class TestTickGoalsFinish:
         await _subtasks_goals_finish()
         assert (await task_state_subtask_get(subtask_id))['pipeline_state'] == 'planned'
 
+    async def test_task_state_tick_keeps_row_rejected_by_qa(self, subtask_id: int):
+        """
+        Строку с отказом QA тик не закрывает, хотя цели все закрыты.
+
+        Вердикт QA шире целей: галочки он ставит по ходу проверки, а отказать может за
+        то, что рядом сломалось или разошлось с документацией. Живьём #6441 закрылась
+        так через полторы минуты после «QA_OK=false», и с ней ушла в `done` задача
+        #4996 — это была её последняя открытая строка.
+        """
+        from src.project.task.task_metadata import (TASK_METADATA_KEY_QA_REJECT,
+                                                    task_metadata_update)
+        from src.project.task.task_pipeline import _subtasks_goals_finish
+        from src.project.task.task_state import task_state_subtask_get
+
+        await self._goals_set(subtask_id, '[{"text": "цель", "done": true}]', 'failed_qa')
+        await task_metadata_update(subtask_id, {TASK_METADATA_KEY_QA_REJECT: True})
+
+        await _subtasks_goals_finish()
+        assert (await task_state_subtask_get(subtask_id))['pipeline_state'] == 'failed_qa'
+
 
 class TestShellBlockedByPermission:
     """

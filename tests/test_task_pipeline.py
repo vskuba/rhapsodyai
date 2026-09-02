@@ -605,6 +605,47 @@ class TestGoalsAllDone:
         assert _goals_all_done({'goals': [{'text': 'раз'}]}) is False
 
 
+class TestGoalsCloseAfterReject:
+    """
+    Отказ QA отменяет пропуск круга по закрытым целям.
+
+    Галочки на целях ставит сам QA, но вердикт у него шире целей: он смотрит ещё и на
+    то, не сломалось ли рядом и сходится ли документация с кодом. Живьём #6441 — QA
+    закрыл единственную цель, отказал за раздел документации, описывающий уже убранный
+    экран, а через полторы минуты тик закрыл строку как готовую и увёл в `done` всю
+    задачу #4996.
+    """
+
+    def test_task_pipeline_close_allowed_without_reject(self):
+        from src.project.task.task_pipeline import _goals_close_allowed
+
+        assert _goals_close_allowed({'goals': '[{"text": "раз", "done": true}]'}) is True
+
+    def test_task_pipeline_close_blocked_after_qa_reject(self):
+        from src.project.task.task_pipeline import _goals_close_allowed
+
+        subtask = {'goals': '[{"text": "раз", "done": true}]',
+                   'metadata': '{"qa_reject": true}'}
+
+        assert _goals_close_allowed(subtask) is False
+
+    def test_task_pipeline_close_blocked_by_open_goal_too(self):
+        """Пометки нет, но и закрывать нечего: обе причины работают порознь."""
+        from src.project.task.task_pipeline import _goals_close_allowed
+
+        assert _goals_close_allowed({'goals': '[{"text": "раз", "done": false}]'}) is False
+
+    def test_task_pipeline_close_survives_foreign_metadata(self):
+        """Мешок общий: чужие ключи, NULL и битый JSON пропуск не запрещают."""
+        from src.project.task.task_pipeline import _goals_close_allowed
+
+        goals = '[{"text": "раз", "done": true}]'
+
+        assert _goals_close_allowed({'goals': goals, 'metadata': '{"branch": "feature/x"}'}) is True
+        assert _goals_close_allowed({'goals': goals, 'metadata': None}) is True
+        assert _goals_close_allowed({'goals': goals, 'metadata': 'не json'}) is True
+
+
 class TestStaleTracesClosed:
     """
     Брошенные трассы закрываются тиком, а не только рестартом сервера.

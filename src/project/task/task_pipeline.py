@@ -104,6 +104,7 @@ from src.project.task.task_metadata import (
     TASK_METADATA_KEY_BRANCH,
     TASK_METADATA_KEY_CONTEXT,
     TASK_METADATA_KEY_MR,
+    TASK_METADATA_KEY_QA_REJECT,
     task_metadata_parse,
     task_metadata_update,
 )
@@ -763,10 +764,9 @@ async def _run_developer(action: dict) -> str | None:
     #
     # И QA звать незачем: закрывал цели он же, второй заход по той же фактуре даст
     # тот же ответ. Подзадача закрывается сразу.
-    if _goals_all_done(subtask):
-        await task_state_subtask_set(subtask['id'], 'done', last_error='',
-                                     attempt_count=int(subtask['pipeline_attempt_count']))
-        await _subtask_report(subtask, 'все цели закрыты QA — круг не нужен, подзадача готова')
+    if _goals_close_allowed(subtask):
+        await _subtask_done(subtask, 'все цели закрыты QA — круг не нужен, подзадача готова',
+                            attempt_count=int(subtask['pipeline_attempt_count']))
         logger_info(f"[task] subtask#{subtask['id']}: все цели закрыты, круг пропущен -> done")
         return f"subtask#{subtask['id']} developer -> done (все цели закрыты)"
 
@@ -943,10 +943,9 @@ async def _run_qa(action: dict) -> str | None:
     # по той же фактуре даст тот же ответ, поэтому подзадача закрывается сразу.
     # Та же проверка стоит и на входе разработчика: до QA такая строка вообще не
     # доходит, а здесь она остаётся для тех, кто попал в очередь раньше правки.
-    if _goals_all_done(subtask):
-        await task_state_subtask_set(subtask['id'], 'done', last_error='',
-                                     attempt_count=int(subtask['pipeline_attempt_count']))
-        await _subtask_report(subtask, 'все цели закрыты QA — проверять нечего, подзадача готова')
+    if _goals_close_allowed(subtask):
+        await _subtask_done(subtask, 'все цели закрыты QA — проверять нечего, подзадача готова',
+                            attempt_count=int(subtask['pipeline_attempt_count']))
         logger_info(f"[task] subtask#{subtask['id']}: все цели закрыты, круг QA пропущен -> done")
         return f"subtask#{subtask['id']} qa -> done (все цели закрыты)"
 
@@ -1021,7 +1020,6 @@ async def _run_qa(action: dict) -> str | None:
                    llm_name=str(action.get('llm') or ''))
 
     if result.get('ok'):
-        await task_state_subtask_set(subtask['id'], 'done', last_error='', attempt_count=attempt_no)
         # Цели подзадачи здесь не трогаем: галочки уже проставил сам QA в ходе
         # прогона — по одной, каждую своим ответом (`src/tool/project/task_goal.py`).
         # Закрыть их отсюда значило бы отметить проверенным и то, что он не подтвердил.
@@ -1034,18 +1032,20 @@ async def _run_qa(action: dict) -> str | None:
         # проверена и принята, а не сошедшиеся ветки — это разговор с человеком, и он
         # уже записан в отчёт. Иначе принятая подзадача возвращалась бы в работу из-за
         # чужого кода.
-        push = await task_branch_push(work_dir, int(subtask['id']),
-                                      int(subtask['parent_id'] or 0),
-                                      role=TASK_QA_ROLE, session=shell_session)
-        if not push.get('ok'):
-            await _subtask_report(
-                subtask, f"проверку QA прошла, но в ветку задачи не влилась: "
-                         f"{push.get('error') or 'слияние не состоялось'}", ok=None)
-        await _subtask_report(subtask, 'проверку QA прошла, подзадача готова')
+        await _subtask_done(subtask, 'проверку QA прошла, подзадача готова',
+                            role=TASK_QA_ROLE, session=shell_session,
+                            attempt_count=attempt_no)
         return f"subtask#{subtask['id']} qa -> done"
 
     if await _question_hold(subtask, result, 'qa', attempt_no):
         return f"subtask#{subtask['id']} qa -> blocked (вопрос человеку)"
+
+    # Отказ помечаем в мешке: галочки на целях QA расставил сам, по ходу проверки, и
+    # без этой пометки строка с закрытыми целями закрывалась бы пропуском круга —
+    # вердикт «нет» ушёл бы в отчёт и ни на что не повлиял. Живьём #6441: QA закрыл
+    # единственную цель, отказал за разошедшуюся с кодом документацию, а через полторы
+    # минуты тик закрыл подзадачу как готовую, и с ней ушла в `done` вся задача #4996.
+    await task_metadata_update(subtask['id'], {TASK_METADATA_KEY_QA_REJECT: True})
 
     error = str(result.get('error') or 'проверки не прошли')
     max_attempts = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_ATTEMPT_MAX)
@@ -1447,6 +1447,36 @@ async def _retry_subtask(subtask: dict, step: str, state_retry: str, role: str, 
     return f"subtask#{subtask['id']} {step} -> retry {retry['count']}/{retry['max']}"
 
 
+async def _subtask_done(subtask: dict, note: str, role: str = '', session: str = '',
+                        attempt_count: int | None = None) -> None:
+    """
+    Закрыть принятую подзадачу и увезти её работу в ветку задачи.
+
+    Путей закрытия три — вердикт QA, «все цели уже закрыты» у разработчика и та же
+    проверка тиком, — и слияние обязано быть на каждом. Оно стояло только на первом, и
+    подзадача, закрытая по целям, молча не попадала в ветку задачи: #6441 прошла так, и
+    ветка `feature/task_4996` осталась без её работы, хотя задача закрылась целиком.
+
+    Неудачу слияния подзадаче в вину не ставим и `done` не отменяем: работа проверена и
+    принята, а не сошедшиеся ветки — разговор с человеком, и он уходит в отчёт. Иначе
+    принятая подзадача возвращалась бы в работу из-за чужого кода.
+    """
+    await task_state_subtask_set(subtask['id'], 'done', last_error='',
+                                 attempt_count=attempt_count)
+
+    work_dir = await task_role_project_work_dir(
+        (await task_state_task_get(int(subtask.get('parent_id') or 0)) or {}).get('project_id'))
+    push = await task_branch_push(work_dir, int(subtask['id']),
+                                  int(subtask.get('parent_id') or 0),
+                                  role=role, session=session)
+    if not push.get('ok'):
+        await _subtask_report(
+            subtask, f"{note}, но в ветку задачи не влилась: "
+                     f"{push.get('error') or 'слияние не состоялось'}", ok=None)
+
+    await _subtask_report(subtask, note)
+
+
 async def _subtask_report(subtask: dict, text: str, ok: bool | None = True, blocked: bool = False) -> None:
     """
     Отчёт шага Developer/QA пишем в родительскую задачу: своего поля отчёта у
@@ -1517,21 +1547,23 @@ async def _subtasks_goals_finish() -> int:
     бы их в работу. Идущий круг не трогаем: его итог придёт своим путём, а
     закрытую строку он уже не воскресит (`unless_done`).
 
+    Строку, которую QA завернул, пропуск не касается — решает `_goals_close_allowed`.
+    Ради этого в выборке и `metadata`: пометка отказа лежит там.
+
     Returns: сколько строк закрыли.
     """
     async with mysql_get_db_async() as db:
         await db.execute(
-            "SELECT id, parent_id, title, goals FROM project_task "
+            "SELECT id, parent_id, title, goals, metadata FROM project_task "
             " WHERE parent_id IS NOT NULL AND pipeline_locked_at IS NULL "
             "   AND pipeline_state IN ('planned', 'failed_qa', 'qa_pending')")
         rows = await db.fetchall()
 
     closed = 0
     for row in rows:
-        if not _goals_all_done(row):
+        if not _goals_close_allowed(row):
             continue
-        await task_state_subtask_set(row['id'], 'done', last_error='')
-        await _subtask_report(row, 'все цели закрыты QA — круг не нужен, подзадача готова')
+        await _subtask_done(row, 'все цели закрыты QA — круг не нужен, подзадача готова')
         logger_info(f"[task] subtask#{row['id']}: все цели закрыты, закрыта тиком")
         closed += 1
 
@@ -1640,6 +1672,31 @@ def _goals_all_done(subtask: dict) -> bool:
     goals = task_plan_goals_normalize(subtask.get('goals'))
 
     return bool(goals) and all(goal.get('done') for goal in goals)
+
+
+def _goals_close_allowed(subtask: dict) -> bool:
+    """
+    Подзадачу можно закрыть по закрытым целям, не тратя круг.
+
+    Закрытые цели — это состоявшаяся проверка: галочку ставит QA, разобрав
+    доказательство по каждой. Но вердикт QA шире целей. Он смотрит ещё и на то, не
+    сломалось ли рядом и сходится ли документация с кодом, — и вправе закрыть все цели
+    и всё равно ответить «нет». Такой отказ пропуск круга отменяет: работа не принята,
+    и закрывать её нечем, кроме следующего круга разработчика.
+
+    Живьём #6441. QA закрыл единственную цель, отказал за раздел документации, который
+    подзадача же и оставила описывать прежний экран, — и через полторы минуты тик
+    закрыл строку как готовую. Замечание осталось в отчёте, работа — несделанной, а
+    задача #4996 закрылась целиком, потому что это была её последняя открытая строка.
+
+    Отказ QA держится пометкой `qa_reject`: снять её может только приёмка, а принятая
+    строка уходит в `done` своим путём. Круг разработчика пометку не снимает — он
+    правит замечание, но принимает работу всё равно QA.
+    """
+    if not _goals_all_done(subtask):
+        return False
+
+    return not task_metadata_parse(subtask.get('metadata')).get(TASK_METADATA_KEY_QA_REJECT)
 
 
 async def _question_hold(subtask: dict, result: dict, role: str, attempt_no: int) -> bool:
