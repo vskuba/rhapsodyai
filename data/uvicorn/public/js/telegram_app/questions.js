@@ -558,14 +558,39 @@ function _reloadTasks() {
     Записать ответ в свой мешок, когда переспросить не у кого.
 
     Нужен только пути пачки без точки GET: сервер ответ принял, а состояние на клиенте
-    обновить всё равно чем-то. Правим ту же структуру, что держали, — `answer.text`
-    по ключу `note`: именно на него смотрит подсчёт неотвеченных (`left`) и галочка
-    на вкладке пачки.
+    обновить всё равно чем-то. Правим ту же структуру, что держали, и тем же видом,
+    каким её кладёт сервер (`task_question_batch_answer`): `text` — подписи вариантов
+    плюс вольный текст через `; `, рядом `keys` и `note`. Иначе клиентское состояние
+    разъехалось бы с серверным: поле уточнения собирается из `text` разбором, который
+    знает про подписи, и на ключах отдало бы человеку `yes, no` вместо его ответа, а
+    отметки вариантов пропали бы — правка ответа стала бы ответом заново.
     */
 function _markAnswered(data, index, form) {
     const batch = ((data || {}).questions || []).slice();
     const item = batch[index];
     if (!item) return data;
-    batch[index] = { ...item, answer: { ...item.answer, text: form.note || (form.answers || []).join(', ') } };
+
+    const keys = (form.answers || []).map(String);
+    const free = String(form.note || '').trim();
+    const labels = _labelsFor(item, keys);
+    const text = [...labels, free].filter(Boolean).join('; ');
+    // Подсчёт неотвеченных (`left`) и галочка на вкладке пачки смотрят в `answer.text`,
+    // поэтому он и заполняется в первую очередь.
+    batch[index] = { ...item, answer: { ...item.answer, text, keys, note: free } };
     return { ...data, questions: batch };
+}
+
+/**
+    Подписи выбранных вариантов — тем же разбором, что `_answer_labels` на сервере.
+
+    Неизвестный ключ пропускается: вопрос мог смениться, пока панель была открыта.
+    Только для локального состояния пачки — серверное решение клиент не переписывает.
+    */
+function _labelsFor(question, keys) {
+    if (!keys.length) return [];
+    const byKey = {};
+    ((question && question.options) || []).forEach(o => {
+        if (o && o.key !== undefined) byKey[String(o.key)] = String(o.label ?? '').trim();
+    });
+    return keys.map(k => byKey[k]).filter(Boolean);
 }

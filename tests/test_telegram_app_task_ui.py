@@ -177,6 +177,64 @@ class TestTaskFlags:
         assert body['patch'] == {'to_development': None}
 
 
+    def test_flag_survives_a_list_that_never_redrew(self, browser: Browser):
+        """Без перерисовки списка чекбокс всё равно остаётся кликабельным.
+
+        Разморозка висела на новом карточном разметчике: пока вкладка не нарисована
+        или её коллбек не дошёл, чекбокс замирал `disabled` до первой перерисовки,
+        которой могло и не быть. Здесь перезагрузка списка снята до клика — и второй
+        клик обязан состояться с обратным значением того же ключа.
+        """
+        meta = {'to_testing': False}
+        ui = _open_mini_app(browser, tasks=[{**TASK_PLAIN, 'metadata': dict(meta)}],
+                            metadata_handler=lambda patch: {**meta, **patch})
+
+        ui.evaluate('window._tg_reload_tasks = null')      # список не перерисует карточку
+        chip = '.task-flag[data-flag="flag_test"] input'
+        ui.locator(chip).click()
+        ui.wait_for_function("() => (window.__saved || []).length > 0")
+
+        assert ui.locator(chip).is_enabled(), 'чекбокс замёрз снятым до перерисовки'
+        ui.locator(chip).click()
+        ui.wait_for_function("() => (window.__saved || []).length > 1")
+
+        bodies = [json.loads(x['body'])['patch'] for x in ui.evaluate('window.__saved')]
+        # Первый ход: ключ стёрт (умолчание «включено»), обратный: выключенное хранится явным false
+        assert bodies == [{'to_testing': None}, {'to_testing': False}], \
+            'обратный ход должен вернуться к выключённому флажку, а не застыть на первом значении'
+
+    def test_plan_flag_title_promises_only_what_the_write_does(self, browser: Browser):
+        """Подпись чипа не обещает остановить прогон: точки остановки у мини-приложения нет.
+
+        `metadata` читает отбор менеджера (`task_metadata_plan_free_sql`), а не идущий
+        круг: обещание «планирование прекратится» было бы враньем ровно там, где человек
+        снял бы флажок, чтобы остановить работу. Админский выключатель фазы
+        (`task.html:3823`) шлёт второй запрос, закрытый правом `planning.update`.
+        """
+        ui = _open_mini_app(browser, tasks=[TASK_PLAIN])
+
+        title = ui.locator('.task-flag[data-flag="flag_plan"]').get_attribute('title')
+        assert 'прекрат' not in title.lower(), f'чип обещает остановку прогона: {title!r}'
+        assert 'останов' in title.lower(), f'из подписи не видно, что прогон не гасится: {title!r}'
+
+    def test_rejected_flag_is_reclickable_after_the_reload(self, browser: Browser):
+        """Отказ не запирает чип: подсветка есть, разморозка тоже.
+
+        Отказ красит чип и возвращает чекбокс в принятое сервером. Если бы разморозка
+        шла только по успешной ветке, человек получил бы красный флажок, которым больше
+        нельзя ничего сделать, — ровно до первой перерисовки списка.
+        """
+        ui = _open_mini_app(browser, tasks=[TASK_FLAGGED], metadata_status=500)
+        ui.evaluate('window._tg_reload_tasks = null')
+
+        ui.locator('.task-flag[data-flag="flag_test"] input').click()
+        ui.wait_for_function("() => (window.__saved || []).length > 0")
+
+        assert ui.locator('.task-flag[data-flag="flag_test"]').evaluate(
+            'el => el.classList.contains("task-flag-failed")'), 'отказ не подсветился'
+        assert ui.locator('.task-flag[data-flag="flag_test"] input').is_enabled()
+
+
 class TestTaskQuestionPanel:
     """Панель вопросов: открывается на карточке, показывает вопрос, принимает ответ."""
 
@@ -350,6 +408,92 @@ class TestTaskQuestionPanel:
         ui.click('#askSendBtn')
         ui.wait_for_function("() => (window.__answered || []).length > 1")
         assert json.loads(ui.evaluate('window.__answered')[1]['body'])['index'] == 1
+
+    def test_answered_batch_question_stays_editable_without_the_get_endpoint(self, browser: Browser):
+        """Локальное состояние пачки — тем же видом, что кладёт сервер.
+
+        Без точки GET панель обновляет свой мешок сама. Если при этом забыть `keys`
+        и собрать `text` из ключей, возвращаться к отвеченному вопросу пришлось бы
+        «вслепую»: вариант не отмечен, а в поле — `yes` вместо человеческой подписи.
+        Правка ответа не должна превращаться в ответ заново.
+        """
+        batch = {**TASK_PLAIN, 'metadata': {'questions': [
+            {'text': 'Первый вопрос?', 'role': 'manager',
+             'options': [{'key': 'yes', 'label': 'Да'}]},
+            {'text': 'Второй вопрос?', 'role': 'manager',
+             'options': [{'key': 'no', 'label': 'Нет'}]},
+        ]}}
+        ui = _open_mini_app(browser, tasks=[batch], answer={'done': False, 'left': 1})
+
+        ui.locator('.task-card').first.click()
+        ui.click('.task-question-options input[value="yes"]')
+        ui.fill('#askNote', 'только вторую цель')
+        ui.click('#askSendBtn')
+        ui.wait_for_selector('.task-question-text:text("Второй вопрос?")')
+
+        # Вернулись к первому — ответ на месте: подпись варианта в поле и сам вариант отмечен.
+        # Отметка ставится постом (панель перерисована строкой), поэтому ждём, а не считываем сразу.
+        ui.locator('.task-question-batch-tab').nth(0).click()
+        ui.wait_for_selector('.task-question-text:text("Первый вопрос?")')
+        ui.wait_for_function("""() => { const i = document.querySelector('.task-question-options input[value="yes"]');
+                                          return !!i && i.checked; }""")
+        assert ui.input_value('#askNote') == 'только вторую цель'
+        # Галочка отвеченного вопроса — она же подсчёт «без ответа: 1 из 2»
+        assert ui.locator('.task-question-batch-tab.done').count() == 1
+        assert 'Без ответа: 1 из 2' in ui.locator('.task-question-hint').inner_text()
+
+    def test_answered_batch_question_reopens_with_its_own_text(self, browser: Browser):
+        """Черновик пачки возвращается в поле: сервер складывает ответ в `text`, а не в `note`.
+
+        `task_question_batch_answer` пишет в черновик и вольный текст (`note`), и
+        собранный из подписей вариантов (`text` — `task_question.py:226`). У ответа
+        кликом `note` пустой, поэтому поле, собранное только по нему, открывалось
+        пустым там, где человек уже ответил, — следующий ответ затирал бы набранное.
+        Ведущие подписи снимаются по равенству: «Да» не должно съедать «Да, но позже».
+        """
+        answered = {**TASK_PLAIN, 'metadata': {'questions': [
+            {'text': 'Первый вопрос?', 'role': 'manager',
+             'options': [{'key': 'yes', 'label': 'Да'}, {'key': 'no', 'label': 'Нет'}],
+             'answer': {'text': 'Да; кроме третьей цели', 'keys': ['yes'], 'note': ''}},
+            {'text': 'Второй вопрос?', 'role': 'manager',
+             'options': [{'key': 'no', 'label': 'Нет'}]},
+        ]}}
+        ui = _open_mini_app(browser, tasks=[answered])
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askNote')
+
+        assert ui.input_value('#askNote') == 'кроме третьей цели', \
+            'поле уточнения открылось пустым — набранное человеком потеряно'
+        # Отметка варианта берётся из ключей ответа: правка ответа — не ответ заново
+        assert ui.locator('.task-question-options input[value="yes"]').is_checked()
+        assert not ui.locator('.task-question-options input[value="no"]').is_checked()
+
+        # Второй вопрос без ответа — поле пустое, подсказка своя
+        ui.locator('.task-question-batch-tab').nth(1).click()
+        ui.wait_for_selector('.task-question-text:text("Второй вопрос?")')
+        assert ui.input_value('#askNote') == ''
+
+    def test_free_answer_without_options_is_not_eaten_by_its_own_label(self, browser: Browser):
+        """Свободный текст не режется по подстроке: ответ «Да, но позже» остаётся целиком.
+
+        Разбор поля ведётся сравнением с подписями отмеченных вариантов. Сверка на
+        вхождение стёрла бы половину собственного ответа — и человек дописывал бы то,
+        что уже написал.
+        """
+        free = {**TASK_PLAIN, 'metadata': {'questions': [
+            {'text': 'Объём?', 'role': 'manager',
+             'options': [{'key': 'yes', 'label': 'Да'}, {'key': 'later', 'label': 'Да, но позже'}],
+             # Сервер склеил подписи и вольный текст через '; ' — тут ровно тот случай,
+             # где часть ответа совпадает с подписью другого варианта.
+             'answer': {'text': 'Да, но позже; если QA успеет', 'keys': ['later']}},
+        ]}}
+        ui = _open_mini_app(browser, tasks=[free])
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askNote')
+
+        assert ui.input_value('#askNote') == 'если QA успеет'
 
     def test_close_button_closes_panel(self, browser: Browser):
         """«Закрыть» — обработчик на window; без него кнопка жала бы ReferenceError."""
