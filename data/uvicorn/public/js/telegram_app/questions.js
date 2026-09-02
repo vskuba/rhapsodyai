@@ -469,20 +469,6 @@ function _goalChoices() {
     return !!_barEl && _barEl.querySelectorAll('[name="askGoal"]:not(:disabled)').length > 0;
 }
 
-/**
-    Тело запроса для вопроса пачки: варианты, текст и номер вопроса — без целей.
-
-    Отметки целей сюда не идут намеренно. Ответ с `index` уходит в
-    `task_question_batch_answer` (`project_task_question.py:139-141`), а он берёт
-    только `answers` и `note`: пачку задаёт менеджер про замысел, охват подзадачи
-    ею не меняют, и `_scope_apply` на этом пути не вызывается. Слать номера целей
-    значило бы отправить поле, которое сервер молча выбросит, — а по коду выходило
-    бы, что дробление заказано и исполнено.
-    */
-function _batchBody(form, index) {
-    return { answers: form.answers, note: form.note, index };
-}
-
 // Сохранить черновик текущего вопроса пачки
 async function askDraftSave() {
     const batch = (_askData || {}).questions || [];
@@ -613,4 +599,18 @@ function _labelsFor(question, keys) {
         if (o && o.key !== undefined) byKey[String(o.key)] = String(o.label ?? '').trim();
     });
     return keys.map(k => byKey[k]).filter(Boolean);
+}
+
+/**
+    Тело запроса для вопроса пачки: варианты, текст и номер вопроса — без целей.
+
+    Отметки целей сюда не идут намеренно. Ответ с `index` уходит в
+    `task_question_batch_answer` (`project_task_question.py:139-141`), а он берёт
+    только `answers` и `note`: пачку задаёт менеджер про замысел, охват подзадачи
+    ею не меняют, и `_scope_apply` на этом пути не вызывается. Слать номера целей
+    значило бы отправить поле, которое сервер молча выбросит, — а по коду выходило
+    бы, что дробление заказано и исполнено.
+    */
+function _batchBody(form, index) {
+    return { answers: form.answers, note: form.note, index };
 }

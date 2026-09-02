@@ -297,10 +297,20 @@ async def _metadata(task_id: int, full: bool = False):
 
 
 async def _drop(task_id: int | None) -> None:
+    """Снести строки теста — обе, вместе с корневой.
+
+    Корневую убираем сами, а не оставляем сессионному сметателю сюиты
+    (`cleanup_test_tasks`, `conftest.py:151`): она заводится в `pipeline_state`
+    `planned` без плана и без проекта, а такую строку живой Менеджер забирает
+    всерьёз — база на стенде одна. Сметатель остаётся страховкой на прерванный
+    прогон, а не единственной уборкой. Подзадачи уходят каскадом (`fk_pt_parent`),
+    поэтому порядок удаления значения не имеет.
+    """
     from mysql_.mysql_ import mysql_get_db_async
 
     async with mysql_get_db_async() as db:
-        await db.execute("DELETE FROM project_task WHERE title = %s", (TEST_TITLE,))
+        await db.execute("DELETE FROM project_task WHERE title IN (%s, %s)",
+                         (TEST_TITLE, TEST_TITLE_ROOT))
         await db.connection.commit()
 
 
