@@ -32,7 +32,7 @@
 | `src/uvicorn/routers/telegram_app/telegram_app_claude.py` | Claude: ask, messages, sessions/active, respond |
 | `src/uvicorn/routers/telegram_app/telegram_app_claude_session.py` | Session registry: register, heartbeat, inbox, finalize, delete |
 | `src/uvicorn/routers/telegram_app/telegram_app_plan.py` | Plans: CRUD + AI-редактирование |
-| `src/uvicorn/routers/telegram_app/telegram_app_task.py` | Tasks: GET /telegram-app/tasks (список задач со страницей /admin/task) |
+| `src/uvicorn/routers/telegram_app/telegram_app_task.py` | Tasks: GET /telegram-app/tasks (список как на /admin/task), POST /task/{id}/metadata (фазовые флажки), POST /task/{id}/pipeline/approve (утвердить план) |
 | `src/uvicorn/routers/telegram_app/telegram_app_common.py` | Shared: `_require_telegram_owner`, `_require_claude_secret`, constants |
 | `src/uvicorn/routers/event/event.py` | Events: GET /events, DELETE /events, POST /event-log |
 

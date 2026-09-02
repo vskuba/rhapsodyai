@@ -1,9 +1,23 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_depend import TASK_DEPEND_DONE_STATES, task_depend_of
-from src.project.task.task_metadata import task_metadata_row_apply
+from src.project.task.task_metadata import (
+    TASK_METADATA_KEY_DEV,
+    TASK_METADATA_KEY_PLAN,
+    TASK_METADATA_KEY_TEST,
+    task_metadata_row_apply,
+    task_metadata_update,
+)
+from src.project.task.task_report import task_report_write
+from src.project.task.task_state import (
+    task_state_dev_to_testing,
+    task_state_plan_to_development,
+    task_state_type_to_dev,
+)
+from src.project.task.task_stop import task_stop_clear
+from src.uvicorn.routers.project.project_task_pipeline import _pipeline_state_set
 from src.uvicorn.routers.telegram_app.telegram_app_common import _require_telegram_owner
 
 router = APIRouter()
@@ -29,6 +43,74 @@ async def telegram_app_task_tasks_list(request: Request):
     await _telegram_app_task_depend_attach(tasks)
 
     return {'result': {'tasks': tasks}}
+
+
+@router.post('/telegram-app/task/{task_id}/metadata')
+async def telegram_app_task_metadata_patch(task_id: int, data: dict, request: Request):
+    """Поставить фазовый флажок задачи: «в планирование», «в разработку», «в тестирование».
+
+    Точечно поправить `metadata`, как на /admin/task (`project_task_metadata_patch`):
+    свои ключи перезаписать, чужие оставить. Мини-приложение шлёт только флажки фаз
+    (`to_planning`, `to_development`, `to_testing`) — то, что рисует в карточке, и
+    чужие ключи не трогает. Повторяет за админкой две немедленные пометки: «в
+    разработку» и «в тестирование» переводят фазу, если задача уже достигла нужного
+    рубежа (план написан, разработка закончена), и снимают остановку. Отвечает только
+    владельцу по `telegram_owner_id`.
+    """
+    _require_telegram_owner(request)
+
+    patch = data.get('patch')
+    if not isinstance(patch, dict) or not patch:
+        raise HTTPException(status_code=400, detail='patch must be a non-empty object')
+
+    allowed = (TASK_METADATA_KEY_PLAN, TASK_METADATA_KEY_DEV, TASK_METADATA_KEY_TEST)
+    if any(k not in allowed for k in patch):
+        raise HTTPException(status_code=400, detail='only phase flags are allowed')
+
+    owner = str(request.session.get('telegram_owner_id'))
+    if patch.get(TASK_METADATA_KEY_DEV) is True \
+            or (TASK_METADATA_KEY_TEST in patch and patch[TASK_METADATA_KEY_TEST] is not False):
+        await task_stop_clear(task_id, owner)
+
+    await task_metadata_update(task_id, patch)
+    if patch.get(TASK_METADATA_KEY_DEV) is True and await task_state_plan_to_development(task_id):
+        await task_report_write(
+            task_id,
+            f'{owner} пометил задачу «в разработку»: план утверждён, '
+            'тип сменён на «Разработка»')
+    if TASK_METADATA_KEY_TEST in patch and patch[TASK_METADATA_KEY_TEST] is not False \
+            and await task_state_dev_to_testing(task_id):
+        await task_report_write(
+            task_id,
+            f'{owner} пометил задачу «в тестирование»: разработка закончена, '
+            'тип сменён на «Тестирование»')
+
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT * FROM project_task WHERE id = %s", (task_id,))
+        task = await db.fetchone()
+
+    if not task:
+        raise HTTPException(status_code=404, detail='task not found')
+
+    return {'result': {'task': task_metadata_row_apply(task)}}
+
+
+@router.post('/telegram-app/task/{task_id}/pipeline/approve')
+async def telegram_app_task_pipeline_approve(task_id: int, request: Request):
+    """Утвердить план из мини-приложения: состояние `plan_approval` -> `approved`, тип `plan` -> `dev`.
+
+    Тот же переход, что кнопка «Утвердить» на /admin/task
+    (`project_task_pipeline_approve`): сначала перевод состояния со сверкой гонки,
+    тип — только удавшемуся нажатию. Отвечает только владельцу по `telegram_owner_id`.
+    """
+    _require_telegram_owner(request)
+
+    result = await _pipeline_state_set(
+        task_id, expected='plan_approval', new_state='approved',
+        report='План утверждён — ждёт разложения на подзадачи')
+    if await task_state_type_to_dev(task_id):
+        await task_report_write(task_id, 'Планирование закончено — тип сменён на «Разработка»')
+    return {'result': result}
 
 
 async def _telegram_app_task_depend_attach(tasks: list) -> None:
