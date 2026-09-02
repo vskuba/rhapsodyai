@@ -33,6 +33,9 @@ pytest.importorskip('playwright', reason='проверка нарисованн�
 
 from playwright.sync_api import Browser, Page, sync_playwright  # noqa: E402
 
+
+pytestmark = pytest.mark.telegram
+
 PUBLIC_DIR = os.path.join('data', 'uvicorn', 'public')
 MODULES = ('tasks.js', 'questions.js', 'flags.js')
 TASK_FLAG_KEYS = ('to_planning', 'to_development', 'to_testing')
@@ -53,6 +56,7 @@ PAGE_HTML = """<!doctype html>
 </div></div></div></div></div>
 <script type="module">
 import { initTasks } from '/static/js/telegram_app/tasks.js';
+
 initTasks();
 </script>
 </body>

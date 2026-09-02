@@ -25,6 +25,9 @@ pytest.importorskip('playwright', reason='проверка нарисованн�
 
 from playwright.sync_api import Browser, Page, sync_playwright  # noqa: E402
 
+
+pytestmark = pytest.mark.telegram
+
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 ADMIN_ACCESS_TOKEN = "a0000000-1111-4444-bbbb-000000000001"
 

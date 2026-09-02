@@ -24,6 +24,9 @@ import json
 
 import pytest
 
+
+pytestmark = pytest.mark.telegram
+
 TEST_TITLE = '__pytest_miniapp_contract'
 # Родитель подзадачи: на него вешается FK `parent_id`, поэтому заводим настоящей
 # строкой, а не номером — чужой id в тестовой базе то существует, то нет.
@@ -319,6 +322,7 @@ async def _drop(task_id: int | None) -> None:
     поэтому порядок удаления значения не имеет.
     """
     from mysql_.mysql_ import mysql_get_db_async
+
 
     async with mysql_get_db_async() as db:
         await db.execute("DELETE FROM project_task WHERE title IN (%s, %s)",

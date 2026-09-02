@@ -23,6 +23,9 @@ pytest.importorskip('playwright', reason='проверка нарисованн�
 
 from playwright.sync_api import Browser, Page, sync_playwright  # noqa: E402
 
+
+pytestmark = pytest.mark.telegram
+
 TEMPLATE = os.path.join('data', 'uvicorn', 'template', 'telegram_app.html')
 PUBLIC_DIR = os.path.join('data', 'uvicorn', 'public')
 MODULES = ('tasks.js', 'questions.js', 'flags.js')
