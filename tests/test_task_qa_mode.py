@@ -123,9 +123,13 @@ class TestQaModeNormalizationAgreesBothBanks:
               [0], [True], {}, {'mode': 'full'}, {'qa_mode': 'full'}]
 
     @staticmethod
-    def _front_rows(rows: list) -> list:
+    def _front_rows(rows: list, phase: str = 'development') -> list:
         """
         Отдать разметку свитчера для готовых строк задачи — так, как её делает браузер.
+
+        `phase` — открытая вкладка страницы: функция читает `_phaseFilter`, чтобы не
+        рисовать кнопку у багфиксера. Умолчание — вкладка разработчика, любая, где
+        свитчер уместен; проверку самого скрытия держит `test_bugs_tab_shows_no_switcher`.
         """
         import json
         import re
@@ -149,7 +153,10 @@ class TestQaModeNormalizationAgreesBothBanks:
             assert found, (f'{name} в шаблоне не найдена: страницу переписали, и тест больше '
                            f'не сторожит норму — править его вместе с шаблоном')
             parts.append(found.group(0))
+        # `_phaseFilter` — состояние страницы, а не функции: объявляем его сами, иначе
+        # вырванная из шаблона функция падает в node на неизвестной переменной.
         script = ('let buf = "";\n'
+                  f'let _phaseFilter = {json.dumps(phase)};\n'
                   'process.stdin.on("data", c => buf += c);\n'
                   'process.stdin.on("end", () => {\n'
                   + '\n'.join(parts) + '\n'
@@ -243,6 +250,24 @@ class TestQaModeNormalizationAgreesBothBanks:
         ])
         assert 'qa-mode-switcher' in markup[0], 'у родителя свитчера нет — проверять нечего'
         assert markup[1] == '', f'подзадача получила свитчер: {markup[1]!r}'
+
+    def test_bugs_tab_shows_no_switcher(self):
+        """
+        На вкладке багфиксера свитчера нет: круга QA у багов не бывает.
+
+        Баг — корневая строка без подзадач, он идёт `bugfixing -> done | failed`, а
+        проверку захватывают только подзадачи (`task_claim_subtask_testable` требует
+        `parent_id IS NOT NULL`). Кнопка там переключалась и писала ключ в мешок, ни на
+        что не влияя: глубину проверки читает один QA-агент, которого баг не зовёт.
+
+        Строка взята одна и та же на обе вкладки — разница только в открытой вкладке,
+        иначе тест сторожил бы не то.
+        """
+        row = [{'id': 5, 'parent_id': None, 'metadata': {'qa_mode': 'full'}}]
+
+        assert 'qa-mode-switcher' in self._front_rows(row, phase='testing')[0], \
+            'у тестировщика свитчер пропал — скрытие задело чужую вкладку'
+        assert self._front_rows(row, phase='bugs')[0] == '', 'на вкладке багов свитчер остался'
 
     def test_switcher_sits_next_to_the_log_button(self):
         """
