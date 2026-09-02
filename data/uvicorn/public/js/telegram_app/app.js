@@ -1,11 +1,11 @@
 import { postData } from '/static/js/api.js';
 import { state } from './state.js';
-import { createInputBar, createMicOnlyBar } from './input_bar.js';
+import { createInputBar } from './input_bar.js';
 import { initSidebar, setSidebarPageMode, updateInputBarsVisibility } from './sidebar.js';
 import { loadEvents, shouldReloadEvents } from './events.js';
 import { initChat } from './chat.js';
 import { initClaude, loadClaudeSessionList, updateClaudePolling, updateClaudeStatusPolling, closeClaudeSessionView } from './claude.js';
-import { initPlans, loadPlans, closePlanDetail } from './plans.js';
+import { initTasks, loadTasks } from './tasks.js';
 
 const tg = window.Telegram?.WebApp;
 
@@ -28,11 +28,13 @@ async function init() {
 
     const claudeBar     = createInputBar({ id: 'claudeInputBar',  progressId: 'claudeProgress',  placeholder: 'Сообщение для Claude Code...', hasQuickCmd: true });
     const chatBar       = createInputBar({ id: 'chatInputBar',    progressId: 'chatProgress',    placeholder: 'Сообщение...' });
-    const planBar       = createInputBar({ id: 'planInputBar',    progressId: 'planProgress',    placeholder: 'Инструкция по правке...' });
-    const planCreateBar = createMicOnlyBar({ id: 'planCreateBar', progressId: 'planCreateProgress' });
+
+    // Поле для задач не заводим: ответ на вопрос пишет панель вопросов (`questions.js`),
+    // она же рисует варианты и поле уточнения. Плановое поле с голосовым созданием
+    // плана уехало вместе с вкладкой Планов.
 
     // progress вставляется перед bar (анимация над полем ввода)
-    for (const { progress, bar } of [claudeBar, chatBar, planBar, planCreateBar]) {
+    for (const { progress, bar } of [claudeBar, chatBar]) {
         appWrapper.appendChild(progress);
         appWrapper.appendChild(bar);
     }
@@ -42,14 +44,12 @@ async function init() {
     const inputBars = {
         claude:     { bar: claudeBar.bar,     progress: claudeBar.progress },
         chat:       { bar: chatBar.bar,       progress: chatBar.progress },
-        plan:       { bar: planBar.bar,       progress: planBar.progress },
-        planCreate: { bar: planCreateBar.bar, progress: planCreateBar.progress },
     };
 
     initSidebar({
         inputBars,
         onTabChange(tab) {
-            if (tab === 'plans') loadPlans();
+            if (tab === 'tasks') loadTasks();
             if (tab === 'claude' && !state.claude.sessionUuid) loadClaudeSessionList();
             updateClaudePolling();
             updateClaudeStatusPolling();
@@ -59,7 +59,10 @@ async function init() {
 
     initChat(chatBar);
     initClaude(claudeBar);
-    initPlans({ ...planBar, createBar: planCreateBar });
+    // Список задач заводится здесь, а не в шаблоне: импорты модулей вкладки идут через
+    // эту точку, и проверка «модуль загружен страницей» (`test_every_module_actually_loads`)
+    // считает запросы именно отсюда.
+    initTasks();
     initHomePing();
 
     await loadEvents();
@@ -69,7 +72,6 @@ async function init() {
 }
 
 function goHome() {
-    if (state.currentPlanId !== null) closePlanDetail();
     if (state.claude.sessionUuid !== null) closeClaudeSessionView();
 
     document.querySelectorAll('.icon-btn[data-tab]').forEach(b => b.classList.remove('active'));

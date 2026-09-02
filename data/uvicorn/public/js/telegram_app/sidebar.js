@@ -1,7 +1,9 @@
 import { state } from './state.js';
 import { loadConfig } from './config.js';
 
-const PAGE_TITLES = { events: 'События', claude: 'Claude', chat: 'Чат', plans: 'Планы' };
+// Заголовок вкладки берётся отсюда. `plans` убран: иконка Планов уступила место задачам,
+// а вкладка Планов сошла с экрана вместе с ней — заголовок для невидимой вкладки врёт.
+const PAGE_TITLES = { events: 'События', claude: 'Claude', chat: 'Чат', tasks: 'Задачи' };
 
 const tg = window.Telegram?.WebApp;
 
@@ -67,13 +69,8 @@ export function setSidebarPageMode(isInPage) {
         isClaudeOpen ? state.claude.sessionLabel : (PAGE_TITLES[state.currentTab] || '');
 }
 
-export function setSidebarPlanMode(isPlanOpen) {
-    document.getElementById('sidebarPageIcons').classList.toggle('active-group', !isPlanOpen);
-    document.getElementById('sidebarPlanIcons').classList.toggle('active-group', isPlanOpen);
-}
-
 export function updateInputBarsVisibility() {
-    const { chat, claude, plan, planCreate } = _inputBars;
+    const { chat, claude } = _inputBars;
     const tab = state.currentTab;
 
     const isChatTab = tab === 'chat';
@@ -84,11 +81,6 @@ export function updateInputBarsVisibility() {
     claude.bar.classList.toggle('chat-visible', isClaudeOpen);
     claude.progress.classList.toggle('chat-visible', isClaudeOpen);
 
-    const isPlanDetail = tab === 'plans' && state.currentPlanId !== null;
-    plan.bar.classList.toggle('chat-visible', isPlanDetail);
-    plan.progress.classList.toggle('chat-visible', isPlanDetail);
-
-    const isPlansList = tab === 'plans' && state.currentPlanId === null;
-    planCreate.bar.classList.toggle('chat-visible', isPlansList);
-    planCreate.progress.classList.toggle('chat-visible', isPlansList);
+    // Плановых баров здесь больше нет: вместе с вкладкой ушли и поля `plan`/`planCreate`,
+    // а ответ на вопрос задачи рисует панель вопросов (`questions.js`) своим слоем.
 }
