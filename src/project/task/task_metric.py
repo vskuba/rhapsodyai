@@ -359,6 +359,10 @@ async def task_metric_totals(parent_id=None) -> dict:
     """
     Итог одной строкой: сколько замеров, времени и токенов накоплено.
 
+    Токенов две суммы, и они несъёмно разные: прочитанное (`tokens_prompt`) на
+    порядок больше сгенерированного (`tokens_output`) — ход агента пересылает
+    историю целиком. Одной цифрой их не показать, не соврав ни в том, ни в другом.
+
     Скорость усредняем по ненулевым (`NULLIF`): ноль означает «счётчики модели
     не читались», и в среднее он входить не должен — иначе каждый сбой замера
     занижал бы скорость модели.
@@ -369,7 +373,8 @@ async def task_metric_totals(parent_id=None) -> dict:
         await db.execute(
             "SELECT COUNT(*) AS runs, "
             "       COALESCE(SUM(duration_ms), 0) AS ms_total, "
-            "       COALESCE(SUM(tokens_output), 0) AS tokens_total, "
+            "       COALESCE(SUM(tokens_prompt), 0) AS tokens_prompt_total, "
+            "       COALESCE(SUM(tokens_output), 0) AS tokens_output_total, "
             "       COALESCE(SUM(lines_changed), 0) AS lines_changed_total, "
             "       ROUND(AVG(NULLIF(tokens_per_sec, 0)), 1) AS speed_avg, "
             "       ROUND(AVG(NULLIF(context_lines, 0))) AS lines_avg "
