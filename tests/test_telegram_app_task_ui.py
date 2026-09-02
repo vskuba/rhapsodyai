@@ -409,6 +409,63 @@ class TestTaskQuestionPanel:
         ui.wait_for_function("() => (window.__answered || []).length > 1")
         assert json.loads(ui.evaluate('window.__answered')[1]['body'])['index'] == 1
 
+    def test_batch_answer_carries_no_goal_indexes(self, browser: Browser):
+        """Ответ пачки уходит без отметок целей — сервер их на этом пути не берёт.
+
+        `task_question_batch_answer` (`project_task_question.py:139-141`) читает
+        только `answers` и `note`: пачку задаёт менеджер про замысел, охват подзадачи
+        ею не меняют, и `_scope_apply` здесь не зовётся. Отправить номера целей
+        значило бы записать заказ на дробление, которого не будет: по телу запроса
+        выходит, что цели указаны, а по колонке — что их никто не трогал.
+        """
+        batch = {**TASK_PLAIN, 'goals': ['Первая цель', 'Вторая цель'],
+                 'metadata': {'questions': [
+                     {'text': 'Раздробить замысел?', 'role': 'manager',
+                      'options': [{'key': 'goals_split', 'label': 'Раздробить'}]},
+                     {'text': 'Второй вопрос?', 'role': 'manager',
+                      'options': [{'key': 'no', 'label': 'Нет'}]},
+                 ]}}
+        ui = _open_mini_app(browser, tasks=[batch], answer={'done': False, 'left': 1})
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askSendBtn')
+        ui.click('.task-question-options input[value="goals_split"]')
+        ui.wait_for_selector('#askGoals input[name="askGoal"]', state='visible')
+        ui.locator('#askGoals input[name="askGoal"]').nth(1).check()
+        ui.click('#askSendBtn')
+
+        ui.wait_for_function("() => (window.__answered || []).length > 0")
+        body = json.loads(ui.evaluate('window.__answered')[0]['body'])
+        assert body['index'] == 0
+        assert 'goal_indexes' not in body, 'пачка отправила отметки целей, которые сервер выбросит'
+
+    def test_single_answer_reads_the_same_form_as_the_batch(self, browser: Browser):
+        """Обе отправки собирают форму одним разбором — `askFormRead`.
+
+        Форма читалась дважды: одиночный путь ходил в DOM сам. Пара таких сборок
+        расходится молча, и цель, отмеченную на экране, теряет тот путь, который
+        забыли поправить. Здесь проверяется единственный разбор: он же приносит
+        вариант, текст и отметку цели.
+        """
+        with_goals = {**TASK_FLAGGED, 'metadata': {**TASK_FLAGGED['metadata'], 'question': {
+            'text': 'Раздробить подзадачу?', 'role': 'manager',
+            'options': [{'key': 'goals_split', 'label': 'Раздробить'}],
+        }}, 'goals': ['Первая цель', 'Вторая цель']}
+        ui = _open_mini_app(browser, tasks=[with_goals])
+
+        ui.locator('.task-card').first.click()
+        ui.wait_for_selector('#askSendBtn')
+        ui.click('.task-question-options input[value="goals_split"]')
+        ui.wait_for_selector('#askGoals input[name="askGoal"]', state='visible')
+        ui.locator('#askGoals input[name="askGoal"]').first.check()
+        ui.fill('#askNote', 'Первую — отдельной подзадачей')
+        ui.click('#askSendBtn')
+
+        ui.wait_for_function("() => (window.__answered || []).length > 0")
+        body = json.loads(ui.evaluate('window.__answered')[0]['body'])
+        assert body == {'answers': ['goals_split'], 'note': 'Первую — отдельной подзадачей',
+                        'goal_indexes': [0]}
+
     def test_answered_batch_question_stays_editable_without_the_get_endpoint(self, browser: Browser):
         """Локальное состояние пачки — тем же видом, что кладёт сервер.
 
