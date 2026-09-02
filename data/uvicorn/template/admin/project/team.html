@@ -1055,6 +1055,20 @@
     // и при перезапуске: renderProjects пересобирает карточки целиком.
     let dshBusy = false;
 
+    // Сессия админки живёт час (`max_age=3600`): страница, открытая дольше, начинает
+    // получать 401 на каждый запрос, а на экране остаётся последний удачный снимок —
+    // кнопки выглядят живыми, команды молча гибнут на авторизации, и это выглядит
+    // как заевший выключатель. Поэтому на первом же 401 страница сама идёт за свежей
+    // сессией: маршрут админки просроченную не пустит, покажется экран входа.
+    async function teamFetch(...args) {
+        const response = await fetch(...args);
+        if (response.status === 401) {
+            location.reload();
+            throw new Error('Сессия истекла — страница перезагружается');
+        }
+        return response;
+    }
+
     async function loadTeamProjects(showSpinner = false) {
         if (restartBusy || dshBusy || timeoutOpen.size) return;
         // Открытый список селекта из JS не виден, но фокус на нём — да: пока
@@ -1073,7 +1087,7 @@
             // ноутбуке, и его молчание не должно задерживать карточки. Ждём обоих —
             // renderProjects рисует кнопки по уже обновлённому состоянию.
             const [response] = await Promise.all([
-                fetch('/api/team/projects'),
+                teamFetch('/api/team/projects'),
                 loadShellPings(),
                 loadDshState(),
             ]);
@@ -1336,7 +1350,7 @@
         // список, собранный до ответа на первый, и один из них потерялся бы.
         box.querySelectorAll('input,select').forEach(i => i.disabled = true);
         try {
-            const response = await fetch('/api/team/llm/pool', {
+            const response = await teamFetch('/api/team/llm/pool', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({project_id: projectId, names: items}),
@@ -1404,7 +1418,7 @@
 
     async function loadShellModels() {
         try {
-            const response = await fetch('/api/team/llm');
+            const response = await teamFetch('/api/team/llm');
             const data = await response.json();
             const result = data.result || {};
             const names = (result.models || []).filter(Boolean);
@@ -1420,7 +1434,7 @@
     // меняется между обновлениями страницы, а пинги переписываются раз в пять минут.
     async function loadShellPings() {
         try {
-            const response = await fetch('/api/team/llm');
+            const response = await teamFetch('/api/team/llm');
             const data = await response.json();
             shellPings = (data.result || {}).pings || {};
         } catch (e) {
@@ -1467,7 +1481,7 @@
         button.disabled = true;
         button.textContent = '…';
         try {
-            const response = await fetch('/api/team/llm/ping', {
+            const response = await teamFetch('/api/team/llm/ping', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({}),
@@ -1738,7 +1752,7 @@
 
     async function loadTimeouts() {
         try {
-            const response = await fetch('/api/team/timeout');
+            const response = await teamFetch('/api/team/timeout');
             if (!response.ok) throw new Error('HTTP ' + response.status);
             const data = await response.json();
             timeoutItems = (data.result && data.result.items) || [];
@@ -1757,7 +1771,7 @@
 
         input.classList.remove('saved', 'failed');
         try {
-            const response = await fetch('/api/team/timeout', {
+            const response = await teamFetch('/api/team/timeout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key: key, value: Number(input.value) }),
@@ -1816,7 +1830,7 @@
 
     async function loadDshState() {
         try {
-            const response = await fetch('/api/team/dsh');
+            const response = await teamFetch('/api/team/dsh');
             if (!response.ok) throw new Error('HTTP ' + response.status);
             const data = await response.json();
             // Неудачу пульта сервер отдаёт полем `problem`, а не кодом ошибки:
@@ -2143,7 +2157,7 @@
         dshBusy = true;
         btn.disabled = true;
         try {
-            const response = await fetch(path, {
+            const response = await teamFetch(path, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -2174,7 +2188,7 @@
         btn.disabled = true;
         btn.classList.add('loading');
         try {
-            const response = await fetch('/api/team/session/restart', {
+            const response = await teamFetch('/api/team/session/restart', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_uuid: sessionUuid }),
