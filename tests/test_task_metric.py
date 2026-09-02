@@ -17,6 +17,8 @@
 `MYSQL_HOST` на импорте, а подмена хоста живёт в фикстурах `conftest.py`.
 """
 
+from typing import AsyncGenerator
+
 import pytest
 
 pytestmark = pytest.mark.pipeline
@@ -102,6 +104,52 @@ class TestDelta:
         after = {'tokens_output': 1000.0, 'tokens_prompt': 5100.0, 'gen_seconds': 100.0}
 
         assert task_metric_gx10_delta(self.BEFORE, after)['tokens_per_sec'] == 0.0
+
+
+class TestTotalsSplit:
+    """
+    Итог по токенам — две отдельные суммы, а не одна.
+
+    Прочитанное больше сгенерированного в разы: ход агента пересылает историю
+    целиком. Одна карточка «токенов» либо скрывала входящие, либо враньём
+    складывала несъёмно разные вещи.
+
+    Проверяется связка «алиас запроса — поле на фронте». Расойдётся она молча:
+    запрос отработает, карточка покажет ноль, и никто не увидит, что пропало
+    полтора десятка миллионов токенов.
+    """
+
+    @pytest.fixture(autouse=True)
+    async def db_pool_release(self) -> AsyncGenerator[None, None]:
+        """
+        Закрыть пул MySQL после теста — тот же повод, что в `test_task_metadata.py`.
+
+        `task_metric_totals` поднимает модульный пул, привязанный к циклу теста, а
+        pytest-asyncio даёт каждому тесту свой. Незакрытый пул догоняет прогон
+        `Event loop is closed` на teardown: тест проходит, а круг считается упавшим.
+        """
+        yield
+        from mysql_.mysql_ import mysql_pool_close
+        await mysql_pool_close()
+
+    async def test_totals_returns_both_sums(self):
+        from src.project.task.task_metric import task_metric_totals
+
+        totals = await task_metric_totals()
+
+        assert 'tokens_prompt_total' in totals, 'сумма прочитанного пропала из итога'
+        assert 'tokens_output_total' in totals, 'сумма сгенерированного пропала из итога'
+
+    def test_frontend_reads_the_same_names(self):
+        import re
+        from pathlib import Path
+
+        page = Path('data/uvicorn/template/admin/project/task.html').read_text(encoding='utf-8')
+
+        for field in ('tokens_prompt_total', 'tokens_output_total'):
+            assert re.search(rf'\b{field}\b', page), f'карточка по {field} пропала со страницы'
+        assert "'вх. токенов'" in page and "'исх. токенов'" in page, \
+            'входящие и исходящие снова слиплись в одну карточку'
 
 
 class TestTokensFromToolOutput:
