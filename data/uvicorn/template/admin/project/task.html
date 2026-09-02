@@ -4089,6 +4089,9 @@ function renderPipeWait(t) {
 //
 // Ни одного срыва — ни значка: у здоровой строки показывать нечего, а «↻0» в каждой
 // строке таблицы отнимает место у того, что действительно случилось.
+//
+// `at` пишет MySQL (`task_retry.py`), а он в контейнере живёт по UTC — метку отдаём
+// через `fmtTz`, иначе «Последний срыв» выглядит на часы раньше, чем был.
 function renderPipeRetries(t) {
     const r = t.metadata?.retry || {};
     const total = Number(r.total || 0);
@@ -4096,9 +4099,16 @@ function renderPipeRetries(t) {
     const parts = [`Прогонов сорвалось за всё время: ${total}`,
                    `Подряд сейчас: ${Number(r.count || 0)}`];
     if (r.role)  parts.push(`Последний срыв: ${r.role}`);
-    if (r.at)    parts.push(`Когда: ${r.at}`);
+    if (r.at)    parts.push(`Когда: ${_fmtMetaTime(r.at)}`);
     if (r.error) parts.push(`Причина: ${r.error}`);
     return `<span class="pipe-retries" title="${esc(parts.join('\n'))}">${total}</span>`;
+}
+
+// Метка времени из `metadata` — её пишут база или контейнер в UTC, и на страницу она
+// приходит сырой. `fmtTz` сдвигает её в пояс настройки `timezone`; с секундами, потому
+// что в подсказке метка стоит целиком и обрезать её не за чем.
+function _fmtMetaTime(value) {
+    return window.fmtTz ? window.fmtTz(value, true) : String(value || '');
 }
 
 // Ссылки на merge request в строке нет намеренно. MR на сервере сравнивает ветку с
@@ -4174,7 +4184,7 @@ function renderPipeMerge(t) {
     const merged = (t.metadata || {})[TASK_META_KEY_MERGED];
     if (!merged) return '';
 
-    const at = merged.at ? `, ${merged.at}` : '';
+    const at = merged.at ? `, ${_fmtMetaTime(merged.at)}` : '';
     const by = merged.by ? ` — ${merged.by}` : '';
 
     return `<span class="pipe-merged" onclick="event.stopPropagation()"`
