@@ -11,6 +11,7 @@ Tests cover:
 - GET  /telegram-app/claude/sessions/active  (requires telegram owner session)
 - GET  /telegram-app/claude/messages         (requires telegram owner session)
 - POST /telegram-app/claude/ask              (bad input validation)
+- GET  /telegram-app/task/{id}/question      (вопрос роли и вопрос конвейера)
 - Unauthorized access (no session → 403)
 """
 import os
@@ -96,6 +97,10 @@ class TestTelegramAppProtectedEndpoints:
         response = await anon_client.get("/telegram-app/plans")
         assert response.status_code == 403
 
+    async def test_tasks_list_requires_auth(self, anon_client: httpx.AsyncClient):
+        response = await anon_client.get("/telegram-app/tasks")
+        assert response.status_code == 403
+
     async def test_plans_detail_requires_auth(self, anon_client: httpx.AsyncClient):
         response = await anon_client.get("/telegram-app/plans/1")
         assert response.status_code == 403
@@ -117,6 +122,17 @@ class TestTelegramAppProtectedEndpoints:
             "/telegram-app/claude/ask",
             json={"session_uuid": "abc", "message": "hello"},
         )
+        assert response.status_code == 403
+
+    async def test_task_answer_requires_auth(self, anon_client: httpx.AsyncClient):
+        response = await anon_client.post(
+            "/telegram-app/task/1/question/answer",
+            json={"answers": ["goals_keep"]},
+        )
+        assert response.status_code == 403
+
+    async def test_task_question_requires_auth(self, anon_client: httpx.AsyncClient):
+        response = await anon_client.get("/telegram-app/task/1/question")
         assert response.status_code == 403
 
 
@@ -238,6 +254,158 @@ class TestTelegramAppClaude:
             assert "session_uuid" in session
             assert "role" in session
             assert "project_label" in session
+
+
+class TestTelegramAppTaskQuestion:
+    """Ответ на вопрос задачи: точка смонтирована и отвечает под сессией владельца."""
+
+    async def test_answer_route_is_mounted(self, telegram_client: httpx.AsyncClient):
+        """
+        Просроченная дата ответа — 404 «нет такой задачи», а не 404 «нет такого маршрута».
+
+        Точка не раз закругом отвечала 404: роутер не был подключён в `main_uvicorn.py`,
+        и записать ответ в рантайме было нечем. Проверка отличает одно от другого по
+        тексту — маршрут жив, просто строки нет.
+        """
+        response = await telegram_client.post(
+            "/telegram-app/task/999999/question/answer",
+            json={"answers": ["цель оставить"], "note": ""},
+        )
+        assert response.status_code == 404
+        assert "task not found" in response.json()["detail"].lower()
+
+    async def test_question_route_is_mounted(self, telegram_client: httpx.AsyncClient):
+        """Несуществующая строка — 404 «нет такой задачи», а не «нет такого маршрута»."""
+        response = await telegram_client.get("/telegram-app/task/999999/question")
+
+        assert response.status_code == 404
+        assert "task not found" in response.json()["detail"].lower()
+
+    async def test_question_returns_role_question(self, telegram_client: httpx.AsyncClient,
+                                                  question_tree):
+        """Вопрос роли отдаётся как есть — с вариантами, целями и попытками."""
+        response = await telegram_client.get(
+            f"/telegram-app/task/{question_tree['asked']}/question")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["question"]["text"] == QUESTION_ROLE_TEXT
+        assert [o["key"] for o in body["question"]["options"]] == ["yes", "no"]
+        # Вопрос роли — не автовопрос: подменять его общим «что делаем с целями»
+        # значит потерять развилку, из-за которой прогон и остановился.
+        assert not body["question"].get("auto")
+        assert body["state"] == "blocked"
+        assert [g["text"] for g in body["goals"]] == ["точка отвечает 200"]
+        assert [a["role"] for a in body["attempts"]] == ["developer"]
+
+    async def test_question_returns_pipeline_question(self, telegram_client: httpx.AsyncClient,
+                                                      question_tree):
+        """Роль не спросила, а подзадача встала — вопрос задаёт конвейер."""
+        response = await telegram_client.get(
+            f"/telegram-app/task/{question_tree['stuck']}/question")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["question"]["auto"] is True
+        assert body["question"]["text"]
+        # Варианты автовопроса — действия над охватом; без них человеку нечего выбрать.
+        assert body["question"]["options"]
+
+    async def test_question_root_task_has_no_auto(self, telegram_client: httpx.AsyncClient,
+                                                  question_tree):
+        """
+        У задачи целиком автовопроса нет.
+
+        Его варианты дробят и сокращают цели, а у корневой строки цели ведёт план
+        менеджера: показать там «раздробить» значило бы предложить действие, которого
+        точка ответа всё равно не выполнит (`409`).
+        """
+        response = await telegram_client.get(
+            f"/telegram-app/task/{question_tree['root']}/question")
+
+        assert response.status_code == 200
+        assert response.json()["question"] == {}
+
+
+QUESTION_ROLE_TEXT = "Переименовывать ли инструменты?"
+
+
+@pytest.fixture
+async def question_tree():
+    """
+    Дерево под чтение вопроса: вставшие корневая строка и две подзадачи.
+
+    Строки заводятся напрямую в БД — вопрос кладёт живая роль в конце прогона, и
+    гонять ради этого настоящий круг конвейера тест не может. Заголовки с `__pytest`,
+    чтобы их снесла общая уборка `cleanup_test_tasks` даже после обрыва.
+
+    Пул закрываем за собой, как и session-фикстуры `conftest.py`: он модульный и
+    привязан к циклу, в котором создан, а у каждого теста цикл свой — оставленный
+    пул роняет следующий тест на «attached to a different loop».
+    """
+    import json
+    from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
+
+    question = {"text": QUESTION_ROLE_TEXT, "multi": False,
+                "options": [{"key": "yes", "label": "Да"}, {"key": "no", "label": "Нет"}],
+                "asked_at": "2026-09-01 10:00:00"}
+    columns = ("INSERT INTO project_task (parent_id, title, description, goals, report, "
+               "                          position, pipeline_state, pipeline_plan, "
+               "                          pipeline_error, metadata) "
+               "VALUES (%s, %s, '', %s, '', 0, 'blocked', '', '', %s)")
+
+    async with mysql_get_db_async() as db:
+        await db.execute(columns, (None, "__pytest telegram question", "[]", None))
+        root_id = db.lastrowid
+        await db.execute(columns, (root_id, "__pytest telegram question asked",
+                                   json.dumps(["точка отвечает 200"]),
+                                   json.dumps({"question": question})))
+        asked_id = db.lastrowid
+        await db.execute(columns, (root_id, "__pytest telegram question stuck",
+                                   json.dumps(["автовопрос собран"]), None))
+        stuck_id = db.lastrowid
+        await db.execute(
+            "INSERT INTO project_task_attempt (task_id, attempt_no, role, status, output, "
+            "                                  error, duration_ms) "
+            "VALUES (%s, 1, 'developer', 'error', '', 'таймаут круга', 1000)", (asked_id,))
+        await db.connection.commit()
+
+    yield {"root": root_id, "asked": asked_id, "stuck": stuck_id}
+
+    async with mysql_get_db_async() as db:
+        await db.execute("DELETE FROM project_task WHERE id = %s", (root_id,))
+        await db.connection.commit()
+    await mysql_pool_close()
+
+
+class TestTelegramAppTasks:
+    """Список задач: вложенный ответ и те же поля, чем собирается карточка.
+
+    Вложенность `{'result': {'tasks': […]}}` — контракт, а не случайность формы:
+    `tasks.js` читает `res.result.tasks`, и на плоский список молча рисует пустой
+    экран. Поведение вкладок и карточек на живом экране держит
+    `test_telegram_app_task_screen.py`.
+    """
+
+    async def test_tasks_list_returns_nested_tasks(self, telegram_client: httpx.AsyncClient):
+        response = await telegram_client.get("/telegram-app/tasks")
+        assert response.status_code == 200, response.text
+        tasks = response.json()["result"]["tasks"]
+        assert isinstance(tasks, list)
+
+    async def test_task_row_carries_the_card_fields(self, telegram_client: httpx.AsyncClient):
+        """Каждая строка годится для карточки: чипсы статуса и состояния, деление по типу."""
+        tasks = (await telegram_client.get("/telegram-app/tasks")).json()["result"]["tasks"]
+        for task in tasks:
+            for field in ('id', 'title', 'status', 'pipeline_state', 'task_type_id'):
+                assert field in task, f'строка #{task.get("id")} без поля {field}'
+
+    async def test_task_row_carries_dependencies(self, telegram_client: httpx.AsyncClient):
+        """Зависимости лежат пустыми списками, а не отсутствием ключей: «нет связей» ≠ «забыли»."""
+        tasks = (await telegram_client.get("/telegram-app/tasks")).json()["result"]["tasks"]
+        for task in tasks:
+            assert isinstance(task['depends_on'], list)
+            assert isinstance(task['depend_blocked'], list)
 
 
 if __name__ == "__main__":
