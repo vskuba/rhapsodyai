@@ -208,5 +208,41 @@ class TestLoginPageUI:
         assert "/static/css/notification.css" in html
 
 
+class TestAdminNavDocsLink:
+    """Ссылка на страницу API точек в правом краю навигации (#34226).
+
+    Проверка по HTML отрендеренной страницы, а не браузером: ссылка статическая,
+    из шаблонов (`base.html`), JS её не достраивает.
+    """
+
+    @pytest.fixture
+    async def authed_client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        """Клиент с активной сессией: страницы админки без входа отдают логин."""
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
+            login_response = await client.post("/auth/login", json=TEST_AUTH)
+            assert login_response.status_code == 200
+            yield client
+
+    async def test_admin_page_links_to_api_docs(self, authed_client: httpx.AsyncClient):
+        """На админ-странице есть ссылка на `/docs` — Swagger со списком точек."""
+        response = await authed_client.get("/admin/agent")
+        assert response.status_code == 200
+        html = response.text
+
+        assert 'href="/docs"' in html
+        assert 'id="docsBtn"' in html
+
+    async def test_docs_link_sits_before_fixer_button(self, authed_client: httpx.AsyncClient):
+        """Ссылка стоит рядом и **перед** кнопкой фиксера, а не где-то вперемешку."""
+        response = await authed_client.get("/admin/agent")
+        assert response.status_code == 200
+        html = response.text
+
+        docs_pos = html.find('id="docsBtn"')
+        fixer_pos = html.find('id="fixerBtn"')
+        assert docs_pos != -1 and fixer_pos != -1
+        assert docs_pos < fixer_pos
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

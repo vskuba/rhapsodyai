@@ -250,6 +250,16 @@
     box-shadow: inset 0 -2px 0 #312e81;
 }
 
+/* Ссылка на /docs стоит левее фиксера: тот же правый угол, но со сдвигом
+   на ширину кнопки фиксера — 43 пикселя, плюс пиксель запаса (#34226). */
+.docs-btn {
+    right: 44px;
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+}
+
 .tabnav-sep {
     width: 1px;
     height: 14px;
