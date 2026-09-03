@@ -119,6 +119,12 @@ class TestFactWrite:
         assert resp.json()["status"] == "success"
         assert resp.json()["added"] == 1
 
+        # Убираем созданный факт: иначе его подхватит крон-фактчек и прогонит через реальный LLM
+        facts = (await client.get(f"/fact/collection/{cname}?query=__pytest_test_fact_document__")).json()["result"]
+        assert facts, "Created fact not found for cleanup"
+        del_resp = await client.delete(f"/fact/{facts[0]['id']}")
+        assert del_resp.status_code == 200
+
     async def test_create_fact_requires_auth(self):
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as anon:
             resp = await anon.put("/fact/collection/1", json=[{"document": "x"}])
