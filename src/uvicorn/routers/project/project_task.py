@@ -12,6 +12,7 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from logging_.logging_ import logger_info
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.project.task.task_abort import task_abort_runs
 from src.project.task.task_depend import TASK_DEPEND_DONE_STATES, task_depend_of
 from src.project.task.task_role import task_role_of_state, task_role_project_work_dir
 from src.project.task.task_spec import task_spec_read
@@ -377,6 +378,13 @@ async def project_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermis
 
     После базы, а не до: снимать захват у задачи, которую не удалось удалить, значило
     бы отобрать модель у идущего круга.
+
+    Идущий круг обрываем там же (`task_abort_runs`). Захваты он не держит — их только
+    что сняли, — но сам прогон живёт в воркере и ждёт ответа агента до своего таймаута:
+    у багфиксера сорок минут, у разработчика вчетверо больше. Всё это время роль занята,
+    а следующая задача, приехав в ту же оболочку, начинает с перезапуска агента и рвёт
+    его незаконченный ход. Живьём так и вышло: баг #34226 удалили в 06:44, прогон досидел
+    до 06:56, и пришедший в 06:51 сосед оборвал его ответ.
     """
     async with mysql_get_db_async() as db:
         await db.execute("SELECT id, project_id FROM project_task WHERE id = %s", (task_id,))
@@ -390,11 +398,12 @@ async def project_task_delete(task_id: int, user=Depends(AuthChecker([AuthPermis
 
     await team_llm_pool_forget(removed_ids)
     await team_shell_pool_forget(removed_ids)
+    aborted = await task_abort_runs(removed_ids)
 
     work_dir = await task_role_project_work_dir(task.get('project_id'))
     worktrees = await task_worktree_remove_tree(work_dir, removed_ids)
 
-    return {'ok': True, 'worktrees': worktrees}
+    return {'ok': True, 'worktrees': worktrees, 'aborted': aborted}
 
 
 @router.post('/task/{task_id}/move')

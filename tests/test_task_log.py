@@ -539,6 +539,51 @@ class TestShellBlocks:
         assert not line.rstrip().endswith(':'), 'висящее двоеточие читается как потерянное значение'
 
 
+class TestPendingJobShowsItsPhase:
+    """
+    Незакрытое задание в журнале говорит, на чём стоит.
+
+    Раньше строка «задание ушло» висела до ответа без единого признака, и сорок минут
+    ожидания выглядели одинаково — что оболочка не забрала задание, что забрала и агент
+    над ним думает. Беды разные: в первом случае чинят оболочку, во втором ждут.
+
+    Живьём по багу #34226: задание простояло в `delivered` сорок минут, а в журнале это
+    читалось так же, как если бы оболочка его вовсе не видела.
+    """
+
+    def test_task_log_shell_delivered_job_says_it_waits_agent(self):
+        from src.project.task.task_log_shell import _phase_mark
+
+        assert _phase_mark({'status': 'delivered', 'responded_at': None}) == \
+               ' (доставлено, ждём агента)'
+
+    def test_task_log_shell_queued_job_says_shell_has_not_taken_it(self):
+        from src.project.task.task_log_shell import _phase_mark
+
+        assert _phase_mark({'status': 'queued', 'responded_at': None}) == \
+               ' (в очереди, оболочка ещё не забрала)'
+
+    def test_task_log_shell_answered_job_has_no_phase(self):
+        """У отвеченного есть своя строка ответа — фаза рядом с заданием лишняя."""
+        from datetime import datetime
+
+        from src.project.task.task_log_shell import _phase_mark
+
+        answered = {'status': 'answered', 'responded_at': datetime(2026, 9, 3, 10, 18)}
+
+        assert _phase_mark(answered) == ''
+        # Фаза снимается по факту ответа, а не по слову в статусе: оболочки старых
+        # версий про колонку не знают и присылают ответ, оставив её пустой.
+        assert _phase_mark({'status': '', 'responded_at': datetime(2026, 9, 3, 10, 18)}) == ''
+
+    def test_task_log_shell_unknown_phase_adds_nothing(self):
+        """Незнакомое значение не должно приписывать строке смысла, которого нет."""
+        from src.project.task.task_log_shell import _phase_mark
+
+        assert _phase_mark({'status': 'что-то новое', 'responded_at': None}) == ''
+        assert _phase_mark({}) == ''
+
+
 class TestHonestReportIsNotBlocker:
     """
     `ok: false` сам по себе затыком не считается.

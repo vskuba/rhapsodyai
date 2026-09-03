@@ -44,6 +44,14 @@ TASK_LOG_SHELL_KEYWORD_FAIL = 'затык'
 TASK_LOG_SHELL_STATUS_ANSWERED = 'answered'
 TASK_LOG_SHELL_STATUS_FAILED = 'failed'
 
+# Как подписать задание, которое ещё ждёт ответа. Человеческими словами, а не фазой:
+# журнал читают глазами, и `delivered` пришлось бы держать в голове. Отвеченное
+# задание в карту не входит — у него есть своя строка ответа.
+TASK_LOG_SHELL_PHASE_MARK = {
+    'queued':    ' (в очереди, оболочка ещё не забрала)',
+    'delivered': ' (доставлено, ждём агента)',
+}
+
 # Сколько символов задания уносим в строку. Задание собирает движок по шаблону
 # шага, и в ленте от него нужно одно: какой шаг ушёл и когда. Полный текст лежит
 # в очереди и в трассе шага.
@@ -110,10 +118,16 @@ async def task_log_shell_events(role: str, work_dir: str, since, until=None) -> 
         content = str(row.get('content') or '')
         service = TASK_LOG_SHELL_SERVICE.get(content.strip())
 
+        # Фаза дописывается только незакрытому заданию, и в этом вся её польза: пока
+        # ответа нет, она единственная отличает «оболочка не забрала» от «забрала, и
+        # агент думает». У закрытого фазы не пишем — за ним идёт строка ответа, и она
+        # говорит больше.
+        phase = _phase_mark(row)
         events.append({
             'created_at': row.get('created_at'),
             'keyword': TASK_LOG_SHELL_KEYWORD_SENT,
-            'title': f'оболочка {role}: {service}' if service else f'оболочка {role} ← задание',
+            'title': (f'оболочка {role}: {service}' if service
+                      else f'оболочка {role} ← задание{phase}'),
             'text': '' if service else _text_cut(_marker_strip(content), TASK_LOG_SHELL_SENT_MAX),
             'seconds': 0,
         })
@@ -196,6 +210,25 @@ async def _rows_window(role: str, work_dir: str, since, until) -> list[dict]:
             params)
 
         return [dict(row) for row in (await db.fetchall() or [])]
+
+
+def _phase_mark(row: dict) -> str:
+    """
+    Приписка к строке задания: на какой фазе оно стоит. Ответ пришёл — пусто.
+
+    Ради этой приписки и затевалось. Раньше журнал показывал «задание ушло» и молчал
+    до ответа — сорок минут одинаковой картинки, по которой не понять, дошло ли задание
+    до оболочки вообще. А это разные беды с разным лечением: `queued` — оболочка не
+    забрала (мертва, занята чужим ходом, потеряла watch), `delivered` — забрала и
+    передала агенту, и ждать теперь агента.
+
+    Живьём по багу #34226: задание стояло в `delivered` сорок минут, и в журнале это
+    выглядело так же, как если бы оболочка его вовсе не видела.
+    """
+    if row.get('responded_at'):
+        return ''
+
+    return TASK_LOG_SHELL_PHASE_MARK.get(str(row.get('status') or ''), '')
 
 
 def _marker_strip(text: str) -> str:
