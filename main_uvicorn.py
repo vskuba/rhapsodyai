@@ -8,6 +8,7 @@ from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from starlette.staticfiles import StaticFiles
@@ -380,7 +381,11 @@ middleware = [
     ),
 ]
 
-app = FastAPI(lifespan=lifespan, middleware=middleware)
+# `docs_url=None` — встроенную страницу Swagger отключаем и собираем свою ниже
+# (`swagger_ui_docs`): готовая тянет скрипт, стили и даже favicon с чужих доменов, а
+# зависимости у нас лежат локально (`docs-common/frontend_rules.md`). Схема
+# (`/openapi.json`) и `/redoc` остаются штатными — их адреса не переопределяются.
+app = FastAPI(lifespan=lifespan, middleware=middleware, docs_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -434,6 +439,30 @@ class NoCacheStaticFiles(StaticFiles):
 
 
 app.mount("/static", NoCacheStaticFiles(directory=public_static_path), name="static")
+
+
+@app.get('/docs', include_in_schema=False)
+async def swagger_ui_docs():
+    """
+    Swagger UI на локальных файлах, без похода к чужим доменам.
+
+    Встроенная страница FastAPI собирается из трёх внешних адресов: скрипт и стили с
+    `cdn.jsdelivr.net`, favicon — с `fastapi.tiangolo.com`. Это внешняя точка отказа
+    (нет интернета — нет документации), утечка факта захода к третьей стороне и
+    плавающая версия: тег `@5` завтра отдаст другую сборку. Все три лежат теперь в
+    статике репозитория, версия зафиксирована — см. «Документация API» в
+    `.claude/docs/quickstart.md`.
+
+    Адрес монтируется вручную, потому что `docs_url=None` у приложения: держать
+    встроенный роут и свой одновременно нельзя — они спорят за один путь.
+    """
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f'{app.title} — API',
+        swagger_js_url='/static/js/vendor/swagger-ui-bundle.js',
+        swagger_css_url='/static/css/vendor/swagger-ui.css',
+        swagger_favicon_url='/static/assets/swagger-favicon.png',
+    )
 
 # PWA-подпроекты (apps/<name>/) - публичные игровые фронтенды, отдаются
 # статикой по /play/<name>/. html=True - индекс отдается на корне папки
