@@ -507,5 +507,78 @@ class TestAgentCRUD:
             await client.delete(f"/agent/{agent_id}")
 
 
+class TestAgentCreateByNameSiteGroup:
+    """POST /agent/create: обязательный `site` с форматом и факультативный `group_name` (#34543)."""
+
+    @pytest.fixture
+    async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
+            await client.post("/auth/login", json=TEST_AUTH)
+            yield client
+
+    @staticmethod
+    def _payload(name: str, **overrides) -> dict:
+        payload = {
+            "node": "Telegram",
+            "name": name,
+            # workflow без шага agent_create_or_update — агент заводится записью,
+            # без прогона через /chat/ask с LLM.
+            "workflow": "test",
+            "site": "support24",
+        }
+        payload.update(overrides)
+        return payload
+
+    async def test_create_requires_site(self, client: httpx.AsyncClient):
+        """Без `site` точка обязана отказать 422 и не завести агента."""
+        payload = self._payload(f"{TEST_AGENT_PREFIX}no_site")
+        payload.pop("site")
+        response = await client.post("/agent/create", json=payload)
+        assert response.status_code == 422
+
+        found = await client.get("/agent/name/" + payload["name"])
+        assert found.status_code == 404
+
+    @pytest.mark.parametrize("bad_site", ["Bad Name!", "site-01", "site_01", "Сайт", "Site01", "a b", ""])
+    async def test_create_rejects_site_format(self, client: httpx.AsyncClient, bad_site: str):
+        """`site` — только строчная латиница и цифры; всё остальное — 422 (#34543)."""
+        response = await client.post(
+            "/agent/create",
+            json=self._payload(f"{TEST_AGENT_PREFIX}bad_site", site=bad_site),
+        )
+        assert response.status_code == 422
+
+    async def test_create_stores_site_and_group_name(self, client: httpx.AsyncClient):
+        """Переданные `site` и `group_name` ложатся в ответ и в строку агента."""
+        payload = self._payload(f"{TEST_AGENT_PREFIX}site_group",
+                                site="support24", group_name="Service")
+        response = await client.post("/agent/create", json=payload)
+        assert response.status_code == 201, response.text
+
+        try:
+            result = response.json()["result"]
+            assert result["site"] == "support24"
+
+            row = (await client.get(f"/agent/{result['id']}")).json()["result"]
+            assert row["site"] == "support24"
+            assert row["group_name"] == "Service"
+        finally:
+            await client.delete(f"/agent/{result['id']}")
+
+    async def test_create_without_group_name_keeps_empty(self, client: httpx.AsyncClient):
+        """`group_name` факультативен: не передан — группы нет, агент заведён."""
+        payload = self._payload(f"{TEST_AGENT_PREFIX}no_group")
+        response = await client.post("/agent/create", json=payload)
+        assert response.status_code == 201, response.text
+
+        try:
+            result = response.json()["result"]
+            row = (await client.get(f"/agent/{result['id']}")).json()["result"]
+            assert row["site"] == "support24"
+            assert not row["group_name"]
+        finally:
+            await client.delete(f"/agent/{result['id']}")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

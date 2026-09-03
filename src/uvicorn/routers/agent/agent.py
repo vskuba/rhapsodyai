@@ -142,6 +142,13 @@ class AgentCreateRequest(BaseModel):
                       description="Системное имя агента; должно быть уникальным")
     workflow: str = Field(..., min_length=1, max_length=50,
                           description="Имя workflow (`agent_workflow.name`)")
+    site: str = Field(..., min_length=1, max_length=50, pattern=r'^[a-z0-9]+$',
+                      description="Сайт-владелец агента: строчная латиница и цифры, "
+                                  "без пробелов и спецсимволов (`^[a-z0-9]+$`); "
+                                  "не соответствует — `422`")
+    group_name: str | None = Field(None, max_length=50,
+                                   description="Папка группировки агента в меню "
+                                               "(`agent.group_name`); не передан — без группы")
     title: str = Field('', max_length=150, description="Отображаемое имя; пусто — возьмётся `name`")
     description: str = Field('', max_length=250, description="Для чего агент")
     greeting: str = Field('', description="Первая реплика агента в диалоге")
@@ -153,6 +160,7 @@ class AgentCreateRequest(BaseModel):
 
     model_config = ConfigDict(json_schema_extra={
         "example": {"node": "Dating", "name": "support_agent", "workflow": "dating_talk",
+                    "site": "support", "group_name": "Service",
                     "title": "Служба поддержки"}})
 
 
@@ -164,6 +172,7 @@ class AgentCreatedResponse(BaseModel):
     title: str = Field(..., description="Отображаемое имя", examples=["Служба поддержки"])
     node_id: int = Field(..., description="Найденный узел", examples=[2])
     workflow_id: int = Field(..., description="Найденный workflow", examples=[7])
+    site: str = Field(..., description="Записанный сайт агента", examples=["support"])
 
 
 class AgentCreatedResult(BaseModel):
@@ -178,7 +187,9 @@ class AgentCreatedResult(BaseModel):
     description="Заводит агента, находя узел и workflow **по имени**. Нужен заголовок "
                 "`Authorization: Bearer <access-token>` пользователя с правом `AGENT_CREATE` "
                 "(вместо него принимается и `X-API-KEY`). Имя агента глобально уникально: "
-                "занятое имя даёт `409`, неизвестный узел или workflow — `422`.",
+                "занятое имя даёт `409`, неизвестный узел или workflow — `422`. "
+                "Обязателен сайт (`site`, строчная латиница и цифры) — "
+                "не подходит под формат, `422`.",
     response_description="Агент заведён",
 )
 async def agent_create_by_name(
@@ -211,13 +222,15 @@ async def agent_create_by_name(
         "prompt_system": data.prompt_system,
         "workflow_id": workflow_id,
         "description": data.description,
-        "group_name": None,
+        "site": data.site.strip(),
+        "group_name": (data.group_name or '').strip() or None,
         "workflow_variable": None,
     })
 
     return {"result": {"id": agent_id, "name": data.name.strip(),
                        "title": (data.title or data.name).strip(),
-                       "node_id": node_id, "workflow_id": workflow_id}}
+                       "node_id": node_id, "workflow_id": workflow_id,
+                       "site": data.site.strip()}}
 
 
 @router.get(
@@ -511,9 +524,22 @@ async def _agent_create_by_workflow(request: Request, data: AgentCreateRequest,
     answer = str((response.json() or {}).get('result') or '').strip()
     created = await AgentRepository().find_one_by({'name': data.name})
 
+    # Сайт и группу пишет точка создания, а не прогон: у инструмента
+    # `agent_create_or_update` их полей нет, а вызывающий их просил. Группа —
+    # COALESCE: не передана, оставляем то, что в строке (workflow её не трогает).
+    if created:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'UPDATE agent SET site = %s, group_name = COALESCE(%s, group_name) '
+                ' WHERE id = %s',
+                (data.site.strip(), (data.group_name or '').strip() or None,
+                 int(created['id'])))
+            await db.connection.commit()
+
     return {'result': {'id': int(created['id']) if created else 0,
                        'name': data.name, 'title': data.title or data.name,
                        'node_id': node_id, 'workflow_id': workflow_id,
+                       'site': data.site.strip(),
                        'workflow_answer': answer}}
 
 
