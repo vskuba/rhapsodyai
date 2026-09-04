@@ -19,6 +19,10 @@ See `.claude/docs/database.md` and `.claude/docs/migration.md` for database sche
 инструменты, LLM, трейс, время, тесты, формат документации. `.claude/docs/` описывает, как это
 реализовано именно здесь. При расхождении конкретика из `.claude/docs/` — актуальнее.
 
+⚠️ `.claude/docs-common` — **симлинк на `py_modules/docs`**, общий для всех проектов.
+Читается как обычная папка, но правка через него меняет общий репозиторий: коммит идёт в
+`py_modules`, и её увидят соседние проекты. Проектной конкретике там не место.
+
 ## Development Patterns
 
 See the documentation files in `.claude/docs/` for detailed patterns:
@@ -70,8 +74,8 @@ asyncio.run(telegram_notify_send_owner('your message'))
 
 ## Docs Reference
 
-Две папки: `.claude/docs-common/` — универсальные правила (переносимы в любой проект),
-`.claude/docs/` — устройство этой инсталляции.
+Две папки: `.claude/docs-common/` — универсальные правила (симлинк на `py_modules/docs`,
+один источник на все проекты), `.claude/docs/` — устройство этой инсталляции.
 
 ### Универсальные правила — `.claude/docs-common/`
 
