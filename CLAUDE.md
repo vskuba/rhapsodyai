@@ -6,7 +6,7 @@
 - **Telegram Bot** (`main_telegram.py`)
 - **FastAPI/Uvicorn Server** (`main_uvicorn.py`) — Web API + HTML frontend
 
-`py_modules/` — shared libraries | `src/` — application code
+`py_modules/` — shared libraries (общий submodule, каталог — `.claude/docs-common/py_modules.md`) | `src/` — application code
 
 See `.claude/docs/quickstart.md` for development commands and setup.
 
@@ -87,6 +87,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `frontend_rules.md` | SSR-страницы админки, чек-лист новой страницы, локальность зависимостей |
 | `deploy_rules.md` | Blue-Green, конфиг прокси как источник истины, healthcheck, откат |
 | `tool_rules.md` | Два слоя (инструменты и общие библиотеки), куда что писать, контракт функции, докстринг для LLM, ошибки |
+| `py_modules.md` | Общий слой библиотек: что внутри, как подключается, правка чужого репозитория |
 | `llm_rules.md` | Маршрутизация по провайдерам, приоритет и фоллбэк, параллельность, журнал |
 | `datetime_rules.md` | Время: хранение в UTC, показ в поясе настройки `timezone`, сравнение из одного источника |
 | `observability_rules.md` | Трейс выполнения, «сбой журнала не роняет процесс», обрезка, чистка |

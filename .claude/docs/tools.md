@@ -88,7 +88,7 @@ grep -oP '^async def \K[a-z_0-9]+' src/tool/<область>/*.py | sort -u
 | Файл | Назначение |
 |------|-----------|
 | `src/tool/` | Сами инструменты, по одной папке на предметную область |
-| `py_modules/` | Общие библиотеки (submodule, отдельный репозиторий) |
+| `py_modules/` | Общие библиотеки (submodule, отдельный репозиторий) — каталог в `docs-common/py_modules.md` |
 | `src/ai/ai_tool.py` | `ai_tool_sync()` (discovery), `ai_tool_get()`, `ai_tool_args_prepare()` (приведение типов) |
 | `src/uvicorn/routers/tool/tool.py` | REST API: список, sync, изолированный тестовый запуск |
 | `data/uvicorn/template/admin/tool.html` | Страница `/admin/tool` — каталог инструментов и кнопка sync |
