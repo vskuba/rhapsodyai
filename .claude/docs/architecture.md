@@ -42,7 +42,7 @@
 | `parser/` | Data parsers (HTML→JSON, MD→Qdrant, MD→Fact) |
 | `project/` | Project-модули: `planning/`, `task/`, `team/` (см. `project_*.md`) |
 | `telegram_/` | `telegram_notify.py` — отправка сообщений через Bot API |
-| `tool/` | Tool implementations — по категориям, auto-discovery (`workflow_tool.md`) |
+| `tool/` | Tool implementations — по категориям, auto-discovery (`tools.md`) |
 | `translator/` | `translator_md.py` — перевод markdown-документов |
 | `uvicorn/routers/` | FastAPI route handlers |
 | `telegram_bot.py` | Telegram bot handler (точка входа — `main_telegram.py`) |

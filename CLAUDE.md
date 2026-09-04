@@ -23,7 +23,7 @@ See `.claude/docs/database.md` and `.claude/docs/migration.md` for database sche
 
 See the documentation files in `.claude/docs/` for detailed patterns:
 
-- **New Tool** → `.claude/docs/workflow_tool.md`
+- **New Tool** → `.claude/docs/tools.md`
 - **New Worker / фоновая обработка** → `.claude/docs/worker.md`
 - **New Admin Page** → `.claude/docs/dashboard_frontend.md`
 - **New Protected Endpoint** → `.claude/docs/auth.md`
@@ -127,7 +127,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `ai_framework.md` | Execution flow, агенты, MCP, движок workflow |
 | `llm.md` | Таблицы, цепочка вызова, провайдеры, параллельность, мониторинг |
 | `workflow.md` | Типы шагов, transitions, переменные, правила `tool_invoke` |
-| `workflow_tool.md` | Создание инструментов, auto-discovery, best practices |
+| `tools.md` | Два слоя: общие библиотеки `py_modules` и инструменты `src/tool`; именование, auto-discovery, вызов из workflow |
 | `workflow_trace.md` | Журнал выполнения: схема, токены, `/admin/workflow_trace` |
 | `workflow/dating_talk.md` | Пример workflow: 17 шагов, 3 LLM |
 | `detective.md` | Игра-детектив: PWA `/play/detective`, guest-сессии, динамические агенты, workflow 12/13/14 |

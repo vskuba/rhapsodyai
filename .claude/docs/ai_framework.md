@@ -101,7 +101,7 @@
 
 Настройка — `/admin/agent_workflow`. Подробности по переменным, transitions,
 правилам `inputs_map` и известным граблям — `workflow.md`;
-разработка самих инструментов — `workflow_tool.md`.
+разработка самих инструментов — `tools.md`.
 
 Трассировка выполнения (шаги, токены, ошибки) — `workflow_trace.md`.
 
@@ -138,7 +138,7 @@
 конфигурации на `/admin/agent_workflow`.
 
 **Новый инструмент** — файл в `src/tool/<категория>/`, подхватывается
-auto-discovery; см. `workflow_tool.md`.
+auto-discovery; см. `tools.md`.
 
 **Новая реализация фреймворка** — класс в `src/ai/framework/<name>/`, наследник
 `AbstractAiFramework` с методами `engine_prepare()`, `engine_run()`,
