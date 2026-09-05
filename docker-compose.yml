@@ -447,10 +447,16 @@ services:
       - opensearch-dashboards
       - mysql
 
+  # Отключён: сервис описан и собирается, но сам не поднимается. Профиль
+  # `disabled` не входит ни в один вызов compose (ни в деплое, ни в bluegreen.sh),
+  # поэтому `docker compose up -d` его пропускает. Запуск вручную:
+  # `docker compose --profile disabled up -d gatus`.
+  # Уведомления в Telegram выключены отдельно — в docker/gatus/config.yaml.
   gatus:
     image: twinproduction/gatus:latest
     container_name: gatus
-    restart: always
+    profiles: ["disabled"]
+    restart: "no"
     ports:
       - "8090:8080"
     env_file:

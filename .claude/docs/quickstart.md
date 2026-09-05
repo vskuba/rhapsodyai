@@ -57,7 +57,7 @@ docker restart uvicorn
 | opensearch | 9200 / 9600 | | |
 | opensearch-dashboards | 5601 | | |
 | cronicle | 3012 | | планировщик |
-| gatus | 8090 | 8080 | health-мониторинг |
+| gatus | 8090 | 8080 | health-мониторинг; **отключён** — profile `disabled`, уведомления в Telegram выключены |
 | caddy_local | 44153 / 80 | 44152 | profile `on_local_only`: локальный HTTPS для Mini App |
 
 `caddy_local` поднимается только профилем `on_local_only` и берёт на хосте **44153**, а

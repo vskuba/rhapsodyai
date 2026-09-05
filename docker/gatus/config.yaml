@@ -1,3 +1,17 @@
+# Gatus отключён: сервис не поднимается вместе со стеком (profile `disabled`
+# в docker-compose.yml), а уведомления в Telegram выключены здесь — на случай,
+# если контейнер запустят вручную.
+#
+# Отключено двумя независимыми способами:
+#  1. блок `alerting` закомментирован — провайдера telegram нет вообще, и Gatus
+#     на старте пишет `configuredProviders=[]`, а `telegram` уходит в ignored;
+#  2. у каждого эндпоинта `alerts[].enabled: false` — штатный выключатель Gatus.
+# Второго слоя достаточно самого по себе, первый снимает вопрос о том, куда
+# вообще может уйти сообщение.
+#
+# Как вернуть уведомления: раскомментировать блок `alerting` и заменить
+# `enabled: false` на `true` в блоках `alerts` у эндпоинтов.
+
 web:
   port: 8080
 
@@ -5,15 +19,15 @@ storage:
   type: sqlite
   path: /data/gatus.db
 
-alerting:
-  telegram:
-    token: "${TELEGRAM_TOKEN_RHAPSODY}"
-    id: "${TELEGRAM_OWNER_CHAT_ID}"
-    default-alert:
-      enabled: true
-      failure-threshold: 2
-      success-threshold: 2
-      send-on-resolved: true
+# alerting:
+#   telegram:
+#     token: "${TELEGRAM_TOKEN_RHAPSODY}"
+#     id: "${TELEGRAM_OWNER_CHAT_ID}"
+#     default-alert:
+#       enabled: true
+#       failure-threshold: 2
+#       success-threshold: 2
+#       send-on-resolved: true
 
 endpoints:
   - name: "🌐 RhapsodyAi — Сайт"
@@ -21,6 +35,7 @@ endpoints:
     interval: 1m
     alerts:
       - type: telegram
+        enabled: false
         description: "Главная страница недоступна или вернула ошибку 5xx. Проверь контейнер uvicorn и Caddy. [Открыть сайт](https://92.5.17.195.sslip.io)"
     conditions:
       - "[STATUS] < 500"
@@ -31,6 +46,7 @@ endpoints:
     interval: 1m
     alerts:
       - type: telegram
+        enabled: false
         description: "Эндпоинт /telegram-app/ping не отвечает или вернул неожиданный ответ. Приложение нестабильно. [Открыть ping](https://92.5.17.195.sslip.io/telegram-app/ping)"
     conditions:
       - "[STATUS] == 200"

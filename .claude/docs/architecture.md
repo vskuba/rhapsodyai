@@ -81,7 +81,7 @@ Install: `pip install -r docker/uvicorn/requirements.txt` / `docker/telegram/req
 | `cronicle` | 3012 | — | Job scheduler |
 | `rq-dashboard` | 9181 | — | Redis queue monitoring; свой образ `docker/rq_dashboard/dockerfile` (151 МБ) — общий с приложением тянул Playwright и модели ради веб-страницы |
 | `phpmyadmin` | 9634→80 | — | MySQL admin |
-| `gatus` | 8090→8080 | — | Health-мониторинг эндпоинтов |
+| `gatus` | 8090→8080 | `disabled` | Health-мониторинг эндпоинтов. Отключён: не поднимается вместе со стеком, уведомления в Telegram выключены в `docker/gatus/config.yaml` |
 | `telegram` | — | `on_prod_only` | Telegram-бот, образ `ghcr.io/vskuba/marina-ai:latest` |
 | `caddy` | 80, 443 | `on_prod_only` | Reverse proxy + TLS; `/play/detective/*` отдаёт статику напрямую |
 
