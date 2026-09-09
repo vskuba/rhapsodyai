@@ -60,7 +60,14 @@ async def qdrant_fact_search(
     field_document = 'document'
 
     if 'tags' in metadata_filter_json:
-        metadata_filter_json['tags'] = [tag.strip() for tag in metadata_filter_json['tags'].split(',')]
+        # Тот же вид, что при записи (см. `_tags_normalize` в fact_collection_): фильтр
+        # сравнивается с payload точным совпадением, поэтому «Hobbies» в запросе обязан
+        # стать «hobbies», иначе факт не найдётся. Пустые куски отбрасываем: висячая
+        # запятая давала пустой тег, и он не совпадал ни с чем.
+        raw_tags = metadata_filter_json['tags']
+        if not isinstance(raw_tags, (list, tuple)):
+            raw_tags = str(raw_tags or '').split(',')
+        metadata_filter_json['tags'] = [t for t in (str(tag).strip().lower() for tag in raw_tags) if t]
 
     search_results = await qdrant_search(
         query_text=query_text,

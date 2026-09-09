@@ -41,9 +41,13 @@ async def fact_collection_add(collection_name: str, data: list[dict], document_t
        фактам, если передан (владелец фактов: только он и админ их видят)
     Возвращает текстовую строку со всеми добавленными фактами.
 
+    Теги приводятся к нижнему регистру и обязаны быть на английском — независимо от
+    языка факта. Тег это общий индекс: «хобби» и «hobbies» разъезжаются в две записи,
+    и поиск по одной не находит другую.
+
     Example:
         collection_name: dating_talk
-        data: [{"document_id": "alla_user1", "language": "ru", "document": "Мы обсуждали его привычки в тренировках.", "tags": "тренажерный зал, физическая активность"}]
+        data: [{"document_id": "alla_user1", "language": "ru", "document": "Мы обсуждали его привычки в тренировках.", "tags": "gym,fitness"}]
         document_title: Анна
         user_id: 1
 
@@ -90,6 +94,13 @@ async def fact_collection_add(collection_name: str, data: list[dict], document_t
 
                 # Отбираем только те поля, которые реально переданы и разрешены для этой коллекции в базе
                 present_fields = [f for f in allowed_fact_fields if f in entry]
+
+                # Регистр и пробелы у тегов приводим к одному виду: «Hobbies», «hobbies»
+                # и « hobbies» иначе лягут тремя разными значениями и поиск по одному
+                # не найдёт остальные. Язык тега этим не чинится — за него отвечает
+                # промпт, — но одинаковые теги перестают размножаться.
+                if 'tags' in entry:
+                    entry['tags'] = _tags_normalize(entry['tags'])
 
                 fact_fields = ['collection_id'] + present_fields
                 fact_values = [collection_id] + [entry.get(f) for f in present_fields]
@@ -209,3 +220,25 @@ async def fact_collection_remove_by(collection_name: str, criteria: dict) -> int
                 f"Полный стек вызовов:\n{backtrace}"
             )
             raise ValueError(f"Ошибка при удалении фактов из коллекции '{collection_name}': {str(e)}")
+
+
+def _tags_normalize(tags) -> str:
+    """Теги к единому виду: нижний регистр, без лишних пробелов, без повторов.
+
+    Принимает и строку через запятую, и список — LLM возвращает то одно, то другое.
+    Порядок сохраняется: он несёт смысл, первый тег обычно главный.
+    """
+    if isinstance(tags, (list, tuple)):
+        items = [str(t) for t in tags]
+    else:
+        items = str(tags or '').split(',')
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        tag = item.strip().lower()
+        if tag and tag not in seen:
+            seen.add(tag)
+            result.append(tag)
+
+    return ",".join(result)
