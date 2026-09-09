@@ -114,7 +114,8 @@
                 <span class="tabnav-sep"></span>
                 <a href="http://localhost:{{ OPENSEARCH_DASHBOARDS_PORT }}/app/data-explorer/discover"
                    target="_blank">🔎 Opensearch</a>
-                <a href="http://localhost:{{ GATUS_PORT }}" target="_blank">💚 Gatus</a>
+                {# Gatus отключён (profile `disabled` в docker-compose.yml) — ссылка вела
+                   бы на порт, где никто не слушает. Вернуть вместе с сервисом. #}
                 <span class="tabnav-sep"></span>
             </div>
             {% endif %}

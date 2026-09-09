@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import asyncio
+import json
 import os
 import traceback
 
@@ -340,8 +341,10 @@ async def logging_middleware(request: Request, call_next):
 
     response_headers = {str(k): str(v) for k, v in response.headers.items()}
 
-    request_data = f", data: {request_body.decode('utf-8', errors='ignore')}" if len(request_body) > 3 else ''
-    response_data = f", data: {response_body.decode('utf-8', errors='ignore')}" if len(response_body) > 0 else ''
+    # Тело маскируется так же, как заголовки выше: пароль из формы логина попадал в
+    # лог контейнера открытым текстом, а оттуда logstash разносил его в OpenSearch.
+    request_data = f", data: {_body_redact(request_body)}" if len(request_body) > 3 else ''
+    response_data = f", data: {_body_redact(response_body)}" if len(response_body) > 0 else ''
 
     logger_info(
         f"🌐 [HTTP] Request {method} {path}"
@@ -536,3 +539,51 @@ app.include_router(browser_error.router)
 # руками человека. Наружу их никто не зовёт, в документации они были бы шумом.
 app.include_router(browser_author.router, include_in_schema=False)
 app.include_router(browser_record.router, include_in_schema=False)
+
+
+# Ключи, значение которых в лог не попадает никогда. Сверять с телом запроса дословно
+# нельзя: имена приходят и в camelCase, и с префиксом (`new_password`, `apiKey`), поэтому
+# совпадение ищется по вхождению подстроки в имя, приведённое к нижнему регистру.
+UVICORN_LOG_SECRET_KEYS = (
+    'password', 'passwd', 'secret', 'token', 'api_key', 'apikey',
+    'authorization', 'cookie', 'private_key', 'access_key',
+)
+
+
+def _body_redact(body: bytes, limit: int = 20000) -> str:
+    """Тело запроса или ответа для лога: значения секретных ключей заменены на `***`.
+
+    JSON разбирается и собирается заново — так маскировка не зависит от форматирования
+    и переживает вложенность (`{"user": {"password": ...}}`). Не-JSON (форма, бинарь,
+    HTML страницы) остаётся как есть: разобрать его нельзя, а вырезать вслепую значит
+    испортить лог. Единственное исключение — тело формы с `password=`, оно вырезается
+    целиком, потому что это ровно тот случай, ради которого функция написана.
+    """
+    text = body.decode('utf-8', errors='ignore')
+
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        # form-urlencoded с паролем: разбирать незачем, достаточно не печатать
+        if 'password=' in text.lower():
+            return '<скрыто: тело формы с паролем>'
+        return text[:limit]
+
+    redacted = _secrets_mask(parsed)
+    return json.dumps(redacted, ensure_ascii=False)[:limit]
+
+
+def _secrets_mask(value):
+    """Рекурсивно заменяет значения секретных ключей на `***`, сохраняя структуру."""
+    if isinstance(value, dict):
+        masked = {}
+        for key, inner in value.items():
+            key_lower = str(key).lower()
+            if any(secret in key_lower for secret in UVICORN_LOG_SECRET_KEYS):
+                masked[key] = '***'
+            else:
+                masked[key] = _secrets_mask(inner)
+        return masked
+    if isinstance(value, list):
+        return [_secrets_mask(item) for item in value]
+    return value
