@@ -16,7 +16,7 @@ from src.ai.ai_llm import ai_llm_node_get
 from logging_.logging_ import logger_info, logging_init
 from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_init
-from py_modules.ai.ai_thread import ai_thread_framework_run
+from ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager

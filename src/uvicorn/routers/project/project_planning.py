@@ -9,7 +9,7 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.project.project_repository import PlanningProjectRepository
 from mysql_.mysql_ import mysql_get_db_async
-from py_modules.setting_.setting_ import setting_get
+from setting_.setting_ import setting_get
 from src.project.team.team_member import team_member_cards_ensure
 from src.worker.project.planning_worker import planning_worker_enqueue
 from src.uvicorn.routers.project.project_common import _CRONICLE_SCHEDULE_FILE

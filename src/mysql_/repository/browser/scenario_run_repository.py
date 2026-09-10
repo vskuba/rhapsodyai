@@ -1,4 +1,4 @@
-from py_modules.mysql_.repository.abstract_repository import AbstractRepository
+from mysql_.repository.abstract_repository import AbstractRepository
 
 
 class BrowserScenarioRunRepository(AbstractRepository):

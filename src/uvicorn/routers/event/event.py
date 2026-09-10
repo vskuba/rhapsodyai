@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
 from mysql_.mysql_ import mysql_get_db_async
-from py_modules.setting_.setting_ import setting_get
+from setting_.setting_ import setting_get
 from src.mysql_.repository.event_log_repository import EventLogRepository
 from src.uvicorn.routers.telegram_app.telegram_app_common import _require_claude_secret, _require_telegram_owner
 

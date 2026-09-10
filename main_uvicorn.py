@@ -19,7 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from src.tool.env.env_ import env_is_prod
-from py_modules.ai.ai_thread import ai_thread_framework_run
+from ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_tool import ai_tool_sync
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from config.config import config_get

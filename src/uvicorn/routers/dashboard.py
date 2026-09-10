@@ -182,7 +182,7 @@ async def dashboard_plan_page(request: Request, user: AuthSession = Depends(dash
 
 @router.get("/admin/planning", response_class=HTMLResponse)
 async def dashboard_planning_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
-    from py_modules.setting_.setting_ import setting_get
+    from setting_.setting_ import setting_get
     tz_offset = await setting_get('timezone', '+0')
     return request.app.state.jinja2_template.TemplateResponse(
         request,

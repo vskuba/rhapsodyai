@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import os
 
 from mysql_.mysql_ import mysql_get_db_async
-from py_modules.setting_.setting_ import setting_get, setting_set, setting_delete
+from setting_.setting_ import setting_get, setting_set, setting_delete
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.setting.setting_config import setting_config_public

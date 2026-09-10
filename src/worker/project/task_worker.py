@@ -26,7 +26,7 @@ from rq.job import Job
 
 from logging_.logging_ import logger_info, logging_init
 from mysql_.mysql_ import mysql_pool_close
-from py_modules.ai.ai_thread import ai_thread_framework_run
+from ai.ai_thread import ai_thread_framework_run
 from queue_.queue_ import queue_init
 from redis_.redis_ import redis_conn_get
 from redis_queue.redis_queue import redis_queue_get

@@ -1,6 +1,6 @@
 import re
 
-from py_modules.mysql_.mysql_ import mysql_get_db_async
+from mysql_.mysql_ import mysql_get_db_async
 
 # Имена таблиц/колонок приходят из metadata шагов workflow — в SQL попадают
 # только валидные идентификаторы, значения передаются параметрами

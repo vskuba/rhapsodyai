@@ -1,4 +1,4 @@
-from py_modules.setting_.setting_ import setting_get
+from setting_.setting_ import setting_get
 
 
 async def setting_value_get(name: str, node_id: int = 0, default: str = '') -> dict:
