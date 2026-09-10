@@ -83,7 +83,7 @@ SQL парсится `_seed_split_sql()` — корректный сплитте
 
 ## Автоматическое применение при старте
 
-`src/mysql_/seed/mysql_seed_up.py` → вызывается в `main_uvicorn.py` после миграции.
+`py_modules/mysql_/mysql_seed.py` → вызывается в `main_uvicorn.py` после миграции.
 
 Логика:
 1. Берёт последний файл `seed_*.sql` из `data/seeds/` (reverse sort по имени)
@@ -105,6 +105,6 @@ SQL парсится `_seed_split_sql()` — корректный сплитте
 | Путь | Роль |
 |------|------|
 | `src/uvicorn/routers/seed/seed.py` | API роутер |
-| `src/mysql_/seed/mysql_seed_up.py` | Автоприменение при старте |
+| `py_modules/mysql_/mysql_seed.py` | Автоприменение при старте |
 | `data/seeds/seed_*.sql` | Хранилище seed-файлов |
 | `data/uvicorn/template/admin/seed.html` | UI страница |

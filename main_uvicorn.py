@@ -26,7 +26,7 @@ from config.config import config_get
 from logging_.logging_ import logging_init, logger_info
 from mysql_.migration.mysql_migration_up import mysql_migration_up
 from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
-from src.mysql_.seed.mysql_seed_up import mysql_seed_up
+from mysql_.mysql_seed import mysql_seed_up
 from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
@@ -84,12 +84,18 @@ from src.uvicorn.routers.browser import (browser_author, browser_error, browser_
                                          browser_record, browser_scenario, browser_site,
                                          browser_site_variable)
 
+# По какой таблице seed решает, что база пуста. `node` — узлы LLM: без них
+# установка не работает вовсе, и заполняет их как раз seed. Имя живёт здесь,
+# потому что общий слой (`mysql_seed`) схемы этого проекта не знает и знать
+# не должен.
+MYSQL_SEED_PROBE_TABLE = 'node'
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging_init()
     mysql_migration_up()
-    mysql_seed_up()
+    mysql_seed_up(MYSQL_SEED_PROBE_TABLE)
     await mysql_pool_get()
 
     print("Starting Uvicorn (Fast-Api) mode...")

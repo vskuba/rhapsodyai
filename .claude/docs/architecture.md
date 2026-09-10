@@ -96,7 +96,7 @@ Cronicle копит две разные кучи, и убираются они �
 | Что | Где | Кто чистит |
 |-----|-----|-----------|
 | История прогонов | `data/cronicle/data/jobs` | сам Cronicle в ночное обслуживание (`maintenance: "04:00"`) по `CRONICLE_job_data_expire_days=3` из `docker-compose.yml` |
-| Архивы суточной ротации логов | `data/cronicle/logs/archives` | `src/cronjob/cronicle_log_cleanup.py` (логика — `src/cronicle/cronicle_log.py`) |
+| Архивы суточной ротации логов | `data/cronicle/logs/archives` | `src/cronjob/cronicle_log_cleanup.py` (логика — `py_modules/cronicle_/cronicle_log.py`) |
 
 Второй крон нужен потому, что **свой лог Cronicle ротирует, но архивы не удаляет
 никогда**: при умолчаниях на проде накопился гигабайт истории прогонов и 30 МБ

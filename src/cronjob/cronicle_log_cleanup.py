@@ -20,9 +20,10 @@ import asyncio
 import json
 import sys
 
+from cronicle_.cronicle_log import (CRONICLE_LOG_KEEP_DAYS, cronicle_log_prune,
+                                    cronicle_log_report, cronicle_log_sizes)
 from logging_.logging_ import logger_info, logging_init
-from src.cronicle.cronicle_log import (CRONICLE_LOG_KEEP_DAYS, cronicle_log_prune,
-                                       cronicle_log_report, cronicle_log_sizes)
+
 from src.telegram_.telegram_notify import telegram_notify_send_owner
 
 

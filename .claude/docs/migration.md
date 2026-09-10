@@ -78,7 +78,7 @@ date +%Y%m%d%H%M%S      # 20260831150226
 
 ## 2. Seed данных — `mysql_seed_up()`
 
-**Файл:** `src/mysql_/seed/mysql_seed_up.py`  
+**Файл:** `py_modules/mysql_/mysql_seed.py`  
 **Папка:** `data/seeds/`
 
 Загружает начальные архитектурные данные (ноды, агенты, workflow, LLM и т.д.) в свежую БД.
