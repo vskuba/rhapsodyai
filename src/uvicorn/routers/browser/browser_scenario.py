@@ -16,14 +16,15 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from browser_.browser_scenario import (BROWSER_SCENARIO_ACTIONS,
+                                       BROWSER_SCENARIO_RETURNS,
+                                       BROWSER_SCENARIO_STEP_TIMEOUT_MS,
+                                       BrowserScenario,
+                                       browser_scenario_variables_used)
 from mysql_.mysql_ import mysql_get_db_async
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.browser.browser_scenario import (BROWSER_SCENARIO_ACTIONS,
-                                          BROWSER_SCENARIO_STEP_TIMEOUT_MS,
-                                          BrowserScenario,
-                                          browser_scenario_variables_used)
 from src.mysql_.repository.browser.scenario_repository import BrowserScenarioRepository
 from src.uvicorn.routers.browser.browser_site_variable import browser_site_variable_values
 from src.uvicorn.routers.browser.browser_upstream import (
@@ -373,16 +374,23 @@ def _parser_models(steps) -> list[dict]:
     `kind` различает две формы ответа, потому что разбирать их клиенту по-разному:
     `rows` — список записей, `text` — строка (у неё несколько совпадений склеены
     переносами, это старое поведение `extract`).
+
+    Какое действие что отдаёт, знает схема (`BROWSER_SCENARIO_RETURNS`), а не
+    развилка здесь: сбор данных умеют полдесятка действий, и своя копия этого
+    списка отставала бы от схемы на каждое новое — новый сбор молча не появлялся
+    бы в модели, которую читают соседние проекты.
     """
     out = []
     for step in _json_load(steps, []) or []:
         if not isinstance(step, dict) or not step.get('name'):
             continue
-        if step.get('action') == 'extract_rows':
-            out.append({'name': step['name'], 'kind': 'rows',
-                        'fields': _field_names(step.get('fields') or [])})
-        elif step.get('action') == 'extract':
-            out.append({'name': step['name'], 'kind': 'text', 'fields': []})
+        kind = BROWSER_SCENARIO_RETURNS.get(step.get('action'))
+        if not kind:
+            continue
+        # Имена полей есть только у построчного сбора: у прочих их взять негде —
+        # что придёт в записи `net_dump` или `console_dump`, решает не сценарий.
+        fields = _field_names(step.get('fields') or []) if step.get('fields') else []
+        out.append({'name': step['name'], 'kind': kind, 'fields': fields})
 
     return out
 

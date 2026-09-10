@@ -10,6 +10,10 @@
 процесса), ни сценарии. Сценарий приходит телом запроса, а трасса прогона уходит
 ответом; хранит и журналирует их `uvicorn`, у которого пул MySQL уже есть. Так
 упавшая база не роняет живые страницы.
+
+Сам контейнер живёт в `py_modules/browser_` — он ничего не знает про этот проект и
+подключается любым соседним. Здесь остаётся ровно то, что проектное: имя сервиса,
+инициализация журнала и поднятие Chromium на время жизни процесса.
 """
 
 from contextlib import asynccontextmanager
@@ -18,13 +22,8 @@ from fastapi import FastAPI
 
 from logging_.logging_ import logging_init
 
-from src.browser.browser_api import router as browser_api_router
-from src.browser.browser_pool import browser_pool_start, browser_pool_stop
-from src.browser.browser_record import router as browser_record_router
-from src.browser.browser_scenario_run import router as browser_scenario_run_router
-from src.browser.browser_snapshot import router as browser_snapshot_router
-from src.browser.browser_view import router as browser_view_router
-from src.browser.browser_ws import router as browser_ws_router
+from browser_.browser_pool import browser_pool_start, browser_pool_stop
+from browser_.browser_router import router as browser_router
 
 
 @asynccontextmanager
@@ -42,9 +41,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title='RhapsodyAi Browser')
 
-app.include_router(browser_api_router)
-app.include_router(browser_view_router)
-app.include_router(browser_ws_router)
-app.include_router(browser_scenario_run_router)
-app.include_router(browser_snapshot_router)
-app.include_router(browser_record_router)
+# Один роутер на весь контейнер: состав ручек — дело общей библиотеки, и новое
+# умение, добавленное там, появляется здесь без правки этого файла.
+app.include_router(browser_router)

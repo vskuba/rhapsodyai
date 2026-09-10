@@ -58,13 +58,13 @@ class TestSecretCrypto:
         Обратимость — то, ради чего здесь шифрование, а не хэш: значение
         подставляют в поле формы, значит его нужно получить целиком.
         """
-        from src.browser.browser_secret import browser_secret_decrypt, browser_secret_encrypt
+        from browser_.browser_secret import browser_secret_decrypt, browser_secret_encrypt
 
         assert browser_secret_decrypt(browser_secret_encrypt('пароль-42')) == 'пароль-42'
 
     async def test_ciphertext_hides_the_value(self):
         """В шифротексте исходного значения нет — именно это увидит дамп базы."""
-        from src.browser.browser_secret import browser_secret_encrypt
+        from browser_.browser_secret import browser_secret_encrypt
 
         assert 'пароль-42' not in browser_secret_encrypt('пароль-42')
 
@@ -74,7 +74,7 @@ class TestSecretCrypto:
         по-разному. Иначе по совпадению строк было бы видно, у каких сайтов пароль
         один и тот же, — а это уже половина ответа.
         """
-        from src.browser.browser_secret import browser_secret_encrypt
+        from browser_.browser_secret import browser_secret_encrypt
 
         assert browser_secret_encrypt('одно и то же') != browser_secret_encrypt('одно и то же')
 
@@ -83,13 +83,13 @@ class TestSecretCrypto:
         Метка отличает зашифрованное от открытого: в одной колонке лежит и то, и
         другое, и гадать по виду строки нельзя.
         """
-        from src.browser.browser_secret import BROWSER_SECRET_PREFIX, browser_secret_encrypt
+        from browser_.browser_secret import BROWSER_SECRET_PREFIX, browser_secret_encrypt
 
         assert browser_secret_encrypt('x').startswith(BROWSER_SECRET_PREFIX)
 
     async def test_plain_value_passes_through(self):
         """Без метки значение возвращается как есть — так читаются открытые переменные."""
-        from src.browser.browser_secret import browser_secret_decrypt
+        from browser_.browser_secret import browser_secret_decrypt
 
         assert browser_secret_decrypt('https://stand.example') == 'https://stand.example'
 
@@ -98,7 +98,7 @@ class TestSecretCrypto:
         Правка соседнего поля не должна наматывать слои: расшифровать такое можно было
         бы только столько же раз подряд.
         """
-        from src.browser.browser_secret import browser_secret_encrypt
+        from browser_.browser_secret import browser_secret_encrypt
 
         once = browser_secret_encrypt('пароль')
         assert browser_secret_encrypt(once) == once
@@ -108,7 +108,7 @@ class TestSecretCrypto:
         Без ключа — исключение, а не тихое сохранение открытым текстом. Молчаливая
         подмена поведения здесь худший исход: обнаружится она при утечке.
         """
-        from src.browser.browser_secret import BROWSER_SECRET_ENV_KEY, browser_secret_encrypt
+        from browser_.browser_secret import BROWSER_SECRET_ENV_KEY, browser_secret_encrypt
 
         monkeypatch.delenv(BROWSER_SECRET_ENV_KEY, raising=False)
 
@@ -122,7 +122,7 @@ class TestSecretCrypto:
         """
         from cryptography.fernet import Fernet
 
-        from src.browser.browser_secret import (BROWSER_SECRET_ENV_KEY,
+        from browser_.browser_secret import (BROWSER_SECRET_ENV_KEY,
                                                 BROWSER_SECRET_UNREADABLE,
                                                 browser_secret_decrypt,
                                                 browser_secret_encrypt)
@@ -142,7 +142,7 @@ class TestStorage:
         ответ API, — в дамп и в бэкап уезжает именно она.
         """
         from mysql_.mysql_ import mysql_get_db_async
-        from src.browser.browser_secret import browser_secret_encrypt
+        from browser_.browser_secret import browser_secret_encrypt
 
         await _variable_add(site, 'password', browser_secret_encrypt('тайна-777'), is_secret=1)
 
@@ -210,7 +210,7 @@ class TestApi:
         Список не отдаёт секретов даже полноправному: он рисуется на каждой смене
         сайта, и пароли пачкой осели бы в журнале прокси и в истории браузера.
         """
-        from src.browser.browser_secret import browser_secret_encrypt
+        from browser_.browser_secret import browser_secret_encrypt
         from src.uvicorn.routers.browser.browser_site_variable import (
             BROWSER_SITE_VARIABLE_MASK, browser_site_variable_list)
 
@@ -227,7 +227,7 @@ class TestApi:
     async def test_reveal_returns_raw(self, site):
         """Сырое значение выдаётся поштучно — на явное действие человека."""
         from mysql_.mysql_ import mysql_get_db_async
-        from src.browser.browser_secret import browser_secret_encrypt
+        from browser_.browser_secret import browser_secret_encrypt
         from src.uvicorn.routers.browser.browser_site_variable import browser_site_variable_reveal
 
         await _variable_add(site, 'password', browser_secret_encrypt('тайна-777'), is_secret=1)
@@ -245,7 +245,7 @@ class TestApi:
         замазываются. Одна сумка с флажком дала бы потребителю возможность
         залогировать всё скопом.
         """
-        from src.browser.browser_secret import browser_secret_encrypt
+        from browser_.browser_secret import browser_secret_encrypt
         from src.uvicorn.routers.browser.browser_site_variable import browser_site_variable_values
 
         await _variable_add(site, 'login', 'stand-user', is_secret=0)
@@ -360,7 +360,7 @@ async def _run_payload(site_id, steps_vars: list, scenario_vars: dict,
     from unittest.mock import patch
 
     from mysql_.mysql_ import mysql_get_db_async
-    from src.browser.browser_secret import browser_secret_encrypt
+    from browser_.browser_secret import browser_secret_encrypt
     import src.uvicorn.routers.browser.browser_scenario as scenario_module
 
     if site_id:

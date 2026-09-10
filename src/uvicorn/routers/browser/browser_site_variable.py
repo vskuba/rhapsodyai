@@ -18,12 +18,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from browser_.browser_secret import (browser_secret_decrypt, browser_secret_encrypt,
+                                     browser_secret_ready)
 from mysql_.mysql_ import mysql_get_db_async
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
-from src.browser.browser_secret import (browser_secret_decrypt, browser_secret_encrypt,
-                                        browser_secret_ready)
 from src.mysql_.repository.browser.site_variable_repository import BrowserSiteVariableRepository
 
 # Префикс не вложен в `/api/browser/site` намеренно, хотя переменные и принадлежат

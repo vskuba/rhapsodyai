@@ -28,18 +28,18 @@ import time
 
 from pydantic import BaseModel, Field
 
+from browser_.browser_scenario import (
+    BROWSER_SCENARIO_ACTIONS,
+    BrowserScenario,
+    BrowserScenarioStep,
+    browser_scenario_step_target,
+)
 from logging_.logging_ import logger_info
 from json_.json_ import json_from_string
 from queue_.queue_ import queue_get
 
 from src.ai.ai_llm import ai_llm_node_get
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
-from src.browser.browser_scenario import (
-    BROWSER_SCENARIO_ACTIONS,
-    BrowserScenario,
-    BrowserScenarioStep,
-    browser_scenario_step_target,
-)
 from src.mysql_.repository.browser.scenario_repository import BrowserScenarioRepository
 from src.mysql_.repository.browser.scenario_run_repository import BrowserScenarioRunRepository
 from src.uvicorn.routers.browser.browser_upstream import (

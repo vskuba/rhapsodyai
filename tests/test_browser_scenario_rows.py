@@ -21,7 +21,7 @@ class TestSchema:
     """Что схема шага принимает, а что отвергает — до всякого прогона."""
 
     def test_rows_step_with_fields(self):
-        from src.browser.browser_scenario import BrowserScenarioStep
+        from browser_.browser_scenario import BrowserScenarioStep
 
         step = BrowserScenarioStep(
             action='extract_rows', selector='.card', name='анкеты',
@@ -37,7 +37,7 @@ class TestSchema:
         нужна потому, что общая шла через `str()`: пустой список давал «[]» —
         непустую строку, — и обязательное поле считалось заполненным.
         """
-        from src.browser.browser_scenario import BrowserScenarioStep
+        from browser_.browser_scenario import BrowserScenarioStep
 
         with pytest.raises(ValueError, match='fields'):
             BrowserScenarioStep(action='extract_rows', selector='.card', name='анкеты')
@@ -47,7 +47,7 @@ class TestSchema:
         У соседних действий поля молча ничего не делали бы, а автор сценария думал
         бы, что сбор настроен.
         """
-        from src.browser.browser_scenario import BrowserScenarioStep
+        from browser_.browser_scenario import BrowserScenarioStep
 
         with pytest.raises(ValueError, match='только у extract_rows'):
             BrowserScenarioStep(action='click', selector='.b',
@@ -55,7 +55,7 @@ class TestSchema:
 
     def test_nested_fields_allowed(self):
         """Вложенность нужна для списка внутри записи — фотографии, метки."""
-        from src.browser.browser_scenario import BrowserScenarioStep
+        from browser_.browser_scenario import BrowserScenarioStep
 
         step = BrowserScenarioStep(
             action='extract_rows', selector='.card', name='анкеты',
@@ -70,7 +70,7 @@ class TestSchema:
         Отказ даёт схема, а не прогон: иначе сценарий сохранился бы и упал у клиента
         посреди сбора.
         """
-        from src.browser.browser_scenario import BrowserScenarioStep
+        from browser_.browser_scenario import BrowserScenarioStep
 
         deep = {'name': 'a', 'selector': 'a'}
         for _ in range(5):
@@ -81,7 +81,7 @@ class TestSchema:
 
     def test_other_actions_unaffected(self):
         """Прежние действия схему проходят как раньше — поля им не нужны."""
-        from src.browser.browser_scenario import BrowserScenarioStep
+        from browser_.browser_scenario import BrowserScenarioStep
 
         assert BrowserScenarioStep(action='click', selector='.btn').fields == []
         assert BrowserScenarioStep(action='extract', selector='h1', name='титул').fields == []
@@ -98,12 +98,12 @@ class TestFormValues:
         отдаёт пусто — сбор молча возвращал пустые строки. Текста у `<input>` тоже
         нет, так что без этой ветки значения формы не достать ничем.
         """
-        from src.browser.browser_scenario import BROWSER_SCENARIO_ATTR_VALUE
+        from browser_.browser_scenario import BROWSER_SCENARIO_ATTR_VALUE
 
         assert BROWSER_SCENARIO_ATTR_VALUE == 'value'
 
     def test_field_accepts_value_attribute(self):
-        from src.browser.browser_scenario import BrowserScenarioStep
+        from browser_.browser_scenario import BrowserScenarioStep
 
         step = BrowserScenarioStep(
             action='extract_rows', selector='.input-group', name='поля',
@@ -121,7 +121,7 @@ class TestMasking:
         кабинета. Без обхода вглубь секрет лёг бы в `browser_scenario_run.extract`
         открытым — мимо той защиты, ради которой значения шифруются в базе.
         """
-        from src.browser.browser_scenario import browser_scenario_mask_data
+        from browser_.browser_scenario_mask import browser_scenario_mask_data
 
         data = [{'имя': 'Diana', 'почта': 'stand-user@example.com'},
                 {'имя': 'Elena', 'фото': ['stand-user@example.com']}]
@@ -133,7 +133,7 @@ class TestMasking:
 
     def test_non_string_values_survive(self):
         """Числа и None проходят насквозь, а не превращаются в строки."""
-        from src.browser.browser_scenario import browser_scenario_mask_data
+        from browser_.browser_scenario_mask import browser_scenario_mask_data
 
         assert browser_scenario_mask_data({'n': 5, 'x': None}, {}) == {'n': 5, 'x': None}
 

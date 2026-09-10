@@ -52,7 +52,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 |------|---------|
 | `main_uvicorn.py` | App bootstrap (FastAPI/Uvicorn server) |
 | `main_telegram.py` | Telegram bot entry point |
-| `main_browser.py` | Контейнер-браузер: один Chromium, изолированные сессии |
+| `main_browser.py` | Контейнер-браузер: один Chromium, изолированные сессии. Сам сервис — `py_modules/browser_` (общий submodule), здесь только точка входа |
 
 **Знакомства уехали.** Анкеты, живой чат и страница `/admin/dating` живут в отдельном
 проекте **DatingAi**; он ходит сюда по HTTP за браузером (`/api/browser/*`) и за
@@ -92,6 +92,14 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `deploy_rules.md` | Blue-Green, конфиг прокси как источник истины, healthcheck, откат |
 | `tool_rules.md` | Два слоя (инструменты и общие библиотеки), куда что писать, контракт функции, докстринг для LLM, ошибки |
 | `py_modules.md` | Общий слой библиотек: что внутри, как подключается, правка чужого репозитория |
+| `project_runtime.md` | Разовое действие в проекте: корень и интерпретатор, прогон кода, запрос к базе без пароля в аргументах |
+| `browser_control.md` | Браузер отдельным сервисом: сессии-контексты, память, живое окно, селекторы, скрипты в страницу |
+| `browser_scenario.md` | Сценарий над страницей: действия, ожидание по признаку, переменные и секреты, сбор данных, трасса |
+| `browser_page.md` | Вопросы к живой странице: текст для модели, снимок и PDF, наблюдатель DOM, консоль, вход без браузера |
+| `mobile_device.md` | Телефон через adb: чем смотреть, снимки экрана, грабли vision-моделей |
+| `mobile_control.md` | Телефон под управлением: карта экрана, нажатия и ввод, приложения, журнал |
+| `mobile_steps.md` | Шаг с проверкой: замер и покой экрана, сравнение до/после, вырезка в натуральную величину |
+| `vision_llm.md` | Локальные модели, читающие изображения: контракт `data:`-URI, цена картинки в токенах |
 | `new_project.md` | Каркас нового проекта: что копируется, раскладка папок, контейнеры, настройки, чек-лист заведения |
 | `llm_rules.md` | Маршрутизация по провайдерам, приоритет и фоллбэк, параллельность, журнал |
 | `datetime_rules.md` | Время: хранение в UTC, показ в поясе настройки `timezone`, сравнение из одного источника |
@@ -110,7 +118,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
-| `browser.md` | Контейнер-браузер: сессии-контексты, API :8014, память, настройки compose |
+| `browser.md` | Контейнер-браузер: как подключён `py_modules/browser_`, страница админки, прокси, API :8014, инструменты над страницей |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
 | `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда, `gx10_autocompact_limit` |
 | `dashboard_frontend.md` | Паттерны админ-страниц: JS, CSS, контракты API |
