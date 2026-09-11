@@ -46,7 +46,7 @@ docker-compose.override.yml
 
 .claude-shell
 .claude/worktrees
-
+.deepseek-harness
 .memsearch
 
 # Blue-Green deployment state (git clean -fd must not delete this)
