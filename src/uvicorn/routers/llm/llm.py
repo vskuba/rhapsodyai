@@ -219,15 +219,38 @@ async def llm_errors_reset(data: dict, user=Depends(AuthChecker([AuthPermission.
 
 
 @router.get("/llm/usage/stats")
-async def llm_usage_stats(node_id: int | None = None, days: int = 7,
+async def llm_usage_stats(node_id: int | None = None, node: str = "", days: int = 7,
                           user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
     """Статистика использования LLM по пользователям за последние `days` дней
     (клампится до 7 - дальше llm_request не хранит записи, см. миграцию).
     Фильтр по node_id - это node_id самого запроса (llm_request.node_id),
     а не текущий список моделей ноды: node_llm может делить одну модель
     между нодами, так что "модель числится за нодой" не значит "запрос был
-    сделан под этой нодой"."""
+    сделан под этой нодой".
+
+    ⚠ **Ноду можно назвать именем** (`node=Dating`), а не только номером.
+    Заведено для соседних проектов: DatingAi адресует ноды **по имени** везде, где
+    к нам обращается (`POST /agent/create` принимает `node`), и номер ему взять
+    негде — читать список нод его служебной учётке не положено, а зашить `2` в
+    чужой код значило бы сломать его при первом переносе базы.
+
+    Имя разрешается здесь, где список нод и так под рукой. Незнакомое имя даёт
+    пустую статистику, а не отказ: «такой ноды нет» и «за неделю ничего не
+    считалось» для читающего одно и то же, а 404 заставил бы страницу отличать их
+    без надобности."""
     days = max(1, min(int(days), 7))
+
+    async with mysql_get_db_async() as db:
+        # Имя в номер — до основного запроса: дальше фильтр всё равно по
+        # `llm_request.node_id`, и вторая ветка SQL под имя означала бы два
+        # похожих запроса, которые однажды разойдутся.
+        if node and not node_id:
+            await db.execute("SELECT id FROM node WHERE name = %s", (str(node),))
+            found = await db.fetchone()
+            if not found:
+                return {"result": {"days": days, "node_id": None, "node": node,
+                                   "rows": []}}
+            node_id = int(found["id"])
 
     node_filter = "AND r.node_id = %s" if node_id else ""
     params = (days, node_id) if node_id else (days,)
@@ -255,7 +278,8 @@ async def llm_usage_stats(node_id: int | None = None, days: int = 7,
             row['tokens_input'] = int(row['tokens_input'] or 0)
             row['tokens_output'] = int(row['tokens_output'] or 0)
 
-    return {"result": {"days": days, "node_id": node_id, "rows": rows}}
+    return {"result": {"days": days, "node_id": node_id, "node": node,
+                       "rows": rows}}
 
 
 @router.delete("/llm/usage/stats")

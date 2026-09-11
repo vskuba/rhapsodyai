@@ -347,6 +347,40 @@ class TestPermissions:
         for role in ('admin', 'qa'):
             assert AuthPermission.BROWSER_SECRET_VIEW in auth_role_permissions(role)
 
+    def test_service_role_reads_llm_usage_but_writes_nothing(self):
+        """⚠ `llm:view` у `dating_service` — **только чтение**, и это осознанно.
+
+        Набор прав служебной учётки узкий намеренно: ею правит не человек, а
+        автоматика, и лишнее право здесь — не удобство, а возможность снести чужое
+        по ошибке в коде. Право добавлено под вкладку «Статистика» у соседа: сколько
+        запросов к LLM ушло и сколько токенов потрачено, считает только эта
+        установка (`llm_request`), и второй копии быть не должно.
+
+        Оговорка про «снести чужое» относится к правам, которые **пишут**.
+        `llm:view` открывает `GET /llm/list`, `/llm/status` и `/llm/usage/stats`;
+        очистка журнала живёт за отдельным `llm:delete`, и его здесь нет.
+        """
+        from src.auth.auth_permission import AuthPermission
+        from src.auth.auth_role import auth_role_permissions
+
+        rights = auth_role_permissions('dating_service')
+
+        assert AuthPermission.LLM_VIEW in rights
+        assert AuthPermission.LLM_DELETE not in rights
+        assert AuthPermission.LLM_UPDATE not in rights
+
+    def test_service_role_stays_narrow(self):
+        """⚠ Сторож объёма: у служебной учётки пять прав, и не больше.
+
+        Права ей добавляют по одному и с доводом (браузер, агент, теперь чтение
+        LLM). Без этой проверки набор рос бы незаметно: каждое следующее «ну ещё
+        одно» выглядит безобидным, а вместе они дают учётке автоматики то, чего
+        никто не решал.
+        """
+        from src.auth.auth_role import auth_role_permissions
+
+        assert len(auth_role_permissions('dating_service')) == 5
+
 
 async def _run_payload(site_id, steps_vars: list, scenario_vars: dict,
                        variables: dict | None = None, secrets: dict | None = None) -> dict:
