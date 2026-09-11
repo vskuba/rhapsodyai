@@ -330,6 +330,7 @@ CREATE TABLE `agent` (
     `description` CHAR(250) NOT NULL,
     `workflow_id` INT NULL,
     `workflow_variable` LONGTEXT DEFAULT NULL,
+    `agent_variable` LONGTEXT DEFAULT NULL COMMENT 'Переменные агента JSON: подставляются в %плейсхолдеры% промпта и приветствия',
     `prompt_system` LONGTEXT NOT NULL,
     `greeting` LONGTEXT NOT NULL,
     `position` INT NOT NULL DEFAULT 0,

@@ -9,6 +9,7 @@ async def agent_create_or_update(
         node_id: int | None = None,
         workflow_id: int | None = None,
         workflow_variable: str | None = None,
+        agent_variable: str | None = None,
         prompt_system: str = '',
         description: str = '',
         greeting: str = '',
@@ -18,6 +19,9 @@ async def agent_create_or_update(
     Создает или обновляет агента по системному имени.
     user_id — активный пользователь (workflow-переменная user_id из сессии):
     агент получает те же роли, что и пользователь (agent_role).
+    agent_variable — переменные агента JSON-строкой, например {"girl_name": "Natalia"}:
+    их значения подставляются в %плейсхолдеры% системного промпта и приветствия,
+    поэтому один шаблон промпта обслуживает всех агентов одного вида.
     Всегда проставляет agent.dynamic=1 - это единственная точка создания
     агентов в рантайме (девушки в dating, подозреваемые/сержант в detective
     и т.п.), в отличие от статичных ботов, которые заводятся только через
@@ -34,6 +38,7 @@ async def agent_create_or_update(
             "node_id": node_id,
             "workflow_id": workflow_id,
             "workflow_variable": workflow_variable,
+            "agent_variable": agent_variable,
             "prompt_system": prompt_system,
             "description": description,
             "greeting": greeting
@@ -60,6 +65,7 @@ async def agent_create_or_update(
             "node_id": node_id,
             "workflow_id": workflow_id,
             "workflow_variable": workflow_variable,
+            "agent_variable": agent_variable,
             "prompt_system": prompt_system,
             "description": description,
             "dynamic": 1,

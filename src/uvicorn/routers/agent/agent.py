@@ -157,11 +157,19 @@ class AgentCreateRequest(BaseModel):
         default_factory=dict,
         description="Значения обязательных полей workflow (`input`-переменные). "
                     "Каких именно — смотрите в отказе `422`: он их перечисляет")
+    agent_variable: dict = Field(
+        default_factory=dict,
+        description="Переменные агента (`agent.agent_variable`): значения, которые "
+                    "подставляются в `%плейсхолдеры%` системного промпта и "
+                    "приветствия — например `{\"girl_name\": \"Natalia\"}`. "
+                    "Это умолчания записи; конкретный разговор может прислать "
+                    "своё значение в `variables` запроса `POST /chat/ask`")
 
     model_config = ConfigDict(json_schema_extra={
         "example": {"node": "Dating", "name": "support_agent", "workflow": "dating_talk",
                     "site": "support", "group_name": "Service",
-                    "title": "Служба поддержки"}})
+                    "title": "Служба поддержки",
+                    "agent_variable": {"girl_name": "Natalia"}}})
 
 
 class AgentCreatedResponse(BaseModel):
@@ -225,6 +233,7 @@ async def agent_create_by_name(
         "site": data.site.strip(),
         "group_name": (data.group_name or '').strip() or None,
         "workflow_variable": None,
+        "agent_variable": _agent_variable_json(data.agent_variable),
     })
 
     return {"result": {"id": agent_id, "name": data.name.strip(),
@@ -296,11 +305,6 @@ async def agent_create(request: Request, data: dict, user=Depends(AuthChecker([A
 
     await _agent_name_unique_check(repo, data.get('name'))
 
-    # Serialize workflow_variable to JSON if it's a dict
-    workflow_variable = data.get('workflow_variable', None)
-    if isinstance(workflow_variable, dict):
-        workflow_variable = json.dumps(workflow_variable, ensure_ascii=False)
-
     agent_id = await repo.add({
         "name": data.get('name'),
         "title": data.get('title'),
@@ -310,7 +314,8 @@ async def agent_create(request: Request, data: dict, user=Depends(AuthChecker([A
         "workflow_id": data.get('workflow_id', None),
         "description": data.get('description', ''),
         "group_name": data.get('group_name') or None,
-        "workflow_variable": workflow_variable,
+        "workflow_variable": _agent_variable_json(data.get('workflow_variable')),
+        "agent_variable": _agent_variable_json(data.get('agent_variable')),
     })
 
     await _agent_role_ids_set(agent_id, data.get('role_ids') or [])
@@ -345,15 +350,11 @@ async def agent_update(
         "group_name": data.get('group_name', current_agent.get('group_name')) or None,
         "workflow_id": data.get('workflow_id', current_agent.get('workflow_id')),
         "workflow_variable": data.get('workflow_variable', current_agent.get('workflow_variable')),
+        "agent_variable": data.get('agent_variable', current_agent.get('agent_variable')),
         "prompt_system": data.get('prompt_system', current_agent.get('prompt_system')),
         "greeting": data.get('greeting', current_agent.get('greeting')),
         "description": data.get('description', current_agent.get('description')),
     }
-
-    # Serialize workflow_variable to JSON if it's a dict
-    workflow_variable = merged_data['workflow_variable']
-    if isinstance(workflow_variable, dict):
-        workflow_variable = json.dumps(workflow_variable, ensure_ascii=False)
 
     async with db:
         sql = """
@@ -365,6 +366,7 @@ async def agent_update(
                 group_name = %s,
                 workflow_id = %s,
                 workflow_variable = %s,
+                agent_variable = %s,
                 prompt_system = %s,
                 greeting = %s,
                 description = %s
@@ -377,7 +379,8 @@ async def agent_update(
             merged_data['title'],
             merged_data['group_name'],
             merged_data['workflow_id'],
-            workflow_variable,
+            _agent_variable_json(merged_data['workflow_variable']),
+            _agent_variable_json(merged_data['agent_variable']),
             merged_data['prompt_system'],
             merged_data['greeting'],
             merged_data['description'],
@@ -418,6 +421,20 @@ async def agent_delete(request: Request, agent_id: int, user=Depends(AuthChecker
     if not deleted:
         return {"status": "error", "message": "Агент не найден"}
     return {"status": "success", "result": "Агент удален"}
+
+
+def _agent_variable_json(value) -> str | None:
+    """Приводит словарь переменных к тому, что лежит в колонке, — JSON-строке.
+
+    Строка проходит как есть: админка присылает уже сериализованный JSON, а
+    внешний клиент — словарь. Пустое значение записываем `NULL`, а не `'{}'`:
+    «переменных нет» и «переменные есть, но пустые» в чтении неразличимы, а
+    NULL короче и честнее.
+    """
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False) if value else None
+
+    return value or None
 
 
 async def _agent_role_ids_get(agent_id: int) -> list[int]:
@@ -524,16 +541,18 @@ async def _agent_create_by_workflow(request: Request, data: AgentCreateRequest,
     answer = str((response.json() or {}).get('result') or '').strip()
     created = await AgentRepository().find_one_by({'name': data.name})
 
-    # Сайт и группу пишет точка создания, а не прогон: у инструмента
-    # `agent_create_or_update` их полей нет, а вызывающий их просил. Группа —
-    # COALESCE: не передана, оставляем то, что в строке (workflow её не трогает).
+    # Сайт, группу и переменные агента пишет точка создания, а не прогон:
+    # вызывающий их просил, а у прогона своя забота. Группа и переменные —
+    # COALESCE: не переданы, оставляем то, что в строке (workflow мог их задать
+    # сам — `agent_create_or_update` умеет писать переменные).
     if created:
         async with mysql_get_db_async() as db:
             await db.execute(
-                'UPDATE agent SET site = %s, group_name = COALESCE(%s, group_name) '
+                'UPDATE agent SET site = %s, group_name = COALESCE(%s, group_name), '
+                '       agent_variable = COALESCE(%s, agent_variable) '
                 ' WHERE id = %s',
                 (data.site.strip(), (data.group_name or '').strip() or None,
-                 int(created['id'])))
+                 _agent_variable_json(data.agent_variable), int(created['id'])))
             await db.connection.commit()
 
     return {'result': {'id': int(created['id']) if created else 0,

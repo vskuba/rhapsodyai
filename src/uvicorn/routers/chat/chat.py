@@ -13,6 +13,7 @@ from src.ai.ai_workflow import ai_workflow_variables_render
 from src.ai.ai_workflow import ai_workflow_variables_input_get
 from src.ai.ai_workflow import ai_workflow_variables_node_get
 from src.ai.ai_workflow import ai_workflow_variables_base, ai_workflow_variables_defaults_apply
+from src.ai.ai_workflow import ai_workflow_text_render
 from src.mysql_.repository.companion_repository import CompanionRepository
 from setting_.setting_ import setting_get
 from src.tool.setting.setting_ import setting_value_get
@@ -122,6 +123,12 @@ async def chat_ask_ai(
     # минуя workflow-переменные) — резолвим их мультиязычные значения здесь же
     entity_agent['prompt_system'] = i18n_text_resolve(entity_agent.get('prompt_system'), language_active)
     entity_agent['greeting'] = i18n_text_resolve(entity_agent.get('greeting'), language_active)
+
+    # Приветствие — такой же шаблон, как системный промпт: у универсального агента
+    # в нём стоит `%girl_name%`. Раскрываем здесь, а не в движке: дальше по коду
+    # переменные ноды подставляют `%agent_greeting%` и должны увидеть готовый текст.
+    # Промпт раскрывает движок — ему видны ещё и переменные ноды.
+    entity_agent['greeting'] = ai_workflow_text_render(entity_agent['greeting'], workflow_variables_all)
     workflow_variables_all['agent_greeting'] = entity_agent['greeting']
 
     # Получаем переменные ноды воркфлоу и рендерим их с учетом уже собранных переменных

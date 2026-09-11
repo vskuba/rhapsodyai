@@ -22,6 +22,10 @@ Workflow — конструктор детерминированных цепо�
 workflow обслуживает множество агентов с разными входными данными (пример из сидов: 4 агента-девушки
 anna/dasha/lera/elena используют один workflow `dating_talk`, отличаясь только `{"document_id": ...}`).
 
+Следующий шаг того же приёма — `agent.agent_variable`: она параметризует не вход workflow, а
+**системный промпт и приветствие**. Когда агенты отличаются одним словом внутри промпта, их
+не нужно и множество: хватает одной записи с `%girl_name%` в тексте (agent.md §6).
+
 ## 2. Модель данных (MySQL)
 
 | Таблица | Роль |
@@ -34,7 +38,7 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 | `node_variable` | Переменные ноды (бывшие «переменные ноды»): name, node_id, **type ENUM('public','proxy')**, default, position, description. Редактируются менеджерами на публичных страницах |
 | `node_variable_role` | M:N публичная переменная ↔ роль (гранулярный доступ) |
 | `node_variable_workflow` | M:N публичная переменная ↔ workflow: переменная видна в редакторе только тех workflow ноды, к которым привязана |
-| `agent` | workflow_id (FK) + workflow_variable (JSON-инициализация) |
+| `agent` | workflow_id (FK) + workflow_variable (JSON-инициализация входа workflow) + **agent_variable** (JSON: значения `%плейсхолдеров%` промпта и приветствия, agent.md §6) |
 | `session.metadata` | Персистентное состояние: `workflow_step_current_index` для continue_workflow |
 | `agent_session` | История: user-prompt / response-final / tool-call / system-prompt |
 | `agent_workflow_trace` | Журнал: один запуск workflow — status running/success/error, prompt, result/error, `variables_start` (снапшот на старте), duration_ms; вложенность sub-workflow через `parent_run_id`/`parent_step_id`/`depth` |
@@ -44,8 +48,12 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 
 Порядок сборки `workflow_variables_all` при запросе (`src/uvicorn/routers/chat/chat.py`):
 
+0. **Переменные агента** — `agent.agent_variable` (JSON). Кладутся **под** базовыми: своё
+   `agent_title` в них базовое имя не подменяет. Единственные, кто доезжает до **всех** точек
+   входа: они внутри `ai_workflow_variables_base()`, а не в `chat.py` (см. ниже и agent.md §6).
 1. **Базовые** — `prompt_user`, `user_id/username/email`, `agent_*`, `companion_*`, `session_uuid`, `workflow_id`, `node_id`.
-2. **Из агента** — `agent.workflow_variable` (JSON).
+2. **Из агента** — `agent.workflow_variable` (JSON). ⚠ Подмешивает только `chat.py`: телеграм-бот,
+   cron-задачи и роли конвейера зовут движок напрямую и этой колонки не видят.
 3. **Из запроса** — `request.variables` (клиент может передать переменные).
 4. **Переменные ноды ноды** (таблица `node_variable`, включая proxy) — рендерятся по порядку `position` с учетом уже собранных (могут ссылаться на них: `girl_title` default=`%prompt_user%`).
 5. **Переменные workflow** (`type='workflow'`) — default-значения, добавляются только если ключа еще нет.
@@ -55,6 +63,14 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 Рендеринг: `ai_workflow_variables_render()` (`src/ai/ai_workflow.py`) — рекурсивная подстановка `%name%`
 в строки/dict/list. **Нюанс — умная замена типов**: если строка состоит только из плейсхолдера (`"%id%"`),
 возвращается исходное значение с типом (int/list/bool), а не строка.
+
+**Системный промпт и приветствие агента — тоже шаблоны.** Тот же рендер, но через
+`ai_workflow_text_render()`: результат всегда строка — промпт из одной `%переменной%` иначе
+уехал бы в движок списком или числом. Промпт раскрывает движок
+(`AiFrameworkAgentManager.prompt_system_create` → `_prompt_system_render`, весь scope
+включая переменные ноды), приветствие — `chat.py` сразу после резолва i18n, потому что
+дальше по коду переменные ноды подставляют `%agent_greeting%` и должны видеть готовый
+текст. Зачем это нужно и как пользоваться — agent.md §6.
 
 **Условные блоки в шаблонах**: `%if var%...%else%...%endif%` (+ отрицание `%if !var%`) —
 разворачиваются ДО подстановки переменных (`ai_workflow_if_blocks_render`). Переменная «истинна»,

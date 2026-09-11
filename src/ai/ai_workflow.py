@@ -2,6 +2,7 @@ import re
 from typing import Any
 
 from json_.json_ import json_from_string
+from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 
 # Условный блок в шаблонах: %if var%...%else%...%endif% (с отрицанием %if !var%).
@@ -14,6 +15,35 @@ WORKFLOW_IF_BLOCK_RE = re.compile(
     r'%endif%',
     re.DOTALL
 )
+
+
+def ai_workflow_variables_agent_get(entity_agent: dict) -> dict:
+    """Переменные агента — словарь из колонки `agent.agent_variable` (JSON).
+
+    Чем отличаются от `agent.workflow_variable`: те задают **вход workflow**, эти —
+    подставляются в **системный промпт и приветствие самого агента**. Разница
+    видна на сотне собеседниц, живущих на одном `dating_talk`: раньше каждой
+    заводили своего агента только потому, что в промпте стоит её имя, — сто
+    записей с одинаковым текстом. С переменной агента запись одна: в промпте
+    `%girl_name%`, а значение приходит из `agent.agent_variable` (умолчание) или
+    из переменных запроса (конкретная анкета).
+
+    Значения попадают в общий scope workflow — шаг читает `%girl_name%` наравне
+    с остальными переменными, отдельного пространства имён у них нет.
+
+    Битый JSON — не повод ронять запрос: агент ответит с нераскрытым `%имя%` в
+    промпте, и это заметнее и безопаснее, чем 500 на ровном месте.
+    """
+    raw = entity_agent.get('agent_variable')
+    if not raw:
+        return {}
+
+    variables = json_from_string(raw)
+    if not variables:
+        logger_info(f"⚠️ agent_variable агента '{entity_agent.get('name')}' не разобран как JSON: {raw!r}")
+        return {}
+
+    return {str(name).strip(): value for name, value in variables.items() if str(name).strip()}
 
 
 def ai_workflow_variables_base(
@@ -34,8 +64,13 @@ def ai_workflow_variables_base(
     переменным (agent_workflow_variable type='global'). Единственный источник
     этих имен: используется всеми точками входа (веб-чат, переводчик и т.д.),
     чтобы правки не приходилось дублировать по копиям словаря.
+
+    Переменные агента (`agent.agent_variable`) кладутся **под** базовыми: собственное
+    имя вроде `agent_title` в переменных агента не должно подменять базовое —
+    глобальные имена одинаковы во всех workflow, и workflow на них рассчитывает.
     """
     return {
+        **ai_workflow_variables_agent_get(entity_agent),
         'prompt_user': prompt_user,
         'user_id': user_id,
         'user_username': user_username,
@@ -205,3 +240,19 @@ def ai_workflow_variables_render(source: Any, variables: dict) -> Any:
         return [ai_workflow_variables_render(item, variables) for item in source]
 
     return source
+
+
+def ai_workflow_text_render(source: Any, variables: dict) -> str:
+    """То же, что `ai_workflow_variables_render`, но результат всегда строка.
+
+    Нужен там, где шаблон — текст для модели (системный промпт, приветствие), а
+    не значение переменной. У общего рендера есть «умная замена типов»: строка
+    ровно из одного плейсхолдера возвращает исходное значение с его типом — и
+    промпт `%girl_prompt%` уехал бы в движок списком или числом. `None`
+    превращаем в пустую строку, а не в текст «None».
+    """
+    rendered = ai_workflow_variables_render(source, variables)
+    if rendered is None:
+        return ''
+
+    return rendered if isinstance(rendered, str) else str(rendered)

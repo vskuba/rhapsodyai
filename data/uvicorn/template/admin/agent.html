@@ -346,6 +346,22 @@
         overflow-y: auto;
     }
 
+    /* Подсказка под заголовком блока: чем переменные агента отличаются от workflow */
+    .variables-hint {
+        font-size: 11px;
+        line-height: 1.5;
+        color: #7f8c8d;
+        margin: -4px 0 2px;
+    }
+
+    .variables-hint code {
+        background: #f1f4f6;
+        border-radius: 3px;
+        padding: 1px 4px;
+        font-family: 'Consolas', 'Monaco', monospace;
+        color: #2c3e50;
+    }
+
     /* Строка с парой Ключ-Значение */
     .variable-row {
         display: flex;
@@ -496,6 +512,22 @@
                 </div>
 
                 <div class="variable-column">
+                    <div class="form-group" id="agentVariablesGroup">
+                        <label>Переменные агента</label>
+                        <div class="variables-hint">
+                            Подставляются в <code>%имя%</code> системного промпта и приветствия.
+                            Один агент с шаблоном вместо сотни копий: в промпте
+                            <code>%girl_name%</code>, значение — здесь. Разговор может прислать
+                            своё в <code>variables</code> запроса — оно перекроет это.
+                        </div>
+                        <div id="agentVariablesContainer" class="variables-editor-container">
+                            <!-- Сюда динамически будут добавляться строки с переменными агента -->
+                        </div>
+                        <button type="button" class="btn-add-var" id="addAgentVariableBtn">+ Добавить
+                            переменную
+                        </button>
+                    </div>
+
                     <div class="form-group" id="variablesGroup" style="margin-top: 10px;">
                         <label>Переменные Workflow</label>
                         <div id="variablesContainer" class="variables-editor-container">
@@ -783,28 +815,8 @@
             // вернется к ней, а не к первой по счету
             sessionStorage.setItem(AGENT_NODE_KEY, String(agent.node_id || 'none'));
 
-            const varContainer = document.getElementById('variablesContainer');
-            if (varContainer) {
-                varContainer.innerHTML = ''; // Очищаем контейнер от старых переменных
-
-                if (agent.workflow_variable) {
-                    try {
-                        // Парсим, если пришла строка, иначе используем как объект
-                        const parsedVars = typeof agent.workflow_variable === 'string'
-                            ? JSON.parse(agent.workflow_variable)
-                            : agent.workflow_variable;
-
-                        // Отрисовываем каждую пару ключ-значение
-                        Object.entries(parsedVars).forEach(([key, val]) => {
-                            createVariableRow(key, val);
-                        });
-                    } catch (e) {
-                        console.error("Ошибка парсинга workflow_variable:", e);
-                        // Если там не валидный JSON, создаем одну строчку с ошибкой в значении
-                        createVariableRow('error_raw_data', agent.workflow_variable);
-                    }
-                }
-            }
+            variablesRender('variablesContainer', agent.workflow_variable);
+            variablesRender('agentVariablesContainer', agent.agent_variable);
 
             document.getElementById('formTitle').textContent = `Agent: #${agent.id} ${agent.name}`;
 
@@ -870,16 +882,6 @@
         const currentWorkflowId = document.getElementById('workflow_id').value;
         const currentRoleIds = getSelectedRoles();
         const saveBtn = document.getElementById('saveBtn');
-        const varRows = document.querySelectorAll('.variable-row');
-        const workflowVariableObj = {};
-
-        varRows.forEach(row => {
-            const key = row.querySelector('.var-key').value.trim();
-            const val = row.querySelector('.var-value').value.trim();
-            if (key) {
-                workflowVariableObj[key] = val;
-            }
-        });
 
         // Собираем данные из полей
         const payload = {
@@ -892,7 +894,8 @@
             prompt_system: langSwitcher.fieldSerialize(document.getElementById('prompt_system')),
             greeting: langSwitcher.fieldSerialize(document.getElementById('greeting')),
             description: document.getElementById('description').value,
-            workflow_variable: JSON.stringify(workflowVariableObj)
+            workflow_variable: JSON.stringify(variablesCollect('variablesContainer')),
+            agent_variable: JSON.stringify(variablesCollect('agentVariablesContainer'))
         };
 
         // Блокируем кнопку на время запроса
@@ -928,8 +931,47 @@
         }
     }
 
-    function createVariableRow(key = '', value = '') {
-        const container = document.getElementById('variablesContainer');
+    /**
+     * Отрисовывает JSON переменных в контейнере. Блока два — переменные агента
+     * и переменные workflow, — и различаются они только контейнером
+     */
+    function variablesRender(containerId, raw) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.innerHTML = ''; // Очищаем контейнер от переменных прошлого агента
+        if (!raw) return;
+
+        try {
+            // Парсим, если пришла строка, иначе используем как объект
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            Object.entries(parsed).forEach(([key, val]) => createVariableRow(containerId, key, val));
+        } catch (e) {
+            console.error(`Ошибка парсинга переменных (${containerId}):`, e);
+            // Если там не валидный JSON, создаем одну строчку с ошибкой в значении
+            createVariableRow(containerId, 'error_raw_data', raw);
+        }
+    }
+
+    /**
+     * Собирает пары ключ-значение блока в объект (пустые ключи отбрасываются)
+     */
+    function variablesCollect(containerId) {
+        const container = document.getElementById(containerId);
+        const result = {};
+        if (!container) return result;
+
+        container.querySelectorAll('.variable-row').forEach(row => {
+            const key = row.querySelector('.var-key').value.trim();
+            const val = row.querySelector('.var-value').value.trim();
+            if (key) result[key] = val;
+        });
+
+        return result;
+    }
+
+    function createVariableRow(containerId, key = '', value = '') {
+        const container = document.getElementById(containerId);
         if (!container) return;
 
         const row = document.createElement('div');
@@ -1006,8 +1048,8 @@
             // Снимаем выделение с активного агента в списке
             document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
 
-            const varContainer = document.getElementById('variablesContainer');
-            if (varContainer) varContainer.innerHTML = ''; // Очищаем переменные
+            variablesRender('variablesContainer', null);      // Очищаем переменные
+            variablesRender('agentVariablesContainer', null);
 
             // Очищаем переводы прошлого агента
             langSwitcher.fieldLoad(document.getElementById('greeting'), '');
@@ -1023,7 +1065,14 @@
     const addVarBtn = document.getElementById('addVariableBtn');
     if (addVarBtn) {
         addVarBtn.addEventListener('click', () => {
-            createVariableRow('', ''); // Создает пустую строку для ввода
+            createVariableRow('variablesContainer', '', ''); // Создает пустую строку для ввода
+        });
+    }
+
+    const addAgentVarBtn = document.getElementById('addAgentVariableBtn');
+    if (addAgentVarBtn) {
+        addAgentVarBtn.addEventListener('click', () => {
+            createVariableRow('agentVariablesContainer', '', '');
         });
     }
 

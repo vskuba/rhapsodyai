@@ -10,7 +10,7 @@ from typing import Any, Callable, Awaitable, cast
 from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_filter_by_type, ai_llm_image_generate, ai_llm_request_log
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
-    ai_workflow_variables_global_get
+    ai_workflow_variables_global_get, ai_workflow_variables_agent_get, ai_workflow_text_render
 from src.ai.ai_workflow_trace import (ai_workflow_trace_run_start, ai_workflow_trace_run_finish,
                                       ai_workflow_trace_step, ai_workflow_trace_variables_diff)
 from logging_.logging_ import logger_info
@@ -96,7 +96,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
     async def prompt_system_create(self, metadata: dict) -> str:
         entity_agent = metadata.get('entity_agent', {})
-        prompt_system = entity_agent.get('prompt_system', '')
+        prompt_system = self._prompt_system_render(metadata)
 
         if not (specialization_id := entity_agent.get('specialization_id', 0)):
             return prompt_system
@@ -1235,6 +1235,33 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         # Fallback: вернуть сырой текст как строку — вызывающий код обернёт его в dict
         # если ожидается ровно одна переменная (см. логику после вызова _json_parse)
         return json_str.strip()
+
+    @staticmethod
+    def _prompt_system_render(metadata: dict) -> str:
+        """Раскрывает `%переменные%` в системном промпте агента.
+
+        Зачем промпту шаблон. Агенты отличаются друг от друга обычно не логикой, а
+        одной строкой внутри промпта — именем собеседницы, названием компании,
+        городом. Пока промпт был мёртвым текстом, каждое такое отличие стоило
+        отдельной записи в `agent`: сто анкет — сто копий одного и того же текста,
+        и правка формулировки означала сто правок. Шаблон снимает это: запись одна,
+        а `%girl_name%` приходит переменной.
+
+        Откуда значения. Весь scope прогона (`workflow_variables`) — в нём уже
+        лежат и переменные агента, и переменные ноды, и переменные запроса, и
+        базовые. Переменные агента подмешиваются отдельно как запасной путь: у
+        служебного вызова `GET /agent/{id}/prompt_system/{collection}` scope-а нет
+        вовсе, а показать он должен тот же текст, что уйдёт в модель.
+
+        Условные блоки `%if var%…%endif%` работают здесь так же, как в шагах, —
+        рендер один и тот же."""
+        entity_agent = metadata.get('entity_agent', {}) or {}
+        variables = {
+            **ai_workflow_variables_agent_get(entity_agent),
+            **(metadata.get('workflow_variables') or {}),
+        }
+
+        return ai_workflow_text_render(entity_agent.get('prompt_system', ''), variables)
 
     @staticmethod
     async def _workflow_variables_protected() -> set:

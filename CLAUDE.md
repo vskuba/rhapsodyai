@@ -180,7 +180,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 
 | File | Contents |
 |------|---------|
-| `agent.md` | `/agent/*`: две дороги заведения — записью и «workflow заводит сам» |
+| `agent.md` | `/agent/*`: две дороги заведения — записью и «workflow заводит сам»; переменные агента (`agent_variable`) — шаблон промпта вместо записи на каждого |
 | `role.md` | `/role/*`: CRUD ролей, право на каждое действие, привязка агентов через `agent_role` |
 | `user.md` | `/user/*`: админский CRUD, bcrypt-хеш, токены доступа, привязка нод |
 | `session.md` | `/session/*`: чтение журнала `agent_session` — список, последняя, диалог по `session_uuid` |
