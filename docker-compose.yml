@@ -8,9 +8,20 @@ services:
       - cluster.name=dev-cluster
       - node.name=opensearch-node1
       - discovery.type=single-node
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      # ⚠ Куча урезана вдвое, и потолок контейнера задан явно. Прежде было
+      # `-Xmx512m` и никакого `mem_limit`: JVM брала 512 МБ кучи плюс своё сверху и
+      # занимала 713 МБ — при двух гигабайтах общей нехватки, из-за которой машина
+      # держала 2.4 ГБ в свопе. Индекс здесь один и маленький (журналы приложений),
+      # на 256 МБ кучи он живёт.
+      - "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m"
       - DISABLE_SECURITY_PLUGIN=true
       - DISABLE_INSTALL_DEMO_CONFIG=true
+    # ⚠ Потолок **втрое от кучи**, и это измерено, а не выведено. Сперва стояло
+    # 512 МБ — вдвое, — и контейнер сел на 96% сразу после старта: у OpenSearch
+    # вне кучи живёт немало (метаданные 70 индексов, буферы, стеки), и при 256 МБ
+    # кучи процесс занимает около 500 МБ. Потолок здесь страховка от разрастания,
+    # а не рабочий размер: прежде его не было вовсе, и JVM брала 713 МБ.
+    mem_limit: 768m
     ulimits:
       memlock: -1
       nofile: 65536
@@ -51,8 +62,14 @@ services:
       - ./data/log:/logs:ro
       - ./data/log/sincedb:/var/lib/logstash/sincedb:rw
     environment:
-      - LS_JAVA_OPTS=-Xms512m -Xmx1g
+      # ⚠ Куча урезана вдвое: конвейер здесь один и читает файлы журналов, а не
+      # держит очередь. Было `-Xmx1g` при занятых 614 МБ.
+      - LS_JAVA_OPTS=-Xms256m -Xmx512m
       - pipeline.ecs_compatibility=disabled
+      # ⚠ Один рабочий вместо числа ядер (их два): каждый держит свой буфер
+      # событий, а поток журналов здесь такой, что и одного много.
+      - pipeline.workers=1
+    mem_limit: 768m
     depends_on:
       - opensearch
     networks:
