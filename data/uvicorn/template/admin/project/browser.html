@@ -1868,6 +1868,125 @@
         font-size: 13px; padding: 2px 5px; border-radius: 5px;
     }
     .var-btn:hover { background: #f1f5f9; color: #475569; }
+
+    /* ---------- Вкладка «Proxy»: выходные адреса ----------
+       ⚠ **Панель обязана быть колонкой.** `.tab-panel.active` — это `display: flex`
+       без направления, то есть **в ряд**: шапка, форма и таблица становились
+       соседями по горизонтали, шапка уезжала в вертикальный центр, а таблица
+       растягивалась на всю высоту и раздувала строки. Соседняя вкладка лечит это
+       построчно (`#tab-variable .var-table { align-self: flex-start }`); здесь
+       чиним разом — направлением и прижатием к верху. */
+    #tab-proxy.active { flex-direction: column; justify-content: flex-start; }
+    #tab-proxy { overflow: auto; padding-bottom: 24px; }
+
+    .pxy-head {
+        display: flex; align-items: center; gap: 12px;
+        padding: 14px 16px 10px; flex: 0 0 auto;
+    }
+    .pxy-note { flex: 1 1 auto; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+    /* Переключатель автопроверки — неприметный: его включают один раз и забывают,
+       а место рядом с кнопками занимает постоянно. */
+    .pxy-auto {
+        display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+        font-size: 12px; color: #64748b; cursor: pointer;
+    }
+    .pxy-auto input { cursor: pointer; }
+    .pxy-auto span { color: #cbd5e1; }
+    /* Числа в сводке — тёмным: их читают, остальное поясняет. */
+    .pxy-note b { color: #475569; font-weight: 600; }
+
+    /* Ширину ограничиваем: реестр читают глазом слева направо, а растянутый на
+       весь монитор он разносит имя и его занятость на полметра друг от друга. */
+    .pxy-table {
+        width: 100%; max-width: 1180px; border-collapse: collapse;
+        font-size: 13px; flex: 0 0 auto;
+    }
+    .pxy-table th {
+        text-align: left; padding: 0 14px 8px; font-size: 11px; font-weight: 600;
+        color: #94a3b8; text-transform: uppercase; letter-spacing: .04em;
+        border-bottom: 1px solid #e2e8f0; white-space: nowrap;
+    }
+    .pxy-table td { padding: 1px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .pxy-table tr:hover td { background: #fafbfc; }
+    /* ⚠ Мёртвый выход серый целиком и внизу списка: он в реестре есть, но
+       потребителю не достанется. Причина — на месте пинга: иначе «серый»
+       читается как «выключен человеком», а это другая беда. */
+    .pxy-table tr.dead td { opacity: .55; }
+
+    /* ⚠ **Ни одного переноса: каждое поле — своей колонкой.** Прежде имя, адрес
+       и пометка шли столбиком под именем, и два десятка выходов не помещались на
+       экран. Длинное имя обрезается многоточием, полное — в подсказке. */
+    .pxy-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pxy-name { font-weight: 600; color: #0f172a; max-width: 220px; }
+    .pxy-where {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; color: #64748b; max-width: 260px;
+    }
+    .pxy-note-cell { font-size: 11px; color: #94a3b8; max-width: 200px; }
+    .pxy-when { font-size: 11px; color: #94a3b8; }
+    .pxy-country .dim { color: #cbd5e1; }
+    /* Код страны — моноширинным и с рамкой: две буквы в потоке текста теряются,
+       а по ним сверяют канал с легендой анкеты. */
+    .pxy-cc {
+        font-family: ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 600;
+        color: #334155; background: #f1f5f9; border-radius: 4px; padding: 1px 6px;
+    }
+    .pxy-ping { font-size: 12px; color: #475569; font-weight: 600; }
+    .pxy-ping .bad { color: #b91c1c; font-weight: 400; }
+    .pxy-ping .dim, .pxy-when .dim { color: #cbd5e1; }
+
+    /* Колонка «Внешний IP» — то, каким нас видит чужой сайт. */
+    .pxy-ip-line { display: inline-flex; align-items: center; gap: 7px; }
+    .pxy-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+    .pxy-dot.ok { background: #22c55e; }
+    .pxy-dot.bad { background: #ef4444; }
+    .pxy-dot.none { background: #cbd5e1; }
+    .pxy-ip {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px; color: #0f172a;
+    }
+    .pxy-ip.dim { color: #cbd5e1; }
+    .pxy-ip-own {
+        font-family: ui-monospace, Menlo, monospace; color: #475569; font-weight: 600;
+    }
+    /* «наш» — предупреждение, а не пометка: такой канал ничего не скрывает. */
+    .pxy-warn {
+        font-size: 10px; font-weight: 700; color: #b45309; background: #fffbeb;
+        border: 1px solid #fde68a; border-radius: 4px; padding: 1px 5px; white-space: nowrap;
+    }
+    /* Общий внешний адрес у нескольких строк — главная ловушка реестра: лимит
+       потребителя они делят, а выглядят как разные выходы. Метка компактная,
+       пояснение в подсказке: фразой в каждой строке это был шум. */
+    .pxy-same {
+        font-size: 10px; font-weight: 600; color: #b45309; background: #fffbeb;
+        border: 1px solid #fde68a; border-radius: 4px; padding: 1px 5px;
+        cursor: help;
+    }
+
+    .pxy-col-act { width: 1%; text-align: right; white-space: nowrap; }
+    .pxy-act { display: inline-flex; gap: 4px; }
+    .pxy-empty { padding: 28px 16px; color: #94a3b8; font-size: 13px; }
+
+    .pxy-form {
+        display: none; gap: 10px; flex-wrap: wrap; align-items: flex-end;
+        padding: 14px 16px; margin: 0 16px 14px; background: #f8fafc;
+        border: 1px solid #e2e8f0; border-radius: 10px; flex: 0 0 auto;
+    }
+    .pxy-form.open { display: flex; }
+    .pxy-field { display: flex; flex-direction: column; gap: 4px; }
+    .pxy-field label { font-size: 11px; color: #94a3b8; }
+    /* Пояснение прямо в подписи: короткое правило («пусто — возьмём хост»)
+       читается там, где его применяют, а не в отдельной справке. */
+    .pxy-field label i { font-style: normal; color: #cbd5e1; }
+    .pxy-field input, .pxy-field select {
+        border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 9px;
+        font-size: 13px; font-family: inherit; background: #fff; color: #334155;
+    }
+    .pxy-field input:focus, .pxy-field select:focus { outline: none; border-color: #c7d2fe; }
+    .pxy-check {
+        flex-direction: row; align-items: center; gap: 6px;
+        font-size: 12px; color: #475569; padding-bottom: 7px;
+    }
     .var-btn-del:hover { background: #fef2f2; color: #dc2626; }
     /* Копирование — рядом со значением, а не в столбце действий: оно про само
        значение, а тот столбец про строку целиком (правку и удаление).
@@ -1918,9 +2037,15 @@
 {% block content %}
 <div class="browser-page">
 
-{# Две страницы на одном шаблоне: `sites` — список того, что заведено, `site` —
-   работа по одному выбранному. Копией их разделять нельзя: страница на четыре
-   тысячи строк, и второй экземпляр разошёлся бы с первым при первой правке. #}
+{# Четыре страницы на одном шаблоне: `sites` — список того, что заведено, `site` —
+   работа по одному выбранному, `error` — ошибки клиентов, `proxy` — реестр
+   выходных адресов. Копией их разделять нельзя: страница на шесть тысяч строк, и
+   второй экземпляр разошёлся бы с первым при первой правке.
+
+   ⚠ Последние две вынесены из «Сайта» по одной и той же причине: их предмет к
+   сайту-закладке не привязан. Ошибки шлют соседние проекты, а прокси — канал
+   наружу, общий на установку; вкладка внутри сайта обещала, что они настраиваются
+   для выбранного вверху сайта, и при переключении показывала то же самое. #}
 {% set browser_page = browser_page | default('sites') %}
 
 {% if browser_page == 'site' %}
@@ -1942,6 +2067,8 @@
     <button class="page-tab" data-tab="runlog">Журналы <span class="page-tab-n" id="tabCount-runlog"></span></button>
     {% elif browser_page == 'error' %}
     <button class="page-tab active" data-tab="error">Ошибки <span class="page-tab-n" id="tabCount-error"></span></button>
+    {% elif browser_page == 'proxy' %}
+    <button class="page-tab active" data-tab="proxy">Прокси <span class="page-tab-n" id="tabCount-proxy"></span></button>
     {% else %}
     <button class="page-tab active" data-tab="site">Сайты <span class="page-tab-n" id="tabCount-site"></span></button>
     {% endif %}
@@ -2216,6 +2343,102 @@
 
 </div>
 
+{% if browser_page == 'proxy' %}
+<!-- Реестр выходных адресов: какие прокси заведены и какие из них живые.
+
+     ⚠⚠ **Своя страница, а не вкладка «Сайта», и это исправление живой путаницы.**
+     Реестр общий на установку: через один канал ходит и Chromium к любому сайту, и
+     соседний проект своими запросами. Вкладка внутри сайта обещала обратное — что
+     выход настраивают для выбранного вверху сайта, — а при переключении сайтов
+     показывала тот же самый список. Человек законно читал это как поломку.
+
+     Тот же довод и то же решение, что у ошибок: предмет к сайту не привязан —
+     значит и страница своя.
+
+     ⚠ **Кому какой выход достанется — решает не эта страница.** Реестр отдаёт
+     список вместе с увиденным адресом, а считает своих потребителей тот, кто их
+     знает: у соседнего проекта свои анкеты и свой предел на адрес. Столбца
+     «Анкеты» здесь поэтому нет — про анкеты в этом проекте не знают. -->
+<div class="tab-panel active" id="tab-proxy">
+
+<div class="pxy-head">
+    <div class="pxy-note" id="pxyNote"></div>
+    {#
+       ⚠ **Автопроверка живёт, пока открыта вкладка**, и заменой расписанию у
+       потребителя не является: то работает без браузера. Здесь — чтобы человек,
+       заводящий десяток каналов подряд, видел их свежими, не нажимая кнопку
+       после каждого.
+    #}
+    <label class="pxy-auto" title="Пока вкладка открыта, проверять выходы раз в пять минут. Скрытая вкладка не проверяет.">
+        <input type="checkbox" id="pxyAuto"> автопроверка каждые 5 минут
+        <span id="pxyAutoWhen"></span>
+    </label>
+    <button type="button" class="browser-btn" id="pxyCheckAllBtn">Проверить все</button>
+    <button type="button" class="browser-btn" id="pxyAddBtn">+ Прокси</button>
+</div>
+
+<div class="pxy-form" id="pxyForm">
+    <input type="hidden" id="pxyId">
+    {#
+       ⚠ **Адрес одной строкой, а не схемой/хостом/портом/логином/паролем.**
+       Каналы покупают пачками, и провайдер присылает их списком — по строке на
+       выход. Пять полей на строку это пять мест, где можно ошибиться, помноженные
+       на два десятка каналов: строку из письма вставляют целиком.
+
+       Форматы разбирает сервер (`http_proxy_parse`): `socks5://user:pass@host:1080`
+       и короткую запись продавцов `host:1080:user:pass`.
+    #}
+    <div class="pxy-field" style="flex:1 1 340px">
+        <label for="pxyAddress">Адрес <i>вставьте строку от провайдера</i></label>
+        <input id="pxyAddress" autocomplete="off"
+               placeholder="socks5://user:pass@host:1080  ·  host:1080:user:pass">
+    </div>
+    <div class="pxy-field" style="flex:1 1 170px">
+        <label for="pxyName">Имя <i>пусто — возьмём хост</i></label>
+        <input id="pxyName" placeholder="DE-1 · резидентный">
+    </div>
+    <div class="pxy-field" style="flex:1 1 180px">
+        <label for="pxyNoteIn">Пометка</label>
+        <input id="pxyNoteIn" placeholder="чей канал, до какого числа оплачен">
+    </div>
+    <label class="pxy-field pxy-check">
+        <input type="checkbox" id="pxyEnabled" checked> в работе
+    </label>
+    <button type="button" class="browser-btn primary" id="pxySaveBtn">Сохранить</button>
+    <button type="button" class="browser-btn" id="pxyCancelBtn">Отмена</button>
+</div>
+
+{#
+   ⚠ **Строка выхода — в одну линию, каждое поле своей колонкой.** Прежде имя,
+   адрес подключения и пометка шли столбиком под именем, а время проверки — под
+   адресом: две-три линии на строку, и два десятка выходов не помещались на
+   экран. Переносов теперь нет вовсе (`white-space: nowrap`), длинное имя
+   обрезается многоточием — читают его слева направо, а не по слогам.
+
+   ⚠ **Колонки «Анкеты» здесь нет и быть не должно.** Она держала счёт мест и
+   чипсы «кто сидит» с ключами `dating:profile:41` — то есть знание соседнего
+   проекта в проекте, который про анкеты не знает. Считает их теперь тот, кто их
+   ведёт; сюда это больше не приезжает.
+#}
+<table class="pxy-table">
+    <thead>
+        <tr>
+            <th>Выход</th>
+            <th>Адрес подключения</th>
+            <th style="width:150px">Внешний IP</th>
+            <th style="width:74px" title="Откуда выходит канал: код страны ISO-3166">Страна</th>
+            <th style="width:120px">Пинг</th>
+            <th style="width:150px">Проверен</th>
+            <th>Пометка</th>
+            <th class="pxy-col-act"></th>
+        </tr>
+    </thead>
+    <tbody id="pxyRows"></tbody>
+</table>
+
+</div>
+{% endif %}
+
 <!-- Ошибки — своя страница (`/admin/browser/error`), а не вкладка сайта: их шлют
      клиенты, соседние проекты, ходящие в браузер и сценарии по API. К сайту такая
      запись привязана не всегда, а внутри страницы одного сайта выглядела как «ошибки
@@ -2360,6 +2583,11 @@
             runlogListRender();
         }
         if (name === 'error') errorsLoad();
+        // ⚠ Реестр выходов живёт **своей страницей** (`/admin/browser/proxy`), и
+        // вкладка на ней одна — переключать нечего. Строку оставляем: `tabSelect`
+        // зовётся и при восстановлении запомненной вкладки, а реестр правят с
+        // соседних окон, и показывать загруженное час назад незачем.
+        if (name === 'proxy') proxyLoad();
 
         // Вкладка сессий без окна бесполезна: страница живёт в контейнере и после
         // перезагрузки админки, поэтому показываем первую живую сразу.
@@ -5636,9 +5864,9 @@
     // Порядок важен: выбор сайта заполняется первым, и только после него грузятся
     // списки — иначе первый запрос ушёл бы без фильтра и на мгновение показал
     // чужие сценарии.
-    // Какая из трёх страниц открыта: `sites`, `site` или `error`. Шаблон один на все
-    // три, но грузить им нужно разное — страница ошибок читает только свой журнал из
-    // базы, и живой контейнер ей не нужен вовсе.
+    // Какая из четырёх страниц открыта: `sites`, `site`, `error` или `proxy`. Шаблон
+    // один на все, но грузить им нужно разное — ошибки читают свой журнал из базы, а
+    // прокси свой реестр, и живой контейнер-браузер не нужен ни тем, ни другим.
     const BROWSER_PAGE = '{{ browser_page }}';
 
     if (BROWSER_PAGE === 'error') {
@@ -5646,6 +5874,14 @@
         // десять секунд ради счётчика сессий, которого на ней нет.
         errorTagsRender();
         errorsLoad();
+    } else if (BROWSER_PAGE === 'proxy') {
+        // ⚠ Ветка пустая **намеренно**, и это не забывчивость: реестр уже загружен
+        // выше, `tabSelect` зовёт `proxyLoad` на входе в свою вкладку. Второй
+        // вызов здесь дал бы два одинаковых запроса на каждое открытие страницы.
+        //
+        // Ветка нужна, чтобы не выполнилось `else`: там сайты, сессии и пул
+        // страниц с опросом контейнера каждые десять секунд — платой за счётчики,
+        // которых на этой странице нет.
     } else {
         (async () => {
             await browserSiteFill();
@@ -5670,6 +5906,371 @@
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) poolLoad();
         });
+    }
+
+
+    // ---------- Вкладка «Proxy»: выходные адреса ----------
+    //
+    // Реестр общий на установку: сайт, выбранный вверху страницы, к нему
+    // отношения не имеет. Смысл реестра — в том, **каким IP нас видит сайт**:
+    // учётки считаются по адресу, и с одного выхода сайт пускает ограниченное
+    // число девушек.
+    //
+    // ⚠ Занятость приходит с сервера уже посчитанной **по внешнему IP**, а не по
+    // строке подключения: два разных прокси нередко выходят одним адресом, и
+    // тогда лимит сайта они делят. Своего счёта страница не ведёт намеренно —
+    // разошлась бы с тем, по которому выдаются места.
+
+    let _proxies = [];
+    // Наш собственный внешний адрес — без прокси. Для сравнения: выход,
+    // выходящий им же, ничего не скрывает.
+    let _direct = {};
+
+    async function proxyLoad() {
+        let rows;
+        try {
+            const got = await getData('/api/browser/proxy');
+            rows = got.result || [];
+            _direct = got.direct || {};
+        } catch (e) {
+            document.getElementById('pxyRows').innerHTML =
+                `<tr><td colspan="6" class="pxy-empty">список не пришёл: ${_escape(e.message)}</td></tr>`;
+            return;
+        }
+
+        _proxies = rows;
+        countSet('proxy', rows.length || '');
+        proxyRender();
+    }
+
+    function proxyRender() {
+        const body = document.getElementById('pxyRows');
+        const note = document.getElementById('pxyNote');
+
+        const ready = _proxies.filter(row => row.check_ok && row.is_enabled);
+        // Сколько **разных** внешних адресов дают годные выходы. Это и есть
+        // полезное число: потребитель считает своих по адресу, и два прокси с
+        // одним IP дают ему один адрес, а не два.
+        const ips = new Set(ready.map(row => row.check_ip).filter(Boolean));
+
+        note.innerHTML = _proxies.length
+            ? `выходов <b>${_proxies.length}</b>, годных <b>${ready.length}</b> · `
+              + `разных адресов <b>${ips.size}</b>`
+            : 'реестр пуст: заведите первый выход — потребителям раздавать нечего';
+
+        if (!_proxies.length) {
+            body.innerHTML = '<tr><td colspan="3" class="pxy-empty">Пока ни одного выхода.</td></tr>';
+            return;
+        }
+
+        // Сколько строк делят один внешний адрес. Считаем здесь, а не на сервере:
+        // это вопрос показа — сервер уже учёл общий IP там, где тот решает дело.
+        const byIp = {};
+        _proxies.forEach(row => {
+            if (row.check_ip) byIp[row.check_ip] = (byIp[row.check_ip] || 0) + 1;
+        });
+
+        body.innerHTML = _proxies.map(row => `
+            <tr class="${row.check_ok && row.is_enabled && row.check_ip ? '' : 'dead'}">
+                <td class="pxy-name" title="${_escape(row.name)}">${_escape(row.name)}</td>
+                <td class="pxy-where">${_escape(row.scheme)}://${_escape(row.host)}:${row.port}</td>
+                <td>${proxyIp(row, byIp)}</td>
+                <td class="pxy-country">${proxyCountry(row)}</td>
+                <td class="pxy-ping">${proxyPing(row)}</td>
+                <td class="pxy-when">${proxyWhen(row)}</td>
+                <td class="pxy-note-cell" title="${_escape(row.note || '')}">${_escape(row.note || '')}</td>
+                <td class="pxy-col-act"><span class="pxy-act">
+                    <button type="button" class="browser-btn" data-check="${row.id}">Проверить</button>
+                    <button type="button" class="browser-btn" data-edit="${row.id}">Править</button>
+                    <button type="button" class="browser-btn" data-drop="${row.id}"
+                            title="Удалить выход">✕</button>
+                </span></td>
+            </tr>`).join('');
+
+        body.querySelectorAll('[data-check]').forEach(el => {
+            el.addEventListener('click', () => proxyCheck(+el.dataset.check, el));
+        });
+        body.querySelectorAll('[data-edit]').forEach(el => {
+            el.addEventListener('click', () => proxyFormOpen(+el.dataset.edit));
+        });
+        body.querySelectorAll('[data-drop]').forEach(el => {
+            el.addEventListener('click', () => proxyDrop(+el.dataset.drop));
+        });
+    }
+
+    // Колонка «Внешний IP»: точка состояния, адрес и метка общего адреса.
+    //
+    // ⚠ Метка «общий» — главная ловушка реестра: два выхода одного пула выходят
+    // одним IP, и потребитель, считающий по строке подключения, поделил бы чужой
+    // предел. Пояснение в подсказке: фразой в каждой строке это был шум.
+    function proxyIp(row, byIp) {
+        const state = row.check_ok ? 'ok' : (row.checked_at ? 'bad' : 'none');
+        const shared = row.check_ip && byIp[row.check_ip] > 1
+            ? ` <span class="pxy-same" title="Тот же внешний адрес у ${byIp[row.check_ip]} выходов:`
+              + ` лимит потребителя считается по адресу, и все они делят его на всех">общий</span>`
+            : '';
+
+        return '<span class="pxy-ip-line">'
+            + `<span class="pxy-dot ${state}"></span>`
+            + `<span class="pxy-ip${row.check_ip ? '' : ' dim'}">${_escape(row.check_ip || '—')}</span>`
+            + shared
+            // ⚠ Совпал с нашим — выход не скрывает ничего: запрос идёт мимо него
+            // либо он прозрачный. Для потребителя это худший случай: он считает
+            // такой выход своим адресом, а на деле все идут с одного.
+            + (row.is_direct
+                ? ' <span class="pxy-warn" title="Тот же адрес, с которого ходит сервер:'
+                  + ' этот выход ничего не скрывает">наш</span>' : '')
+            + '</span>';
+    }
+
+    // Колонка «Страна»: откуда канал выходит на самом деле.
+    //
+    // ⚠ **Не то же, что написано в имени.** Живой пример: выход, заведённый как
+    // «UA 193.93.54.238», выходит через 201.7.31.146 и отвечает `TR` — канал
+    // украинский по виду, а наружу смотрит из Турции. Сайты сверяют геолокацию
+    // входа с анкетой, и такой выход им подозрителен.
+    //
+    // Пусто — «не знаем»: у непроверенных и мёртвых. Прочерком, а не «??»:
+    // выдуманный код читался бы как ответ.
+    function proxyCountry(row) {
+        return row.check_country
+            ? `<span class="pxy-cc">${_escape(row.check_country)}</span>`
+            : '<span class="dim">—</span>';
+    }
+
+    // Колонка «Пинг»: миллисекунды у живого, причина отказа у мёртвого.
+    //
+    // ⚠ Причина стоит **на месте пинга**, а не отдельной строкой под адресом:
+    // это ответ на тот же вопрос «как он отвечает», и своя строка удваивала бы
+    // высоту у каждой мёртвой записи.
+    function proxyPing(row) {
+        if (row.check_ok) {
+            return row.check_ms
+                ? `<span style="color:${pingColor(row.check_ms)}">${row.check_ms} мс</span>`
+                : '';
+        }
+        if (!row.checked_at) return '<span class="dim">не проверяли</span>';
+
+        const why = row.check_error || 'не отвечает';
+
+        return `<span class="bad" title="${_escape(why)}">${_escape(why)}</span>`;
+    }
+
+    // Цвет пинга: плавно от зелёного к красному.
+    //
+    // ⚠ **Шкала логарифмическая, а не линейная.** Пинги живых каналов лежат от
+    // 200 мс до 18 секунд; по прямой шкале всё медленнее секунды слилось бы в
+    // один красный, и разница между 2 и 15 секундами пропала бы — а она и есть
+    // та, по которой канал выбирают.
+    //
+    // Границы грубые намеренно: точнее их не знает никто, а цвет здесь подсказка
+    // «что брать», а не приговор.
+    const PING_FAST_MS = 150;
+    const PING_SLOW_MS = 15000;
+
+    function pingColor(ms) {
+        const span = Math.log(PING_SLOW_MS / PING_FAST_MS);
+        const at = Math.log(Math.max(PING_FAST_MS, Math.min(PING_SLOW_MS, ms)) / PING_FAST_MS);
+
+        // 130° — зелёный, 0° — красный. Светлота 38%, иначе жёлтая середина
+        // теряется на белом фоне.
+        return `hsl(${Math.round(130 * (1 - at / span))}, 72%, 38%)`;
+    }
+
+    function proxyWhen(row) {
+        return row.checked_at
+            ? _escape(_when(row.checked_at).slice(5, 16))
+            : '<span class="dim">—</span>';
+    }
+
+    function proxyFormOpen(id) {
+        const form = document.getElementById('pxyForm');
+        const row = _proxies.find(one => one.id === id) || {};
+
+        // ⚠ **На правку адрес подставляется БЕЗ пароля.** Показать его нельзя:
+        // наружу он уходит одной ручкой и по отдельному праву. Отсюда правило,
+        // записанное и на сервере: строка без пароля прежний не затирает —
+        // «не трогал» вместо «убери». Сменить — вписать новый прямо в адрес.
+        const auth = row.username ? `${row.username}@` : '';
+        document.getElementById('pxyId').value = id || '';
+        document.getElementById('pxyAddress').value = row.id
+            ? `${row.scheme}://${auth}${row.host}:${row.port}`
+            : '';
+        document.getElementById('pxyName').value = row.name || '';
+        document.getElementById('pxyNoteIn').value = row.note || '';
+        document.getElementById('pxyEnabled').checked = row.id ? !!row.is_enabled : true;
+
+        form.classList.add('open');
+        document.getElementById('pxyAddress').focus();
+    }
+
+    async function proxySave() {
+        const id = document.getElementById('pxyId').value;
+        const address = document.getElementById('pxyAddress').value.trim();
+        if (!address) return showNotification('Вставьте адрес прокси', 'error');
+
+        const body = {
+            address,
+            name: document.getElementById('pxyName').value.trim(),
+            note: document.getElementById('pxyNoteIn').value.trim(),
+            is_enabled: document.getElementById('pxyEnabled').checked,
+        };
+
+        try {
+            if (id) {
+                const got = await putData(`/api/browser/proxy/${id}`, body);
+                if (got.result && got.result.recheck) {
+                    showNotification('Адрес правился — выход снят с раздачи до проверки', 'success');
+                }
+            } else {
+                await postData('/api/browser/proxy', body);
+            }
+        } catch (e) {
+            // Негодная строка приезжает сюда 422-м с текстом от разбора: «не
+            // разобрать хост и порт», «схема не из списка». Это ровно то, что
+            // человеку нужно — он вставлял строку и должен понять, чем она плоха.
+            showNotification('Не сохранилось: ' + e.message, 'error');
+            return;
+        }
+
+        document.getElementById('pxyForm').classList.remove('open');
+        await proxyLoad();
+    }
+
+    async function proxyCheck(id, button) {
+        const was = button ? button.textContent : '';
+        if (button) { button.disabled = true; button.textContent = '…'; }
+
+        try {
+            const got = (await postData(`/api/browser/proxy/${id}/check`, {})).result;
+            showNotification(got.ok
+                ? `${got.name}: выход виден как ${got.ip} (${got.ms} мс)`
+                : `${got.name}: ${got.error}`, got.ok ? 'success' : 'error');
+        } catch (e) {
+            showNotification('Проверка не прошла: ' + e.message, 'error');
+        } finally {
+            if (button) { button.disabled = false; button.textContent = was; }
+        }
+
+        await proxyLoad();
+    }
+
+    // `quiet` — проверка по таймеру: уведомление каждые пять минут человек
+    // перестаёт читать через час, а вместе с ним перестаёт читать и то, которое
+    // сообщает о настоящей беде. Отказ показываем всегда — он редкий.
+    async function proxyCheckAll({quiet = false} = {}) {
+        const button = document.getElementById('pxyCheckAllBtn');
+        button.disabled = true;
+        button.textContent = 'Проверяю…';
+
+        try {
+            const rows = (await postData('/api/browser/proxy/check', {})).result || [];
+            const ok = rows.filter(row => row.ok).length;
+            if (!quiet || ok !== rows.length) {
+                showNotification(`Проверено ${rows.length}: годных ${ok}, отказали ${rows.length - ok}`,
+                                 ok === rows.length ? 'success' : 'error');
+            }
+        } catch (e) {
+            showNotification('Проверка не прошла: ' + e.message, 'error');
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Проверить все';
+        }
+
+        await proxyLoad();
+        proxyAutoWhen();
+    }
+
+    async function proxyDrop(id) {
+        const row = _proxies.find(one => one.id === id) || {};
+
+        // ⚠ **Реестр не знает, пользуется ли кто-то этим выходом**, и спросить
+        // ему некого: потребители сюда не докладываются. Поэтому предупреждение
+        // общее, а не «на нём сидят двое» — числа у нас нет и взяться ему неоткуда.
+        if (!confirm(`Удалить «${row.name}»?\n\nТот, кто через него ходит, `
+                     + 'останется без выхода — у себя он это увидит.')) return;
+
+        try {
+            await deleteData(`/api/browser/proxy/${id}`);
+        } catch (e) {
+            showNotification('Не удалилось: ' + e.message, 'error');
+            return;
+        }
+
+        await proxyLoad();
+    }
+
+    // ── Автопроверка, пока вкладка открыта ───────────────────────────────────
+    //
+    // ⚠ **Скрытая вкладка не проверяет.** Проверка идёт до минуты через два
+    // десятка каналов; вкладка, забытая на ночь, стучалась бы к провайдерам
+    // триста раз без единого зрителя. Возвращение к вкладке проверяет сразу, если
+    // срок вышел, — иначе человек видел бы данные той давности, когда отвернулся.
+    const PXY_AUTO_KEY = 'browser_proxy_auto';
+    const PXY_AUTO_EVERY_MS = 5 * 60 * 1000;
+
+    let _autoTimer = null;
+    let _autoAt = 0;
+
+    function proxyAutoInit() {
+        const box = document.getElementById('pxyAuto');
+        if (!box) return;
+
+        box.checked = localStorage.getItem(PXY_AUTO_KEY) === '1';
+        box.addEventListener('change', () => {
+            localStorage.setItem(PXY_AUTO_KEY, box.checked ? '1' : '0');
+            proxyAutoApply();
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) proxyAutoTick();
+        });
+
+        proxyAutoApply();
+    }
+
+    function proxyAutoApply() {
+        clearInterval(_autoTimer);
+        _autoTimer = null;
+
+        const on = document.getElementById('pxyAuto').checked;
+        proxyAutoWhen();
+        if (!on) return;
+
+        // Тик чаще срока: он только смотрит, не пора ли. Так возвращение к
+        // вкладке не ждёт полных пяти минут до первой проверки.
+        _autoTimer = setInterval(proxyAutoTick, 30000);
+    }
+
+    function proxyAutoTick() {
+        const box = document.getElementById('pxyAuto');
+        if (!box || !box.checked || document.hidden) return;
+        if (Date.now() - _autoAt < PXY_AUTO_EVERY_MS) return;
+
+        _autoAt = Date.now();
+        proxyCheckAll({quiet: true});
+    }
+
+    // Когда проверяли последний раз — рядом с переключателем. Без этого
+    // «автопроверка включена» ничем не отличается от «включена и не работает».
+    function proxyAutoWhen() {
+        const el = document.getElementById('pxyAutoWhen');
+        if (!el) return;
+
+        const on = document.getElementById('pxyAuto').checked;
+        el.textContent = on && _autoAt
+            ? `· проверено в ${new Date(_autoAt).toTimeString().slice(0, 5)}`
+            : '';
+    }
+
+    if (document.getElementById('pxyRows')) {
+        document.getElementById('pxyAddBtn').addEventListener('click', () => proxyFormOpen(0));
+        document.getElementById('pxySaveBtn').addEventListener('click', proxySave);
+        document.getElementById('pxyCancelBtn').addEventListener('click', () => {
+            document.getElementById('pxyForm').classList.remove('open');
+        });
+        document.getElementById('pxyCheckAllBtn').addEventListener('click', () => proxyCheckAll());
+        proxyAutoInit();
     }
 
     window.addEventListener('beforeunload', () => {

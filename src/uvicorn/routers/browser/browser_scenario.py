@@ -26,6 +26,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.browser.scenario_repository import BrowserScenarioRepository
+from src.uvicorn.routers.browser.browser_proxy_net import browser_proxy_net_url
 from src.uvicorn.routers.browser.browser_site_variable import browser_site_variable_values
 from src.uvicorn.routers.browser.browser_upstream import (
     BROWSER_UPSTREAM_SCENARIO_TIMEOUT,
@@ -59,6 +60,8 @@ class BrowserScenarioRun(BaseModel):
     variables: dict[str, str] = Field(default_factory=dict, description='Поверх значений сценария; попадут в журнал')
     secrets: dict[str, str] = Field(default_factory=dict, description='Пароли и токены; ни в базу, ни в журнал')
     keep_session: bool = Field(False, description='Оставить сессию живой — посмотреть результат в /admin/browser')
+    proxy_id: int = Field(0, ge=0,
+                          description='Выход из реестра «Proxy» для временной вкладки прогона')
 
 
 @router.get('/action')
@@ -219,13 +222,14 @@ async def browser_scenario_run(scenario_id: int, data: BrowserScenarioRun,
     что сценарий стал вдвое медленнее, — а это первый признак, что вёрстка поехала.
     """
     result = await browser_scenario_run_one(scenario_id, data.session_id, data.variables,
-                                           data.secrets, data.keep_session)
+                                           data.secrets, data.keep_session, data.proxy_id)
 
     return {'result': result}
 
 
 async def browser_scenario_run_one(scenario_id: int, session_id: str, variables: dict,
-                                   secrets: dict, keep_session: bool) -> dict:
+                                   secrets: dict, keep_session: bool,
+                                   proxy_id: int = 0) -> dict:
     """Один прогон сценария: отдать контейнеру, записать журнал, поправить метку.
 
     Отдельной функцией, а не только ручкой: прогон зовут и изнутри — например,
@@ -234,6 +238,10 @@ async def browser_scenario_run_one(scenario_id: int, session_id: str, variables:
 
     Возвращает ответ контейнера как есть: код запроса тут ни при чём, упавший на
     третьем шаге сценарий — это `status: "error"` с трассой, а не ошибка HTTP.
+
+    ⚠ `proxy_id` действует только на **временную** вкладку (`session_id` пуст): у
+    готовой сессии выход задан при открытии, и менять его на ходу Playwright не
+    умеет. Номер разворачивается здесь — у контейнера базы нет.
     """
     row = await _scenario_row(scenario_id)
     scenario = _scenario_load(row)
@@ -265,6 +273,9 @@ async def browser_scenario_run_one(scenario_id: int, session_id: str, variables:
         # и шифруют.
         'secrets': {**site_secret, **_filled(secrets)},
         'keep_session': keep_session,
+        # Выход временной вкладки. Разворачиваем номер в адрес здесь: реестр наш,
+        # и пароль канала не должен ездить через сеть ради того, что мы знаем.
+        'proxy': await browser_proxy_net_url(proxy_id) if proxy_id and not session_id else '',
     }
 
     result = await browser_upstream_request('POST', '/browser/scenario/run', payload,

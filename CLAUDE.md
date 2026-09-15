@@ -118,7 +118,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
-| `browser.md` | Контейнер-браузер: как подключён `py_modules/browser_`, страница админки, прокси, API :8014, инструменты над страницей |
+| `browser.md` | Контейнер-браузер: как подключён `py_modules/browser_`, страница админки, прокси вебсокета, API :8014, инструменты над страницей. ⚠ Там же §4.3 — **реестр сетевых прокси** (своя страница `/admin/browser/proxy`, не вкладка сайта: выход общий на установку и к закладке не привязан): какие выходы есть и какие живые. **Раздачу он не ведёт** — про потребителей здесь не знают; кому какой выход достанется, решает тот, кто их ведёт, по `check_ip` из списка |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
 | `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда, `gx10_autocompact_limit` |
 | `dashboard_frontend.md` | Паттерны админ-страниц: JS, CSS, контракты API |

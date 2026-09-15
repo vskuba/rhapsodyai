@@ -264,6 +264,30 @@ async def dashboard_browser_error_page(request: Request, user: AuthSession = Dep
     )
 
 
+@router.get("/admin/browser/proxy", response_class=HTMLResponse)
+async def dashboard_browser_proxy_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
+    """
+    Выходные адреса — своей страницей, а не вкладкой внутри сайта.
+
+    ⚠ **Реестр общий на установку.** Прокси не принадлежит сайту-закладке: через
+    один и тот же канал ходит и Chromium к любому сайту, и соседний проект своими
+    запросами. Вкладка внутри «Сайта» обещала обратное — что выход настраивается
+    для выбранного вверху сайта, — а на деле при переключении сайтов показывала
+    один и тот же список. Человек, менявший сайт и видевший те же строки, законно
+    решал, что страница сломана.
+
+    Тот же довод и то же решение, что у ошибок (`/admin/browser/error`): предмет не
+    привязан к сайту — значит и страница своя.
+
+    Шаблон тот же, что у сайтов, — разделён параметром, а не копией.
+    """
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/project/browser.html",
+        {"browser_page": "proxy"},
+    )
+
+
 @router.get("/admin/browser/site", response_class=HTMLResponse)
 async def dashboard_browser_site_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     """

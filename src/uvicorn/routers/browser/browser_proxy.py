@@ -23,6 +23,7 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.auth.auth_role import auth_role_permissions
 from src.uvicorn.routers.browser.browser_error import browser_error_write
+from src.uvicorn.routers.browser.browser_proxy_net import browser_proxy_net_url
 from src.uvicorn.routers.browser.browser_upstream import (
     browser_upstream_headers,
     browser_upstream_request,
@@ -52,7 +53,21 @@ async def browser_proxy_session_list(user=Depends(AuthChecker([AuthPermission.BR
 
 @router.post('/session', status_code=201)
 async def browser_proxy_session_create(data: dict, user=Depends(AuthChecker([AuthPermission.BROWSER_CREATE]))):
-    """Заводит сессию: `name`, `url`, `storage_state`, `viewport`."""
+    """Заводит сессию: `name`, `url`, `storage_state`, `viewport`, `proxy_id`.
+
+    ⚠ **Выход называют номером из реестра, а не строкой с паролем.** Номер
+    разворачивается здесь (`browser_proxy_net.py`), у контейнера базы нет. Плата
+    за это — один запрос к своей базе на открытие сессии; взамен пароль прокси не
+    ездит туда-обратно через сеть ради того, что мы и так знаем.
+
+    Номера нет в реестре — 404, а не молчаливый прямой выход: сессия, открытая
+    мимо прокси, ведёт анкету на сайт с общего адреса, и узнали бы мы об этом из
+    блокировки учётки.
+    """
+    proxy_id = int(data.pop('proxy_id', 0) or 0)
+    if proxy_id:
+        data['proxy'] = await browser_proxy_net_url(proxy_id)
+
     return await browser_upstream_request('POST', '/browser/session', data)
 
 

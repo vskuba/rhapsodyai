@@ -81,8 +81,8 @@ from src.uvicorn.routers.playwright import playwright
 from src.uvicorn.routers.stt import stt
 from src.uvicorn.routers.blog import blog as blog_router
 from src.uvicorn.routers.browser import (browser_author, browser_error, browser_proxy,
-                                         browser_record, browser_scenario, browser_site,
-                                         browser_site_variable)
+                                         browser_proxy_net, browser_record, browser_scenario,
+                                         browser_site, browser_site_variable)
 
 # По какой таблице seed решает, что база пуста. `node` — узлы LLM: без них
 # установка не работает вовсе, и заполняет их как раз seed. Имя живёт здесь,
@@ -537,6 +537,10 @@ app.include_router(playwright.router, include_in_schema=False)
 # сценарии, снимает `storage_state`. Скрытыми они были по недосмотру: документация
 # показывала картину, обратную настоящей.
 app.include_router(browser_proxy.router)
+# ⚠ Реестр выходов — **до** `browser_proxy`, чей префикс `/api/browser`: пути
+# разбираются по порядку, и `/api/browser/proxy/claim` при обратном порядке
+# однажды прочитался бы как сессия с именем «proxy».
+app.include_router(browser_proxy_net.router)
 app.include_router(browser_scenario.router)
 app.include_router(browser_site.router)
 app.include_router(browser_site_variable.router)
