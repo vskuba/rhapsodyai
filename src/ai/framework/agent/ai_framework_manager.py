@@ -9,7 +9,8 @@ from typing import Any, Callable, Awaitable, cast
 
 from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_filter_by_type, ai_llm_image_generate, ai_llm_request_log
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
-from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_input_get, ai_workflow_variables_render, \
+from src.ai.ai_workflow import ai_workflow_load, ai_workflow_marks_check, \
+    ai_workflow_variables_input_get, ai_workflow_variables_render, \
     ai_workflow_variables_global_get, ai_workflow_variables_agent_get, ai_workflow_text_render
 from src.ai.ai_workflow_trace import (ai_workflow_trace_run_start, ai_workflow_trace_run_finish,
                                       ai_workflow_trace_step, ai_workflow_trace_variables_diff)
@@ -337,6 +338,24 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
             # Подставляем накопленные переменные в метаданные текущего шага
             step_meta = ai_workflow_variables_render(step_meta, variables)
+
+            # ⚠⚠ **Метка, пережившая подстановку, — отказ, а не мелочь.**
+            #
+            # Подставляются только те метки, чьи имена есть в словаре; чужая
+            # остаётся в тексте как есть и уезжает в LLM **словами**. Модель
+            # читает `%invite_angle%` как часть задания и отвечает наугад, а мы
+            # видим правдоподобный ответ и ничего не замечаем — в журнале всё
+            # зелено, а работа испорчена.
+            #
+            # Поймано живьём у инвайтов: промпт ссылался на переменную, заведённую
+            # типом `workflow` без умолчания (то есть необязательную), и работало
+            # это лишь потому, что единственный вызывающий её передавал.
+            #
+            # ⚠ Проверяем **промпт**, а не метаданные целиком: в `transitions` и
+            # `inputs_map` лежат имена переменных, а не текст для модели, и там
+            # `%имя%` — обычное дело.
+            ai_workflow_marks_check(step_meta.get('prompt_user', ''),
+                                    current_step.get('title', ''))
 
             transitions = step_meta.get('transitions_before', [])
             transition_jumped = False
