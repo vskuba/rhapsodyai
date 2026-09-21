@@ -90,6 +90,8 @@ LLM_COMPANION_TITLE = 'Gerard'
 # Шаги-приметы маршрута. Названия берутся из трассы как есть.
 STEP_TOPIC = 'Тема разговора'
 STEP_BRANCH = 'Ветка: письма и фото'
+STEP_FACTS_TAGS = 'qdrant_fact_search_girl_tags'
+STEP_FACTS_PLAIN = 'qdrant_fact_search_girl'
 STEP_ANSWER = 'Ответ'
 STEP_SILENCE = 'Тишина'
 

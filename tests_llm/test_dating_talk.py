@@ -21,7 +21,8 @@
 
 import pytest
 
-from tests_llm.conftest import STEP_ANSWER, STEP_BRANCH, STEP_TOPIC
+from tests_llm.conftest import (STEP_ANSWER, STEP_BRANCH, STEP_FACTS_TAGS,
+                                STEP_FACTS_PLAIN, STEP_TOPIC)
 
 pytestmark = pytest.mark.llm
 
@@ -173,3 +174,51 @@ class TestTheHistoryIsHeard:
 
         assert got.vars.get('talk_topic') == 'photo_mail', \
             f'короткий вопрос без истории не прочитался.{got}'
+
+
+class TestGirlFactsAreSearchedByTagsFirst:
+    """⚠⚠ Факты девушки ищутся сперва по тегам, без тегов — только как откат.
+
+    «Анализ сообщения» размечает реплику тегами, и поиск фактов собеседника и
+    разговора ими пользовался, а поиск фактов самой девушки — нет. Одним вызовом
+    это не чинится: `tags` — поле `must`, указал его — и факты без этих тегов не
+    найдутся вовсе. Отсюда второй шаг и откат.
+    """
+
+    async def test_the_tagged_search_always_runs(self, talk):
+        """⚠ Он первый в цепочке: не отработал — не будет и отката."""
+        got = await talk('Hi! How was your day?')
+
+        assert got.went_through(STEP_FACTS_TAGS), \
+            f'поиск фактов девушки по тегам не отработал.{got}'
+
+    async def test_nothing_found_falls_back_to_the_plain_search(self, talk):
+        """⚠⚠ Теги, под которые у девушки фактов заведомо нет.
+
+        Ожидание не в том, что она ответит про физику, а в том, что **сработал
+        откат**: прежний бестеговый поиск отработал следом.
+        """
+        got = await talk('Do you follow quantum chromodynamics research?')
+
+        assert got.went_through(STEP_FACTS_TAGS), f'шаг с тегами не отработал.{got}'
+
+        if got.vars.get('prompt_user_tags'):
+            assert got.went_through(STEP_FACTS_PLAIN) \
+                or got.vars.get('qdrant_fact_search_result_tagged'), \
+                f'ни теги не нашли, ни откат не сработал.{got}'
+
+    async def test_the_answer_survives_either_path(self, talk):
+        """⚠⚠ Этот тест поймал живую ошибку.
+
+        Прежде шаг без тегов отрабатывал всегда, и его переменная существовала к
+        моменту генерации сама собой. Теперь его можно пропустить — и переменной
+        не стало вовсе, а сторож меток роняет шаг, когда метка осталась без
+        значения. «Генерация ответа» отказывала ровно тогда, когда поиск по тегам
+        срабатывал, — то есть на удаче, а не на неудаче.
+        """
+        for question in ('So what is your job like these days?',
+                         'What do you do on weekends?'):
+            got = await talk(question)
+
+            assert got.status == 'success', \
+                f'прогон оборвался на {question!r}.{got}'
