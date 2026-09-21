@@ -96,6 +96,7 @@ DSH_STATE_OK = {
     'project': TEST_DSH_PROJECT_A,
     'projects': [DSH_PROJECT_A],
     'harness_url': 'http://127.0.0.1:8790/',
+    'harness_open_url': 'http://127.0.0.1:8791/harness',
     'alive': True,
 }
 
@@ -333,12 +334,32 @@ class TestDshState:
 
         Хост Harness переживает и оболочку, и сервис, а человеку ссылка нужна ровно
         тогда, когда что-то не работает: по ней он и увидит, что там на самом деле.
+
+        Адресов два, и умолчание нужно обоим: показываем хост, а ведём через пересадку.
         """
-        from src.project.team.team_dsh_panel import TEAM_DSH_PANEL_HARNESS_URL
+        from src.project.team.team_dsh_panel import (TEAM_DSH_PANEL_HARNESS_OPEN_URL,
+                                                     TEAM_DSH_PANEL_HARNESS_URL)
 
         state = await _state_from({TEST_DSH_PANEL_A: httpx.ConnectTimeout('молчит')})
 
         assert state['harness_url'] == TEAM_DSH_PANEL_HARNESS_URL
+        assert state['harness_open_url'] == TEAM_DSH_PANEL_HARNESS_OPEN_URL
+
+    async def test_state_leads_the_link_through_the_hop(self):
+        """
+        Адрес пересадки доезжает до страницы — и наверх, и в каждый проект.
+
+        Путать его с `harness_url` нельзя: показывают хост, а `href` ставят пересадку.
+        Ссылка прямо на хост встречает `401` — cookie у него `SameSite=Strict`, и на
+        переходе, начатом страницей команды, браузер её не отдаёт.
+        """
+        state = await _state_from({TEST_DSH_PANEL_A: DSH_STATE_OK})
+
+        assert state['harness_open_url'] == 'http://127.0.0.1:8791/harness'
+        assert state['harness_url'] == 'http://127.0.0.1:8790/'
+        project = state['projects'][TEST_DSH_PROJECT_A]
+        assert project['harness_open_url'] == 'http://127.0.0.1:8791/harness'
+        assert project['harness_url'] == 'http://127.0.0.1:8790/'
 
     async def test_state_skips_panel_without_projects(self):
         """

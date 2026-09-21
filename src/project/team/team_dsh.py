@@ -21,7 +21,8 @@
 import asyncio
 
 from logging_.logging_ import logger_info
-from src.project.team.team_dsh_panel import (TEAM_DSH_PANEL_HARNESS_URL, TeamDshError,
+from src.project.team.team_dsh_panel import (TEAM_DSH_PANEL_HARNESS_OPEN_URL,
+                                             TEAM_DSH_PANEL_HARNESS_URL, TeamDshError,
                                              team_dsh_panel_projects, team_dsh_panel_request,
                                              team_dsh_panel_roles, team_dsh_panel_sessions,
                                              team_dsh_panel_urls)
@@ -31,10 +32,16 @@ async def team_dsh_state() -> dict:
     """
     Состояние ролей Harness по всем пультам сразу.
 
-    Returns: `{'harness_url': адрес, 'alive': bool, 'problem': '', 'panels': [...],
-    'projects': {корень проекта: {'url', 'alive', 'harness_url', 'label', 'home',
-    'roles', 'sessions'}}}`, где `roles` — словарь `роль → {title, enabled, cards}`, а
-    `sessions` — словарь `сессия реестра → {card_id, role, index}`.
+    Returns: `{'harness_url': адрес, 'harness_open_url': адрес, 'alive': bool,
+    'problem': '', 'panels': [...], 'projects': {корень проекта: {'url', 'alive',
+    'harness_url', 'harness_open_url', 'label', 'home', 'roles', 'sessions'}}}`, где
+    `roles` — словарь `роль → {title, enabled, cards}`, а `sessions` — словарь
+    `сессия реестра → {card_id, role, index}`.
+
+    Адресов интерфейса два, и путать их нельзя. `harness_url` — сам хост, его показывают
+    на экране. `harness_open_url` — пересадка на пульте, её ставят ссылке в `href`:
+    напрямую хост встречает `401`, потому что cookie у него `SameSite=Strict`, а переход
+    с этой страницы для петли чужой (подробности у `TEAM_DSH_PANEL_HARNESS_OPEN_URL`).
 
     Ключ проектов — корень каталога: другого общего признака у страницы и пульта нет,
     номера проекта пульт не знает. Роли отдаём словарём, а не списком: страница ищет в
@@ -55,6 +62,7 @@ async def team_dsh_state() -> dict:
     отсутствие — обычное состояние установки, а не поломка страницы команды.
     """
     projects, panels, problems, harness_url, alive = {}, [], [], '', False
+    harness_open_url = ''
 
     for url, state, problem in await team_dsh_panels():
         served = team_dsh_panel_projects(state)
@@ -63,7 +71,9 @@ async def team_dsh_state() -> dict:
                        f'(старый ds-shell? перезапустите сервис)')
 
         harness = str(state.get('harness_url') or TEAM_DSH_PANEL_HARNESS_URL)
+        harness_open = str(state.get('harness_open_url') or TEAM_DSH_PANEL_HARNESS_OPEN_URL)
         harness_url = harness_url or harness
+        harness_open_url = harness_open_url or harness_open
         alive = alive or bool(state.get('alive'))
         panels.append({'url': url,
                        'alive': bool(state.get('alive')),
@@ -78,12 +88,14 @@ async def team_dsh_state() -> dict:
                 'url': url,
                 'alive': bool(state.get('alive')),
                 'harness_url': harness,
+                'harness_open_url': harness_open,
                 'label': item['label'],
                 'home': item['home'],
                 'roles': team_dsh_panel_roles(item['roles']),
                 'sessions': team_dsh_panel_sessions(item['attached'])}
 
     return {'harness_url': harness_url or TEAM_DSH_PANEL_HARNESS_URL,
+            'harness_open_url': harness_open_url or TEAM_DSH_PANEL_HARNESS_OPEN_URL,
             'alive': alive,
             'panels': panels,
             'projects': projects,
