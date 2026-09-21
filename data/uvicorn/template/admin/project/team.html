@@ -1852,6 +1852,11 @@
             return;
         }
 
+        // Ссылка ведёт по адресу с разовым пропуском (`?token=…`) — голый хост встречает
+        // `401`, и взять cookie человеку больше неоткуда, — а показываем адрес без него:
+        // длинный токен в строке нечитаем и запоминать его незачем, он одноразовый.
+        const shown = url.split('?')[0];
+
         // Ссылку показываем и когда пульты молчат: адрес хоста известен и без них, а
         // нужен он человеку ровно тогда, когда что-то не работает.
         //
@@ -1886,7 +1891,7 @@
         box.innerHTML = `
             <span class="dot${dshState.alive ? ' alive' : ''}"></span>
             <span>DeepSeek Harness</span>
-            <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
+            <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(shown)}</a>
             <span>включено ролей: <b>${enabled}</b></span>
             ${tail}
             ${restart}
