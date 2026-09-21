@@ -347,19 +347,17 @@ class TestDshState:
 
     async def test_state_leads_the_link_through_the_hop(self):
         """
-        Адрес пересадки доезжает до страницы — и наверх, и в каждый проект.
+        Адрес пересадки доезжает до страницы — и отдельно от адреса самого хоста.
 
-        Путать его с `harness_url` нельзя: показывают хост, а `href` ставят пересадку.
-        Ссылка прямо на хост встречает `401` — cookie у него `SameSite=Strict`, и на
-        переходе, начатом страницей команды, браузер её не отдаёт.
+        Путать их нельзя: показывают хост, а `href` ставят пересадку. Ссылка прямо на
+        хост встречает `401` — cookie у него `SameSite=Strict`, и на переходе, начатом
+        страницей команды, браузер её не отдаёт.
         """
         state = await _state_from({TEST_DSH_PANEL_A: DSH_STATE_OK})
 
         assert state['harness_open_url'] == 'http://127.0.0.1:8791/harness'
         assert state['harness_url'] == 'http://127.0.0.1:8790/'
-        project = state['projects'][TEST_DSH_PROJECT_A]
-        assert project['harness_open_url'] == 'http://127.0.0.1:8791/harness'
-        assert project['harness_url'] == 'http://127.0.0.1:8790/'
+        assert state['projects'][TEST_DSH_PROJECT_A]['harness_url'] == 'http://127.0.0.1:8790/'
 
     async def test_state_skips_panel_without_projects(self):
         """
