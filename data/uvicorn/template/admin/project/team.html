@@ -1891,7 +1891,8 @@
         box.innerHTML = `
             <span class="dot${dshState.alive ? ' alive' : ''}"></span>
             <span>DeepSeek Harness</span>
-            <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(shown)}</a>
+            <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"
+               title="Первый заход с этой страницы может встретить 401: cookie хост ставит с SameSite=Strict, и по переходу с чужого адреса браузер её не отдаёт. Обновите открывшуюся вкладку (F5) — cookie уже поставлена, дальше месяц заходов без пропуска.">${escapeHtml(shown)}</a>
             <span>включено ролей: <b>${enabled}</b></span>
             ${tail}
             ${restart}
