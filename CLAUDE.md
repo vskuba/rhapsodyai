@@ -115,6 +115,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 |------|---------|
 | `quickstart.md` | Запуск через Docker, порты, тесты, переменные `.env` |
 | `testing.md` | Группы тестов по подсистемам: что запускать под свою правку, как делить новые |
+| `testing_llm.md` | Живые вызовы модели (`tests_llm/`): проверяем маршрут разговора, а не формулировку. Запуск только руками |
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
