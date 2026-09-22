@@ -93,6 +93,9 @@ STEP_BRANCH = 'Ветка: письма и фото'
 STEP_FACTS_TAGS = 'qdrant_fact_search_girl_tags'
 STEP_FACTS_PLAIN = 'qdrant_fact_search_girl'
 STEP_ANSWER = 'Ответ'
+# Шаг, сочиняющий реплику. ⚠ Не путать с `STEP_ANSWER`: тот отдаёт готовое
+# наружу, а здесь собирается промпт — то, что вправду видит модель.
+STEP_MAKE = 'Генерация ответа'
 STEP_SILENCE = 'Тишина'
 
 # Что нашли один раз — номер агента и собеседника. ⚠ Обычный словарь, а не
@@ -112,10 +115,22 @@ class Talk:
     route: tuple = ()
     route_all: tuple = ()
     vars: dict = field(default_factory=dict)
+    # Промпты шагов **после подстановки** — то, что вправду ушло в модель.
+    #
+    # ⚠⚠ Нужны затем, что по ответу нельзя судить о входе. Модель пересказывает
+    # своими словами: получив «Занятие: lighthouse keeper», она отвечает «i bet
+    # you're good with lights» — данные дошли, а искомого слова в ответе нет.
+    # Проверка «вошло ли» обязана смотреть на вход, иначе она проверяет
+    # красноречие.
+    prompts: dict = field(default_factory=dict)
 
     def went_through(self, step: str) -> bool:
         """Встретился ли шаг на маршруте — в главном прогоне или в подпрогоне."""
         return step in self.route_all
+
+    def prompt_of(self, step: str) -> str:
+        """Отрисованный промпт шага. Пусто — шага не было или промпта у него нет."""
+        return str(self.prompts.get(step) or '')
 
     def __str__(self) -> str:
         return (f'\nответ: {self.text!r}\n'
@@ -125,7 +140,8 @@ class Talk:
                 f'попыток: {self.attempts}, статус: {self.status}, сессия: {self.session}')
 
 
-def _walk(run: dict, main: list, every: list, merged: dict, top: bool = True) -> None:
+def _walk(run: dict, main: list, every: list, merged: dict, prompts: dict,
+          top: bool = True) -> None:
     """Обходит дерево прогона: шаги родителя и всех подпрогонов."""
     for step in run.get('steps') or []:
         title = str(step.get('step_title') or '')
@@ -136,6 +152,12 @@ def _walk(run: dict, main: list, every: list, merged: dict, top: bool = True) ->
             if top:
                 main.append(title)
 
+            # ⚠ Берём **первую** отрисовку шага: повтор после неудачной проверки
+            # идёт с тем же входом, а последняя запись затёрла бы то, с чего
+            # разговор начался.
+            if title not in prompts:
+                prompts[title] = _rendered_prompt(step)
+
         changed = step.get('variables_changed')
         try:
             merged.update(json.loads(changed) if isinstance(changed, str)
@@ -144,7 +166,25 @@ def _walk(run: dict, main: list, every: list, merged: dict, top: bool = True) ->
             pass
 
     for child in run.get('children') or []:
-        _walk(child, main, every, merged, top=False)
+        _walk(child, main, every, merged, prompts, top=False)
+
+
+def _rendered_prompt(step: dict) -> str:
+    """Промпт шага после подстановки переменных. Пусто — у шага его нет.
+
+    ⚠ Поле приходит то строкой, то разобранным словарём — зависит от того, как
+    его положили. Читаем оба вида: разбираться в этом на каждой проверке значило
+    бы размазать знание о хранении по тестам.
+    """
+    meta = step.get('metadata_rendered')
+
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta or '{}')
+        except (TypeError, ValueError):
+            return ''
+
+    return str((meta or {}).get('prompt_user') or '')
 
 
 async def _trace_read(client, agent: int, question: str) -> tuple:
@@ -158,24 +198,25 @@ async def _trace_read(client, agent: int, question: str) -> tuple:
                               params={'agent_id': agent, 'limit': 30})
 
     if answer.status_code != 200:
-        return (), (), {}, ''
+        return (), (), {}, '', {}
 
     mine = next((one for one in (answer.json().get('result') or [])
                  if str(one.get('prompt_user') or '') == str(question)), None)
 
     if not mine:
-        return (), (), {}, ''
+        return (), (), {}, '', {}
 
     full = await client.get(f'/workflow_trace/run/{mine.get("run_uuid")}')
 
     if full.status_code != 200:
-        return (), (), {}, str(mine.get('status') or '')
+        return (), (), {}, str(mine.get('status') or ''), {}
 
     root = full.json().get('result') or {}
-    main, every, merged = [], [], {}
-    _walk(root, main, every, merged)
+    main, every, merged, prompts = [], [], {}, {}
+    _walk(root, main, every, merged, prompts)
 
-    return tuple(main), tuple(every), merged, str(root.get('status') or '')
+    return (tuple(main), tuple(every), merged, str(root.get('status') or ''),
+            prompts)
 
 
 @pytest.fixture
@@ -286,12 +327,13 @@ async def talk(client, agent_id, companion_id):
                 continue
 
             if answer.status_code == 200:
-                route, every, merged, status = await _trace_read(
+                route, every, merged, status, prompts = await _trace_read(
                     client, agent_id, question)
 
                 return Talk(text=str(answer.json().get('result') or ''),
                             session=session, status=status, attempts=attempt,
-                            route=route, route_all=every, vars=merged)
+                            route=route, route_all=every, vars=merged,
+                            prompts=prompts)
 
             last = f'{answer.status_code}: {answer.text[:300]}'
             # ⚠ Новая сессия на повтор: прошлая уже несёт оборванный прогон, и
@@ -300,7 +342,7 @@ async def talk(client, agent_id, companion_id):
             payload['session_uuid'] = session
             await asyncio.sleep(2)
 
-        route, _, _, _ = await _trace_read(client, agent_id, question)
+        route, _, _, _, _ = await _trace_read(client, agent_id, question)
         pytest.fail(f'агент не ответил за {LLM_ATTEMPTS} попыт(ки). Последнее: {last}\n'
                     f'маршрут оборванного прогона: {" → ".join(route) or "пусто"}')
 
