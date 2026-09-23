@@ -407,6 +407,72 @@ async def workflow_agents(
     return {"result": [dict(r) for r in rows]}
 
 
+@router.put("/workflow/{workflow_id}/variable/{workflow_variable_id}")
+async def workflow_variable_update(
+        request: Request,
+        workflow_id: int,
+        workflow_variable_id: int,
+        data: dict,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
+):
+    """Правит переменную workflow: имя, умолчание, описание.
+
+    ⚠⚠ **Этой ручки не было вовсе**, а страница в неё стучалась — по адресу
+    `/agent_workflow_variable/{id}`, которого тоже нет. То есть правка имени и
+    умолчания во входящих переменных **молча не работала**: `404` уходил в
+    консоль браузера, форма показывала новое значение, база хранила старое.
+
+    Нашлось при заведении описания: проба PUT ответила `404`, и описание
+    сохранялось бы ровно так же — никак.
+
+    ⚠ Правим **только присланные поля**: страница шлёт одно описание, и
+    затирать им имя с умолчанием нельзя.
+
+    Raises:
+        HTTPException: 400 — нечего править либо имя не годится в идентификатор.
+    """
+    fields, values = [], []
+
+    if 'name' in data:
+        name = str(data.get('name') or '').strip()
+        # ⚠ Имя уходит в промпт меткой `%имя%`, и разборщик ждёт идентификатор:
+        # пробел или дефис превратят метку в текст, который модель прочтёт как
+        # часть задания.
+        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Имя '{name}' не годится: буквы, цифры и подчёркивание, "
+                       f"и не с цифры.")
+        fields.append('`name` = %s')
+        values.append(name)
+
+    if 'default' in data:
+        fields.append('`default` = %s')
+        values.append(data.get('default'))
+
+    if 'description' in data:
+        # ⚠ Пустое описание — `NULL`, а не пустая строка: «не описали» и
+        # «описали пустотой» это одно состояние, и двух его видов быть не должно.
+        note = str(data.get('description') or '').strip()
+        fields.append('`description` = %s')
+        values.append(note or None)
+
+    if not fields:
+        raise HTTPException(status_code=400,
+                            detail='Нечего править: ни имени, ни умолчания, '
+                                   'ни описания в запросе.')
+
+    values.append(workflow_variable_id)
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            f"UPDATE `agent_workflow_variable` SET {', '.join(fields)} "
+            f"WHERE `id` = %s", tuple(values))
+        await db.connection.commit()
+
+    return {'result': {'id': workflow_variable_id}}
+
+
 @router.delete("/workflow/{workflow_id}/variable/{workflow_variable_id}")
 async def workflow_variable_delete(
         request: Request,
