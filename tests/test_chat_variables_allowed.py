@@ -81,6 +81,18 @@ DATING_SENDS = ('talk_history', 'companion_uid', 'companion_bio', 'girl_bio',
                 'girl_name', 'girl_id', 'companion_name', 'companion_title',
                 'chat_timeout')
 
+# ⚠⚠ Что добавляет **дверь**, а не занятие.
+#
+# `rhapsody_api.py:539` у DatingAi кладёт это в КАЖДЫЙ вызов `/chat/ask`, каким
+# бы занятием он ни был:
+#
+#     'variables': {'chat_timeout': RHAPSODY_API_CHAT_TIMEOUT, **(variables or {})}
+#
+# Вызывающий об этом не знает: `mail_agent.invite_template` кладёт только свои
+# `invite_*`. Отсюда правило: список входящих снимается не с кода занятия, а с
+# того, что вправду уходит по HTTP.
+DOOR_ADDS = ('chat_timeout',)
+
 
 @pytest.fixture
 async def client():
@@ -148,6 +160,44 @@ class TestWhatDatingAiSendsIsDeclared:
             (f'DatingAi шлёт необъявленное — вызовы упадут с 400: {missing}.'
              f' Объявите их входящими у `dating_talk` либо уберите из'
              f' `answer.py`')
+
+    async def test_every_dating_workflow_takes_what_the_door_adds(self, client):
+        """⚠⚠ Инвайты встали на проде через 6 минут после выкладки — из-за этого.
+
+        В журнале воркера, 14:18:40:
+
+            круг инвайтов: сосед ответил отказом: Переменные chat_timeout
+            не объявлены входящими у этого workflow (/chat/ask → 400)
+
+        `chat_timeout` добавляет **дверь** `rhapsody_api.py`, а объявлен он был
+        только у `dating_talk`. Шесть почтовых занятий получали `400` на каждом
+        вызове: пул не набирался вовсе.
+
+        ⚠ **Та же ошибка, что у `/agent/create`** двумя тестами выше, и оба раза
+        причина одна: список входящих снимался с кода занятия, а добавку общего
+        слоя не видел никто.
+
+        ⚠⚠ Берём workflow **по признаку**, а не списком имён: агенты DatingAi
+        помечены сайтом (`agent.site`), и седьмое занятие упало бы так же.
+        """
+        agents = (await client.get('/agent/list')).json().get('result') or []
+
+        sited = {int(one['workflow_id']) for one in agents
+                 if one.get('workflow_id') and str(one.get('site') or '').strip()}
+
+        if not sited:
+            pytest.skip('агентов с меткой сайта в этой базе нет')
+
+        broken = []
+        for workflow_id in sorted(sited):
+            declared = await _declared(client, workflow_id)
+            missing = sorted(set(DOOR_ADDS) - declared)
+            if missing:
+                broken.append(f'#{workflow_id}: {", ".join(missing)}')
+
+        assert not broken, \
+            (f'дверь DatingAi шлёт необъявленное — занятие встанет с 400:'
+             f' {"; ".join(broken)}')
 
     async def test_the_agent_create_handle_variables_are_declared(self, client):
         """⚠⚠ Ручка `/agent/create` добавляет переменные САМА, и её забыли.
