@@ -7,7 +7,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
-from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_filter_by_type, ai_llm_image_generate, ai_llm_request_log
+from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_queue_ttl_get, ai_llm_filter_by_type, ai_llm_image_generate, ai_llm_request_log
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_marks_check, \
     ai_workflow_variables_input_get, ai_workflow_variables_render, \
@@ -71,6 +71,10 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.companion_id = metadata.get('companion_id', 0)
             framework_model.node_id = entity_agent.get('node_id') or await ai_llm_node_id_default_get()
             framework_model.llm_parallel_per_agent_max = await ai_llm_parallel_per_agent_max_get(framework_model.node_id)
+            # ⚠ Срок ожидания в очереди читается здесь, а не диспетчером: тот
+            # крутится каждые 0,1 с, и поход в базу на каждом обороте стоил бы
+            # дороже самой очереди. Тем же приёмом, что строкой выше.
+            framework_model.llm_workflow_queue_ttl = await ai_llm_queue_ttl_get()
             framework_model.workflow_steps = metadata.get('workflow_steps', [])
             framework_model.workflow_variables = metadata.get('workflow_variables', {})
 

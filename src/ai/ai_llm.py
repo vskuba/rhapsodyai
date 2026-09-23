@@ -7,6 +7,7 @@ import httpx
 from config.config import config_get
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+from setting_.setting_ import setting_get
 
 LLM_PROVIDERS = ('openrouter', 'claude', 'ollama', 'gemini', 'groq', 'mistral', 'huggingface', 'cerebras', 'openai',
                  'gx10')
@@ -142,6 +143,80 @@ async def ai_llm_parallel_per_agent_max_get(node_id: int | None) -> int:
         await db.execute("SELECT llm_parallel_per_agent_max FROM `node` WHERE id = %s", (effective_node_id,))
         row = await db.fetchone()
         return int(row['llm_parallel_per_agent_max']) if row and row.get('llm_parallel_per_agent_max') else 1
+
+
+# Сколько секунд заявка ждёт освобождения агента, если настройки нет. То же
+# число, что умолчание диспетчера (`AI_FRAMEWORK_QUEUE_TTL`): пустая база и
+# ненастроенная установка обязаны вести себя одинаково.
+AI_LLM_QUEUE_TTL_DEFAULT = 60.0
+
+# Ключ настройки на странице «Настройки → Значения».
+AI_LLM_QUEUE_TTL_KEY = 'llm_workflow_queue_ttl'
+
+
+async def ai_llm_queue_ttl_get() -> float:
+    """Сколько секунд заявка ждёт освобождения занятого агента.
+
+    Returns:
+        float: срок в секундах. Настройки нет или значение негодное —
+        `AI_LLM_QUEUE_TTL_DEFAULT`.
+
+    ## ⚠⚠ Зачем настройкой, а не константой
+
+    Прежде срок был прибит в общем слое (`AI_FRAMEWORK_QUEUE_TTL = 60.0`) и мерил
+    одной меркой два разных случая:
+
+    * **чат с человеком** — ждать дольше минуты вправду незачем: HTTP-запрос уже
+      отвалился по 504, а запоздалый ответ выдаёт бота;
+    * **пакетный прогон** — шаблон инвайтов просит несколько реплик одним вызовом
+      и внутри крутит цикл «черновик → судья» на каждую. При одном слоте на агента
+      (`node.llm_parallel_per_agent_max`) второй такой вызов встаёт в очередь
+      целиком и минуты не дожидается никогда.
+
+    Живой случай: прогон `dating_invite_write` упал через 60,1 с с «Агент
+    'invite_ladadate' занят: запрос отброшен по TTL очереди».
+
+    ⚠ **Настройка общая, а не на ноду.** Она про терпение очереди, а не про
+    мощность узла: у слотов своё место — колонка `node`.
+
+    ⚠ Читается **один раз на заявку** (`ai_framework_manager`) и едет в ней
+    полем. Диспетчер крутится каждые 0,1 с, и поход в базу на каждом обороте
+    стоил бы дороже самой очереди.
+    """
+    return ai_llm_queue_ttl_value(await setting_get(AI_LLM_QUEUE_TTL_KEY))
+
+
+def ai_llm_queue_ttl_value(raw) -> float:
+    """Разбор значения настройки. Негодное — умолчание.
+
+    Args:
+        raw: что лежит в базе. Настройки нет — `None`; значения хранятся
+            строками, и `'180'` здесь обычное дело.
+
+    Returns:
+        float: срок в секундах, всегда больше нуля.
+
+    ## ⚠⚠ Своей функцией, а не строками внутри чтения
+
+    Разбор значения — чистая работа, базе здесь делать нечего. Пока он жил внутри
+    `ai_llm_queue_ttl_get`, проверить «что будет от опечатки» можно было только
+    походом в MySQL — а пул там привязан к циклу событий, в котором создан, и
+    второй такой тест падал с «attached to a different loop» **после зелёного
+    первого**.
+
+    ⚠ Значение правит человек в текстовом поле, и негодное не должно ни подвесить
+    очередь навсегда, ни заставить диспетчер отбрасывать заявки сразу: и то, и
+    другое выглядело бы как поломка агентов, а чинилось бы по журналу.
+    """
+    try:
+        ttl = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return AI_LLM_QUEUE_TTL_DEFAULT
+
+    # ⚠ Ноль и отрицательное — не «ждать вечно» и не «не ждать»: это описка.
+    # Отвечаем умолчанием, иначе очередь либо встанет, либо начнёт отбрасывать
+    # всё подряд.
+    return ttl if ttl > 0 else AI_LLM_QUEUE_TTL_DEFAULT
 
 CHUNK_SIZE_REFRESH_MINUTES = 15
 CHUNK_SIZE_TARGET_SECONDS = 10
