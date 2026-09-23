@@ -60,10 +60,39 @@ UPDATE `agent_workflow_step`
    SET `metadata` = REPLACE(`metadata`, '"talk_history"', '"talk_history_chat"')
  WHERE `metadata` LIKE '%"talk\_history"%';
 
-UPDATE `agent_workflow_variable`
-   SET `name` = 'talk_history_chat',
-       `description` = 'Реплики чата с этим человеком, старые сверху. Кладёт панель'
- WHERE `name` = 'talk_history';
+-- ⚠⚠ **Старое имя заводим заново, а не переименовываем — ради окна выкладки.**
+--
+-- Проекта два, и выкладываются они не одновременно. `/chat/ask` отвечает 400 на
+-- **незаявленную** переменную (`_variables_allowed`), поэтому любой порядок рвёт
+-- связь на время окна:
+--
+-- * сосед первым — старый DatingAi шлёт `talk_history`, которой уже нет → 400;
+-- * DatingAi первым — шлёт `talk_history_chat`, которой ещё нет → 400.
+--
+-- Оставленное объявление снимает обе беды: старый код шлёт `talk_history` и
+-- проходит, новый шлёт две новые и тоже проходит. Обратное правило не мешает —
+-- объявленная, но неприсланная переменная добирается умолчанием
+-- (`ai_workflow_variables_defaults_apply`).
+--
+-- ⚠ В промптах её больше нет: шаги переименованы выше. Это пустое объявление,
+-- живущее ровно до конца выкладки, и убирает его миграция
+-- `…_wf_talk_history_old_drop.sql`.
+--
+-- Цена урока — утренняя поломка инвайтов ровно этим способом.
+INSERT INTO `agent_workflow_variable` (`name`, `type`, `default`, `description`)
+SELECT 'talk_history_chat', 'input', '',
+       'Реплики чата с этим человеком, старые сверху. Кладёт панель'
+  FROM DUAL
+ WHERE NOT EXISTS (SELECT 1 FROM `agent_workflow_variable`
+                    WHERE `name` = 'talk_history_chat');
+
+INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`)
+SELECT v.`id`, w.`id`
+  FROM `agent_workflow_variable` v
+  JOIN `agent_workflow` w ON w.`name` IN ('dating_talk', 'dating_talk_about_photo')
+ WHERE v.`name` = 'talk_history_chat'
+   AND NOT EXISTS (SELECT 1 FROM `agent_workflow_variable_workflow` x
+                    WHERE x.`variable_id` = v.`id` AND x.`workflow_id` = w.`id`);
 
 -- ── 2. Переменная писем ─────────────────────────────────────────────────────
 -- ⚠ Умолчание — **пустая строка, а не NULL**, как у переменной чата: обе
@@ -210,8 +239,9 @@ SELECT 'ИТОГ' AS этап,
          WHERE `name` = 'talk_history_chat') AS есть_чат,
        (SELECT COUNT(*) FROM `agent_workflow_variable`
          WHERE `name` = 'talk_history_mail') AS есть_письма,
+       -- ⚠ Единица — так и задумано: старое объявление живёт до конца выкладки.
        (SELECT COUNT(*) FROM `agent_workflow_variable`
-         WHERE `name` = 'talk_history') AS старая_осталась,
+         WHERE `name` = 'talk_history') AS старая_на_время_выкладки,
        (SELECT COUNT(*) FROM `agent_workflow_step`
          WHERE `metadata` LIKE '%talk\_history\_mail%') AS шагов_с_письмами,
        (SELECT COUNT(*) FROM `agent` WHERE `name` LIKE 'mail\_reply\_%'
