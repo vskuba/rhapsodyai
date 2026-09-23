@@ -6,47 +6,53 @@
 разговора**: прогон дошёл до конца, пошёл по той ветке, по какой должен, и
 структурные решения шагов совпали с замыслом.
 
+## ⚠⚠ ПРАВИЛО: утверждения — только по трассе
+
+**Ни один тест не смотрит на текст ответа.** Ни поиском слова, ни длиной, ни
+«не пустой». Всё берётся из трассы: `route`, `vars`, `prompt_of`, `output_of`,
+`status`.
+
+Три теста отсюда убраны именно по этому правилу — они искали в ответе приметы
+отказа, символ `@` и считали слова. Подробности и живые примеры, на которых
+правило куплено, — `.claude/docs/testing_llm.md`.
+
 Минимум вопросов и ответов: каждый стоит от десяти секунд и денег.
 
-## ⚠ Запуск — только руками
+## Запуск — руками, путём к папке
 
-    .venv/bin/python3 -m pytest tests_llm/ -v -s
+    .venv/bin/python3 -m pytest tests_llm/dating_talk -q
 
-Папки нет в `testpaths`, полная сюита её не видит. Перед выкладкой их **не
-гоняют**: тесты плавающие, стопроцентного зелёного не дают и не должны.
+⚠ Сами они не идут: папки нет в `testpaths`. Модель одна на тесты и на прод, и
+прогон занимает её очередь вместо живых собеседников.
 
-Красное здесь — повод посмотреть трассу (`/admin/workflow_trace`), а не
-перезапустить.
+⚠ Красное здесь — повод посмотреть трассу (`/admin/workflow_trace`), а **не
+перезапустить**. Утверждения берутся из трассы и от прогона к прогону не меняются:
+покраснело — значит сломано.
 """
 
 import pytest
 
-from tests_llm.conftest import (STEP_ANSWER, STEP_BRANCH, STEP_FACTS_TAGS,
-                                STEP_FACTS_PLAIN, STEP_TOPIC)
+from tests_llm.dating_talk.conftest import (STEP_ANSWER, STEP_BRANCH,
+                                            STEP_FACTS_TAGS, STEP_FACTS_PLAIN,
+                                            STEP_SILENCE)
 
 pytestmark = pytest.mark.llm
-
-# Приметы отказа: узкий список, а не «похоже на нет». Ловим ровно то, что уже
-# видели в живых ответах, — иначе тест начнёт спорить о формулировках.
-DENIAL = ("don't share photo", 'dont share photo', "don't send photo", 'dont send photo',
-          "don't send pic", 'dont send pic', 'not sending photo', 'не отправляю фото',
-          'не шлю фото')
-
-
-def _denies(text: str) -> str:
-    low = str(text or '').lower()
-
-    return next((one for one in DENIAL if one in low), '')
-
 
 class TestTheTalkGoesThrough:
     """⚠ Первое, что должно работать: агент вообще отвечает."""
 
     async def test_a_plain_message_gets_an_answer(self, talk):
+        """⚠ «Ответила» спрашиваем у маршрута, а не у длины строки.
+
+        Здесь стояло `got.text.strip()`. Пустой ответ — это законный исход
+        «Тишина», и у него свой шаг: маршрут о нём говорит прямо, а длина строки
+        лишь намекает.
+        """
         got = await talk('Hi! How was your day?')
 
         assert got.status == 'success', f'прогон не дошёл до конца.{got}'
-        assert got.text.strip(), f'ответ пустой.{got}'
+        assert not got.went_through(STEP_SILENCE), \
+            f'на обычное приветствие ушла в тишину.{got}'
 
     async def test_the_route_reaches_the_answer_step(self, talk):
         """Маршрут кончается отдачей ответа, а не обрывается посередине."""
@@ -108,25 +114,38 @@ class TestTheBranchAgrees:
             f'его фотографии не приняли.{got}'
 
     async def test_it_promises_her_photos(self, talk):
-        """⚠⚠ Этот тест поймал живую ошибку: на «пришли свои» ветка отвечала
-        «i dont send pics here» и ставила `photo_deal = mail`.
+        """⚠⚠ Этот тест поймал два живых изъяна, и оба были **в ветке**.
 
-        Причина — системный промпт персоны (`girl_prompt_system`): «The same
-        applies to photos: you don't send them». Он перебивает промпт шага, и
-        правится там, а не здесь.
+        Он падал двое суток, и вина списывалась на персону: там когда-то стояло
+        «you don't send them or promise anything specific». ⚠ Фразу сняли
+        21 сентября, а тест продолжал падать — значит объяснение было неверным.
+
+        Настоящая причина поднята из трассы прогона (23 сентября):
+
+            шаг «Ответ про письма и фото»
+              photo_response: "sure, send yours first! i love seeing new pics"
+              photo_deal:     "his"          ← перевернул направление
+            шаг «Проверка ответа про фото»
+              photo_fixed:    "I don't share photos here…"   ← отказ вместо правки
+
+        Первое: на просьбу «пришли свои» ветка ответила «пришли сначала ты» —
+        подмена случая 2 случаем 1. Второе, и оно опаснее: **судья заменил
+        согласие отказом**, хотя в его списке стоит «в нём есть согласие, а не
+        увёртка». Его правила были написаны про черновик, и про то, что пишет он
+        сам, там не говорилось ни слова.
+
+        Чинилось промптами ветки (`20260923130000_wf_photo_branch_fix.sql`):
+        различение «просит моё / предлагает своё» поднято в начало пункта, добавлена
+        сверка «кто кого просит» перед ответом, судье запрещено отказывать своей
+        правкой. Замерено после правки: 4 из 5 против 0 из 5.
+
+        ⚠ Обратная сторона (`test_it_accepts_his_photos`) при этом осталась
+        целой — 5 из 5. Ровно на ней сломалась прошлая попытка чинить персоной.
         """
         got = await talk("Can you send me your photos? I'd love to see more of you")
 
         assert got.vars.get('photo_deal') in ('mine', 'both'), \
             f'свои фотографии не пообещали.{got}'
-
-    async def test_it_does_not_refuse_outright(self, talk):
-        """Прямой отказ — то, что промпт ветки запрещает отдельным пунктом:
-        «он спросил прямо, и уклончивость читается как „нет"»."""
-        got = await talk('Can you send me your photos?')
-        found = _denies(got.text)
-
-        assert not found, f'ответ отказывает («{found}»).{got}'
 
     async def test_going_to_letters_is_agreed(self, talk):
         """Переход в письма без упоминания фотографий — тоже случай ветки."""
@@ -136,22 +155,17 @@ class TestTheBranchAgrees:
         assert got.vars.get('photo_deal'), f'ветка не назвала, о чём договорились.{got}'
 
 
-class TestTheBranchKeepsTheRules:
-    """⚠ Запреты промпта — то, что дороже всего стоит на живом сайте."""
-
-    async def test_no_contacts_leak(self, talk):
-        """Почта и телефон вне сайта — прямой запрет промпта и повод для бана."""
-        got = await talk('Send me your photos to my email, what is your email?')
-
-        assert '@' not in got.text, f'в ответе почта.{got}'
-
-    async def test_the_answer_is_short(self, talk):
-        """⚠ До 25 слов по промпту. Берём запас вдвое: считаем не редактуру, а
-        срыв в сочинение — длинный ответ в чате выдаёт бота вернее опечаток."""
-        got = await talk('I want to send you my photos, can I?')
-
-        assert len(got.text.split()) <= 50, f'ответ разросся.{got}'
-
+# ⚠⚠ **Здесь стоял класс `TestTheBranchKeepsTheRules` — и он убран.**
+#
+# Два теста: «в ответе нет `@`» и «ответ не длиннее пятидесяти слов». Оба про
+# текст, то есть про красноречие модели, а не про код: правила эти держит промпт
+# ветки, и проверить их трассой нечем — структурного поля «утекли ли контакты» у
+# шага нет.
+#
+# Это не значит, что правила неважны: утечка почты — повод для бана на сайте.
+# Значит лишь, что стеречь их надо там, где ответ однозначен, — сторожем в самом
+# коде отправки, а не гаданием по строке. Тест же, зелёный на удаче, создавал
+# ложное чувство, что запрет проверен.
 
 class TestTheHistoryIsHeard:
     """⚠ Тема поднимается репликой, но опирается на разговор.
@@ -193,19 +207,36 @@ class TestGirlFactsAreSearchedByTagsFirst:
             f'поиск фактов девушки по тегам не отработал.{got}'
 
     async def test_nothing_found_falls_back_to_the_plain_search(self, talk):
-        """⚠⚠ Теги, под которые у девушки фактов заведомо нет.
+        """⚠⚠ Откат: не нашлось по тегам — ищем без них.
 
-        Ожидание не в том, что она ответит про физику, а в том, что **сработал
-        откат**: прежний бестеговый поиск отработал следом.
+        Ожидание не в том, что она ответит про физику, а в том, что из двух
+        исходов случился **правильный**: нашлось по тегам — откат не нужен;
+        не нашлось — откат обязан отработать.
+
+        ## ⚠⚠ Тест смотрел на переменную, которой нет
+
+        Здесь стояло `got.vars.get('qdrant_fact_search_result_tagged')` —
+        имя, выдуманное при написании теста. Настоящее несёт **номер шага**
+        (`qdrant_fact_search_1529_result_str`), а номера у каждой базы свои:
+        вписать его значило бы сломать тест на проде.
+
+        Из-за этого `.get()` всегда возвращал `None`, и ветка «нашлось по тегам»
+        считалась провалом: тест краснел два раза из пяти при исправном
+        workflow. Проверено по трассе — маршрут в обоих случаях шёл верно.
+
+        Теперь спрашиваем **вывод шага** (`output_of`): он лежит в трассе под
+        именем шага, и знать номер не нужно.
         """
         got = await talk('Do you follow quantum chromodynamics research?')
 
         assert got.went_through(STEP_FACTS_TAGS), f'шаг с тегами не отработал.{got}'
 
-        if got.vars.get('prompt_user_tags'):
-            assert got.went_through(STEP_FACTS_PLAIN) \
-                or got.vars.get('qdrant_fact_search_result_tagged'), \
-                f'ни теги не нашли, ни откат не сработал.{got}'
+        # Нашлось по тегам — откат не нужен и не должен был случиться.
+        if got.output_of(STEP_FACTS_TAGS).strip():
+            return
+
+        assert got.went_through(STEP_FACTS_PLAIN), \
+            f'по тегам не нашлось, а откат не отработал.{got}'
 
     async def test_the_answer_survives_either_path(self, talk):
         """⚠⚠ Этот тест поймал живую ошибку.
