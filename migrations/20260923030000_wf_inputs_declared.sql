@@ -46,10 +46,25 @@
 -- придуманы: разбором `variables={...}` у каждого вызова. Разойдись они —
 -- работающий вызов станет отвергаться.
 
+-- ⚠⚠ **Кодировка задана явно, и без неё миграция падает на проде.**
+--
+-- Временная таблица без оговорки берёт кодировку **базы**, а не таблиц. У
+-- `project` на проде база `utf8mb4_unicode_ci`, а таблицы `utf8mb4_0900_ai_ci` —
+-- одна кодировка, разные сортировки, и сравнение `w.name = m.wf_name` отвечает
+-- `ERROR 1267: Illegal mix of collations`.
+--
+-- ⚠ Локально это не воспроизводилось: там база `latin1_swedish_ci`, а разные
+-- **кодировки** MySQL приводит молча — ошибка бывает только при одной кодировке с
+-- разными сортировками. То есть локальный успех был случайностью чужой
+-- настройки, а не признаком исправности.
+--
+-- Отсюда два правила ниже: явная кодировка у таблицы и явный `COLLATE` в каждом
+-- сравнении — он весомее неявной кодировки столбца, и работает при любой
+-- настройке установки.
 CREATE TEMPORARY TABLE `wf_input_map` (
     `wf_name` CHAR(64) NOT NULL,
     `var_name` CHAR(64) NOT NULL
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 INSERT INTO `wf_input_map` (`wf_name`, `var_name`) VALUES
     -- Чат с девушкой: кладёт `answer.py`.
@@ -115,7 +130,8 @@ SELECT 'ДО' AS этап,
 UPDATE `agent_workflow_variable` v
    SET v.`type` = 'input'
  WHERE v.`type` = 'workflow'
-   AND v.`name` IN (SELECT `var_name` FROM `wf_input_map`);
+   AND v.`name` IN (SELECT `var_name` COLLATE utf8mb4_0900_ai_ci
+                      FROM `wf_input_map`);
 
 -- ── Связь с workflow ────────────────────────────────────────────────────────
 
@@ -132,13 +148,16 @@ UPDATE `agent_workflow_variable` v
 INSERT INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`)
 SELECT v.`id`, w.`id`
   FROM `wf_input_map` m
-  JOIN `agent_workflow` w ON w.`name` = m.`wf_name`
-  JOIN `agent_workflow_variable` v ON v.`name` = m.`var_name`
+  JOIN `agent_workflow` w
+    ON w.`name` = m.`wf_name` COLLATE utf8mb4_0900_ai_ci
+  JOIN `agent_workflow_variable` v
+    ON v.`name` = m.`var_name` COLLATE utf8mb4_0900_ai_ci
  WHERE NOT EXISTS (SELECT 1 FROM `agent_workflow_variable_workflow` vw
                     WHERE vw.`variable_id` = v.`id` AND vw.`workflow_id` = w.`id`)
    AND NOT EXISTS (SELECT 1 FROM `agent_workflow_variable_workflow` vw2
                      JOIN `agent_workflow_variable` v2 ON v2.`id` = vw2.`variable_id`
-                    WHERE vw2.`workflow_id` = w.`id` AND v2.`name` = m.`var_name`);
+                    WHERE vw2.`workflow_id` = w.`id`
+                      AND v2.`name` = m.`var_name` COLLATE utf8mb4_0900_ai_ci);
 
 SELECT 'ПОСЛЕ' AS этап,
        (SELECT COUNT(*) FROM `agent_workflow_variable` WHERE `type` = 'input')
@@ -147,8 +166,10 @@ SELECT 'ПОСЛЕ' AS этап,
 -- Чего не хватило: имя из списка, которого нет в реестре. Пусто — всё нашлось.
 SELECT 'НЕ НАЙДЕНО' AS этап, m.`wf_name`, m.`var_name`
   FROM `wf_input_map` m
-  LEFT JOIN `agent_workflow_variable` v ON v.`name` = m.`var_name`
-  LEFT JOIN `agent_workflow` w ON w.`name` = m.`wf_name`
+  LEFT JOIN `agent_workflow_variable` v
+    ON v.`name` = m.`var_name` COLLATE utf8mb4_0900_ai_ci
+  LEFT JOIN `agent_workflow` w
+    ON w.`name` = m.`wf_name` COLLATE utf8mb4_0900_ai_ci
  WHERE v.`id` IS NULL OR w.`id` IS NULL;
 
 DROP TEMPORARY TABLE `wf_input_map`;

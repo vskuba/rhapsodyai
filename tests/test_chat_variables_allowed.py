@@ -149,6 +149,43 @@ class TestWhatDatingAiSendsIsDeclared:
              f' Объявите их входящими у `dating_talk` либо уберите из'
              f' `answer.py`')
 
+    async def test_the_agent_create_handle_variables_are_declared(self, client):
+        """⚠⚠ Ручка `/agent/create` добавляет переменные САМА, и её забыли.
+
+        Она кладёт их всем мастерам без разбора, а вызывающий об этом не знает:
+
+            variables['agent_name'] = data.name
+            variables.setdefault('chat_timeout', AGENT_CREATE_CHAT_TIMEOUT)
+
+        `agent_name` проходит — он `global`. `chat_timeout` был объявлен у
+        `dating_talk`, но не у `dating_girl_create` — а именно его гоняет
+        заведение агента анкеты. На проде это значило бы, что **ни одна новая
+        анкета не заводится**: `400` вместо агента.
+
+        ⚠ Поймано прогоном миграций на копии прод-базы перед выкладкой, а не
+        тестами: локальная база уже имела нужные строки от прошлых заходов, и
+        проверка была зелёной при сломанном проде.
+
+        ⚠⚠ Проверяются **все мастера сразу**, а не `dating_girl_create` по имени:
+        ручка добавляет переменные каждому, кого зовёт, и второй мастер упал бы
+        ровно так же.
+        """
+        masters = await _masters(client)
+
+        if not masters:
+            pytest.skip('мастеров (workflow с агентом *_runner) в этой базе нет')
+
+        broken = []
+        for workflow_id, name in masters:
+            declared = await _declared(client, workflow_id)
+            missing = sorted({'agent_name', 'chat_timeout'} - declared)
+            if missing:
+                broken.append(f'{name}: {", ".join(missing)}')
+
+        assert not broken, \
+            (f'ручка /agent/create шлёт необъявленное — заведение агента упадёт'
+             f' с 400: {"; ".join(broken)}')
+
     async def test_an_inner_variable_is_not_among_them(self, client):
         """⚠ Сторож проверки: список объявленных не должен разрастись до
         внутренних.
@@ -174,6 +211,32 @@ async def _workflow_id(client) -> int:
         pytest.skip(f'агента «{AGENT_NAME}» нет в этой базе')
 
     return int((answer.json().get('result') or {}).get('workflow_id') or 0)
+
+
+async def _masters(client) -> list:
+    """Workflow, которые гоняет ручка `/agent/create`, — по её же признаку.
+
+    Она ищет агента с именем `<workflow>_runner`; тем же условием находим их и
+    здесь. Перечисли мы имена руками — список разошёлся бы с ручкой при заведении
+    нового мастера, и тест молчал бы о сломанном.
+    """
+    answer = await client.get('/agent/list')
+
+    if answer.status_code != 200:
+        return []
+
+    runners = {str(one.get('name') or '') for one in
+               (answer.json().get('result') or [])
+               if str(one.get('name') or '').endswith('_runner')}
+
+    listed = await client.get('/workflow/list')
+
+    if listed.status_code != 200:
+        return []
+
+    return [(int(one['id']), str(one.get('name') or ''))
+            for one in (listed.json().get('result') or [])
+            if f"{one.get('name')}_runner" in runners]
 
 
 async def _declared(client, workflow_id: int) -> set:
