@@ -513,6 +513,37 @@
         font-weight: 600;
     }
 
+    /* Откуда у переменной значение: снапшот старта либо конкретный шаг */
+    .var-source {
+        font-size: 10px;
+        font-weight: 600;
+        color: #92400e;
+        background: #fef3c7;
+        border: 1px solid #fde68a;
+        border-radius: 8px;
+        padding: 1px 7px;
+        white-space: nowrap;
+    }
+
+    .var-source-start {
+        color: #475569;
+        background: #eef2f7;
+        border-color: #dbe3ec;
+    }
+
+    /* Переменная объявлена, но в прогоне значения не получила — показано умолчание */
+    .var-source-default {
+        color: #9a3412;
+        background: #fff1e7;
+        border-color: #fed7aa;
+    }
+
+    .var-desc {
+        margin-top: 3px;
+        font-size: 10.5px;
+        color: #94a3b8;
+    }
+
     .var-type {
         font-size: 10px;
         font-weight: 600;
@@ -631,6 +662,53 @@
         border-radius: 8px;
         padding: 2px 9px;
         white-space: nowrap;
+    }
+
+    /* Переменные: два аккордеона рядом — значения прогона и реестр workflow */
+    .vars-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 10px;
+        align-items: start;
+    }
+
+    .vars-col {
+        min-width: 0;
+    }
+
+    .vars-toggle {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .vars-toggle:hover {
+        color: #2b6cb0;
+    }
+
+    .vars-body {
+        margin-top: 4px;
+    }
+
+    .child-run .vars-row {
+        margin-bottom: 6px;
+    }
+
+    .child-run .vars-row .label {
+        color: #7f8c8d;
+        font-size: 11px;
+        text-transform: uppercase;
+        font-weight: bold;
+    }
+
+    .child-run .vars-row > pre {
+        margin: 4px 0 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #fff;
+        border: 1px solid #edf2f7;
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-size: 12px;
     }
 
     .btn-delete-run {
@@ -1002,29 +1080,58 @@
         return wrap;
     }
 
-    // UL-список переменных: скаляры — в строку, list/dict — бейдж типа + вложенный JSON
-    function renderVariablesList(vars) {
+    // Строка списка переменных: имя, бейджи, значение (скаляр — в строку, list/dict — JSON ниже)
+    function varListItem(name, value, badges, description) {
+        const li = document.createElement('li');
+        const head = el('div', 'var-head');
+        head.appendChild(el('span', 'var-name', `%${name}%`));
+        (badges || []).forEach(badge => head.appendChild(el('span', badge.className, badge.text)));
+        head.appendChild(el('span', 'var-sep', ':'));
+
+        if (value !== null && typeof value === 'object') {
+            const isList = Array.isArray(value);
+            const size = isList ? value.length : Object.keys(value).length;
+            head.appendChild(el('span', 'var-type', isList ? `list · ${size}` : `dict · ${size}`));
+            li.appendChild(head);
+            li.appendChild(el('pre', 'var-value-complex', JSON.stringify(value, null, 2)));
+        } else {
+            const empty = value === null || value === undefined || value === '';
+            const valueEl = el('span', 'var-value-inline' + (empty ? ' var-value-empty' : ''),
+                empty ? 'пусто' : String(value));
+            head.appendChild(valueEl);
+            li.appendChild(head);
+        }
+        if (description) li.appendChild(el('div', 'var-desc', description));
+        return li;
+    }
+
+    // Бейдж происхождения значения: {label, start} из collectRunVariables
+    function varSourceBadge(source) {
+        return {className: `var-source${source.start ? ' var-source-start' : ''}`, text: source.label};
+    }
+
+    // UL-список переменных: скаляры — в строку, list/dict — бейдж типа + вложенный JSON.
+    // sources (необязательный) — откуда значение: {имя: {label, start}} рядом с именем
+    function renderVariablesList(vars, sources) {
         const ul = el('ul', 'vars-list');
         Object.entries(vars).forEach(([name, value]) => {
-            const li = document.createElement('li');
-            const head = el('div', 'var-head');
-            head.appendChild(el('span', 'var-name', `%${name}%`));
-            head.appendChild(el('span', 'var-sep', ':'));
+            const source = sources && sources[name];
+            ul.appendChild(varListItem(name, value, source ? [varSourceBadge(source)] : []));
+        });
+        return ul;
+    }
 
-            if (value !== null && typeof value === 'object') {
-                const isList = Array.isArray(value);
-                const size = isList ? value.length : Object.keys(value).length;
-                head.appendChild(el('span', 'var-type', isList ? `list · ${size}` : `dict · ${size}`));
-                li.appendChild(head);
-                li.appendChild(el('pre', 'var-value-complex', JSON.stringify(value, null, 2)));
-            } else {
-                const empty = value === null || value === undefined || value === '';
-                const valueEl = el('span', 'var-value-inline' + (empty ? ' var-value-empty' : ''),
-                    empty ? 'пусто' : String(value));
-                head.appendChild(valueEl);
-                li.appendChild(head);
-            }
-            ul.appendChild(li);
+    // Входящие переменные workflow: описание из реестра и то, чем они обернулись в прогоне.
+    // Значения нет — показываем умолчание из реестра, чтобы видеть, с чем шаг работал бы.
+    function renderWorkflowVariablesList(declared, values, sources) {
+        const ul = el('ul', 'vars-list');
+        declared.forEach(variable => {
+            const name = variable.name || '';
+            const used = Object.prototype.hasOwnProperty.call(values, name);
+            const badge = used
+                ? varSourceBadge(sources[name])
+                : {className: 'var-source var-source-default', text: 'умолчание'};
+            ul.appendChild(varListItem(name, used ? values[name] : variable.default, [badge], variable.description));
         });
         return ul;
     }
@@ -1194,6 +1301,8 @@
         runDetail.appendChild(el('div', 'empty-note', 'Загрузка...'));
         try {
             const data = await getData(`/workflow_trace/run/${runUuid}`);
+            // Реестр переменных тянем до рендера: сам рендер синхронный и ждать не умеет
+            await workflowVariablesPrefetch(data.result);
             renderRunDetail(data.result);
         } catch (e) {
             console.error('Ошибка загрузки запуска:', e);
@@ -1295,6 +1404,10 @@
         resultRow.appendChild(el('pre', null, (isErrorLike ? run.error : run.result) || '—'));
         summary.appendChild(resultRow);
 
+        // Переменные запуска: снапшот старта + всё, что дописали шаги
+        const varsRow = renderRunVariablesRow(run);
+        if (varsRow) summary.appendChild(varsRow);
+
         // LLM статистика: подсчёт вызовов по моделям из всех шагов (включая sub-workflow рекурсивно)
         const llmCounts = collectLlmStats(run);
         const { input: tokIn, output: tokOut } = collectTokenStats(run);
@@ -1319,6 +1432,123 @@
 
         // Таймлайн шагов (с рекурсией для sub-workflow)
         runDetail.appendChild(renderRunTimeline(run));
+    }
+
+    // Реестр объявленных переменных по workflow_id: одна и та же ветка встречается
+    // в дереве запуска много раз, а список её переменных от прогона не зависит
+    const workflowVariablesCache = {};
+
+    // Объявленные переменные workflow: `agent_workflow_variable` (workflow/input/global)
+    // плюс привязанные переменные ноды — их отдаёт /workflow/{id}/variables
+    async function workflowVariablesLoad(workflowId) {
+        if (workflowVariablesCache[workflowId]) return;
+        try {
+            const res = await getData(`/workflow/${workflowId}/variables`);
+            workflowVariablesCache[workflowId] = res.result || [];
+        } catch (e) {
+            // Журнал живёт и без реестра: workflow мог быть удалён, прав может не хватать
+            console.error('Не загружены переменные workflow:', workflowId, e);
+            workflowVariablesCache[workflowId] = [];
+        }
+    }
+
+    // Реестры для всех workflow дерева запуска: у каждого sub-workflow он свой
+    async function workflowVariablesPrefetch(run) {
+        const ids = new Set();
+        const walk = (r) => {
+            if (r.workflow_id) ids.add(r.workflow_id);
+            (r.children || []).forEach(walk);
+        };
+        walk(run);
+        await Promise.all([...ids].map(workflowVariablesLoad));
+    }
+
+    // Переменные запуска: снапшот на старте, поверх — значения, записанные шагами.
+    // Потомки не учитываются: у sub-workflow изолированный scope и свой снапшот старта.
+    function collectRunVariables(run) {
+        const values = {};
+        const sources = {};
+
+        const start = parseJson(run.variables_start);
+        if (start && typeof start === 'object' && !Array.isArray(start)) {
+            Object.entries(start).forEach(([name, value]) => {
+                values[name] = value;
+                sources[name] = { label: 'старт', start: true };
+            });
+        }
+
+        (run.steps || []).forEach(step => {
+            const changed = parseJson(step.variables_changed);
+            if (!changed || typeof changed !== 'object' || Array.isArray(changed)) return;
+            Object.entries(changed).forEach(([name, value]) => {
+                values[name] = value;
+                sources[name] = { label: `шаг #${step.exec_index}`, start: false };
+            });
+        });
+
+        return { values, sources };
+    }
+
+    // Аккордеон: заголовок-переключатель + тело. Тело строится при первом раскрытии —
+    // списков на странице десятки (каждый sub-workflow свой), а открывают единицы.
+    function renderVarsAccordion(label, count, buildBody) {
+        const column = el('div', 'vars-col');
+        const head = el('div', 'label vars-toggle');
+        const body = el('div', 'vars-body');
+        let open = false;
+        let built = false;
+
+        const apply = () => {
+            head.textContent = `${open ? '▾' : '▸'} ${label} (${count})`;
+            if (open && !built) {
+                body.appendChild(buildBody());
+                built = true;
+            }
+            body.style.display = open ? '' : 'none';
+        };
+        head.onclick = () => {
+            open = !open;
+            apply();
+        };
+        apply();
+
+        column.appendChild(head);
+        column.appendChild(body);
+        return column;
+    }
+
+    // Ряд переменных: слева значения прогона, справа объявленные переменные workflow.
+    // Возвращает null, если показывать нечего.
+    function renderRunVariablesRow(run) {
+        const { values, sources } = collectRunVariables(run);
+        const names = Object.keys(values);
+        // Только входящие: с чем ветку вызвали. Остальные объявленные (workflow, global,
+        // ноды) — внутренняя кухня ветки, и в левом списке они уже есть по факту
+        const declared = (workflowVariablesCache[run.workflow_id] || []).filter(v => v.type === 'input');
+        const rawStart = typeof run.variables_start === 'string' ? run.variables_start : '';
+        // Снапшот не разобрался: обрезан по длине при записи — говорим это, а не молчим
+        const truncated = !names.length && rawStart.includes('...[truncated]');
+
+        if (!names.length && !declared.length && !truncated) return null;
+
+        const row = el('div', 'row vars-row');
+
+        if (names.length) {
+            row.appendChild(renderVarsAccordion('Переменные', names.length,
+                () => renderVariablesList(values, sources)));
+        } else if (truncated) {
+            const column = el('div', 'vars-col');
+            column.appendChild(el('div', 'label', 'Переменные'));
+            column.appendChild(el('pre', null, '⚠️ Снапшот переменных обрезан при записи (слишком длинный).'));
+            row.appendChild(column);
+        }
+
+        if (declared.length) {
+            row.appendChild(renderVarsAccordion('Входящие workflow переменные', declared.length,
+                () => renderWorkflowVariablesList(declared, values, sources)));
+        }
+
+        return row;
     }
 
     // Рекурсивно собирает статистику вызовов LLM по всем шагам запуска и его потомков
@@ -1476,6 +1706,9 @@
                 title.appendChild(badge);
                 title.appendChild(el('span', 'run-meta', ` ${fmtDuration(child.duration_ms)}`));
                 block.appendChild(title);
+                // Переменные sub-workflow: и scope, и реестр переменных у него свои
+                const childVarsRow = renderRunVariablesRow(child);
+                if (childVarsRow) block.appendChild(childVarsRow);
                 block.appendChild(renderRunTimeline(child));
                 container.appendChild(block);
             });

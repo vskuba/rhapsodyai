@@ -113,14 +113,300 @@ export async function loadWorkflowVariables(workflowId) {
 // ===== Входящие переменные (type === 'input') в форме "Редактирование задачи" =====
 
 function renderInputVariables() {
-    const container = document.getElementById('inputVariablesContainer');
-    if (!container) return;
-    container.innerHTML = '';
+    const list = document.getElementById('inputVariablesList');
+    const hidden = document.getElementById('inputVariablesContainer');
+    if (!list || !hidden) return;
 
-    const variablesArray = Array.isArray(state.allCurrentVariables) ? state.allCurrentVariables : [];
-    variablesArray.filter(v => v.type === 'input').forEach(variable => {
-        createInputVariableRow(variable);
+    list.innerHTML = '';
+    hidden.innerHTML = '';
+
+    const all = Array.isArray(state.allCurrentVariables) ? state.allCurrentVariables : [];
+    const inputs = all.filter(v => v.type === 'input');
+
+    // ⚠ Скрытые строки остаются: на них держится сохранение вместе с workflow
+    // (`saveInputVariables` читает `#inputVariablesContainer`). Вид сменился,
+    // сохранение — нет.
+    inputs.forEach(variable => createInputVariableRow(variable));
+
+    inputs.forEach(variable => list.append(nameButton(variable)));
+
+    if (!inputs.length) {
+        list.innerHTML = '<div class="input-vars-empty">переменных нет</div>';
+    }
+
+    // Выбранную держим между перерисовками: список перечитывается после каждого
+    // сохранения, и сброс выбора выбрасывал бы человека из формы, которую он
+    // правит.
+    const want = inputs.find(v => String(v.id) === String(state.inputVarPicked))
+        || inputs[0];
+
+    if (want) pickInputVariable(want);
+    else showInputForm(null);
+}
+
+/**
+ * Строка списка: имя слева, кружок удаления справа.
+ *
+ * ⚠ `div`, а не `button`: внутри кнопки другая кнопка недопустима по разметке, а
+ * удаление обязано быть отдельной кнопкой — иначе щелчок по нему выбирал бы
+ * переменную вместо удаления.
+ *
+ * ⚠⚠ Кружок появляется **по наведению**. Всегда видимый ряд крестиков в списке
+ * читается как «это всё можно снести» и провоцирует промах: строки узкие, а
+ * выбор и удаление стояли бы в паре пикселей друг от друга.
+ */
+function nameButton(variable) {
+    const row = document.createElement('div');
+    row.className = 'input-var-name';
+    row.dataset.id = variable.id ?? '';
+    row.tabIndex = 0;
+    if (!variable.id) row.classList.add('fresh');
+
+    const label = document.createElement('span');
+    label.className = 'input-var-label';
+    label.textContent = variable.name || '(без имени)';
+    // ⚠ Ширина списка рассчитана на самое длинное здешнее имя, но имена
+    // заводит человек: что не влезло, показывается подсказкой.
+    label.title = variable.name || '';
+
+    const kill = document.createElement('button');
+    kill.type = 'button';
+    kill.className = 'input-var-kill';
+    kill.title = `Удалить «${variable.name || 'переменную'}»`;
+    kill.textContent = '×';
+    kill.onclick = (e) => {
+        // ⚠ Щелчок по кружку не должен всплывать до строки: иначе переменная
+        // сперва выберется, а следом откроется вопрос об удалении — и человек
+        // подтвердит его, глядя на только что открывшуюся форму.
+        e.stopPropagation();
+        removeInputVariable(variable);
+    };
+
+    row.onclick = () => pickInputVariable(variable);
+    row.append(label, kill);
+
+    return row;
+}
+
+function pickInputVariable(variable) {
+    state.inputVarPicked = variable.id ?? null;
+
+    document.querySelectorAll('.input-var-name').forEach(one => {
+        one.classList.toggle('active',
+            String(one.dataset.id) === String(variable.id ?? ''));
     });
+
+    showInputForm(variable);
+}
+
+/**
+ * Форма выбранной переменной: имя, значение по умолчанию, описание.
+ *
+ * ⚠⚠ **Все три поля сохраняются сами**, по уходу из поля. Кнопки «сохранить»
+ * тут нет: правка идёт по одному полю за раз, и лишний щелчок после каждой
+ * означал бы, что описания просто не станут править.
+ *
+ * ⚠ Новая переменная (без номера) сохраняется вместе с workflow — ей ещё некуда
+ * слать PUT. Оттого поля у неё живут в скрытой строке, а форма только
+ * показывает, что она есть.
+ */
+function showInputForm(variable) {
+    const box = document.getElementById('inputVariablesForm');
+    if (!box) return;
+
+    box.innerHTML = '';
+
+    if (!variable) {
+        box.innerHTML = '<div class="input-vars-empty">выберите переменную слева</div>';
+        return;
+    }
+
+    box.append(
+        formField('Имя переменной', inputField(variable, 'name')),
+        formField('Значение по умолчанию', textField(variable, 'default', 2)),
+        formField('Описание — зачем она и что в неё кладут',
+                  noteView(variable)),
+    );
+
+    // ⚠ Кнопки удаления здесь нет: она живёт в списке слева, у каждой строки.
+    // Два места для одного действия означали бы вопрос, чем они отличаются.
+}
+
+function formField(label, control) {
+    const wrap = document.createElement('div');
+    const cap = document.createElement('div');
+    cap.className = 'field-label';
+    cap.textContent = label;
+    wrap.append(cap, control);
+
+    return wrap;
+}
+
+/**
+ * Описание: текст и карандаш; поле ввода открывается щелчком.
+ *
+ * ⚠ Читают описание в разы чаще, чем правят, — постоянное текстовое поле
+ * выглядит как «здесь надо что-то заполнить», а рядом с ним ещё два таких же.
+ * Текст отвечает на «что это», не требуя ничего.
+ *
+ * ⚠⚠ Сохраняется само, по уходу из поля. Кнопки «сохранить» нет: правка одна на
+ * заход, и лишний щелчок после каждой означал бы, что описания не станут править.
+ */
+function noteView(variable) {
+    const box = document.createElement('div');
+    box.className = 'note-view';
+
+    const text = document.createElement('div');
+    text.className = 'note-text';
+
+    const show = () => {
+        const note = variable.description ?? '';
+        text.textContent = note || 'без описания';
+        text.classList.toggle('empty', !note);
+        text.title = note ? 'Нажмите, чтобы изменить' : 'Нажмите, чтобы описать';
+    };
+
+    const pen = document.createElement('button');
+    pen.type = 'button';
+    pen.className = 'btn-note-edit';
+    pen.title = 'Описать переменную';
+    pen.textContent = '✎';
+
+    const edit = () => {
+        if (box.querySelector('textarea')) return;
+
+        const field = textField(variable, 'description', 4, 'field-note');
+        field.placeholder = 'Зачем эта переменная и что в неё кладут';
+
+        // ⚠ Возврат к тексту — **после** сохранения: `bindSave` висит на `blur`
+        // и к этому мигу уже записал значение в `variable`.
+        field.addEventListener('blur', () => {
+            setTimeout(() => {
+                field.replaceWith(text);
+                pen.style.display = '';
+                show();
+            }, 0);
+        });
+
+        pen.style.display = 'none';
+        text.replaceWith(field);
+        field.focus();
+    };
+
+    text.onclick = edit;
+    pen.onclick = edit;
+
+    show();
+    box.append(text, pen);
+
+    return box;
+}
+
+function inputField(variable, field) {
+    const el = document.createElement('input');
+    el.type = 'text';
+    el.className = 'form-control';
+    el.value = variable[field] ?? '';
+    bindSave(el, variable, field);
+
+    return el;
+}
+
+function textField(variable, field, rows, extra = '') {
+    const el = document.createElement('textarea');
+    el.className = `form-control ${extra}`.trim();
+    el.rows = rows;
+    el.value = variable[field] ?? '';
+    bindSave(el, variable, field);
+
+    return el;
+}
+
+/** Автосохранение поля: по уходу и по Ctrl+Enter, один раз на правку. */
+function bindSave(el, variable, field) {
+    const save = async () => {
+        const value = el.value.trim();
+        if (value === (variable[field] ?? '')) return;
+
+        // ⚠ Новая переменная уедет вместе с workflow: PUT слать некуда, но
+        // скрытую строку обновить надо — из неё читает `saveInputVariables`.
+        if (!variable.id) {
+            variable[field] = value;
+            syncHiddenRow(variable);
+            return;
+        }
+
+        if (field === 'name'
+                && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
+            showNotification(`Недопустимое имя переменной: "${value}"`, 'error');
+            el.value = variable.name;
+            return;
+        }
+
+        const workflowId = document.getElementById('workflowId')?.value;
+
+        try {
+            await putData(`/workflow/${workflowId}/variable/${variable.id}`,
+                {[field]: value || null});
+            variable[field] = value;
+            syncHiddenRow(variable);
+            if (field === 'name') renderInputVariables();
+            savedMark(el);
+        } catch (err) {
+            console.error('Переменная не сохранилась:', err);
+            showNotification(`Не сохранилось: ${err.message}`, 'error');
+            el.value = variable[field] ?? '';
+        }
+    };
+
+    el.addEventListener('blur', save);
+    el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || el.tagName === 'INPUT')) {
+            e.preventDefault();
+            el.blur();
+        }
+    });
+}
+
+/** Скрытая строка — источник для сохранения вместе с workflow. */
+function syncHiddenRow(variable) {
+    const row = document.querySelector(
+        `#inputVariablesContainer .input-variable-row[data-id="${variable.id}"]`);
+    if (!row) return;
+
+    row.querySelector('.var-key').value = variable.name ?? '';
+    row.querySelector('.var-value').value = variable.default ?? '';
+    row.dataset.originalName = variable.name ?? '';
+    row.dataset.originalDefault = variable.default ?? '';
+}
+
+/** Короткая отметка «сохранено»: всплывающее сообщение на каждое поле — шум. */
+function savedMark(el) {
+    const was = el.style.borderColor;
+    el.style.borderColor = '#16a34a';
+    setTimeout(() => { el.style.borderColor = was; }, 900);
+}
+
+async function removeInputVariable(variable) {
+    if (!variable.id) {
+        state.inputVarPicked = null;
+        renderInputVariables();
+        return;
+    }
+
+    if (!confirm(`Удалить переменную "${variable.name}"?`)) return;
+
+    const workflowId = document.getElementById('workflowId')?.value;
+
+    try {
+        await deleteData(`/workflow/${workflowId}/variable/${variable.id}`);
+        showNotification('Переменная успешно удалена', 'success');
+        state.inputVarPicked = null;
+        await loadWorkflowVariables(workflowId);
+    } catch (err) {
+        console.error('Ошибка удаления переменной:', err);
+        showNotification(`Ошибка удаления: ${err.message}`, 'error');
+    }
 }
 
 function createInputVariableRow(variable = null) {
@@ -131,7 +417,6 @@ function createInputVariableRow(variable = null) {
     row.className = 'variable-row input-variable-row';
     if (variable) {
         row.dataset.id = variable.id;
-        // Исходные значения — чтобы при сохранении отправлять PUT только для измененных строк
         row.dataset.originalName = variable.name;
         row.dataset.originalDefault = variable.default ?? '';
     }
@@ -139,42 +424,24 @@ function createInputVariableRow(variable = null) {
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.className = 'form-control var-key';
-    nameInput.placeholder = 'Имя переменной';
     nameInput.value = variable ? variable.name : '';
 
     const valInput = document.createElement('input');
     valInput.type = 'text';
     valInput.className = 'form-control var-value';
-    valInput.placeholder = 'Значение по умолчанию';
     valInput.value = variable ? (variable.default ?? '') : '';
 
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.className = 'btn-del-var';
-    delBtn.title = 'Удалить переменную';
-    delBtn.innerHTML = '&times;';
-    delBtn.onclick = async () => {
-        // Новая (еще не сохраненная) строка — просто убираем из DOM
-        if (!variable) {
-            row.remove();
-            return;
-        }
-
-        const workflowId = document.getElementById('workflowId')?.value;
-        if (!confirm(`Удалить переменную "${variable.name}"?`)) return;
-
-        try {
-            await deleteData(`/workflow/${workflowId}/variable/${variable.id}`);
-            showNotification('Переменная успешно удалена', 'success');
-            await loadWorkflowVariables(workflowId);
-        } catch (err) {
-            console.error("Ошибка удаления переменной:", err);
-            showNotification(`Ошибка удаления: ${err.message}`, 'error');
-        }
-    };
-
-    row.append(nameInput, valInput, delBtn);
+    row.append(nameInput, valInput);
     container.appendChild(row);
+
+    // Новая строка: показываем её в списке и открываем форму.
+    if (!variable) {
+        state.inputVarPicked = null;
+        const list = document.getElementById('inputVariablesList');
+        const fresh = {name: '', default: '', description: '', id: null};
+        if (list) list.append(nameButton(fresh));
+        showInputForm(fresh);
+    }
 }
 
 /**
@@ -202,7 +469,7 @@ export async function saveInputVariables(workflowId) {
                 || value !== (row.dataset.originalDefault || '');
 
             if (isChanged) {
-                await putData(`/agent_workflow_variable/${variableId}`, {
+                await putData(`/workflow/${workflowId}/variable/${variableId}`, {
                     name: name,
                     "default": value === '' ? null : value
                 });

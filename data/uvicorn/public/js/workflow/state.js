@@ -87,6 +87,11 @@ export const state = {
     allTargetSteps: [],          // id шагов, на которые есть переходы
     allWorkflowStepsType: {},    // справочник типов шагов по id
     allCurrentVariables: {},     // переменные выбранного workflow
+    inputVarPicked: null,        // выбранная входящая переменная: список
+                                 // перечитывается после каждого
+                                 // сохранения, и без памяти о выборе
+                                 // человека выбрасывало бы из формы,
+                                 // которую он правит
     allAvailableTools: [],       // все инструменты (для виджетов и tool-переменных)
     allUsedVariables: [],        // имена переменных, используемых в шагах
     allWorkflows: [],            // все workflow (для виджета workflow_invoke и имен sub-workflow)

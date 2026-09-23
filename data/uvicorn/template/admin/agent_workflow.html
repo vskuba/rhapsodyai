@@ -22,6 +22,267 @@
     }
 
     /* Resizer */
+    /* ⚠⚠ Входящая переменная — **два этажа**: поля сверху, описание снизу.
+       В одну строку описание не влезает: два поля ввода забирают всю ширину
+       колонки, и ячейка схлопывается в полоску в пару пикселей — проверено
+       снимком страницы. А описание длиннее имени по существу: это фраза, а не
+       слово. */
+    /* ⚠ Селектор из двух классов — не для красоты. `.variable-row` объявлен
+       ниже по файлу и при равной специфичности выигрывает: его
+       `align-items: center` сжимал строку полей по содержимому и ставил её
+       посередине блока, а описание оставалось во всю ширину.
+
+       Поймано замером в браузере: поля начинались на 124 пикселя правее
+       описания — ровно половина разницы ширин. */
+    .variable-row.input-variable-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        padding: 8px;
+        border: 1px solid #eef2f7;
+        border-radius: 6px;
+        margin-bottom: 8px;
+    }
+    .variable-row.input-variable-row .var-line {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    .variable-row.input-variable-row .var-line .form-control {
+        flex: 1;
+        min-width: 0;
+    }
+
+    /* ⚠⚠ Разделитель не работал, и вот почему. `.settings-column` объявлена
+       `flex: 2`, то есть `flex-basis: 0%` — а помощник перетаскивания задаёт
+       `style.width`. При нулевом `flex-basis` ширина игнорируется целиком:
+       колонка слушалась только доли роста, и полоса ездила вхолостую.
+
+       `flex: 0 1 auto` возвращает ширине силу: `auto` берёт её за основу.
+       Умолчание задаётся тут же, иначе до первого перетаскивания колонка
+       схлопнулась бы по содержимому. */
+    #workflowSettingsView > .settings-column {
+        flex: 0 1 auto;
+        width: 55%;
+    }
+
+    .input-vars {
+        display: flex;
+        gap: 12px;
+        align-items: stretch;
+        min-height: 260px;
+    }
+
+    /* Левая колонка — меню имён. Узкая и с прокруткой: имён бывает под два
+       десятка, а форма справа должна оставаться на виду. */
+    /* ⚠ Ширина под самое длинное имя целиком (`datetime_current_get_zone`,
+       186px) плюс отступы и кружок удаления: 242. Ужми до 210 — и единственное
+       длинное имя поедет многоточием, хотя место рядом есть. */
+    .input-vars-list {
+        flex: 0 0 242px;
+        max-height: 420px;
+        overflow-y: auto;
+        border: 1px solid #e8edf3;
+        border-radius: 6px;
+        padding: 4px;
+        background: #fbfcfe;
+    }
+
+    /* ⚠ `box-sizing` обязателен: на странице он `content-box`, и заданная строке
+       ширина не включала бы ни отступы, ни полосу слева. Строка вылезала за
+       список на 19 пикселей — кружок удаления оказывался поверх рамки, а список
+       заводил горизонтальную прокрутку. Замерено: 229 против 210. */
+    .input-var-name {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        text-align: left;
+        border: none;
+        background: none;
+        padding: 6px 6px 6px 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 12px;
+        color: #334155;
+        border-left: 3px solid transparent;
+        transition: background 0.12s, color 0.12s, border-color 0.12s;
+    }
+    .input-var-name:hover { background: #eef4ff; }
+
+    /* ⚠ Выбранная — цветом и полосой слева, а не только фоном: в длинном списке
+       один оттенок фона теряется, особенно при наведении на соседнюю. */
+    .input-var-name.active {
+        background: #e0edff;
+        color: #1d4ed8;
+        font-weight: 600;
+        border-left-color: #3b82f6;
+    }
+
+    /* ⚠ Новая, ещё не сохранённая: видно, что её нет в базе. */
+    .input-var-name.fresh { color: #a16207; font-style: italic; }
+
+    .input-var-label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Кружок удаления: показывается по наведению на строку.
+       ⚠ Место занимает всегда (`visibility`, а не `display`), иначе имя дёргалось
+       бы при каждом наведении. */
+    .input-var-kill {
+        visibility: hidden;
+        flex-shrink: 0;
+        width: 18px;
+        height: 18px;
+        line-height: 1;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background: #e2e8f0;
+        color: #64748b;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.12s, color 0.12s;
+    }
+    .input-var-name:hover .input-var-kill,
+    .input-var-name:focus-within .input-var-kill { visibility: visible; }
+
+    .input-var-kill:hover { background: #ef4444; color: #fff; }
+
+    .input-vars-form {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .input-vars-form .field-label {
+        font-size: 10px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #94a3b8;
+        margin-bottom: 3px;
+    }
+
+    .input-vars-form textarea {
+        resize: vertical;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 13px;
+        line-height: 1.4;
+        /* ⚠ Высота по числу строк, а не по `rows`: у `rows` она считается от
+           шрифта браузера, и при моноширинном 13px последняя строка обрезалась
+           пополам — видно на снимке страницы. */
+        min-height: 52px;
+    }
+    .input-vars-form .field-note { min-height: 84px; }
+
+    /* Описание в форме: текст, а рядом карандаш. Поле ввода открывается только
+       по щелчку — читают описание в разы чаще, чем правят, и постоянное
+       текстовое поле выглядит как «здесь надо что-то заполнить». */
+    .note-view {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        min-width: 0;
+    }
+    .note-text {
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        line-height: 1.45;
+        color: #475569;
+        padding: 6px 8px;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        cursor: text;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    .note-text:hover { background: #f8fafc; border-color: #eef2f7; }
+    .note-text.empty { color: #cbd5e1; font-style: italic; }
+
+    /* Пусто — когда ничего не выбрано. */
+    .input-vars-empty {
+        color: #cbd5e1;
+        font-size: 12px;
+        font-style: italic;
+        padding: 12px 4px;
+    }
+
+    .input-vars-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 2px;
+    }
+
+    /* Строка описания: текст и карандаш рядом. */
+    .var-note-line {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+    }
+    .var-note-line .var-note { flex: 1; }
+
+    /* Описание входящей переменной: зачем она и что в неё кладут.
+       ⚠ Показывается текстом, а не полем ввода: читают его в разы чаще, чем
+       правят, а десяток полей подряд превращают список в анкету. */
+    .var-note {
+        min-width: 0;
+        font-size: 11px;
+        color: #64748b;
+        line-height: 1.35;
+        padding: 4px 6px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        cursor: text;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .var-note:hover { background: #f8fafc; }
+    .var-note.empty { color: #cbd5e1; font-style: italic; }
+
+    /* В правке — то же место, тот же размер: строка не должна прыгать. */
+    .var-note-edit {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        font-size: 11px;
+        line-height: 1.35;
+        padding: 4px 6px;
+        border: 1px solid #3b82f6;
+        border-radius: 4px;
+        outline: none;
+        font-family: inherit;
+    }
+
+    .btn-note-edit {
+        flex-shrink: 0;
+        align-self: flex-start;
+        background: none;
+        border: none;
+        cursor: pointer;
+        opacity: 0.35;
+        font-size: 12px;
+        padding: 2px 4px;
+    }
+    .btn-note-edit:hover { opacity: 1; }
+
+    .var-note-saved {
+        flex-shrink: 0;
+        font-size: 10px;
+        color: #16a34a;
+    }
+
     .workflow-resizer {
         width: 2px;
         background: #e0e0e0;
@@ -1083,6 +1344,16 @@
             <input type="hidden" id="workflowId">
 
             <!-- 1. Контейнер ПАРАМЕТРОВ (скрывается при клике на название) -->
+            <!-- ⚠ «Кем используется» стоит НАД колонками, а не под ними.
+                 Прежде оба блока лежали между двумя сетками — «Настройки» и
+                 «Шаги», — и на вкладке настроек уезжали под низ страницы: сетка
+                 растянута `min-height: 450px`, и подпись про агента оказывалась
+                 ниже сгиба, отдельно от того, к чему относится.
+
+                 Это ответ на вопрос «что сейчас открыто», и читают его первым. -->
+            <div class="parent-workflow"></div>
+            <div class="parent-agent"></div>
+
             <div id="workflowSettingsView" class="form-layout-grid">
                 <div class="settings-column">
                     <div class="form-group">
@@ -1109,21 +1380,51 @@
                         <label for="subflow" style="cursor: pointer; margin: 0;text-transform: none;">🇼 sub-workflow (используется только шагом «Вызов workflow»)</label>
                     </div>
                 </div>
+
+                <!-- ⚠ Тот же разделитель, что делит список workflow и форму
+                     (`workflowResizer`), и тот же помощник `initSidebarResizer`.
+                     Своя реализация разошлась бы с ним в мелочах: ширина хвата,
+                     курсор, запрет выделения при перетаскивании. -->
+                <div class="workflow-resizer" id="settingsResizer"
+                     title="Потяните, чтобы изменить ширину"></div>
+
                 <div class="prompt-column">
                     <div class="form-group" id="inputVariablesGroup">
                         <label>Входящие переменные</label>
-                        <div id="inputVariablesContainer" class="variables-editor-container">
-                            <!-- Сюда динамически будут добавляться строки с входящими переменными -->
+
+                        <!-- ⚠⚠ Две колонки: слева имена списком, справа форма
+                             выбранной. Прежде каждая переменная была строкой из
+                             двух полей и описания — при дюжине переменных это
+                             тридцать полей ввода подряд, и найти нужную можно
+                             было только чтением всех.
+
+                             Список отвечает на «какие вообще есть», форма — на
+                             «что эта делает». Вопроса два, и показывать их надо
+                             порознь. -->
+                        <div class="input-vars">
+                            <div class="input-vars-list" id="inputVariablesList">
+                                <!-- Имена: заполняет JS -->
+                            </div>
+
+                            <div class="input-vars-form" id="inputVariablesForm">
+                                <!-- Форма выбранной: заполняет JS -->
+                            </div>
                         </div>
+
+                        <!-- ⚠ Скрытый контейнер прежних строк: на нём держится
+                             сохранение вместе с workflow (`saveInputVariables`
+                             читает именно его). Переписывать сохранение заодно
+                             с видом значило бы менять две вещи разом и не знать,
+                             которая сломалась. -->
+                        <div id="inputVariablesContainer" class="variables-editor-container"
+                             style="display: none;"></div>
+
                         <button type="button" class="btn-add-var" id="addInputVariableBtn">+ Добавить
                             переменную
                         </button>
                     </div>
                 </div>
             </div>
-
-            <div class="parent-workflow"></div>
-            <div class="parent-agent"></div>
 
             <!-- 2. Контейнер ШАГОВ (Две колонки) -->
             <div id="stepsEditorView" class="form-layout-grid" style="display: none;">
@@ -1271,6 +1572,12 @@
 <script src="/static/js/sidebar_resizer.js"></script>
 <script>
     initSidebarResizer('workflowResizer', 'workflow_sidebar_width', document.querySelector('.agents-sidebar'));
+
+    // ⚠ Колонки настроек — на `flex`, поэтому ширину задаём левой, а правая
+    // забирает остаток сама. Предел справа шире обычного: во входящих
+    // переменных теперь три поля в строке, и им нужно место.
+    initSidebarResizer('settingsResizer', 'workflow_settings_width',
+        document.querySelector('#workflowSettingsView .settings-column'), 240, 900);
 </script>
 <script type="module" src="/static/js/workflow/main.js?v=9"></script>
 {% endblock %}
