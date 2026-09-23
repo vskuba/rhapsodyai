@@ -3,6 +3,7 @@ import re
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflow import ai_workflow_variables_node_get
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
 from src.mysql_.repository.agent_workflow_step_repository import AgentWorkflowStepRepository
 from src.mysql_.repository.agent_workflow_step_type_repository import AgentWorkflowStepTypeRepository
@@ -217,27 +218,22 @@ async def workflow_variables(
 ):
     # Получает все переменные, связанные с конкретным workflow (включая глобальные и публичные переменные ноды)
     #
-    # ⚠⚠ **Переменные ноды берутся по самой ноде, а не по связке
-    # `node_variable_workflow`.** Так их отдаёт движок
-    # (`ai_workflow_variables_node_get`: `WHERE v.node_id = %s`) — то есть каждый
-    # workflow ноды получает их все, ни о какой связке не спрашивая.
+    # ⚠⚠ **Переменные ноды спрашиваем у движка, а не ищем своим запросом.**
+    # Правило «что за переменные у этой ноды» принадлежит
+    # `ai_workflow_variables_node_get`, и второго знатока у него быть не должно:
+    # ровно на этом страница и разошлась с работой. Она искала переменные через
+    # связку `node_variable_workflow`, движок — по `node_id`, и у workflow, не
+    # попавшего в связку, колонка показывала ноль. У `dating_favorite_mail_write`
+    # связок нет вовсе, а в его прогонах лежат и `girl_prompt_system`, и
+    # `girl_bio_example`: человек видел пустую колонку и не мог сослаться на то,
+    # что ему доступно.
     #
-    # Страница же требовала строку связки, и потому показывала ноль там, где на
-    # деле переменные есть: у `dating_favorite_mail_write` связок нет вовсе, а в
-    # его прогонах лежат и `girl_prompt_system`, и `girl_bio_example`. Человек
-    # видел пустую колонку и не мог сослаться на то, что ему доступно.
+    # Ценой второго запроса, и она того стоит: свой SQL повторял бы чужое правило
+    # и разошёлся бы с ним снова — при первой же правке у движка.
     #
     # ⚠ Связка при этом жива и наполняется редактором переменной — вот только на
     # работу движка она не влияет **никак**. Это отдельный разговор: либо она
-    # должна начать ограничивать выдачу, либо её стоит убрать. Пока страница
-    # обязана показывать то, что вправду доедет до шага.
-    #
-    # ⚠⚠ **Из переменных ноды показываем только `public`.** Отбора по типу здесь
-    # не было вовсе — его нечаянно подменяла связка, в которую `proxy` просто не
-    # попал. Убрав связку, мы бы этот тип открыли, и `girl_title` встал бы в
-    # список наравне с остальными.
-    #
-    # Чем `proxy` отличается — см. оговорку `node_variable.type` ниже.
+    # должна начать ограничивать выдачу, либо её стоит убрать.
     sql = """
         (SELECT v.id, v.name, v.`type`, v.`default`, v.description, NULL as node_id
          FROM `agent_workflow_variable` v
@@ -247,17 +243,19 @@ async def workflow_variables(
         (SELECT v.id, v.name, v.`type`, v.`default`, v.description, NULL as node_id
          FROM `agent_workflow_variable` v
          WHERE v.type = 'global')
-        UNION
-        (SELECT v.id, v.name, 'node' as `type`, v.`default`, v.description, v.node_id
-         FROM `node_variable` v
-         JOIN `agent_workflow` w ON w.node_id = v.node_id
-         WHERE w.id = %s AND v.`type` = 'public')
         ORDER BY name ASC
     """
     async with mysql_get_db_async() as db:
-        await db.execute(sql, (workflow_id,workflow_id,))
-        rows = await db.fetchall()
-        return {"result": rows}
+        await db.execute(sql, (workflow_id,))
+        rows = list(await db.fetchall())
+
+        await db.execute("SELECT node_id FROM agent_workflow WHERE id = %s", (workflow_id,))
+        found = await db.fetchone()
+
+    rows.extend(await _node_variables_public(int((found or {}).get('node_id') or 0)))
+    rows.sort(key=lambda one: str(one.get('name') or ''))
+
+    return {"result": rows}
 
 
 @router.post("/workflow/{workflow_id}/step")
@@ -503,3 +501,37 @@ async def workflow_variable_delete(
 ):
     repo = AgentWorkflowVariableRepository()
     return {"result": await repo.delete(workflow_variable_id)}
+
+
+# Тип переменной ноды, который человек настраивает сам. Второй — `proxy`,
+# служебный псевдоним: его значение подставляет другую переменную
+# (`girl_title` = `%prompt_user%`), и предлагать его в списке «на что сослаться и
+# что настроить» незачем. Подробности — `workflow.md` §3.0a.
+WORKFLOW_VARIABLE_NODE_PUBLIC = 'public'
+
+
+async def _node_variables_public(node_id: int) -> list:
+    """Публичные переменные ноды в том виде, в каком их ждёт страница.
+
+    Args:
+        node_id: нода workflow. Ноль — у workflow нет ноды, и список пуст.
+
+    Returns:
+        list: записи с теми же ключами, что у остальных переменных выдачи.
+
+    ⚠ **Список берём у движка** (`ai_workflow_variables_node_get`), а не своим
+    запросом: правило «что за переменные у ноды» принадлежит ему. Здесь остаётся
+    только то, что вправду наше, — какие из них показывать человеку и в каком
+    виде.
+
+    ⚠ `type` подменяем на `'node'`: страница делит переменные на группы по этому
+    полю, и `public`/`proxy` для неё не роль, а подробность устройства ноды.
+    """
+    if not node_id:
+        return []
+
+    return [{'id': one.get('id'), 'name': one.get('name'), 'type': 'node',
+             'default': one.get('default'), 'description': one.get('description'),
+             'node_id': one.get('node_id')}
+            for one in await ai_workflow_variables_node_get(node_id)
+            if one.get('type') == WORKFLOW_VARIABLE_NODE_PUBLIC]

@@ -29,9 +29,14 @@
 `proxy` не виден ни один.
 """
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 
 from src.ai.ai_workflow import ai_workflow_variables_node_get
+from src.uvicorn.routers.workflow import workflow
 from mysql_.mysql_ import mysql_get_db_async
 
 pytestmark = pytest.mark.core
@@ -48,6 +53,98 @@ async def db_pool_release():
     yield
     from mysql_.mysql_ import mysql_pool_close
     await mysql_pool_close()
+
+
+class TestThePageShowsThePublicOnes:
+    """⚠⚠ Главное: видны все публичные и ни одной `proxy`."""
+
+    async def test_every_public_variable_is_shown(self):
+        """Ни одна публичная не теряется — из-за чего всё и затевалось.
+
+        ⚠ Проверяется на всех workflow с нодой, а не на одном: связка наполнена
+        выборочно, и ошибка пряталась именно у тех, кого в ней нет.
+
+        ⚠⚠ Здесь же стережётся **сам разобранный случай**: среди проверенных
+        обязан быть workflow **без** связки, у которого список непуст. Это
+        `dating_favorite_mail_write`. Верни ручка зависимость от связки — он
+        снова покажет ноль, и тест это назовёт.
+        """
+        rows = await _survey()
+
+        assert rows, 'не нашлось ни одного workflow с переменными ноды'
+
+        unlinked_seen = False
+        for workflow_id, linked, expected, _all in rows:
+            # ⚠ Зовём **настоящий код ручки**, а не повторяем её запрос: свой
+            # повтор проверял бы сам себя и прозевал бы ровно то расхождение,
+            # из-за которого всё затевалось.
+            page = {one['name'] for one in
+                    await workflow._node_variables_public(await _node_of(workflow_id))}
+
+            assert page == expected, (
+                f'workflow {workflow_id}: страница покажет {sorted(page)}, '
+                f'а публичных на ноде {sorted(expected)}')
+
+            if not linked and page:
+                unlinked_seen = True
+
+        assert unlinked_seen, (
+            'ни один проверенный workflow не обошёлся без связки — '
+            'разобранный случай перестал проверяться')
+
+    async def test_proxy_stays_hidden(self):
+        """⚠⚠ Служебные псевдонимы в список не попадают.
+
+        Их значение — часть проводки узла (`girl_title` = `%prompt_user%`), и
+        настроить такую переменную из редактора workflow нельзя. Пропадёт отбор
+        по типу — `girl_title` встанет рядом с настоящими настройками.
+        """
+        rows = await _survey()
+        checked = 0
+
+        for workflow_id, _linked, _expected, all_vars in rows:
+            node_id = await _node_of(workflow_id)
+            proxy = {one['name'] for one in await _node_vars(workflow_id)
+                     if one.get('type') == 'proxy'}
+            if not proxy:
+                continue
+
+            page = {one['name'] for one in
+                    await workflow._node_variables_public(node_id)}
+
+            assert not (page & proxy), (
+                f'workflow {workflow_id}: в списке служебные {sorted(page & proxy)}')
+            assert proxy <= all_vars, 'обзор потерял proxy — проверка ничего не значит'
+            checked += 1
+
+        assert checked, 'ни одной proxy-переменной не нашлось — правило не проверено'
+
+
+class TestTheRuleHasOneOwner:
+    """⚠⚠ Сторож приёма: ручка не заводит второго знатока переменных ноды.
+
+    Разошлись они именно потому, что правило «что за переменные у этой ноды»
+    знали двое. Свой SQL в ручке повторил бы его снова — и снова разошёлся бы
+    при первой правке у движка.
+    """
+
+    def test_the_handler_asks_the_engine(self):
+        """Список берётся у `ai_workflow_variables_node_get`, а не своим запросом."""
+        code = _source(workflow.workflow_variables) \
+            + _source(workflow._node_variables_public)
+
+        assert 'ai_workflow_variables_node_get' in code, \
+            'ручка снова ищет переменные ноды сама, мимо движка'
+
+    def test_the_link_table_is_not_asked(self):
+        """⚠ Связка не решает, что показать: у workflow вне её список был пуст."""
+        assert 'node_variable_workflow' not in _source(workflow.workflow_variables), \
+            'выдача переменных ноды снова зависит от связки'
+
+    def test_the_public_filter_is_there(self):
+        """⚠ Без отбора по типу служебный `proxy` встанет рядом с настройками."""
+        assert 'WORKFLOW_VARIABLE_NODE_PUBLIC' in _source(workflow._node_variables_public), \
+            'пропал отбор по типу — служебные proxy попадут в список'
 
 
 async def _survey(limit: int = 12) -> list:
@@ -87,89 +184,14 @@ async def _survey(limit: int = 12) -> list:
             for row in rows]
 
 
-class TestThePageShowsThePublicOnes:
-    """⚠⚠ Главное: видны все публичные и ни одной `proxy`."""
+async def _node_of(workflow_id: int) -> int:
+    """Нода workflow — то, чем движок и ручка находят переменные."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT node_id FROM agent_workflow WHERE id = %s', (workflow_id,))
+        row = await db.fetchone()
 
-    async def test_every_public_variable_is_shown(self):
-        """Ни одна публичная не теряется — из-за чего всё и затевалось.
-
-        ⚠ Проверяется на всех workflow с нодой, а не на одном: связка наполнена
-        выборочно, и ошибка пряталась именно у тех, кого в ней нет.
-
-        ⚠⚠ Здесь же стережётся **сам разобранный случай**: среди проверенных
-        обязан быть workflow **без** связки, у которого список непуст. Это
-        `dating_favorite_mail_write`. Верни ручка зависимость от связки — он
-        снова покажет ноль, и тест это назовёт.
-        """
-        rows = await _survey()
-
-        assert rows, 'не нашлось ни одного workflow с переменными ноды'
-
-        unlinked_seen = False
-        for workflow_id, linked, page, _all in rows:
-            node_public = {one['name'] for one in
-                           await _node_vars(workflow_id)
-                           if one.get('type') == 'public'}
-
-            assert page == node_public, (
-                f'workflow {workflow_id}: страница покажет {sorted(page)}, '
-                f'а публичных на ноде {sorted(node_public)}')
-
-            if not linked and page:
-                unlinked_seen = True
-
-        assert unlinked_seen, (
-            'ни один проверенный workflow не обошёлся без связки — '
-            'разобранный случай перестал проверяться')
-
-    async def test_proxy_stays_hidden(self):
-        """⚠⚠ Служебные псевдонимы в список не попадают.
-
-        Их значение — часть проводки узла (`girl_title` = `%prompt_user%`), и
-        настроить такую переменную из редактора workflow нельзя. Пропадёт отбор
-        по типу — `girl_title` встанет рядом с настоящими настройками.
-        """
-        rows = await _survey()
-        checked = 0
-
-        for workflow_id, _linked, page, all_vars in rows:
-            proxy = {one['name'] for one in await _node_vars(workflow_id)
-                     if one.get('type') == 'proxy'}
-            if not proxy:
-                continue
-
-            assert not (page & proxy), (
-                f'workflow {workflow_id}: в списке служебные {sorted(page & proxy)}')
-            assert proxy <= all_vars, 'обзор потерял proxy — проверка ничего не значит'
-            checked += 1
-
-        assert checked, 'ни одной proxy-переменной не нашлось — правило не проверено'
-
-
-class TestTheQueryStaysTheOne:
-    """⚠ Сторож приёма: ручка не вернулась к связке и не забыла тип."""
-
-    def test_the_handler_asks_the_node(self):
-        import ast
-        import inspect
-        import textwrap
-
-        from src.uvicorn.routers.workflow import workflow
-
-        # ⚠ Разбором, а не поиском по тексту: и связка, и тип названы рядом в
-        # пояснениях, зачем так сделано, — поиск подстрокой ловил бы их.
-        tree = ast.parse(textwrap.dedent(
-            inspect.getsource(workflow.workflow_variables)))
-        sql = ' '.join(node.value for node in ast.walk(tree)
-                       if isinstance(node, ast.Constant)
-                       and isinstance(node.value, str))
-
-        assert 'node_variable_workflow' not in sql, \
-            'выдача переменных ноды снова зависит от связки'
-        assert 'w.node_id = v.node_id' in sql, \
-            'переменные ноды берутся не по ноде workflow'
-        assert "= 'public'" in sql, \
-            'пропал отбор по типу — служебные proxy попадут в список'
+    return int((row or {}).get('node_id') or 0)
 
 
 async def _node_vars(workflow_id: int) -> list:
@@ -182,3 +204,24 @@ async def _node_vars(workflow_id: int) -> list:
     node_id = int((row or {}).get('node_id') or 0)
 
     return await ai_workflow_variables_node_get(node_id) if node_id else []
+
+
+def _source(func) -> str:
+    """Код функции без комментариев и docstring.
+
+    ⚠ Нужен затем, чтобы сторож приёма не ловил **объяснения**: и связка, и тип
+    названы рядом в пояснениях, зачем так сделано, — поиск подстрокой находил бы
+    их вместо настоящего возврата.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+
+    for node in ast.walk(tree):
+        body = getattr(node, 'body', None)
+        if not isinstance(body, list):
+            continue
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            body.pop(0)
+
+    return ast.unparse(tree)

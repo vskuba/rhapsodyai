@@ -31,38 +31,6 @@ from ai.ai_think import ai_think_strip
 pytestmark = pytest.mark.core
 
 
-def _code_only(path: pathlib.Path) -> str:
-    """Файл без комментариев и docstring — один только код.
-
-    ⚠ Нужен ровно затем, чтобы сторож приёма не ловил **объяснения**. Правило,
-    которое убрали, называют по имени в комментарии рядом с заменой — иначе
-    следующий читатель не поймёт, отчего так; и поиск подстрокой находит это
-    объяснение вместо возврата правила.
-
-    ⚠⚠ Строковые литералы при этом **остаются**, и иначе нельзя: искомая
-    регулярка сама есть строка, и, срезав строки, сторож перестал бы видеть её
-    даже вернувшуюся. Поэтому разбором, а не выбрасыванием всех строк подряд:
-    `ast.unparse` уносит комментарии, а литералы не трогает.
-    """
-    try:
-        tree = ast.parse(path.read_text(encoding='utf-8'))
-    except SyntaxError:
-        # Нечитаемый файл — не повод краснеть сторожу: он про наши правила, а
-        # синтаксис ловит сам разбор при запуске.
-        return ''
-
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.Module, ast.ClassDef,
-                                 ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        body = getattr(node, 'body', [])
-        if (body and isinstance(body[0], ast.Expr)
-                and isinstance(body[0].value, ast.Constant)
-                and isinstance(body[0].value.value, str)):
-            body.pop(0)
-
-    return ast.unparse(tree)
-
 # ⚠ Дословно то, что приезжает с прода: фраза из `--reasoning-budget-message`
 # сервера и закрывающий тег без открывающего.
 BROKEN = ("exceeded, let's stop and write the final answer now.</think>\n\n"
@@ -146,3 +114,36 @@ class TestTheRuleIsOne:
         assert len(body) == 2, 'граница ответа исчезла или переименована'
         assert 'ai_think_strip' in body[1].split('\n    async def')[0], \
             'граница ответа перестала срезать хвост размышлений'
+
+
+def _code_only(path: pathlib.Path) -> str:
+    """Файл без комментариев и docstring — один только код.
+
+    ⚠ Нужен ровно затем, чтобы сторож приёма не ловил **объяснения**. Правило,
+    которое убрали, называют по имени в комментарии рядом с заменой — иначе
+    следующий читатель не поймёт, отчего так; и поиск подстрокой находит это
+    объяснение вместо возврата правила.
+
+    ⚠⚠ Строковые литералы при этом **остаются**, и иначе нельзя: искомая
+    регулярка сама есть строка, и, срезав строки, сторож перестал бы видеть её
+    даже вернувшуюся. Поэтому разбором, а не выбрасыванием всех строк подряд:
+    `ast.unparse` уносит комментарии, а литералы не трогает.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+    except SyntaxError:
+        # Нечитаемый файл — не повод краснеть сторожу: он про наши правила, а
+        # синтаксис ловит сам разбор при запуске.
+        return ''
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef,
+                                 ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        body = getattr(node, 'body', [])
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            body.pop(0)
+
+    return ast.unparse(tree)

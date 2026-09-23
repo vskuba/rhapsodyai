@@ -182,7 +182,7 @@ async def blog_compose(data: dict, user=Depends(AuthChecker([AuthPermission.STT_
     body = "\n\n".join(f"[черновик {i + 1}]\n{text}" for i, text in enumerate(drafts))
     prompt = (f"Пожелание автора: {hint}\n\n" if hint else "") + body
 
-    text = _thinking_strip(await _agent_ask(BLOG_WRITER_AGENT_NAME, prompt))
+    text = ai_think_strip(await _agent_ask(BLOG_WRITER_AGENT_NAME, prompt))
     logger_info(f"[blog] сборка: {len(drafts)} черновиков → {len(text)} знаков")
 
     return {"result": {"text": text}}
@@ -280,7 +280,7 @@ async def blog_merge(data: dict, user=Depends(AuthChecker([AuthPermission.STT_CR
     prompt = (f"Версия «по кускам»:\n{chunked}\n\n"
               f"Версия «целиком»:\n{full}")
 
-    text = _thinking_strip(await _agent_ask(BLOG_MERGE_AGENT_NAME, prompt))
+    text = ai_think_strip(await _agent_ask(BLOG_MERGE_AGENT_NAME, prompt))
     logger_info(f"[blog] сведение: {len(chunked)}+{len(full)} → {len(text)} знаков")
 
     return {"result": {"text": text}}
@@ -308,7 +308,7 @@ async def blog_topics(data: dict, user=Depends(AuthChecker([AuthPermission.STT_C
                      + (f" теги: {tags}" if tags else "")
                      + f"\n{str(item.get('text') or '')[:1500]}")
 
-    answer = _thinking_strip(await _agent_ask(BLOG_TOPICS_AGENT_NAME, "\n\n".join(lines)))
+    answer = ai_think_strip(await _agent_ask(BLOG_TOPICS_AGENT_NAME, "\n\n".join(lines)))
     topics = _topics_parse(answer, {int(d.get("id") or 0) for d in drafts})
     logger_info(f"[blog] темы: из {len(drafts)} черновиков → {len(topics)}")
 
@@ -327,7 +327,7 @@ async def blog_document(data: dict, user=Depends(AuthChecker([AuthPermission.STT
     body = "\n\n".join(f"[заметка {i + 1}]\n{text}" for i, text in enumerate(drafts))
     prompt = f"Тема документа: {title}\n\n{body}"
 
-    text = _thinking_strip(await _agent_ask(BLOG_DOCUMENT_AGENT_NAME, prompt))
+    text = ai_think_strip(await _agent_ask(BLOG_DOCUMENT_AGENT_NAME, prompt))
     logger_info(f"[blog] документ «{title}»: {len(drafts)} заметок → {len(text)} знаков")
 
     return {"result": {"title": title, "text": text}}
@@ -355,7 +355,7 @@ async def blog_rewrite(data: dict, user=Depends(AuthChecker([AuthPermission.STT_
               f"=== ТЕКУЩИЙ ТЕКСТ ДОКУМЕНТА ===\n{current}\n\n"
               f"=== ВСЕ ЗАМЕТКИ АВТОРА ===\n{body}")
 
-    text = _thinking_strip(await _agent_ask(BLOG_REWRITE_AGENT_NAME, prompt))
+    text = ai_think_strip(await _agent_ask(BLOG_REWRITE_AGENT_NAME, prompt))
     logger_info(f"[blog] дополнение «{title}»: было {len(current)} знаков, "
                 f"стало {len(text)}, заметок {len(drafts)}")
 
@@ -508,23 +508,6 @@ async def _dense_search(text: str, limit: int):
     )
 
     return response.points
-
-
-def _thinking_strip(text: str) -> str:
-    """Убирает размышления модели из ответа — общим правилом.
-
-    ⚠ **Своей копии здесь больше нет.** Сборка статьи наступила на это первой и
-    чинилась у себя; потом то же протекло в письма, и стало видно, что правило
-    обязано быть одно на все ответы модели. Оно переехало в `ai_think_strip` и
-    зовётся **на границе** (`engine_result_handle`), где ответ впервые
-    становится нашим, — сюда мусор уже не доходит.
-
-    Обёртка оставлена намеренно: вызовов пять, и менять их на прямой вызов
-    значило бы трогать пять мест ради переименования. Она же и страхует —
-    границу минует разве что новый способ спросить модель, а он здесь не
-    заведётся незаметно.
-    """
-    return ai_think_strip(text)
 
 
 def _prompt(text: str, vocabulary: list, language: str = "") -> str:
