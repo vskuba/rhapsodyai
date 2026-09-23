@@ -9,6 +9,7 @@ from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
 
 from src.ai.ai_llm import ai_llm_request_log
 from src.ai.ai_session import ai_session_message_add
+from ai.ai_think import ai_think_strip
 from ai.framework.ai_framework import AbstractAiFramework, AiFrameworkResult, AgentRateLimitError, LlmProviderError
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from logging_.logging_ import logger_info
@@ -65,11 +66,16 @@ class AiFrameworkAgent(AbstractAiFramework):
     ) -> AiFrameworkResult | None:
         await super().engine_result_handle(result, framework_model)
 
-        # если ответ просто текст, а не модель
+        # ⚠ Хвост размышлений срезаем **здесь** — там, где ответ модели впервые
+        # становится нашим. Ниже дорог много (JSON шага, простой текст, сборка
+        # статьи), и каждая, чинясь у себя, разошлась бы с соседями: так и было —
+        # в разборе JSON стояла регулярка на пару тегов, не ловившая обрыв, а
+        # текстовый ответ не чинился вовсе, и черновик письма ушёл в пул с
+        # «exceeded, let's stop…» в первой строке. Правило одно: `ai_think_strip`.
         if not result.output or isinstance(result.output, str):
-            return AiFrameworkResult(str(result.output))
+            return AiFrameworkResult(ai_think_strip(str(result.output)))
 
-        return AiFrameworkResult(result.output.text)
+        return AiFrameworkResult(ai_think_strip(result.output.text))
 
     async def framework_run(self, framework_model: AiFrameworkAgentModel):
         _exception: Exception | None = None

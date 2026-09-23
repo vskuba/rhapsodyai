@@ -25,6 +25,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ai.ai_think import ai_think_strip
 from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
@@ -510,17 +511,20 @@ async def _dense_search(text: str, limit: int):
 
 
 def _thinking_strip(text: str) -> str:
-    """Убирает размышления модели из ответа.
+    """Убирает размышления модели из ответа — общим правилом.
 
-    Рассуждающие модели пишут ход мысли в `<think>…</think>` и только потом
-    ответ. Обычно движок это срезает, но при обрыве по лимиту закрывающий тег
-    приходит без открывающего — и в текст протекает хвост вроде «exceeded,
-    let\'s stop and write the final answer now.</think>». Наступили на это на
-    первом же прогоне сборки.
+    ⚠ **Своей копии здесь больше нет.** Сборка статьи наступила на это первой и
+    чинилась у себя; потом то же протекло в письма, и стало видно, что правило
+    обязано быть одно на все ответы модели. Оно переехало в `ai_think_strip` и
+    зовётся **на границе** (`engine_result_handle`), где ответ впервые
+    становится нашим, — сюда мусор уже не доходит.
+
+    Обёртка оставлена намеренно: вызовов пять, и менять их на прямой вызов
+    значило бы трогать пять мест ради переименования. Она же и страхует —
+    границу минует разве что новый способ спросить модель, а он здесь не
+    заведётся незаметно.
     """
-    marker = text.rfind("</think>")
-
-    return text[marker + len("</think>"):].strip() if marker >= 0 else text.strip()
+    return ai_think_strip(text)
 
 
 def _prompt(text: str, vocabulary: list, language: str = "") -> str:

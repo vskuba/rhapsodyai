@@ -20,6 +20,7 @@ from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.ai.ai_tool import ai_tool_args_prepare
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
+from ai.ai_think import ai_think_strip
 from ai.framework.ai_framework_manager import AbstractAiFrameworkManager
 from src.mysql_.repository.agent_specialization_repository import AgentSpecializationRepository
 
@@ -1212,8 +1213,15 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         if not json_str:
             return ""
 
-        # Убираем thinking-блоки <think>...</think> (Qwen3 и аналоги)
-        stripped = re.sub(r'<think>.*?</think>', '', json_str, flags=re.DOTALL | re.IGNORECASE).strip()
+        # Убираем размышления (Qwen3 и аналоги) — тем же правилом, что и везде.
+        #
+        # ⚠ **Была регулярка `<think>.*?</think>`, и она требовала пары.** При
+        # обрыве размышлений открывающего тега не приходит вовсе, пара не
+        # складывается, и замена молча не делала ничего. Здесь это сходило с рук:
+        # ниже стоит поиск `{…}`, который отбрасывал мусор заодно со скобкой. А
+        # вот текстовому ответу помочь было нечем — и письмо ушло в пул с
+        # «exceeded, let's stop…» в первой строке.
+        stripped = ai_think_strip(json_str)
         if not stripped:
             stripped = json_str
 
