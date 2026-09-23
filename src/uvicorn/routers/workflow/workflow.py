@@ -253,7 +253,11 @@ async def workflow_variables(
         found = await db.fetchone()
 
     rows.extend(await _node_variables_public(int((found or {}).get('node_id') or 0)))
-    rows.sort(key=lambda one: str(one.get('name') or ''))
+    # ⚠ Без учёта регистра — как сортировал `ORDER BY name` до переноса: сличение
+    # у колонки `utf8mb4_0900_ai_ci`, а сортировка Python идёт по байтам, и
+    # `Girl_title` уехал бы к началу списка. Сегодня имён с заглавными нет ни
+    # одного, поэтому разницы не видно, — но она и не должна появиться молча.
+    rows.sort(key=lambda one: str(one.get('name') or '').lower())
 
     return {"result": rows}
 
