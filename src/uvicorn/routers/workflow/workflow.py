@@ -216,6 +216,28 @@ async def workflow_variables(
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
 ):
     # Получает все переменные, связанные с конкретным workflow (включая глобальные и публичные переменные ноды)
+    #
+    # ⚠⚠ **Переменные ноды берутся по самой ноде, а не по связке
+    # `node_variable_workflow`.** Так их отдаёт движок
+    # (`ai_workflow_variables_node_get`: `WHERE v.node_id = %s`) — то есть каждый
+    # workflow ноды получает их все, ни о какой связке не спрашивая.
+    #
+    # Страница же требовала строку связки, и потому показывала ноль там, где на
+    # деле переменные есть: у `dating_favorite_mail_write` связок нет вовсе, а в
+    # его прогонах лежат и `girl_prompt_system`, и `girl_bio_example`. Человек
+    # видел пустую колонку и не мог сослаться на то, что ему доступно.
+    #
+    # ⚠ Связка при этом жива и наполняется редактором переменной — вот только на
+    # работу движка она не влияет **никак**. Это отдельный разговор: либо она
+    # должна начать ограничивать выдачу, либо её стоит убрать. Пока страница
+    # обязана показывать то, что вправду доедет до шага.
+    #
+    # ⚠⚠ **Из переменных ноды показываем только `public`.** Отбора по типу здесь
+    # не было вовсе — его нечаянно подменяла связка, в которую `proxy` просто не
+    # попал. Убрав связку, мы бы этот тип открыли, и `girl_title` встал бы в
+    # список наравне с остальными.
+    #
+    # Чем `proxy` отличается — см. оговорку `node_variable.type` ниже.
     sql = """
         (SELECT v.id, v.name, v.`type`, v.`default`, v.description, NULL as node_id
          FROM `agent_workflow_variable` v
@@ -228,8 +250,8 @@ async def workflow_variables(
         UNION
         (SELECT v.id, v.name, 'node' as `type`, v.`default`, v.description, v.node_id
          FROM `node_variable` v
-         JOIN `node_variable_workflow` vw ON v.id = vw.node_variable_id
-         WHERE vw.workflow_id = %s)
+         JOIN `agent_workflow` w ON w.node_id = v.node_id
+         WHERE w.id = %s AND v.`type` = 'public')
         ORDER BY name ASC
     """
     async with mysql_get_db_async() as db:
