@@ -247,14 +247,13 @@ function _optionRow(value, share, block, collect) {
     const shareInput = document.createElement('input');
     shareInput.className = 'form-control dice-option-share';
     shareInput.value = share === null || share === undefined ? '' : String(share);
-    shareInput.title = 'шанс в процентах — число или метка переменной';
-    shareInput.style = 'width: 96px; padding: 4px; font-size: 12px; height: 30px;'
-        + ' text-align: right;';
     shareInput.oninput = () => {
         _clamp(shareInput, block);
+        _shareFit(shareInput);
         _retotal(block);
         collect();
     };
+    _shareFit(shareInput);
 
     // ⚠ Доля из переменной вводится **тем же полем**: отдельный переключатель
     // «число или переменная» добавил бы состояние, которое видно только по нему,
@@ -262,8 +261,12 @@ function _optionRow(value, share, block, collect) {
     // чтобы имя не набирали руками с опечатками.
     const pick = document.createElement('select');
     pick.className = 'form-control dice-option-var';
-    pick.style = 'width: 34px; padding: 0; font-size: 11px; height: 30px;';
-    pick.innerHTML = '<option value="">%</option>';
+    // ⚠⚠ Шире поля доли, и это не вкусовщина: в списке лежат **имена
+    // переменных** (`dice_mail_question_percent`) и «остаток до 100%». В узком
+    // селекте не читается ни то, ни другое — человек выбирает вслепую и узнаёт,
+    // что выбрал, только по тому, что подставилось в соседнее поле.
+    pick.style = 'width: 170px; padding: 2px; font-size: 11px; height: 30px;';
+    pick.innerHTML = '<option value="">— долю из —</option>';
     // ⚠⚠ «Остаток» стоит **первым пунктом**, до списка переменных: у пары
     // «да/нет» с долей из настройки это единственный верный способ задать вторую
     // половину. Впиши туда число — и стоит человеку подвинуть настройку, как
@@ -275,6 +278,7 @@ function _optionRow(value, share, block, collect) {
         if (pick.value) {
             shareInput.value = pick.value === DICE_REST
                 ? DICE_REST : `%${pick.value}%`;
+            _shareFit(shareInput);
             _retotal(block);
             collect();
         }
@@ -302,6 +306,35 @@ function _optionRow(value, share, block, collect) {
     return row;
 }
 
+// Ширина поля доли по тому, что в нём лежит. ⚠ Числу хватает узкого: больше
+// «100» там не бывает, а широкое поле под двузначное число сдвигает вправо всё
+// остальное — при восьми вариантах это заметно сразу.
+//
+// ⚠⚠ Метке узкого мало: `%dice_mail_story_percent%` в полсотни пикселей не
+// читается вовсе, а именно по ней видно, что долю задаёт настройка сайта.
+// Прятать это за обрезкой — прятать самое важное в строке.
+const DICE_SHARE_WIDTH = {number: '48px', rest: '64px', mark: '150px'};
+
+/**
+ * Подогнать ширину поля доли под то, что в нём лежит.
+ *
+ * ⚠ Ширину ведёт **одна** функция: значение поля меняется из трёх мест (ввод
+ * руками, выбор из селекта, раскладка поровну), и три копии правила разошлись бы
+ * — поле то сжималось бы на метке, то оставалось широким под числом.
+ */
+function _shareFit(field) {
+    const raw = String(field.value || '').trim();
+    const kind = _isNumberShare(raw) ? 'number'
+        : (raw.startsWith('%') ? 'mark' : 'rest');
+
+    field.style = `width: ${DICE_SHARE_WIDTH[kind]}; padding: 4px;`
+        + ' font-size: 12px; height: 30px;'
+        + ` text-align: ${kind === 'number' ? 'right' : 'left'};`;
+    field.title = kind === 'number'
+        ? 'шанс в процентах'
+        : 'долю задаёт это значение: метка переменной или остаток до 100%';
+}
+
 /** Разложить сто процентов поровну между вариантами с числовой долей.
  *
  * ⚠ Доли-метки не трогаем и в счёт не берём: их значение известно только в
@@ -320,6 +353,7 @@ function _spread(block) {
         // Остаток от деления раздаём первым строкам по единице: 34 / 33 / 33.
         one.value = String(each + (left > 0 ? 1 : 0));
         if (left > 0) left -= 1;
+        _shareFit(one);
     });
 }
 
