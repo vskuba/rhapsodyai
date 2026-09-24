@@ -6,6 +6,7 @@ import {showNotification} from '../notification.js';
 import {state, WORKFLOW_STEP_CONFIG} from './state.js';
 import {parseMetadata, getToolOutputKeys} from './utils.js';
 import {fillVariablesSelectOptions} from './variables.js';
+import {renderDiceWidget, DICE_TOOL_NAME} from './dice-widget.js';
 
 export function renderCustomStepFields(step, metadata) {
     const container = document.getElementById('dynamicStepFieldsContainer');
@@ -306,6 +307,13 @@ export function renderCustomStepFields(step, metadata) {
             // Функция сборки и сохранения всего стейта виджета
             const collectToolWidgetData = () => {
                 const selectedName = selectElement.value; // Теперь тут лежит имя инструмента
+
+                // ⚠⚠ У жребия свой сборщик, и общий его затёр бы. Имена выходов
+                // `dice` придумывает человек в редакторе, а здесь `outputs_map`
+                // всегда уезжает пустым — для инструментов с объявленными
+                // выходами это верно, для него нет.
+                if (String(selectedName) === DICE_TOOL_NAME) return;
+
                 const inputsMap = {};
 
                 // Собираем Inputs
@@ -351,6 +359,17 @@ export function renderCustomStepFields(step, metadata) {
                 if (selectedTool.description) {
                     descContainer.textContent = 'Описание: ' + selectedTool.description;
                     descContainer.style.display = 'block';
+                }
+
+                // ⚠⚠ Жребь рисуется своим редактором: у `dice` выходы **не
+                // объявлены заранее** — их имена задаёт человек тут же, — и
+                // общий вид «входы слева, объявленные выходы справа» ему нечем
+                // наполнить. Описание он сам укладывает в `inputs_map`
+                // литералом `_const_`, а имена — в `outputs_map`.
+                if (String(toolName) === DICE_TOOL_NAME) {
+                    renderDiceWidget(mappingContainer, currentValue, saveChanges);
+
+                    return;
                 }
 
                 // Парсинг аргументов из базы
