@@ -11,6 +11,7 @@ __pycache__/
 # Конфиги и секреты
 .env
 .env.local
+.env.test
 .env.prod
 config.yaml
 !docker/gatus/config.yaml
