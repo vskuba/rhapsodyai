@@ -61,10 +61,23 @@ workflow: переименуй шаг одному, второй останет�
 |---|---|
 | прогон дошёл до конца | `status` запуска в трассе |
 | каким путём пошёл | `route` (верх), `route_all` (с подпрогонами) |
-| был ли шаг, сколько раз | `went_through(шаг)`, `times(шаг)` |
+| был ли шаг на маршруте | `went_through(шаг)`, `times(шаг)` |
+| **отработал** ли шаг | `ran(шаг)`, `times_ran(шаг)` |
 | что модель **увидела** | `prompt_of(шаг)`, `prompt_each(шаг)` |
 | что вернул шаг | `output_of(шаг)`, `output_each(шаг)` |
 | текст ответа | **ничем. Никогда** |
+
+## ⚠⚠ «Был на маршруте» — это не «отработал»
+
+Шаг, с которого поток ушёл `transitions_before`, **пишется в трассу** наравне с
+выполненными (`ai_framework_manager`: `trace_current_step()` перед `continue`).
+Так и задумано — иначе развилки не было бы видно в журнале, — но для проверок это
+ловушка: `went_through('Ответ в чат')` истинно и тогда, когда ветка чата уступила
+дорогу письму.
+
+Различает их `ran`: он не считает проходы, помеченные `phase = "before"`. Поэтому
+«какой веткой пошло» спрашивают у `ran`, а `went_through` оставляют вопросам вида
+«поток вообще добирался сюда».
 
 ⚠⚠ **Структурное поле — развилка проверки, а не её предмет.** Написать
 `assert got.vars['invite_ok'] in ('yes', 'no', 'fixed')` нельзя: слово выбирает
@@ -183,19 +196,43 @@ class Talk:
     # накопленного ещё нет.
     prompts_each: dict = field(default_factory=dict)
     outputs_each: dict = field(default_factory=dict)
+    # Сколько раз с шага ушли, **не выполнив** его: сработал `transitions_before`.
+    #
+    # ⚠⚠ Такой проход движок пишет в трассу наравне с выполненным, и без этого
+    # счёта «шаг был на маршруте» и «шаг отработал» неразличимы. У развилки они
+    # значат прямо противоположное: шаг ветки чата попадает в трассу и тогда,
+    # когда поток ушёл с него в ветку письма.
+    jumps: dict = field(default_factory=dict)
 
     def went_through(self, step: str) -> bool:
-        """Встретился ли шаг на маршруте — в главном прогоне или в подпрогоне."""
+        """Встретился ли шаг на маршруте — в главном прогоне или в подпрогоне.
+
+        ⚠ **Это не «отработал».** Шаг, покинутый `transitions_before`, тоже
+        встретился. Про работу спрашивают `ran`.
+        """
         return step in self.route_all
 
+    def ran(self, step: str) -> bool:
+        """Отработал ли шаг вправду — хоть раз, не считая уходов с него.
+
+        ⚠⚠ Единственный честный способ спросить «какой веткой пошло». Развилка
+        `dating_talk` уводит с шага чата `transitions_before`, и `went_through`
+        на нём истинен при любой ветке.
+        """
+        return self.times_ran(step) > 0
+
     def times(self, step: str) -> int:
-        """Сколько раз шаг встретился на маршруте.
+        """Сколько раз шаг встретился на маршруте — вместе с уходами с него.
 
         ⚠ Нужно там, где повтор и есть предмет проверки: цикл инвайтов гоняет
         одни и те же шаги по разу на реплику, и «был ли шаг» на такой вопрос не
         отвечает.
         """
         return self.route_all.count(step)
+
+    def times_ran(self, step: str) -> int:
+        """Сколько раз шаг **отработал**: проходы минус уходы `before`."""
+        return self.times(step) - int(self.jumps.get(step) or 0)
 
     def prompt_of(self, step: str) -> str:
         """Отрисованный промпт шага. Пусто — шага не было или промпта у него нет."""
@@ -219,9 +256,15 @@ class Talk:
         return tuple(self.outputs_each.get(step) or ())
 
     def __str__(self) -> str:
+        # ⚠ Уходы показываем отдельной строкой: в маршруте они неотличимы от
+        # работы, и упавшая проверка ветки без них читается как «шаг был, а
+        # проверка врёт».
+        left = ', '.join(f'{name} ×{qty}' for name, qty in self.jumps.items())
+
         return (f'\nответ: {self.text!r}\n'
                 f'маршрут: {" → ".join(self.route) or "пусто"}\n'
                 f'подпрогоны: {" → ".join(self.route_all) or "пусто"}\n'
+                f'ушли не выполнив: {left or "нет"}\n'
                 f'попыток: {self.attempts}, статус: {self.status}, сессия: {self.session}')
 
 
@@ -429,19 +472,28 @@ def _walk(run: dict, got: Talk, main: list, every: list,
             if top:
                 main.append(title)
 
-            prompt = _rendered_prompt(step)
-            output = str(step.get('output') or '')
+            # ⚠⚠ Уход `transitions_before` — **не работа шага**, и дальше он не
+            # учитывается ни промптом, ни выводом. Промпт у такого прохода в
+            # трассе есть (метаданные отрисовываются до проверки переходов), но в
+            # модель он не уезжал, а `prompts` обещает ровно обратное — «то, что
+            # вправду ушло в модель». Запиши его сюда, и проверка входа читала бы
+            # текст, которого модель не видела.
+            if _jumped_before(step):
+                got.jumps[title] = int(got.jumps.get(title) or 0) + 1
+            else:
+                prompt = _rendered_prompt(step)
+                output = str(step.get('output') or '')
 
-            got.prompts_each.setdefault(title, []).append(prompt)
-            got.outputs_each.setdefault(title, []).append(output)
+                got.prompts_each.setdefault(title, []).append(prompt)
+                got.outputs_each.setdefault(title, []).append(output)
 
-            # ⚠ Берём **первую** отрисовку шага: повтор после неудачной проверки
-            # идёт с тем же входом, а последняя запись затёрла бы то, с чего
-            # разговор начался. Вывод — по тому же правилу и ради того же.
-            # Все прохождения целиком лежат рядом (`*_each`).
-            if title not in got.prompts:
-                got.prompts[title] = prompt
-                got.outputs[title] = output
+                # ⚠ Берём **первую** отрисовку шага: повтор после неудачной
+                # проверки идёт с тем же входом, а последняя запись затёрла бы
+                # то, с чего разговор начался. Вывод — по тому же правилу и ради
+                # того же. Все прохождения целиком лежат рядом (`*_each`).
+                if title not in got.prompts:
+                    got.prompts[title] = prompt
+                    got.outputs[title] = output
 
         changed = step.get('variables_changed')
         try:
@@ -452,6 +504,29 @@ def _walk(run: dict, got: Talk, main: list, every: list,
 
     for child in run.get('children') or []:
         _walk(child, got, main, every, top=False)
+
+
+def _jumped_before(step: dict) -> bool:
+    """Ушли ли с шага, не выполнив его: сработал `transitions_before`.
+
+    ⚠⚠ Метка — `phase` у перехода, и она единственная надёжная. «Пустой вывод»
+    приметой не годится: шаг-развилка без промпта возвращает пустоту и тогда,
+    когда честно отработал, а подпрогон наоборот кладёт вывод даже без модели.
+
+    ⚠ Поле приходит то строкой JSON, то разобранным словарём — как и
+    `metadata_rendered`, и по той же причине. Негодный JSON читается как «не
+    ушли»: шаг в трассе есть, а чем он кончился, мы не знаем — и считать его
+    пропущенным значило бы прятать работу, которая, возможно, была.
+    """
+    got = step.get('transition')
+
+    if isinstance(got, str):
+        try:
+            got = json.loads(got or '{}')
+        except (TypeError, ValueError):
+            return False
+
+    return str((got or {}).get('phase') or '') == 'before'
 
 
 def _rendered_prompt(step: dict) -> str:
