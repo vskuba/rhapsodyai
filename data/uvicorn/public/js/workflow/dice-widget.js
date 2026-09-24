@@ -8,8 +8,6 @@
 // их имена придумывает человек здесь же. Поэтому общий вид «входы слева, выходы
 // справа» ему не подходит, и у него свой.
 
-import {fillVariablesSelectOptions} from './variables.js';
-
 // Имя инструмента, ради которого всё это. ⚠ Сверяется с `tool.name` в базе:
 // переименуют там — здесь перестанет находиться, и человек увидит общий вид.
 export const DICE_TOOL_NAME = 'dice';
@@ -249,42 +247,28 @@ function _optionRow(value, share, block, collect) {
     shareInput.value = share === null || share === undefined ? '' : String(share);
     shareInput.oninput = () => {
         _clamp(shareInput, block);
+        // ⚠ Подгонка заодно снимает пометку о негодной метке: человек правит
+        // имя, и красная рамка на каждой букве недописанного имени — помеха.
         _shareFit(shareInput);
         _retotal(block);
         collect();
     };
+    // ⚠⚠ Проверяем **на потере фокуса**, а не на вводе: имя набирают по букве, и
+    // `%dice_m` негодно ровно до последнего знака. Ругаться раньше — ругаться на
+    // человека за то, что он ещё печатает.
+    shareInput.onblur = () => _shareCheck(shareInput);
     _shareFit(shareInput);
+    _shareCheck(shareInput);
 
-    // ⚠ Доля из переменной вводится **тем же полем**: отдельный переключатель
-    // «число или переменная» добавил бы состояние, которое видно только по нему,
-    // а метка `%имя%` говорит о себе сама. Селект рядом лишь вставляет её,
-    // чтобы имя не набирали руками с опечатками.
-    const pick = document.createElement('select');
-    pick.className = 'form-control dice-option-var';
-    // ⚠⚠ Шире поля доли, и это не вкусовщина: в списке лежат **имена
-    // переменных** (`dice_mail_question_percent`) и «остаток до 100%». В узком
-    // селекте не читается ни то, ни другое — человек выбирает вслепую и узнаёт,
-    // что выбрал, только по тому, что подставилось в соседнее поле.
-    pick.style = 'width: 170px; padding: 2px; font-size: 11px; height: 30px;';
-    pick.innerHTML = '<option value="">— долю из —</option>';
-    // ⚠⚠ «Остаток» стоит **первым пунктом**, до списка переменных: у пары
-    // «да/нет» с долей из настройки это единственный верный способ задать вторую
-    // половину. Впиши туда число — и стоит человеку подвинуть настройку, как
-    // сумма перевалит за сотню, а увидит он это отказом на живом заходе.
-    pick.innerHTML += `<option value="${DICE_REST}">остаток до 100%</option>`;
-    fillVariablesSelectOptions(pick, '');
-    pick.title = 'взять долю из переменной или отдать остаток';
-    pick.onchange = () => {
-        if (pick.value) {
-            shareInput.value = pick.value === DICE_REST
-                ? DICE_REST : `%${pick.value}%`;
-            _shareFit(shareInput);
-            _retotal(block);
-            collect();
-        }
-        pick.value = '';
-    };
-
+    // ⚠⚠ **Селекта «взять долю из переменной» здесь нет намеренно.** Он был и
+    // подставлял в это же поле `%имя%` либо `rest` — то есть делал ровно то, что
+    // человек делает набором, и занимал при этом сто семьдесят пикселей в
+    // **каждой** строке, хотя в большинстве строк лежит обычное число.
+    //
+    // Его работ было две, и обе закрыты дешевле: опечатку в имени ловит сам
+    // инструмент (метка, не раскрывшаяся к его вызову, — это отказ с именем
+    // переменной в тексте, а не молчаливый ноль), а про «остаток» и метки
+    // говорят подсказка сверху и placeholder.
     const drop = _button('×', '#a0aec0');
     drop.title = 'убрать вариант';
     drop.onclick = () => {
@@ -300,7 +284,6 @@ function _optionRow(value, share, block, collect) {
 
     row.appendChild(text);
     row.appendChild(shareInput);
-    row.appendChild(pick);
     row.appendChild(drop);
 
     return row;
@@ -313,7 +296,10 @@ function _optionRow(value, share, block, collect) {
 // ⚠⚠ Метке узкого мало: `%dice_mail_story_percent%` в полсотни пикселей не
 // читается вовсе, а именно по ней видно, что долю задаёт настройка сайта.
 // Прятать это за обрезкой — прятать самое важное в строке.
-const DICE_SHARE_WIDTH = {number: '48px', rest: '64px', mark: '150px'};
+// ⚠ Пустое поле — тоже широкое: в нём видна подсказка, а она теперь единственное
+// место, где человек узнаёт про «остаток» и метки. Впишет число — поле сожмётся.
+const DICE_SHARE_WIDTH = {number: '48px', rest: '64px', mark: '150px',
+                          empty: '150px'};
 
 /**
  * Подогнать ширину поля доли под то, что в нём лежит.
@@ -324,15 +310,48 @@ const DICE_SHARE_WIDTH = {number: '48px', rest: '64px', mark: '150px'};
  */
 function _shareFit(field) {
     const raw = String(field.value || '').trim();
-    const kind = _isNumberShare(raw) ? 'number'
-        : (raw.startsWith('%') ? 'mark' : 'rest');
+    const kind = !raw ? 'empty'
+        : (_isNumberShare(raw) ? 'number'
+            : (raw.startsWith('%') ? 'mark' : 'rest'));
 
     field.style = `width: ${DICE_SHARE_WIDTH[kind]}; padding: 4px;`
         + ' font-size: 12px; height: 30px;'
         + ` text-align: ${kind === 'number' ? 'right' : 'left'};`;
+    // ⚠ Подсказка в пустом поле — теперь единственное место, где человек узнаёт
+    // про «остаток» и метки: селекта, который их подставлял, больше нет.
+    field.placeholder = '50 · rest · %имя%';
     field.title = kind === 'number'
         ? 'шанс в процентах'
         : 'долю задаёт это значение: метка переменной или остаток до 100%';
+}
+
+/**
+ * Показать, что метка в поле доли не совпадает ни с одной переменной workflow.
+ *
+ * ⚠⚠ **Проверять есть с чем, и это главное.** `window.allCurrentVariables` —
+ * тот самый список, которым нарисована первая колонка страницы: всё, что workflow
+ * объявил. Метки, которой там нет, в заходе не будет тоже — движок оставит её в
+ * тексте как есть, а инструмент ответит отказом. Показать это в форме стоит
+ * трёх строк, а поймать иначе можно только на живом письме.
+ *
+ * ⚠ Пустой список — не повод ругаться: переменные приезжают своим запросом, и до
+ * его ответа «не нашли» значит «ещё не знаем», а не «неверно».
+ */
+function _shareCheck(field) {
+    const raw = String(field.value || '').trim();
+    const known = window.allCurrentVariables;
+
+    if (!raw.startsWith('%') || !Array.isArray(known) || !known.length) return;
+
+    const name = raw.slice(1, -1);
+
+    if (known.some(one => String(one && one.name) === name)) return;
+
+    field.style.borderColor = '#e53e3e';
+    field.style.color = '#e53e3e';
+    field.title = `Переменной «${name}» нет среди переменных этого workflow —`
+        + ' метка не раскроется, и жребий ответит отказом. Проверьте имя по'
+        + ' списку слева.';
 }
 
 /** Разложить сто процентов поровну между вариантами с числовой долей.
