@@ -48,6 +48,50 @@ export function getToolOutputKeys(toolName) {
     return [];
 }
 
+// Ключ выбранной вкладки. ⚠ `sessionStorage`, а не `localStorage`: выбор живёт
+// столько же, сколько и выбранный workflow (он лежит там же), и вкладка, открытая
+// неделю назад, не должна встречать человека в новой сессии.
+const WORKFLOW_TAB_KEY = 'workflow_selected_view';
+
+// Вкладка, с которой страница открывается, когда ничего не запомнено.
+const WORKFLOW_TAB_DEFAULT = 'tabSteps';
+
+/**
+ * Переключить вкладку редактора и запомнить выбор на перезагрузку.
+ *
+ * ⚠⚠ **Единственная дверь к смене вкладки.** Пометить кнопку активной можно и
+ * руками — двумя строками, — и так уже было сделано в `graph.js`: щелчок по узлу
+ * графа уводил на «Шаги» в обход. Пока запоминания не было, разницы не
+ * чувствовалось; теперь такой обход **молча теряет** выбор, и страница после
+ * перезагрузки открывается не там, где человек её оставил.
+ *
+ * @param {string} tabId id кнопки вкладки: tabSteps, tabSettings, tabGraph.
+ */
+export function activateTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+    const tab = document.getElementById(tabId);
+    if (!tab) return;
+
+    tab.classList.add('active');
+    sessionStorage.setItem(WORKFLOW_TAB_KEY, tabId);
+}
+
+/**
+ * Вкладка, на которой страницу оставили в прошлый раз.
+ *
+ * ⚠ Читать её нужно **до** того, как откроется workflow: открытие показывает
+ * «Шаги» и тем самым перезаписывает память. Иначе восстанавливать будет нечего —
+ * в хранилище уже будет лежать `tabSteps`.
+ *
+ * @returns {string} id кнопки; `tabSteps`, если ничего не запомнено.
+ */
+export function savedTab() {
+    const got = sessionStorage.getItem(WORKFLOW_TAB_KEY);
+
+    return document.getElementById(got) ? got : WORKFLOW_TAB_DEFAULT;
+}
+
 // Позиция вставки при drag-and-drop шагов
 export function getDragAfterElement(container, y) {
     const draggableElements = [...container.querySelectorAll('.step-item-block:not(.dragging)')];

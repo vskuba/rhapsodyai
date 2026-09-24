@@ -5,7 +5,7 @@
 const TO_NEXT_STEP = 'to_next_step';
 
 import {state} from './state.js';
-import {parseMetadata, graphLabelEscape} from './utils.js';
+import {parseMetadata, graphLabelEscape, activateTab} from './utils.js';
 import {showNotification} from '../notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
 import {getData} from '../api.js';
@@ -406,8 +406,11 @@ function attachGraphNodeHandlers(container) {
             if (!step) return;
             document.getElementById('stepsGraph').style.display = 'none';
             document.getElementById('stepsEditorView').style.display = 'flex';
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('tabSteps')?.classList.add('active');
+            // ⚠ Через общую функцию, а не двумя строками с `classList`: она же
+            // запоминает вкладку. Своими руками выбор менялся бы молча, и
+            // страница после перезагрузки возвращала бы на граф — туда, откуда
+            // человек как раз ушёл.
+            activateTab('tabSteps');
             const stepBlock = document.querySelector(`.step-item-block[data-id="${stepId}"]`);
             if (stepBlock) selectStep(step, stepBlock);
         });

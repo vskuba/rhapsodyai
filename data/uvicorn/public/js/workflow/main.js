@@ -4,7 +4,7 @@
 import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state} from './state.js';
-import {parseMetadata} from './utils.js';
+import {parseMetadata, activateTab, savedTab} from './utils.js';
 import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
@@ -13,12 +13,10 @@ import {buildGroupTree, renderGroupTree} from '../agent_group_tree.js';
 // Инициализация режима Graph (mermaid)
 initGraphMode();
 
-// Переключение вкладок
-function activateTab(tabId) {
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    const tab = document.getElementById(tabId);
-    if (tab) tab.classList.add('active');
-}
+// ⚠ Вкладка, на которой страницу оставили: снимаем её **до** первой загрузки
+// списка. Открытие workflow показывает «Шаги» и тем самым перезапишет память —
+// прочитай мы её позже, восстанавливать было бы нечего.
+const tabToRestore = savedTab();
 
 document.getElementById('tabSteps')?.addEventListener('click', async () => {
     const workflowId = document.getElementById('workflowId')?.value;
@@ -122,6 +120,10 @@ let carouselNodes = [];
 let carouselIndex = 0;
 let sidebarWorkflows = [];
 let deepLinkApplied = false;
+// ⚠ Вкладку возвращаем **один раз за жизнь страницы**, как и deep-link рядом:
+// список перечитывается после каждого сохранения, и без этой отметки правка в
+// «Настройках» дёргала бы человека обратно на вкладку, где он уже стоит.
+let tabRestored = false;
 
 // Клик по ссылке sub-workflow в виджете шага (step-widgets.js шлет событие,
 // прямой импорт оттуда невозможен — циклическая зависимость модулей)
@@ -270,7 +272,7 @@ async function duplicateWorkflow(workflow) {
 
 async function openWorkflowSteps(workflow, element) {
     setActiveItem(element);
-    workflowSelectionSave(workflow, 'steps');
+    workflowSelectionSave(workflow);
     activateTab('tabSteps');
 
     document.getElementById('workflowSettingsView').style.display = 'none';
@@ -280,28 +282,42 @@ async function openWorkflowSteps(workflow, element) {
 
     await fillWorkflowForm(workflow);
     await loadWorkflowSteps(workflow.id);
+
+    tabRestore();
 }
 
 /**
- * Режим 2: Редактирование параметров задачи (без шагов)
+ * Вернуть вкладку, на которой страницу оставили. Один раз за жизнь страницы.
+ *
+ * ⚠⚠ **Отсюда, а не из загрузки списка.** Список открывает workflow щелчком по
+ * ссылке, но `openWorkflowSteps` асинхронна: к возврату из `.click()` форма ещё
+ * пуста. А обработчик «Настроек» первым делом смотрит на `workflowId` и при
+ * пустом **молча выходит** — вкладка не вернулась бы, и выглядело бы это как
+ * «иногда работает»: успеет форма заполниться или нет, зависит от скорости сети.
+ *
+ * ⚠ Один раз: список перечитывается после каждого сохранения, и без отметки
+ * правка в «Настройках» возвращала бы человека на вкладку, где он уже стоит.
  */
-function openWorkflowSettings(workflow, element) {
-    setActiveItem(element);
-    workflowSelectionSave(workflow, 'settings');
-    activateTab('tabSettings');
+function tabRestore() {
+    if (tabRestored) return;
 
-    document.getElementById('workflowSettingsView').style.display = 'flex';
-    document.getElementById('stepsEditorView').style.display = 'none';
-    document.getElementById('stepsGraph').style.display = 'none';
+    tabRestored = true;
 
-    fillWorkflowForm(workflow);
+    // «Шаги» уже показаны открытием — щёлкать по ним значит грузить их заново.
+    if (tabToRestore !== 'tabSteps') document.getElementById(tabToRestore)?.click();
 }
 
-// Запоминаем ноду + выбранный workflow + режим (шаги/настройки), чтобы пережить перезагрузку страницы
-function workflowSelectionSave(workflow, view) {
+// Запоминаем ноду и выбранный workflow, чтобы пережить перезагрузку страницы.
+//
+// ⚠ Вкладку здесь **не пишем**: её ведёт `activateTab` в `utils.js`, и каждый
+// переход через неё проходит. Прежде эта функция писала ещё и режим
+// («шаги»/«настройки») — но ту запись никто не читал, а вторая половина пары,
+// `openWorkflowSettings`, не вызывалась ни разу: вкладку «Настройки» открывает
+// её собственная кнопка. Половина механизма, которая молча ничего не делает,
+// хуже отсутствующей — на неё смотрят и считают, что запоминание уже есть.
+function workflowSelectionSave(workflow) {
     sessionStorage.setItem('workflow_selected_node_id', workflow.node_id || 'none');
     sessionStorage.setItem('workflow_selected_id', workflow.id);
-    sessionStorage.setItem('workflow_selected_view', view);
 }
 
 // Вспомогательные функции
