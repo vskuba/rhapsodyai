@@ -8,6 +8,11 @@
 """
 from src.mysql_.repository.companion_repository import CompanionRepository
 
+# Ширина `companion.unique_id` и `companion.title` в базе
+# (`…_companion_unique_id_wider`). ⚠ Обрезаем по ней же: длиннее не влезет, а
+# молча укоротить значит завести запись, которую потом не найти по её ключу.
+COMPANION_FIELD_MAX = 190
+
 
 async def companion_create(unique_id: str, title: str = '') -> dict:
     """Завести запись собеседника, если её ещё нет. Вернуть её номер.
@@ -49,7 +54,13 @@ async def companion_create(unique_id: str, title: str = '') -> dict:
 
     # ⚠ Имя обязательно: столбец `NOT NULL`, а пустое название в списке
     # собеседников не отличить от соседнего пустого.
-    made = await repo.add({'unique_id': key, 'title': str(title or key)[:25]})
+    # ⚠ Обрезка по ширине столбца (`varchar(190)`), а не по круглому числу:
+    # прежде она стояла на 25, и ключ длиннее молча терял хвост — поиск шёл по
+    # полному, не находил и вставлял снова, упираясь в уникальный индекс.
+    # Сообщение «Duplicate entry» при том, что записи нет, уводит искать гонку
+    # вставок вместо ширины поля.
+    made = await repo.add({'unique_id': key[:COMPANION_FIELD_MAX],
+                           'title': str(title or key)[:COMPANION_FIELD_MAX]})
 
     return {'id': made, 'unique_id': key, 'created': 1}
 
