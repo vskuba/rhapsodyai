@@ -1,49 +1,26 @@
 import json
-import uuid
 
 from mysql_.mysql_ import mysql_get_db_async
 
 
-async def ai_session_message_add(session_uuid, request_uuid, llm_id, user_id, companion_id, role, agent_id, kind_type, content, token=None):
+async def ai_session_message_add(session_uuid, request_uuid, llm_id, user_id, role, agent_id, kind_type, content, token=None):
+    """Строка журнала вызова LLM: промпт, ответ, вызов инструмента.
+
+    ⚠ Собеседника здесь нет и быть не должно. `agent_session` отвечает на вопрос
+    «что мы спросили у модели и что она ответила»; кто с кем разговаривает —
+    вопрос `companion_session`, и там у разговора своя строка на обмен. Пока
+    столбец `companion_id` стоял здесь, он же был и единственным местом, куда
+    переписка попадала, — но попадала слепком промпта, из которого разговор не
+    выбрать ни по паре, ни по времени.
+    """
     async with mysql_get_db_async() as db:
         # Используем %s для MySQL
         sql = '''
-            INSERT INTO agent_session (session_uuid, request_uuid, llm_id, user_id, companion_id, role, agent_id, kind_type, content, token)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO agent_session (session_uuid, request_uuid, llm_id, user_id, role, agent_id, kind_type, content, token)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         '''
-        await db.execute(sql, (session_uuid, request_uuid, llm_id, user_id, companion_id, role, agent_id, kind_type, content, token))
+        await db.execute(sql, (session_uuid, request_uuid, llm_id, user_id, role, agent_id, kind_type, content, token))
         # При autocommit=True в настройках пула, commit() произойдет автоматически
-
-
-async def ai_session_messages(companion_id, agent_id, limit=10) -> list:
-    async with mysql_get_db_async() as db:
-        sql = '''
-            SELECT session_uuid, role, kind_type, content FROM agent_session 
-            WHERE companion_id = %s AND agent_id = %s AND kind_type in ('user-prompt', 'response-final') 
-            ORDER BY created_at DESC, id DESC
-            LIMIT %s
-        '''
-        await db.execute(sql, (companion_id, agent_id, limit))
-        rows = await db.fetchall()
-
-        return list(reversed(rows))
-
-
-async def ai_session_uuid_get(companion_id, agent_id) -> str:
-    async with mysql_get_db_async() as db:
-        sql = '''
-            SELECT session_uuid FROM agent_session 
-            WHERE companion_id = %s AND agent_id = %s 
-            ORDER BY created_at DESC 
-            LIMIT 1
-        '''
-        await db.execute(sql, (companion_id, agent_id))
-        row = await db.fetchone()
-
-        if not row:
-            return str(uuid.uuid4())
-
-        return row['session_uuid']
 
 
 async def ai_session_metadata_get(session_uuid) -> dict:

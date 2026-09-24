@@ -139,8 +139,7 @@ async def session_message_add(
         user_message: str,
         agent_response: str,
         agent_id: int = 0,
-        user_id: int = 0,
-        companion_id: int = 0
+        user_id: int = 0
 ) -> str:
     """
     Записывает в сессию пару сообщений диалога: user-prompt (сообщение собеседника)
@@ -151,7 +150,6 @@ async def session_message_add(
     request_uuid = str(uuid.uuid4())
     agent_id = int(agent_id) or None
     user_id = int(user_id) or None
-    companion_id = int(companion_id) or None
 
     for role, kind_type, content in (
             ('user', 'user-prompt', user_message),
@@ -162,7 +160,6 @@ async def session_message_add(
             request_uuid=request_uuid,
             llm_id=None,
             user_id=user_id,
-            companion_id=companion_id,
             role=role,
             agent_id=agent_id,
             kind_type=kind_type,

@@ -337,9 +337,9 @@ def seed_test_session():
     req_uuid = str(uuid.uuid4())
 
     async def _seed():
-        await ai_session_message_add(TEST_SESSION_UUID, req_uuid, None, 1, None,
+        await ai_session_message_add(TEST_SESSION_UUID, req_uuid, None, 1,
                                      'user', TEST_SESSION_AGENT_ID, 'user-prompt', 'test prompt')
-        await ai_session_message_add(TEST_SESSION_UUID, req_uuid, None, 1, None,
+        await ai_session_message_add(TEST_SESSION_UUID, req_uuid, None, 1,
                                      'assistant', TEST_SESSION_AGENT_ID, 'response-final', 'test response')
 
     from mysql_.mysql_ import mysql_pool_close

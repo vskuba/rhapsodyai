@@ -87,7 +87,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.entity_llm_current = framework_model.entities_llm[0] if framework_model.entities_llm else {}
             framework_model.metadata = metadata or {}
             framework_model.user_id = metadata.get('user_id', 0)
-            framework_model.companion_id = metadata.get('companion_id', 0)
             framework_model.node_id = entity_agent.get('node_id') or await ai_llm_node_id_default_get()
             framework_model.llm_parallel_per_agent_max = await ai_llm_parallel_per_agent_max_get(framework_model.node_id)
             # ⚠ Срок ожидания в очереди читается здесь, а не диспетчером: тот
@@ -188,7 +187,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     agent_id=model.entity_agent.get('id'),
                     kind_type='user-prompt',
                     content=model.workflow_variables.get('prompt_user', ''),
-                    companion_id=model.companion_id
                 )
                 await ai_session_message_add(
                     session_uuid=model.session_uuid,
@@ -199,7 +197,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     agent_id=model.entity_agent.get('id'),
                     kind_type='response-final',
                     content='',
-                    companion_id=model.companion_id
                 )
 
                 if not future.done():
@@ -485,7 +482,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     agent_id=model.entity_agent.get('id'),
                     kind_type='system-prompt',
                     content=model.prompt_system,
-                    companion_id=model.companion_id
                 )
 
             if depth == 0 and iteration == 0:
@@ -498,7 +494,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     agent_id=model.entity_agent.get('id'),
                     kind_type='user-prompt',
                     content=variables['prompt_user'],
-                    companion_id=model.companion_id
                 )
 
             if step_type == 'llm_to_json':
@@ -775,7 +770,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         kind_type='tool-call',
                         content=f"{tool_name}({tool_args}): \n\n {str(raw_result)}",
                         token=0,
-                        companion_id=model.companion_id
                     )
 
                     if isinstance(raw_result, dict):
@@ -1059,7 +1053,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         agent_id=model.entity_agent.get('id'),
                         kind_type='response-final',
                         content=model.prompt_user,
-                        companion_id=model.companion_id
                     )
 
                 # Если после этого шага есть еще шаги, сохраняем обновленный индекс текущего шага в метаданных сессии
