@@ -495,6 +495,16 @@ function toNextStepShow(metadata) {
     if (!box) return;
 
     box.checked = (metadata || {})[TO_NEXT_STEP] !== false;
+    toNextStepPaint();
+}
+
+// Снятая галочка заметна серым полем: тупик в потоке не должен выглядеть как
+// обычный шаг. ⚠ Красит та же пара, что читает и пишет значение — иначе вид и
+// смысл разошлись бы.
+function toNextStepPaint() {
+    const box = document.getElementById('stepToNextStep');
+    const frame = document.getElementById('stepToNextStepBox');
+    if (box && frame) frame.classList.toggle('off', !box.checked);
 }
 
 // Что стоит в галочке сейчас. Нет её на странице — считаем включённой: иначе
@@ -508,6 +518,8 @@ function toNextStepValue() {
 // ⚠ Правка галочки сохраняется тем же путём, что правка условия: снятая и
 // незаписанная, она обещала бы тупик, которого в базе нет.
 document.getElementById('stepToNextStep').onchange = () => {
+    toNextStepPaint();
+
     const activeStepBlock = document.querySelector('.step-item-block.active');
     if (!activeStepBlock) return;
 

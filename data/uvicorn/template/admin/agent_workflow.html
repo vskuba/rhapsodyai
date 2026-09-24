@@ -720,6 +720,49 @@
         cursor: pointer;
     }
 
+    /* Галочка «to next step» — вид кнопки рядом.
+     *
+     * ⚠ Высота и рамка повторяют `.btn-create` в той строке: `padding: 5px 10px`
+     * и `1px` рамки дают ту же высоту, а `box-sizing` держит её при смене шрифта.
+     * Разный вид читался бы как «подпись к кнопке», хотя это отдельный
+     * выключатель, отвечающий на свой вопрос.
+     *
+     * ⚠ Снятая — заметна: серое поле вместо белого. Иначе тупик в потоке
+     * выглядел бы так же, как обычный шаг. */
+    .to-next-step {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        box-sizing: border-box;
+        padding: 5px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 5px;
+        background: #fff;
+        color: #374151;
+        font-size: 12px;
+        line-height: 1.2;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .to-next-step:hover {
+        border-color: #9ca3af;
+    }
+
+    /* ⚠ Классом, а не `:has(input:not(:checked))`: селектор молодой, а в
+     * проекте он не встречается больше нигде. Класс ставит та же функция, что
+     * показывает значение (`toNextStepShow`), — второго источника правды нет. */
+    .to-next-step.off {
+        background: #f3f4f6;
+        color: #6b7280;
+    }
+
+    .to-next-step input {
+        margin: 0;
+        cursor: pointer;
+    }
+
     .btn-delete {
         background: transparent;
         color: #e74c3c;
@@ -1534,14 +1577,22 @@
                                  этого шага». Условия говорят «куда прыгнуть», галочка
                                  — «а если ни одно не сработало». -->
                             <div style="margin-top: 10px; display: flex; align-items: center; gap: 12px;">
+                                <!-- ⚠ `width: auto` обязателен: у `.btn-create`
+                                     стоит `width: 100%`, и кнопка съедала всю
+                                     строку, выдавливая галочку к краю. -->
                                 <button type="button" class="btn-create" id="addConditionBtnAfter"
-                                        style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
+                                        style="width: auto; flex: 0 0 auto; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px; white-space: nowrap;">
                                     + Добавить условие перехода
                                 </button>
-                                <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: #374151; cursor: pointer; user-select: none;"
+                                <!-- ⚠ Рамка и отступы те же, что у кнопки слева:
+                                     обе решают одно — куда пойдёт поток, — и
+                                     разный вид делал бы галочку подписью к кнопке,
+                                     а не самостоятельным выключателем.
+                                     ⚠ `nowrap`: «to next step» в три слова, и в
+                                     узком сайдбаре оно ломалось на строки. -->
+                                <label class="to-next-step" id="stepToNextStepBox"
                                        title="Снята — поток дальше по номеру не идёт: не сработал ни один переход, и шаг отвечает «no more step available». Нужна развилке, где следующий по номеру шаг это чужая ветка.">
-                                    <input type="checkbox" id="stepToNextStep" checked
-                                           style="margin: 0; cursor: pointer;">
+                                    <input type="checkbox" id="stepToNextStep" checked>
                                     to next step
                                 </label>
                             </div>
