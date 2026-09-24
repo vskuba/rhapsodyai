@@ -134,6 +134,60 @@ class TestTheShareMayComeFromAVariable:
         assert got['б'] == pytest.approx(70, abs=TOLERANCE), got
 
 
+class TestTheRestTakesWhatIsLeft:
+    """⚠⚠ Ради «остатка» всё и затевалось: без него доля из настройки не пишется.
+
+    Пара «да/нет» требует, чтобы сумма укладывалась в сотню, а второй половины мы
+    не знаем. `{да: "%percent%", нет: 75}` при настройке 40 даёт 115 — отказ
+    прямо на заходе, то есть письмо не ушло из-за того, что кто-то подвинул
+    ползунок. С «остатком» сумма сходится при любой настройке.
+    """
+
+    @pytest.mark.parametrize('percent', [0, 10, 40, 90, 100])
+    async def test_it_holds_for_any_setting(self, percent):
+        got = await _shares({'x': {'да': percent, 'нет': 'rest'}}, 'x')
+
+        assert got.get('да', 0) == pytest.approx(percent, abs=TOLERANCE), got
+        assert got.get('нет', 0) == pytest.approx(100 - percent, abs=TOLERANCE), got
+
+    async def test_nothing_is_ever_empty_with_a_rest(self):
+        """⚠ «Остаток» и недобор — разные вещи, и вместе их не бывает.
+
+        Пустая строка значит «ни один вариант не выпал»; при «остатке» такого
+        случая нет вовсе — он и есть все оставшиеся проценты.
+        """
+        got = await _shares({'x': {'да': 30, 'нет': 'rest'}}, 'x')
+
+        assert '' not in got, f'при «остатке» пустого быть не может: {got}'
+
+    async def test_an_empty_setting_gives_the_rest_everything(self):
+        got = await _shares({'x': {'да': '', 'нет': 'rest'}}, 'x')
+
+        assert got.get('нет', 0) == pytest.approx(100, abs=TOLERANCE), got
+
+    async def test_it_keeps_its_place_in_the_order(self):
+        """⚠ Доля считается после всех, но **стоит там, где записана**.
+
+        Порядок решает, какому варианту достанется бросок; переставь «остаток» в
+        конец — и доли соседей поедут.
+        """
+        got = await _shares({'x': {'прочее': 'rest', 'да': 30}}, 'x')
+
+        assert got['да'] == pytest.approx(30, abs=TOLERANCE), got
+        assert got['прочее'] == pytest.approx(70, abs=TOLERANCE), got
+
+    async def test_a_capital_letter_is_tolerated(self):
+        """⚠ Значение приходит из формы: «Rest» — обычная описка, а не другое
+        слово. Отказ «доля не число» спрятал бы причину."""
+        got = await _shares({'x': {'да': 25, 'нет': ' Rest '}}, 'x')
+
+        assert got['да'] == pytest.approx(25, abs=TOLERANCE), got
+
+    async def test_two_rests_are_refused(self):
+        with pytest.raises(ValueError, match='rest'):
+            await dice({'x': {'а': 'rest', 'б': 'rest'}})
+
+
 class TestBadSpecIsRefusedLoudly:
     """⚠ Всё, что здесь пропущено молча, всплывёт как ровные письма.
 

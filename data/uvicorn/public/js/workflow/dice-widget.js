@@ -32,6 +32,23 @@ const DICE_OPTIONS_MIN = 2;
 // нельзя — редактор пропустил бы описание, на котором заход упадёт.
 const DICE_TOTAL = 100;
 
+// Доля-«остаток»: всё, что не разобрали соседи. ⚠ Слово то же, что в `dice.py`.
+const DICE_REST = 'rest';
+
+/**
+ * Участвует ли доля в арифметике формы.
+ *
+ * ⚠⚠ Три вида долей, и два из них считать нельзя: метка `%имя%` раскроется
+ * только в заходе, «остаток» вычисляется от суммы остальных. Поровну делим и
+ * подрезаем **только числа** — иначе форма затёрла бы метку числом, молча
+ * отменив настройку сайта.
+ */
+function _isNumberShare(text) {
+    const raw = String(text || '').trim();
+
+    return !!raw && !raw.startsWith('%') && raw.toLowerCase() !== DICE_REST;
+}
+
 /**
  * Нарисовать редактор жребия внутри готового блока.
  *
@@ -90,9 +107,11 @@ export function renderDiceWidget(host, current, save) {
     addButton.onclick = () => addVariable();
 
     host.appendChild(_hint(
-        'Каждая переменная получает одно из своих значений по жребию. '
-        + 'Доля — число или метка переменной (%percent_setting%): её подставит '
-        + 'движок, и тогда шанс задаёт настройка сайта.'));
+        'Каждая переменная получает одно из своих значений по жребию. Доля — '
+        + 'число, метка переменной (%percent_setting%: шанс задаёт настройка '
+        + 'сайта) или «остаток» — всё, что не разобрали соседи. Не набрали ста '
+        + 'процентов и остатка нет — в разнице не выпадает ничего, и переменная '
+        + 'приходит пустой.'));
     host.appendChild(list);
     host.appendChild(addButton);
 
@@ -129,7 +148,8 @@ function _specIn(current) {
 
 /** Доля в том виде, в каком уезжает в JSON: число либо метка строкой. */
 function _shareOut(text) {
-    if (text.startsWith('%')) return text;
+    // ⚠ Метка и «остаток» уезжают строкой как есть: их читает инструмент.
+    if (!_isNumberShare(text)) return text.trim();
     const num = Number(String(text).replace(',', '.'));
 
     return Number.isFinite(num) ? num : 0;
@@ -244,11 +264,17 @@ function _optionRow(value, share, block, collect) {
     pick.className = 'form-control dice-option-var';
     pick.style = 'width: 34px; padding: 0; font-size: 11px; height: 30px;';
     pick.innerHTML = '<option value="">%</option>';
+    // ⚠⚠ «Остаток» стоит **первым пунктом**, до списка переменных: у пары
+    // «да/нет» с долей из настройки это единственный верный способ задать вторую
+    // половину. Впиши туда число — и стоит человеку подвинуть настройку, как
+    // сумма перевалит за сотню, а увидит он это отказом на живом заходе.
+    pick.innerHTML += `<option value="${DICE_REST}">остаток до 100%</option>`;
     fillVariablesSelectOptions(pick, '');
-    pick.title = 'взять долю из переменной';
+    pick.title = 'взять долю из переменной или отдать остаток';
     pick.onchange = () => {
         if (pick.value) {
-            shareInput.value = `%${pick.value}%`;
+            shareInput.value = pick.value === DICE_REST
+                ? DICE_REST : `%${pick.value}%`;
             _retotal(block);
             collect();
         }
@@ -283,7 +309,7 @@ function _optionRow(value, share, block, collect) {
  */
 function _spread(block) {
     const fields = [...block.querySelectorAll('.dice-option-share')]
-        .filter(one => !one.value.trim().startsWith('%'));
+        .filter(one => _isNumberShare(one.value));
 
     if (!fields.length) return;
 
@@ -300,7 +326,7 @@ function _spread(block) {
 /** Не дать сумме перевалить за сто: лишнее срезаем у поля, которое правят. */
 function _clamp(field, block) {
     const text = field.value.trim();
-    if (!text || text.startsWith('%')) return;
+    if (!_isNumberShare(text)) return;
 
     const num = Number(text.replace(',', '.'));
     if (!Number.isFinite(num)) return;
@@ -317,18 +343,30 @@ function _clamp(field, block) {
 function _retotal(block) {
     const fields = [...block.querySelectorAll('.dice-option-share')];
     const marks = fields.filter(one => one.value.trim().startsWith('%')).length;
+    const rests = fields.filter(
+        one => one.value.trim().toLowerCase() === DICE_REST).length;
     const sum = fields.reduce((acc, one) => acc + _numberOf(one.value), 0);
     const foot = block.querySelector('.dice-total');
 
     if (!foot) return;
 
-    // ⚠⚠ Недобор — **законное** описание, а не недоделка: в оставшихся
-    // процентах переменная приходит пустой, и `%if%` читает это как «не надо».
-    // Так задаётся «в 60% случаев добавь приём» без варианта-пустышки.
-    const rest = DICE_TOTAL - sum;
-    const tail = marks
-        ? ` и ещё ${marks} из переменных — итог известен только в заходе`
-        : (rest > 0 ? ` · в остальных ${rest}% не выпадает ничего` : '');
+    // Три разных исхода, и путать их нельзя: остаток кем-то занят, остаток ничей,
+    // либо итог вообще неизвестен до захода.
+    const left = DICE_TOTAL - sum;
+    let tail = '';
+
+    if (rests) {
+        // ⚠ Остаток занят — недобора не бывает: сумма сходится при любой
+        // настройке, ради чего «остаток» и заведён.
+        tail = ` · остаток (${marks ? 'считается в заходе' : left + '%'}) забирает свой вариант`;
+    } else if (marks) {
+        tail = ` и ещё ${marks} из переменных — итог известен только в заходе`;
+    } else if (left > 0) {
+        // ⚠⚠ Недобор — **законное** описание, а не недоделка: в оставшихся
+        // процентах переменная приходит пустой, и `%if%` читает это как «не
+        // надо». Так задаётся «в 40% случаев добавь рассказ» без пустышки.
+        tail = ` · в остальных ${left}% не выпадает ничего`;
+    }
 
     foot.textContent = `сумма: ${sum}%${tail}`;
     foot.style.color = sum > DICE_TOTAL ? '#e53e3e' : '#64748b';
@@ -337,7 +375,7 @@ function _retotal(block) {
 /** Число из поля доли; метка и мусор считаются нулём. */
 function _numberOf(text) {
     const raw = String(text || '').trim();
-    if (!raw || raw.startsWith('%')) return 0;
+    if (!_isNumberShare(raw)) return 0;
     const num = Number(raw.replace(',', '.'));
 
     return Number.isFinite(num) ? num : 0;
