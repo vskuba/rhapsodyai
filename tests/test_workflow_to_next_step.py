@@ -79,12 +79,49 @@ class TestTheEngineObeys:
         """Условие стоит там, где шаг уходит дальше, и смотрит на три вещи."""
         code = _source(mod.AiFrameworkAgentManager._workflow_steps_run)
 
-        assert 'index_fallen' in code, \
-            'движок перестал отличать «остался на месте» от «прыгнул»'
+        assert 'transition_jumped' in code, \
+            'движок перестал отмечать сам факт срабатывания перехода'
         assert '_to_next_step(step_meta)' in code, 'галочка не спрашивается'
         assert 'AI_FRAMEWORK_STEP_RETURNS' in code, \
             'шаги-ответы перестали быть исключением'
-        assert 'AI_FRAMEWORK_NO_MORE_STEP' in code, 'тупик отвечает не словами'
+
+    def test_the_jump_is_a_fact_not_a_distance(self):
+        """⚠⚠ Сторож против возврата сравнения индексов.
+
+        Здесь стояло `current_index == index_fallen`, и это было неверно:
+        `current_index` увеличивается строкой выше, поэтому переход, ведущий
+        **ровно на следующий по номеру** шаг, давал тот же индекс, что и путь
+        «сам собой» — сработавший переход читался как несработавший.
+
+        ⚠ Прежний тест этого не ловил и не мог: он проверял `_decide` с готовым
+        `transition_fired`, то есть **пересказ** решения. Сломалось же
+        вычисление самого флага — то, чего в пересказе нет.
+
+        Цена на проде: ветка «Инициатива» стоит прямо перед «Валидацией», её
+        переход вёл туда же, куда и порядок, — заход обрывался, и собеседнику
+        ушла служебная фраза (`message` #79572).
+        """
+        code = _source(mod.AiFrameworkAgentManager._workflow_steps_run)
+
+        assert 'index_fallen' not in code, \
+            'решение снова считается по разнице индексов — переход на соседний' \
+            ' шаг опять будет читаться как несработавший'
+
+    def test_the_dead_end_answers_with_silence(self):
+        """⚠⚠ Наружу тупик отдаёт пустоту, а не слова.
+
+        Вызывающий ответ не разбирает — он его **отправляет**. Словесная пометка
+        ушла живому человеку в чат; пустой ответ читается как «агент решил
+        промолчать», и к этому исходу готовы все дороги.
+
+        ⚠ Сама пометка остаётся — но в трассе шага, где её и ищут.
+        """
+        code = _source(mod.AiFrameworkAgentManager._workflow_steps_run)
+
+        assert 'trace_output = AI_FRAMEWORK_NO_MORE_STEP' in code, \
+            'тупик перестал помечаться в трассе — найти его станет нечем'
+        assert 'return AI_FRAMEWORK_NO_MORE_STEP' not in code, \
+            'тупик снова отвечает словами, и они уйдут собеседнику'
 
     @pytest.mark.parametrize('meta,step_type,fired,want', [
         ({}, 'llm_to_json', False, 'next'),
