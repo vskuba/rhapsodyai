@@ -379,7 +379,21 @@ async def agent_of(client):
 
 
 @pytest.fixture
-async def ask(client, agent_of, companion_id):
+def llm_plan():
+    """Ответы модели по умолчанию — заготовка **этого** workflow.
+
+    ⚠⚠ Здесь пусто нарочно: наполняет её `conftest.py` своей папки, переопределив
+    фикстуру. Так каждый тест папки получает рабочий сценарий даром, а тот, кому
+    нужно иное, перебивает его через `llm_answers`.
+
+    Без этого каждый тест начинался бы с десяти строк «чем отвечает модель» —
+    то есть с устройства workflow вместо своего предмета.
+    """
+    return []
+
+
+@pytest.fixture
+async def ask(client, agent_of, companion_id, llm_answers, llm_plan):
     """Позвать агента по имени и получить ответ вместе с маршрутом.
 
     Args:
@@ -398,6 +412,12 @@ async def ask(client, agent_of, companion_id):
     """
 
     async def _ask(agent: str, question: str, variables: dict = None) -> Talk:
+        # ⚠ Заготовка кладётся **на каждый вызов**, а не один раз за тест: тест
+        # вправе позвать агента дважды, а `llm_answers` внутри него — сменить
+        # сценарий. Повторная укладка того же стоит одного запроса к подмене.
+        if llm_plan:
+            await llm_answers(llm_plan)
+
         agent_id = await agent_of(agent)
         asked = _unique(question)
         session = str(uuid.uuid4())

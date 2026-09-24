@@ -27,7 +27,7 @@ from tests_llm.dating_invite_write.conftest import (HEAD_DONE_DRAFT,
                                                     HEAD_DONE_JUDGE, STEP_DRAFT,
                                                     STEP_JUDGE, STEP_TIME)
 
-pytestmark = pytest.mark.llm_live
+pytestmark = pytest.mark.llm
 
 # Сколько реплик просим в проверках цикла. ⚠ Две, а не пять: каждая — вызов
 # модели и вызов судьи, то есть секунды прогона. Двух довольно, чтобы отличить

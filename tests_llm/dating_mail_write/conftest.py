@@ -30,6 +30,8 @@ Kyiv», а такой шаблон годен одной анкете из со�
 import pytest
 
 from tests_llm.conftest import LLM_SITE
+from tests_llm.plan import Marks, plan_load
+from tests_llm.dating_mail_write.fixtures import PLAN_OK
 
 # ⚠ Имя собирает DatingAi (`MAIL_WRITE_NAME`).
 AGENT = f'mail_write_{LLM_SITE}'
@@ -100,3 +102,57 @@ async def letter(ask):
             **over})
 
     return _letter
+
+
+# ── Сценарий ответов модели ─────────────────────────────────────────────────
+#
+# ⚠ Механика — в `tests_llm/plan.py`, здесь только данные этого workflow.
+
+# Приметы переменных вызова: что подставляем и что ищем в промпте.
+MARKS = Marks({
+    'letter_country': 'Vardo',
+    'letter_vars': VARS_TEXT,
+    'letter_avoid': 'Так я уже писала про маяк и барометры',
+})
+
+# ── Сценарий ответов модели ─────────────────────────────────────────────────
+#
+# ⚠ Механика — в `tests_llm/plan.py`, здесь только данные этого workflow.
+
+# Приметы переменных вызова: что подставляем и что ищем в промпте.
+MARKS = Marks({
+    'letter_country': 'Vardo',
+    'letter_vars': VARS_TEXT,
+    'letter_avoid': 'Так я уже писала про маяк и барометры',
+})
+
+# ── Сценарий ответов модели ─────────────────────────────────────────────────
+#
+# ⚠ Механика — в `tests_llm/plan.py`, здесь только данные этого workflow.
+
+# Приметы переменных вызова: что подставляем и что ищем в промпте.
+MARKS = Marks({
+    'letter_country': 'Vardo',
+    'letter_vars': VARS_TEXT,
+    'letter_avoid': 'Так я уже писала про маяк и барометры',
+})
+
+# ── Сценарий ответов модели ─────────────────────────────────────────────────
+#
+# ⚠ Механика — в `tests_llm/plan.py`, здесь только данные этого workflow.
+
+# Приметы переменных вызова: что подставляем и что ищем в промпте.
+MARKS = Marks({
+    'letter_country': 'Vardo',
+    'letter_vars': VARS_TEXT,
+    'letter_avoid': 'Так я уже писала про маяк и барометры',
+})
+
+@pytest.fixture
+def llm_plan():
+    """Заготовка ответов на все тесты папки: заход удаётся с первого раза.
+
+    ⚠ Тест, которому нужно иное, кладёт своё **перед** заготовкой:
+    `await llm_answers(plan_load(PLAN_LANG_BAD, PLAN_OK))`.
+    """
+    return plan_load(PLAN_OK)

@@ -33,6 +33,8 @@ import pytest
 
 from tests_llm.datingai import CARD_GIRL, CARD_MAN
 from tests_llm.conftest import LLM_SITE
+from tests_llm.plan import plan_load
+from tests_llm.dating_mail_question.fixtures import PLAN_OK
 
 # ⚠ Имя собирает DatingAi (`MAIL_QUESTION_NAME`) — и оно **не** `mail_question`:
 # приставка у агента своя.
@@ -69,3 +71,19 @@ async def question(ask):
             **over})
 
     return _question
+
+
+# ── Сценарий ответов модели ─────────────────────────────────────────────────
+#
+# ⚠ Данные — в `fixtures.py`, механика — в `tests_llm/plan.py`. Здесь только
+# связь: что берётся по умолчанию.
+
+
+@pytest.fixture
+def llm_plan():
+    """Заготовка: вопрос годен с первого раза.
+
+    ⚠ Тесту, которому нужно иное, кладёт своё **перед** заготовкой:
+    `await llm_answers(plan_load(PLAN_ЧТО_ТО, PLAN_OK))`.
+    """
+    return plan_load(PLAN_OK)

@@ -24,7 +24,7 @@ from tests_llm.dating_invite_write.conftest import (HEAD_AVOID, HEAD_COUNTRY,
                                                     HEAD_TIME, STEP_DRAFT,
                                                     STEP_JUDGE, STEP_TIME)
 
-pytestmark = pytest.mark.llm_live
+pytestmark = pytest.mark.llm
 
 ANGLE = 'дерзкий вызов, на который хочется ответить сразу'
 LENGTH = 'одна фраза, не длиннее десяти слов'
