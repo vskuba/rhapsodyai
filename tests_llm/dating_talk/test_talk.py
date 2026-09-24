@@ -36,7 +36,7 @@ from tests_llm.dating_talk.conftest import (STEP_ANSWER, STEP_BRANCH,
                                             STEP_FACTS_TAGS, STEP_FACTS_PLAIN,
                                             STEP_SILENCE)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 class TestTheTalkGoesThrough:
     """⚠ Первое, что должно работать: агент вообще отвечает."""

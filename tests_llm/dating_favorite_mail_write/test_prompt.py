@@ -29,7 +29,7 @@ from tests_llm.dating_favorite_mail_write.conftest import (HEAD_AVOID,
                                                            STEP_JUDGE,
                                                            STEP_TIME)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 ANGLE = 'тёплое воспоминание о мелочи, которая рассмешила'
 LENGTH = 'три абзаца'

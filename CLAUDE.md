@@ -31,10 +31,11 @@ See the documentation files in `.claude/docs/` for detailed patterns:
 - **New Worker / фоновая обработка** → `.claude/docs/worker.md`
 - **New Admin Page** → `.claude/docs/dashboard_frontend.md`
 - **New Protected Endpoint** → `.claude/docs/auth.md`
-- **Workflow** → `.claude/docs/workflow.md` (⚠⚠ правка промпта, шага, перехода или
-  входящей переменной — **предложи прогон LLM-тестов и дождись ответа**. Сам не
-  запускай: модель одна на тесты и на прод, и прогон занимает очередь вместо
-  живых собеседников. Папка на workflow — `tests_llm/<имя_workflow>/`)
+- **Workflow** → `.claude/docs/workflow.md` (⚠ правка промпта, шага, перехода или
+  входящей переменной — тесты маршрута (`tests_llm/`, метка `llm`) идут **сами**:
+  ответы модели даёт подмена. ⚠⚠ Живые (`llm_live`) по-прежнему **предлагают, а
+  не запускают**: нода одна на тесты и на прод. Папка на workflow —
+  `tests_llm/<имя_workflow>/`)
 - **Team / Ping System** → `.claude/docs/project_team.md`
 - **DeepSeek Harness: включение ролей со страницы команды** → `.claude/docs/dsh.md`
 - **Settings/Config** → `.claude/docs/setting.md`
@@ -119,7 +120,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `quickstart.md` | Запуск через Docker, порты, тесты, переменные `.env` |
 | `testing.md` | Группы тестов по подсистемам: что запускать под свою правку, как делить новые |
 | `testing_browser.md` | Живой Chromium (`tests_browser/`): контейнер ходит наружу мимо сторожа сети, пул вкладок общий. ⚠⚠ Вне `testpaths`: запуск только руками и с согласия человека |
-| `testing_llm.md` | Живые вызовы модели (`tests_llm/`): папка на workflow, утверждения только по трассе — текст ответа не проверяется никогда. ⚠⚠ Вне `testpaths`: запуск только руками и только с согласия человека (модель общая с продом) |
+| `testing_llm.md` | Прогон workflow (`tests_llm/`): папка на workflow, утверждения только по трассе — текст ответа не проверяется никогда. ⚠ Метка `llm` идёт сама (подменная модель), `llm_live` — только руками: нода общая с продом |
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |

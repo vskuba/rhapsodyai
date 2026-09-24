@@ -76,10 +76,22 @@ ALLOWED_TYPES = ('input', 'global')
 # ⚠⚠ **При правке там — править и здесь.** Тест на то и стоит: разойдись списки,
 # занятие встанет целиком и молча для того, кто правил реестр, — он увидит `400`
 # в журнале чужого проекта.
-DATING_SENDS = ('talk_history', 'companion_uid', 'companion_bio', 'girl_bio',
-                'answer_anyway', 'make_initiative', 'initiative_kind',
-                'girl_name', 'girl_id', 'companion_name', 'companion_title',
-                'chat_timeout')
+DATING_SENDS = (
+    # Две истории пары: чат и письма. ⚠ Прежде была одна `talk_history`; её
+    # объявление снято миграцией, и слать её теперь значит получить `400`.
+    'talk_history_chat', 'talk_history_mail',
+    'companion_uid', 'companion_bio', 'girl_bio', 'girl_name', 'girl_id',
+    'companion_name', 'companion_title', 'chat_timeout',
+    # Повод заговорить первой. ⚠ Приёма (`initiative_kind`) здесь больше нет:
+    # двенадцать приёмов с весами переехали в шаг «Жребий» у соседа, и панель
+    # шлёт только флаг.
+    'answer_anyway', 'make_initiative',
+    # Письмо: вид, длина и сам признак. ⚠ `mail_kind` — не жребий, а факт
+    # работы: «write» или «reply».
+    'mail_mode', 'mail_kind', 'mail_length',
+    # Доли разнообразия — настройки сайта, которые читает шаг «Жребий».
+    'dice_mail_name_percent', 'dice_mail_question_percent',
+    'dice_mail_story_percent')
 
 # ⚠⚠ Что добавляет **дверь**, а не занятие.
 #

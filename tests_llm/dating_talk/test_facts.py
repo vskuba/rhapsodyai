@@ -44,7 +44,7 @@ from tests_llm.dating_talk.conftest import (STEP_ANALYSE, STEP_FACT_INVENT,
                                             STEP_FACTS_TAGS, STEP_FACTS_TALK,
                                             STEP_MAKE)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 # ⚠ Ответ обязателен — иначе прогон вправе уйти в «Тишину», и проверять станет
 # нечего. Строкой `'1'`: `%if%` считает ложными пустое, `'0'` и отсутствие, а

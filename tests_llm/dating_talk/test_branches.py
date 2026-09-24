@@ -44,7 +44,7 @@ from tests_llm.dating_talk.conftest import (STEP_ANSWER, STEP_BRANCH,
                                             STEP_JUDGE, STEP_MAIL_REPLY,
                                             STEP_MAIL_WRITE)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 # Длина письма приходит **готовой**: жребий бросает панель, а не модель.
 #
@@ -56,6 +56,24 @@ MAIL_LENGTH = TALK_MAIL_LENGTHS[1]
 # в условиях, которых в жизни не бывает — отвечать было бы не на что.
 MAIL_HISTORY = ('[22.09 10:15] она: Рассказывала тебе про поездку в Карпаты.\n'
                 '[23.09 19:40] он: Звучит здорово. Сам давно никуда не выбирался.')
+
+
+def _mail_vars(kind: str) -> dict:
+    """Переменные, которые панель кладёт для письма, — все до одной.
+
+    ⚠⚠ **`answer_anyway` здесь обязателен, и забыть его дорого.** Шаг «Анализ
+    сообщения» стоит раньше веток и вправе решить «отвечать не нужно»
+    (`prompt_user_ignore = 1`), уведя поток на «Тишину» мимо всех веток. В бою
+    от этого защищает `anyway=True`, который шлют **оба** почтовых пути
+    (`answer_mail_write`, `answer_mail_reply`): человек ждёт письма, и молчание
+    читается как «его игнорируют».
+
+    Без него тест проверял бы условия, в которых боевой код не работает. Поймано
+    живьём: «ответ на письмо» ушёл в «Тишину», а «письмо первым» уцелело — то
+    есть падение было **случайным**, и назавтра могло переехать на соседа.
+    """
+    return {'mail_mode': '1', 'mail_kind': kind, 'mail_length': MAIL_LENGTH,
+            'answer_anyway': '1'}
 
 
 def _others(got, wanted: str) -> tuple:
@@ -92,8 +110,7 @@ class TestEachBranchGoesItsOwnWay:
         """⚠ `mail_mode` уводит на «Письмо первым» — то, что пишут молчащему."""
         got = await talk(TALK_MAIL_ASK,
                          mail_history=MAIL_HISTORY,
-                         variables={'mail_mode': '1', 'mail_kind': TALK_MAIL_WRITE,
-                                    'mail_length': MAIL_LENGTH})
+                         variables=_mail_vars(TALK_MAIL_WRITE))
 
         assert got.ran(STEP_MAIL_WRITE), f'письмо пошло не своей веткой.{got}'
         assert not _others(got, STEP_MAIL_WRITE), \
@@ -104,8 +121,7 @@ class TestEachBranchGoesItsOwnWay:
         первым, иначе оба вида письма ушли бы в «Письмо первым»."""
         got = await talk(TALK_MAIL_REPLY_ASK,
                          mail_history=MAIL_HISTORY,
-                         variables={'mail_mode': '1', 'mail_kind': TALK_MAIL_REPLY,
-                                    'mail_length': MAIL_LENGTH})
+                         variables=_mail_vars(TALK_MAIL_REPLY))
 
         assert got.ran(STEP_MAIL_REPLY), f'ответ пошёл не своей веткой.{got}'
         assert not _others(got, STEP_MAIL_REPLY), \
@@ -114,7 +130,7 @@ class TestEachBranchGoesItsOwnWay:
     async def test_an_initiative_goes_to_its_branch(self, talk):
         """⚠ Инициатива — реплика в чат после паузы, а не письмо."""
         got = await talk('Собеседник молчит. Напиши ему сама.',
-                         variables={'make_initiative': '1'})
+                         variables={'make_initiative': '1', 'answer_anyway': '1'})
 
         assert got.ran(STEP_INITIATIVE), f'инициатива пошла не своей веткой.{got}'
         assert not _others(got, STEP_INITIATIVE), \
@@ -132,8 +148,7 @@ class TestBranchesDoNotLeak:
         """Ветка письма отработала ровно раз, а не перетекла дальше по номеру."""
         got = await talk(TALK_MAIL_ASK,
                          mail_history=MAIL_HISTORY,
-                         variables={'mail_mode': '1', 'mail_kind': TALK_MAIL_WRITE,
-                                    'mail_length': MAIL_LENGTH})
+                         variables=_mail_vars(TALK_MAIL_WRITE))
         made = got.times_ran(STEP_MAIL_WRITE)
 
         assert made == 1, f'ветка письма отработала {made} раз(а).{got}'
@@ -145,8 +160,7 @@ class TestBranchesDoNotLeak:
         """
         got = await talk(TALK_MAIL_ASK,
                          mail_history=MAIL_HISTORY,
-                         variables={'mail_mode': '1', 'mail_kind': TALK_MAIL_WRITE,
-                                    'mail_length': MAIL_LENGTH})
+                         variables=_mail_vars(TALK_MAIL_WRITE))
 
         assert got.ran(STEP_JUDGE), f'ветка письма не дошла до судьи.{got}'
 
@@ -164,8 +178,7 @@ class TestTheLengthReachesTheLetter:
         модель вольна написать два там, где просили «до трёх»."""
         got = await talk(TALK_MAIL_ASK,
                          mail_history=MAIL_HISTORY,
-                         variables={'mail_mode': '1', 'mail_kind': TALK_MAIL_WRITE,
-                                    'mail_length': MAIL_LENGTH})
+                         variables=_mail_vars(TALK_MAIL_WRITE))
 
         assert MAIL_LENGTH in got.prompt_of(STEP_MAIL_WRITE), \
             f'длина письма не доехала до промпта ветки.{got}'
@@ -185,8 +198,7 @@ class TestBothHistoriesTravel:
         got = await talk(TALK_MAIL_REPLY_ASK,
                          history='[23.09 12:00] он: Как твои дела?',
                          mail_history=MAIL_HISTORY,
-                         variables={'mail_mode': '1', 'mail_kind': TALK_MAIL_REPLY,
-                                    'mail_length': MAIL_LENGTH})
+                         variables=_mail_vars(TALK_MAIL_REPLY))
 
         assert got.ran(STEP_MAIL_REPLY), \
             f'вызов с двумя историями не дошёл до ветки ответа.{got}'
@@ -227,8 +239,7 @@ class TestTheDiceIsThrownFirst:
     async def test_the_letter_gets_its_opening(self, talk):
         """Зачин доехал до промпта ветки письма — иначе метка осталась пустой."""
         got = await talk(TALK_MAIL_ASK, mail_history=MAIL_HISTORY,
-                         variables={'mail_mode': '1', 'mail_kind': TALK_MAIL_WRITE,
-                                    'mail_length': MAIL_LENGTH})
+                         variables=_mail_vars(TALK_MAIL_WRITE))
         prompt = got.prompt_of(STEP_MAIL_WRITE)
 
         assert 'Зачин:' in prompt, f'блока жребия нет в промпте письма.{got}'
@@ -248,7 +259,7 @@ class TestTheDiceIsThrownFirst:
         модель получит задание без приёма и заговорит одинаково со всеми.
         """
         got = await talk('Собеседник молчит. Напиши ему сама.',
-                         variables={'make_initiative': '1'})
+                         variables={'make_initiative': '1', 'answer_anyway': '1'})
         prompt = got.prompt_of(STEP_INITIATIVE)
 
         assert 'Приём на этот раз:' in prompt, \
@@ -267,8 +278,7 @@ class TestTheDiceIsThrownFirst:
         жребий на то и жребий.
         """
         got = await talk(TALK_MAIL_ASK, mail_history=MAIL_HISTORY,
-                         variables={'mail_mode': '1', 'mail_kind': TALK_MAIL_WRITE,
-                                    'mail_length': MAIL_LENGTH,
+                         variables={**_mail_vars(TALK_MAIL_WRITE),
                                     'dice_mail_name_percent': '0'})
         prompt = got.prompt_of(STEP_MAIL_WRITE)
 

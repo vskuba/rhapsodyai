@@ -45,13 +45,15 @@
 ⚠ Сами они не идут: папки нет в `testpaths`. Модель одна на тесты и на прод.
 """
 
+import pathlib
+
 import pytest
 
 from tests_llm.conftest import LLM_COMPANION_TITLE
 from tests_llm.mark import mark_key
 from tests_llm.dating_talk.conftest import STEP_MAKE
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 # ⚠ Ремесло и город, которые вместе не встречаются в частых сюжетах. Модель,
 # не получившая анкеты, не назовёт их: проверено вторым тестом пары.
@@ -189,3 +191,32 @@ class TestTheRuleItself:
 
         assert not bad, ('тест смотрит на текст ответа — так нельзя '
                          '(`.claude/docs/testing_llm.md`): ' + ', '.join(bad))
+
+    def test_every_step_marker_exists_in_the_workflow(self, workflow_steps):
+        """⚠⚠ Приметы шагов сверяются с базой — иначе они тихо умирают.
+
+        Имя шага живёт в двух местах: в админке и здесь. Переименуй шаг — и
+        примета перестаёт совпадать ни с чем, а `prompt_of` возвращает пустоту.
+        Тест падает на «промпт не прочитался», и настоящая причина в этих словах
+        не названа.
+
+        Так уже было: разбиение на ветки переименовало «Генерация ответа» в
+        «Ответ в чат», и семь проверок в трёх файлах оказались красными разом —
+        каждая жаловалась на промпт, ни одна на имя.
+
+        ⚠ Этот тест **не ходит к модели**: одна ручка списка шагов. Оттого он и
+        стоит первым в папке — его красное чинится без прогона дорогих соседей.
+        """
+        import re
+
+        marks = dict(re.findall(
+            r"^(STEP_[A-Z_]+) = '([^']+)'",
+            (pathlib.Path(__file__).parent / 'conftest.py').read_text(
+                encoding='utf-8'), re.M))
+        dead = {name: value for name, value in marks.items()
+                if value not in workflow_steps}
+
+        assert not dead, (
+            'приметы шагов не совпадают ни с одним шагом workflow — '
+            'их переименовали в админке: '
+            + ', '.join(f'{n} = «{v}»' for n, v in sorted(dead.items())))

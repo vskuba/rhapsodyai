@@ -21,7 +21,7 @@ from tests_llm.dating_mail_write.conftest import (STEP_INLINE, STEP_LANG,
                                                   STEP_WHY, STEP_WRITE,
                                                   TRIES_MAX)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 
 class TestTheRunGoesThrough:

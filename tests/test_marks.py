@@ -24,7 +24,14 @@ pytestmark = pytest.mark.core
 # Группы по подсистемам — те же, что в `pyproject.toml`. Признаки стоимости
 # (`integration`, `slow`) сюда не входят: они ставятся поперёк групп и группой не
 # являются.
-GROUPS = ('pipeline', 'team', 'browser', 'ai', 'auth', 'core', 'telegram')
+#
+# ⚠⚠ `llm` и `llm_live` — **группы, а не признаки стоимости**, и потому здесь.
+# Тесты workflow делятся не по подсистемам, а по тому, кто отвечает за модель:
+# `llm` идёт с подменой и участвует в обычном прогоне, `llm_live` зовёт живую
+# ноду и исключён `addopts`. Не назови мы их группами, сторож объявил бы всю
+# папку неразмеченной — что и случилось, когда её внесли в `testpaths`.
+GROUPS = ('pipeline', 'team', 'browser', 'ai', 'auth', 'core', 'telegram',
+          'llm', 'llm_live')
 
 
 def test_every_test_belongs_to_a_group():
@@ -36,7 +43,9 @@ def test_every_test_belongs_to_a_group():
     expression = ' and '.join(f'not {name}' for name in GROUPS)
     result = subprocess.run(
         [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:warnings',
-         '-m', expression],
+         # ⚠ Живые тесты исключены `addopts`, и без этого они не собрались бы
+         # вовсе — сторож счёл бы их «не в группе», хотя группа у них есть.
+         '-m', expression, '-o', 'addopts='],
         capture_output=True, text=True, timeout=180)
 
     orphans = [line.split('::')[0] for line in result.stdout.splitlines() if '::' in line]

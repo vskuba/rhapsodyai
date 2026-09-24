@@ -223,7 +223,16 @@ def no_outside_http():
     """
     from http_.http_mock import http_mock_guard
 
-    with http_mock_guard(allow=_own_hosts_ports(BASE_URL)):
+    # ⚠⚠ Подменная модель — **своя установка, а не «наружу»**. Она поднимается
+    # фикстурой `tests_llm` на этой же машине и отвечает вместо живой ноды;
+    # запрет к ней означал бы, что тесты workflow нельзя гонять вместе со
+    # всеми — то есть ровно то, ради отмены чего подмена и сделана.
+    #
+    # ⚠ Адрес берётся из той же настройки, что читают тесты, а не переписан
+    # числом: сменят порт — список разрешённого сменится вместе с ним.
+    from tests_llm.conftest import LLM_FAKE_URL
+
+    with http_mock_guard(allow=_own_hosts_ports(BASE_URL, LLM_FAKE_URL)):
         yield
 
 

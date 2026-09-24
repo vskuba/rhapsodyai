@@ -24,7 +24,7 @@ from tests_llm.dating_mail_vars.conftest import (HEAD_HINT, STEP_CHECK,
                                                  TRIES_MAX, VARS_JSON,
                                                  VARS_NAMES, VARS_TEXT)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 WANTED = tuple(VARS_NAMES.split(','))
 

@@ -39,7 +39,7 @@ from tests_llm.mark import TEST_GIRL_ID, mark_key
 from tests_llm.dating_talk.conftest import (STEP_FACTS_PLAIN, STEP_FACTS_TAGS,
                                             STEP_MAKE)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 # ⚠ Ответ обязателен — иначе прогон вправе уйти в «Тишину», и проверять нечего.
 ANYWAY = {'answer_anyway': '1'}

@@ -12,7 +12,7 @@ from tests_llm.dating_favorite_mail_write.conftest import (STEP_DRAFT, STEP_FIX,
                                                            STEP_JUDGE, STEP_OUT,
                                                            STEP_TIME)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 
 class TestTheRunGoesThrough:

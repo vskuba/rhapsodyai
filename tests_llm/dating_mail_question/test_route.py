@@ -13,7 +13,7 @@ from tests_llm.dating_mail_question.conftest import (HEAD_GIRL, HEAD_HINT,
                                                      STEP_CHECK, STEP_OUT,
                                                      STEP_WHY, TRIES_MAX)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 
 class TestTheRunGoesThrough:

@@ -12,7 +12,7 @@ from tests_llm.dating_invite_write.conftest import (STEP_DRAFT, STEP_FIX,
                                                     STEP_JUDGE, STEP_KEEP,
                                                     STEP_LOOP, STEP_OUT)
 
-pytestmark = pytest.mark.llm
+pytestmark = pytest.mark.llm_live
 
 
 class TestTheRunGoesThrough:
