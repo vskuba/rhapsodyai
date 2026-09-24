@@ -30,7 +30,6 @@ from tests_llm.dating_talk.conftest import (MARKS, STEP_ANALYSE, STEP_BRANCH,
                                             STEP_CHAT, STEP_DICE, STEP_JUDGE,
                                             STEP_MAIL_WRITE, STEP_REPEAT,
                                             STEP_SILENCE, STEP_TOPIC,
-                                            marks_missing, marks_vars,
                                             talk_plan)
 
 pytestmark = pytest.mark.llm
@@ -140,8 +139,8 @@ class TestWhatThePanelAlwaysSendsArrives:
 
         got = await talk('Hi!', history=MARKS['talk_history_chat'],
                          mail_history=MARKS['talk_history_mail'],
-                         variables=marks_vars())
-        missing = marks_missing(got, STEP_CHAT, (
+                         variables=MARKS.vars())
+        missing = MARKS.missing(got, STEP_CHAT, (
             'companion_bio', 'talk_history_chat', 'talk_history_mail',
             'companion_title'))
 
@@ -157,10 +156,10 @@ class TestWhatThePanelAlwaysSendsArrives:
 
         got = await talk(TALK_MAIL_ASK, history=MARKS['talk_history_chat'],
                          mail_history=MARKS['talk_history_mail'],
-                         variables=marks_vars(mail_mode='1',
+                         variables=MARKS.vars(mail_mode='1',
                                               mail_kind=TALK_MAIL_WRITE,
                                               answer_anyway='1'))
-        missing = marks_missing(got, STEP_MAIL_WRITE, (
+        missing = MARKS.missing(got, STEP_MAIL_WRITE, (
             'companion_bio', 'talk_history_chat', 'talk_history_mail',
             'mail_length'))
 
@@ -189,7 +188,7 @@ class TestWhatThePanelAlwaysSendsArrives:
         """
         await llm_answers(talk_plan())
 
-        got = await talk('Hi!', variables=marks_vars())
+        got = await talk('Hi!', variables=MARKS.vars())
         prompt = got.prompt_of(STEP_CHAT)
 
         assert MARKS['girl_bio'] in prompt, \
@@ -199,3 +198,57 @@ class TestWhatThePanelAlwaysSendsArrives:
         # ⚠ Имя агента в промпте — признак возврата прежней подстановки.
         assert 'dating_girl_universal' not in prompt, \
             f'в промпте имя агента вместо имени девушки.{got}'
+
+
+class TestTheDiceSectionsOpenAndClose:
+    """⚠⚠ Выпавший жребий открывает свою секцию промпта, невыпавший — прячет.
+
+    ⚠ Проверки перенесены из `tests_llm/dating_favorite_mail_write/`: письма
+    избранным переехали в ветки `dating_talk`, а их workflow осиротел. Поведение
+    при этом живо, и без переноса покрытие ушло бы вместе с папкой.
+
+    Пустой заголовок хуже отсутствия блока: «Расскажи о себе. Тема:» и пустота
+    модель читает как задание без темы и придумывает её сама — то есть каждый
+    раз одну и ту же. Оттого секция и стоит под `%if%`.
+    """
+
+    async def test_a_story_opens_its_section(self, talk, llm_answers):
+        await llm_answers(talk_plan())
+
+        got = await talk(TALK_MAIL_ASK,
+                         variables=MARKS.vars(mail_mode='1',
+                                              mail_kind=TALK_MAIL_WRITE,
+                                              answer_anyway='1',
+                                              dice_mail_story_percent='100'))
+
+        assert 'Расскажи о себе' in got.prompt_of(STEP_MAIL_WRITE), \
+            f'жребий выпал, а секции рассказа в промпте нет.{got}'
+
+    async def test_no_story_hides_the_section(self, talk, llm_answers):
+        """⚠ Доля `0` — «никогда»: секции быть не должно вовсе."""
+        await llm_answers(talk_plan())
+
+        got = await talk(TALK_MAIL_ASK,
+                         variables=MARKS.vars(mail_mode='1',
+                                              mail_kind=TALK_MAIL_WRITE,
+                                              answer_anyway='1',
+                                              dice_mail_story_percent='0'))
+
+        assert 'Расскажи о себе' not in got.prompt_of(STEP_MAIL_WRITE), \
+            f'жребий не выпал, а секция рассказа осталась.{got}'
+
+    async def test_the_judge_knows_the_asked_length(self, talk, llm_answers):
+        """⚠⚠ Судья обязан знать **заказанную** длину, а не судить на глаз.
+
+        Иначе он бракует письмо за то, чего у него не просили, — и заход уходит
+        на круг правок из-за расхождения двух промптов.
+        """
+        await llm_answers(talk_plan())
+
+        got = await talk(TALK_MAIL_ASK,
+                         variables=MARKS.vars(mail_mode='1',
+                                              mail_kind=TALK_MAIL_WRITE,
+                                              answer_anyway='1'))
+
+        assert not MARKS.missing(got, STEP_JUDGE, ('mail_length',)), \
+            f'судья не знает, какой длины просили письмо.{got}'

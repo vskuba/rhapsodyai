@@ -65,8 +65,8 @@ async def question(ask):
 
     async def _question(**over):
         return await ask(AGENT, QUESTION, {
-            'girl_card': CARD_GIRL,
-            'companion_card': CARD_MAN,
+            'girl_bio': CARD_GIRL,
+            'companion_bio': CARD_MAN,
             'user_language': 'en',
             **over})
 

@@ -82,7 +82,7 @@ async def fill(ask):
 
     async def _fill(**over):
         return await ask(AGENT, QUESTION, {
-            'girl_card': CARD_GIRL,
+            'girl_bio': CARD_GIRL,
             'mail_vars': VARS_TEXT,
             'mail_vars_json': VARS_JSON,
             'mail_var_names': VARS_NAMES,

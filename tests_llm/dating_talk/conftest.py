@@ -14,6 +14,7 @@ import os
 import pytest
 
 from tests_llm.conftest import LLM_GIRL_ID
+from tests_llm.plan import Marks
 
 # Агент чата. ⚠ Он **один на все анкеты** (`dating_girl_universal`): имя девушки
 # и ключ её фактов уходят переменными вызова, а не своим агентом на каждую.
@@ -248,13 +249,13 @@ def talk_plan(answer: str = 'hi there', skip: str = '0', topic: str = 'usual',
 #
 # Тест говорит **что и где** искать, а как — знает `marks_missing`.
 #
-#     got = await talk('Hi!', variables=marks_vars())
-#     assert not marks_missing(got, STEP_CHAT, ('companion_bio',)), …
+#     got = await talk('Hi!', variables=MARKS.vars())
+#     assert not MARKS.missing(got, STEP_CHAT, ('companion_bio',)), …
 #
 # ⚠ Приметы редкие и вместе не встречающиеся: увидев «Vardo» в промпте, тест
 # знает, что туда попало **наше** значение, а не совпадение с чем-то из самого
 # промпта. «Анна из Киева» такой уверенности не даёт.
-MARKS = {
+MARKS = Marks({
     'companion_bio': 'Occupation: lighthouse keeper in Vardo',
     'girl_bio': 'Hobby: restoring antique barometers',
     'girl_name': 'Zinaida-Test',
@@ -262,39 +263,10 @@ MARKS = {
     'talk_history_chat': '[23.09 12:00] он: Как там маяк?',
     'talk_history_mail': '[22.09 10:15] она: Писала тебе про Карпаты',
     'mail_length': 'ровно два абзаца по 40-60 слов',
-}
+})
 
 # Переменные, которые **не** несут приметы: их значение правит маршрут, а не
 # текст. Подставь сюда примету — и заход ушёл бы не той веткой.
 MARKS_SKIP = ('mail_mode', 'mail_kind', 'make_initiative', 'answer_anyway')
 
 
-def marks_vars(**extra) -> dict:
-    """Переменные вызова с приметными значениями — для проверки передачи.
-
-    Args:
-        extra: что добавить или перебить (флаги ветки, доли жребия).
-
-    ⚠ Истории здесь же, хотя фикстура `talk` принимает их отдельными доводами:
-    так весь набор примет лежит одним местом, и тест не выбирает, где что
-    передать.
-    """
-    return {**MARKS, **extra}
-
-
-def marks_missing(got, step: str, names: tuple) -> tuple:
-    """Какие приметы не доехали до промпта шага. Пусто — все на месте.
-
-    Args:
-        got: результат прогона.
-        step: шаг, чей промпт смотрим.
-        names: имена переменных из `MARKS`.
-
-    ⚠⚠ Смотрим **вход шага**, а не ответ модели: по ответу о входе судить
-    нельзя. Живой пример — на «Занятие: lighthouse keeper» модель ответила «i
-    bet you're good with lights»: данные дошли, а слова в ответе нет.
-    """
-    prompt = got.prompt_of(step)
-
-    return tuple(name for name in names
-                 if MARKS.get(name) and MARKS[name] not in prompt)

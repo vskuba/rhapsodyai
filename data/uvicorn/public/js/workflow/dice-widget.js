@@ -28,7 +28,7 @@ const DICE_OPTIONS_MIN = 2;
 
 // Сумма долей одной переменной. ⚠ То же число, что в `dice.py`; расходиться им
 // нельзя — редактор пропустил бы описание, на котором заход упадёт.
-const DICE_TOTAL = 100;
+const DICE_PERCENT_TOTAL = 100;
 
 // Доля-«остаток»: всё, что не разобрали соседи. ⚠ Слово то же, что в `dice.py`.
 const DICE_REST = 'rest';
@@ -410,8 +410,8 @@ function _spread(block) {
 
     if (!fields.length) return;
 
-    const each = Math.floor(DICE_TOTAL / fields.length);
-    let left = DICE_TOTAL - each * fields.length;
+    const each = Math.floor(DICE_PERCENT_TOTAL / fields.length);
+    let left = DICE_PERCENT_TOTAL - each * fields.length;
 
     fields.forEach(one => {
         // Остаток от деления раздаём первым строкам по единице: 34 / 33 / 33.
@@ -433,7 +433,7 @@ function _clamp(field, block) {
         .reduce((sum, one) => sum + _numberOf(one.value), 0);
 
     if (num < 0) field.value = '0';
-    if (others + num > DICE_TOTAL) field.value = String(Math.max(0, DICE_TOTAL - others));
+    if (others + num > DICE_PERCENT_TOTAL) field.value = String(Math.max(0, DICE_PERCENT_TOTAL - others));
 }
 
 /** Подпись с итогом: сколько набрано и что значит недобор. */
@@ -449,7 +449,7 @@ function _retotal(block) {
 
     // Три разных исхода, и путать их нельзя: остаток кем-то занят, остаток ничей,
     // либо итог вообще неизвестен до захода.
-    const left = DICE_TOTAL - sum;
+    const left = DICE_PERCENT_TOTAL - sum;
     let tail = '';
 
     if (rests) {
@@ -466,7 +466,7 @@ function _retotal(block) {
     }
 
     foot.textContent = `сумма: ${sum}%${tail}`;
-    foot.style.color = sum > DICE_TOTAL ? '#e53e3e' : '#64748b';
+    foot.style.color = sum > DICE_PERCENT_TOTAL ? '#e53e3e' : '#64748b';
 }
 
 /** Число из поля доли; метка и мусор считаются нулём. */

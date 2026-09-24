@@ -54,7 +54,7 @@ class TestTheCardsReachThePrompt:
         assert MARK_MAN in prompt, \
             f'карточка получателя не подставилась.{got}'
 
-    async def test_the_girl_card_is_shown(self, question):
+    async def test_the_girl_bio_is_shown(self, question):
         """⚠ Анкета девушки нужна затем, чтобы вопрос звучал **от неё**, а не от
         безличной панели."""
         got = await question()
@@ -69,7 +69,7 @@ class TestTheCardsReachThePrompt:
         Пустой блок промпта хуже честного «ничего не известно»: во втором случае
         агент задаст общий вопрос, в первом — выдумает увлечения.
         """
-        got = await question(companion_card=CARD_MAN_NONE)
+        got = await question(companion_bio=CARD_MAN_NONE)
         prompt = got.prompt_of(STEP_ASK)
 
         assert CARD_MAN_NONE in prompt, \

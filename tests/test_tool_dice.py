@@ -37,16 +37,6 @@ ROLLS = 10_000
 TOLERANCE = 3.0
 
 
-async def _shares(spec: dict, name: str) -> dict:
-    """Частоты значений одной переменной в процентах."""
-    got = collections.Counter()
-
-    for _ in range(ROLLS):
-        got[(await dice(spec))[name]] += 1
-
-    return {value: qty * 100 / ROLLS for value, qty in got.items()}
-
-
 class TestTheSharesAreWhatWasAsked:
 
     async def test_two_options_come_out_as_set(self):
@@ -229,3 +219,13 @@ class TestTheSpecMayArriveAsText:
         got = await dice('{"x": {"а": 50, "б": 50}}')
 
         assert got['x'] in ('а', 'б'), got
+
+
+async def _shares(spec: dict, name: str) -> dict:
+    """Частоты значений одной переменной в процентах."""
+    got = collections.Counter()
+
+    for _ in range(ROLLS):
+        got[(await dice(spec))[name]] += 1
+
+    return {value: qty * 100 / ROLLS for value, qty in got.items()}
