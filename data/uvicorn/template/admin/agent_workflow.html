@@ -731,6 +731,10 @@
      * выглядел бы так же, как обычный шаг. */
     .to-next-step {
         display: inline-flex;
+        /* ⚠ Не сжимается и не растёт: остаток строки забирает кнопка слева, а
+         * галочка держит ровно свою ширину — иначе «to next step» поехало бы
+         * под кнопку при узком сайдбаре. */
+        flex: 0 0 auto;
         align-items: center;
         gap: 6px;
         box-sizing: border-box;
@@ -1577,11 +1581,13 @@
                                  этого шага». Условия говорят «куда прыгнуть», галочка
                                  — «а если ни одно не сработало». -->
                             <div style="margin-top: 10px; display: flex; align-items: center; gap: 12px;">
-                                <!-- ⚠ `width: auto` обязателен: у `.btn-create`
-                                     стоит `width: 100%`, и кнопка съедала всю
-                                     строку, выдавливая галочку к краю. -->
+                                <!-- ⚠ Кнопка забирает остаток строки (`flex: 1 1 auto`),
+                                     галочка справа держит свою ширину и не сжимается.
+                                     Голое `width: 100%` из `.btn-create` тут не годится:
+                                     оно считается от всей строки, а не от остатка, и
+                                     выдавливало галочку к краю. -->
                                 <button type="button" class="btn-create" id="addConditionBtnAfter"
-                                        style="width: auto; flex: 0 0 auto; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px; white-space: nowrap;">
+                                        style="width: auto; flex: 1 1 auto; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px; white-space: nowrap;">
                                     + Добавить условие перехода
                                 </button>
                                 <!-- ⚠ Рамка и отступы те же, что у кнопки слева:
