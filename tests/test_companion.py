@@ -57,7 +57,7 @@ class TestCompanionFlow:
         data1 = response1.json()
         assert "result" in data1
         companion1 = data1["result"]
-        assert companion1["name"] == unique_name
+        assert companion1["unique_id"] == unique_name
         assert companion1["title"] == initial_title
         assert isinstance(companion1["id"], int)
         companion_id = companion1["id"]
@@ -69,7 +69,7 @@ class TestCompanionFlow:
         assert "result" in data2
         companion2 = data2["result"]
         assert companion2["id"] == companion_id
-        assert companion2["name"] == unique_name
+        assert companion2["unique_id"] == unique_name
         assert companion2["title"] == initial_title
 
         # 3. Third post/create call with updated_title (should update the companion's title in the DB)
@@ -79,5 +79,5 @@ class TestCompanionFlow:
         assert "result" in data3
         companion3 = data3["result"]
         assert companion3["id"] == companion_id
-        assert companion3["name"] == unique_name
+        assert companion3["unique_id"] == unique_name
         assert companion3["title"] == updated_title

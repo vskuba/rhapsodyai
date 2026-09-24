@@ -318,7 +318,12 @@ async def companion_id(client) -> int:
             return 0
 
         for one in (answer.json().get('result') or []):
-            if str(one.get('name')) == LLM_COMPANION_NAME:
+            # ⚠ Ищем по `unique_id`: столбец звался `name`, но всегда был
+            # ключом записи, а не именем человека — имя лежит в `title`
+            # (`…_companion_unique_id`). Поле **запроса** осталось `name`: его
+            # шлют соседние проекты, и менять договор ради ясности внутри
+            # незачем.
+            if str(one.get('unique_id')) == LLM_COMPANION_NAME:
                 return int(one.get('id') or 0)
 
         return 0

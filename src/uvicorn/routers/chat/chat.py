@@ -153,7 +153,7 @@ async def chat_ask_ai(
             user_username=entity_user.get('username'),
             user_email=entity_user.get('email'),
             companion_id=json_request.companion_id,
-            companion_name=entity_companion.get('name'),
+            companion_name=entity_companion.get('unique_id'),
             companion_title=entity_companion.get('title'),
             entity_agent=entity_agent,
             session_uuid=session_uuid,

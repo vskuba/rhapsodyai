@@ -80,7 +80,10 @@ DATING_SENDS = (
     # Две истории пары: чат и письма. ⚠ Прежде была одна `talk_history`; её
     # объявление снято миграцией, и слать её теперь значит получить `400`.
     'talk_history_chat', 'talk_history_mail',
-    'companion_uid', 'companion_bio', 'girl_bio', 'girl_name', 'girl_id',
+    # ⚠ `companion_uid` здесь больше нет: номер человека **на сайте** уехал
+    # вместе с объявлением у соседа. Запись собеседника у него своя, и её ключ
+    # (`companion.unique_id`) панель кладёт в `companion_name`.
+    'companion_bio', 'girl_bio', 'girl_name', 'girl_id',
     'companion_name', 'companion_title', 'chat_timeout',
     # Повод заговорить первой. ⚠ Приёма (`initiative_kind`) здесь больше нет:
     # двенадцать приёмов с весами переехали в шаг «Жребий» у соседа, и панель

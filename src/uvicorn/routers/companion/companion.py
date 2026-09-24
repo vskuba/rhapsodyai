@@ -42,12 +42,19 @@ async def companion_get_or_create(
     name = data.name.lower()
     title = data.title or name
     try:
-        entity_companion = await repo.find_one_by({"name": name})
+        entity_companion = await repo.find_one_by({"unique_id": name})
         if not entity_companion:
             # Create a new companion with name and title
-            companion_data = {"name": name, "title": title}
+            # ⚠ `name` в запросе — **ключ** записи, а не имя человека: имя
+            # приходит в `title`. Столбец переименован в `unique_id`, поле
+            # запроса осталось прежним — его шлют соседние проекты.
+            companion_data = {"unique_id": name, "title": title}
             companion_id = await repo.add(companion_data)
-            entity_companion = {"id": companion_id, "name": name, "title": title}
+            # ⚠ Ответ собирается руками и обязан совпадать с тем, что отдаёт
+            # поиск: разойдись поля — вызывающий получал бы `name` у новой
+            # записи и `unique_id` у найденной, то есть разное на один запрос.
+            entity_companion = {"id": companion_id, "unique_id": name,
+                                "title": title}
         elif data.title and entity_companion.get("title") != data.title:
             # Если title изменился, обновим его в БД
             await repo.update(entity_companion["id"], {"title": data.title})

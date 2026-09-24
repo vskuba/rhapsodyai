@@ -322,7 +322,7 @@
                 const companion = allCompanions[compId];
                 if (companion) {
                     const count = associatedCompanions[compId];
-                    companionFilter.add(new Option(`${companion.title || companion.name} (${count})`, compId));
+                    companionFilter.add(new Option(`${companion.title || companion.unique_id} (${count})`, compId));
                 }
             });
             if (companionFilter.options.length > 0) companionFilter.selectedIndex = 0;
@@ -436,7 +436,7 @@
             });
             Object.keys(companionsWithSessions).forEach(compId => {
                 const companion = allCompanions[compId];
-                if (companion) companionFilter.add(new Option(`${companion.title || companion.name} (${companionsWithSessions[compId]})`, compId));
+                if (companion) companionFilter.add(new Option(`${companion.title || companion.unique_id} (${companionsWithSessions[compId]})`, compId));
             });
 
             agentFilter.onchange = async () => {
