@@ -1,5 +1,9 @@
 // Режим 3: Граф переходов workflow (mermaid)
 
+// Ключ галочки «to next step». ⚠ То же имя, что у движка и редактора:
+// разойдутся — граф покажет путь, которого нет, или скроет живой.
+const TO_NEXT_STEP = 'to_next_step';
+
 import {state} from './state.js';
 import {parseMetadata, graphLabelEscape} from './utils.js';
 import {showNotification} from '../notification.js';
@@ -105,7 +109,16 @@ function _buildInnerLines(steps, prefix, subflowStepsMap, warnings, includeStart
         const isTerminal = typeName === 'return_response_llm' || typeName === 'return_response_text';
 
         // Sequential → next step
-        if (next) {
+        //
+        // ⚠⚠ **Снятая галочка «to next step» убирает эту стрелку.** Она рисуется
+        // всем подряд и оттого показывает путь, которого может не быть: у шага
+        // развилки следующий по номеру — чужая ветка, и поток туда не идёт.
+        // Человек же читал стрелку как «идёт», и разобраться, куда поток попадёт
+        // на самом деле, можно было только по условиям переходов.
+        //
+        // ⚠ Ключа нет — стрелка рисуется: так вёл себя граф до появления
+        // галочки, и все прежние шаги должны выглядеть как выглядели.
+        if (next && meta[TO_NEXT_STEP] !== false) {
             if (isTerminal) {
                 if (typeName === 'return_response_text' && meta.continue_workflow) {
                     lines.push(`  ${nodeId} -. "следующий запрос" .-> ${prefix}S${next.id}`);
@@ -163,7 +176,10 @@ function _buildInnerLines(steps, prefix, subflowStepsMap, warnings, includeStart
         const typeName = (state.allWorkflowStepsType[step.type_id] || {}).name || '';
         const meta = parseMetadata(step.metadata);
         const next = stepsSorted[index + 1];
-        if (next && typeName !== 'return_response_llm') hasIncoming.add(String(next.id));
+        // ⚠ Тот же довод: шаг, в который стрелки не будет, не считается
+        // «имеющим входящие» — иначе граф счёл бы ветку достижимой по номеру.
+        if (next && typeName !== 'return_response_llm'
+                && meta[TO_NEXT_STEP] !== false) hasIncoming.add(String(next.id));
         ['transitions_before', 'transitions_after'].forEach(key => {
             (Array.isArray(meta[key]) ? meta[key] : []).forEach(tr => {
                 if (tr?.step_id) hasIncoming.add(String(tr.step_id));

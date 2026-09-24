@@ -283,6 +283,8 @@ export function selectStep(step, element) {
         renderTransitions(step, state.allCurrentStepsData, type);
     });
 
+    toNextStepShow(metadata);
+
     const stepTransitionsViews = document.querySelectorAll('.transitions-editor');
     if (state.allWorkflowStepsType[step.type_id].name === 'return_response_llm') {
         stepTransitionsViews.forEach(view => {
@@ -465,6 +467,9 @@ function syncTransitionsToStepState(step, type) {
     const transitionKey = 'transitions_' + type.toLowerCase();
     // Вызываем обновленный collectTransitions(), который собирает только переменные, операторы и step_id
     latestMeta[transitionKey] = collectTransitions(type);
+    // ⚠ Галочка едет вместе с условиями: она часть одного ответа на вопрос
+    // «куда пойдёт поток», и сохранить половину значило бы потерять вторую.
+    latestMeta[TO_NEXT_STEP] = toNextStepValue();
 
     // Записываем обновленный объект обратно в state текущего шага в виде строки JSON
     step.metadata = JSON.stringify(latestMeta);
@@ -475,6 +480,41 @@ function syncTransitionsToStepState(step, type) {
         stepTextarea.value = step.metadata;
     }
 }
+
+// Ключ галочки «to next step» в метаданных шага. ⚠ То же имя, что читает
+// движок (`AI_FRAMEWORK_TO_NEXT_STEP`): разойдутся — страница будет показывать
+// одно, а поток пойдёт по другому.
+const TO_NEXT_STEP = 'to_next_step';
+
+// Что показать в галочке у открытого шага.
+//
+// ⚠ **Ключа нет — значит включена.** Так работали все шаги до её появления, и
+// снятая галочка у старого шага оборвала бы его молча.
+function toNextStepShow(metadata) {
+    const box = document.getElementById('stepToNextStep');
+    if (!box) return;
+
+    box.checked = (metadata || {})[TO_NEXT_STEP] !== false;
+}
+
+// Что стоит в галочке сейчас. Нет её на странице — считаем включённой: иначе
+// правка шага со скрытым блоком переходов снимала бы её сама собой.
+function toNextStepValue() {
+    const box = document.getElementById('stepToNextStep');
+
+    return box ? !!box.checked : true;
+}
+
+// ⚠ Правка галочки сохраняется тем же путём, что правка условия: снятая и
+// незаписанная, она обещала бы тупик, которого в базе нет.
+document.getElementById('stepToNextStep').onchange = () => {
+    const activeStepBlock = document.querySelector('.step-item-block.active');
+    if (!activeStepBlock) return;
+
+    const step = state.allCurrentStepsData.find(
+        s => String(s.id) === String(activeStepBlock.dataset.id));
+    if (step) syncTransitionsToStepState(step, 'After');
+};
 
 ['Before', 'After'].forEach(type => {
     document.getElementById('addConditionBtn' + type).onclick = () => {
@@ -618,6 +658,7 @@ function stepAutoSaveSchedule() {
     const metadata = parseMetadata(currentStepData.metadata);
     metadata.transitions_before = collectTransitions('Before');
     metadata.transitions_after = collectTransitions('After');
+    metadata[TO_NEXT_STEP] = toNextStepValue();
 
     const stepTitleEl = document.getElementById('stepTitle');
     const title = (stepTitleEl && stepTitleEl.value.trim()) || currentStepData.title;

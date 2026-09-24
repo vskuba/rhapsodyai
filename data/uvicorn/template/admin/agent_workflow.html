@@ -1529,10 +1529,22 @@
                                 <!-- Сюда JS будет рендерить строки условий -->
                             </div>
 
-                            <button type="button" class="btn-create" id="addConditionBtnAfter"
-                                    style="margin-top: 10px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
-                                + Добавить условие перехода
-                            </button>
+                            <!-- ⚠ Кнопка и галочка в одной строке намеренно: они
+                                 отвечают на один вопрос — «куда пойдёт поток после
+                                 этого шага». Условия говорят «куда прыгнуть», галочка
+                                 — «а если ни одно не сработало». -->
+                            <div style="margin-top: 10px; display: flex; align-items: center; gap: 12px;">
+                                <button type="button" class="btn-create" id="addConditionBtnAfter"
+                                        style="background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; font-size: 12px;">
+                                    + Добавить условие перехода
+                                </button>
+                                <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: #374151; cursor: pointer; user-select: none;"
+                                       title="Снята — поток дальше по номеру не идёт: не сработал ни один переход, и шаг отвечает «no more step available». Нужна развилке, где следующий по номеру шаг это чужая ветка.">
+                                    <input type="checkbox" id="stepToNextStep" checked
+                                           style="margin: 0; cursor: pointer;">
+                                    to next step
+                                </label>
+                            </div>
                         </div>
 
                         <div class="stepTitle">

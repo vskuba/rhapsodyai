@@ -31,6 +31,20 @@ from src.mysql_.repository.agent_specialization_repository import AgentSpecializ
 WORKFLOW_CANCEL_WORDS = {'отмена', 'cancel', '/cancel'}
 WORKFLOW_CANCEL_CHIP = '[[!Отмена]]'
 
+# Ключ галочки «to next step» в метаданных шага. ⚠ **Умолчание — включено**, и
+# это не мелочь: ключа нет ни у одного прежнего шага, и любое другое умолчание
+# оборвало бы все workflow разом.
+AI_FRAMEWORK_TO_NEXT_STEP = 'to_next_step'
+
+# Что отвечает шаг, которому дальше идти некуда. ⚠ Словами, а не пустотой:
+# пустой ответ вызывающий читает как «агент решил промолчать», и настроенный
+# тупик выглядел бы обычной работой.
+AI_FRAMEWORK_NO_MORE_STEP = 'no more step available'
+
+# Шаги, которые сами возвращают ответ. ⚠ Им галочка ни к чему: они и так
+# заканчивают прогон, и запрет следующего шага для них ничего не значит.
+AI_FRAMEWORK_STEP_RETURNS = ('return_response_text', 'return_response_llm')
+
 # Реестр живых запусков workflow: run_uuid -> asyncio.Task.
 # Кнопка «Стоп» (/workflow_trace/run/{uuid}/stop) отменяет задачу по run_uuid
 workflow_runs_active: dict[str, asyncio.Task] = {}
@@ -1075,6 +1089,11 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             iteration += 1
             iteration_exception = 0
 
+            # ⚠⚠ Запоминаем, куда шаг попал «сам собой»: ниже по этому сравнению
+            # видно, сработал ли хоть один переход. Иначе «остался на месте» и
+            # «прыгнул ровно на следующий» неотличимы.
+            index_fallen = current_index
+
             # Проверяем наличие условий переходов в метаданных шага и при выполнении условия изменяем индекс текущего шага на указанный
             transitions = step_meta.get('transitions_after', [])
             if transitions:
@@ -1107,6 +1126,31 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         }
                         current_index = step_index
                         break
+
+            # ⚠⚠ **Переход «на следующий по номеру» — выбор шага, а не закон
+            # движка.** По умолчанию он включён, и всё работает как работало; но
+            # у развилки последовательный путь ведёт в чужую ветку, и там его
+            # снимают галочкой «to next step».
+            #
+            # Поймано живьём: ветки сочинения `dating_talk` стоят подряд, и шаг
+            # «Письмо первым» при несработавшем переходе уходил в «Ответ на
+            # письмо» — то есть писал письмо дважды. Держалось это на условии
+            # `girl_response exists`, истинном по случайности устройства.
+            #
+            # ⚠ Отвечаем словами, а не молчанием: пустой ответ вызывающий читает
+            # как «агент решил промолчать», и настроенный тупик выглядел бы
+            # обычной работой.
+            if (current_index == index_fallen
+                    and not _to_next_step(step_meta)
+                    and step_type not in AI_FRAMEWORK_STEP_RETURNS):
+                logger_info(
+                    f"⛔ Шаг {current_step['title']}: следующий по номеру запрещён "
+                    f"галочкой «to next step», а переходы не сработали"
+                )
+                trace_output = AI_FRAMEWORK_NO_MORE_STEP
+                await trace_current_step()
+
+                return AI_FRAMEWORK_NO_MORE_STEP
 
             # Журнал: запись выполненного шага (вход/выход/переход/длительность)
             await trace_current_step()
@@ -1302,3 +1346,25 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         значений — чат-слой, а не workflow. request_uuid — служебная, в таблице ее нет."""
         variables_global = await ai_workflow_variables_global_get()
         return {v.get('name', '').strip() for v in variables_global if v.get('name')} | {'request_uuid'}
+
+
+def _to_next_step(step_meta: dict) -> bool:
+    """Разрешён ли шагу переход на следующий по номеру.
+
+    Args:
+        step_meta: метаданные шага.
+
+    Returns:
+        bool: значение галочки «to next step». Ключа нет — разрешён: так
+        работали все шаги до её появления, и менять это молча нельзя.
+
+    ⚠ Значение приводим сами. Галочку пишет страница, а метаданные приезжают и
+    из seed, и из чужих правок руками, где `false` мог стать строкой `'false'`,
+    — а `bool('false')` истина, то есть запрет там, где его поставили.
+    """
+    raw = (step_meta or {}).get(AI_FRAMEWORK_TO_NEXT_STEP, True)
+
+    if isinstance(raw, str):
+        return raw.strip().lower() not in ('0', 'false', 'no', 'off', '')
+
+    return bool(raw)
