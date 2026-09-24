@@ -670,10 +670,15 @@
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
         gap: 10px;
         align-items: start;
+        margin-bottom: 11px !important;
     }
 
     .vars-col {
         min-width: 0;
+        background: #e9f1fb;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        padding: 1px 7px;
     }
 
     .vars-toggle {
@@ -798,10 +803,25 @@
         background: #fff;
     }
 
-    .status-tab.tab-running.active { border-bottom-color: #b7950b; color: #b7950b; }
-    .status-tab.tab-success.active { border-bottom-color: #1e8449; color: #1e8449; }
-    .status-tab.tab-error.active   { border-bottom-color: #c0392b; color: #c0392b; }
-    .status-tab.tab-stopped.active { border-bottom-color: #7f8c8d; color: #7f8c8d; }
+    .status-tab.tab-running.active {
+        border-bottom-color: #b7950b;
+        color: #b7950b;
+    }
+
+    .status-tab.tab-success.active {
+        border-bottom-color: #1e8449;
+        color: #1e8449;
+    }
+
+    .status-tab.tab-error.active {
+        border-bottom-color: #c0392b;
+        color: #c0392b;
+    }
+
+    .status-tab.tab-stopped.active {
+        border-bottom-color: #7f8c8d;
+        color: #7f8c8d;
+    }
 
     /* Стоп-кнопка (красный квадрат) на карточке в списке */
     .btn-stop-card {
@@ -822,12 +842,22 @@
         margin-left: 4px;
     }
 
-    .btn-stop-card:hover { background: #c0392b; }
-    .btn-stop-card:disabled { opacity: 0.5; cursor: default; }
+    .btn-stop-card:hover {
+        background: #c0392b;
+    }
+
+    .btn-stop-card:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
 
     @keyframes running-pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.55; }
+        0%, 100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.55;
+        }
     }
 
     .step-running-current {
@@ -848,7 +878,7 @@
             <div class="status-tabs">
                 <div class="status-tab tab-running" data-status="running">▶ Running</div>
                 <div class="status-tab tab-success" data-status="success">✓ Success</div>
-                <div class="status-tab tab-error"   data-status="error">✕ Error</div>
+                <div class="status-tab tab-error" data-status="error">✕ Error</div>
                 <div class="status-tab tab-stopped" data-status="stopped">■ Stopped</div>
             </div>
 
@@ -923,9 +953,9 @@
     // Возвращает { date: 'YYYY-MM-DD', hm: 'HH:MM' }
     function fmtDateParts(value) {
         const full = fmtDate(value);           // 'YYYY-MM-DD HH:MM:SS'
-        if (!full) return { date: '', hm: '' };
+        if (!full) return {date: '', hm: ''};
         const [date, time] = full.split(' ');
-        return { date, hm: (time || '').slice(0, 5) };
+        return {date, hm: (time || '').slice(0, 5)};
     }
 
     function fmtTimeAgo(value) {
@@ -981,8 +1011,8 @@
             try {
                 return JSON.parse(
                     raw.replace(/\n/g, '\\n')
-                       .replace(/\r/g, '\\r')
-                       .replace(/\t/g, '\\t')
+                        .replace(/\r/g, '\\r')
+                        .replace(/\t/g, '\\t')
                 );
             } catch {
                 return null;
@@ -1157,7 +1187,8 @@
                 const match = String(tzRow.value || '').match(/([+-]?\d+)/);
                 if (match) _tzOffsetMinutes = parseInt(match[1], 10) * 60;
             }
-        } catch { /* используем UTC если настройки недоступны */ }
+        } catch { /* используем UTC если настройки недоступны */
+        }
 
         // Справочники для фильтров и иконок типов шагов
         try {
@@ -1274,7 +1305,7 @@
             card.appendChild(head);
 
             const meta = el('div', 'run-meta');
-            const { date, hm } = fmtDateParts(run.started_at);
+            const {date, hm} = fmtDateParts(run.started_at);
             const agentTxt = run.agent_title ? ` · ${run.agent_title}` : '';
             const subflowTxt = run.children_qty > 0 ? ` · subflow: ${run.children_qty}` : '';
             meta.innerHTML = `${date} <b style="color:#1e293b;font-size:13px;">${hm}</b>${agentTxt} · ${fmtDuration(run.duration_ms)} · шагов: ${run.steps_qty}${subflowTxt}`;
@@ -1322,7 +1353,7 @@
         headRow.appendChild(el('span', 'run-name', `${run.workflow_name || ''} `));
         headRow.appendChild(el('span', `status-badge status-${run.status}`, run.status));
         const dateSpan = el('span', 'run-meta');
-        const { date: rDate, hm: rHm } = fmtDateParts(run.started_at);
+        const {date: rDate, hm: rHm} = fmtDateParts(run.started_at);
         const ago = fmtTimeAgo(run.started_at);
         dateSpan.innerHTML = `&nbsp;&nbsp;${rDate} <b style="color:#1e293b;">${rHm}</b>${ago ? ` <span style="color:#94a3b8;font-weight:normal;">(${ago})</span>` : ''}`;
         headRow.appendChild(dateSpan);
@@ -1410,7 +1441,7 @@
 
         // LLM статистика: подсчёт вызовов по моделям из всех шагов (включая sub-workflow рекурсивно)
         const llmCounts = collectLlmStats(run);
-        const { input: tokIn, output: tokOut } = collectTokenStats(run);
+        const {input: tokIn, output: tokOut} = collectTokenStats(run);
         if (Object.keys(llmCounts).length > 0 || tokIn > 0 || tokOut > 0) {
             const statsRow = el('div', 'row');
             statsRow.appendChild(el('div', 'label', 'LLM вызовы'));
@@ -1473,7 +1504,7 @@
         if (start && typeof start === 'object' && !Array.isArray(start)) {
             Object.entries(start).forEach(([name, value]) => {
                 values[name] = value;
-                sources[name] = { label: 'старт', start: true };
+                sources[name] = {label: 'старт', start: true};
             });
         }
 
@@ -1482,11 +1513,11 @@
             if (!changed || typeof changed !== 'object' || Array.isArray(changed)) return;
             Object.entries(changed).forEach(([name, value]) => {
                 values[name] = value;
-                sources[name] = { label: `шаг #${step.exec_index}`, start: false };
+                sources[name] = {label: `шаг #${step.exec_index}`, start: false};
             });
         });
 
-        return { values, sources };
+        return {values, sources};
     }
 
     // Аккордеон: заголовок-переключатель + тело. Тело строится при первом раскрытии —
@@ -1520,7 +1551,7 @@
     // Ряд переменных: слева значения прогона, справа объявленные переменные workflow.
     // Возвращает null, если показывать нечего.
     function renderRunVariablesRow(run) {
-        const { values, sources } = collectRunVariables(run);
+        const {values, sources} = collectRunVariables(run);
         const names = Object.keys(values);
         // Только входящие: с чем ветку вызвали. Остальные объявленные (workflow, global,
         // ноды) — внутренняя кухня ветки, и в левом списке они уже есть по факту
@@ -1575,7 +1606,7 @@
             (r.children || []).forEach(addSteps);
         };
         addSteps(run);
-        return { input, output };
+        return {input, output};
     }
 
     function renderRunTimeline(run) {
