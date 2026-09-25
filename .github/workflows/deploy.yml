@@ -82,7 +82,19 @@ jobs:
             git remote set-url origin "$REPO_URL"
 
             echo "Получаем последние изменения с GitHub..."
-            git fetch origin master --prune
+            # ⚠⚠ `--no-recurse-submodules` обязателен, и не ради скорости.
+            #
+            # По умолчанию git тянет подмодуль `on-demand`: увидев, что указатель
+            # `py_modules` менялся, он пытается достать **каждый** указатель из всех
+            # новых коммитов. А в истории есть два потерянных коммита слоя
+            # (`0558e87`, `42632d5`) — их нет ни на origin, ни в одном клоне, — и
+            # fetch падает `upload-pack: not our ref`, роняя всю выкладку.
+            #
+            # ⚠ Серверу нужен указатель **только текущего** master: ниже стоит
+            # `reset --hard origin/master` и `submodule update`, который достаёт
+            # ровно тот коммит слоя, что записан в HEAD. Историю подмодуля здесь не
+            # читает никто, и тянуть её незачем.
+            git fetch origin master --prune --no-recurse-submodules
 
             echo "Сбрасываем рабочую директорию на состояние master..."
             git reset --hard origin/master
