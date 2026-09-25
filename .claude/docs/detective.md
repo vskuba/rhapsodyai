@@ -149,7 +149,7 @@ Workflow (таблица `agent_workflow`):
 
 Ветка `/accuse`: `detective_case_suspects_list` (шаг 131) → вопрос «Кого ты обвиняешь…»
 с чипами и `continue_workflow: true` → `detective_case_verdict_check` (шаг 133) → ответ с
-условным блоком `%if ..._correct%✅ Верно!…%else%❌ Мимо…%endif%`.
+условным блоком `[<if ..._correct>]✅ Верно!…[<else>]❌ Мимо…[<endif>]`.
 
 ## Workflow 13 `detective_talk`
 

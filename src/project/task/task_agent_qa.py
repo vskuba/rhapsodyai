@@ -136,7 +136,7 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         # изменений, а это лишний круг обращений к оболочке.
         'task_dev_report':   await _developer_report(int(subtask.get('id') or 0)),
         # Пустая строка — не «нет значения», а осознанная ложь для
-        # `%if task_last_error%`: `ai_workflow_variable_truthy` считает пустую
+        # `[<if task_last_error>]`: `ai_workflow_variable_truthy` считает пустую
         # строку ложной, и блоки про прошлый круг не раскроются.
         'task_last_error':   str(last_error or ''),
         # Решения человека по развилкам подзадачи (`task_question`). QA они нужны

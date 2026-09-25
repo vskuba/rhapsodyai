@@ -1343,7 +1343,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         служебного вызова `GET /agent/{id}/prompt_system/{collection}` scope-а нет
         вовсе, а показать он должен тот же текст, что уйдёт в модель.
 
-        Условные блоки `%if var%…%endif%` работают здесь так же, как в шагах, —
+        Условные блоки `[<if var>]…[<endif>]` работают здесь так же, как в шагах, —
         рендер один и тот же."""
         entity_agent = metadata.get('entity_agent', {}) or {}
         variables = {

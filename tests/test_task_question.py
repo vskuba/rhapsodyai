@@ -140,7 +140,7 @@ class TestDecisionsText:
         assert task_question_decisions_text(row) == '- Реестр не трогать'
 
     def test_task_question_decisions_text_empty_is_falsy(self):
-        """Пустая строка — то, что `%if subtask_decisions%` не раскроет."""
+        """Пустая строка — то, что `[<if subtask_decisions>]` не раскроет."""
         from src.project.task.task_question import task_question_decisions_text
 
         assert task_question_decisions_text({}) == ''

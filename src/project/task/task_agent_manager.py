@@ -109,13 +109,13 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
         'task_type':        str(task_type.get('name') or ''),
         'task_type_title':  str(task_type.get('title') or ''),
         # Пустая строка при обычном планировании — не «нет значения», а осознанная
-        # ложь для `%if task_plan_current%`: `ai_workflow_variable_truthy` считает
+        # ложь для `[<if task_plan_current>]`: `ai_workflow_variable_truthy` считает
         # пустую строку ложной, и блок пересмотра в промпте просто не раскроется.
         'task_plan_current': task_plan_parse(task.get('pipeline_plan') or '')[0] if revise else '',
         # Решения человека по прежним вопросам менеджера. Вопрос одноразовый, а
         # решение живёт: план пересматривают не один раз, и на каждом пересмотре
         # менеджер обязан помнить, что уже решено, — иначе спросит о том же снова.
-        # Пусто — блок `%if task_decisions%` в промпте не раскроется.
+        # Пусто — блок `[<if task_decisions>]` в промпте не раскроется.
         'task_decisions':    task_question_decisions_text(task),
         # Адрес оболочки для шагов `claude_shell_call`: раньше роль была вписана
         # в шаги константой `_const_manager`, теперь её везёт прогон.

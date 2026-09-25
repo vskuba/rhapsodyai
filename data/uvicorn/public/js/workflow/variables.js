@@ -19,12 +19,29 @@ const CONST_PREFIX = '_const_';
 const VAR_NAME_FIELDS = ['variable'];
 const VAR_NAME_MAPS = ['inputs_map', 'outputs_map'];
 
-// Управляющие слова разметки: выглядят меткой, переменной не являются.
+// Две разные записи, и обе означают чтение переменной.
 //
-// ⚠ `%endif%` и `%else%` попадали в улов и прежним сбором — вреда не было, потому
-// что переменных с такими именами нет и подсветить их нечем. Но сбор теперь
-// **общий**, и мусор в нём завтра прочтут как переменную.
-const MARKUP_WORDS = ['if', 'else', 'endif'];
+// ⚠⚠ Списка «слова разметки, которые выглядят меткой» здесь больше нет, и его
+// отсутствие — смысл перехода на `[<…>]`. Прежде условие писалось `%if имя%`, то
+// есть той же парой процентов, что и подстановка: сбор ловил `if`, `else`, `endif`
+// как имена и вычитал их перечнем. Перечень знали два места — этот файл и сторож
+// движка, — а два места, знающих один список, расходятся.
+//
+// ⚠ Имя из условия собирается **наравне с меткой**: `[<if girl_name>]` переменную
+// читает, и «где используется» обязано её найти. Разметка (`[<else>]`, `[<endif>]`)
+// имени не несёт вовсе, поэтому под шаблон не попадает и вычитать её не из чего.
+const VAR_MARK_RE = /%([a-zA-Z_][a-zA-Z0-9_]*)%/g;
+// ⚠ Со словом `if` внутри скобок, а не по одним скобкам: `[[firstName]]` в
+// DatingAi — метка переменной письма, и промпты писем живут в этих же шагах.
+const VAR_IF_RE = /\[<if !?([a-zA-Z_][a-zA-Z0-9_]*)>\]/g;
+
+/** Имена переменных из строки: метки подстановки и условия блоков. */
+function textVariables(text, into) {
+    if (typeof text !== 'string') return;
+
+    for (const match of text.matchAll(VAR_MARK_RE)) into.add(match[1]);
+    for (const match of text.matchAll(VAR_IF_RE)) into.add(match[1]);
+}
 
 /**
  * Все переменные, которые участвуют в шаге — и читаемые, и записываемые.
@@ -46,12 +63,7 @@ const MARKUP_WORDS = ['if', 'else', 'endif'];
 export function stepVariables(step) {
     const found = new Set();
 
-    const fromText = (text) => {
-        if (typeof text !== 'string') return;
-        for (const match of text.matchAll(/%(?:if !?)?([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
-            if (!MARKUP_WORDS.includes(match[1])) found.add(match[1]);
-        }
-    };
+    const fromText = (text) => textVariables(text, found);
 
     const walk = (node, key) => {
         if (typeof node === 'string') {
@@ -164,12 +176,7 @@ const VAR_READ_ARRAYS = ['transitions_before', 'transitions_after'];
 export function stepReadVariables(step) {
     const read = new Set();
 
-    const marks = (text) => {
-        if (typeof text !== 'string') return;
-        for (const match of text.matchAll(/%(?:if !?)?([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
-            if (!MARKUP_WORDS.includes(match[1])) read.add(match[1]);
-        }
-    };
+    const marks = (text) => textVariables(text, read);
 
     const walk = (node, key) => {
         if (typeof node === 'string') {

@@ -60,7 +60,7 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
             правит другой круг конвейера, и чужие изменения сорвали бы проверку
             QA этой подзадачи.
         last_error: замечание QA с прошлой попытки. Не пустое — прогон идёт как
-            доработка (`%if task_last_error%` раскрывает соответствующие блоки
+            доработка (`[<if task_last_error>]` раскрывает соответствующие блоки
             промптов), а не как работа с нуля.
         role: чья оболочка выполняет работу. По умолчанию `developer`; параметр
             оставлен для симметрии с менеджером и на случай задач, которые ведёт
@@ -126,13 +126,13 @@ async def task_agent_developer_run(task: dict, subtask: dict, last_error: str = 
         # родителя. По этому же имени страница задач ищет merge request.
         'subtask_branch':    task_worktree_branch(subtask.get('id')),
         # Пустая строка — не «нет значения», а осознанная ложь для
-        # `%if task_last_error%`: `ai_workflow_variable_truthy` считает пустую
+        # `[<if task_last_error>]`: `ai_workflow_variable_truthy` считает пустую
         # строку ложной, и блоки про прошлую ошибку QA не раскроются.
         'task_last_error':   str(last_error or ''),
         # Решения человека по развилкам этой подзадачи — те, что он принял, отвечая
         # на вопросы роли (`task_question`). Идут в каждый круг, а не только в
         # следующий за ответом: решение принимается один раз, кругов после него
-        # может быть сколько угодно. Пусто — блок `%if subtask_decisions%` в промпте
+        # может быть сколько угодно. Пусто — блок `[<if subtask_decisions>]` в промпте
         # не раскроется, и промпт останется прежним.
         'subtask_decisions': task_question_decisions_text(subtask),
         'task_shell_role':   role,

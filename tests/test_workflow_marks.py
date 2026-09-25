@@ -28,8 +28,8 @@ scope `None`, подстановка делала `str(None)` — и в пром
 
 import pytest
 
-from src.ai.ai_workflow import (AiWorkflowMarkError, ai_workflow_marks_check,
-                                ai_workflow_marks_left,
+from src.ai.ai_workflow import (AiWorkflowMarkError, ai_workflow_blocks_left,
+                                ai_workflow_marks_check, ai_workflow_marks_left,
                                 ai_workflow_variables_defaults_apply,
                                 ai_workflow_variables_render)
 
@@ -79,12 +79,72 @@ class TestNoFalseAlarms:
         assert ai_workflow_marks_left('скидка 50% сегодня') == []
 
     def test_block_leftovers_are_not_counted_as_variables(self):
-        """⚠ `%endif%` без пары — сломанный блок, а не забытая переменная.
+        """⚠ `[<endif>]` без пары — сломанный блок, а не забытая переменная.
 
         Беда разная, и чинится по-разному: одно правят в промпте, другое — в
         вызове. Свалив их в одну кучу, мы отправили бы человека не туда.
+
+        ⚠⚠ И держится это **без списка исключений**. Пока условие писалось
+        `%if var%…%endif%`, разметка делила проценты с меткой, и отличить
+        `%endif%` от переменной с именем `endif` можно было только перечнем
+        служебных слов — перечнем, который знали два места: сторож и подсветка
+        редактора. Теперь `[<…>]` меткой не выглядит вовсе, и вычитать нечего.
         """
-        assert ai_workflow_marks_left('%endif% хвост') == []
+        assert ai_workflow_marks_left('[<endif>] хвост') == []
+
+
+class TestOldSyntaxIsNamed:
+    """⚠⚠ Прежний синтаксис ловится **как прежний синтаксис**, а не как переменная.
+
+    После перехода `%endif%` — это просто метка с именем `endif`, и сторож меток
+    честно нашёл бы её. Человеку это сообщение не помогает ничем: он ищет
+    переменную `endif`, которой нет и не будет, вместо того чтобы переписать блок.
+
+    Поэтому блоки проверяются **раньше** меток, и отказ называет новый вид записи.
+    """
+
+    def test_old_marks_are_reported_as_a_block(self):
+        with pytest.raises(AiWorkflowMarkError) as got:
+            ai_workflow_marks_check('%if avoid%секция%endif%', 'Черновик')
+
+        text = str(got.value)
+        assert '%if ' in text and '%endif%' in text, 'отказ не назвал, что именно нашлось'
+        assert '[<if' in text, 'отказ не подсказал новый синтаксис'
+
+    def test_old_marks_are_listed_as_blocks(self):
+        assert ai_workflow_blocks_left('%if x%a%endif%') == ['%if ', '%endif%']
+
+    def test_the_half_day_syntax_is_also_named_old(self):
+        """⚠ `[[if …]]` прожил полдня и тоже считается прежним.
+
+        Двойные квадратные скобки пришлось оставить: **тем же видом** записаны
+        метки переменных письма в DatingAi (`[[firstName]]`), а промпты писем
+        живут в этих же шагах — один вид записи с двумя смыслами в одном тексте.
+        Поэтому разметка ушла в `[<…>]`, а `[[if ` осталось приметой прежнего.
+        """
+        with pytest.raises(AiWorkflowMarkError) as got:
+            ai_workflow_marks_check('[[if avoid]]секция[[endif]]', 'Черновик')
+
+        assert 'прежний' in str(got.value)
+
+    def test_a_letter_mark_is_not_markup(self):
+        """⚠⚠ И наоборот: метка письма разметкой не считается.
+
+        `[[firstName]]` — переменная письма DatingAi, и промпт, который просит
+        модель её поставить, обязан проходить сторожа. Ловили бы мы разметку по
+        скобкам, а не по слову, — такой промпт отказывал бы всегда.
+        """
+        assert ai_workflow_blocks_left('вставь метку [[firstName]] в текст') == []
+        ai_workflow_marks_check('вставь метку [[firstName]] в текст', 'Письмо')
+
+    def test_new_blocks_render_and_leave_nothing(self):
+        """Развёрнутый блок не оставляет ни разметки, ни метки."""
+        text = ai_workflow_variables_render('[<if avoid>]секция[<endif>]хвост',
+                                            {'avoid': ''})
+
+        assert text == 'хвост'
+        assert ai_workflow_blocks_left(text) == []
+        assert ai_workflow_marks_left(text) == []
 
 
 class TestEmptyDefault:
@@ -107,12 +167,12 @@ class TestEmptyDefault:
         """⚠ И условный блок читает пустоту как «нечего показывать».
 
         Ради этого пустая строка и выбрана вместо пропуска переменной: секция
-        `%if var%…%endif%` исчезает целиком, как и задумано.
+        `[<if var>]…[<endif>]` исчезает целиком, как и задумано.
         """
         variables = ai_workflow_variables_defaults_apply(
             {}, [{'name': 'avoid', 'default': None}])
 
-        assert ai_workflow_variables_render('%if avoid%секция%endif%хвост',
+        assert ai_workflow_variables_render('[<if avoid>]секция[<endif>]хвост',
                                             variables) == 'хвост'
 
     def test_a_real_default_survives(self):
