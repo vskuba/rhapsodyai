@@ -33,6 +33,31 @@ class TestUserAccessToken:
             )
             yield client
 
+    @pytest.fixture
+    async def own_key(self, client: httpx.AsyncClient) -> AsyncGenerator[str, None]:
+        """Свежий токен доступа **своей** учётки — той, под которой вошёл `client`.
+
+        ⚠⚠ Заводится и удаляется тестом. Готовый ключ из базы для этого не годится:
+        он принадлежит неизвестно кому, и его роль решает, что будет в ответе. Так и
+        вышло — тест падал на чужом ключе при полностью исправном коде.
+
+        ⚠ Учётка берётся из `/auth/me`, а не пишется литералом: сюита ходит под
+        разными именами (`QA_USERNAME`), и второе написание разошлось бы с первым.
+        """
+        # ⚠ `/auth/me` отдаёт `{"user": …}`, а не общий конверт `result`: это единственная
+        # ручка с таким ответом, и тот же ключ читает `test_cabinet.py`.
+        me = await client.get('/auth/me')
+        assert me.status_code == 200, 'сюита не вошла — токен выдавать некому'
+        user_id = me.json()['user']['id']
+
+        made = await client.post(f'/user/{user_id}/token')
+        assert made.status_code == 200, f'токен не выдался: {made.text[:200]}'
+        row = made.json()['result']
+
+        yield row['token']
+
+        await client.delete(f"/user/token/{row['id']}")
+
     async def test_access_token_lifecycle(self, client: httpx.AsyncClient):
         # 1. Create a temporary test user
         user_response = await client.post(
@@ -84,18 +109,29 @@ class TestUserAccessToken:
             # Cleanup: delete the test user
             await client.delete(f"/user/{user_id}")
 
-    async def test_agent_list_with_api_key(self):
-        """Test querying agent list via POST /agent/list using an API Key."""
+    async def test_agent_list_with_api_key(self, own_key: str):
+        """Test querying agent list via POST /agent/list using an API Key.
+
+        ⚠⚠ Ключ **заводится тестом**, а не берётся готовым из базы. Прежде здесь
+        стоял литерал `8fd15581-…`, и тест падал при исправном коде: этот ключ в
+        базе есть, но принадлежит роли `manager_dating`, а она видит агентов только
+        своих узлов — проверка же ждала «агентов admin». Красное при исправном коде
+        приучает не смотреть на красное (`testing.md`).
+        """
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False) as anon_client:
             # 1. Query with valid API key
-            headers = {"X-API-KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"}
+            headers = {"X-API-KEY": own_key}
             payload = {"find_by": {}}
             response = await anon_client.post("/agent/list", json=payload, headers=headers)
             assert response.status_code == 200
             data = response.json()
             assert "result" in data
             assert isinstance(data["result"], list)
-            assert len(data["result"]) > 0  # Should return admin's agents
+            # ⚠ Ключ выдан той же учётке, под которой ходит сюита, — полноправной:
+            # она видит всех агентов, и список обязан быть непустым.
+            assert len(data["result"]) > 0, (
+                'по своему же ключу список агентов пуст — либо ключ не признан, '
+                'либо агентов нет в базе вовсе')
 
             # Verify that only "id", "name", and "title" are returned for agents
             for agent in data["result"]:

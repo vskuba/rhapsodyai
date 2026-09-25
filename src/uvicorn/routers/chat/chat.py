@@ -44,50 +44,6 @@ class ChatMessagesJsonRequest(BaseModel):
     limit: int = 10
 
 
-async def _variables_allowed(workflow_id: int, sent: dict) -> None:
-    """Пускает в сборку только объявленные переменные. Иначе — 400.
-
-    Args:
-        workflow_id: чей вызов проверяем.
-        sent: то, что прислал вызывающий (`json_request.variables`).
-
-    Raises:
-        HTTPException: 400 — прислано имя, не объявленное входящим у этого
-            workflow. В сообщении — имя и что с ним делать.
-
-    ## ⚠⚠ Пускаем `input` и `global`, а `workflow` — нет
-
-    `input` — то, что вызывающий обязан прислать: это его часть договора.
-    `global` — переменные запроса, приносимые каждым сообщением заново; у них в
-    движке своя роль (снимок сессии их намеренно не хранит).
-
-    А `workflow` — **внутреннее устройство**: имена коллекций фактов, пределы,
-    флаги ветвления. Право их переопределять снаружи и было дырой.
-
-    ⚠ Молча отбрасывать нельзя: вызывающий, приславший `girl_i` вместо
-    `girl_id`, получил бы зелёный ответ и молчащую ветку. Отказ с именем читается
-    сразу.
-    """
-    if not sent:
-        return
-
-    allowed = {x.get('name') for x
-               in await ai_workflow_variables_input_get(workflow_id)}
-    allowed |= {x.get('name') for x in await ai_workflow_variables_global_get()}
-
-    extra = sorted(set(sent) - allowed)
-    if not extra:
-        return
-
-    raise HTTPException(
-        status_code=400,
-        detail=(f"Переменные {', '.join(extra)} не объявлены входящими у этого "
-                f"workflow. Объявите их (`agent_workflow_variable.type = "
-                f"'input'` и связь с workflow) либо уберите из запроса: "
-                f"переопределять внутренние переменные workflow снаружи нельзя.")
-    )
-
-
 @router.post("/chat/ask")
 async def chat_ask_ai(
         request: Request,
@@ -325,3 +281,47 @@ async def chat_voice_to_text(file: UploadFile = File(...)):
     os.remove(temp_file)
 
     return {"result": text}
+
+
+async def _variables_allowed(workflow_id: int, sent: dict) -> None:
+    """Пускает в сборку только объявленные переменные. Иначе — 400.
+
+    Args:
+        workflow_id: чей вызов проверяем.
+        sent: то, что прислал вызывающий (`json_request.variables`).
+
+    Raises:
+        HTTPException: 400 — прислано имя, не объявленное входящим у этого
+            workflow. В сообщении — имя и что с ним делать.
+
+    ## ⚠⚠ Пускаем `input` и `global`, а `workflow` — нет
+
+    `input` — то, что вызывающий обязан прислать: это его часть договора.
+    `global` — переменные запроса, приносимые каждым сообщением заново; у них в
+    движке своя роль (снимок сессии их намеренно не хранит).
+
+    А `workflow` — **внутреннее устройство**: имена коллекций фактов, пределы,
+    флаги ветвления. Право их переопределять снаружи и было дырой.
+
+    ⚠ Молча отбрасывать нельзя: вызывающий, приславший `girl_i` вместо
+    `girl_id`, получил бы зелёный ответ и молчащую ветку. Отказ с именем читается
+    сразу.
+    """
+    if not sent:
+        return
+
+    allowed = {x.get('name') for x
+               in await ai_workflow_variables_input_get(workflow_id)}
+    allowed |= {x.get('name') for x in await ai_workflow_variables_global_get()}
+
+    extra = sorted(set(sent) - allowed)
+    if not extra:
+        return
+
+    raise HTTPException(
+        status_code=400,
+        detail=(f"Переменные {', '.join(extra)} не объявлены входящими у этого "
+                f"workflow. Объявите их (`agent_workflow_variable.type = "
+                f"'input'` и связь с workflow) либо уберите из запроса: "
+                f"переопределять внутренние переменные workflow снаружи нельзя.")
+    )
