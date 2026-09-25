@@ -264,8 +264,6 @@ class AiFrameworkAgent(AbstractAiFramework):
                 _exception = e
                 continue
 
-    @staticmethod
-
     async def session_message_add(
             self,
             session_uuid,
@@ -289,6 +287,13 @@ class AiFrameworkAgent(AbstractAiFramework):
             content, token
         )
 
+    # ⚠⚠ `@staticmethod` здесь обязателен: у метода нет `self`, а зовут его через
+    # `self._error_complete(framework_model, e)`. Без декоратора `self` уезжает
+    # первым доводом, метод падает `TypeError`, и падает он **внутри обработчика
+    # ошибок** — то есть прячет исходную беду и уводит цикл агента в бесконечный
+    # повтор. Живьём это дало 736 ошибок за 80 секунд и строку в `llm_request` на
+    # каждую.
+    @staticmethod
     async def _error_complete(framework_model: AiFrameworkAgentModel, e: Exception):
         error_text = 'Произошла ошибка: %s' % e
         if framework_model.on_complete:
