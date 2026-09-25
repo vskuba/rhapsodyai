@@ -18,6 +18,9 @@ import json
 
 import pytest
 
+from tests_llm.plan import plan_load
+from tests_llm.dating_mail_vars.fixtures import PLAN_OK, PLAN_PART
+
 from tests_llm.datingai import CARD_GIRL
 from tests_llm.dating_mail_vars.conftest import (HEAD_HINT, STEP_CHECK,
                                                  STEP_FILL, STEP_OUT, STEP_WHY,
@@ -141,32 +144,44 @@ class TestTheAnswerKeepsOnlyWhatWasAsked:
 
 
 class TestTheRewriteLoop:
-    """⚠ Чего не хватило — просим заново, но не больше трёх раз."""
+    """⚠ Чего не хватило — просим заново, но не больше трёх раз.
 
-    async def test_a_second_pass_means_a_reason_was_collected(self, fill):
-        got = await fill()
+    ⚠⚠ **Нехватку задаёт сценарий, а не удача прогона.** Прежде эти тесты звали
+    `fill()` с годной заготовкой и вызывали `pytest.skip`, если цикла не случилось
+    — то есть пропускались всегда либо, когда заготовка была сломана, проходили
+    по случайности. Ни то ни другое покрытием не было.
+    """
 
-        if got.times(STEP_FILL) < 2:
-            pytest.skip('переменные заполнились с первого раза — цикла не было')
+    @pytest.fixture
+    async def short(self, fill, llm_answers):
+        """Заход, где модель забыла одно значение. Возвращает `Talk`.
 
-        assert got.went_through(STEP_WHY), \
-            f'заход повторялся, а нехватку никто не собирал.{got}'
+        ⚠ Сценарий кладётся **до** вызова: заготовка папки уступает своему
+        (`ask`), и без этого порядка заход прошёл бы с первого раза.
+        """
+        await llm_answers(plan_load(PLAN_PART, PLAN_OK))
 
-    async def test_the_second_pass_is_told_what_is_missing(self, fill):
+        return await fill()
+
+    async def test_a_missing_value_sends_it_back(self, short):
+        assert short.times(STEP_FILL) > 1, \
+            (f'значения заполнились с первого раза, хотя одного не хватало —'
+             f' проверка стоит, но никуда не возвращает.{short}')
+        assert short.went_through(STEP_WHY), \
+            f'заход повторялся, а нехватку никто не собирал.{short}'
+
+    async def test_the_second_pass_is_told_what_is_missing(self, short):
         """⚠⚠ Второму заходу называют **имена** незаполненных, а не «заполни всё».
 
         Список собирает тот же инструмент, и он же решает, был ли повтор нужен:
         два источника этого знания разошлись бы, и цикл крутился бы из-за поля,
         которое уже заполнено.
         """
-        got = await fill()
-        passes = got.prompt_each(STEP_FILL)
+        passes = short.prompt_each(STEP_FILL)
 
-        if len(passes) < 2:
-            pytest.skip('переменные заполнились с первого раза — цикла не было')
-
+        assert len(passes) > 1, f'второго захода не было вовсе.{short}'
         assert HEAD_HINT in passes[1], \
-            f'второй заход не знает, чего не хватило.{got}'
+            f'второй заход не знает, чего не хватило.{short}'
 
     async def test_the_first_pass_has_no_reproach(self, fill):
         got = await fill()
@@ -176,9 +191,33 @@ class TestTheRewriteLoop:
         assert HEAD_HINT not in first[0], \
             f'первому заходу показали нехватку, которой ещё нет.{got}'
 
-    async def test_the_loop_has_a_ceiling(self, fill):
+    async def test_the_ceiling_holds_when_nothing_improves(self, short):
+        """⚠⚠ Модель отвечает тем же на каждом заходе — значит выйти можно только
+        по пределу.
+
+        Без него заход крутился бы до таймаута движка, и человек получил бы `504`
+        вместо письма. Это и есть проверка потолка: прежняя утверждала
+        `<= 3`, что верно и для одного захода.
+        """
+        assert short.times(STEP_FILL) == TRIES_MAX, \
+            (f'неисправимая нехватка дала {short.times(STEP_FILL)} заходов,'
+             f' а предел {TRIES_MAX}.{short}')
+        assert short.status == 'success', \
+            f'упёрлись в потолок и уронили прогон вместо выдачи значений.{short}'
+
+    async def test_a_full_answer_passes_at_once(self, fill):
+        """⚠⚠ Обратная сторона: всё пришло — значит цикла быть не должно.
+
+        Эта проверка появилась не от полноты. Заготовка `PLAN_OK` отдавала
+        значения строками «имя: значение», а шаг проверки ждёт JSON, — и разбор
+        давал пустой словарь. Каждый прогон уходил в потолок, удачный путь не
+        проверялся вовсе, а тесты были зелёные: они смотрели на промпт, а не на
+        число заходов.
+        """
         got = await fill()
 
-        assert got.times(STEP_FILL) <= TRIES_MAX, \
-            (f'переменные заполнялись {got.times(STEP_FILL)} раз при пределе'
-             f' {TRIES_MAX}.{got}')
+        assert got.times(STEP_FILL) == 1, \
+            (f'все значения пришли, а заход всё равно повторялся'
+             f' {got.times(STEP_FILL)} раз — проверка не признала их годными.{got}')
+        assert not got.went_through(STEP_WHY), \
+            f'нехватку собирали там, где всё на месте.{got}'

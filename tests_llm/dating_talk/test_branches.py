@@ -109,7 +109,7 @@ class TestEachBranchGoesItsOwnWay:
     async def test_a_letter_goes_to_the_letter_branch(self, talk):
         """⚠ `mail_mode` уводит на «Письмо первым» — то, что пишут молчащему."""
         got = await talk(TALK_MAIL_ASK,
-                         mail_history=MAIL_HISTORY,
+                         mailed=MAIL_HISTORY,
                          variables=_mail_vars(TALK_MAIL_WRITE))
 
         assert got.ran(STEP_MAIL_WRITE), f'письмо пошло не своей веткой.{got}'
@@ -120,7 +120,7 @@ class TestEachBranchGoesItsOwnWay:
         """⚠⚠ `mail_kind = reply` сильнее `mail_mode`: правило развилки стоит
         первым, иначе оба вида письма ушли бы в «Письмо первым»."""
         got = await talk(TALK_MAIL_REPLY_ASK,
-                         mail_history=MAIL_HISTORY,
+                         mailed=MAIL_HISTORY,
                          variables=_mail_vars(TALK_MAIL_REPLY))
 
         assert got.ran(STEP_MAIL_REPLY), f'ответ пошёл не своей веткой.{got}'
@@ -147,7 +147,7 @@ class TestBranchesDoNotLeak:
     async def test_the_letter_is_composed_once(self, talk):
         """Ветка письма отработала ровно раз, а не перетекла дальше по номеру."""
         got = await talk(TALK_MAIL_ASK,
-                         mail_history=MAIL_HISTORY,
+                         mailed=MAIL_HISTORY,
                          variables=_mail_vars(TALK_MAIL_WRITE))
         made = got.times_ran(STEP_MAIL_WRITE)
 
@@ -159,7 +159,7 @@ class TestBranchesDoNotLeak:
         Оборвись он, текст ушёл бы человеку мимо судьи.
         """
         got = await talk(TALK_MAIL_ASK,
-                         mail_history=MAIL_HISTORY,
+                         mailed=MAIL_HISTORY,
                          variables=_mail_vars(TALK_MAIL_WRITE))
 
         assert got.ran(STEP_JUDGE), f'ветка письма не дошла до судьи.{got}'
@@ -177,7 +177,7 @@ class TestTheLengthReachesTheLetter:
         """⚠ Смотрим **вход**, а не ответ: по числу абзацев судить нельзя —
         модель вольна написать два там, где просили «до трёх»."""
         got = await talk(TALK_MAIL_ASK,
-                         mail_history=MAIL_HISTORY,
+                         mailed=MAIL_HISTORY,
                          variables=_mail_vars(TALK_MAIL_WRITE))
 
         assert MAIL_LENGTH in got.prompt_of(STEP_MAIL_WRITE), \
@@ -196,8 +196,8 @@ class TestBothHistoriesTravel:
         (тогда тест падает отказом), а заявленную, но не подставленную — никто,
         и её ловит только взгляд в промпт."""
         got = await talk(TALK_MAIL_REPLY_ASK,
-                         history='[23.09 12:00] он: Как твои дела?',
-                         mail_history=MAIL_HISTORY,
+                         said='[23.09 12:00] он: Как твои дела?',
+                         mailed=MAIL_HISTORY,
                          variables=_mail_vars(TALK_MAIL_REPLY))
 
         assert got.ran(STEP_MAIL_REPLY), \
@@ -207,7 +207,7 @@ class TestBothHistoriesTravel:
 
     async def test_the_chat_history_reaches_the_chat(self, talk):
         got = await talk('А ты как думаешь?',
-                         history='[23.09 12:00] она: Я вчера пекла шарлотку.')
+                         said='[23.09 12:00] она: Я вчера пекла шарлотку.')
 
         assert 'шарлотку' in got.prompt_of(STEP_CHAT), \
             f'история чата не доехала до промпта ветки.{got}'
@@ -238,7 +238,7 @@ class TestTheDiceIsThrownFirst:
 
     async def test_the_letter_gets_its_opening(self, talk):
         """Зачин доехал до промпта ветки письма — иначе метка осталась пустой."""
-        got = await talk(TALK_MAIL_ASK, mail_history=MAIL_HISTORY,
+        got = await talk(TALK_MAIL_ASK, mailed=MAIL_HISTORY,
                          variables=_mail_vars(TALK_MAIL_WRITE))
         prompt = got.prompt_of(STEP_MAIL_WRITE)
 
@@ -277,7 +277,7 @@ class TestTheDiceIsThrownFirst:
         письмо не должно звать по имени. Утверждать долю в середине нельзя —
         жребий на то и жребий.
         """
-        got = await talk(TALK_MAIL_ASK, mail_history=MAIL_HISTORY,
+        got = await talk(TALK_MAIL_ASK, mailed=MAIL_HISTORY,
                          variables={**_mail_vars(TALK_MAIL_WRITE),
                                     'dice_mail_name_percent': '0'})
         prompt = got.prompt_of(STEP_MAIL_WRITE)

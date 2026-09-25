@@ -7,6 +7,10 @@
 
 import pytest
 
+from tests_llm.plan import plan_load
+from tests_llm.dating_invite_write.fixtures import (PLAN_JUDGE_FIXES,
+                                                    PLAN_OK)
+
 from tests_llm.datingai import ENVELOPE
 from tests_llm.dating_invite_write.conftest import (STEP_DRAFT, STEP_FIX,
                                                     STEP_JUDGE, STEP_KEEP,
@@ -123,3 +127,73 @@ class TestTheEnvelope:
 
         assert envelope.lstrip().startswith('VERDICT:'), \
             f'конверт начинается не с вердикта: {envelope[:120]!r}.{got}'
+
+
+class TestTheJudgeSendsItToTheFix:
+    """⚠⚠ Судья вправду **уводит** брак на правку, а не просто стоит на пути.
+
+    Соседний класс проверяет согласованность вердикта и маршрута «по факту»: как
+    решила модель, так и сверяем. Это верно для живого прогона, но одного этого
+    мало — если переход отвалится, судья продолжит выносить вердикты, брак пойдёт
+    дальше, и связь «fixed ⇔ правка» станет проверять пустоту: вердикта `fixed`
+    просто не появится.
+
+    Здесь вердикт **задан**: судья бракует, правка исправляет. Живой моделью так
+    не поставишь — забракует она или нет, решает сама.
+
+    ## ⚠ Почему брак и правка одним сценарием
+
+    Оба шага отвечают **теми же ключами** (`invite_draft`, `invite_ok`), а подмена
+    берёт первое совпавшее правило. Разложи их по разным сценариям — правка
+    получила бы вердикт судьи и вернула `no` вместо `fixed`, то есть цикл пошёл бы
+    вечно (`fixtures.PLAN_JUDGE_FIXES`).
+    """
+
+    @pytest.fixture
+    async def refused(self, invite, llm_answers):
+        """Заход, где судья забраковал черновик.
+
+        ⚠ Сценарий кладётся **до** вызова: заготовка папки уступает своему
+        (`ask`), и без этого порядка судья пропустил бы черновик.
+        """
+        await llm_answers(plan_load(PLAN_JUDGE_FIXES, PLAN_OK))
+
+        return await invite()
+
+    async def test_a_refusal_goes_to_the_fix(self, refused):
+        assert refused.went_through(STEP_FIX), \
+            (f'судья забраковал черновик, а шага правки на маршруте нет —'
+             f' брак уехал бы полусотне людей.{refused}')
+
+    async def test_the_fix_sees_what_was_wrong(self, refused):
+        """⚠ Правка обязана **видеть** замечание: без него она переписывала бы
+        наугад, и второй черновик вышел бы не лучше первого."""
+        said = refused.prompt_of(STEP_FIX)
+
+        assert said, f'шаг правки ничего не получил на вход.{refused}'
+        assert 'слишком похоже на шаблон' in said, \
+            f'правка не знает, чем плох черновик.{refused}'
+
+    async def test_the_verdict_becomes_fixed(self, refused):
+        """⚠⚠ Вердикт после правки — `fixed`, и это не украшение отчёта.
+
+        По нему DatingAi отличает «шаблон исправлен» от «прошёл сразу», а
+        соседний класс держит на нём свою развилку. Останься `no` — цикл пошёл бы
+        на второй круг правки.
+        """
+        assert str(refused.vars.get('invite_ok')) == 'fixed', \
+            (f'после правки вердикт {refused.vars.get("invite_ok")!r},'
+             f' а ждали «fixed».{refused}')
+
+    async def test_a_pass_skips_the_fix(self, invite):
+        """⚠ Обратная сторона: судья пропустил — правки быть не должно.
+
+        Лишний заход правки стоит вызова модели на каждый инвайт, а пул набирают
+        полусотней.
+        """
+        got = await invite()
+
+        assert str(got.vars.get('invite_ok')) == 'yes', \
+            f'заготовка должна давать вердикт «yes».{got}'
+        assert not got.went_through(STEP_FIX), \
+            f'судья пропустил черновик, а правка всё равно шла.{got}'

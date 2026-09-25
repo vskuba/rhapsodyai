@@ -7,6 +7,10 @@
 
 import pytest
 
+from tests_llm.plan import plan_load
+from tests_llm.dating_mail_question.fixtures import (PLAN_FLAT,
+                                                     PLAN_OK)
+
 from tests_llm.datingai import (CARD_MAN_NONE, MARK_GIRL, MARK_MAN)
 from tests_llm.dating_mail_question.conftest import (HEAD_GIRL, HEAD_HINT,
                                                      HEAD_MAN, STEP_ASK,
@@ -85,28 +89,36 @@ class TestTheCardsReachThePrompt:
 class TestTheRewriteLoop:
     """⚠ Не прошли ворота — сочиняем заново, но не больше трёх раз.
 
-    Проверяется **связь**, а не то, забракуют ли вопрос: это решает формальный
-    признак в ответе модели.
+    ⚠⚠ **Брак задаёт сценарий, а не удача прогона.** Прежде эти тесты звали
+    `question()` с годной заготовкой и вызывали `pytest.skip`, если цикла не
+    случилось: с годным вопросом он не случается никогда, и оба пропускались
+    всегда. В отчёте это выглядело нормой.
     """
 
-    async def test_a_second_pass_means_a_reason_was_collected(self, question):
-        got = await question()
+    @pytest.fixture
+    async def flat(self, question, llm_answers):
+        """Заход, где модель вернула утверждение вместо вопроса.
 
-        if got.times(STEP_ASK) < 2:
-            pytest.skip('вопрос прошёл с первого раза — цикла не было')
+        ⚠ Ворота здесь — **инструмент**, а не модель: `text_regex_extract` ищет
+        вопросительный знак. Поэтому брак задаётся самим текстом, а не вердиктом.
+        """
+        await llm_answers(plan_load(PLAN_FLAT, PLAN_OK))
 
-        assert got.went_through(STEP_WHY), \
-            f'вопрос переписывался, а замечания никто не собирал.{got}'
+        return await question()
 
-    async def test_the_second_pass_is_told_what_was_wrong(self, question):
-        got = await question()
-        passes = got.prompt_each(STEP_ASK)
+    async def test_a_statement_sends_it_back(self, flat):
+        assert flat.times(STEP_ASK) > 1, \
+            (f'утверждение прошло как вопрос — ворота стоят, но никуда не'
+             f' возвращают.{flat}')
+        assert flat.went_through(STEP_WHY), \
+            f'вопрос переписывался, а замечания никто не собирал.{flat}'
 
-        if len(passes) < 2:
-            pytest.skip('вопрос прошёл с первого раза — цикла не было')
+    async def test_the_second_pass_is_told_what_was_wrong(self, flat):
+        passes = flat.prompt_each(STEP_ASK)
 
+        assert len(passes) > 1, f'второго захода не было вовсе.{flat}'
         assert HEAD_HINT in passes[1], \
-            f'второй заход сочинял, не зная, чем плох первый.{got}'
+            f'второй заход сочинял, не зная, чем плох первый.{flat}'
 
     async def test_the_first_pass_has_no_reproach(self, question):
         """⚠ Первому заходу замечания взяться неоткуда — блок под `%if%`.
@@ -121,12 +133,22 @@ class TestTheRewriteLoop:
         assert HEAD_HINT not in first[0], \
             f'первому заходу показали замечание, которого ещё нет.{got}'
 
-    async def test_the_loop_has_a_ceiling(self, question):
+    async def test_the_ceiling_holds_when_nothing_improves(self, flat):
+        """⚠⚠ Модель отвечает тем же на каждом заходе — выйти можно только по
+        пределу. Прежняя проверка утверждала `<= 3`, что верно и для одного."""
+        assert flat.times(STEP_ASK) == TRIES_MAX, \
+            (f'неисправимый вопрос сочинялся {flat.times(STEP_ASK)} раз,'
+             f' а предел {TRIES_MAX}.{flat}')
+        assert flat.status == 'success', \
+            f'упёрлись в потолок и уронили прогон вместо выдачи вопроса.{flat}'
+
+    async def test_a_real_question_passes_at_once(self, question):
+        """⚠ Обратная сторона: годный вопрос циклу не подлежит."""
         got = await question()
 
-        assert got.times(STEP_ASK) <= TRIES_MAX, \
-            (f'вопрос сочинялся {got.times(STEP_ASK)} раз при пределе'
-             f' {TRIES_MAX}.{got}')
+        assert got.times(STEP_ASK) == 1, \
+            (f'годный вопрос сочинялся {got.times(STEP_ASK)} раз —'
+             f' проверка не признала его вопросом.{got}')
 
 
 class TestTheAnswerIsTheQuestionAlone:

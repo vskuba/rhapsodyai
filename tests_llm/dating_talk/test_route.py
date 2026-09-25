@@ -23,13 +23,25 @@
 переставшее совпадать, видно сразу: тест падает, а `llm_calls` показывает
 настоящие промпты.
 """
+import uuid
+
 import pytest
 
 from tests_llm.datingai import TALK_MAIL_ASK, TALK_MAIL_WRITE
-from tests_llm.dating_talk.conftest import (MARKS, STEP_ANALYSE, STEP_BRANCH,
-                                            STEP_CHAT, STEP_DICE, STEP_JUDGE,
-                                            STEP_MAIL_WRITE, STEP_REPEAT,
-                                            STEP_SILENCE, STEP_TOPIC,
+from tests_llm.dating_talk.conftest import (FACTS_MAN, FACTS_TALK,
+                                            MARKS, STEP_ANALYSE, STEP_ANSWER,
+                                            STEP_BRANCH, STEP_BRANCHES,
+                                            STEP_CHAT, STEP_DICE,
+                                            STEP_FACT_INVENT,
+                                            STEP_FACT_INVENT_ADD,
+                                            STEP_FACT_SAVE, STEP_FACT_SAVE_MAN,
+                                            STEP_FACT_SAVE_TALK, STEP_INITIATIVE,
+                                            STEP_JUDGE, STEP_MAIL_WRITE,
+                                            STEP_REPEAT, STEP_SILENCE,
+                                            STEP_FACTS_MAN,
+                                            STEP_FACTS_PLAIN,
+                                            STEP_FACTS_TAGS,
+                                            STEP_TOPIC, facts_girl_for,
                                             talk_plan)
 
 pytestmark = pytest.mark.llm
@@ -122,7 +134,7 @@ class TestTheTopicSendsToTheBranch:
 
 
 class TestWhatThePanelAlwaysSendsArrives:
-    """⚠⚠ Переменные, которые DatingAi кладёт в **каждый** вызов, доезжают до промпта.
+    """⚠⚠ Всё, что промпту полагается знать о паре, доезжает до него.
 
     Разрыв этого договора тихий с обеих сторон: сосед снял объявление — панель
     получает `400` и молчит в чужом журнале; панель перестала слать — промпт
@@ -131,14 +143,25 @@ class TestWhatThePanelAlwaysSendsArrives:
 
     ⚠ Проверка одна на всех (`marks_missing`): ветки письма и инициативы читают
     те же переменные, и своя проверка в каждом тесте разошлась бы с соседями.
+
+    ## ⚠⚠ Источников два, и это видно по способу подготовки
+
+    Анкету собеседника и его имя **присылает панель** — они уходят в
+    `variables`. А ленты разговора панель больше не шлёт: их собирает сам
+    workflow из `companion_session`, и посеять их можно только настоящим
+    обменом (`said` / `mailed`).
+
+    То есть эти тесты сторожат обе дороги разом: пришедшее снаружи и добытое
+    самим прогоном. Метка, посеянная репликой, обязана вернуться лентой — если
+    не вернулась, разорвано звено между записью и чтением.
     """
 
     async def test_the_chat_branch_gets_them(self, talk, llm_answers):
         """Ветка чата: анкета собеседника, обе истории, имя собеседника."""
         await llm_answers(talk_plan())
 
-        got = await talk('Hi!', history=MARKS['talk_history_chat'],
-                         mail_history=MARKS['talk_history_mail'],
+        got = await talk('Hi!', said=MARKS['talk_history_chat'],
+                         mailed=MARKS['talk_history_mail'],
                          variables=MARKS.vars())
         missing = MARKS.missing(got, STEP_CHAT, (
             'companion_bio', 'talk_history_chat', 'talk_history_mail',
@@ -154,8 +177,8 @@ class TestWhatThePanelAlwaysSendsArrives:
         """
         await llm_answers(talk_plan())
 
-        got = await talk(TALK_MAIL_ASK, history=MARKS['talk_history_chat'],
-                         mail_history=MARKS['talk_history_mail'],
+        got = await talk(TALK_MAIL_ASK, said=MARKS['talk_history_chat'],
+                         mailed=MARKS['talk_history_mail'],
                          variables=MARKS.vars(mail_mode='1',
                                               mail_kind=TALK_MAIL_WRITE,
                                               answer_anyway='1'))
@@ -252,3 +275,293 @@ class TestTheDiceSectionsOpenAndClose:
 
         assert not MARKS.missing(got, STEP_JUDGE, ('mail_length',)), \
             f'судья не знает, какой длины просили письмо.{got}'
+
+
+class TestTheInitiativeHasItsOwnBranch:
+    """⚠⚠ «Собеседник молчит — пишем первыми» идёт **своей** веткой.
+
+    Ветка нужна не для порядка: у неё своё задание («заговори», а не «ответь») и
+    свой жребий приёма. Уйди заход веткой чата — он получил бы «ответь на
+    сказанное», а сказанного нет.
+
+    ⚠ Прежде это проверял только живой прогон (`test_branches.py`), то есть не
+    проверял никто: живые тесты не идут вместе с сюитой.
+    """
+
+    async def test_it_goes_to_the_initiative_branch(self, talk, llm_answers):
+        await llm_answers(talk_plan())
+
+        got = await talk('', variables={'make_initiative': '1',
+                                        'answer_anyway': '1'})
+
+        assert got.ran(STEP_INITIATIVE), f'ветка инициативы не отработала.{got}'
+        assert not got.ran(STEP_CHAT), \
+            f'инициатива ушла веткой чата — там задание «ответь».{got}'
+
+    async def test_it_returns_through_the_common_judge(self, talk, llm_answers):
+        """⚠ Инициатива обязана пройти судью, как и прочие ветки: текст уходит
+        живому человеку, и своего пути в обход проверки у неё быть не должно."""
+        await llm_answers(talk_plan())
+
+        got = await talk('', variables={'make_initiative': '1',
+                                        'answer_anyway': '1'})
+
+        assert got.ran(STEP_JUDGE), \
+            f'инициатива миновала судью.{got}'
+        assert got.went_through(STEP_ANSWER), \
+            f'инициатива не дошла до общего выхода.{got}'
+
+
+class TestTheAnalysisCanStopTheRun:
+    """⚠⚠ Разбор вправе решить «отвечать не нужно» — и это должно работать.
+
+    Развилка `prompt_user_ignore` уводит на «Тишину» **мимо всех веток**: ни
+    сочинения, ни судьи, ни платного вызова модели. На неё приходятся реплики
+    вроде «ок» и наборы букв.
+
+    ⚠ Довод `ignore` был в `talk_plan` с самого начала, но **ни один тест его не
+    задавал** — путь не проверялся ничем, и трасса это подтвердила: переход
+    #27 → «Тишина» не сработал ни разу за прогон.
+    """
+
+    async def test_an_ignored_message_goes_silent(self, talk, llm_answers):
+        await llm_answers(talk_plan(ignore='1'))
+
+        got = await talk('ок')
+
+        assert got.ran(STEP_SILENCE), \
+            f'разбор велел молчать, а поток пошёл дальше.{got}'
+
+    async def test_it_costs_no_composing(self, talk, llm_answers):
+        """⚠⚠ Смысл развилки — **не платить** за ответ, которого не будет.
+
+        Пройди поток дальше, он позвал бы модель ещё дважды (ветка и судья), и
+        каждая реплика «ок» стоила бы как полноценный ответ.
+        """
+        await llm_answers(talk_plan(ignore='1'))
+
+        got = await talk('ок')
+
+        for step in STEP_BRANCHES:
+            assert not got.ran(step), \
+                f'после «отвечать не нужно» отработала ветка {step}.{got}'
+        assert not got.ran(STEP_JUDGE), \
+            f'после «отвечать не нужно» звали судью.{got}'
+
+
+class TestWhatHeSaidIsKept:
+    """⚠⚠ Факты из реплики **вправду записываются**, а не «шаг был на маршруте».
+
+    Подпрогон `companion_fact_extract` обходит запись, когда фактов нет
+    (`prompt_user_facts_companion == 0`). В обычном заходе так и есть — значит
+    сама запись не выполнялась **ни разу**: 16 обходов из 16 по трассе.
+
+    То есть дорога, ради которой заведена вся память агента, была не проверена.
+
+    ⚠ Факты кладутся врозь: о человеке и о переписке пары. «Он инженер» верно для
+    любой нашей анкеты, «договорились созвониться» — только для этой пары.
+    """
+
+    async def test_the_subflow_runs(self, talk, llm_answers):
+        await llm_answers(talk_plan(facts_man=FACTS_MAN, facts_talk=FACTS_TALK))
+
+        got = await talk('I am an architect living in Porto.')
+
+        assert got.went_through(STEP_FACT_SAVE), \
+            f'подпрогон сохранения фактов не позван.{got}'
+
+    async def test_both_stores_are_written(self, talk, llm_answers):
+        await llm_answers(talk_plan(facts_man=FACTS_MAN, facts_talk=FACTS_TALK))
+
+        got = await talk('I am an architect living in Porto.')
+
+        assert got.ran(STEP_FACT_SAVE_MAN), \
+            f'факты о собеседнике не записались.{got}'
+        assert got.ran(STEP_FACT_SAVE_TALK), \
+            f'факты о переписке не записались.{got}'
+
+    async def test_no_facts_means_no_writing(self, talk, llm_answers):
+        """⚠ Обратная сторона: фактов нет — запись обязана быть обойдена.
+
+        Иначе подпрогон писал бы в Qdrant пустоту на каждой реплике «ок».
+        """
+        await llm_answers(talk_plan())
+
+        got = await talk('ок')
+
+        assert got.went_through(STEP_FACT_SAVE), \
+            f'подпрогон не позван вовсе — проверять нечего.{got}'
+        assert not got.ran(STEP_FACT_SAVE_MAN), \
+            f'фактов не было, а запись всё равно шла.{got}'
+
+
+class TestHerOwnFactsAreInvented:
+    """⚠⚠ Спросил о ней — значит ей есть что ответить, и это запоминается.
+
+    Собеседник спрашивает «а ты чем занимаешься?», фактов о девушке нет, и агент
+    выдумал бы новое при каждом вопросе — завтра сказав другое. Подпрогон
+    `girl_fact_invent` придумывает **один раз** и кладёт в память.
+
+    ⚠ Вход в него — развилка `prompt_user_question == 1` у поиска фактов. По
+    трассе она не срабатывала ни разу: подпрогон не запускался вовсе.
+    """
+
+    async def test_a_question_runs_the_subflow(self, talk, llm_answers):
+        await llm_answers(talk_plan(question='1', facts_girl=facts_girl_for('test_key')))
+
+        got = await talk('And what do you do for a living?')
+
+        assert got.went_through(STEP_FACT_INVENT), \
+            f'подпрогон выдумывания фактов не позван.{got}'
+
+    async def test_the_invented_facts_are_stored(self, talk, llm_answers):
+        """⚠ Придумать мало — надо записать: иначе на тот же вопрос завтра
+        придумается другое, и девушка начнёт себе противоречить."""
+        await llm_answers(talk_plan(question='1', facts_girl=facts_girl_for('test_key')))
+
+        got = await talk('And what do you do for a living?')
+
+        assert got.ran(STEP_FACT_INVENT_ADD), \
+            f'придуманные факты никуда не записались.{got}'
+
+    async def test_nothing_invented_writes_nothing(self, talk, llm_answers):
+        """⚠⚠ Подпрогон позвали, а придумать он ничего не смог — записи быть не
+        должно.
+
+        Вопрос бывает такой, что выдумывать нечего («а сколько времени?»), и
+        подпрогон честно отвечает нулём. Уйди этот ноль в запись — в память
+        девушки лёг бы факт-пустышка, и поиск стал бы возвращать его вместо
+        настоящих.
+        """
+        await llm_answers(talk_plan(question='1', facts_girl='0'))
+
+        got = await talk('And what time is it there?')
+
+        assert got.went_through(STEP_FACT_INVENT), \
+            f'подпрогон не позван вовсе — проверять нечего.{got}'
+        assert not got.ran(STEP_FACT_INVENT_ADD), \
+            f'придумывать было нечего, а запись всё равно шла.{got}'
+
+    async def test_no_question_means_no_inventing(self, talk, llm_answers):
+        """⚠⚠ Обратная сторона, и она про деньги: подпрогон это лишний вызов
+        модели. Запускайся он на каждой реплике — платили бы за него всегда."""
+        await llm_answers(talk_plan())
+
+        got = await talk('ок')
+
+        assert not got.went_through(STEP_FACT_INVENT), \
+            f'о девушке не спрашивали, а факты ей всё равно придумывали.{got}'
+
+
+class TestHerFactsAreFoundByTags:
+    """⚠⚠ Записанное **находится** — и находится поиском по тегам.
+
+    Это последнее звено памяти, и проверить его можно только двумя заходами:
+    первый придумывает и записывает, второй ищет. Одним заходом не выйдет — в
+    момент поиска записывать ещё нечего.
+
+    ## ⚠⚠ Этот тест — сторож найденной поломки
+
+    Промпт подпрогона велел помечать факты `%girl_name%`, а внутри подпрогона это
+    **имя агента** (`dating_girl_universal`): все придуманные факты всех девушек
+    ложились в один документ и не читались ничем. На проде их два — вся работа
+    занятия за всё время (`…_wf_invent_facts_key`).
+
+    Поломка была совершенно тихой: запись шла, шаг зеленел, поиск честно
+    возвращал пусто. Ни один прежний тест её не видел, потому что все они
+    проверяли **один** заход.
+
+    ⚠ Ключ девушки тест задаёт сам — обе части. Иначе он не знает, чем помечать
+    факт: склейку делает шаг «Ключи» внутри прогона.
+    """
+
+    @pytest.fixture
+    def girl(self):
+        """Своя девушка и её склеенный ключ: номер, имя, ключ.
+
+        ⚠ Номер уникален на прогон: два теста с общей девушкой делили бы память,
+        и второй находил бы факты первого.
+        """
+        number = f'9{uuid.uuid4().hex[:7]}'
+        name = 'Zinaida-Test'
+
+        return number, name, f'{number}_{name}'
+
+    async def test_what_was_invented_is_found_next_time(self, talk, llm_answers,
+                                                        girl):
+        number, name, key = girl
+        who = {'girl_id': number, 'girl_name': name}
+
+        # Первый заход: собеседник спросил о ней, подпрогон придумал и записал.
+        await llm_answers(talk_plan(question='1',
+                                    facts_girl=facts_girl_for(key)))
+        first = await talk('And what do you do for a living?', variables=who)
+
+        assert first.ran(STEP_FACT_INVENT_ADD), \
+            f'первый заход ничего не записал — искать будет нечего.{first}'
+
+        # Второй: тот же вопрос, но придумывать больше не нужно — факт уже есть.
+        await llm_answers(talk_plan(question='1',
+                                    facts_girl=facts_girl_for(key)))
+        second = await talk('And what do you do for a living?', variables=who)
+
+        found = second.output_of(STEP_FACTS_TAGS)
+
+        assert found, f'поиск по тегам ничего не вернул.{second}'
+        assert 'lighthouse' in found, \
+            (f'записанный факт не нашёлся поиском по тегам: {found[:120]!r}.'
+             f' Ключ записи и ключ поиска разошлись.{second}')
+
+    async def test_found_facts_reach_the_companion_search(self, talk, llm_answers,
+                                                          girl):
+        """⚠⚠ Нашлись факты, а вопроса не было — поток идёт к фактам собеседника.
+
+        У шага поиска по тегам **три** выхода, и разводят их два условия:
+
+            ничего не нашлось          → общий поиск фактов девушки
+            нашлось и он спросил о ней → подпрогон выдумывания
+            нашлось, вопроса не было   → поиск фактов собеседника
+
+        Третий — обычный ход разговора: о девушке уже всё записано, спрашивают о
+        нём. Проверить его можно только так: сперва записать факты, потом
+        заговорить **без** вопроса о ней.
+        """
+        number, name, key = girl
+        who = {'girl_id': number, 'girl_name': name}
+
+        await llm_answers(talk_plan(question='1',
+                                    facts_girl=facts_girl_for(key)))
+        await talk('And what do you do for a living?', variables=who)
+
+        # ⚠ Вопроса о ней нет — значит выдумывать нечего, и поток идёт дальше.
+        await llm_answers(talk_plan())
+        got = await talk('Nice weather today, right?', variables=who)
+
+        assert got.ran(STEP_FACTS_TAGS), f'поиск по тегам не отработал.{got}'
+        assert got.ran(STEP_FACTS_MAN), \
+            (f'факты нашлись и вопроса не было, а к фактам собеседника поток'
+             f' не пошёл.{got}')
+        assert not got.went_through(STEP_FACT_INVENT), \
+            f'о девушке не спрашивали, а выдумывание всё равно звали.{got}'
+
+    async def test_found_facts_skip_the_plain_search(self, talk, llm_answers,
+                                                     girl):
+        """⚠ Нашлось по тегам — значит общий поиск не нужен.
+
+        Оба поиска подряд стоили бы лишнего обращения к Qdrant на каждой реплике,
+        а теги для этого и заведены: они сужают выборку до «о чём сейчас речь».
+        """
+        number, name, key = girl
+        who = {'girl_id': number, 'girl_name': name}
+
+        await llm_answers(talk_plan(question='1',
+                                    facts_girl=facts_girl_for(key)))
+        await talk('And what do you do for a living?', variables=who)
+
+        await llm_answers(talk_plan(question='1',
+                                    facts_girl=facts_girl_for(key)))
+        got = await talk('And what do you do for a living?', variables=who)
+
+        assert got.ran(STEP_FACTS_TAGS), f'поиск по тегам не отработал.{got}'
+        assert not got.ran(STEP_FACTS_PLAIN), \
+            f'теги нашли факты, а общий поиск всё равно шёл.{got}'

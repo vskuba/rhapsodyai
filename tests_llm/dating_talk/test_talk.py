@@ -182,7 +182,7 @@ class TestTheHistoryIsHeard:
         промпт развилки прямо говорит, что слово «фото» в рассказе о поездке
         темой не является. Тест спорил с правилом, которое сам же проверяет.
         """
-        got = await talk('so can i?', history=(
+        got = await talk('so can i?', said=(
             'Gerard: can i send you a few photos of me?\n'
             'Она: hmm, maybe\n'))
 

@@ -15,11 +15,16 @@
 import pytest
 
 from tests_llm.datingai import TITLE_MARK
+from tests_llm.plan import plan_load
 from tests_llm.dating_mail_write.conftest import (STEP_INLINE, STEP_LANG,
                                                   STEP_MISSING, STEP_OUT,
                                                   STEP_SAME, STEP_VARS,
                                                   STEP_WHY, STEP_WRITE,
                                                   TRIES_MAX)
+from tests_llm.dating_mail_write.fixtures import (PLAN_INLINE, PLAN_LANG_BAD,
+                                                  PLAN_NO_MARKS, PLAN_OK,
+                                                  PLAN_SAME, PLAN_SOME_MARKS,
+                                                  PLAN_UNKNOWN_MARK)
 
 pytestmark = pytest.mark.llm
 
@@ -89,50 +94,19 @@ class TestEveryGateIsPassed:
             f'повтор прошлых писем никто не судит.{got}'
 
 
-class TestTheRewriteLoop:
-    """⚠⚠ Цикл переписывания: не прошли ворота — заходим заново.
-
-    Проверяется **связь**, а не то, забракуют ли черновик: забракуют или нет,
-    решают модель и инструменты. Зато связь «был второй заход ⇔ шёл шаг
-    замечания» держит движок.
-    """
-
-    async def test_a_second_pass_means_a_reason_was_collected(self, letter):
-        got = await letter()
-
-        if got.times(STEP_WRITE) < 2:
-            pytest.skip('черновик прошёл с первого раза — цикла не было')
-
-        assert got.went_through(STEP_WHY), \
-            f'письмо переписывалось, а замечания никто не собирал.{got}'
-        assert got.times(STEP_WHY) == got.times(STEP_WRITE) - 1, \
-            (f'заходов {got.times(STEP_WRITE)}, а замечаний'
-             f' {got.times(STEP_WHY)}.{got}')
-
-    async def test_the_second_pass_is_told_what_was_wrong(self, letter):
-        """⚠ Второй заход обязан **видеть** замечание: без него он переписывал бы
-        наугад и с тем же успехом."""
-        got = await letter()
-        passes = got.prompt_each(STEP_WRITE)
-
-        if len(passes) < 2:
-            pytest.skip('черновик прошёл с первого раза — цикла не было')
-
-        assert 'НЕ ГОДИТСЯ:' in passes[1], \
-            f'второй заход сочинял, не зная, чем плох первый.{got}'
-
-    async def test_the_loop_has_a_ceiling(self, letter):
-        """⚠⚠ Потолок обязателен, и он не «на всякий случай».
-
-        Без него негодный черновик крутил бы цикл, пока не оборвётся таймаут
-        движка, — и человек получил бы `504` вместо письма с изъяном. Три захода
-        это уже минута ожидания.
-        """
-        got = await letter()
-
-        assert got.times(STEP_WRITE) <= TRIES_MAX, \
-            (f'письмо сочинялось {got.times(STEP_WRITE)} раз при пределе'
-             f' {TRIES_MAX}.{got}')
+# ⚠⚠ **Здесь был класс `TestTheRewriteLoop`, и он проверял цикл впустую.**
+#
+# Три теста: два вызывали `pytest.skip`, если цикла не случилось, а третий
+# утверждал `times(STEP_WRITE) <= 3`. С годной заготовкой цикла не случается
+# никогда — значит первые два **всегда** пропускались, а третий был верен
+# тривиально (один заход из трёх возможных).
+#
+# То есть класс выглядел покрытием, а не был им: путь брака оставался
+# непроверенным, и оба пропуска висели в отчёте прогона как норма.
+#
+# Цикл теперь проверяет `TestEachGateSendsItBack` ниже — каждыми воротами
+# отдельно и без пропусков. Там же и потолок: изъян неисправим, поэтому заходов
+# ровно три.
 
 
 class TestTheEnvelope:
@@ -162,3 +136,110 @@ class TestTheEnvelope:
         assert head.strip() != envelope.strip(), \
             f'название и письмо не разделены переносом.{got}'
         assert tail.strip(), f'после названия письма нет вовсе.{got}'
+
+
+class TestEachGateSendsItBack:
+    """⚠⚠ Каждые ворота **вправду возвращают** негодное письмо на переписывание.
+
+    Соседний класс проверяет, что ворота стоят на пути. Этого мало: ворота могут
+    стоять и ни на что не влиять — условие перехода отвалилось, письмо идёт
+    дальше, и брак уезжает в рассылку сотням людей. Зелёный прогон при этом
+    остаётся зелёным.
+
+    Здесь каждая проверка **ломается намеренно**, и утверждение одно: заход
+    вернулся к сочинению.
+
+    ## ⚠ Пятеро ворот, и изъян у каждого свой
+
+    | Ворота | Чем ломаем | Кто решает |
+    |---|---|---|
+    | Переменные | метка `favourite_song`, которой нет в реестре | инструмент |
+    | Вопрос отдельно? | живая метка внутри фразы | инструмент |
+    | Все ли метки? | письмо без меток вовсе | инструмент |
+    | Язык верный? | вердикт `letter_lang_ok = 0` | модель |
+    | Судья: не повтор ли? | вердикт `letter_same = yes` | модель |
+
+    ⚠⚠ Общим негодным письмом это не проверить: оно упёрлось бы в **первые**
+    ворота, и остальные четверо снова остались бы без проверки. Поэтому у каждого
+    теста свой изъян, а прочее в письме верно.
+
+    ## ⚠⚠ Дойти до потолка — часть проверки, а не побочный итог
+
+    Изъян никуда не девается: модель отвечает тем же на каждом заходе. Значит
+    письмо сочиняется трижды и уходит как есть — ровно то поведение, которое
+    задумано (`write_try < 3`). Живой моделью этого не проверить: заставить её
+    забраковать письмо трижды подряд нельзя.
+    """
+
+    async def _rejected(self, letter, llm_answers, plan, step: str):
+        """Заход с одним изъяном: вернулся ли он к сочинению.
+
+        ⚠ Сценарий кладётся **до** вызова: заготовка папки уступает своему
+        (`ask`), и без этого порядка тест получил бы годное письмо.
+        """
+        await llm_answers(plan_load(plan, PLAN_OK))
+
+        got = await letter()
+
+        assert got.times(STEP_WRITE) > 1, \
+            (f'{step}: письмо с изъяном прошло с первого раза — ворота стоят,'
+             f' но никуда не возвращают.{got}')
+        assert got.went_through(STEP_WHY), \
+            f'{step}: письмо переписывали, а замечания никто не собрал.{got}'
+
+        return got
+
+    async def test_an_unknown_mark_goes_back(self, letter, llm_answers):
+        await self._rejected(letter, llm_answers, PLAN_UNKNOWN_MARK, STEP_VARS)
+
+    async def test_an_inline_mark_goes_back(self, letter, llm_answers):
+        await self._rejected(letter, llm_answers, PLAN_INLINE, STEP_INLINE)
+
+    async def test_a_letter_without_any_marks_goes_back(self, letter, llm_answers):
+        """⚠⚠ Письмо без единой метки отсеивают **первые** ворота, а не «Все ли
+        метки?»: у шага «Переменные» два условия, и второе — `found_qty == 0`.
+
+        Разница не формальная. Шаблон без меток уходит всем сорока девушкам одним
+        текстом, и заметить это по одному письму нельзя.
+        """
+        await self._rejected(letter, llm_answers, PLAN_NO_MARKS, STEP_VARS)
+
+    async def test_missing_marks_go_back(self, letter, llm_answers):
+        """⚠ Здесь метки есть, все известны, вопрос отдельно — не хватает одной
+        обязательной. Только так заход доходит до ворот «Все ли метки?»."""
+        await self._rejected(letter, llm_answers, PLAN_SOME_MARKS, STEP_MISSING)
+
+    async def test_a_wrong_language_goes_back(self, letter, llm_answers):
+        await self._rejected(letter, llm_answers, PLAN_LANG_BAD, STEP_LANG)
+
+    async def test_a_repeat_verdict_goes_back(self, letter, llm_answers):
+        await self._rejected(letter, llm_answers, PLAN_SAME, STEP_SAME)
+
+    async def test_the_reason_reaches_the_next_pass(self, letter, llm_answers):
+        """⚠ Второй заход обязан **видеть**, чем плох первый.
+
+        Не увидит — будет переписывать наугад, и три захода дадут три одинаково
+        негодных письма вместо одного исправленного.
+        """
+        got = await self._rejected(letter, llm_answers, PLAN_LANG_BAD, STEP_LANG)
+        passes = got.prompt_each(STEP_WRITE)
+
+        assert len(passes) > 1, f'второго захода не было вовсе.{got}'
+        assert 'НЕ ГОДИТСЯ:' in passes[1], \
+            f'второй заход сочинял, не зная, чем плох первый.{got}'
+
+    async def test_the_ceiling_holds_when_nothing_improves(self, letter,
+                                                           llm_answers):
+        """⚠⚠ Изъян неисправим — значит потолок обязан остановить цикл.
+
+        Без потолка заход крутился бы до таймаута движка, и человек получил бы
+        `504` вместо письма с изъяном. Здесь модель отвечает одним и тем же, то
+        есть условие выхода наступить не может — остаётся только предел.
+        """
+        got = await self._rejected(letter, llm_answers, PLAN_LANG_BAD, STEP_LANG)
+
+        assert got.times(STEP_WRITE) == TRIES_MAX, \
+            (f'неисправимое письмо сочинялось {got.times(STEP_WRITE)} раз,'
+             f' а предел {TRIES_MAX}.{got}')
+        assert got.status == 'success', \
+            f'упёрлись в потолок и уронили прогон вместо выдачи письма.{got}'
