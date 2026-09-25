@@ -485,7 +485,17 @@ services:
       test: [ "CMD", "mysqladmin", "ping", "-p$$MYSQL_ROOT_PASSWORD","--protocol","tcp" ]
 
   telegram:
-    image: ghcr.io/vskuba/marina-ai:latest
+    # ⚠ Образ **наш**, а не чужой: его собирает наша же выкладка
+    # (`.github/workflows/deploy.yml`, шаг «Build and push Bot image») из
+    # `docker/telegram/dockerfile`. Звать его больше некому — ни один другой сервис
+    # и ни один другой проект на него не ссылается.
+    #
+    # ⚠⚠ Прежде звался `ghcr.io/vskuba/marina-ai` — по имени проекта, которого
+    # больше нет. Имя обманывало ровно в тот момент, когда цена ошибки высока: на
+    # упавшей выкладке `docker compose pull` сказал «NotFound» про marina-ai, и это
+    # прочиталось как «сторонний образ сломал нам выкладку». Искать причину пошли
+    # не туда.
+    image: ghcr.io/vskuba/rhapsodyai-telegram:latest
     container_name: telegram
     profiles: ["on_prod_only"]
     restart: always

@@ -82,7 +82,7 @@ Install: `pip install -r docker/uvicorn/requirements.txt` / `docker/telegram/req
 | `rq-dashboard` | 9181 | — | Redis queue monitoring; свой образ `docker/rq_dashboard/dockerfile` (151 МБ) — общий с приложением тянул Playwright и модели ради веб-страницы |
 | `phpmyadmin` | 9634→80 | — | MySQL admin |
 | `gatus` | 8090→8080 | `disabled` | Health-мониторинг эндпоинтов. Отключён: не поднимается вместе со стеком, уведомления в Telegram выключены в `docker/gatus/config.yaml` |
-| `telegram` | — | `on_prod_only` | Telegram-бот, образ `ghcr.io/vskuba/marina-ai:latest` |
+| `telegram` | — | `on_prod_only` | Telegram-бот, образ `ghcr.io/vskuba/rhapsodyai-telegram:latest` (собираем сами; ⚠ до 25.09.2026 звался `marina-ai` — по имени проекта, которого больше нет) |
 | `caddy` | 80, 443 | `on_prod_only` | Reverse proxy + TLS; `/play/detective/*` отдаёт статику напрямую |
 
 Сервисы с профилем не поднимаются обычным `docker compose up` — нужен
