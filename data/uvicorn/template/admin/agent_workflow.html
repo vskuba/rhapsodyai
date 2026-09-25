@@ -1196,6 +1196,155 @@
         background-color: #ffd9ea;
     }
 
+    /* Динамические: их никто не заводил, они появляются в прогоне сами.
+       ⚠ Полоса пунктиром, а не цветом — цвета у соседей уже разобраны, а пунктир
+       говорит то же, что и надпись на вкладке: записи в реестре нет. */
+    /* ── Граф: панель переменных рядом с диаграммой ──────────────────────── */
+
+    .graph-layout {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    /* ⚠⚠ Диаграмме нужно **явно** сказать «займи остальное».
+       Её содержимое позиционировано абсолютно (перемещение и масштаб), то есть
+       собственной ширины у контейнера нет вовсе. Как flex-ребёнок без `flex` он
+       схлопывался до двух пикселей — ровно до своих рамок, — и граф пропадал с
+       экрана целиком. Ошибки при этом не было: SVG жил в DOM с тремя узлами и
+       размером 0×0.
+       ⚠ `min-width: 0` обязателен рядом: без него flex не даёт ребёнку стать уже
+       содержимого, и широкий граф растянул бы раскладку, выдавив панель. */
+    .graph-layout .graph-container {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    /* ⚠ Узкая и с своей прокруткой: диаграмме нужно всё остальное место, а имён
+       переменных бывает под сотню. */
+    .graph-vars {
+        flex: 0 0 240px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .graph-vars-list {
+        overflow-y: auto;
+        max-height: 40vh;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        padding: 3px;
+        background: #fff;
+    }
+
+    .graph-var {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        padding: 3px 6px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 11px;
+        font-family: monospace;
+        color: #334155;
+    }
+
+    .graph-var:hover {
+        background: #f1f5f9;
+    }
+
+    .graph-var.active {
+        background: #dbeafe;
+        color: #1e40af;
+        font-weight: 600;
+    }
+
+    /* ⚠⚠ Цвета — те же, что у групп на панели шагов, и это не украшение: человек
+       узнаёт вид переменной по полосе, не читая подписи. Разойдись они — полоса
+       стала бы врать. */
+    .graph-var-input    { border-left: 3px solid #26c6da; }
+    .graph-var-common   { border-left: 3px solid limegreen; }
+    .graph-var-node     { border-left: 3px solid #ffd73b; }
+    .graph-var-tool     { border-left: 3px solid #f488d5; }
+    .graph-var-workflow { border-left: 3px solid #2974df; }
+    /* ⚠ Пунктир — тот же признак, что на вкладке «Dynamic»: записи в реестре нет. */
+    .graph-var-dynamic  { border-left: 3px dashed #9575cd; }
+
+    /* Название группы над именем в трассе. */
+    .graph-vars-trace .trace-group {
+        font-size: 10px;
+        color: #64748b;
+        border-left: 3px solid #cbd5e1;
+        padding-left: 6px;
+        margin-bottom: 4px;
+    }
+
+    .trace-group-input    { border-left-color: #26c6da; }
+    .trace-group-common   { border-left-color: limegreen; }
+    .trace-group-node     { border-left-color: #ffd73b; }
+    .trace-group-tool     { border-left-color: #f488d5; }
+    .trace-group-workflow { border-left-color: #2974df; }
+    .trace-group-dynamic  { border-left-color: #9575cd; }
+
+    /* Сколько шагов кладёт и читает — видно до щелчка. */
+    .graph-var-count {
+        font-size: 10px;
+        color: #94a3b8;
+        white-space: nowrap;
+    }
+
+    .graph-vars-trace {
+        font-size: 11px;
+        line-height: 1.5;
+        color: #475569;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        padding: 6px 8px;
+        background: #fff;
+        overflow-y: auto;
+        max-height: 34vh;
+    }
+
+    .graph-vars-trace .trace-head {
+        font-family: monospace;
+        font-weight: 600;
+        color: #1e293b;
+        margin-bottom: 4px;
+        word-break: break-all;
+    }
+
+    .graph-vars-trace .trace-role {
+        margin-top: 6px;
+        font-size: 10px;
+        letter-spacing: .04em;
+        color: #94a3b8;
+    }
+
+    .graph-vars-trace .trace-step {
+        cursor: pointer;
+        padding: 1px 0;
+    }
+
+    .graph-vars-trace .trace-step:hover {
+        color: #1d4ed8;
+        text-decoration: underline;
+    }
+
+    .graph-vars-trace .trace-none {
+        color: #b45309;
+    }
+
+    .variable-item-dynamic {
+        border-left: 2px dashed #9575cd;
+    }
+
+    .variable-item-dynamic:hover {
+        background-color: #ece6f8;
+    }
+
     .variable-item-input {
         border-left: 2px solid #26c6da;
     }
@@ -1622,8 +1771,20 @@
             <!-- 3. Контейнер ГРАФА переходов -->
             <div id="stepsGraph" style="display: none;">
                 <div id="stepsGraphWarnings" class="graph-warnings"></div>
-                <div id="stepsGraphContainer" class="graph-container">
-                    <!-- Сюда рендерится mermaid-диаграмма -->
+                <!-- ⚠⚠ Своя панель переменных, а не та, что в редакторе шагов:
+                     редактор при показе графа скрывается целиком, и вместе с ним
+                     уходит `#variablesContainer`. Две панели об одном — плата за
+                     то, что виды взаимоисключающие. -->
+                <div class="graph-layout">
+                    <div class="graph-vars">
+                        <input type="text" id="graphVarFilter" class="form-control"
+                               placeholder="Поиск переменной…" autocomplete="off">
+                        <div id="graphVarList" class="graph-vars-list"></div>
+                        <div id="graphVarTrace" class="graph-vars-trace"></div>
+                    </div>
+                    <div id="stepsGraphContainer" class="graph-container">
+                        <!-- Сюда рендерится mermaid-диаграмма -->
+                    </div>
                 </div>
             </div>
 

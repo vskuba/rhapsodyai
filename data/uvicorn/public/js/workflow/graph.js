@@ -9,6 +9,7 @@ import {parseMetadata, graphLabelEscape, activateTab} from './utils.js';
 import {showNotification} from '../notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
 import {getData} from '../api.js';
+import {variablesTrace, variableGroupOf} from './variables.js';
 
 export function initGraphMode() {
     if (window.mermaid) {
@@ -138,6 +139,24 @@ function _buildInnerLines(steps, prefix, subflowStepsMap, warnings, includeStart
                 const subPrefix = `${prefix}W${subWfId}_`;
                 // Entry: invoke node → first sub-workflow step
                 lines.push(`  ${nodeId} --> ${subPrefix}S${subSorted[0].id}`);
+
+                // ⚠⚠ **И возврат обратно.** Подпрогон всегда отдаёт результат
+                // вызвавшему шагу: движок кладёт его переменные в `variables`
+                // родителя по `outputs_map`, а прогон продолжается с того же
+                // места (`ai_framework_manager`, ветка `workflow_invoke`).
+                //
+                // Рисовалась только стрелка входа, и граф читался так, будто
+                // поток уходит в подпрогон и там кончается. По нему нельзя было
+                // понять, откуда родитель берёт то, что кладёт следующий шаг.
+                //
+                // ⚠ Сплошной, как и вход: возврат случается **всегда**, а не
+                // при условии. Пунктир на этом графе означает «может не
+                // произойти» — им нарисованы повтор подпрогона (`↩ until …`) и
+                // условные переходы. Отдай мы возврату тот же вид, читающий
+                // искал бы условие, которого нет.
+                const backFrom = `${subPrefix}S${subSorted[subSorted.length - 1].id}`;
+                const backLabel = _invokeReturnLabel(invoke);
+                lines.push(`  ${backFrom} -- "${backLabel}" --> ${nodeId}`);
                 // Repeat loop: last sub-step ↩ first sub-step (condition from invoke metadata)
                 if (invoke.repeat?.until) {
                     const {variable, operator = '==', value = ''} = invoke.repeat.until;
@@ -201,6 +220,23 @@ function _buildInnerLines(steps, prefix, subflowStepsMap, warnings, includeStart
  * Builds mermaid definition for the given steps + all referenced sub-workflows.
  * subflowStepsMap: { workflowId: steps[] }
  */
+/**
+ * Подпись стрелки возврата из подпрогона: что именно он отдаёт родителю.
+ *
+ * ⚠ Имена переменных, а не «результат вообще»: по ним видно, ради чего вызов и
+ * сделан. Их до трёх — дальше многоточие, иначе подпись растянет узел вдвое.
+ */
+function _invokeReturnLabel(invoke) {
+    const outputs = Object.values((invoke && invoke.outputs_map) || {})
+        .filter(one => typeof one === 'string' && one);
+
+    if (outputs.length === 0) return '↩';
+
+    const shown = outputs.slice(0, 3).join(', ');
+
+    return graphLabelEscape(`↩ ${shown}${outputs.length > 3 ? '…' : ''}`);
+}
+
 export function buildWorkflowGraphDefinition(steps, subflowStepsMap = {}) {
     const warnings = [];
     const lines = ['flowchart TD'];
@@ -277,6 +313,9 @@ export async function openWorkflowGraph() {
         container.appendChild(hint);
         attachGraphPanZoom(container);
         attachGraphNodeHandlers(container);
+        // ⚠ После узлов: подсветка ищет их в готовом SVG, а выбор переменной
+        // переживает перерисовку — панель восстановит его сама.
+        renderGraphVariables(container);
     } catch (e) {
         console.error('Ошибка построения графа:', e, definition);
         container.innerHTML = `<div style="color:#c0392b; margin-bottom:8px;">Не удалось построить граф: ${e.message}</div>`
@@ -404,15 +443,262 @@ function attachGraphNodeHandlers(container) {
         nodeEl.addEventListener('click', () => {
             const step = state.allCurrentStepsData.find(s => String(s.id) === stepId);
             if (!step) return;
-            document.getElementById('stepsGraph').style.display = 'none';
-            document.getElementById('stepsEditorView').style.display = 'flex';
-            // ⚠ Через общую функцию, а не двумя строками с `classList`: она же
-            // запоминает вкладку. Своими руками выбор менялся бы молча, и
-            // страница после перезагрузки возвращала бы на граф — туда, откуда
-            // человек как раз ушёл.
-            activateTab('tabSteps');
-            const stepBlock = document.querySelector(`.step-item-block[data-id="${stepId}"]`);
-            if (stepBlock) selectStep(step, stepBlock);
+            // ⚠ Одна дорога на щелчок по узлу и на строку трассы: разойдись они,
+            // один путь забыл бы запомнить вкладку, и страница после перезагрузки
+            // возвращала бы на граф — туда, откуда человек как раз ушёл.
+            openStepFromGraph(step);
         });
     });
+}
+
+
+// ── Панель переменных рядом с графом ────────────────────────────────────────
+//
+// ⚠⚠ **Своя, а не та, что в редакторе шагов.** Редактор при показе графа
+// скрывается целиком (`stepsEditorView.style.display = 'none'`), и вместе с ним
+// уходит `#variablesContainer`. Одну панель на два вида не сделать, не перестроив
+// раскладку страницы.
+
+// Цвета подсветки узлов. ⚠ Два, и они про разное: кто **кладёт** переменную и кто
+// её **читает**. Один цвет на оба смысла отвечал бы на половину вопроса.
+const VAR_MADE_COLOR = '#16a34a';
+const VAR_USED_COLOR = '#2563eb';
+
+// Что помним между перерисовками графа: трасса, выбранное имя и нумерация шагов.
+let _varTrace = new Map();
+let _varPicked = null;
+let _stepNumbers = new Map();
+
+/**
+ * Номер шага так, как его видит человек: порядковый, с единицы.
+ *
+ * ⚠⚠ **Не `position`.** Тот хранится в базе с нуля и **с пропусками**: у
+ * `dating_talk` позиции идут 0–33 на 33 шага, потому что миграции раздвигали их
+ * и одна дырка осталась. И граф (`index + 1` в `_buildInnerLines`), и список
+ * шагов (`step-number-badge`) нумеруют порядком в отсортированном массиве.
+ *
+ * Пока трасса печатала `position`, её номера расходились с теми, что на экране:
+ * «5. Ленты разговора» в трассе против «6. Ленты разговора» на графе. Человек
+ * искал шаг по номеру и не находил.
+ */
+function stepNumbersOf(steps) {
+    const numbers = new Map();
+
+    [...(steps || [])]
+        .sort((a, b) => (a.position || 0) - (b.position || 0))
+        .forEach((step, index) => numbers.set(String(step.id), index + 1));
+
+    return numbers;
+}
+
+/**
+ * Рисует список переменных workflow и вешает выбор.
+ *
+ * ⚠ Зовётся **после** отрисовки диаграммы: подсветка ищет узлы в готовом SVG.
+ */
+function renderGraphVariables(container) {
+    const listBox = document.getElementById('graphVarList');
+    const traceBox = document.getElementById('graphVarTrace');
+    const filterInput = document.getElementById('graphVarFilter');
+    if (!listBox || !traceBox) return;
+
+    _varTrace = variablesTrace(state.allCurrentStepsData);
+    _stepNumbers = stepNumbersOf(state.allCurrentStepsData);
+
+    const draw = (filter = '') => {
+        const needle = filter.trim().toLowerCase();
+        listBox.innerHTML = '';
+
+        let shown = 0;
+        _varTrace.forEach((cell, name) => {
+            if (needle && !name.toLowerCase().includes(needle)) return;
+            shown++;
+
+            const group = variableGroupOf(name);
+            const row = document.createElement('div');
+            // ⚠ Цвет полосы — по группе, тот же, что на панели шагов. Ключ группы
+            // становится классом (`graph-var-input`), а цвета живут в CSS: два
+            // списка цветов разошлись бы на первой правке.
+            row.className = 'graph-var' + (group ? ` graph-var-${group.key}` : '');
+            if (name === _varPicked) row.className += ' active';
+            row.dataset.name = name;
+            if (group) row.title = group.title;
+
+            const label = document.createElement('span');
+            label.textContent = name;
+            // ⚠ Длинное имя обрезаем видом, а не текстом: полное нужно в подсказке.
+            label.style.overflow = 'hidden';
+            label.style.textOverflow = 'ellipsis';
+            label.style.whiteSpace = 'nowrap';
+            label.title = name;
+
+            const count = document.createElement('span');
+            count.className = 'graph-var-count';
+            count.textContent = `${cell.made.length}→${cell.used.length}`;
+            count.title = `кладёт шагов: ${cell.made.length}, читает: ${cell.used.length}`;
+
+            row.append(label, count);
+            row.onclick = () => pickVariable(name, container);
+            listBox.appendChild(row);
+        });
+
+        if (shown === 0) {
+            listBox.innerHTML = '<div class="empty-text" style="font-size:11px;padding:4px;color:#888;">Ничего не нашлось</div>';
+        }
+    };
+
+    if (filterInput) {
+        filterInput.oninput = () => draw(filterInput.value);
+        draw(filterInput.value);
+    } else {
+        draw();
+    }
+
+    // ⚠ Выбор переживает перерисовку: граф перестраивается при каждом заходе, и
+    // терять выбранное имя значило бы заставлять человека искать его заново.
+    if (_varPicked && _varTrace.has(_varPicked)) pickVariable(_varPicked, container);
+    else traceBox.innerHTML = '<div style="color:#94a3b8;">Выберите переменную — покажу, кто её кладёт и кто читает</div>';
+}
+
+/**
+ * Выбрать переменную: показать трассу и подсветить узлы на графе.
+ */
+function pickVariable(name, container) {
+    _varPicked = name;
+    const cell = _varTrace.get(name) || {made: [], used: []};
+
+    document.querySelectorAll('#graphVarList .graph-var').forEach(row => {
+        row.classList.toggle('active', row.dataset.name === name);
+    });
+
+    renderVariableTrace(name, cell, container);
+    highlightGraphForVariable(cell, container);
+}
+
+/**
+ * Трасса словами: кто кладёт, кто читает. Щелчок по шагу открывает его в редакторе.
+ */
+function renderVariableTrace(name, cell, container) {
+    const box = document.getElementById('graphVarTrace');
+    if (!box) return;
+    box.innerHTML = '';
+
+    // ⚠ Название группы над именем: по нему видно, откуда переменная берётся
+    // вообще — входящая приходит снаружи, динамическую кладёт шаг.
+    const group = variableGroupOf(name);
+    if (group) {
+        const kind = document.createElement('div');
+        kind.className = `trace-group trace-group-${group.key}`;
+        kind.textContent = `${group.title}:`;
+        box.appendChild(kind);
+    }
+
+    const head = document.createElement('div');
+    head.className = 'trace-head';
+    head.textContent = `%${name}%`;
+    box.appendChild(head);
+
+    const part = (title, steps) => {
+        const label = document.createElement('div');
+        label.className = 'trace-role';
+        label.textContent = title;
+        box.appendChild(label);
+
+        if (steps.length === 0) {
+            // ⚠ Прочерк, а не фраза: список читается глазами сверху вниз, и
+            // объяснение в две строки сбивает ритм. Почему пусто, видно по группе
+            // над именем — у входящей класть и некому.
+            const none = document.createElement('div');
+            none.className = 'trace-none';
+            none.textContent = '—';
+            box.appendChild(none);
+
+            return;
+        }
+
+        steps.forEach(step => {
+            const row = document.createElement('div');
+            row.className = 'trace-step';
+            const type = state.allWorkflowStepsType[step.type_id]?.name || '';
+            row.textContent = `${_stepNumbers.get(String(step.id)) ?? '?'}. ${step.title}`;
+            row.title = type;
+            // ⚠ Щелчок ведёт **к шагу**: трасса отвечает «где», а поправить можно
+            // только в редакторе. Тем же путём, что и щелчок по узлу графа.
+            row.onclick = () => openStepFromGraph(step);
+            box.appendChild(row);
+        });
+    };
+
+    part('КЛАДУТ:', cell.made);
+    part('ЧИТАЮТ:', cell.used);
+}
+
+/**
+ * Подсвечивает на диаграмме узлы, которые кладут и читают переменную.
+ *
+ * ⚠⚠ Разметку узлов не меняем вовсе — только обводку в готовом SVG. Имена
+ * переменных внутри узлов граф бы не вынес: «Ответ в чат» трогает 21 переменную,
+ * «Письмо первым» — 24.
+ */
+function highlightGraphForVariable(cell, container) {
+    const svg = container.querySelector('svg');
+    if (!svg) return;
+
+    // Снимаем прошлую обводку
+    svg.querySelectorAll('.node').forEach(nodeEl => {
+        nodeEl.querySelectorAll('rect, polygon, path, circle').forEach(shape => {
+            if (shape.dataset.varMark === undefined) return;
+            shape.style.stroke = shape.dataset.varStroke || '';
+            shape.style.strokeWidth = shape.dataset.varWidth || '';
+            delete shape.dataset.varMark;
+        });
+    });
+
+    const paint = (steps, color) => {
+        steps.forEach(step => {
+            const nodeEl = graphNodeOfStep(svg, step.id);
+            if (!nodeEl) return;
+            nodeEl.querySelectorAll('rect, polygon, path, circle').forEach(shape => {
+                // ⚠ Прежние значения запоминаем, чтобы снятие возвращало как было,
+                // а не стирало обводку, нарисованную mermaid-ом.
+                if (shape.dataset.varMark === undefined) {
+                    shape.dataset.varStroke = shape.style.stroke || '';
+                    shape.dataset.varWidth = shape.style.strokeWidth || '';
+                }
+                shape.dataset.varMark = '1';
+                shape.style.stroke = color;
+                shape.style.strokeWidth = '3px';
+            });
+        });
+    };
+
+    // ⚠ Читающие красим первыми: шаг может и класть, и читать (переход шага
+    // проверяет то, что шаг положил), и «кладёт» — ответ важнее.
+    paint(cell.used, VAR_USED_COLOR);
+    paint(cell.made, VAR_MADE_COLOR);
+}
+
+/**
+ * Узел диаграммы по номеру шага. `null` — шага на графе нет.
+ *
+ * ⚠ Имена узлов у mermaid: `flowchart-S{id}-{n}` у своих шагов и
+ * `flowchart-W{wf}_S{id}-{n}` у шагов подпрогона. Здесь нужны **свои**: трасса
+ * строится по шагам этого workflow, а у подпрогона своя область переменных.
+ */
+function graphNodeOfStep(svg, stepId) {
+    return [...svg.querySelectorAll('.node')]
+        .find(nodeEl => new RegExp(`^flowchart-S${stepId}-`).test(nodeEl.id || '')) || null;
+}
+
+/**
+ * Открыть шаг в редакторе — общая дорога для узла графа и строки трассы.
+ */
+function openStepFromGraph(step) {
+    document.getElementById('stepsGraph').style.display = 'none';
+    document.getElementById('stepsEditorView').style.display = 'flex';
+    // ⚠ Через общую функцию, а не двумя строками с `classList`: она же запоминает
+    // вкладку, иначе страница после перезагрузки вернёт на граф.
+    activateTab('tabSteps');
+    const stepBlock = document.querySelector(`.step-item-block[data-id="${step.id}"]`);
+    if (stepBlock) selectStep(step, stepBlock);
 }

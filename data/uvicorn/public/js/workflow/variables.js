@@ -6,66 +6,262 @@ import {showNotification} from '../notification.js';
 import {state} from './state.js';
 import {parseMetadata, getToolOutputKeys} from './utils.js';
 
+// Приставка литерала в `inputs_map`: значение за ней — текст, а не имя переменной.
+// ⚠ Метки внутри него всё равно читаются: движок подставляет их до вызова
+// инструмента, поэтому `_const_%girl_name%_ключ` **использует** `girl_name`.
+const CONST_PREFIX = '_const_';
+
+// Места, где лежит **имя** переменной, а не текст с метками.
+//
+// ⚠⚠ Их приходится перечислять, потому что отличить имя от обычной строки нельзя:
+// `"companion_title"` в `inputs_map` — переменная, а такое же слово в промпте —
+// просто слово. Метки (`%…%`) собираются отовсюду и списка не требуют.
+const VAR_NAME_FIELDS = ['variable'];
+const VAR_NAME_MAPS = ['inputs_map', 'outputs_map'];
+
+// Управляющие слова разметки: выглядят меткой, переменной не являются.
+//
+// ⚠ `%endif%` и `%else%` попадали в улов и прежним сбором — вреда не было, потому
+// что переменных с такими именами нет и подсветить их нечем. Но сбор теперь
+// **общий**, и мусор в нём завтра прочтут как переменную.
+const MARKUP_WORDS = ['if', 'else', 'endif'];
+
+/**
+ * Все переменные, которые участвуют в шаге — и читаемые, и записываемые.
+ *
+ * ## ⚠⚠ Обход рекурсивный, а не по списку типов
+ *
+ * Прежде сбор шёл перечнем: «у `llm_to_json` смотри `prompt_user`, у
+ * `tool_invoke` — `inputs_map`…». Такой перечень отстаёт от устройства молча:
+ * появился `workflow_invoke` с `inputs_map` (22 шага) и приставка `_const_` с
+ * метками внутри (38 шагов) — и ни одно из этих мест в сбор не попало.
+ *
+ * Рекурсия по метаданным этого не знает и знать не должна: метку `%имя%` она
+ * найдёт в любой строке, на любой глубине, у любого типа шага.
+ *
+ * ⚠ Имена **без** меток (`inputs_map`, `outputs_map`, `variable` у переходов и
+ * у конверсии) перечислены выше: строку «companion_title» от обычного слова
+ * отличает только место, в котором она лежит.
+ */
+export function stepVariables(step) {
+    const found = new Set();
+
+    const fromText = (text) => {
+        if (typeof text !== 'string') return;
+        for (const match of text.matchAll(/%(?:if !?)?([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
+            if (!MARKUP_WORDS.includes(match[1])) found.add(match[1]);
+        }
+    };
+
+    const walk = (node, key) => {
+        if (typeof node === 'string') {
+            fromText(node);
+
+            return;
+        }
+        if (Array.isArray(node)) {
+            node.forEach(one => walk(one, key));
+
+            return;
+        }
+        if (!node || typeof node !== 'object') return;
+
+        Object.entries(node).forEach(([name, value]) => {
+            // Имя переменной прямо в поле: `variable` у переходов и у конверсии.
+            if (VAR_NAME_FIELDS.includes(name) && typeof value === 'string' && value) {
+                found.add(value);
+
+                return;
+            }
+
+            // Карты доводов и выходов: значение — имя переменной, если это не литерал.
+            if (VAR_NAME_MAPS.includes(name) && value && typeof value === 'object') {
+                Object.values(value).forEach(one => {
+                    if (typeof one !== 'string' || !one) return;
+                    if (one.startsWith(CONST_PREFIX)) fromText(one);
+                    else found.add(one);
+                });
+
+                return;
+            }
+
+            walk(value, name);
+        });
+    };
+
+    walk(parseMetadata(step.metadata), null);
+
+    return found;
+}
+
+// Поля, где лежит имя переменной, **в которую шаг пишет**.
+//
+// ⚠ Ключ `variable` встречается и у переходов — там он про чтение. Поэтому важен
+// не сам ключ, а массив, в котором он лежит: `llm_to_json_variable` — ключи ответа
+// модели, `variable_conversion` — цели подстановки.
+const VAR_WRITE_ARRAYS = ['llm_to_json_variable', 'variable_conversion'];
+
+/**
+ * Переменные, которые шаг **создаёт**: ключи ответа модели, цели конверсии и
+ * человеческие имена из `outputs_map`.
+ *
+ * ⚠ Отдельно от `stepVariables`, потому что вопросы разные. Тому нужно «что
+ * участвует» — для подсветки; этому «что появляется» — чтобы показать
+ * динамические переменные, которых нет в реестре.
+ */
+export function stepMadeVariables(step) {
+    const made = new Set();
+
+    const walk = (node, key) => {
+        if (Array.isArray(node)) {
+            node.forEach(one => walk(one, key));
+
+            return;
+        }
+        if (!node || typeof node !== 'object') return;
+
+        Object.entries(node).forEach(([name, value]) => {
+            if (name === 'variable' && typeof value === 'string' && value
+                    && VAR_WRITE_ARRAYS.includes(key)) {
+                made.add(value);
+
+                return;
+            }
+            if (name === 'outputs_map' && value && typeof value === 'object') {
+                Object.values(value).forEach(one => {
+                    if (typeof one === 'string' && one) made.add(one);
+                });
+
+                return;
+            }
+
+            walk(value, name);
+        });
+    };
+
+    walk(parseMetadata(step.metadata), null);
+
+    return made;
+}
+
+// Массивы, где ключ `variable` означает **чтение**: условие перехода спрашивает
+// переменную, а не создаёт её.
+const VAR_READ_ARRAYS = ['transitions_before', 'transitions_after'];
+
+/**
+ * Переменные, которые шаг **читает**: метки в любом тексте, имена в `inputs_map`
+ * и переменные условий переходов.
+ *
+ * ⚠⚠ Отдельно от `stepVariables`, и вот зачем. Тот собирает всё, что участвует —
+ * для подсветки этого довольно. А трассе нужно различать: у шага «Ленты разговора»
+ * `talk_history_chat` — **цель** конверсии, и показывать его в списке «читают»
+ * рядом с «кладут» значит показывать один шаг дважды с разным смыслом.
+ *
+ * ⚠ Переход своего же шага — **настоящее** чтение: «Валидация ответа» кладёт
+ * `girl_response_skip` и тут же им развилку проверяет. Вычитанием такое не
+ * отделить, поэтому условия переходов собираются здесь явно.
+ */
+export function stepReadVariables(step) {
+    const read = new Set();
+
+    const marks = (text) => {
+        if (typeof text !== 'string') return;
+        for (const match of text.matchAll(/%(?:if !?)?([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
+            if (!MARKUP_WORDS.includes(match[1])) read.add(match[1]);
+        }
+    };
+
+    const walk = (node, key) => {
+        if (typeof node === 'string') {
+            marks(node);
+
+            return;
+        }
+        if (Array.isArray(node)) {
+            node.forEach(one => walk(one, key));
+
+            return;
+        }
+        if (!node || typeof node !== 'object') return;
+
+        Object.entries(node).forEach(([name, value]) => {
+            if (name === 'variable' && typeof value === 'string' && value
+                    && VAR_READ_ARRAYS.includes(key)) {
+                read.add(value);
+
+                return;
+            }
+            if (name === 'inputs_map' && value && typeof value === 'object') {
+                Object.values(value).forEach(one => {
+                    if (typeof one !== 'string' || !one) return;
+                    if (one.startsWith(CONST_PREFIX)) marks(one);
+                    else read.add(one);
+                });
+
+                return;
+            }
+
+            walk(value, name);
+        });
+    };
+
+    walk(parseMetadata(step.metadata), null);
+
+    return read;
+}
+
+/**
+ * Трасса переменных: у какой что кладёт и кто читает.
+ *
+ * Args:
+ *     steps: шаги **одного** workflow, в порядке `position`.
+ *
+ * Returns:
+ *     Map: имя → `{made: [шаг…], used: [шаг…]}`, отсортированная по имени.
+ *
+ * ## ⚠⚠ Чтение и запись считаются врозь, а не вычитанием
+ *
+ * Соблазн написать «читает = всё, что трогает, минус то, что кладёт» велик — и он
+ * даёт ложь. Переход шага читает **то, что шаг же и положил**: «Валидация ответа»
+ * кладёт `girl_response_skip` и тут же им развилку и проверяет. Вычитание объявило
+ * бы такую переменную непрочитанной, и трасса врала бы на самом обычном случае —
+ * проверено, пять ложных из пяти в `dating_talk`.
+ *
+ * ## ⚠⚠ Чего здесь **нет**: проверки порядка
+ *
+ * «Читают раньше, чем кладут» по номерам шагов не работает: в круге правок это
+ * норма. `dating_mail_write` кладёт `write_hint` шагом «Что не так» (позиция 5) и
+ * читает шагом «Письмо» (позиция 0) — поток возвращается к сочинению. Такая
+ * проверка дала 14 находок по всем workflow, и **все 14 ложные**.
+ *
+ * Отличить круг от ошибки может только обход по переходам, и это отдельная
+ * работа. Пока её нет, трасса отвечает «где», а не «правильно ли».
+ */
+export function variablesTrace(steps) {
+    const trace = new Map();
+    const put = (name, step, key) => {
+        if (!trace.has(name)) trace.set(name, {made: [], used: []});
+        const cell = trace.get(name)[key];
+        if (!cell.includes(step)) cell.push(step);
+    };
+
+    (Array.isArray(steps) ? steps : []).forEach(step => {
+        stepMadeVariables(step).forEach(name => put(name, step, 'made'));
+        stepReadVariables(step).forEach(name => put(name, step, 'used'));
+    });
+
+    return new Map([...trace.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+}
+
 /**
  * Собирает имена всех переменных, используемых в шагах workflow,
  * и сохраняет их в state.allUsedVariables.
  */
 export function extractVariablesFromSteps(steps) {
     const usedVariables = new Set();
-    const stepsArray = Array.isArray(steps) ? steps : [];
 
-    // Вхождения по паттерну %varname% в произвольном тексте
-    const collectFromText = (text) => {
-        if (typeof text !== 'string') return;
-        for (const match of text.matchAll(/%([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
-            usedVariables.add(match[1]);
-        }
-        // Условные блоки: переменная в условии %if var% / %if !var%
-        for (const match of text.matchAll(/%if !?([a-zA-Z_][a-zA-Z0-9_]*)%/g)) {
-            usedVariables.add(match[1]);
-        }
-    };
-
-    stepsArray.forEach(step => {
-        const metadata = parseMetadata(step.metadata);
-        const typeName = state.allWorkflowStepsType[step.type_id]?.name;
-
-        // return_response_llm / return_response_text / llm_to_json: %varname% в prompt_user
-        if (['return_response_llm', 'return_response_text', 'llm_to_json'].includes(typeName)) {
-            collectFromText(metadata.prompt_user);
-        }
-
-        // llm_to_json: массив объектов с ключом "variable"
-        if (typeName === 'llm_to_json' && Array.isArray(metadata.llm_to_json_variable)) {
-            metadata.llm_to_json_variable.forEach(item => {
-                if (item?.variable) usedVariables.add(item.variable);
-            });
-        }
-
-        // tool_invoke: значения inputs_map — имена переменных
-        if (typeName === 'tool_invoke') {
-            const inputsMap = metadata.inputs_map || metadata.tool_invoke?.inputs_map;
-            if (inputsMap && typeof inputsMap === 'object') {
-                Object.values(inputsMap).forEach(value => {
-                    if (typeof value === 'string' && value) usedVariables.add(value);
-                });
-            }
-        }
-
-        // variable_conversion: %varname% в поле "text" каждого объекта
-        if (typeName === 'variable_conversion' && Array.isArray(metadata.variable_conversion)) {
-            metadata.variable_conversion.forEach(item => collectFromText(item?.text));
-        }
-
-        // Переходы (у всех типов шагов): ключ "variable" в условиях
-        ['transitions_before', 'transitions_after'].forEach(key => {
-            if (Array.isArray(metadata[key])) {
-                metadata[key].forEach(transition => {
-                    if (transition?.variable) usedVariables.add(transition.variable);
-                });
-            }
-        });
-    });
+    (Array.isArray(steps) ? steps : [])
+        .forEach(step => stepVariables(step).forEach(name => usedVariables.add(name)));
 
     state.allUsedVariables = Array.from(usedVariables);
     markUnusedWorkflowVariables();
@@ -494,6 +690,7 @@ function groupWorkflowVariables(variables) {
     const workflowGroup = [];
     const toolGroup = [];
     const inputGroup = [];
+    const dynamicGroup = [];
 
     variablesArray.forEach(variable => {
         if (variable.type === 'input') {
@@ -537,7 +734,65 @@ function groupWorkflowVariables(variables) {
         });
     });
 
-    return {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup};
+    // Динамические переменные шагов: их **никто не заводил руками**, они
+    // появляются в прогоне сами — ключи ответа модели (`talk_topic`), цели
+    // конверсии, имена из `outputs_map`.
+    //
+    // ⚠⚠ Показываем только те, которых нет ни в одной другой группе. Иначе
+    // `girl_response` оказался бы в двух вкладках разом: он и в реестре, и
+    // кладётся шагом.
+    //
+    // ⚠ Прежде их не было видно **нигде**, хотя работают они наравне с
+    // заведёнными: на `talk_topic` стоит развилка ветки письма-фото, а
+    // `girl_response_fixed` — это правленый судьёй ответ, тот самый, что уходит
+    // человеку. Найти их можно было только чтением метаданных шага.
+    const known = new Set([
+        ...variablesArray.map(one => one?.name),
+        ...foundToolVariables,
+    ]);
+
+    if (Array.isArray(state.allCurrentStepsData)) {
+        const made = new Set();
+        state.allCurrentStepsData.forEach(step => {
+            stepMadeVariables(step).forEach(name => made.add(name));
+        });
+
+        [...made].filter(name => !known.has(name)).sort().forEach(name => {
+            dynamicGroup.push({
+                // ⚠ Отрицательный номер — чтобы не появилась кнопка удаления:
+                // удалять нечего, записи в реестре у них нет.
+                id: -3,
+                name,
+                default: null,
+            });
+        });
+    }
+
+    return {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup, dynamicGroup};
+}
+
+/**
+ * К какой группе относится переменная: ключ и человеческое название.
+ *
+ * Args:
+ *     name: имя переменной.
+ *
+ * Returns:
+ *     `{key, title}` — ключ группы (`input`, `tool`, `dynamic`…) и её подпись.
+ *     Не нашлась нигде — `null`.
+ *
+ * ⚠⚠ Разбивку берём у `groupWorkflowVariables`, а не повторяем правила. Своя копия
+ * разошлась бы с панелью на первой правке: переменная числилась бы входящей в
+ * одном месте и динамической в другом.
+ */
+export function variableGroupOf(name) {
+    const groups = groupWorkflowVariables(state.allCurrentVariables || []);
+
+    for (const [title, items, key] of workflowVariableSections(groups)) {
+        if (items.some(one => one?.name === name)) return {key, title};
+    }
+
+    return null;
 }
 
 // Порядок и названия групп — единые для списка #variablesContainer и селектов переменных
@@ -548,6 +803,9 @@ function workflowVariableSections(groups) {
         ['🇳 Node переменные', groups.nodeGroup, 'node'],
         ['⚙️ Tool переменные', groups.toolGroup, 'tool'],
         ['🇼 Workflow переменные ', groups.workflowGroup, 'workflow'],
+        // ⚠ Последней: она про то, что появляется само, и заглядывают туда реже
+        // прочих. Порядок этого перечня — он же порядок вкладок и групп в селектах.
+        ['🌀 Dynamic переменные', groups.dynamicGroup, 'dynamic'],
     ];
 }
 
@@ -603,7 +861,8 @@ export function renderWorkflowVariables(variables) {
     }
 
     // 1. Распределяем переменные по группам
-    const {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup} = groupWorkflowVariables(variablesArray);
+    const {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup,
+           dynamicGroup} = groupWorkflowVariables(variablesArray);
 
     // 2. Функция создания DOM-элемента отдельной переменной
     function createVariableElement(variable) {
@@ -614,6 +873,9 @@ export function renderWorkflowVariables(variables) {
         }
         if (variable.id === -2) {
             div.className += ' variable-item-tool';
+        }
+        if (variable.id === -3) {
+            div.className += ' variable-item-dynamic';
         }
         if (variable.type === 'node') {
             div.className += ' variable-item-node';
@@ -741,7 +1003,8 @@ export function renderWorkflowVariables(variables) {
     }
 
     // 4. Добавляем секции аккордеона в контейнер
-    workflowVariableSections({commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup}).forEach(([title, groupItems, storageKey]) => {
+    workflowVariableSections({commonGroup, nodeGroup, workflowGroup, toolGroup,
+                              inputGroup, dynamicGroup}).forEach(([title, groupItems, storageKey]) => {
         container.appendChild(createAccordionSection(title, groupItems, storageKey));
     });
 
@@ -860,10 +1123,31 @@ export function highlightStepToolVariables(step) {
 }
 
 /**
- * При выборе шага "Переменные" (variable_conversion) раскрывает группу "Переменные workflow"
- * и подсвечивает переменные, в которые пишет этот шаг. Имена берутся из значений селектов
- * формы шага справа (#dynamicStepFieldsContainer).
- * Для остальных шагов просто снимает подсветку.
+ * Раскрывает группу "Переменные workflow" и подсвечивает **все** переменные,
+ * участвующие в выбранном шаге: и читаемые, и записываемые.
+ *
+ * ## ⚠⚠ Для любого типа шага, а не для трёх из семи
+ *
+ * Прежде подсветка была написана под `variable_conversion` и выходила на первой
+ * строке для всего остального:
+ *
+ *     if (typeName !== 'variable_conversion') return;
+ *
+ * Тёмными оставались **67 шагов**, и все они с переменными работают: «Ответ в
+ * чат» читает историю разговора и анкеты, «Валидация ответа» — черновик. Со
+ * стороны это выглядело как случайная поломка («подсвечивает не всегда»), хотя
+ * было незаконченной работой.
+ *
+ * ⚠ Имена берёт `stepVariables` — тот же сбор, что помечает неиспользуемые. Один
+ * источник на оба применения: разойдись они, переменная числилась бы
+ * использованной в одном месте и неиспользуемой в другом.
+ *
+ * ## ⚠ Что подсветить нельзя
+ *
+ * То, чего нет **в реестре**: панель рисует его, а не метаданные шага. Шаг вправе
+ * положить переменную, не заведённую в реестре (`talk_topic`,
+ * `girl_response_fixed` у `dating_talk`), — такая останется тёмной, и это уже про
+ * реестр, а не про подсветку.
  */
 export function highlightStepWorkflowVariables(step) {
     const container = document.getElementById('variablesContainer');
@@ -873,17 +1157,18 @@ export function highlightStepWorkflowVariables(step) {
     container.querySelectorAll('.variable-item.workflow-var-highlight')
         .forEach(el => el.classList.remove('workflow-var-highlight'));
 
-    if (state.allWorkflowStepsType[step.type_id]?.name !== 'variable_conversion') return;
+    const variableNames = stepVariables(step);
 
-    // Значения селектов в форме шага — имена переменных, в которые идет запись
-    const fieldsContainer = document.getElementById('dynamicStepFieldsContainer');
-    if (!fieldsContainer) return;
+    // ⚠ Значения селектов формы — **поверх** метаданных: у шага «Переменные»
+    // человек правит цель на месте, и до сохранения метаданные ещё старые.
+    if (state.allWorkflowStepsType[step.type_id]?.name === 'variable_conversion') {
+        document.querySelectorAll('#dynamicStepFieldsContainer select')
+            .forEach(sel => {
+                const name = (sel.value || '').trim();
+                if (name) variableNames.add(name);
+            });
+    }
 
-    const variableNames = new Set(
-        [...fieldsContainer.querySelectorAll('select')]
-            .map(sel => (sel.value || '').trim())
-            .filter(Boolean)
-    );
     if (variableNames.size === 0) return;
 
     const workflowSection = container.querySelector('.variables-accordion-section[data-key="workflow"]');
