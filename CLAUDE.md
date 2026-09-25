@@ -31,11 +31,16 @@ See the documentation files in `.claude/docs/` for detailed patterns:
 - **New Worker / фоновая обработка** → `.claude/docs/worker.md`
 - **New Admin Page** → `.claude/docs/dashboard_frontend.md`
 - **New Protected Endpoint** → `.claude/docs/auth.md`
-- **Workflow** → `.claude/docs/workflow.md` (⚠ правка промпта, шага, перехода или
-  входящей переменной — тесты маршрута (`tests_llm/`, метка `llm`) идут **сами**:
-  ответы модели даёт подмена. ⚠⚠ Живые (`llm_live`) по-прежнему **предлагают, а
-  не запускают**: нода одна на тесты и на прод. Папка на workflow —
-  `tests_llm/<имя_workflow>/`)
+- **Workflow** → `.claude/docs/workflow.md`
+  - ⚠⚠⚠ **АРХИТЕКТУРУ WORKFLOW ПРИДУМЫВАЕТ ТОЛЬКО ЧЕЛОВЕК. Модели разрешено
+    повторять то, что уже есть, — и ничего больше.** Новый шаг, переменная,
+    переход делаются **по образцу соседних**. Новый приём вводит только человек,
+    и только конкретным указанием. Встретил в workflow что-то неправильное —
+    **скажи, но не правь**. Полное правило и счёт ошибок — `workflow.md`, шапка.
+  - ⚠ правка промпта, шага, перехода или входящей переменной — тесты маршрута
+    (`tests_llm/`, метка `llm`) идут **сами**: ответы модели даёт подмена.
+    ⚠⚠ Живые (`llm_live`) по-прежнему **предлагают, а не запускают**: нода одна на
+    тесты и на прод. Папка на workflow — `tests_llm/<имя_workflow>/`
 - **Team / Ping System** → `.claude/docs/project_team.md`
 - **DeepSeek Harness: включение ролей со страницы команды** → `.claude/docs/dsh.md`
 - **Settings/Config** → `.claude/docs/setting.md`
