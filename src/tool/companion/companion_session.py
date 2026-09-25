@@ -1,0 +1,242 @@
+"""Разговор пары: записать обмен и прочитать последние.
+
+Единственный дом переписки. До него её не хранили нигде разборно: DatingAi
+собирал ленту на каждый вызов из пяти своих таблиц и присылал готовым текстом, а
+у нас она оседала слепками — в `agent_workflow_trace.variables_start` и внутри
+собранных промптов в `agent_session`. Разговор был, но выбрать его по паре,
+времени или каналу было нельзя.
+
+## ⚠⚠ Ключи приходят готовыми, и это то же решение, что у `companion_create`
+
+Склеить `{номер}_{имя}` мог бы и инструмент. Но тогда правило «из чего состоит
+ключ» лежало бы в коде, а читают workflow — в редакторе: шаг «Ключи» показывает
+`%companion_id%_%companion_name%` прямо в списке.
+
+## ⚠ Обе половины обмена умеют пустовать
+
+    вопроса нет   заговорили мы: инвайт, рассылка, письмо избранному
+    ответа нет    не ответили: он написал дважды подряд, или агент смолчал
+
+Пустые обе — единственный отказ: такая строка не говорит ничего.
+"""
+from datetime import datetime
+
+from mysql_.mysql_ import mysql_get_db_async
+from src.mysql_.repository.companion_repository import CompanionRepository
+from src.mysql_.repository.companion_session_repository import (
+    CompanionSessionRepository)
+
+# Каналы разговора — они же значения столбца `kind`.
+#
+# ⚠ Чат и почта держатся врозь намеренно: это разные разговоры — разной длины,
+# разного тона, часто разных дней. Слитые в одну ленту, письма вытолкнул бы чат
+# на первом же пределе выборки, а отвечать на письмо агент стал бы в регистре
+# мессенджера.
+COMPANION_SESSION_KINDS = ('chat', 'mail')
+
+# Сколько последних обменов отдавать, если предел не задали.
+COMPANION_SESSION_LIMIT = 20
+
+# Потолок поверх запрошенного: длинная история стоит токенов на каждом ответе, а
+# промпт из сотни реплик модель читает как простыню и отвечает первым, что
+# увидит.
+COMPANION_SESSION_LIMIT_MAX = 100
+
+# Обрезка текста реплики в ленте, знаков. У письма свой предел: три абзаца, и
+# тысяча знаков отрезала бы у него конец.
+COMPANION_SESSION_TEXT_MAX = {'chat': 1000, 'mail': 2000}
+
+
+async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
+                                question: str = '', answer: str = '',
+                                kind: str = 'chat',
+                                source_uid: str = '') -> dict:
+    """Записать один обмен разговора: что спросил он, что ответили мы.
+
+    Args:
+        owner_unique_id: ключ нашей стороны (`companion.unique_id`).
+        companion_unique_id: ключ той стороны.
+        question: что написал он. Пусто — заговорили мы.
+        answer: что ответили мы. Пусто — не ответили.
+        kind: `chat` или `mail`.
+        source_uid: номер реплики у источника, если он есть. Ловит повтор.
+
+    Returns:
+        dict: `id` — номер строки (0, если не записали), `saved` — записали ли,
+        `why` — причина отказа словами.
+
+    ## ⚠ Записи заводятся, если их нет
+
+    Обе стороны обязаны лежать в `companion`: строка разговора ведёт на них
+    внешним ключом. Обычно записи уже есть — их заводит шаг `companion_create`, —
+    но полагаться на порядок шагов значило бы терять разговор всякий раз, когда
+    шаг переставят.
+    """
+    owner_key = str(owner_unique_id or '').strip()
+    companion_key = str(companion_unique_id or '').strip()
+    question_text = str(question or '').strip()
+    answer_text = str(answer or '').strip()
+    channel = str(kind or '').strip().lower()
+
+    if not owner_key or not companion_key:
+        # ⚠ Пустой ключ — не «запиши куда-нибудь», а «части не доехали». Запиши
+        # мы обмен под чужой записью, разговор двух людей слился бы в один.
+        return {'id': 0, 'saved': 0, 'why': 'нет ключа стороны'}
+
+    if channel not in COMPANION_SESSION_KINDS:
+        return {'id': 0, 'saved': 0, 'why': f'неизвестный канал: {channel}'}
+
+    if not question_text and not answer_text:
+        return {'id': 0, 'saved': 0, 'why': 'обе половины пусты'}
+
+    owner_id = await _companion_id(owner_key)
+    companion_id = await _companion_id(companion_key)
+
+    if not owner_id or not companion_id:
+        return {'id': 0, 'saved': 0, 'why': 'не завелась запись стороны'}
+
+    now = datetime.utcnow()
+    # ⚠ Время у половины ставится, **только если половина есть**: пустой
+    # половине время незачем, а ноль встал бы в ленту раньше всего сказанного.
+    row = {'owner_id': owner_id, 'companion_id': companion_id, 'kind': channel,
+           'question': question_text,
+           'question_at': now if question_text else None,
+           'answer': answer_text,
+           'answer_at': now if answer_text else None,
+           'source_uid': str(source_uid or '').strip() or None}
+
+    made = await CompanionSessionRepository().add(row)
+
+    return {'id': int(made or 0), 'saved': 1, 'why': ''}
+
+
+async def companion_session_history(owner_unique_id: str,
+                                    companion_unique_id: str,
+                                    kind: str = 'chat',
+                                    limit: int = 0) -> str:
+    """Последние обмены пары строками промпта. Пусто — разговора не было.
+
+    Args:
+        owner_unique_id: ключ нашей стороны.
+        companion_unique_id: ключ той стороны.
+        kind: `chat` или `mail` — каналы не смешиваются.
+        limit: сколько последних обменов взять. Ноль — умолчание канала.
+
+    Returns:
+        str: строки «[дд.мм чч:мм] она|он: текст», старое сверху.
+
+    ## Что видит агент
+
+        [16.09 21:04] он: Спорим, ты сейчас улыбнулся?
+        [17.09 08:12] она: Улыбнулся. Как тебя зовут?
+
+    ⚠ **Время в строке обязательно.** Без него агент не отличит «ответил через
+    минуту» от «ответил через неделю», а это разные разговоры: во втором случае
+    продолжать с полуслова значит выдать робота.
+
+    ⚠ **«Она» и «он», а не имена.** Имя девушки у агента есть переменной, а имя
+    собеседника приходит не всегда — у трети людей в ленте оно нелатинское или
+    пустое. Роль же не пустеет никогда.
+
+    ⚠ **Старое сверху.** Так читают диалог глаза и так понимает его модель: в
+    обратном порядке она отвечает на верхнюю строку, то есть на последнюю по
+    времени.
+
+    ⚠ **Не бросает.** Ответ без истории хуже, чем с историей, но лучше, чем
+    молчание: сбой чтения отдаёт пустую строку, и агент отвечает как прежде — по
+    одной реплике.
+    """
+    channel = str(kind or '').strip().lower()
+
+    if channel not in COMPANION_SESSION_KINDS:
+        channel = COMPANION_SESSION_KINDS[0]
+
+    rows = await companion_session_rows(owner_unique_id, companion_unique_id,
+                                        channel, limit)
+    text_max = COMPANION_SESSION_TEXT_MAX[channel]
+    lines = []
+
+    for row in rows:
+        lines.extend(_lines_of(row, text_max))
+
+    return '\n'.join(lines)
+
+
+async def companion_session_rows(owner_unique_id: str,
+                                 companion_unique_id: str,
+                                 kind: str = 'chat',
+                                 limit: int = 0) -> list[dict]:
+    """Те же обмены, но строками базы — для страниц и проверок.
+
+    Отдельно от текста, потому что вопросы разные: промпту нужна одна строка, а
+    тому, кто считает или показывает, — поля.
+
+    ⚠ **Берём последние, а отдаём по возрастанию.** `ORDER BY … DESC LIMIT`
+    отбирает хвост разговора, `reversed` возвращает ему естественный порядок. Без
+    первого мы взяли бы начало переписки вместо конца, без второго — модель
+    отвечала бы на самую свежую строку как на самую важную.
+    """
+    owner_key = str(owner_unique_id or '').strip()
+    companion_key = str(companion_unique_id or '').strip()
+
+    if not owner_key or not companion_key:
+        return []
+
+    channel = str(kind or '').strip().lower()
+
+    if channel not in COMPANION_SESSION_KINDS:
+        channel = COMPANION_SESSION_KINDS[0]
+
+    take = int(limit or 0) or COMPANION_SESSION_LIMIT
+    take = max(1, min(take, COMPANION_SESSION_LIMIT_MAX))
+
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT s.`question`, s.`question_at`, s.`answer`, s.`answer_at`'
+                '  FROM `companion_session` s'
+                '  JOIN `companion` o ON o.`id` = s.`owner_id`'
+                '  JOIN `companion` c ON c.`id` = s.`companion_id`'
+                ' WHERE o.`unique_id` = %s AND c.`unique_id` = %s'
+                '   AND s.`kind` = %s'
+                # ⚠ По времени, а не по `id`: перенесённые обмены ложатся в базу
+                # позже, чем стоят в разговоре.
+                ' ORDER BY COALESCE(s.`question_at`, s.`answer_at`) DESC,'
+                '          s.`id` DESC'
+                ' LIMIT %s',
+                (owner_key, companion_key, channel, take))
+            rows = await db.fetchall()
+    except Exception:
+        return []
+
+    return list(reversed(rows or []))
+
+
+async def _companion_id(unique_id: str) -> int:
+    """Номер записи стороны; нет её — завести."""
+    from src.tool.companion.companion import companion_create
+
+    repo = CompanionRepository()
+    found = await repo.find_one_by({'unique_id': unique_id})
+
+    if found:
+        return int(found.get('id') or 0)
+
+    return int((await companion_create(unique_id)).get('id') or 0)
+
+
+def _lines_of(row: dict, text_max: int) -> list[str]:
+    """Обмен строками ленты: вопрос и ответ идут порознь, как их и говорили."""
+    made = []
+
+    for half, who in (('question', 'он'), ('answer', 'она')):
+        text = ' '.join(str(row.get(half) or '').split())[:text_max]
+
+        if not text:
+            continue
+
+        when = row.get(f'{half}_at')
+        stamp = f'[{when:%d.%m %H:%M}] ' if when else ''
+        made.append(f'{stamp}{who}: {text}')
+
+    return made

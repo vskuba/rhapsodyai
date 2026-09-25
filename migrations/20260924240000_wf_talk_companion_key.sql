@@ -38,8 +38,19 @@ SET @wf = (SELECT `id` FROM `agent_workflow` WHERE `name` = 'dating_talk');
 SET @conv = (SELECT `id` FROM `agent_workflow_step_type`
               WHERE `name` = 'variable_conversion');
 SET @tool = (SELECT `id` FROM `agent_workflow_step_type` WHERE `name` = 'tool_invoke');
+-- ⚠⚠ Сторож повтора смотрит на **инструмент**, а не на заголовок. Заголовок тут
+-- обманчив дважды: его правит человек в редакторе — и его правит **соседняя
+-- миграция**: `…_wf_talk_girl_key` переименовывает «Ключ собеседника» в «Ключи»,
+-- потому что склеек там становится две.
+--
+-- Пока сторож смотрел на заголовок, повторный прогон цепочки не находил шага и
+-- заводил **оба заново**: в прогоне появлялись вторые «Ключи» и второй
+-- `companion_create`, а позиции сталкивались. Поймано репетицией всей цепочки
+-- дважды на копии прода.
 SET @made = (SELECT COUNT(*) FROM `agent_workflow_step`
-              WHERE `workflow_id` = @wf AND `title` = 'Ключ собеседника');
+              WHERE `workflow_id` = @wf
+                AND JSON_UNQUOTE(JSON_EXTRACT(`metadata`,
+                      '$.tool_invoke.tool_name')) = 'companion_create');
 
 SELECT 'ДО' AS этап, @made AS шаги_уже_есть,
        (SELECT COUNT(*) FROM `agent_workflow_step` WHERE `workflow_id` = @wf) AS шагов;

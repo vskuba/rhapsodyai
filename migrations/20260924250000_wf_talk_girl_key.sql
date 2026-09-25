@@ -28,8 +28,16 @@
 
 SET @wf = (SELECT `id` FROM `agent_workflow` WHERE `name` = 'dating_talk');
 SET @tool = (SELECT `id` FROM `agent_workflow_step_type` WHERE `name` = 'tool_invoke');
+-- ⚠⚠ Сторож повтора — по **доводу шага**, а не по заголовку: подпись человек
+-- правит в редакторе, и повтор завёл бы вторую запись девушки.
+--
+-- ⚠ Инструмента здесь недостаточно: `companion_create` зовут два шага — этот и
+-- соседний, для собеседника (`…_wf_talk_companion_key`). Различает их ключ,
+-- который они кладут: `girl_unique_id` против `companion_unique_id`.
 SET @made = (SELECT COUNT(*) FROM `agent_workflow_step`
-              WHERE `workflow_id` = @wf AND `title` = 'Запись девушки');
+              WHERE `workflow_id` = @wf
+                AND JSON_UNQUOTE(JSON_EXTRACT(`metadata`,
+                      '$.tool_invoke.inputs_map.unique_id')) = 'girl_unique_id');
 
 SELECT 'ДО' AS этап, @made AS шаг_уже_есть,
        (SELECT COUNT(*) FROM `agent_workflow_step` WHERE `workflow_id` = @wf) AS шагов;
