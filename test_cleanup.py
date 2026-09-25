@@ -40,6 +40,7 @@ LLM-тесты добавляют своё в Qdrant: факты о выдума
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import urllib.error
@@ -66,6 +67,15 @@ MARK = TEST_MARK
 # Коллекции фактов, куда пишут LLM-тесты.
 COLLECTIONS = ('dating_girl', 'dating_companion', 'dating_talk')
 
+# ⚠⚠ Долг старой фикстуры: документы `9<7 hex>_Zinaida-Test`. Тест `test_route.py`
+# строил ключ девушки как `f'9{uuid…}'` — похоже на номер анкеты и **без метки**,
+# поэтому ни уборка после теста, ни поиск по приставке их не находили. Фикстура
+# исправлена (`mark_key`), а накопленное надо снести.
+#
+# ⚠ Образец **точный**: `9` + ровно семь шестнадцатеричных + это самое имя. Рабочий
+# ключ под него не подойдёт — у живых анкет номер шестизначный и имя человека.
+QDRANT_DEBT = re.compile(r'^9[0-9a-f]{7}_Zinaida-Test$')
+
 # ── Что считать тестовым в MySQL ────────────────────────────────────────────
 #
 # Пара «таблица → условие». Условие пишется так, чтобы **не задеть рабочее**:
@@ -78,7 +88,27 @@ RULES = (
     ('agent', f"`name` LIKE '{MARK}\\_%'"),
     ('user', f"`username` LIKE '{MARK}\\_%'"),
     ('user_access_token', f"`token` LIKE '{MARK}\\_%'"),
-    ('companion', f"`name` LIKE '{MARK}\\_%'"),
+
+    # ── Разговоры пар и их участники ────────────────────────────────────────
+    #
+    # ⚠⚠ **Порядок здесь обязателен: разговоры раньше собеседников.**
+    # `companion_session.owner_id` и `.companion_id` — внешние ключи на
+    # `companion`. Снеси собеседника первым, и удаление упрётся в него, а вся
+    # уборка оборвётся на середине.
+    #
+    # ⚠ Отбор по **владельцу или собеседнику** с меткой, а не по своей метке:
+    # у строки разговора своего имени нет вовсе, она узнаётся только по паре.
+    ('companion_session',
+     f"`owner_id` IN (SELECT `id` FROM (SELECT * FROM `companion`) c"
+     f" WHERE c.`unique_id` LIKE '{MARK}\\_%')"
+     f" OR `companion_id` IN (SELECT `id` FROM (SELECT * FROM `companion`) c2"
+     f" WHERE c2.`unique_id` LIKE '{MARK}\\_%')"),
+
+    # ⚠⚠ Столбец `unique_id`, а не `name`. Звался он `name`, и правило искало по
+    # прежнему имени — то есть уборка **падала целиком** на первом же запросе
+    # («Unknown column 'name'»), причём молча для того, кто смотрел только на
+    # итоговую цифру. Тестовый мусор копился при «работающей» уборке.
+    ('companion', f"`unique_id` LIKE '{MARK}\\_%'"),
 
     # ── Долг старой сюиты: имена, заведённые до правила ──────────────────────
     #
@@ -174,12 +204,14 @@ def sweep_qdrant(apply: bool) -> int:
             print(f'  {name:<28} пропущена: {e}')
             continue
 
-        # ⚠ Приставок две: нынешняя и унаследованная. `llm-facts-…` и
+        # ⚠ Приставок несколько: нынешняя и унаследованные. `llm-facts-…` и
         # `llm-bio-…` — имена, которыми тесты звали собеседников до правила;
         # мусор под ними уже накоплен, и уборка обязана его видеть.
         ids = [point['id'] for point in got['result']['points']
                if str(point.get('payload', {}).get('document_id', ''))
-               .startswith((MARK, 'llm-facts-', 'llm-bio-', 'llm-test-'))]
+               .startswith((MARK, 'llm-facts-', 'llm-bio-', 'llm-test-'))
+               or QDRANT_DEBT.match(
+                   str(point.get('payload', {}).get('document_id', '')))]
 
         if not ids:
             continue

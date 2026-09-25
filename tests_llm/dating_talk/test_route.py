@@ -27,7 +27,9 @@ import uuid
 
 import pytest
 
+from tests_llm.conftest import talk_forget
 from tests_llm.datingai import TALK_MAIL_ASK, TALK_MAIL_WRITE
+from tests_llm.mark import mark_key
 from tests_llm.dating_talk.conftest import (FACTS_MAN, FACTS_TALK,
                                             MARKS, STEP_ANALYSE, STEP_ANSWER,
                                             STEP_BRANCH, STEP_BRANCHES,
@@ -476,16 +478,31 @@ class TestHerFactsAreFoundByTags:
     """
 
     @pytest.fixture
-    def girl(self):
+    async def girl(self):
         """Своя девушка и её склеенный ключ: номер, имя, ключ.
 
         ⚠ Номер уникален на прогон: два теста с общей девушкой делили бы память,
         и второй находил бы факты первого.
-        """
-        number = f'9{uuid.uuid4().hex[:7]}'
-        name = 'Zinaida-Test'
 
-        return number, name, f'{number}_{name}'
+        ## ⚠⚠ Номер несёт приставку `pytest_`, и это не украшение
+
+        Прежде здесь стояло `f'9{uuid…}'` — похоже на номер анкеты и **без метки**.
+        Такую запись не находит ни уборка после теста, ни `test_cleanup.py`: оба
+        ищут по приставке. За каждый прогон оставалось по три собеседника и шесть
+        разговоров, а в Qdrant — по документу фактов на тест.
+
+        ⚠ Строка вместо числа безопасна: ключ собирается склейкой
+        (`%girl_id%_%girl_name%`), в число его никто не переводит.
+        """
+        number = mark_key('girl')
+        name = 'Zinaida-Test'
+        key = f'{number}_{name}'
+
+        yield number, name, key
+
+        # ⚠ Уборка за собой: `talk` чистит **свою** девушку, а этот тест приносит
+        # свою — и она осталась бы, сколько ни чисти чужую.
+        await talk_forget(number)
 
     async def test_what_was_invented_is_found_next_time(self, talk, llm_answers,
                                                         girl):

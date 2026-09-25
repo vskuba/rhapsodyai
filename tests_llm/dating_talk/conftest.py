@@ -13,7 +13,7 @@ import os
 
 import pytest
 
-from tests_llm.conftest import LLM_GIRL_ID
+from tests_llm.conftest import LLM_GIRL_ID, talk_forget
 from tests_llm.plan import Marks
 
 # Агент чата. ⚠ Он **один на все анкеты** (`dating_girl_universal`): имя девушки
@@ -164,7 +164,15 @@ async def talk(ask):
             'girl_id': girl,
             **sent})
 
-    return _talk
+    yield _talk
+
+    # ⚠⚠ Уборка **сразу после теста и только за собой** — по своему ключу девушки.
+    #
+    # Соблазн убрать всё разом («удалить `pytest_%` в конце прогона») здесь
+    # опасен: LLM-тесты гоняют в восемь потоков (`pytest tests_llm -n 8`), и
+    # такая уборка снесла бы разговоры, которые в этот миг ведут соседние
+    # работники. Ключ девушки свой у каждого вызова фикстуры — им и чистим.
+    await talk_forget(girl)
 
 
 @pytest.fixture

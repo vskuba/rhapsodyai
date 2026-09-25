@@ -289,6 +289,82 @@ class Talk:
                 f'попыток: {self.attempts}, статус: {self.status}, сессия: {self.session}')
 
 
+async def talk_forget(girl: str) -> dict:
+    """Снести разговоры тестовой девушки и её запись — сразу после теста.
+
+    Args:
+        girl: ключ девушки, который тест и заводил (`pytest_llm_girl-…`).
+
+    Returns:
+        dict: `{sessions, companion}` — сколько строк убрано.
+
+    ## ⚠⚠ Чистим по своему ключу, а не «всё `pytest_%`»
+
+    LLM-тесты гоняют в восемь потоков (`pytest tests_llm -n 8`). Уборка «снести
+    всё с приставкой» в конце прогона унесла бы разговоры, которые в этот миг
+    ведут соседние работники, — и тесты падали бы через один, а причину искали бы
+    в промптах. Ключ девушки свой у каждого вызова фикстуры, им и чистим.
+
+    ## ⚠⚠ Порядок: сперва разговоры, потом запись
+
+    `companion_session.owner_id` — внешний ключ на `companion`. Снеси запись
+    первой, и удаление упрётся в него (либо, при выключенных проверках, оставит
+    строки-сироты, чей владелец неизвестен).
+
+    ⚠ Приставка проверяется **здесь же**: ключ без `pytest_` означает, что тест
+    работал под рабочей записью, и удалять её нельзя ни в каком случае.
+
+    ⚠ Отказ уборки **не глушится**. Молчаливая уборка — худший исход: мусор копится
+    «при работающей уборке», и это ровно та беда, от которой заведён `mark.py`.
+
+    ⚠⚠ Ходим `mysql_query_run`, а не пулом приложения (`mysql_get_db_async`). Пул
+    берёт адрес из `MYSQL_HOST`, а это `mysql` — имя сервиса **внутри** compose-сети;
+    сюита идёт с хоста и получает `Can't connect to MySQL server on 'mysql'`.
+    `mysql_query_run` спрашивает адрес у `mysql_host_address`, который знает про
+    снаружи и внутри. (`tests/conftest.py` решает то же иначе — подменяет
+    `MYSQL_HOST` на весь прогон; здесь подмена не нужна.)
+
+    ⚠ Вызов синхронный внутри async-разборки: это одна-две десятых секунды на
+    тест, и ради них тащить второй способ ходить в базу незачем.
+    """
+    from mysql_.mysql_query import mysql_query_run
+
+    if not str(girl or '').startswith(f'{TEST_MARK}_'):
+        raise AssertionError(
+            f'уборка звана для ключа «{girl}» без приставки {TEST_MARK}_ — '
+            'это похоже на рабочую запись, и удалять её нельзя')
+
+    # ⚠⚠ Ищем по **приставке**, а не по точному ключу: шаг «Ключи» дописывает к
+    # номеру имя девушки (`%girl_id%_%girl_name%`), и в базе лежит
+    # `pytest_llm_girl-765ee852_Natalia`, а фикстура знает только часть до имени.
+    # Точное сравнение находило ноль и уборка **молча** ничего не делала — 23
+    # записи за один файл тестов, при «работающей» уборке.
+    #
+    # ⚠ Приставка безопасна: в ней случайные восемь знаков, и чужую запись она
+    # захватить не может.
+    found = mysql_query_run(
+        "SELECT `id` FROM `companion` WHERE `unique_id` LIKE CONCAT(%s, '%%')",
+        (str(girl),))
+    rows = found.get('rows') or []
+
+    if not rows:
+        # ⚠ Законный исход: тест мог не дойти до шага, заводящего запись.
+        return {'sessions': 0, 'companion': 0}
+
+    sessions = companions = 0
+
+    for one in rows:
+        who = int(one['id'])
+        gone = mysql_query_run('DELETE FROM `companion_session`'
+                               ' WHERE `owner_id` = %s OR `companion_id` = %s',
+                               (who, who))
+        left = mysql_query_run('DELETE FROM `companion` WHERE `id` = %s', (who,))
+        sessions += int(gone.get('affected') or 0)
+        companions += int(left.get('affected') or 0)
+
+    return {'sessions': sessions, 'companion': companions}
+
+
 @pytest.fixture
 async def client():
     """Вошедший клиент. ⚠ На каждый тест свой — вместе с его циклом событий.
