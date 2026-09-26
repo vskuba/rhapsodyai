@@ -1,0 +1,535 @@
+{% extends "base.html" %}
+
+{% block title %}Журнал{% endblock %}
+
+{% block head %}
+<style>
+    /* Страница во всю высоту: подвкладки, шапка с отбором, лента, листалка внизу.
+       Раскладка та же, что у трасс (`workflow_trace.html`) — соседние страницы
+       одной вкладки меню читаются одними глазами. */
+    .journal-page {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+    }
+
+    /* ===================== Подвкладки журнала =====================
+       Разметка и имена классов те же, что на /admin/llm: страницы админки
+       переключаются одинаково. Новая подвкладка — кнопка в шапку и панель ниже,
+       больше ничего: переключатель ищет их по `data-tab` и `id`. */
+    .page-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 2px solid #e2e8f0;
+        padding: 0 25px;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .page-tab {
+        padding: 10px 20px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #718096;
+        cursor: pointer;
+        border: none;
+        background: none;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+        transition: color 0.15s, border-color 0.15s;
+    }
+
+    .page-tab.active {
+        color: #2c3e50;
+        border-bottom-color: #3498db;
+    }
+
+    .page-tab:hover:not(.active) {
+        color: #4a5568;
+    }
+
+    .tab-panel {
+        display: none;
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+    }
+
+    .tab-panel.active {
+        display: flex;
+    }
+
+    .journal-tools {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        border-bottom: 1px solid #e0e0e0;
+        background: #fafafa;
+        flex-shrink: 0;
+    }
+
+    /* ⚠ `width: auto` обязателен: в `common.css` у `select` стоит `width: 100%`,
+       и без этого два отбора растягиваются на пол-экрана каждый. */
+    .journal-tools .journal-field {
+        width: auto;
+        flex: 0 0 auto;
+        padding: 4px 8px;
+        font-size: 12px;
+        border: 1px solid #d6dbe0;
+        border-radius: 4px;
+        background: #fff;
+        color: #2c3e50;
+    }
+
+    .journal-tools select.journal-field {
+        min-width: 160px;
+    }
+
+    .journal-tools input[type="search"].journal-field {
+        flex: 0 1 340px;
+        min-width: 200px;
+    }
+
+    .journal-count {
+        margin-left: auto;
+        font-size: 12px;
+        color: #7f8c8d;
+        white-space: nowrap;
+    }
+
+    .journal-btn {
+        background: #fff;
+        border: 1px solid #d6dbe0;
+        border-radius: 4px;
+        padding: 4px 10px;
+        font-size: 12px;
+        color: #2c3e50;
+        cursor: pointer;
+    }
+
+    .journal-btn:hover {
+        background: #f0f0f0;
+    }
+
+    .journal-btn-danger {
+        border-color: #e6b0aa;
+        color: #c0392b;
+    }
+
+    .journal-btn-danger:hover {
+        background: #fdedec;
+    }
+
+    .journal-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 16px;
+    }
+
+    .journal-card {
+        background: #fff;
+        border: 1px solid #e8ecef;
+        border-left: 3px solid #e74c3c;
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+        font-size: 13px;
+    }
+
+    /* CRITICAL — не то же самое, что ERROR: процесс после него обычно не
+       продолжается, и в ленте это должно быть видно без чтения. */
+    .journal-card.journal-critical {
+        border-left-color: #8e44ad;
+        background: #fdf7ff;
+    }
+
+    .journal-card-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+    }
+
+    .journal-source {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #2c3e50;
+        background: #eef2f7;
+        border-radius: 3px;
+        padding: 1px 6px;
+    }
+
+    .journal-logger {
+        font-size: 11px;
+        color: #7f8c8d;
+        font-family: monospace;
+    }
+
+    .journal-when {
+        font-size: 11px;
+        color: #7f8c8d;
+        white-space: nowrap;
+    }
+
+    /* Счётчик повторов. Строка одна на отпечаток ошибки, поэтому «сколько раз»
+       здесь — главная цифра: она отличает разовый сбой от зациклившегося. */
+    .journal-hits {
+        font-size: 11px;
+        font-weight: 700;
+        color: #fff;
+        background: #e67e22;
+        border-radius: 9px;
+        padding: 1px 7px;
+    }
+
+    .journal-message {
+        color: #2c3e50;
+        word-break: break-word;
+        white-space: pre-wrap;
+    }
+
+    /* Указатель только там, где под текстом действительно есть трассировка:
+       иначе он обещает раскрытие, которого не будет. */
+    .journal-message-open {
+        cursor: pointer;
+    }
+
+    .journal-where {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #95a5a6;
+        font-family: monospace;
+    }
+
+    .journal-trace {
+        margin-top: 8px;
+        padding: 8px 10px;
+        background: #2d3436;
+        color: #dfe6e9;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 420px;
+        overflow: auto;
+    }
+
+    .journal-drop {
+        background: none;
+        border: none;
+        color: #b2bec3;
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 1;
+        padding: 0 2px;
+    }
+
+    .journal-drop:hover {
+        color: #c0392b;
+    }
+
+    .journal-empty {
+        color: #999;
+        text-align: center;
+        padding: 40px 0;
+        font-size: 13px;
+    }
+
+    .journal-pager {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+        padding: 8px 12px;
+        border-top: 1px solid #e0e0e0;
+        font-size: 12px;
+        color: #7f8c8d;
+        flex-shrink: 0;
+    }
+
+    .journal-pager button {
+        background: #fff;
+        border: 1px solid #d6dbe0;
+        border-radius: 4px;
+        padding: 3px 10px;
+        cursor: pointer;
+    }
+
+    .journal-pager button:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{# Журнал установки — раздел, а не один список. Сейчас в нём одна подвкладка,
+   «Ошибки»: всё, что падает в любом процессе, стекается туда само — обработчик
+   корневого логгера пишет строку без участия падающего кода. Место под соседние
+   подвкладки (события, запросы наружу) оставлено сознательно: предмет у них
+   разный, а вопрос один — «что происходило на установке».
+   Устройство ошибок — `.claude/docs/journal.md`. #}
+<div class="journal-page">
+
+    <div class="page-tabs" id="journalTabs">
+        <button type="button" class="page-tab active" data-tab="error">⚠️ Ошибки</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-error">
+        <div class="journal-tools">
+            <select id="journalSource" class="journal-field" title="Чей процесс">
+                <option value="">Любой процесс</option>
+            </select>
+            <select id="journalLevel" class="journal-field" title="Уровень">
+                <option value="">Любой уровень</option>
+                <option value="ERROR">ERROR</option>
+                <option value="CRITICAL">CRITICAL</option>
+            </select>
+            <input type="search" id="journalFind" class="journal-field"
+                   placeholder="поиск по тексту, логгеру и трассировке">
+            <button type="button" class="journal-btn" id="journalReload" title="Спросить заново">⟳</button>
+            <button type="button" class="journal-btn journal-btn-danger" id="journalClear"
+                    title="Убрать все записи по текущему отбору процесса">Очистить</button>
+            <span class="journal-count" id="journalCount"></span>
+        </div>
+
+        <div class="journal-list" id="journalList">
+            <div class="journal-empty">Загрузка...</div>
+        </div>
+
+        <div class="journal-pager">
+            <button type="button" id="journalPagePrev">‹</button>
+            <span id="journalPageInfo">—</span>
+            <button type="button" id="journalPageNext">›</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, deleteData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    // ⚠ Строка журнала — это ОШИБКА С ОТПЕЧАТКОМ, а не отдельное падение:
+    // одинаковые повторы сходятся в одну запись со счётчиком `hits`
+    // (`src/journal/journal.py`). Поэтому «10 строк» здесь не значит «10 сбоев»,
+    // и цифру повторов видно прямо в шапке карточки.
+    const state = {page: 1, pages: 1, sourcesFilled: false};
+    let findTimer = 0;
+
+    const listEl = document.getElementById('journalList');
+    const sourceEl = document.getElementById('journalSource');
+    const levelEl = document.getElementById('journalLevel');
+    const findEl = document.getElementById('journalFind');
+    const countEl = document.getElementById('journalCount');
+
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = text;
+        return node;
+    }
+
+    function timeAgo(value) {
+        if (!value) return '';
+        const raw = String(value).replace(' ', 'T');
+        const date = new Date(raw.endsWith('Z') ? raw : raw + 'Z');
+        if (isNaN(date.getTime())) return '';
+        const sec = Math.round((Date.now() - date.getTime()) / 1000);
+        if (sec < 60) return `${sec} сек назад`;
+        const min = Math.round(sec / 60);
+        if (min < 60) return `${min} мин назад`;
+        const hours = Math.floor(min / 60);
+        if (hours < 24) return (min % 60) ? `${hours} ч ${min % 60} мин назад` : `${hours} ч назад`;
+        return `${Math.floor(hours / 24)} дн назад`;
+    }
+
+    async function load() {
+        const params = new URLSearchParams({page: state.page});
+        if (sourceEl.value) params.set('source', sourceEl.value);
+        if (levelEl.value) params.set('level', levelEl.value);
+        if (findEl.value.trim()) params.set('q', findEl.value.trim());
+
+        let data;
+        try {
+            data = (await getData(`/api/journal?${params}`)).result;
+        } catch (e) {
+            listEl.replaceChildren(el('div', 'journal-empty', `Журнал не пришёл: ${e.message}`));
+            return;
+        }
+
+        state.page = Number(data.page || 1);
+        state.pages = Number(data.pages || 1);
+        countEl.textContent = data.total ? `ошибок: ${data.total}` : '';
+
+        // ⚠ Подписи процессов приходят с сервера (`sources`), своей копии
+        // страница не держит: переименуют процесс в словаре — страница
+        // подхватит молча. Заполняем один раз: список статичен.
+        if (!state.sourcesFilled) {
+            Object.entries(data.sources || {}).forEach(([key, label]) => {
+                const option = el('option', null, label);
+                option.value = key;
+                sourceEl.appendChild(option);
+            });
+            state.sourcesFilled = true;
+        }
+
+        document.getElementById('journalPageInfo').textContent = `${state.page} / ${state.pages}`;
+        document.getElementById('journalPagePrev').disabled = state.page <= 1;
+        document.getElementById('journalPageNext').disabled = state.page >= state.pages;
+
+        if (!data.rows.length) {
+            // Пусто — хорошая новость, и сказать её надо словами: пустая
+            // область читается как «не загрузилось».
+            listEl.replaceChildren(el('div', 'journal-empty',
+                'Ошибок нет. Сюда стекается всё, что падает на установке: '
+                + 'роутеры, воркеры, кронджобы, телеграм-бот.'));
+            return;
+        }
+
+        listEl.replaceChildren(...data.rows.map(card));
+        listEl.scrollTop = 0;
+    }
+
+    function card(row) {
+        const node = el('div', 'journal-card' + (row.level === 'CRITICAL' ? ' journal-critical' : ''));
+
+        const head = el('div', 'journal-card-head');
+        head.appendChild(el('span', 'journal-source', row.source_title || row.source));
+        head.appendChild(el('span', 'journal-logger', row.logger || ''));
+        if (row.hits > 1) head.appendChild(el('span', 'journal-hits', `×${row.hits}`));
+        head.appendChild(el('span', 'journal-when',
+            `${fmtTz(row.last_at, true)} · ${timeAgo(row.last_at)}`));
+
+        const drop = el('button', 'journal-drop', '✕');
+        drop.type = 'button';
+        drop.title = 'Убрать запись';
+        drop.onclick = async () => {
+            try {
+                await deleteData(`/api/journal/${row.id}`);
+            } catch (e) {
+                showNotification(`Запись не убралась: ${e.message}`, 'error');
+                return;
+            }
+            load();
+        };
+        head.appendChild(drop);
+        node.appendChild(head);
+
+        const message = el('div', 'journal-message', row.message);
+        node.appendChild(message);
+
+        const where = row.context || {};
+        if (where.file) {
+            node.appendChild(el('div', 'journal-where',
+                `${where.file}:${where.line} · ${where.func || ''}`
+                + (where.trace_id ? ` · trace ${where.trace_id}` : '')
+                + ` · впервые ${fmtTz(row.first_at, true)}`));
+        }
+
+        // Трассировка под спойлером: в ленте её сто строк забивают всё
+        // остальное, а нужна она уже после того, как ошибку нашли глазами.
+        if (row.traceback) {
+            const trace = el('pre', 'journal-trace', row.traceback);
+            trace.hidden = true;
+            message.classList.add('journal-message-open');
+            message.title = 'Показать трассировку';
+            message.onclick = () => {
+                trace.hidden = !trace.hidden;
+            };
+            node.appendChild(trace);
+        }
+
+        return node;
+    }
+
+    sourceEl.onchange = () => {
+        state.page = 1;
+        load();
+    };
+    levelEl.onchange = () => {
+        state.page = 1;
+        load();
+    };
+    findEl.oninput = () => {
+        clearTimeout(findTimer);
+        findTimer = setTimeout(() => {
+            state.page = 1;
+            load();
+        }, 400);
+    };
+    document.getElementById('journalReload').onclick = () => load();
+    document.getElementById('journalClear').onclick = async () => {
+        const scope = sourceEl.value
+            ? `записи процесса «${sourceEl.options[sourceEl.selectedIndex].text}»`
+            : 'весь журнал';
+        if (!confirm(`Убрать ${scope}? Это не отменить.`)) return;
+        try {
+            const params = sourceEl.value ? `?source=${encodeURIComponent(sourceEl.value)}` : '';
+            const res = await deleteData(`/api/journal${params}`);
+            showNotification(`Убрано записей: ${res.result.deleted}`, 'success');
+        } catch (e) {
+            showNotification(`Журнал не очистился: ${e.message}`, 'error');
+        }
+        state.page = 1;
+        load();
+    };
+    document.getElementById('journalPagePrev').onclick = () => {
+        if (state.page > 1) {
+            state.page--;
+            load();
+        }
+    };
+    document.getElementById('journalPageNext').onclick = () => {
+        if (state.page < state.pages) {
+            state.page++;
+            load();
+        }
+    };
+
+    // ===================== Переключение подвкладок =====================
+    //
+    // Подвкладка сейчас одна, но переключатель общий и пустой работы не делает:
+    // соседнюю добавляют кнопкой в шапку и панелью `#tab-<имя>`, и она заработает
+    // без правки этого кода. Выбор помним между заходами — разбираются с журналом
+    // длинными заходами.
+    const JOURNAL_TAB_KEY = 'journal_tab';
+
+    function tabSwitch(name) {
+        document.querySelectorAll('.page-tab').forEach(one => {
+            one.classList.toggle('active', one.dataset.tab === name);
+        });
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+            panel.classList.toggle('active', panel.id === `tab-${name}`);
+        });
+        if (name === 'error') load();
+    }
+
+    document.querySelectorAll('.page-tab').forEach(tab => {
+        tab.onclick = () => {
+            localStorage.setItem(JOURNAL_TAB_KEY, tab.dataset.tab);
+            tabSwitch(tab.dataset.tab);
+        };
+    });
+
+    // ⚠ `loadTz()` до первой отрисовки: без него `fmtTz` покажет UTC, а
+    // настройка `timezone` сдвигает время на всех страницах админки.
+    await loadTz();
+
+    // Запомненная подвкладка, если она ещё существует: пункт могли убрать, и
+    // тогда открывается первая — пустая страница вместо журнала хуже забытого
+    // выбора.
+    const remembered = localStorage.getItem(JOURNAL_TAB_KEY);
+    const known = [...document.querySelectorAll('.page-tab')].map(one => one.dataset.tab);
+    tabSwitch(known.includes(remembered) ? remembered : known[0]);
+</script>
+{% endblock %}

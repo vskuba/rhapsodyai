@@ -7,7 +7,7 @@
 падения workflow: всё, что случилось вне движка, там не видно вовсе.
 
 Пишет сюда не код по месту, а обработчик корневого логгера
-(`error_log_handler.py`): любой `logger_exception` / `logging.error` в любом
+(`journal_handler.py`): любой `logger_exception` / `logging.error` в любом
 процессе установки оставляет здесь строку. Поэтому новый код попадает в журнал
 сам, без единой строчки про журнал в нём.
 
@@ -23,18 +23,18 @@
 вопрос «что сломано прямо сейчас», и починка убирает запись. Здесь предмет
 другой — «что ломалось на установке»: ошибка воркера, случившаяся ночью,
 интересна утром, даже если следующий заход прошёл. Чистит журнал время
-(`ERROR_LOG_KEEP_DAYS`) и человек кнопкой.
+(`JOURNAL_KEEP_DAYS`) и человек кнопкой.
 
 ## ⚠⚠ Запись синхронная, и это выбрано намеренно
 
 Логгер зовут откуда угодно: из обработчика запроса, из потока `rq`, из
 кронджоба, у которого цикл событий вот-вот закроется. Асинхронная запись
 «в фоне» в двух последних случаях теряется молча — задача не успевает
-выполниться до конца процесса. Поэтому `error_log_write` — обычная функция с
+выполниться до конца процесса. Поэтому `journal_write` — обычная функция с
 одним соединением pymysql на процесс: несколько миллисекунд на ошибке, которая
 и так случается редко, дешевле потерянной записи.
 
-Чтение (`error_log_rows` и соседи) — асинхронное: его зовёт роутер, и там пул
+Чтение (`journal_rows` и соседи) — асинхронное: его зовёт роутер, и там пул
 уже есть.
 """
 
@@ -50,7 +50,7 @@ from mysql_.mysql_ import mysql_conn_get, mysql_get_db_async
 
 # Кто поймал ошибку. Ключи — те же слова, что ложатся в колонку `source`; подписи
 # для человека страница берёт отсюда, своей копии не держит.
-ERROR_LOG_SOURCES = {
+JOURNAL_SOURCES = {
     'uvicorn': 'сервер',
     'worker': 'воркер',
     'telegram': 'телеграм-бот',
@@ -59,27 +59,27 @@ ERROR_LOG_SOURCES = {
 
 # Длина текста ошибки. Обрезаем при записи, а не при показе: в базе незачем
 # держать мегабайт чужого вывода, а человек читает первые строки.
-ERROR_LOG_MESSAGE_MAX = 2000
+JOURNAL_MESSAGE_MAX = 2000
 
 # Трассировка длиннее этого обрезается. 20 000 — столько же, сколько хранит
 # трасса workflow (`ai_workflow_trace`): разойдись цифры — и одна и та же ошибка
 # выглядела бы на двух страницах по-разному.
-ERROR_LOG_TRACEBACK_MAX = 20000
+JOURNAL_TRACEBACK_MAX = 20000
 
 # Сколько строк отдаём страницей и сколько разрешаем запросить.
-ERROR_LOG_PAGE = 50
-ERROR_LOG_PAGE_MAX = 200
+JOURNAL_PAGE = 50
+JOURNAL_PAGE_MAX = 200
 
 # Сколько дней держим запись. Журнал читают, разбираясь с тем, что случилось на
 # днях; месячной давности ошибка уже не о текущем коде. Срок длиннее, чем у
 # трассы workflow (там 7 дней): трасса пишется на каждый запуск, а сюда
 # попадают только падения.
-ERROR_LOG_KEEP_DAYS = 30
+JOURNAL_KEEP_DAYS = 30
 
 # Что вычёркиваем из текста, считая отпечаток: меняющиеся куски. Иначе одна и та
 # же ошибка с другим id в сообщении заводит новую строку, и счётчик повторов
 # теряет смысл.
-_ERROR_LOG_VARIABLE = (
+_JOURNAL_VARIABLE = (
     # uuid целиком
     re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I),
     # адреса в памяти (`at 0x7f…`)
@@ -89,7 +89,7 @@ _ERROR_LOG_VARIABLE = (
 )
 
 
-def error_log_fingerprint(source: str, logger_name: str, message: str) -> str:
+def journal_fingerprint(source: str, logger_name: str, message: str) -> str:
     """Отпечаток «той же самой ошибки» — по нему повтор находит свою строку.
 
     Args:
@@ -110,20 +110,20 @@ def error_log_fingerprint(source: str, logger_name: str, message: str) -> str:
     одинаковые ошибки по разным строкам.
     """
     head = str(message or '').strip().split('\n', 1)[0]
-    for pattern in _ERROR_LOG_VARIABLE:
+    for pattern in _JOURNAL_VARIABLE:
         head = pattern.sub('#', head)
 
-    raw = f'{source}|{logger_name}|{head[:ERROR_LOG_MESSAGE_MAX]}'
+    raw = f'{source}|{logger_name}|{head[:JOURNAL_MESSAGE_MAX]}'
     return hashlib.md5(raw.encode('utf-8', errors='ignore')).hexdigest()
 
 
-def error_log_write(source: str, message: str, level: str = 'ERROR',
-                    logger_name: str = '', traceback_text: str = '',
-                    context: dict | None = None) -> None:
+def journal_write(source: str, message: str, level: str = 'ERROR',
+                  logger_name: str = '', traceback_text: str = '',
+                  context: dict | None = None) -> None:
     """Записывает ошибку в журнал. Повтор того же отпечатка — счётчик, а не строка.
 
     Args:
-        source: кто поймал (`ERROR_LOG_SOURCES`).
+        source: кто поймал (`JOURNAL_SOURCES`).
         message: текст ошибки — его и читает человек.
         level: `ERROR` или `CRITICAL`.
         logger_name: имя логгера, оно же подсистема.
@@ -141,7 +141,7 @@ def error_log_write(source: str, message: str, level: str = 'ERROR',
     ⚠ Синхронная намеренно: зовут её из потоков `rq` и из кронджобов, где
     фоновая задача не успевает выполниться до конца процесса (шапка модуля).
     """
-    message = str(message or '').strip()[:ERROR_LOG_MESSAGE_MAX]
+    message = str(message or '').strip()[:JOURNAL_MESSAGE_MAX]
     if not message:
         return
 
@@ -150,28 +150,28 @@ def error_log_write(source: str, message: str, level: str = 'ERROR',
         str(level or 'ERROR')[:16],
         str(logger_name or '')[:255],
         message,
-        (traceback_text or '')[:ERROR_LOG_TRACEBACK_MAX] or None,
+        (traceback_text or '')[:JOURNAL_TRACEBACK_MAX] or None,
         json.dumps(context or {}, ensure_ascii=False, default=str),
-        error_log_fingerprint(str(source or ''), str(logger_name or ''), message),
+        journal_fingerprint(str(source or ''), str(logger_name or ''), message),
     )
 
-    with _error_log_lock:
+    with _journal_lock:
         try:
-            connection = _error_log_connection()
+            connection = _journal_connection()
             with connection.cursor() as cursor:
-                cursor.execute(_ERROR_LOG_INSERT, row)
+                cursor.execute(_JOURNAL_INSERT, row)
             connection.commit()
         except Exception as e:
-            _error_log_connection_drop()
-            logger_info(f'[error_log] ошибка не записалась в журнал: {e}')
+            _journal_connection_drop()
+            logger_info(f'[journal] ошибка не записалась в журнал: {e}')
 
 
-async def error_log_rows(source: str = '', level: str = '', q: str = '',
-                         page: int = 1, per_page: int = ERROR_LOG_PAGE) -> dict:
+async def journal_rows(source: str = '', level: str = '', q: str = '',
+                       page: int = 1, per_page: int = JOURNAL_PAGE) -> dict:
     """Страница журнала — свежее сверху.
 
     Args:
-        source: чей процесс (`ERROR_LOG_SOURCES`). Пусто — любой.
+        source: чей процесс (`JOURNAL_SOURCES`). Пусто — любой.
         level: `ERROR` или `CRITICAL`. Пусто — любой.
         q: подстрока в тексте ошибки, в трассировке или в имени логгера.
         page, per_page: страница и её размер.
@@ -183,7 +183,7 @@ async def error_log_rows(source: str = '', level: str = '', q: str = '',
     Время в строках — UTC, как всё в проекте: сдвигает страница по настройке
     `timezone`.
     """
-    per_page = max(1, min(int(per_page or ERROR_LOG_PAGE), ERROR_LOG_PAGE_MAX))
+    per_page = max(1, min(int(per_page or JOURNAL_PAGE), JOURNAL_PAGE_MAX))
     page = max(1, int(page or 1))
 
     where, params = [], []
@@ -200,7 +200,7 @@ async def error_log_rows(source: str = '', level: str = '', q: str = '',
     where_sql = f' WHERE {" AND ".join(where)}' if where else ''
 
     async with mysql_get_db_async() as db:
-        await db.execute(f'SELECT COUNT(*) AS qty FROM error_log{where_sql}', params)
+        await db.execute(f'SELECT COUNT(*) AS qty FROM journal{where_sql}', params)
         total = int((await db.fetchone() or {}).get('qty') or 0)
 
         pages = max(1, -(-total // per_page))
@@ -209,29 +209,29 @@ async def error_log_rows(source: str = '', level: str = '', q: str = '',
         await db.execute(
             'SELECT id, source, level, logger, message, traceback, context,'
             '       hits, first_at, last_at'
-            f'  FROM error_log{where_sql}'
+            f'  FROM journal{where_sql}'
             ' ORDER BY last_at DESC, id DESC'
             ' LIMIT %s OFFSET %s',
             (*params, per_page, (page - 1) * per_page))
         rows = await db.fetchall()
 
-    return {'rows': [_error_log_row(dict(row)) for row in rows],
+    return {'rows': [_journal_row(dict(row)) for row in rows],
             'total': total, 'page': page, 'pages': pages,
-            'sources': ERROR_LOG_SOURCES}
+            'sources': JOURNAL_SOURCES}
 
 
-async def error_log_delete(row_id: int) -> int:
+async def journal_delete(row_id: int) -> int:
     """Убирает одну запись — разобрались и больше не хотим её видеть.
 
     Returns:
         int: сколько строк убрано; 0 — записи уже не было.
     """
     async with mysql_get_db_async() as db:
-        await db.execute('DELETE FROM error_log WHERE id = %s', (int(row_id),))
+        await db.execute('DELETE FROM journal WHERE id = %s', (int(row_id),))
         return int(db.rowcount or 0)
 
 
-async def error_log_clear(source: str = '') -> int:
+async def journal_clear(source: str = '') -> int:
     """Чистит журнал целиком либо по одному источнику.
 
     Args:
@@ -242,13 +242,13 @@ async def error_log_clear(source: str = '') -> int:
     """
     async with mysql_get_db_async() as db:
         if source:
-            await db.execute('DELETE FROM error_log WHERE source = %s', (str(source)[:32],))
+            await db.execute('DELETE FROM journal WHERE source = %s', (str(source)[:32],))
         else:
-            await db.execute('DELETE FROM error_log')
+            await db.execute('DELETE FROM journal')
         return int(db.rowcount or 0)
 
 
-async def error_log_trim(keep_days: int = ERROR_LOG_KEEP_DAYS) -> int:
+async def journal_trim(keep_days: int = JOURNAL_KEEP_DAYS) -> int:
     """Убирает записи старше срока. Зовётся при показе журнала.
 
     Отдельного расписания у чистки нет намеренно: журнал читают редко, а строк в
@@ -259,7 +259,7 @@ async def error_log_trim(keep_days: int = ERROR_LOG_KEEP_DAYS) -> int:
         int: сколько строк убрано.
     """
     async with mysql_get_db_async() as db:
-        await db.execute('DELETE FROM error_log WHERE last_at < NOW() - INTERVAL %s DAY',
+        await db.execute('DELETE FROM journal WHERE last_at < NOW() - INTERVAL %s DAY',
                          (int(keep_days),))
         return int(db.rowcount or 0)
 
@@ -268,8 +268,8 @@ async def error_log_trim(keep_days: int = ERROR_LOG_KEEP_DAYS) -> int:
 
 # Соединение на процесс и замок к нему. pymysql не умеет работать из двух потоков
 # сразу, а логгер зовут откуда угодно — включая потоки `rq`.
-_error_log_conn: pymysql.Connection | None = None
-_error_log_lock = threading.Lock()
+_journal_conn: pymysql.Connection | None = None
+_journal_lock = threading.Lock()
 
 # Текст и трассировку обновляем: интересна последняя, а не первая — по ней
 # смотрят, что происходит сейчас. Время ставим явно: MySQL не трогает
@@ -280,8 +280,8 @@ _error_log_lock = threading.Lock()
 # `VALUES(col)`: с MySQL 8.0.20 та объявлена устаревшей и на каждую запись
 # пишет предупреждение в журнал сервера. В проекте есть места со старой формой —
 # это не повод заводить новое.
-_ERROR_LOG_INSERT = (
-    'INSERT INTO error_log'
+_JOURNAL_INSERT = (
+    'INSERT INTO journal'
     ' (source, level, logger, message, traceback, context, fingerprint)'
     ' VALUES (%s, %s, %s, %s, %s, %s, %s) AS fresh'
     ' ON DUPLICATE KEY UPDATE'
@@ -294,39 +294,39 @@ _ERROR_LOG_INSERT = (
 )
 
 
-def _error_log_connection() -> pymysql.Connection:
+def _journal_connection() -> pymysql.Connection:
     """Живое соединение: заводит при первом обращении, поднимает после обрыва.
 
-    ⚠ Зовётся только под `_error_log_lock`.
+    ⚠ Зовётся только под `_journal_lock`.
     """
-    global _error_log_conn
+    global _journal_conn
 
-    if _error_log_conn is None:
-        _error_log_conn = mysql_conn_get()
+    if _journal_conn is None:
+        _journal_conn = mysql_conn_get()
     else:
         # База рвёт простаивающие соединения по `wait_timeout`, а журнал молчит
         # сутками: без пинга первая же ночная ошибка ушла бы в закрытый сокет.
-        _error_log_conn.ping(reconnect=True)
+        _journal_conn.ping(reconnect=True)
 
-    return _error_log_conn
+    return _journal_conn
 
 
-def _error_log_connection_drop() -> None:
+def _journal_connection_drop() -> None:
     """Забывает соединение после неудачи — следующая запись заведёт новое.
 
-    ⚠ Зовётся только под `_error_log_lock`.
+    ⚠ Зовётся только под `_journal_lock`.
     """
-    global _error_log_conn
+    global _journal_conn
 
-    if _error_log_conn is not None:
+    if _journal_conn is not None:
         try:
-            _error_log_conn.close()
+            _journal_conn.close()
         except Exception:
             pass
-        _error_log_conn = None
+        _journal_conn = None
 
 
-def _error_log_row(row: dict) -> dict:
+def _journal_row(row: dict) -> dict:
     """Дополняет строку тем, что нужно странице, и не нужно базе."""
     context = row.get('context')
     if isinstance(context, str):
@@ -336,5 +336,5 @@ def _error_log_row(row: dict) -> dict:
             context = {}
 
     row['context'] = context or {}
-    row['source_title'] = ERROR_LOG_SOURCES.get(row.get('source'), row.get('source') or '')
+    row['source_title'] = JOURNAL_SOURCES.get(row.get('source'), row.get('source') or '')
     return row

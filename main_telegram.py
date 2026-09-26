@@ -11,17 +11,17 @@ from ai.ai_thread import ai_thread_framework_run
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
-from src.error.error_log_handler import error_log_handler_install
+from src.journal.journal_handler import journal_handler_install
 from src.telegram_bot import telegram_bot_init
 from state.state import state_set
 from thread_.thread_ import thread_with_callback
 
 if __name__ == "__main__":
     logging_init()
-    # Ошибки бота — в общий журнал установки (вкладка «Журнал» на странице
-    # трасс): свой контейнер, и без этого его падения видны только в его же
-    # `docker logs`.
-    error_log_handler_install('telegram')
+    # Ошибки бота — в общий журнал установки (страница «Журнал»,
+    # /admin/journal): свой контейнер, и без этого его падения видны только
+    # в его же `docker logs`.
+    journal_handler_install('telegram')
 
     print("Starting telegram bot-only mode...")
 

@@ -1,4 +1,4 @@
-"""Журнал ошибок установки — `/api/error_log` и запись через обработчик логгера.
+"""Журнал ошибок установки — `/api/journal` и запись через обработчик логгера.
 
 Проверяется то, ради чего журнал заведён:
 
@@ -9,7 +9,7 @@
 * запись на уровне ERROR попадает в журнал сама, через обработчик корневого
   логгера, — то есть новый код не должен ничего знать про журнал.
 
-⚠ Текст ошибки здесь всегда с меткой `ERROR_LOG_TEST_MARK`, а источник — свой
+⚠ Текст ошибки здесь всегда с меткой `JOURNAL_TEST_MARK`, а источник — свой
 (`pytest`): сюита ходит в общую базу установки, и чистка «по всему журналу»
 снесла бы живые записи.
 """
@@ -23,17 +23,17 @@ import pytest
 from tests.conftest import BASE_URL
 from tests.constants import TEST_AUTH
 
-from src.error.error_log import error_log_fingerprint, error_log_write
-from src.error.error_log_handler import error_log_handler_install, error_log_handler_remove
+from src.journal.journal import journal_fingerprint, journal_write
+from src.journal.journal_handler import journal_handler_install, journal_handler_remove
 
 pytestmark = pytest.mark.core
 
 # Метка тестовых записей: по ней тесты находят своё.
-ERROR_LOG_TEST_MARK = 'pytest_error_log'
+JOURNAL_TEST_MARK = 'pytest_journal'
 
-# Источник тестовых записей. Не из `ERROR_LOG_SOURCES`: так тестовые строки не
+# Источник тестовых записей. Не из `JOURNAL_SOURCES`: так тестовые строки не
 # смешиваются с настоящими ни в отборе по процессу, ни на глаз.
-ERROR_LOG_TEST_SOURCE = 'pytest'
+JOURNAL_TEST_SOURCE = 'pytest'
 
 
 @pytest.fixture
@@ -41,28 +41,28 @@ async def client() -> AsyncGenerator[httpx.AsyncClient, None]:
     async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=15.0) as session:
         await session.post('/auth/login', json=TEST_AUTH)
         yield session
-        await session.delete(f'/api/error_log?source={ERROR_LOG_TEST_SOURCE}')
+        await session.delete(f'/api/journal?source={JOURNAL_TEST_SOURCE}')
 
 
-class TestErrorLogAuth:
+class TestJournalAuth:
     """Журнал закрыт: он показывает пути файлов и трассировки."""
 
     async def test_list_requires_auth(self):
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=15.0) as anon:
-            response = await anon.get('/api/error_log')
+            response = await anon.get('/api/journal')
             assert response.status_code in (401, 403)
 
     async def test_clear_requires_auth(self):
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=15.0) as anon:
-            response = await anon.delete('/api/error_log')
+            response = await anon.delete('/api/journal')
             assert response.status_code in (401, 403)
 
 
-class TestErrorLogContract:
-    """Форма ответа: её читает вкладка «Журнал» на странице трасс."""
+class TestJournalContract:
+    """Форма ответа: её читает страница «Журнал» (/admin/journal)."""
 
     async def test_list_shape(self, client: httpx.AsyncClient):
-        response = await client.get('/api/error_log')
+        response = await client.get('/api/journal')
         assert response.status_code == 200
 
         result = response.json()['result']
@@ -72,30 +72,30 @@ class TestErrorLogContract:
 
     async def test_sources_come_from_server(self, client: httpx.AsyncClient):
         """⚠ Подписи процессов отдаёт сервер: своей копии страница не держит."""
-        result = (await client.get('/api/error_log')).json()['result']
+        result = (await client.get('/api/journal')).json()['result']
         assert 'uvicorn' in result['sources']
         assert result['sources']['uvicorn']
 
 
-class TestErrorLogWrite:
+class TestJournalWrite:
     """Запись и чтение: то, ради чего таблица заведена."""
 
     async def test_written_error_is_visible(self, client: httpx.AsyncClient):
-        message = f'{ERROR_LOG_TEST_MARK}: {uuid.uuid4()}'
-        error_log_write(ERROR_LOG_TEST_SOURCE, message, logger_name='tests')
+        message = f'{JOURNAL_TEST_MARK}: {uuid.uuid4()}'
+        journal_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
 
-        result = (await client.get(f'/api/error_log?q={ERROR_LOG_TEST_MARK}')).json()['result']
+        result = (await client.get(f'/api/journal?q={JOURNAL_TEST_MARK}')).json()['result']
         found = [row for row in result['rows'] if row['message'] == message]
 
         assert len(found) == 1
-        assert found[0]['source'] == ERROR_LOG_TEST_SOURCE
+        assert found[0]['source'] == JOURNAL_TEST_SOURCE
         assert found[0]['hits'] == 1
 
     async def test_repeat_counts_instead_of_new_row(self, client: httpx.AsyncClient):
         """⚠ Главное свойство журнала: зациклившаяся ошибка — строка со счётчиком."""
-        message = f'{ERROR_LOG_TEST_MARK}: повтор {uuid.uuid4()}'
+        message = f'{JOURNAL_TEST_MARK}: повтор {uuid.uuid4()}'
         for _ in range(3):
-            error_log_write(ERROR_LOG_TEST_SOURCE, message, logger_name='tests')
+            journal_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
 
         rows = await _rows(client, message)
 
@@ -104,96 +104,96 @@ class TestErrorLogWrite:
         assert rows[0]['last_at'] >= rows[0]['first_at']
 
     async def test_deleted_row_disappears(self, client: httpx.AsyncClient):
-        message = f'{ERROR_LOG_TEST_MARK}: на удаление {uuid.uuid4()}'
-        error_log_write(ERROR_LOG_TEST_SOURCE, message, logger_name='tests')
+        message = f'{JOURNAL_TEST_MARK}: на удаление {uuid.uuid4()}'
+        journal_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
 
         rows = await _rows(client, message)
         assert len(rows) == 1
 
-        response = await client.delete(f'/api/error_log/{rows[0]["id"]}')
+        response = await client.delete(f'/api/journal/{rows[0]["id"]}')
         assert response.status_code == 200
         assert response.json()['result']['deleted'] == 1
 
         assert not await _rows(client, message)
 
 
-class TestErrorLogFingerprint:
+class TestJournalFingerprint:
     """Отпечаток решает, что считать «той же самой ошибкой»."""
 
     def test_changing_numbers_do_not_split_rows(self):
         """«Задача 5219 не найдена» и «задача 5220 не найдена» — одна ошибка."""
-        first = error_log_fingerprint('worker', 'tests', 'задача 5219 не найдена')
-        second = error_log_fingerprint('worker', 'tests', 'задача 5220 не найдена')
+        first = journal_fingerprint('worker', 'tests', 'задача 5219 не найдена')
+        second = journal_fingerprint('worker', 'tests', 'задача 5220 не найдена')
 
         assert first == second
 
     def test_different_text_splits_rows(self):
-        first = error_log_fingerprint('worker', 'tests', 'задача не найдена')
-        second = error_log_fingerprint('worker', 'tests', 'агент не найден')
+        first = journal_fingerprint('worker', 'tests', 'задача не найдена')
+        second = journal_fingerprint('worker', 'tests', 'агент не найден')
 
         assert first != second
 
     def test_traceback_tail_does_not_split_rows(self):
         """⚠ Отпечаток считается по первой строке: адреса в трассировке плавают."""
-        first = error_log_fingerprint('worker', 'tests', 'сбой\nFile "a.py", line 1')
-        second = error_log_fingerprint('worker', 'tests', 'сбой\nFile "b.py", line 2')
+        first = journal_fingerprint('worker', 'tests', 'сбой\nFile "a.py", line 1')
+        second = journal_fingerprint('worker', 'tests', 'сбой\nFile "b.py", line 2')
 
         assert first == second
 
     def test_source_splits_rows(self):
         """Одна ошибка у воркера и у сервера — разные строки: чинят разное."""
-        first = error_log_fingerprint('worker', 'tests', 'нет соединения')
-        second = error_log_fingerprint('uvicorn', 'tests', 'нет соединения')
+        first = journal_fingerprint('worker', 'tests', 'нет соединения')
+        second = journal_fingerprint('uvicorn', 'tests', 'нет соединения')
 
         assert first != second
 
 
-class TestErrorLogHandler:
+class TestJournalHandler:
     """⚠ Ошибка попадает в журнал сама — код о журнале ничего не знает."""
 
     async def test_logged_error_reaches_journal(self, client: httpx.AsyncClient):
-        message = f'{ERROR_LOG_TEST_MARK}: через логгер {uuid.uuid4()}'
+        message = f'{JOURNAL_TEST_MARK}: через логгер {uuid.uuid4()}'
 
-        error_log_handler_install(ERROR_LOG_TEST_SOURCE)
+        journal_handler_install(JOURNAL_TEST_SOURCE)
         try:
-            logging.getLogger('tests.error_log').error(message)
+            logging.getLogger('tests.journal').error(message)
         finally:
-            error_log_handler_remove()
+            journal_handler_remove()
 
         rows = await _rows(client, message)
 
         assert len(rows) == 1
-        assert rows[0]['logger'] == 'tests.error_log'
+        assert rows[0]['logger'] == 'tests.journal'
         assert rows[0]['level'] == 'ERROR'
 
     async def test_exception_brings_traceback_and_place(self, client: httpx.AsyncClient):
         """Трассировка и место падения — то, ради чего в журнал вообще смотрят."""
-        message = f'{ERROR_LOG_TEST_MARK}: с исключением {uuid.uuid4()}'
+        message = f'{JOURNAL_TEST_MARK}: с исключением {uuid.uuid4()}'
 
-        error_log_handler_install(ERROR_LOG_TEST_SOURCE)
+        journal_handler_install(JOURNAL_TEST_SOURCE)
         try:
             try:
                 {}['нет такого ключа']
             except KeyError:
-                logging.getLogger('tests.error_log').exception(message)
+                logging.getLogger('tests.journal').exception(message)
         finally:
-            error_log_handler_remove()
+            journal_handler_remove()
 
         rows = await _rows(client, message)
 
         assert len(rows) == 1
         assert 'KeyError' in (rows[0]['traceback'] or '')
-        assert rows[0]['context']['file'].endswith('test_error_log.py')
+        assert rows[0]['context']['file'].endswith('test_journal.py')
 
     async def test_warning_stays_out(self, client: httpx.AsyncClient):
         """⚠ Ниже ERROR в журнал не попадает: WARNING значит «странно, но работаем»."""
-        message = f'{ERROR_LOG_TEST_MARK}: предупреждение {uuid.uuid4()}'
+        message = f'{JOURNAL_TEST_MARK}: предупреждение {uuid.uuid4()}'
 
-        error_log_handler_install(ERROR_LOG_TEST_SOURCE)
+        journal_handler_install(JOURNAL_TEST_SOURCE)
         try:
-            logging.getLogger('tests.error_log').warning(message)
+            logging.getLogger('tests.journal').warning(message)
         finally:
-            error_log_handler_remove()
+            journal_handler_remove()
 
         assert not await _rows(client, message)
 
@@ -204,14 +204,14 @@ class TestErrorLogHandler:
 async def _rows(client: httpx.AsyncClient, message: str) -> list[dict]:
     """Строки журнала по тексту — через ручку, а не напрямую в базу.
 
-    ⚠ Прямой вызов `error_log_rows` из теста падает на втором тесте: пул
+    ⚠ Прямой вызов `journal_rows` из теста падает на втором тесте: пул
     aiomysql привязан к циклу событий, в котором заведён, а pytest-asyncio даёт
     каждому тесту новый цикл — второй тест получает пул с закрытым циклом.
-    Запись (`error_log_write`) этим не страдает: она синхронная, своим
+    Запись (`journal_write`) этим не страдает: она синхронная, своим
     соединением.
     """
-    params = {'source': ERROR_LOG_TEST_SOURCE, 'q': message}
-    response = await client.get('/api/error_log', params=params)
+    params = {'source': JOURNAL_TEST_SOURCE, 'q': message}
+    response = await client.get('/api/journal', params=params)
     assert response.status_code == 200
 
     return response.json()['result']['rows']

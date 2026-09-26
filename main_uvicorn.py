@@ -30,12 +30,12 @@ from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
-from src.error.error_log_handler import error_log_handler_install
+from src.journal.journal_handler import journal_handler_install
 from src.event.event_handlers import event_handlers_register
 from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import dashboard
-from src.uvicorn.routers.error import error_log as error_log_router
+from src.uvicorn.routers.journal import journal as journal_router
 from src.uvicorn.routers.event import event as event_router
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.auth import auth as auth_router
@@ -96,10 +96,11 @@ MYSQL_SEED_PROBE_TABLE = 'node'
 async def lifespan(app: FastAPI):
     logging_init()
     # Журнал ошибок установки: всё, что пишется в логи уровнем ERROR, начиная
-    # отсюда попадает и в таблицу `error_log` — вкладка «Журнал» на странице
-    # трасс. Ставится рядом с `logging_init`, потому что подвешивается к тем же
-    # логгерам; порядок важен — до него ошибки видны только в `docker logs`.
-    error_log_handler_install('uvicorn')
+    # отсюда попадает и в таблицу `journal` — страница «Журнал»
+    # (/admin/journal). Ставится рядом с `logging_init`, потому что
+    # подвешивается к тем же логгерам; порядок важен — до него ошибки видны
+    # только в `docker logs`.
+    journal_handler_install('uvicorn')
     mysql_migration_up()
     mysql_seed_up(MYSQL_SEED_PROBE_TABLE)
     await mysql_pool_get()
@@ -181,7 +182,7 @@ async def catch_exceptions_middleware(request: Request, call_next):
         instance = type(e).__name__
 
         # ⚠ `logger_exception`, а не `logger_info`: уровнем INFO сбой роутера не
-        # доходил до журнала ошибок (`error_log`) — тот слушает ERROR, — и 500-е
+        # доходил до журнала ошибок (`journal`) — тот слушает ERROR, — и 500-е
         # были видны только в `docker logs`. Трассировку сюда больше не
         # подклеиваем руками: её кладёт в запись сам логгер (`exc_info`), а
         # журнал забирает оттуда в отдельную колонку.
@@ -537,7 +538,7 @@ app.include_router(telegram_app_claude_session.router, include_in_schema=False)
 app.include_router(telegram_app_plan.router, include_in_schema=False)
 app.include_router(telegram_app_task.router, include_in_schema=False)
 app.include_router(event_router.router, include_in_schema=False)
-app.include_router(error_log_router.router, include_in_schema=False)
+app.include_router(journal_router.router, include_in_schema=False)
 app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)
 app.include_router(project_team_router.router, include_in_schema=False)

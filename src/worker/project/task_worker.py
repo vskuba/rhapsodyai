@@ -25,7 +25,7 @@ from rq import Worker
 from rq.job import Job
 
 from logging_.logging_ import logger_info, logging_init
-from src.error.error_log_handler import error_log_handler_install
+from src.journal.journal_handler import journal_handler_install
 from mysql_.mysql_ import mysql_pool_close
 from ai.ai_thread import ai_thread_framework_run
 from queue_.queue_ import queue_init
@@ -198,10 +198,10 @@ async def _job_async(action: dict) -> str:
     её разбирает фоновая задача. Без неё job повиснет на ожидании ответа.
     """
     logging_init()
-    # Ошибки воркера — в общий журнал установки (вкладка «Журнал» на
-    # странице трасс): job падает в своём контейнере, и без этого его
+    # Ошибки воркера — в общий журнал установки (страница «Журнал»,
+    # /admin/journal): job падает в своём контейнере, и без этого его
     # падения видны только в `docker logs worker_task`.
-    error_log_handler_install('worker')
+    journal_handler_install('worker')
     queue_init([
         'chat', 'chat_response', 'chat_input_send',
         'task', 'task_abort', 'task_complete', 'task_continue',

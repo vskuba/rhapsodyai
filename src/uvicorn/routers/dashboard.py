@@ -148,6 +148,25 @@ async def dashboard_workflow_trace_page(request: Request, user: AuthSession = De
     )
 
 
+@router.get("/admin/journal", response_class=HTMLResponse)
+async def dashboard_journal_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
+    """
+    Журнал установки — своей страницей, а не вкладкой внутри трасс.
+
+    Предмет другой. Трассы отвечают на вопрос «что делал движок workflow»: запуски,
+    шаги, токены. Журнал — «что происходило на установке» в целом. Общего у них
+    только пункт меню «Логи».
+
+    ⚠ **Журнал — раздел с подвкладками, а не один список.** Сейчас в нём одна,
+    «Ошибки» (`.claude/docs/journal.md`); соседние по этому же вопросу
+    добавляются кнопкой и панелью в шаблоне, без правки роутера.
+    """
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/journal.html"
+    )
+
+
 @router.get("/admin/llm", response_class=HTMLResponse)
 async def dashboard_llm_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(

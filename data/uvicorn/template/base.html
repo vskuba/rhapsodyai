@@ -114,6 +114,10 @@
                 <span class="tabnav-sep"></span>
                 <a href="http://localhost:{{ OPENSEARCH_DASHBOARDS_PORT }}/app/data-explorer/discover"
                    target="_blank">🔎 Opensearch</a>
+                {# Журнал установки — раздел с подвкладками (сейчас «Ошибки»).
+                   Предмет не тот же, что у трасс, на которые ведёт сама вкладка
+                   меню, — поэтому отдельная страница. #}
+                <a href="/admin/journal">📋 Журнал</a>
                 {# Gatus отключён (profile `disabled` в docker-compose.yml) — ссылка вела
                    бы на порт, где никто не слушает. Вернуть вместе с сервисом. #}
                 <span class="tabnav-sep"></span>
@@ -243,6 +247,7 @@
             '/admin/browser/error': 'browser',
             '/admin/miniapp': 'miniapp',
             '/admin/workflow_trace': 'logs',
+            '/admin/journal': 'logs',
             '/admin/setting': 'setting',
             '/admin/user': 'setting',
             '/admin/role': 'setting',

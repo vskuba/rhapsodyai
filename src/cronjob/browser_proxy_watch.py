@@ -53,7 +53,7 @@ import json
 import sys
 
 from logging_.logging_ import logger_info, logging_init
-from src.error.error_log_handler import error_log_handler_install
+from src.journal.journal_handler import journal_handler_install
 from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
 from src.telegram_.telegram_notify import telegram_notify_send_owner
@@ -67,10 +67,10 @@ BROWSER_PROXY_WATCH_REPORT_MAX = 5
 
 async def main():
     logging_init()
-    # Ошибки кронджоба — в общий журнал установки (вкладка «Журнал» на
-    # странице трасс): он живёт минуту в отдельном процессе, и его отказ
+    # Ошибки кронджоба — в общий журнал установки (страница «Журнал»,
+    # /admin/journal): он живёт минуту в отдельном процессе, и его отказ
     # иначе теряется вместе с этим процессом.
-    error_log_handler_install('cronjob')
+    journal_handler_install('cronjob')
 
     metadata = {}
     if len(sys.argv) > 1:
