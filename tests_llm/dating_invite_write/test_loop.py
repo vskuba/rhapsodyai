@@ -25,7 +25,7 @@ import pytest
 
 from tests_llm.dating_invite_write.conftest import (HEAD_DONE_DRAFT,
                                                     HEAD_DONE_JUDGE, STEP_DRAFT,
-                                                    STEP_JUDGE, STEP_TIME)
+                                                    STEP_JUDGE, STEP_DICE)
 
 pytestmark = pytest.mark.llm
 
@@ -109,17 +109,20 @@ class TestEachReplySeesThePreviousOnes:
             f'второй текст судили, не показав ему первый.{got}'
 
 
-class TestTheClockIsAskedOncePerReply:
-    """⚠ Время снимается внутри подпрогона, то есть на каждую реплику.
+class TestTheDiceAreThrownPerReply:
+    """⚠⚠ Жребий бросается **внутри подпрогона**, то есть на каждую реплику.
 
-    Это не расточительство и не ошибка: цикл может идти минуту, и час, снятый
-    один раз на входе, к последней реплике устарел бы. Но знать об этом стоит —
-    отсюда тест, а не умолчание.
+    Прежде здесь стоял тест про часы — время снималось тем же порядком, на каждую
+    реплику. Часов больше нет, а вопрос остался и стал важнее: приём и длину
+    выбирает жребий, и если бросить его **один раз на заход**, все реплики пула
+    выйдут одним приёмом одной длины — то самое однообразие, от которого уходили.
+
+    ⚠ Это не расточительство: инструмент местный и дешёвый, сети не трогает.
     """
 
-    async def test_the_clock_runs_for_every_reply(self, invite):
+    async def test_the_dice_run_for_every_reply(self, invite):
         got = await invite(invite_count=TWICE)
 
-        assert got.times(STEP_TIME) == got.times(STEP_DRAFT), \
-            (f'часы спрошены {got.times(STEP_TIME)} раз(а) на'
+        assert got.times(STEP_DICE) == got.times(STEP_DRAFT), \
+            (f'жребий брошен {got.times(STEP_DICE)} раз(а) на'
              f' {got.times(STEP_DRAFT)} реплик.{got}')
