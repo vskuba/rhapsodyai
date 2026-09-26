@@ -14,6 +14,7 @@ import uuid
 
 from src.ai.ai_llm import ai_llm_node_get
 from logging_.logging_ import logger_info, logging_init
+from src.error.error_log_handler import error_log_handler_install
 from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_init
 from ai.ai_thread import ai_thread_framework_run
@@ -28,6 +29,10 @@ WORKFLOW_TIMEOUT = 120.0
 
 async def main():
     logging_init()
+    # Ошибки кронджоба — в общий журнал установки (вкладка «Журнал» на
+    # странице трасс): он живёт минуту в отдельном процессе, и его отказ
+    # иначе теряется вместе с этим процессом.
+    error_log_handler_install('cronjob')
 
     # Мини-инфраструктура движка (как в main_uvicorn): LLM-шаги идут через
     # очередь ai_framework_model, которую обрабатывает фоновая задача

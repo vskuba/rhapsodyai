@@ -17,6 +17,10 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.WORKFLOW_VIEW,
     AuthPermission.WORKFLOW_VARIABLE_VIEW,
     AuthPermission.WORKFLOW_TRACE_VIEW,
+    # Журнал ошибок читают все, кто видит трассы: вкладка стоит на той же
+    # странице, и «страница открылась, а одна вкладка отвечает 403» читается
+    # как поломка, а не как отсутствие права.
+    AuthPermission.ERROR_LOG_VIEW,
     AuthPermission.WORKFLOW_VARIABLE_UPDATE,
     AuthPermission.NODE_VIEW,
     AuthPermission.TOOL_VIEW,

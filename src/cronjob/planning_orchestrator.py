@@ -12,6 +12,7 @@ import json
 import sys
 
 from logging_.logging_ import logging_init
+from src.error.error_log_handler import error_log_handler_install
 from mysql_.mysql_ import mysql_pool_close
 from src.project.planning.planning_batch import (
     planning_batch_run_all,
@@ -22,6 +23,10 @@ from src.project.planning.planning_batch import (
 
 async def main():
     logging_init()
+    # Ошибки кронджоба — в общий журнал установки (вкладка «Журнал» на
+    # странице трасс): он живёт минуту в отдельном процессе, и его отказ
+    # иначе теряется вместе с этим процессом.
+    error_log_handler_install('cronjob')
 
     metadata = {}
     if len(sys.argv) > 1:

@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import traceback
 
 from openai.types.chat import ChatCompletion
 from pydantic import ConfigDict
@@ -23,7 +22,7 @@ from ai.ai_thread import ai_thread_framework_run
 from src.ai.ai_tool import ai_tool_sync
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from config.config import config_get
-from logging_.logging_ import logging_init, logger_info
+from logging_.logging_ import logging_init, logger_exception, logger_info
 from mysql_.migration.mysql_migration_up import mysql_migration_up
 from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from mysql_.mysql_seed import mysql_seed_up
@@ -31,10 +30,12 @@ from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
+from src.error.error_log_handler import error_log_handler_install
 from src.event.event_handlers import event_handlers_register
 from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import dashboard
+from src.uvicorn.routers.error import error_log as error_log_router
 from src.uvicorn.routers.event import event as event_router
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.auth import auth as auth_router
@@ -94,6 +95,11 @@ MYSQL_SEED_PROBE_TABLE = 'node'
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging_init()
+    # Журнал ошибок установки: всё, что пишется в логи уровнем ERROR, начиная
+    # отсюда попадает и в таблицу `error_log` — вкладка «Журнал» на странице
+    # трасс. Ставится рядом с `logging_init`, потому что подвешивается к тем же
+    # логгерам; порядок важен — до него ошибки видны только в `docker logs`.
+    error_log_handler_install('uvicorn')
     mysql_migration_up()
     mysql_seed_up(MYSQL_SEED_PROBE_TABLE)
     await mysql_pool_get()
@@ -173,14 +179,16 @@ async def catch_exceptions_middleware(request: Request, call_next):
         return await call_next(request)
     except Exception as e:
         instance = type(e).__name__
-        err_stack = traceback.format_exc()
 
-        # Логируем ошибку с деталями запроса
-        logger_info(
+        # ⚠ `logger_exception`, а не `logger_info`: уровнем INFO сбой роутера не
+        # доходил до журнала ошибок (`error_log`) — тот слушает ERROR, — и 500-е
+        # были видны только в `docker logs`. Трассировку сюда больше не
+        # подклеиваем руками: её кладёт в запись сам логгер (`exc_info`), а
+        # журнал забирает оттуда в отдельную колонку.
+        logger_exception(
             f"❌ Сбой в роутере: {request.url.path}\n"
             f"Ошибка: {str(e)}\n"
-            f"Instance: {instance}\n"
-            f"Стек вызовов:\n{err_stack}"
+            f"Instance: {instance}"
         )
 
         # Если это ошибка лимитов AI или HTTPException c кодом 429
@@ -529,6 +537,7 @@ app.include_router(telegram_app_claude_session.router, include_in_schema=False)
 app.include_router(telegram_app_plan.router, include_in_schema=False)
 app.include_router(telegram_app_task.router, include_in_schema=False)
 app.include_router(event_router.router, include_in_schema=False)
+app.include_router(error_log_router.router, include_in_schema=False)
 app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)
 app.include_router(project_team_router.router, include_in_schema=False)

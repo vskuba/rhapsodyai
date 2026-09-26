@@ -23,12 +23,17 @@ import sys
 from cronicle_.cronicle_log import (CRONICLE_LOG_KEEP_DAYS, cronicle_log_prune,
                                     cronicle_log_report, cronicle_log_sizes)
 from logging_.logging_ import logger_info, logging_init
+from src.error.error_log_handler import error_log_handler_install
 
 from src.telegram_.telegram_notify import telegram_notify_send_owner
 
 
 async def main():
     logging_init()
+    # Ошибки кронджоба — в общий журнал установки (вкладка «Журнал» на
+    # странице трасс): он живёт минуту в отдельном процессе, и его отказ
+    # иначе теряется вместе с этим процессом.
+    error_log_handler_install('cronjob')
 
     metadata = {}
     if len(sys.argv) > 1:

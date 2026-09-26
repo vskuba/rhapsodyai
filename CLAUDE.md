@@ -41,6 +41,9 @@ See the documentation files in `.claude/docs/` for detailed patterns:
     (`tests_llm/`, метка `llm`) идут **сами**: ответы модели даёт подмена.
     ⚠⚠ Живые (`llm_live`) по-прежнему **предлагают, а не запускают**: нода одна на
     тесты и на прод. Папка на workflow — `tests_llm/<имя_workflow>/`
+- **Что сломалось на установке** → `.claude/docs/error_log.md` (вкладка «Журнал» на
+  `/admin/workflow_trace`; ошибки стекаются туда сами — от кода требуется только
+  сообщать сбой `logger_exception`, а не `logger_info`)
 - **Team / Ping System** → `.claude/docs/project_team.md`
 - **DeepSeek Harness: включение ролей со страницы команды** → `.claude/docs/dsh.md`
 - **Settings/Config** → `.claude/docs/setting.md`
@@ -129,6 +132,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
 | `worker.md` | Воркеры в `src/worker/`: очереди Redis/asyncio, таймауты, single-flight |
+| `error_log.md` | Журнал ошибок установки — вкладка «Журнал» на `/admin/workflow_trace`. Всё, что пишется уровнем ERROR в любом процессе, попадает туда **само** (обработчик корневого логгера); писать в журнал руками не надо, но сбой сообщать `logger_exception`, а не `logger_info` — иначе он в журнал не попадёт |
 | `browser.md` | Контейнер-браузер: как подключён `py_modules/browser_`, страница админки, прокси вебсокета, API :8014, инструменты над страницей. ⚠ Там же §4.3 — **реестр сетевых прокси** (своя страница `/admin/browser/proxy`, не вкладка сайта: выход общий на установку и к закладке не привязан): какие выходы есть и какие живые. **Раздачу он не ведёт** — про потребителей здесь не знают; кому какой выход достанется, решает тот, кто их ведёт, по `check_ip` из списка |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
 | `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда, `gx10_autocompact_limit` |

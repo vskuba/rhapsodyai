@@ -38,6 +38,10 @@ class AuthPermission(str, Enum):
     WORKFLOW_TRACE_REPLAY = "workflow_trace:replay"
     WORKFLOW_TRACE_STOP = "workflow_trace:stop"
 
+    # Журнал ошибок установки — вкладка «Журнал» на странице трасс
+    ERROR_LOG_VIEW = "error_log:view"
+    ERROR_LOG_DELETE = "error_log:delete"
+
     # Node permissions
     NODE_VIEW = "node:view"
     NODE_CREATE = "node:create"
