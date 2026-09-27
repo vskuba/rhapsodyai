@@ -7,6 +7,7 @@ import {state, WORKFLOW_STEP_CONFIG} from './state.js';
 import {parseMetadata, getToolOutputKeys} from './utils.js';
 import {fillVariablesSelectOptions} from './variables.js';
 import {renderDiceWidget, DICE_TOOL_NAME} from './dice-widget.js';
+import {textModalIcon} from './text-modal.js';
 
 export function renderCustomStepFields(step, metadata) {
     const container = document.getElementById('dynamicStepFieldsContainer');
@@ -30,7 +31,20 @@ export function renderCustomStepFields(step, metadata) {
         const label = document.createElement('label');
         label.style = "font-size: 12px; font-weight: 600; color: #4a5568;";
         label.textContent = field.label;
-        fieldWrapper.appendChild(label);
+
+        // ⚠ У textarea подпись живёт в **строке**, а не сама по себе: справа к ней
+        // встаёт иконка большого окна (`text-modal.js`), и для этого нужен ряд.
+        // Прочим полям ряд незачем — лишняя обёртка в разметке.
+        let labelRow = null;
+        if (field.type === 'textarea') {
+            labelRow = document.createElement('div');
+            labelRow.style = "display: flex; align-items: center;"
+                + " justify-content: space-between; gap: 8px;";
+            labelRow.appendChild(label);
+            fieldWrapper.appendChild(labelRow);
+        } else {
+            fieldWrapper.appendChild(label);
+        }
 
         // Извлекаем текущее сохраненное значение или берем дефолтное
         const currentValue = metadata[field.key] !== undefined ? metadata[field.key] : (field.default || '');
@@ -960,6 +974,11 @@ export function renderCustomStepFields(step, metadata) {
                 inputElement.style = "height: 170px; resize: vertical; font-size: 13px; padding: 8px;";
                 inputElement.placeholder = field.placeholder || '';
                 inputElement.value = currentValue;
+
+                // ⚠ Иконка добавляется **здесь**, а не вместе с подписью: окну нужно
+                // само поле — оно пишет в него и пинает его же событиями, чтобы
+                // сохранение шло одной дорогой со страницей.
+                if (labelRow) labelRow.appendChild(textModalIcon(inputElement, field.label));
             } else if (field.type === 'select') {
                 inputElement = document.createElement('select');
                 inputElement.id = `field_${field.key}`;
