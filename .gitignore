@@ -13,6 +13,7 @@ __pycache__/
 .env.local
 .env.test
 .env.prod
+.git_worktree
 config.yaml
 !docker/gatus/config.yaml
 *.log
