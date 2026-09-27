@@ -1140,14 +1140,30 @@
         return {className: `var-source${source.start ? ' var-source-start' : ''}`, text: source.label};
     }
 
+    // Порядок имён в списках переменных — по алфавиту.
+    //
+    // ⚠ Порядок вставки ничего не значил: слева он шёл от снапшота старта к тому, что
+    // дописали шаги, справа — как отдала ручка реестра. Искать имя глазами в таком
+    // списке приходилось перечитывая его целиком.
+    //
+    // ⚠⚠ Происхождение значения при этом не теряется — его несёт бейдж рядом с именем
+    // («старт» / «шаг #N» / «умолчание»), а не позиция в списке. Иначе сортировать
+    // было бы нельзя: она стёрла бы ответ на вопрос «кто это записал».
+    //
+    // Компаратор тот же, что у переменных на странице workflow
+    // (`js/workflow/variables.js`): списки в соседних местах должны листаться одинаково.
+    const byVarName = (a, b) => String(a || '').localeCompare(String(b || ''));
+
     // UL-список переменных: скаляры — в строку, list/dict — бейдж типа + вложенный JSON.
     // sources (необязательный) — откуда значение: {имя: {label, start}} рядом с именем
     function renderVariablesList(vars, sources) {
         const ul = el('ul', 'vars-list');
-        Object.entries(vars).forEach(([name, value]) => {
-            const source = sources && sources[name];
-            ul.appendChild(varListItem(name, value, source ? [varSourceBadge(source)] : []));
-        });
+        Object.entries(vars)
+            .sort((a, b) => byVarName(a[0], b[0]))
+            .forEach(([name, value]) => {
+                const source = sources && sources[name];
+                ul.appendChild(varListItem(name, value, source ? [varSourceBadge(source)] : []));
+            });
         return ul;
     }
 
@@ -1155,14 +1171,20 @@
     // Значения нет — показываем умолчание из реестра, чтобы видеть, с чем шаг работал бы.
     function renderWorkflowVariablesList(declared, values, sources) {
         const ul = el('ul', 'vars-list');
-        declared.forEach(variable => {
-            const name = variable.name || '';
-            const used = Object.prototype.hasOwnProperty.call(values, name);
-            const badge = used
-                ? varSourceBadge(sources[name])
-                : {className: 'var-source var-source-default', text: 'умолчание'};
-            ul.appendChild(varListItem(name, used ? values[name] : variable.default, [badge], variable.description));
-        });
+        // ⚠ Сортируем копию: `declared` — это массив из `workflowVariablesCache`, общий
+        // на все прогоны одного workflow. `sort` правит массив на месте, и без копии
+        // отрисовка перекладывала бы чужой кэш.
+        [...declared]
+            .sort((a, b) => byVarName(a.name, b.name))
+            .forEach(variable => {
+                const name = variable.name || '';
+                const used = Object.prototype.hasOwnProperty.call(values, name);
+                const badge = used
+                    ? varSourceBadge(sources[name])
+                    : {className: 'var-source var-source-default', text: 'умолчание'};
+                ul.appendChild(varListItem(name, used ? values[name] : variable.default,
+                                           [badge], variable.description));
+            });
         return ul;
     }
 
