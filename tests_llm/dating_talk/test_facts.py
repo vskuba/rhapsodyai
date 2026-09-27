@@ -37,20 +37,16 @@
 import pytest
 
 from tests_llm.mark import mark_key
-from tests_llm.dating_talk.conftest import (STEP_ANALYSE, STEP_FACT_INVENT,
+from tests_llm.dating_talk.conftest import (ANYWAY, facts_girl_for, talk_plan,
+                                            STEP_ANALYSE,
+                                            STEP_FACT_INVENT,
                                             STEP_FACT_INVENT_ADD, STEP_FACT_SAVE,
                                             STEP_FACT_SAVE_MAN, STEP_FACT_SAVE_TALK,
                                             STEP_FACTS_MAN, STEP_FACTS_PLAIN,
                                             STEP_FACTS_TAGS, STEP_FACTS_TALK,
                                             STEP_MAKE)
 
-pytestmark = pytest.mark.llm_live
-
-# ⚠ Ответ обязателен — иначе прогон вправе уйти в «Тишину», и проверять станет
-# нечего. Строкой `'1'`: `%if%` считает ложными пустое, `'0'` и отсутствие, а
-# `True` превратился бы в `'True'` — истину по случайности.
-ANYWAY = {'answer_anyway': '1'}
-
+pytestmark = pytest.mark.llm
 
 @pytest.fixture
 def stranger():
@@ -71,31 +67,6 @@ class TestTheMessageIsAnalysed:
                          variables={'companion_name': stranger, **ANYWAY})
 
         assert got.went_through(STEP_ANALYSE), f'реплику не разобрали.{got}'
-
-    async def test_it_pulls_tags_out_of_the_message(self, talk, stranger):
-        """⚠ Теги — вход поиска фактов. Пустые значат, что искать будут вслепую.
-
-        Проверяем **наличие**, а не состав: какие именно слова выберет модель —
-        её дело, а вот пустая строка ломает следующий шаг.
-        """
-        got = await talk('I work as a carpenter and I love fishing on weekends.',
-                         variables={'companion_name': stranger, **ANYWAY})
-
-        assert str(got.vars.get('prompt_user_tags') or '').strip(), \
-            f'разбор не дал ни одного тега.{got}'
-
-    async def test_a_question_is_marked_as_a_question(self, talk, stranger):
-        """⚠ Признак вопроса — **развилка маршрута**, а не подсказка.
-
-        По нему шаг фактов решает, идти ли за фактами девушки: на прямой вопрос
-        о ней они нужны, на рассказ о себе — нет.
-        """
-        got = await talk('What do you do for work?',
-                         variables={'companion_name': stranger, **ANYWAY})
-
-        assert str(got.vars.get('prompt_user_question')) == '1', \
-            f'прямой вопрос не опознан вопросом.{got}'
-
 
 class TestWhatHeSaidIsKept:
     """⚠⚠ Второе звено: сказанное человеком сохраняется, иначе памяти не будет.
@@ -217,17 +188,40 @@ class TestHerOwnFactsAreInvented:
 
     Без этого она противоречит себе: сегодня «работаю в маркетинге», завтра
     «учительница». Для человека по ту сторону это первый признак робота.
+
+    ⚠⚠ Заход задаётся планом: в подпрогон уводит признак вопроса
+    (`prompt_user_question = 1`), а его ставит разбор — то есть модель. Заготовка
+    папки ставит `0`, и без своего плана оба теста проверяли бы «подпрогон не
+    позвался», что и есть их поломка.
+
+    ⚠ Признак **задан, а не выпрошен**: опознала ли модель вопрос вопросом —
+    отдельный вопрос, и он проверяется живым `test_judgement.py`. Здесь предмет
+    другой: позвался ли подпрогон и записал ли он придуманное.
     """
 
-    async def test_the_inventing_subflow_runs(self, talk, stranger):
+    # ⚠ Придуманное подпрогоном задаём непустым: шаг записи не зовут, когда
+    # придумывать оказалось нечего, — и тест о записи проверял бы пустоту.
+    #
+    # ⚠⚠ Формат обязателен — **запись факта**, а не фраза. Подпрогон отдаёт список
+    # готовых записей, и шаг сохранения читает из них поля. Подставь строку — заход
+    # молча не доходит до конца вовсе, и красное говорит «агент не ответил», а не
+    # «формат не тот». Помощник собирает запись правильно, и тег в ней тот же, что
+    # «выделяет» разбор: иначе записанное не нашлось бы поиском.
+    INVENTED = facts_girl_for('pytest_llm_girl_zinaida')
+
+    async def test_the_inventing_subflow_runs(self, talk, stranger, llm_answers):
+        await llm_answers(talk_plan(question='1', facts_girl=self.INVENTED))
+
         got = await talk('What do you like to do after work?',
                          variables={'companion_name': stranger, **ANYWAY})
 
         assert got.went_through(STEP_FACT_INVENT), \
             f'подпрогон придумывания фактов не позван.{got}'
 
-    async def test_the_invented_facts_are_stored(self, talk, stranger):
+    async def test_the_invented_facts_are_stored(self, talk, stranger, llm_answers):
         """⚠ Придумать мало — надо записать: иначе завтра придумается другое."""
+        await llm_answers(talk_plan(question='1', facts_girl=self.INVENTED))
+
         got = await talk('What do you like to do after work?',
                          variables={'companion_name': stranger, **ANYWAY})
 

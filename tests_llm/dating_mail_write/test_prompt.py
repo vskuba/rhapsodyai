@@ -25,7 +25,7 @@ from tests_llm.dating_mail_write.conftest import (HEAD_AVOID, HEAD_GREETING,
                                                   STEP_SAME, STEP_WRITE,
                                                   VARS_TEXT)
 
-pytestmark = pytest.mark.llm_live
+pytestmark = pytest.mark.llm
 
 ANGLE = 'разговор о мелочи, которую замечают только внимательные'
 LENGTH = 'три коротких абзаца'

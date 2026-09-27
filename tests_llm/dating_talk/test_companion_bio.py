@@ -38,11 +38,12 @@
 Поэтому `companion_name` — свой на каждый вызов: документ с таким ключом пуст
 по построению.
 
-## Запуск — руками, путём к папке
+## Идут на подмене, вместе со всей сюитой
 
-    .venv/bin/python3 -m pytest tests_llm/dating_talk -q
+Оба теста смотрят в **промпт**, а его собирает код: чем отвечает модель — всё равно.
+Ответы кладёт заготовка папки (`llm_plan`), наружу не уходит ни один запрос.
 
-⚠ Сами они не идут: папки нет в `testpaths`. Модель одна на тесты и на прод.
+    .venv/bin/python3 -m pytest tests_llm/dating_talk/test_companion_bio.py -q
 """
 
 
@@ -50,9 +51,9 @@ import pytest
 
 from tests_llm.conftest import LLM_COMPANION_TITLE
 from tests_llm.mark import mark_key
-from tests_llm.dating_talk.conftest import STEP_MAKE
+from tests_llm.dating_talk.conftest import ANYWAY, STEP_MAKE
 
-pytestmark = pytest.mark.llm_live
+pytestmark = pytest.mark.llm
 
 # ⚠ Ремесло и город, которые вместе не встречаются в частых сюжетах. Модель,
 # не получившая анкеты, не назовёт их: проверено вторым тестом пары.
@@ -83,19 +84,6 @@ PROMPT_MARKS = (BIO_CITY, BIO_COUNTRY, BIO_JOB)
 # теперь **неважно** — утверждения смотрят в промпт, а он собирается до модели.
 # Берём обычную реплику, чтобы разговор шёл своим чередом.
 QUESTION = "Do you know what my job is?"
-
-# ⚠⚠ **`answer_anyway` — в каждом вызове теста, и это не украшение.**
-#
-# Без него девушке разрешено промолчать на то, чего она не поняла, — и она этим
-# пользуется: в замере два прогона из пяти возвращали пустую строку и уходили в
-# шаг «Тишина». Тест при этом краснел, ничего не проверив: молчание — законный
-# исход, а не поломка.
-#
-# Строкой `'1'`, а не `True`: у соседа `%if%` считает ложными пустое, `'0'` и
-# отсутствие, а `True` превратился бы в `'True'` — то есть тоже в истину, но
-# случайно. Тот же приём, что в бою (`answer.py`).
-ANYWAY = {'answer_anyway': '1'}
-
 
 @pytest.fixture
 def stranger():

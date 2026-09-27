@@ -42,9 +42,9 @@ from tests_llm.dating_talk.conftest import (STEP_ANSWER, STEP_BRANCH,
                                             STEP_BRANCHES, STEP_CHAT,
                                             STEP_DICE, STEP_INITIATIVE,
                                             STEP_JUDGE, STEP_MAIL_REPLY,
-                                            STEP_MAIL_WRITE)
+                                            STEP_MAIL_WRITE, talk_plan)
 
-pytestmark = pytest.mark.llm_live
+pytestmark = pytest.mark.llm
 
 # Длина письма приходит **готовой**: жребий бросает панель, а не модель.
 #
@@ -227,14 +227,28 @@ class TestTheDiceIsThrownFirst:
     ни в одном не повторив формулировку.
     """
 
-    async def test_it_runs_before_everything(self, talk):
-        """⚠ Первым шагом он стоит не для красоты: от него зависят промпты
-        ниже, а сам он не ждёт ничего."""
+    async def test_it_runs_before_the_composing(self, talk):
+        """⚠ Жребий обязан лечь **раньше сочинения**: его значения уходят метками
+        в промпты веток, а выпавшие позже пришли бы в уже собранный промпт.
+
+        ⚠⚠ Проверяется «раньше ветки», а не «первым на маршруте». Первым он не
+        стоит и не должен: до него идут заведение собеседника, ленты разговора и
+        сборка переменных — жребию они не нужны, а промптам нужны. Прежняя версия
+        утверждала `route[0] == STEP_DICE`, и это была **неправда**: шаг стоит
+        седьмым и локально, и на проде. Тест был бы красным на любом прогоне —
+        под `llm_live` он просто не шёл ни разу.
+        """
         got = await talk('Hi! How was your day?')
 
         assert got.ran(STEP_DICE), f'жребий не отработал.{got}'
-        assert got.route and got.route[0] == STEP_DICE, \
-            f'жребий не первый на маршруте: {got.route[:3]}.{got}'
+
+        route = list(got.route or ())
+        made = [one for one in (STEP_CHAT, STEP_MAIL_WRITE, STEP_MAIL_REPLY,
+                                STEP_INITIATIVE) if one in route]
+
+        assert made, f'ни одна ветка сочинения не отработала.{got}'
+        assert route.index(STEP_DICE) < min(route.index(one) for one in made), \
+            f'жребий выпал позже сочинения — метки пришли в собранный промпт.{got}'
 
     async def test_the_letter_gets_its_opening(self, talk):
         """Зачин доехал до промпта ветки письма — иначе метка осталась пустой."""
@@ -287,6 +301,20 @@ class TestTheDiceIsThrownFirst:
             f'при доле 0% выпало обращение по имени — настройка не доехала.{got}'
 
 
+# Ответы подмены для ветки «письма и фото».
+#
+# ⚠⚠ Тема **задаётся**, а не выпрашивается у модели: подмена отвечает тем, что
+# велел тест. Предмет этих двух тестов — «куда ветка возвращает ответ», и знать,
+# опознала ли модель просьбу о фото, для него незачем. Опознание проверяют живые
+# тесты в `test_judgement.py` — там это и есть предмет.
+#
+# ⚠ `default` обязателен: у сабворкфлоу ветки свои шаги, и заготовка обычного
+# захода (`talk_plan`) их не знает — без умолчания они остались бы без ответа.
+PHOTO_DEFAULT = {'girl_response': 'fake', 'girl_response_skip': '0',
+                 'girl_response_fixed': '', 'photo_deal': 'mail',
+                 'photo_response': 'fake', 'photo_fixed': ''}
+
+
 class TestThePhotoBranchAnswersInCommon:
     """⚠⚠ Ветка «письма и фото» отвечает **общим** шагом «Ответ».
 
@@ -299,17 +327,29 @@ class TestThePhotoBranchAnswersInCommon:
     заметить это по тексту нельзя, он останется правдоподобным.
     """
 
-    async def test_it_returns_through_the_common_answer(self, talk):
+    async def test_it_returns_through_the_common_answer(self, talk, llm_answers):
+        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_DEFAULT)
+
         got = await talk("Can you send me your photos? I'd love to see more of you")
 
         assert got.ran(STEP_BRANCH), f'ветка фото не сработала.{got}'
         assert got.ran(STEP_ANSWER), \
             f'ветка фото не дошла до общего шага «Ответ».{got}'
 
-    async def test_the_old_exit_is_gone(self, talk):
+    async def test_the_old_exit_is_gone(self, talk, llm_answers):
         """⚠ Свой шаг возврата убран, и маршрут через него значил бы, что
-        миграция `…_wf_talk_photo_branch_one_exit` не доехала до этой базы."""
+        миграция `…_wf_talk_photo_branch_one_exit` не доехала до этой базы.
+
+        ⚠⚠ Тема задаётся, и **без этого тест был бы пустым**: утверждение
+        отрицательное, а не сработавшая ветка не ходит вообще никуда — «своего шага
+        нет» выполнялось бы само собой. Зелёный при незапущенной ветке ничего не
+        значит, и поймать такое по цвету нельзя.
+        """
+        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_DEFAULT)
+
         got = await talk('Can you send me your photos?')
 
+        assert got.ran(STEP_BRANCH), \
+            f'ветка фото не сработала — проверять было нечего.{got}'
         assert not got.went_through('Ответ ветки'), \
             f'ветка отвечает своим шагом, а не общим.{got}'
