@@ -556,9 +556,7 @@ async def _agent_ask(agent_name: str, message: str) -> str:
     variables = {
         **ai_workflow_variables_base(
             prompt_user=message, user_id=BLOG_USER_ID, entity_agent=entity_agent,
-            session_uuid=session_uuid, workflow_id=workflow_id,
-            companion_id=BLOG_COMPANION_ID, companion_name="user_admin",
-            companion_title="admin"),
+            session_uuid=session_uuid, workflow_id=workflow_id),
         **json_from_string(entity_agent.get("workflow_variable") or "{}"),
     }
     ai_workflow_variables_defaults_apply(variables, workflow_data["variables"])

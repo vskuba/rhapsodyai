@@ -3,6 +3,10 @@
 
 const DETECTIVE_BOT_AGENT_ID = 30;
 const COMPANION_ID = 4; // companion 'detective_player'
+// Как шаги бота и подозреваемых зовут игрока: сосед больше не подставляет
+// `companion_title` из запроса по умолчанию - PWA кладёт его переменой сам
+// (то же значение, что лежало в реестре: companion.title у записи 4).
+const COMPANION_TITLE = 'Игрок';
 const SESSION_STORAGE_KEY = 'detective_session_uuid';
 
 const messagesEl = document.getElementById('messages');
@@ -207,6 +211,7 @@ async function sendMessage(text, displayText) {
                 question,
                 agent_id: currentAgentId,
                 companion_id: COMPANION_ID,
+                variables: { companion_title: COMPANION_TITLE },
                 session_uuid: getSessionUuid(),
             }),
         });

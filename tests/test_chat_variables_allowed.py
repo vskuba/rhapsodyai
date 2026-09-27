@@ -90,8 +90,13 @@ DATING_SENDS = (
     # ⚠ `companion_uid` здесь больше нет: номер человека **на сайте** уехал
     # вместе с объявлением у соседа. Запись собеседника у него своя, и её ключ
     # (`companion.unique_id`) панель кладёт в `companion_name`.
+    #
+    # ⚠⚠ Троица едет **целиком** с `remove_companion`: сосед перестал подставлять
+    # её из запроса по умолчанию, и шаг «Переменные» склеивает ключ фактов
+    # `companion_unique_id` из `%companion_id%_%companion_name%` — без номера
+    # ключ съедает приставку.
     'companion_bio', 'girl_bio', 'girl_name', 'girl_id',
-    'companion_name', 'companion_title', 'chat_timeout',
+    'companion_id', 'companion_name', 'companion_title', 'chat_timeout',
     # Повод заговорить первой. ⚠ Приёма (`initiative_kind`) здесь больше нет:
     # двенадцать приёмов с весами переехали в шаг «Жребий» у соседа, и панель
     # шлёт только флаг.

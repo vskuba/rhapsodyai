@@ -282,6 +282,13 @@ async function processAiResponse(cleanText) {
                 question: cleanText,
                 agent_id: parseInt(agent_id),
                 companion_id: companionId,
+                // Сосед больше не подставляет троицу из запроса (remove_companion):
+                // что не прислано — то пустой default. Имя и ключ те же, что у
+                // записи, заведённой POST /companion выше, — расхождения нет.
+                variables: {
+                    companion_name: companionName,
+                    companion_title: companionTitle
+                },
                 session_uuid: session_uuid
             })
         });

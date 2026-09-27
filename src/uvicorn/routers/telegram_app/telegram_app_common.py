@@ -18,9 +18,9 @@ agent_manager = AiFrameworkAgentManager()
 TELEGRAM_CHAT_USER_ID = 1
 TELEGRAM_CHAT_AGENT_NAME = 'telegram_assistant'
 TELEGRAM_CLAUDE_AGENT_NAME = 'telegram_claude'
+# Only the number remains: the trio `companion_*` is no longer injected as a default,
+# so the assistant's workflow doesn't read them (`remove_companion`).
 TELEGRAM_CHAT_COMPANION_ID = 3
-TELEGRAM_CHAT_COMPANION_NAME = 'user_admin'
-TELEGRAM_CHAT_COMPANION_TITLE = 'admin'
 
 SESSION_CLEANUP_MARKER = '__SESSION_CLEANUP__'
 # Перезапуск watch просят из двух мест — Mini App и карточки на /admin/team, —
@@ -63,9 +63,6 @@ async def _telegram_agent_chat_ask(data: dict, agent_name: str) -> dict:
             entity_agent=entity_agent,
             session_uuid=session_uuid,
             workflow_id=workflow_id,
-            companion_id=TELEGRAM_CHAT_COMPANION_ID,
-            companion_name=TELEGRAM_CHAT_COMPANION_NAME,
-            companion_title=TELEGRAM_CHAT_COMPANION_TITLE,
         ),
         **json_from_string(entity_agent.get("workflow_variable") or "{}"),
     }

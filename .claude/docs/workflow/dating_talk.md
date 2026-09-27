@@ -53,8 +53,14 @@ pos 17 variable_conversion «Влить придуманные факты»
 ```json
 POST /chat/ask
 {"agent_id": <id «Девушки»>, "companion_id": <…>, "question": "hi",
- "variables": {"girl_id": "natalia_1430119", "girl_name": "Natalia"}}
+ "variables": {"girl_id": "natalia_1430119", "girl_name": "Natalia",
+               "companion_id": 10, "companion_name": "dating_343_1430119",
+               "companion_title": "Natalia"}}
 ```
+
+⚠⚠ Троица `companion_*` едет **переменной**, а не полем запроса: движок её больше
+никому не подставляет (chat.md §3), а шаг «Переменные» склеивает из номера и имени
+`companion_unique_id` — приставка номера теряется молча, без неё ключ фактов съезжает.
 
 Механика переменных агента — `../agent.md` §6. Ранее заведённые агенты анкет
 работают как работали: их промпт — готовый текст, рендеру в нём нечего искать.

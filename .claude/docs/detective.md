@@ -64,9 +64,11 @@ Workflow (таблица `agent_workflow`):
 `{result: {suspects: [{id, title, greeting}], sergeant: {...}}}` (выборка по `name LIKE
 'case_<uuid>_%'` и `name = 'sergeant_<uuid>'`, `ORDER BY id ASC`).
 
-Отправка: `POST /chat/ask` `{question, agent_id: currentAgentId, companion_id: 4, session_uuid}`.
-Флаг `requestInFlight` блокирует **и кнопку, и чипы** — иначе двойной тап по `[[/new_case]]`
-запускает генерацию дела дважды.
+Отправка: `POST /chat/ask` `{question, agent_id: currentAgentId, companion_id: 4,
+session_uuid, variables: {companion_title: «Игрок»}}` — троицу сборщик больше не
+подставляет, и workflow 12/13 читает `companion_title` как входящую (шаги-источники
+`inputs_map`). Флаг `requestInFlight` блокирует **и кнопку, и чипы** — иначе двойной
+тап по `[[/new_case]]` запускает генерацию дела дважды.
 
 Голос: удержание кнопки микрофона (`pointerdown/up/leave`) → `POST /chat/voice` FormData
 `file=voice.wav`; расшифровка подставляется в поле ввода, **не** отправляется автоматически.
