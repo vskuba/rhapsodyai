@@ -391,27 +391,46 @@ async def workflow_parents(
         workflow_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
 ):
-    """Workflows that call this subflow via workflow_invoke step."""
-    wid = str(workflow_id)
-    # Cover both compact and spaced JSON: "workflow_id":36, / "workflow_id": 36,
-    id_patterns = [
-        f'%"workflow_id":{wid},%',
-        f'%"workflow_id":{wid}}}%',
-        f'%"workflow_id": {wid},%',
-        f'%"workflow_id": {wid}}}%',
-    ]
+    """Кто зовёт этот подпоток шагом `workflow_invoke`.
+
+    ## ⚠⚠ Номер бывает и числом, и строкой — искать надо оба
+
+    Четыре шаблона `LIKE` искали только **число** (`"workflow_id":36,`), а в базе
+    встречается и строка (`"workflow_id": "36"`). Страница подпотока честно отвечала
+    «не используется ни одним workflow» про тот, который вызывается прямо сейчас, —
+    и проверить это было нечем, кроме как открыть родителя глазами.
+
+    ⚠ Движку разницы нет: он приводит значение к `int` при вызове
+    (`ai_framework_manager`). Поэтому беда и жила — ломался только показ.
+
+    ⚠⚠ Строку пишет не редактор: его виджет кладёт `parseInt(...)`. Строки приходят
+    из миграций и из переносов между базами, где значение однажды прошло через
+    `str()`. Значит «починить того, кто пишет» — не решение: писавших много, и
+    новый появится завтра. Читаем оба вида.
+
+    ## ⚠ Почему `REGEXP` по тексту, а не `JSON_EXTRACT`
+
+    В таблице есть строки с **невалидным JSON** (пять на сегодня: `response_soko`,
+    `response_cashier`, `test`). `JSON_EXTRACT` в `WHERE` упал бы на них целиком —
+    и ответ стал бы отказом вместо списка. Текстовый поиск их просто не находит.
+
+    ⚠ Хвост `"?[[:space:]]*[,}]` обязателен: без него номер `74` нашёлся бы внутри
+    `740`, и подпоток показал бы чужих родителей.
+    """
+    pattern = (r'"workflow_id"[[:space:]]*:[[:space:]]*"?'
+               + str(int(workflow_id)) + r'"?[[:space:]]*[,}]')
+
     async with mysql_get_db_async() as db:
-        placeholders = " OR ".join(
-            ["(s.metadata LIKE %s AND s.metadata LIKE '%%workflow_invoke%%')"] * len(id_patterns)
-        )
         await db.execute(
-            f"SELECT DISTINCT w.id, w.name, w.title "
-            f"FROM agent_workflow_step s "
-            f"JOIN agent_workflow w ON w.id = s.workflow_id "
-            f"WHERE {placeholders}",
-            id_patterns
+            "SELECT DISTINCT w.id, w.name, w.title "
+            "FROM agent_workflow_step s "
+            "JOIN agent_workflow w ON w.id = s.workflow_id "
+            "WHERE s.metadata LIKE '%%workflow_invoke%%' "
+            "  AND s.metadata REGEXP %s",
+            (pattern,)
         )
         rows = await db.fetchall()
+
     return {"result": [dict(r) for r in rows]}
 
 
