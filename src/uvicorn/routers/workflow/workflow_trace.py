@@ -268,7 +268,6 @@ async def workflow_trace_run_replay(
         "workflow_variables": variables,
         "prompt_user": variables.get('prompt_user', ''),
         "user_id": run.get('user_id') or user.user_id,
-        "companion_id": variables.get('companion_id', 0),
         "session_uuid": replay_session_uuid,
         "tools": tools,
     })

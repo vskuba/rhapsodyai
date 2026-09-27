@@ -487,7 +487,6 @@ async def project_task_ai_generate(request: Request, data: dict, user=Depends(Au
         'workflow_variables': wf_vars,
         'prompt_user':       description,
         'user_id':           user.user_id,
-        'companion_id':      None,
         'session_uuid':      session_uuid,
         'tools':             {},
     })

@@ -74,12 +74,8 @@ BLOG_SIMILAR_MIN_SCORE = 0.40
 
 # От чьего имени идёт запрос. Учётка владельца: черновики — его личные мысли,
 # и разводить их по пользователям пока незачем.
-#
-# `companion_id` = 1 (`user_admin`), а НЕ 3 как в телеграмных константах: там
-# число из другой установки, и у нас запись в `agent_session` падала на внешнем
-# ключе `fk_memory_companion` — собеседника с id 3 в таблице нет.
+
 BLOG_USER_ID = 1
-BLOG_COMPANION_ID = 1
 
 # Ждём разметку не дольше минуты. Черновик короткий, и если модель думает
 # дольше — что-то не так, а BlogAi не должен висеть на этом запросе.
@@ -576,7 +572,6 @@ async def _agent_ask(agent_name: str, message: str) -> str:
         "workflow_variables": variables,
         "prompt_user": message,
         "user_id": BLOG_USER_ID,
-        "companion_id": BLOG_COMPANION_ID,
         "session_uuid": session_uuid,
         "tools": tools,
     })

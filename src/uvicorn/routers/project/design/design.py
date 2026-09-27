@@ -216,7 +216,6 @@ async def design_tokens_generate(data: dict, user=Depends(AuthChecker([AuthPermi
         'workflow_variables': wf_vars,
         'prompt_user': prompt,
         'user_id': user.user_id,
-        'companion_id': None,
         'session_uuid': session_uuid,
         'tools': {},
     })
@@ -371,7 +370,6 @@ async def design_wireframe_compose(
         'workflow_variables': wf_vars,
         'prompt_user': f"Compose wireframes for project {project_id}",
         'user_id': user.user_id,
-        'companion_id': None,
         'session_uuid': session_uuid,
         'tools': tools,
     })

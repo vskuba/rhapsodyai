@@ -14,7 +14,6 @@ from src.ai.ai_workflow import ai_workflow_variables_input_get
 from src.ai.ai_workflow import ai_workflow_variables_node_get
 from src.ai.ai_workflow import ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.ai.ai_workflow import ai_workflow_text_render
-from src.mysql_.repository.companion_repository import CompanionRepository
 from setting_.setting_ import setting_get
 from src.tool.setting.setting_ import setting_value_get
 from i18n_.i18n_ import i18n_text_resolve, i18n_languages_parse
@@ -34,7 +33,6 @@ router = APIRouter()
 class ChatAskJsonRequest(BaseModel):
     question: str
     agent_id: int
-    companion_id: int
     session_uuid: str | None = None
     variables: dict = {}
 
@@ -68,11 +66,6 @@ async def chat_ask_ai(
     workflow_id = entity_agent.get('workflow_id')
     if not workflow_id:
         raise HTTPException(status_code=401, detail="Agent '%s' not have workflow" % entity_agent.get('name'))
-
-    repo_companion = CompanionRepository()
-    entity_companion = await repo_companion.find_one_by({'id': json_request.companion_id})
-    if not entity_companion:
-        raise HTTPException(status_code=401, detail="Companion not found by ID: %s" % json_request.companion_id)
 
     # LLM ноды агента (список настраивается на ноду, не на пользователя)
     entities_llm = await ai_llm_node_get(entity_agent.get('node_id'))
@@ -209,7 +202,6 @@ async def chat_ask_ai(
         "workflow_variables": workflow_variables_all,
         "prompt_user": json_request.question,
         "user_id": user.user_id,
-        "companion_id": json_request.companion_id,
         "session_uuid": session_uuid,
         "tools": tools,
     })

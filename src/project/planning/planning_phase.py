@@ -123,7 +123,6 @@ async def planning_phase_run(
                 'workflow_variables': wf_vars,
                 'prompt_user': '',
                 'user_id': PLANNING_USER_ID,
-                'companion_id': None,
                 'session_uuid': session_uuid,
                 'tools': await _tools_load(),
             })

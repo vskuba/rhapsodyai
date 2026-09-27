@@ -52,7 +52,7 @@ pos 17 variable_conversion «Влить придуманные факты»
 
 ```json
 POST /chat/ask
-{"agent_id": <id «Девушки»>, "companion_id": <…>, "question": "hi",
+{"agent_id": <id «Девушки»>, "question": "hi",
  "variables": {"girl_id": "natalia_1430119", "girl_name": "Natalia",
                "companion_id": 10, "companion_name": "dating_343_1430119",
                "companion_title": "Natalia"}}

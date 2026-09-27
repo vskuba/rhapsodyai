@@ -64,8 +64,8 @@ Workflow (таблица `agent_workflow`):
 `{result: {suspects: [{id, title, greeting}], sergeant: {...}}}` (выборка по `name LIKE
 'case_<uuid>_%'` и `name = 'sergeant_<uuid>'`, `ORDER BY id ASC`).
 
-Отправка: `POST /chat/ask` `{question, agent_id: currentAgentId, companion_id: 4,
-session_uuid, variables: {companion_title: «Игрок»}}` — троицу сборщик больше не
+Отправка: `POST /chat/ask` `{question, agent_id: currentAgentId, session_uuid,
+variables: {companion_title: «Игрок»}}` — троицу сборщик больше не
 подставляет, и workflow 12/13 читает `companion_title` как входящую (шаги-источники
 `inputs_map`). Флаг `requestInFlight` блокирует **и кнопку, и чипы** — иначе двойной
 тап по `[[/new_case]]` запускает генерацию дела дважды.
@@ -219,10 +219,6 @@ session_uuid, variables: {companion_title: «Игрок»}}` — троицу с
   На чистой БД `/new_case` падает на шаге `detective_case_create`, а `/accuse` отвечает
   «Дело еще не начато». Схема живёт только в `20260101000000_initial_schema.sql` (`migration.md`) — таблицу надо
   туда добавить.
-- **Нет companion `id = 4` (`detective_player`).** Ни в БД, ни в seed-файле, а
-  `apps/detective/js/app.js` жёстко шлёт `companion_id: 4`. `POST /chat/ask` отвечает
-  `401 Companion not found by ID: 4` — до workflow дело не доходит. Это данные, значит
-  заводить через Seed UI (`/admin/seed`), не миграцией.
 - **Битый `greeting` у агента 30** прямо в seed-файле:
   `[[link:http:/[[/92]].5.17.195:8011[[/play]][[/detective]]/|🕵️ Играть]]` — каждый
   `/`-сегмент обёрнут в `[[…]]`, ссылка «Играть» не рендерится.

@@ -12,10 +12,9 @@
 | `POST` | `/chat/messages` | нет (вне схемы) | последние N сообщений сессии из `agent_session` |
 | `POST` | `/chat/voice` | **нет** | wav → текст через faster-whisper |
 
-Запрос `/chat/ask`: `{question, agent_id, companion_id, session_uuid?, variables?}`.
-Без `session_uuid` генерируется новый. Ответ: `{result}`. `companion_id` запроса нужен
-лишь `agent_session` (кому принадлежит диалог); в промпт собеседник попадает только
-как переменная `variables` — см. §3.
+Запрос `/chat/ask`: `{question, agent_id, session_uuid?, variables?}`. Без
+`session_uuid` генерируется новый. Ответ: `{result}`. Собеседника в запросе больше
+нет; в промпт он попадает только как переменная `variables` — см. §3.
 
 ## 2. Выбор модели и языка — разные источники
 

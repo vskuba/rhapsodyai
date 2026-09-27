@@ -342,15 +342,11 @@ async def _ask(client, variables: dict):
     agent = (await client.get(f'/agent/name/{AGENT_NAME}')).json()
     agent_id = (agent.get('result') or {}).get('id')
 
-    companions = (await client.get('/companion/list')).json().get('result') or []
-    companion = next((one for one in companions
-                      if one.get('name') == 'test_llm_companion'), None)
-
-    if not agent_id or not companion:
-        pytest.skip('агента или собеседника тестов нет в этой базе')
+    if not agent_id:
+        pytest.skip('агента тестов нет в этой базе')
 
     return await client.post('/chat/ask', json={
         'question': f'probe {uuid.uuid4().hex[:6]}',
-        'agent_id': agent_id, 'companion_id': companion['id'],
+        'agent_id': agent_id,
         'session_uuid': str(uuid.uuid4()),
         'variables': variables})

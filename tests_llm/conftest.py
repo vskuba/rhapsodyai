@@ -181,10 +181,6 @@ LLM_SITE = os.getenv('LLM_SITE', 'ladadate').strip()
 # возможность переопределить переменной окружения.
 LLM_GIRL_ID = os.getenv('LLM_GIRL_ID', TEST_GIRL_ID)
 
-LLM_COMPANION_NAME = 'test_llm_companion'
-LLM_COMPANION_TITLE = 'Gerard'
-
-
 @dataclass
 class Talk:
     """Один прогон workflow: что вернулось и каким путём к этому пришли."""
@@ -385,56 +381,6 @@ async def client():
 
 
 @pytest.fixture
-async def companion_id(client) -> int:
-    """Свой собеседник тестов: заводится один раз, дальше переиспользуется.
-
-    ⚠ Не `dating_person` (тот, которым ходит боевой код): факты разговора ложатся
-    в Qdrant под ключ собеседника, и тесты засоряли бы живой документ.
-
-    ⚠ Почтовым workflow собеседник не нужен по смыслу — шаблон пишется на весь
-    пул, — но поле `companion_id` у ручки обязательное, и ссылаться ему нужно на
-    честную строку. Тот же приём, что в DatingAi (`MAIL_AGENT_COMPANION_ID`).
-    """
-    if 'companion' in _FOUND:
-        return _FOUND['companion']
-
-    async def _find() -> int:
-        answer = await client.get('/companion/list')
-
-        if answer.status_code != 200:
-            return 0
-
-        for one in (answer.json().get('result') or []):
-            # ⚠ Ищем по `unique_id`: столбец звался `name`, но всегда был
-            # ключом записи, а не именем человека — имя лежит в `title`
-            # (`…_companion_unique_id`). Поле **запроса** осталось `name`: его
-            # шлют соседние проекты, и менять договор ради ясности внутри
-            # незачем.
-            if str(one.get('unique_id')) == LLM_COMPANION_NAME:
-                return int(one.get('id') or 0)
-
-        return 0
-
-    found = await _find()
-
-    if not found:
-        made = await client.post('/companion', json={'name': LLM_COMPANION_NAME,
-                                                     'title': LLM_COMPANION_TITLE})
-        if made.status_code not in (200, 201):
-            pytest.fail(f'собеседник теста не завёлся ({made.status_code}):'
-                        f' {made.text[:200]}')
-
-        found = await _find()
-
-    if not found:
-        pytest.fail('собеседник теста заведён, но не читается списком')
-
-    _FOUND['companion'] = found
-
-    return found
-
-
-@pytest.fixture
 async def agent_of(client):
     """Номер агента по системному имени. Нет такого — тест пропускается.
 
@@ -485,7 +431,7 @@ def llm_plan():
 
 
 @pytest.fixture
-async def ask(client, agent_of, companion_id, llm_answers, llm_plan):
+async def ask(client, agent_of, llm_answers, llm_plan):
     """Позвать агента по имени и получить ответ вместе с маршрутом.
 
     Args:
@@ -528,7 +474,7 @@ async def ask(client, agent_of, companion_id, llm_answers, llm_plan):
         await _plan_put(llm_answers, session)
 
         payload = {'question': asked, 'agent_id': agent_id,
-                   'companion_id': companion_id, 'session_uuid': session,
+                   'session_uuid': session,
                    'variables': dict(variables or {})}
         last = ''
 
@@ -804,7 +750,7 @@ async def _plan_put(llm_answers, session: str) -> None:
                       session=session)
     LLM_HELD['session'] = session
 
-# Что найдено один раз — номера агентов и собеседника. ⚠ Обычный словарь, а не
+# Что найдено один раз — номера агентов. ⚠ Обычный словарь, а не
 # сессионная фикстура: в `pytest-asyncio` 1.x сессионная async-фикстура живёт в
 # цикле событий **первого** теста и со второго падает «Event loop is closed».
 _FOUND = {}

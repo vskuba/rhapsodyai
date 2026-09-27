@@ -285,7 +285,6 @@ async def design_block_planning_block_regenerate(request: Request, block_id: int
         'workflow_variables': wf_vars,
         'prompt_user': '',
         'user_id': user.user_id,
-        'companion_id': None,
         'session_uuid': session_uuid,
         'tools': await _tools_load(),
     })
@@ -427,7 +426,6 @@ async def design_block_planning_block_generate(request: Request, project_id: int
         'workflow_variables': wf_vars,
         'prompt_user': '',
         'user_id': user.user_id,
-        'companion_id': None,
         'session_uuid': session_uuid,
         'tools': await _tools_load(),
     })
