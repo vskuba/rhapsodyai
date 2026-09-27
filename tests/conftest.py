@@ -143,6 +143,192 @@ async def cleanup_test_users() -> AsyncGenerator[None, None]:
         await _cleanup_test_roles(client)
 
 
+# ── Уборка за кодом под тестом: строки, у которых нет имени ──────────────────
+#
+# ⚠⚠ Фикстуры выше убирают **по имени**: пользователь с префиксом `test_`, агент
+# `test_agent_`, роль из списка. Это работает, пока запись заводит сам тест и знает,
+# как он её назвал.
+#
+# Но большую часть мусора заводит не тест, а **код под тестом**. Один вызов
+# `/chat/ask` оставляет после себя сессию агента, след прогона workflow с деревом
+# шагов, строки запросов к модели и сколько-то фактов, которые агент сочинил сам.
+# Имён у этих строк нет, номеров их тест не знает, и «подчистить за собой» ему
+# нечем: он не видел, что именно завелось.
+#
+# Общее у них одно — **хозяин**. Сюита ходит под отдельной неадминской учёткой
+# ровно затем, чтобы по строке было видно, кто её завёл: сюита или человек
+# (`testing_rules.md`, §3). Этого признака для уборки достаточно, и другого нет.
+#
+# ⚠ Замер до первой уборки, три дня прогонов: 95 268 строк тестовой учётки в
+# таблицах ниже плюс 76 744 шага следов каскадом — около 172 тысяч.
+TEST_SWEEP_TABLES = (
+    # ⚠ Порядок между ними не важен: внешних ключей друг на друга у этих четырёх
+    # нет. А `agent_workflow_trace_step` уедет **сам** — он висит на следе через
+    # `ON DELETE CASCADE`, и удалять его отдельной строкой значило бы записать это
+    # правило вторым местом, своими словами.
+    'fact',
+    'agent_workflow_trace',
+    'agent_session',
+    'llm_request',
+)
+
+# ⚠⚠ Список **белый, а не чёрный**, и это не вкусовщина. У тестовой учётки есть
+# строки, которые мусором не являются: её токен доступа (`user_access_token`), её
+# узлы (`user_node`), её настройки (`setting`), её проекты. Снеси их «за компанию» —
+# и следующий прогон не войдёт. Поэтому перечисляем то, что убираем, а не то, что
+# бережём: забытое в чёрном списке стоит сломанного прогона, забытое в белом —
+# всего лишь неубранного хвоста.
+
+# Снимает уборку целиком: `KEEP_TEST_DATA=1 .venv/bin/python -m pytest …`
+TEST_SWEEP_KEEP = 'KEEP_TEST_DATA'
+
+# Адрес Qdrant **с хоста**: снаружи compose-сети он опубликован другим портом
+# (`0.0.0.0:6335->6333`). Тот же приём и тот же довод, что у `MYSQL_TEST_*` выше.
+QDRANT_TEST_HOST = os.getenv('QDRANT_TEST_HOST', 'localhost').strip() or 'localhost'
+QDRANT_TEST_PORT = int(os.getenv('QDRANT_PORT', '6335') or 6335)
+
+
+def _test_user_id() -> int:
+    """Номер тестовой учётки — по имени входа, а не числом.
+
+    ⚠ Зашить число нельзя: автономер у каждой инсталляции свой. Здесь 170, на
+    соседней машине другой — и уборка молча не нашла бы ничего.
+
+    ⚠⚠ Ходим `mysql_query_run`, а не пулом приложения, по тому же доводу, что и
+    уборка в `tests_llm/conftest.py`: пул живёт в процессе приложения, а сюита —
+    отдельный процесс, и адрес базы у неё свой (`mysql_host_address`).
+    """
+    from mysql_.mysql_query import mysql_query_run
+
+    got = mysql_query_run('SELECT `id` FROM `user` WHERE `username` = %s',
+                          (str(TEST_AUTH.get('username') or ''),))
+    rows = got.get('rows') or []
+    return int(rows[0]['id']) if rows else 0
+
+
+def _test_vectors_drop(rows: list) -> int:
+    """Убрать из Qdrant точки удаляемых фактов; вернуть, сколько их было.
+
+    ⚠⚠ Зовётся **до** удаления строк: точка адресуется номером строки MySQL —
+    `uuid5(NAMESPACE_DNS, 'fact_id_<id>')`, см. `qdrant_save`, — и после `DELETE`
+    этих номеров уже не узнать. Строки уйдут, вектора останутся навсегда.
+
+    ⚠ Удаляем **по номерам точек**, а не фильтром `qdrant_remove_by` по
+    `document_id`: у половины тестовых фактов ключ пуст (их пишет
+    `companion_fact_extract`), а с пустым фильтром та функция честно не делает
+    ничего — и молча.
+    """
+    if not rows:
+        return 0
+
+    async def _drop() -> int:
+        from qdrant_client import AsyncQdrantClient, models
+
+        # ⚠⚠ Свой клиент, а НЕ `_qdrant_db_get_client()`. Тот зашивает
+        # `host="qdrant", port=6333` — имя сервиса внутри compose-сети, — и с хоста,
+        # где идёт сюита, не разрешается вовсе. Первая версия этой уборки звала его
+        # и молча падала в `except`: строки в MySQL исчезали, а 92 точки оставались
+        # при 55 живых фактах. Ровно тот же разрыв «хост против сети compose», что
+        # разобран выше для MySQL, и лечится он так же.
+        #
+        # ⚠ Клиент **местный, а не подменённый глобально**: singleton в
+        # `qdrant_.qdrant_` трогать нельзя — им пользуется код под тестом, и
+        # подмена сделала бы достижимым то, что тесты считают недоступным.
+        client = AsyncQdrantClient(host=QDRANT_TEST_HOST, port=QDRANT_TEST_PORT)
+        by_collection = {}
+        for one in rows:
+            point = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"fact_id_{int(one['id'])}"))
+            by_collection.setdefault(str(one['collection']), []).append(point)
+
+        gone = 0
+        try:
+            for name, points in by_collection.items():
+                if not await client.collection_exists(name):
+                    continue
+                await client.delete(collection_name=name,
+                                    points_selector=models.PointIdsList(points=points))
+                gone += len(points)
+        finally:
+            await client.close()
+
+        return gone
+
+    # ⚠ Отказ Qdrant не должен ронять прогон — уборка не то, ради чего он запущен.
+    # Но и промолчать нельзя: невидимый отказ значит, что вектора копятся годами.
+    try:
+        return asyncio.run(_drop())
+    except Exception as err:
+        print(f'\n⚠ уборка Qdrant не удалась ({err}) — вектора остались')
+        return 0
+
+
+def _test_rows_drop() -> dict:
+    """Снести строки тестовой учётки из таблиц-накопителей.
+
+    Returns:
+        `{имя таблицы: сколько удалено}`, плюс ключ `qdrant` — сколько снято точек.
+        Пустой словарь значит «убирать было нечего».
+    """
+    from mysql_.mysql_query import mysql_query_run
+
+    who = _test_user_id()
+    if not who:
+        return {}
+
+    # Факты — первыми и с номерами: по ним снимаются вектора (см. ⚠⚠ выше).
+    facts = mysql_query_run(
+        'SELECT f.`id`, fc.`name` AS `collection`'
+        '  FROM `fact` f JOIN `fact_collection` fc ON fc.`id` = f.`collection_id`'
+        ' WHERE f.`user_id` = %s', (who,)).get('rows') or []
+
+    counted = {}
+    # ⚠ Пишем счёт векторов **всегда, когда были факты**, даже если он нулевой:
+    # «qdrant: 0» при непустом `fact` — это и есть примета молчаливого отказа, ради
+    # которой строка и нужна. Без неё уборка однажды уже провалилась незаметно.
+    vectors = _test_vectors_drop(facts)
+    if facts:
+        counted['qdrant'] = vectors
+
+    for table in TEST_SWEEP_TABLES:
+        # ⚠ Имя таблицы уезжает в SQL текстом — потому и берётся только из
+        # `TEST_SWEEP_TABLES`, а не из ответа базы и уж тем более не из окружения.
+        got = mysql_query_run(f'DELETE FROM `{table}` WHERE `user_id` = %s', (who,))
+        gone = int(got.get('affected') or 0)
+        if gone:
+            counted[table] = gone
+
+    return counted
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_test_rows():
+    """Уборка строк тестовой учётки — и до прогона, и после него.
+
+    ⚠ **До** — потому что хвост остаётся и от упавшего прогона, и от прерванного
+    `Ctrl-C`, когда до уборки дело не дошло вовсе. Без этого шага база копит мусор
+    ровно в тех случаях, ради которых уборка и нужна.
+
+    ⚠⚠ **После** — то, о чём просили: прогон не оставляет следов. Цена известна и
+    принята: упавший прогон уносит с собой и свои следы, а смотреть в них иногда
+    надо. На этот случай `KEEP_TEST_DATA=1` снимает уборку целиком — и ту, что до,
+    тоже: «не трогай мои данные» значит не трогай.
+    """
+    keep = str(os.getenv(TEST_SWEEP_KEEP, '')).strip().lower() in ('1', 'true', 'yes')
+
+    if keep:
+        print(f'\n⚠ {TEST_SWEEP_KEEP} — уборка за прогоном снята, строки останутся')
+        yield
+        return
+
+    _test_rows_drop()
+    yield
+    counted = _test_rows_drop()
+
+    if counted:
+        said = ', '.join(f'{name}: {qty}' for name, qty in counted.items())
+        print(f'\nУбрано за прогоном — {said}')
+
+
 # Все задачи сюиты называются с этого префикса (`test_task_pipeline`, `test_task_tree`,
 # `test_task_metadata`, `test_planning`). Подчёркивания экранированы: в LIKE `_` — это
 # любой один символ, и без экранирования шаблон подошёл бы к чужому заголовку.
