@@ -195,25 +195,25 @@ class TestTheMessageIsUnderstood:
     """
 
     async def test_it_pulls_tags_out_of_the_message(self, talk, stranger):
-            """⚠ Теги — вход поиска фактов. Пустые значат, что искать будут вслепую.
+        """⚠ Теги — вход поиска фактов. Пустые значат, что искать будут вслепую.
 
-            Проверяем **наличие**, а не состав: какие именно слова выберет модель —
-            её дело, а вот пустая строка ломает следующий шаг.
-            """
-            got = await talk('I work as a carpenter and I love fishing on weekends.',
-                             variables={'companion_name': stranger, **ANYWAY})
+        Проверяем **наличие**, а не состав: какие именно слова выберет модель —
+        её дело, а вот пустая строка ломает следующий шаг.
+        """
+        got = await talk('I work as a carpenter and I love fishing on weekends.',
+                         variables={'companion_name': stranger, **ANYWAY})
 
-            assert str(got.vars.get('prompt_user_tags') or '').strip(), \
-                f'разбор не дал ни одного тега.{got}'
+        assert str(got.vars.get('prompt_user_tags') or '').strip(), \
+            f'разбор не дал ни одного тега.{got}'
 
     async def test_a_question_is_marked_as_a_question(self, talk, stranger):
-            """⚠ Признак вопроса — **развилка маршрута**, а не подсказка.
+        """⚠ Признак вопроса — **развилка маршрута**, а не подсказка.
 
-            По нему шаг фактов решает, идти ли за фактами девушки: на прямой вопрос
-            о ней они нужны, на рассказ о себе — нет.
-            """
-            got = await talk('What do you do for work?',
-                             variables={'companion_name': stranger, **ANYWAY})
+        По нему шаг фактов решает, идти ли за фактами девушки: на прямой вопрос
+        о ней они нужны, на рассказ о себе — нет.
+        """
+        got = await talk('What do you do for work?',
+                         variables={'companion_name': stranger, **ANYWAY})
 
-            assert str(got.vars.get('prompt_user_question')) == '1', \
-                f'прямой вопрос не опознан вопросом.{got}'
+        assert str(got.vars.get('prompt_user_question')) == '1', \
+            f'прямой вопрос не опознан вопросом.{got}'

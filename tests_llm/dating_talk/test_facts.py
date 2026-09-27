@@ -2,13 +2,28 @@
 
 ## Что здесь проверяется
 
-Цепочка памяти целиком, шаг за шагом:
+Цепочка памяти:
 
     реплика → разбор → сохранить сказанное им → поискать сохранённое
                     ↘ придумать факты девушке (у неё своя память)
 
-Каждое звено ставится отдельным тестом: порвись любое — агент начнёт разговор
-заново при каждом сообщении, и заметно это станет не сразу.
+Порвись любое звено — агент начнёт разговор заново при каждом сообщении, и заметно
+это станет не сразу.
+
+## ⚠⚠ Два звена проверяет `test_route.py`, а не этот файл
+
+**Сама запись** — и сохранения, и выдумывания. Здесь стояли четыре теста об этом, и
+все четыре убраны: два слово в слово повторяли тамошние, а два были слабее. Держать
+их рядом значило бы иметь два ответа на один вопрос — и чинить при правке оба.
+
+⚠⚠ Один из убранных был **пустым**, и это стоит знать: он спрашивал
+`went_through(STEP_FACT_SAVE_MAN)` при заготовке, где фактов нет, — подпрогон запись
+обходит, а шаг на маршруте всё равно значится. Зелёный при обойдённой записи.
+Разницу видно только в трассе: про запись спрашивают **`ran`**, про «поток
+добирался» — `went_through`.
+
+Здесь остались звенья, которых там нет: разбор реплики, передача фактов подпрогону,
+четыре поиска сохранённого и путь ключа девушки до фильтра.
 
 ## ⚠⚠ ПРАВИЛО: утверждения — только по трассе
 
@@ -37,14 +52,9 @@
 import pytest
 
 from tests_llm.mark import mark_key
-from tests_llm.dating_talk.conftest import (ANYWAY, facts_girl_for, talk_plan,
-                                            STEP_ANALYSE,
-                                            STEP_FACT_INVENT,
-                                            STEP_FACT_INVENT_ADD, STEP_FACT_SAVE,
-                                            STEP_FACT_SAVE_MAN, STEP_FACT_SAVE_TALK,
-                                            STEP_FACTS_MAN, STEP_FACTS_PLAIN,
-                                            STEP_FACTS_TAGS, STEP_FACTS_TALK,
-                                            STEP_MAKE)
+from tests_llm.dating_talk.conftest import (ANYWAY, STEP_ANALYSE, STEP_FACTS_MAN,
+                                            STEP_FACTS_PLAIN, STEP_FACTS_TAGS,
+                                            STEP_FACTS_TALK, STEP_MAKE)
 
 pytestmark = pytest.mark.llm
 
@@ -69,30 +79,23 @@ class TestTheMessageIsAnalysed:
         assert got.went_through(STEP_ANALYSE), f'реплику не разобрали.{got}'
 
 class TestWhatHeSaidIsKept:
-    """⚠⚠ Второе звено: сказанное человеком сохраняется, иначе памяти не будет.
+    """⚠⚠ Второе звено: разбор передаёт подпрогону то, что тот будет сохранять.
 
     Подпрогон `companion_fact_extract` кладёт факты в два места: о нём самом и о
     договорённостях пары. Разделение не формальное — «он инженер» верно для любой
     нашей анкеты, а «договорились созвониться» только для этой пары.
+
+    ⚠⚠ Что запись **вправду идёт** — проверяет `test_route.py`, и только он. Здесь
+    стояли два таких теста, и оба убраны: один слово в слово повторял тамошний, а
+    второй был **пустым**. Он спрашивал `went_through` при заготовке, где фактов
+    нет (`facts_man = '0'`), — подпрогон запись обходит, а шаг на маршруте всё
+    равно значится. Зелёный при обойдённой записи: замени `went_through` на `ran` —
+    падает сразу.
+
+    ⚠ Отсюда правило на будущее: про запись спрашивают `ran`, про «поток добирался»
+    — `went_through`. Разницу видно только в трассе, и ошибку по цвету не поймать.
     """
 
-    async def test_the_saving_subflow_runs(self, talk, stranger):
-        got = await talk('I am 45, I live in Porto and I work as an architect.',
-                         variables={'companion_name': stranger, **ANYWAY})
-
-        assert got.went_through(STEP_FACT_SAVE), \
-            f'подпрогон сохранения фактов не позван.{got}'
-
-    async def test_both_stores_are_written(self, talk, stranger):
-        """⚠ Оба шага записи, а не один: факты о человеке и о переписке лежат
-        врозь и ищутся врозь."""
-        got = await talk('I am 45, I live in Porto and I work as an architect.',
-                         variables={'companion_name': stranger, **ANYWAY})
-
-        assert got.went_through(STEP_FACT_SAVE_MAN), \
-            f'факты о собеседнике не сохранялись.{got}'
-        assert got.went_through(STEP_FACT_SAVE_TALK), \
-            f'факты о переписке не сохранялись.{got}'
 
     async def test_the_analysis_hands_facts_over(self, talk, stranger):
         """⚠⚠ Сохранять должно быть **что**: подпрогон берёт вход у разбора.
@@ -189,44 +192,14 @@ class TestHerOwnFactsAreInvented:
     Без этого она противоречит себе: сегодня «работаю в маркетинге», завтра
     «учительница». Для человека по ту сторону это первый признак робота.
 
-    ⚠⚠ Заход задаётся планом: в подпрогон уводит признак вопроса
-    (`prompt_user_question = 1`), а его ставит разбор — то есть модель. Заготовка
-    папки ставит `0`, и без своего плана оба теста проверяли бы «подпрогон не
-    позвался», что и есть их поломка.
+    ⚠⚠ Что подпрогон **позвался и записал** — проверяет `test_route.py`, вместе с
+    обеими обратными сторонами: придумывать было нечего — записи нет; о девушке не
+    спрашивали — подпрогона нет вовсе. Здесь стояли два теста об этом, и оба убраны
+    как повтор: тамошние спрашивают `ran`, то есть строже.
 
-    ⚠ Признак **задан, а не выпрошен**: опознала ли модель вопрос вопросом —
-    отдельный вопрос, и он проверяется живым `test_judgement.py`. Здесь предмет
-    другой: позвался ли подпрогон и записал ли он придуманное.
+    Осталось то, чего там нет: **куда доехал ключ**.
     """
 
-    # ⚠ Придуманное подпрогоном задаём непустым: шаг записи не зовут, когда
-    # придумывать оказалось нечего, — и тест о записи проверял бы пустоту.
-    #
-    # ⚠⚠ Формат обязателен — **запись факта**, а не фраза. Подпрогон отдаёт список
-    # готовых записей, и шаг сохранения читает из них поля. Подставь строку — заход
-    # молча не доходит до конца вовсе, и красное говорит «агент не ответил», а не
-    # «формат не тот». Помощник собирает запись правильно, и тег в ней тот же, что
-    # «выделяет» разбор: иначе записанное не нашлось бы поиском.
-    INVENTED = facts_girl_for('pytest_llm_girl_zinaida')
-
-    async def test_the_inventing_subflow_runs(self, talk, stranger, llm_answers):
-        await llm_answers(talk_plan(question='1', facts_girl=self.INVENTED))
-
-        got = await talk('What do you like to do after work?',
-                         variables={'companion_name': stranger, **ANYWAY})
-
-        assert got.went_through(STEP_FACT_INVENT), \
-            f'подпрогон придумывания фактов не позван.{got}'
-
-    async def test_the_invented_facts_are_stored(self, talk, stranger, llm_answers):
-        """⚠ Придумать мало — надо записать: иначе завтра придумается другое."""
-        await llm_answers(talk_plan(question='1', facts_girl=self.INVENTED))
-
-        got = await talk('What do you like to do after work?',
-                         variables={'companion_name': stranger, **ANYWAY})
-
-        assert got.went_through(STEP_FACT_INVENT_ADD), \
-            f'придуманные факты не сохранялись.{got}'
 
     async def test_the_girl_id_reaches_the_subflow(self, talk, stranger):
         """⚠⚠ Ключ девушки обязателен, иначе факты всех сольются в один документ.
