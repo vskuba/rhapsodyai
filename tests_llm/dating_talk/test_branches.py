@@ -38,7 +38,8 @@ import pytest
 from tests_llm.datingai import (TALK_MAIL_ASK, TALK_MAIL_LENGTHS,
                                TALK_MAIL_REPLY, TALK_MAIL_REPLY_ASK,
                                TALK_MAIL_WRITE)
-from tests_llm.dating_talk.conftest import (STEP_ANSWER, STEP_BRANCH,
+from tests_llm.dating_talk.conftest import (ANSWER_PHOTO, STEP_ANSWER,
+                                            STEP_BRANCH,
                                             STEP_BRANCHES, STEP_CHAT,
                                             STEP_DICE, STEP_INITIATIVE,
                                             STEP_JUDGE, STEP_MAIL_REPLY,
@@ -56,43 +57,6 @@ MAIL_LENGTH = TALK_MAIL_LENGTHS[1]
 # в условиях, которых в жизни не бывает — отвечать было бы не на что.
 MAIL_HISTORY = ('[22.09 10:15] она: Рассказывала тебе про поездку в Карпаты.\n'
                 '[23.09 19:40] он: Звучит здорово. Сам давно никуда не выбирался.')
-
-
-def _mail_vars(kind: str) -> dict:
-    """Переменные, которые панель кладёт для письма, — все до одной.
-
-    ⚠⚠ **`answer_anyway` здесь обязателен, и забыть его дорого.** Шаг «Анализ
-    сообщения» стоит раньше веток и вправе решить «отвечать не нужно»
-    (`prompt_user_ignore = 1`), уведя поток на «Тишину» мимо всех веток. В бою
-    от этого защищает `anyway=True`, который шлют **оба** почтовых пути
-    (`answer_mail_write`, `answer_mail_reply`): человек ждёт письма, и молчание
-    читается как «его игнорируют».
-
-    Без него тест проверял бы условия, в которых боевой код не работает. Поймано
-    живьём: «ответ на письмо» ушёл в «Тишину», а «письмо первым» уцелело — то
-    есть падение было **случайным**, и назавтра могло переехать на соседа.
-    """
-    return {'mail_mode': '1', 'mail_kind': kind, 'mail_length': MAIL_LENGTH,
-            'answer_anyway': '1'}
-
-
-def _others(got, wanted: str) -> tuple:
-    """Какие ветки отработали, кроме нужной. Пусто — всё верно."""
-    return tuple(name for name in STEP_BRANCHES
-                 if name != wanted and got.ran(name))
-
-
-def _after(prompt: str, label: str) -> str:
-    """Что стоит в промпте после подписи, до конца строки.
-
-    ⚠⚠ Нужно затем, что **пустая метка не оставляет следа**. Не доедь жребий — в
-    промпте будет «Зачин:» и пустота, а `'Зачин:' in prompt` при этом истинно.
-    Проверка на наличие подписи такую поломку пропускает целиком; проверять надо
-    то, что после неё.
-    """
-    head, _, tail = str(prompt).partition(label)
-
-    return tail.split('\n')[0].strip() if head or tail else ''
 
 
 class TestEachBranchGoesItsOwnWay:
@@ -301,20 +265,6 @@ class TestTheDiceIsThrownFirst:
             f'при доле 0% выпало обращение по имени — настройка не доехала.{got}'
 
 
-# Ответы подмены для ветки «письма и фото».
-#
-# ⚠⚠ Тема **задаётся**, а не выпрашивается у модели: подмена отвечает тем, что
-# велел тест. Предмет этих двух тестов — «куда ветка возвращает ответ», и знать,
-# опознала ли модель просьбу о фото, для него незачем. Опознание проверяют живые
-# тесты в `test_judgement.py` — там это и есть предмет.
-#
-# ⚠ `default` обязателен: у сабворкфлоу ветки свои шаги, и заготовка обычного
-# захода (`talk_plan`) их не знает — без умолчания они остались бы без ответа.
-PHOTO_DEFAULT = {'girl_response': 'fake', 'girl_response_skip': '0',
-                 'girl_response_fixed': '', 'photo_deal': 'mail',
-                 'photo_response': 'fake', 'photo_fixed': ''}
-
-
 class TestThePhotoBranchAnswersInCommon:
     """⚠⚠ Ветка «письма и фото» отвечает **общим** шагом «Ответ».
 
@@ -328,7 +278,7 @@ class TestThePhotoBranchAnswersInCommon:
     """
 
     async def test_it_returns_through_the_common_answer(self, talk, llm_answers):
-        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_DEFAULT)
+        await llm_answers(talk_plan(topic='photo_mail'), default=ANSWER_PHOTO)
 
         got = await talk("Can you send me your photos? I'd love to see more of you")
 
@@ -345,7 +295,7 @@ class TestThePhotoBranchAnswersInCommon:
         нет» выполнялось бы само собой. Зелёный при незапущенной ветке ничего не
         значит, и поймать такое по цвету нельзя.
         """
-        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_DEFAULT)
+        await llm_answers(talk_plan(topic='photo_mail'), default=ANSWER_PHOTO)
 
         got = await talk('Can you send me your photos?')
 
@@ -353,3 +303,40 @@ class TestThePhotoBranchAnswersInCommon:
             f'ветка фото не сработала — проверять было нечего.{got}'
         assert not got.went_through('Ответ ветки'), \
             f'ветка отвечает своим шагом, а не общим.{got}'
+
+
+def _mail_vars(kind: str) -> dict:
+    """Переменные, которые панель кладёт для письма, — все до одной.
+
+    ⚠⚠ **`answer_anyway` здесь обязателен, и забыть его дорого.** Шаг «Анализ
+    сообщения» стоит раньше веток и вправе решить «отвечать не нужно»
+    (`prompt_user_ignore = 1`), уведя поток на «Тишину» мимо всех веток. В бою
+    от этого защищает `anyway=True`, который шлют **оба** почтовых пути
+    (`answer_mail_write`, `answer_mail_reply`): человек ждёт письма, и молчание
+    читается как «его игнорируют».
+
+    Без него тест проверял бы условия, в которых боевой код не работает. Поймано
+    живьём: «ответ на письмо» ушёл в «Тишину», а «письмо первым» уцелело — то
+    есть падение было **случайным**, и назавтра могло переехать на соседа.
+    """
+    return {'mail_mode': '1', 'mail_kind': kind, 'mail_length': MAIL_LENGTH,
+            'answer_anyway': '1'}
+
+
+def _others(got, wanted: str) -> tuple:
+    """Какие ветки отработали, кроме нужной. Пусто — всё верно."""
+    return tuple(name for name in STEP_BRANCHES
+                 if name != wanted and got.ran(name))
+
+
+def _after(prompt: str, label: str) -> str:
+    """Что стоит в промпте после подписи, до конца строки.
+
+    ⚠⚠ Нужно затем, что **пустая метка не оставляет следа**. Не доедь жребий — в
+    промпте будет «Зачин:» и пустота, а `'Зачин:' in prompt` при этом истинно.
+    Проверка на наличие подписи такую поломку пропускает целиком; проверять надо
+    то, что после неё.
+    """
+    head, _, tail = str(prompt).partition(label)
+
+    return tail.split('\n')[0].strip() if head or tail else ''

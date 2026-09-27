@@ -59,7 +59,8 @@
 
 import pytest
 
-from tests_llm.dating_talk.conftest import (ANYWAY, ASK_ANALYSE, FACTS_MAN,
+from tests_llm.dating_talk.conftest import (ANSWER_PHOTO, ANYWAY, ASK_ANALYSE,
+                                            FACTS_MAN,
                                             FACTS_TALK, STEP_BRANCH, STEP_TOPIC,
                                             talk_plan)
 
@@ -94,10 +95,9 @@ BRANCHED = {'photo_deal': 'zz-deal',
             'photo_response': 'zz-response',
             'photo_fixed': 'zz-fixed'}
 
-# ⚠ Умолчание нужно шагам сабворкфлоу ветки: заготовка обычного захода их не знает,
-# и без него они остались бы без ответа. Тот же приём, что в `test_route.py`.
-PHOTO_DEFAULT = {'girl_response': 'fake', 'girl_response_skip': '0',
-                 'girl_response_fixed': '', **BRANCHED}
+# Умолчание ветки со своими значениями поверх общего: сами выходы нам нужны нарочные,
+# остальное — как у всех (`ANSWER_PHOTO` в `conftest.py` папки).
+PHOTO_ANSWERS = {**ANSWER_PHOTO, **BRANCHED}
 
 
 class TestTheTopicArrives:
@@ -105,7 +105,7 @@ class TestTheTopicArrives:
 
     async def test_the_topic_reaches_its_variable(self, talk, llm_answers):
         """Сказала `photo_mail` — значит в `talk_topic` лежит `photo_mail`."""
-        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_DEFAULT)
+        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_ANSWERS)
 
         got = await talk('Can you send me your photos?', variables=ANYWAY)
 
@@ -132,7 +132,7 @@ class TestTheAnalysisVariablesArrive:
         # значит ему нужен ответ, иначе заход обрывается на нём.
         await llm_answers(talk_plan(extra=[(ASK_ANALYSE, ANALYSED)],
                                     facts_girl=FACTS_GIRL),
-                          default=PHOTO_DEFAULT)
+                          default=PHOTO_ANSWERS)
 
         got = await talk('I work as a carpenter and I love fishing.',
                          variables=ANYWAY)
@@ -158,7 +158,7 @@ class TestTheBranchOutputsArrive:
     """
 
     async def test_all_three_outputs_come_out(self, talk, llm_answers):
-        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_DEFAULT)
+        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_ANSWERS)
 
         got = await talk('Can you send me your photos?', variables=ANYWAY)
 
@@ -175,7 +175,7 @@ class TestTheBranchOutputsArrive:
         Общий шаг «Ответ» читает вторые имена и ничего не знает о первых: разойдись
         карта — он отдал бы пустоту либо прошлое значение.
         """
-        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_DEFAULT)
+        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_ANSWERS)
 
         got = await talk('Can you send me your photos?', variables=ANYWAY)
 

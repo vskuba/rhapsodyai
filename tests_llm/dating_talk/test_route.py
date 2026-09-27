@@ -23,14 +23,14 @@
 переставшее совпадать, видно сразу: тест падает, а `llm_calls` показывает
 настоящие промпты.
 """
-import uuid
 
 import pytest
 
 from tests_llm.conftest import talk_forget
 from tests_llm.datingai import TALK_MAIL_ASK, TALK_MAIL_WRITE
 from tests_llm.mark import mark_key
-from tests_llm.dating_talk.conftest import (FACTS_MAN, FACTS_TALK,
+from tests_llm.dating_talk.conftest import (ANSWER_PHOTO, FACTS_MAN,
+                                            FACTS_TALK,
                                             MARKS, STEP_ANALYSE, STEP_ANSWER,
                                             STEP_BRANCH, STEP_BRANCHES,
                                             STEP_CHAT, STEP_DICE,
@@ -114,10 +114,7 @@ class TestTheTopicSendsToTheBranch:
         await llm_answers(talk_plan(topic='photo_mail'),
                           # ⚠ Умолчание нужно ветке письма-фото: у её подпрогона
                           # свои шаги, и заготовка обычного захода их не знает.
-                          default={'girl_response': 'fake',
-                                   'girl_response_skip': '0',
-                                   'girl_response_fixed': '', 'photo_deal': 'mail',
-                                   'photo_response': 'fake', 'photo_fixed': ''})
+                          default=ANSWER_PHOTO)
 
         got = await talk('Can you send me your photos?')
 

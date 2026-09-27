@@ -35,7 +35,6 @@
 """
 
 import json
-import re
 import shutil
 import subprocess
 
@@ -140,6 +139,21 @@ class TestTheSharedCacheIsNotTouched:
                             f'   стал: {now}')
 
 
+def test_the_metadata_keys_are_left_alone():
+    """⚠ Ключи metadata шага сортировать НЕ надо, и это не забывчивость.
+
+    У них авторский порядок: `tool_name` стоит перед `inputs_map`, потому что так
+    читается — сперва чем зовём, потом с чем. Это не список переменных, а настройка
+    шага, и алфавит перемешал бы её без пользы.
+    """
+    code = _source()
+    where = code.index('function renderMetadataBlock')
+    body = code[where:where + 1200]
+
+    assert 'byVarName' not in body, \
+        'сортировка уехала в metadata шага — там нужен авторский порядок ключей'
+
+
 def _source() -> str:
     with open(PAGE, encoding='utf-8') as file:
         return file.read()
@@ -221,16 +235,3 @@ def _render(what: str, badges: bool = False):
     return [tuple(one) for one in got] if badges else got
 
 
-def test_the_metadata_keys_are_left_alone():
-    """⚠ Ключи metadata шага сортировать НЕ надо, и это не забывчивость.
-
-    У них авторский порядок: `tool_name` стоит перед `inputs_map`, потому что так
-    читается — сперва чем зовём, потом с чем. Это не список переменных, а настройка
-    шага, и алфавит перемешал бы её без пользы.
-    """
-    code = _source()
-    where = code.index('function renderMetadataBlock')
-    body = code[where:where + 1200]
-
-    assert 'byVarName' not in body, \
-        'сортировка уехала в metadata шага — там нужен авторский порядок ключей'

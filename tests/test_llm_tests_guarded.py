@@ -18,13 +18,8 @@
 
 import pathlib
 import re
-from typing import AsyncGenerator
-
-import httpx
 import pytest
 
-from tests.conftest import BASE_URL
-from tests.constants import TEST_AUTH
 from tests_llm.mark import TEST_GIRL_ID, TEST_MARK
 
 pytestmark = pytest.mark.ai
@@ -91,13 +86,6 @@ class TestTheStepMarkersAreAlive:
 
     ⚠ К модели не ходит: список workflow и шаги к нему — обычные ручки.
     """
-
-    @pytest.fixture
-    async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
-        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False,
-                                     timeout=10.0) as client:
-            await client.post('/auth/login', json=TEST_AUTH)
-            yield client
 
     @pytest.fixture
     async def workflow_steps(self, client) -> set:

@@ -4,7 +4,6 @@ import pytest
 import asyncio
 import httpx
 import uuid
-from contextlib import suppress
 from typing import AsyncGenerator
 
 from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH, TEST_AUTH_ROLE
@@ -50,6 +49,45 @@ def pytest_configure(config):
     )
 
 
+@pytest.fixture
+async def client():
+    """Вошедший в панель клиент — под учёткой сюиты, не под админской.
+
+    ⚠⚠ **Завелась потому, что этих четырёх строк в `tests/` было двадцать три копии.**
+    Двадцать три файла объявляли свой `client` слово в слово: адрес, `follow_redirects`,
+    таймаут, вход. Это далеко за порогом правила трёх (`code_rules.md`, §4.2): смени
+    таймаут или способ входа — и правка нужна в двадцати трёх местах, а разойдутся они
+    молча.
+
+    Внутри — общий `uvicorn_panel_client` из слоя, а не своя сборка httpx: вход
+    контрактом панели (JSON-телом, на форме она отвечает 422) и перезаход на 401 уже
+    написаны там.
+
+    ⚠⚠⚠ **Учётка передаётся явно, и это не перестраховка.** По умолчанию тот клиент
+    входит под `ADMIN_*` из `.env` — то есть под человеком. Сюита обязана ходить под
+    своей неадминской учёткой (`testing_rules.md`, §3), и на этом стоит уборка за
+    прогоном: `cleanup_test_rows` находит строки **по хозяину**. Войди сюита админом —
+    её мусор стал бы неотличим от рабочих данных, а уборка перестала бы его видеть.
+
+    ⚠ Адрес тоже явно: сам он выводит его из compose, а сюите нужен `BASE_URL` — тот,
+    что переключает прогон на сервер ветки.
+
+    ⚠⚠ **Клиент не закрывается намеренно.** Транспорт у него общий на процесс
+    (`http_pool_transport`), и `aclose()` унёс бы его у всех, кто ещё работает.
+
+    ⚠ Своя копия остаётся законной там, где фикстура **делает ещё что-то** — заводит
+    данные, убирает за собой, отдаёт пару «клиент + номер». Таких восемнадцать, и
+    сводить их нельзя: у них разные обязанности, а не разные имена одной. Двадцать три
+    простые сводятся, **когда их и так правят** (§4.2): одновременная правка
+    двадцати трёх чужих файлов — риск больше пользы.
+    """
+    from uvicorn_.uvicorn_panel import uvicorn_panel_client
+
+    yield await uvicorn_panel_client(base=BASE_URL,
+                                     user=TEST_AUTH['username'],
+                                     password=TEST_AUTH['password'])
+
+
 # Адрес сервера, который проверяет сюита.
 #
 # По умолчанию это основной `uvicorn` установки — так сюиту запускает человек.
@@ -67,58 +105,7 @@ TEST_USER_PREFIX = "test_"
 TEST_AGENT_PREFIX = "test_agent_"
 
 
-async def _cleanup_test_users(client: httpx.AsyncClient) -> None:
-    """Delete all users with username starting with TEST_USER_PREFIX."""
-    try:
-        response = await client.get("/user/list")
-        if response.status_code != 200:
-            return
-        users = response.json().get("result", [])
-        test_users = [u for u in users if u.get("username", "").startswith(TEST_USER_PREFIX)]
-        for user in test_users:
-            try:
-                await client.delete(f"/user/{user['id']}")
-            except Exception:
-                pass  # Ignore individual deletion errors
-    except Exception:
-        pass  # Ignore cleanup errors
-
-
-async def _cleanup_test_agents(client: httpx.AsyncClient) -> None:
-    """Delete all agents with name starting with TEST_AGENT_PREFIX."""
-    try:
-        response = await client.get("/agent/list")
-        if response.status_code != 200:
-            return
-        agents = response.json().get("result", [])
-        test_agents = [a for a in agents if a.get("name", "").startswith(TEST_AGENT_PREFIX)]
-        for agent in test_agents:
-            try:
-                await client.delete(f"/agent/{agent['id']}")
-            except Exception:
-                pass  # Ignore individual deletion errors
-    except Exception:
-        pass  # Ignore cleanup errors
-
-
 TEST_ROLE_NAMES = ("test_role", "updated_role")
-
-
-async def _cleanup_test_roles(client: httpx.AsyncClient) -> None:
-    """Delete leftover roles created by test_role_crud.py."""
-    try:
-        response = await client.get("/role/list")
-        if response.status_code != 200:
-            return
-        roles = response.json().get("result", [])
-        test_roles = [r for r in roles if r.get("name") in TEST_ROLE_NAMES]
-        for role in test_roles:
-            try:
-                await client.delete(f"/role/{role['id']}")
-            except Exception:
-                pass  # Ignore individual deletion errors
-    except Exception:
-        pass  # Ignore cleanup errors
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -188,118 +175,6 @@ QDRANT_TEST_HOST = os.getenv('QDRANT_TEST_HOST', 'localhost').strip() or 'localh
 QDRANT_TEST_PORT = int(os.getenv('QDRANT_PORT', '6335') or 6335)
 
 
-def _test_user_id() -> int:
-    """Номер тестовой учётки — по имени входа, а не числом.
-
-    ⚠ Зашить число нельзя: автономер у каждой инсталляции свой. Здесь 170, на
-    соседней машине другой — и уборка молча не нашла бы ничего.
-
-    ⚠⚠ Ходим `mysql_query_run`, а не пулом приложения, по тому же доводу, что и
-    уборка в `tests_llm/conftest.py`: пул живёт в процессе приложения, а сюита —
-    отдельный процесс, и адрес базы у неё свой (`mysql_host_address`).
-    """
-    from mysql_.mysql_query import mysql_query_run
-
-    got = mysql_query_run('SELECT `id` FROM `user` WHERE `username` = %s',
-                          (str(TEST_AUTH.get('username') or ''),))
-    rows = got.get('rows') or []
-    return int(rows[0]['id']) if rows else 0
-
-
-def _test_vectors_drop(rows: list) -> int:
-    """Убрать из Qdrant точки удаляемых фактов; вернуть, сколько их было.
-
-    ⚠⚠ Зовётся **до** удаления строк: точка адресуется номером строки MySQL —
-    `uuid5(NAMESPACE_DNS, 'fact_id_<id>')`, см. `qdrant_save`, — и после `DELETE`
-    этих номеров уже не узнать. Строки уйдут, вектора останутся навсегда.
-
-    ⚠ Удаляем **по номерам точек**, а не фильтром `qdrant_remove_by` по
-    `document_id`: у половины тестовых фактов ключ пуст (их пишет
-    `companion_fact_extract`), а с пустым фильтром та функция честно не делает
-    ничего — и молча.
-    """
-    if not rows:
-        return 0
-
-    async def _drop() -> int:
-        from qdrant_client import AsyncQdrantClient, models
-
-        # ⚠⚠ Свой клиент, а НЕ `_qdrant_db_get_client()`. Тот зашивает
-        # `host="qdrant", port=6333` — имя сервиса внутри compose-сети, — и с хоста,
-        # где идёт сюита, не разрешается вовсе. Первая версия этой уборки звала его
-        # и молча падала в `except`: строки в MySQL исчезали, а 92 точки оставались
-        # при 55 живых фактах. Ровно тот же разрыв «хост против сети compose», что
-        # разобран выше для MySQL, и лечится он так же.
-        #
-        # ⚠ Клиент **местный, а не подменённый глобально**: singleton в
-        # `qdrant_.qdrant_` трогать нельзя — им пользуется код под тестом, и
-        # подмена сделала бы достижимым то, что тесты считают недоступным.
-        client = AsyncQdrantClient(host=QDRANT_TEST_HOST, port=QDRANT_TEST_PORT)
-        by_collection = {}
-        for one in rows:
-            point = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"fact_id_{int(one['id'])}"))
-            by_collection.setdefault(str(one['collection']), []).append(point)
-
-        gone = 0
-        try:
-            for name, points in by_collection.items():
-                if not await client.collection_exists(name):
-                    continue
-                await client.delete(collection_name=name,
-                                    points_selector=models.PointIdsList(points=points))
-                gone += len(points)
-        finally:
-            await client.close()
-
-        return gone
-
-    # ⚠ Отказ Qdrant не должен ронять прогон — уборка не то, ради чего он запущен.
-    # Но и промолчать нельзя: невидимый отказ значит, что вектора копятся годами.
-    try:
-        return asyncio.run(_drop())
-    except Exception as err:
-        print(f'\n⚠ уборка Qdrant не удалась ({err}) — вектора остались')
-        return 0
-
-
-def _test_rows_drop() -> dict:
-    """Снести строки тестовой учётки из таблиц-накопителей.
-
-    Returns:
-        `{имя таблицы: сколько удалено}`, плюс ключ `qdrant` — сколько снято точек.
-        Пустой словарь значит «убирать было нечего».
-    """
-    from mysql_.mysql_query import mysql_query_run
-
-    who = _test_user_id()
-    if not who:
-        return {}
-
-    # Факты — первыми и с номерами: по ним снимаются вектора (см. ⚠⚠ выше).
-    facts = mysql_query_run(
-        'SELECT f.`id`, fc.`name` AS `collection`'
-        '  FROM `fact` f JOIN `fact_collection` fc ON fc.`id` = f.`collection_id`'
-        ' WHERE f.`user_id` = %s', (who,)).get('rows') or []
-
-    counted = {}
-    # ⚠ Пишем счёт векторов **всегда, когда были факты**, даже если он нулевой:
-    # «qdrant: 0» при непустом `fact` — это и есть примета молчаливого отказа, ради
-    # которой строка и нужна. Без неё уборка однажды уже провалилась незаметно.
-    vectors = _test_vectors_drop(facts)
-    if facts:
-        counted['qdrant'] = vectors
-
-    for table in TEST_SWEEP_TABLES:
-        # ⚠ Имя таблицы уезжает в SQL текстом — потому и берётся только из
-        # `TEST_SWEEP_TABLES`, а не из ответа базы и уж тем более не из окружения.
-        got = mysql_query_run(f'DELETE FROM `{table}` WHERE `user_id` = %s', (who,))
-        gone = int(got.get('affected') or 0)
-        if gone:
-            counted[table] = gone
-
-    return counted
-
-
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_test_rows():
     """Уборка строк тестовой учётки — и до прогона, и после него.
@@ -365,28 +240,6 @@ TEST_TASK_TITLE_LIKE = r'\_\_pytest%'
 #
 # Сам сторож — в общем слое (`py_modules/http_/http_mock.py`): правило не наше
 # личное, соседним проектам оно нужно ровно так же.
-
-
-def _own_hosts_ports(*urls) -> list:
-    """Пары «хост, порт» из адресов своей установки. Для списка разрешённого.
-
-    ⚠ Адрес берётся **из той же настройки, что читают тесты** (`BASE_URL`), а не
-    переписывается сюда числом. Иначе прогон против сервера ветки
-    (`BASE_URL=http://localhost:8013`) упирался бы в собственного сторожа: адрес
-    сменился, а список разрешённого остался прежним.
-    """
-    pairs = []
-
-    for url in urls:
-        one = httpx.URL(str(url))
-        port = one.port or (443 if one.scheme == 'https' else 80)
-
-        # Локальные имена перечисляем все: `localhost` и `127.0.0.1` в настройках
-        # встречаются вперемешку, а сравнение идёт по строке.
-        for host in {one.host, 'localhost', '127.0.0.1', '::1'}:
-            pairs.append((host, port))
-
-    return pairs
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -546,3 +399,188 @@ def seed_test_session():
     loop2 = asyncio.new_event_loop()
     loop2.run_until_complete(_cleanup())
     loop2.close()
+
+
+async def _cleanup_test_users(client: httpx.AsyncClient) -> None:
+    """Delete all users with username starting with TEST_USER_PREFIX."""
+    try:
+        response = await client.get("/user/list")
+        if response.status_code != 200:
+            return
+        users = response.json().get("result", [])
+        test_users = [u for u in users if u.get("username", "").startswith(TEST_USER_PREFIX)]
+        for user in test_users:
+            try:
+                await client.delete(f"/user/{user['id']}")
+            except Exception:
+                pass  # Ignore individual deletion errors
+    except Exception:
+        pass  # Ignore cleanup errors
+
+
+async def _cleanup_test_agents(client: httpx.AsyncClient) -> None:
+    """Delete all agents with name starting with TEST_AGENT_PREFIX."""
+    try:
+        response = await client.get("/agent/list")
+        if response.status_code != 200:
+            return
+        agents = response.json().get("result", [])
+        test_agents = [a for a in agents if a.get("name", "").startswith(TEST_AGENT_PREFIX)]
+        for agent in test_agents:
+            try:
+                await client.delete(f"/agent/{agent['id']}")
+            except Exception:
+                pass  # Ignore individual deletion errors
+    except Exception:
+        pass  # Ignore cleanup errors
+
+
+async def _cleanup_test_roles(client: httpx.AsyncClient) -> None:
+    """Delete leftover roles created by test_role_crud.py."""
+    try:
+        response = await client.get("/role/list")
+        if response.status_code != 200:
+            return
+        roles = response.json().get("result", [])
+        test_roles = [r for r in roles if r.get("name") in TEST_ROLE_NAMES]
+        for role in test_roles:
+            try:
+                await client.delete(f"/role/{role['id']}")
+            except Exception:
+                pass  # Ignore individual deletion errors
+    except Exception:
+        pass  # Ignore cleanup errors
+
+
+def _test_user_id() -> int:
+    """Номер тестовой учётки — по имени входа, а не числом.
+
+    ⚠ Зашить число нельзя: автономер у каждой инсталляции свой. Здесь 170, на
+    соседней машине другой — и уборка молча не нашла бы ничего.
+
+    ⚠⚠ Ходим `mysql_query_run`, а не пулом приложения, по тому же доводу, что и
+    уборка в `tests_llm/conftest.py`: пул живёт в процессе приложения, а сюита —
+    отдельный процесс, и адрес базы у неё свой (`mysql_host_address`).
+    """
+    from mysql_.mysql_query import mysql_query_run
+
+    got = mysql_query_run('SELECT `id` FROM `user` WHERE `username` = %s',
+                          (str(TEST_AUTH.get('username') or ''),))
+    rows = got.get('rows') or []
+    return int(rows[0]['id']) if rows else 0
+
+
+def _test_vectors_drop(rows: list) -> int:
+    """Убрать из Qdrant точки удаляемых фактов; вернуть, сколько их было.
+
+    ⚠⚠ Зовётся **до** удаления строк: точка адресуется номером строки MySQL —
+    `uuid5(NAMESPACE_DNS, 'fact_id_<id>')`, см. `qdrant_save`, — и после `DELETE`
+    этих номеров уже не узнать. Строки уйдут, вектора останутся навсегда.
+
+    ⚠ Удаляем **по номерам точек**, а не фильтром `qdrant_remove_by` по
+    `document_id`: у половины тестовых фактов ключ пуст (их пишет
+    `companion_fact_extract`), а с пустым фильтром та функция честно не делает
+    ничего — и молча.
+    """
+    if not rows:
+        return 0
+
+    async def _drop() -> int:
+        from qdrant_client import AsyncQdrantClient, models
+
+        # ⚠⚠ Свой клиент, а НЕ `_qdrant_db_get_client()`. Тот зашивает
+        # `host="qdrant", port=6333` — имя сервиса внутри compose-сети, — и с хоста,
+        # где идёт сюита, не разрешается вовсе. Первая версия этой уборки звала его
+        # и молча падала в `except`: строки в MySQL исчезали, а 92 точки оставались
+        # при 55 живых фактах. Ровно тот же разрыв «хост против сети compose», что
+        # разобран выше для MySQL, и лечится он так же.
+        #
+        # ⚠ Клиент **местный, а не подменённый глобально**: singleton в
+        # `qdrant_.qdrant_` трогать нельзя — им пользуется код под тестом, и
+        # подмена сделала бы достижимым то, что тесты считают недоступным.
+        client = AsyncQdrantClient(host=QDRANT_TEST_HOST, port=QDRANT_TEST_PORT)
+        by_collection = {}
+        for one in rows:
+            point = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"fact_id_{int(one['id'])}"))
+            by_collection.setdefault(str(one['collection']), []).append(point)
+
+        gone = 0
+        try:
+            for name, points in by_collection.items():
+                if not await client.collection_exists(name):
+                    continue
+                await client.delete(collection_name=name,
+                                    points_selector=models.PointIdsList(points=points))
+                gone += len(points)
+        finally:
+            await client.close()
+
+        return gone
+
+    # ⚠ Отказ Qdrant не должен ронять прогон — уборка не то, ради чего он запущен.
+    # Но и промолчать нельзя: невидимый отказ значит, что вектора копятся годами.
+    try:
+        return asyncio.run(_drop())
+    except Exception as err:
+        print(f'\n⚠ уборка Qdrant не удалась ({err}) — вектора остались')
+        return 0
+
+
+def _test_rows_drop() -> dict:
+    """Снести строки тестовой учётки из таблиц-накопителей.
+
+    Returns:
+        `{имя таблицы: сколько удалено}`, плюс ключ `qdrant` — сколько снято точек.
+        Пустой словарь значит «убирать было нечего».
+    """
+    from mysql_.mysql_query import mysql_query_run
+
+    who = _test_user_id()
+    if not who:
+        return {}
+
+    # Факты — первыми и с номерами: по ним снимаются вектора (см. ⚠⚠ выше).
+    facts = mysql_query_run(
+        'SELECT f.`id`, fc.`name` AS `collection`'
+        '  FROM `fact` f JOIN `fact_collection` fc ON fc.`id` = f.`collection_id`'
+        ' WHERE f.`user_id` = %s', (who,)).get('rows') or []
+
+    counted = {}
+    # ⚠ Пишем счёт векторов **всегда, когда были факты**, даже если он нулевой:
+    # «qdrant: 0» при непустом `fact` — это и есть примета молчаливого отказа, ради
+    # которой строка и нужна. Без неё уборка однажды уже провалилась незаметно.
+    vectors = _test_vectors_drop(facts)
+    if facts:
+        counted['qdrant'] = vectors
+
+    for table in TEST_SWEEP_TABLES:
+        # ⚠ Имя таблицы уезжает в SQL текстом — потому и берётся только из
+        # `TEST_SWEEP_TABLES`, а не из ответа базы и уж тем более не из окружения.
+        got = mysql_query_run(f'DELETE FROM `{table}` WHERE `user_id` = %s', (who,))
+        gone = int(got.get('affected') or 0)
+        if gone:
+            counted[table] = gone
+
+    return counted
+
+
+def _own_hosts_ports(*urls) -> list:
+    """Пары «хост, порт» из адресов своей установки. Для списка разрешённого.
+
+    ⚠ Адрес берётся **из той же настройки, что читают тесты** (`BASE_URL`), а не
+    переписывается сюда числом. Иначе прогон против сервера ветки
+    (`BASE_URL=http://localhost:8013`) упирался бы в собственного сторожа: адрес
+    сменился, а список разрешённого остался прежним.
+    """
+    pairs = []
+
+    for url in urls:
+        one = httpx.URL(str(url))
+        port = one.port or (443 if one.scheme == 'https' else 80)
+
+        # Локальные имена перечисляем все: `localhost` и `127.0.0.1` в настройках
+        # встречаются вперемешку, а сравнение идёт по строке.
+        for host in {one.host, 'localhost', '127.0.0.1', '::1'}:
+            pairs.append((host, port))
+
+    return pairs
