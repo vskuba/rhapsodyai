@@ -175,34 +175,9 @@ async def talk(ask):
     await talk_forget(girl)
 
 
-@pytest.fixture
-async def workflow_steps(client) -> set:
-    """Имена всех шагов всех workflow — чтобы сверять с ними приметы.
-
-    ⚠⚠ **Всех, а не только `dating_talk`.** Часть примет указывает на шаги
-    подпрогонов (`fact_collection_add_companion` живёт в `companion_fact_extract`),
-    и они приезжают в трассу наравне со своими. Ограничь выборку одним workflow —
-    сторож объявил бы законные приметы мёртвыми.
-
-    ⚠ К модели не ходит: список workflow и шаги к нему — обычные запросы.
-    """
-    got = await client.get('/workflow/list')
-
-    if got.status_code != 200:
-        pytest.fail(f'список workflow не читается ({got.status_code})')
-
-    out = set()
-
-    for one in (got.json().get('result') or []):
-        steps = await client.get(f'/workflow/{one.get("id")}/steps')
-
-        if steps.status_code != 200:
-            continue
-
-        out |= {str(step.get('title') or '')
-                for step in (steps.json().get('result') or [])}
-
-    return out
+# ⚠ Фикстура `workflow_steps` уехала в `tests/test_llm_tests_guarded.py` вместе со
+# сторожем, который её звал: он к модели не ходит, а здесь не шёл вовсе — метка
+# `llm_live` исключена из `addopts`. Здесь она осталась бы без зовущих.
 
 
 # ── Сценарий ответов модели ─────────────────────────────────────────────────
