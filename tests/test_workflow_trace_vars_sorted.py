@@ -191,6 +191,9 @@ def _render(what: str, badges: bool = False):
     const varSourceBadge = (source) => ({className: 'src', text: source.label});
     const varListItem = (name, value, badges) => ({name,
         badge: (badges && badges[0]) ? badges[0].text : ''});
+    // Отрисовке чип не нужен — ей важен порядок имён; но живая функция ссылается
+    // на этот константный резерв, и без него кусок кода не собирается.
+    const VAR_GROUP_UNKNOWN = {key: 'stub', title: 'stub'};
     '''
 
     # ⚠ Бейджи метим именем нарочно: «источник:girl_name» у другого имени сразу
