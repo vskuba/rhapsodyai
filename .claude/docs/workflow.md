@@ -777,7 +777,10 @@ continue_workflow, если не были возвращены пользова�
   входящих переменных type='input' с добавлением/удалением/редактированием) и «Шаги» (drag-drop список,
   панель переменных в 5 группах: входящие/общие/ноды/tool/workflow, конструктор metadata по типу шага,
   редактор переходов before/after). Неиспользуемые в шагах workflow-переменные подсвечиваются серым
-  (`extractVariablesFromSteps` → класс `unused-variable`).
+  (`extractVariablesFromSteps` → класс `unused-variable`). При показе графа редактор скрыт целиком,
+  и у панели своя копия (`#graphVarList`): тот же полный набор по алфавиту — реестр, tool,
+  динамические, имя без следа показывается как `0→0` — перед именем значок группы, вся подпись
+  в подсказке (значок и подпись отдаёт `variableGroupIndex` одним `{key, title, icon}`).
 - **`/admin/variable`** (шаблоны `node_variable.html` — admin и custom/dating) — реестр
   переменных ноды по нодам: name, node, description, роли, type (public/proxy), default, drag-drop
   порядка (position). Подсказки под полем «Значение» — proxy-переменные той же ноды (эндпоинт
