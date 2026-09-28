@@ -3,7 +3,7 @@ import re
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflow import ai_workflow_variables_node_get
+from src.ai.ai_workflow import ai_workflow_variables_node_get, ai_workflow_step_refs_remap
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
 from src.mysql_.repository.agent_workflow_step_repository import AgentWorkflowStepRepository
 from src.mysql_.repository.agent_workflow_step_type_repository import AgentWorkflowStepTypeRepository
@@ -109,16 +109,11 @@ async def workflow_duplicate(
             id_map[step['id']] = db.lastrowid
             metadata_by_new_id[db.lastrowid] = step['metadata'] or ''
 
-        # Второй проход — ремап id шагов в metadata. Новые id (AUTO_INCREMENT) всегда
-        # больше всех старых, поэтому последовательные замены не пересекаются
+        # Второй проход — ремап id шагов в metadata. Знание о формах ссылки —
+        # общее (`ai_workflow_step_refs_remap`); политика дубля — перенумеровать
+        # всегда, новые id из AUTO_INCREMENT заведомо больше всех старых.
         for new_step_id, metadata in metadata_by_new_id.items():
-            updated = metadata
-            for old_id, new_id in id_map.items():
-                # Переходы: "step_id": "66" (строкой) и "step_id": 66 (числом)
-                updated = re.sub(rf'("step_id"\s*:\s*"){old_id}(")', rf'\g<1>{new_id}\g<2>', updated)
-                updated = re.sub(rf'("step_id"\s*:\s*){old_id}(\s*[,}}\]])', rf'\g<1>{new_id}\g<2>', updated)
-                # Переменные результатов шагов: tool_66_result_* -> tool_<new>_result_*
-                updated = updated.replace(f'_{old_id}_result', f'_{new_id}_result')
+            updated = ai_workflow_step_refs_remap(metadata, id_map)
             if updated != metadata:
                 await db.execute(
                     "UPDATE agent_workflow_step SET metadata = %s WHERE id = %s",

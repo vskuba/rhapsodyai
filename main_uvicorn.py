@@ -71,6 +71,11 @@ from src.uvicorn.routers.telegram_app import telegram_app_task
 from src.uvicorn.routers.tool import tool
 from src.uvicorn.routers.translate import translate
 from src.uvicorn.routers.workflow import workflow, workflow_step, workflow_variable, workflow_trace
+# Порядок регистрации важен: `/workflow/export` и `/workflow/import` обязаны
+# стоять до `workflow.router`, где живёт `GET /workflow/{workflow_id:int}` —
+# иначе «export» проглотится параметром пути, ответит 422 и до точки не дойдёт.
+from src.uvicorn.routers.workflow import workflow_export
+from src.uvicorn.routers.workflow import workflow_import
 from src.uvicorn.routers.user import user
 from src.uvicorn.routers.companion import companion
 from src.uvicorn.routers.role import role
@@ -508,6 +513,9 @@ app.include_router(gx10.router, include_in_schema=False)
 app.include_router(session.router, include_in_schema=False)
 app.include_router(node.router, include_in_schema=False)
 app.include_router(role.router, include_in_schema=False)
+# Экспорт/импорт — до остального workflow-роутера: см. комментарий на импорте.
+app.include_router(workflow_export.router, include_in_schema=False)
+app.include_router(workflow_import.router, include_in_schema=False)
 app.include_router(workflow.router, include_in_schema=False)
 app.include_router(workflow_step.router, include_in_schema=False)
 app.include_router(workflow_variable.router, include_in_schema=False)
