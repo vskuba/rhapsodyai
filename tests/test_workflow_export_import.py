@@ -83,6 +83,36 @@ class TestWorkflowExportImport:
         assert {l["workflow_id"] for l in payload["variable_links"]} == {probe["wf_one"]}
         assert probe["wf_one"] in {l["workflow_id"] for l in payload["node_variable_links"]}
 
+    async def test_export_counts_global_variables_once(self, client: httpx.AsyncClient, probe: dict):
+        """Глобальная на двух workflow узла — в предупреждении одна, и названа.
+
+        ⚠ Дефект, доживший до прода: счёт шёл `COUNT(*)` по таблице связей, и
+        переменная, привязанная к двум workflow ноды, считалась дважды. На ноде
+        Dating предупреждение обещало четыре записи там, где их три, — человек
+        на принимающей стороне искал четвёртую.
+
+        Проверяем не только число: имена в тексте избавляют принимающую сторону
+        от похода в базу за списком.
+        """
+        name = f"{WF_ONE}_g"
+        for workflow_id in (probe["wf_one"], probe["wf_two"]):
+            created = await client.post(f"/workflow/{workflow_id}/variable",
+                                        json={"name": name, "default": "", "type": "global"})
+            assert created.status_code == 200, created.text
+
+        try:
+            payload = await _export(client, probe["node_id"])
+
+            about_globals = [w for w in payload["warnings"] if "Глобальные" in w]
+            assert len(about_globals) == 1, payload["warnings"]
+            assert "(1)" in about_globals[0], f"переменная сосчитана дважды: {about_globals[0]}"
+            assert name in about_globals[0], f"имя не названо: {about_globals[0]}"
+
+            # Сама она в файл не едет — только предупреждение о ней.
+            assert name not in [v["name"] for v in payload["variables"]]
+        finally:
+            await client.delete(f"/workflow/{probe['wf_one']}/variable/{_rid(created.json()['result'])}")
+
     async def test_export_pseudo_node_works(self, client: httpx.AsyncClient):
         """`node_id=none` — файл без ноды собирается, и роут id-а не перекрыт."""
         payload = await _export(client, "none")

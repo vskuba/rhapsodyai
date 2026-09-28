@@ -111,8 +111,11 @@ async def ai_workflow_export_payload(node_pk):
             payload['variables'], payload['variable_links'], skipped = \
                 await _workflow_export_fetch_variables(db, workflow_ids)
             if skipped:
+                # Имена, а не только счёт: на принимающей стороне сразу видно,
+                # что проверять, — без похода в базу за списком.
                 payload['warnings'].append(
-                    f'Глобальные переменные не переносятся: {skipped} — заведите их на принимающей стороне'
+                    f'Глобальные переменные не переносятся ({len(skipped)}): '
+                    f'{", ".join(skipped)} — они системные, заведите их на принимающей стороне'
                 )
 
         if node_pk is not None:
@@ -202,8 +205,8 @@ async def _workflow_export_fetch_variables(db, workflow_ids):
 
     Переменная может быть привязана и к чужому workflow (M:N) — на принимающей
     стороне импорт сопоставит её по имени и типу, а чужая связь не пострадает.
-    Глобальные в файл не идут (свои на каждой базе) — их количество возвращается
-    отдельным числом, чтобы сборщик поставил его в `warnings`. Слияние дублей
+    Глобальные в файл не идут (свои на каждой базе) — их **имена** возвращаются
+    отдельным списком, чтобы сборщик перечислил их в `warnings`. Слияние дублей
     по паре (имя, тип) — не здесь: правило живёт в
     `ai_workflow_export_variables_merge`.
     """
@@ -219,13 +222,19 @@ async def _workflow_export_fetch_variables(db, workflow_ids):
     )
     variables_rows = await db.fetchall() or []
 
+    # ⚠ `DISTINCT` по имени, а не `COUNT(*)` по связям: одна переменная,
+    # привязанная к двум workflow узла, давала две строки и считалась дважды —
+    # у ноды Dating предупреждение обещало четыре записи там, где их три, и
+    # человек на принимающей стороне искал четвёртую.
     await db.execute(
-        f'SELECT COUNT(*) AS `cnt` FROM `agent_workflow_variable` v '
+        f'SELECT DISTINCT v.`name` FROM `agent_workflow_variable` v '
         f'JOIN `agent_workflow_variable_workflow` l ON l.`variable_id` = v.`id` '
-        f'WHERE l.`workflow_id` IN ({placeholders}) AND v.`type` = %s',
+        f'WHERE l.`workflow_id` IN ({placeholders}) AND v.`type` = %s '
+        f'ORDER BY v.`name`',
         tuple(workflow_ids) + ('global',)
     )
-    global_count = (await db.fetchone() or {}).get('cnt', 0)
+    global_names = [ai_workflow_export_strip(row['name'])
+                    for row in (await db.fetchall() or [])]
 
     # Связи глобальных переменных не пишутся: самих их в файле нет, а ссылка на
     # отсутствующую запись сделала бы файл битым для импорта.
@@ -239,7 +248,7 @@ async def _workflow_export_fetch_variables(db, workflow_ids):
     link_rows = await db.fetchall() or []
 
     variables, merged = ai_workflow_export_variables_merge(variables_rows, link_rows)
-    return variables, merged, global_count
+    return variables, merged, global_names
 
 
 async def _workflow_export_fetch_node_variables(db, node_pk, workflow_ids):
