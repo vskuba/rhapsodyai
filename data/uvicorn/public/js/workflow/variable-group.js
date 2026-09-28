@@ -392,9 +392,10 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools) {
  *         `groupWorkflowVariables`.
  *
  * Returns:
- *     `Map<имя, {key, title}>` — ключ группы (`input`, `tool`, `dynamic`…) и её
- *     подпись с иконкой группы. В первой найденной секции и стоит имя: список
- *     не показывает переменную дважды.
+ *     `Map<имя, {key, title, icon}>` — ключ группы (`input`, `tool`, `dynamic`…),
+ *     её полная подпись и значок врозь от неё: списки ставят перед именем только
+ *     значок, подпись же нужна подсказкой. В первой найденной секции и стоит имя:
+ *     список не показывает переменную дважды.
  *
  * ⚠ Карта, а не вопрос про одно имя: списки спрашивают про десятки имён подряд, а
  * разбивка стоит разбора метаданных всех шагов. Перебирать её на каждое имя — та
@@ -405,8 +406,12 @@ export function variableGroupIndex(variables, stepsData, workflows, tools) {
     const index = new Map();
 
     for (const [title, items, key] of workflowVariableSections(groups)) {
+        // Значок — первый токен секции: чипы списков показывают только его, вся
+        // подпись уезжает в подсказку.
+        const icon = title.split(' ')[0];
+
         items.forEach(one => {
-            if (one?.name && !index.has(one.name)) index.set(one.name, {key, title});
+            if (one?.name && !index.has(one.name)) index.set(one.name, {key, title, icon});
         });
     }
 

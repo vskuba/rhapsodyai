@@ -538,15 +538,16 @@
         border-color: #fed7aa;
     }
 
-    /* К какой группе относится переменная («Входящие», «Workflow»…): подпись несёт
-       иконку и название группы. Акценты — те же, что полоса `.variable-item-*` на
-       панели редактора: один цвет читается в двух местах, а не два разных. */
+    /* К какой группе относится переменная («Входящие», «Workflow»…): в пилюле
+       только значок группы, вся подпись живёт подсказкой. Акценты — те же, что
+       полоса `.variable-item-*` на панели редактора: один цвет читается в двух
+       местах, а не два разных. */
     .var-group {
         font-size: 10px;
         font-weight: 600;
         border: 1px solid transparent;
         border-radius: 8px;
-        padding: 1px 7px;
+        padding: 1px 4px;
         white-space: nowrap;
     }
 
@@ -1182,8 +1183,13 @@
         const li = document.createElement('li');
         const head = el('div', 'var-head');
         // Чип группы перед именем: из одного имени не видно, откуда переменная.
-        // Подпись несёт группа, а не позиция: списки отсортированы по алфавиту
-        if (group) head.appendChild(el('span', `var-group var-group-${group.key}`, group.title));
+        // В чипе один значок: подпись с названием группы съедала треть строки,
+        // читается же она теперь только подсказкой наведённой мыши.
+        if (group) {
+            const chip = el('span', `var-group var-group-${group.key}`, group.icon);
+            chip.title = group.title;
+            head.appendChild(chip);
+        }
         head.appendChild(el('span', 'var-name', `%${name}%`));
         (badges || []).forEach(badge => head.appendChild(el('span', badge.className, badge.text)));
         head.appendChild(el('span', 'var-sep', ':'));
@@ -1211,8 +1217,9 @@
     }
 
     // Имя не нашлось ни в реестре, ни в следах шагов — честный ответ «не объявлена»,
-    // пустое место рядом с именем снова оставляло бы вопрос без ответа
-    const VAR_GROUP_UNKNOWN = {key: 'unknown', title: 'не объявлена'};
+    // пустое место рядом с именем снова оставляло бы вопрос без ответа. Значок —
+    // пустое множество: имени нет ни в одной группе.
+    const VAR_GROUP_UNKNOWN = {key: 'unknown', title: 'не объявлена', icon: '∅'};
 
     // Порядок имён в списках переменных — по алфавиту.
     //

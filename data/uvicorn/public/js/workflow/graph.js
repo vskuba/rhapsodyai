@@ -517,12 +517,20 @@ function renderGraphVariables(container) {
         const needle = filter.trim().toLowerCase();
         listBox.innerHTML = '';
 
+        // ⚠⚠ Список — **все** переменные workflow: реестр (входящие, глобальные,
+        // node, workflow), результаты инструментов, динамические — как их видит
+        // трасса прогона. Прежний обход одной трассы молчал про имена, которых
+        // шаги не касаются вовсе, и до половины списка дело не доходило.
+        const names = [...new Set([..._varGroups.keys(), ..._varTrace.keys()])]
+            .sort((a, b) => a.localeCompare(b));
+
         let shown = 0;
-        _varTrace.forEach((cell, name) => {
+        names.forEach(name => {
             if (needle && !name.toLowerCase().includes(needle)) return;
             shown++;
 
             const group = _varGroups.get(name);
+            const cell = _varTrace.get(name) || {made: [], used: []};
             const row = document.createElement('div');
             // ⚠ Цвет полосы — по группе, тот же, что на панели шагов. Ключ группы
             // становится классом (`graph-var-input`), а цвета живут в CSS: два
@@ -531,6 +539,12 @@ function renderGraphVariables(container) {
             if (name === _varPicked) row.className += ' active';
             row.dataset.name = name;
             if (group) row.title = group.title;
+
+            // ⚠ Значок группы перед именем — тот же, что чип на трассе прогона:
+            // группу узнают глазами, подпись читать не нужно.
+            const icon = document.createElement('span');
+            icon.className = 'graph-var-icon';
+            icon.textContent = group?.icon || '';
 
             const label = document.createElement('span');
             label.textContent = name;
@@ -545,7 +559,7 @@ function renderGraphVariables(container) {
             count.textContent = `${cell.made.length}→${cell.used.length}`;
             count.title = `кладёт шагов: ${cell.made.length}, читает: ${cell.used.length}`;
 
-            row.append(label, count);
+            row.append(icon, label, count);
             row.onclick = () => pickVariable(name, container);
             listBox.appendChild(row);
         });
@@ -564,7 +578,8 @@ function renderGraphVariables(container) {
 
     // ⚠ Выбор переживает перерисовку: граф перестраивается при каждом заходе, и
     // терять выбранное имя значило бы заставлять человека искать его заново.
-    if (_varPicked && _varTrace.has(_varPicked)) pickVariable(_varPicked, container);
+    // Имя живёт и в трассе, и в одной только карте групп — проверка по обоим.
+    if (_varPicked && (_varTrace.has(_varPicked) || _varGroups.has(_varPicked))) pickVariable(_varPicked, container);
     else traceBox.innerHTML = '<div style="color:#94a3b8;">Выберите переменную — покажу, кто её кладёт и кто читает</div>';
 }
 
