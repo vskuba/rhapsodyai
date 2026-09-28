@@ -116,7 +116,6 @@ async def main():
             "workflow_variables": workflow_variables_all,
             "prompt_user": document,
             "user_id": VERIFY_USER_ID,
-            "companion_id": None,
             "session_uuid": session_uuid,
             "tools": await _tools_get(),
         })

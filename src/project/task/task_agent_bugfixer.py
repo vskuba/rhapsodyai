@@ -132,7 +132,6 @@ async def task_agent_bugfixer_run(task: dict, role: str = TASK_BUGFIXER_ROLE,
         'workflow_variables': wf_vars,
         'prompt_user':        prompt_user,
         'user_id':            BUGFIXER_USER_ID,
-        'companion_id':       None,
         'session_uuid':       session_uuid,
         'tools':              await _tools_load(),
     })

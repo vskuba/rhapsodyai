@@ -154,7 +154,6 @@ async def task_agent_manager_plan(task: dict, revise: bool = False,
         'workflow_variables': wf_vars,
         'prompt_user':        str(task.get('description') or ''),
         'user_id':            MANAGER_USER_ID,
-        'companion_id':       None,
         'session_uuid':       session_uuid,
         'tools':              await _tools_load(),
     })

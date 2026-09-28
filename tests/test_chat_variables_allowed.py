@@ -90,8 +90,13 @@ DATING_SENDS = (
     # ⚠ `companion_uid` здесь больше нет: номер человека **на сайте** уехал
     # вместе с объявлением у соседа. Запись собеседника у него своя, и её ключ
     # (`companion.unique_id`) панель кладёт в `companion_name`.
+    #
+    # ⚠⚠ Троица едет **целиком** с `remove_companion`: сосед перестал подставлять
+    # её из запроса по умолчанию, и шаг «Переменные» склеивает ключ фактов
+    # `companion_unique_id` из `%companion_id%_%companion_name%` — без номера
+    # ключ съедает приставку.
     'companion_bio', 'girl_bio', 'girl_name', 'girl_id',
-    'companion_name', 'companion_title', 'chat_timeout',
+    'companion_id', 'companion_name', 'companion_title', 'chat_timeout',
     # Повод заговорить первой. ⚠ Приёма (`initiative_kind`) здесь больше нет:
     # двенадцать приёмов с весами переехали в шаг «Жребий» у соседа, и панель
     # шлёт только флаг.
@@ -337,15 +342,11 @@ async def _ask(client, variables: dict):
     agent = (await client.get(f'/agent/name/{AGENT_NAME}')).json()
     agent_id = (agent.get('result') or {}).get('id')
 
-    companions = (await client.get('/companion/list')).json().get('result') or []
-    companion = next((one for one in companions
-                      if one.get('name') == 'test_llm_companion'), None)
-
-    if not agent_id or not companion:
-        pytest.skip('агента или собеседника тестов нет в этой базе')
+    if not agent_id:
+        pytest.skip('агента тестов нет в этой базе')
 
     return await client.post('/chat/ask', json={
         'question': f'probe {uuid.uuid4().hex[:6]}',
-        'agent_id': agent_id, 'companion_id': companion['id'],
+        'agent_id': agent_id,
         'session_uuid': str(uuid.uuid4()),
         'variables': variables})

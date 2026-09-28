@@ -161,7 +161,6 @@ async def design_prototype_page_auto_blocks(
         'workflow_variables': wf_vars,
         'prompt_user': '',
         'user_id': user.user_id,
-        'companion_id': None,
         'session_uuid': session_uuid,
         'tools': await _tools_load(),
     })

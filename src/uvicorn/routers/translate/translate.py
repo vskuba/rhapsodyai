@@ -70,8 +70,6 @@ async def translate_translate(
         "workflow_variables": workflow_variables_all,
         "prompt_user": text,
         "user_id": user.user_id,
-        # None, не 0: agent_session.companion_id имеет FK на companion — 0 нарушает его, NULL допустим
-        "companion_id": None,
         "session_uuid": session_uuid,
         "tools": {},
     })

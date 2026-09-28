@@ -146,7 +146,6 @@ async def _plan_workflow_run(agent_name: str, instruction: str, extra_variables:
         "workflow_variables": workflow_variables_all,
         "prompt_user": instruction,
         "user_id": TELEGRAM_PLAN_USER_ID,
-        "companion_id": None,
         "session_uuid": session_uuid,
     })
     agent_manager.framework_workflow_run(framework_model, future, loop)

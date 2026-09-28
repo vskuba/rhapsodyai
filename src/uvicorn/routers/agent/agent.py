@@ -26,9 +26,6 @@ router = APIRouter()
 # остаётся: ею можно увести вызов на другой адрес, если понадобится.
 AGENT_CREATE_CHAT_URL = config_get('UVICORN_URL', 'http://127.0.0.1:8000') + '/chat/ask'
 
-# Тип собеседника для движка: у служебного прогона он один.
-AGENT_CREATE_COMPANION_ID = 1
-
 # Прогон с LLM идёт минуты, а не секунды.
 AGENT_CREATE_TIMEOUT = 300.0
 
@@ -522,7 +519,6 @@ async def _agent_create_by_workflow(request: Request, data: AgentCreateRequest,
 
     payload = {'question': (data.title or data.name).strip(),
                'agent_id': runner_id,
-               'companion_id': AGENT_CREATE_COMPANION_ID,
                'variables': variables}
 
     headers = {}

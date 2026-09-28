@@ -57,7 +57,6 @@ async def project_idea_planning_ideas_generate(request: Request, data: dict, use
         'workflow_variables': wf_vars,
         'prompt_user': niche,
         'user_id': user.user_id,
-        'companion_id': None,
         'session_uuid': session_uuid,
         'tools': {},
     })

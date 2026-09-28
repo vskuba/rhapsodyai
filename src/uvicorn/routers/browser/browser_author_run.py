@@ -282,10 +282,6 @@ async def _llm_ask(data: BrowserAuthorRequest, snapshot: dict, steps_ok: list[Br
         'entity_agent': entity_agent,
         'entities_llm': entities_llm,
         'user_id': user_id,
-        # None, а не 0 по умолчанию: у `agent_session.companion_id` внешний ключ на
-        # `companion`, и нулём переписка автора в журнал не запишется — вызов упадёт
-        # уже после ответа модели, потратив его впустую.
-        'companion_id': None,
     })
     framework_model.prompt_user = _prompt_user(data, snapshot, steps_ok, error_last, number)
     framework_model.is_gui_mode = False

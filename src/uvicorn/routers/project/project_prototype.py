@@ -91,7 +91,6 @@ async def project_prototype_planning_prototype_refine(request: Request, project_
         'workflow_variables': wf_vars,
         'prompt_user': refine_request,
         'user_id': user.user_id,
-        'companion_id': None,
         'session_uuid': session_uuid,
         'tools': await _tools_load(),
     })

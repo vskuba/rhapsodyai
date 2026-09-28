@@ -49,7 +49,6 @@
 
 import pytest
 
-from tests_llm.conftest import LLM_COMPANION_TITLE
 from tests_llm.mark import mark_key
 from tests_llm.dating_talk.conftest import ANYWAY, STEP_MAKE
 
@@ -61,16 +60,15 @@ BIO_CITY = 'Tórshavn'
 BIO_COUNTRY = 'Faroe Islands'
 BIO_JOB = 'lighthouse keeper'
 
+# Имя на анкете: с `remove_companion` собеседника в запросе больше нет — у
+# блока теперь одно имя, то, что на самой анкете, и столкнуться двум именам
+# негде.
+BIO_NAME = 'Gerard'
+
 # ⚠ Вид ровно тот, что кладёт DatingAi (`companion_bio.py`): подписи по-русски,
 # значения — как на сайте знакомств. Разойдись вид здесь и там, тест проверял бы
 # выдуманный формат.
-#
-# ⚠⚠ **Имя берём то же, каким агент зовёт собеседника.** Заголовок блока
-# подставляет `companion_title` из карточки («Gerard»), и своё имя в анкете
-# («Eirik») дало бы модели двух разных людей в одном абзаце — первый прогон так
-# и вышел. В бою такого не бывает: имя в анкете и в заголовке приходят из одной
-# карточки.
-BIO = (f'Имя: {LLM_COMPANION_TITLE}\n'
+BIO = (f'Имя: {BIO_NAME}\n'
        f'Возраст: 52\n'
        f'Живёт: {BIO_CITY}, {BIO_COUNTRY}\n'
        f'О себе: quiet life by the sea, raised two sons\n'

@@ -791,17 +791,13 @@
                 return;
             }
 
-            // Получаем Companion ID
-            const compName = `user_${selectedUsername}`;
-            const compData = await postData('/companion', {
-                name: compName,
-                title: selectedUsername
-            });
-            const companionId = compData.result.id;
-
+            // ⚠ Собеседника здесь больше нет, и заводить его незачем. Движок
+            // троицу `companion_*` не подставляет: кому она нужна, тот объявляет
+            // её входящей и получает от вызывающего (`.claude/docs/chat.md`, §3).
+            // Пульт разработчика зовёт любого агента подряд, а незаявленная
+            // переменная — отказ 400, поэтому слать её отсюда нельзя в принципе.
             const data = await postData('/chat/ask', {
                 question: text,
-                companion_id: companionId,
                 agent_id: agentSelect.value,
                 session_uuid: currentSessionId
             });
