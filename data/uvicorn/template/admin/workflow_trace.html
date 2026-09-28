@@ -981,7 +981,7 @@
     // список трассы и панель редактора размечают группы одним кодом.
     // ⚠ Именно `variable-group.js`, а не `variables.js`: второй — панель редактора,
     // и тянет за собой её обвязку вплоть до обработчика на форме шага
-    import {variableGroupIndex} from '/static/js/workflow/variable-group.js';
+    import {variableGroupIndex, VAR_GROUP_UNKNOWN} from '/static/js/workflow/variable-group.js';
 
     const runsList = document.getElementById('runsList');
     const runDetail = document.getElementById('runDetail');
@@ -1185,9 +1185,11 @@
         // Чип группы перед именем: из одного имени не видно, откуда переменная.
         // В чипе один значок: подпись с названием группы съедала треть строки,
         // читается же она теперь только подсказкой наведённой мыши.
+        // ⚠ В подсказке `label`, а не `title`: тот несёт значок первым словом, и
+        // подсказка повторяла бы то, что и так нарисовано в чипе.
         if (group) {
             const chip = el('span', `var-group var-group-${group.key}`, group.icon);
-            chip.title = group.title;
+            chip.title = group.label;
             head.appendChild(chip);
         }
         head.appendChild(el('span', 'var-name', `%${name}%`));
@@ -1215,11 +1217,6 @@
     function varSourceBadge(source) {
         return {className: `var-source${source.start ? ' var-source-start' : ''}`, text: source.label};
     }
-
-    // Имя не нашлось ни в реестре, ни в следах шагов — честный ответ «не объявлена»,
-    // пустое место рядом с именем снова оставляло бы вопрос без ответа. Значок —
-    // пустое множество: имени нет ни в одной группе.
-    const VAR_GROUP_UNKNOWN = {key: 'unknown', title: 'не объявлена', icon: '∅'};
 
     // Порядок имён в списках переменных — по алфавиту.
     //

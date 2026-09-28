@@ -58,7 +58,11 @@ STEPS = [
     {'id': 524, 'metadata': json.dumps({
         'tool_invoke': {
             'tool_name': 'companion_bio',
-            'inputs_map': {'bio': 'companion_bio_524_result_bio'},
+            # ⚠ Второе имя нарочно ничьё: шаг его читает, а породить его некому —
+            # шага 9 в ветке нет, да и `args.output` инструмента про `sheet` молчит.
+            # Ровно так выглядят 117 имён из 2075 по всем workflow установки.
+            'inputs_map': {'bio': 'companion_bio_524_result_bio',
+                           'sheet': 'list_shift_9_result_sheet'},
             'outputs_map': {'bio': 'girl_bio'},
         }}, ensure_ascii=False)},
     {'id': 786, 'metadata': json.dumps(
@@ -73,22 +77,29 @@ TOOLS = [{'name': 'companion_bio',
           'args': json.dumps({'output': {'keys': {'bio': 'string'}}})}]
 WORKFLOWS = [{'id': 5, 'name': 'dating_invite_one'}]
 
-# Что обязан показать значок у каждого имени: знак группы в строке, полная
-# подпись — подсказкой, ключ (из ключа рождён класс строки `graph-var-<ключ>`).
+# Что обязан показать значок у каждого имени: знак группы в строке, название —
+# подсказкой, ключ (из ключа рождён класс строки `graph-var-<ключ>`).
+#
+# ⚠ В подсказке `label`, а не `title`: тот несёт значок первым словом, и подсказка
+# повторяла бы то, что и так нарисовано в строке.
 EXPECTED = {
-    'girl_name': {'key': 'input', 'icon': '📥', 'title': '📥 Входящие переменные'},
-    'timezone': {'key': 'common', 'icon': '🇬', 'title': '🇬 Глобальные переменные'},
-    'agent_title': {'key': 'node', 'icon': '🇳', 'title': '🇳 Node переменные'},
-    'talk_history_chat': {'key': 'workflow', 'icon': '🇼', 'title': '🇼 Workflow переменные'},
-    'companion_bio_524_result_bio': {'key': 'tool', 'icon': '⚙️', 'title': '⚙️ Tool переменные'},
-    'dating_invite_one_786_result_str': {'key': 'tool', 'icon': '⚙️', 'title': '⚙️ Tool переменные'},
-    'girl_bio': {'key': 'dynamic', 'icon': '🌀', 'title': '🌀 Dynamic переменные'},
-    'talk_topic': {'key': 'dynamic', 'icon': '🌀', 'title': '🌀 Dynamic переменные'},
+    'girl_name': {'key': 'input', 'icon': '📥', 'label': 'Входящие переменные'},
+    'timezone': {'key': 'common', 'icon': '🇬', 'label': 'Глобальные переменные'},
+    'agent_title': {'key': 'node', 'icon': '🇳', 'label': 'Node переменные'},
+    'talk_history_chat': {'key': 'workflow', 'icon': '🇼', 'label': 'Workflow переменные'},
+    'companion_bio_524_result_bio': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    'dating_invite_one_786_result_str': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    'girl_bio': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
+    'talk_topic': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
+    # Шаг читает результат инструмента, которого нет в `args.output` его реестра:
+    # имя живёт, а группы у него нет ни одной
+    'list_shift_9_result_sheet': {'key': 'unknown', 'icon': '∅', 'label': 'не объявлена'},
 }
 
-# Имена, которых шаги не касают вовсе: раньше их не было видно на графе.
-SILENT = [name for name, g in EXPECTED.items()
-          if name not in ('companion_bio_524_result_bio', 'girl_bio', 'talk_topic')]
+# Имена, которых шаги не касаются вовсе: раньше их не было видно на графе.
+SILENT = [name for name in EXPECTED
+          if name not in ('companion_bio_524_result_bio', 'girl_bio', 'talk_topic',
+                          'list_shift_9_result_sheet')]
 
 # Якоря кусков панели: живой код вырезается, а не копируется в тест.
 STEPNUMS_FROM = '* Номер шага так, как его видит человек'
@@ -139,10 +150,36 @@ class TestEveryRowCarriesItsIcon:
             assert row['icon'] == want['icon'], (
                 f'у «{row["name"]}» значок чужой группы: {row["icon"]!r}, '
                 f'ждали {want["icon"]!r}')
-            assert row['tip'] == want['title'], \
+            assert row['tip'] == want['label'], \
                 f'у «{row["name"]}» подсказка молчит о группе: {row["tip"]!r}'
             assert row['cls'] == f"graph-var graph-var-{want['key']}", \
                 f'у «{row["name"]}» строка в чужом классе: {row["cls"]}'
+
+    def test_a_nameless_group_answers_the_same_as_the_trace(self):
+        """⚠⚠ Имя без группы получает `∅`, а не пустое место.
+
+        Пустое место рядом с именем оставляет вопрос «откуда оно» ровно так же,
+        как его оставляло отсутствие группы. Ответ один на обе страницы — общий
+        `VAR_GROUP_UNKNOWN` из модуля правила, а не своя выдумка на каждой.
+        """
+        row = next(r for r in _rows() if r['name'] == 'list_shift_9_result_sheet')
+
+        assert row['icon'] == '∅', \
+            f'у имени без группы снова пусто вместо знака: {row["icon"]!r}'
+        assert row['cls'] == 'graph-var graph-var-unknown', \
+            f'строка без группы не помечена классом: {row["cls"]}'
+
+    def test_the_icon_and_the_name_sit_in_one_block(self):
+        """⚠⚠ Значок — приставка к имени, а не третья колонка строки.
+
+        Строка это flex с `space-between`: пока детей было двое, он разводил имя и
+        счётчик по краям. Третий ребёнок встал между ними, и у короткого имени
+        значок отъезжал от него на 67 пикселей. Обёртка держит их вместе.
+        """
+        for row in _rows():
+            assert row['row_kids'] == ['graph-var-head', 'graph-var-count'], (
+                f'у «{row["name"]}» строка снова из трёх детей подряд: '
+                f'{row["row_kids"]} — значок оторвётся от имени')
 
     def test_the_icon_holds_no_text_name(self):
         """Значок текстом — половина строки: слово читает только подсказка."""
@@ -197,7 +234,7 @@ def _base_script() -> str:
     не свою копию правила.
     """
     stub = f'''
-    import {{variablesTrace, variableGroupIndex}} from '{GROUP}';
+    import {{variablesTrace, variableGroupIndex, VAR_GROUP_UNKNOWN}} from '{GROUP}';
 
     const boxes = {{}};
     const el = (tag) => ({{tag, kids: [], dataset: {{}}, style: {{}}, value: '',
@@ -250,16 +287,22 @@ def _rows() -> list:
 
     for row in rows:
         kids = row['kids']
-        icon = next((k for k in kids if k.get('className') == 'graph-var-icon'), None)
-        name = next((k for k in kids if not k.get('className')), None)
+        head = next((k for k in kids if k.get('className') == 'graph-var-head'), None)
         count = next((k for k in kids if k.get('className') == 'graph-var-count'), None)
+        assert head is not None, f'у строки графа нет блока «значок + имя»: {row}'
+        assert count is not None, f'у строки графа нет счётчика шагов: {row}'
+
+        icon = next((k for k in head['kids'] if k.get('className') == 'graph-var-icon'), None)
+        name = next((k for k in head['kids'] if k.get('className') == 'graph-var-name'), None)
         assert icon is not None, f'у строки графа нет значка группы: {row}'
         assert name is not None, f'у строки графа нет имени: {row}'
+
         out.append({'name': row['dataset']['name'],
                     'cls': row.get('className'),
                     'icon': icon['textContent'],
                     'tip': row.get('title'),
                     'count': count['textContent'],
-                    'icon_before_name': kids.index(icon) < kids.index(name)})
+                    'row_kids': [k.get('className') for k in kids],
+                    'icon_before_name': head['kids'].index(icon) < head['kids'].index(name)})
 
     return out

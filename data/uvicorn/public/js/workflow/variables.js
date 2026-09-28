@@ -469,10 +469,10 @@ export function fillVariablesSelectOptions(sel, selectedVal = '', placeholder = 
 
     let selectedMatched = false;
     const groups = editorVariableGroups(window.allCurrentVariables);
-    workflowVariableSections(groups).forEach(([label, items]) => {
+    workflowVariableSections(groups).forEach(({title, items}) => {
         if (items.length === 0) return;
         const optgroup = document.createElement('optgroup');
-        optgroup.label = label;
+        optgroup.label = title;
         items.forEach(v => {
             const opt = document.createElement('option');
             opt.value = v.name;
@@ -657,8 +657,8 @@ export function renderWorkflowVariables(variables) {
 
     // 4. Добавляем секции аккордеона в контейнер
     workflowVariableSections({commonGroup, nodeGroup, workflowGroup, toolGroup,
-                              inputGroup, dynamicGroup}).forEach(([title, groupItems, storageKey]) => {
-        container.appendChild(createAccordionSection(title, groupItems, storageKey));
+                              inputGroup, dynamicGroup}).forEach(({title, items, key}) => {
+        container.appendChild(createAccordionSection(title, items, key));
     });
 
     // 5. Помечаем неиспользуемые переменные workflow (если шаги уже загружены)

@@ -15,6 +15,23 @@
 
 import {parseMetadata} from './utils.js';
 
+/**
+ * Группа имени, которого нет ни в реестре, ни в следах шагов — той же формы, что
+ * секции `workflowVariableSections`, и потому подставляется вместо них без оговорок.
+ *
+ * ⚠⚠ Живёт здесь, а не у показывающего. Имя без группы — не редкость и не сбой: по
+ * всем 65 workflow установки таких 117 из 2075 (это результаты инструментов, чьи
+ * ключи не объявлены в `args.output`, и алиас `workflow_invoke_<шаг>_result_str`,
+ * который кладёт сам движок). Пока ответ знал один список, второй показывал на том
+ * же имени пустое место — а пустое место оставляет вопрос без ответа ровно так же,
+ * как его оставляло отсутствие группы.
+ *
+ * ⚠ Значок — знак пустого множества: имя не попало ни в одну группу. Своего цвета у
+ * него нет, полоса и рамка пунктиром — как у динамических: записи в реестре нет.
+ */
+export const VAR_GROUP_UNKNOWN = {key: 'unknown', icon: '∅', label: 'не объявлена',
+                                  title: '∅ не объявлена'};
+
 // Приставка литерала в `inputs_map`: значение за ней — текст, а не имя переменной.
 // ⚠ Метки внутри него всё равно читаются: движок подставляет их до вызова
 // инструмента, поэтому `_const_%girl_name%_ключ` **использует** `girl_name`.
@@ -392,10 +409,13 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools) {
  *         `groupWorkflowVariables`.
  *
  * Returns:
- *     `Map<имя, {key, title, icon}>` — ключ группы (`input`, `tool`, `dynamic`…),
- *     её полная подпись и значок врозь от неё: списки ставят перед именем только
- *     значок, подпись же нужна подсказкой. В первой найденной секции и стоит имя:
- *     список не показывает переменную дважды.
+ *     `Map<имя, секция>` — та самая запись, что отдаёт `workflowVariableSections`,
+ *     только без `items`: `{key, icon, label, title}`. В первой найденной секции и
+ *     стоит имя: список не показывает переменную дважды.
+ *
+ * ⚠ Имени, которого нет ни в реестре, ни в следах шагов, в карте нет. Показывать
+ * его всё равно надо — но чем, решает не разбор, а `VAR_GROUP_UNKNOWN`: у обоих
+ * списков ответ обязан быть один.
  *
  * ⚠ Карта, а не вопрос про одно имя: списки спрашивают про десятки имён подряд, а
  * разбивка стоит разбора метаданных всех шагов. Перебирать её на каждое имя — та
@@ -405,32 +425,41 @@ export function variableGroupIndex(variables, stepsData, workflows, tools) {
     const groups = groupWorkflowVariables(variables, stepsData, workflows, tools);
     const index = new Map();
 
-    for (const [title, items, key] of workflowVariableSections(groups)) {
-        // Значок — первый токен секции: чипы списков показывают только его, вся
-        // подпись уезжает в подсказку.
-        const icon = title.split(' ')[0];
-
+    for (const {items, ...section} of workflowVariableSections(groups)) {
         items.forEach(one => {
-            if (one?.name && !index.has(one.name)) index.set(one.name, {key, title, icon});
+            if (one?.name && !index.has(one.name)) index.set(one.name, section);
         });
     }
 
     return index;
 }
 
-// Порядок и названия групп — единые для списка #variablesContainer, селектов
-// переменных и чипов на трассе прогона
+/**
+ * Порядок и подписи групп — единые для списка `#variablesContainer`, селектов
+ * переменных, чипов трассы и панели графа.
+ *
+ * Returns:
+ *     Массив секций по порядку показа: `{key, icon, label, title, items}`.
+ *     `title` — собранная подпись «значок + название», её просят заголовки;
+ *     `icon` и `label` врозь нужны спискам, где значок стоит чипом, а название
+ *     живёт подсказкой.
+ *
+ * ⚠⚠ Значок объявлен **полем**, а не первым словом подписи. Он им и был — и
+ * доставали его разбором `title.split(' ')[0]`: подпись показывают человеку, а по
+ * ней восстанавливали структуру. Неразрывный пробел, название без значка,
+ * перестановка слов — и в чипе молча оказалось бы слово вместо знака.
+ */
 export function workflowVariableSections(groups) {
     return [
-        ['📥 Входящие переменные', groups.inputGroup, 'input'],
-        ['🇬 Глобальные переменные', groups.commonGroup, 'common'],
-        ['🇳 Node переменные', groups.nodeGroup, 'node'],
-        ['⚙️ Tool переменные', groups.toolGroup, 'tool'],
-        ['🇼 Workflow переменные', groups.workflowGroup, 'workflow'],
+        {key: 'input', icon: '📥', label: 'Входящие переменные', items: groups.inputGroup},
+        {key: 'common', icon: '🇬', label: 'Глобальные переменные', items: groups.commonGroup},
+        {key: 'node', icon: '🇳', label: 'Node переменные', items: groups.nodeGroup},
+        {key: 'tool', icon: '⚙️', label: 'Tool переменные', items: groups.toolGroup},
+        {key: 'workflow', icon: '🇼', label: 'Workflow переменные', items: groups.workflowGroup},
         // ⚠ Последней: она про то, что появляется само, и заглядывают туда реже
         // прочих. Порядок этого перечня — он же порядок вкладок и групп в селектах.
-        ['🌀 Dynamic переменные', groups.dynamicGroup, 'dynamic'],
-    ];
+        {key: 'dynamic', icon: '🌀', label: 'Dynamic переменные', items: groups.dynamicGroup},
+    ].map(section => ({...section, title: `${section.icon} ${section.label}`}));
 }
 
 

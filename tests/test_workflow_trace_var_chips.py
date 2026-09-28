@@ -83,19 +83,22 @@ WORKFLOWS = [{'id': 5, 'name': 'dating_invite_one'}]
 
 RUN = {'workflow_id': 5, 'steps': STEPS}
 
-# Что обязан показать чип у каждого имени: значок группы в чипе, полная подпись —
-# только подсказкой, и ключ (из ключа рождён класс чипа `var-group-<ключ>`).
+# Что обязан показать чип у каждого имени: значок группы в чипе, название —
+# подсказкой, и ключ (из ключа рождён класс чипа `var-group-<ключ>`).
+#
+# ⚠ В подсказке `label`, а не `title`: тот несёт значок первым словом, и подсказка
+# повторяла бы то, что и так нарисовано в чипе.
 EXPECTED = {
-    'girl_name': {'key': 'input', 'icon': '📥', 'title': '📥 Входящие переменные'},
-    'timezone': {'key': 'common', 'icon': '🇬', 'title': '🇬 Глобальные переменные'},
-    'agent_title': {'key': 'node', 'icon': '🇳', 'title': '🇳 Node переменные'},
-    'talk_history_chat': {'key': 'workflow', 'icon': '🇼', 'title': '🇼 Workflow переменные'},
-    'companion_bio_524_result_bio': {'key': 'tool', 'icon': '⚙️', 'title': '⚙️ Tool переменные'},
-    'dating_invite_one_786_result_str': {'key': 'tool', 'icon': '⚙️', 'title': '⚙️ Tool переменные'},
-    'girl_bio': {'key': 'dynamic', 'icon': '🌀', 'title': '🌀 Dynamic переменные'},
-    'talk_topic': {'key': 'dynamic', 'icon': '🌀', 'title': '🌀 Dynamic переменные'},
+    'girl_name': {'key': 'input', 'icon': '📥', 'label': 'Входящие переменные'},
+    'timezone': {'key': 'common', 'icon': '🇬', 'label': 'Глобальные переменные'},
+    'agent_title': {'key': 'node', 'icon': '🇳', 'label': 'Node переменные'},
+    'talk_history_chat': {'key': 'workflow', 'icon': '🇼', 'label': 'Workflow переменные'},
+    'companion_bio_524_result_bio': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    'dating_invite_one_786_result_str': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    'girl_bio': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
+    'talk_topic': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
     # ни в реестре, ни в следах шагов: имя обязано честно говорить об этом
-    'prompt_user': {'key': 'unknown', 'icon': '∅', 'title': 'не объявлена'},
+    'prompt_user': {'key': 'unknown', 'icon': '∅', 'label': 'не объявлена'},
 }
 
 VALUES = {name: f'значение:{name}' for name in EXPECTED}
@@ -150,9 +153,9 @@ class TestEveryRowCarriesItsChip:
             assert row['icon'] == want['icon'], (
                 f'у «{row["name"]}» чип размечен не своей группой: '
                 f'{row["icon"]!r}, ждали {want["icon"]!r}')
-            assert row['tip'] == want['title'], (
+            assert row['tip'] == want['label'], (
                 f'у «{row["name"]}» подсказка чипа молчит о группе: '
-                f'{row["tip"]!r}, ждали {want["title"]!r}')
+                f'{row["tip"]!r}, ждали {want["label"]!r}')
             assert row['cls'] == f"var-group var-group-{want['key']}", \
                 f'у «{row["name"]}» чип в чужом классе: {row["cls"]}'
 
@@ -206,7 +209,7 @@ class TestTheStepReadsFromTheSameMap:
     def test_the_step_values_get_the_same_chips(self):
         for row in _render('step'):
             want = EXPECTED[row['name']]
-            assert row['icon'] == want['icon'] and row['tip'] == want['title'], \
+            assert row['icon'] == want['icon'] and row['tip'] == want['label'], \
                 f'в «Вход (metadata)» у «{row["name"]}» чип чужой: {row["icon"]!r}'
 
 
@@ -289,7 +292,7 @@ def _base_script() -> str:
     самой страницы.
     """
     stub = f'''
-    import {{variableGroupIndex}} from '{GROUP}';
+    import {{variableGroupIndex, VAR_GROUP_UNKNOWN}} from '{GROUP}';
 
     const el = (tag, cls, text) => ({{tag, cls, text, kids: [],
         appendChild(one) {{ this.kids.push(one); }}}});

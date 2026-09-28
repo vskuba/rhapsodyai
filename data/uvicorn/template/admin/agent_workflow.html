@@ -1272,11 +1272,37 @@
     .graph-var-workflow { border-left: 3px solid #2974df; }
     /* ⚠ Пунктир — тот же признак, что на вкладке «Dynamic»: записи в реестре нет. */
     .graph-var-dynamic  { border-left: 3px dashed #9575cd; }
+    /* Группы нет вовсе (`VAR_GROUP_UNKNOWN`): пунктир — записи в реестре нет, серый —
+       своего цвета у неё и не должно быть. Тот же вид, что у чипа `∅` на трассе. */
+    .graph-var-unknown  { border-left: 3px dashed #cbd5e1; }
+
+    /* ⚠⚠ Значок и имя — одним блоком. `justify-content: space-between` у строки
+       разводит детей по краям, и третий ребёнок (значок) отъезжал от имени на
+       67 пикселей у коротких имён: читался не приставкой к имени, а сам по себе.
+       Обёртка держит их вместе, а счётчику остаётся правый край.
+       `min-width: 0` обязателен — без него многоточие в имени не срабатывает. */
+    .graph-var-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+    }
 
     /* Значок группы перед именем — тот же, что чип на трассе прогона. Жёсткий:
-       имя с многоточием не должно съедать его в узкой колонке. */
+       имя с многоточием не должно съедать его в узкой колонке.
+       ⚠ Ширина задана: знаки разной ширины (∅ уже эмодзи) сдвигали бы начало имён
+       на пяток пикселей, и колонка имён в моноширинном списке шла бы волной. */
     .graph-var-icon {
         flex: 0 0 auto;
+        width: 1.2em;
+        text-align: center;
+    }
+
+    /* ⚠ Длинное имя обрезаем видом, а не текстом: полное живёт в подсказке. */
+    .graph-var-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     /* Название группы над именем в трассе. */
@@ -1294,6 +1320,7 @@
     .trace-group-tool     { border-left-color: #f488d5; }
     .trace-group-workflow { border-left-color: #2974df; }
     .trace-group-dynamic  { border-left-color: #9575cd; }
+    .trace-group-unknown  { border-left-color: #cbd5e1; }
 
     /* Сколько шагов кладёт и читает — видно до щелчка. */
     .graph-var-count {
