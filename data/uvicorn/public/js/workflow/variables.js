@@ -689,8 +689,14 @@ export async function saveInputVariables(workflowId) {
 
 
 // Распределяет переменные по группам (общие / ноды / tool / workflow) — единая логика
-// для списка #variablesContainer и селектов переменных
-function groupWorkflowVariables(variables) {
+// для списка #variablesContainer и селектов переменных.
+//
+// ⚠ Шаги приходят параметром, а не читаются молча из стейта: трассе прогона
+// (`/admin/workflow_trace`) нужны шаги прогона, а не открытого в редакторе
+// workflow. Правило разбора при этом одно — разошедшаяся копия числила бы
+// переменную входящей в одном месте и динамической в другом.
+function groupWorkflowVariables(variables, stepsData = state.allCurrentStepsData,
+                               workflows = state.allWorkflows, tools = state.allAvailableTools) {
     const variablesArray = Array.isArray(variables) ? variables : [];
     const commonGroup = [];
     const nodeGroup = [];
@@ -715,18 +721,18 @@ function groupWorkflowVariables(variables) {
     // имена формируются по шаблону '{tool_name}_{step_id}_result_{output_key}' — ID шага
     // делает имя уникальным при повторных вызовах одного инструмента
     const foundToolVariables = new Set();
-    if (typeof state.allCurrentStepsData !== 'undefined' && Array.isArray(state.allCurrentStepsData)) {
-        state.allCurrentStepsData.forEach(step => {
+    if (Array.isArray(stepsData)) {
+        stepsData.forEach(step => {
             let metadata = parseMetadata(step.metadata);
             if (metadata && metadata.tool_invoke && metadata.tool_invoke.tool_name) {
                 const tool_name = metadata.tool_invoke.tool_name;
-                getToolOutputKeys(tool_name).forEach(key => {
+                getToolOutputKeys(tool_name, tools).forEach(key => {
                     foundToolVariables.add(tool_name + '_' + step.id + '_result_' + key);
                 });
             }
             // Результат шага workflow_invoke: {имя_sub_workflow}_{step_id}_result_str
             if (metadata && metadata.workflow_invoke && metadata.workflow_invoke.workflow_id) {
-                const wf = (state.allWorkflows || []).find(w => String(w.id) === String(metadata.workflow_invoke.workflow_id));
+                const wf = (workflows || []).find(w => String(w.id) === String(metadata.workflow_invoke.workflow_id));
                 const childName = wf ? wf.name : ('workflow_' + metadata.workflow_invoke.workflow_id);
                 foundToolVariables.add(childName + '_' + step.id + '_result_str');
             }
@@ -758,9 +764,9 @@ function groupWorkflowVariables(variables) {
         ...foundToolVariables,
     ]);
 
-    if (Array.isArray(state.allCurrentStepsData)) {
+    if (Array.isArray(stepsData)) {
         const made = new Set();
-        state.allCurrentStepsData.forEach(step => {
+        stepsData.forEach(step => {
             stepMadeVariables(step).forEach(name => made.add(name));
         });
 
@@ -779,6 +785,38 @@ function groupWorkflowVariables(variables) {
 }
 
 /**
+ * Карта «имя → группа» для набора переменных и их шагов.
+ *
+ * Args:
+ *     variables: записи реестра (`/workflow/{id}/variables`): name, type, default.
+ *     stepsData / workflows / tools: данные того места, где список рисуется.
+ *         Для редактора это глобальный стейт страницы (значения по умолчанию),
+ *         для трассы прогона — данные прогона, которые приходят аргументами.
+ *
+ * Returns:
+ *     `Map<имя, {key, title}>` — ключ группы (`input`, `tool`, `dynamic`…) и её
+ *     подпись с иконкой группы. В первой найденной секции и стоит имя: список
+ *     не показывает переменную дважды.
+ *
+ * ⚠⚠ Разбивку берём у `groupWorkflowVariables`, а не повторяем правила. Своя копия
+ * разошлась бы с панелью на первой правке: переменная числилась бы входящей в
+ * одном месте и динамической в другом.
+ */
+export function variableGroupIndex(variables, stepsData = state.allCurrentStepsData,
+                                   workflows = state.allWorkflows, tools = state.allAvailableTools) {
+    const groups = groupWorkflowVariables(variables, stepsData, workflows, tools);
+    const index = new Map();
+
+    for (const [title, items, key] of workflowVariableSections(groups)) {
+        items.forEach(one => {
+            if (one?.name && !index.has(one.name)) index.set(one.name, {key, title});
+        });
+    }
+
+    return index;
+}
+
+/**
  * К какой группе относится переменная: ключ и человеческое название.
  *
  * Args:
@@ -793,13 +831,7 @@ function groupWorkflowVariables(variables) {
  * одном месте и динамической в другом.
  */
 export function variableGroupOf(name) {
-    const groups = groupWorkflowVariables(state.allCurrentVariables || []);
-
-    for (const [title, items, key] of workflowVariableSections(groups)) {
-        if (items.some(one => one?.name === name)) return {key, title};
-    }
-
-    return null;
+    return variableGroupIndex(state.allCurrentVariables || []).get(name) || null;
 }
 
 // Порядок и названия групп — единые для списка #variablesContainer и селектов переменных
@@ -809,7 +841,7 @@ function workflowVariableSections(groups) {
         ['🇬 Глобальные переменные', groups.commonGroup, 'common'],
         ['🇳 Node переменные', groups.nodeGroup, 'node'],
         ['⚙️ Tool переменные', groups.toolGroup, 'tool'],
-        ['🇼 Workflow переменные ', groups.workflowGroup, 'workflow'],
+        ['🇼 Workflow переменные', groups.workflowGroup, 'workflow'],
         // ⚠ Последней: она про то, что появляется само, и заглядывают туда реже
         // прочих. Порядок этого перечня — он же порядок вкладок и групп в селектах.
         ['🌀 Dynamic переменные', groups.dynamicGroup, 'dynamic'],

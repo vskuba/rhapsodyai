@@ -30,9 +30,11 @@ export function graphLabelEscape(text) {
     return String(text || '').replace(/["`#;]/g, "'").replace(/\s+/g, ' ').trim();
 }
 
-// Извлекает выходящие ключи инструмента по его названию (из state.allAvailableTools, структура args.output)
-export function getToolOutputKeys(toolName) {
-    const tool = state.allAvailableTools.find(t => String(t.name) === String(toolName));
+// Извлекает выходящие ключи инструмента по его названию (структура args.output).
+// Список инструментов приходит параметром: у трассы прогона (`/admin/workflow_trace`)
+// он свой, а не глобальный стейт редактора.
+export function getToolOutputKeys(toolName, tools = state.allAvailableTools) {
+    const tool = (tools || []).find(t => String(t.name) === String(toolName));
     if (!tool) return [];
 
     const argsObj = parseMetadata(tool.args);

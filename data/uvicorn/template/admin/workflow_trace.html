@@ -538,6 +538,64 @@
         border-color: #fed7aa;
     }
 
+    /* К какой группе относится переменная («Входящие», «Workflow»…): подпись несёт
+       иконку и название группы. Акценты — те же, что полоса `.variable-item-*` на
+       панели редактора: один цвет читается в двух местах, а не два разных. */
+    .var-group {
+        font-size: 10px;
+        font-weight: 600;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 1px 7px;
+        white-space: nowrap;
+    }
+
+    .var-group-input {
+        color: #0e7490;
+        background: #d9f7fb;
+        border-color: #26c6da;
+    }
+
+    .var-group-common {
+        color: #166534;
+        background: #e3f9e5;
+        border-color: #9bd9aa;
+    }
+
+    .var-group-node {
+        color: #854d0e;
+        background: #fff8dd;
+        border-color: #ffd73b;
+    }
+
+    .var-group-tool {
+        color: #9d174d;
+        background: #fde8f5;
+        border-color: #f488d5;
+    }
+
+    .var-group-workflow {
+        color: #1e40af;
+        background: #e8f1fd;
+        border-color: #2974df;
+    }
+
+    /* Пунктир, как полоса динамических в редакторе: их никто не заводил, они
+       появляются в прогоне сами */
+    .var-group-dynamic {
+        color: #5b21b6;
+        background: #ece6f8;
+        border-color: #9575cd;
+        border-style: dashed;
+    }
+
+    .var-group-unknown {
+        color: #475569;
+        background: #eef2f7;
+        border-color: #dbe3ec;
+        border-style: dashed;
+    }
+
     .var-desc {
         margin-top: 3px;
         font-size: 10.5px;
@@ -918,11 +976,17 @@
 <script type="module">
     import {getData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
+    // Правило «к какой группе относится переменная» живёт в модуле редактора:
+    // список трассы и панель шагов размечают группы одинаково
+    import {variableGroupIndex} from '/static/js/workflow/variables.js';
 
     const runsList = document.getElementById('runsList');
     const runDetail = document.getElementById('runDetail');
 
-    const state = {page: 1, totalPages: 1, activeRunUuid: null, stepTypeIcons: {}, activeTab: 'running'};
+    // Справочники нужны разбору переменных прогона: имя tool-переменной строится
+    // из имени инструмента и его выходных ключей, имя под-запуска — из имени workflow
+    const state = {page: 1, totalPages: 1, activeRunUuid: null, stepTypeIcons: {}, activeTab: 'running',
+                  workflows: [], tools: []};
 
     // Смещение часового пояса из настроек (минуты), применяется в fmtDate
     let _tzOffsetMinutes = 0;
@@ -1110,10 +1174,14 @@
         return wrap;
     }
 
-    // Строка списка переменных: имя, бейджи, значение (скаляр — в строку, list/dict — JSON ниже)
-    function varListItem(name, value, badges, description) {
+    // Строка списка переменных: чип группы, имя, бейджи, значение (скаляр — в строку,
+    // list/dict — JSON ниже)
+    function varListItem(name, value, badges, description, group) {
         const li = document.createElement('li');
         const head = el('div', 'var-head');
+        // Чип группы перед именем: из одного имени не видно, откуда переменная.
+        // Подпись несёт группа, а не позиция: списки отсортированы по алфавиту
+        if (group) head.appendChild(el('span', `var-group var-group-${group.key}`, group.title));
         head.appendChild(el('span', 'var-name', `%${name}%`));
         (badges || []).forEach(badge => head.appendChild(el('span', badge.className, badge.text)));
         head.appendChild(el('span', 'var-sep', ':'));
@@ -1140,6 +1208,10 @@
         return {className: `var-source${source.start ? ' var-source-start' : ''}`, text: source.label};
     }
 
+    // Имя не нашлось ни в реестре, ни в следах шагов — честный ответ «не объявлена»,
+    // пустое место рядом с именем снова оставляло бы вопрос без ответа
+    const VAR_GROUP_UNKNOWN = {key: 'unknown', title: 'не объявлена'};
+
     // Порядок имён в списках переменных — по алфавиту.
     //
     // ⚠ Порядок вставки ничего не значил: слева он шёл от снапшота старта к тому, что
@@ -1155,21 +1227,23 @@
     const byVarName = (a, b) => String(a || '').localeCompare(String(b || ''));
 
     // UL-список переменных: скаляры — в строку, list/dict — бейдж типа + вложенный JSON.
-    // sources (необязательный) — откуда значение: {имя: {label, start}} рядом с именем
-    function renderVariablesList(vars, sources) {
+    // sources (необязательный) — откуда значение: {имя: {label, start}} рядом с именем.
+    // groups — карта «имя → группа» (variableGroupIndex): чип перед именем
+    function renderVariablesList(vars, sources, groups) {
         const ul = el('ul', 'vars-list');
         Object.entries(vars)
             .sort((a, b) => byVarName(a[0], b[0]))
             .forEach(([name, value]) => {
                 const source = sources && sources[name];
-                ul.appendChild(varListItem(name, value, source ? [varSourceBadge(source)] : []));
+                ul.appendChild(varListItem(name, value, source ? [varSourceBadge(source)] : [],
+                                          null, (groups && groups.get(name)) || VAR_GROUP_UNKNOWN));
             });
         return ul;
     }
 
     // Входящие переменные workflow: описание из реестра и то, чем они обернулись в прогоне.
     // Значения нет — показываем умолчание из реестра, чтобы видеть, с чем шаг работал бы.
-    function renderWorkflowVariablesList(declared, values, sources) {
+    function renderWorkflowVariablesList(declared, values, sources, groups) {
         const ul = el('ul', 'vars-list');
         // ⚠ Сортируем копию: `declared` — это массив из `workflowVariablesCache`, общий
         // на все прогоны одного workflow. `sort` правит массив на месте, и без копии
@@ -1183,7 +1257,8 @@
                     ? varSourceBadge(sources[name])
                     : {className: 'var-source var-source-default', text: 'умолчание'};
                 ul.appendChild(varListItem(name, used ? values[name] : variable.default,
-                                           [badge], variable.description));
+                                           [badge], variable.description,
+                                           (groups && groups.get(name)) || VAR_GROUP_UNKNOWN));
             });
         return ul;
     }
@@ -1212,13 +1287,17 @@
         } catch { /* используем UTC если настройки недоступны */
         }
 
-        // Справочники для фильтров и иконок типов шагов
+        // Справочники для фильтров, иконок типов шагов и разбора переменных прогона
         try {
-            const [workflowsRes, agentsRes, typesRes] = await Promise.all([
+            const [workflowsRes, agentsRes, typesRes, toolsRes] = await Promise.all([
                 getData('/workflow/list'),
                 getData('/agent/list'),
                 getData('/workflow_step/list'),
+                getData('/tool/list'),
             ]);
+
+            state.workflows = workflowsRes.result || [];
+            state.tools = toolsRes.result || toolsRes || [];
 
             const wfSel = document.getElementById('filterWorkflow');
             (workflowsRes.result || []).forEach(w => {
@@ -1516,6 +1595,20 @@
         await Promise.all([...ids].map(workflowVariablesLoad));
     }
 
+    // «Имя → группа» для одного прогона: и реестр, и шаги у ветки свои (у
+    // sub-workflow изолированный scope). Разбирает то же правило, что панель
+    // редактора, — переменная не должна расходиться между двумя страницами.
+    // metadata_rendered — что шаг получил в прогоне: имена в llm_to_json_variable,
+    // variable_conversion и outputs_map рендер не трогает, они остаются литеральными.
+    function runVariableGroups(run) {
+        return variableGroupIndex(
+            workflowVariablesCache[run.workflow_id] || [],
+            (run.steps || []).map(s => ({id: s.step_id, metadata: s.metadata_rendered})),
+            state.workflows,
+            state.tools,
+        );
+    }
+
     // Переменные запуска: снапшот на старте, поверх — значения, записанные шагами.
     // Потомки не учитываются: у sub-workflow изолированный scope и свой снапшот старта.
     function collectRunVariables(run) {
@@ -1575,6 +1668,7 @@
     function renderRunVariablesRow(run) {
         const {values, sources} = collectRunVariables(run);
         const names = Object.keys(values);
+        const variableGroups = runVariableGroups(run);
         // Только входящие: с чем ветку вызвали. Остальные объявленные (workflow, global,
         // ноды) — внутренняя кухня ветки, и в левом списке они уже есть по факту
         const declared = (workflowVariablesCache[run.workflow_id] || []).filter(v => v.type === 'input');
@@ -1588,7 +1682,7 @@
 
         if (names.length) {
             row.appendChild(renderVarsAccordion('Переменные', names.length,
-                () => renderVariablesList(values, sources)));
+                () => renderVariablesList(values, sources, variableGroups)));
         } else if (truncated) {
             const column = el('div', 'vars-col');
             column.appendChild(el('div', 'label', 'Переменные'));
@@ -1598,7 +1692,7 @@
 
         if (declared.length) {
             row.appendChild(renderVarsAccordion('Входящие workflow переменные', declared.length,
-                () => renderWorkflowVariablesList(declared, values, sources)));
+                () => renderWorkflowVariablesList(declared, values, sources, variableGroups)));
         }
 
         return row;
@@ -1643,6 +1737,10 @@
 
         // Снапшот переменных на входе шага: старт запуска + изменения предыдущих шагов
         let variablesSnapshot = parseJson(run.variables_start) || {};
+
+        // Группа переменной в списках «Вход (metadata)»: та же карта, что и в ряду
+        // переменных — имена разбираются по реестру и следам шагов этой ветки
+        const variableGroups = runVariableGroups(run);
 
         // Данные шагов для расшифровки переходов (step_id → номер/иконка/название)
         const stepInfo = {};
@@ -1725,7 +1823,7 @@
             const inputVariables = stepInputVariables(step.metadata_rendered, variablesSnapshot);
             appendSectionRow(
                 'Вход (metadata после рендера)', renderMetadataBlock(step.metadata_rendered),
-                'Вход (metadata)', inputVariables ? renderVariablesList(inputVariables) : null
+                'Вход (metadata)', inputVariables ? renderVariablesList(inputVariables, null, variableGroups) : null
             );
 
             // Ряд 2: измененные шагом переменные + сырой результат
