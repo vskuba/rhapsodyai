@@ -4,7 +4,8 @@
 import {getData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state, WORKFLOW_STEP_CONFIG} from './state.js';
-import {parseMetadata, getToolOutputKeys} from './utils.js';
+import {parseMetadata} from './utils.js';
+import {getToolOutputKeys} from './variable-group.js';
 import {fillVariablesSelectOptions} from './variables.js';
 import {renderDiceWidget, DICE_TOOL_NAME} from './dice-widget.js';
 import {textModalIcon} from './text-modal.js';
@@ -396,7 +397,7 @@ export function renderCustomStepFields(step, metadata) {
                 const inputKeys = Object.keys(inputs);
 
                 // 2. Извлекаем выходящие параметры инструмента
-                const outputKeys = getToolOutputKeys(toolName);
+                const outputKeys = getToolOutputKeys(toolName, state.allAvailableTools);
 
                 // --- РЕНДЕРИНГ ВХОДЯЩИХ (Input) ---
                 if (inputKeys.length > 0) {

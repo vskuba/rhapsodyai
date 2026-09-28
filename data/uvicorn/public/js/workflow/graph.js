@@ -9,7 +9,8 @@ import {parseMetadata, graphLabelEscape, activateTab} from './utils.js';
 import {showNotification} from '../notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
 import {getData} from '../api.js';
-import {variablesTrace, variableGroupOf} from './variables.js';
+import {variablesTrace} from './variable-group.js';
+import {editorVariableGroupIndex} from './variables.js';
 
 export function initGraphMode() {
     if (window.mermaid) {
@@ -464,10 +465,16 @@ function attachGraphNodeHandlers(container) {
 const VAR_MADE_COLOR = '#16a34a';
 const VAR_USED_COLOR = '#2563eb';
 
-// Что помним между перерисовками графа: трасса, выбранное имя и нумерация шагов.
+// Что помним между перерисовками графа: трасса, выбранное имя, нумерация шагов и
+// группы переменных.
+//
+// ⚠ Группы держим картой, а не спрашиваем про каждое имя: разбивка стоит разбора
+// метаданных всех шагов, а список перерисовывается на **каждое нажатие** в поле
+// фильтра. Пересборка на имя давала V разборов на один символ.
 let _varTrace = new Map();
 let _varPicked = null;
 let _stepNumbers = new Map();
+let _varGroups = new Map();
 
 /**
  * Номер шага так, как его видит человек: порядковый, с единицы.
@@ -504,6 +511,7 @@ function renderGraphVariables(container) {
 
     _varTrace = variablesTrace(state.allCurrentStepsData);
     _stepNumbers = stepNumbersOf(state.allCurrentStepsData);
+    _varGroups = editorVariableGroupIndex();
 
     const draw = (filter = '') => {
         const needle = filter.trim().toLowerCase();
@@ -514,7 +522,7 @@ function renderGraphVariables(container) {
             if (needle && !name.toLowerCase().includes(needle)) return;
             shown++;
 
-            const group = variableGroupOf(name);
+            const group = _varGroups.get(name);
             const row = document.createElement('div');
             // ⚠ Цвет полосы — по группе, тот же, что на панели шагов. Ключ группы
             // становится классом (`graph-var-input`), а цвета живут в CSS: два
@@ -585,7 +593,7 @@ function renderVariableTrace(name, cell, container) {
 
     // ⚠ Название группы над именем: по нему видно, откуда переменная берётся
     // вообще — входящая приходит снаружи, динамическую кладёт шаг.
-    const group = variableGroupOf(name);
+    const group = _varGroups.get(name);
     if (group) {
         const kind = document.createElement('div');
         kind.className = `trace-group trace-group-${group.key}`;

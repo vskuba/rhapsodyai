@@ -1,6 +1,7 @@
-// Чистые хелперы редактора workflow
-
-import {state} from './state.js';
+// Чистые хелперы редактора workflow.
+//
+// ⚠ Модуль ничего не импортирует: его тянет к себе `variable-group.js`, а тот
+// обязан оставаться чистым — стейт страницы сюда заводить нельзя.
 
 export function parseMetadata(metadataFieldValue) {
     if (!metadataFieldValue) return {};
@@ -28,26 +29,6 @@ export function parseMetadata(metadataFieldValue) {
 // Очистка текста для label mermaid: кавычки и спецсимволы ломают синтаксис диаграммы
 export function graphLabelEscape(text) {
     return String(text || '').replace(/["`#;]/g, "'").replace(/\s+/g, ' ').trim();
-}
-
-// Извлекает выходящие ключи инструмента по его названию (структура args.output).
-// Список инструментов приходит параметром: у трассы прогона (`/admin/workflow_trace`)
-// он свой, а не глобальный стейт редактора.
-export function getToolOutputKeys(toolName, tools = state.allAvailableTools) {
-    const tool = (tools || []).find(t => String(t.name) === String(toolName));
-    if (!tool) return [];
-
-    const argsObj = parseMetadata(tool.args);
-    if (!argsObj || !argsObj.output) return [];
-
-    const output = argsObj.output;
-    if (typeof output === 'object') {
-        if (output.keys) return Object.keys(output.keys);
-        if (output.type) return [output.type];
-        return Object.keys(output);
-    }
-    if (typeof output === 'string') return [output];
-    return [];
 }
 
 // Ключ выбранной вкладки. ⚠ `sessionStorage`, а не `localStorage`: выбор живёт

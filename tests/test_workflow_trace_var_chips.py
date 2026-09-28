@@ -1,20 +1,27 @@
 """Чипы групп у переменных на трассе: из строки видно, откуда имя пришло.
 
-Списки страницы `/admin/workflow_trace` («Переменные», «Входящие workflow
-переменные», «Вход (metadata)» у шага) показывали имя и значение — и молчали о
-том, к какой группе имя относится: входящая ли переменная, из реестра workflow,
-из шага инструмента, из sub-workflow. Теперь перед каждым именем стоит чип с
-иконкой и названием группы («📥 Входящие переменные», «⚙️ Tool переменные»…), а
-у имени, которое не нашлось ни в одной группе, — «не объявлена».
+Списки страницы `/admin/workflow_trace` («Переменные» прогона и «Вход (metadata)»
+у шага) показывали имя и значение — и молчали о том, к какой группе имя
+относится: входящая ли переменная, из реестра workflow, из шага инструмента, из
+sub-workflow. Теперь перед каждым именем стоит чип с иконкой и названием группы
+(«📥 Входящие переменные», «⚙️ Tool переменные»…), а у имени, которое не нашлось
+ни в одной группе, — «не объявлена».
 
 ## ⚠⚠ Что здесь главное
 
-Разбивает переменные по группам НЕ своя копия правил, а тот же модуль, что
-раскладывает панель редактора (`js/workflow/variables.js`): тест зовёт живой
-`variableGroupIndex` и живые функции шаблона. Своя копия разошлась бы с панелью
-на первой правке — и одна переменная числилась бы входящей в одном месте и
-динамической в другом. Отсюда проверки «правило живёт в одном месте» и
-«редактор видит ту же группу, что и трасса».
+Разбивает переменные по группам НЕ своя копия правил, а **чистый модуль**
+`js/workflow/variable-group.js` — тот же, которым размечает группы панель
+редактора. Тест зовёт его живым импортом, а не вырезкой: своя копия разошлась бы
+с панелью на первой правке, и одна переменная числилась бы входящей в одном месте
+и динамической в другом.
+
+## ⚠ Чистота модуля — не стиль, а условие задачи
+
+Пока правило лежало внутри панели редактора (`variables.js`), страница трассы за
+одной функцией тянула тысячу строк UI, `api.js`, `notification.js` и обработчик
+`change`, который вешается прямо на импорте. Поэтому `TestTheRuleIsPure` заводит
+модуль в голом node **без единой заглушки**: упал — значит правило снова приросло
+к странице.
 
 ## ⚠ Чип обязан стоять ПЕРЕД именем
 
@@ -25,8 +32,8 @@
 ## ⚠ Почему через node, а не браузером
 
 Функции чистые: данные на входе, список узлов на выходе. Тот же приём и тот же
-пропуск без node, что у `test_workflow_trace_vars_sorted.py`: куски вырезаются
-из живых файлов по якорным комментариям — копия разошлась бы с оригиналом.
+пропуск без node, что у `test_workflow_trace_vars_sorted.py`. Куски страницы
+по-прежнему вырезаются по якорным комментариям — у шаблона модулей нет.
 """
 
 import json
@@ -39,6 +46,7 @@ import pytest
 pytestmark = pytest.mark.core
 
 PAGE = './data/uvicorn/template/admin/workflow_trace.html'
+GROUP = './data/uvicorn/public/js/workflow/variable-group.js'
 VARS = './data/uvicorn/public/js/workflow/variables.js'
 UTILS = './data/uvicorn/public/js/workflow/utils.js'
 
@@ -91,21 +99,42 @@ EXPECTED = {
 
 VALUES = {name: f'значение:{name}' for name in EXPECTED}
 
-# Якоря кусков: живой код файлов вырезается, а не копируется в тест.
+# Якоря кусков страницы: живой код вырезается, а не копируется в тест.
+# ⚠ Правило группировки здесь больше не режется — оно приходит настоящим импортом.
 PAGE_FROM = '// Строка списка переменных'
 PAGE_TILL = '// Значения переменных, участвующих в metadata шага'
-VARS_STEP_FROM = '// Поля, где лежит имя переменной, **в которую шаг пишет**'
-VARS_STEP_TILL = '// Массивы, где ключ `variable` означает **чтение**'
-VARS_GROUP_FROM = '// Распределяет переменные по группам'
-VARS_GROUP_TILL = '// Заполняет селект опциями переменных'
-VARS_RUN_FROM = '// «Имя → группа» для одного прогона'
-VARS_RUN_TILL = '// Переменные запуска: снапшот на старте'
-UTILS_FROM = 'export function parseMetadata'
-UTILS_TILL = '// Ключ выбранной вкладки'
+PAGE_RUN_FROM = '// Разобранные группы по объекту прогона'
+PAGE_RUN_TILL = '// Переменные запуска: снапшот на старте'
+
+
+class TestTheRuleIsPure:
+    """⚠⚠ Правило живёт чистым модулем: ни DOM, ни сети, ни стейта страницы."""
+
+    def test_the_module_loads_with_no_browser_at_all(self):
+        """Заводится в голом node без заглушек — иначе трасса снова тянет редактор."""
+        done = _node_run(f'await import({_json(GROUP)});')
+
+        assert done.returncode == 0, (
+            'чистый модуль не заводится без браузера:\n' + done.stderr +
+            '\nЗначит, в него вернулась привязка к странице — DOM, сеть или стейт.')
+
+    def test_the_module_imports_nothing_but_helpers(self):
+        """⚠ Импорт стейта или сети — та же привязка, только записанная строкой."""
+        imported = re.findall(r"^import\s.*?from\s+'([^']+)'", _read(GROUP), re.M)
+
+        assert imported == ['./utils.js'], \
+            f'чистый модуль потянул к себе лишнее: {imported}'
+
+    def test_the_module_never_reaches_for_page_state(self):
+        forbidden = [word for word in ('state.', 'document.', 'window.', 'getData(')
+                     if word in _read(GROUP)]
+
+        assert not forbidden, \
+            f'в правило вернулась привязка к странице: {forbidden}'
 
 
 class TestEveryRowCarriesItsChip:
-    """⚠⚠ У каждой строки списка — чип группы, и стоит он перед именем."""
+    """⚠⚠ У каждой строки списка прогона — чип группы, и стоит он перед именем."""
 
     def test_every_name_gets_its_chip_before_it(self):
         for row in _render('values'):
@@ -129,19 +158,35 @@ class TestEveryRowCarriesItsChip:
             assert row['text'] == row['text'].strip(), \
                 f'у «{row["name"]}» подпись чипа обросла пробелами: {row["text"]!r}'
 
-    def test_the_declared_list_gets_chips_too(self):
-        """⚠ Правый список («Входящие workflow переменные») — теми же чипами."""
-        for row in _render('declared'):
-            assert row['text'] == EXPECTED[row['name']][1], \
-                f'у объявленной «{row["name"]}» чип чужой: {row["text"]!r}'
+
+class TestTheDeclaredListStaysPlain:
+    """⚠⚠ У правого списка («Входящие workflow переменные») чипа нет — и не должно.
+
+    Он строится как `реестр.filter(type === 'input')`, а разбивка кладёт
+    `type === 'input'` ровно в группу «Входящие»: чип у всех строк вышел бы один и
+    тот же и лишь повторял бы заголовок аккордеона. Проверено на 334 прогонах —
+    330 строк из 330 дали `input`, других не бывает **по построению**.
+    """
+
+    def test_the_declared_rows_carry_no_group_chip(self):
+        for li in _node(_base_script() + f'\nconst declared = {_json(REGISTRY)};',
+                        'renderWorkflowVariablesList(declared, {}, null)')['kids']:
+            chips = [k for k in li['kids'][0]['kids'] if 'var-group' in (k['cls'] or '')]
+
+            assert not chips, \
+                f'в правом списке снова завёлся чип: {chips} — он там всегда один и тот же'
+
+    def test_the_declared_list_takes_no_groups_argument(self):
+        """Довод не должен и приезжать: мёртвый аргумент переживёт мёртвый чип."""
+        assert 'renderWorkflowVariablesList(declared, values, sources)' in _read(PAGE), \
+            'правому списку снова передают карту групп, хотя рисовать её нечем'
 
 
 class TestTheStepReadsFromTheSameMap:
     """⚠ Список «Вход (metadata)» у шага размечается той же картой."""
 
     def test_the_step_line_passes_the_same_groups_map(self):
-        code = _read(PAGE)
-        assert 'renderVariablesList(inputVariables, null, variableGroups)' in code, \
+        assert 'renderVariablesList(inputVariables, null, variableGroups)' in _read(PAGE), \
             'шаг отдаёт своему списку переменных свою карту групп — группы разъедутся'
 
     def test_the_step_values_get_the_same_chips(self):
@@ -151,28 +196,42 @@ class TestTheStepReadsFromTheSameMap:
 
 
 class TestOneRuleForBothPages:
-    """⚠⚠⚠ Правило одно и живёт оно в модуле редактора, а не копией на трассе."""
+    """⚠⚠⚠ Правило одно, и трасса берёт именно его, а не копию и не панель."""
 
     def test_the_rule_is_defined_once(self):
         """Разошедшаяся копия правил — переменная входящая тут, динамическая там."""
-        everywhere = _read(VARS) + _read(UTILS) + _read(PAGE)
+        everywhere = _read(GROUP) + _read(VARS) + _read(UTILS) + _read(PAGE)
 
-        assert everywhere.count('function groupWorkflowVariables(') == 1, \
-            'правило разбора объявлено не один раз — копии разойдутся на правке'
-        assert "import {variableGroupIndex} from '/static/js/workflow/variables.js'" \
-            in _read(PAGE), 'трасса берёт разбор из модуля редактора, а не из копии'
+        for name in ('groupWorkflowVariables', 'workflowVariableSections',
+                     'getToolOutputKeys', 'variableGroupIndex'):
+            assert everywhere.count(f'function {name}(') == 1, \
+                f'«{name}» объявлена не один раз — копии разойдутся на правке'
 
-    def test_the_editor_sees_the_same_group_as_the_trace_chip(self):
-        """Одна карта на обе страницы: редактор и трасса показывают одну группу."""
-        for name, (key, title) in EXPECTED.items():
-            got = _editor_group(name)
+    def test_the_trace_takes_the_rule_from_the_clean_module(self):
+        page = _read(PAGE)
 
-            if key == 'unknown':
-                assert got is None, \
-                    f'редактор придумал «{name}» группу {got}, хотя её никто не заводил'
-            else:
-                assert got == {'key': key, 'title': title}, \
-                    f'редактор видит «{name}» иначе, чем трасса: {got!r}'
+        assert "from '/static/js/workflow/variable-group.js'" in page, \
+            'трасса берёт разбор не из чистого модуля'
+        assert "/static/js/workflow/variables.js'" not in page, \
+            'трасса снова импортирует панель редактора — вместе со всей её обвязкой'
+
+    def test_the_editor_binds_the_page_state_in_one_place(self):
+        """⚠ Стейт страницы подставляет редактор, и ровно в одном месте.
+
+        Правило стейта не знает (им пользуется и трасса), но привязку надо где-то
+        держать: четвёрка `state.*`, повторённая по вызовам, разойдётся молча —
+        одному забудут справочник, и группа поедет.
+        """
+        code = _read(VARS)
+
+        assert 'export function editorVariableGroups(' in code, \
+            'адаптер редактора пропал — привязка к стейту снова разойдётся по файлу'
+
+        # Каждую функцию правила панель зовёт ровно из своего адаптера: второй
+        # вызов — это вторая четвёрка `state.*`, и разойдутся они молча.
+        for name in ('groupWorkflowVariables', 'variableGroupIndex'):
+            assert code.count(f'{name}(') == 1, \
+                f'«{name}» зовут из панели больше одного раза — мимо адаптера'
 
 
 class TestThePaintExists:
@@ -191,6 +250,10 @@ def _read(path: str) -> str:
         return file.read()
 
 
+def _json(value) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
 def _slice(path: str, anchor_from: str, anchor_till: str) -> str:
     code = _read(path)
 
@@ -204,36 +267,40 @@ def _slice(path: str, anchor_from: str, anchor_till: str) -> str:
 
 
 def _base_script() -> str:
-    """Заглушки DOM ровно того объёма, каким живут функции, + живые куски файлов."""
+    """Заглушки DOM того объёма, каким живут функции страницы, + живой импорт правила.
+
+    ⚠⚠ Правило приезжает `import`-ом, а не вырезкой: ради этого его и вынесли в
+    отдельный модуль. Режется только то, у чего файла нет, — код внутри `<script>`
+    самой страницы.
+    """
     stub = f'''
+    import {{variableGroupIndex}} from '{GROUP}';
+
     const el = (tag, cls, text) => ({{tag, cls, text, kids: [],
         appendChild(one) {{ this.kids.push(one); }}}});
     const document = {{createElement: (tag) => el(tag)}};
-    const state = {{workflows: {json.dumps(WORKFLOWS, ensure_ascii=False)},
-                   tools: {json.dumps(TOOLS, ensure_ascii=False)},
-                   allWorkflows: {json.dumps(WORKFLOWS, ensure_ascii=False)},
-                   allAvailableTools: {json.dumps(TOOLS, ensure_ascii=False)},
-                   allCurrentVariables: {json.dumps(REGISTRY, ensure_ascii=False)},
-                   allCurrentStepsData: {json.dumps([{f'id': s['step_id'], 'metadata': s['metadata_rendered']} for s in STEPS], ensure_ascii=False)}}};
-    const workflowVariablesCache = {{'5': {json.dumps(REGISTRY, ensure_ascii=False)}}};
-    const RUN = {json.dumps(RUN, ensure_ascii=False)};
+    const state = {{workflows: {_json(WORKFLOWS)}, tools: {_json(TOOLS)}}};
+    const workflowVariablesCache = {{'5': {_json(REGISTRY)}}};
+    const RUN = {_json(RUN)};
     '''
 
     return (stub
-            + _slice(UTILS, UTILS_FROM, UTILS_TILL)
-            + _slice(VARS, VARS_STEP_FROM, VARS_STEP_TILL)
-            + _slice(VARS, VARS_GROUP_FROM, VARS_GROUP_TILL)
             + _slice(PAGE, PAGE_FROM, PAGE_TILL)
-            + _slice(PAGE, VARS_RUN_FROM, VARS_RUN_TILL))
+            + _slice(PAGE, PAGE_RUN_FROM, PAGE_RUN_TILL))
 
 
-def _node(script: str, expr: str):
+def _node_run(script: str) -> subprocess.CompletedProcess:
     if not shutil.which('node'):
         pytest.skip('node недоступен — отрисовку страницы проверить нечем')
 
-    done = subprocess.run(['node', '--input-type=module', '-e',
-                           script + f'\nprocess.stdout.write(JSON.stringify({expr}));'],
+    # ⚠ Без `cwd`: относительные пути в `import` node считает от текущей папки, а
+    # сюита и так идёт из корня проекта — оттуда же собраны и константы путей.
+    return subprocess.run(['node', '--input-type=module', '-e', script],
                           capture_output=True, text=True)
+
+
+def _node(script: str, expr: str):
+    done = _node_run(script + f'\nprocess.stdout.write(JSON.stringify({expr}));')
 
     assert done.returncode == 0, f'node: {done.stderr}'
 
@@ -244,27 +311,21 @@ def _render(what: str) -> list:
     """Строки живого списка: имя, класс и подпись чипа, порядок детей узла — proof.
 
     Args:
-        'values' — левый список («Переменные») прогона;
-        'declared' — правый («Входящие workflow переменные»);
-        'step' — «Вход (metadata)» шага: те же карты, часть имён.
+        'values' — список «Переменные» прогона;
+        'step' — «Вход (metadata)» шага: та же карта, часть имён.
     """
     script = _base_script()
 
     if what == 'values':
-        script += f'\nconst vars = {json.dumps(VALUES, ensure_ascii=False)};'
-        expr = 'renderVariablesList(vars, null, runVariableGroups(RUN))'
-    elif what == 'declared':
-        expr = 'renderWorkflowVariablesList(state.allCurrentVariables, {}, null, ' \
-               'runVariableGroups(RUN))'
+        script += f'\nconst vars = {_json(VALUES)};'
     else:
-        subset = {name: VALUES[name] for name in
-                  ('girl_name', 'agent_title', 'dating_invite_one_786_result_str')}
-        script += f'\nconst subset = {json.dumps(subset, ensure_ascii=False)};'
-        expr = 'renderVariablesList(subset, null, runVariableGroups(RUN))'
+        script += '\nconst vars = ' + _json(
+            {name: VALUES[name] for name in
+             ('girl_name', 'agent_title', 'dating_invite_one_786_result_str')}) + ';'
 
     out = []
 
-    for li in _node(script, expr)['kids']:
+    for li in _node(script, 'renderVariablesList(vars, null, runVariableGroups(RUN))')['kids']:
         head = li['kids'][0]
         chip = next((k for k in head['kids'] if 'var-group' in (k['cls'] or '')), None)
         name = next((k for k in head['kids'] if k['cls'] == 'var-name'), None)
@@ -278,10 +339,3 @@ def _render(what: str) -> list:
                         head['kids'].index(chip) < head['kids'].index(name)})
 
     return out
-
-
-def _editor_group(name: str):
-    """Группу имени видит и редактор: variableGroupOf — та же карта, что у трассы."""
-    got = _node(_base_script(), f'variableGroupOf({json.dumps(name, ensure_ascii=False)})')
-
-    return got

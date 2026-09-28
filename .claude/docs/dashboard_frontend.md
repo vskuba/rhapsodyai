@@ -85,7 +85,16 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
 
 - `js/workflow/` — редактор `/admin/workflow`: `main.js` (вход), `state.js` (общий стейт,
   поля не переприсваивать), `steps.js` (шаги, переходы, DnD), `step-widgets.js`
-  (динамические поля по типу шага), `variables.js`, `graph.js` (mermaid), `utils.js`
+  (динамические поля по типу шага), `variables.js` (панель переменных), `graph.js`
+  (mermaid), `utils.js`, `variable-group.js`.
+  ⚠⚠ `variable-group.js` — **чистый** модуль: что за переменные живут в шагах и к
+  какой группе относится имя. Ни DOM, ни сети, ни стейта страницы: его импортирует
+  и панель редактора, и страница трассы (`/admin/workflow_trace`), у которой
+  никакого редактора нет. Всё нужное приходит аргументами — реестр, шаги,
+  справочники workflow и инструментов; **умолчаний из стейта там нет намеренно**,
+  умолчание и есть скрытая привязка к редактору. Привязку к стейту страницы держит
+  редактор, и в одном месте — адаптеры `editorVariableGroups` /
+  `editorVariableGroupIndex` в `variables.js`.
 - `js/project/` — страница планирования: `main.js`, `projects.js`, `panel.js`,
   `actions.js`, `ideas.js`, `compare.js`, `markdown.js`, `cronicle.js`, `design.js`,
   `prototype-editor-widget.js`, `utils.js`

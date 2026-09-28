@@ -976,9 +976,11 @@
 <script type="module">
     import {getData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
-    // Правило «к какой группе относится переменная» живёт в модуле редактора:
-    // список трассы и панель шагов размечают группы одинаково
-    import {variableGroupIndex} from '/static/js/workflow/variables.js';
+    // Правило «к какой группе относится переменная» живёт отдельным чистым модулем:
+    // список трассы и панель редактора размечают группы одним кодом.
+    // ⚠ Именно `variable-group.js`, а не `variables.js`: второй — панель редактора,
+    // и тянет за собой её обвязку вплоть до обработчика на форме шага
+    import {variableGroupIndex} from '/static/js/workflow/variable-group.js';
 
     const runsList = document.getElementById('runsList');
     const runDetail = document.getElementById('runDetail');
@@ -1243,7 +1245,13 @@
 
     // Входящие переменные workflow: описание из реестра и то, чем они обернулись в прогоне.
     // Значения нет — показываем умолчание из реестра, чтобы видеть, с чем шаг работал бы.
-    function renderWorkflowVariablesList(declared, values, sources, groups) {
+    //
+    // ⚠⚠ Чипа группы здесь нет **намеренно**, хотя соседний список его показывает.
+    // Этот строится как `реестр.filter(type === 'input')`, а разбивка кладёт
+    // `type === 'input'` ровно в группу «Входящие» — то есть чип у всех строк был бы
+    // один и тот же и повторял бы заголовок аккордеона. Проверено на 334 прогонах:
+    // 330 строк из 330 дали `input`, других не бывает по построению.
+    function renderWorkflowVariablesList(declared, values, sources) {
         const ul = el('ul', 'vars-list');
         // ⚠ Сортируем копию: `declared` — это массив из `workflowVariablesCache`, общий
         // на все прогоны одного workflow. `sort` правит массив на месте, и без копии
@@ -1257,8 +1265,7 @@
                     ? varSourceBadge(sources[name])
                     : {className: 'var-source var-source-default', text: 'умолчание'};
                 ul.appendChild(varListItem(name, used ? values[name] : variable.default,
-                                           [badge], variable.description,
-                                           (groups && groups.get(name)) || VAR_GROUP_UNKNOWN));
+                                           [badge], variable.description));
             });
         return ul;
     }
@@ -1297,7 +1304,7 @@
             ]);
 
             state.workflows = workflowsRes.result || [];
-            state.tools = toolsRes.result || toolsRes || [];
+            state.tools = toolsRes.result || [];
 
             const wfSel = document.getElementById('filterWorkflow');
             (workflowsRes.result || []).forEach(w => {
@@ -1595,18 +1602,28 @@
         await Promise.all([...ids].map(workflowVariablesLoad));
     }
 
+    // Разобранные группы по объекту прогона. ⚠ Карту у одной ветки спрашивают дважды —
+    // ряд переменных и списки «Вход (metadata)» её шагов, — а стоит она разбора
+    // метаданных всех шагов. `WeakMap` убирается сам вместе с данными прогона.
+    const _runGroupsCache = new WeakMap();
+
     // «Имя → группа» для одного прогона: и реестр, и шаги у ветки свои (у
     // sub-workflow изолированный scope). Разбирает то же правило, что панель
     // редактора, — переменная не должна расходиться между двумя страницами.
     // metadata_rendered — что шаг получил в прогоне: имена в llm_to_json_variable,
     // variable_conversion и outputs_map рендер не трогает, они остаются литеральными.
     function runVariableGroups(run) {
-        return variableGroupIndex(
+        if (_runGroupsCache.has(run)) return _runGroupsCache.get(run);
+
+        const groups = variableGroupIndex(
             workflowVariablesCache[run.workflow_id] || [],
             (run.steps || []).map(s => ({id: s.step_id, metadata: s.metadata_rendered})),
             state.workflows,
             state.tools,
         );
+        _runGroupsCache.set(run, groups);
+
+        return groups;
     }
 
     // Переменные запуска: снапшот на старте, поверх — значения, записанные шагами.
@@ -1692,7 +1709,7 @@
 
         if (declared.length) {
             row.appendChild(renderVarsAccordion('Входящие workflow переменные', declared.length,
-                () => renderWorkflowVariablesList(declared, values, sources, variableGroups)));
+                () => renderWorkflowVariablesList(declared, values, sources)));
         }
 
         return row;
