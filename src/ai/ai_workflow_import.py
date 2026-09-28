@@ -22,11 +22,14 @@ id**, а не полагается на автоинкремент, и `metadata
 Импорт — **одна транзакция**: ошибка на любом шаге откатывает всё, база не
 остаётся наполовину вычищенной (пул `mysql_get_db_async` с autocommit=True —
 транзакцию приходится открывать явно).
+
+Ошибки — доменные (`AiWorkflowImportError` и наследники), без знания про HTTP:
+вызвать `ai_workflow_import_apply` может cron, воркер или разовый скрипт с
+другой машиной. Чем ответить человеку (400/409/500), решает только HTTP-слой
+(`routers/workflow/workflow_import.py`).
 """
 
 import re
-
-from fastapi import HTTPException
 
 from logging_.logging_ import logger_exception, logger_info
 from mysql_.mysql_ import mysql_get_db_async
@@ -40,6 +43,31 @@ from src.ai.ai_workflow_export import (
 # Имя переменной — тот же идентификатор, что требует редактор переменной:
 # в промпты оно подставляется как есть.
 _VARIABLE_NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+class AiWorkflowImportError(RuntimeError):
+    """Импорт не состоялся или отменён на середине; база не осталась наполовину
+    вычищенной. Ловится одним `except` тем, кто зовёт, — cron, воркер,
+    HTTP-слой; чем именно ответить человеку, решает слой, а не домен.
+    """
+
+
+class AiWorkflowImportRejectedError(AiWorkflowImportError):
+    """Файл недостоверен: не читается, противоречит себе или требует того, чего
+    на принимающей стороне нет. Ни одного изменения базы не сделано.
+    """
+
+
+class AiWorkflowImportConflictError(AiWorkflowImportError):
+    """Файл достоверен, но его `id` или имя workflow занято чужими записями,
+    которые импорт не вправе ни перетереть, ни перенумеровать.
+    """
+
+
+class AiWorkflowImportFailedError(AiWorkflowImportError):
+    """Запись сорвалась на середине по непредвиденной причине: всё откачено,
+    база ровно такая, какой была до импорта.
+    """
 
 
 async def ai_workflow_import_apply(data, actor):
@@ -88,14 +116,15 @@ async def ai_workflow_import_apply(data, actor):
             agents_rebound = await _rebind_agents(db, agent_bindings, set(workflow_ids))
 
             await db.connection.commit()
-        except HTTPException:
-            # Штатный отказ (400/409): файл отвергнут, журнал ошибок не мажет.
+        except AiWorkflowImportError:
+            # Штатный отказ домена (файл недостоверен или занято чужое): откат
+            # и наружу, журнал ошибок не мажем — решать по статусу слою HTTP.
             await db.connection.rollback()
             raise
         except Exception as error:
             await db.connection.rollback()
             logger_exception('Импорт workflow откатан', exc=error)
-            raise HTTPException(status_code=500, detail=f'Импорт не удался, изменения отменены: {error}')
+            raise AiWorkflowImportFailedError(f'Импорт не удался, изменения отменены: {error}') from error
 
     logger_info(f'Импорт workflow: пользователь {actor}, нода '
                 f'{payload["node"] and payload["node"]["name"]}, workflow {len(payload["workflows"])}, '
@@ -125,146 +154,40 @@ async def ai_workflow_import_apply(data, actor):
 # ---------------------------------------------------------------------------
 
 def _validate_import_payload(data):
-    """Форма и допустимость файла. Всё, что можно понять до базы, понято здесь."""
+    """Голова: форма файла и нода, каждая секция — своим валидатором.
+
+    Всё, что можно понять до базы, понято здесь: на выходе доверенный
+    payload — поля stripped и пригнаны к ширине схемы, ссылки сверены
+    с самим файлом.
+    """
     if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail='Ожидался JSON-объект')
+        raise AiWorkflowImportRejectedError('Ожидался JSON-объект')
 
     if data.get('format') != WORKFLOW_EXPORT_FORMAT:
-        raise HTTPException(status_code=400, detail='Файл не похож на экспорт workflow (нет метки формата)')
+        raise AiWorkflowImportRejectedError('Файл не похож на экспорт workflow (нет метки формата)')
     if data.get('version') != WORKFLOW_EXPORT_VERSION:
-        raise HTTPException(status_code=400,
-                            detail=f'Неизвестная версия формата: {data.get("version")} (ожидается {WORKFLOW_EXPORT_VERSION})')
+        raise AiWorkflowImportRejectedError(
+            f'Неизвестная версия формата: {data.get("version")} (ожидается {WORKFLOW_EXPORT_VERSION})')
 
     for key in ('workflows', 'steps', 'variables', 'variable_links',
                 'node_variables', 'node_variable_links'):
         if not isinstance(data.get(key), list):
-            raise HTTPException(status_code=400, detail=f'Поле «{key}» отсутствует или не список')
+            raise AiWorkflowImportRejectedError(f'Поле «{key}» отсутствует или не список')
 
-    node = data.get('node')
-    if node is not None:
-        if not isinstance(node, dict) or not ai_workflow_export_strip(node.get('name')):
-            raise HTTPException(status_code=400, detail='Поле «node» — объект с именем или null')
-        node = {'name': ai_workflow_export_strip(node['name'])[:50]}
+    node = None
+    if data.get('node') is not None:
+        raw_node = data['node']
+        if not isinstance(raw_node, dict) or not ai_workflow_export_strip(raw_node.get('name')):
+            raise AiWorkflowImportRejectedError('Поле «node» — объект с именем или null')
+        # Имя — единственное, чему верим: id ноды на принимающей стороне свой.
+        node = {'name': ai_workflow_export_strip(raw_node['name'])[:50]}
 
-    workflows = {}
-    for raw in data['workflows']:
-        workflow_id = _positive_id(raw.get('id'), 'workflow')
-        name = _check_text(ai_workflow_export_strip(raw.get('name')), 'name workflow', max_length=50, required=True)
-        title = _check_text(ai_workflow_export_strip(raw.get('title')) or '', 'title workflow', max_length=50)
-        if workflow_id in workflows:
-            raise HTTPException(status_code=400, detail=f'В файле два workflow с id {workflow_id}')
-        workflows[workflow_id] = {
-            'id': workflow_id,
-            'name': name,
-            'title': title,
-            'description': _check_text(ai_workflow_export_strip(raw.get('description')) or '',
-                                       'description workflow', max_length=200),
-            'position': _int_or(raw.get('position'), 0),
-            'group_name': _check_text(ai_workflow_export_strip(raw.get('group_name')), 'group_name workflow', max_length=50),
-            'subflow': 1 if _int_or(raw.get('subflow'), 0) else 0,
-        }
-    if not workflows:
-        raise HTTPException(status_code=400, detail='В файле нет ни одного workflow')
-
-    seen_names = set()
-    for workflow in workflows.values():
-        if workflow['name'] in seen_names:
-            raise HTTPException(status_code=400, detail=f"В файле два workflow с именем «{workflow['name']}»")
-        seen_names.add(workflow['name'])
-
-    steps = []
-    for raw in data['steps']:
-        step_id = _positive_id(raw.get('id'), 'шаг')
-        if raw.get('workflow_id') not in workflows:
-            raise HTTPException(status_code=400, detail=f'Шаг {step_id} ссылается на workflow вне файла')
-        metadata = raw.get('metadata')
-        if not isinstance(metadata, str):
-            raise HTTPException(status_code=400,
-                                detail=f'metadata шага {step_id} должен быть строкой (переносим дословно)')
-        steps.append({
-            'id': step_id,
-            'workflow_id': raw['workflow_id'],
-            'type_name': _check_text(ai_workflow_export_strip(raw.get('type_name')), 'type_name шага', max_length=50),
-            'title': _check_text(ai_workflow_export_strip(raw.get('title')) or '', 'title шага', max_length=50),
-            'position': _int_or(raw.get('position'), 0),
-            'metadata': metadata,
-        })
-
-    variables, seen_pairs, seen_ids = [], set(), set()
-    for raw in data['variables']:
-        # `id` файла — только ключ связей внутри файла: переменные на принимающей
-        # стороне опознаются по паре (имя, тип), их собственные id в metadata не зашиты.
-        variable_file_id = _positive_id(raw.get('id'), 'переменная')
-        if variable_file_id in seen_ids:
-            raise HTTPException(status_code=400, detail=f'В файле две переменные с id {variable_file_id}')
-        seen_ids.add(variable_file_id)
-        name = _check_text(ai_workflow_export_strip(raw.get('name')), 'имя переменной', max_length=50)
-        if not name or not _VARIABLE_NAME_RE.match(name):
-            raise HTTPException(status_code=400, detail=f'Недопустимое имя переменной: {raw.get("name")!r}')
-        var_type = raw.get('type')
-        if var_type not in ('input', 'workflow'):
-            # Глобальные в файл не пишутся; если пришли из рук — мимо, их заводит принимающая сторона.
-            raise HTTPException(status_code=400, detail=f'Переменная {name!r}: недопустимый тип {var_type!r}')
-        pair = (name, var_type)
-        if pair in seen_pairs:
-            raise HTTPException(status_code=400, detail=f'В файле две переменные {name} типа {var_type}')
-        seen_pairs.add(pair)
-        variables.append({
-            'id': variable_file_id,
-            'name': name,
-            'type': var_type,
-            'default': raw.get('default'),
-            'description': _check_text(ai_workflow_export_strip(raw.get('description')), 'description переменной', max_length=200),
-        })
-
-    variable_links = []
-    variable_ids = {variable['id'] for variable in variables}
-    link_pairs = set()
-    for raw in data['variable_links']:
-        variable_id, workflow_id = raw.get('variable_id'), raw.get('workflow_id')
-        if variable_id not in variable_ids:
-            raise HTTPException(status_code=400, detail=f'Связь переменной {variable_id} — переменной нет в файле')
-        if workflow_id not in workflows:
-            raise HTTPException(status_code=400, detail=f'Связь переменной на workflow {workflow_id} — его нет в файле')
-        if (variable_id, workflow_id) not in link_pairs:
-            link_pairs.add((variable_id, workflow_id))
-            variable_links.append((variable_id, workflow_id))
-
-    node_variables, seen_nv_names, seen_nv_ids = [], set(), set()
-    for raw in data['node_variables']:
-        nv_file_id = _positive_id(raw.get('id'), 'переменная ноды')
-        if nv_file_id in seen_nv_ids:
-            raise HTTPException(status_code=400, detail=f'В файле две переменные ноды с id {nv_file_id}')
-        seen_nv_ids.add(nv_file_id)
-        name = _check_text(ai_workflow_export_strip(raw.get('name')), 'имя переменной ноды', max_length=50)
-        if not name or not _VARIABLE_NAME_RE.match(name):
-            raise HTTPException(status_code=400, detail=f'Недопустимое имя переменной ноды: {raw.get("name")!r}')
-        if name in seen_nv_names:
-            raise HTTPException(status_code=400, detail=f'В файле две переменные ноды с именем {name}')
-        seen_nv_names.add(name)
-        node_variables.append({
-            'id': nv_file_id,
-            'name': name,
-            'title': _check_text(ai_workflow_export_strip(raw.get('title')) or '', 'title переменной ноды', max_length=100),
-            'type': raw.get('type') if raw.get('type') in ('public', 'proxy') else 'public',
-            'default': raw.get('default'),
-            'position': _int_or(raw.get('position'), 0),
-            'description': _check_text(ai_workflow_export_strip(raw.get('description')),
-                                       'description переменной ноды', max_length=200),
-        })
-
-    node_variable_links, nv_link_pairs = [], set()
-    nv_id_to_name = {variable['id']: variable['name'] for variable in node_variables}
-    for raw in data['node_variable_links']:
-        nv_name = nv_id_to_name.get(raw.get('node_variable_id'))
-        if not nv_name:
-            raise HTTPException(status_code=400, detail=f'Связь переменной ноды {raw.get("node_variable_id")} — её нет в файле')
-        if raw.get('workflow_id') not in workflows:
-            raise HTTPException(status_code=400, detail=f'Связь переменной ноды на workflow {raw.get("workflow_id")} — его нет в файле')
-        pair = (nv_name, raw['workflow_id'])
-        if pair not in nv_link_pairs:
-            nv_link_pairs.add(pair)
-            node_variable_links.append(pair)
+    workflows = _validate_workflows(data['workflows'])
+    steps = _validate_steps(data['steps'], workflows)
+    variables = _validate_variables(data['variables'])
+    variable_links = _validate_variable_links(data['variable_links'], variables, workflows)
+    node_variables = _validate_node_variables(data['node_variables'])
+    node_variable_links = _validate_node_variable_links(data['node_variable_links'], node_variables, workflows)
 
     return {
         'node': node,
@@ -276,6 +199,157 @@ def _validate_import_payload(data):
         'node_variable_links': node_variable_links,
         'warnings': [str(warning) for warning in data.get('warnings') or []] if isinstance(data.get('warnings'), list) else [],
     }
+
+
+def _validate_workflows(raw_workflows):
+    """Workflow файла: уникальные id и имя, поля по ширине схемы.
+
+    Returns:
+        dict: id → запись в порядке файла; эти id потом вставляются дословно.
+    """
+    workflows = {}
+    for raw in raw_workflows:
+        workflow_id = _positive_id(raw.get('id'), 'workflow')
+        name = _check_text(ai_workflow_export_strip(raw.get('name')), 'name workflow', max_length=50, required=True)
+        title = _check_text(ai_workflow_export_strip(raw.get('title')) or '', 'title workflow', max_length=50)
+        if workflow_id in workflows:
+            raise AiWorkflowImportRejectedError(f'В файле два workflow с id {workflow_id}')
+        workflows[workflow_id] = {
+            'id': workflow_id,
+            'name': name,
+            'title': title,
+            'description': _check_text(ai_workflow_export_strip(raw.get('description')) or '',
+                                       'description workflow', max_length=200),
+            'position': _int_or(raw.get('position'), 0),
+            'group_name': _check_text(ai_workflow_export_strip(raw.get('group_name')), 'group_name workflow', max_length=50),
+            'subflow': 1 if _int_or(raw.get('subflow'), 0) else 0,
+        }
+    if not workflows:
+        raise AiWorkflowImportRejectedError('В файле нет ни одного workflow')
+
+    seen_names = set()
+    for workflow in workflows.values():
+        if workflow['name'] in seen_names:
+            raise AiWorkflowImportRejectedError(f"В файле два workflow с именем «{workflow['name']}»")
+        seen_names.add(workflow['name'])
+    return workflows
+
+
+def _validate_steps(raw_steps, workflows):
+    """Шаги: ссылка только на workflow из файла; metadata — строка, дословно."""
+    steps = []
+    for raw in raw_steps:
+        step_id = _positive_id(raw.get('id'), 'шаг')
+        if raw.get('workflow_id') not in workflows:
+            raise AiWorkflowImportRejectedError(f'Шаг {step_id} ссылается на workflow вне файла')
+        metadata = raw.get('metadata')
+        if not isinstance(metadata, str):
+            raise AiWorkflowImportRejectedError(
+                f'metadata шага {step_id} должен быть строкой (переносим дословно)')
+        steps.append({
+            'id': step_id,
+            'workflow_id': raw['workflow_id'],
+            'type_name': _check_text(ai_workflow_export_strip(raw.get('type_name')), 'type_name шага', max_length=50),
+            'title': _check_text(ai_workflow_export_strip(raw.get('title')) or '', 'title шага', max_length=50),
+            'position': _int_or(raw.get('position'), 0),
+            'metadata': metadata,
+        })
+    return steps
+
+
+def _validate_variables(raw_variables):
+    """Переменные: идентичность — пара (имя, тип), id файла — лишь ключ связей.
+
+    Собственные id в metadata не зашиты, на принимающей стороне переменная
+    опознаётся по паре; глобальные в файл не пишутся, а пришедшие из рук —
+    мимо, их заводит принимающая сторона.
+    """
+    variables, seen_pairs, seen_ids = [], set(), set()
+    for raw in raw_variables:
+        variable_file_id = _positive_id(raw.get('id'), 'переменная')
+        if variable_file_id in seen_ids:
+            raise AiWorkflowImportRejectedError(f'В файле две переменные с id {variable_file_id}')
+        seen_ids.add(variable_file_id)
+        name = _check_text(ai_workflow_export_strip(raw.get('name')), 'имя переменной', max_length=50)
+        if not name or not _VARIABLE_NAME_RE.match(name):
+            raise AiWorkflowImportRejectedError(f'Недопустимое имя переменной: {raw.get("name")!r}')
+        var_type = raw.get('type')
+        if var_type not in ('input', 'workflow'):
+            raise AiWorkflowImportRejectedError(f'Переменная {name!r}: недопустимый тип {var_type!r}')
+        pair = (name, var_type)
+        if pair in seen_pairs:
+            raise AiWorkflowImportRejectedError(f'В файле две переменные {name} типа {var_type}')
+        seen_pairs.add(pair)
+        variables.append({
+            'id': variable_file_id,
+            'name': name,
+            'type': var_type,
+            'default': raw.get('default'),
+            'description': _check_text(ai_workflow_export_strip(raw.get('description')), 'description переменной', max_length=200),
+        })
+    return variables
+
+
+def _validate_variable_links(raw_links, variables, workflows):
+    """Связи переменных: оба конца — внутри файла; повтор пары — один раз."""
+    variable_ids = {variable['id'] for variable in variables}
+    links, link_pairs = [], set()
+    for raw in raw_links:
+        variable_id, workflow_id = raw.get('variable_id'), raw.get('workflow_id')
+        if variable_id not in variable_ids:
+            raise AiWorkflowImportRejectedError(f'Связь переменной {variable_id} — переменной нет в файле')
+        if workflow_id not in workflows:
+            raise AiWorkflowImportRejectedError(f'Связь переменной на workflow {workflow_id} — его нет в файле')
+        if (variable_id, workflow_id) not in link_pairs:
+            link_pairs.add((variable_id, workflow_id))
+            links.append((variable_id, workflow_id))
+    return links
+
+
+def _validate_node_variables(raw_node_variables):
+    """Переменные ноды: уникальные id и имя внутри файла; тип — public или proxy."""
+    node_variables, seen_names, seen_ids = [], set(), set()
+    for raw in raw_node_variables:
+        nv_file_id = _positive_id(raw.get('id'), 'переменная ноды')
+        if nv_file_id in seen_ids:
+            raise AiWorkflowImportRejectedError(f'В файле две переменные ноды с id {nv_file_id}')
+        seen_ids.add(nv_file_id)
+        name = _check_text(ai_workflow_export_strip(raw.get('name')), 'имя переменной ноды', max_length=50)
+        if not name or not _VARIABLE_NAME_RE.match(name):
+            raise AiWorkflowImportRejectedError(f'Недопустимое имя переменной ноды: {raw.get("name")!r}')
+        if name in seen_names:
+            raise AiWorkflowImportRejectedError(f'В файле две переменные ноды с именем {name}')
+        seen_names.add(name)
+        node_variables.append({
+            'id': nv_file_id,
+            'name': name,
+            'title': _check_text(ai_workflow_export_strip(raw.get('title')) or '', 'title переменной ноды', max_length=100),
+            'type': raw.get('type') if raw.get('type') in ('public', 'proxy') else 'public',
+            'default': raw.get('default'),
+            'position': _int_or(raw.get('position'), 0),
+            'description': _check_text(ai_workflow_export_strip(raw.get('description')),
+                                       'description переменной ноды', max_length=200),
+        })
+    return node_variables
+
+
+def _validate_node_variable_links(raw_links, node_variables, workflows):
+    """Связи переменных ноды: оба конца — внутри файла; пары — по имени."""
+    nv_id_to_name = {variable['id']: variable['name'] for variable in node_variables}
+    links, seen_pairs = [], set()
+    for raw in raw_links:
+        nv_name = nv_id_to_name.get(raw.get('node_variable_id'))
+        if not nv_name:
+            raise AiWorkflowImportRejectedError(
+                f'Связь переменной ноды {raw.get("node_variable_id")} — её нет в файле')
+        if raw.get('workflow_id') not in workflows:
+            raise AiWorkflowImportRejectedError(
+                f'Связь переменной ноды на workflow {raw.get("workflow_id")} — его нет в файле')
+        pair = (nv_name, raw['workflow_id'])
+        if pair not in seen_pairs:
+            seen_pairs.add(pair)
+            links.append(pair)
+    return links
 
 
 # ---------------------------------------------------------------------------
@@ -290,10 +364,9 @@ async def _resolve_target_node(db, node):
                      (node['name'],))
     found = await db.fetchone()
     if not found:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Нода «{node['name']}» не найдена — создайте её на странице нод "
-                   f"(имя то же) и настройте ей LLM, затем повторите импорт"
+        raise AiWorkflowImportRejectedError(
+            f"Нода «{node['name']}» не найдена — создайте её на странице нод "
+            f"(имя то же) и настройте ей LLM, затем повторите импорт"
         )
     return found['id']
 
@@ -321,8 +394,7 @@ async def _check_collisions(db, payload, workflow_ids, wipe):
     taken = await db.fetchall() or []
     if taken:
         listed = ', '.join(f'#{row["id"]} «{ai_workflow_export_strip(row["name"])}»' for row in taken[:10])
-        raise HTTPException(status_code=409,
-                            detail=f'id из файла заняты чужими workflow: {listed} — импорт отменён')
+        raise AiWorkflowImportConflictError(f'id из файла заняты чужими workflow: {listed} — импорт отменён')
 
     names = [workflow['name'] for workflow in payload['workflows']]
     name_placeholders = ','.join(['%s'] * len(names))
@@ -335,8 +407,7 @@ async def _check_collisions(db, payload, workflow_ids, wipe):
     taken_names = await db.fetchall() or []
     if taken_names:
         listed = ', '.join(f'«{ai_workflow_export_strip(row["name"])}» (id {row["id"]})' for row in taken_names[:10])
-        raise HTTPException(status_code=409,
-                            detail=f'Имена workflow заняты вне заменяемой ноды: {listed} — импорт отменён')
+        raise AiWorkflowImportConflictError(f'Имена workflow заняты вне заменяемой ноды: {listed} — импорт отменён')
 
 
 async def _assign_step_ids(db, payload, wipe):
@@ -517,9 +588,9 @@ async def _insert_steps(db, steps, step_mapping):
     for step in steps:
         type_id = type_ids.get(step['type_name'])
         if step['type_name'] and type_id is None:
-            raise HTTPException(status_code=400,
-                                detail=f'Неизвестный тип шага «{step["type_name"]}» — справочник типов '
-                                       f'принимающей стороны его не знает')
+            raise AiWorkflowImportRejectedError(
+                f'Неизвестный тип шага «{step["type_name"]}» — справочник типов '
+                f'принимающей стороны его не знает')
         metadata = ai_workflow_step_refs_remap(step['metadata'], step_mapping)
         step_id = step_mapping.get(step['id'], step['id'])
         await db.execute(
@@ -550,9 +621,9 @@ def _positive_id(value, label):
     try:
         parsed = int(value)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail=f'«{label}»: id должен быть числом, получено {value!r}')
+        raise AiWorkflowImportRejectedError(f'«{label}»: id должен быть числом, получено {value!r}')
     if parsed <= 0:
-        raise HTTPException(status_code=400, detail=f'«{label}»: id должен быть положительным')
+        raise AiWorkflowImportRejectedError(f'«{label}»: id должен быть положительным')
     return parsed
 
 
@@ -565,8 +636,7 @@ def _int_or(value, default):
 
 def _check_text(value, label, max_length, required=False):
     if required and not value:
-        raise HTTPException(status_code=400, detail=f'«{label}»: обязательно')
+        raise AiWorkflowImportRejectedError(f'«{label}»: обязательно')
     if value and len(value) > max_length:
-        raise HTTPException(status_code=400,
-                            detail=f'«{label}»: длиннее {max_length} символов ({len(value)})')
+        raise AiWorkflowImportRejectedError(f'«{label}»: длиннее {max_length} символов ({len(value)})')
     return value

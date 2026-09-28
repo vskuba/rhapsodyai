@@ -33,12 +33,18 @@ JSON, а пересборка через `json.dumps` их необратимо 
 import re
 from datetime import datetime, timezone
 
-from fastapi import HTTPException
-
 from mysql_.mysql_ import mysql_get_db_async
 
 WORKFLOW_EXPORT_FORMAT = 'rhapsodyai.workflow'
 WORKFLOW_EXPORT_VERSION = 1
+
+
+class AiWorkflowExportError(RuntimeError):
+    """Экспорт не удался. HTTP-слой решает, во что превратить это в ответ."""
+
+
+class AiWorkflowExportNodeMissingError(AiWorkflowExportError):
+    """Ноды с таким id нет на этой инсталляции — экспортировать нечего."""
 
 # Вызов подпотока: `"workflow_id": 6` или `"workflow_id": "6"` (и плейсхолдеры
 # вроде `%test_workflow_id%` — не числа, мимо пробегут).
@@ -79,7 +85,7 @@ async def ai_workflow_export_payload(node_pk):
             await db.execute('SELECT `name` FROM `node` WHERE `id` = %s', (node_pk,))
             node = await db.fetchone()
             if not node:
-                raise HTTPException(status_code=404, detail=f'Нода {node_pk} не найдена')
+                raise AiWorkflowExportNodeMissingError(f'Нода {node_pk} не найдена')
             # `id` ноды в файл не пишем: импорт опознаёт ноду по имени — id
             # на принимающей стороне будет свой, а этот только сбивал бы.
             payload['node'] = {'name': ai_workflow_export_strip(node['name'])}
@@ -114,6 +120,47 @@ async def ai_workflow_export_payload(node_pk):
                 await _workflow_export_fetch_node_variables(db, node_pk, workflow_ids)
 
     return payload
+
+
+def ai_workflow_export_variables_merge(variables_rows, link_rows):
+    """Правило идентичности переменной, им и пользуется редактор: пара (имя, тип).
+
+    Уникального индекса на пару в схеме нет, поэтому под одним именем могут
+    жить строки с разными id (наследие старых заводов): первой канонической
+    считается строка с меньшим id, её и пишем в файл, а связи дублей
+    переводим на неё — файл обязан быть непротиворечив относительно пары.
+
+    Args:
+        variables_rows: строки `agent_workflow_variable` (порядок по id).
+        link_rows: строки связей `variable_id`/`workflow_id` тех же id.
+
+    Returns:
+        tuple: (variables, links) — канонические записи и объединённые
+            связи, где `variable_id` уже указывает на каноническую строку.
+    """
+    variables, aliases, canonical = [], {}, {}
+    for row in variables_rows:
+        pair = (row['name'], row['type'])
+        if pair not in canonical:
+            canonical[pair] = row['id']
+            variables.append({
+                'id': row['id'],
+                'name': ai_workflow_export_strip(row['name']),
+                'type': row['type'],
+                'default': row['default'],
+                'description': ai_workflow_export_strip(row['description']),
+            })
+        else:
+            aliases[row['id']] = canonical[pair]
+
+    merged, seen_pairs = [], set()
+    for row in link_rows:
+        variable_id = aliases.get(row['variable_id'], row['variable_id'])
+        key = (variable_id, row['workflow_id'])
+        if key not in seen_pairs:
+            seen_pairs.add(key)
+            merged.append({'variable_id': variable_id, 'workflow_id': row['workflow_id']})
+    return variables, merged
 
 
 async def _workflow_export_fetch_workflows(db, node_pk):
@@ -155,11 +202,10 @@ async def _workflow_export_fetch_variables(db, workflow_ids):
 
     Переменная может быть привязана и к чужому workflow (M:N) — на принимающей
     стороне импорт сопоставит её по имени и типу, а чужая связь не пострадает.
-
-    Дубли строк по паре (имя, тип) сливаются в одну запись (берётся строка с
-    меньшим id, связи — объединением): уникальный индекс на пару в схеме
-    отсутствует, редактор же опознаёт переменную именно по паре — файл обязан
-    быть непротиворечивым относительно этой идентичности.
+    Глобальные в файл не идут (свои на каждой базе) — их количество возвращается
+    отдельным числом, чтобы сборщик поставил его в `warnings`. Слияние дублей
+    по паре (имя, тип) — не здесь: правило живёт в
+    `ai_workflow_export_variables_merge`.
     """
     placeholders = ','.join(['%s'] * len(workflow_ids))
     await db.execute(
@@ -171,7 +217,7 @@ async def _workflow_export_fetch_variables(db, workflow_ids):
         f'ORDER BY v.`id`',
         tuple(workflow_ids) + ('global',)
     )
-    rows = await db.fetchall() or []
+    variables_rows = await db.fetchall() or []
 
     await db.execute(
         f'SELECT COUNT(*) AS `cnt` FROM `agent_workflow_variable` v '
@@ -180,21 +226,6 @@ async def _workflow_export_fetch_variables(db, workflow_ids):
         tuple(workflow_ids) + ('global',)
     )
     global_count = (await db.fetchone() or {}).get('cnt', 0)
-
-    variables, aliases, canonical = [], {}, {}
-    for row in rows:
-        pair = (row['name'], row['type'])
-        if pair not in canonical:
-            canonical[pair] = row['id']
-            variables.append({
-                'id': row['id'],
-                'name': ai_workflow_export_strip(row['name']),
-                'type': row['type'],
-                'default': row['default'],
-                'description': ai_workflow_export_strip(row['description']),
-            })
-        else:
-            aliases[row['id']] = canonical[pair]
 
     # Связи глобальных переменных не пишутся: самих их в файле нет, а ссылка на
     # отсутствующую запись сделала бы файл битым для импорта.
@@ -205,13 +236,9 @@ async def _workflow_export_fetch_variables(db, workflow_ids):
         f'ORDER BY l.`variable_id`, l.`workflow_id`',
         ('global',) + tuple(workflow_ids)
     )
-    merged, seen_pairs = [], set()
-    for row in await db.fetchall() or []:
-        variable_id = aliases.get(row['variable_id'], row['variable_id'])
-        key = (variable_id, row['workflow_id'])
-        if key not in seen_pairs:
-            seen_pairs.add(key)
-            merged.append({'variable_id': variable_id, 'workflow_id': row['workflow_id']})
+    link_rows = await db.fetchall() or []
+
+    variables, merged = ai_workflow_export_variables_merge(variables_rows, link_rows)
     return variables, merged, global_count
 
 

@@ -7,9 +7,9 @@
 одноразовые данные (`twei_*`): нода, два workflow с шагами, переменная workflow
 и переменная ноды. Настоящие ноды и workflow не читаются для изменения и не
 меняются вовсе — чужой id используется лишь как приманка для проверки отказа.
-Одна проверка — юнит на слияние дублей переменных прямо на модуле: через API
-дубль не создать (редактор get-or-create), гонять ради него живую базу
-бессмысленно.
+Одна проверка — юнит на слияние дублей переменных, по публичной функции
+модуля `ai_workflow_export_variables_merge`: через API дубль не создать
+(редактор get-or-create), гонять ради него живую базу бессмысленно.
 
 Проверяется:
 - форма экспортного файла и порядок роутов (`GET /workflow/{id}` не перекрыт);
@@ -27,7 +27,7 @@ import time
 import httpx
 import pytest
 
-from src.ai.ai_workflow_export import _workflow_export_fetch_variables
+from src.ai.ai_workflow_export import ai_workflow_export_variables_merge
 from tests.constants import TEST_AUTH
 
 pytestmark = pytest.mark.ai
@@ -94,42 +94,25 @@ class TestWorkflowExportImport:
             response = await client.get(f"/workflow/{other[0]['id']}")
             assert response.status_code == 200, "GET /workflow/{id} перекрыт новым роутом"
 
-    async def test_export_merges_duplicate_variable_pair(self):
+    def test_export_merges_duplicate_variable_pair(self):
         """Две строки переменной с одной парой (имя, тип) — в файле одна запись.
 
         Уникального индекса на пару в схеме нет, редактор опознаёт переменную
         по паре, а создать дубль через API не может (get-or-create) — такие
-        строки остаются только наследием старых заводов. Значит, проверка
-        прямая: слияние в модуле на подставных строках.
+        строки остаются только наследием старых заводов. Проверка прямая, по
+        публичному правилу `ai_workflow_export_variables_merge`: на подставных
+        строках, без похода в базу.
         """
-        class StubDb:
-            """Кормит ответы по порядку вызовов: строки, счётчик глобальных, связи."""
-            def __init__(self, answers):
-                self.answers = list(answers)
-
-            async def execute(self, sql, args=None):
-                pass
-
-            async def fetchall(self):
-                return self.answers.pop(0)
-
-            async def fetchone(self):
-                return self.answers.pop(0)
-
-        db = StubDb([
+        variables, links = ai_workflow_export_variables_merge(
             [{'id': 24, 'name': 'fact_girl', 'type': 'workflow', 'default': 'dating_girl', 'description': None},
              {'id': 34, 'name': 'fact_girl', 'type': 'workflow', 'default': 'dating_girl', 'description': None},
              {'id': 40, 'name': 'other', 'type': 'input', 'default': None, 'description': None}],
-            {'cnt': 0},
             [{'variable_id': 24, 'workflow_id': 2}, {'variable_id': 24, 'workflow_id': 58},
              {'variable_id': 34, 'workflow_id': 5}, {'variable_id': 34, 'workflow_id': 6},
              {'variable_id': 40, 'workflow_id': 5}],
-        ])
-
-        variables, links, globals_count = await _workflow_export_fetch_variables(db, [2, 5, 6, 58])
+        )
 
         assert [v['id'] for v in variables] == [24, 40]
-        assert globals_count == 0
         assert {l['variable_id'] for l in links} == {24, 40}, "связь дубля переезжает на каноническую строку"
         assert sorted((l['variable_id'], l['workflow_id']) for l in links) == \
             [(24, 2), (24, 5), (24, 6), (24, 58), (40, 5)]
