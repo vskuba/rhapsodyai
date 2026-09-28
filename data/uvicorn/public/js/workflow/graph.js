@@ -9,7 +9,7 @@ import {parseMetadata, graphLabelEscape, activateTab} from './utils.js';
 import {showNotification} from '../notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
 import {getData} from '../api.js';
-import {variablesTrace} from './variable-group.js';
+import {variablesTrace, VAR_GROUP_UNKNOWN} from './variable-group.js';
 import {editorVariableGroupIndex} from './variables.js';
 
 export function initGraphMode() {
@@ -501,6 +501,12 @@ function stepNumbersOf(steps) {
 /**
  * Рисует список переменных workflow и вешает выбор.
  *
+ * Список показывает **все** переменные workflow — реестр, tool и динамические — а не
+ * только замеченные трассой: карта групп (`editorVariableGroupIndex`) и трасса
+ * (`variablesTrace`) сливаются в один обход по алфавиту, имя без следа показывается
+ * как `0→0`. Перед именем — значок группы из того же модуля, полная подпись группы
+ * живёт подсказкой строки.
+ *
  * ⚠ Зовётся **после** отрисовки диаграммы: подсветка ищет узлы в готовом SVG.
  */
 function renderGraphVariables(container) {
@@ -517,27 +523,44 @@ function renderGraphVariables(container) {
         const needle = filter.trim().toLowerCase();
         listBox.innerHTML = '';
 
+        // ⚠⚠ Список — **все** переменные workflow: реестр (входящие, глобальные,
+        // node, workflow), результаты инструментов, динамические — как их видит
+        // трасса прогона. Прежний обход одной трассы молчал про имена, которых
+        // шаги не касаются вовсе, и до половины списка дело не доходило.
+        const names = [...new Set([..._varGroups.keys(), ..._varTrace.keys()])]
+            .sort((a, b) => a.localeCompare(b));
+
         let shown = 0;
-        _varTrace.forEach((cell, name) => {
+        names.forEach(name => {
             if (needle && !name.toLowerCase().includes(needle)) return;
             shown++;
 
-            const group = _varGroups.get(name);
+            // ⚠ Имя без группы — не редкость: результат инструмента, чьих ключей
+            // нет в `args.output`, или алиас `workflow_invoke_<шаг>_result_str` от
+            // движка. Таких 117 из 2075 по всем workflow установки, и отвечать им
+            // пустым местом значит оставлять вопрос без ответа — тем же `∅`, что и
+            // на трассе прогона.
+            const group = _varGroups.get(name) || VAR_GROUP_UNKNOWN;
+            const cell = _varTrace.get(name) || {made: [], used: []};
             const row = document.createElement('div');
             // ⚠ Цвет полосы — по группе, тот же, что на панели шагов. Ключ группы
             // становится классом (`graph-var-input`), а цвета живут в CSS: два
             // списка цветов разошлись бы на первой правке.
-            row.className = 'graph-var' + (group ? ` graph-var-${group.key}` : '');
+            row.className = `graph-var graph-var-${group.key}`;
             if (name === _varPicked) row.className += ' active';
             row.dataset.name = name;
-            if (group) row.title = group.title;
+            row.title = group.label;
+
+            // ⚠ Значок группы перед именем — тот же, что чип на трассе прогона:
+            // группу узнают глазами, подпись читать не нужно.
+            const icon = document.createElement('span');
+            icon.className = 'graph-var-icon';
+            icon.textContent = group.icon;
 
             const label = document.createElement('span');
+            label.className = 'graph-var-name';
             label.textContent = name;
             // ⚠ Длинное имя обрезаем видом, а не текстом: полное нужно в подсказке.
-            label.style.overflow = 'hidden';
-            label.style.textOverflow = 'ellipsis';
-            label.style.whiteSpace = 'nowrap';
             label.title = name;
 
             const count = document.createElement('span');
@@ -545,7 +568,15 @@ function renderGraphVariables(container) {
             count.textContent = `${cell.made.length}→${cell.used.length}`;
             count.title = `кладёт шагов: ${cell.made.length}, читает: ${cell.used.length}`;
 
-            row.append(label, count);
+            // ⚠⚠ Значок и имя — одним блоком, счётчик отдельно. Строка это flex, и
+            // пока детей было двое, `space-between` разводил их по краям как надо.
+            // Третий ребёнок встал между ними, и у короткого имени значок отъехал
+            // от него на 67 пикселей — читался уже не приставкой к имени, а сам по
+            // себе. Обёртка возвращает значку его место, а счётчику — правый край.
+            const head = document.createElement('span');
+            head.className = 'graph-var-head';
+            head.append(icon, label);
+            row.append(head, count);
             row.onclick = () => pickVariable(name, container);
             listBox.appendChild(row);
         });
@@ -564,7 +595,8 @@ function renderGraphVariables(container) {
 
     // ⚠ Выбор переживает перерисовку: граф перестраивается при каждом заходе, и
     // терять выбранное имя значило бы заставлять человека искать его заново.
-    if (_varPicked && _varTrace.has(_varPicked)) pickVariable(_varPicked, container);
+    // Имя живёт и в трассе, и в одной только карте групп — проверка по обоим.
+    if (_varPicked && (_varTrace.has(_varPicked) || _varGroups.has(_varPicked))) pickVariable(_varPicked, container);
     else traceBox.innerHTML = '<div style="color:#94a3b8;">Выберите переменную — покажу, кто её кладёт и кто читает</div>';
 }
 
@@ -593,13 +625,15 @@ function renderVariableTrace(name, cell, container) {
 
     // ⚠ Название группы над именем: по нему видно, откуда переменная берётся
     // вообще — входящая приходит снаружи, динамическую кладёт шаг.
-    const group = _varGroups.get(name);
-    if (group) {
-        const kind = document.createElement('div');
-        kind.className = `trace-group trace-group-${group.key}`;
-        kind.textContent = `${group.title}:`;
-        box.appendChild(kind);
-    }
+    //
+    // ⚠⚠ Строка стоит **всегда**, в том числе у имени без группы. Прочерк ниже
+    // объясняется именно ею («у входящей класть и некому»), и без неё оставался
+    // без объяснения — а таких имён по всем workflow установки 117 из 2075.
+    const group = _varGroups.get(name) || VAR_GROUP_UNKNOWN;
+    const kind = document.createElement('div');
+    kind.className = `trace-group trace-group-${group.key}`;
+    kind.textContent = `${group.title}:`;
+    box.appendChild(kind);
 
     const head = document.createElement('div');
     head.className = 'trace-head';

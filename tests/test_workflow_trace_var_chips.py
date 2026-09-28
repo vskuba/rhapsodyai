@@ -3,9 +3,10 @@
 Списки страницы `/admin/workflow_trace` («Переменные» прогона и «Вход (metadata)»
 у шага) показывали имя и значение — и молчали о том, к какой группе имя
 относится: входящая ли переменная, из реестра workflow, из шага инструмента, из
-sub-workflow. Теперь перед каждым именем стоит чип с иконкой и названием группы
-(«📥 Входящие переменные», «⚙️ Tool переменные»…), а у имени, которое не нашлось
-ни в одной группе, — «не объявлена».
+sub-workflow. Теперь перед каждым именем стоит чип со **значком** группы (📥, 🇬,
+🇳, ⚙️, 🇼, 🌀), а полное название группы живёт только подсказкой наведённой
+мыши — в тесной строке списка оно съедало треть места. У имени, которое не
+нашлось ни в одной группе, — чип «∅» с тем же честным «не объявлена» в подсказке.
 
 ## ⚠⚠ Что здесь главное
 
@@ -82,19 +83,22 @@ WORKFLOWS = [{'id': 5, 'name': 'dating_invite_one'}]
 
 RUN = {'workflow_id': 5, 'steps': STEPS}
 
-# Что обязан показать чип у каждого имени: подпись группы и её ключ (из ключа
-# рождён класс чипа `var-group-<ключ>`).
+# Что обязан показать чип у каждого имени: значок группы в чипе, название —
+# подсказкой, и ключ (из ключа рождён класс чипа `var-group-<ключ>`).
+#
+# ⚠ В подсказке `label`, а не `title`: тот несёт значок первым словом, и подсказка
+# повторяла бы то, что и так нарисовано в чипе.
 EXPECTED = {
-    'girl_name': ('input', '📥 Входящие переменные'),
-    'timezone': ('common', '🇬 Глобальные переменные'),
-    'agent_title': ('node', '🇳 Node переменные'),
-    'talk_history_chat': ('workflow', '🇼 Workflow переменные'),
-    'companion_bio_524_result_bio': ('tool', '⚙️ Tool переменные'),
-    'dating_invite_one_786_result_str': ('tool', '⚙️ Tool переменные'),
-    'girl_bio': ('dynamic', '🌀 Dynamic переменные'),
-    'talk_topic': ('dynamic', '🌀 Dynamic переменные'),
+    'girl_name': {'key': 'input', 'icon': '📥', 'label': 'Входящие переменные'},
+    'timezone': {'key': 'common', 'icon': '🇬', 'label': 'Глобальные переменные'},
+    'agent_title': {'key': 'node', 'icon': '🇳', 'label': 'Node переменные'},
+    'talk_history_chat': {'key': 'workflow', 'icon': '🇼', 'label': 'Workflow переменные'},
+    'companion_bio_524_result_bio': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    'dating_invite_one_786_result_str': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    'girl_bio': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
+    'talk_topic': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
     # ни в реестре, ни в следах шагов: имя обязано честно говорить об этом
-    'prompt_user': ('unknown', 'не объявлена'),
+    'prompt_user': {'key': 'unknown', 'icon': '∅', 'label': 'не объявлена'},
 }
 
 VALUES = {name: f'значение:{name}' for name in EXPECTED}
@@ -134,29 +138,42 @@ class TestTheRuleIsPure:
 
 
 class TestEveryRowCarriesItsChip:
-    """⚠⚠ У каждой строки списка прогона — чип группы, и стоит он перед именем."""
+    """⚠⚠ У каждой строки списка прогона — чип со значком группы, перед именем."""
 
     def test_every_name_gets_its_chip_before_it(self):
         for row in _render('values'):
             assert row['chip_before_name'], \
                 f'у «{row["name"]}» чип группы стоит не перед именем: {row["cls"]}'
 
-    def test_chip_signs_the_group_the_rule_picked(self):
-        """⚠ Подпись чипа — группа того же правила, что раскладывает панель редактора."""
+    def test_chip_carries_the_sign_and_the_tooltip_the_name(self):
+        """⚠ В чипе — значок своей группы, вся подпись переехала в подсказку."""
         for row in _render('values'):
-            key, title = EXPECTED[row['name']]
+            want = EXPECTED[row['name']]
 
-            assert row['text'] == title, (
-                f'у «{row["name"]}» чип подписан не своей группой: '
-                f'{row["text"]!r}, ждали {title!r}')
-            assert row['cls'] == f'var-group var-group-{key}', \
+            assert row['icon'] == want['icon'], (
+                f'у «{row["name"]}» чип размечен не своей группой: '
+                f'{row["icon"]!r}, ждали {want["icon"]!r}')
+            assert row['tip'] == want['label'], (
+                f'у «{row["name"]}» подсказка чипа молчит о группе: '
+                f'{row["tip"]!r}, ждали {want["label"]!r}')
+            assert row['cls'] == f"var-group var-group-{want['key']}", \
                 f'у «{row["name"]}» чип в чужом классе: {row["cls"]}'
 
-    def test_a_chip_text_is_clean(self):
-        """⚠ Подпись с висящим пробелом — та же грязь, что пустое место у имени."""
+    def test_a_chip_holds_no_text_name(self):
+        """⚠ Текстовое название в чипе — половина строки, съеденная подписью.
+
+        Значок читается глазами, название перечитывали бы дважды: чип обязан
+        нести одни лишь знаки, а слово — только подсказка.
+        """
         for row in _render('values'):
-            assert row['text'] == row['text'].strip(), \
-                f'у «{row["name"]}» подпись чипа обросла пробелами: {row["text"]!r}'
+            assert not re.search(r'[a-zA-Zа-яА-ЯёЁ]', row['icon']), \
+                f'у «{row["name"]}» чип снова расписан текстом: {row["icon"]!r}'
+
+    def test_a_chip_text_is_clean(self):
+        """⚠ Значок с висящим пробелом — та же грязь, что пустое место у имени."""
+        for row in _render('values'):
+            assert row['icon'] == row['icon'].strip(), \
+                f'у «{row["name"]}» значок чипа оброс пробелами: {row["icon"]!r}'
 
 
 class TestTheDeclaredListStaysPlain:
@@ -191,8 +208,9 @@ class TestTheStepReadsFromTheSameMap:
 
     def test_the_step_values_get_the_same_chips(self):
         for row in _render('step'):
-            assert row['text'] == EXPECTED[row['name']][1], \
-                f'в «Вход (metadata)» у «{row["name"]}» чип чужой: {row["text"]!r}'
+            want = EXPECTED[row['name']]
+            assert row['icon'] == want['icon'] and row['tip'] == want['label'], \
+                f'в «Вход (metadata)» у «{row["name"]}» чип чужой: {row["icon"]!r}'
 
 
 class TestOneRuleForBothPages:
@@ -240,7 +258,7 @@ class TestThePaintExists:
     def test_every_group_key_has_a_rule(self):
         code = _read(PAGE)
 
-        for key in {key for key, _ in EXPECTED.values()}:
+        for key in {g['key'] for g in EXPECTED.values()}:
             assert re.search(r'\.var-group-' + re.escape(key) + r'\s*\{', code), \
                 f'для чипов «{key}» нет своего цвета — группу не отличить глазами'
 
@@ -274,7 +292,7 @@ def _base_script() -> str:
     самой страницы.
     """
     stub = f'''
-    import {{variableGroupIndex}} from '{GROUP}';
+    import {{variableGroupIndex, VAR_GROUP_UNKNOWN}} from '{GROUP}';
 
     const el = (tag, cls, text) => ({{tag, cls, text, kids: [],
         appendChild(one) {{ this.kids.push(one); }}}});
@@ -333,7 +351,8 @@ def _render(what: str) -> list:
         assert name is not None, f'у строки списка нет имени: {li}'
         out.append({'name': name['text'].strip('%'),
                     'cls': chip['cls'],
-                    'text': chip['text'],
+                    'icon': chip['text'],
+                    'tip': chip['title'],
                     'key': chip['cls'].removeprefix('var-group var-group-'),
                     'chip_before_name':
                         head['kids'].index(chip) < head['kids'].index(name)})
