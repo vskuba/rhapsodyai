@@ -547,4 +547,134 @@ if (createNewWorkflowBtn) {
     };
 }
 
+/**
+ * Экспорт и импорт workflow узла карусели.
+ *
+ * Экспорт — скачивание .json со всеми workflow текущей ноды; импорт — выбор
+ * такого файла, подтверждение и замена workflow ноды на его содержимое.
+ * Сервер сохраняет исходные id (они зашиты внутри metadata), детали — в
+ * `src/uvicorn/routers/workflow/workflow_export.py` и `workflow_import.py`.
+ */
+const exportWorkflowsBtn = document.getElementById('exportWorkflowsBtn');
+const importWorkflowsBtn = document.getElementById('importWorkflowsBtn');
+const importWorkflowsFile = document.getElementById('importWorkflowsFile');
+
+// Нода карусели — вот её узел и экспортируем, и заменяем; «Вне нод» — 'none'.
+function currentCarouselNode() {
+    return carouselNodes[carouselIndex] || null;
+}
+
+function currentNodeParam(node) {
+    return node.id === 'none' ? 'none' : String(node.id);
+}
+
+function fileStamp() {
+    // Метка в UTC: имя файла пересылают между машинами, местный пояс в нём только путает.
+    return new Date().toISOString().replace('T', '_').slice(0, 19);
+}
+
+if (exportWorkflowsBtn) {
+    exportWorkflowsBtn.onclick = async () => {
+        const node = currentCarouselNode();
+        if (!node) {
+            showNotification('Нода не выбрана — нечего экспортировать', 'error');
+            return;
+        }
+        exportWorkflowsBtn.disabled = true;
+        try {
+            const res = await getData(`/workflow/export?node_id=${encodeURIComponent(currentNodeParam(node))}`);
+            const payload = res.result;
+            const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `workflow_export_${(payload.node ? payload.node.name : 'vne_nod').replace(/\s+/g, '_')}_${fileStamp()}.json`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+            let message = `Экспортировано workflow: ${payload.workflows.length}, шагов: ${payload.steps.length}`;
+            if (payload.warnings.length) message += ` — предупреждений: ${payload.warnings.length}`;
+            showNotification(message, payload.warnings.length ? 'warning' : 'success');
+        } catch (e) {
+            showNotification(e.message, 'error');
+        } finally {
+            exportWorkflowsBtn.disabled = false;
+        }
+    };
+}
+
+if (importWorkflowsBtn && importWorkflowsFile) {
+    importWorkflowsBtn.onclick = () => {
+        if (!currentCarouselNode()) {
+            showNotification('Нода не выбрана', 'error');
+            return;
+        }
+        importWorkflowsFile.click();
+    };
+
+    importWorkflowsFile.onchange = async () => {
+        const file = importWorkflowsFile.files[0];
+        // Снимаем выбор сразу: повторный выбор того же файла должен снова дать onchange.
+        importWorkflowsFile.value = '';
+        if (!file) return;
+
+        let payload;
+        try {
+            payload = JSON.parse(await file.text());
+        } catch (e) {
+            showNotification(`Файл не читается как JSON: ${e.message}`, 'error');
+            return;
+        }
+        // Метку формата и версию проверяет сервер (авторитет) — и отвечает внятным
+        // 400 на чужой файл; третья копия метки здесь была бы не нужна.
+
+        const fileNodeName = payload.node ? payload.node.name : 'Вне нод';
+        const currentNode = currentCarouselNode();
+        const currentName = currentNode ? currentNode.name : '—';
+        const fileCount = (payload.workflows || []).length;
+        const doomedCount = sidebarWorkflows.filter(
+            w => String(w.node_id || 'none') === currentNodeParam(currentNode)).length;
+
+        // Файл всегда заменяет СВОЮ ноду — если пользователь стоит на другой,
+        // об этом надо спросить, а не подменять цель молча.
+        const foreign = fileNodeName !== currentName;
+        const question = foreign
+            ? `Файл для ноды «${fileNodeName}», а в карусели выбрана «${currentName}».\n\n` +
+              `Заменить workflow ноды «${fileNodeName}»? Все её текущие будут удалены, в файле: ${fileCount}.\n` +
+              `Нода «${currentName}» останется без изменений.`
+            : `Заменить workflow ноды «${currentName}»?\n\n` +
+              `Сейчас в ноде: ${doomedCount}. В файле: ${fileCount}. Остальные ноды не изменятся.`;
+        if (!confirm(question)) return;
+
+        importWorkflowsBtn.disabled = true;
+        try {
+            const res = await postData('/workflow/import', payload);
+            const result = res.result;
+            let message = `Импорт: workflow ${result.workflows_imported}, шагов ${result.steps_imported}`;
+            if (result.agents_rebound) message += `, агентов возвращено ${result.agents_rebound}`;
+            showNotification(message, 'success');
+            (result.notes || []).forEach(note => showNotification(note, 'warning'));
+
+            // Открытый workflow мог быть удалён заменой — сбрасываем выбор и
+            // перетаскиваем карусель на ноду файла: импорт меняет именно её.
+            sessionStorage.removeItem('workflow_selected_id');
+            await initWorkflowManager();
+            const fileNodeIndex = carouselNodes.findIndex(
+                n => n.name === (payload.node ? payload.node.name : 'Вне нод'));
+            if (fileNodeIndex >= 0 && fileNodeIndex !== carouselIndex) {
+                carouselIndex = fileNodeIndex;
+                renderCarouselNode();
+            }
+            if (!workflowListContainer.querySelector('.agent-item.active') && createNewWorkflowBtn) {
+                // Нода осталась пустой (или активной строки нет) — чистый редактор,
+                // а не старый workflow, которого в базе уже нет.
+                createNewWorkflowBtn.click();
+            }
+        } catch (e) {
+            // Сервер при любой ошибке откатывает транзакцию — база остаётся как была.
+            showNotification(e.message, 'error');
+        } finally {
+            importWorkflowsBtn.disabled = false;
+        }
+    };
+}
+
 initWorkflowManager().catch(err => console.error("Критический сбой инициализации модуля:", err));

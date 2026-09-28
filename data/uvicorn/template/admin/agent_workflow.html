@@ -720,6 +720,52 @@
         cursor: pointer;
     }
 
+    /* Три кнопки в ряд в шапке сайдбара: создать / экспорт / импорт.
+     *
+     * ⚠ Правила скоупим внутри `.sidebar-actions`: глобальным `.btn-create`
+     * пользуются кнопки «добавить шаг» и «добавить условие» — их не трогаем.
+     * Отступа снизу не добавляем: карусель уже несёт свой `margin-top: 12px`. */
+    .sidebar-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .sidebar-actions .btn-create {
+        width: auto;
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 10px 6px;
+        /* Кегль как у соседей: со 16px «+ Создать» не влезала в общий ряд и
+         * обрезалась; втроем кнопки обязаны выглядеть парой, а не пасынком. */
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .btn-sidebar-action {
+        background: #fff;
+        color: #30353a;
+        border: 1px solid #cfd8dc;
+        border-radius: 5px;
+        padding: 10px 8px;
+        font-weight: bold;
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .btn-sidebar-action:hover {
+        background: #eef2f4;
+    }
+
+    .btn-sidebar-action:disabled {
+        opacity: .55;
+        cursor: default;
+    }
+
     /* Галочка «to next step» — вид кнопки рядом.
      *
      * ⚠ Высота и рамка повторяют `.btn-create` в той строке: `padding: 5px 10px`
@@ -1502,7 +1548,16 @@
     <!-- Список (Sidebar) -->
     <div class="agents-sidebar">
         <div class="sidebar-header">
-            <button class="btn-create" id="createNewWorkflow">+ Создать workflow</button>
+            <div class="sidebar-actions">
+                <button class="btn-create" id="createNewWorkflow" title="Создать новый workflow">+ Создать</button>
+                <button type="button" class="btn-sidebar-action" id="exportWorkflowsBtn"
+                        title="Скачать все workflow этой ноды одним файлом">Экспорт</button>
+                <button type="button" class="btn-sidebar-action" id="importWorkflowsBtn"
+                        title="Заменить workflow этой ноды содержимым файла">Импорт</button>
+            </div>
+            <!-- Файл выбирается только этим полем; после чтения оно очищается,
+                 чтобы повторный выбор того же файла снова считался onchange. -->
+            <input type="file" id="importWorkflowsFile" accept=".json,application/json" hidden>
 
             <!-- Карусель нод: стрелки листают ноды по кругу -->
             <div class="node-carousel">
@@ -1809,5 +1864,5 @@
     initSidebarResizer('settingsResizer', 'workflow_settings_width',
         document.querySelector('#workflowSettingsView .settings-column'), 240, 900);
 </script>
-<script type="module" src="/static/js/workflow/main.js?v=9"></script>
+<script type="module" src="/static/js/workflow/main.js?v=10"></script>
 {% endblock %}

@@ -450,3 +450,38 @@ def ai_workflow_text_render(source: Any, variables: dict) -> str:
         return ''
 
     return rendered if isinstance(rendered, str) else str(rendered)
+
+
+# Ссылки на id шага внутри `metadata` — три вида: число в переходах, строка
+# «на всякий случай» и имя переменной результата. Один проход с подстановкой по
+# словарю: последовательные `.replace` цепляются друг за друга (25 → 26, а
+# потом 26 → 27 перетёрло бы и новое).
+_STEP_REF_NUM_RE = re.compile(r'("step_id"\s*:\s*)(\d+)(\s*[,}\]])')
+_STEP_REF_STR_RE = re.compile(r'("step_id"\s*:\s*")(\d+)(")')
+_STEP_RESULT_RE = re.compile(r'(?<![\d_])_(\d+)(_result)')
+
+
+def ai_workflow_step_refs_remap(metadata: str, id_map: dict) -> str:
+    """Переписать ссылки на id шагов внутри `metadata` одним проходом по виду ссылки.
+
+    Знание о формах ссылки живёт здесь, а политики у потребителей разные:
+    `workflow_duplicate` перенумеровывает шаги всегда (новые id из
+    автоинкремента, и они заведомо больше всех старых), импорт сохраняет id
+    файла и зовёт remap только при столкновении с чужими записями. Пустой
+    словарь — дословно: текст не трогаем нигде, в том числе в шагах, которые
+    не разбираются как JSON.
+    """
+    if not id_map or not metadata:
+        return metadata
+
+    def _by_mapping(match_number, match_text):
+        old = int(match_number)
+        return f'{match_text}{id_map.get(old, old)}'
+
+    metadata = _STEP_REF_NUM_RE.sub(
+        lambda m: _by_mapping(m.group(2), m.group(1)) + m.group(3), metadata)
+    metadata = _STEP_REF_STR_RE.sub(
+        lambda m: _by_mapping(m.group(2), m.group(1)) + m.group(3), metadata)
+    metadata = _STEP_RESULT_RE.sub(
+        lambda m: f'_{id_map.get(int(m.group(1)), int(m.group(1)))}{m.group(2)}', metadata)
+    return metadata
