@@ -26,7 +26,6 @@ router = APIRouter()
 # остаётся: ею можно увести вызов на другой адрес, если понадобится.
 AGENT_CREATE_CHAT_URL = config_get('UVICORN_URL', 'http://127.0.0.1:8000') + '/chat/ask'
 
-
 # Прогон с LLM идёт минуты, а не секунды.
 AGENT_CREATE_TIMEOUT = 300.0
 

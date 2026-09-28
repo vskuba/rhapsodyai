@@ -181,6 +181,7 @@ LLM_SITE = os.getenv('LLM_SITE', 'ladadate').strip()
 # возможность переопределить переменной окружения.
 LLM_GIRL_ID = os.getenv('LLM_GIRL_ID', TEST_GIRL_ID)
 
+
 @dataclass
 class Talk:
     """Один прогон workflow: что вернулось и каким путём к этому пришли."""

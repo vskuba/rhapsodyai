@@ -196,7 +196,7 @@ async function processAiResponse(cleanText) {
             return;
         }
 
-        await addPluginLog("Запуск цепочки ИИ-ответа: получение user_id и companion_id...");
+        await addPluginLog("Запуск цепочки ИИ-ответа: получение user_id и записи собеседника...");
         // 1. Получаем user_id
         const userRes = await fetch(`${aiUrl}/user`, {
             headers: {'X-API-KEY': accessToken}
@@ -242,7 +242,10 @@ async function processAiResponse(cleanText) {
         const compData = await compRes.json();
         const companionId = compData.result.id;
 
-        await addPluginLog(`user_id: ${user_id}, companion_id: ${companionId}. Получение session_uuid...`);
+        // ⚠ Номер записи в запрос не уходит (remove_companion) — он остаётся в журнале
+        // как примета: по нему видно, что get-or-create попал в ту же строку, чьи
+        // имя и заголовок поедут переменными.
+        await addPluginLog(`user_id: ${user_id}, запись собеседника: ${companionId}. Получение session_uuid...`);
 
         // 2. Получаем session_uuid
         const sessRes = await fetch(`${aiUrl}/session/last/uuid`, {
