@@ -26,9 +26,6 @@ router = APIRouter()
 # остаётся: ею можно увести вызов на другой адрес, если понадобится.
 AGENT_CREATE_CHAT_URL = config_get('UVICORN_URL', 'http://127.0.0.1:8000') + '/chat/ask'
 
-# Тип собеседника для движка: у служебного прогона он один.
-AGENT_CREATE_COMPANION_ID = 1
-
 # Прогон с LLM идёт минуты, а не секунды.
 AGENT_CREATE_TIMEOUT = 300.0
 
@@ -36,6 +33,9 @@ AGENT_CREATE_TIMEOUT = 300.0
 # в них не укладывается: один шаг разбирает биографию на три десятка фактов.
 # Перед экраном здесь никто не сидит, поэтому ждём столько, сколько работа занимает.
 AGENT_CREATE_CHAT_TIMEOUT = 240
+
+# Инструмент, по которому узнаём: workflow сам заводит агента или нет.
+AGENT_CREATE_TOOL = 'agent_create_or_update'
 
 # All agent routes require AGENT_VIEW permission
 agent_auth = AuthChecker([AuthPermission.AGENT_VIEW])
@@ -454,10 +454,6 @@ async def _agent_role_ids_set(agent_id: int, role_ids: list, replace: bool = Fal
             await db.execute("INSERT INTO agent_role (agent_id, role_id) VALUES (%s, %s)", (agent_id, role_id))
 
 
-# Инструмент, по которому узнаём: workflow сам заводит агента или нет.
-AGENT_CREATE_TOOL = 'agent_create_or_update'
-
-
 async def _workflow_inputs_check(workflow_id: int, variables: dict) -> None:
     """Проверяет обязательные поля workflow. Не хватает — 422 с перечнем.
 
@@ -522,7 +518,6 @@ async def _agent_create_by_workflow(request: Request, data: AgentCreateRequest,
 
     payload = {'question': (data.title or data.name).strip(),
                'agent_id': runner_id,
-               'companion_id': AGENT_CREATE_COMPANION_ID,
                'variables': variables}
 
     headers = {}

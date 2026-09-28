@@ -80,60 +80,6 @@ async def project_task_tasks_list(project_id: int, user=Depends(AuthChecker([Aut
     return {'tasks': tasks}
 
 
-def _tasks_role_attach(tasks: list) -> None:
-    """
-    Положить на каждую строку роль, которая работает над ней **сейчас**.
-
-    Вкладки страницы делят задачи по ролям, а делали это по типу задачи — а тип
-    статичен: его ставят при заведении, и он говорит, кто задачу планирует. Работа же
-    переходит из рук в руки. QA вернул подзадачу на доработку, её делает разработчик,
-    а тип так и остался `test` — живьём #5219 висела на вкладке «Тестировщик» в
-    состоянии `developing`.
-
-    Считаем на сервере, а не на странице: карта состояний живёт в `task_role`, и
-    вторая её копия в JS разошлась бы с первой на ближайшем новом состоянии.
-
-    Пустая строка — состояние ничьё (ждёт человека, закрыто). Тогда страница остаётся
-    при типе задачи: закрытую работу ищут там, где заводили.
-    """
-    for task in tasks:
-        task['pipeline_role'] = task_role_of_state(task.get('pipeline_state'))
-
-
-async def _tasks_depend_attach(tasks: list) -> None:
-    """
-    Положить на каждую строку её зависимости. Сбой связей список не роняет.
-
-    Одним запросом на всю выдачу: `task_depend_of` берёт сразу все номера. Строкам
-    без связей кладём пустые списки, а не отсутствие ключей, — фронтенду не придётся
-    различать «связей нет» и «поле забыли положить».
-    """
-    for task in tasks:
-        task['depends_on'] = []
-        task['depend_blocked'] = []
-
-    ids = [int(t['id']) for t in tasks if t.get('id')]
-    if not ids:
-        return
-
-    try:
-        links = await task_depend_of(ids)
-        if not links:
-            return
-
-        # Кто из предшественников ещё не закрыт — считаем по той же выдаче, без
-        # похода в базу: состояния всех строк дерева уже здесь.
-        state_by_id = {int(t['id']): str(t.get('pipeline_state') or '') for t in tasks}
-        for task in tasks:
-            deps = links.get(int(task['id']), [])
-            task['depends_on'] = deps
-            task['depend_blocked'] = [
-                dep for dep in deps
-                if state_by_id.get(dep, '') not in TASK_DEPEND_DONE_STATES]
-    except Exception as error:
-        logger_info(f'project_task: зависимости не приложены: {type(error).__name__}: {error}')
-
-
 @router.post('/tasks/{project_id}')
 async def project_task_create(project_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.PLANNING_CREATE]))):
     title = str(data.get('title') or '').strip()
@@ -280,14 +226,6 @@ async def project_task_spec_get(task_id: int,
 
     return {'result': {**spec, 'task_id': task_id, 'title': str(row.get('title') or ''),
                        'is_parent': bool(await _has_kids(task_id))}}
-
-
-async def _has_kids(task_id: int) -> bool:
-    """Есть ли у строки подзадачи — по этому спецификация сводная, а не своя."""
-    async with mysql_get_db_async() as db:
-        await db.execute('SELECT 1 FROM project_task WHERE parent_id = %s LIMIT 1', (task_id,))
-
-        return bool(await db.fetchone())
 
 
 @router.post('/task/{task_id}/metadata')
@@ -487,7 +425,6 @@ async def project_task_ai_generate(request: Request, data: dict, user=Depends(Au
         'workflow_variables': wf_vars,
         'prompt_user':       description,
         'user_id':           user.user_id,
-        'companion_id':      None,
         'session_uuid':      session_uuid,
         'tools':             {},
     })
@@ -513,3 +450,67 @@ async def project_task_ai_generate(request: Request, data: dict, user=Depends(Au
         goals = []
 
     return {'title': title, 'description': description, 'goals': goals}
+
+
+# ── Приватное ────────────────────────────────────────────────────────────────
+
+def _tasks_role_attach(tasks: list) -> None:
+    """
+    Положить на каждую строку роль, которая работает над ней **сейчас**.
+
+    Вкладки страницы делят задачи по ролям, а делали это по типу задачи — а тип
+    статичен: его ставят при заведении, и он говорит, кто задачу планирует. Работа же
+    переходит из рук в руки. QA вернул подзадачу на доработку, её делает разработчик,
+    а тип так и остался `test` — живьём #5219 висела на вкладке «Тестировщик» в
+    состоянии `developing`.
+
+    Считаем на сервере, а не на странице: карта состояний живёт в `task_role`, и
+    вторая её копия в JS разошлась бы с первой на ближайшем новом состоянии.
+
+    Пустая строка — состояние ничьё (ждёт человека, закрыто). Тогда страница остаётся
+    при типе задачи: закрытую работу ищут там, где заводили.
+    """
+    for task in tasks:
+        task['pipeline_role'] = task_role_of_state(task.get('pipeline_state'))
+
+
+async def _tasks_depend_attach(tasks: list) -> None:
+    """
+    Положить на каждую строку её зависимости. Сбой связей список не роняет.
+
+    Одним запросом на всю выдачу: `task_depend_of` берёт сразу все номера. Строкам
+    без связей кладём пустые списки, а не отсутствие ключей, — фронтенду не придётся
+    различать «связей нет» и «поле забыли положить».
+    """
+    for task in tasks:
+        task['depends_on'] = []
+        task['depend_blocked'] = []
+
+    ids = [int(t['id']) for t in tasks if t.get('id')]
+    if not ids:
+        return
+
+    try:
+        links = await task_depend_of(ids)
+        if not links:
+            return
+
+        # Кто из предшественников ещё не закрыт — считаем по той же выдаче, без
+        # похода в базу: состояния всех строк дерева уже здесь.
+        state_by_id = {int(t['id']): str(t.get('pipeline_state') or '') for t in tasks}
+        for task in tasks:
+            deps = links.get(int(task['id']), [])
+            task['depends_on'] = deps
+            task['depend_blocked'] = [
+                dep for dep in deps
+                if state_by_id.get(dep, '') not in TASK_DEPEND_DONE_STATES]
+    except Exception as error:
+        logger_info(f'project_task: зависимости не приложены: {type(error).__name__}: {error}')
+
+
+async def _has_kids(task_id: int) -> bool:
+    """Есть ли у строки подзадачи — по этому спецификация сводная, а не своя."""
+    async with mysql_get_db_async() as db:
+        await db.execute('SELECT 1 FROM project_task WHERE parent_id = %s LIMIT 1', (task_id,))
+
+        return bool(await db.fetchone())

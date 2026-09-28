@@ -191,7 +191,6 @@ async def task_agent_qa_run(task: dict, subtask: dict, last_error: str = '',
         'workflow_variables': wf_vars,
         'prompt_user':        prompt_user,
         'user_id':            QA_USER_ID,
-        'companion_id':       None,
         'session_uuid':       session_uuid,
         'tools':              await _tools_load(),
     })

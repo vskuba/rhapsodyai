@@ -233,7 +233,6 @@ async def _run(agent: dict, llms: list, workflow: dict, blocks: str, count: int,
         'workflow_variables': wf_vars,
         'prompt_user':        blocks,
         'user_id':            TASK_LOG_SUMMARY_USER_ID,
-        'companion_id':       None,
         'session_uuid':       session_uuid,
         'tools':              {},
     })

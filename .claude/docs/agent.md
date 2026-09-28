@@ -61,7 +61,7 @@
   гонять этот workflow — его и создаст прогон);
 - кладёт `agent_name` в переменные — чтобы workflow задал имя именно то,
   что просил вызывающий;
-- шлёт `POST /chat/ask` с `companion_id = 1` и `question` = `title`/`name`;
+- шлёт `POST /chat/ask` с `question` = `title`/`name`;
 - после прогона находит агента по `name` и отдаёт его `id`.
 
 Обязательные `input`-переменные workflow проверяются **здесь** (422 с
@@ -134,7 +134,7 @@
 
 ```json
 POST /chat/ask
-{"agent_id": <id>, "companion_id": 1, "question": "hi",
+{"agent_id": <id>, "question": "hi",
  "variables": {"girl_id": "natalia_1430119", "girl_name": "Natalia"}}
 ```
 

@@ -104,9 +104,6 @@ def ai_workflow_variables_base(
         workflow_id: int,
         user_username: str = '',
         user_email: str = '',
-        companion_id: int | None = None,
-        companion_name: str = '',
-        companion_title: str = '',
 ) -> dict:
     """
     Единый набор базовых переменных workflow — имена соответствуют глобальным
@@ -117,6 +114,10 @@ def ai_workflow_variables_base(
     Переменные агента (`agent.agent_variable`) кладутся **под** базовыми: собственное
     имя вроде `agent_title` в переменных агента не должно подменять базовое —
     глобальные имена одинаковы во всех workflow, и workflow на них рассчитывает.
+
+    ⚠ Собеседника здесь **больше нет** (`companion_id/name/title` убраны из
+    подстановки). Он не дело всех workflow: где троица нужна, она объявлена
+    входящей, и её полным списком присылает вызывающий — чат стейтлесс.
     """
     return {
         **ai_workflow_variables_agent_get(entity_agent),
@@ -124,9 +125,6 @@ def ai_workflow_variables_base(
         'user_id': user_id,
         'user_username': user_username,
         'user_email': user_email,
-        'companion_id': companion_id,
-        'companion_name': companion_name,
-        'companion_title': companion_title,
         'agent_id': entity_agent.get('id'),
         'agent_name': entity_agent.get('name'),
         'agent_title': entity_agent.get('title'),
