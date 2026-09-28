@@ -34,6 +34,9 @@ AGENT_CREATE_TIMEOUT = 300.0
 # Перед экраном здесь никто не сидит, поэтому ждём столько, сколько работа занимает.
 AGENT_CREATE_CHAT_TIMEOUT = 240
 
+# Инструмент, по которому узнаём: workflow сам заводит агента или нет.
+AGENT_CREATE_TOOL = 'agent_create_or_update'
+
 # All agent routes require AGENT_VIEW permission
 agent_auth = AuthChecker([AuthPermission.AGENT_VIEW])
 
@@ -449,10 +452,6 @@ async def _agent_role_ids_set(agent_id: int, role_ids: list, replace: bool = Fal
             await db.execute("DELETE FROM agent_role WHERE agent_id = %s", (agent_id,))
         for role_id in role_ids:
             await db.execute("INSERT INTO agent_role (agent_id, role_id) VALUES (%s, %s)", (agent_id, role_id))
-
-
-# Инструмент, по которому узнаём: workflow сам заводит агента или нет.
-AGENT_CREATE_TOOL = 'agent_create_or_update'
 
 
 async def _workflow_inputs_check(workflow_id: int, variables: dict) -> None:
