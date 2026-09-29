@@ -603,6 +603,17 @@ async def _agent_list_for_user(repo: AgentRepository, user_id: int, find_by: dic
 
     role_id = target_user['role_id']
 
+    # ⚠⚠ Репозиторий зовётся ЗА пределами блока `async with`, а не внутри.
+    #
+    # `repo.find_by` берёт из пула СВОЁ соединение. Позови его внутри блока,
+    # который своё соединение уже держит, — и обработчик занимает два. Пока
+    # запросы идут по одному, это лишь расточительно; но стоит десяти прийти
+    # разом, и каждый держит одно соединение, ожидая второго, которого в пуле
+    # больше нет. Все ждут друг друга навсегда, и ни одной ошибки при этом не
+    # возникает: исчерпанный пул не роняет запрос, а ждёт.
+    #
+    # Ровно так 2026-09-29 встал прод из-за `/llm/status` — там внутри блока
+    # крутился цикл с `setting_get`. Подробности в комментарии той ручки.
     async with mysql_get_db_async() as db:
         # Определяем имя роли: админ видит всех агентов без фильтрации по нодам
         await db.execute("SELECT name FROM `role` WHERE id = %s", (role_id,))
@@ -610,25 +621,31 @@ async def _agent_list_for_user(repo: AgentRepository, user_id: int, find_by: dic
         role_name = role_row['name'] if role_row else None
 
         if auth_role_is_full(role_name or ''):
-            return await repo.find_by(find_by, order_by='position ASC')
+            # Своё соединение больше не нужно: остальное сделает репозиторий.
+            full_access = True
+        else:
+            full_access = False
 
-        # Получаем node_ids пользователя из промежуточной таблицы
-        await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", (user_id,))
-        rows = await db.fetchall()
-        user_node_ids = [row["node_id"] for row in rows]
+            # Получаем node_ids пользователя из промежуточной таблицы
+            await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", (user_id,))
+            rows = await db.fetchall()
+            user_node_ids = [row["node_id"] for row in rows]
 
-        # Агенты, у которых среди ролей есть роль пользователя
-        await db.execute("SELECT agent_id FROM agent_role WHERE role_id = %s", (role_id,))
-        role_rows = await db.fetchall()
-        role_agent_ids = {row["agent_id"] for row in role_rows}
+            # Агенты, у которых среди ролей есть роль пользователя
+            await db.execute("SELECT agent_id FROM agent_role WHERE role_id = %s", (role_id,))
+            role_rows = await db.fetchall()
+            role_agent_ids = {row["agent_id"] for row in role_rows}
 
-        # Получаем всех агентов, подходящих под критерии find_by
-        all_agents = await repo.find_by(find_by, order_by='position ASC')
+    # Соединение блока уже отпущено — репозиторий берёт своё, а не второе.
+    all_agents = await repo.find_by(find_by, order_by='position ASC')
 
-        # Фильтруем агентов:
-        # - должен относиться к одной из нод пользователя (agent['node_id'] in user_node_ids)
-        # - роль пользователя должна быть среди ролей агента (agent_role)
-        return [
-            agent for agent in all_agents
-            if agent.get("node_id") in user_node_ids and agent.get("id") in role_agent_ids
-        ]
+    if full_access:
+        return all_agents
+
+    # Фильтруем агентов:
+    # - должен относиться к одной из нод пользователя (agent['node_id'] in user_node_ids)
+    # - роль пользователя должна быть среди ролей агента (agent_role)
+    return [
+        agent for agent in all_agents
+        if agent.get("node_id") in user_node_ids and agent.get("id") in role_agent_ids
+    ]

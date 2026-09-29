@@ -107,7 +107,39 @@ async def llm_status(node_id: int | None = None, reset_seconds: int | None = Non
         )
         rows = await db.fetchall()
 
-        pings = {row['id']: await _ping_get(row['id']) for row in rows}
+        # ⚠⚠ Пинги читаются ОДНИМ запросом, и это не про скорость, а про пул.
+        #
+        # Раньше здесь стоял `{row['id']: await _ping_get(row['id']) for row in rows}`.
+        # Каждый `_ping_get` зовёт `setting_get`, а тот берёт СВОЁ соединение из
+        # пула — внутри блока `async with mysql_get_db_async() as db`, который
+        # своё соединение уже держит. То есть на каждую модель ноды бралось
+        # второе соединение, не отпустив первое.
+        #
+        # Пока запросы идут по одному, это лишь расточительно. Но стоит десяти
+        # прийти разом (страница опрашивала ручку раз в секунду) — и каждый
+        # держит одно соединение, ожидая второго, которого в пуле уже нет. Все
+        # десять ждут друг друга навсегда: классический тупик на исчерпании пула.
+        # Ни одной ошибки при этом не возникает, запросы просто висят.
+        #
+        # Живьём 2026-09-29: `used=10 free=0`, сервер отвечал только там, где не
+        # ходил в базу; вход в панель, LLM и соседний проект встали. В MySQL те же
+        # соединения видны обычными `Sleep` — база их не держит, держит наш
+        # счётчик занятых.
+        #
+        # ⚠ Правило общее: **внутри блока `async with mysql_get_db_async()`
+        # нельзя звать функции, которые берут соединение сами.** Либо читать
+        # тем же курсором (как здесь), либо выносить вызов за пределы блока.
+        ping_keys = [f'llm_ping_{row["id"]}' for row in rows]
+        pings = {}
+        if ping_keys:
+            marks = ', '.join(['%s'] * len(ping_keys))
+            await db.execute(
+                f'SELECT `key`, value FROM setting'
+                f' WHERE `key` IN ({marks}) AND user_id IS NULL AND node_id IS NULL',
+                ping_keys)
+            saved = {row['key']: row['value'] for row in (await db.fetchall() or [])}
+            pings = {row['id']: _ping_parse(saved.get(f'llm_ping_{row["id"]}'))
+                     for row in rows}
 
         # Счетчики запросов по окнам (журнал llm_request хранится 7 дней).
         # Фильтр по node_id самого запроса (не по текущему списку моделей ноды) -
@@ -421,11 +453,23 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
 
 
 async def _ping_get(llm_id: int) -> dict | None:
-    value = str(await setting_get(f'llm_ping_{llm_id}'))
-    if not value:
+    """Последний пинг модели из настроек. Своё соединение, вне блока с базой.
+
+    ⚠ Внутри `async with mysql_get_db_async()` звать НЕЛЬЗЯ: возьмёт второе
+    соединение, не отпустив первое, и на нагрузке это кладёт пул (см. комментарий
+    в `llm_status`). Там, где пинги нужны сразу для нескольких моделей, читать их
+    одним запросом и разбирать `_ping_parse`.
+    """
+    return _ping_parse(await setting_get(f'llm_ping_{llm_id}'))
+
+
+def _ping_parse(value) -> dict | None:
+    """Разбор сохранённого пинга. Мусор в настройке — это `None`, а не отказ."""
+    text = str(value or '')
+    if not text:
         return None
     try:
-        return json.loads(value)
+        return json.loads(text)
     except (ValueError, TypeError):
         return None
 
