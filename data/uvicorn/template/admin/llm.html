@@ -812,9 +812,16 @@
 
             <div class="filter-item auto-refresh-item">
                 <label class="filter-label" for="autoRefreshSelect">Автообновление</label>
+                {# ⚠ Умолчание — 3 секунды, а не 1. Каждый тик зовёт /llm/status,
+                   и 2026-09-29 секундный опрос сложился с замком на всю таблицу
+                   node_llm: запросы наложились, заняли весь пул соединений, и
+                   встало всё, что ходит в базу. Замок убран (см. llm.py), но
+                   опрашивать базу раз в секунду ради страницы, на которую смотрят
+                   минутами, незачем и так. Секунда осталась в списке: иногда
+                   действительно надо смотреть в реальном времени. #}
                 <select id="autoRefreshSelect">
-                    <option value="1" selected>1 сек</option>
-                    <option value="3">3 сек</option>
+                    <option value="1">1 сек</option>
+                    <option value="3" selected>3 сек</option>
                     <option value="7">7 сек</option>
                 </select>
             </div>

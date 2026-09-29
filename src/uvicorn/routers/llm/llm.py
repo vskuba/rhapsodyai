@@ -50,14 +50,39 @@ async def llm_status(node_id: int | None = None, reset_seconds: int | None = Non
         seconds = int(stored) if stored and stored.isdigit() else LLM_ERROR_RESET_DEFAULT
 
     async with mysql_get_db_async() as db:
-        # Сброс просроченных ошибок: модель снова участвует в очереди по своей позиции
+        # Сброс просроченных ошибок: модель снова участвует в очереди по своей позиции.
+        #
+        # ⚠⚠ Сначала спрашиваем, есть ли что сбрасывать, и только потом пишем.
+        # Лишний `SELECT` здесь дешевле `UPDATE` вхолостую, и вот почему:
+        # индекса по `rate_limit_at` нет, `EXPLAIN` на этот `UPDATE` даёт
+        # `rows: 41` — то есть просматриваются все строки таблицы, — а при
+        # `REPEATABLE-READ` просмотренное запирается next-key-замками. Замок на
+        # всю `node_llm` берётся, даже когда обновлять нечего, а нечего почти
+        # всегда: модели в ошибке — исключение, а не норма.
+        #
+        # Цена этого выяснилась на проде 2026-09-29. Страница `/admin/llm`
+        # опрашивает эту ручку **раз в секунду**, запросы наложились друг на
+        # друга и встали в очередь за замком (`innodb_lock_wait_timeout` — 50 с).
+        # Десять таких запросов заняли весь пул соединений, и вместе с ними встало
+        # всё, что ходит в базу: вход в панель, вызовы LLM, работа соседнего
+        # проекта. В логах при этом ни одной ошибки — исчерпанный пул не роняет
+        # запрос, а ждёт.
+        #
+        # `SELECT` замков не берёт вовсе, и в обычном случае ручка теперь не
+        # пишет ничего.
         await db.execute(
-            """
-            UPDATE node_llm SET rate_limit_at = NULL, code_error = NULL
-            WHERE rate_limit_at IS NOT NULL AND rate_limit_at < NOW() - INTERVAL %s SECOND
-            """,
+            "SELECT COUNT(*) AS qty FROM node_llm"
+            " WHERE rate_limit_at IS NOT NULL AND rate_limit_at < NOW() - INTERVAL %s SECOND",
             (seconds,)
         )
+        if int((await db.fetchone() or {}).get('qty') or 0):
+            await db.execute(
+                """
+                UPDATE node_llm SET rate_limit_at = NULL, code_error = NULL
+                WHERE rate_limit_at IS NOT NULL AND rate_limit_at < NOW() - INTERVAL %s SECOND
+                """,
+                (seconds,)
+            )
 
         await db.execute("SELECT id, name FROM `node` ORDER BY name ASC")
         nodes = await db.fetchall()

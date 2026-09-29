@@ -116,6 +116,89 @@ class TestShapeIsOneRow:
         assert len(mysql_watch_drain()) == 1
 
 
+class TestCounterIsCheapOnBigValues:
+    """
+    ⚠⚠ Счётчик обязан быть дешевле того, что считает — и на больших значениях тоже.
+
+    Это не про скорость ради скорости. Счётчик зовут **синхронно из цикла
+    событий**, а цикл однопоточный: каждая его миллисекунда — миллисекунда, когда
+    приложение не отвечает никому. Первая версия разбирала значение целиком и под
+    локом: 500 КБ стоили 65 мс. Живьём (прод, 2026-09-29) этого хватило, чтобы
+    запросы перестали успевать, клиенты начали их обрывать, оборванные не вернули
+    соединения в пул — и через десять обрывов встало всё, что ходит в базу: вход
+    в панель, вызовы LLM, работа соседнего проекта. Ни одной ошибки в логах при
+    этом не было.
+
+    Трасса workflow пишет такие значения постоянно: снимок переменных прогона,
+    отрендеренный шаг, ответ модели — до `TRACE_VALUE_MAX_LEN` (500 000 знаков).
+    """
+
+    # Потолок на один вызов. С запасом к замеру (0.8 мс на 500 КБ): тест стережёт
+    # порядок величины, а не конкретное число — иначе он краснел бы от соседа по
+    # машине, а не от вернувшейся беды.
+    CALL_MAX_MS = 10.0
+
+    def test_big_value_does_not_stall_the_loop(self, counted):
+        """Полмегабайта в значении не превращаются в десятки миллисекунд."""
+        import time
+
+        from mysql_.mysql_watch import mysql_watch_drain
+
+        big = 'x' * 500_000
+        query = 'INSERT INTO agent_workflow_trace (variables_start) VALUES (%s)'
+
+        started = time.perf_counter()
+        _shape(query, (big,), ms=5.0)
+        took = (time.perf_counter() - started) * 1000
+
+        assert took < self.CALL_MAX_MS, (
+            f'счётчик занял {took:.1f} мс на значении в {len(big)} знаков — '
+            f'столько же стоит простой всего приложения')
+        assert mysql_watch_drain(), 'значение не записалось вовсе'
+
+    def test_repeat_is_nearly_free(self, counted):
+        """
+        Повтор не разбирает значения заново: рекорд по времени уже есть, и
+        трогать сохранённые аргументы незачем. Это главный случай — рекорд
+        случается раз, повторов тысячи.
+        """
+        import time
+
+        big = 'x' * 500_000
+        query = 'INSERT INTO agent_workflow_trace (variables_start) VALUES (%s)'
+        _shape(query, (big,), ms=500.0)
+
+        started = time.perf_counter()
+        for _ in range(20):
+            _shape(query, (big,), ms=1.0)
+        took = (time.perf_counter() - started) * 1000 / 20
+
+        assert took < 1.0, f'повторный вызов занял {took:.2f} мс — значения разбираются заново'
+
+    def test_long_value_is_marked_as_cut(self, counted):
+        """
+        ⚠ Обрезка помечается. Обрывок без пометки читается как целое значение —
+        и человек ищет беду в данных, которых на самом деле не видел.
+        """
+        from mysql_.mysql_watch import MYSQL_WATCH_ARGS_MAX, mysql_watch_drain
+
+        _shape('SELECT id FROM t WHERE a = %s', ('y' * 300_000,))
+        args = mysql_watch_drain()[0]['slow_args']
+
+        assert len(args) <= MYSQL_WATCH_ARGS_MAX + 20, 'в базу уехало значение целиком'
+        assert args.endswith('…[обрезано]'), 'обрезка не помечена'
+
+    def test_short_value_is_kept_whole(self, counted):
+        """Короткое значение не режется и не помечается: резать нечего."""
+        from mysql_.mysql_watch import mysql_watch_drain
+
+        _shape('SELECT id FROM t WHERE a = %s', ('коротко',))
+        args = mysql_watch_drain()[0]['slow_args']
+
+        assert 'коротко' in args
+        assert 'обрезано' not in args
+
+
 class TestValuesAreKept:
     """Значения нужны — без них «WHERE id = %s» не отвечает ни на один вопрос."""
 
