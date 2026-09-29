@@ -30,6 +30,7 @@ from queue_.queue_ import queue_init
 from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
+from src.auth.auth_session_slide import auth_session_slide_touch
 from src.journal.journal_handler import journal_handler_install
 from src.journal.journal_mysql import (journal_mysql_flush_forever,
                                        journal_mysql_watch_start)
@@ -98,6 +99,11 @@ from src.uvicorn.routers.browser import (browser_author, browser_error, browser_
 # потому что общий слой (`mysql_seed`) схемы этого проекта не знает и знать
 # не должен.
 MYSQL_SEED_PROBE_TABLE = 'node'
+
+# Сколько живёт сессия админки без единого запроса. Окно скользящее
+# (`session_slide_middleware`), поэтому это «два часа простоя», а не «два часа с
+# момента входа»: работающего человека сессия не выбрасывает вовсе.
+SESSION_MAX_AGE = 7200
 
 
 @asynccontextmanager
@@ -242,6 +248,27 @@ async def catch_exceptions_middleware(request: Request, call_next):
                 "details": str(e)  # В продакшене лучше скрыть детали
             }
         )
+
+
+async def session_slide_middleware(request: Request, call_next):
+    """Продлевает сессию по активности: срок считается от последнего запроса.
+
+    Вся логика — в `auth_session_slide_touch` (там же, почему метка огрублена и
+    чем это отличается по версиям Starlette). Здесь только место вызова: после
+    ответа, чтобы свежий `Set-Cookie` попал в уже сформированные заголовки.
+    """
+    response = await call_next(request)
+
+    try:
+        session = request.session
+    except AssertionError:
+        # `SessionMiddleware` не в цепочке (так бывает у приложения, собранного
+        # без него) — продлевать нечего.
+        return response
+
+    auth_session_slide_touch(session)
+
+    return response
 
 
 async def auth_middleware(request: Request, call_next):
@@ -408,19 +435,21 @@ middleware = [
         SessionMiddleware,  # type: ignore
         secret_key=config_get('SESSION_SECRET_KEY'),
         session_cookie="uvicorn_session",
-        # Два часа. Был час, и он кончался посреди работы: страница админки
-        # оставалась открытой, но данные в панелях переставали приходить — все
-        # запросы к API отвечали 401, а сама страница отдавалась как ни в чём не
-        # бывало (её маршрут проверяет вход отдельно и уводит на /login только при
-        # переходе). Выглядело это поломкой сервера, а не концом сессии.
-        #
-        # ⚠ Срок считается от входа, а не от последнего действия: `SessionMiddleware`
-        # продлевать куку по активности не умеет. То есть два часа — это потолок
-        # непрерывной работы, а не «два часа простоя».
-        max_age=7200,
+        # Два часа **простоя**: окно скользящее, его двигает
+        # `session_slide_middleware` ниже. Был час и от входа — он кончался
+        # посреди работы, и выглядело это не как «сессия истекла», а как поломка
+        # сервера: страница админки остаётся открытой (её маршрут проверяет вход
+        # только при переходе), а запросы к API начинают отвечать 401 — панели
+        # молча пустеют. Дважды приняли за отказ базы.
+        max_age=SESSION_MAX_AGE,
         same_site="lax",
         https_only=False
     ),
+    # ⚠ Продление стоит ПОСЛЕ `SessionMiddleware` в списке — то есть **внутри**
+    # него в цепочке вызовов. Middleware оборачивают друг друга в порядке
+    # объявления: первый снаружи. Окажись продление выше — оно правило бы
+    # сессию, которой ещё нет, и падало бы на `request.session`.
+    Middleware(BaseHTTPMiddleware, dispatch=session_slide_middleware),
     Middleware(BaseHTTPMiddleware, dispatch=logging_middleware),
     Middleware(BaseHTTPMiddleware, dispatch=catch_exceptions_middleware),
     Middleware(
