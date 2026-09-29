@@ -1,4 +1,5 @@
 from json_.json_ import json_from_string
+from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from qdrant_.qdrant_ import qdrant_search, qdrant_remove_by
 from src.ai.ai_fact import ai_fact_qdrant_sync
@@ -55,7 +56,30 @@ async def qdrant_fact_search(
     """
     Высокоуровневая обёртка для поиска.
     Автоматически подтягивает метаданные и возвращает только список текстовых фактов.
+    Пустой запрос (переменная workflow не заполнена) — пустой ответ, не отказ.
     """
+    # ⚠⚠ Незаполненная переменная приходит сюда как `None`, и это **по контракту**:
+    # движок берёт значение `variables.get(имя, None)`, а кастование по аннотациям
+    # `None` намеренно пропускает как есть (`tools.md`, §8). Значит различать
+    # «не передано» и «передано пустым» — работа инструмента, и вот она.
+    #
+    # ⚠ Цена пропуска измерена. Без этой проверки `None` доезжал до токенизатора
+    # внутри `qdrant_search`, и тот отвечал `TextEncodeInput must be
+    # Union[TextInputSequence, …]` — сообщение, по которому не найти ни шага, ни
+    # переменной. На проде так падал подпоток `girl_fact_invent` каждый раз,
+    # когда родитель не передавал ему `prompt_user` (99 попаданий в журнале
+    # с 26.09), а весь прогон `dating_talk` обрывался с «Внутренняя ошибка
+    # сервера».
+    #
+    # Пустой ответ, а не отказ: искать факты по пустому запросу нечем, и «ничего
+    # не нашлось» — честный итог, с которым workflow идёт дальше. Прежде так и
+    # было, пока пустая строка доходила вместо `None`: поиск отрабатывал и
+    # возвращал пусто.
+    if query_text is None or not str(query_text).strip():
+        logger_info(f"🔍 qdrant_fact_search: запрос пуст, искать нечего "
+                    f"(коллекция '{collection_name}') — возвращаем пусто")
+        return ''
+
     metadata_filter_json = json_from_string(metadata_filter)
     field_document = 'document'
 
