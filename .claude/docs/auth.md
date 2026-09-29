@@ -26,7 +26,7 @@ Middleware(
     SessionMiddleware,
     secret_key=config_get('SESSION_SECRET_KEY'),
     session_cookie="uvicorn_session",
-    max_age=3600,
+    max_age=7200,          # два часа
     same_site="lax",
     https_only=False
 ),
@@ -34,6 +34,30 @@ Middleware(BaseHTTPMiddleware, dispatch=auth_middleware),
 ```
 
 `auth_middleware` protects `/admin/*` routes, redirects unauthenticated users to `/login`.
+
+### ⚠ Срок сессии — два часа, и считается он от входа
+
+Было час, подняли 2026-09-29. Час кончался посреди работы, и выглядело это не как
+«сессия истекла», а как поломка сервера: страница админки остаётся открытой (её маршрут
+проверяет вход только при переходе), а все запросы к API отвечают 401 — панели молча
+пустеют. Живьём это дважды приняли за отказ базы.
+
+⚠ **Срок считается от входа, а не от последнего действия.** `SessionMiddleware` продлевать
+куку по активности не умеет: `max_age` пишется в `Set-Cookie` один раз. То есть два часа —
+это потолок непрерывной работы, а не «два часа простоя». Понадобится скользящее окно —
+это уже свой middleware, который переустанавливает куку на каждом запросе.
+
+⚠ **Секрет сессии переживает выкладку**, пока `SESSION_SECRET_KEY` лежит в `.env` прода:
+куки после деплоя остаются годными. Пропадёт переменная — все сессии оборвутся разом, и
+это будет выглядеть тем же «сервер сломался».
+
+Проверить срок в живой установке: `Max-Age` в ответе на вход.
+
+```bash
+curl -s -i -X POST http://localhost:8011/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"…","password":"…"}' | grep -i '^set-cookie'
+```
 
 ## AuthSession Model
 
