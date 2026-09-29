@@ -311,6 +311,6 @@ async def _variables_allowed(workflow_id: int, sent: dict) -> None:
         status_code=400,
         detail=(f"Переменные {', '.join(extra)} не объявлены входящими у этого "
                 f"workflow. Объявите их (`agent_workflow_variable.type = "
-                f"'input'` и связь с workflow) либо уберите из запроса: "
+                f"'input'` у этого workflow) либо уберите из запроса: "
                 f"переопределять внутренние переменные workflow снаружи нельзя.")
     )

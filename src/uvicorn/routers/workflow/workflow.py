@@ -7,7 +7,6 @@ from src.ai.ai_workflow import ai_workflow_variables_node_get, ai_workflow_step_
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
 from src.mysql_.repository.agent_workflow_step_repository import AgentWorkflowStepRepository
 from src.mysql_.repository.agent_workflow_step_type_repository import AgentWorkflowStepTypeRepository
-from src.mysql_.repository.agent_workflow_variable_repository import AgentWorkflowVariableRepository
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 
@@ -120,14 +119,21 @@ async def workflow_duplicate(
                     (updated, new_step_id)
                 )
 
-        # Связи переменных: обычные и публичные (сами переменные общие, копируем только связи)
+        # Переменные workflow: копии строк, а не ссылки на чужие.
+        #
+        # ⚠⚠ Здесь копировались **связи** — дубликат садился на переменные
+        # оригинала, и переименование в копии переименовывало их в источнике.
+        # У переменной теперь один владелец (`workflow_id`), и дубликату
+        # заводится свой набор: те же имена, умолчания и описания, свои строки.
         await db.execute(
             """
-            INSERT INTO agent_workflow_variable_workflow (variable_id, workflow_id)
-            SELECT variable_id, %s FROM agent_workflow_variable_workflow WHERE workflow_id = %s
+            INSERT INTO agent_workflow_variable (workflow_id, name, `type`, `default`, description)
+            SELECT %s, name, `type`, `default`, description
+            FROM agent_workflow_variable WHERE workflow_id = %s
             """,
             (new_workflow_id, workflow_id)
         )
+        # Переменные ноды общие для ноды — у них копируется именно связь.
         await db.execute(
             """
             INSERT INTO node_variable_workflow (node_variable_id, workflow_id)
@@ -232,8 +238,7 @@ async def workflow_variables(
     sql = """
         (SELECT v.id, v.name, v.`type`, v.`default`, v.description, NULL as node_id
          FROM `agent_workflow_variable` v
-         JOIN `agent_workflow_variable_workflow` vw ON v.id = vw.variable_id
-         WHERE vw.workflow_id = %s)
+         WHERE v.workflow_id = %s)
         UNION
         (SELECT v.id, v.name, v.`type`, v.`default`, v.description, NULL as node_id
          FROM `agent_workflow_variable` v
@@ -296,47 +301,50 @@ async def workflow_variable_add(
         data: dict,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
 ):
+    """Заводит переменную этого workflow. Имя уже есть — отдаёт её же.
+
+    ## ⚠⚠ Своя строка, а не чужая с тем же именем
+
+    Здесь искалась запись с такой же парой (имя, тип) **по всей базе**, и если
+    она находилась, workflow просто привязывался к ней. Родитель и подпоток,
+    объявившие `girl_name`, получали одну строку на двоих — и переименование в
+    одном переименовывало в другом, а удаление сносило у обоих.
+
+    У переменной теперь один владелец (`agent_workflow_variable.workflow_id`), и
+    заводится она всегда своя. Одинаковые имена в двух workflow — это две
+    независимые записи, как и должно быть: общаться workflow между собой могут
+    только контрактом входа (`inputs_map` шага `workflow_invoke`).
+
+    ⚠ Исключение — `type='global'`: такая переменная ничья по определению
+    (`workflow_id IS NULL`). Движок отдаёт все глобальные каждому workflow
+    (`ai_workflow_variables_global_get`), и владельца у них нет. Редактор их не
+    заводит — тип приходит только из вызовов API.
+    """
+    variable_type = data.get("type", "workflow")
+    # Владелец глобальной — никто: она общая на установку, а не на workflow.
+    owner_id = None if variable_type == 'global' else workflow_id
+
     async with mysql_get_db_async() as db:
-        # Check if relation already exists
-        sql_check = """
-            SELECT v.id 
-            FROM agent_workflow_variable v
-            JOIN agent_workflow_variable_workflow vw ON v.id = vw.variable_id
-            WHERE vw.workflow_id = %s AND v.name = %s
-        """
-        await db.execute(sql_check, (workflow_id, data.get("name")))
+        # Повтор по имени внутри своего workflow — не ошибка: страница добавляет
+        # переменную и по кнопке, и подхватом из шага, а результат один и тот же.
+        await db.execute(
+            "SELECT id FROM agent_workflow_variable "
+            "WHERE `workflow_id` <=> %s AND name = %s",
+            (owner_id, data.get("name"))
+        )
         variable = await db.fetchone()
         if variable:
             return {"result": variable.get("id")}
 
-        variable_type = data.get("type", "workflow")
-
-        # Check if variable with same name and type already exists
         await db.execute(
-            "SELECT id FROM agent_workflow_variable WHERE name = %s AND `type` = %s",
-            (data.get("name"), variable_type)
-        )
-        existing_var = await db.fetchone()
-
-        if existing_var:
-            variable_id = existing_var.get("id")
-        else:
-            # Create new variable
-            sql_insert_var = """
-                INSERT INTO agent_workflow_variable (name, `default`, `type`)
-                VALUES (%s, %s, %s)
             """
-            await db.execute(sql_insert_var, (data.get("name"), data.get("default"), variable_type))
-            variable_id = db.lastrowid
+            INSERT INTO agent_workflow_variable (workflow_id, name, `default`, `type`)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (owner_id, data.get("name"), data.get("default"), variable_type)
+        )
 
-        # Insert relationship
-        sql_insert_link = """
-            INSERT INTO agent_workflow_variable_workflow (variable_id, workflow_id)
-            VALUES (%s, %s)
-        """
-        await db.execute(sql_insert_link, (variable_id, workflow_id))
-
-        return {"result": variable_id}
+        return {"result": db.lastrowid}
 
 
 @router.put("/workflow/{workflow_id}/steps/reorder")
@@ -466,8 +474,20 @@ async def workflow_variable_update(
     ⚠ Правим **только присланные поля**: страница шлёт одно описание, и
     затирать им имя с умолчанием нельзя.
 
+    ## ⚠⚠ `workflow_id` из адреса участвует в условии, и это не украшение
+
+    Он в адресе был с самого начала, а в запросе — нет: правилась строка по
+    одному `id`. Пока переменная была общей, это и означало «переименовать у
+    всех»: `girl_name` у `dating_talk` и у подпотока `girl_fact_invent` — одна
+    запись, и правка в подпотоке меняла имя родителю.
+
+    Теперь у переменной один владелец, и ручка правит только его запись. Чужая
+    (или глобальная, у которой владельца нет) в условие не попадает — ответ
+    `404`, а не молчаливая правка соседа.
+
     Raises:
         HTTPException: 400 — нечего править либо имя не годится в идентификатор.
+            404 — у этого workflow такой переменной нет.
     """
     fields, values = [], []
 
@@ -500,12 +520,22 @@ async def workflow_variable_update(
                             detail='Нечего править: ни имени, ни умолчания, '
                                    'ни описания в запросе.')
 
-    values.append(workflow_variable_id)
+    values.extend([workflow_variable_id, workflow_id])
 
     async with mysql_get_db_async() as db:
         await db.execute(
+            "SELECT `id` FROM `agent_workflow_variable` "
+            "WHERE `id` = %s AND `workflow_id` = %s",
+            (workflow_variable_id, workflow_id))
+        if not await db.fetchone():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Переменной {workflow_variable_id} у workflow "
+                       f"{workflow_id} нет: чужие и глобальные отсюда не правятся.")
+
+        await db.execute(
             f"UPDATE `agent_workflow_variable` SET {', '.join(fields)} "
-            f"WHERE `id` = %s", tuple(values))
+            f"WHERE `id` = %s AND `workflow_id` = %s", tuple(values))
         await db.connection.commit()
 
     return {'result': {'id': workflow_variable_id}}
@@ -514,11 +544,27 @@ async def workflow_variable_update(
 @router.delete("/workflow/{workflow_id}/variable/{workflow_variable_id}")
 async def workflow_variable_delete(
         request: Request,
+        workflow_id: int,
         workflow_variable_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))
 ):
-    repo = AgentWorkflowVariableRepository()
-    return {"result": await repo.delete(workflow_variable_id)}
+    """Убирает переменную у этого workflow.
+
+    ⚠⚠ Удаление шло по одному `id`, мимо `workflow_id` из адреса. Пока строка
+    была общей, «убрать переменную у себя» означало **снести её у всех**, кто
+    её объявил, — и заметить это можно было только по упавшему прогону соседа.
+    Владелец у переменной теперь один, и условие спрашивает обоих.
+
+    Returns:
+        dict: `result` — сколько строк удалено (ноль, если переменная чужая).
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "DELETE FROM `agent_workflow_variable` "
+            "WHERE `id` = %s AND `workflow_id` = %s",
+            (workflow_variable_id, workflow_id))
+        await db.connection.commit()
+        return {"result": db.rowcount}
 
 
 # Тип переменной ноды, который человек настраивает сам. Второй — `proxy`,

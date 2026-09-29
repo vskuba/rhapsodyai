@@ -114,7 +114,7 @@ async def ai_workflow_export_payload(node_pk):
                 # Имена, а не только счёт: на принимающей стороне сразу видно,
                 # что проверять, — без похода в базу за списком.
                 payload['warnings'].append(
-                    f'Глобальные переменные не переносятся ({len(skipped)}): '
+                    f'Глобальные переменные установки не переносятся ({len(skipped)}): '
                     f'{", ".join(skipped)} — они системные, заведите их на принимающей стороне'
                 )
 
@@ -126,12 +126,18 @@ async def ai_workflow_export_payload(node_pk):
 
 
 def ai_workflow_export_variables_merge(variables_rows, link_rows):
-    """Правило идентичности переменной, им и пользуется редактор: пара (имя, тип).
+    """Правило идентичности переменной, им и пользуется редактор: (workflow, имя).
 
-    Уникального индекса на пару в схеме нет, поэтому под одним именем могут
-    жить строки с разными id (наследие старых заводов): первой канонической
-    считается строка с меньшим id, её и пишем в файл, а связи дублей
-    переводим на неё — файл обязан быть непротиворечив относительно пары.
+    ⚠⚠ Пара была **(имя, тип) по всей базе** — ровно та ошибка, из-за которой
+    переменные родителя и подпотока оказывались одной записью. Теперь у
+    переменной один владелец, и одинаковые имена в двух workflow — две разные
+    записи, обе едут в файл.
+
+    Дубль внутри одного workflow схема больше не допускает (`UNIQUE
+    (workflow_id, name)`), так что слияние здесь — страховка на данные, снятые
+    до этого индекса: канонической считается строка с меньшим id, связи
+    остальных переводятся на неё, чтобы файл не ссылался на невыгруженную
+    запись.
 
     Args:
         variables_rows: строки `agent_workflow_variable` (порядок по id).
@@ -143,7 +149,7 @@ def ai_workflow_export_variables_merge(variables_rows, link_rows):
     """
     variables, aliases, canonical = [], {}, {}
     for row in variables_rows:
-        pair = (row['name'], row['type'])
+        pair = (row.get('workflow_id'), row['name'])
         if pair not in canonical:
             canonical[pair] = row['id']
             variables.append({
@@ -201,51 +207,40 @@ async def _workflow_export_fetch_steps(db, workflow_ids):
 
 
 async def _workflow_export_fetch_variables(db, workflow_ids):
-    """Неглобальные переменные, привязанные к workflow узла, и сами связи.
+    """Неглобальные переменные workflow узла и связи «переменная — её workflow».
 
-    Переменная может быть привязана и к чужому workflow (M:N) — на принимающей
-    стороне импорт сопоставит её по имени и типу, а чужая связь не пострадает.
+    У переменной один владелец (`agent_workflow_variable.workflow_id`), поэтому
+    связь однозначна и собирается прямо из строки. В файле она всё равно лежит
+    отдельным списком `variable_links`: формат заведён при общих переменных и
+    менять его незачем — старые файлы читаются тем же импортом.
+
     Глобальные в файл не идут (свои на каждой базе) — их **имена** возвращаются
-    отдельным списком, чтобы сборщик перечислил их в `warnings`. Слияние дублей
-    по паре (имя, тип) — не здесь: правило живёт в
-    `ai_workflow_export_variables_merge`.
+    отдельным списком, чтобы сборщик перечислил их в `warnings`.
+
+    ⚠⚠ Глобальные берутся **все, что есть на установке**, а не «привязанные к
+    этим workflow»: владельца у глобальной нет и быть не может, движок отдаёт
+    их каждому workflow целиком (`ai_workflow_variables_global_get`). Прежняя
+    выборка «по связи» опиралась на связку, которая на работу не влияла и
+    заполнялась случайно — тем, кто как заводил переменную.
     """
     placeholders = ','.join(['%s'] * len(workflow_ids))
     await db.execute(
-        f'SELECT v.`id`, v.`name`, v.`type`, v.`default`, v.`description` '
+        f'SELECT v.`id`, v.`workflow_id`, v.`name`, v.`type`, v.`default`, v.`description` '
         f'FROM `agent_workflow_variable` v '
-        f'JOIN `agent_workflow_variable_workflow` l ON l.`variable_id` = v.`id` '
-        f'WHERE l.`workflow_id` IN ({placeholders}) AND v.`type` != %s '
-        f'GROUP BY v.`id`, v.`name`, v.`type`, v.`default`, v.`description` '
+        f'WHERE v.`workflow_id` IN ({placeholders}) AND v.`type` != %s '
         f'ORDER BY v.`id`',
         tuple(workflow_ids) + ('global',)
     )
     variables_rows = await db.fetchall() or []
 
-    # ⚠ `DISTINCT` по имени, а не `COUNT(*)` по связям: одна переменная,
-    # привязанная к двум workflow узла, давала две строки и считалась дважды —
-    # у ноды Dating предупреждение обещало четыре записи там, где их три, и
-    # человек на принимающей стороне искал четвёртую.
     await db.execute(
-        f'SELECT DISTINCT v.`name` FROM `agent_workflow_variable` v '
-        f'JOIN `agent_workflow_variable_workflow` l ON l.`variable_id` = v.`id` '
-        f'WHERE l.`workflow_id` IN ({placeholders}) AND v.`type` = %s '
-        f'ORDER BY v.`name`',
-        tuple(workflow_ids) + ('global',)
-    )
+        'SELECT DISTINCT `name` FROM `agent_workflow_variable` '
+        'WHERE `type` = %s ORDER BY `name`', ('global',))
     global_names = [ai_workflow_export_strip(row['name'])
                     for row in (await db.fetchall() or [])]
 
-    # Связи глобальных переменных не пишутся: самих их в файле нет, а ссылка на
-    # отсутствующую запись сделала бы файл битым для импорта.
-    await db.execute(
-        f'SELECT l.`variable_id`, l.`workflow_id` FROM `agent_workflow_variable_workflow` l '
-        f'JOIN `agent_workflow_variable` v ON v.`id` = l.`variable_id` AND v.`type` != %s '
-        f'WHERE l.`workflow_id` IN ({placeholders}) '
-        f'ORDER BY l.`variable_id`, l.`workflow_id`',
-        ('global',) + tuple(workflow_ids)
-    )
-    link_rows = await db.fetchall() or []
+    link_rows = [{'variable_id': row['id'], 'workflow_id': row['workflow_id']}
+                 for row in variables_rows]
 
     variables, merged = ai_workflow_export_variables_merge(variables_rows, link_rows)
     return variables, merged, global_names

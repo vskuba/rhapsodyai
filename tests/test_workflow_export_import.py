@@ -17,7 +17,7 @@
 - конфликт: чужой id и занятое имя → 409, битый файл → 400, нет такой ноды → 400;
 - откат: падение в середине импорта не трогает ноду;
 - предупреждения: цель `workflow_invoke` вне файла не тянется, а видна в warnings;
-- дубли строк переменной по паре (имя, тип) сливаются в файле в одну запись.
+- одно имя у двух workflow — две записи в файле, дубль внутри workflow сливается.
 """
 
 import json
@@ -83,35 +83,36 @@ class TestWorkflowExportImport:
         assert {l["workflow_id"] for l in payload["variable_links"]} == {probe["wf_one"]}
         assert probe["wf_one"] in {l["workflow_id"] for l in payload["node_variable_links"]}
 
-    async def test_export_counts_global_variables_once(self, client: httpx.AsyncClient, probe: dict):
-        """Глобальная на двух workflow узла — в предупреждении одна, и названа.
+    async def test_export_names_global_variables_once(self, client: httpx.AsyncClient, probe: dict):
+        """Глобальные названы поимённо, каждая по разу, и в файл не едут.
 
         ⚠ Дефект, доживший до прода: счёт шёл `COUNT(*)` по таблице связей, и
         переменная, привязанная к двум workflow ноды, считалась дважды. На ноде
         Dating предупреждение обещало четыре записи там, где их три, — человек
         на принимающей стороне искал четвёртую.
 
+        ⚠⚠ Связки больше нет, и выборка «глобальные этих workflow» тоже: у
+        глобальной **нет владельца** — движок отдаёт их все каждому workflow.
+        Поэтому предупреждение перечисляет глобальные установки целиком, и
+        проверяем то же самое: имена названы, повторов нет, в `variables`
+        ни одной.
+
         Проверяем не только число: имена в тексте избавляют принимающую сторону
         от похода в базу за списком.
         """
-        name = f"{WF_ONE}_g"
-        for workflow_id in (probe["wf_one"], probe["wf_two"]):
-            created = await client.post(f"/workflow/{workflow_id}/variable",
-                                        json={"name": name, "default": "", "type": "global"})
-            assert created.status_code == 200, created.text
+        payload = await _export(client, probe["node_id"])
 
-        try:
-            payload = await _export(client, probe["node_id"])
+        about_globals = [w for w in payload["warnings"] if "Глобальные" in w]
+        assert len(about_globals) == 1, payload["warnings"]
 
-            about_globals = [w for w in payload["warnings"] if "Глобальные" in w]
-            assert len(about_globals) == 1, payload["warnings"]
-            assert "(1)" in about_globals[0], f"переменная сосчитана дважды: {about_globals[0]}"
-            assert name in about_globals[0], f"имя не названо: {about_globals[0]}"
+        listed = about_globals[0].split('):', 1)[1].split(' — ')[0]
+        names = [one.strip() for one in listed.split(',') if one.strip()]
+        assert 'prompt_user' in names, f"системная не названа: {about_globals[0]}"
+        assert len(names) == len(set(names)), f"имя посчитано дважды: {about_globals[0]}"
+        assert f"({len(names)})" in about_globals[0], f"счёт разошёлся с именами: {about_globals[0]}"
 
-            # Сама она в файл не едет — только предупреждение о ней.
-            assert name not in [v["name"] for v in payload["variables"]]
-        finally:
-            await client.delete(f"/workflow/{probe['wf_one']}/variable/{_rid(created.json()['result'])}")
+        # Сами они в файл не едут — только предупреждение о них.
+        assert not set(names) & {v["name"] for v in payload["variables"]}
 
     async def test_export_pseudo_node_works(self, client: httpx.AsyncClient):
         """`node_id=none` — файл без ноды собирается, и роут id-а не перекрыт."""
@@ -124,28 +125,35 @@ class TestWorkflowExportImport:
             response = await client.get(f"/workflow/{other[0]['id']}")
             assert response.status_code == 200, "GET /workflow/{id} перекрыт новым роутом"
 
-    def test_export_merges_duplicate_variable_pair(self):
-        """Две строки переменной с одной парой (имя, тип) — в файле одна запись.
+    def test_export_keeps_same_name_in_two_workflows(self):
+        """Одно имя у двух workflow — две записи в файле, а не одна.
 
-        Уникального индекса на пару в схеме нет, редактор опознаёт переменную
-        по паре, а создать дубль через API не может (get-or-create) — такие
-        строки остаются только наследием старых заводов. Проверка прямая, по
-        публичному правилу `ai_workflow_export_variables_merge`: на подставных
-        строках, без похода в базу.
+        ⚠⚠ Ровно это и было бедой: слияние шло по паре (имя, тип) **по всей
+        базе**, и `girl_name` родителя с `girl_name` подпотока становились одной
+        строкой. Теперь у переменной один владелец, и записи независимы.
+
+        Сливается только дубль **внутри одного workflow** — страховка на данные,
+        снятые до `UNIQUE (workflow_id, name)`: связь дубля переезжает на
+        каноническую строку, иначе файл сослался бы на невыгруженную запись.
+        Проверка прямая, по публичному правилу
+        `ai_workflow_export_variables_merge`, на подставных строках.
         """
         variables, links = ai_workflow_export_variables_merge(
-            [{'id': 24, 'name': 'fact_girl', 'type': 'workflow', 'default': 'dating_girl', 'description': None},
-             {'id': 34, 'name': 'fact_girl', 'type': 'workflow', 'default': 'dating_girl', 'description': None},
-             {'id': 40, 'name': 'other', 'type': 'input', 'default': None, 'description': None}],
-            [{'variable_id': 24, 'workflow_id': 2}, {'variable_id': 24, 'workflow_id': 58},
-             {'variable_id': 34, 'workflow_id': 5}, {'variable_id': 34, 'workflow_id': 6},
-             {'variable_id': 40, 'workflow_id': 5}],
+            [{'id': 24, 'workflow_id': 5, 'name': 'girl_name', 'type': 'input',
+              'default': None, 'description': None},
+             {'id': 34, 'workflow_id': 6, 'name': 'girl_name', 'type': 'input',
+              'default': None, 'description': None},
+             {'id': 44, 'workflow_id': 5, 'name': 'girl_name', 'type': 'input',
+              'default': None, 'description': None},
+             {'id': 40, 'workflow_id': 5, 'name': 'other', 'type': 'input',
+              'default': None, 'description': None}],
+            [{'variable_id': 24, 'workflow_id': 5}, {'variable_id': 34, 'workflow_id': 6},
+             {'variable_id': 44, 'workflow_id': 5}, {'variable_id': 40, 'workflow_id': 5}],
         )
 
-        assert [v['id'] for v in variables] == [24, 40]
-        assert {l['variable_id'] for l in links} == {24, 40}, "связь дубля переезжает на каноническую строку"
+        assert [v['id'] for v in variables] == [24, 34, 40], "тёзка из чужого workflow — своя запись"
         assert sorted((l['variable_id'], l['workflow_id']) for l in links) == \
-            [(24, 2), (24, 5), (24, 6), (24, 58), (40, 5)]
+            [(24, 5), (34, 6), (40, 5)], "дубль внутри workflow переезжает на каноническую строку"
 
     async def test_roundtrip_keeps_ids(self, client: httpx.AsyncClient, probe: dict):
         """Экспорт→импорт в ту же ноду: те же id workflow и шагов, metadata целая."""

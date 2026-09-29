@@ -330,3 +330,54 @@ class TestWorkflowSteps:
         resp1 = await client.post(f"/workflow/{wf_id}/variable", json={"name": var_name, "type": "workflow"})
         resp2 = await client.post(f"/workflow/{wf_id}/variable", json={"name": var_name, "type": "workflow"})
         assert resp1.json()["result"] == resp2.json()["result"]
+
+    async def test_same_name_in_two_workflows_is_two_variables(self, client: httpx.AsyncClient):
+        """Одно имя у двух workflow — две записи, и правка одной не трогает вторую.
+
+        ⚠⚠ Тот самый дефект: переменные жили общей строкой в реестре, а
+        `agent_workflow_variable_workflow` привязывала её к скольким угодно
+        workflow. `girl_name` у `dating_talk` и у подпотока `girl_fact_invent`
+        были **одной записью** — переименование в подпотоке переименовывало её
+        родителю, а удаление сносило обоим.
+
+        Общаться workflow между собой могут только контрактом входа
+        (`inputs_map` шага `workflow_invoke`), а не общей записью в реестре.
+        Проверяем всё три следствия разом: id разные, переименование в одном не
+        видно в другом, удаление в одном не трогает второй.
+        """
+        parent = (await client.post("/workflow", json={
+            "name": f"{TEST_WF_PREFIX}parent", "title": "Изоляция: родитель"})).json()["result"]["id"]
+        child = (await client.post("/workflow", json={
+            "name": f"{TEST_WF_PREFIX}child", "title": "Изоляция: подпоток",
+            "subflow": 1})).json()["result"]["id"]
+
+        # Убираем за собой сами: переменные унесёт `ON DELETE CASCADE` с workflow.
+        try:
+            name = f"test_iso_var_{parent}"
+            parent_var = (await client.post(f"/workflow/{parent}/variable",
+                                            json={"name": name, "type": "input"})).json()["result"]
+            child_var = (await client.post(f"/workflow/{child}/variable",
+                                           json={"name": name, "type": "input"})).json()["result"]
+            assert parent_var != child_var, "одно имя в двух workflow не должно быть одной записью"
+
+            renamed = f"{name}_renamed"
+            response = await client.put(f"/workflow/{child}/variable/{child_var}", json={"name": renamed})
+            assert response.status_code == 200, response.text
+
+            async def names_of(workflow_id):
+                rows = (await client.get(f"/workflow/{workflow_id}/variables")).json()["result"]
+                return {row["name"] for row in rows}
+
+            assert name in await names_of(parent), "переименование в подпотоке уехало родителю"
+            assert renamed in await names_of(child)
+
+            # Чужую запись не достать даже прямым адресом: workflow в пути — часть условия.
+            foreign = await client.put(f"/workflow/{child}/variable/{parent_var}",
+                                       json={"name": "test_iso_hijack"})
+            assert foreign.status_code == 404, foreign.text
+
+            assert (await client.delete(f"/workflow/{child}/variable/{child_var}")).status_code == 200
+            assert name in await names_of(parent), "удаление в подпотоке снесло переменную родителю"
+        finally:
+            for workflow_id in (child, parent):
+                await client.delete(f"/workflow/{workflow_id}")

@@ -70,8 +70,7 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 | `agent_workflow` | Сам workflow: name, title, node_id, position, description, **subflow** (зарезервирован: 0=основной, 1=под-процесс — пока не используется движком) |
 | `agent_workflow_step` | Шаг: workflow_id, type_id, title, position (порядок выполнения), **metadata LONGTEXT** — JSON-конфиг шага |
 | `agent_workflow_step_type` | Справочник 6 типов шагов (name, icon, description, metadata-схема) |
-| `agent_workflow_variable` | Реестр переменных: name, **type ENUM('global','input','workflow')**, default, description |
-| `agent_workflow_variable_workflow` | M:N переменная ↔ workflow (для workflow/input-переменных) |
+| `agent_workflow_variable` | Переменные workflow: **workflow_id (владелец)**, name, **type ENUM('global','input','workflow')**, default, description. `UNIQUE (workflow_id, name)`, FK на `agent_workflow` с `ON DELETE CASCADE`. `workflow_id IS NULL` — только у `global` (§2.1) |
 | `node_variable` | Переменные ноды (бывшие «переменные ноды»): name, node_id, **type ENUM('public','proxy')**, default, position, description. Редактируются менеджерами на публичных страницах |
 | `node_variable_role` | M:N публичная переменная ↔ роль (гранулярный доступ) |
 | `node_variable_workflow` | M:N публичная переменная ↔ workflow. ⚠⚠ **На работу движка не влияет никак**: переменные ноды он берёт по `node_id` и отдаёт всем её workflow. Наполняется редактором переменной, но ничего не ограничивает — см. §3.0a и §8 |
@@ -80,6 +79,51 @@ anna/dasha/lera/elena используют один workflow `dating_talk`, от
 | `agent_session` | История: user-prompt / response-final / tool-call / system-prompt |
 | `agent_workflow_trace` | Журнал: один запуск workflow — status running/success/error, prompt, result/error, `variables_start` (снапшот на старте), duration_ms; вложенность sub-workflow через `parent_run_id`/`parent_step_id`/`depth` |
 | `agent_workflow_trace_step` | Журнал: выполненный шаг — `exec_index` (порядок выполнения, не position), `metadata_rendered` (вход), `variables_changed` (дифф), `output`, `transition`, status success/error/retry, duration_ms; каскадное удаление с запуском |
+
+### 2.1 ⚠⚠ Переменная принадлежит одному workflow, и общих переменных нет
+
+Родитель и подпоток общаются **только контрактом входа** — `inputs_map` шага
+`workflow_invoke` и объявленные `input`-переменные ребёнка. Одинаковое имя в двух
+workflow — две независимые записи: переименование, умолчание и удаление в одном
+не видны в другом.
+
+⚠ **Так было не всегда, и цена ошибки измерена.** До 2026-09-29 существовала
+таблица `agent_workflow_variable_workflow` — связь M:N, — а запись в реестре была
+одна на имя. `girl_name` у `dating_talk` и у подпотока `girl_fact_invent` были
+**одной строкой**: переименуй её в подпотоке — переименуется у родителя, удали —
+исчезнет у обоих. Общих строк набралось 51, одна (`planning_project_id`) висела
+на восемнадцати workflow.
+
+⚠⚠ Движок при этом был изолирован всегда: `ai_workflow_load` брал переменные
+только своего workflow, а `workflow_invoke` собирал ребёнку чистый scope. Течь
+была в **реестре и редакторе** — то есть там, где человек правит, а не там, где
+машина считает. Поэтому она и не ловилась ни прогоном, ни тестом.
+
+Что из этого следует при работе:
+
+| Правило | Почему |
+|---------|--------|
+| дубликат workflow копирует **строки** переменных, а не ссылки | иначе копия сидит на переменных оригинала |
+| `PUT`/`DELETE` переменной спрашивают и её id, **и** workflow из адреса | чужую не достать даже прямым адресом — `404` |
+| удаление workflow уносит его переменные (`ON DELETE CASCADE`) | прежде оставались сироты: их накопилось 98 |
+| `type='global'` — единственное исключение, владельца у неё нет | движок отдаёт все глобальные каждому workflow |
+
+⚠⚠ **Переезд идёт двумя выкладками, и порядок не переставить.** Первая
+(`20260929003100_workflow_variable_own.sql`) заводит `workflow_id`, разбирает
+данные и таблицу связей **оставляет**; вторая
+(`20260929134932_workflow_variable_link_drop.sql`) её удаляет. Причина в том, что
+миграции накатывает новый контейнер uvicorn при старте, а трафик держит ещё
+старый слот, и `telegram` с `worker_task` перезапускаются уже после переключения
+(`deploy.md`). Старый код читает переменные через `JOIN
+agent_workflow_variable_workflow` — в том числе `ai_workflow_load`, то есть
+каждый прогон workflow. Удали таблицу в той же выкладке — и от наката до
+перезапуска телеграма любой запрос к агенту падает с «Table doesn't exist».
+
+⚠ В промежутке обе картины верны: на копии прода после первой миграции старый
+запрос по связям и новый по колонке дают один и тот же набор пар
+(workflow, имя) — 334 против 334, объединение тоже 334. Вторая миграция едет
+**следующим** коммитом: yoyo применяет всё, что лежит в папке, и порядок имён от
+этого не спасает.
 
 ## 3. Типы переменных и приоритет инициализации
 

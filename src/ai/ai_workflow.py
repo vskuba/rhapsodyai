@@ -182,8 +182,7 @@ async def ai_workflow_load(workflow_id: int) -> dict:
     sql_vars = """
         SELECT v.name, v.`default`
         FROM agent_workflow_variable v
-        JOIN agent_workflow_variable_workflow vw ON v.id = vw.variable_id
-        WHERE vw.workflow_id = %s
+        WHERE v.workflow_id = %s
     """
     async with mysql_get_db_async() as db:
         await db.execute(sql_workflow, (workflow_id,))
@@ -238,8 +237,7 @@ async def ai_workflow_variables_input_get(workflow_id: int) -> list[dict]:
     sql = """
         SELECT v.*
         FROM agent_workflow_variable v
-        LEFT JOIN agent_workflow_variable_workflow vw ON v.id = vw.variable_id
-        WHERE v.type = 'input' AND vw.workflow_id = %s
+        WHERE v.type = 'input' AND v.workflow_id = %s
         ORDER BY v.name ASC
     """
     async with mysql_get_db_async() as db:

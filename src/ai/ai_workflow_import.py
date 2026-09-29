@@ -74,8 +74,9 @@ async def ai_workflow_import_apply(data, actor):
     """Заменить workflow ноды, чей это файл. Остальные ноды не трогаются.
 
     Порядок внутри одной транзакции: снимок привязок агентов → чистка ноды →
-    вставка workflow и шагов **с исходными id** → переменные → связи →
-    обратная привязка агентов. Любая ошибка — откат, база как была.
+    вставка workflow и шагов **с исходными id** → переменные (по строке на
+    каждый workflow-владелец) → переменные ноды и их связи → обратная привязка
+    агентов. Любая ошибка — откат, база как была.
 
     Совпадения на чужих записях:
     - `id` или имя workflow занято чужим workflow → 409, файл не импортируется;
@@ -104,8 +105,8 @@ async def ai_workflow_import_apply(data, actor):
 
             await _insert_workflows(db, workflows, target_node_id)
 
-            variable_id_map = await _upsert_variables(db, payload['variables'])
-            await _insert_variable_links(db, payload['variable_links'], variable_id_map, set(workflow_ids))
+            variable_id_map = await _insert_variables(
+                db, payload['variables'], payload['variable_links'], set(workflow_ids))
 
             node_variable_id_map = await _upsert_node_variables(db, payload['node_variables'], target_node_id)
             await _insert_node_variable_links(db, payload['node_variable_links'],
@@ -258,13 +259,22 @@ def _validate_steps(raw_steps, workflows):
 
 
 def _validate_variables(raw_variables):
-    """Переменные: идентичность — пара (имя, тип), id файла — лишь ключ связей.
+    """Переменные: id файла уникален, имя — идентификатор, тип — input/workflow.
 
-    Собственные id в metadata не зашиты, на принимающей стороне переменная
-    опознаётся по паре; глобальные в файл не пишутся, а пришедшие из рук —
-    мимо, их заводит принимающая сторона.
+    ⚠⚠ Проверки «две переменные с одним именем и типом» здесь **больше нет**, и
+    это не послабление. Переменная принадлежит одному workflow, поэтому файл с
+    родителем и подпотоком, объявившими `girl_name`, обязан нести **две**
+    записи с этим именем. Прежняя проверка отвергала бы собственный экспорт.
+
+    Имя уникально внутри своего workflow, а какому оно принадлежит — знает
+    связь, не запись. Там же уникальность и проверяется
+    (`_validate_variable_links`).
+
+    Собственные id в metadata не зашиты — они здесь лишь ключ связей;
+    глобальные в файл не пишутся, а пришедшие из рук мимо: их заводит
+    принимающая сторона.
     """
-    variables, seen_pairs, seen_ids = [], set(), set()
+    variables, seen_ids = [], set()
     for raw in raw_variables:
         variable_file_id = _positive_id(raw.get('id'), 'переменная')
         if variable_file_id in seen_ids:
@@ -276,10 +286,6 @@ def _validate_variables(raw_variables):
         var_type = raw.get('type')
         if var_type not in ('input', 'workflow'):
             raise AiWorkflowImportRejectedError(f'Переменная {name!r}: недопустимый тип {var_type!r}')
-        pair = (name, var_type)
-        if pair in seen_pairs:
-            raise AiWorkflowImportRejectedError(f'В файле две переменные {name} типа {var_type}')
-        seen_pairs.add(pair)
         variables.append({
             'id': variable_file_id,
             'name': name,
@@ -291,18 +297,31 @@ def _validate_variables(raw_variables):
 
 
 def _validate_variable_links(raw_links, variables, workflows):
-    """Связи переменных: оба конца — внутри файла; повтор пары — один раз."""
+    """Связи переменных: оба конца — внутри файла; повтор пары — один раз.
+
+    ⚠ Здесь же уникальность имени внутри workflow: у переменной один владелец,
+    и `UNIQUE (workflow_id, name)` в схеме отверг бы вторую запись посреди
+    транзакции. Отказ до базы называет обе стороны, а не «Duplicate entry».
+    """
     variable_ids = {variable['id'] for variable in variables}
-    links, link_pairs = [], set()
+    name_by_id = {variable['id']: variable['name'] for variable in variables}
+    links, link_pairs, seen_names = [], set(), set()
     for raw in raw_links:
         variable_id, workflow_id = raw.get('variable_id'), raw.get('workflow_id')
         if variable_id not in variable_ids:
             raise AiWorkflowImportRejectedError(f'Связь переменной {variable_id} — переменной нет в файле')
         if workflow_id not in workflows:
             raise AiWorkflowImportRejectedError(f'Связь переменной на workflow {workflow_id} — его нет в файле')
-        if (variable_id, workflow_id) not in link_pairs:
-            link_pairs.add((variable_id, workflow_id))
-            links.append((variable_id, workflow_id))
+        if (variable_id, workflow_id) in link_pairs:
+            continue
+        name_key = (workflow_id, name_by_id[variable_id])
+        if name_key in seen_names:
+            raise AiWorkflowImportRejectedError(
+                f'У workflow {workflow_id} две переменные с именем '
+                f'{name_by_id[variable_id]} — имя внутри workflow одно')
+        seen_names.add(name_key)
+        link_pairs.add((variable_id, workflow_id))
+        links.append((variable_id, workflow_id))
     return links
 
 
@@ -455,14 +474,18 @@ async def _snapshot_agent_bindings(db, wipe):
 
 async def _wipe_node_workflows(db, wipe):
     """Удаление ноды: шаги — явно (их FK `SET NULL` оставил бы сирот),
-    связи переменных снимает `CASCADE`, строки журнала — `SET NULL`, так и живём."""
+    переменные workflow и связи переменных ноды снимает `CASCADE`, строки
+    журнала — `SET NULL`, так и живём.
+
+    ⚠ Переменные workflow больше не удаляются отдельной строкой: с появлением
+    владельца (`agent_workflow_variable.workflow_id`) их уносит тот же внешний
+    ключ, что и всё остальное на удаляемом workflow.
+    """
     if not wipe:
         return
     placeholders = ','.join(['%s'] * len(wipe))
     args = tuple(wipe)
     await db.execute(f'DELETE FROM `agent_workflow_step` WHERE `workflow_id` IN ({placeholders})', args)
-    await db.execute(
-        f'DELETE FROM `agent_workflow_variable_workflow` WHERE `workflow_id` IN ({placeholders})', args)
     await db.execute(f'DELETE FROM `node_variable_workflow` WHERE `workflow_id` IN ({placeholders})', args)
     await db.execute(f'DELETE FROM `agent_workflow` WHERE `id` IN ({placeholders})', args)
 
@@ -481,48 +504,47 @@ async def _insert_workflows(db, workflows, target_node_id):
         )
 
 
-async def _upsert_variables(db, variables):
-    """Переменные по паре (имя, тип) — так же их опознаёт редактор.
+async def _insert_variables(db, variables, links, workflow_ids):
+    """Переменные файла — по своей строке каждому workflow-владельцу.
 
-    Существующая может быть общей с чужими workflow — обновляем только
-    содержательные поля, `id` остаётся местным.
+    ## ⚠⚠ Строка на связь, а не строка на имя
+
+    Раньше запись искалась по паре (имя, тип) **во всей базе**: нашлась —
+    правились её поля, и workflow просто привязывался к чужой. Импорт файла с
+    родителем и подпотоком сажал их на одну переменную, а с ней — и на общее
+    имя: правка в одном месте меняла оба.
+
+    Теперь у переменной один владелец, и цикл идёт **по связям**: сколько
+    workflow в файле её объявили, столько строк и заведётся.
+
+    ⚠ Ни поиска, ни обновления: ноды файла к этому моменту вычищены
+    (`_wipe_node_workflows`), а внешний ключ `ON DELETE CASCADE` унёс их
+    переменные вместе с ними. Чужих строк на этих workflow быть не может — их
+    id заняты проверкой `_check_collisions`.
+
+    Args:
+        variables: записи файла (ключ — `id` файла).
+        links: пары `(variable_id, workflow_id)` из файла.
+        workflow_ids: id workflow файла — чужое сюда не попадает.
+
+    Returns:
+        dict: `(id файла, workflow_id)` → id заведённой строки.
     """
+    by_file_id = {variable['id']: variable for variable in variables}
     resolved = {}
-    for variable in variables:
-        await db.execute(
-            'SELECT `id` FROM `agent_workflow_variable` WHERE `name` = %s AND `type` = %s '
-            'ORDER BY `id` LIMIT 1',
-            (variable['name'], variable['type'])
-        )
-        found = await db.fetchone()
-        if found:
-            variable_id = found['id']
-            await db.execute(
-                'UPDATE `agent_workflow_variable` SET `default` = %s, `description` = %s WHERE `id` = %s',
-                (variable['default'], variable['description'], variable_id)
-            )
-        else:
-            await db.execute(
-                'INSERT INTO `agent_workflow_variable` (`name`, `type`, `default`, `description`) '
-                'VALUES (%s, %s, %s, %s)',
-                (variable['name'], variable['type'], variable['default'], variable['description'])
-            )
-            variable_id = db.lastrowid
-        resolved[variable['id']] = variable_id
-    return resolved
-
-
-async def _insert_variable_links(db, links, variable_id_map, workflow_ids):
-    """Связи переменных: только внутрь workflow файла, чужое уже разобрано."""
     for variable_id, workflow_id in links:
-        target_variable_id = variable_id_map.get(variable_id)
-        if target_variable_id is None or workflow_id not in workflow_ids:
+        variable = by_file_id.get(variable_id)
+        if variable is None or workflow_id not in workflow_ids:
             continue
         await db.execute(
-            'INSERT IGNORE INTO `agent_workflow_variable_workflow` (`variable_id`, `workflow_id`) '
-            'VALUES (%s, %s)',
-            (target_variable_id, workflow_id)
+            'INSERT INTO `agent_workflow_variable` '
+            '(`workflow_id`, `name`, `type`, `default`, `description`) '
+            'VALUES (%s, %s, %s, %s, %s)',
+            (workflow_id, variable['name'], variable['type'],
+             variable['default'], variable['description'])
         )
+        resolved[(variable_id, workflow_id)] = db.lastrowid
+    return resolved
 
 
 async def _upsert_node_variables(db, node_variables, target_node_id):
