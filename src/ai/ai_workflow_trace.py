@@ -29,6 +29,21 @@ TRACE_STR_VALUE_MAX_LEN = 100_000
 # workflow, а не из памяти о том, каким он был.
 TRACE_RUN_STALE_SECONDS = 9000
 
+# Сколько дней держим прогон. Столько же, сколько держали раньше, — менялось не
+# «сколько», а «кто и когда убирает» (`ai_workflow_trace_trim`).
+TRACE_KEEP_DAYS = 7
+
+# Сколько прогонов сносим одним `DELETE`. Пачка нужна не ради скорости, а ради
+# замков: каждый прогон тянет за собой каскадом свои шаги и свои sub-workflow, и
+# один `DELETE` на месячный завал держал бы таблицу под замком минутами — ровно
+# ту таблицу, в которую в этот момент пишутся живые прогоны.
+TRACE_TRIM_BATCH = 200
+
+# Потолок на один прогон уборки. Стоит не от недоверия к базе, а от расписания:
+# крон ходит ежечасно, и уборке незачем разгребать за один раз то, что спокойно
+# разойдётся по нескольким заходам.
+TRACE_TRIM_MAX = 10000
+
 
 def ai_workflow_trace_enabled() -> bool:
     return str(config_get('WORKFLOW_TRACE_ENABLED', '1')).lower() not in ('0', 'false', 'off')
@@ -160,6 +175,71 @@ async def ai_workflow_trace_runs_stale_close() -> int:
     except Exception as e:
         logger_info(f"⚠️ ai_workflow_trace_runs_stale_close не выполнен: {e}")
         return 0
+
+
+async def ai_workflow_trace_trim(keep_days: int = TRACE_KEEP_DAYS,
+                                 batch: int = TRACE_TRIM_BATCH,
+                                 limit: int = TRACE_TRIM_MAX) -> int:
+    """Сносит прогоны старше срока. Пачками, по расписанию — не из запроса страницы.
+
+    Args:
+        keep_days: сколько дней держим прогон.
+        batch: сколько прогонов сносим одним `DELETE`.
+        limit: потолок на один заход уборки.
+
+    Returns:
+        int: сколько прогонов снесено (шаги и sub-workflow уходят каскадом, в счёт
+        не попадают).
+
+    ## ⚠ Почему это больше не живёт в ручке списка
+
+    Раньше тот же `DELETE` стоял первой строкой в `/workflow_trace/run/list`, то
+    есть шёл на **каждое** открытие страницы трасс — а страница зовёт список
+    дважды при заходе и ещё раз на каждое переключение вкладки, отбора и
+    страницы. Стоило это на проде 119 мс полного прохода по таблице в 174 МБ, и
+    удаляло при этом **ноль строк**: 26 тысяч прогонов набегают меньше чем за
+    неделю, и до порога не доживает никто.
+
+    Хуже цены была блокировка. Условие шло без индекса, а уровень изоляции у базы
+    `REPEATABLE-READ`: `DELETE` брал next-key-замок на каждую просмотренную
+    строку, то есть открытие страницы трасс на сотню миллисекунд запирало запись
+    трассы для всех идущих в этот момент workflow. Страницу трасс открывают
+    именно тогда, когда что-то идёт.
+
+    ⚠ **`depth = 0` в условии обязателен.** У дочерних прогонов (sub-workflow)
+    свой `finished_at`, и он почти всегда раньше родительского: адресный снос
+    по времени выдрал бы ветки из-под живого дерева. Дети уходят каскадом за
+    родителем — так и задумано внешним ключом `fk_wr_run_parent`.
+
+    ⚠ **`ORDER BY finished_at` не для красоты.** Без него MySQL выбирает, какие
+    именно `batch` строк снести, на своё усмотрение, и пачки перемешиваются:
+    уборка перестаёт быть «сначала самое старое» и на потолке `limit`
+    останавливается посреди случайного места.
+    """
+    removed = 0
+    try:
+        async with mysql_get_db_async() as db:
+            while removed < limit:
+                await db.execute(
+                    'DELETE FROM agent_workflow_trace'
+                    ' WHERE depth = 0 AND finished_at < NOW() - INTERVAL %s DAY'
+                    ' ORDER BY finished_at'
+                    ' LIMIT %s',
+                    (int(keep_days), min(int(batch), limit - removed)))
+                count = int(db.rowcount or 0)
+                removed += count
+                if not count:
+                    break
+    except Exception as e:
+        # Уборка — не работа, ради которой процесс живёт: недоступная база или
+        # замок отменяют заход, а не роняют кронджоб. Следующий час разгребёт.
+        logger_info(f'⚠️ ai_workflow_trace_trim не доделан ({removed} снесено): {e}')
+
+    if removed:
+        logger_info(f'🧹 ai_workflow_trace_trim: снесено прогонов {removed} '
+                    f'(старше {keep_days} дн.)')
+
+    return removed
 
 
 def ai_workflow_trace_variables_diff(before: dict, after: dict) -> dict:

@@ -267,20 +267,124 @@
         opacity: 0.4;
         cursor: default;
     }
+
+    /* ===================== Подвкладка «MySQL» =====================
+       Карточка та же, что у ошибок, но левая полоса синяя: запрос — не поломка,
+       и красным он читался бы как беда. Разводить две раскладки незачем — лента
+       одна и та же, меняется только содержимое строки. */
+    .sql-card {
+        background: #fff;
+        border: 1px solid #e8ecef;
+        border-left: 3px solid #3498db;
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+        font-size: 13px;
+    }
+
+    /* Запрос, который сам по себе долгий. Порог — `SQL_SLOW_MS` в скрипте: он
+       же решает, показывать ли эту отметку. */
+    .sql-card.sql-slow {
+        border-left-color: #e67e22;
+        background: #fffaf5;
+    }
+
+    .sql-numbers {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+        font-size: 11px;
+        color: #7f8c8d;
+    }
+
+    /* Главное число строки — суммарное время. Оно, а не «сколько раз»: дешёвый
+       запрос, заданный тысячу раз, стоит дороже дорогого, заданного однажды. */
+    .sql-total {
+        font-weight: 700;
+        font-size: 12px;
+        color: #fff;
+        background: #34495e;
+        border-radius: 9px;
+        padding: 1px 8px;
+    }
+
+    .sql-hits {
+        font-weight: 700;
+        color: #2c3e50;
+        background: #eef2f7;
+        border-radius: 3px;
+        padding: 1px 6px;
+    }
+
+    .sql-query {
+        color: #2c3e50;
+        font-family: monospace;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+        cursor: pointer;
+    }
+
+    /* Свёрнутый запрос — три строки: длинный SELECT забивает ленту целиком, а
+       узнаётся он по началу. Разворачивается щелчком, как трассировка у ошибок. */
+    .sql-query.sql-query-short {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .sql-slowest {
+        margin-top: 6px;
+        padding: 6px 8px;
+        background: #f7f9fb;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 11px;
+        color: #5a6c7d;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .sql-slowest b {
+        color: #c0392b;
+    }
+
+    /* Счётчик выключен — сказать об этом надо словами, иначе пустая лента
+       читается как «запросов нет». */
+    .sql-off {
+        margin: 10px 16px 0;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: #fff8e1;
+        border: 1px solid #ffe0a3;
+        color: #8a6d3b;
+        font-size: 12px;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-{# Журнал установки — раздел, а не один список. Сейчас в нём одна подвкладка,
-   «Ошибки»: всё, что падает в любом процессе, стекается туда само — обработчик
-   корневого логгера пишет строку без участия падающего кода. Место под соседние
-   подвкладки (события, запросы наружу) оставлено сознательно: предмет у них
-   разный, а вопрос один — «что происходило на установке».
-   Устройство ошибок — `.claude/docs/journal.md`. #}
+{# Журнал установки — раздел, а не один список. Вопрос у подвкладок один — «что
+   происходило на установке», — а предмет разный, и потому у каждой свои ручки,
+   своя таблица и свои поля; общей «дай журнал» здесь нет намеренно.
+
+   «Ошибки» — всё, что падает в любом процессе: стекается туда само, обработчиком
+   корневого логгера, без участия падающего кода.
+   «MySQL» — запросы к базе: строка на вид запроса, числа складываются по
+   отпечатку. Ответы базы не хранятся, только запрос, значения и время.
+
+   Место под следующие соседние подвкладки (события, походы наружу) остаётся:
+   кнопка в шапку и панель `#tab-<имя>` ниже, переключатель найдёт их сам.
+   Устройство — `.claude/docs/journal.md`. #}
 <div class="journal-page">
 
     <div class="page-tabs" id="journalTabs">
         <button type="button" class="page-tab active" data-tab="error">⚠️ Ошибки</button>
+        <button type="button" class="page-tab" data-tab="mysql">🗄️ MySQL</button>
     </div>
 
     <div class="tab-panel active" id="tab-error">
@@ -309,6 +413,42 @@
             <button type="button" id="journalPagePrev">‹</button>
             <span id="journalPageInfo">—</span>
             <button type="button" id="journalPageNext">›</button>
+        </div>
+    </div>
+
+    {# Подвкладка «MySQL»: строка не на прогон запроса, а на его ВИД. Числа
+       складываются по отпечатку (`journal_mysql`), потому что при шести тысячах
+       запросов в минуту строка на каждый — десять миллионов строк в сутки.
+       Устройство — `.claude/docs/journal.md`, раздел про запросы. #}
+    <div class="tab-panel" id="tab-mysql">
+        <div class="journal-tools">
+            <select id="sqlSource" class="journal-field" title="Чей процесс">
+                <option value="">Любой процесс</option>
+            </select>
+            <select id="sqlOrder" class="journal-field" title="Чем сортировать">
+                <option value="total_ms">дороже всего суммарно</option>
+                <option value="max_ms">худший случай</option>
+                <option value="avg_ms">дороже в среднем</option>
+                <option value="hits">чаще всего</option>
+                <option value="rows">больше строк</option>
+                <option value="last_at">свежее</option>
+            </select>
+            <input type="search" id="sqlFind" class="journal-field"
+                   placeholder="поиск по тексту запроса и значениям">
+            <button type="button" class="journal-btn" id="sqlReload" title="Спросить заново">⟳</button>
+            <button type="button" class="journal-btn journal-btn-danger" id="sqlClear"
+                    title="Обнулить счётчики по текущему отбору процесса">Обнулить</button>
+            <span class="journal-count" id="sqlCount"></span>
+        </div>
+
+        <div class="journal-list" id="sqlList">
+            <div class="journal-empty">Загрузка...</div>
+        </div>
+
+        <div class="journal-pager">
+            <button type="button" id="sqlPagePrev">‹</button>
+            <span id="sqlPageInfo">—</span>
+            <button type="button" id="sqlPageNext">›</button>
         </div>
     </div>
 </div>
@@ -496,6 +636,197 @@
         }
     };
 
+    // ===================== Подвкладка «MySQL» =====================
+    //
+    // ⚠ Строка здесь — это ВИД запроса, а не его прогон: одинаковые повторы
+    // сходятся в одну запись, и числа в ней складываются (`journal_mysql`).
+    // Поэтому «50 строк» не значит «50 запросов», а `hits` — главная цифра
+    // рядом с суммарным временем.
+    //
+    // ⚠ Ответов базы здесь нет и не будет: хранится запрос, его значения и
+    // числа. Значения вычищены от секретов на сервере (`mysql_log_args`).
+
+    // С какого среднего времени запрос считаем медленным сам по себе. Не порог
+    // записи (пишутся все), а только подсветка: глазу нужна зацепка.
+    const SQL_SLOW_MS = 50;
+
+    const sqlState = {page: 1, pages: 1, sourcesFilled: false};
+    let sqlFindTimer = 0;
+
+    const sqlListEl = document.getElementById('sqlList');
+    const sqlSourceEl = document.getElementById('sqlSource');
+    const sqlOrderEl = document.getElementById('sqlOrder');
+    const sqlFindEl = document.getElementById('sqlFind');
+    const sqlCountEl = document.getElementById('sqlCount');
+
+    function msText(ms) {
+        const value = Number(ms || 0);
+        if (value >= 60000) return `${Math.round(value / 60000)} мин`;
+        if (value >= 1000) return `${(value / 1000).toFixed(1)} с`;
+        if (value >= 10) return `${Math.round(value)} мс`;
+        return `${value.toFixed(1)} мс`;
+    }
+
+    function qtyText(value) {
+        const n = Number(value || 0);
+        if (n >= 1000000) return `${(n / 1000000).toFixed(1)} млн`;
+        if (n >= 1000) return `${(n / 1000).toFixed(1)} тыс`;
+        return String(n);
+    }
+
+    async function sqlLoad() {
+        const params = new URLSearchParams({page: sqlState.page, order: sqlOrderEl.value});
+        if (sqlSourceEl.value) params.set('source', sqlSourceEl.value);
+        if (sqlFindEl.value.trim()) params.set('q', sqlFindEl.value.trim());
+
+        let data;
+        try {
+            data = (await getData(`/api/journal/mysql?${params}`)).result;
+        } catch (e) {
+            sqlListEl.replaceChildren(el('div', 'journal-empty', `Журнал запросов не пришёл: ${e.message}`));
+            return;
+        }
+
+        sqlState.page = Number(data.page || 1);
+        sqlState.pages = Number(data.pages || 1);
+        sqlCountEl.textContent = data.total
+            ? `видов: ${data.total} · запросов: ${qtyText(data.totals.hits)} · всего ${msText(data.totals.total_ms)}`
+            : '';
+
+        // Подписи процессов приходят с сервера — та же дисциплина, что на
+        // соседней подвкладке: своей копии страница не держит.
+        if (!sqlState.sourcesFilled) {
+            Object.entries(data.sources || {}).forEach(([key, label]) => {
+                const option = el('option', null, label);
+                option.value = key;
+                sqlSourceEl.appendChild(option);
+            });
+            sqlState.sourcesFilled = true;
+        }
+
+        document.getElementById('sqlPageInfo').textContent = `${sqlState.page} / ${sqlState.pages}`;
+        document.getElementById('sqlPagePrev').disabled = sqlState.page <= 1;
+        document.getElementById('sqlPageNext').disabled = sqlState.page >= sqlState.pages;
+
+        const cards = data.rows.map(sqlCard);
+
+        if (!data.enabled) {
+            // Выключенный счётчик и «запросов не было» выглядят одинаково —
+            // пустой лентой. Разница принципиальная, и сказать её надо словами.
+            cards.unshift(el('div', 'sql-off',
+                'Счёт запросов выключен: MYSQL_WATCH_ENABLED=0 в .env. '
+                + 'Показано то, что успели насчитать раньше.'));
+        }
+
+        if (!data.rows.length) {
+            cards.push(el('div', 'journal-empty',
+                'Запросов не насчитано. Считает каждый процесс у себя и сбрасывает '
+                + 'в таблицу раз в полминуты — сразу после перезапуска здесь пусто.'));
+        }
+
+        sqlListEl.replaceChildren(...cards);
+        sqlListEl.scrollTop = 0;
+    }
+
+    function sqlCard(row) {
+        const avg = Number(row.avg_ms || 0);
+        const node = el('div', 'sql-card' + (avg >= SQL_SLOW_MS ? ' sql-slow' : ''));
+
+        const head = el('div', 'journal-card-head');
+        head.appendChild(el('span', 'journal-source', row.source_title || row.source || '—'));
+        head.appendChild(el('span', 'journal-when',
+            `${fmtTz(row.last_at, true)} · ${timeAgo(row.last_at)}`));
+
+        const drop = el('button', 'journal-drop', '✕');
+        drop.type = 'button';
+        drop.title = 'Убрать строку';
+        drop.onclick = async () => {
+            try {
+                await deleteData(`/api/journal/mysql/${row.id}`);
+            } catch (e) {
+                showNotification(`Строка не убралась: ${e.message}`, 'error');
+                return;
+            }
+            sqlLoad();
+        };
+        head.appendChild(drop);
+        node.appendChild(head);
+
+        // Порядок чисел — от главного: суммарное время, сколько раз, среднее,
+        // худший случай, сколько строк отдаёт. Отвечает на «куда уходит время» и
+        // на «долгий потому, что много ищет, или потому, что много отдаёт».
+        const numbers = el('div', 'sql-numbers');
+        numbers.appendChild(el('span', 'sql-total', `Σ ${msText(row.total_ms)}`));
+        numbers.appendChild(el('span', 'sql-hits', `×${qtyText(row.hits)}`));
+        numbers.appendChild(el('span', null, `сред ${msText(avg)}`));
+        numbers.appendChild(el('span', null, `макс ${msText(row.max_ms)}`));
+        numbers.appendChild(el('span', null,
+            `строк: сред ${Math.round(Number(row.avg_rows || 0))}, макс ${qtyText(row.max_rows)}`));
+        node.appendChild(numbers);
+
+        const query = el('div', 'sql-query sql-query-short', row.query || '');
+        query.title = 'Показать запрос целиком';
+        query.onclick = () => query.classList.toggle('sql-query-short');
+        node.appendChild(query);
+
+        // Значения — от самого долгого прогона, а не от последнего: вопрос,
+        // ради которого сюда смотрят, звучит «почему иногда медленно».
+        if (row.slow_args || Number(row.slow_ms || 0) > 0) {
+            const slow = el('div', 'sql-slowest');
+            slow.appendChild(el('b', null, `медленный случай: ${msText(row.slow_ms)}`));
+            slow.appendChild(document.createTextNode(
+                `, строк ${qtyText(row.slow_rows)}, ${fmtTz(row.slow_at, true)}`
+                + (row.slow_args ? `\nArgs: ${row.slow_args}` : '')));
+            node.appendChild(slow);
+        }
+
+        return node;
+    }
+
+    sqlSourceEl.onchange = () => {
+        sqlState.page = 1;
+        sqlLoad();
+    };
+    sqlOrderEl.onchange = () => {
+        sqlState.page = 1;
+        sqlLoad();
+    };
+    sqlFindEl.oninput = () => {
+        clearTimeout(sqlFindTimer);
+        sqlFindTimer = setTimeout(() => {
+            sqlState.page = 1;
+            sqlLoad();
+        }, 400);
+    };
+    document.getElementById('sqlReload').onclick = () => sqlLoad();
+    document.getElementById('sqlClear').onclick = async () => {
+        const scope = sqlSourceEl.value
+            ? `счётчики процесса «${sqlSourceEl.options[sqlSourceEl.selectedIndex].text}»`
+            : 'все счётчики';
+        if (!confirm(`Обнулить ${scope}? Это не отменить.`)) return;
+        try {
+            const params = sqlSourceEl.value ? `?source=${encodeURIComponent(sqlSourceEl.value)}` : '';
+            const res = await deleteData(`/api/journal/mysql${params}`);
+            showNotification(`Убрано строк: ${res.result.deleted}`, 'success');
+        } catch (e) {
+            showNotification(`Счётчики не обнулились: ${e.message}`, 'error');
+        }
+        sqlState.page = 1;
+        sqlLoad();
+    };
+    document.getElementById('sqlPagePrev').onclick = () => {
+        if (sqlState.page > 1) {
+            sqlState.page--;
+            sqlLoad();
+        }
+    };
+    document.getElementById('sqlPageNext').onclick = () => {
+        if (sqlState.page < sqlState.pages) {
+            sqlState.page++;
+            sqlLoad();
+        }
+    };
+
     // ===================== Переключение подвкладок =====================
     //
     // Подвкладка сейчас одна, но переключатель общий и пустой работы не делает:
@@ -511,7 +842,10 @@
         document.querySelectorAll('.tab-panel').forEach(panel => {
             panel.classList.toggle('active', panel.id === `tab-${name}`);
         });
+        // Спрашивает сервер только открытая подвкладка: у соседней свои ручки и
+        // своя цена — журнал запросов на каждом показе сбрасывает накопленное.
         if (name === 'error') load();
+        if (name === 'mysql') sqlLoad();
     }
 
     document.querySelectorAll('.page-tab').forEach(tab => {

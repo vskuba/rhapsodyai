@@ -15,6 +15,8 @@ import uuid
 from src.ai.ai_llm import ai_llm_node_get
 from logging_.logging_ import logger_info, logging_init
 from src.journal.journal_handler import journal_handler_install
+from src.journal.journal_mysql import (journal_mysql_watch_start,
+                                       journal_mysql_watch_stop)
 from mysql_.mysql_ import mysql_get_db_async
 from queue_.queue_ import queue_init
 from ai.ai_thread import ai_thread_framework_run
@@ -33,6 +35,9 @@ async def main():
     # /admin/journal): он живёт минуту в отдельном процессе, и его отказ
     # иначе теряется вместе с этим процессом.
     journal_handler_install('cronjob')
+    # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
+    # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
+    await journal_mysql_watch_start('cronjob')
 
     # Мини-инфраструктура движка (как в main_uvicorn): LLM-шаги идут через
     # очередь ai_framework_model, которую обрабатывает фоновая задача
@@ -135,6 +140,15 @@ async def main():
 
     summary = f"Проверено фактов: {len(facts)}. " + ", ".join(f"{k}: {v}" for k, v in stats.items() if v)
     logger_info(f"🔎 {summary}")
+
+    # Счёт запросов за этот заход — в подвкладку «MySQL»: процесс короткий, и без
+    # сброса его работа пропала бы вместе с ним.
+    #
+    # ⚠ До печати итога, а не после: сброс ходит в базу, а пул печатает про каждый
+    # чекаут — строки логгера легли бы после итоговой, и тот, кто читает кронджоб
+    # по последней строке stdout, прочёл бы их (как сюита читает `task_orchestrator`).
+    await journal_mysql_watch_stop()
+
     print(summary)
 
     framework_task.cancel()

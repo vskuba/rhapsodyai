@@ -44,20 +44,31 @@ async def workflow_trace_run_list(
     page = max(1, int(page))
     offset = (page - 1) * limit
 
+    # ⚠ Уборки старых прогонов здесь больше нет — она в кроне
+    # (`src/cronjob/workflow_trace_cleanup.py`, раз в час). Стояла она первой
+    # строкой этой ручки и шла на каждое открытие страницы: 119 мс полного
+    # прохода по таблице в 174 МБ, снесённых строк ноль, плюс next-key-замки на
+    # всё просмотренное — то есть открытие страницы трасс запирало запись
+    # трассы для идущих в этот момент workflow. Почему именно так — в
+    # докстринге `ai_workflow_trace_trim`.
     async with mysql_get_db_async() as db:
-        await db.execute(
-            "DELETE FROM agent_workflow_trace WHERE depth = 0 AND finished_at < NOW() - INTERVAL 7 DAY"
-        )
-        if db.rowcount:
-            await db.connection.commit()
-
         await db.execute(f"SELECT COUNT(*) as qty FROM agent_workflow_trace r WHERE {where_sql}", params)
         total = (await db.fetchone())['qty']
 
+        # ⚠ Ни `result`, ни `error` карточка списка не показывает — только
+        # заголовок, состояние, время, число шагов и начало промпта. А это
+        # LONGTEXT: тянуть их на тридцать строк значило гонять по сети то, что
+        # тут же выбрасывается. Целиком они есть на соседней ручке — той, что
+        # открывается щелчком по карточке (`workflow_trace_run_detail`).
+        #
+        # ⚠ `prompt_user` обрезан здесь, а не в браузере: в карточке у него
+        # `white-space: nowrap; text-overflow: ellipsis`, то есть видно ровно
+        # одну строку, а приезжал он целиком.
         await db.execute(
             f"""
             SELECT r.id, r.run_uuid, r.workflow_id, r.agent_id, r.user_id, r.status,
-                   r.prompt_user, r.result, r.error, r.started_at, r.duration_ms,
+                   LEFT(r.prompt_user, 300) AS prompt_user,
+                   r.started_at, r.duration_ms,
                    w.title AS workflow_title,
                    a.title AS agent_title,
                    (SELECT COUNT(*) FROM agent_workflow_trace_step s WHERE s.run_id = r.id) AS steps_qty,

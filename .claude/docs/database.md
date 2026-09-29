@@ -100,6 +100,14 @@ Seed data (LLM providers, users, roles, nodes, tools, agents, workflows) is mana
 - `browser_error` — error journal: `source`, `message`, `session_id`, `url`, JSON `context` (no FKs on purpose)
 - `browser_site` — bookmarks for the browser container: unique `name` + `url` (scheme required), `position` for the drag-and-drop order, `tags` (comma-separated, lowercase) so neighbours can filter their own sites via `GET /api/browser/site?tag=dating`
 
+### Journal (`/admin/journal`)
+- `journal` — installation error log: one row per `fingerprint`, repeats bump `hits`
+- `journal_mysql` — query counters: one row per **query shape** + process
+  (`UNIQUE(fingerprint, source)`), repeats add into `hits`/`total_ms`/`total_rows`.
+  No FKs on purpose — counters are per-process, not per-entity. ⚠ Holds **no database
+  answers**: only the query text, its (secret-scrubbed) values and numbers. Filled by
+  `mysql_watch` in process memory, flushed in batches by `journal_mysql_flush`
+
 ## Table Order in 0001.sql (FK dependency order)
 
 1. `llm` → `role` → `user` → `user_access_token`

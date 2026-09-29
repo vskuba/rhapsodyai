@@ -12,9 +12,30 @@ from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
 from src.journal.journal_handler import journal_handler_install
+from src.journal.journal_mysql import (journal_mysql_flush_forever,
+                                       journal_mysql_watch_start)
 from src.telegram_bot import telegram_bot_init
 from state.state import state_set
 from thread_.thread_ import thread_with_callback
+
+
+async def telegram_main() -> None:
+    """Главный цикл процесса: обработчик очереди плюс сброс счётчика запросов.
+
+    Отдельной функцией, а не `asyncio.run(ai_thread_framework_run(...))` на
+    месте: фоновую задачу нельзя завести до того, как цикл событий запущен
+    (`create_task` вне работающего цикла падает `RuntimeError: no running event
+    loop`), а второй `asyncio.run` завёл бы второй цикл — и пул базы, привязанный
+    к первому, перестал бы работать.
+
+    ⚠ Счёт запросов включается здесь же, а не в `__main__`: выключатель живёт
+    настройкой в таблице, читать её надо из базы — то есть уже внутри цикла
+    событий.
+    """
+    await journal_mysql_watch_start('telegram')
+    asyncio.create_task(journal_mysql_flush_forever('telegram'))
+    await ai_thread_framework_run([AiFrameworkAgent()])
+
 
 if __name__ == "__main__":
     logging_init()
@@ -61,10 +82,6 @@ if __name__ == "__main__":
     try:
         # Главный event loop процесса: вечный обработчик очереди ai_framework_model
         # (create_task вне запущенного loop падает RuntimeError: no running event loop)
-        asyncio.run(ai_thread_framework_run(
-            [
-                AiFrameworkAgent(),
-            ]
-        ))
+        asyncio.run(telegram_main())
     except KeyboardInterrupt:
         print("Shutting down...")

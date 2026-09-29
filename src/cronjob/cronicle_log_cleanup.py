@@ -24,6 +24,8 @@ from cronicle_.cronicle_log import (CRONICLE_LOG_KEEP_DAYS, cronicle_log_prune,
                                     cronicle_log_report, cronicle_log_sizes)
 from logging_.logging_ import logger_info, logging_init
 from src.journal.journal_handler import journal_handler_install
+from src.journal.journal_mysql import (journal_mysql_watch_start,
+                                       journal_mysql_watch_stop)
 
 from src.telegram_.telegram_notify import telegram_notify_send_owner
 
@@ -34,6 +36,9 @@ async def main():
     # /admin/journal): он живёт минуту в отдельном процессе, и его отказ
     # иначе теряется вместе с этим процессом.
     journal_handler_install('cronjob')
+    # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
+    # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
+    await journal_mysql_watch_start('cronjob')
 
     metadata = {}
     if len(sys.argv) > 1:
@@ -55,6 +60,10 @@ async def main():
             # в лог и выходим успешно, иначе Cronicle отметит job провалившимся
             # из-за того, что не относится к его работе.
             logger_info(f'🧹 Логи Cronicle: отчёт в Telegram не ушёл — {type(e).__name__}: {e}')
+
+    # Счёт запросов за этот заход — в подвкладку «MySQL»: процесс короткий, и
+    # без сброса его работа пропала бы вместе с ним.
+    await journal_mysql_watch_stop()
 
     print(report)
     print(json.dumps({**stats, 'sizes': sizes}, ensure_ascii=False))

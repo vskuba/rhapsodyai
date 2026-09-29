@@ -31,11 +31,14 @@ from redis_queue.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
 from src.journal.journal_handler import journal_handler_install
+from src.journal.journal_mysql import (journal_mysql_flush_forever,
+                                       journal_mysql_watch_start)
 from src.event.event_handlers import event_handlers_register
 from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import dashboard
 from src.uvicorn.routers.journal import journal as journal_router
+from src.uvicorn.routers.journal import journal_mysql as journal_mysql_router
 from src.uvicorn.routers.event import event as event_router
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.auth import auth as auth_router
@@ -110,6 +113,14 @@ async def lifespan(app: FastAPI):
     mysql_seed_up(MYSQL_SEED_PROBE_TABLE)
     await mysql_pool_get()
 
+    # Журнал запросов к базе — соседняя подвкладка той же страницы. Считает
+    # счётчик в памяти процесса, сбрасывает в таблицу фоновая задача ниже.
+    #
+    # ⚠ Только ПОСЛЕ миграций: выключатель живёт настройкой в таблице `setting`,
+    # а на свежей установке её заводят те же миграции. Рядом с
+    # `journal_handler_install` вызов стоять не может — там базы ещё нет.
+    await journal_mysql_watch_start('uvicorn')
+
     print("Starting Uvicorn (Fast-Api) mode...")
 
     ChatCompletion.model_config = ConfigDict(extra='allow')
@@ -118,6 +129,11 @@ async def lifespan(app: FastAPI):
     await telegram_notify_bot_setup()
 
     await ai_workflow_trace_runs_stale_close()
+
+    # Сброс счётчика запросов в таблицу раз в полминуты. Отдельной задачей, а не
+    # при показе страницы: страницу открывают редко, а знать надо про то, что
+    # происходило, пока на неё никто не смотрел.
+    asyncio.create_task(journal_mysql_flush_forever('uvicorn'))
 
     queue_init([
         'chat',
@@ -546,6 +562,11 @@ app.include_router(telegram_app_claude_session.router, include_in_schema=False)
 app.include_router(telegram_app_plan.router, include_in_schema=False)
 app.include_router(telegram_app_task.router, include_in_schema=False)
 app.include_router(event_router.router, include_in_schema=False)
+# ⚠⚠ Журнал запросов подключается РАНЬШЕ журнала ошибок, и порядок здесь не
+# косметика: у соседа объявлено `DELETE /api/journal/{record_id}` с номером
+# записи числом, и подключись он первым — на `DELETE /api/journal/mysql` FastAPI
+# попытался бы прочитать «mysql» номером и ответил бы 422 вместо чистки.
+app.include_router(journal_mysql_router.router, include_in_schema=False)
 app.include_router(journal_router.router, include_in_schema=False)
 app.include_router(seed.router, include_in_schema=False)
 app.include_router(backup.router, include_in_schema=False)

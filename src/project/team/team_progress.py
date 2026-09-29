@@ -18,6 +18,19 @@
 судьи развернулся лишний раз), а работающий прогон не бывает завершён — процент
 упирается в `TEAM_PROGRESS_MAX_PERCENT` и ждёт настоящего конца.
 
+## ⚠ Знаменатель считается редко, а не на каждый опрос
+
+Выдачу, ради которой этот модуль и зовут, опрашивают раз в 15 секунд две
+страницы админки. Медиана при этом за 15 секунд не меняется — чтобы она
+сдвинулась, нужны новые удачные прогоны того же workflow, — а стоила она на проде
+406 мс: база сводила все удачные прогоны workflow разом. Поэтому значение живёт в
+`_totals_cache` на `TEAM_PROGRESS_TOTAL_TTL`, а сам замер (`_totals_measure`)
+берёт индексом только последний десяток прогонов, а не все.
+
+⚠ Второй половиной той же экономии занимается вызывающий: `team_queue` не зовёт
+`team_progress_running` вовсе, пока в очереди нет ни одной занятой строки.
+Прогресс есть только у работающей роли, а конвейер стоит большую часть суток.
+
 Здесь же считается срок текущего шага. Прогон обрывается не по своему потолку
 (`timeout_manager_run` — больше часа), а по ожиданию ответа оболочки на отдельном
 шаге: в WF55 это десять минут, и планирование гибнет именно на нём. Значение шага
@@ -25,6 +38,8 @@
 workflow, а не из настроек; разбор литерала и правка с карточки команды — в
 `task_setting_step.py`.
 """
+import time
+
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
 from src.project.task.task_setting_step import task_setting_step_timeout_of
@@ -33,6 +48,13 @@ from src.project.task.task_setting_timeout import (TASK_SETTING_TIMEOUT_SHELL_CA
 
 # Сколько прошлых удачных прогонов берём за образец длины.
 TEAM_PROGRESS_SAMPLE_LIMIT = 10
+
+# Насколько знаменатель считается свежим. Медиана по десяти последним удачным
+# прогонам за пять минут не меняется: чтобы она сдвинулась, нужны новые удачные
+# прогоны того же workflow, а идут они минутами. Правку самого workflow при этом
+# видно на следующем окне — это и есть верхняя граница «через сколько доля
+# перестроится под новый сценарий».
+TEAM_PROGRESS_TOTAL_TTL = 300
 
 # Работающий прогон не показывает 100 %: конец отмечает завершение, а не оценка.
 TEAM_PROGRESS_MAX_PERCENT = 99
@@ -92,13 +114,20 @@ async def team_progress_running() -> dict[tuple[str, int], dict]:
 
 
 async def _runs_running() -> list[dict]:
-    """Работающие прогоны с номерами задачи и подзадачи из стартовых переменных."""
+    """Работающие прогоны с номерами задачи и подзадачи из стартовых переменных.
+
+    ⚠ Номера берутся **колонками**, а не разбором JSON на лету. Раньше здесь
+    стояли `JSON_VALID` и два `JSON_EXTRACT` по `variables_start`, и любое из них
+    заставляло базу прочитать LONGTEXT у каждой строки таблицы: `type: ALL`,
+    174 МБ, 81 мс на запрос — а запрос этот идёт по опросу страницы. Колонки
+    `task_id`/`subtask_id` считаются из того же поля при вставке и покрыты
+    индексом (`20260929123812`); `JSON_VALID` в условии не нужен вовсе — кривой
+    JSON даёт в них `NULL`, и прогон отсеется дальше, в `_key_build`.
+    """
     sql = (
-        "SELECT id, workflow_id, "
-        "       JSON_UNQUOTE(JSON_EXTRACT(variables_start, '$.task_id')) AS task_id, "
-        "       JSON_UNQUOTE(JSON_EXTRACT(variables_start, '$.subtask_id')) AS subtask_id "
+        "SELECT id, workflow_id, task_id, subtask_id "
         "  FROM agent_workflow_trace "
-        " WHERE status = 'running' AND JSON_VALID(variables_start) "
+        " WHERE status = 'running' "
         " ORDER BY id"
     )
 
@@ -145,29 +174,90 @@ async def _steps_defined(workflow_ids: set[int]) -> dict[int, list[dict]]:
     return steps
 
 
+# Посчитанный знаменатель: `{workflow_id: (шагов, до какого момента годен)}`.
+# Живёт в процессе, общего хранилища ему не нужно — значение одинаковое у всех, и
+# посчитать его заново стоит один запрос.
+_totals_cache: dict[int, tuple[int, float]] = {}
+
+
 async def _totals_by_workflow(workflow_ids: set[int]) -> dict[int, int]:
-    """Сколько шагов считать за 100 % — по медиане прошлых удачных прогонов."""
+    """Сколько шагов считать за 100 % — по медиане прошлых удачных прогонов.
+
+    Значение кэшируется на `TEAM_PROGRESS_TOTAL_TTL`: см. шапку модуля, раздел
+    про цену знаменателя.
+    """
     ids = [wid for wid in workflow_ids if wid]
     if not ids:
         return {}
 
-    marks = ', '.join(['%s'] * len(ids))
-    sql = (
-        "SELECT r.workflow_id, r.id, COUNT(s.id) AS execs "
-        "  FROM agent_workflow_trace r "
-        "  JOIN agent_workflow_trace_step s ON s.run_id = r.id "
-        f" WHERE r.workflow_id IN ({marks}) AND r.status = 'success' "
-        " GROUP BY r.workflow_id, r.id "
-        " ORDER BY r.workflow_id, r.id DESC"
-    )
+    now = time.monotonic()
+    known: dict[int, int] = {}
+    for wid in ids:
+        value, until = _totals_cache.get(wid, (0, 0.0))
+        if until > now:
+            known[wid] = value
+
+    stale = [wid for wid in ids if wid not in known]
+    if not stale:
+        return known
+
+    fresh = await _totals_measure(stale)
+    until = now + TEAM_PROGRESS_TOTAL_TTL
+    for wid in stale:
+        # В кэш кладём и промах: workflow без единого удачного прогона и без шагов
+        # знаменателя не даёт, и переспрашивать о нём каждые 15 секунд — та же
+        # работа, только впустую. Ноль вызывающий уже умеет читать как «молчим
+        # про долю» (`max(1, ...)` на месте использования).
+        _totals_cache[wid] = (int(fresh.get(wid) or 0), until)
+
+    return {**known, **fresh}
+
+
+async def _totals_measure(workflow_ids: list[int]) -> dict[int, int]:
+    """Медиана числа исполненных шагов по последним удачным прогонам. Без кэша.
+
+    ⚠ **Прогоны отбираются по одному workflow за раз, и это дешевле общего
+    запроса.** Прежде брался один `IN (...)` с `GROUP BY r.workflow_id, r.id` и
+    без предела: база сводила **все** удачные прогоны каждого workflow (на проде
+    это 10 454 строки только по четырём номерам, плюс временная таблица), а
+    питон дальше выбрасывал всё, кроме первого десятка. Замер — 406 мс, и уходили
+    они на работу, результат которой не использовался.
+
+    Здесь у каждого workflow свои `TEAM_PROGRESS_SAMPLE_LIMIT` последних удачных
+    прогонов отбираются индексом, и шаги считаются только у них. Ответ тот же:
+    прежний код брал ровно первый десяток того же порядка (`ORDER BY r.id DESC`).
+
+    ⚠ Запросов столько, сколько workflow у идущих прогонов, — то есть единицы:
+    ролей конвейера четыре. Это не «N+1»: N здесь не растёт ни с числом задач, ни
+    с числом прогонов.
+
+    ⚠ **`EXISTS` в отборе прогонов — не лишнее условие, а сохранение прежнего
+    ответа.** Старый запрос сводил прогоны с шагами внутренним `JOIN`, то есть
+    прогон без единого записанного шага в десяток образцов не попадал вовсе.
+    Возьми мы просто «последние десять удачных», такой прогон занял бы место в
+    выборке и выпал бы уже после — образцов стало бы меньше десяти, и медиана
+    поехала бы. Сегодня на проде таких прогонов ноль из 25 775, но ноль этот
+    держится на том, что запись шага может и не состояться: `trace_step` свои
+    отказы глотает, чтобы не ронять workflow.
+    """
     samples: dict[int, list[int]] = {}
-    for row in await _rows_fetch(sql, tuple(ids)):
-        bucket = samples.setdefault(int(row['workflow_id']), [])
-        if len(bucket) < TEAM_PROGRESS_SAMPLE_LIMIT:
-            bucket.append(int(row['execs'] or 0))
+    for wid in workflow_ids:
+        rows = await _rows_fetch(
+            "SELECT COUNT(s.id) AS execs "
+            "  FROM (SELECT id FROM agent_workflow_trace r "
+            "         WHERE r.workflow_id = %s AND r.status = 'success' "
+            "           AND EXISTS (SELECT 1 FROM agent_workflow_trace_step e "
+            "                        WHERE e.run_id = r.id) "
+            "         ORDER BY r.id DESC LIMIT %s) r "
+            "  JOIN agent_workflow_trace_step s ON s.run_id = r.id "
+            " GROUP BY r.id",
+            (wid, TEAM_PROGRESS_SAMPLE_LIMIT))
+        values = [int(row['execs'] or 0) for row in rows]
+        if values:
+            samples[wid] = values
 
     totals = {wid: _median(values) for wid, values in samples.items() if _median(values)}
-    missing = [wid for wid in ids if wid not in totals]
+    missing = [wid for wid in workflow_ids if wid not in totals]
 
     return {**(await _totals_defined(missing)), **totals}
 

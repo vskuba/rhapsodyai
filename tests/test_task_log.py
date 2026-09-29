@@ -716,3 +716,86 @@ class TestShellAnswerNotCut:
         body = [line for line in tail.splitlines() if not line.startswith('…')]
 
         assert all(line[2] == ':' for line in body), 'в хвосте остались обрывки без времени'
+
+
+class TestRunsFoundByTaskNumber:
+    """
+    Прогоны строки ищутся по номеру — и находятся, какой бы формы он ни был.
+
+    Номер лежит в стартовых переменных прогона, а движок кладёт переменные **как
+    есть**: одна и та же подзадача попадает в трассу то строкой (`"5219"`), то
+    числом (`5219`) — по тому, чем её положил вызывающий шаг. Прежний отбор искал
+    подстроку вместе с кавычками и числовую форму не находил ни разу: круг шёл, а
+    журнал и замеры его не видели. Теперь номер берётся колонкой
+    (`subtask_id`/`task_id`, миграция `20260929123812`), и форма записи роли не
+    играет.
+    """
+
+    @pytest.fixture
+    async def runs(self):
+        """Четыре прогона одной задачи: обе формы номера, подзадача и пустышка."""
+        import json
+        import uuid
+
+        from mysql_.mysql_ import mysql_get_db_async
+
+        task_id, subtask_id = 990001, 990002
+        shapes = {
+            'task_str':      {'task_id': str(task_id)},
+            'task_num':      {'task_id': task_id},
+            'subtask_num':   {'task_id': task_id, 'subtask_id': subtask_id},
+            'subtask_empty': {'task_id': task_id, 'subtask_id': ''},
+        }
+
+        made = {}
+        async with mysql_get_db_async() as db:
+            for name, variables in shapes.items():
+                await db.execute(
+                    "INSERT INTO agent_workflow_trace (run_uuid, status, variables_start) "
+                    "VALUES (%s, 'running', %s)",
+                    (str(uuid.uuid4()), json.dumps(variables, ensure_ascii=False)))
+                made[name] = db.lastrowid
+            await db.connection.commit()
+
+        yield {'task_id': task_id, 'subtask_id': subtask_id, 'ids': made}
+
+        async with mysql_get_db_async() as db:
+            marks = ', '.join(['%s'] * len(made))
+            await db.execute(f"DELETE FROM agent_workflow_trace WHERE id IN ({marks})",
+                             tuple(made.values()))
+            await db.connection.commit()
+
+    async def test_numeric_task_id_is_found(self, runs):
+        """Номер числом — тот самый случай, который старый поиск терял молча."""
+        from src.project.task.task_log import _runs_active
+
+        found = await _runs_active(runs['task_id'])
+
+        assert len(found) >= 2, 'прогоны задачи с номером-числом не нашлись'
+
+    async def test_numeric_subtask_id_is_found(self, runs):
+        """Подзадача числом — тот же случай, и терялся он так же."""
+        from src.project.task.task_log import _runs_active
+
+        assert await _runs_active(runs['subtask_id']), 'прогон подзадачи не нашёлся'
+
+    async def test_subtask_run_does_not_belong_to_its_parent(self, runs):
+        """
+        Главное условие отбора: в трассе подзадачи лежит и номер родителя, и без
+        разделения задача забирала бы себе прогоны всех своих подзадач.
+        """
+        from mysql_.mysql_ import mysql_get_db_async
+        from src.project.task.task_log import _runs_active
+
+        found = await _runs_active(runs['task_id'])
+
+        async with mysql_get_db_async() as db:
+            marks = ', '.join(['%s'] * len(found))
+            await db.execute(
+                f"SELECT subtask_id FROM agent_workflow_trace WHERE session_uuid IN ({marks})"
+                if found else "SELECT 1 WHERE 0",
+                tuple(row['session_uuid'] for row in found))
+            rows = await db.fetchall() or []
+
+        assert all(row['subtask_id'] is None for row in rows), \
+            'задаче достался прогон её подзадачи'

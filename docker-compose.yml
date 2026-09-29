@@ -462,7 +462,19 @@ services:
   mysql:
     platform: linux/x86_64
     image: mysql:8.0
-    command: mysqld --sql-mode="NO_ENGINE_SUBSTITUTION"
+    # ⚠⚠ `innodb-buffer-pool-size` — не тюнинг «на всякий случай», а починка.
+    # Умолчание образа — 128 МБ, и оно никогда не менялось, пока база росла до
+    # 2.1 ГБ. Замерено на проде (`SHOW GLOBAL STATUS`, 9 суток аптайма):
+    # свободных страниц в пуле 0, с диска прочитано 4.26 ТБ — по 5.5 МБ/с
+    # непрерывно. Одна только `agent_workflow_trace` весит 174 МБ, то есть
+    # каждый полный проход по ней вытеснял из кэша **весь** остальной проект.
+    #
+    # 1 ГБ, а не 2: на машине 11.6 ГБ на все проекты (свой стек, DatingAi,
+    # Reels, opensearch с logstash, qdrant), и 2 ГБ уже в свопе. MySQL держит
+    # сверх пула ещё сотни мегабайт на соединения и словарь — при 1 ГБ его RSS
+    # выходит около 1.3 ГБ, и это влезает с запасом. Освободится память —
+    # поднимать дальше можно без правок кода, размер живёт только здесь.
+    command: mysqld --sql-mode="NO_ENGINE_SUBSTITUTION" --innodb-buffer-pool-size=1G
     ports:
       - "3302:3306"
     networks:
@@ -563,6 +575,11 @@ services:
       - ./apps:/srv/apps:ro
       - caddy-data:/data
       - caddy-config:/config
+      # Журнал доступа. Именованный том, а не stderr: выкладка пересоздаёт этот
+      # контейнер, и `docker logs caddy` исчезает вместе с ним — а нужен журнал
+      # ровно затем, чтобы разбирать вчерашнее после сегодняшней выкладки.
+      # Ротация своя, у Caddy (`roll_size`/`roll_keep` в Caddyfile).
+      - caddy-logs:/var/log/caddy
     networks:
       - os-net
     # No depends_on uvicorn: Blue-Green manages which uvicorn slot is active.
@@ -599,6 +616,7 @@ volumes:
   cronicle-logs:
   caddy-data:
   caddy-config:
+  caddy-logs:
   gatus-data:
 
 networks:

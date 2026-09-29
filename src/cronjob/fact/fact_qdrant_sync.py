@@ -1,6 +1,8 @@
 import asyncio
 from logging_.logging_ import logger_info, logging_init
 from src.journal.journal_handler import journal_handler_install
+from src.journal.journal_mysql import (journal_mysql_watch_start,
+                                       journal_mysql_watch_stop)
 from src.ai.ai_fact import ai_fact_qdrant_sync
 from qdrant_.qdrant_ import _qdrant_db_get_client
 
@@ -11,6 +13,9 @@ async def main():
     # /admin/journal): он живёт минуту в отдельном процессе, и его отказ
     # иначе теряется вместе с этим процессом.
     journal_handler_install('cronjob')
+    # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
+    # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
+    await journal_mysql_watch_start('cronjob')
     try:
         result = await ai_fact_qdrant_sync()
         logger_info(result)
@@ -19,6 +24,9 @@ async def main():
         logger_info(f"Критическая ошибка в процессе синхронизации: {e}")
         print(f"Критическая ошибка в процессе синхронизации: {e}")
     finally:
+        # Счёт запросов за этот заход — в подвкладку «MySQL»: процесс короткий,
+        # и без сброса его работа пропала бы вместе с ним.
+        await journal_mysql_watch_stop()
         try:
             qdrant_client = _qdrant_db_get_client()
             if qdrant_client:

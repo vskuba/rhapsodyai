@@ -54,6 +54,8 @@ import sys
 
 from logging_.logging_ import logger_info, logging_init
 from src.journal.journal_handler import journal_handler_install
+from src.journal.journal_mysql import (journal_mysql_watch_start,
+                                       journal_mysql_watch_stop)
 from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
 from src.telegram_.telegram_notify import telegram_notify_send_owner
@@ -71,6 +73,9 @@ async def main():
     # /admin/journal): он живёт минуту в отдельном процессе, и его отказ
     # иначе теряется вместе с этим процессом.
     journal_handler_install('cronjob')
+    # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
+    # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
+    await journal_mysql_watch_start('cronjob')
 
     metadata = {}
     if len(sys.argv) > 1:
@@ -97,7 +102,10 @@ async def main():
             # из-за того, что не относится к его работе.
             logger_info(f'[proxy] сторож: доклад в Telegram не ушёл — {type(e).__name__}: {e}')
 
-    await mysql_pool_close()
+    # ⚠ Счёт запросов сбрасываем ДО закрытия пула: сброс ходит в базу
+        # тем же пулом, и после закрытия ему не на чем ехать.
+        await journal_mysql_watch_stop()
+        await mysql_pool_close()
 
     print(report)
     print(json.dumps({'checked': len(checked), 'changes': changes}, ensure_ascii=False))

@@ -393,10 +393,14 @@ async def _trace_last_session(task_id: int) -> str:
     следующий круг, и в замер уедет его копия.
     """
     async with mysql_get_db_async() as db:
+        # ⚠ Отбор по колонке `subtask_id` (считается из `variables_start`,
+        # миграция `20260929123812`), а не подстрокой по LONGTEXT: `LIKE '%...%'`
+        # индексом не покрыть, и такой поиск читал `variables_start` у всех строк
+        # таблицы — 639 мс на проде, чаще всего чтобы не найти ничего.
         await db.execute(
             "SELECT session_uuid FROM agent_workflow_trace "
-            " WHERE variables_start LIKE %s ORDER BY id DESC LIMIT 1",
-            (f'%"subtask_id": "{int(task_id)}"%',))
+            " WHERE subtask_id = %s ORDER BY id DESC LIMIT 1",
+            (int(task_id),))
         row = await db.fetchone()
 
     return str((row or {}).get('session_uuid') or '')

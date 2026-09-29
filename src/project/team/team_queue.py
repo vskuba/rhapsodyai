@@ -69,20 +69,31 @@ async def team_queue_by_project() -> dict[int, dict[str, dict]]:
     # бюджет, карточка обещала бы не тот остаток, как только значения разойдутся.
     bugfix_timeout = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_BUGFIX_RUN)
     role_timeout = {TASK_ROLE_BUGFIXER: (bugfix_timeout, TASK_SETTING_TIMEOUT_BUGFIX_RUN)}
+
+    sources = [(role, await _planner_rows(role),
+                *role_timeout.get(role, (plan_timeout, TASK_SETTING_TIMEOUT_MANAGER_RUN)))
+               for role in TASK_ROLE_TYPES] + [
+        ('developer', await _developer_rows(),
+         await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN),
+         TASK_SETTING_TIMEOUT_DEVELOPER_RUN),
+        ('qa', await _qa_rows(),
+         await task_setting_timeout_get(TASK_SETTING_TIMEOUT_QA_RUN),
+         TASK_SETTING_TIMEOUT_QA_RUN),
+    ]
+
     # Один запрос на всю выдачу: работающих прогонов единицы, а строк очереди сотни.
-    progress = await team_progress_running()
-    for role, rows, timeout, timeout_key in (
-        [(role, await _planner_rows(role),
-          *role_timeout.get(role, (plan_timeout, TASK_SETTING_TIMEOUT_MANAGER_RUN)))
-         for role in TASK_ROLE_TYPES] + [
-            ('developer', await _developer_rows(),
-             await task_setting_timeout_get(TASK_SETTING_TIMEOUT_DEVELOPER_RUN),
-             TASK_SETTING_TIMEOUT_DEVELOPER_RUN),
-            ('qa', await _qa_rows(),
-             await task_setting_timeout_get(TASK_SETTING_TIMEOUT_QA_RUN),
-             TASK_SETTING_TIMEOUT_QA_RUN),
-        ]
-    ):
+    #
+    # ⚠ **И ноль запросов, когда никто не работает.** Долю выполненного показывает
+    # только занятая строка (`busy`), у ждущей её нет и быть не может: отсчёт ещё
+    # не начинался. А спрашивали трассу всегда — эту выдачу опрашивают раз в 15 с
+    # две страницы админки (`/admin/team` и `/admin/task`), и на проде из этого
+    # набегало примерно по полному проходу по `agent_workflow_trace` каждые 23
+    # секунды: 905 млн прочитанных строк за девять суток на таблице в 26 тысяч.
+    # Конвейер же стоит большую часть суток.
+    busy = any(int(row.get('busy') or 0) for _, rows, *_ in sources for row in rows)
+    progress = await team_progress_running() if busy else {}
+
+    for role, rows, timeout, timeout_key in sources:
         for row in rows:
             slot = _slot_get(queues, row.get('project_id'), role)
             item = _item_build(row, timeout, timeout_key, progress)

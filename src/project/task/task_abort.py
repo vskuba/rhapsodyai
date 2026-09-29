@@ -78,9 +78,17 @@ async def _runs_live(ids: list) -> list[dict]:
     """
     Живые прогоны этих задач: `[{'id', 'started_at', 'session_uuid'}]`.
 
-    Сравниваем числом (`CAST ... AS UNSIGNED`), а не строкой: движок кладёт переменные
-    как есть, и номер задачи попадает в трассу то числом, то строкой — по строковому
-    сравнению `'34226'` и `34226` разошлись бы молча.
+    Сравниваем числом, а не строкой: движок кладёт переменные как есть, и номер
+    задачи попадает в трассу то числом, то строкой — по строковому сравнению
+    `'34226'` и `34226` разошлись бы молча.
+
+    ⚠ Приведение к числу делает теперь не запрос, а сама колонка: `subtask_id` и
+    `task_id` считаются из `variables_start` при вставке (миграция
+    `20260929123812`) и уже `INT`. Прежние `JSON_EXTRACT` в условии заставляли
+    базу прочитать LONGTEXT у каждой строки таблицы — `type: ALL`, 174 МБ.
+
+    ⚠ `task_shell_session` остаётся разбором JSON: своей колонки у него нет, но и
+    отбора по нему здесь нет — он только читается у уже найденных строк.
     """
     placeholders = ', '.join(['%s'] * len(ids))
     async with mysql_get_db_async() as db:
@@ -90,10 +98,7 @@ async def _runs_live(ids: list) -> list[dict]:
             "           AS session_uuid "
             "  FROM agent_workflow_trace "
             " WHERE status = 'running' "
-            "   AND CAST(COALESCE("
-            "           JSON_UNQUOTE(JSON_EXTRACT(variables_start, '$.subtask_id')), "
-            "           JSON_UNQUOTE(JSON_EXTRACT(variables_start, '$.task_id')), 0"
-            f"       ) AS UNSIGNED) IN ({placeholders})",
+            f"   AND COALESCE(subtask_id, task_id, 0) IN ({placeholders})",
             tuple(ids))
 
         return [dict(row) for row in (await db.fetchall() or [])]

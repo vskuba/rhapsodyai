@@ -31,6 +31,8 @@ import asyncio
 
 from logging_.logging_ import logger_info, logging_init
 from src.journal.journal_handler import journal_handler_install
+from src.journal.journal_mysql import (journal_mysql_watch_start,
+                                       journal_mysql_watch_stop)
 from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 from ai.ai_thread import ai_thread_framework_run
 from queue_.queue_ import queue_init
@@ -146,6 +148,9 @@ async def _job_async(project_id: int) -> str:
     # /admin/journal): job падает в своём контейнере, и без этого его
     # падения видны только в `docker logs worker_task`.
     journal_handler_install('worker')
+    # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
+    # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
+    await journal_mysql_watch_start('worker')
     queue_init([
         'chat', 'chat_response', 'chat_input_send',
         'task', 'task_abort', 'task_complete', 'task_continue',
@@ -158,6 +163,9 @@ async def _job_async(project_id: int) -> str:
         framework_task.cancel()
         planning_worker_flight_release(project_id)
         # Процесс отдельный, пул свой — закрываем явно, иначе соединения утекают.
+        # ⚠ Счёт запросов сбрасываем ДО закрытия пула: сброс ходит в базу
+        # тем же пулом, и после закрытия ему не на чем ехать.
+        await journal_mysql_watch_stop()
         await mysql_pool_close()
 
 

@@ -13,6 +13,8 @@ import sys
 
 from logging_.logging_ import logging_init
 from src.journal.journal_handler import journal_handler_install
+from src.journal.journal_mysql import (journal_mysql_watch_start,
+                                       journal_mysql_watch_stop)
 from mysql_.mysql_ import mysql_pool_close
 from src.project.planning.planning_batch import (
     planning_batch_run_all,
@@ -27,6 +29,9 @@ async def main():
     # /admin/journal): он живёт минуту в отдельном процессе, и его отказ
     # иначе теряется вместе с этим процессом.
     journal_handler_install('cronjob')
+    # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
+    # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
+    await journal_mysql_watch_start('cronjob')
 
     metadata = {}
     if len(sys.argv) > 1:
@@ -46,6 +51,11 @@ async def main():
         else:
             stats = await planning_batch_run_all()
 
+        # ⚠⚠ Сброс счётчика запросов — ДО печати итога, а не в `finally`. Контракт
+        # кронджоба: итоговый JSON — **последняя непустая строка** stdout. Сброс
+        # ходит в базу, а пул печатает про каждый чекаут (`[MySQL POOL]`), и из
+        # `finally` эти строки легли бы после JSON — итог переставал бы читаться.
+        await journal_mysql_watch_stop()
         print(json.dumps(stats, ensure_ascii=False))
     finally:
         # Процесс отдельный, пул свой — закрываем явно, иначе соединения утекают.

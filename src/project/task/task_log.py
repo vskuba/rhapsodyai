@@ -250,16 +250,26 @@ async def task_log_rows_running() -> dict[int, str]:
     отвечает лишь на вопрос «чей это прогон и какая роль».
     """
     async with mysql_get_db_async() as db:
+        # ⚠ Номер строки берём колонками (`subtask_id`, `task_id` — считаются из
+        # `variables_start`, миграция `20260929123812`), а роль — по-прежнему
+        # разбором: своей колонки у неё нет, да и незачем. Читается `variables_start`
+        # при этом только у работающих прогонов, а их единицы: отбор по `status`
+        # теперь идёт индексом (`idx_workflow_run_status`), а не проходом по всей
+        # таблице.
+        #
+        # Приоритет подзадачи сохранён как был: `COALESCE` берёт первое не-NULL,
+        # а пустая строка в переменных в колонку не попадает (там `NULL`) — ровно
+        # так же, как её пропускал прежний `or` в питоне.
         await db.execute(
-            "SELECT variables_start FROM agent_workflow_trace WHERE status = 'running'")
+            "SELECT COALESCE(subtask_id, task_id) AS task_id, variables_start "
+            "  FROM agent_workflow_trace "
+            " WHERE status = 'running' AND COALESCE(subtask_id, task_id) IS NOT NULL")
         rows = await db.fetchall() or []
 
         running: dict[int, str] = {}
         for row in rows:
             variables = _dict_parse(str(row.get('variables_start') or '')) or {}
-            task_id = str(variables.get('subtask_id') or variables.get('task_id') or '').strip()
-            if task_id.isdigit():
-                running[int(task_id)] = str(variables.get('task_shell_role') or '')
+            running[int(row['task_id'])] = str(variables.get('task_shell_role') or '')
         if not running:
             return {}
 
@@ -424,6 +434,27 @@ async def _runs_active(task_id) -> list[dict]:
     всех своих подзадач.
 
     Роль берём из тех же переменных (`task_shell_role`) — в самой трассе её нет.
+
+    ⚠ Отбор идёт по колонкам `subtask_id`/`task_id` (считаются из
+    `variables_start`, миграция `20260929123812`), а не подстрокой по LONGTEXT:
+    `LIKE '%...%'` проиндексировать нечем, и такой поиск читал `variables_start`
+    у всех строк таблицы — 639 мс на проде.
+
+    ⚠⚠ **Заодно чинится тихая потеря прогонов.** Старый образец искал номер
+    вместе с кавычками (`"subtask_id": "5219"`), а движок кладёт переменные как
+    есть — и номер попадает в трассу то строкой, то **числом**
+    (`"subtask_id": 5219`). По числовой записи образец не совпадал ни разу, и
+    такие прогоны не находились вовсе: ни здесь, ни в замерах
+    (`task_metric._trace_last_session`). Знал об этом только `task_abort`, там
+    номер приводили к числу явно. Сверка на образцах обеих форм показала ровно
+    это: старый отбор терял `{"subtask_id": 7004}`, новый находит.
+
+    ⚠ Условие «у задачи нет подзадачи» теперь `subtask_id IS NULL` вместо
+    прежнего `NOT LIKE '%"subtask_id": "%'`. Разница ровно в одном случае: ключ
+    есть, но пустой. Прежний отбор такой прогон исключал, новый — берёт, и это
+    не расхождение, а совпадение с питоном рядом: `variables.get('subtask_id')
+    or variables.get('task_id')` пустую строку тоже пропускает и считает прогон
+    задачиным.
     """
     task_id = int(task_id or 0)
     if not task_id:
@@ -434,11 +465,9 @@ async def _runs_active(task_id) -> list[dict]:
             "SELECT session_uuid, started_at, variables_start "
             "  FROM agent_workflow_trace "
             " WHERE status = 'running' "
-            "   AND (variables_start LIKE %s "
-            "        OR (variables_start LIKE %s AND variables_start NOT LIKE %s)) "
+            "   AND (subtask_id = %s OR (task_id = %s AND subtask_id IS NULL)) "
             " ORDER BY id",
-            (f'%"subtask_id": "{task_id}"%',
-             f'%"task_id": "{task_id}"%', '%"subtask_id": "%'))
+            (task_id, task_id))
         rows = await db.fetchall() or []
 
     runs = []
@@ -549,13 +578,13 @@ async def _trace_last_session(task_id) -> str:
         return ''
 
     async with mysql_get_db_async() as db:
+        # Отбор по колонкам, а не подстрокой по LONGTEXT: та же замена и та же
+        # оговорка про пустой `subtask_id`, что в `_runs_active` выше.
         await db.execute(
             "SELECT session_uuid FROM agent_workflow_trace "
-            " WHERE variables_start LIKE %s "
-            "    OR (variables_start LIKE %s AND variables_start NOT LIKE %s) "
+            " WHERE subtask_id = %s OR (task_id = %s AND subtask_id IS NULL) "
             " ORDER BY id DESC LIMIT 1",
-            (f'%"subtask_id": "{task_id}"%',
-             f'%"task_id": "{task_id}"%', '%"subtask_id": "%'))
+            (task_id, task_id))
         row = await db.fetchone()
 
     return str((row or {}).get('session_uuid') or '')
