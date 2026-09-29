@@ -43,11 +43,11 @@ WORKDIR /app
 # Колесо `torch-2.13.0+cpu-cp311-cp311-manylinux_2_28_aarch64.whl` на CPU-индексе есть —
 # прод на ARM соберётся тем же путём, что и amd64.
 RUN pip install --no-cache-dir --default-timeout=1000 \
-    torch --index-url https://download.pytorch.org/whl/cpu
+    torch==2.14.0+cpu --index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install --no-cache-dir --default-timeout=1000 \
-    faster-whisper \
-    sentence-transformers
+    faster-whisper==1.2.1 \
+    sentence-transformers==6.1.0
 
 # Копируем файл с зависимостями
 COPY docker/uvicorn/requirements.txt .
@@ -64,7 +64,9 @@ RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceT
 
 RUN python3 -c "from fastembed import TextEmbedding, SparseTextEmbedding; TextEmbedding(model_name='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'); SparseTextEmbedding(model_name='Qdrant/bm25')"
 
-RUN pip install rq rq-dashboard redis
+# ⚠ Версии закреплены, как и в requirements.txt: голые имена тянули бы при
+# каждой сборке свежее с PyPI, и образ переставал быть воспроизводимым.
+RUN pip install rq==2.12.0 rq-dashboard==0.9.0 redis==8.1.0
 
 # Модели уже скачаны выше в слои образа — в рантайме работаем только с локальным кэшем,
 # без HEAD-проверок huggingface.co (иначе его недоступность блокирует старт сервера)

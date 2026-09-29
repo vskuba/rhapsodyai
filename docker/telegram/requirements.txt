@@ -1,20 +1,42 @@
-aiogram
-aiosqlite
-anthropic
-click
-faster-whisper
-groq
-httpx
-openai
-pydantic
-pydantic-ai>=0.0.24
-PyGithub
-python-dotenv
-python-json-logger
-qdrant_client
-sentence_transformers
-aiomysql
-pymysql
-fastembed
-ddgs
-beautifulsoup4
+# Зависимости образа telegram-бота.
+#
+# ⚠⚠ ВЕРСИИ ЗАКРЕПЛЕНЫ — причина та же, что в `docker/uvicorn/requirements.txt`
+# (там же подробности): голые имена означают, что `pip install` при каждой сборке
+# тянет сегодняшний PyPI, и образ перестаёт быть воспроизводимым. Версии сняты с
+# прода, то есть закреплено ровно то, что уже работает.
+#
+# ## ⚠ Этот образ РАЗОШЁЛСЯ с образом uvicorn, и это долг
+#
+# Замерено 2026-09-29, оба собраны из своих Dockerfile в разные дни:
+#
+#   пакет           telegram    uvicorn
+#   anthropic       1.7.0       1.9.0
+#   openai          3.16.2      3.20.0
+#   pydantic-ai     2.46.0      2.51.0
+#   qdrant-client   1.19.1      1.18.0
+#
+# Код проекта (`src/`) у них общий, база общая — значит одна и та же функция в
+# двух контейнерах работает на разных библиотеках. Пока расхождение зафиксировано
+# как есть: закрепление не должно менять поведение. Выравнивать — отдельной
+# правкой и с прогоном обоих контейнеров, а не заодно.
+
+aiogram==3.31.0
+aiosqlite==0.22.1
+anthropic==1.7.0
+click==8.5.0
+faster-whisper==1.2.1
+groq==1.7.0
+httpx==0.28.1
+openai==3.16.2
+pydantic==2.13.5
+pydantic-ai==2.46.0
+PyGithub==2.10.0
+python-dotenv==1.2.3
+python-json-logger==4.2.0
+qdrant_client==1.19.1
+sentence_transformers==6.1.0
+aiomysql==0.3.2
+pymysql==1.2.3
+fastembed==0.8.0
+ddgs==9.16.0
+beautifulsoup4==4.15.0
