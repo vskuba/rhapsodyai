@@ -8,13 +8,14 @@
 import pytest
 
 from tests_llm.plan import plan_load
-from tests_llm.dating_invite_write.fixtures import (PLAN_JUDGE_FIXES,
-                                                    PLAN_OK)
+from tests_llm.dating_invite_write.fixtures import (DRAFT_GOOD, DRAFT_WEAK,
+                                                    PLAN_JUDGE_REFUSES, PLAN_OK)
 
 from tests_llm.datingai import ENVELOPE
-from tests_llm.dating_invite_write.conftest import (STEP_DRAFT, STEP_FIX,
+from tests_llm.dating_invite_write.conftest import (STEP_DICE, STEP_DRAFT,
                                                     STEP_JUDGE, STEP_KEEP,
-                                                    STEP_LOOP, STEP_OUT)
+                                                    STEP_LOOP, STEP_OUT,
+                                                    VERDICT_OK)
 
 pytestmark = pytest.mark.llm
 
@@ -77,28 +78,39 @@ class TestTheJudgeVerdict:
     Утверждать «судья ответил одним из трёх слов» нельзя: слово выбирает модель,
     и такой тест краснел бы от её оговорки, а не от поломки. Стеречь можно только
     связь, которую держит движок: вердикт и пройденные шаги обязаны сходиться.
+
+    ⚠ Обе проверки ниже верны при **любом** решении модели — и когда судья
+    пропустил с первого раза, и когда забраковал пять черновиков подряд. Потому
+    они и годятся для живого прогона (`llm_live`), где решение не задать.
     """
 
-    async def test_a_fix_means_the_judge_refused(self, invite):
-        """⚠ Связь двусторонняя, и проверяется она **по факту**, а не по ожиданию.
+    async def test_every_draft_is_judged(self, invite):
+        """Сколько черновиков написано, столько раз работал и судья.
 
-        Ждать «судья забракует» нельзя: забракует он или нет, решает модель.
-        Зато связь «вердикт `fixed` ⇔ шаг правки пройден» держит переход шага
-        (`transitions_after`), и от удачи она не зависит вовсе.
-
-        ⚠⚠ Вердикт здесь — **не предмет проверки, а развилка самой проверки**.
-        Пришло неизвестное слово — обе ветки молчат, и тест не притворяется, что
-        что-то проверил.
+        ⚠⚠ Это и есть смысл затеи: шаблон уходит полусотне людей без
+        человеческого взгляда, и черновик, проскочивший мимо судьи, уедет им
+        как есть. Отвались переход — счётчики разойдутся, и разойдутся молча:
+        прогон останется удачным.
         """
         got = await invite()
-        verdict = str(got.vars.get('invite_ok'))
 
-        if verdict == 'fixed':
-            assert got.went_through(STEP_FIX), \
-                f'вердикт «fixed», а шага правки на маршруте нет.{got}'
-        elif verdict == 'yes':
-            assert not got.went_through(STEP_FIX), \
-                f'судья пропустил черновик, а правка всё равно шла.{got}'
+        assert got.times_ran(STEP_DRAFT) == got.times_ran(STEP_JUDGE), \
+            (f'черновиков {got.times_ran(STEP_DRAFT)},'
+             f' а судья работал {got.times_ran(STEP_JUDGE)} раз.{got}')
+
+    async def test_a_finished_run_ends_on_a_pass(self, invite):
+        """⚠ У дошедшего до конца прогона вердикт — `yes`, и иначе не бывает.
+
+        Дорога `yes` — единственный выход из подпрогона: любое другое слово
+        возвращает заход к жребию. Значит «прогон удался, а вердикт не `yes`»
+        означает, что переход брака пропускает брак дальше.
+        """
+        got = await invite()
+
+        assert got.status == 'success', f'прогон не дошёл до конца.{got}'
+        assert str(got.vars.get('invite_ok')) == VERDICT_OK, \
+            (f'прогон удался с вердиктом {got.vars.get("invite_ok")!r}:'
+             f' брак прошёл мимо развилки.{got}')
 
 
 class TestTheEnvelope:
@@ -129,71 +141,90 @@ class TestTheEnvelope:
             f'конверт начинается не с вердикта: {envelope[:120]!r}.{got}'
 
 
-class TestTheJudgeSendsItToTheFix:
-    """⚠⚠ Судья вправду **уводит** брак на правку, а не просто стоит на пути.
+class TestARefusalStartsOver:
+    """⚠⚠ Брак вправду **возвращает** заход к жребию, а не идёт дальше.
 
-    Соседний класс проверяет согласованность вердикта и маршрута «по факту»: как
-    решила модель, так и сверяем. Это верно для живого прогона, но одного этого
-    мало — если переход отвалится, судья продолжит выносить вердикты, брак пойдёт
-    дальше, и связь «fixed ⇔ правка» станет проверять пустоту: вердикта `fixed`
-    просто не появится.
+    Соседний класс сверяет счётчики «по факту»: как решила модель, так и сверяем.
+    Это верно для живого прогона, но одного этого мало — отвались переход брака,
+    судья продолжит выносить вердикты, а брак поедет в пул, и счётчики сойдутся:
+    черновик один, судья один.
 
-    Здесь вердикт **задан**: судья бракует, правка исправляет. Живой моделью так
-    не поставишь — забракует она или нет, решает сама.
+    Здесь вердикт **задан**: первый черновик бракуется, второй проходит. Живой
+    моделью так не поставишь — забракует она или нет, решает сама.
 
-    ## ⚠ Почему брак и правка одним сценарием
+    ## ⚠ Почему сценарий однократный
 
-    Оба шага отвечают **теми же ключами** (`invite_draft`, `invite_ok`), а подмена
-    берёт первое совпавшее правило. Разложи их по разным сценариям — правка
-    получила бы вердикт судьи и вернула `no` вместо `fixed`, то есть цикл пошёл бы
-    вечно (`fixtures.PLAN_JUDGE_FIXES`).
+    Примета правила — кусок промпта, а у двух проходов одного шага промпт **один
+    и тот же**. Судья, бракующий всегда, гонял бы круг «жребий → черновик →
+    судья» до предела шагов движка (300): прогон обрывался бы, ничего не
+    проверив. Поэтому оба правила `PLAN_JUDGE_REFUSES` помечены «сработать один
+    раз», и второй круг достаётся заготовке (`plan.py`, `plan_load`).
     """
 
     @pytest.fixture
     async def refused(self, invite, llm_answers):
-        """Заход, где судья забраковал черновик.
+        """Заход, где судья забраковал первый черновик.
 
         ⚠ Сценарий кладётся **до** вызова: заготовка папки уступает своему
-        (`ask`), и без этого порядка судья пропустил бы черновик.
+        (`ask`), и без этого порядка судья пропустил бы черновик сразу.
         """
-        await llm_answers(plan_load(PLAN_JUDGE_FIXES, PLAN_OK))
+        await llm_answers(plan_load(PLAN_JUDGE_REFUSES, PLAN_OK))
 
         return await invite()
 
-    async def test_a_refusal_goes_to_the_fix(self, refused):
-        assert refused.went_through(STEP_FIX), \
-            (f'судья забраковал черновик, а шага правки на маршруте нет —'
-             f' брак уехал бы полусотне людей.{refused}')
+    async def test_the_dice_is_rolled_again(self, refused):
+        """⚠⚠ Главное: брак уводит **назад, к жребию**, а не вперёд.
 
-    async def test_the_fix_sees_what_was_wrong(self, refused):
-        """⚠ Правка обязана **видеть** замечание: без него она переписывала бы
-        наугад, и второй черновик вышел бы не лучше первого."""
-        said = refused.prompt_of(STEP_FIX)
-
-        assert said, f'шаг правки ничего не получил на вход.{refused}'
-        assert 'слишком похоже на шаблон' in said, \
-            f'правка не знает, чем плох черновик.{refused}'
-
-    async def test_the_verdict_becomes_fixed(self, refused):
-        """⚠⚠ Вердикт после правки — `fixed`, и это не украшение отчёта.
-
-        По нему DatingAi отличает «шаблон исправлен» от «прошёл сразу», а
-        соседний класс держит на нём свою развилку. Останься `no` — цикл пошёл бы
-        на второй круг правки.
+        Новый приём — весь смысл переделки: текст не чинят по замечанию, его
+        пишут заново, с другого захода. Веди переход брака куда-нибудь ещё —
+        второй черновик вышел бы тем же самым, и судья забраковал бы его снова.
         """
-        assert str(refused.vars.get('invite_ok')) == 'fixed', \
-            (f'после правки вердикт {refused.vars.get("invite_ok")!r},'
-             f' а ждали «fixed».{refused}')
+        assert refused.times(STEP_DICE) == 2, \
+            (f'жребий бросали {refused.times(STEP_DICE)} раз(а), а после брака'
+             f' их должно быть два.{refused}')
 
-    async def test_a_pass_skips_the_fix(self, invite):
-        """⚠ Обратная сторона: судья пропустил — правки быть не должно.
+    async def test_the_second_draft_is_written(self, refused):
+        """Забракованный черновик переписывается, а не досылается как есть."""
+        assert refused.times_ran(STEP_DRAFT) == 2, \
+            (f'черновиков {refused.times_ran(STEP_DRAFT)}, а после брака'
+             f' их должно быть два.{refused}')
+        assert refused.times_ran(STEP_JUDGE) == 2, \
+            f'второй черновик не показали судье.{refused}'
 
-        Лишний заход правки стоит вызова модели на каждый инвайт, а пул набирают
+    async def test_the_refused_text_stays_out_of_the_pool(self, refused):
+        """⚠⚠ То, ради чего судья заведён: брак не должен уехать людям.
+
+        Проверяем не маршрут, а **накопленное** — то, что уйдёт в пул. Шаг
+        накопления работает только на дороге `yes`, и забракованный текст обязан
+        остаться за бортом целиком.
+        """
+        kept = refused.output_of(STEP_KEEP) + refused.prompt_of(STEP_OUT)
+
+        assert DRAFT_GOOD in kept, \
+            f'годный черновик до пула не доехал.{refused}'
+        assert DRAFT_WEAK not in kept, \
+            f'забракованный черновик всё равно уехал в пул.{refused}'
+
+    async def test_only_the_accepted_reply_is_kept(self, refused):
+        """⚠ Накопление — ровно одно: реплика в пуле одна, а не две.
+
+        Сработай оно и на браке, пул набрался бы вдвое, и половина его была бы
+        тем, что судья отверг.
+        """
+        assert refused.times_ran(STEP_KEEP) == 1, \
+            (f'накопление сработало {refused.times_ran(STEP_KEEP)} раз(а),'
+             f' а годная реплика одна.{refused}')
+
+    async def test_a_pass_goes_straight_through(self, invite):
+        """⚠ Обратная сторона: судья пропустил — второго круга быть не должно.
+
+        Лишний круг стоит двух вызовов модели на каждый инвайт, а пул набирают
         полусотней.
         """
         got = await invite()
 
-        assert str(got.vars.get('invite_ok')) == 'yes', \
-            f'заготовка должна давать вердикт «yes».{got}'
-        assert not got.went_through(STEP_FIX), \
-            f'судья пропустил черновик, а правка всё равно шла.{got}'
+        assert str(got.vars.get('invite_ok')) == VERDICT_OK, \
+            f'заготовка должна давать вердикт «{VERDICT_OK}».{got}'
+        assert got.times(STEP_DICE) == 1, \
+            (f'судья пропустил черновик, а жребий бросали'
+             f' {got.times(STEP_DICE)} раз(а).{got}')

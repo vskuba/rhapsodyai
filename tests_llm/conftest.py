@@ -458,7 +458,7 @@ async def ask(client, agent_of, llm_answers, llm_plan):
         # Пока здесь стояло безусловное `await llm_answers(llm_plan)`, победа
         # была за заготовкой: свой сценарий теста затирался на каждом вызове
         # `ask`. Оттого фикстуры брака (`PLAN_LANG_BAD`, `PLAN_SAME`,
-        # `PLAN_JUDGE_FIXES`, …) не звал **ни один** тест — они не могли
+        # `PLAN_JUDGE_REFUSES`, …) не звал **ни один** тест — они не могли
         # сработать, и путь брака оставался непроверенным. При этом в докстринге
         # `llm_plan` способ был описан как рабочий.
         if llm_plan and 'rules' not in LLM_HELD:
@@ -662,8 +662,7 @@ async def llm_answers():
                 LLM_HELD['rules'] = rules
                 LLM_HELD['default'] = default
 
-            body = {'rules': [{'when': when, 'answer': answer}
-                              for when, answer in (rules or [])],
+            body = {'rules': [_rule(item) for item in (rules or [])],
                     'default': default}
             try:
                 got = await fake.post('/fixtures', json=body,
@@ -732,6 +731,32 @@ async def llm_calls():
 
 
 # ── Приватное ────────────────────────────────────────────────────────────────
+
+
+def _rule(item) -> dict:
+    """Правило подмены из пары или тройки сценария.
+
+    Args:
+        item: `(примета, ответ)` либо `(примета, ответ, однократно)`.
+
+    Returns:
+        Тело правила для подменного сервиса.
+
+    ⚠⚠ Третий элемент необязателен, и это не вкусовщина: пары кладут прямо в
+    `llm_answers` десятки тестов, и требование третьего сломало бы их все разом.
+
+    ⚠ `once` значит «сработать один раз и уйти»: следующий такой же вопрос
+    достанется правилу ниже. Нужно шагам, чей отказ уводит поток назад, — судье,
+    валидатору, проверке языка: примета у двух проходов одна и та же, и вечное
+    «нет» гоняло бы круг до предела шагов движка (`ai/ai_llm_fake.py`).
+    """
+    when, answer = item[0], item[1]
+    rule = {'when': when, 'answer': answer}
+
+    if len(item) > 2 and item[2]:
+        rule['once'] = True
+
+    return rule
 
 
 async def _plan_put(llm_answers, session: str) -> None:
