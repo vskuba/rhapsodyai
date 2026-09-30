@@ -218,6 +218,17 @@ async def ai_workflow_variables_global_get() -> list[dict]:
         return await db.fetchall()
 
 
+# Тип переменной ноды, который человек настраивает сам. Второй — `proxy`,
+# служебный псевдоним: его значение подставляет другую переменную
+# (`girl_title` = `%prompt_user%`), и предлагать его в списке «на что сослаться и
+# что настроить» незачем. Подробности — `workflow.md` §3.0a.
+#
+# ⚠⚠ Живёт у движка, рядом с `ai_workflow_variables_node_get`: словарь колонки
+# `node_variable.type` — его знание. Читают его двое — роутер переменных и сбор
+# индекса «Undefined переменные», — и двух копий строки `'public'` им не нужно.
+WORKFLOW_VARIABLE_NODE_PUBLIC = 'public'
+
+
 async def ai_workflow_variables_node_get(node_id: int) -> list[dict]:
     # Переменные ноды (включая proxy) — порядок по position важен: переменная
     # ниже по списку может ссылаться на %переменные% выше и должна получить их

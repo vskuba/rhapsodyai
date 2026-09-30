@@ -75,6 +75,31 @@ export function savedTab() {
     return document.getElementById(got) ? got : WORKFLOW_TAB_DEFAULT;
 }
 
+/**
+ * Идентификатор workflow, открытого в редакторе, — из скрытой закладки страницы.
+ *
+ * ## ⚠⚠ Одна дверь к одному вопросу
+ *
+ * `document.getElementById('workflowId').value` стоял на странице тринадцатью
+ * копиями по пяти модулям, и часть из них — без `?.`: на странице без закладки
+ * такой вызов ронял обработчик, а соседний рядом отдавал `undefined` и уходил
+ * строить `/workflow/undefined/steps`. Теперь ответ один и он пустая строка,
+ * а уйти по ней молча — дело зовущего: `if (!workflowId) return;`.
+ *
+ * ⚠ Наружу отдаётся **значение**, не элемент. Двум местам нужен сам узел —
+ * `fillWorkflowForm` и сброс формы в `main.js` пишут в него, — и они спрашивают
+ * DOM сами: это запись, а не вопрос «какой workflow открыт».
+ *
+ * ⚠ Живёт здесь, а не в `variable-undefined.js`, где появилось впервые: тот
+ * модуль про сеть и кэш индекса, а «какой workflow открыт» — вопрос страницы,
+ * и спрашивают его те, кто про индекс не знает вовсе.
+ *
+ * @returns {string} id закладки; пустая строка, если закладки на странице нет.
+ */
+export function editorWorkflowId() {
+    return document.getElementById('workflowId')?.value || '';
+}
+
 // Позиция вставки при drag-and-drop шагов
 export function getDragAfterElement(container, y) {
     const draggableElements = [...container.querySelectorAll('.step-item-block:not(.dragging)')];

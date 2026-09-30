@@ -4,10 +4,11 @@
 import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state} from './state.js';
-import {parseMetadata} from './utils.js';
+import {parseMetadata, editorWorkflowId} from './utils.js';
 import {stepVariables, groupWorkflowVariables, variableGroupIndex,
-    workflowVariableSections} from './variable-group.js';
-import {editorWorkflowId, hiddenNamesFor, invalidateUndefinedIndex} from './undefined-index.js';
+    workflowVariableSections, VAR_ID_TOOL, VAR_ID_DYNAMIC,
+    VAR_ID_UNDEFINED} from './variable-group.js';
+import {hiddenNamesFor, invalidateUndefinedIndex} from './variable-undefined.js';
 
 /**
  * Разбивка переменных по группам для **открытого в редакторе** workflow.
@@ -327,7 +328,7 @@ function bindSave(el, variable, field) {
             return;
         }
 
-        const workflowId = document.getElementById('workflowId')?.value;
+        const workflowId = editorWorkflowId();
 
         try {
             await putData(`/workflow/${workflowId}/variable/${variable.id}`,
@@ -383,7 +384,7 @@ async function removeInputVariable(variable) {
 
     if (!confirm(`Удалить переменную "${variable.name}"?`)) return;
 
-    const workflowId = document.getElementById('workflowId')?.value;
+    const workflowId = editorWorkflowId();
 
     try {
         await deleteData(`/workflow/${workflowId}/variable/${variable.id}`);
@@ -523,7 +524,7 @@ export function renderWorkflowVariables(variables) {
 
     // 1. Распределяем переменные по группам
     // ⚠ Пустой реестр — не повод молчать: «Undefined переменные» смотрят именно
-    // туда, где человек ещё ничего не завёл, и шаг с `%имя%` без хозяйина там
+    // туда, где человек ещё ничего не завёл, и шаг с `%имя%` без хозяина там
     // виден лучше всего.
     const {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup,
            dynamicGroup, undefinedGroup} = editorVariableGroups(variablesArray);
@@ -535,13 +536,13 @@ export function renderWorkflowVariables(variables) {
         if (variable.type === 'global') {
             div.className += ' variable-item-common';
         }
-        if (variable.id === -2) {
+        if (variable.id === VAR_ID_TOOL) {
             div.className += ' variable-item-tool';
         }
-        if (variable.id === -3) {
+        if (variable.id === VAR_ID_DYNAMIC) {
             div.className += ' variable-item-dynamic';
         }
-        if (variable.id === -4) {
+        if (variable.id === VAR_ID_UNDEFINED) {
             div.className += ' variable-item-undefined';
         }
         if (variable.type === 'node') {
@@ -567,7 +568,7 @@ export function renderWorkflowVariables(variables) {
                 showNotification('Не удалось скопировать переменную', 'error');
             }
         };
-        if (variable.id === -4) {
+        if (variable.id === VAR_ID_UNDEFINED) {
             // Предупреждение до имени: мигающий значок; имя в красной рамке строки
             // и подсказка про пустоту в прогоне. Кнопки удаления нет — строка с
             // отрицательным id её не получает (проверено ниже по тому же признаку).
@@ -581,7 +582,7 @@ export function renderWorkflowVariables(variables) {
 
         div.appendChild(nameSpan);
 
-        if (variable.id === -4) {
+        if (variable.id === VAR_ID_UNDEFINED) {
             const readers = Array.isArray(variable.readers) ? variable.readers : [];
             const readSpan = document.createElement('span');
             readSpan.className = 'variable-readers';
@@ -615,7 +616,7 @@ export function renderWorkflowVariables(variables) {
             deleteBtn.innerHTML = '&times;';
 
             deleteBtn.onclick = async () => {
-                const workflowId = document.getElementById('workflowId')?.value;
+                const workflowId = editorWorkflowId();
 
                 const cleanLocalState = () => {
                     if (typeof state.allCurrentVariables !== 'undefined') {
@@ -718,7 +719,7 @@ export function renderWorkflowVariables(variables) {
 }
 
 async function addWorkflowVariable() {
-    const workflowId = document.getElementById('workflowId').value;
+    const workflowId = editorWorkflowId();
     const newVariableNameInput = document.getElementById('newVariableName');
     const newVariableValueInput = document.getElementById('newVariableValue');
 

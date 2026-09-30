@@ -4,7 +4,7 @@
 import {getData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state, WORKFLOW_STEP_CONFIG} from './state.js';
-import {parseMetadata} from './utils.js';
+import {parseMetadata, editorWorkflowId} from './utils.js';
 import {getToolOutputKeys} from './variable-group.js';
 import {fillVariablesSelectOptions} from './variables.js';
 import {renderDiceWidget, DICE_TOOL_NAME} from './dice-widget.js';
@@ -539,7 +539,7 @@ export function renderCustomStepFields(step, metadata) {
             selectElement.style = "width: 100%; padding: 6px; font-size: 13px; height: 36px; font-weight: 500;";
             selectElement.innerHTML = '<option value="">-- Выберите workflow --</option>';
 
-            const currentWorkflowId = document.getElementById('workflowId')?.value;
+            const currentWorkflowId = editorWorkflowId();
             (state.allWorkflows || [])
                 .filter(wf => String(wf.id) !== String(currentWorkflowId))
                 .forEach(wf => {

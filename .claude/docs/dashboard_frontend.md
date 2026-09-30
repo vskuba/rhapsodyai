@@ -86,23 +86,50 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
 - `js/workflow/` — редактор `/admin/workflow`: `main.js` (вход), `state.js` (общий стейт,
   поля не переприсваивать), `steps.js` (шаги, переходы, DnD), `step-widgets.js`
   (динамические поля по типу шага), `variables.js` (панель переменных), `graph.js`
-  (mermaid), `utils.js`, `variable-group.js`, `undefined-index.js`.
+  (mermaid), `utils.js`, `variable-group.js`, `variable-undefined.js`.
   ⚠⚠ `variable-group.js` — **чистый** модуль: что за переменные живут в шагах, к
   какой группе относится имя и что считать неопределённой переменной (`undefinedVariables`,
-  группа `VAR_GROUP_UNKNOWN`, секция `undefined` у `groupWorkflowVariables`) — **там и
-  только там**; панель редактора, список workflow и страница трассы импортируют правило,
+  секция `undefined` у `groupWorkflowVariables`) — **там и только там**; панель
+  редактора, список workflow и страница трассы импортируют правило,
   а не пересчитывают своим разбором. Ни DOM, ни сети, ни стейта страницы: всё нужное
   приходит аргументами — реестр, шаги,
   справочники workflow и инструментов; **умолчаний из стейта там нет намеренно**,
   умолчание и есть скрытая привязка к редактору. Привязку к стейту страницы держит
   редактор, и в одном месте — адаптеры `editorVariableGroups` /
   `editorVariableGroupIndex` в `variables.js`.
-  ⚠ `undefined-index.js` — сеть и кэш, правила в нём нет: один GET
+  ⚠ `variable-undefined.js` — сеть и кэш, правила в нём нет: один GET
   `/workflow_variable/undefined_index` на страницу с сырьём `{steps, registryNames,
   hiddenNames}` на workflow; для открытого редактором workflow сырьё берётся из стейта
-  страницы, пакет мог быть скачан до правки шага. Proxy-переменные нод и
-  `agent_variable` в правило приходят как `hiddenNames`: наружу не показываются и не
-  помечаются.
+  страницы, пакет мог быть скачан до правки шага.
+
+  ⚠ «Какой workflow открыт в редакторе» спрашивают у `editorWorkflowId()` из
+  `utils.js` — там же, где остальные вопросы к DOM страницы. В модуле кэша его
+  нет намеренно: вопрос не про индекс, и задают его те, кто про индекс не знает.
+
+  ⚠⚠ **`hiddenNames` — четыре источника, и три из них про запускающего.** Реестр
+  отвечает только за заведённое руками; значение приходит ещё с трёх сторон, и ни
+  одной из них в реестре нет. Пока источники не были собраны, правило звало дырками
+  40 живых имён из 74 по установке.
+
+  | источник | пример | где лежит |
+  |---|---|---|
+  | `agent_variable` агента | `girl_name` | карточка агента |
+  | `proxy`-переменные ноды | `girl_title` | `node_variable`, тип `proxy` |
+  | словарь запускающего | `task_id`, `subtask_branch` | `variables_start` последних прогонов |
+  | входящие подпрогона | `w_project_id` | `inputs_map` родительского `workflow_invoke` |
+
+  Все четыре наружу не показываются и значком не помечаются.
+
+  ⚠ Ещё две поправки живут в самом правиле, а не в `hiddenNames`: шаг с
+  **непрозрачным инструментом** (`toolOutputIsOpaque`: объявлен `{"type": "dict"}`,
+  а ключи движок раскладывает по ответу) снимает подозрение со всего
+  `{tool}_{шаг}_result_*`, и **однобуквенное имя** не считается переменной —
+  `%Y%m%d%H%M%S` это формат даты, а не три метки.
+
+  ⚠⚠ Словарь запускающего виден правилу только после **первого прогона** workflow:
+  `task_id` и соседей кладёт питон (`src/project/task/task_agent_*.py`), и в базе
+  их нет больше нигде. Workflow, который ни разу не бегал и не объявил входящих,
+  получит значки на рабочих именах — лечится прогоном или строкой `input` в реестре.
 - `js/project/` — страница планирования: `main.js`, `projects.js`, `panel.js`,
   `actions.js`, `ideas.js`, `compare.js`, `markdown.js`, `cronicle.js`, `design.js`,
   `prototype-editor-widget.js`, `utils.js`
@@ -195,7 +222,14 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
 - `/workflow_variable/undefined_index` → `{"result": {"workflows": {id: {steps,
   registryNames, hiddenNames}}}}` — **сырьё**, а не вычисленный ответ: «Undefined
   переменные» вычисляет клиент (`undefinedVariables` из `variable-group.js`); право
-  `WORKFLOW_VARIABLE_VIEW`, ответ — все workflow разом одним GET
+  `WORKFLOW_VARIABLE_VIEW`, ответ — все workflow разом одним GET.
+  ⚠⚠ Ручка в `workflow_variable.py` — **тонкая**, как `workflow_export.py` рядом:
+  сбор живёт в `src/ai/ai_workflow_undefined.py` (`ai_workflow_undefined_index`),
+  там и правят. Роутер знает про HTTP и право, и больше ни про что.
+  ⚠ Ключи словаря старта считает база (`JSON_KEYS`), а не питон: `variables_start`
+  хранит и промпты прогона, и по сети он ехать не должен. Отбор последних
+  прогонов (`AI_WORKFLOW_UNDEFINED_RUNS_LIMIT`) идёт по id, тяжёлая колонка
+  читается только у отобранных строк
 
 ## Грабли
 

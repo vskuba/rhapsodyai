@@ -32,6 +32,22 @@ import {parseMetadata} from './utils.js';
 export const VAR_GROUP_UNKNOWN = {key: 'unknown', icon: '∅', label: 'не объявлена',
                                   title: '∅ не объявлена'};
 
+/**
+ * Номера строк, которых **нет в реестре**: их составляет разбивка, а не база.
+ *
+ * ## ⚠⚠ Отрицательный номер — это признак, и читают его в другом файле
+ *
+ * Строка с таким номером не имеет записи в `agent_workflow_variable`: удалять
+ * нечего, править нечего, и панель обязана не рисовать ей ни кнопки удаления,
+ * ни формы. Признак «номер меньше нуля» проверяет `variables.js` —
+ * `if (variable.id > 0 …)`, а сами числа раздаёт `groupWorkflowVariables`
+ * здесь. Пока числа стояли голыми в обоих файлах, знание «-3 это динамическая»
+ * жило в двух местах сразу и расходилось бы молча.
+ */
+export const VAR_ID_TOOL = -2;
+export const VAR_ID_DYNAMIC = -3;
+export const VAR_ID_UNDEFINED = -4;
+
 // Приставка литерала в `inputs_map`: значение за ней — текст, а не имя переменной.
 // ⚠ Метки внутри него всё равно читаются: движок подставляет их до вызова
 // инструмента, поэтому `_const_%girl_name%_ключ` **использует** `girl_name`.
@@ -302,6 +318,53 @@ export function getToolOutputKeys(toolName, tools) {
     return [];
 }
 
+// Объявления выхода, по которым **нельзя** перечислить ключи результата: движок
+// раскладывает словарь как `{tool}_{step}_result_{ключ}`, а какие в нём ключи —
+// знает только сам инструмент в момент ответа.
+const TOOL_OUTPUT_OPAQUE_TYPES = ['dict', 'any', 'object', 'json'];
+
+/**
+ * Можно ли перечислить ключи результата инструмента, или он «отдаёт что угодно».
+ *
+ * ## ⚠⚠ Зачем спрашивать это отдельно от `getToolOutputKeys`
+ *
+ * Тот отвечает «какие ключи объявлены», и на `{"type": "dict"}` честно отдаёт
+ * `['dict']` — одно имя `{tool}_{step}_result_dict`. Для списка групп этого
+ * довольно. Для правила неопределённости — нет: у `list_shift` объявлен `dict`,
+ * а шаги читают `list_shift_137_result_greeting`, `…_name`, `…_sheet` и ещё два,
+ * и все их движок вправду кладёт. Считать их дырками значит кричать на живое:
+ * таких инструментов 37 из 121 на этой установке.
+ *
+ * Args:
+ *     toolName: имя из `tool_invoke.tool_name`.
+ *     tools: справочник `/tool/list` — обязательный аргумент, как и у соседа.
+ *
+ * Returns:
+ *     boolean: `true` — ключи неизвестны, всё `{tool}_{step}_result_*` этого шага
+ *     считается обеспеченным. `false` — ключи перечислены (`output.keys`) или
+ *     результат одиночный (`{"type": "str"}`), и лишнее имя вправду лишнее.
+ *
+ * ⚠ Инструмент, которого в справочнике нет вовсе, тоже непрозрачен. Он либо
+ * переименован, либо снят — но шаг на него ссылается, и доказать пустоту нечем.
+ */
+export function toolOutputIsOpaque(toolName, tools) {
+    const tool = (tools || []).find(t => String(t.name) === String(toolName));
+    if (!tool) return true;
+
+    const argsObj = parseMetadata(tool.args);
+    const output = argsObj && argsObj.output;
+    if (!output) return true;
+
+    if (typeof output === 'object') {
+        if (output.keys) return false; // ключи перечислены — спрос по списку
+        if (output.type) return TOOL_OUTPUT_OPAQUE_TYPES.includes(String(output.type).toLowerCase());
+
+        return false;
+    }
+
+    return TOOL_OUTPUT_OPAQUE_TYPES.includes(String(output).toLowerCase());
+}
+
 /**
  * Имена, которые **шаги кладут сами**: результаты инструментов и подпрогонов.
  *
@@ -362,13 +425,28 @@ export function stepResultVariables(stepsData, workflows, tools) {
  * * алиас `workflow_invoke_{шаг}_result_str` — его кладёт движок сверх
  *   именованного результата, в справочниках его нет вовсе;
  * * `hiddenNames` — то, что движок подмешивает в scope молча: proxy-переменные
- *   ноды и `agent_variable` агента. По указанию хозяина **не показывать их
+ *   ноды, `agent_variable` агента, словарь запускающего из `variables_start`
+ *   последних прогонов и `inputs_map` родительского `workflow_invoke`, если
+ *   этот workflow — подпрогон. По указанию хозяина **не показывать их
  *   в списках** — но считать обеспеченными обязаны, иначе `%girl_name%` из
  *   переменных агента кричал бы предупреждением на каждом шагу.
  *
+ * ## ⚠⚠ Две поправки на то, чего знать неоткуда
+ *
+ * Правило молчит там, где доказать пустоту нечем, — иначе оно кричит на живое:
+ *
+ * * **шаг с непрозрачным инструментом** (`toolOutputIsOpaque`): объявлен
+ *   `{"type": "dict"}`, а ключи движок раскладывает по ответу. Всё
+ *   `{tool}_{шаг}_result_*` такого шага считается обеспеченным;
+ * * **однобуквенное имя**: `%Y%m%d%H%M%S` в промпте — формат даты, а не три
+ *   переменные, но метка `%…%` в нём выглядит как переменная (`Y`, `m`, `d`).
+ *   Переменных в один символ на установке нет ни одной, а формат даты в
+ *   промптах есть.
+ *
  * Args:
  *     variables / stepsData / workflows / tools: то же, что у `groupWorkflowVariables`.
- *     hiddenNames: массив имён, легальных, но не показуемых (proxy, агентские).
+ *     hiddenNames: массив имён, легальных, но не показуемых (proxy, агентские,
+ *         словарь запускающего, входящие подпрогона).
  *
  * Returns:
  *     `Map<имя, [шаг…]>`: читающие шаги в порядке `position`, по имени
@@ -378,8 +456,10 @@ export function stepResultVariables(stepsData, workflows, tools) {
  * номерам он ложен в кругах правок, см. `variablesTrace`.
  */
 export function undefinedVariables(variables, stepsData, workflows, tools, hiddenNames) {
+    const steps = Array.isArray(stepsData) ? stepsData : [];
+
     const readers = new Map();
-    (Array.isArray(stepsData) ? stepsData : []).forEach(step => {
+    steps.forEach(step => {
         stepReadVariables(step).forEach(name => {
             if (!readers.has(name)) readers.set(name, []);
             readers.get(name).push(step);
@@ -396,18 +476,33 @@ export function undefinedVariables(variables, stepsData, workflows, tools, hidde
         ..._names(hiddenNames),
     ]);
 
-    (Array.isArray(stepsData) ? stepsData : []).forEach(step => {
+    // Приставки шагов, чей инструмент не объявил ключей: имя с такой приставкой
+    // спрашивать не с кого — см. «две поправки» в шапке.
+    const opaquePrefixes = [];
+
+    steps.forEach(step => {
         stepMadeVariables(step).forEach(name => known.add(name));
+
+        const metadata = parseMetadata(step.metadata);
+        if (!metadata) return;
+
         // Алиас движка: кладётся сверх `{имя_подпрогона}_{шаг}_result_str` и в
         // справочниках не значит нигде — берём его из устройства шага.
-        const metadata = parseMetadata(step.metadata);
-        if (metadata && metadata.workflow_invoke && metadata.workflow_invoke.workflow_id) {
+        if (metadata.workflow_invoke && metadata.workflow_invoke.workflow_id) {
             known.add('workflow_invoke_' + step.id + '_result_str');
+        }
+        if (metadata.tool_invoke && metadata.tool_invoke.tool_name
+                && toolOutputIsOpaque(metadata.tool_invoke.tool_name, tools)) {
+            opaquePrefixes.push(metadata.tool_invoke.tool_name + '_' + step.id + '_result_');
         }
     });
 
+    const supplied = (name) => known.has(name)
+        || name.length < 2
+        || opaquePrefixes.some(prefix => name.startsWith(prefix));
+
     const result = new Map();
-    [...readers.keys()].filter(name => !known.has(name)).sort()
+    [...readers.keys()].filter(name => !supplied(name)).sort()
         .forEach(name => result.set(name, readers.get(name)));
 
     return result;
@@ -426,7 +521,7 @@ export function undefinedVariables(variables, stepsData, workflows, tools, hidde
  *     hiddenNames: легальные, но не показуемые имена (`undefinedVariables`).
  *
  * Returns:
- *     Группы плюс `undefinedGroup`: записи `{id: -4, name, readers}` — читающие
+ *     Группы плюс `undefinedGroup`: записи `{id: VAR_ID_UNDEFINED, name, readers}` — читающие
  *     шаги нужны подписи «читают N шагов» и подсказке, своего места в строке
  *     им не отдавать.
  */
@@ -458,7 +553,7 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools, h
 
     foundToolVariables.forEach(varName => {
         toolGroup.push({
-            id: -2, // Отрицательный ID чтобы не появилась кнопка удаления
+            id: VAR_ID_TOOL, // не из реестра: кнопки удаления у строки не будет
             name: varName,
             default: null,
         });
@@ -490,9 +585,8 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools, h
 
         [...made].filter(name => !known.has(name)).sort().forEach(name => {
             dynamicGroup.push({
-                // ⚠ Отрицательный номер — чтобы не появилась кнопка удаления:
-                // удалять нечего, записи в реестре у них нет.
-                id: -3,
+                // ⚠ Не из реестра: удалять нечего, записи у них там нет.
+                id: VAR_ID_DYNAMIC,
                 name,
                 default: null,
             });
@@ -500,16 +594,16 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools, h
     }
 
     // ⚠⚠ Неопределённые — после tool и workflow групп и перед dynamic: имя может
-    // быть и прочитанным, и кладеным разными шагами, и тогда оно уже показано
+    // быть и прочитанным, и положенным разными шагами, и тогда оно уже показано
     // выше; здесь остаются только те, коим нет места ни в одной другой группе.
     const undefinedGroup = [];
     if (Array.isArray(stepsData)) {
         undefinedVariables(variablesArray, stepsData, workflows, tools, hiddenNames)
             .forEach((readers, name) => {
                 undefinedGroup.push({
-                    // ⚠ Свой отрицательный номер: в реестре такой переменной нет —
-                    // кнопки удаления и формы правки у её строки быть не должно.
-                    id: -4,
+                    // ⚠ Свой номер: в реестре такой переменной нет — кнопки
+                    // удаления и формы правки у её строки быть не должно.
+                    id: VAR_ID_UNDEFINED,
                     name,
                     default: null,
                     readers,

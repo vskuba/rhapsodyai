@@ -5,14 +5,14 @@
 const TO_NEXT_STEP = 'to_next_step';
 
 import {state} from './state.js';
-import {parseMetadata, graphLabelEscape, activateTab} from './utils.js';
+import {parseMetadata, graphLabelEscape, activateTab, editorWorkflowId} from './utils.js';
 import {showNotification} from '../notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
 import {getData} from '../api.js';
 import {variablesTrace, VAR_GROUP_UNKNOWN} from './variable-group.js';
 import {editorVariableGroupIndex} from './variables.js';
-import {editorWorkflowId, workflowUndefinedEntries,
-    workflowUndefinedEntriesSync} from './undefined-index.js';
+import {workflowUndefinedEntries,
+    workflowUndefinedEntriesSync} from './variable-undefined.js';
 
 export function initGraphMode() {
     if (window.mermaid) {
@@ -262,7 +262,7 @@ export function buildWorkflowGraphDefinition(steps, subflowStepsMap = {}) {
  * Opens graph mode: loads steps, fetches all sub-workflow steps recursively, renders diagram.
  */
 export async function openWorkflowGraph() {
-    const workflowId = document.getElementById('workflowId').value;
+    const workflowId = editorWorkflowId();
     if (!workflowId) {
         showNotification('Сначала выберите workflow', 'warning');
         return;
@@ -482,7 +482,7 @@ let _stepNumbers = new Map();
 let _varGroups = new Map();
 
 // Кэш панели: неопределённые переменные открытого workflow, Map<имя, [шаги-читатели]>
-// (сырьё — `undefined-index.js`). Нужен и списку (счётчик «читают N шаг(ов)» и
+// (сырьё — `variable-undefined.js`). Нужен и списку (счётчик «читают N шаг(ов)» и
 // подсказка в строке), и графу (треугольник в узле) — потому он общий, а не два
 // дрожащих кэша.
 let _undefinedNames = new Map();
@@ -809,10 +809,10 @@ async function markUndefinedWarnings(container) {
         let box;
         try { box = shape.getBBox(); } catch (e) { continue; } // без геометрии маркер встал бы наугад
 
-        const warn = document.createElementNS(SVG_NS, 'g');
-        warn.setAttribute('class', 'wf-node-warn');
-
+        // ⚠ Одна группа, а не две вложенных: внешняя несла только класс, и
+        // `<title>` внутри неё лежал на уровень глубже, чем смотрит мышь.
         const mark = document.createElementNS(SVG_NS, 'g');
+        mark.setAttribute('class', 'wf-node-warn');
         mark.setAttribute('transform', `translate(${box.x + box.width - 14},${box.y + 1})`);
 
         const tri = document.createElementNS(SVG_NS, 'polygon');
@@ -829,8 +829,7 @@ async function markUndefinedWarnings(container) {
         const tip = document.createElementNS(SVG_NS, 'title'); // нативная подсказка браузера
         tip.textContent = 'Неопределённые переменные: ' + names.join(', ');
 
-        warn.append(mark);
         mark.append(tri, bang, tip);
-        nodeEl.appendChild(warn);
+        nodeEl.appendChild(mark);
     }
 }

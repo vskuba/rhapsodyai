@@ -4,11 +4,11 @@
 import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state} from './state.js';
-import {parseMetadata, getDragAfterElement} from './utils.js';
+import {parseMetadata, getDragAfterElement, editorWorkflowId} from './utils.js';
 import {renderWorkflowVariables, extractVariablesFromSteps, fillVariablesSelectOptions,
     highlightStepToolVariables, highlightStepWorkflowVariables} from './variables.js';
 import {renderCustomStepFields} from './step-widgets.js';
-import {invalidateUndefinedIndex} from './undefined-index.js';
+import {invalidateUndefinedIndex} from './variable-undefined.js';
 
 function renderWorkflowSteps(steps) {
     const container = document.getElementById('workflowStepsSortable');
@@ -214,7 +214,9 @@ export async function loadAvailableStepTypes() {
 }
 
 async function updateStepsPosition() {
-    const workflowId = document.getElementById('workflowId').value;
+    const workflowId = editorWorkflowId();
+    if (!workflowId) return;
+
     const items = [...document.querySelectorAll('.step-item-block')];
 
     const newPositions = items.map((el, index) => ({
@@ -422,7 +424,8 @@ function renderTransitions(step, allSteps, type) {
 }
 
 async function deleteStep(stepId, stepTitle) {
-    const workflowId = document.getElementById('workflowId').value;
+    const workflowId = editorWorkflowId();
+    if (!workflowId) return;
 
     if (!confirm(`Удалить шаг "${stepTitle}" из задачи?`)) return;
 
@@ -608,12 +611,10 @@ document.getElementById('stepToNextStep').onchange = () => {
 const addStepToWorkflowBtn = document.getElementById('addStepToWorkflowBtn');
 if (addStepToWorkflowBtn) {
     addStepToWorkflowBtn.onclick = async () => {
-        const workflowIdEl = document.getElementById('workflowId');
         const stepSelectEl = document.getElementById('availableStepsSelect');
+        if (!stepSelectEl) return;
 
-        if (!workflowIdEl || !stepSelectEl) return;
-
-        const workflowId = workflowIdEl.value;
+        const workflowId = editorWorkflowId();
         const typeId = stepSelectEl.value;
 
         if (!workflowId || !typeId) {
@@ -666,7 +667,7 @@ let stepAutoSavePending = null;
 let stepAutoSaveTimer = null;
 
 function stepAutoSaveSchedule() {
-    const workflowId = document.getElementById('workflowId')?.value;
+    const workflowId = editorWorkflowId();
     const activeStepBlock = document.querySelector('.step-item-block.active');
     if (!workflowId || !activeStepBlock) return;
 
@@ -706,7 +707,7 @@ async function stepAutoSaveFlush() {
     try {
         await putData(`/workflow/${workflowId}/step/${stepId}`, payload);
         // Метка шага правилась на странице — перечитаем кэш «Undefined переменных»
-        // для workflow слева и для панели графа: она считают по метадатам из стейта.
+        // для workflow слева и для панели графа: они считают по метаданным из стейта.
         invalidateUndefinedIndex(workflowId);
         if (titleEl) titleEl.textContent = payload.title;
         showNotification(`Шаг «${payload.title}» сохранен`, 'success');

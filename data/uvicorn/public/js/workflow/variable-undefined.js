@@ -15,6 +15,7 @@
 import {getData} from '../api.js';
 import {undefinedVariables} from './variable-group.js';
 import {state} from './state.js';
+import {editorWorkflowId} from './utils.js';
 
 // workflow id → сырьё из бэкенда: {steps, registryNames, hiddenNames}.
 const _raw = new Map();
@@ -24,11 +25,6 @@ const _computed = new Map();
 
 let _loadPromise = null;
 const _listeners = new Set();
-
-/** Идентификатор workflow, открытого в редакторе (тот же канал, что у соседних модулей). */
-export function editorWorkflowId() {
-    return document.getElementById('workflowId')?.value || '';
-}
 
 /**
  * Скрытые имена (proxy ноды, переменные агента) для чужого workflow из кэша.
@@ -106,7 +102,7 @@ export function workflowUndefinedEntriesSync(workflowId) {
     return _workflowUndefinedEntriesSync(workflowId);
 }
 
-/** Подписка на «индекс догрузился / кэш сброшен»; возращает функцию отписки. */
+/** Подписка на «индекс догрузился / кэш сброшен»; возвращает функцию отписки. */
 export function onUndefinedIndexChange(cb) {
     _listeners.add(cb);
     return () => _listeners.delete(cb);

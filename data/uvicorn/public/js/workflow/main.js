@@ -4,13 +4,13 @@
 import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state} from './state.js';
-import {parseMetadata, activateTab, savedTab} from './utils.js';
+import {parseMetadata, activateTab, savedTab, editorWorkflowId} from './utils.js';
 import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 import {buildGroupTree, renderGroupTree} from '../agent_group_tree.js';
 import {ensureUndefinedIndex, workflowUndefinedEntriesSync,
-    onUndefinedIndexChange, invalidateUndefinedIndex} from './undefined-index.js';
+    onUndefinedIndexChange, invalidateUndefinedIndex} from './variable-undefined.js';
 
 // Инициализация режима Graph (mermaid)
 initGraphMode();
@@ -21,7 +21,7 @@ initGraphMode();
 const tabToRestore = savedTab();
 
 document.getElementById('tabSteps')?.addEventListener('click', async () => {
-    const workflowId = document.getElementById('workflowId')?.value;
+    const workflowId = editorWorkflowId();
     if (!workflowId) return;
     activateTab('tabSteps');
     document.getElementById('workflowSettingsView').style.display = 'none';
@@ -36,7 +36,7 @@ document.getElementById('tabSteps')?.addEventListener('click', async () => {
 });
 
 document.getElementById('tabSettings')?.addEventListener('click', () => {
-    if (!document.getElementById('workflowId')?.value) return;
+    if (!editorWorkflowId()) return;
     activateTab('tabSettings');
     document.getElementById('workflowSettingsView').style.display = 'flex';
     document.getElementById('stepsEditorView').style.display = 'none';
@@ -213,25 +213,36 @@ function renderCarouselNode() {
         div.className = 'agent-item';
         if (depth > 0) div.style.paddingLeft = `${indent}px`;
 
-        const label = (depth > 0 ? '· ' : '') + workflow.title;
+        const row = document.createElement('div');
+        row.className = 'workflow-title-row';
 
         // ⚠⚠ Мигающая «!» в квадратике: в этом workflow шаги читают переменные,
         // которых не заведёт ни один его шаг. Список слева ничего не считает сам:
         // он показывает то, что посчитало правило из `variable-group.js`, по кэшу
-        // `undefined-index.js`. Нет данных — нет значка: лучше молчание, чем вранье.
+        // `variable-undefined.js`. Нет данных — нет значка: лучше молчание, чем враньё.
         const undefinedEntries = workflowUndefinedEntriesSync(workflow.id);
-        const warnMark = (undefinedEntries && undefinedEntries.size > 0)
-            ? `<span class="workflow-warn-mark" title="Неопределённые переменные читают ${undefinedEntries.size} шаг(ов): `
-              + `${[...undefinedEntries.keys()].slice(0, 3).join(', ')}${undefinedEntries.size > 3 ? ' …' : ''}">!</span>`
-            : '';
+        if (undefinedEntries && undefinedEntries.size > 0) {
+            const names = [...undefinedEntries.keys()];
+            const warn = document.createElement('span');
+            warn.className = 'workflow-warn-mark';
+            warn.textContent = '!';
+            // ⚠ Свойством, а не атрибутом в разметке: имена переменных приходят
+            // из `inputs_map` и полей `variable` шага сырыми строками — кавычка
+            // в такой строке разорвала бы атрибут `title` посреди разметки.
+            warn.title = `Неопределённые переменные читают ${undefinedEntries.size} шаг(ов): `
+                + names.slice(0, 3).join(', ') + (names.length > 3 ? ' …' : '');
+            row.appendChild(warn);
+        }
 
-        div.innerHTML = `
-    <div class="workflow-title-row">
-        ${warnMark}<span class="workflow-name-link" id="workflow_link_${workflow.id}">${label}</span>
-    </div>
-`;
+        const link = document.createElement('span');
+        link.className = 'workflow-name-link';
+        link.id = `workflow_link_${workflow.id}`;
+        // ⚠ Тем же доводом, что и подсказка выше: название workflow пишет человек.
+        link.textContent = (depth > 0 ? '· ' : '') + workflow.title;
+        link.onclick = () => openWorkflowSteps(workflow, div);
 
-        div.querySelector('.workflow-name-link').onclick = () => openWorkflowSteps(workflow, div);
+        row.appendChild(link);
+        div.appendChild(row);
 
         return div;
     };
@@ -252,7 +263,7 @@ function renderCarouselNode() {
     }
 
     // Восстанавливаем выделение открытого workflow, если он в этой ноде
-    const currentId = document.getElementById('workflowId')?.value;
+    const currentId = editorWorkflowId();
     if (currentId) {
         const link = workflowListContainer.querySelector(`#workflow_link_${currentId}`);
         if (link) link.closest('.agent-item').classList.add('active');
@@ -428,7 +439,7 @@ async function renderParentAgents(workflow) {
 }
 
 async function deleteWorkflow() {
-    const id = document.getElementById('workflowId')?.value;
+    const id = editorWorkflowId();
     const title = document.getElementById('title')?.value;
 
     if (!id || !confirm(`Удалить задачу "${title}" со всеми её шагами?`)) {
@@ -452,8 +463,7 @@ async function deleteWorkflow() {
 workflowForm.onsubmit = async (e) => {
     e.preventDefault();
 
-    const idEl = document.getElementById('workflowId');
-    const id = idEl ? idEl.value : '';
+    const id = editorWorkflowId();
 
     // 1. Безопасный сбор основного payload задачи
     const payload = {

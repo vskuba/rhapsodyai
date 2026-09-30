@@ -3,7 +3,8 @@ import re
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflow import ai_workflow_variables_node_get, ai_workflow_step_refs_remap
+from src.ai.ai_workflow import (WORKFLOW_VARIABLE_NODE_PUBLIC,
+                               ai_workflow_variables_node_get, ai_workflow_step_refs_remap)
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
 from src.mysql_.repository.agent_workflow_step_repository import AgentWorkflowStepRepository
 from src.mysql_.repository.agent_workflow_step_type_repository import AgentWorkflowStepTypeRepository
@@ -566,12 +567,6 @@ async def workflow_variable_delete(
         await db.connection.commit()
         return {"result": db.rowcount}
 
-
-# Тип переменной ноды, который человек настраивает сам. Второй — `proxy`,
-# служебный псевдоним: его значение подставляет другую переменную
-# (`girl_title` = `%prompt_user%`), и предлагать его в списке «на что сослаться и
-# что настроить» незачем. Подробности — `workflow.md` §3.0a.
-WORKFLOW_VARIABLE_NODE_PUBLIC = 'public'
 
 
 async def _node_variables_public(node_id: int) -> list:

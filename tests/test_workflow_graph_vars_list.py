@@ -43,7 +43,8 @@ pytestmark = pytest.mark.core
 GRAPH = './data/uvicorn/public/js/workflow/graph.js'
 GROUP = './data/uvicorn/public/js/workflow/variable-group.js'
 VARS = './data/uvicorn/public/js/workflow/variables.js'
-INDEX = './data/uvicorn/public/js/workflow/undefined-index.js'
+INDEX = './data/uvicorn/public/js/workflow/variable-undefined.js'
+UTILS = './data/uvicorn/public/js/workflow/utils.js'
 STATE = './data/uvicorn/public/js/workflow/state.js'
 
 # Шаги открытого в редакторе workflow (`.id`/`.metadata`, не прогонные
@@ -234,7 +235,7 @@ def _base_script() -> str:
     """Заглушки DOM того объёма, каким живёт панель, + живой импорт правила.
 
     ⚠ Карта групп и кэш неопределённых приезжают настоящими `import`-ами
-    (`variable-group.js`, `undefined-index.js`), связка со стейтом — телом того
+    (`variable-group.js`, `variable-undefined.js`), связка со стейтом — телом того
     же адаптера, что в `variables.js`: тест проверяет список панели, а не свою
     копию правила. Имена, которые вырезанные куски `graph.js` зовут со страницы,
     обязаны жить и в этой заглушке — иначе node падает на первом же `import`.
@@ -258,9 +259,10 @@ def _base_script() -> str:
     globalThis.location = {{search: '?workflow_id=6'}};
 
     import {{variablesTrace, variableGroupIndex, VAR_GROUP_UNKNOWN}} from '{GROUP}';
-    import {{editorWorkflowId, workflowUndefinedEntriesSync, hiddenNamesFor,
+    import {{workflowUndefinedEntriesSync, hiddenNamesFor,
         ensureUndefinedIndex, invalidateUndefinedIndex,
         workflowUndefinedEntries}} from '{INDEX}';
+    import {{editorWorkflowId}} from '{UTILS}';
     import {{state}} from '{STATE}';
 
     state.allCurrentVariables = {_json(REGISTRY)};
