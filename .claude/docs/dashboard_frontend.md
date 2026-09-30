@@ -86,15 +86,23 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
 - `js/workflow/` — редактор `/admin/workflow`: `main.js` (вход), `state.js` (общий стейт,
   поля не переприсваивать), `steps.js` (шаги, переходы, DnD), `step-widgets.js`
   (динамические поля по типу шага), `variables.js` (панель переменных), `graph.js`
-  (mermaid), `utils.js`, `variable-group.js`.
-  ⚠⚠ `variable-group.js` — **чистый** модуль: что за переменные живут в шагах и к
-  какой группе относится имя. Ни DOM, ни сети, ни стейта страницы: его импортирует
-  и панель редактора, и страница трассы (`/admin/workflow_trace`), у которой
-  никакого редактора нет. Всё нужное приходит аргументами — реестр, шаги,
+  (mermaid), `utils.js`, `variable-group.js`, `undefined-index.js`.
+  ⚠⚠ `variable-group.js` — **чистый** модуль: что за переменные живут в шагах, к
+  какой группе относится имя и что считать неопределённой переменной (`undefinedVariables`,
+  группа `VAR_GROUP_UNKNOWN`, секция `undefined` у `groupWorkflowVariables`) — **там и
+  только там**; панель редактора, список workflow и страница трассы импортируют правило,
+  а не пересчитывают своим разбором. Ни DOM, ни сети, ни стейта страницы: всё нужное
+  приходит аргументами — реестр, шаги,
   справочники workflow и инструментов; **умолчаний из стейта там нет намеренно**,
   умолчание и есть скрытая привязка к редактору. Привязку к стейту страницы держит
   редактор, и в одном месте — адаптеры `editorVariableGroups` /
   `editorVariableGroupIndex` в `variables.js`.
+  ⚠ `undefined-index.js` — сеть и кэш, правила в нём нет: один GET
+  `/workflow_variable/undefined_index` на страницу с сырьём `{steps, registryNames,
+  hiddenNames}` на workflow; для открытого редактором workflow сырьё берётся из стейта
+  страницы, пакет мог быть скачан до правки шага. Proxy-переменные нод и
+  `agent_variable` в правило приходят как `hiddenNames`: наружу не показываются и не
+  помечаются.
 - `js/project/` — страница планирования: `main.js`, `projects.js`, `panel.js`,
   `actions.js`, `ideas.js`, `compare.js`, `markdown.js`, `cronicle.js`, `design.js`,
   `prototype-editor-widget.js`, `utils.js`
@@ -184,6 +192,10 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
   колонка называется `title`, не `name`
 - `/workflow/{id}/steps/reorder` — `PUT` с `{positions: [{id, position}]}`
 - `/workflow/{id}/variables` → `{"result": [{id, name, default}]}`
+- `/workflow_variable/undefined_index` → `{"result": {"workflows": {id: {steps,
+  registryNames, hiddenNames}}}}` — **сырьё**, а не вычисленный ответ: «Undefined
+  переменные» вычисляет клиент (`undefinedVariables` из `variable-group.js`); право
+  `WORKFLOW_VARIABLE_VIEW`, ответ — все workflow разом одним GET
 
 ## Грабли
 

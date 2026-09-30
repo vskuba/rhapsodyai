@@ -83,7 +83,7 @@ globalThis.window = {location: {search: '?workflow_id=__EDITOR__'},
     localStorage: {getItem: () => null, setItem: () => {}}};
 globalThis.location = {search: '?workflow_id=__EDITOR__'};
 
-import {editorWorkflowId, hiddenNamesFor, ensureUndefinedIndex, undefinedIndexReady,
+import {editorWorkflowId, hiddenNamesFor, ensureUndefinedIndex,
     invalidateUndefinedIndex, workflowUndefinedEntries, workflowUndefinedEntriesSync,
     onUndefinedIndexChange} from '__INDEX__';
 import {state} from '__STATE__';
@@ -139,18 +139,23 @@ class TestTheCacheIsNetwork:
         каждую перекладку вкладок.
         """
         out = _run(_script('''
+const cold = workflowUndefinedEntriesSync('9') === null ? 'нет' : 'есть';
 await ensureUndefinedIndex();
 const first = _fetches.length;
 await ensureUndefinedIndex();
 const again = _fetches.length;
-_out = {first, again, urls: [..._fetches], ready: undefinedIndexReady()};
+const warm = workflowUndefinedEntriesSync('9');
+_out = {cold, first, again, urls: [..._fetches], warm: warm ? 'есть' : null};
 '''))
 
         assert out['first'] == 1 and out['again'] == 1, \
             f'индекс качают повторно: {out["urls"]}'
         assert out['urls'] == ['/workflow_variable/undefined_index'], \
             f'индекс просят не одним GET: {out["urls"]}'
-        assert out['ready'] is True, 'индекс догрузился, а `ready` всё еще нет'
+        assert out['cold'] == 'нет', \
+            f'пустой список до загрузки сошёл за готовый: {out["cold"]}'
+        assert out['warm'] == 'есть', \
+            f'кэш промахнулся мимо готового индекса: {out["warm"]}'
 
     def test_a_broken_load_is_not_cached(self):
         """⚠⚠ Сбой сети не отметка «готово»: пустой список после сбоя — ложь,
@@ -159,8 +164,7 @@ _out = {first, again, urls: [..._fetches], ready: undefinedIndexReady()};
         out = _run(_script('''
 globalThis.fetch = async () => {throw new Error('сеть легла');};
 await ensureUndefinedIndex();
-const afterFail = {ready: undefinedIndexReady(),
-                   entries: (await workflowUndefinedEntries('9')) ? 1 : null,
+const afterFail = {entries: (await workflowUndefinedEntries('9')) ? 1 : null,
                    sync: workflowUndefinedEntriesSync('9') ? 1 : null};
 globalThis.fetch = async (url) => {
     _fetches.push(String(url).split('?')[0]);
@@ -172,8 +176,6 @@ _out = {asked: _fetches.length, afterFail, has: entries ? entries.size : null};
 
         assert out['afterFail']['entries'] is None and out['afterFail']['sync'] is None, \
             f'сбой сети притворился готовым индексом: {out["afterFail"]}'
-        assert out['afterFail']['ready'] is False, \
-            f'сбой сети отметился «индекс догрузился»: {out["afterFail"]["ready"]}'
         assert out['asked'] == 1, \
             f'после сбоя индекс не догнали новым запросом: {out["asked"]}'
         assert out['has'] == 1, f'после сбоя индекс не догнали: {out["has"]}'

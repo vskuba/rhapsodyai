@@ -6,7 +6,7 @@
 // только там. Этот модуль берёт то, чего правилу не хватает из стейта страницы:
 // сырьё для **чужих** workflow (шаги, реестр, скрытые имена) — одним пакетом с
 // бэкенда, и держит его в кэше, чтобы список слева и панель графа спрашивали
-// имя столько раз, сколько видят, — а не столько раз, сколько_workflow открыто.
+// имя столько раз, сколько видят, — а не столько раз, сколько workflow открыто.
 //
 // Для workflow, открытого в редакторе, сырьё берётся из стейта страницы
 // (`state.allCurrentStepsData`, `state.allCurrentVariables`): оно всегда свежее
@@ -41,16 +41,6 @@ export function hiddenNamesFor(workflowId) {
     return _raw.get(String(workflowId))?.hiddenNames || [];
 }
 
-function notify() {
-    _listeners.forEach(cb => {
-        try {
-            cb();
-        } catch (e) {
-            console.error('Ошибка подписчика на индекс неопределённых переменных:', e);
-        }
-    });
-}
-
 /**
  * Один запрос на страницу: сырьё для всех workflow разом.
  *
@@ -82,11 +72,6 @@ export function ensureUndefinedIndex() {
     return _loadPromise;
 }
 
-/** Есть ли сырьё; нет — показывать нечего, и списки молча не рисуют значков. */
-export function undefinedIndexReady() {
-    return _loadPromise !== null && _raw.size > 0;
-}
-
 /**
  * Сброс кэша вычисления для workflow после правки его шагов/переменных + весть
  * подписчикам.
@@ -97,7 +82,7 @@ export function undefinedIndexReady() {
  */
 export function invalidateUndefinedIndex(workflowId) {
     _computed.delete(String(workflowId ?? editorWorkflowId()));
-    notify();
+    _notify();
 }
 
 /**
@@ -117,14 +102,28 @@ export async function workflowUndefinedEntries(workflowId) {
 
 /** Та же работа без ожидания сети: для отрисовки, идущей за `await ensureUndefinedIndex()`. */
 export function workflowUndefinedEntriesSync(workflowId) {
-    if (_loadPromise === null) return null; // сеть не зватая — молча без значков
+    if (_loadPromise === null) return null; // индекс не догрузился — молча без значков
     return _workflowUndefinedEntriesSync(workflowId);
 }
 
-/** Подписка на «индекс догрузился / кэш сброшен»; возварает функцию отписки. */
+/** Подписка на «индекс догрузился / кэш сброшен»; возращает функцию отписки. */
 export function onUndefinedIndexChange(cb) {
     _listeners.add(cb);
     return () => _listeners.delete(cb);
+}
+
+// ── детали реализации ──────────────────────────────────────────────────────────
+// Ниже — приватные функции модуля: наружу не торчат, зовутся по имени с
+// префиксом `_` (code_rules.md §1.2, §3).
+
+function _notify() {
+    _listeners.forEach(cb => {
+        try {
+            cb();
+        } catch (e) {
+            console.error('Ошибка подписчика на индекс неопределённых переменных:', e);
+        }
+    });
 }
 
 function _workflowUndefinedEntriesSync(workflowId) {

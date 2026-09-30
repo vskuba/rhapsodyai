@@ -259,7 +259,7 @@ def _base_script() -> str:
 
     import {{variablesTrace, variableGroupIndex, VAR_GROUP_UNKNOWN}} from '{GROUP}';
     import {{editorWorkflowId, workflowUndefinedEntriesSync, hiddenNamesFor,
-        ensureUndefinedIndex, undefinedIndexReady, invalidateUndefinedIndex,
+        ensureUndefinedIndex, invalidateUndefinedIndex,
         workflowUndefinedEntries}} from '{INDEX}';
     import {{state}} from '{STATE}';
 
