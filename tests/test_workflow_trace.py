@@ -81,6 +81,31 @@ class TestWorkflowTrace:
         assert resp.status_code == 200
         assert resp.json()["pagination"]["total_records"] == 0
 
+    async def test_trace_list_filter_by_node_id(self, client: httpx.AsyncClient):
+        resp = await client.get("/workflow_trace/run/list?node_id=999999")
+        assert resp.status_code == 200
+        assert resp.json()["pagination"]["total_records"] == 0
+
+    async def test_trace_list_filter_by_node_id_keeps_agents_of_that_node(self, client: httpx.AsyncClient):
+        """Ноды у прогона нет — отбор идёт через агента, поэтому проверяем именно это:
+        каждый прогон отбора принадлежит агенту запрошенной ноды."""
+        nodes = (await client.get("/node/list")).json()["result"]
+        agents = (await client.get("/agent/list")).json()["result"]
+
+        for node in nodes:
+            node_agent_ids = {a["id"] for a in agents if a.get("node_id") == node["id"]}
+            if not node_agent_ids:
+                continue
+            resp = await client.get(f"/workflow_trace/run/list?node_id={node['id']}&limit=30")
+            assert resp.status_code == 200
+            runs = resp.json()["result"]
+            if not runs:
+                continue
+            assert {r["agent_id"] for r in runs} <= node_agent_ids
+            return
+
+        pytest.skip("Нет ноды с прогонами в БД")
+
     async def test_trace_list_run_fields(self, client: httpx.AsyncClient):
         runs = (await client.get("/workflow_trace/run/list")).json()["result"]
         if not runs:

@@ -7,6 +7,7 @@ import uuid
 from typing import AsyncGenerator
 
 from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH, TEST_AUTH_ROLE
+from tests_llm.mark import TEST_MARK
 
 # Тесты идут с хоста, а `MYSQL_HOST=mysql` — имя сервиса внутри compose-сети.
 #
@@ -165,6 +166,10 @@ TEST_SWEEP_TABLES = (
 # и следующий прогон не войдёт. Поэтому перечисляем то, что убираем, а не то, что
 # бережём: забытое в чёрном списке стоит сломанного прогона, забытое в белом —
 # всего лишь неубранного хвоста.
+#
+# ⚠ Проекты сюиты всё же убираются — но **по заголовку, а не по хозяину**, и другой
+# фикстурой (`cleanup_test_tasks`). Признак «чей» для них не годится: у тестовой
+# учётки могут быть и настоящие проекты, а мусор узнаётся приставкой `__pytest`.
 
 # Снимает уборку целиком: `KEEP_TEST_DATA=1 .venv/bin/python -m pytest …`
 TEST_SWEEP_KEEP = 'KEEP_TEST_DATA'
@@ -204,10 +209,25 @@ def cleanup_test_rows():
         print(f'\nУбрано за прогоном — {said}')
 
 
-# Все задачи сюиты называются с этого префикса (`test_task_pipeline`, `test_task_tree`,
-# `test_task_metadata`, `test_planning`). Подчёркивания экранированы: в LIKE `_` — это
-# любой один символ, и без экранирования шаблон подошёл бы к чужому заголовку.
-TEST_TASK_TITLE_LIKE = r'\_\_pytest%'
+# Заголовок всего, что заводит сюита в конвейере, — и задачи (`test_task_pipeline`,
+# `test_task_tree`, `test_task_metadata`), и проекты под ними (`test_planning`,
+# `test_task_spec`, `test_task_depend`, `test_task_type_cascade`). Признак один на
+# двоих, потому и константа одна.
+#
+# ⚠ Приставка берётся **у владельца** (`tests_llm/mark.py`), а не переписана сюда
+# строкой: разойдись они — сюита метила бы одним, уборка искала другое, и мусор копился
+# бы при работающей на вид уборке.
+#
+# ⚠ Подчёркивания экранированы: в LIKE `_` — это любой один символ, и без
+# экранирования шаблон подошёл бы к чужому заголовку.
+TEST_TITLE_LIKE = rf'\_\_{TEST_MARK}%'
+
+# Таблицы, которые ссылаются на проект **без внешнего ключа** — их строки надо снести
+# самим. `project_team` в списке нет намеренно: у него FK с каскадом, и он уедет сам.
+TEST_PROJECT_CHILD_TABLES = (
+    'project_planning_phase',
+    'project_planning_document',
+)
 
 # ⚠ Уборка забытых вкладок и имя сайта-закладки уехали в `tests_browser/conftest.py`
 # вместе с браузерными тестами: они про контейнер-браузер, то есть про ту папку.
@@ -278,7 +298,7 @@ def no_outside_http():
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_test_tasks():
     """
-    Снести задачи сюиты до и после прогона.
+    Снести задачи и проекты сюиты до и после прогона.
 
     Фикстуры тестов убирают за собой сами, но прерванный прогон (Ctrl-C, таймаут,
     упавший сервер) оставляет строки в рабочей БД — а конвейер их подхватывает
@@ -287,9 +307,22 @@ def cleanup_test_tasks():
     очереди с настоящими задачами. Найдено на живой установке: 57 брошенных строк,
     15 из них ждали Менеджера, трём план был уже написан.
 
-    Одним DELETE и по всем проектам: подзадачи, попытки и ревизии уходят каскадом
-    (`fk_pt_parent`, `fk_pta_task`, `fk_ptpr_task` в `migrations/0001.sql`), а
-    тестовые задачи заводятся и без проекта, и внутри него.
+    ⚠⚠ **Проекты — тоже сюда, и это не «за компанию».** Заводят их и `test_planning.py`
+    по HTTP, и фикстуры конвейера через репозиторий; убирают они за собой сами, но
+    ровно до первого обрыва. Накопленное видно человеку: страница `/admin/project` —
+    список проектов установки, и двадцать четыре строки `__pytest_planning_test__`
+    среди четырёх настоящих превращают её в свалку. Отсюда же 30 брошенных фаз
+    планирования: у `project_planning_phase` FK на проект нет.
+
+    ⚠ **Порядок внутри обязателен: дети раньше проекта.** Внешнего ключа от
+    `project_task.project_id` и от таблиц планирования к `project` в схеме нет —
+    снесённый первым проект не уносит их каскадом, а обращает в сирот: `project_id`
+    указывает в пустоту, и по заголовку их уже не найти (тестовые задачи зовутся
+    «родитель», «первая»). Так на этой базе осталась 21 задача.
+
+    Задачи — одним DELETE и по всем проектам: подзадачи, попытки и ревизии уходят
+    каскадом (`fk_pt_parent`, `fk_pta_task`, `fk_ptpr_task` в `migrations/0001.sql`),
+    а тестовые задачи заводятся и без проекта, и внутри него.
 
     Свой цикл событий и `mysql_pool_close()` — по той же причине, что у
     `create_test_user`: пул модульный и привязан к циклу, в котором создан.
@@ -298,8 +331,23 @@ def cleanup_test_tasks():
 
     async def _sweep() -> None:
         async with mysql_get_db_async() as db:
+            # Задачи тестовых проектов: своего признака в заголовке у них нет,
+            # узнаются только через проект.
             await db.execute(
-                "DELETE FROM project_task WHERE title LIKE %s", (TEST_TASK_TITLE_LIKE,))
+                "DELETE FROM project_task WHERE project_id IN "
+                "  (SELECT id FROM project WHERE title LIKE %s)", (TEST_TITLE_LIKE,))
+            await db.execute(
+                "DELETE FROM project_task WHERE title LIKE %s", (TEST_TITLE_LIKE,))
+
+            for table in TEST_PROJECT_CHILD_TABLES:
+                # ⚠ Имя таблицы уходит в SQL текстом — потому и берётся только из
+                # `TEST_PROJECT_CHILD_TABLES`, а не из ответа базы.
+                await db.execute(
+                    f"DELETE FROM `{table}` WHERE project_id IN "
+                    "  (SELECT id FROM project WHERE title LIKE %s)", (TEST_TITLE_LIKE,))
+
+            await db.execute(
+                "DELETE FROM project WHERE title LIKE %s", (TEST_TITLE_LIKE,))
             await db.connection.commit()
 
     def _run() -> None:

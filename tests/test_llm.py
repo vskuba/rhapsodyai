@@ -440,3 +440,79 @@ class TestProviderRawCall:
 
         assert large and medium and large != medium, 'размер модели не влияет на адрес'
         assert key, 'ключ один на все размеры — машина одна'
+
+
+class TestLlmStatusDoesNotExhaustThePool:
+    """
+    ⚠⚠ `/llm/status` не должна брать второе соединение, не отпустив первое.
+
+    2026-09-29 эта ручка положила прод на полчаса. Внутри блока
+    `async with mysql_get_db_async()` стоял цикл по моделям ноды, и каждый его
+    виток звал `setting_get` — а тот берёт СВОЁ соединение из пула. Пока запросы
+    шли по одному, это выглядело расточительством. Но страница `/admin/llm`
+    опрашивала ручку раз в секунду; десять запросов пришли разом, каждый занял
+    по соединению и стал ждать второго, которого в пуле уже не было. Все десять
+    ждали друг друга навсегда.
+
+    Признак беды тихий: ошибок нет ни одной — исчерпанный пул не роняет запрос,
+    а ждёт. Снаружи сервер даже «отвечает»: 401 отдаётся до похода в базу.
+
+    Тест ловит именно это: после пачки одновременных запросов обычный запрос
+    обязан пройти. На сломанном коде он висит до таймаута.
+    """
+
+    @pytest.fixture
+    async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False,
+                                     timeout=25.0) as client:
+            await client.post("/auth/login", json=TEST_AUTH)
+            yield client
+
+    async def test_aborted_requests_leave_the_pool_usable(self, client):
+        """
+        Оборванные на полпути запросы не должны съесть пул.
+
+        ⚠⚠ Рвать соединение обязательно — без этого беда не воспроизводится.
+        Запрос, доведённый до ответа, соединение возвращает, даже беря их по два.
+        Тупик возникает, когда обработчик снят на середине: одно соединение он
+        уже занял, второго не дождался, а вернуть первое некому.
+
+        ⚠ Пачек несколько: пул `maxsize=10`, и одна пачка из десяти его лишь
+        заполняет. Умирает он на второй-третьей, когда прежние соединения не
+        вернулись, а новые запросы уже пришли.
+        """
+        import asyncio
+
+        url = '/llm/status?node_id=2&reset_seconds=15'
+
+        for _ in range(3):
+            # ⚠ Свой клиент с крошечным таймаутом: он и рвёт запрос на середине,
+            # изображая браузер, который не дождался и закрыл вкладку.
+            async with httpx.AsyncClient(base_url=BASE_URL, timeout=0.05,
+                                         cookies=client.cookies) as breaker:
+                await asyncio.gather(*[breaker.get(url) for _ in range(10)],
+                                     return_exceptions=True)
+            await asyncio.sleep(1.5)
+
+        # Главная проверка: пул жив после обрывов. На сломанном коде запрос
+        # висит до таймаута, потому что свободных соединений в пуле больше нет.
+        after = await client.get(url)
+        assert after.status_code == 200, 'после оборванных запросов пул не отдаёт соединение'
+
+    async def test_status_answers_fast(self, client):
+        """
+        Одиночный запрос отвечает быстро.
+
+        Сторожит вторую половину той же беды: ручка брала замок на всю таблицу
+        `node_llm` (индекса по `rate_limit_at` не было, `UPDATE` шёл вхолостую на
+        каждый тик опроса). Медленный ответ здесь — первый признак, что замок или
+        лишний поход в базу вернулись.
+        """
+        import time
+
+        started = time.perf_counter()
+        got = await client.get('/llm/status?node_id=2&reset_seconds=15')
+        took = time.perf_counter() - started
+
+        assert got.status_code == 200
+        assert took < 3.0, f'ручка ответила за {took:.1f} с — похоже на замок или лишние запросы'

@@ -29,14 +29,29 @@
     /* Левая колонка: фильтры + список запусков */
     .runs-sidebar {
         width: 340px;
-        border-right: 1px solid #e0e0e0;
+        flex-shrink: 0;
         display: flex;
         flex-direction: column;
         background: #fafafa;
     }
 
+    /* Разделитель колонок: тянется мышью, ширина живет в localStorage
+       (общий помощник /static/js/sidebar_resizer.js, как на agent и tool) */
+    .trace-resizer {
+        width: 4px;
+        background: #e0e0e0;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background 0.15s;
+    }
+
+    .trace-resizer:hover,
+    .trace-resizer.dragging {
+        background: #3498db;
+    }
+
     .trace-filters {
-        padding: 15px 15px 10px;
+        padding: 10px 12px 8px;
         border-bottom: 1px solid #e0e0e0;
     }
 
@@ -46,19 +61,35 @@
         color: #4a5568;
     }
 
+    /* Заголовок и поле — в одну строку: три фильтра занимают три строки */
+    .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 5px;
+    }
+
+    .filter-row:last-child {
+        margin-bottom: 0;
+    }
+
+    /* 72px — по самому длинному заголовку (WORKFLOW ~70px): при меньшей ширине
+       min-content раздвигает именно его строку, и поля перестают стоять в колонку */
     .filter-label {
-        display: block;
+        flex: 0 0 72px;
         font-size: 11px;
         font-weight: bold;
         color: #718096;
         text-transform: uppercase;
-        margin-bottom: 5px;
     }
 
     .trace-filters .form-control {
-        width: 100%;
+        flex: 1;
+        min-width: 0;
         box-sizing: border-box;
-        margin-bottom: 10px;
+        margin-bottom: 0;
+        padding: 3px 6px;
+        font-size: 12px;
     }
 
     .runs-list {
@@ -952,15 +983,26 @@
 
             <!-- Фильтры: изменение любого сразу перезагружает список -->
             <div class="trace-filters">
-                <label for="filterWorkflow" class="filter-label">Workflow</label>
-                <select id="filterWorkflow" class="form-control">
-                    <option value="">Все workflow</option>
-                </select>
+                <div class="filter-row">
+                    <label for="filterNode" class="filter-label">Нода</label>
+                    <select id="filterNode" class="form-control">
+                        <option value="">Все ноды</option>
+                    </select>
+                </div>
 
-                <label for="filterAgent" class="filter-label">Агент</label>
-                <select id="filterAgent" class="form-control">
-                    <option value="">Все агенты</option>
-                </select>
+                <div class="filter-row">
+                    <label for="filterWorkflow" class="filter-label">Workflow</label>
+                    <select id="filterWorkflow" class="form-control">
+                        <option value="">Все workflow</option>
+                    </select>
+                </div>
+
+                <div class="filter-row">
+                    <label for="filterAgent" class="filter-label">Агент</label>
+                    <select id="filterAgent" class="form-control">
+                        <option value="">Все агенты</option>
+                    </select>
+                </div>
             </div>
 
             <div class="runs-list" id="runsList">
@@ -973,6 +1015,8 @@
             </div>
         </div>
 
+        <div class="trace-resizer" id="traceResizer"></div>
+
         <div class="detail-column">
             <div class="run-detail" id="runDetail">
                 <div class="empty-note">Выберите запуск слева</div>
@@ -983,6 +1027,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/sidebar_resizer.js"></script>
 <script type="module">
     import {getData, postData, deleteData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
@@ -998,7 +1043,7 @@
     // Справочники нужны разбору переменных прогона: имя tool-переменной строится
     // из имени инструмента и его выходных ключей, имя под-запуска — из имени workflow
     const state = {page: 1, totalPages: 1, activeRunUuid: null, stepTypeIcons: {}, activeTab: 'running',
-                  workflows: [], tools: []};
+                  workflows: [], agents: [], tools: []};
 
     // Смещение часового пояса из настроек (минуты), применяется в fmtDate
     let _tzOffsetMinutes = 0;
@@ -1309,30 +1354,29 @@
 
         // Справочники для фильтров, иконок типов шагов и разбора переменных прогона
         try {
-            const [workflowsRes, agentsRes, typesRes, toolsRes] = await Promise.all([
+            const [workflowsRes, agentsRes, nodesRes, typesRes, toolsRes] = await Promise.all([
                 getData('/workflow/list'),
                 getData('/agent/list'),
+                getData('/node/list'),
                 getData('/workflow_step/list'),
                 getData('/tool/list'),
             ]);
 
             state.workflows = workflowsRes.result || [];
+            state.agents = agentsRes.result || [];
             state.tools = toolsRes.result || [];
 
-            const wfSel = document.getElementById('filterWorkflow');
-            (workflowsRes.result || []).forEach(w => {
-                const opt = el('option', null, w.title || w.name);
-                opt.value = w.id;
-                wfSel.appendChild(opt);
+            // Ноды у прогона нет — она у агента, поэтому фильтр по ноде на сервере
+            // разворачивается в «агенты этой ноды» (workflow_trace_run_list)
+            const nodeSel = document.getElementById('filterNode');
+            (nodesRes.result || []).forEach(n => {
+                const opt = el('option', null, n.name);
+                opt.value = n.id;
+                nodeSel.appendChild(opt);
             });
 
-            const agSel = document.getElementById('filterAgent');
-            (agentsRes.result || []).forEach(a => {
-                const opt = el('option', null, a.title || a.name);
-                opt.value = a.id;
-                agSel.appendChild(opt);
-            });
-
+            // Два зависимых селекта наполняет `filterOptionsRebuild` — она же
+            // пересобирает их при смене ноды, и списку неоткуда разойтись самому с собой
             (typesRes.result || []).forEach(t => {
                 state.stepTypeIcons[t.name] = t.icon;
             });
@@ -1340,9 +1384,16 @@
             console.error('Ошибка загрузки справочников:', e);
         }
 
-        // Определяем начальную вкладку: Running если есть записи, иначе Success
+        // Восстановление — после наполнения справочников: у пустого select
+        // выставлять нечего, и сохранённый выбор потерялся бы молча
+        filtersRestore();
+
+        // Определяем начальную вкладку: Running если есть записи, иначе Success.
+        // ⚠ Проба идёт с восстановленными фильтрами: без них страница с выбранной
+        // нодой открывалась бы на Running из-за чужих прогонов — и показывала пусто
         try {
-            const probe = await getData('/workflow_trace/run/list?status=running&page=1&limit=1');
+            const probeParams = filterParams(new URLSearchParams({status: 'running', page: 1, limit: 1}));
+            const probe = await getData(`/workflow_trace/run/list?${probeParams}`);
             state.activeTab = (probe.pagination.total_records > 0) ? 'running' : 'success';
         } catch {
             state.activeTab = 'running';
@@ -1358,12 +1409,89 @@
         });
     }
 
-    async function loadRuns() {
-        const params = new URLSearchParams({page: state.page, limit: 30});
+    // Выбор фильтра переживает перезагрузку страницы: ключ на селект, значение — id
+    const FILTER_STORAGE_KEY = {
+        filterNode: 'workflow_trace_filter_node',
+        filterWorkflow: 'workflow_trace_filter_workflow',
+        filterAgent: 'workflow_trace_filter_agent',
+    };
+
+    // Значения трёх селектов в query — нужны и списку, и пробе начальной вкладки
+    function filterParams(params) {
+        const nd = document.getElementById('filterNode').value;
         const wf = document.getElementById('filterWorkflow').value;
         const ag = document.getElementById('filterAgent').value;
+        if (nd) params.set('node_id', nd);
         if (wf) params.set('workflow_id', wf);
         if (ag) params.set('agent_id', ag);
+        return params;
+    }
+
+    function filterSave(selectId) {
+        localStorage.setItem(FILTER_STORAGE_KEY[selectId], document.getElementById(selectId).value);
+    }
+
+    // Workflow и агенты сужаются до выбранной ноды: `node_id` есть у обеих сущностей,
+    // и оба справочника уже в памяти — отбор идёт на клиенте, без второго похода на сервер.
+    //
+    // ⚠ Сужение обязано совпадать с тем, что умеет ручка списка: она отбирает прогоны по
+    // `agent.node_id`, то есть безнодовых агентов при выбранной ноде не вернёт никогда.
+    // Оставь их в селекте — и получишь пункт, который всегда даёт пустой список
+    function filterOptionsRebuild() {
+        const nodeId = document.getElementById('filterNode').value;
+        filterOptionsFill('filterWorkflow', state.workflows, 'Все workflow', nodeId);
+        filterOptionsFill('filterAgent', state.agents, 'Все агенты', nodeId);
+    }
+
+    function filterOptionsFill(selectId, rows, allLabel, nodeId) {
+        const select = document.getElementById(selectId);
+        const previous = select.value;
+
+        select.innerHTML = '';
+        const optionAll = el('option', null, allLabel);
+        // ⚠ Пустое значение — явно: у option без атрибута value свойство `.value`
+        // отдаёт его текст, и «все» уехало бы в запрос строкой «Все workflow»
+        optionAll.value = '';
+        select.appendChild(optionAll);
+
+        rows.filter(row => !nodeId || String(row.node_id ?? '') === nodeId)
+            .forEach(row => {
+                const opt = el('option', null, row.title || row.name);
+                opt.value = row.id;
+                select.appendChild(opt);
+            });
+
+        // Выбранное могло не пережить смену ноды. Тогда — «Все», и запомненное стираем:
+        // иначе оно воскресло бы при следующей загрузке, когда нода снова станет своей,
+        // и человек получил бы отбор, который сам уже потерял из виду
+        if ([...select.options].some(opt => opt.value === previous)) select.value = previous;
+        else if (previous) localStorage.removeItem(FILTER_STORAGE_KEY[selectId]);
+    }
+
+    // ⚠ Сохранённый id, которого больше нет в списке (workflow удалён, агент
+    // переехал на другую ноду), не восстанавливаем и стираем: select с value вне
+    // своих options уходит в selectedIndex = -1 и показывает пустую строку — не
+    // «Все workflow», а именно пустоту, и человек видит отбор, которого не делал
+    function filterRestoreOne(selectId) {
+        const saved = localStorage.getItem(FILTER_STORAGE_KEY[selectId]);
+        if (!saved) return;
+        const select = document.getElementById(selectId);
+        if ([...select.options].some(opt => opt.value === saved)) select.value = saved;
+        else localStorage.removeItem(FILTER_STORAGE_KEY[selectId]);
+    }
+
+    // ⚠⚠ Порядок здесь — не стилистика. Нода идёт первой, потому что задаёт содержимое
+    // двух других селектов; пока они не пересобраны, сохранённый workflow в их options
+    // не найдётся, и восстановление сочло бы его протухшим и стёрло из хранилища
+    function filtersRestore() {
+        filterRestoreOne('filterNode');
+        filterOptionsRebuild();
+        filterRestoreOne('filterWorkflow');
+        filterRestoreOne('filterAgent');
+    }
+
+    async function loadRuns() {
+        const params = filterParams(new URLSearchParams({page: state.page, limit: 30}));
         params.set('status', state.activeTab);
 
         try {
@@ -1915,15 +2043,17 @@
         return container;
     }
 
-    // Слушатели: изменение фильтра сразу перезагружает список
-    document.getElementById('filterWorkflow').onchange = () => {
-        state.page = 1;
-        loadRuns();
-    };
-    document.getElementById('filterAgent').onchange = () => {
-        state.page = 1;
-        loadRuns();
-    };
+    // Слушатели: изменение фильтра сразу перезагружает список и запоминает выбор
+    Object.keys(FILTER_STORAGE_KEY).forEach(selectId => {
+        document.getElementById(selectId).onchange = () => {
+            filterSave(selectId);
+            // Нода правит содержимое двух других селектов — пересобираем их до запроса,
+            // иначе в него уехала бы пара «нода + чужой ей workflow», то есть заведомо пусто
+            if (selectId === 'filterNode') filterOptionsRebuild();
+            state.page = 1;
+            loadRuns();
+        };
+    });
     document.querySelectorAll('.status-tab').forEach(tab => {
         tab.onclick = () => {
             if (tab.dataset.status === state.activeTab) return;
@@ -1945,6 +2075,9 @@
             loadRuns();
         }
     };
+
+    initSidebarResizer('traceResizer', 'workflow_trace_sidebar_width',
+        document.querySelector('.runs-sidebar'), 240, 900);
 
     init();
 </script>
