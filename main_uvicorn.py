@@ -101,9 +101,9 @@ from src.uvicorn.routers.browser import (browser_author, browser_error, browser_
 MYSQL_SEED_PROBE_TABLE = 'node'
 
 # Сколько живёт сессия админки без единого запроса. Окно скользящее
-# (`session_slide_middleware`), поэтому это «два часа простоя», а не «два часа с
-# момента входа»: работающего человека сессия не выбрасывает вовсе.
-SESSION_MAX_AGE = 7200
+# (`session_slide_middleware`), поэтому это «четыре часа простоя», а не «четыре
+# часа с момента входа»: работающего человека сессия не выбрасывает вовсе.
+SESSION_MAX_AGE = 14400
 
 
 @asynccontextmanager
@@ -435,7 +435,7 @@ middleware = [
         SessionMiddleware,  # type: ignore
         secret_key=config_get('SESSION_SECRET_KEY'),
         session_cookie="uvicorn_session",
-        # Два часа **простоя**: окно скользящее, его двигает
+        # Четыре часа **простоя**: окно скользящее, его двигает
         # `session_slide_middleware` ниже. Был час и от входа — он кончался
         # посреди работы, и выглядело это не как «сессия истекла», а как поломка
         # сервера: страница админки остаётся открытой (её маршрут проверяет вход
