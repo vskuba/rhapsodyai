@@ -20,6 +20,7 @@ async def workflow_trace_run_list(
         request: Request,
         workflow_id: int | None = None,
         agent_id: int | None = None,
+        node_id: int | None = None,
         status: str | None = None,
         page: int = 1,
         limit: int = 30,
@@ -35,6 +36,11 @@ async def workflow_trace_run_list(
     if agent_id:
         where.append("r.agent_id = %s")
         params.append(agent_id)
+    # Ноды у прогона нет — она у агента. Подзапросом, а не джойном: условие идет и
+    # в COUNT, который агента не джойнит, и порядок параметров остается общим
+    if node_id:
+        where.append("r.agent_id IN (SELECT id FROM agent WHERE node_id = %s)")
+        params.append(node_id)
     if status in ('running', 'success', 'error', 'stopped'):
         where.append("r.status = %s")
         params.append(status)
