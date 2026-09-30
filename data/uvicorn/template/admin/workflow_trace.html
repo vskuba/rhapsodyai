@@ -597,6 +597,15 @@
         border-style: dashed;
     }
 
+    /* ⚠ «Undefined переменные»: имя читают шаги, но не кладёт никто. Сплошная
+       красная рамка — дырка, а не «нет группы» (пунктир `unknown`); в прогоне на
+       таком имени пусто. Тот же красный, что в редакторе. */
+    .var-group-undefined {
+        color: #b4231d;
+        background: #fef2f2;
+        border-color: #dc2626;
+    }
+
     .var-desc {
         margin-top: 3px;
         font-size: 10.5px;
@@ -1624,6 +1633,10 @@
             (run.steps || []).map(s => ({id: s.step_id, metadata: s.metadata_rendered})),
             state.workflows,
             state.tools,
+            // ⚠ Имена из снапшота старта: движок положил их в scope молча (входящие,
+            // агентские, конверсии) — показывать их «неопределёнными» нельзя, имена
+            // легальные и просто не видны списку реестра.
+            Object.keys(parseJson(run.variables_start) || {}),
         );
         _runGroupsCache.set(run, groups);
 

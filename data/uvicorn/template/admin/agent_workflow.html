@@ -839,6 +839,32 @@
         cursor: pointer;
     }
 
+    /* ⚠⚠ Мигающая «!» в квадратике: в этом workflow шаги читают переменные, которых
+       не заведёт ни один его шаг. Список слева ничего не считает сам — значок ставят
+       строки `main.js` по кэшу `undefined-index.js`; нет данных — нет и значка.
+       `step-end` — мигалка, а не плавный фейд: дёрганье заметнее плавного ухода. */
+    .workflow-warn-mark {
+        flex: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #dc2626;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 14px;
+        text-align: center;
+        cursor: help;
+        animation: wf-blink 1s step-end infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        /* Человек попросил тишину — мигалки гаснут, цвет остаётся. */
+        .workflow-warn-mark, .variable-warn-mark, .wf-node-warn {
+            animation: none;
+        }
+    }
+
     /* Строка с иконками действий под пунктом меню */
     .workflow-actions {
         display: flex;
@@ -1242,6 +1268,35 @@
         background-color: #ffd9ea;
     }
 
+    /* ⚠⚠ «Undefined переменные»: имя читают шаги, но не кладёт никто. Полоса
+       красная и сплошная — в отличие от пунктира `dynamic`/`unknown`: это не
+       «нет группы», а дырка: в прогоне на её месте пусто.
+       ⚠ Мигалка `step-end`: плавный фейд глаз читает как «померцало», рваный
+       такт — как «тревога». Под `prefers-reduced-motion` мигалка гаснет
+       (медиазапрос с `.workflow-warn-mark`), цвет остаётся. */
+    .variable-item-undefined {
+        border-left: 2px solid #dc2626;
+        background: #fef2f2;
+    }
+
+    .variable-item-undefined:hover {
+        background-color: #fee2e2;
+    }
+
+    .variable-warn-mark {
+        color: #dc2626;
+        flex: none;
+        animation: wf-blink 1.1s step-end infinite;
+    }
+
+    /* Счётчик читающих: «читают 2 шаг(а)» — без подсказки не видно, сколько
+       шагов уйдёт в пустоту, если переменную не завести. */
+    .variable-readers {
+        flex: none;
+        color: #b4231d;
+        font-size: 10px;
+    }
+
     /* Динамические: их никто не заводил, они появляются в прогоне сами.
        ⚠ Полоса пунктиром, а не цветом — цвета у соседей уже разобраны, а пунктир
        говорит то же, что и надпись на вкладке: записи в реестре нет. */
@@ -1322,6 +1377,42 @@
        своего цвета у неё и не должно быть. Тот же вид, что у чипа `∅` на трассе. */
     .graph-var-unknown  { border-left: 3px dashed #cbd5e1; }
 
+    /* ⚠⚠ «Undefined переменные»: переменная читается шагами, но не объявлена нигде.
+       Сплошная красная полоса — это не «нет группы» (пунктир `unknown`), а «дырка»:
+       в прогоне на её месте пусто. Тот же цвет, что предупреждений на шагах. */
+    .graph-var-undefined { border-left: 3px solid #dc2626; }
+    .graph-var-undefined {
+        background: #fef2f2;
+    }
+    .graph-var-undefined:hover {
+        background-color: #fee2e2;
+    }
+
+    /* Мигалка «неопределённая» и на строке трассы, и на узле диаграммы. */
+    .graph-var-undefined .graph-var-icon {
+        color: #dc2626;
+    }
+
+    /* ⚠⚠ Мигалка: туг же, где у «Undefined переменных» на вкладке «Шаги» и в
+       левом списке. `steps()` — рваный такт, глаз цепляет смену, а не плавку. */
+    @keyframes wf-blink {
+        50% { opacity: .12; }
+    }
+
+    /* Треугольник-предупреждение внутрь узла: mermaid рисует узел как `g.node` с
+       `path`, маркер — последним, значит поверх фигурки. Координаты — из
+       `getBBox()` в `graph.js`, отсютда правый верхний угол и край. */
+    .wf-node-warn {
+        animation: wf-blink 1.1s step-end infinite;
+        pointer-events: none; /* мышь не должна снимать подсказку узла */
+    }
+    .wf-node-warn-tri { fill: #dc2626; stroke: none; }
+    .wf-node-warn-bang {
+        fill: #fff;
+        font: 700 8px/1 system-ui, sans-serif;
+        pointer-events: none;
+    }
+
     /* ⚠⚠ Значок и имя — одним блоком. `justify-content: space-between` у строки
        разводит детей по краям, и третий ребёнок (значок) отъезжал от имени на
        67 пикселей у коротких имён: читался не приставкой к имени, а сам по себе.
@@ -1367,6 +1458,9 @@
     .trace-group-workflow { border-left-color: #2974df; }
     .trace-group-dynamic  { border-left-color: #9575cd; }
     .trace-group-unknown  { border-left-color: #cbd5e1; }
+    /* ⚠ Тот же красный, что у строки `undefined` в списке: чип трассы и строка
+       списка — один и тот же факт, и цвет у них один. */
+    .trace-group-undefined { border-left-color: #dc2626; }
 
     /* Сколько шагов кладёт и читает — видно до щелчка. */
     .graph-var-count {
@@ -1897,5 +1991,5 @@
     initSidebarResizer('settingsResizer', 'workflow_settings_width',
         document.querySelector('#workflowSettingsView .settings-column'), 240, 900);
 </script>
-<script type="module" src="/static/js/workflow/main.js?v=10"></script>
+<script type="module" src="/static/js/workflow/main.js?v=12"></script>
 {% endblock %}

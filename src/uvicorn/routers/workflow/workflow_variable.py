@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Request, Depends
 
+from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflow import ai_workflow_variables_node_get
+from src.uvicorn.routers.workflow.workflow import WORKFLOW_VARIABLE_NODE_PUBLIC
 from src.auth.auth import AuthChecker
 from src.auth.auth_field_policy import ALL_FIELDS, auth_field_policy_fields_filter_for_update, auth_field_policy_fields_allowed
 from src.auth.auth_permission import AuthPermission
@@ -66,6 +69,98 @@ async def workflow_variable_list(
             results = [{k: v for k, v in row.items() if k in allowed} for row in results]
 
         return {"result": results}
+
+
+@router.get("/workflow_variable/undefined_index")
+async def workflow_variable_undefined_index(
+        request: Request,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_VARIABLE_VIEW]))
+):
+    """Сырьё для индекса «Undefined переменные» — разом для всех workflow.
+
+    ⚠⚠ **Здесь только сырьё.** Правило «что такое неопределённая переменная»
+    живёт на фронте в `variable-group.js`, и второго знатока ему не нужно:
+    бэкенд складывает в ответ то, чего фронту не взять из чужих карточек, —
+    метаданные шагов, имена реестра и скрытые имена (proxy ноды, переменные
+    агента). Считает и красит треугольники фронт.
+
+    Возврат: `{"result": {"workflows": {id: {steps, registryNames,
+    hiddenNames}}}}`, где `steps` — [{id, metadata}] в порядке position,
+    `registryNames` — имена, видимые в списке переменных редактора (реестр
+    workflow + глобальные + публичные ноды), `hiddenNames` — имена, легальные,
+    но в списке не показуемые (указание хозяина: не показывать, но считать
+    обеспеченными).
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT id, node_id FROM agent_workflow")
+        workflow_rows = await db.fetchall()
+
+        await db.execute("""
+            SELECT id, workflow_id, metadata
+            FROM agent_workflow_step
+            WHERE workflow_id IS NOT NULL
+            ORDER BY workflow_id ASC, position ASC
+        """)
+        step_rows = await db.fetchall()
+
+        await db.execute("SELECT workflow_id, name, `type` FROM agent_workflow_variable")
+        variable_rows = await db.fetchall()
+
+        await db.execute("SELECT workflow_id, agent_variable FROM agent WHERE workflow_id IS NOT NULL")
+        agent_rows = await db.fetchall()
+
+    # Шаги: одним проходом, метаданные — сырыми строками, их разберёт фронт
+    steps_by_workflow = {}
+    for one in step_rows:
+        steps_by_workflow.setdefault(one['workflow_id'], []).append(
+            {'id': one['id'], 'metadata': one['metadata']})
+
+    # Имена реестра: строка с workflow_id — чужая; глобальная — всех
+    registry_by_workflow = {}
+    global_names = []
+    for one in variable_rows:
+        name = one.get('name')
+        if one.get('type') == 'global':
+            global_names.append(name)
+        elif one.get('workflow_id') is not None:
+            registry_by_workflow.setdefault(one['workflow_id'], []).append(name)
+
+    # Скрытые имена агента: ключи словаря agent_variable, как их читает движок
+    hidden_by_workflow = {}
+    for one in agent_rows:
+        keys = [str(name) for name in json_from_string(one.get('agent_variable') or {}).keys()]
+        bucket = hidden_by_workflow.setdefault(one['workflow_id'], [])
+        bucket.extend(keys)
+
+    # Переменные ноды — у движка, одним обращением на ноду (кэш по node_id)
+    node_names_by_node = {}
+    workflows = {}
+    for one in workflow_rows:
+        workflow_id = one['id']
+        node_id = one.get('node_id')
+
+        registry_names = list(registry_by_workflow.get(workflow_id) or [])
+        registry_names += global_names
+        hidden_names = list(hidden_by_workflow.get(workflow_id) or [])
+
+        if node_id and node_id not in node_names_by_node:
+            registry, hidden = [], []
+            for var in await ai_workflow_variables_node_get(node_id):
+                # Тип из таблица: 'public' — в список, прочее ('proxy') — в скрытые
+                (registry if var.get('type') == WORKFLOW_VARIABLE_NODE_PUBLIC else hidden).append(var['name'])
+            node_names_by_node[node_id] = (sorted(set(registry)), sorted(set(hidden)))
+
+        if node_id:
+            registry_names += list(node_names_by_node[node_id][0])
+            hidden_names += list(node_names_by_node[node_id][1])
+
+        workflows[str(workflow_id)] = {
+            'steps': steps_by_workflow.get(workflow_id) or [],
+            'registryNames': sorted(set(filter(None, registry_names))),
+            'hiddenNames': sorted(set(filter(None, hidden_names))),
+        }
+
+    return {"result": {"workflows": workflows}}
 
 
 @router.get("/workflow_variable/public/{variable_id}/hints")

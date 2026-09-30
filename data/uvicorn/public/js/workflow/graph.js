@@ -11,6 +11,8 @@ import {loadWorkflowSteps, selectStep} from './steps.js';
 import {getData} from '../api.js';
 import {variablesTrace, VAR_GROUP_UNKNOWN} from './variable-group.js';
 import {editorVariableGroupIndex} from './variables.js';
+import {editorWorkflowId, workflowUndefinedEntries,
+    workflowUndefinedEntriesSync} from './undefined-index.js';
 
 export function initGraphMode() {
     if (window.mermaid) {
@@ -317,6 +319,9 @@ export async function openWorkflowGraph() {
         // ⚠ После узлов: подсветка ищет их в готовом SVG, а выбор переменной
         // переживает перерисовку — панель восстановит его сама.
         renderGraphVariables(container);
+        // Сеть внутри: список читает синхронный кэш, узлы ждут индекс сами —
+        // иначе первая отрисовка молча обошлась бы без значков.
+        markUndefinedWarnings(container);
     } catch (e) {
         console.error('Ошибка построения графа:', e, definition);
         container.innerHTML = `<div style="color:#c0392b; margin-bottom:8px;">Не удалось построить граф: ${e.message}</div>`
@@ -476,6 +481,12 @@ let _varPicked = null;
 let _stepNumbers = new Map();
 let _varGroups = new Map();
 
+// Кэш панели: неопределённые переменные открытого workflow, Map<имя, [шаги-читатели]>
+// (сырьё — `undefined-index.js`). Нужен и списку (счётчик «читают N шаг(ов)» и
+// подсказка в строке), и графу (треугольник в узле) — потому он общий, а не два
+// дрожащих кэша.
+let _undefinedNames = new Map();
+
 /**
  * Номер шага так, как его видит человек: порядковый, с единицы.
  *
@@ -518,6 +529,8 @@ function renderGraphVariables(container) {
     _varTrace = variablesTrace(state.allCurrentStepsData);
     _stepNumbers = stepNumbersOf(state.allCurrentStepsData);
     _varGroups = editorVariableGroupIndex();
+    // Кэш панели: индекса нет — значков нет, пустая карта — «неопределённых нет».
+    _undefinedNames = workflowUndefinedEntriesSync(editorWorkflowId()) || new Map();
 
     const draw = (filter = '') => {
         const needle = filter.trim().toLowerCase();
@@ -542,6 +555,9 @@ function renderGraphVariables(container) {
             // на трассе прогона.
             const group = _varGroups.get(name) || VAR_GROUP_UNKNOWN;
             const cell = _varTrace.get(name) || {made: [], used: []};
+            // Счётчик читающих — из кэша неопределённых: строка без группы и без
+            // следа в трассе иначе врала бы «0→0» про имя, которое шаги читают.
+            const undef = _undefinedNames.get(name);
             const row = document.createElement('div');
             // ⚠ Цвет полосы — по группе, тот же, что на панели шагов. Ключ группы
             // становится классом (`graph-var-input`), а цвета живут в CSS: два
@@ -549,7 +565,10 @@ function renderGraphVariables(container) {
             row.className = `graph-var graph-var-${group.key}`;
             if (name === _varPicked) row.className += ' active';
             row.dataset.name = name;
-            row.title = group.label;
+            row.title = undef
+                ? `${group.label}: читают ${undef.length} шаг(ов) — ` +
+                  undef.map(s => `#${_stepNumbers.get(String(s.id)) || s.id}`).join(', ')
+                : group.label;
 
             // ⚠ Значок группы перед именем — тот же, что чип на трассе прогона:
             // группу узнают глазами, подпись читать не нужно.
@@ -743,4 +762,75 @@ function openStepFromGraph(step) {
     activateTab('tabSteps');
     const stepBlock = document.querySelector(`.step-item-block[data-id="${step.id}"]`);
     if (stepBlock) selectStep(step, stepBlock);
+}
+
+/**
+ * ⚠ Треугольники «читает неопределённую переменную» внутрь узлов.
+ *
+ * Список панели уже красит такие имена (`graph-var-undefined` из индекса групп),
+ * но на самой диаграмме имени нет — узел молчал бы про дырку в переменной.
+ * Значок кладётся в тот же `g.node`, что и фигуры шага: `g.node` у mermaid не
+ * имеет `transform`, поэтому координаты маркера совпадают с `getBBox()` фигурки,
+ * а pan-zoom (он правит `transform` у `g.node`) уносит маркер вместе с узлом.
+ *
+ * ⚠ Узлы подпрогонов (`flowchart-W…`) пропускаем: чужая область переменных, её
+ * имена править этим workflow — ложная тревога (указание хозяина).
+ */
+async function markUndefinedWarnings(container) {
+    const entries = await workflowUndefinedEntries(editorWorkflowId());
+    if (!entries || entries.size === 0) return;
+    const svg = container.querySelector('svg');
+    if (!svg) return;
+
+    // «шаг → имена» вместо «имя → шаги»: узел на диаграмме один, а имён в нём
+    // бывает несколько — подпись соберём за один обход.
+    const byStep = new Map();
+    for (const [name, steps] of entries) {
+        for (const step of steps || []) {
+            const key = String(step?.id ?? '');
+            if (!key) continue;
+            if (!byStep.has(key)) byStep.set(key, []);
+            if (!byStep.get(key).includes(name)) byStep.get(key).push(name);
+        }
+    }
+
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    for (const nodeEl of svg.querySelectorAll('g.node')) {
+        const m = (nodeEl.id || '').match(/^flowchart-S(\d+)-/);
+        if (!m) continue; // свой шаг или подпрогон — решает id узла, см. шапку
+        const names = byStep.get(m[1]);
+        if (!names) continue;
+        if (nodeEl.dataset.undefMark !== undefined) continue; // правка узлов после mermaid
+        nodeEl.dataset.undefMark = '1';
+
+        const shape = nodeEl.querySelector('rect, polygon, path, circle');
+        if (!shape) continue;
+        let box;
+        try { box = shape.getBBox(); } catch (e) { continue; } // без геометрии маркер встал бы наугад
+
+        const warn = document.createElementNS(SVG_NS, 'g');
+        warn.setAttribute('class', 'wf-node-warn');
+
+        const mark = document.createElementNS(SVG_NS, 'g');
+        mark.setAttribute('transform', `translate(${box.x + box.width - 14},${box.y + 1})`);
+
+        const tri = document.createElementNS(SVG_NS, 'polygon');
+        tri.setAttribute('points', '0,0 11,0 5.5,9.5');
+        tri.setAttribute('class', 'wf-node-warn-tri');
+
+        const bang = document.createElementNS(SVG_NS, 'text');
+        bang.setAttribute('x', '5.5');
+        bang.setAttribute('y', '8');
+        bang.setAttribute('text-anchor', 'middle');
+        bang.setAttribute('class', 'wf-node-warn-bang');
+        bang.textContent = '!';
+
+        const tip = document.createElementNS(SVG_NS, 'title'); // нативная подсказка браузера
+        tip.textContent = 'Неопределённые переменные: ' + names.join(', ');
+
+        warn.append(mark);
+        mark.append(tri, bang, tip);
+        nodeEl.appendChild(warn);
+    }
 }

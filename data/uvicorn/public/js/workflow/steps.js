@@ -8,6 +8,7 @@ import {parseMetadata, getDragAfterElement} from './utils.js';
 import {renderWorkflowVariables, extractVariablesFromSteps, fillVariablesSelectOptions,
     highlightStepToolVariables, highlightStepWorkflowVariables} from './variables.js';
 import {renderCustomStepFields} from './step-widgets.js';
+import {invalidateUndefinedIndex} from './undefined-index.js';
 
 function renderWorkflowSteps(steps) {
     const container = document.getElementById('workflowStepsSortable');
@@ -120,6 +121,11 @@ export async function loadWorkflowSteps(workflowId) {
         // Это позволит функции добавления условий видеть актуальный список шагов
         state.allCurrentStepsData = data.result || [];
 
+        // ⚠ Свежие шаги — повод выбросить кэш «Undefined переменных»: этот workflow
+        // теперь считают по свежему составу, а значки в левом списке берут его из
+        // кэша. Вызов и на открытии, и после правки шага — кэш всегда за state.
+        invalidateUndefinedIndex(workflowId);
+
         let activeStepId = null;
         let currentStepData = null;
         let currentStepBlock = null;
@@ -218,6 +224,9 @@ async function updateStepsPosition() {
 
     try {
         await putData(`/workflow/${workflowId}/steps/reorder`, {positions: newPositions});
+        // Порядок шагов — это и нумерация в значках «Undefined переменных»:
+        // сбрасываем кэш, списки пересчитают состав и номера по свежему порядку.
+        invalidateUndefinedIndex(workflowId);
 
         // Обновляем визуальные номера шагов
         items.forEach((el, idx) => {
@@ -696,6 +705,9 @@ async function stepAutoSaveFlush() {
 
     try {
         await putData(`/workflow/${workflowId}/step/${stepId}`, payload);
+        // Метка шага правилась на странице — перечитаем кэш «Undefined переменных»
+        // для workflow слева и для панели графа: она считают по метадатам из стейта.
+        invalidateUndefinedIndex(workflowId);
         if (titleEl) titleEl.textContent = payload.title;
         showNotification(`Шаг «${payload.title}» сохранен`, 'success');
     } catch (e) {

@@ -289,7 +289,8 @@ def _base_script() -> str:
 
     ⚠⚠ Правило приезжает `import`-ом, а не вырезкой: ради этого его и вынесли в
     отдельный модуль. Режется только то, у чего файла нет, — код внутри `<script>`
-    самой страницы.
+    самой страницы. Имена, которые вырезанные куски зовут со страницы (`parseJson`),
+    обязана давать и заглушка: без них node падает на первом же `import`.
     """
     stub = f'''
     import {{variableGroupIndex, VAR_GROUP_UNKNOWN}} from '{GROUP}';
@@ -300,6 +301,13 @@ def _base_script() -> str:
     const state = {{workflows: {_json(WORKFLOWS)}, tools: {_json(TOOLS)}}};
     const workflowVariablesCache = {{'5': {_json(REGISTRY)}}};
     const RUN = {_json(RUN)};
+
+    // Тот же разбор JSON, что на странице: метаданные шага приезжают строкой.
+    const parseJson = (raw) => {{
+        if (raw === null || raw === undefined || raw === '') return null;
+        if (typeof raw !== 'string') return raw;
+        try {{ return JSON.parse(raw); }} catch (e) {{ return null; }}
+    }};
     '''
 
     return (stub

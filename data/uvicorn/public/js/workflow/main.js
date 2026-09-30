@@ -9,6 +9,8 @@ import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 import {buildGroupTree, renderGroupTree} from '../agent_group_tree.js';
+import {ensureUndefinedIndex, workflowUndefinedEntriesSync,
+    onUndefinedIndexChange, invalidateUndefinedIndex} from './undefined-index.js';
 
 // Инициализация режима Graph (mermaid)
 initGraphMode();
@@ -59,7 +61,12 @@ async function initWorkflowManager() {
         const [workflowsRes, nodesRes, toolsRes] = await Promise.all([
             getData('/workflow/list'),
             getData('/node/list'),
-            getData('/tool/list')
+            getData('/tool/list'),
+            // ⚠⚠ Сырьё индекса «Undefined переменных» — одним запросом на всю
+            // страницу (указание хозяина: держать список переменных на фронте и
+            // брать его быстрым чтением). Строки списка читают кэш синхронно,
+            // потому загрузка — до отрисовки списка.
+            ensureUndefinedIndex(),
         ]);
 
         state.allAvailableTools = toolsRes.result || toolsRes || [];
@@ -207,9 +214,20 @@ function renderCarouselNode() {
         if (depth > 0) div.style.paddingLeft = `${indent}px`;
 
         const label = (depth > 0 ? '· ' : '') + workflow.title;
+
+        // ⚠⚠ Мигающая «!» в квадратике: в этом workflow шаги читают переменные,
+        // которых не заведёт ни один его шаг. Список слева ничего не считает сам:
+        // он показывает то, что посчитало правило из `variable-group.js`, по кэшу
+        // `undefined-index.js`. Нет данных — нет значка: лучше молчание, чем вранье.
+        const undefinedEntries = workflowUndefinedEntriesSync(workflow.id);
+        const warnMark = (undefinedEntries && undefinedEntries.size > 0)
+            ? `<span class="workflow-warn-mark" title="Неопределённые переменные читают ${undefinedEntries.size} шаг(ов): `
+              + `${[...undefinedEntries.keys()].slice(0, 3).join(', ')}${undefinedEntries.size > 3 ? ' …' : ''}">!</span>`
+            : '';
+
         div.innerHTML = `
     <div class="workflow-title-row">
-        <span class="workflow-name-link" id="workflow_link_${workflow.id}">${label}</span>
+        ${warnMark}<span class="workflow-name-link" id="workflow_link_${workflow.id}">${label}</span>
     </div>
 `;
 
@@ -481,6 +499,9 @@ workflowForm.onsubmit = async (e) => {
             await putData(`/workflow/${id}`, payload);
             await saveInputVariables(id); // Создаем новые и обновляем измененные входящие переменные
             showNotification('Изменения успешно сохранены', 'success');
+            // Кэш «Undefined переменных» по этому workflow протух: сохранение могло
+            // завести/править переменные — значки в списке слева считают по свежему.
+            invalidateUndefinedIndex(id);
             await initWorkflowManager(); // Полностью обновляем списки в UI
         } else {
             const createRes = await postData('/workflow', payload);
@@ -676,5 +697,15 @@ if (importWorkflowsBtn && importWorkflowsFile) {
         }
     };
 }
+
+// Индекс «Undefined переменных»: сырьё догрузилось или кэш сброшен — значки в
+// левом списке расставляют заново, не дожидаясь, пока человек полистает карусель.
+onUndefinedIndexChange(() => {
+    try {
+        renderCarouselNode();
+    } catch (e) {
+        console.error('Не удалось перерисовать список после обновления индекса:', e);
+    }
+});
 
 initWorkflowManager().catch(err => console.error("Критический сбой инициализации модуля:", err));

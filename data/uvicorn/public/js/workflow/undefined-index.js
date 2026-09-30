@@ -1,0 +1,166 @@
+// Кэш индекса «Undefined переменные» для списков, которые не могут его вычислить сами.
+//
+// ## ⚠⚠ Здесь сеть и кэш; правила здесь нет
+//
+// Правило «что такое неопределённая переменная» живёт в `variable-group.js` и
+// только там. Этот модуль берёт то, чего правилу не хватает из стейта страницы:
+// сырьё для **чужих** workflow (шаги, реестр, скрытые имена) — одним пакетом с
+// бэкенда, и держит его в кэше, чтобы список слева и панель графа спрашивали
+// имя столько раз, сколько видят, — а не столько раз, сколько_workflow открыто.
+//
+// Для workflow, открытого в редакторе, сырьё берётся из стейта страницы
+// (`state.allCurrentStepsData`, `state.allCurrentVariables`): оно всегда свежее
+// пакета, который мог быть скачан до правки шага.
+
+import {getData} from '../api.js';
+import {undefinedVariables} from './variable-group.js';
+import {state} from './state.js';
+
+// workflow id → сырьё из бэкенда: {steps, registryNames, hiddenNames}.
+const _raw = new Map();
+// workflow id → вычисленный Map<имя, [шаги]>; null — «данных нет» (не путать с
+// пустой картой: пустая — это «данные есть, неопределённых нет»).
+const _computed = new Map();
+
+let _loadPromise = null;
+const _listeners = new Set();
+
+/** Идентификатор workflow, открытого в редакторе (тот же канал, что у соседних модулей). */
+export function editorWorkflowId() {
+    return document.getElementById('workflowId')?.value || '';
+}
+
+/**
+ * Скрытые имена (proxy ноды, переменные агента) для чужого workflow из кэша.
+ *
+ * Правилу они нужны как «обеспеченные»: показывать их нельзя (указание
+ * хозяина), но и кричать на них нечем. Пустой список — «данных нет», тогда
+ * правило не считает имя обеспеченным и неопределённая показывает честно.
+ */
+export function hiddenNamesFor(workflowId) {
+    return _raw.get(String(workflowId))?.hiddenNames || [];
+}
+
+function notify() {
+    _listeners.forEach(cb => {
+        try {
+            cb();
+        } catch (e) {
+            console.error('Ошибка подписчика на индекс неопределённых переменных:', e);
+        }
+    });
+}
+
+/**
+ * Один запрос на страницу: сырьё для всех workflow разом.
+ *
+ * Возврат — тот же промис, что и первый вызов, значит вторая и каждая дальняя
+ * вкладка «Граф» ждёт сеть только впервой раз. Сбой не кэшим: следующий вызов
+ * пробует снова.
+ */
+export function ensureUndefinedIndex() {
+    if (!_loadPromise) {
+        _loadPromise = getData('/workflow_variable/undefined_index')
+            .then((res) => {
+                const workflows = res?.result?.workflows || res?.workflows || {};
+                Object.entries(workflows).forEach(([id, entry]) => {
+                    _raw.set(String(id), {
+                        steps: entry?.steps || [],
+                        registryNames: entry?.registryNames || [],
+                        hiddenNames: entry?.hiddenNames || [],
+                    });
+                });
+                _computed.clear();
+                return _raw.size;
+            })
+            .catch(e => {
+                console.error('Не удалось загрузить индекс неопределённых переменных:', e);
+                _loadPromise = null; // сбой — не отметка «готово»: следующий вызов пробует снова
+                return null;
+            });
+    }
+    return _loadPromise;
+}
+
+/** Есть ли сырьё; нет — показывать нечего, и списки молча не рисуют значков. */
+export function undefinedIndexReady() {
+    return _loadPromise !== null && _raw.size > 0;
+}
+
+/**
+ * Сброс кэша вычисления для workflow после правки его шагов/переменных + весть
+ * подписчикам.
+ *
+ * ⚠ Зовётся на каждой дороге записи (сохранение шага, переменной, workflow):
+ * списки берут значки из кэша вычисления, и без сброса они врали бы до первой
+ * полной перезагрузки страницы.
+ */
+export function invalidateUndefinedIndex(workflowId) {
+    _computed.delete(String(workflowId ?? editorWorkflowId()));
+    notify();
+}
+
+/**
+ * Неопределённые переменные workflow: вычисление с кэшем.
+ *
+ * Args:
+ *     workflowId: id из `state.allWorkflows` / сырьё того же id.
+ *
+ * Returns:
+ *     Promise<Map<имя, [шаг…]> | null>: null — данных нет (индекс не загружен),
+ *     пустая карта — неопределённых нет.
+ */
+export async function workflowUndefinedEntries(workflowId) {
+    await ensureUndefinedIndex();
+    return _workflowUndefinedEntriesSync(workflowId);
+}
+
+/** Та же работа без ожидания сети: для отрисовки, идущей за `await ensureUndefinedIndex()`. */
+export function workflowUndefinedEntriesSync(workflowId) {
+    if (_loadPromise === null) return null; // сеть не зватая — молча без значков
+    return _workflowUndefinedEntriesSync(workflowId);
+}
+
+/** Подписка на «индекс догрузился / кэш сброшен»; возварает функцию отписки. */
+export function onUndefinedIndexChange(cb) {
+    _listeners.add(cb);
+    return () => _listeners.delete(cb);
+}
+
+function _workflowUndefinedEntriesSync(workflowId) {
+    const key = String(workflowId);
+
+    if (_computed.has(key)) return _computed.get(key);
+
+    // Для открытого редактором workflow сырьё — из стейта: шаги и переменные
+    // правятся на странице, и пакет бэкенда может быть снят до правки.
+    const opened = editorWorkflowId();
+    const fromEditor = opened && key === String(opened);
+
+    let steps;
+    let registryNames;
+    let hiddenNames;
+
+    if (fromEditor) {
+        steps = state.allCurrentStepsData;
+        // `allCurrentVariables` на старте страницы — `{}` (state.js), а не массив:
+        // `(x || []).map` тут ронял бы отрисовку панели. Считаем только массив.
+        registryNames = Array.isArray(state.allCurrentVariables)
+            ? state.allCurrentVariables.map(one => one?.name) : [];
+        hiddenNames = _raw.get(key)?.hiddenNames || [];
+    } else {
+        const entry = _raw.get(key);
+        if (!entry) return null; // чужой workflow без данных: показывать нечего
+        steps = entry.steps;
+        registryNames = entry.registryNames;
+        hiddenNames = entry.hiddenNames;
+    }
+
+    if (!Array.isArray(steps)) return null;
+
+    const result = undefinedVariables(
+        registryNames, steps, state.allWorkflows, state.allAvailableTools, hiddenNames);
+
+    _computed.set(key, result);
+    return result;
+}

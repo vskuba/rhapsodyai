@@ -7,6 +7,7 @@ import {state} from './state.js';
 import {parseMetadata} from './utils.js';
 import {stepVariables, groupWorkflowVariables, variableGroupIndex,
     workflowVariableSections} from './variable-group.js';
+import {editorWorkflowId, hiddenNamesFor, invalidateUndefinedIndex} from './undefined-index.js';
 
 /**
  * Разбивка переменных по группам для **открытого в редакторе** workflow.
@@ -19,7 +20,8 @@ import {stepVariables, groupWorkflowVariables, variableGroupIndex,
  */
 export function editorVariableGroups(variables) {
     return groupWorkflowVariables(variables, state.allCurrentStepsData,
-                                  state.allWorkflows, state.allAvailableTools);
+                                  state.allWorkflows, state.allAvailableTools,
+                                  hiddenNamesFor(editorWorkflowId()));
 }
 
 /**
@@ -31,7 +33,8 @@ export function editorVariableGroups(variables) {
  */
 export function editorVariableGroupIndex() {
     return variableGroupIndex(state.allCurrentVariables || [], state.allCurrentStepsData,
-                              state.allWorkflows, state.allAvailableTools);
+                              state.allWorkflows, state.allAvailableTools,
+                              hiddenNamesFor(editorWorkflowId()));
 }
 
 /**
@@ -71,6 +74,10 @@ export async function loadWorkflowVariables(workflowId) {
         // Это позволит функциям генерации полей и автодополнения видеть актуальный список.
         state.allCurrentVariables = data.result || data || [];
         window.allCurrentVariables = state.allCurrentVariables; // Дублируем для генератора динамических полей
+
+        // ⚠ Состав реестра изменился (или список открыли заново) — кэш «Undefined
+        // переменных» протух: списки слева и на графе берут значки из него.
+        invalidateUndefinedIndex(workflowId);
 
         // 3. Отрисовываем переменные в интерфейсе
         renderWorkflowVariables(state.allCurrentVariables);
@@ -327,6 +334,9 @@ function bindSave(el, variable, field) {
                 {[field]: value || null});
             variable[field] = value;
             syncHiddenRow(variable);
+            // Имя переменной могло измениться — состав реестра для правила
+            // «Undefined переменных» считается заново на ближайшей отрисовке.
+            invalidateUndefinedIndex(workflowId);
             if (field === 'name') renderInputVariables();
             savedMark(el);
         } catch (err) {
@@ -469,8 +479,11 @@ export function fillVariablesSelectOptions(sel, selectedVal = '', placeholder = 
 
     let selectedMatched = false;
     const groups = editorVariableGroups(window.allCurrentVariables);
-    workflowVariableSections(groups).forEach(({title, items}) => {
+    workflowVariableSections(groups).forEach(({title, items, key}) => {
         if (items.length === 0) return;
+        // ⚠ В выборе доводов секции undefined нет: имя из неё в доводе — обещанное
+        // %имя%, которого движок не заполнит, список его не знает намеренно.
+        if (key === 'undefined') return;
         const optgroup = document.createElement('optgroup');
         optgroup.label = title;
         items.forEach(v => {
@@ -508,14 +521,12 @@ export function renderWorkflowVariables(variables) {
 
     const variablesArray = Array.isArray(variables) ? variables : [];
 
-    if (variablesArray.length === 0) {
-        container.innerHTML = '<div class="empty-text">Нет переменных</div>';
-        return;
-    }
-
     // 1. Распределяем переменные по группам
+    // ⚠ Пустой реестр — не повод молчать: «Undefined переменные» смотрят именно
+    // туда, где человек ещё ничего не завёл, и шаг с `%имя%` без хозяйина там
+    // виден лучше всего.
     const {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup,
-           dynamicGroup} = editorVariableGroups(variablesArray);
+           dynamicGroup, undefinedGroup} = editorVariableGroups(variablesArray);
 
     // 2. Функция создания DOM-элемента отдельной переменной
     function createVariableElement(variable) {
@@ -529,6 +540,9 @@ export function renderWorkflowVariables(variables) {
         }
         if (variable.id === -3) {
             div.className += ' variable-item-dynamic';
+        }
+        if (variable.id === -4) {
+            div.className += ' variable-item-undefined';
         }
         if (variable.type === 'node') {
             div.className += ' variable-item-node';
@@ -553,7 +567,30 @@ export function renderWorkflowVariables(variables) {
                 showNotification('Не удалось скопировать переменную', 'error');
             }
         };
+        if (variable.id === -4) {
+            // Предупреждение до имени: мигающий значок; имя в красной рамке строки
+            // и подсказка про пустоту в прогоне. Кнопки удаления нет — строка с
+            // отрицательным id её не получает (проверено ниже по тому же признаку).
+            const warnSpan = document.createElement('span');
+            warnSpan.className = 'variable-warn-mark';
+            warnSpan.textContent = '⚠';
+            warnSpan.title = 'Переменная не объявлена ни в одном шаге этого workflow'
+                + ' и не возвращается ни одним его инструментом; в прогоне на её месте пусто';
+            div.appendChild(warnSpan);
+        }
+
         div.appendChild(nameSpan);
+
+        if (variable.id === -4) {
+            const readers = Array.isArray(variable.readers) ? variable.readers : [];
+            const readSpan = document.createElement('span');
+            readSpan.className = 'variable-readers';
+            readSpan.textContent = `читают ${readers.length} шаг(ов)`;
+            readSpan.title = 'Читают: ' + readers
+                .map(s => `#${s.id} ${s.title || ''}`.trim())
+                .join(', ');
+            div.appendChild(readSpan);
+        }
 
         // Проверяем наличие значения по умолчанию
         if (variable.default !== undefined && variable.default !== null && variable.default !== '') {
@@ -585,6 +622,9 @@ export function renderWorkflowVariables(variables) {
                         state.allCurrentVariables = state.allCurrentVariables.filter(v => v !== variable);
                     }
                     window.allCurrentVariables = (window.allCurrentVariables || []).filter(v => v !== variable);
+                    // Переменная ушла из реестра: для «Undefined переменных» её
+                    // теперь нет в «известных» — перечитаем кэш перед отрисовкой.
+                    invalidateUndefinedIndex(workflowId);
                     div.remove();
                     renderWorkflowVariables(typeof state.allCurrentVariables !== 'undefined' ? state.allCurrentVariables : window.allCurrentVariables);
                 };
@@ -656,8 +696,10 @@ export function renderWorkflowVariables(variables) {
     }
 
     // 4. Добавляем секции аккордеона в контейнер
+    // ⚠ Секцию `undefined` показываем: в этом списке переменную и надо показать —
+    // её некому нести в форму, кроме как предупредить об этом списке.
     workflowVariableSections({commonGroup, nodeGroup, workflowGroup, toolGroup,
-                              inputGroup, dynamicGroup}).forEach(({title, items, key}) => {
+                              inputGroup, dynamicGroup, undefinedGroup}).forEach(({title, items, key}) => {
         container.appendChild(createAccordionSection(title, items, key));
     });
 

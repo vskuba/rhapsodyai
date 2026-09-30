@@ -303,8 +303,119 @@ export function getToolOutputKeys(toolName, tools) {
 }
 
 /**
- * Распределяет переменные по группам (общие / ноды / tool / workflow) — единая
- * логика для списка `#variablesContainer`, селектов переменных и трассы прогона.
+ * Имена, которые **шаги кладут сами**: результаты инструментов и подпрогонов.
+ *
+ * ## ⚠⚠ Одно знание, два потребителя
+ *
+ * Эти имена нужны и разбивке на группы (строки `⚙️ Tool переменные`), и правилу
+ * неопределённости (`undefinedVariables`): имя `dating_talk_42_result_str` никто
+ * в реестр не заводил — работает оно наравне. Пока оно строилось внутри
+ * `groupWorkflowVariables` и наружу не отдавалось, второе правило вынуждено
+ * были бы перестраивать его своим перебором — а два знатока одного шаблона
+ * расходятся при первой правке, это уже проходили на `foundToolVariables`.
+ *
+ * Args:
+ *     stepsData / workflows / tools: то же, что у `groupWorkflowVariables`.
+ *
+ * Returns:
+ *     Set<имя>: `{tool_name}_{step_id}_result_{ключ}` из `args.output` инструмента
+ *     и `{имя_подпрогона}_{step_id}_result_str` — строковый итог `workflow_invoke`.
+ */
+export function stepResultVariables(stepsData, workflows, tools) {
+    const found = new Set();
+
+    (Array.isArray(stepsData) ? stepsData : []).forEach(step => {
+        const metadata = parseMetadata(step.metadata);
+        if (metadata && metadata.tool_invoke && metadata.tool_invoke.tool_name) {
+            const tool_name = metadata.tool_invoke.tool_name;
+            getToolOutputKeys(tool_name, tools).forEach(key => {
+                found.add(tool_name + '_' + step.id + '_result_' + key);
+            });
+        }
+        // Результат шага workflow_invoke: {имя_sub_workflow}_{step_id}_result_str
+        if (metadata && metadata.workflow_invoke && metadata.workflow_invoke.workflow_id) {
+            const wf = (workflows || []).find(w => String(w.id) === String(metadata.workflow_invoke.workflow_id));
+            const childName = wf ? wf.name : ('workflow_' + metadata.workflow_invoke.workflow_id);
+            found.add(childName + '_' + step.id + '_result_str');
+        }
+    });
+
+    return found;
+}
+
+/**
+ * Переменные, которые шаги **читают, но никто не кладёт и в реестре их нет**.
+ *
+ * ## ⚠⚠ Почему это отдельное правило, а не догадка по группам
+ *
+ * Имя из `%...%` в промпте может значить что угодно: опечатку, след удалённой
+ * переменной, легальное имя из proxy ноды или переменных агента. Первые —
+ * неработающие ссылки: шаг читает то, что ему никто не даёт, и в прогоне там
+ * пусто или нераскрытый `%имя%`. Вторые — рабочие, но не видны по списку
+ * реестра. Отличают их друг от друга только оба списка сразу.
+ *
+ * Undefined = прочитанное минус всё легально доступное:
+ *
+ * * реестр workflow (входящие, глобальные, workflow, публичные ноды);
+ * * следы шагов — результаты инструментов/подпрогонов (`stepResultVariables`)
+ *   и сделанное шагами (`stepMadeVariables`: ключи модели, цели конверсии);
+ * * алиас `workflow_invoke_{шаг}_result_str` — его кладёт движок сверх
+ *   именованного результата, в справочниках его нет вовсе;
+ * * `hiddenNames` — то, что движок подмешивает в scope молча: proxy-переменные
+ *   ноды и `agent_variable` агента. По указанию хозяина **не показывать их
+ *   в списках** — но считать обеспеченными обязаны, иначе `%girl_name%` из
+ *   переменных агента кричал бы предупреждением на каждом шагу.
+ *
+ * Args:
+ *     variables / stepsData / workflows / tools: то же, что у `groupWorkflowVariables`.
+ *     hiddenNames: массив имён, легальных, но не показуемых (proxy, агентские).
+ *
+ * Returns:
+ *     `Map<имя, [шаг…]>`: читающие шаги в порядке `position`, по имени
+ *     отсортированно. У имени, читаемого из нескольких мест, шаг не повторяется.
+ *
+ * ⚠ Порядок «прочитано раньше, чем положено» не проверяется намеренно — по
+ * номерам он ложен в кругах правок, см. `variablesTrace`.
+ */
+export function undefinedVariables(variables, stepsData, workflows, tools, hiddenNames) {
+    const readers = new Map();
+    (Array.isArray(stepsData) ? stepsData : []).forEach(step => {
+        stepReadVariables(step).forEach(name => {
+            if (!readers.has(name)) readers.set(name, []);
+            readers.get(name).push(step);
+        });
+    });
+
+    const _names = (list) => (Array.isArray(list) ? list : [])
+        .map(one => (typeof one === 'string' ? one : one?.name))
+        .filter(name => !!name);
+
+    const known = new Set([
+        ..._names(variables),
+        ...stepResultVariables(stepsData, workflows, tools),
+        ..._names(hiddenNames),
+    ]);
+
+    (Array.isArray(stepsData) ? stepsData : []).forEach(step => {
+        stepMadeVariables(step).forEach(name => known.add(name));
+        // Алиас движка: кладётся сверх `{имя_подпрогона}_{шаг}_result_str` и в
+        // справочниках не значит нигде — берём его из устройства шага.
+        const metadata = parseMetadata(step.metadata);
+        if (metadata && metadata.workflow_invoke && metadata.workflow_invoke.workflow_id) {
+            known.add('workflow_invoke_' + step.id + '_result_str');
+        }
+    });
+
+    const result = new Map();
+    [...readers.keys()].filter(name => !known.has(name)).sort()
+        .forEach(name => result.set(name, readers.get(name)));
+
+    return result;
+}
+
+/**
+ * Распределяет переменные по группам (общие / ноды / tool / workflow / undefined) —
+ * единая логика для списка `#variablesContainer`, селектов переменных и трассы прогона.
  *
  * Args:
  *     variables: записи реестра (`/workflow/{id}/variables`): name, type, default.
@@ -312,8 +423,14 @@ export function getToolOutputKeys(toolName, tools) {
  *         шаги открытого workflow, для трассы — шаги прогона.
  *     workflows / tools: справочники, из которых собираются имена результатов
  *         `workflow_invoke` и `tool_invoke`.
+ *     hiddenNames: легальные, но не показуемые имена (`undefinedVariables`).
+ *
+ * Returns:
+ *     Группы плюс `undefinedGroup`: записи `{id: -4, name, readers}` — читающие
+ *     шаги нужны подписи «читают N шагов» и подсказке, своего места в строке
+ *     им не отдавать.
  */
-export function groupWorkflowVariables(variables, stepsData, workflows, tools) {
+export function groupWorkflowVariables(variables, stepsData, workflows, tools, hiddenNames) {
     const variablesArray = Array.isArray(variables) ? variables : [];
     const commonGroup = [];
     const nodeGroup = [];
@@ -337,24 +454,7 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools) {
     // Динамические переменные из инструментов:
     // имена формируются по шаблону '{tool_name}_{step_id}_result_{output_key}' — ID шага
     // делает имя уникальным при повторных вызовах одного инструмента
-    const foundToolVariables = new Set();
-    if (Array.isArray(stepsData)) {
-        stepsData.forEach(step => {
-            let metadata = parseMetadata(step.metadata);
-            if (metadata && metadata.tool_invoke && metadata.tool_invoke.tool_name) {
-                const tool_name = metadata.tool_invoke.tool_name;
-                getToolOutputKeys(tool_name, tools).forEach(key => {
-                    foundToolVariables.add(tool_name + '_' + step.id + '_result_' + key);
-                });
-            }
-            // Результат шага workflow_invoke: {имя_sub_workflow}_{step_id}_result_str
-            if (metadata && metadata.workflow_invoke && metadata.workflow_invoke.workflow_id) {
-                const wf = (workflows || []).find(w => String(w.id) === String(metadata.workflow_invoke.workflow_id));
-                const childName = wf ? wf.name : ('workflow_' + metadata.workflow_invoke.workflow_id);
-                foundToolVariables.add(childName + '_' + step.id + '_result_str');
-            }
-        });
-    }
+    const foundToolVariables = stepResultVariables(stepsData, workflows, tools);
 
     foundToolVariables.forEach(varName => {
         toolGroup.push({
@@ -379,6 +479,7 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools) {
     const known = new Set([
         ...variablesArray.map(one => one?.name),
         ...foundToolVariables,
+        ...(Array.isArray(hiddenNames) ? hiddenNames : []),
     ]);
 
     if (Array.isArray(stepsData)) {
@@ -398,14 +499,32 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools) {
         });
     }
 
-    return {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup, dynamicGroup};
+    // ⚠⚠ Неопределённые — после tool и workflow групп и перед dynamic: имя может
+    // быть и прочитанным, и кладеным разными шагами, и тогда оно уже показано
+    // выше; здесь остаются только те, коим нет места ни в одной другой группе.
+    const undefinedGroup = [];
+    if (Array.isArray(stepsData)) {
+        undefinedVariables(variablesArray, stepsData, workflows, tools, hiddenNames)
+            .forEach((readers, name) => {
+                undefinedGroup.push({
+                    // ⚠ Свой отрицательный номер: в реестре такой переменной нет —
+                    // кнопки удаления и формы правки у её строки быть не должно.
+                    id: -4,
+                    name,
+                    default: null,
+                    readers,
+                });
+            });
+    }
+
+    return {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup, dynamicGroup, undefinedGroup};
 }
 
 /**
  * Карта «имя → группа» для набора переменных и их шагов.
  *
  * Args:
- *     variables / stepsData / workflows / tools: то же, что у
+ *     variables / stepsData / workflows / tools / hiddenNames: то же, что у
  *         `groupWorkflowVariables`.
  *
  * Returns:
@@ -421,8 +540,8 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools) {
  * разбивка стоит разбора метаданных всех шагов. Перебирать её на каждое имя — та
  * самая работа, которую видно пальцами в фильтре графа.
  */
-export function variableGroupIndex(variables, stepsData, workflows, tools) {
-    const groups = groupWorkflowVariables(variables, stepsData, workflows, tools);
+export function variableGroupIndex(variables, stepsData, workflows, tools, hiddenNames) {
+    const groups = groupWorkflowVariables(variables, stepsData, workflows, tools, hiddenNames);
     const index = new Map();
 
     for (const {items, ...section} of workflowVariableSections(groups)) {
@@ -448,6 +567,13 @@ export function variableGroupIndex(variables, stepsData, workflows, tools) {
  * доставали его разбором `title.split(' ')[0]`: подпись показывают человеку, а по
  * ней восстанавливали структуру. Неразрывный пробел, название без значка,
  * перестановка слов — и в чипе молча оказалось бы слово вместо знака.
+ *
+ * ⚠ Секцию `undefined` списки показов **пропускают** там, где список — выбор
+ * (селекты доводов): показывать в выборе имя, которого ни в одном списке нет и
+ * которое на прогоне не раскроется, значит предлагать человеком писать битовое
+ * значение. Списки же, где переменную только показывают (`#variablesContainer`,
+ * панель графа), её рисуют: красный цвет и значок ⚠️ — то, что списки уже
+ * различают глазами, там и так работают списком.
  */
 export function workflowVariableSections(groups) {
     return [
@@ -456,6 +582,9 @@ export function workflowVariableSections(groups) {
         {key: 'node', icon: '🇳', label: 'Node переменные', items: groups.nodeGroup},
         {key: 'tool', icon: '⚙️', label: 'Tool переменные', items: groups.toolGroup},
         {key: 'workflow', icon: '🇼', label: 'Workflow переменные', items: groups.workflowGroup},
+        // ⚠ Перед dynamic: «про то, что не заведено нигде» важнее для глаза, чем
+        // «про то, что кладёт шаг», а пустую секцию списки не рисуют вовсе.
+        {key: 'undefined', icon: '⚠️', label: 'Undefined переменные', items: groups.undefinedGroup || []},
         // ⚠ Последней: она про то, что появляется само, и заглядывают туда реже
         // прочих. Порядок этого перечня — он же порядок вкладок и групп в селектах.
         {key: 'dynamic', icon: '🌀', label: 'Dynamic переменные', items: groups.dynamicGroup},

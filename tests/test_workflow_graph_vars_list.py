@@ -43,6 +43,8 @@ pytestmark = pytest.mark.core
 GRAPH = './data/uvicorn/public/js/workflow/graph.js'
 GROUP = './data/uvicorn/public/js/workflow/variable-group.js'
 VARS = './data/uvicorn/public/js/workflow/variables.js'
+INDEX = './data/uvicorn/public/js/workflow/undefined-index.js'
+STATE = './data/uvicorn/public/js/workflow/state.js'
 
 # Шаги открытого в редакторе workflow (`.id`/`.metadata`, не прогонные
 # `step_id`/`metadata_rendered`) и реестр переменных. Имена нарочно из всех
@@ -91,9 +93,10 @@ EXPECTED = {
     'dating_invite_one_786_result_str': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
     'girl_bio': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
     'talk_topic': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
-    # Шаг читает результат инструмента, которого нет в `args.output` его реестра:
-    # имя живёт, а группы у него нет ни одной
-    'list_shift_9_result_sheet': {'key': 'unknown', 'icon': '∅', 'label': 'не объявлена'},
+    # Шаг читает переменную, которой нет ни в реестре, ни в следах шагов: имя
+    # получает свою секцию «Undefined переменные» со значком предупреждения.
+    'list_shift_9_result_sheet': {'key': 'undefined', 'icon': '⚠️',
+                                  'label': 'Undefined переменные'},
 }
 
 # Имена, которых шаги не касаются вовсе: раньше их не было видно на графе.
@@ -155,19 +158,20 @@ class TestEveryRowCarriesItsIcon:
             assert row['cls'] == f"graph-var graph-var-{want['key']}", \
                 f'у «{row["name"]}» строка в чужом классе: {row["cls"]}'
 
-    def test_a_nameless_group_answers_the_same_as_the_trace(self):
-        """⚠⚠ Имя без группы получает `∅`, а не пустое место.
+    def test_the_undefined_name_gets_the_warning_mark_of_the_shared_rule(self):
+        """⚠⚠ Имя без группы получает `⚠️` своей секции, а не пустое место.
 
         Пустое место рядом с именем оставляет вопрос «откуда оно» ровно так же,
-        как его оставляло отсутствие группы. Ответ один на обе страницы — общий
-        `VAR_GROUP_UNKNOWN` из модуля правила, а не своя выдумка на каждой.
+        как его оставляло отсутствие группы. Ответ один на обе страницы — секция
+        «Undefined переменные» из модуля правила: и граф, и трасса берут её из
+        одного `variableGroupIndex`, своего значка панель графа не выдумывает.
         """
         row = next(r for r in _rows() if r['name'] == 'list_shift_9_result_sheet')
 
-        assert row['icon'] == '∅', \
+        assert row['icon'] == '⚠️', \
             f'у имени без группы снова пусто вместо знака: {row["icon"]!r}'
-        assert row['cls'] == 'graph-var graph-var-unknown', \
-            f'строка без группы не помечена классом: {row["cls"]}'
+        assert row['cls'] == 'graph-var graph-var-undefined', \
+            f'неопределённая строка не несёт знака в классе: {row["cls"]}'
 
     def test_the_icon_and_the_name_sit_in_one_block(self):
         """⚠⚠ Значок — приставка к имени, а не третья колонка строки.
@@ -229,28 +233,44 @@ def _slice(path: str, anchor_from: str, anchor_till: str) -> str:
 def _base_script() -> str:
     """Заглушки DOM того объёма, каким живёт панель, + живой импорт правила.
 
-    ⚠ Карта групп приезжает настоящим `variableGroupIndex`, связка со стейтом —
-    телом того же адаптера, что в `variables.js`: тест проверяет список панели, а
-    не свою копию правила.
+    ⚠ Карта групп и кэш неопределённых приезжают настоящими `import`-ами
+    (`variable-group.js`, `undefined-index.js`), связка со стейтом — телом того
+    же адаптера, что в `variables.js`: тест проверяет список панели, а не свою
+    копию правила. Имена, которые вырезанные куски `graph.js` зовут со страницы,
+    обязаны жить и в этой заглушке — иначе node падает на первом же `import`.
     """
+    # ⚠ `variables.js` сюда не импортируем: его верхний строк лезит в DOM при
+    # загрузке, а импорт исполняется прежде тела скрипта — node упал бы на нём.
+    # Адаптер здесь повторяют телом; текстом его сверяют с `variables.js` другие
+    # тесты этой же сюиты (TestTheRuleLivesInOneFile).
     stub = f'''
-    import {{variablesTrace, variableGroupIndex, VAR_GROUP_UNKNOWN}} from '{GROUP}';
+    let _varTrace = new Map(), _varPicked = null, _stepNumbers = new Map();
+    let _varGroups = new Map(), _undefinedNames = new Map();
 
-    const boxes = {{}};
     const el = (tag) => ({{tag, kids: [], dataset: {{}}, style: {{}}, value: '',
         append(...one) {{ this.kids.push(...one); }},
         appendChild(one) {{ this.kids.push(one); }}}});
-    const document = {{createElement: el,
+    const boxes = {{}};
+    globalThis.document = {{createElement: el,
         getElementById: (id) => (boxes[id] ??= el('div'))}};
-    const state = {{allCurrentVariables: {_json(REGISTRY)},
-        allCurrentStepsData: {_json(STEPS)},
-        allWorkflows: {_json(WORKFLOWS)},
-        allAvailableTools: {_json(TOOLS)}}};
-    let _varTrace = new Map(), _varPicked = null, _stepNumbers = new Map();
-    let _varGroups = new Map();
+    globalThis.window = {{location: {{search: '?workflow_id=6'}},
+        localStorage: {{getItem: () => null, setItem: () => {{}}}}}};
+    globalThis.location = {{search: '?workflow_id=6'}};
+
+    import {{variablesTrace, variableGroupIndex, VAR_GROUP_UNKNOWN}} from '{GROUP}';
+    import {{editorWorkflowId, workflowUndefinedEntriesSync, hiddenNamesFor,
+        ensureUndefinedIndex, undefinedIndexReady, invalidateUndefinedIndex,
+        workflowUndefinedEntries}} from '{INDEX}';
+    import {{state}} from '{STATE}';
+
+    state.allCurrentVariables = {_json(REGISTRY)};
+    state.allCurrentStepsData = {_json(STEPS)};
+    state.allWorkflows = {_json(WORKFLOWS)};
+    state.allAvailableTools = {_json(TOOLS)};
+
     const editorVariableGroupIndex = () => variableGroupIndex(
-        state.allCurrentVariables, state.allCurrentStepsData,
-        state.allWorkflows, state.allAvailableTools);
+        state.allCurrentVariables || [], state.allCurrentStepsData,
+        state.allWorkflows, state.allAvailableTools, hiddenNamesFor(editorWorkflowId()));
     '''
 
     # ⚠ `/**`…`*/` вокруг вырезок: куски начинаются и кончаются посреди чужих
