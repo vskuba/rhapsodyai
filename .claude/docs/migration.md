@@ -137,7 +137,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 ### Какие таблицы включать в seed
 
 **Включать** (архитектурные данные):  
-`node`, `llm`, `node_llm`, `role`, `role_node`, `setting`, `agent_workflow_step_type`, `agent_workflow_variable`, `agent_workflow`, `agent_workflow_step`, `agent_workflow_variable_*`, `agent`, `agent_role`, `planning_phase`, `planning_phase_source`, `fact_collection`, `user`, `user_access_token`, `user_node`
+`node`, `llm`, `node_llm`, `role`, `role_node`, `setting`, `agent_workflow_step_type`, `agent_workflow_variable`, `agent_workflow`, `agent_workflow_step`, `agent`, `agent_role`, `planning_phase`, `planning_phase_source`, `fact_collection`, `user`, `user_access_token`, `user_node`
 
 **Не включать** (динамические/runtime данные):  
 `tool`, `tool_group` — генерируются через `ai_tool_sync()` при каждом старте  
