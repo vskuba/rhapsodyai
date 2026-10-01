@@ -214,6 +214,12 @@ async def companion_session_rows(owner_unique_id: str,
     отбирает хвост разговора, `reversed` возвращает ему естественный порядок. Без
     первого мы взяли бы начало переписки вместо конца, без второго — модель
     отвечала бы на самую свежую строку как на самую важную.
+
+    ## ⚠⚠ Неподтверждённый ответ не показывается
+
+    `delivered_at IS NULL` значит «мы это сочинили, но собеседник не получил»:
+    обмен пишется внутри прогона, а отправляет его DatingAi после. Показать
+    такое агенту — заставить его продолжать несказанное.
     """
     owner_key = str(owner_unique_id or '').strip()
     companion_key = str(companion_unique_id or '').strip()
@@ -232,12 +238,25 @@ async def companion_session_rows(owner_unique_id: str,
     try:
         async with mysql_get_db_async() as db:
             await db.execute(
-                'SELECT s.`question`, s.`question_at`, s.`answer`, s.`answer_at`'
+                'SELECT s.`question`, s.`question_at`,'
+                # ⚠⚠ **Отбор половиной, а не строкой.** Доставка бывает только у
+                # нашей реплики: его слова доставлены самим фактом прихода.
+                # Отбери мы строку целиком — вместе с неподтверждённым ответом
+                # пропали бы и его слова, в том числе у «тишины», где нашего
+                # ответа нет вовсе.
+                "       IF(s.`delivered_at` IS NULL, '', s.`answer`) AS `answer`,"
+                '       s.`answer_at`'
                 '  FROM `companion_session` s'
                 '  JOIN `companion` o ON o.`id` = s.`owner_id`'
                 '  JOIN `companion` c ON c.`id` = s.`companion_id`'
                 ' WHERE o.`unique_id` = %s AND c.`unique_id` = %s'
                 '   AND s.`kind` = %s'
+                # ⚠⚠ **Строка, которой нечего показать, отсекается здесь — до
+                # `LIMIT`.** Отсеки её после выборки, и «последние двадцать»
+                # считали бы двадцать строк, из которых видимых три: лента
+                # выходила бы короче предела тем сильнее, чем хуже доходили
+                # ответы, — то есть ровно тогда, когда история нужнее всего.
+                "   AND (s.`question` <> '' OR s.`delivered_at` IS NOT NULL)"
                 # ⚠ По времени, а не по `id`: перенесённые обмены ложатся в базу
                 # позже, чем стоят в разговоре.
                 ' ORDER BY COALESCE(s.`question_at`, s.`answer_at`) DESC,'

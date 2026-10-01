@@ -21,7 +21,8 @@ import pytest
 from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
 from src.tool.companion.companion_session import (companion_session_add,
-                                                   companion_session_delivered)
+                                                   companion_session_delivered,
+                                                   companion_session_history)
 
 pytestmark = pytest.mark.core
 
@@ -101,3 +102,33 @@ class TestDeliveredMark:
 
         assert got['marked'] == 0
         assert got['why']
+
+
+class TestHistoryHidesUndelivered:
+    async def test_undelivered_answer_is_hidden(self, pair):
+        """⚠⚠ Неотмеченный ответ в ленту не идёт — ради этого всё и затеяно."""
+        await companion_session_add(pair[0], pair[1],
+                                    question='are you there?', answer='yes!')
+
+        got = await companion_session_history(pair[0], pair[1])
+
+        assert 'are you there?' in got, 'его слова доставлены самим приходом'
+        assert 'yes!' not in got, 'наш неотмеченный ответ показывать нельзя'
+
+    async def test_delivered_answer_is_shown(self, pair):
+        """Отмеченный — показывается."""
+        made = await companion_session_add(pair[0], pair[1],
+                                           question='are you there?', answer='yes!')
+        await companion_session_delivered(int(made['id']))
+
+        got = await companion_session_history(pair[0], pair[1])
+
+        assert 'yes!' in got
+
+    async def test_row_without_visible_half_is_skipped(self, pair):
+        """Строка, где нечего показать, в ленту не идёт вовсе."""
+        await companion_session_add(pair[0], pair[1], question='', answer='ghost')
+
+        got = await companion_session_history(pair[0], pair[1])
+
+        assert got == ''
