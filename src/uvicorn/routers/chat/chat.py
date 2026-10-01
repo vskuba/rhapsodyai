@@ -220,7 +220,20 @@ async def chat_ask_ai(
 
     try:
         result_text = await asyncio.wait_for(future, timeout=timeout)
-        return {"result": result_text}
+
+        # ⚠⚠ Номер обмена разговора — тому, кто будет отправлять реплику.
+        # `workflow_variables` движок мутирует на месте, поэтому после прогона в
+        # нём лежат финальные значения, в том числе положенное шагом записи.
+        #
+        # ⚠ Ноль — законный исход, а не отказ: агент промолчал, прогон ушёл в
+        # «Тишину», и доставлять нечего.
+        try:
+            message_id = int(framework_model.workflow_variables
+                             .get('talk_message_id') or 0)
+        except (TypeError, ValueError):
+            message_id = 0
+
+        return {"result": result_text, "message_id": message_id}
     except asyncio.TimeoutError:
         # Пытаемся отменить future, чтобы не висела в памяти
         future.cancel()
