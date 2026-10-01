@@ -139,7 +139,10 @@ async def companion_session_delivered(message_id: int) -> dict:
         await db.execute(
             'UPDATE `companion_session` SET `delivered_at` = %s'
             ' WHERE `id` = %s AND `delivered_at` IS NULL',
-            (datetime.now(), number))
+            # ⚠ UTC, как и `question_at`/`answer_at` у записи обмена: столбцы
+            # одной строки обязаны мериться одними часами. Разойдись они — и
+            # «доставлено раньше, чем сказано» выглядело бы поломкой кода.
+            (datetime.utcnow(), number))
         marked = int(db.rowcount or 0)
         await db.connection.commit()
 
