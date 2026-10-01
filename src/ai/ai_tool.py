@@ -35,9 +35,24 @@ async def ai_tool_sync(force: bool = False) -> int:
     if not tools_dir.exists():
         return 0
 
-    # Добавляем корень src в sys.path, чтобы внутренние импорты в файлах инструментов не падали
+    # Добавляем корень src в sys.path, чтобы внутренние импорты в файлах инструментов не падали.
+    #
+    # ⚠⚠ **В конец, а не в начало.** Папка `src` содержит пакеты, чьи имена
+    # совпадают с namespace общего слоя: `ai`, `mysql_`, `translator`. Стоя
+    # первым, `src` перекрывает слой — и инструмент, зовущий `ai.vision...`,
+    # падает `ModuleNotFoundError`, а сканер **молча пропускает файл**: строка в
+    # журнале, и инструмента просто нет в реестре.
+    #
+    # Пережили это только потому, что `mysql_` и `translator` в `src` — пакеты
+    # без `__init__.py`, то есть namespace-пакеты: Python сливает обе папки, и
+    # `mysql_.mysql_` находится в слое. У `src/ai` файл `__init__.py` есть, и
+    # слияния не происходит.
+    #
+    # Концом списка приоритет возвращается тому, что в `PYTHONPATH` (`/app` и
+    # `/app/py_modules`), а инструментам это ничего не ломает: проектное они
+    # зовут полным путём `src.xxx`, слой — короткими namespace.
     if str(src_root) not in sys.path:
-        sys.path.insert(0, str(src_root))
+        sys.path.append(str(src_root))
 
     all_tools_data = []
 
