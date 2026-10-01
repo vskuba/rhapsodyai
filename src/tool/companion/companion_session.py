@@ -110,6 +110,45 @@ async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
     return {'id': int(made or 0), 'saved': 1, 'why': ''}
 
 
+async def companion_session_delivered(message_id: int) -> dict:
+    """Отметить обмен доставленным: наш ответ дошёл до собеседника.
+
+    Args:
+        message_id: номер строки `companion_session` — его отдаёт
+            `companion_session_add` и возвращает `/chat/ask` полем `message_id`.
+
+    Returns:
+        dict: `marked` — 1, если отметка легла, 0 иначе; `why` — почему не легла.
+
+    ## ⚠⚠ Повтор времени не двигает
+
+    Условие `delivered_at IS NULL`. Без него повторная отправка сдвигала бы
+    отметку вперёд, и «когда это дошло» перестало бы отвечать на свой вопрос.
+
+    ## ⚠ Неизвестный номер — не отказ
+
+    Строки нет — отвечаем `marked: 0` и причиной. Исключение здесь заставило бы
+    панель повторять вызов, которому повторяться незачем: строка не появится.
+    """
+    number = int(message_id or 0)
+
+    if number <= 0:
+        return {'marked': 0, 'why': 'номер обмена не задан'}
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'UPDATE `companion_session` SET `delivered_at` = %s'
+            ' WHERE `id` = %s AND `delivered_at` IS NULL',
+            (datetime.now(), number))
+        marked = int(db.rowcount or 0)
+        await db.connection.commit()
+
+    if marked:
+        return {'marked': 1, 'why': ''}
+
+    return {'marked': 0, 'why': f'обмен {number} не найден либо уже отмечен'}
+
+
 async def companion_session_history(owner_unique_id: str,
                                     companion_unique_id: str,
                                     kind: str = 'chat',

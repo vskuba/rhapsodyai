@@ -42,6 +42,10 @@ class ChatMessagesJsonRequest(BaseModel):
     limit: int = 10
 
 
+class ChatMessageDeliveredRequest(BaseModel):
+    message_id: int
+
+
 @router.post("/chat/ask")
 async def chat_ask_ai(
         request: Request,
@@ -228,6 +232,24 @@ async def chat_ask_ai(
             f"Полный стек вызовов:\n{backtrace}"
         )
         raise e
+
+
+@router.post("/chat/message/delivered")
+async def chat_message_delivered(
+        json_request: ChatMessageDeliveredRequest,
+        user: AuthSession = Depends(AuthChecker([]))
+) -> dict:
+    """Отметить обмен разговора доставленным.
+
+    Зовёт DatingAi в момент, когда реплика реально ушла собеседнику. До этого
+    строка в `companion_session` лежит без отметки и в ленту для агента не идёт:
+    сочинённое — ещё не сказанное.
+
+    ⚠ Идемпотентна: повтор отвечает `marked: 0` и времени не двигает.
+    """
+    from src.tool.companion.companion_session import companion_session_delivered
+
+    return {"result": await companion_session_delivered(json_request.message_id)}
 
 
 @router.post("/chat/messages", include_in_schema=False)
