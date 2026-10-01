@@ -22,7 +22,8 @@ from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
 from src.tool.companion.companion_session import (companion_session_add,
                                                    companion_session_delivered,
-                                                   companion_session_history)
+                                                   companion_session_history,
+                                                   companion_session_rows)
 
 pytestmark = pytest.mark.core
 
@@ -132,3 +133,38 @@ class TestHistoryHidesUndelivered:
         got = await companion_session_history(pair[0], pair[1])
 
         assert got == ''
+
+
+class TestLimitCountsVisibleRows:
+    async def test_undelivered_tail_does_not_shrink_the_limit(self, pair):
+        """⚠⚠ Предел считает видимые строки, а не строки вообще.
+
+        Отбор по видимости стоит в `WHERE`, до `LIMIT` — нарочно: если условие
+        перенести туда, где оно смотрит на уже выбранные строки (фильтр в
+        Python после `fetchall`), база отдаст **последние** `limit` строк
+        подряд, а видимость уже не повлияет на то, что в выборку попало.
+        Здесь свежий хвост — сплошь неподтверждённые ответы без вопроса,
+        то есть целиком невидимый: буква в букву заберёт всю выборку и не
+        оставит места старым строкам, которые есть что показать. Лента
+        вернёт пустоту вместо полных пяти — ровно когда доставка хромает и
+        история агенту нужнее всего.
+        """
+        limit = 5
+
+        for i in range(limit):
+            await companion_session_add(pair[0], pair[1],
+                                        question=f'old question {i}',
+                                        answer=f'old answer {i}')
+
+        for i in range(limit):
+            # Пусто `question` и неотмеченный `answer` — строка без видимой
+            # половины, та самая, что отсекается условием в WHERE.
+            await companion_session_add(pair[0], pair[1], question='',
+                                        answer=f'fresh undelivered {i}')
+
+        rows = await companion_session_rows(pair[0], pair[1], limit=limit)
+
+        assert len(rows) == limit, (
+            'предел ушёл в невидимый хвост вместо старой видимой истории')
+        assert [row['question'] for row in rows] == [
+            f'old question {i}' for i in range(limit)]
