@@ -28,7 +28,7 @@ framework_model.entity_llm_current = entities_llm[0]  -- framework_model_create(
 | Точка создания | `llm_id` в теле `POST /agent` | `src/uvicorn/routers/agent/agent.py` |
 | Точка правки | `llm_id` в merge и `UPDATE` у `PUT /agent/{id}` | там же |
 | Select | «LLM default» в левой колонке формы, под «Workflow» | `data/uvicorn/template/admin/agent.html` |
-| Pin в движке | сортировка `entities_llm` перед выбором `entity_llm_current` | `src/ai/framework/agent/ai_framework_manager.py::framework_model_create` |
+| Pin в движке | сортировка `entities_llm` перед выбором `entity_llm_current` | `src/ai/ai_llm.py::ai_llm_pin`, зовёт `framework_model_create` |
 | Тесты | `tests/test_agent_llm_default.py` | по образцу `test_agent_variable.py` |
 | Док | `agent.md` (поле), `llm.md` (цепочка вызова и «Выбор LLM») | `.claude/docs/` |
 
@@ -55,17 +55,26 @@ ADD COLUMN `llm_id` INT NULL DEFAULT NULL
 
 ## 4. Движок: выбор LLM, когда приходит запрос на агента
 
-Одно место на все точки входа — `framework_model_create()` между двумя существующими
-строками (`entities_llm` уже в модели, `entity_llm_current` ещё не выбран):
+Одно место на все точки входа: `framework_model_create()` между двумя существующими
+строками (`entities_llm` уже в модели, `entity_llm_current` ещё не выбран) зовёт
+`ai_llm_pin()` — сортировка живёт в домене LLM, одним паттерном с соседней
+`ai_llm_filter_by_type()`:
 
 ```python
-# Пин агента — поверх порядка ноды: выбранная модель первой, остальное как было
-llm_id = entity_agent.get('llm_id')
-if llm_id and any(l.get('id') == llm_id for l in framework_model.entities_llm):
-    framework_model.entities_llm.sort(key=lambda l: l.get('id') != llm_id)
-    logger_info(f"📌 LLM агента: {name} → {pinned.get('name')} (agent.llm_id)")
-elif llm_id:
-    logger_info(f"⚠️ agent.llm_id={llm_id} агента '{name}' нет среди моделей ноды — берём порядок ноды")
+# src/ai/ai_llm.py — пин поверх порядка ноды: модель первой, остальное как было
+def ai_llm_pin(llm_list: list[dict], llm_id: int | None, agent_name: str = '') -> list[dict]:
+    if not llm_id:
+        return llm_list
+    if any(llm.get('id') == llm_id for llm in llm_list):
+        pinned = sorted(llm_list, key=lambda llm: llm.get('id') != llm_id)
+        logger_info(f"📌 LLM агента '{agent_name}' запинена: {pinned[0].get('name')} (agent.llm_id)")
+        return pinned
+    logger_info(f"⚠️ agent.llm_id={llm_id} агента '{agent_name}' нет среди моделей ноды — берём порядок ноды")
+    return llm_list
+
+# src/ai/framework/agent/ai_framework_manager.py — вызов из framework_model_create()
+framework_model.entities_llm = ai_llm_pin(
+    metadata.get('entities_llm', []), entity_agent.get('llm_id'), entity_agent.get('name', ''))
 ```
 
 Почему здесь, а не в вызывающих: `entity_agent` и `entities_llm` сходятся уже

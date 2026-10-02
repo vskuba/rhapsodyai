@@ -7,7 +7,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Awaitable, cast
 
-from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_queue_ttl_get, ai_llm_filter_by_type, ai_llm_image_generate, ai_llm_request_log
+from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_parallel_per_agent_max_get, ai_llm_queue_ttl_get, ai_llm_filter_by_type, ai_llm_pin, ai_llm_image_generate, ai_llm_request_log
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_marks_check, \
     ai_workflow_variables_input_get, ai_workflow_variables_render, \
@@ -83,22 +83,13 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.request_uuid = str(uuid.uuid4())
             framework_model.session_uuid = metadata.get('session_uuid', str(uuid.uuid4()))
             framework_model.entity_agent = entity_agent
-            framework_model.entities_llm = metadata.get('entities_llm', [])
-            # Пин агента (agent.llm_id) — поверх порядка ноды: выбранная модель
-            # первой, остальные модели ноды остаются подстраховкой при 429/503.
-            # Пина в списке ноды нет — список не трогаем, берём порядок ноды
-            llm_id = entity_agent.get('llm_id')
-            if llm_id and any(llm.get('id') == llm_id for llm in framework_model.entities_llm):
-                framework_model.entities_llm.sort(key=lambda llm: llm.get('id') != llm_id)
-                logger_info(
-                    f"📌 LLM агента '{entity_agent.get('name', '')}' запинена: "
-                    f"{framework_model.entities_llm[0].get('name', '?')} (agent.llm_id)"
-                )
-            elif llm_id:
-                logger_info(
-                    f"⚠️ agent.llm_id={llm_id} агента '{entity_agent.get('name', '')}' "
-                    f"нет среди моделей ноды — берём порядок ноды"
-                )
+            # Порядок ноды уже внутри entities_llm; пин агента (agent.llm_id),
+            # если он среди этих моделей, ставит первой ai_llm_pin
+            framework_model.entities_llm = ai_llm_pin(
+                metadata.get('entities_llm', []),
+                entity_agent.get('llm_id'),
+                entity_agent.get('name', ''),
+            )
             framework_model.entity_llm_current = framework_model.entities_llm[0] if framework_model.entities_llm else {}
             framework_model.metadata = metadata or {}
             framework_model.user_id = metadata.get('user_id', 0)

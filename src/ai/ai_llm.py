@@ -127,6 +127,37 @@ def ai_llm_filter_by_type(
         result = [r for r in result if output_type in (r.get('output_type') or 'text').split(',')]
     return result
 
+
+def ai_llm_pin(
+        llm_list: list[dict],
+        llm_id: int | None,
+        agent_name: str = '',
+) -> list[dict]:
+    """Ставит пин агента (agent.llm_id) первой в уже собранном списке ноды.
+
+    Сортировка устойчивая: остальные модели остаются в порядке ноды
+    (`rate_limit_at`, `position`) — подстраховка при 429/503 не переставляется.
+    Пина нет в списке (отфильтрован типом, снят с ноды) — список не трогаем,
+    предупреждение идёт в журнал.
+    """
+    if not llm_id:
+        return llm_list
+
+    if any(llm.get('id') == llm_id for llm in llm_list):
+        pinned = sorted(llm_list, key=lambda llm: llm.get('id') != llm_id)
+        logger_info(
+            f"📌 LLM агента '{agent_name}' запинена: "
+            f"{pinned[0].get('name', '?')} (agent.llm_id)"
+        )
+        return pinned
+
+    logger_info(
+        f"⚠️ agent.llm_id={llm_id} агента '{agent_name}' "
+        f"нет среди моделей ноды — берём порядок ноды"
+    )
+    return llm_list
+
+
 async def ai_llm_node_id_default_get() -> int:
     """Нода-фоллбэк (node.is_catchall=1) для агентов без своей ноды (node_id IS NULL)."""
     async with mysql_get_db_async() as db:
