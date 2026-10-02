@@ -60,8 +60,8 @@
 import pytest
 
 from tests_llm.dating_talk.conftest import (ANSWER_PHOTO, ANYWAY, ASK_ANALYSE,
-                                            FACTS_MAN,
-                                            FACTS_TALK, STEP_BRANCH, STEP_TOPIC,
+                                            FACTS_MAN, FACTS_TALK, STEP_BRANCH,
+                                            STEP_TOPIC, analyse_answer,
                                             talk_plan)
 
 pytestmark = pytest.mark.llm
@@ -75,16 +75,24 @@ pytestmark = pytest.mark.llm
 # сохранения, и на строке он падает «не удалось распарсить как валидный
 # JSON-массив». Заход при этом обрывается целиком, и красное говорит «агент не
 # ответил» — про формат ни слова. Поймано здесь же, первым прогоном.
-ANALYSED = {
-    'session_messages_result_processed': 'zz-summary',
-    'prompt_user_category': 'zz-category',
-    'prompt_user_tags': 'zz-tags',
-    'prompt_user_question': '1',
-    'search_query': 'zz-query',
-    'prompt_user_facts_companion': FACTS_MAN,
-    'prompt_user_facts_talk': FACTS_TALK,
-    'prompt_user_ignore': '0',
-}
+#
+# ⚠⚠ Собирается `analyse_answer`, а не пишется словарём: ключи шага живут в самом
+# шаге и меняются вместе с промптом. Здесь перечислено только то, что этот тест
+# **проверяет** — приметы на выходе, — остальное доберётся заглушкой.
+#
+# ⚠⚠⚠ `filler` здесь нарочный, а не пустой: тест проверяет **доезд** значений, а
+# трасса пишет только изменённое — пустая строка в неё не попадёт. С приметой
+# ключ, добавленный в шаг завтра, проверится сам, без правки этого файла.
+ANALYSED = analyse_answer(
+    filler='zz-filler',
+    session_messages_result_processed='zz-summary',
+    prompt_user_category='zz-category',
+    prompt_user_tags='zz-tags',
+    prompt_user_question='1',
+    search_query='zz-query',
+    prompt_user_facts_companion=FACTS_MAN,
+    prompt_user_facts_talk=FACTS_TALK,
+    prompt_user_ignore='0')
 
 # Придуманное подпрогоном — тоже готовая запись, и по той же причине.
 FACTS_GIRL = ('[{"language": "en", "tags": "weather", '
