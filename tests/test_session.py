@@ -147,6 +147,66 @@ class TestSessionFlow:
         no_match_data = no_match_response.json()
         assert no_match_data["result"] is None
 
+    async def test_session_list_is_paged_by_default(self, client: httpx.AsyncClient):
+        """⚠⚠ Выдача ограничена БЕЗ просьбы: иначе это 5 МБ на 27 тысяч сессий.
+
+        Стережётся именно умолчание. Вызывающий, который про страницы не
+        знает, обязан получить страницу, а не всё подряд, — ради этого
+        умолчание и заводилось.
+        """
+        response = await client.post("/session/list", json={})
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert len(data["result"]) <= data["per_page"]
+        assert data["page"] == 1
+        assert data["total"] >= len(data["result"])
+        assert data["pages"] >= 1
+
+    async def test_session_list_pages_do_not_overlap(self, client: httpx.AsyncClient):
+        """Соседние страницы не повторяют друг друга и идут свежими вперёд."""
+        first = (await client.post("/session/list", json={"per_page": 5})).json()
+        second = (await client.post("/session/list",
+                                    json={"per_page": 5, "page": 2})).json()
+
+        if second["total"] <= 5:
+            pytest.skip("на установке меньше двух страниц сессий")
+
+        uuids_first = {row["session_uuid"] for row in first["result"]}
+        uuids_second = {row["session_uuid"] for row in second["result"]}
+
+        assert not (uuids_first & uuids_second), "страницы пересеклись"
+        assert (first["result"][-1]["last_message_at"]
+                >= second["result"][0]["last_message_at"]), "порядок не по убыванию"
+
+    async def test_session_list_per_page_has_a_ceiling(self, client: httpx.AsyncClient):
+        """Потолок страницы не обойти запросом: иначе предел ничего не значит."""
+        response = await client.post("/session/list", json={"per_page": 100000})
+
+        assert response.status_code == 200
+        assert response.json()["per_page"] <= 500
+
+    async def test_session_agent_list(self, client: httpx.AsyncClient):
+        """Справочник отборов: пары «агент + пользователь» и честное «всего».
+
+        ⚠ `total` берётся отдельным запросом, а не суммой пар: сессия со
+        строками под разными парами сложилась бы дважды. Здесь это и
+        проверяется — сумма пар сойтись не обязана, а `total` обязан совпасть
+        с тем, что отдаёт список.
+        """
+        response = await client.get("/session/agent/list")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert isinstance(data["result"], list)
+        assert data["total"] > 0
+
+        listed = (await client.post("/session/list", json={"per_page": 1})).json()
+
+        assert data["total"] == listed["total"]
+
     async def test_session_messages(self, client: httpx.AsyncClient):
         """Test retrieving messages for a specific session UUID."""
         response = await client.post(

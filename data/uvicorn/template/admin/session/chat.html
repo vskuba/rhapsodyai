@@ -1,0 +1,84 @@
+{# Вкладка «Чат»: разговоры пары (`companion_session`).
+   Подключается включением из `admin/session.html`; стили — `css/session.css`,
+   поведение — `js/session/chat.js`.
+
+   Строка здесь — не сообщение, а ОБМЕН: «он спросил — мы ответили», со
+   временем каждой половины и отметкой доставки. Разговор опознаётся тройкой:
+   наша сторона, собеседник, канал (чат и почта — разные разговоры одной пары).
+
+   ⚠ Кнопки удаления нет намеренно: разговор — это память агента, из него
+   собирается лента для промпта. Довод целиком —
+   `src/uvicorn/routers/session/session_companion.py`, шапка. #}
+<div class="tab-panel" id="tab-chat">
+    <div class="session-body-container">
+
+        <div class="session-sidebar">
+            <div class="filter-group">
+                <div class="sidebar-title">Фильтры</div>
+
+                <div class="filter-field">
+                    <label for="chatSessionOwner" class="filter-label">Наша сторона</label>
+                    <select id="chatSessionOwner" class="form-control">
+                        <option>Загрузка...</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="chatSessionCompanion" class="filter-label">Собеседник</label>
+                    <select id="chatSessionCompanion" class="form-control">
+                        <option>Загрузка...</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="chatSessionKind" class="filter-label">Канал</label>
+                    {# Варианты приходят с сервера (`/session/companion/kind/list`):
+                       хозяин списка — инструмент, который в таблицу пишет. #}
+                    <select id="chatSessionKind" class="form-control">
+                        <option value="">Все каналы</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="chatSessionDelivered" class="filter-label">Доставка ответа</label>
+                    {# ⚠ По умолчанию «Доставлен»: разговор — это то, что
+                       собеседник получил. Неотправленный ответ в ленте стоит
+                       рядом с отправленными и читается как сказанное, хотя его
+                       никто не слышал. Кому нужно именно оно — у отбора есть
+                       «Не доставлен», и это отдельный вопрос, а не фон. #}
+                    <select id="chatSessionDelivered" class="form-control">
+                        <option value="">Любая</option>
+                        <option value="yes" selected>Доставлен</option>
+                        <option value="no">Не доставлен</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="chatSessionLimit" class="filter-label">Limit обменов</label>
+                    <select id="chatSessionLimit" class="form-control">
+                        <option value="20">20</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="session-group">
+                <div class="session-group-header">
+                    <div class="sidebar-title" style="margin-bottom: 0;">Разговоры</div>
+                </div>
+
+                <select id="chatSessionSelect" class="session-select" size="4"></select>
+            </div>
+        </div>
+
+        <div class="session-detail-view">
+            <div class="detail-header" id="chatSessionTitle">Выберите разговор</div>
+            <div class="session-stream" id="chatSessionStream">
+                <div class="placeholder">Обмены разговора будут отображены здесь</div>
+            </div>
+        </div>
+
+    </div>
+</div>

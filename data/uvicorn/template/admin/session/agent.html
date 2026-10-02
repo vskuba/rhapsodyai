@@ -1,0 +1,85 @@
+{# Вкладка «Агенты»: журнал вызова LLM (`agent_session`).
+   Подключается включением из `admin/session.html`; стили — `css/session.css`,
+   поведение — `js/session/agent.js`.
+
+   ⚠ Отбора по собеседнику здесь нет намеренно: столбец
+   `agent_session.companion_id` снят миграцией (`…_agent_session_companion_drop`),
+   и фильтр «Собеседник» всё это время не фильтровал ничего. Собеседник — на
+   соседней вкладке, где он настоящий.
+
+   ⚠ Идентификаторы элементов у вкладок РАЗНЫЕ (`agentSession*` против
+   `chatSession*`): панели лежат в одном документе, и одинаковый `id` отдал бы
+   обе вкладки тому скрипту, который инициализировался первым. #}
+<div class="tab-panel active" id="tab-agent">
+    <div class="session-body-container">
+
+        <div class="session-sidebar">
+            <div class="filter-group">
+                <div class="sidebar-title">Фильтры</div>
+
+                <div class="filter-field">
+                    <label for="agentSessionAgent" class="filter-label">Агент</label>
+                    <select id="agentSessionAgent" class="form-control">
+                        <option>Загрузка...</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="agentSessionUser" class="filter-label">Пользователь</label>
+                    <select id="agentSessionUser" class="form-control">
+                        <option>Загрузка...</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="agentSessionKind" class="filter-label">Тип записи</label>
+                    <select id="agentSessionKind" class="form-control" multiple size="5"
+                            style="height: 100px;">
+                        <option>Загрузка...</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="agentSessionLimit" class="filter-label">Limit сообщений</label>
+                    <select id="agentSessionLimit" class="form-control">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="session-group">
+                <div class="session-group-header">
+                    <div class="sidebar-title" style="margin-bottom: 0;">Сессии</div>
+
+                    <button type="button"
+                            class="btn-session-delete{% if request.session.get('role') != 'admin' %} btn-session-delete-hide{% endif %}"
+                            id="agentSessionDelete"
+                            title="Удалить выбранную сессию (всю переписку)" disabled>🗑
+                    </button>
+                </div>
+
+                <select id="agentSessionSelect" class="session-select" size="4"></select>
+
+                {# Листалка: сессий на установке десятки тысяч, и отдавать их
+                   одним списком — пять мегабайт на заход. Устройство и числа —
+                   `.claude/docs/session.md`, §2. #}
+                <div class="session-pager">
+                    <button type="button" id="agentSessionPrev" title="Страница новее">‹</button>
+                    <span id="agentSessionPageInfo">—</span>
+                    <button type="button" id="agentSessionNext" title="Страница старее">›</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="session-detail-view">
+            <div class="detail-header" id="agentSessionTitle">Выберите сессию</div>
+            <div class="session-stream" id="agentSessionStream">
+                <div class="placeholder">Поток сообщений будет отображён здесь</div>
+            </div>
+        </div>
+
+    </div>
+</div>
