@@ -8,7 +8,8 @@
 `agent` — записи «кто отвечает»: связка `name` (системное имя, глобально
 уникальное — это же `document_id` в Qdrant и заголовок фактов), `title`
 (отображаемое), `node_id` (узел LLM, см. node.md), `workflow_id`
-(сценарий, см. workflow.md), `prompt_system`, `greeting`,
+(сценарий, см. workflow.md), `llm_id` (модель по умолчанию, см. llm.md),
+`prompt_system`, `greeting`,
 `workflow_variable`, `agent_variable` (§6). Привязка «агент ↔ роль» — таблица
 `agent_role`, меняется полем `role_ids` в `POST`/`PUT /agent`; через неё
 не-админы видят подмножество агентов и сессий (session.md).

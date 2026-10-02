@@ -499,6 +499,13 @@
                             </select>
                         </div>
                     </div>
+
+                    <div class="form-group">
+                        <label>LLM default</label>
+                        <select id="llm_id" class="form-control">
+                            <option value="">Нет</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Правая колонка: Только System Prompt -->
@@ -567,8 +574,10 @@
     langSwitcher.fieldBind(document.getElementById('prompt_system'));
 
     // Смена ноды в форме — обновляем набор языков (введенные переводы сохраняются в памяти поля)
+    // и список «LLM default»: движок будет брать модели из нового списка ноды
     document.getElementById('node_id').addEventListener('change', async (e) => {
         langSwitcher.setLanguages(await nodeLanguagesGet(e.target.value));
+        await llmOptionsFill(e.target.value);
     });
 
     const agentListContainer = document.getElementById('agentList');
@@ -577,6 +586,12 @@
     const deleteBtn = document.getElementById('deleteBtn');
 
     let allWorkflows = [];
+    // Справочник моделей и кэш деталей нод: select «LLM default» рисует модели
+    // ноды в порядке ноды (rate_limit_at, position), не дергая узел вторично
+    let allLlms = [];
+    const nodeLlmCache = new Map();
+    // Нода-фоллбэк движка: вне своей ноды агент получает модели из catchall
+    let catchallNodeId = null;
 
     // Карусель нод: список показывает агентов одной ноды, стрелки листают их по кругу
     let carouselNodes = [];
@@ -594,11 +609,12 @@
         if (!agentListContainer) return;
 
         try {
-            const [agentsRes, nodesRes, workflowRes, roleRes] = await Promise.all([
+            const [agentsRes, nodesRes, workflowRes, roleRes, llmRes] = await Promise.all([
                 getData('/agent/list'),
                 getData('/node/list'),
                 getData('/workflow/list'),
-                getData('/role/list')
+                getData('/role/list'),
+                getData('/llm/list')
             ]);
 
             // 1. Сортируем группы по полю position (от меньшего к большему)
@@ -607,6 +623,7 @@
             const workflows = workflowRes.result;
             allWorkflows = workflows || [];
             const roles = roleRes.result;
+            allLlms = llmRes.result || [];
 
             // 2. Заполняем Select групп (в отсортированном порядке)
             const nodeSelect = document.getElementById('node_id');
@@ -650,6 +667,10 @@
                 setSelectedRoles(selectedRoleIds);
             }
 
+            // «LLM default»: вне ноды движок тоже берёт по catchall — список живёт по той же схеме
+            catchallNodeId = (nodes.find(n => n.is_catchall) || {}).id ?? null;
+            await llmOptionsFill(nodeSelect.value);
+
             renderNodeList(agents, nodes);
 
         } catch (e) {
@@ -668,6 +689,44 @@
     function getSelectedRoles() {
         const roleSelect = document.getElementById('role_id');
         return Array.from(roleSelect.selectedOptions).map(opt => parseInt(opt.value, 10));
+    }
+
+    /**
+     * Опции select «LLM default»: «Нет» + модели эффективной ноды в порядке ноды.
+     * Для агента вне ноды эффективная нода — catchall: там движок берёт так же.
+     * Подсвечивается пин из target (открытый агент), иначе — что select держал.
+     * Пина нет в новом списке — стоит «Нет», и сохранение обнулит значение
+     */
+    async function llmOptionsFill(nodeId, target = null) {
+        const llmSelect = document.getElementById('llm_id');
+        if (!llmSelect) return;
+        const pinned = target !== null ? String(target) : llmSelect.value;
+
+        let llmIds = [];
+        const effectiveId = nodeId || catchallNodeId;
+        if (effectiveId) {
+            if (!nodeLlmCache.has(String(effectiveId))) {
+                const res = await getData(`/node/${effectiveId}`);
+                nodeLlmCache.set(String(effectiveId), (res.result && res.result.llm_ids) || []);
+            }
+            llmIds = nodeLlmCache.get(String(effectiveId));
+        }
+
+        llmSelect.innerHTML = '';
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'Нет';
+        llmSelect.appendChild(none);
+        llmIds.forEach(id => {
+            const llm = allLlms.find(l => String(l.id) === String(id));
+            if (!llm) return;
+            const opt = document.createElement('option');
+            opt.value = llm.id;
+            opt.textContent = llm.name;
+            llmSelect.appendChild(opt);
+        });
+
+        llmSelect.value = [...llmSelect.options].some(o => o.value === pinned) ? pinned : '';
     }
 
     function renderNodeList(agents, nodes) {
@@ -811,6 +870,10 @@
 
             setSelectedRoles(agent.role_ids || []);
 
+            // «LLM default»: список моделей ноды открытого агента в порядке ноды,
+            // пин показан над ними; пина нет в списке — стоит «Нет»
+            await llmOptionsFill(agent.node_id, agent.llm_id || '');
+
             // Запоминаем ноду открытого агента: после перезагрузки страницы карусель
             // вернется к ней, а не к первой по счету
             sessionStorage.setItem(AGENT_NODE_KEY, String(agent.node_id || 'none'));
@@ -890,6 +953,7 @@
             title: document.getElementById('title').value,
             group_name: document.getElementById('group_name').value.trim() || null,
             workflow_id: document.getElementById('workflow_id').value || null,
+            llm_id: document.getElementById('llm_id').value || null,
             role_ids: currentRoleIds,
             prompt_system: langSwitcher.fieldSerialize(document.getElementById('prompt_system')),
             greeting: langSwitcher.fieldSerialize(document.getElementById('greeting')),
