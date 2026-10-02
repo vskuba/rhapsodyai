@@ -128,7 +128,11 @@ async def planning_phase_run(
             })
             agent_manager.framework_workflow_run(framework_model, future, loop)
 
-            phase_timeout = await _timeout_get(entities_llm[0].get('id') if entities_llm else None)
+            # Модель берём из собранной модели, а не первую из entities_llm: пин агента
+            # (agent.llm_id) мог поставить первой другую, и срок обязан мериться по той,
+            # что вправду отвечает. Иначе пин медленнее первой по ноде получает её срок
+            # и фаза срывается по таймауту раньше, чем успевает ответить
+            phase_timeout = await _timeout_get(framework_model.entity_llm_current.get('id'))
             logger_info(f'planning [{phase}]: таймаут {phase_timeout:.0f}s')
             await asyncio.wait_for(future, timeout=phase_timeout)
 
