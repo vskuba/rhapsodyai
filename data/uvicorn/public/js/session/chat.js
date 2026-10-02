@@ -15,7 +15,8 @@
 // «Что сочинили, но не отправили» и есть вопрос, с которым сюда приходят.
 
 import {postData} from '../api.js';
-import {htmlEscape, selectFill, selectValueRestore, stampList} from './util.js';
+import {htmlEscape, labelClip, selectFill, selectValueRestore,
+        stampList} from './util.js';
 
 const CHAT_STORE_PREFIX = 'session_chat_';
 
@@ -32,6 +33,15 @@ let chatRequest = 0;
 // ULID — 26 знаков в алфавите Крокфорда (без I, L, O, U). У этого семейства
 // ключей приставки нет вовсе, и узнаётся оно только по форме.
 const CHAT_SOURCE_ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+// Сколько знаков ключа стороны влезает в строку списка рядом с датой, стрелкой
+// и счётчиком. Посчитано по ширине поля (`css/session.css`): шире — обрежет сам
+// `<select>`, и пропадёт хвост строки, а не ключ.
+//
+// ⚠ Режется ХВОСТ ключа, то есть имя, а номер остаётся: `283331_dwight_car…`.
+// Это та половина, ради которой ключ в списке и стоит, — имя целиком видно в
+// шапке открытого разговора и в подсказке.
+const CHAT_KEY_MAX = 18;
 
 const el = {};
 const state = {
@@ -178,16 +188,21 @@ async function pairsLoad() {
     el.list.innerHTML = '';
 
     pairs.forEach(one => {
-        // Строка списка отвечает на «кто с кем»: обе стороны, в том же порядке
-        // и теми же именами, что в шапке ленты и в подписях половин обмена.
+        // Строка списка отвечает на «кто с кем» — КЛЮЧАМИ обеих сторон, а не
+        // именами.
+        //
+        // ⚠⚠ Имена не уникальны: двух Diana и двух Elena в списке не
+        // различить никак, а они разные люди. Ключ несёт номер анкеты, и он
+        // единственное, что в строке списка отвечает на «которая из них».
+        // Имя при этом не теряется: оно стоит в ключе и целиком — в шапке
+        // открытого разговора и в подсказке.
         //
         // ⚠ Длинная строка в `<select>` обрезается справа и БЕЗ многоточия —
-        // то, что не влезло, выглядит как конец имени. Поэтому у списка свои
-        // ширина и кегль (`css/session.css`), а полная подпись с ключами
-        // сторон всегда есть подсказкой.
+        // то, что не влезло, выглядит как конец ключа. Поэтому обе стороны
+        // режутся явно (`labelClip`), а целиком ключи есть подсказкой.
         const option = new Option(
-            `${stampList(one.last_at)} ${sideLabel(one, 'owner')}`
-            + ` → ${sideLabel(one, 'companion')}`
+            `${stampList(one.last_at)} ${labelClip(one.owner_unique_id, CHAT_KEY_MAX)}`
+            + ` → ${labelClip(one.companion_unique_id, CHAT_KEY_MAX)}`
             + ` ${one.kind === 'mail' ? '✉' : '💬'}${one.exchange_count}`
             + `${one.undelivered_count > 0 ? ` ⏳${one.undelivered_count}` : ''}`,
             String(one.companion_id));
@@ -244,7 +259,7 @@ function exchangesRender(pair, rows) {
     // в шапке неразличимы.
     el.title.title = pairTip(pair);
     el.title.innerHTML =
-        `${htmlEscape(sideLabel(pair, 'owner'))} ↔ ${htmlEscape(sideLabel(pair, 'companion'))}`
+        `${htmlEscape(sideFull(pair, 'owner'))} ↔ ${htmlEscape(sideFull(pair, 'companion'))}`
         + `<span class="detail-header-note">· ${htmlEscape(pair.kind)},`
         + ` показано ${rows.length} из ${pair.exchange_count} обменов</span>`;
 
@@ -479,7 +494,7 @@ function sourceLabel(sourceUid) {
     return value.split(/[:\-]/)[0] || value;
 }
 
-/** Как называть сторону: заголовок, иначе ключ записи.
+/** Как называть сторону коротко: заголовок, иначе ключ записи.
  *
  * ⚠ Ключ — это `{номер}_{имя}` (`128282_gerard`), а заголовок — имя человека.
  * Пустой заголовок бывает: у трети людей в ленте имя нелатинское или его нет,
@@ -488,6 +503,25 @@ function sourceLabel(sourceUid) {
 function sideLabel(pair, side) {
     return pair[`${side}_title`] || pair[`${side}_unique_id`]
         || `#${pair[`${side}_id`]}`;
+}
+
+/** Сторона полностью: «Имя (ключ)».
+ *
+ * ⚠⚠ Номер в скобках обязателен. **Имена не уникальны**: на установке две
+ * Diana, две Elena, две Natalia — разные анкеты на сайте, разные люди. По
+ * одному имени в шапке нельзя сказать, чья это переписка; номер анкеты
+ * (`418024_diana` против `643694_diana`) говорит это однозначно.
+ *
+ * ⚠ Заголовок, равный ключу, не задваивается: такие записи заводили без
+ * имени, и «999029_olga (999029_olga)» ничего не добавляет.
+ */
+function sideFull(pair, side) {
+    const title = pair[`${side}_title`];
+    const key = pair[`${side}_unique_id`];
+
+    if (!key) return title || `#${pair[`${side}_id`]}`;
+
+    return title && title !== key ? `${title} (${key})` : key;
 }
 
 function countOf(pairs) {
