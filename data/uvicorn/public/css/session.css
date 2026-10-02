@@ -382,7 +382,7 @@
 /* Его реплика и наша различаются фоном, а не стороной: читают их подряд, и
    прыгающий влево-вправо текст в длинной переписке теряет взгляд. */
 .chat-half-his .chat-half-text {
-    background: #f4f6f8;
+    background: #e5e7e9;
 }
 
 .chat-half-ours .chat-half-text {
