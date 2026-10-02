@@ -62,6 +62,15 @@
                 </div>
 
                 <select id="agentSessionSelect" class="session-select" size="4"></select>
+
+                {# Листалка: сессий на установке десятки тысяч, и отдавать их
+                   одним списком — пять мегабайт на заход. Устройство и числа —
+                   `.claude/docs/session.md`, §2. #}
+                <div class="session-pager">
+                    <button type="button" id="agentSessionPrev" title="Страница новее">‹</button>
+                    <span id="agentSessionPageInfo">—</span>
+                    <button type="button" id="agentSessionNext" title="Страница старее">›</button>
+                </div>
             </div>
         </div>
 

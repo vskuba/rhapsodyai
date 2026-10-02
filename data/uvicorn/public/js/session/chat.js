@@ -15,7 +15,7 @@
 // «Что сочинили, но не отправили» и есть вопрос, с которым сюда приходят.
 
 import {postData} from '../api.js';
-import {htmlEscape, selectFill, selectValueRestore} from './util.js';
+import {htmlEscape, selectFill, selectValueRestore, stampList} from './util.js';
 
 const CHAT_STORE_PREFIX = 'session_chat_';
 
@@ -186,7 +186,7 @@ async function pairsLoad() {
         // ширина и кегль (`css/session.css`), а полная подпись с ключами
         // сторон всегда есть подсказкой.
         const option = new Option(
-            `${fmtTz(one.last_at)} ${sideLabel(one, 'owner')}`
+            `${stampList(one.last_at)} ${sideLabel(one, 'owner')}`
             + ` → ${sideLabel(one, 'companion')}`
             + ` ${one.kind === 'mail' ? '✉' : '💬'}${one.exchange_count}`
             + `${one.undelivered_count > 0 ? ` ⏳${one.undelivered_count}` : ''}`,

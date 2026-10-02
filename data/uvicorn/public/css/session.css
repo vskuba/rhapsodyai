@@ -152,6 +152,40 @@
     margin-bottom: 10px;
 }
 
+/* Листалка под списком сессий. Та же, что внизу страницы «Журнал», только
+   прижата к сайдбару: список там же, где и отбор. */
+.session-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding-top: 8px;
+    font-size: 11px;
+    color: #718096;
+    flex-shrink: 0;
+}
+
+.session-pager button {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    line-height: 1;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+    background: #fff;
+    color: #4a5568;
+    cursor: pointer;
+}
+
+.session-pager button:hover:not(:disabled) {
+    background: #edf2f7;
+}
+
+.session-pager button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
 .btn-session-delete {
     width: 26px;
     height: 26px;

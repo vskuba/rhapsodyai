@@ -28,24 +28,31 @@ const AGENT_KIND_DEFAULT = ['user-prompt', 'response-final'];
 const AGENT_NAME_MAX = 28;
 
 // Номер последнего начатого запроса; ответ не своего номера выбрасывается.
-// ⚠ Полная выдача списка — 780 КБ и доли секунды: за это время отбор успевают
-// сменить дважды, и без счётчика список остаётся от первого запроса, а лента —
-// от второго. Довод подробнее — в соседней вкладке (`chat.js`).
+// ⚠ За время ответа отбор успевают сменить дважды, и без счётчика список
+// остаётся от первого запроса, а лента — от второго. Довод подробнее — в
+// соседней вкладке (`chat.js`).
 let agentRequest = 0;
 
 const el = {};
 const state = {
-    // Полная выборка сессий — из неё строятся оба отбора со счётчиками.
+    // Пары «агент + пользователь» со счётом сессий — из них строятся отборы.
     //
-    // ⚠ Отфильтрованным результатом её перезаписывать нельзя: выбрав агента,
-    // мы бы потеряли из списка всех остальных и вернуться к ним стало бы
-    // нечем. На этом уже спотыкались — пустел список собеседников.
-    sessions: [],
+    // ⚠⚠ Это НЕ список сессий. Прежде отборы собирались из полной выдачи
+    // `/session/list`, но список стал страничным: собери их из страницы — и
+    // в отборе останутся только те, кто говорил последним. Пар два десятка,
+    // сессий двадцать восемь тысяч; спрашивать надо то, что нужно.
+    pairs: [],
+    // Сессий всего под правами — честное число от сервера, не сумма пар.
+    sessionsTotal: 0,
     agents: {},
     users: {},
     // Сообщения открытой сессии: тип записи отбирается на клиенте, и
     // перевыбор не должен стоить ещё одного запроса.
     messages: [],
+    // Страница списка: номер, сколько всего страниц и сессий под отбором.
+    page: 1,
+    pages: 1,
+    total: 0,
 };
 
 export async function sessionAgentInit() {
@@ -57,17 +64,14 @@ export async function sessionAgentInit() {
     el.remove = document.getElementById('agentSessionDelete');
     el.title = document.getElementById('agentSessionTitle');
     el.stream = document.getElementById('agentSessionStream');
+    el.pagePrev = document.getElementById('agentSessionPrev');
+    el.pageNext = document.getElementById('agentSessionNext');
+    el.pageInfo = document.getElementById('agentSessionPageInfo');
 
     try {
         await Promise.all([dictionariesLoad(), kindsLoad()]);
         filtersBind();
-
-        // ⚠ Без отбора список сессий — это та самая полная выборка, которую
-        // уже принёс `dictionariesLoad`: второй такой запрос стоил бы ещё
-        // 780 КБ на каждый заход. Прежняя страница платила их всегда — и
-        // ровно за тот же ответ.
-        if (filtersEmpty()) sessionsShow(state.sessions);
-        else await sessionsLoad();
+        await sessionsLoad();
     } catch (e) {
         el.stream.innerHTML =
             `<div class="placeholder">Ошибка загрузки: ${htmlEscape(e.message)}</div>`;
@@ -77,12 +81,12 @@ export async function sessionAgentInit() {
 // ===================== Справочники и отборы =====================
 
 async function dictionariesLoad() {
-    const [agents, users, sessions] = await Promise.all([
+    const [agents, users, pairs] = await Promise.all([
         fetch('/agent/list').then(r => r.json()).catch(() => ({})),
         // ⚠ Не падаем без пользователей: `/user/list` требует своего права, и
         // роль без него должна видеть сессии, просто без имён в отборе.
         fetch('/user/list').then(r => r.json()).catch(() => ({})),
-        postData('/session/list', {}),
+        fetch('/session/agent/list').then(r => r.json()),
     ]);
 
     (agents.result || []).forEach(one => {
@@ -91,7 +95,10 @@ async function dictionariesLoad() {
     (users.result || []).forEach(one => {
         state.users[one.id] = one;
     });
-    state.sessions = sessions.result || [];
+    state.pairs = pairs.result || [];
+    // ⚠ Не сумма пар: сессия со строками под разными парами сложилась бы
+    // дважды, и «всего» разошлось бы с числом под списком.
+    state.sessionsTotal = pairs.total || 0;
 
     agentFill();
     userFill();
@@ -113,8 +120,8 @@ function agentFill() {
     // открывалась на первом агенте и вернуться к полной выдаче не давала
     // вовсе: такого варианта в списке не было.
     selectFill(el.agent, [
-        {value: '', text: `Все агенты (${state.sessions.length})`},
-        ...entriesOf(state.sessions, 'agent_id', state.agents),
+        {value: '', text: `Все агенты (${state.sessionsTotal})`},
+        ...entriesOf(state.pairs, 'agent_id', state.agents),
     ]);
 }
 
@@ -124,11 +131,11 @@ function userFill() {
     // Сужение в обе стороны выглядит разумным ровно до первого применения:
     // каждый отбор переписывает соседний, и вернуть «всех» становится нечем.
     const scoped = agentId
-        ? state.sessions.filter(one => one.agent_id === agentId)
-        : state.sessions;
+        ? state.pairs.filter(one => one.agent_id === agentId)
+        : state.pairs;
 
     selectFill(el.user, [
-        {value: '', text: `Все пользователи (${scoped.length})`},
+        {value: '', text: `Все пользователи (${sessionsOf(scoped)})`},
         ...entriesOf(scoped, 'user_id', state.users),
     ]);
 }
@@ -148,17 +155,23 @@ async function kindsLoad() {
 }
 
 function filtersBind() {
+    // ⚠ Смена отбора возвращает на первую страницу. Иначе «страница 40» под
+    // новым отбором либо пуста, либо показывает чужую середину — и то и
+    // другое читается как «фильтр сломался».
     el.agent.onchange = async () => {
         sessionStorage.setItem(`${AGENT_STORE_PREFIX}agent_id`, el.agent.value);
         userFill();
         sessionStorage.setItem(`${AGENT_STORE_PREFIX}user_id`, el.user.value);
-        await sessionsLoad();
+        await sessionsLoad(1);
     };
 
     el.user.onchange = async () => {
         sessionStorage.setItem(`${AGENT_STORE_PREFIX}user_id`, el.user.value);
-        await sessionsLoad();
+        await sessionsLoad(1);
     };
+
+    el.pagePrev.onclick = () => sessionsLoad(state.page - 1);
+    el.pageNext.onclick = () => sessionsLoad(state.page + 1);
 
     el.kind.onchange = () => {
         sessionStorage.setItem(`${AGENT_STORE_PREFIX}kinds`,
@@ -178,7 +191,7 @@ function filtersBind() {
 
 // ===================== Сессии =====================
 
-async function sessionsLoad() {
+async function sessionsLoad(page = 1) {
     const request = ++agentRequest;
 
     el.list.innerHTML = '<option>Загрузка...</option>';
@@ -186,14 +199,31 @@ async function sessionsLoad() {
     const data = await postData('/session/list', {
         agent_id: numberOf(el.agent.value) || null,
         user_id: numberOf(el.user.value) || null,
+        page: Math.max(1, page),
     });
 
     if (request !== agentRequest) return;
 
+    state.page = data.page || 1;
+    state.pages = data.pages || 1;
+    state.total = data.total || 0;
+    pagerShow();
+
     await sessionsShow(data.result || []);
 }
 
-/** Показать список сессий и открыть верхнюю. */
+/** Листалка под списком: где мы и сколько всего. */
+function pagerShow() {
+    // Всего сессий, а не страниц, — главное число: по нему видно, насколько
+    // узок отбор. Номер страницы рядом отвечает «куда я забрёл».
+    el.pageInfo.textContent = state.total
+        ? `${state.page} / ${state.pages} · сессий ${state.total}`
+        : '—';
+    el.pagePrev.disabled = state.page <= 1;
+    el.pageNext.disabled = state.page >= state.pages;
+}
+
+/** Показать страницу списка и открыть верхнюю сессию. */
 async function sessionsShow(sessions) {
     el.list.innerHTML = '';
     sessions.forEach(one => {
@@ -257,7 +287,9 @@ async function sessionRemove() {
     try {
         await deleteData(`/session/${uuid}`);
         showNotification('Сессия удалена', 'success');
-        await sessionsLoad();
+        // Остаёмся на той же странице: удалили одну из пятидесяти, и
+        // прыжок в начало списка потерял бы место, где человек работал.
+        await sessionsLoad(state.page);
     } catch (e) {
         showNotification(`Ошибка удаления: ${e.message}`, 'error');
         el.remove.disabled = false;
@@ -331,8 +363,9 @@ function kindsSelected() {
     return [...el.kind.selectedOptions].map(one => one.value);
 }
 
-function filtersEmpty() {
-    return !numberOf(el.agent.value) && !numberOf(el.user.value);
+/** Сколько сессий покрывают эти пары «агент + пользователь». */
+function sessionsOf(pairs) {
+    return pairs.reduce((sum, one) => sum + Number(one.sessions || 0), 0);
 }
 
 function numberOf(value) {
@@ -341,12 +374,19 @@ function numberOf(value) {
     return isNaN(number) ? 0 : number;
 }
 
-/** Варианты отбора «запись (сколько сессий)», отсортированные по названию. */
-function entriesOf(sessions, field, dictionary) {
+/** Варианты отбора «запись (сколько сессий)», отсортированные по названию.
+ *
+ * ⚠ Складывает `sessions` строк-пар, а не считает сами строки: пара «агент +
+ * пользователь» одна, а сессий за ней могут быть сотни.
+ */
+function entriesOf(pairs, field, dictionary) {
     const counts = {};
 
-    sessions.forEach(one => {
-        if (one[field]) counts[one[field]] = (counts[one[field]] || 0) + 1;
+    pairs.forEach(one => {
+        if (one[field]) {
+            counts[one[field]] = (counts[one[field]] || 0)
+                + Number(one.sessions || 0);
+        }
     });
 
     return Object.keys(counts)

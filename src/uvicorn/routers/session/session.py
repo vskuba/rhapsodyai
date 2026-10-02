@@ -33,6 +33,16 @@ router = APIRouter()
 # и «сообщений 12» в списке означало бы не то, что показывает выбранная сессия.
 SESSION_KIND_DIALOG = ('user-prompt', 'response-final')
 
+# Размер страницы списка сессий и потолок поверх запрошенного.
+#
+# ⚠⚠ Предел стоит **по умолчанию**, а не по желанию вызывающего. Без него
+# ручка отдавала 5,25 МБ на 27 792 сессии прода — строка на сессию, все разом,
+# и браузер потом строил из них 27 792 `<option>`. Это не теория: страница
+# открывалась семь секунд, из которых почти четыре уходили на перевоз и
+# отрисовку списка, который человек всё равно читает сверху.
+SESSION_PAGE = 50
+SESSION_PAGE_MAX = 500
+
 # Та же пара списком для SQL. Значения свои, не из запроса, — подстановка в
 # текст запроса здесь ничем не грозит.
 _SESSION_KIND_DIALOG_SQL = ', '.join(f"'{kind}'" for kind in SESSION_KIND_DIALOG)
@@ -65,6 +75,10 @@ _SESSION_GROUPED_SELECT = f"""
 class SessionJsonRequest(BaseModel):
     agent_id: int | None = None
     user_id: int | None = None
+    # Страница списка и её размер. Касаются только `/session/list`: у `last` и
+    # `last/uuid` ответ и так один.
+    page: int = 1
+    per_page: int = SESSION_PAGE
 
 
 class SessionMessagesJsonRequest(BaseModel):
@@ -80,20 +94,109 @@ async def session_list(
         db=Depends(mysql_get_db_async),
         user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
 ):
-    """Сессии по фильтрам, свежие сверху. Строка на `session_uuid`.
+    """Страница сессий по фильтрам, свежие сверху. Строка на `session_uuid`.
 
     Returns:
-        dict: `result` — строки с `session_uuid`, `agent_id`, `user_id`,
-        временем последней записи, числом строк журнала (`msg_count`) и числом
-        реплик (`dialog_count`).
+        dict: `result` — строки страницы (`session_uuid`, `agent_id`,
+        `user_id`, время последней записи, `msg_count` — строк журнала,
+        `dialog_count` — реплик); рядом `total`, `page`, `pages`, `per_page`.
+
+    ## ⚠ Выдача ограничена по умолчанию, и это слом совместимости
+
+    Прежде ручка отдавала **все** сессии. Вызывающий, который про страницы не
+    знает, теперь получит первые `SESSION_PAGE` — то есть самые свежие.
+    Сделано нарочно: на проде «все» это 5,25 МБ и четыре секунды, и такой
+    ответ нельзя оставлять умолчанием. Нужен прежний объём — спросите
+    `per_page` явно (потолок `SESSION_PAGE_MAX`).
+
+    ## ⚠ `total` считается отдельным запросом, и он дёшев
+
+    `COUNT(DISTINCT session_uuid)` идёт по `idx_session` разреженным сканом
+    (`Using index for group-by`) — 0,23 с против трёх у самой выборки. Брать
+    его из длины полного списка значило бы вернуть ровно то, от чего ушли.
+
+    ⚠ Порядок — `last_message_at DESC`: свежие сверху, первая страница это
+    «что происходит сейчас». Так же устроен и список разговоров на соседней
+    вкладке.
     """
     condition, params = _session_filters(json_request, user)
+    per_page = max(1, min(int(json_request.per_page or 0) or SESSION_PAGE,
+                          SESSION_PAGE_MAX))
+    page = max(1, int(json_request.page or 1))
+
     sql = (_SESSION_GROUPED_SELECT + condition
-           + " GROUP BY session_uuid ORDER BY last_message_at DESC")
+           + " GROUP BY session_uuid ORDER BY last_message_at DESC"
+             " LIMIT %s OFFSET %s")
 
     async with db:
-        await db.execute(sql, tuple(params))
-        return {"result": await db.fetchall()}
+        await db.execute(
+            "SELECT COUNT(DISTINCT session_uuid) as total FROM agent_session"
+            " WHERE 1=1" + condition, tuple(params))
+        total = int(((await db.fetchone()) or {}).get("total") or 0)
+
+        await db.execute(sql, tuple(params) + (per_page, (page - 1) * per_page))
+        rows = await db.fetchall()
+
+    return {"result": rows, "total": total, "page": page,
+            "per_page": per_page,
+            "pages": max(1, -(-total // per_page))}
+
+
+@router.get("/session/agent/list")
+async def session_agent_list(
+        request: Request,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
+):
+    """По каким парам «агент + пользователь» есть сессии и сколько.
+
+    Returns:
+        dict: `result` — `[{agent_id, user_id, sessions}]`, пар два десятка;
+        `total` — сессий всего под правами вызывающего.
+
+    ## ⚠⚠ Заведена потому, что список сессий стал страничным
+
+    Отборы на странице строились из **полной** выдачи `/session/list`: оттуда
+    брались и список агентов, и счётчики, и сужение пользователей выбранным
+    агентом. Со страницей в полсотни строк такой источник показывал бы только
+    тех, кто попал в первую страницу, — то есть отбор молча терял бы агентов,
+    у которых давно не было разговоров.
+
+    Здесь спрашивается ровно то, что нужно отбору: пары и счёт. Строк два
+    десятка против двадцати восьми тысяч.
+
+    ⚠ Считаются **сессии**, а не строки журнала: в отборе стоит «сколько
+    разговоров у этого агента», а строк на разговор приходится в среднем
+    шестнадцать.
+
+    ## ⚠ `total` спрашивается отдельно, и не из лени
+
+    Сложить `sessions` по парам нельзя: сессия, у которой строки лежат под
+    разными парами, попала бы в сумму дважды. На проде таких одна из 27 792,
+    на разработке тринадцать из 4 018 — мало, но «всего сессий» обязано
+    совпадать с тем, что отдаёт список, иначе числа в интерфейсе спорят.
+    Отдельный `COUNT(DISTINCT)` идёт разреженным сканом и стоит доли секунды.
+    """
+    condition = ''
+    params = []
+
+    if not auth_role_is_full(user.role):
+        condition = f" AND {_agent_role_condition()}"
+        params.append(user.role)
+
+    async with db:
+        await db.execute(
+            "SELECT agent_id, user_id, COUNT(DISTINCT session_uuid) as sessions"
+            " FROM agent_session WHERE 1=1" + condition
+            + " GROUP BY agent_id, user_id", tuple(params))
+        pairs = await db.fetchall()
+
+        await db.execute(
+            "SELECT COUNT(DISTINCT session_uuid) as total FROM agent_session"
+            " WHERE 1=1" + condition, tuple(params))
+        total = int(((await db.fetchone()) or {}).get("total") or 0)
+
+    return {"result": pairs, "total": total}
 
 
 @router.get("/session/kind_type/list")
