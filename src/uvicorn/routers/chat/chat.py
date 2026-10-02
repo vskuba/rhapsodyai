@@ -46,6 +46,18 @@ class ChatMessageDeliveredRequest(BaseModel):
     message_id: int
 
 
+class ChatMessageIncomingRequest(BaseModel):
+    owner_unique_id: str
+    companion_unique_id: str
+    text: str
+    kind: str = 'chat'
+    # Ключ реплики у источника. Не обязателен, но без него повтор вызова
+    # положит вторую строку: защита стоит именно на нём.
+    source_uid: str = ''
+    # Когда он это написал, `ГГГГ-ММ-ДД ЧЧ:ММ:СС` в UTC. Пусто — сейчас.
+    said_at: str = ''
+
+
 @router.post("/chat/ask")
 async def chat_ask_ai(
         request: Request,
@@ -263,6 +275,36 @@ async def chat_message_delivered(
     from src.tool.companion.companion_session import companion_session_delivered
 
     return {"result": await companion_session_delivered(json_request.message_id)}
+
+
+@router.post("/chat/message/incoming")
+async def chat_message_incoming(
+        json_request: ChatMessageIncomingRequest,
+        user: AuthSession = Depends(AuthChecker([]))
+) -> dict:
+    """Записать реплику собеседника — сразу, не дожидаясь нашего ответа.
+
+    Зовёт DatingAi в момент приёма сообщения. Вторая дорога в
+    `companion_session` помимо прогона workflow, и заведена она потому, что
+    первая проходима **только при ответе**: `/chat/ask` запускают, когда
+    решили отвечать, а реплика, оставшаяся без ответа, не попадала к нам
+    ничем — ни ошибкой, ни следом. Двенадцать таких за восемь дней, замерено
+    на проде 02.10.2026.
+
+    ⚠ Идемпотентна по `source_uid`: повтор отвечает `saved: 0` и номер уже
+    записанной строки. Без ключа защиты нет — повтор положит вторую строку.
+
+    ⚠ Ответ агента, пришедший следом, эту строку **поглотит**: шаг workflow
+    пишет обмен целиком, а висящая реплика убирается (`_pending_absorb`).
+    Поэтому звать приём на каждое входящее безопасно и правильно — даже на
+    то, на которое собираемся ответить.
+    """
+    from src.tool.companion.companion_session import companion_session_incoming
+
+    return {"result": await companion_session_incoming(
+        json_request.owner_unique_id, json_request.companion_unique_id,
+        json_request.text, kind=json_request.kind,
+        source_uid=json_request.source_uid, said_at=json_request.said_at)}
 
 
 @router.post("/chat/messages", include_in_schema=False)

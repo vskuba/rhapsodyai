@@ -19,7 +19,7 @@
 
 Пустые обе — единственный отказ: такая строка не говорит ничего.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.companion_repository import CompanionRepository
@@ -45,6 +45,13 @@ COMPANION_SESSION_LIMIT_MAX = 100
 # Обрезка текста реплики в ленте, знаков. У письма свой предел: три абзаца, и
 # тысяча знаков отрезала бы у него конец.
 COMPANION_SESSION_TEXT_MAX = {'chat': 1000, 'mail': 2000}
+
+# Сколько времени висящая реплика считается относящейся к новому ответу.
+#
+# ⚠ Сутки, а не вечность: собеседник написал вчера, агент отвечает сегодня на
+# сегодняшнее — вчерашняя строка к этому ответу не относится и остаётся в
+# ленте своей репликой. Подробности — в `_pending_absorb`.
+COMPANION_SESSION_PENDING_SEC = 86400
 
 
 async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
@@ -104,6 +111,94 @@ async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
            'answer': answer_text,
            'answer_at': now if answer_text else None,
            'source_uid': str(source_uid or '').strip() or None}
+
+    # ⚠⚠ Реплики, записанные приёмом (`companion_session_incoming`), вошли в
+    # этот же вопрос — их строки надо закрыть, иначе лента покажет вопрос
+    # дважды: один раз висящим, второй в составе обмена. Подробности и границы
+    # — в `_pending_absorb`.
+    if question_text:
+        await _pending_absorb(owner_id, companion_id, channel, question_text)
+
+    made = await CompanionSessionRepository().add(row)
+
+    return {'id': int(made or 0), 'saved': 1, 'why': ''}
+
+
+async def companion_session_incoming(owner_unique_id: str,
+                                     companion_unique_id: str,
+                                     text: str, kind: str = 'chat',
+                                     source_uid: str = '',
+                                     said_at: str = '') -> dict:
+    """Записать реплику собеседника сразу, не дожидаясь нашего ответа.
+
+    Args:
+        owner_unique_id: ключ нашей стороны (`companion.unique_id`).
+        companion_unique_id: ключ той стороны.
+        text: что он написал.
+        kind: `chat` или `mail`.
+        source_uid: ключ реплики у источника. **Нужен**: им ловится повтор.
+        said_at: когда он это написал, `ГГГГ-ММ-ДД ЧЧ:ММ:СС` в UTC. Пусто —
+            сейчас.
+
+    Returns:
+        dict: `id` — номер строки (0, если не записали), `saved` — записали ли,
+        `why` — причина отказа словами.
+
+    ## ⚠⚠ ЗАЧЕМ ОТДЕЛЬНАЯ ДОРОГА
+
+    Единственный путь в `companion_session` шёл через прогон workflow, а его
+    запускает `/chat/ask` — то есть **решение ответить**. Реплика, на которую
+    не ответили, не попадала к нам ничем: ни ошибки, ни следа.
+
+    Замерено на проде 02.10.2026: двенадцать таких за восемь дней. У всех у
+    соседа `is_answered = 0` и попытки не было вовсе — агента на них не звали.
+    Среди потерянного «how did you sleep???» и «sent you photo».
+
+    ## ⚠ Повтор не задваивает, и ключ тут обязателен
+
+    Приём зовут на каждое входящее, а доставка до нас не гарантирована:
+    сосед повторит вызов. Без `source_uid` каждый повтор клал бы новую строку.
+    Проверка идёт по тройке `(owner, kind, source_uid)` — ровно тот уникальный
+    ключ, что стоит у таблицы.
+
+    ⚠ Пустой `source_uid` не запрещён (у реплики со страницы своего номера
+    нет), но тогда и защиты от повтора нет: `NULL` в уникальном ключе MySQL
+    сам с собой не сталкивается.
+    """
+    owner_key = str(owner_unique_id or '').strip()
+    companion_key = str(companion_unique_id or '').strip()
+    said = str(text or '').strip()
+    channel = str(kind or '').strip().lower()
+    source = str(source_uid or '').strip()
+
+    if not owner_key or not companion_key:
+        return {'id': 0, 'saved': 0, 'why': 'нет ключа стороны'}
+
+    if channel not in COMPANION_SESSION_KINDS:
+        return {'id': 0, 'saved': 0, 'why': f'неизвестный канал: {channel}'}
+
+    if not said:
+        return {'id': 0, 'saved': 0, 'why': 'пустая реплика'}
+
+    owner_id = await _companion_id(owner_key)
+    companion_id = await _companion_id(companion_key)
+
+    if not owner_id or not companion_id:
+        return {'id': 0, 'saved': 0, 'why': 'не завелась запись стороны'}
+
+    if source:
+        found = await _by_source(owner_id, channel, source)
+
+        if found:
+            return {'id': found, 'saved': 0, 'why': 'уже записано'}
+
+    when = _moment(said_at)
+    # ⚠ Ответа нет и времени ответа нет: его ещё не сочинили. `delivered_at`
+    # тоже пуст — отметка про НАШУ реплику, а её тут нет.
+    row = {'owner_id': owner_id, 'companion_id': companion_id, 'kind': channel,
+           'question': said, 'question_at': when,
+           'answer': '', 'answer_at': None,
+           'source_uid': source or None}
 
     made = await CompanionSessionRepository().add(row)
 
@@ -271,6 +366,107 @@ async def companion_session_rows(owner_unique_id: str,
         return []
 
     return list(reversed(rows or []))
+
+
+async def _by_source(owner_id: int, kind: str, source_uid: str) -> int:
+    """Номер уже записанного обмена с этим ключом источника; нет — ноль."""
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT `id` FROM `companion_session`'
+                ' WHERE `owner_id` = %s AND `kind` = %s AND `source_uid` = %s'
+                ' LIMIT 1', (int(owner_id), kind, source_uid))
+            row = await db.fetchone()
+    except Exception:
+        return 0
+
+    return int((row or {}).get('id') or 0)
+
+
+async def _pending_absorb(owner_id: int, companion_id: int, kind: str,
+                          question: str) -> int:
+    """Убрать висящие реплики пары, уже вошедшие в этот вопрос.
+
+    Returns:
+        int: сколько строк убрано.
+
+    ## ⚠⚠ ЗАЧЕМ
+
+    Приём (`companion_session_incoming`) пишет реплику собеседника сразу, а
+    через минуту агент отвечает — и шаг workflow кладёт обмен, где та же
+    реплика стоит вопросом (автоответчик соседа склеивает хвост в
+    `prompt_user`). Без уборки лента показала бы её дважды: висящей строкой и
+    в составе обмена.
+
+    ## ⚠⚠⚠ Границы узкие нарочно — это единственное место, где инструмент УДАЛЯЕТ
+
+    Убирается строка, у которой сошлось **всё**:
+
+        та же пара и тот же канал       чужой разговор не трогаем
+        ответ пуст и доставки нет       наша половина не написана
+        текст вопроса ВХОДИТ в новый    это ровно та реплика, что склеили
+        не старше суток                 вчерашнее к сегодняшнему ответу не относится
+
+    Любое из условий не сошлось — строка остаётся. Лишняя строка в ленте
+    хуже, чем её отсутствие, но куда лучше, чем стёртая чужая реплика.
+
+    ⚠ Сравнение по сжатым пробелам: склейка идёт через пустую строку, а внутри
+    реплики переводы строк бывают свои — побайтово такое не совпадёт.
+
+    ⚠ Своей ошибкой не роняем запись обмена: не вышло убрать — обмен всё равно
+    пишется, в ленте будет повтор. Потерять ответ дороже.
+    """
+    text = ' '.join(str(question or '').split())
+
+    if not text:
+        return 0
+
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT `id`, `question` FROM `companion_session`'
+                ' WHERE `owner_id` = %s AND `companion_id` = %s AND `kind` = %s'
+                "   AND `answer` = '' AND `delivered_at` IS NULL"
+                "   AND `question` <> ''"
+                '   AND `created_at` >= %s',
+                (int(owner_id), int(companion_id), kind,
+                 datetime.utcnow() - timedelta(seconds=COMPANION_SESSION_PENDING_SEC)))
+            rows = await db.fetchall()
+
+            gone = [int(r['id']) for r in (rows or [])
+                    if ' '.join(str(r['question'] or '').split()) in text]
+
+            if not gone:
+                return 0
+
+            await db.execute(
+                'DELETE FROM `companion_session` WHERE `id` IN ('
+                + ', '.join(['%s'] * len(gone)) + ')', tuple(gone))
+            await db.connection.commit()
+    except Exception:
+        return 0
+
+    return len(gone)
+
+
+def _moment(said_at: str):
+    """Время реплики из строки запроса; не разобралось — сейчас.
+
+    ⚠ UTC, как и всё остальное в таблице: `question_at` этой строки и
+    `answer_at` соседней обязаны мериться одними часами.
+    """
+    text = str(said_at or '').strip()
+
+    if not text:
+        return datetime.utcnow()
+
+    for shape in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M'):
+        try:
+            return datetime.strptime(text[:19], shape)
+        except ValueError:
+            continue
+
+    return datetime.utcnow()
 
 
 async def _companion_id(unique_id: str) -> int:
