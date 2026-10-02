@@ -118,6 +118,21 @@ async def session_list(
     ⚠ Порядок — `last_message_at DESC`: свежие сверху, первая страница это
     «что происходит сейчас». Так же устроен и список разговоров на соседней
     вкладке.
+
+    ## ⚠⚠⚠ Вторым ключом `session_uuid`, иначе страницы пересекаются
+
+    Время последней записи **не уникально**: сессии, заведённые в одну
+    миллисекунду, равны для сортировки, и порядок между ними MySQL выбирает на
+    своё усмотрение — для каждого `LIMIT/OFFSET` заново. Одна и та же сессия
+    тогда попадает и на первую страницу, и на вторую, а чья-то не попадает
+    никуда.
+
+    Поймано тестом `test_session_list_pages_do_not_overlap`: при `per_page = 5`
+    пересеклась одна сессия из пяти. На проде это видно как «строка
+    продублировалась при перелистывании».
+
+    ⚠ `session_uuid` годится в тай-брейкер именно здесь: по нему идёт
+    `GROUP BY`, значит в выдаче он уникален по построению.
     """
     condition, params = _session_filters(json_request, user)
     per_page = max(1, min(int(json_request.per_page or 0) or SESSION_PAGE,
@@ -125,7 +140,8 @@ async def session_list(
     page = max(1, int(json_request.page or 1))
 
     sql = (_SESSION_GROUPED_SELECT + condition
-           + " GROUP BY session_uuid ORDER BY last_message_at DESC"
+           + " GROUP BY session_uuid"
+             " ORDER BY last_message_at DESC, session_uuid DESC"
              " LIMIT %s OFFSET %s")
 
     async with db:
