@@ -360,9 +360,9 @@
    обмены ленты, иначе текст реплик шёл бы лесенкой. */
 .chat-half-who {
     flex: 0 0 110px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
-    color: #718096;
+    color: #007bff;
     padding-top: 7px;
     overflow-wrap: anywhere;
 }
