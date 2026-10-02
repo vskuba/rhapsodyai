@@ -223,6 +223,53 @@ _out = [...undefinedVariables([], steps, [], [], []).keys()];
             f'формат даты снова разобран на переменные: {out}'
 
 
+class TestTheConditionTellsWordsFromNames:
+    """⚠⚠⚠ В условии справа от оператора кавычки решают: слово или переменная.
+
+    Это правило движка (`_condition_value_resolve`), и здесь оно живёт в третьей
+    копии: движок, подсветка, сбор переменных. Разойдись сбор — страница стала
+    бы ругаться на каждое сравнение со строкой («переменной `chat` нет»), а
+    настоящую опечатку в правом имени не заметила бы вовсе.
+    """
+
+    def test_a_quoted_word_is_not_a_variable(self):
+        """`kind == 'chat'` — одна переменная, а не две."""
+        out = self._names("[<if kind == 'chat'>]да[<endif>]")
+
+        assert out == ['kind'], f'слово в кавычках сочли переменной: {out}'
+
+    def test_a_bare_name_is_a_variable(self):
+        """`kind == other` — две: сравнение двух переменных законно."""
+        out = self._names('[<if kind == other>]да[<endif>]')
+
+        assert out == ['kind', 'other'], f'правое имя не собрано: {out}'
+
+    def test_a_number_is_not_a_variable(self):
+        """⚠ `count > 5` — число под шаблон имени не попадает вовсе."""
+        out = self._names("[<if count > 5 and kind == 'chat'>]да[<endif>]")
+
+        assert out == ['count', 'kind'], f'число сочли переменной: {out}'
+
+    def test_a_connective_in_quotes_is_still_a_word(self):
+        """⚠⚠ `'and'` в кавычках — значение, а не связка и не переменная.
+
+        Ловится тем, что строка в шаблоне стоит **первой** альтернативой: поймай
+        её шаблон имени, и `and` ушло бы в переменные.
+        """
+        out = self._names("[<if kind == 'and'>]да[<endif>]")
+
+        assert out == ['kind'], f'связка в кавычках сочтена переменной: {out}'
+
+    @staticmethod
+    def _names(prompt: str) -> list:
+        """Неопределённые имена, которые правило нашло в промпте шага."""
+        return _node(f'''
+const steps = {_json(_steps((1, {'agent_invoke': {'agent_id': 1,
+                                                  'prompt': prompt}})))};
+_out = [...undefinedVariables([], steps, [], [], []).keys()];
+''', 'undefinedVariables')
+
+
 def _steps(*pairs) -> list:
     """Шаги редакторской формы `{id, position, metadata}` из пар `(id, метаданные)`.
 

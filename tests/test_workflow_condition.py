@@ -90,9 +90,10 @@ class TestComparison:
         ('[<if count < 10>]МЕНЬШЕ[<endif>]', 'МЕНЬШЕ'),
         ('[<if count >= 7>]НЕ МЕНЬШЕ[<endif>]', 'НЕ МЕНЬШЕ'),
         ('[<if count <= 7>]НЕ БОЛЬШЕ[<endif>]', 'НЕ БОЛЬШЕ'),
-        ('[<if kind == chat>]ЧАТ[<endif>]', 'ЧАТ'),
-        ('[<if kind == mail>]П[<else>]НЕ ПОЧТА[<endif>]', 'НЕ ПОЧТА'),
-        ('[<if kind != mail>]НЕ ПОЧТА[<endif>]', 'НЕ ПОЧТА'),
+        ("[<if kind == 'chat'>]ЧАТ[<endif>]", 'ЧАТ'),
+        ('[<if kind == "chat">]ДВОЙНЫЕ ТОЖЕ[<endif>]', 'ДВОЙНЫЕ ТОЖЕ'),
+        ("[<if kind == 'mail'>]П[<else>]НЕ ПОЧТА[<endif>]", 'НЕ ПОЧТА'),
+        ("[<if kind != 'mail'>]НЕ ПОЧТА[<endif>]", 'НЕ ПОЧТА'),
         ('[<if number == 1>]ЧИСЛОМ[<endif>]', 'ЧИСЛОМ'),
     ])
     def test_operators(self, source, expected):
@@ -109,13 +110,58 @@ class TestComparison:
         """Значение с пробелом берут в кавычки — иначе оборвётся на первом."""
         assert _render('[<if name == "John Smith">]ИМЯ[<endif>]') == 'ИМЯ'
 
-    def test_value_is_a_literal_not_a_variable(self):
-        """⚠⚠ Справа — литерал. `kind == chat` это слово «chat», а не значение
-        переменной `chat`, даже когда такая переменная есть."""
-        got = ai_workflow_condition_check('kind == chat', {'kind': 'chat',
-                                                           'chat': 'mail'})
+    def test_quotes_make_it_a_word(self):
+        """⚠⚠⚠ В кавычках — слово, даже если переменная с таким именем есть."""
+        got = ai_workflow_condition_check("kind == 'chat'", {'kind': 'chat',
+                                                             'chat': 'mail'})
 
         assert got is True
+
+    def test_bare_name_is_a_variable(self):
+        """⚠⚠⚠ Без кавычек справа — ПЕРЕМЕННАЯ, а не слово.
+
+        Правило выбрано человеком и лучше прежнего: спорить, слово это или
+        переменная, не приходится — кавычки видны.
+        """
+        same = ai_workflow_condition_check('kind == other', {'kind': 'chat',
+                                                             'other': 'chat'})
+        differ = ai_workflow_condition_check('kind == other', {'kind': 'chat',
+                                                               'other': 'mail'})
+
+        assert same is True and differ is False
+
+    def test_numbers_compare_by_variable_too(self):
+        """Справа тоже бывает число переменной, а не только литерал."""
+        got = ai_workflow_condition_check('count > limit', {'count': '7',
+                                                            'limit': '5'})
+
+        assert got is True
+
+    def test_missing_right_variable_is_false(self):
+        """⚠ Правой переменной нет — условие ложно, а не «текст непонятен».
+
+        Имя написано верно, значения пока нет: ругаться не на что, сравнивать
+        не с чем.
+        """
+        assert _render('[<if kind == missing>]Х[<else>]НЕТ[<endif>]') == 'НЕТ'
+
+    def test_right_variable_none_is_emptiness(self):
+        """⚠⚠ `None` у заполненной переменной — пустота, а не слово «None».
+
+        Сравнение приводит правую часть к строке, и без приведения `str(None)`
+        дал бы `'None'` — значение, с которым никто не сравнивает нарочно.
+        Ключ в словаре есть, поэтому это не «переменной нет».
+        """
+        empty = ai_workflow_condition_check('kind == other', {'kind': '',
+                                                              'other': None})
+        word = ai_workflow_condition_check('kind == other', {'kind': 'None',
+                                                             'other': None})
+
+        assert empty is True and word is False
+
+    def test_empty_string_is_comparable(self):
+        """⚠ `''` — законное сравнение с пустотой, а не «переменной нет»."""
+        assert ai_workflow_condition_check("empty == ''", {'empty': ''}) is True
 
     def test_missing_variable_is_false_not_broken(self):
         """⚠ Переменной нет — условие ложно, а не «текст непонятен».
@@ -126,7 +172,9 @@ class TestComparison:
         assert _render('[<if missing == 5>]Х[<else>]НЕТ[<endif>]') == 'НЕТ'
 
     def test_mixed_with_connective(self):
-        assert _render('[<if count > 5 and kind == chat>]ОБА[<endif>]') == 'ОБА'
+        source = "[<if count > 5 and kind == 'chat'>]ОБА[<endif>]"
+
+        assert _render(source) == 'ОБА'
 
 
 class TestNesting:
