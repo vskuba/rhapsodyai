@@ -11,7 +11,8 @@
 
 import {postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
-import {htmlEscape, labelClip, labelOf, selectFill, selectValueRestore} from './util.js';
+import {htmlEscape, labelClip, labelOf, numberOf, selectFill,
+        selectValueRestore, sumOf} from './util.js';
 
 // Отбор помним между заходами: с сессиями разбираются длинными заходами, и
 // сбрасывать выбранного агента на каждый F5 — терять место, где остановились.
@@ -135,7 +136,7 @@ function userFill() {
         : state.pairs;
 
     selectFill(el.user, [
-        {value: '', text: `Все пользователи (${sessionsOf(scoped)})`},
+        {value: '', text: `Все пользователи (${sumOf(scoped, 'sessions')})`},
         ...entriesOf(scoped, 'user_id', state.users),
     ]);
 }
@@ -361,17 +362,6 @@ function messagesRender() {
 
 function kindsSelected() {
     return [...el.kind.selectedOptions].map(one => one.value);
-}
-
-/** Сколько сессий покрывают эти пары «агент + пользователь». */
-function sessionsOf(pairs) {
-    return pairs.reduce((sum, one) => sum + Number(one.sessions || 0), 0);
-}
-
-function numberOf(value) {
-    const number = parseInt(value, 10);
-
-    return isNaN(number) ? 0 : number;
 }
 
 /** Варианты отбора «запись (сколько сессий)», отсортированные по названию.

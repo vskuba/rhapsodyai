@@ -15,8 +15,8 @@
 // «Что сочинили, но не отправили» и есть вопрос, с которым сюда приходят.
 
 import {postData} from '../api.js';
-import {htmlEscape, labelClip, selectFill, selectValueRestore,
-        stampList} from './util.js';
+import {htmlEscape, labelClip, numberOf, selectFill, selectValueRestore,
+        stampList, sumOf} from './util.js';
 
 const CHAT_STORE_PREFIX = 'session_chat_';
 
@@ -113,7 +113,7 @@ async function pairsLoadAll() {
 
 function sidesFill() {
     selectFill(el.owner, [
-        {value: '', text: `Все (${countOf(state.pairs)} обменов)`},
+        {value: '', text: `Все (${sumOf(state.pairs, 'exchange_count')} обменов)`},
         ...sideEntries(state.pairs, 'owner'),
     ]);
     companionFill();
@@ -126,7 +126,7 @@ function companionFill() {
         : state.pairs;
 
     selectFill(el.companion, [
-        {value: '', text: `Все (${countOf(scoped)} обменов)`},
+        {value: '', text: `Все (${sumOf(scoped, 'exchange_count')} обменов)`},
         ...sideEntries(scoped, 'companion'),
     ]);
 }
@@ -314,7 +314,7 @@ function exchangeHtml(pair, row) {
             <div class="chips-container">
                 <span class="chip chip-id" title="строка в базе с ${fmtTz(row.created_at)}">#${htmlEscape(row.id)}</span>
             </div>
-            ${halfHtml({
+            ${String(row.question || '') === '' ? '' : halfHtml({
                 side: 'his',
                 who: sideLabel(pair, 'companion'),
                 text: row.question,
@@ -378,12 +378,18 @@ function exchangeHtml(pair, row) {
 function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
                    timeAfter = null, timeAfterHint = '', undelivered = false,
                    marks = ''}) {
-    // Пустая половина не выкидывается, а показывается прочерком: «он написал
-    // дважды подряд» и «агент смолчал» — разные события, и обмен без половины
-    // обязан отличаться от обмена, которого не было.
+    // ⚠ Пустая НАША половина остаётся прочерком, а его — не рисуется вовсе
+    // (решает `exchangeHtml`). Разница в том, что каждая из них значит.
+    //
+    //     его половина пуста    заговорили мы: инвайт, письмо, инициатива.
+    //                           Таких строк две трети, и прочерк в каждой —
+    //                           просто столбец пустых клеток.
+    //     наша половина пуста   агент СМОЛЧАЛ на сказанное. Это решение, и
+    //                           видеть его надо: лента без прочерка выглядит
+    //                           так, будто разговор на этом кончился сам.
     const content = String(text || '') !== ''
         ? htmlEscape(text)
-        : '<span class="chat-half-empty">— пусто —</span>';
+        : '<span class="chat-half-empty">— нет ответа —</span>';
     // ⚠ Два голых штампа в одной строке без подсказок не различить: оба
     // выглядят датой. Какой из них что — сказано наведением.
     const tail = [
@@ -524,12 +530,3 @@ function sideFull(pair, side) {
     return title && title !== key ? `${title} (${key})` : key;
 }
 
-function countOf(pairs) {
-    return pairs.reduce((sum, one) => sum + Number(one.exchange_count || 0), 0);
-}
-
-function numberOf(value) {
-    const number = parseInt(value, 10);
-
-    return isNaN(number) ? 0 : number;
-}

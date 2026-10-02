@@ -21,6 +21,7 @@
 """
 from datetime import datetime, timedelta
 
+from datetime_.datetime_ import datetime_utc_now
 from mysql_.mysql_ import mysql_get_db_async
 from src.mysql_.repository.companion_repository import CompanionRepository
 from src.mysql_.repository.companion_session_repository import (
@@ -102,7 +103,7 @@ async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
     if not owner_id or not companion_id:
         return {'id': 0, 'saved': 0, 'why': 'не завелась запись стороны'}
 
-    now = datetime.utcnow()
+    now = datetime_utc_now()
     # ⚠ Время у половины ставится, **только если половина есть**: пустой
     # половине время незачем, а ноль встал бы в ленту раньше всего сказанного.
     row = {'owner_id': owner_id, 'companion_id': companion_id, 'kind': channel,
@@ -237,7 +238,7 @@ async def companion_session_delivered(message_id: int) -> dict:
             # ⚠ UTC, как и `question_at`/`answer_at` у записи обмена: столбцы
             # одной строки обязаны мериться одними часами. Разойдись они — и
             # «доставлено раньше, чем сказано» выглядело бы поломкой кода.
-            (datetime.utcnow(), number))
+            (datetime_utc_now(), number))
         marked = int(db.rowcount or 0)
         await db.connection.commit()
 
@@ -430,7 +431,7 @@ async def _pending_absorb(owner_id: int, companion_id: int, kind: str,
                 "   AND `question` <> ''"
                 '   AND `created_at` >= %s',
                 (int(owner_id), int(companion_id), kind,
-                 datetime.utcnow() - timedelta(seconds=COMPANION_SESSION_PENDING_SEC)))
+                 datetime_utc_now() - timedelta(seconds=COMPANION_SESSION_PENDING_SEC)))
             rows = await db.fetchall()
 
             gone = [int(r['id']) for r in (rows or [])
@@ -458,7 +459,7 @@ def _moment(said_at: str):
     text = str(said_at or '').strip()
 
     if not text:
-        return datetime.utcnow()
+        return datetime_utc_now()
 
     for shape in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M'):
         try:
@@ -466,7 +467,7 @@ def _moment(said_at: str):
         except ValueError:
             continue
 
-    return datetime.utcnow()
+    return datetime_utc_now()
 
 
 async def _companion_id(unique_id: str) -> int:
