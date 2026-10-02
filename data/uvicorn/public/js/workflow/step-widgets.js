@@ -1,13 +1,13 @@
 // Динамические поля формы шага по его типу: textarea/checkbox и виджеты
 // widget_json_variable, widget_tool_invoke, widget_variable_conversion
 
-import {getData} from '../api.js';
 import {showNotification} from '../notification.js';
 import {state, WORKFLOW_STEP_CONFIG} from './state.js';
 import {parseMetadata, editorWorkflowId} from './utils.js';
 import {getToolOutputKeys} from './variable-group.js';
 import {fillVariablesSelectOptions} from './variables.js';
 import {renderDiceWidget, DICE_TOOL_NAME} from './dice-widget.js';
+import {renderSubflowMaps, subflowMapsCollect} from './subflow-maps.js';
 import {textModalIcon} from './text-modal.js';
 
 export function renderCustomStepFields(step, metadata) {
@@ -580,14 +580,9 @@ export function renderCustomStepFields(step, metadata) {
                 openLink.style.display = 'inline-flex';
             };
 
-            // 2. Маппинг входящих переменных ребенка + выходящие параметры
+            // 2. Карты переменных подпотока: входящие и исходящие (вкладками)
             const mappingContainer = document.createElement('div');
             mappingContainer.style = "display: flex; flex-direction: column; gap: 10px; margin-top: 5px;";
-
-            const childWorkflowName = (wfId) => {
-                const wf = (state.allWorkflows || []).find(w => String(w.id) === String(wfId));
-                return wf ? wf.name : ('workflow_' + wfId);
-            };
 
             // --- Секция "Повтор вызова" (repeat): condition-строка в стиле transition
             // (переменная / оператор / значение) для режима until, либо фиксированное число попыток ---
@@ -706,19 +701,15 @@ export function renderCustomStepFields(step, metadata) {
             // Сборка и сохранение metadata.workflow_invoke
             const collectSubflowData = () => {
                 const wfId = selectElement.value ? parseInt(selectElement.value) : null;
-                const inputsMap = {};
-                mappingContainer.querySelectorAll('.subflow-input-row').forEach(row => {
-                    const argEl = row.querySelector('.map-arg-select');
-                    const varEl = row.querySelector('.map-var-select');
-                    if (argEl && argEl.value && varEl && varEl.value) {
-                        inputsMap[argEl.value] = varEl.value;
-                    }
-                });
+                // ⚠⚠ Обе карты собираются из полей блока (`subflow-maps.js`).
+                // Прежде `outputs_map` переписывался сам в себя из
+                // `currentValue`: правка была невозможна, а неправка — вечной.
+                const maps = subflowMapsCollect(mappingContainer);
 
                 const payload = {
                     workflow_id: wfId,
-                    inputs_map: inputsMap,
-                    outputs_map: (currentValue && currentValue.outputs_map) || {}
+                    inputs_map: maps.inputs_map,
+                    outputs_map: maps.outputs_map
                 };
 
                 if (repeatModeSelect.value === 'until') {
@@ -750,125 +741,42 @@ export function renderCustomStepFields(step, metadata) {
             });
             untilValInput.addEventListener('input', collectSubflowData);
 
-            // Секция "Выходящие параметры" — как у виджета инструментов:
-            // тип результата ➔ переменная с копированием по клику
-            const renderSubflowOutputs = (wfId) => {
-                const title = document.createElement('div');
-                title.style = "font-size: 11px; font-weight: bold; color: #4a5568; margin-top: 5px;";
-                title.textContent = "Выходящие параметры (Output Mapping):";
-                mappingContainer.appendChild(title);
-
-                const row = document.createElement('div');
-                row.className = 'output-map-row';
-                row.style = "display: flex; align-items: center; gap: 8px; background: #fff; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;";
-
-                // Левая часть: тип результата sub-workflow
-                const argText = document.createElement('span');
-                argText.style = "flex: 1; padding: 4px; font-size: 12px; color: #ea3d3d; font-weight: bold;";
-                argText.textContent = 'str';
-
-                // Стрелочка разделитель
-                const arrow = document.createElement('span');
-                arrow.innerHTML = '➔';
-                arrow.style = "color: #a0aec0; font-size: 12px;";
-
-                // Правая часть: переменная результата (в стиле variable-name с копированием)
-                const varSpanContainer = document.createElement('div');
-                varSpanContainer.style = "flex: 1; display: flex; align-items: center; padding: 4px;font-size: 11px;";
-
-                const varSpan = document.createElement('span');
-                varSpan.className = 'variable-name';
-                varSpan.style.marginRight = '0';
-                varSpan.title = 'Нажмите, чтобы скопировать';
-                const varText = `%${childWorkflowName(wfId)}_${step.id}_result_str%`;
-                varSpan.textContent = varText;
-
-                varSpan.onclick = async () => {
-                    try {
-                        await navigator.clipboard.writeText(varText);
-                        showNotification(`Переменная ${varText} скопирована в буфер`, 'success');
-                    } catch (err) {
-                        showNotification('Не удалось скопировать переменную', 'error');
-                    }
-                };
-
-                varSpanContainer.appendChild(varSpan);
-
-                row.appendChild(argText);
-                row.appendChild(arrow);
-                row.appendChild(varSpanContainer);
-                mappingContainer.appendChild(row);
-            };
-
-            // Рендер строк inputs_map по input-переменным выбранного workflow
-            const renderSubflowDetails = async (wfId) => {
-                mappingContainer.innerHTML = '';
-                if (!wfId) return;
-
-                let inputVars = [];
-                try {
-                    const res = await getData(`/workflow/${wfId}/variables`);
-                    inputVars = (res.result || []).filter(v => v.type === 'input');
-                } catch (e) {
-                    console.error('Ошибка загрузки переменных sub-workflow:', e);
-                    return;
-                }
-
-                if (inputVars.length === 0) {
-                    const emptyNote = document.createElement('div');
-                    emptyNote.style = "font-size: 11px; color: #94a3b8;";
-                    emptyNote.textContent = 'У выбранного workflow нет входящих переменных';
-                    mappingContainer.appendChild(emptyNote);
-                } else {
-                    const title = document.createElement('div');
-                    title.style = "font-size: 11px; font-weight: bold; color: #4a5568; margin-top: 5px;";
-                    title.textContent = "Входящие переменные (Input Mapping):";
-                    mappingContainer.appendChild(title);
-
-                    const savedInputs = (currentValue && currentValue.inputs_map) || {};
-                    inputVars.forEach(v => {
-                        const row = document.createElement('div');
-                        row.className = 'subflow-input-row';
-                        row.style = "display: flex; align-items: center; gap: 8px; background: #fff; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;";
-
-                        const argHidden = document.createElement('input');
-                        argHidden.type = 'hidden';
-                        argHidden.className = 'map-arg-select';
-                        argHidden.value = v.name;
-
-                        const argText = document.createElement('span');
-                        argText.style = "flex: 1; padding: 4px; font-size: 12px; color: #2b6cb0; font-weight: bold;";
-                        argText.textContent = v.name;
-
-                        const arrow = document.createElement('span');
-                        arrow.innerHTML = '⬅';
-                        arrow.style = "color: #a0aec0; font-size: 12px;";
-
-                        // Селект родительской переменной (сгруппирован как в #variablesContainer)
-                        const varSelect = document.createElement('select');
-                        varSelect.className = 'form-control map-var-select';
-                        varSelect.style = "flex: 1; padding: 4px; font-size: 12px; height: 32px;";
-                        fillVariablesSelectOptions(varSelect, savedInputs[v.name] || '');
-                        varSelect.onchange = collectSubflowData;
-
-                        row.append(argHidden, argText, arrow, varSelect);
-                        mappingContainer.appendChild(row);
-                    });
-                }
-
-                // Выходящие параметры — всегда после входящих
-                renderSubflowOutputs(wfId);
-            };
+            // Блок карт переменных: вкладки «Входящие» и «Исходящие».
+            //
+            // ⚠⚠⚠ Исходящих тут прежде не было вовсе — под подписью «Output
+            // Mapping» показывалось одно автоимя результата, а настоящая
+            // `outputs_map` правилась только через базу. Устройство блока и
+            // почему он отдельным файлом — `subflow-maps.js`.
+            //
+            // ⚠⚠⚠ После сборки шаг пинается событием: правки блока приходят и
+            // **кнопками** (снос пары, добавление строки), а отправку на сервер
+            // страница вешает на `change` и `focusout` колонки. Клик по кнопке
+            // не даёт ни того, ни другого — снёс пару, ушёл со страницы, правка
+            // потеряна. Поймано живым прогоном: снос не доехал до базы, а
+            // появился там попутно, при следующем выборе в селекте.
+            //
+            // ⚠ Событием, а не вызовом `stepAutoSaveSchedule`: она живёт в
+            // `steps.js`, который импортирует этот файл, — обратный импорт
+            // замкнул бы круг. Тем же приёмом ходит ссылка «Перейти в…» выше.
+            const renderSubflowDetails = renderSubflowMaps(
+                mappingContainer, step.id, () => {
+                    collectSubflowData();
+                    document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
+                });
 
             selectElement.onchange = async () => {
                 openLinkUpdate();
-                await renderSubflowDetails(selectElement.value);
+                // ⚠⚠ Сменили подпоток — карты рисуются **пустыми**: прежние
+                // пары называли переменные другого workflow, и перенеси мы их,
+                // в метаданных осталась бы карта в никуда. Движок на такую
+                // ругается в лог, которого никто не читает.
+                await renderSubflowDetails(selectElement.value, {});
                 collectSubflowData();
             };
 
             // Первичный рендер при открытии шага
             if (currentValue && currentValue.workflow_id) {
-                renderSubflowDetails(currentValue.workflow_id);
+                renderSubflowDetails(currentValue.workflow_id, currentValue);
             }
             openLinkUpdate();
 
