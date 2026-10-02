@@ -84,6 +84,21 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             framework_model.session_uuid = metadata.get('session_uuid', str(uuid.uuid4()))
             framework_model.entity_agent = entity_agent
             framework_model.entities_llm = metadata.get('entities_llm', [])
+            # Пин агента (agent.llm_id) — поверх порядка ноды: выбранная модель
+            # первой, остальные модели ноды остаются подстраховкой при 429/503.
+            # Пина в списке ноды нет — список не трогаем, берём порядок ноды
+            llm_id = entity_agent.get('llm_id')
+            if llm_id and any(llm.get('id') == llm_id for llm in framework_model.entities_llm):
+                framework_model.entities_llm.sort(key=lambda llm: llm.get('id') != llm_id)
+                logger_info(
+                    f"📌 LLM агента '{entity_agent.get('name', '')}' запинена: "
+                    f"{framework_model.entities_llm[0].get('name', '?')} (agent.llm_id)"
+                )
+            elif llm_id:
+                logger_info(
+                    f"⚠️ agent.llm_id={llm_id} агента '{entity_agent.get('name', '')}' "
+                    f"нет среди моделей ноды — берём порядок ноды"
+                )
             framework_model.entity_llm_current = framework_model.entities_llm[0] if framework_model.entities_llm else {}
             framework_model.metadata = metadata or {}
             framework_model.user_id = metadata.get('user_id', 0)
