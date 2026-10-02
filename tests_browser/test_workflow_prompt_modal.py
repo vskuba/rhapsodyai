@@ -42,6 +42,7 @@ import pytest
 from dotenv import load_dotenv
 from playwright.sync_api import Browser, Page, sync_playwright
 
+from mysql_.mysql_query import mysql_query_run
 from tests.constants import TEST_AUTH
 
 load_dotenv()
@@ -262,13 +263,36 @@ def _login(page: Page) -> None:
 
 
 def _open_step(page: Page) -> None:
-    """Открывает нужный workflow и шаг в нём — по названиям, а не по номерам."""
-    page.goto(f'{BASE_URL}/admin/workflow')
-    page.wait_for_selector('.workflow-item', state='visible', timeout=10000)
-    page.locator('.workflow-item').filter(has_text=WORKFLOW_NAME).first.click()
+    """Открывает нужный workflow и шаг в нём — по названию workflow и шага.
 
+    ## ⚠⚠⚠ Навигация была сломана, и все 13 тестов падали на первом же шаге
+
+    Селектор списка слева — `.workflow-item` — в коде отсутствует **вовсе**: имя
+    класса сменилось на `.agent-item` (`main.js`), и тест ждал элемент, которого
+    нет, десять секунд, а потом падал ошибкой фикстуры. Красного никто не видел:
+    папка вне `testpaths`, запуск только руками.
+
+    ⚠ Поэтому workflow открывается **номером в адресе**: имени в списке слева
+    нет совсем — там `title` («Чат»), а `name` (`dating_talk`) живёт только в
+    базе, и `has_text` по нему не найдёт ничего.
+
+    ⚠⚠ Шаг — по `data-id`, а не по заголовку: `has_text` ловит и соседей,
+    которые на этот шаг только ссылаются условием перехода. Проверено на
+    соседнем тесте: по тексту открывался не тот шаг.
+    """
+    got = mysql_query_run(
+        'SELECT ws.id, ws.workflow_id FROM agent_workflow_step ws'
+        ' JOIN agent_workflow w ON w.id = ws.workflow_id'
+        ' WHERE w.name = %s AND ws.title = %s LIMIT 1',
+        (WORKFLOW_NAME, STEP_TITLE))
+    rows = got.get('rows') or []
+
+    if not rows:
+        pytest.skip(f'на установке нет шага «{STEP_TITLE}» у {WORKFLOW_NAME}')
+
+    page.goto(f'{BASE_URL}/admin/workflow?workflow_id={rows[0]["workflow_id"]}')
     page.wait_for_selector('.step-item-block', state='visible', timeout=10000)
-    page.locator('.step-item-block').filter(has_text=STEP_TITLE).first.click()
+    page.locator(f'.step-item-block[data-id="{rows[0]["id"]}"]').first.click()
     page.wait_for_selector('#field_prompt_user', state='visible', timeout=10000)
 
 
@@ -293,11 +317,15 @@ def _step_metadata(page: Page) -> str:
     workflow_id = page.locator('#workflowId').input_value()
     step_id = page.locator('.step-item-block.active').first.get_attribute('data-id')
 
-    got = page.request.get(f'{BASE_URL}/workflow/{workflow_id}/step')
+    # ⚠⚠ Ручка называется `/steps`, а не `/step`: на единственном числе сервер
+    # отвечает `405 Method Not Allowed` — там живёт только `POST` создания. Тест
+    # ходил по ней и падал, но красного никто не видел: папка вне `testpaths`.
+    got = page.request.get(f'{BASE_URL}/workflow/{workflow_id}/steps')
     assert got.ok, f'шаги не прочитались: {got.status}'
 
-    body = got.json()
-    for one in body.get('data') or body.get('steps') or []:
+    # ⚠ Ответ лежит в `result` — общий контракт ручек проекта. Прежние `data` и
+    # `steps` не отдаёт ни одна, и цикл молча не находил ничего.
+    for one in got.json().get('result') or []:
         if str(one.get('id')) == str(step_id):
             return str(one.get('metadata') or '')
 
