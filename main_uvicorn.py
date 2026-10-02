@@ -65,6 +65,9 @@ from src.uvicorn.routers.llm import llm
 from src.uvicorn.routers import gx10
 from src.uvicorn.routers.node import node
 from src.uvicorn.routers.session import session
+# Вкладка «Чат» страницы «Сессии»: разговоры пары (`companion_session`).
+# Подключается РАНЬШЕ соседа — см. комментарий у `include_router`.
+from src.uvicorn.routers.session import session_companion
 from src.uvicorn.routers.setting import setting
 from src.uvicorn.routers.telegram_app import telegram_app
 from src.uvicorn.routers.telegram_app import telegram_app_chat
@@ -564,6 +567,12 @@ app.include_router(setting.router, include_in_schema=False)
 app.include_router(translate.router, include_in_schema=False)
 app.include_router(llm.router, include_in_schema=False)
 app.include_router(gx10.router, include_in_schema=False)
+# ⚠ Разговоры пары — раньше журнала вызовов. У соседа объявлен
+# `DELETE /session/{session_uuid}`, и путь `/session/companion/...` под этим
+# шаблоном читается как uuid сессии: подключись сосед первым, добавленная позже
+# ручка под `/session/companion/` с методом DELETE попала бы не туда. Тот же
+# порядок и по той же причине, что у подвкладок журнала.
+app.include_router(session_companion.router, include_in_schema=False)
 app.include_router(session.router, include_in_schema=False)
 app.include_router(node.router, include_in_schema=False)
 app.include_router(role.router, include_in_schema=False)

@@ -23,7 +23,7 @@ HTML-роуты — `src/uvicorn/routers/dashboard.py` (не `html.py`), по о
 | `/admin/node` | `admin/node.html` | Ноды |
 | `/admin/tool` | `admin/tool.html` | Инструменты + тест-раннер |
 | `/admin/fact`, `/admin/fact_collection` | `admin/fact*.html` | Факты и коллекции |
-| `/admin/session` | `admin/session.html` | Просмотр сессий |
+| `/admin/session` | `admin/session.html` | Сессии: вкладки «Агенты» и «Чат», разметка вкладок — `{% include %}` из `admin/session/` |
 | `/admin/user`, `/admin/role` | `admin/user.html`, `admin/role.html` | Пользователи и роли |
 | `/admin/cabinet` | `admin/cabinet.html` | Личный кабинет, access-токены |
 | `/admin/miniapp` | `admin/miniapp.html` | Mini App в рамке телефона (iframe на `/telegram-app`) |
@@ -130,6 +130,14 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
   `task_id` и соседей кладёт питон (`src/project/task/task_agent_*.py`), и в базе
   их нет больше нигде. Workflow, который ни разу не бегал и не объявил входящих,
   получит значки на рабочих именах — лечится прогоном или строкой `input` в реестре.
+- `js/session/` — страница `/admin/session`: `main.js` (переключение вкладок и
+  ленивый завод каждой), `agent.js` (вкладка «Агенты», `agent_session`),
+  `chat.js` (вкладка «Чат», `companion_session`), `util.js` (экранирование,
+  заполнение `select`). ⚠ Вкладки не делят ни поля, ни отборы, ни ленту —
+  поэтому не делят и модуль; разметка вкладок тоже разведена по шаблонам
+  (`admin/session/agent.html`, `admin/session/chat.html`), а стили лежат одним
+  файлом `css/session.css`, потому что их делят три шаблона. Устройство —
+  `.claude/docs/session.md`
 - `js/project/` — страница планирования: `main.js`, `projects.js`, `panel.js`,
   `actions.js`, `ideas.js`, `compare.js`, `markdown.js`, `cronicle.js`, `design.js`,
   `prototype-editor-widget.js`, `utils.js`
@@ -144,6 +152,7 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
 | `menu_top.css` | Верхнее меню: `.topbar`, `.nav-shell`, `.tabnav-group`, `.tabnav-panel`, `.topbar-user*` |
 | `notification.css` | Тосты |
 | `design.css` (2386 строк) | Дизайн-модуль; подключает только `project/design.html` |
+| `session.css` | Страница `/admin/session`; вынесена из шаблона, потому что её делят три шаблона (оболочка и две панели вкладок) |
 | `telegram_app.css`, `user_access_token.css`, `code_mirror_*.css` | По названию |
 
 **Общей библиотеки классов нет.** `.editor-container`, `.agents-sidebar`, `.form-control`,

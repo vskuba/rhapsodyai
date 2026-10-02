@@ -1,0 +1,442 @@
+/* Страница «Сессии»: две вкладки на одной раскладке.
+ *
+ * Файл, а не инлайн в шаблоне, потому что стили делят между собой три шаблона:
+ * оболочка страницы (`admin/session.html`) и две панели вкладок
+ * (`admin/session/agent.html`, `admin/session/chat.html`). Инлайн в оболочке
+ * оставил бы панели без стилей при чтении, а в каждой панели — развёл бы два
+ * сайдбара, которые обязаны выглядеть одинаково.
+ *
+ * Общей библиотеки классов в проекте нет (dashboard_frontend.md): правя этот
+ * файл, вы правите одну страницу.
+ */
+
+/* ===================== Оболочка и вкладки =====================
+   Разметка и имена классов те же, что на /admin/llm и /admin/journal: страницы
+   админки переключаются одинаково. Новая вкладка — кнопка в шапку и панель
+   `#tab-<имя>` ниже, переключатель найдёт их сам. */
+.session-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+    background: #f8f9fa;
+}
+
+.page-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #e2e8f0;
+    padding: 0 25px;
+    background: #fff;
+    flex-shrink: 0;
+}
+
+.page-tab {
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #718096;
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.page-tab.active {
+    color: #2c3e50;
+    border-bottom-color: #3498db;
+}
+
+.page-tab:hover:not(.active) {
+    color: #4a5568;
+}
+
+.tab-panel {
+    display: none;
+    flex: 1;
+    min-height: 0;
+}
+
+.tab-panel.active {
+    display: flex;
+}
+
+/* ===================== Две колонки, общие для вкладок ===================== */
+.session-body-container {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    background: #fff;
+}
+
+/* ЛЕВАЯ КОЛОНКА: фильтры своей вкладки + список её сессий.
+   ⚠ Ширина считана по самой длинной строке списка — «дата, огрызок uuid, имя
+   агента, счётчик» на вкладке «Агенты». Варианты `<select>` обрезаются справа
+   и БЕЗ многоточия, то есть обрезанное имя выглядит как целое, а хвост строки
+   пропадает молча; что в эту ширину не влезает, скрипты режут сами и видимо
+   (`labelClip`). */
+.session-sidebar {
+    width: 420px !important;
+    min-width: 420px;
+    border-right: 1px solid #e0e4e8;
+    background: #fcfcfc;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+}
+
+.filter-label {
+    display: block;
+    font-size: 11px;
+    font-weight: bold;
+    color: #718096;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+}
+
+.filter-field {
+    margin-bottom: 10px;
+}
+
+.form-control {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #cbd5e0;
+    background: #fff;
+    font-size: 14px;
+    outline: none;
+}
+
+.sidebar-title {
+    font-weight: bold;
+    color: #4a5568;
+    margin-bottom: 10px;
+}
+
+/* Список сессий/разговоров: моноширинный, потому что в строках ключи и числа —
+   их сравнивают глазами по колонкам. */
+.session-select {
+    width: 100%;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    padding: 5px;
+    font-family: monospace;
+    font-size: 11px;
+}
+
+.session-group {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 120px;
+}
+
+.session-group .session-select {
+    flex: 1;
+}
+
+.session-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.btn-session-delete {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    color: #e74c3c;
+    border: 1px solid #f1b0a8;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+    padding: 0;
+}
+
+.btn-session-delete-hide {
+    display: none;
+}
+
+.btn-session-delete:hover:not(:disabled) {
+    background: #e74c3c;
+    color: #fff;
+    border-color: #e74c3c;
+}
+
+.btn-session-delete:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* ПРАВАЯ КОЛОНКА: лента выбранной сессии */
+.session-detail-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    min-width: 0;
+}
+
+.detail-header {
+    padding: 12px 25px;
+    font-weight: bold;
+    color: #007bff;
+    font-size: 13px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.detail-header-note {
+    font-weight: normal;
+    color: #718096;
+    margin-left: 10px;
+}
+
+.session-stream {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+}
+
+.placeholder {
+    padding: 20px;
+    color: #a0aec0;
+}
+
+/* ===================== Чипы, общие для обеих лент ===================== */
+.chips-container {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.chip {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 10px;
+    border-radius: 12px;
+    color: white;
+    letter-spacing: 0.5px;
+}
+
+.chip-date {
+    font-size: 14px;
+    color: #1a8697;
+    margin-left: auto;
+}
+
+.role-user {
+    background-color: #f0913d;
+}
+
+.role-llm {
+    background-color: #4a90e2;
+}
+
+.role-tool, .role-workflow {
+    background-color: #67c23a;
+}
+
+.role-system {
+    background-color: #909399;
+}
+
+.role-thinking {
+    background-color: #adb5bd;
+}
+
+.chip-llm {
+    background-color: #d7d8f0;
+    color: #7f59e9;
+    border: 1px solid #e2e8f0;
+}
+
+.chip-request-id {
+    background-color: #f4f4f4;
+    color: #2c61c7;
+    border: 1px solid #e2e8f0;
+}
+
+.chip-kind {
+    background-color: #d7eff0;
+    color: #0d3061;
+    border: 1px solid #e2e8f0;
+}
+
+.chip-token {
+    background-color: #e0f0d7;
+    color: #1a4c95;
+    border: 1px solid #e2e8f0;
+}
+
+/* ===================== Лента вкладки «Агенты» ===================== */
+.admin-msg-box {
+    padding-bottom: 20px;
+    border-bottom: 1px solid #f1f3f5;
+}
+
+.admin-msg-content {
+    font-size: 13px;
+    line-height: 1.4;
+    color: #1e293b;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ===================== Лента вкладки «Чат» =====================
+   Строка таблицы — один ОБМЕН: «он спросил — мы ответили». Поэтому половины
+   стоят в одном блоке, а не идут двумя сообщениями подряд: так видно, что на
+   что отвечали, и видно обмен, где половина пуста (заговорили мы / он написал
+   дважды подряд). */
+.chat-exchange {
+    padding: 10px 14px 14px;
+    border-bottom: 1px solid #f1f3f5;
+}
+
+.chat-half {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+    align-items: flex-start;
+}
+
+/* Подпись половины — ИМЯ стороны, а не «он»/«мы». Поэтому колонка под слово, а
+   не под два символа, и без `uppercase`: имя человека капсом читается криком.
+   Длинное имя переносится, а не растягивает колонку: ширина общая на все
+   обмены ленты, иначе текст реплик шёл бы лесенкой. */
+.chat-half-who {
+    flex: 0 0 110px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #718096;
+    padding-top: 7px;
+    overflow-wrap: anywhere;
+}
+
+.chat-half-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #1e293b;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 6px 12px;
+    border-radius: 10px;
+}
+
+/* Его реплика и наша различаются фоном, а не стороной: читают их подряд, и
+   прыгающий влево-вправо текст в длинной переписке теряет взгляд. */
+.chat-half-his .chat-half-text {
+    background: #f4f6f8;
+}
+
+.chat-half-ours .chat-half-text {
+    background: #eaf3fd;
+}
+
+/* Неподтверждённый ответ видно, но видно и то, что он не ушёл: на вкладке
+   показывается именно он, в отличие от ленты агента. */
+.chat-half-undelivered .chat-half-text {
+    background: #fdf3e7;
+    border: 1px dashed #e8b96a;
+}
+
+/* Время — ПЕРЕД репликой, своим столбцом. Прижатое к правому краю реплики, оно
+   у длинного письма уезжало бы вниз на десяток строк, и лента переставала бы
+   читаться по времени сверху вниз. Ширина под полный штамп `ГГГГ-ММ-ДД ЧЧ:ММ`:
+   половины обмена бывают в разные дни, и час без даты врал бы. */
+.chat-half-time {
+    flex: 0 0 105px;
+    font-size: 11px;
+    color: #94a3b8;
+    padding-top: 7px;
+    white-space: nowrap;
+}
+
+/* Время в хвосте строки — когда ответ был СОЧИНЁН (слева стоит доставка).
+   Своей ширины не держит: столбец ровняется только левое время, а хвост
+   прижат к правому краю и выравнивать его не с чем. */
+.chat-half-time-tail {
+    flex: 0 0 auto;
+    padding-top: 1px;
+}
+
+/* Хвост строки: время сочинения и отметки обмена. */
+.chat-half-marks {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    padding-top: 6px;
+}
+
+.chat-half-empty {
+    font-style: italic;
+    color: #a0aec0;
+}
+
+.chip-id {
+    background-color: #eef2f7;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+
+.chip-delivered {
+    background-color: #e0f0d7;
+    color: #2f6f2f;
+    border: 1px solid #cfe6c0;
+}
+
+.chip-undelivered {
+    background-color: #fdeccf;
+    color: #92500c;
+    border: 1px solid #f2d3a0;
+}
+
+/* Откуда приехала реплика. Чип заливной и яркий: это единственное в строке,
+   что отвечает на «какой дорогой», и бледно-серым он терялся рядом с текстом.
+   ⚠ Без `uppercase` (в отличие от соседних чипов): внутри технические имена
+   (`favorite_mail`, `mail_in`), и капсом подчёркивание в них читается хуже. */
+.chip-source {
+    background-color: #6366f1;
+    color: #fff;
+    border: 1px solid #6366f1;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 10px;
+}
+
+/* ===================== Полоса прокрутки ===================== */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e0;
+    border-radius: 10px;
+}
