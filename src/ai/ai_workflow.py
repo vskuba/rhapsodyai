@@ -54,8 +54,19 @@ from mysql_.mysql_ import mysql_get_db_async
 #
 # ⚠ Регулярка матчит только ВНУТРЕННИЕ блоки (содержимое без вложенных `[<if`) —
 # вложенность разрешается повторными проходами изнутри наружу.
+#
+# ⚠⚠⚠ Условие — «любой знак, кроме `>` перед `]` и кроме `[`». Ни «всё кроме
+# `>`», ни нежадное `.+?` здесь не годятся, и обе ошибки были сделаны:
+#
+#     [^>]+     ломает сравнение: `[<if count > 5>]` обрывается на первом `>`
+#     .+?       перескакивает через `>]` к следующему и съедает чужой блок —
+#               на `[<if a>][<if count > 5>]…` условием становилось
+#               `a>][<if count > 5`, а внешний блок пропадал целиком
+#
+# `>` разрешён, только если за ним не `]`: тогда `count > 5` читается условием,
+# а `a>]` закрывает блок. Запрет `[` держит условие внутри своего блока.
 WORKFLOW_IF_BLOCK_RE = re.compile(
-    r'\[<if (!?)(\w+)>\]'
+    r'\[<if ((?:[^>\[]|>(?!\]))+)>\]'
     r'((?:(?!\[<if ).)*?)'
     r'(?:\[<else>\]((?:(?!\[<if ).)*?))?'
     r'\[<endif>\]',
@@ -64,6 +75,30 @@ WORKFLOW_IF_BLOCK_RE = re.compile(
 
 # Начало блока — им же цикл разворачивания решает, есть ли ещё работа.
 WORKFLOW_IF_OPEN = '[<if '
+
+# Операторы сравнения. ⚠⚠ Порядок в списке = порядок поиска, и двухсимвольные
+# обязаны стоять раньше: иначе `>=` разберётся как `>` со значением `=5`.
+WORKFLOW_COMPARE_OPERATORS = ('==', '!=', '>=', '<=', '>', '<')
+
+# Связки условия. ⚠ Разделитель — слово **в окружении пробелов**: `\bor\b`
+# поймал бы `oregon`, а имя переменной пробелов не содержит.
+WORKFLOW_OR_RE = re.compile(r'\s+or\s+')
+WORKFLOW_AND_RE = re.compile(r'\s+and\s+')
+
+# Атом условия: `!var`, `var`, `var <оп> значение`.
+#
+# ⚠ Значение берётся «всё до конца атома» и может быть в кавычках — иначе
+# `[<if name == John Smith>]` оборвался бы на пробеле. Кавычки снимаются в
+# `_condition_value_clean`.
+#
+# ⚠⚠ Список операторов берётся из константы, а не повторяется строкой: иначе
+# добавленный в список `<>` работал бы в переходах и молча не работал в блоках.
+WORKFLOW_IF_ATOM_RE = re.compile(
+    r'^(!?)([a-zA-Z_][a-zA-Z0-9_]*)'
+    r'(?:\s*(' + '|'.join(re.escape(one) for one in WORKFLOW_COMPARE_OPERATORS)
+    + r')\s*(.*))?$',
+    re.DOTALL
+)
 
 
 def ai_workflow_variables_agent_get(entity_agent: dict) -> dict:
@@ -265,23 +300,162 @@ def ai_workflow_variable_truthy(variables: dict, name: str) -> bool:
     return str(value).strip().lower() not in ('', '0', 'false')
 
 
+def ai_workflow_variable_compare(variables: dict, name: str, operator: str,
+                                 value) -> bool | None:
+    """Сравнить переменную с литералом. `None` — переменной нет, а она нужна.
+
+    Args:
+        variables: словарь переменных прогона.
+        name: имя переменной.
+        operator: один из `WORKFLOW_COMPARE_OPERATORS`.
+        value: литерал справа (не имя переменной).
+
+    ## ⚠⚠ Одно правило на переходы и на `[<if …>]`
+
+    Сравнение жило в `_transition_condition_check` (`ai_framework_manager.py`) и
+    было приватным методом менеджера. Когда условные блоки научились сравнивать,
+    второе такое же правило рядом означало бы, что `>` в переходе и `>` в блоке
+    однажды разойдутся молча. Теперь оно здесь — там, где уже лежит знание о
+    переменных (`ai_workflow_variable_truthy`), а менеджер зовёт эту функцию.
+
+    ## ⚠⚠ Числа сравниваются числами, остальное — строками
+
+    `str(10) > str(5)` лексикографически **ложь**: «1» меньше «5». Поэтому обе
+    стороны пробуются как `float`, и только если не вышло — сравниваются как
+    текст.
+
+    ## ⚠ `exists` и `empty` работают и для отсутствующей переменной
+
+    Они спрашивают про сам факт наличия, поэтому проверяются до возврата
+    `None`. Остальным операторам без значения ответить нечем.
+    """
+    exists = name in variables
+    current = variables.get(name)
+
+    if operator == 'exists':
+        return exists
+
+    if operator == 'empty':
+        return not exists or current is None or str(current).strip() == ''
+
+    if not exists:
+        return None
+
+    if operator == 'contains':
+        return str(value) in str(current)
+
+    if operator == 'not_contains':
+        return str(value) not in str(current)
+
+    if operator == 'regex':
+        try:
+            return re.search(str(value), str(current)) is not None
+        except re.error as e:
+            logger_info(f"⚠️ Некорректное регулярное выражение '{value}': {e}")
+
+            return False
+
+    left, right = str(current), str(value)
+
+    try:
+        left, right = float(left), float(right)
+    except (ValueError, TypeError):
+        pass
+
+    return (
+        operator == '==' and left == right
+        or operator == '!=' and left != right
+        or operator == '>' and left > right
+        or operator == '<' and left < right
+        or operator == '>=' and left >= right
+        or operator == '<=' and left <= right
+    )
+
+
+def ai_workflow_condition_check(expression: str, variables: dict) -> bool | None:
+    """Истинность условия блока `[<if …>]`. `None` — выражение не разобралось.
+
+    Args:
+        expression: то, что стоит между `[<if ` и `>]`.
+        variables: словарь переменных прогона.
+
+    Понимает четыре вида записи:
+
+        var                   истинность переменной (пусто, `0`, `false` — ложь)
+        !var                  отрицание
+        var <оп> значение     сравнение: == != > < >= <=
+        A and B,  A or B      связки, `and` связывает сильнее `or`
+
+    ## ⚠⚠ `None` — не «ложь», а «я это не понял»
+
+    Вызывающий обязан различать: при ложном условии блок исчезает, при
+    неразобранном — **остаётся в тексте как есть** и ловится сторожем
+    (`ai_workflow_marks_check`). Верни мы здесь `False`, опечатка в условии
+    молча съедала бы кусок промпта, и заметить это было бы нечем.
+
+    ## ⚠⚠ Справа — литерал, а не имя переменной
+
+    `[<if kind == chat>]` сравнивает со словом «chat», а не со значением
+    переменной `chat`. Так же устроены переходы (`value` в них — константа), и
+    два смысла у одной записи читались бы как ошибка через неделю.
+
+    ⚠ Значение с пробелами берут в кавычки: `[<if name == "John Smith">]`.
+
+    ## ⚠ Связки ищутся только в окружении пробелов
+
+    `\\bor\\b` поймал бы `oregon` в середине имени, поэтому разделитель — ровно
+    ` or ` и ` and `. Имя переменной пробелов не содержит, так что это не
+    ограничение, а защита.
+    """
+    text = str(expression or '').strip()
+
+    if not text:
+        return None
+
+    # ⚠ Все части считаются до ответа, а не по короткому замыканию: нам важно
+    # заметить непонятную часть даже справа от истинной. `[<if a or мусор>]`
+    # должен достаться сторожу, а не тихо сработать по левой половине.
+    parts = [_condition_and_check(one, variables)
+             for one in WORKFLOW_OR_RE.split(text)]
+
+    if any(one is None for one in parts):
+        return None
+
+    return any(parts)
+
+
 def ai_workflow_if_blocks_render(source: str, variables: dict) -> str:
     """Разворачивает условные блоки `[<if var>]…[<else>]…[<endif>]` в шаблоне.
 
     Условие проверяется по словарю переменных **до** подстановки `%переменных%`:
-    блок остаётся (или берётся ветка `[<else>]`) по истинности переменной.
-    `[<if !var>]` — отрицание. Вложенные блоки разворачиваются изнутри наружу.
+    блок остаётся (или берётся ветка `[<else>]`) по истинности условия.
+    Вложенные блоки разворачиваются изнутри наружу.
+
+    Что понимает условие — `ai_workflow_condition_check`: истинность, отрицание
+    `!var`, сравнения `== != > < >= <=` и связки `and` / `or`.
 
     ⚠ Незакрытый или неверно написанный блок остаётся в тексте **как есть** — и
     ловится потом сторожем (`ai_workflow_marks_check`). Молча такое уезжать в LLM
     не должно: модель прочтёт `[<if …>]` как часть задания.
+
+    ## ⚠⚠ Непонятое условие тоже остаётся целиком
+
+    Разборщик отвечает `None` на выражение, которого не понял, и блок уходит в
+    текст нетронутым — вместе с `[<endif>]`. Сверни мы его как ложное, опечатка
+    (`[<if a && b>]`) молча съедала бы кусок промпта: ни ошибки, ни следа, а
+    модель получила бы задание без половины.
+
+    ⚠ Поэтому же цикл считает работу законченной, когда проход ничего не
+    изменил: непонятый блок остаётся на месте и зацикливания не создаёт.
     """
 
     def replace(match: re.Match) -> str:
-        negate, name, then_text, else_text = match.groups()
-        condition = ai_workflow_variable_truthy(variables, name)
-        if negate:
-            condition = not condition
+        expression, then_text, else_text = match.groups()
+        condition = ai_workflow_condition_check(expression, variables)
+
+        if condition is None:
+            return match.group(0)
+
         return then_text if condition else (else_text or '')
 
     while WORKFLOW_IF_OPEN in source:
@@ -492,3 +666,64 @@ def ai_workflow_step_refs_remap(metadata: str, id_map: dict) -> str:
     metadata = _STEP_RESULT_RE.sub(
         lambda m: f'_{id_map.get(int(m.group(1)), int(m.group(1)))}{m.group(2)}', metadata)
     return metadata
+
+
+# ── детали разбора условия ──
+
+def _condition_and_check(part: str, variables: dict) -> bool | None:
+    """Цепочка через `and`. `None` — хоть один атом не разобрался.
+
+    ⚠ Короткого замыкания нет намеренно: непонятный атом справа от ложного
+    должен быть замечен, иначе опечатка в условии живёт, пока первая половина
+    ложна, и проявляется в тот день, когда она станет истинной.
+    """
+    atoms = [_condition_atom_check(one, variables)
+             for one in WORKFLOW_AND_RE.split(part)]
+
+    if any(one is None for one in atoms):
+        return None
+
+    return all(atoms)
+
+
+def _condition_atom_check(atom: str, variables: dict) -> bool | None:
+    """Один атом: `var`, `!var` или `var <оп> значение`. `None` — не разобрался."""
+    found = WORKFLOW_IF_ATOM_RE.match(str(atom or '').strip())
+
+    if not found:
+        return None
+
+    negate, name, operator, value = found.groups()
+
+    if not operator:
+        result = ai_workflow_variable_truthy(variables, name)
+
+        return not result if negate else result
+
+    # ⚠⚠ Отрицание вместе со сравнением запрещено: `!a == b` читается двояко —
+    # «не（a == b）» или «（!a） == b». Вместо догадки отдаём это сторожу, а
+    # пишущему остаётся `!=`, который значит ровно одно.
+    if negate:
+        return None
+
+    compared = ai_workflow_variable_compare(
+        variables, name, operator, _condition_value_clean(value))
+
+    # ⚠ Переменной нет — это «условие не выполнено», а не «текст непонятен».
+    # Иначе промпт с условием по ещё не заполненной переменной уехал бы к
+    # модели с разметкой внутри.
+    return False if compared is None else compared
+
+
+def _condition_value_clean(value: str) -> str:
+    """Литерал справа от оператора: снимает обрамляющие кавычки и пробелы.
+
+    ⚠ Кавычки снимаются **только парные по краям**: `"John Smith"` → `John
+    Smith`, а `5" труба` остаётся как есть — там кавычка часть значения.
+    """
+    text = str(value or '').strip()
+
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
+        return text[1:-1]
+
+    return text

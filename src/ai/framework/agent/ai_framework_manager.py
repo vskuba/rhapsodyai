@@ -11,7 +11,8 @@ from src.ai.ai_llm import ai_llm_node_id_default_get, ai_llm_speed_get, ai_llm_p
 from src.ai.ai_session import ai_session_message_add, ai_session_metadata_set, ai_session_metadata_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_marks_check, \
     ai_workflow_variables_input_get, ai_workflow_variables_render, \
-    ai_workflow_variables_global_get, ai_workflow_variables_agent_get, ai_workflow_text_render
+    ai_workflow_variables_global_get, ai_workflow_variables_agent_get, \
+    ai_workflow_text_render, ai_workflow_variable_compare
 from src.ai.ai_workflow_trace import (ai_workflow_trace_run_start, ai_workflow_trace_run_finish,
                                       ai_workflow_trace_step, ai_workflow_trace_variables_diff)
 from logging_.logging_ import logger_info
@@ -1184,46 +1185,19 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
         Возвращает True/False, либо None — если переменная отсутствует, а оператор
         требует ее значения (такой переход нужно пропустить с предупреждением).
-        exists/empty оценивают сам факт наличия/пустоты переменной, поэтому
-        работают и для отсутствующих переменных.
-        Числа сравниваются численно, иначе — как строки
-        (str(10) > str(5) лексикографически дает False)."""
-        variable_exists = variable_name in variables
-        current_value = variables.get(variable_name)
 
-        if operator == 'exists':
-            return variable_exists
-        if operator == 'empty':
-            return not variable_exists or current_value is None or str(current_value).strip() == ''
+        ## ⚠⚠ Само правило живёт не здесь, и это нарочно
 
-        if not variable_exists:
-            return None
+        Сравнение переехало в `ai_workflow_variable_compare`: те же операторы
+        понимают условные блоки `[<if …>]` в промптах. Держи мы два правила, `>`
+        в переходе и `>` в блоке однажды разошлись бы молча — например, когда
+        одному из них добавят умное сравнение дат.
 
-        if operator == 'contains':
-            return str(value) in str(current_value)
-        if operator == 'not_contains':
-            return str(value) not in str(current_value)
-        if operator == 'regex':
-            try:
-                return re.search(str(value), str(current_value)) is not None
-            except re.error as e:
-                logger_info(f"⚠️ Некорректное регулярное выражение в переходе '{value}': {e}")
-                return False
-
-        a, b = str(current_value), str(value)
-        try:
-            a, b = float(a), float(b)
-        except (ValueError, TypeError):
-            pass
-
-        return (
-                operator == "==" and a == b
-                or operator == "!=" and a != b
-                or operator == ">" and a > b
-                or operator == "<" and a < b
-                or operator == ">=" and a >= b
-                or operator == "<=" and a <= b
-        )
+        Обязанность положена туда, где уже лежит знание о переменных workflow
+        (`ai_workflow.py`, рядом с `ai_workflow_variable_truthy`), а здесь
+        остаётся исполнение перехода.
+        """
+        return ai_workflow_variable_compare(variables, variable_name, operator, value)
 
     @staticmethod
     def _text_split_chunks(text: str, chunk_size: int, overlap: int) -> list[str]:
