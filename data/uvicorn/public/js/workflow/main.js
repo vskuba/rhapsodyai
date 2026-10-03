@@ -319,13 +319,28 @@ async function duplicateWorkflow(workflow) {
 
 async function openWorkflowSteps(workflow, element) {
     setActiveItem(element);
-    workflowSelectionSave(workflow);
-    activateTab('tabSteps');
 
-    document.getElementById('workflowSettingsView').style.display = 'none';
-    document.getElementById('stepsEditorView').style.display = 'flex';
-    document.getElementById('stepsGraph').style.display = 'none';
-    document.getElementById('addStepToWorkflowBtn').style.display = 'block';
+    // ⚠⚠⚠ Вкладку сбрасываем на «Шаги» только при переходе к **другому**
+    // workflow. Тот же самый открывается заново после каждого сохранения
+    // (`initWorkflowManager` перечитывает список и щёлкает по активной ссылке),
+    // и сброс выбрасывал человека из «Настроек» на «Шаги»: правил он в одной
+    // вкладке, а оказывался в другой — где входящих переменных не видно вовсе.
+    // Читалось это как «правка не сохранилась», хотя она уже лежала в базе.
+    //
+    // ⚠ Сравнение — **до** `fillWorkflowForm`: это она пишет новый номер в
+    // `#workflowId`, и после неё «тот же» от «другого» не отличить.
+    const another = String(editorWorkflowId()) !== String(workflow.id);
+
+    workflowSelectionSave(workflow);
+
+    if (another) {
+        activateTab('tabSteps');
+
+        document.getElementById('workflowSettingsView').style.display = 'none';
+        document.getElementById('stepsEditorView').style.display = 'flex';
+        document.getElementById('stepsGraph').style.display = 'none';
+        document.getElementById('addStepToWorkflowBtn').style.display = 'block';
+    }
 
     await fillWorkflowForm(workflow);
     await loadWorkflowSteps(workflow.id);

@@ -63,13 +63,43 @@ class TestTheDiffFindsTheChangedKey:
         assert got[0]['was'] == '%invite_count%'
         assert got[0]['now'] == 1
 
-    def test_a_number_and_a_string_are_not_the_same(self):
-        """⚠⚠ `1` и `"1"` — разное, и это не придирка: единица против
-        строки-метки и есть та разница, из-за которой история завелась."""
+    def test_a_number_and_the_same_digits_are_one_value(self):
+        """⚠⚠⚠ `2` и `"2"` — одно значение, и прежде здесь стояло обратное.
+
+        Довод был про `repeat.count`: единица против строки-метки и есть та
+        разница, ради которой история завелась. Довод верный, вывод из него —
+        нет: защищает он от подмены **значения**, а строгое сравнение по типу
+        ловило заодно и подмену типа при том же значении.
+
+        Цена вышла прямая. Форма workflow берёт `node_id` из `<select>`,
+        оттуда всё приходит строкой, а в базе колонка `INT` — и каждое нажатие
+        «Сохранить workflow» писало в историю `node_id: 2 → 2`. Лента набилась
+        правками, которых не было, и настоящая в ней тонула: на вопрос «что
+        именно поменяли» история отвечала «ничего, но много раз».
+
+        ⚠ Защита цела и проверена соседним тестом: `%invite_count%` и `1`
+        различны и как текст.
+        """
         got = workflow_history_changes({'metadata': '{"a": 1}'},
                                        {'metadata': '{"a": "1"}'})
 
-        assert len(got) == 1, got
+        assert got == [], f'одно и то же записано правкой: {got}'
+
+    def test_a_select_value_against_an_int_column_is_not_a_change(self):
+        """⚠⚠ Тот самый случай живьём: `node_id` из формы против базы."""
+        got = workflow_history_changes({'node_id': 2, 'title': 'Инвайт'},
+                                       {'node_id': '2', 'title': 'Инвайт'})
+
+        assert got == [], f'фантомная правка вернулась: {got}'
+
+    def test_an_empty_string_is_not_the_same_as_nothing(self):
+        """⚠ «Не было поля» и «пустая строка» — разные состояния, и лента
+        показывает их по-разному («нет» против «пусто»). Текстовое сравнение
+        слило бы их, не отдели мы `None` особо."""
+        got = workflow_history_changes({'group_name': None},
+                                       {'group_name': ''})
+
+        assert len(got) == 1, f'разные состояния слиты: {got}'
 
     def test_key_order_is_not_a_change(self):
         """⚠ Метаданные приезжают строкой JSON, и смена порядка ключей правкой

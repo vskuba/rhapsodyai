@@ -52,6 +52,9 @@
 | `test_telegram_app_task_ui.py` | Chromium | нет: местная разметка | 48 |
 | `test_telegram_app_task_wiring.py` | Chromium | нет | 6 |
 | `test_telegram_app_task_screen.py` | Chromium | нет | 5 |
+| `test_workflow_prompt_modal.py` | Chromium | нет: своя панель | 13 |
+| `test_workflow_subflow_maps.py` | Chromium | нет: своя панель | 8 |
+| `test_workflow_input_variable_add.py` | Chromium | нет: своя панель | 19 |
 
 ⚠ **Телеграмные в интернет не ходят вовсе** — они рисуют местную разметку. Здесь
 они по второму признаку: **живой Chromium**. Его запуск стоит секунд и роняется

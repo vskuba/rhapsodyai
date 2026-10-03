@@ -333,6 +333,23 @@ async def workflow_variable_add(
 ):
     """Заводит переменную этого workflow. Имя уже есть — отдаёт её же.
 
+    ## ⚠⚠⚠ Имя занято переменной другого рода — роду меняется, а не отказ
+
+    Отбор шёл по одному имени, без рода. Входящая `invite_done` у
+    `dating_invite_one` натыкалась на `workflow`-переменную с тем же именем,
+    получала в ответ её номер — и редактор рапортовал «сохранено», хотя не
+    завелось ничего. Список входящих отбирает по `type='input'`, и переменная
+    пропадала из него на глазах.
+
+    Теперь повтор **того же** рода по-прежнему отдаёт номер молча (страница
+    заводит переменную и кнопкой, и подхватом из шага), а повтор **другого**
+    рода переназначает род и пишет это в историю. Решение человека: имя одно —
+    запись одна, и род задаёт тот, кто заводит.
+
+    Returns:
+        `{"result": id, "type_was": прежний род или None}` — второе поле нужно
+        странице, чтобы сказать человеку, что поменяла.
+
     ## ⚠⚠ Своя строка, а не чужая с тем же именем
 
     Здесь искалась запись с такой же парой (имя, тип) **по всей базе**, и если
@@ -354,40 +371,72 @@ async def workflow_variable_add(
     # Владелец глобальной — никто: она общая на установку, а не на workflow.
     owner_id = None if variable_type == 'global' else workflow_id
 
+    was_type = None
+
     async with mysql_get_db_async() as db:
         # Повтор по имени внутри своего workflow — не ошибка: страница добавляет
         # переменную и по кнопке, и подхватом из шага, а результат один и тот же.
         await db.execute(
-            "SELECT id FROM agent_workflow_variable "
+            "SELECT id, `type` FROM agent_workflow_variable "
             "WHERE `workflow_id` <=> %s AND name = %s",
             (owner_id, data.get("name"))
         )
         variable = await db.fetchone()
-        if variable:
+
+        if variable and variable.get('type') == variable_type:
             return {"result": variable.get("id")}
 
-        await db.execute(
-            """
-            INSERT INTO agent_workflow_variable (workflow_id, name, `default`, `type`)
-            VALUES (%s, %s, %s, %s)
-            """,
-            (owner_id, data.get("name"), data.get("default"), variable_type)
-        )
-        new_id = db.lastrowid
+        # ⚠⚠⚠ Имя занято переменной **другого рода** — меняем ей род, а не
+        # отмахиваемся её номером. Прежде здесь возвращался чужой номер, и это
+        # было молчаливой ложью: редактор добавляет входящую, получает в ответ
+        # `workflow`-переменную с тем же именем, рапортует «сохранено», а список
+        # входящих отбирает по `type='input'` — и переменная пропадала из него
+        # на глазах у человека. Поймано на `invite_done` у `dating_invite_one`:
+        # «нажимаю сохранить, и переменной в списке больше нет».
+        #
+        # ⚠⚠ Решение человека: род задаёт тот, кто заводит. Имя одно, запись
+        # одна — двух `invite_done` у одного workflow быть не может, и выбор
+        # между «отказать» и «переназначить» решён в пользу второго: человек,
+        # добавляющий входящую, именно это и просит. Смена рода ложится в
+        # историю (`update` с полем `type`) — молчать ей нельзя.
+        if variable:
+            was_type = variable.get('type')
+            await db.execute(
+                "UPDATE agent_workflow_variable SET `type` = %s WHERE id = %s",
+                (variable_type, variable.get('id')))
+            await db.connection.commit()
+            new_id = variable.get('id')
+        else:
+            # ⚠ Описание пишется здесь же, а не доправляется вторым запросом: у
+            # новой входящей переменной страница отдаёт его разом с именем (форма
+            # заполнена до сохранения workflow), и отдельный PUT следом означал бы
+            # две записи в историю на одно заведение.
+            await db.execute(
+                """
+                INSERT INTO agent_workflow_variable
+                       (workflow_id, name, `default`, `type`, description)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (owner_id, data.get("name"), data.get("default"), variable_type,
+                 str(data.get("description") or '').strip() or None)
+            )
+            new_id = db.lastrowid
 
     # ⚠ **Вне `async with`**: запись истории берёт своё соединение, и вложенный
     # заход за ним изнутри открытого держал бы два на один запрос.
     #
-    # ⚠ Повтор по имени записи не даёт — он возвращается выше: «добавил
+    # ⚠ Повтор того же рода записи не даёт — он возвращается выше: «добавил
     # существующую» событием не является (страница заводит переменную и кнопкой,
-    # и подхватом из шага).
+    # и подхватом из шага). А смена рода — событие: именно она меняет то, откуда
+    # переменная берёт значение.
     await workflow_history_write(
-        workflow_id, HISTORY_OBJECT_VARIABLE, HISTORY_ACTION_CREATE,
-        changes=[{'field': 'type', 'was': None, 'now': variable_type}],
+        workflow_id, HISTORY_OBJECT_VARIABLE,
+        HISTORY_ACTION_UPDATE if was_type else HISTORY_ACTION_CREATE,
+        changes=[{'field': 'type', 'was': was_type, 'now': variable_type}],
         user=user, object_id=int(new_id or 0),
         object_name=str(data.get('name') or ''))
 
-    return {"result": new_id}
+    return {"result": new_id, "type_was": was_type}
 
 
 @router.put("/workflow/{workflow_id}/steps/reorder")

@@ -67,6 +67,16 @@ export async function loadWorkflowVariables(workflowId) {
     const container = document.getElementById('variablesContainer');
     if (!container) return;
 
+    // ⚠⚠ Незаконченные переменные принадлежат **своему** workflow. Перечитывание
+    // зовётся и после сохранения того же (там они нужны: не уехавшее из-за
+    // негодного имени чинится на месте), и при переходе к другому — где их
+    // показ был бы чужой строкой в чужом списке, да ещё и уехал бы в него по
+    // первому «Сохранить».
+    if (String(state.inputVarPendingFor ?? '') !== String(workflowId)) {
+        state.inputVarPending = [];
+        state.inputVarPendingFor = workflowId;
+    }
+
     try {
         // 1. Делаем асинхронный запрос к выделенному эндпоинту переменных
         const data = await getData(`/workflow/${workflowId}/variables`);
@@ -97,6 +107,24 @@ export async function loadWorkflowVariables(workflowId) {
 
 // ===== Входящие переменные (type === 'input') в форме "Редактирование задачи" =====
 
+// Род переменной по-русски: для разговора с человеком, а не для разметки.
+const VAR_TYPE_WORDS = {
+    workflow: 'переменная прогона',
+    global: 'глобальная',
+    input: 'входящая',
+    node: 'переменная ноды',
+};
+
+/**
+ * Список входящих переменных и скрытые строки под сохранение.
+ *
+ * ⚠⚠⚠ Рисует **две** породы: пришедшие из базы (`state.allCurrentVariables`) и
+ * заведённые кнопкой, но ещё не уехавшие туда (`state.inputVarPending`). Вторые
+ * прежде жили только в разметке — и пропадали на любой перерисовке списка:
+ * переименовал соседнюю переменную, движок дёрнул перечитывание — и набранное
+ * имя исчезало вместе с узлами, молча. Перерисовка обязана уметь восстановить
+ * всё, что человек видит; значит, источником может быть только состояние.
+ */
 function renderInputVariables() {
     const list = document.getElementById('inputVariablesList');
     const hidden = document.getElementById('inputVariablesContainer');
@@ -106,7 +134,9 @@ function renderInputVariables() {
     hidden.innerHTML = '';
 
     const all = Array.isArray(state.allCurrentVariables) ? state.allCurrentVariables : [];
-    const inputs = all.filter(v => v.type === 'input');
+    const saved = all.filter(v => v.type === 'input');
+    const pending = Array.isArray(state.inputVarPending) ? state.inputVarPending : [];
+    const inputs = [...saved, ...pending];
 
     // ⚠ Скрытые строки остаются: на них держится сохранение вместе с workflow
     // (`saveInputVariables` читает `#inputVariablesContainer`). Вид сменился,
@@ -122,11 +152,29 @@ function renderInputVariables() {
     // Выбранную держим между перерисовками: список перечитывается после каждого
     // сохранения, и сброс выбора выбрасывал бы человека из формы, которую он
     // правит.
-    const want = inputs.find(v => String(v.id) === String(state.inputVarPicked))
+    //
+    // ⚠ Несохранённую ищем по её ключу (`new:N`), а не по номеру: номера у неё
+    // нет, и без ключа перерисовка уводила бы человека из формы, которую он
+    // прямо сейчас заполняет.
+    const want = inputs.find(v => String(inputVarKey(v)) === String(state.inputVarPicked))
         || inputs[0];
 
     if (want) pickInputVariable(want);
     else showInputForm(null);
+}
+
+/**
+ * Ключ переменной в списке: номер у сохранённой, `new:N` у ещё не уехавшей.
+ *
+ * ⚠ Один ключ на обе породы нужен выбору: `state.inputVarPicked` держит ровно
+ * его, и пустой номер новой сливал бы все несохранённые в одну.
+ */
+function inputVarKey(variable) {
+    if (variable.id) return String(variable.id);
+
+    const at = (state.inputVarPending || []).indexOf(variable);
+
+    return `new:${at < 0 ? 0 : at}`;
 }
 
 /**
@@ -143,6 +191,9 @@ function renderInputVariables() {
 function nameButton(variable) {
     const row = document.createElement('div');
     row.className = 'input-var-name';
+    // ⚠ Ключ, а не номер: у несохранённой номера нет, и по пустому её не
+    // отличить ни от соседней такой же, ни при подсветке выбранной.
+    row.dataset.key = inputVarKey(variable);
     row.dataset.id = variable.id ?? '';
     row.tabIndex = 0;
     if (!variable.id) row.classList.add('fresh');
@@ -174,11 +225,11 @@ function nameButton(variable) {
 }
 
 function pickInputVariable(variable) {
-    state.inputVarPicked = variable.id ?? null;
+    const key = inputVarKey(variable);
+    state.inputVarPicked = key;
 
     document.querySelectorAll('.input-var-name').forEach(one => {
-        one.classList.toggle('active',
-            String(one.dataset.id) === String(variable.id ?? ''));
+        one.classList.toggle('active', String(one.dataset.key) === String(key));
     });
 
     showInputForm(variable);
@@ -313,18 +364,30 @@ function bindSave(el, variable, field) {
         const value = el.value.trim();
         if (value === (variable[field] ?? '')) return;
 
-        // ⚠ Новая переменная уедет вместе с workflow: PUT слать некуда, но
-        // скрытую строку обновить надо — из неё читает `saveInputVariables`.
-        if (!variable.id) {
-            variable[field] = value;
-            syncHiddenRow(variable);
+        // ⚠ Имя проверяется до разбора «новая или существующая»: у новой оно
+        // уедет в базу тем же POST и той же проверкой, и узнать о негодном имени
+        // при сохранении всего workflow — на один шаг позже, чем надо.
+        //
+        // ⚠⚠ Набранное **не стираем**: прежде поле возвращалось к прежнему
+        // значению, а у новой переменной прежнее — пустота. Человек видел, как
+        // имя исчезает само, и читал это как «страница съела правку». Текст
+        // остаётся, поле краснеет, починить можно на месте.
+        if (field === 'name'
+                && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
+            showNotification(
+                `Имя «${value}» не годится: буквы, цифры и подчёркивание, и не `
+                + 'с цифры. Переменная не сохранится, пока имя такое.', 'error');
+            badMark(el);
             return;
         }
 
-        if (field === 'name'
-                && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
-            showNotification(`Недопустимое имя переменной: "${value}"`, 'error');
-            el.value = variable.name;
+        // ⚠ Новая переменная уедет вместе с workflow: PUT слать некуда, но
+        // состояние обновить надо — из него читает `saveInputVariables`.
+        if (!variable.id) {
+            variable[field] = value;
+            syncHiddenRow(variable);
+            freshLabelSync(variable);
+            savedMark(el);
             return;
         }
 
@@ -356,16 +419,43 @@ function bindSave(el, variable, field) {
     });
 }
 
-/** Скрытая строка — источник для сохранения вместе с workflow. */
+/**
+ * Скрытая строка — источник для сохранения существующих вместе с workflow.
+ *
+ * ⚠ Несохранённую искать в разметке нечем и незачем: её правда лежит в
+ * `state.inputVarPending`, оттуда её и возьмёт `saveInputVariables`. Разметка у
+ * неё живёт ровно до ближайшей перерисовки.
+ */
 function syncHiddenRow(variable) {
+    if (!variable.id) return;
+
     const row = document.querySelector(
         `#inputVariablesContainer .input-variable-row[data-id="${variable.id}"]`);
     if (!row) return;
 
     row.querySelector('.var-key').value = variable.name ?? '';
     row.querySelector('.var-value').value = variable.default ?? '';
+    row.querySelector('.var-note').value = variable.description ?? '';
     row.dataset.originalName = variable.name ?? '';
     row.dataset.originalDefault = variable.default ?? '';
+}
+
+/**
+ * Имя несохранённой переменной в строке списка слева.
+ *
+ * ⚠ Её нет в `state.allCurrentVariables`, и полной перерисовки ради одного
+ * имени звать не надо: та сбрасывает фокус, а человек сейчас в поле. Без этой
+ * строчки список держал бы «(без имени)» до самого сохранения — ровно там, где
+ * человек ищет подтверждение правки.
+ */
+function freshLabelSync(variable) {
+    const row = document.querySelector(
+        `.input-var-name[data-key="${inputVarKey(variable)}"]`);
+    const label = row?.querySelector('.input-var-label');
+    if (!label) return;
+
+    label.textContent = variable.name || '(без имени)';
+    label.title = variable.name || '';
 }
 
 /** Короткая отметка «сохранено»: всплывающее сообщение на каждое поле — шум. */
@@ -375,8 +465,24 @@ function savedMark(el) {
     setTimeout(() => { el.style.borderColor = was; }, 900);
 }
 
+/**
+ * Отметка «так не годится»: поле остаётся красным, пока его не поправят.
+ *
+ * ⚠ Не гаснет по времени, в отличие от `savedMark`. Негодное имя — это
+ * состояние, а не событие: переменная с ним не сохранится ни сейчас, ни через
+ * минуту, и признак обязан дожить до починки.
+ */
+function badMark(el) {
+    el.style.borderColor = '#dc2626';
+    el.addEventListener('input', () => { el.style.borderColor = ''; },
+                        {once: true});
+}
+
 async function removeInputVariable(variable) {
+    // Несохранённую сносим из состояния: в базе её нет, спрашивать не о чем.
     if (!variable.id) {
+        const at = (state.inputVarPending || []).indexOf(variable);
+        if (at >= 0) state.inputVarPending.splice(at, 1);
         state.inputVarPicked = null;
         renderInputVariables();
         return;
@@ -397,13 +503,20 @@ async function removeInputVariable(variable) {
     }
 }
 
-function createInputVariableRow(variable = null) {
+/**
+ * Скрытая строка переменной: источник сохранения существующих.
+ *
+ * ⚠ Зовётся из `renderInputVariables` на каждую переменную — и сохранённую, и
+ * ещё не уехавшую в базу. У второй `id` пуст; строка ей нужна только для
+ * единообразия разметки, сохранение её читает из `state.inputVarPending`.
+ */
+function createInputVariableRow(variable) {
     const container = document.getElementById('inputVariablesContainer');
     if (!container) return;
 
     const row = document.createElement('div');
     row.className = 'variable-row input-variable-row';
-    if (variable) {
+    if (variable.id) {
         row.dataset.id = variable.id;
         row.dataset.originalName = variable.name;
         row.dataset.originalDefault = variable.default ?? '';
@@ -412,64 +525,147 @@ function createInputVariableRow(variable = null) {
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.className = 'form-control var-key';
-    nameInput.value = variable ? variable.name : '';
+    nameInput.value = variable.name ?? '';
 
     const valInput = document.createElement('input');
     valInput.type = 'text';
     valInput.className = 'form-control var-value';
-    valInput.value = variable ? (variable.default ?? '') : '';
+    valInput.value = variable.default ?? '';
 
-    row.append(nameInput, valInput);
+    // ⚠ Описание тоже лежит в строке, хотя у существующей переменной уезжает в
+    // базу сразу (PUT по уходу из поля). Оно здесь ради единообразия: читать
+    // строку кому-то, кроме сохранения существующих, не полагается.
+    const noteInput = document.createElement('input');
+    noteInput.type = 'hidden';
+    noteInput.className = 'var-note';
+    noteInput.value = variable.description ?? '';
+
+    row.append(nameInput, valInput, noteInput);
     container.appendChild(row);
-
-    // Новая строка: показываем её в списке и открываем форму.
-    if (!variable) {
-        state.inputVarPicked = null;
-        const list = document.getElementById('inputVariablesList');
-        const fresh = {name: '', default: '', description: '', id: null};
-        if (list) list.append(nameButton(fresh));
-        showInputForm(fresh);
-    }
 }
 
 /**
- * Сохраняет входящие переменные: новые строки (без data-id) создаются через POST
- * с type='input', измененные существующие обновляются через PUT.
+ * Завести переменную, которой ещё нет в базе: она уедет туда с сохранением.
+ *
+ * ⚠⚠⚠ Кладём её **в состояние**, а не в разметку. Прежде она жила только
+ * узлами DOM, и любая перерисовка списка её уносила — вместе с набранным
+ * именем и без единого слова. Перерисовку зовёт не только сохранение: хватит
+ * переименовать соседнюю переменную (`bindSave` → `renderInputVariables`).
+ * Состояние переживает перерисовку по устройству, разметка — нет.
+ */
+function inputVariableAdd() {
+    if (!Array.isArray(state.inputVarPending)) state.inputVarPending = [];
+
+    const fresh = {name: '', default: '', description: '', id: null};
+    state.inputVarPending.push(fresh);
+    state.inputVarPicked = inputVarKey(fresh);
+
+    renderInputVariables();
+}
+
+/**
+ * Сохраняет входящие переменные вместе с workflow: заведённые кнопкой уезжают
+ * POST-ом с `type='input'`, правка существующих — PUT-ом.
+ *
+ * ⚠⚠ Новые берутся из `state.inputVarPending`, существующие — из скрытых строк.
+ * Два источника — потому что правда у них разная: у существующей в строке
+ * лежит ещё и «что было» (`data-original*`), по которому видно, менялось ли
+ * что-нибудь; у новой сравнивать не с чем.
+ *
+ * ⚠⚠⚠ Пропуски больше **не молчат**. Безымянная или негодно названная
+ * переменная не сохранится — и прежде это происходило без слова: человек жал
+ * «Сохранить», получал зелёное «Изменения успешно сохранены» и не досчитывался
+ * переменной. Имя для беды важнее тишины.
  */
 export async function saveInputVariables(workflowId) {
-    const rows = document.querySelectorAll('#inputVariablesContainer .input-variable-row');
+    const skipped = [];
 
-    for (const row of rows) {
+    for (const row of document.querySelectorAll(
+            '#inputVariablesContainer .input-variable-row[data-id]')) {
         const name = row.querySelector('.var-key').value.trim();
         const value = row.querySelector('.var-value').value.trim();
-        const variableId = row.dataset.id;
 
-        if (!name) continue;
+        if (!inputVariableNameOk(name, skipped)) continue;
 
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-            showNotification(`Недопустимое имя переменной: "${name}"`, 'error');
-            continue;
-        }
+        // Существующая переменная: обновляем, только если что-то изменилось.
+        const isChanged = name !== row.dataset.originalName
+            || value !== (row.dataset.originalDefault || '');
 
-        if (variableId) {
-            // Существующая переменная: обновляем только если имя или значение изменились
-            const isChanged = name !== row.dataset.originalName
-                || value !== (row.dataset.originalDefault || '');
-
-            if (isChanged) {
-                await putData(`/workflow/${workflowId}/variable/${variableId}`, {
-                    name: name,
-                    "default": value === '' ? null : value
-                });
-            }
-        } else {
-            await postData(`/workflow/${workflowId}/variable`, {
+        if (isChanged) {
+            await putData(`/workflow/${workflowId}/variable/${row.dataset.id}`, {
                 name: name,
-                "default": value === '' ? null : value,
-                type: 'input'
+                "default": value === '' ? null : value
             });
         }
     }
+
+    const pending = Array.isArray(state.inputVarPending) ? state.inputVarPending : [];
+    const landed = [];
+
+    for (const fresh of pending) {
+        const name = String(fresh.name || '').trim();
+        const value = String(fresh.default || '').trim();
+        const note = String(fresh.description || '').trim();
+
+        // ⚠ Выбрана ли она сейчас — смотрим **до** записи: ключ `new:N` живёт
+        // ровно до отъезда в базу, дальше у переменной появляется номер.
+        const picked = String(state.inputVarPicked) === String(inputVarKey(fresh));
+
+        if (!inputVariableNameOk(name, skipped)) continue;
+
+        // ⚠ Описание уходит тем же запросом: у новой переменной это
+        // единственная возможность. Правка описания существующей идёт
+        // отдельным PUT сразу по уходу из поля (`bindSave`).
+        const got = await postData(`/workflow/${workflowId}/variable`, {
+            name: name,
+            "default": value === '' ? null : value,
+            description: note === '' ? null : note,
+            type: 'input'
+        });
+        landed.push(fresh);
+
+        // ⚠⚠ Переназначение рода называем вслух. Имя было занято переменной
+        // прогона, и человек вправе знать, что завелась не новая запись, а
+        // прежняя сменила род: её значение теперь приходит снаружи, а не
+        // складывается шагом.
+        if (got?.type_was) {
+            showNotification(
+                `Переменная «${name}» уже была в этом workflow как `
+                + `«${VAR_TYPE_WORDS[got.type_was] || got.type_was}» — `
+                + 'теперь она входящая.', 'success');
+        }
+
+        // ⚠⚠ Выбор переезжает на свежий номер. Иначе список после
+        // перечитывания не найдёт ключа `new:N` и откроет **первую** переменную:
+        // человек сохранил свою и смотрит на чужую, гадая, та ли сохранилась.
+        if (picked && got?.result) state.inputVarPicked = String(got.result);
+    }
+
+    // ⚠ Уехавшие убираем из очереди, **не трогая оставшиеся**: переменная с
+    // негодным именем остаётся на странице, чтобы имя можно было починить и
+    // сохранить ещё раз. Очистка списка целиком отобрала бы набранное.
+    state.inputVarPending = pending.filter(one => !landed.includes(one));
+
+    if (skipped.length) {
+        showNotification(
+            `Не сохранены переменные: ${skipped.join(', ')}. `
+            + 'Имя — буквы, цифры и подчёркивание, и не с цифры.', 'error');
+    }
+}
+
+/** Годится ли имя в идентификатор; негодное — в список пропущенных. */
+function inputVariableNameOk(name, skipped) {
+    if (!name) {
+        skipped.push('без имени');
+        return false;
+    }
+
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+        skipped.push(`«${name}»`);
+        return false;
+    }
+
+    return true;
 }
 
 
@@ -913,6 +1109,6 @@ export function initVariablesHandlers() {
     // Кнопка "+ Добавить переменную" в блоке входящих переменных (настройки workflow)
     const addInputVariableBtn = document.getElementById('addInputVariableBtn');
     if (addInputVariableBtn) {
-        addInputVariableBtn.onclick = () => createInputVariableRow();
+        addInputVariableBtn.onclick = () => inputVariableAdd();
     }
 }

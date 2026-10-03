@@ -26,12 +26,40 @@ const HISTORY_PER = 30;
 // выглядит чужим.
 const OBJECT_WORDS = {workflow: 'workflow', step: 'шаг', variable: 'переменная'};
 
-// Что сделали. ⚠ `reorder` назван «порядок шагов», а не «перестановка»: в ленте
-// читают глазами, и существительное находится быстрее отглагольного.
-const ACTION_WORDS = {
-    create: 'заведено', update: 'изменено', delete: 'удалено',
-    reorder: 'порядок шагов', import: 'импорт',
+// Поля самого workflow — человеческими именами.
+//
+// ⚠ Только свои поля, и намеренно. Пути внутрь метаданных шага
+// (`metadata.workflow_invoke.repeat.count`) остаются как есть: это адрес, по
+// которому правку ищут в редакторе, и перевод сделал бы его ненаходимым.
+const FIELD_WORDS = {
+    name: 'технический id',
+    title: 'название',
+    description: 'описание',
+    node_id: 'нода',
+    group_name: 'группа',
+    subflow: 'sub-workflow',
+    type: 'род',
+    'default': 'значение по умолчанию',
 };
+
+// Что сделали — в роде предмета. ⚠ `reorder` назван «порядок шагов», а не
+// «перестановка»: в ленте читают глазами, и существительное находится быстрее
+// отглагольного.
+//
+// ⚠⚠ Род обязателен: слово стоит вплотную к предмету, и «заведено переменная»
+// спотыкает на каждой строке. У правки самого workflow предмет не пишется
+// вовсе, и там идёт безличное средним родом — «изменено».
+const ACTION_WORDS = {
+    create: {n: 'заведено', m: 'заведён', f: 'заведена'},
+    update: {n: 'изменено', m: 'изменён', f: 'изменена'},
+    delete: {n: 'удалено', m: 'удалён', f: 'удалена'},
+    reorder: {n: 'порядок шагов'},
+    import: {n: 'импорт'},
+};
+
+// Род предмета для согласования: шаг — мужской, переменная — женский, сам
+// workflow предметом не пишется и идёт безличным средним.
+const OBJECT_GENDER = {workflow: 'n', step: 'm', variable: 'f'};
 
 // Кто правил. ⚠ Правки агента лежат **в той же ленте** (решение человека): метка
 // нужна затем, чтобы человеческие не терялись среди машинных, а не затем, чтобы
@@ -43,6 +71,10 @@ const AUTHOR_WORDS = {human: '', agent: '🤖 агент', import: '📦 имп�
 // ⚠ Отбор держим здесь, а не в DOM: страница перерисовывается целиком, и
 // прочитай мы его из разметки — он слетал бы на каждой перерисовке.
 const view = {workflowId: 0, page: 1, object: '', objectId: 0};
+
+// Спрашивали ли уже пояс установки. ⚠ Один раз за жизнь страницы: настройка за
+// время работы вкладки не меняется, а запрос на каждое её открытие — лишний.
+let _tzAsked = false;
 
 
 /**
@@ -57,6 +89,15 @@ export async function openWorkflowHistory() {
     if (!host) return;
 
     host.style.display = 'block';
+
+    // ⚠⚠ Пояс спрашиваем **до** отрисовки и один раз за жизнь страницы:
+    // `loadTz` ходит в `/setting/list`, а вкладку открывают много раз.
+    // Забытый вызов и был причиной времени в UTC: `fmtTz` без него считает
+    // сдвиг нулём и молчит об этом.
+    if (!_tzAsked) {
+        _tzAsked = true;
+        if (window.loadTz) await window.loadTz();
+    }
 
     if (!workflowId) {
         host.innerHTML = _note('Выберите workflow — история показывается по нему');
@@ -157,11 +198,22 @@ function _row(one) {
     // лента собирается склейкой HTML, и «это поле точно безопасное» — ровно то
     // рассуждение, которым дыры и заводятся. Имена ключей в `field` человек
     // правит руками, и они приезжают в ленту тем же путём.
-    const what = ACTION_WORDS[one.action] || _safe(one.action);
-    const object = OBJECT_WORDS[one.object] || _safe(one.object);
+    const said = ACTION_WORDS[one.action];
+    const gender = OBJECT_GENDER[one.object] || 'n';
+    const what = said ? (said[gender] || said.n) : _safe(one.action);
     const id = Number(one.object_id) || 0;
-    const name = one.object_name
-        ? `«${_safe(one.object_name)}»` : (id ? `#${id}` : '');
+
+    // ⚠⚠ У правки самого workflow род и имя **не пишем**. Вкладка показывает
+    // историю одного workflow, его имя стоит в шапке страницы, и строка
+    // «изменено workflow «Инвайт: шаблон: один»» повторяла известное — а
+    // повтор известного в ленте стоит места, которое нужно сути правки.
+    const subject = one.object === 'workflow' ? '' : (() => {
+        const object = OBJECT_WORDS[one.object] || _safe(one.object);
+        const name = one.object_name
+            ? `«${_safe(one.object_name)}»` : (id ? `#${id}` : '');
+
+        return ` ${object} ${name}`;
+    })();
 
     // ⚠ Щелчок по строке ведёт **к шагу**: история нужна, чтобы починить, а не
     // чтобы полюбоваться. Тот же порядок, что у ленты событий в DatingAi.
@@ -174,7 +226,7 @@ function _row(one) {
     return `<div class="history-row"${goes}>`
         + `<div class="history-when">${when}</div>`
         + `<div class="history-who">${_safe(who)}${mark}</div>`
-        + `<div class="history-what">${what} ${object} ${name}</div>`
+        + `<div class="history-what">${what}${subject}</div>`
         + `<div class="history-diff">${(one.changes || []).map(_diff).join('')}</div>`
         + '</div>';
 }
@@ -188,7 +240,7 @@ function _diff(one) {
     // человека: полный промпт в истории не нужен). Показываем их как дифф, с
     // номерами строк — по ним ищут глазами в поле промпта.
     if (one.lines) {
-        return `<div class="history-field">${_safe(one.field)}</div>`
+        return `<div class="history-field">${_field(one.field)}</div>`
             + one.lines.map(row => row.more
                 ? `<div class="history-more">…и ещё ${Number(row.more) || 0} строк</div>`
                 : `<div class="history-line history-line-${row.op === '+' ? 'add' : 'cut'}">`
@@ -197,7 +249,7 @@ function _diff(one) {
     }
 
     return `<div class="history-change">`
-        + `<span class="history-field">${_safe(one.field)}</span>`
+        + `<span class="history-field">${_field(one.field)}</span>`
         + `<span class="history-was">${_value(one.was)}</span>`
         + '<span class="history-arrow">→</span>'
         + `<span class="history-now">${_value(one.now)}</span>`
@@ -258,13 +310,30 @@ function _wire(host) {
     });
 }
 
+/**
+ * Время правки в поясе установки.
+ *
+ * ⚠⚠⚠ Здесь стояло «показываем как записано»: довод был, что сдвигать нечем —
+ * настройка живёт на сервере. Довод неверен. Пояс отдаётся фронтенду
+ * (`/setting/list`, ключ `timezone`), и общий помощник `tz.js` подключён в
+ * `base.html` на каждой странице панели — звать `loadTz()` просто забыли. Лента
+ * показывала UTC, а соседние страницы — местное время: на вопрос «когда это
+ * сломалось» два ответа, разные на величину пояса.
+ *
+ * ⚠ С секундами: правка шага уходит в базу сама через 400 мс, и две записи в
+ * одну минуту — обычное дело. Без секунд лента выглядела бы перетасованной.
+ */
 function _when(raw) {
-    // ⚠ Время приходит как есть, строкой базы: сдвигать его часовым поясом
-    // здесь нечем — настройка живёт на сервере, и врать на час хуже, чем
-    // показать то, что записано.
-    const text = String(raw || '').replace('T', ' ');
+    if (window.fmtTz) return _safe(window.fmtTz(raw, true));
 
-    return _safe(text.slice(0, 19));
+    // ⚠ Помощника нет — показываем записанное, но не молча: иначе «UTC» и
+    // «местное» неотличимы, и человек сверяет время не с тем.
+    return _safe(String(raw || '').replace('T', ' ').slice(0, 19) + ' UTC');
+}
+
+/** Имя поля человеку; незнакомое — как есть, это путь внутрь метаданных. */
+function _field(name) {
+    return _safe(FIELD_WORDS[name] || name);
 }
 
 function _safe(text) {
