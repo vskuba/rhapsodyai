@@ -35,23 +35,17 @@ information» и три JSON-примера, потому что закрыва�
 """
 import pytest
 
-from tests_llm.datingai import (TALK_MAIL_ASK, TALK_MAIL_LENGTHS,
-                               TALK_MAIL_REPLY, TALK_MAIL_REPLY_ASK,
-                               TALK_MAIL_WRITE)
-from tests_llm.dating_talk.conftest import (ANSWER_PHOTO, STEP_ANSWER,
+from tests_llm.datingai import (TALK_MAIL_ASK, TALK_MAIL_REPLY,
+                               TALK_MAIL_REPLY_ASK, TALK_MAIL_WRITE)
+from tests_llm.dating_talk.conftest import (STEP_ANSWER,
                                             STEP_BRANCH,
                                             STEP_BRANCHES, STEP_CHAT,
                                             STEP_DICE, STEP_INITIATIVE,
                                             STEP_JUDGE, STEP_MAIL_REPLY,
-                                            STEP_MAIL_WRITE, talk_plan)
+                                            STEP_MAIL_WRITE, photo_answer,
+                                            talk_plan)
 
 pytestmark = pytest.mark.llm
-
-# Длина письма приходит **готовой**: жребий бросает панель, а не модель.
-#
-# ⚠ Берём из общего модуля, а не переписываем руками: это копия стороны
-# DatingAi, и разойдись она — тест проверял бы длину, которой панель не шлёт.
-MAIL_LENGTH = TALK_MAIL_LENGTHS[1]
 
 # Переписка письмами для почтовых веток: без неё «ответ на письмо» проверялся бы
 # в условиях, которых в жизни не бывает — отвечать было бы не на что.
@@ -101,6 +95,72 @@ class TestEachBranchGoesItsOwnWay:
             f'отработала и соседняя ветка: {_others(got, STEP_INITIATIVE)}.{got}'
 
 
+class TestTheChannelIsMarkedBeforeTheAnswerIsStored:
+    """⚠⚠⚠ Канал разговора: чат или письмо — и записывается он по этой метке.
+
+    `talk_session_kind` читают шаги записи (`Разговор: записать ответ` и
+    `… тишину`) доводом `kind`. Умолчание `chat` ставит шаг «Переменные» в самом
+    начале; почтовые ветки перебивают его на `mail` отдельными шагами «Канал:
+    …», которые стоят **после** ветки и ведут на общую «Валидацию».
+
+    ## ⚠⚠ Почему это надо стеречь отдельно
+
+    Поломка здесь **тихая вдвойне**. Сорвись переход на «Канал: …» — письмо
+    всё равно сочинится, пройдёт судью и уедет человеку: текст будет верный.
+    Разойдётся только журнал разговора: ответ на письмо ляжет каналом `chat`,
+    и в ленте он окажется не там, где его ищут. Ни один маршрутный тест этого
+    не заметит — ветка-то отработала.
+
+    ⚠ Метка проверяется по трассе (`variables_changed`), а не по базе: предмет
+    здесь — решение workflow, а не работа инструмента записи.
+    """
+
+    async def test_a_chat_message_is_marked_as_chat(self, talk):
+        """Умолчание из шага «Переменные» доезжает нетронутым."""
+        got = await talk('Hi! Tell me about your weekend')
+
+        assert got.vars.get('talk_session_kind') == 'chat', \
+            f'чат помечен каналом {got.vars.get("talk_session_kind")!r}.{got}'
+
+    async def test_a_letter_is_marked_as_mail(self, talk):
+        """⚠ Ветка «Письмо первым» уводит на «Канал: письмо первым»."""
+        got = await talk(TALK_MAIL_ASK,
+                         mailed=MAIL_HISTORY,
+                         variables=_mail_vars(TALK_MAIL_WRITE))
+
+        assert got.ran(STEP_MAIL_WRITE), f'письмо пошло не своей веткой.{got}'
+        assert got.vars.get('talk_session_kind') == 'mail', \
+            f'письмо помечено каналом {got.vars.get("talk_session_kind")!r}.{got}'
+
+    async def test_a_reply_is_marked_as_mail_too(self, talk):
+        """⚠⚠ У ответа на письмо свой шаг канала (`#799`), и он отдельный.
+
+        Два шага вместо одного — потому что ветки разные и `to_next_step` у них
+        снят: общий шаг пришлось бы ставить после обеих, а туда они не идут.
+        Значит и проверять надо обе: сорвись переход у одной, вторая промолчит.
+        """
+        got = await talk(TALK_MAIL_REPLY_ASK,
+                         mailed=MAIL_HISTORY,
+                         variables=_mail_vars(TALK_MAIL_REPLY))
+
+        assert got.ran(STEP_MAIL_REPLY), f'ответ пошёл не своей веткой.{got}'
+        assert got.vars.get('talk_session_kind') == 'mail', \
+            f'ответ на письмо помечен каналом {got.vars.get("talk_session_kind")!r}.{got}'
+
+    async def test_an_initiative_stays_a_chat(self, talk):
+        """⚠ Инициатива — реплика в чат, и каналом остаётся `chat`.
+
+        Проверка от обратного: шаги «Канал: …» не должны ловить всех подряд —
+        инициатива идёт своей веткой и мимо них.
+        """
+        got = await talk('Собеседник молчит. Напиши ему сама.',
+                         variables={'make_initiative': '1', 'answer_anyway': '1'})
+
+        assert got.ran(STEP_INITIATIVE), f'инициатива пошла не своей веткой.{got}'
+        assert got.vars.get('talk_session_kind') == 'chat', \
+            f'инициатива помечена каналом {got.vars.get("talk_session_kind")!r}.{got}'
+
+
 class TestBranchesDoNotLeak:
     """⚠⚠ Ветки стоят подряд, и провал по номеру ведёт в соседнюю.
 
@@ -130,22 +190,46 @@ class TestBranchesDoNotLeak:
 
 
 class TestTheLengthReachesTheLetter:
-    """⚠⚠ Длину письма выбирает панель, а не модель, и доехать она обязана.
+    """⚠⚠ Длину письма выбирает жребий, а не модель, и доехать она обязана.
 
-    Разнообразие рассылки держится на жребии снаружи: «будь разной» модель не
-    понимает. Потеряйся `mail_length` по дороге — все письма выйдут одной длины,
-    и заметить это по одному письму нельзя.
+    Разнообразие рассылки держится на жребии: «будь разной» модель не понимает.
+    Пока длину задавала вилка в промпте («от одного абзаца до трёх»), из
+    двенадцати писем прода девять вышли ровно в три абзаца — у вилки верх
+    читается как цель.
+
+    ## ⚠⚠⚠ Бросает жребий ВНУТРИ workflow, а не панель снаружи
+
+    Было: панель бросала и присылала `mail_length`. Стало: шаг «Жребий»
+    (позиция 6) отдаёт `dice_mail_length`, и ветки читают его сами. Поэтому
+    тест больше не может сверить промпт со **своим** значением — он его не
+    выбирает.
+
+    Проверяется то, что проверяемо: метка в промпте **раскрылась**. Останься
+    она неподставленной (`%dice_mail_length%`), письма вышли бы одной длины, а
+    по одному письму этого не видно.
     """
 
-    async def test_it_is_in_the_prompt(self, talk):
+    async def test_the_mark_is_filled_in(self, talk):
         """⚠ Смотрим **вход**, а не ответ: по числу абзацев судить нельзя —
         модель вольна написать два там, где просили «до трёх»."""
         got = await talk(TALK_MAIL_ASK,
                          mailed=MAIL_HISTORY,
                          variables=_mail_vars(TALK_MAIL_WRITE))
 
-        assert MAIL_LENGTH in got.prompt_of(STEP_MAIL_WRITE), \
-            f'длина письма не доехала до промпта ветки.{got}'
+        assert '%dice_mail_length%' not in got.prompt_of(STEP_MAIL_WRITE), \
+            f'метка длины осталась в промпте ветки нераскрытой.{got}'
+
+    async def test_the_judge_sees_it_too(self, talk):
+        """⚠⚠ Судья тоже читает длину: он решает, годится ли черновик.
+
+        Не увидь он её — мерил бы письмо не тем, чего просили у сочинителя.
+        """
+        got = await talk(TALK_MAIL_ASK,
+                         mailed=MAIL_HISTORY,
+                         variables=_mail_vars(TALK_MAIL_WRITE))
+
+        assert '%dice_mail_length%' not in got.prompt_of(STEP_JUDGE), \
+            f'метка длины осталась в промпте судьи нераскрытой.{got}'
 
 
 class TestBothHistoriesTravel:
@@ -269,16 +353,20 @@ class TestThePhotoBranchAnswersInCommon:
     """⚠⚠ Ветка «письма и фото» отвечает **общим** шагом «Ответ».
 
     Своего шага возврата у неё больше нет: он делал ровно то же, отличаясь лишь
-    именем переменной. Теперь `outputs_map` кладёт выходы сабворкфлоу в
-    `girl_response` и `girl_response_fixed`, и общий шаг отдаёт их сам.
+    именем переменной. Теперь `outputs_map` кладёт выход сабворкфлоу в
+    `girl_response`, и общий шаг отдаёт его сам.
 
-    ⚠ `photo_fixed` в карте обязателен — это правка судьи внутри сабворкфлоу.
-    Пропусти его, и к человеку поедет черновик, а исправление пропадёт молча;
-    заметить это по тексту нельзя, он останется правдоподобным.
+    ⚠ Пара `draft_response → girl_response` в карте обязательна: пропусти её, и
+    общий шаг отдал бы пустоту либо прошлое значение. По тексту это не видно —
+    ответ останется правдоподобным.
+
+    ⚠⚠ Прежде в карте была ещё правка судьи (`photo_fixed →
+    girl_response_fixed`). Ветку переписали вместе с судьёй верхнего уровня:
+    оба теперь отдают **вердикт** и правят перегенерацией, а не текстом.
     """
 
     async def test_it_returns_through_the_common_answer(self, talk, llm_answers):
-        await llm_answers(talk_plan(topic='photo_mail'), default=ANSWER_PHOTO)
+        await llm_answers(talk_plan(topic='photo_mail'), default=photo_answer())
 
         got = await talk("Can you send me your photos? I'd love to see more of you")
 
@@ -295,7 +383,7 @@ class TestThePhotoBranchAnswersInCommon:
         нет» выполнялось бы само собой. Зелёный при незапущенной ветке ничего не
         значит, и поймать такое по цвету нельзя.
         """
-        await llm_answers(talk_plan(topic='photo_mail'), default=ANSWER_PHOTO)
+        await llm_answers(talk_plan(topic='photo_mail'), default=photo_answer())
 
         got = await talk('Can you send me your photos?')
 
@@ -318,9 +406,23 @@ def _mail_vars(kind: str) -> dict:
     Без него тест проверял бы условия, в которых боевой код не работает. Поймано
     живьём: «ответ на письмо» ушёл в «Тишину», а «письмо первым» уцелело — то
     есть падение было **случайным**, и назавтра могло переехать на соседа.
+
+    ## ⚠⚠⚠ `mail_length` здесь больше НЕТ, и возвращать её нельзя
+
+    Длину письма бросает **шаг «Жребий» внутри самого workflow** (позиция 6):
+    он отдаёт `dice_mail_length`, и три ветки письма читают его сами. Прежде
+    длину бросала панель и присылала переменной `mail_length`.
+
+    Переменная снята с объявления входящей, а сторож ручки
+    (`chat.py:_variables_allowed`) считает **имена** присланного, а не
+    значения: лишнее имя — `400` на весь заход. Пришли мы её — упали бы все
+    почтовые тесты разом, что и случилось: шестнадцать штук.
+
+    ⚠ То же правило уже стоило прода на стороне DatingAi: объявление сняли
+    раньше, чем ушёл шлющий код, и `/chat/ask` отвечал `400` на все четыре
+    ветки — включая обычный чат, которому длина не нужна вовсе.
     """
-    return {'mail_mode': '1', 'mail_kind': kind, 'mail_length': MAIL_LENGTH,
-            'answer_anyway': '1'}
+    return {'mail_mode': '1', 'mail_kind': kind, 'answer_anyway': '1'}
 
 
 def _others(got, wanted: str) -> tuple:

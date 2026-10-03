@@ -29,7 +29,7 @@ import pytest
 from tests_llm.conftest import talk_forget
 from tests_llm.datingai import TALK_MAIL_ASK, TALK_MAIL_WRITE
 from tests_llm.mark import mark_key
-from tests_llm.dating_talk.conftest import (ANSWER_PHOTO, FACTS_MAN,
+from tests_llm.dating_talk.conftest import (FACTS_MAN,
                                             FACTS_TALK,
                                             MARKS, STEP_ANALYSE, STEP_ANSWER,
                                             STEP_BRANCH, STEP_BRANCHES,
@@ -44,7 +44,7 @@ from tests_llm.dating_talk.conftest import (ANSWER_PHOTO, FACTS_MAN,
                                             STEP_FACTS_PLAIN,
                                             STEP_FACTS_TAGS,
                                             STEP_TOPIC, facts_girl_for,
-                                            talk_plan)
+                                            photo_answer, talk_plan)
 
 pytestmark = pytest.mark.llm
 
@@ -114,7 +114,7 @@ class TestTheTopicSendsToTheBranch:
         await llm_answers(talk_plan(topic='photo_mail'),
                           # ⚠ Умолчание нужно ветке письма-фото: у её подпрогона
                           # свои шаги, и заготовка обычного захода их не знает.
-                          default=ANSWER_PHOTO)
+                          default=photo_answer())
 
         got = await talk('Can you send me your photos?')
 
@@ -181,9 +181,10 @@ class TestWhatThePanelAlwaysSendsArrives:
                          variables=MARKS.vars(mail_mode='1',
                                               mail_kind=TALK_MAIL_WRITE,
                                               answer_anyway='1'))
+        # ⚠ Длины здесь нет: её бросает «Жребий» внутри workflow, и своего
+        # значения у теста не бывает. Что метка раскрылась — `test_branches.py`.
         missing = MARKS.missing(got, STEP_MAIL_WRITE, (
-            'companion_bio', 'talk_history_chat', 'talk_history_mail',
-            'mail_length'))
+            'companion_bio', 'talk_history_chat', 'talk_history_mail'))
 
         assert not missing, f'до промпта ветки письма не доехало: {missing}.{got}'
 
@@ -263,7 +264,10 @@ class TestTheDiceSectionsOpenAndClose:
         """⚠⚠ Судья обязан знать **заказанную** длину, а не судить на глаз.
 
         Иначе он бракует письмо за то, чего у него не просили, — и заход уходит
-        на круг правок из-за расхождения двух промптов.
+        на круг перегенерации из-за расхождения двух промптов.
+
+        ⚠ Длину бросает «Жребий» внутри workflow (`dice_mail_length`), поэтому
+        своего значения у теста нет: проверяем, что метка **раскрылась**.
         """
         await llm_answers(talk_plan())
 
@@ -272,7 +276,7 @@ class TestTheDiceSectionsOpenAndClose:
                                               mail_kind=TALK_MAIL_WRITE,
                                               answer_anyway='1'))
 
-        assert not MARKS.missing(got, STEP_JUDGE, ('mail_length',)), \
+        assert '%dice_mail_length%' not in got.prompt_of(STEP_JUDGE), \
             f'судья не знает, какой длины просили письмо.{got}'
 
 

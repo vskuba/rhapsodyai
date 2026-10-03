@@ -7,11 +7,14 @@
 спросить» → «в какую переменную положить». У «Анализа сообщения» таких пар **восемь**.
 
 Подпоток раскладывает иначе — `outputs_map` шага вызова. У ветки «письма и фото» там
-три пары, и одна из них переименовывает:
+две пары, и одна из них переименовывает:
 
     {"photo_deal": "photo_deal",
-     "photo_response": "girl_response",
-     "photo_fixed": "girl_response_fixed"}
+     "draft_response": "girl_response"}
+
+⚠ Пар было три: ветка отдавала ещё и правку судьи (`photo_fixed →
+girl_response_fixed`). Судью переделали на вердикт с перегенерацией, и правка
+исчезла из карты вместе со своим смыслом.
 
 До этого файла ни один тест не утверждал, что хоть одно значение **доехало**.
 `photo_deal` вообще встречался в сюите только как вход подмены, никогда как предмет
@@ -59,10 +62,10 @@
 
 import pytest
 
-from tests_llm.dating_talk.conftest import (ANSWER_PHOTO, ANYWAY, ASK_ANALYSE,
+from tests_llm.dating_talk.conftest import (ANYWAY, ASK_ANALYSE,
                                             FACTS_MAN, FACTS_TALK, STEP_BRANCH,
                                             STEP_TOPIC, analyse_answer,
-                                            talk_plan)
+                                            photo_answer, talk_plan)
 
 pytestmark = pytest.mark.llm
 
@@ -98,14 +101,19 @@ ANALYSED = analyse_answer(
 FACTS_GIRL = ('[{"language": "en", "tags": "weather", '
               '"document": "She watches storms from the lighthouse."}]')
 
-# Ответы ветки «письма и фото»: три выхода, и два из них переименовываются.
+# Ответы ветки «письма и фото»: два выхода, и один из них переименовывается.
+#
+# ⚠⚠⚠ Выходов стало два, а было три. Ветку переписали вместе с судьёй: вместо
+# правки текста (`photo_fixed → girl_response_fixed`) она теперь отдаёт черновик
+# и вердикт, а правит перегенерацией. `photo_response` при этом стал
+# `draft_response`. Старые имена держались здесь руками — и уронили тест
+# молчанием «агент не ответил».
 BRANCHED = {'photo_deal': 'zz-deal',
-            'photo_response': 'zz-response',
-            'photo_fixed': 'zz-fixed'}
+            'draft_response': 'zz-response'}
 
-# Умолчание ветки со своими значениями поверх общего: сами выходы нам нужны нарочные,
-# остальное — как у всех (`ANSWER_PHOTO` в `conftest.py` папки).
-PHOTO_ANSWERS = {**ANSWER_PHOTO, **BRANCHED}
+# Умолчание ветки со своими значениями поверх общего: сами выходы нам нужны
+# нарочные, остальное — как у всех (`photo_answer` в `conftest.py` папки).
+PHOTO_ANSWERS = photo_answer(**BRANCHED)
 
 
 class TestTheTopicArrives:
@@ -160,34 +168,39 @@ class TestTheAnalysisVariablesArrive:
 class TestTheBranchOutputsArrive:
     """⚠⚠⚠ Выходы подпотока: здесь живёт единственная **молчаливая** поломка.
 
-    `outputs_map` ветки переименовывает два значения из трёх, и потеря правки судьи
-    (`photo_fixed → girl_response_fixed`) по ответу не видна: человеку уедет
-    черновик, правдоподобный и непроверенный.
+    `outputs_map` ветки переименовывает одно значение из двух, и потеря ответа
+    (`draft_response → girl_response`) по ответу человека не видна: общий шаг
+    отдал бы пустоту либо прошлое значение, а выглядело бы это как обычный
+    ответ.
     """
 
-    async def test_all_three_outputs_come_out(self, talk, llm_answers):
+    async def test_both_outputs_come_out(self, talk, llm_answers):
         await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_ANSWERS)
 
         got = await talk('Can you send me your photos?', variables=ANYWAY)
 
         assert got.ran(STEP_BRANCH), f'ветка не сработала — проверять нечего.{got}'
 
-        for name, value in BRANCHED.items():
-            assert got.vars.get(name) == value, \
-                f'выход ветки `{name}` не доехал: {got.vars.get(name)!r}.{got}'
+        # ⚠ Имя слева — переменная **подпотока**, и в переменных родителя её
+        # может не быть вовсе: `draft_response` приезжает под именем
+        # `girl_response`. Поэтому сверяем по карте, а не по ключу вслепую.
+        assert got.vars.get('photo_deal') == BRANCHED['photo_deal'], \
+            f'выход `photo_deal` не доехал: {got.vars.get("photo_deal")!r}.{got}'
 
-    async def test_the_judges_fix_is_renamed_on_the_way_out(self, talk, llm_answers):
-        """⚠⚠ Две пары `outputs_map` **переименовывают**, и проверяется именно это.
+    async def test_the_draft_is_renamed_on_the_way_out(self, talk, llm_answers):
+        """⚠⚠ Пара `outputs_map` **переименовывает**, и проверяется именно это.
 
-        `photo_response → girl_response`, `photo_fixed → girl_response_fixed`.
-        Общий шаг «Ответ» читает вторые имена и ничего не знает о первых: разойдись
-        карта — он отдал бы пустоту либо прошлое значение.
+        `draft_response → girl_response`. Общий шаг «Ответ» читает второе имя и
+        ничего не знает о первом: разойдись карта — он отдал бы пустоту либо
+        прошлое значение.
+
+        ⚠ Прежде пар было две: ветка отдавала ещё и правку судьи
+        (`photo_fixed → girl_response_fixed`). Судью переделали на вердикт с
+        перегенерацией, и правка исчезла из карты вместе со своим смыслом.
         """
         await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_ANSWERS)
 
         got = await talk('Can you send me your photos?', variables=ANYWAY)
 
-        assert got.vars.get('girl_response') == BRANCHED['photo_response'], \
-            f'`photo_response` не переименовался в `girl_response`.{got}'
-        assert got.vars.get('girl_response_fixed') == BRANCHED['photo_fixed'], \
-            f'правка судьи не доехала до `girl_response_fixed`.{got}'
+        assert got.vars.get('girl_response') == BRANCHED['draft_response'], \
+            f'`draft_response` не переименовался в `girl_response`.{got}'
