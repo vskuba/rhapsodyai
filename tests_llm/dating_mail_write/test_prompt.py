@@ -27,8 +27,8 @@ from tests_llm.dating_mail_write.conftest import (HEAD_AVOID, HEAD_GREETING,
 
 pytestmark = pytest.mark.llm
 
-ANGLE = 'разговор о мелочи, которую замечают только внимательные'
-LENGTH = 'три коротких абзаца'
+# ⚠ `ANGLE` и `LENGTH` отсюда убраны: приём и длину бросает шаг «Жребий» внутри
+# workflow, своего значения у теста больше нет (см. `TestTheDiceReachThePrompt`).
 GREETING = 'начни с обращения по имени и сразу с мысли'
 STORY = 'как варила кофе и смотрела в окно на чужую собаку'
 AVOID = 'так уже было: «I was scrolling through profiles and yours caught my eye»'
@@ -69,19 +69,32 @@ class TestTheRegistryReachesThePrompt:
 
 
 class TestTheDiceReachThePrompt:
-    """Приём и длина — жребий панели."""
+    """Приём и длина — жребий, и бросает его сам workflow.
 
-    async def test_the_angle_is_shown(self, letter):
-        got = await letter(mail_angle=ANGLE)
+    ## ⚠⚠⚠ Бросок переехал ВНУТРЬ, и значения у теста больше нет
 
-        assert ANGLE in got.prompt_of(STEP_WRITE), \
-            f'приём не доехал до промпта — модель выберет свой.{got}'
+    Было: бросала панель и присылала `mail_angle` / `mail_length`. Стало: шаг
+    «Жребий» (позиция 1) отдаёт `dice_mail_angle` и `dice_mail_length`, а
+    объявления входящими сняты — присылка любой из них роняет **весь** вызов
+    `400`-м.
 
-    async def test_the_length_is_shown(self, letter):
-        got = await letter(mail_length=LENGTH)
+    Поэтому тест не может сверить промпт со **своим** значением: он его не
+    выбирает. Проверяется то, что проверяемо, — метка в промпте **раскрылась**.
+    Останься она как есть (`%dice_mail_angle%`), все шаблоны вышли бы на один
+    приём и одну длину, а по одному письму этого не видно.
+    """
 
-        assert LENGTH in got.prompt_of(STEP_WRITE), \
-            f'длина не доехала до промпта.{got}'
+    async def test_the_angle_mark_is_filled_in(self, letter):
+        got = await letter()
+
+        assert '%dice_mail_angle%' not in got.prompt_of(STEP_WRITE), \
+            f'метка приёма осталась нераскрытой — модель выберет свой.{got}'
+
+    async def test_the_length_mark_is_filled_in(self, letter):
+        got = await letter()
+
+        assert '%dice_mail_length%' not in got.prompt_of(STEP_WRITE), \
+            f'метка длины осталась нераскрытой.{got}'
 
 
 class TestTheGreetingIsADice:
