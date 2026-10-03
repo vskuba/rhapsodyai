@@ -168,3 +168,91 @@ class TestLimitCountsVisibleRows:
             'предел ушёл в невидимый хвост вместо старой видимой истории')
         assert [row['question'] for row in rows] == [
             f'old question {i}' for i in range(limit)]
+
+
+class TestHistoryNeedsHisWords:
+    """Порог `companion_message_at_least`: монолог — не история.
+
+    ⚠⚠ Что здесь стережётся. Разговор, где говорили только мы (инвайт,
+    рассылка, письмо без ответа), даёт ленту из одних своих слов. Агент,
+    получив её, продолжает несуществующий диалог — ссылается на «как я говорила
+    вчера» там, где человек не сказал ещё ничего. Порог считает реплики
+    **собеседника**, и пока их меньше нужного, лента пуста.
+    """
+
+    async def test_monologue_is_empty_by_default(self, pair):
+        """Умолчание — одна его реплика: наших слов одних мало."""
+        made = await companion_session_add(pair[0], pair[1], answer='наш инвайт')
+        await companion_session_delivered(int(made['id']))
+
+        assert await companion_session_history(pair[0], pair[1]) == ''
+
+    async def test_zero_turns_the_threshold_off(self, pair):
+        """Ноль — порога нет: лента отдаётся как есть, с первого слова."""
+        made = await companion_session_add(pair[0], pair[1], answer='наш инвайт')
+        await companion_session_delivered(int(made['id']))
+
+        got = await companion_session_history(pair[0], pair[1],
+                                              companion_message_at_least=0)
+
+        assert 'наш инвайт' in got
+
+    async def test_one_his_word_is_enough_for_default(self, pair):
+        """Одна его реплика — и лента едет целиком, вместе с нашей половиной."""
+        made = await companion_session_add(pair[0], pair[1],
+                                           question='hi there', answer='hello')
+        await companion_session_delivered(int(made['id']))
+
+        got = await companion_session_history(pair[0], pair[1])
+
+        assert 'hi there' in got
+        assert 'hello' in got
+
+    async def test_threshold_counts_his_words_only(self, pair):
+        """⚠ Считаются его реплики, а не строки ленты.
+
+        Три обмена, его слов два: порог 2 ленту отдаёт, порог 3 — нет. Будь
+        счёт по строкам, прошли бы оба.
+        """
+        for i in range(2):
+            made = await companion_session_add(pair[0], pair[1],
+                                               question=f'his {i}',
+                                               answer=f'ours {i}')
+            await companion_session_delivered(int(made['id']))
+
+        lonely = await companion_session_add(pair[0], pair[1], answer='ours alone')
+        await companion_session_delivered(int(lonely['id']))
+
+        assert await companion_session_history(
+            pair[0], pair[1], companion_message_at_least=2) != ''
+        assert await companion_session_history(
+            pair[0], pair[1], companion_message_at_least=3) == ''
+
+    async def test_threshold_looks_at_the_returned_window(self, pair):
+        """⚠⚠ Считается та лента, что вернётся, а не весь разговор.
+
+        Его слова лежат в начале переписки, `limit` до них не достаёт — и порог
+        обязан отсечь: модель увидит окно, а не всё, что есть в таблице.
+        """
+        first = await companion_session_add(pair[0], pair[1],
+                                            question='его давняя реплика',
+                                            answer='наш давний ответ')
+        await companion_session_delivered(int(first['id']))
+
+        for i in range(3):
+            made = await companion_session_add(pair[0], pair[1],
+                                               answer=f'наш монолог {i}')
+            await companion_session_delivered(int(made['id']))
+
+        assert await companion_session_history(pair[0], pair[1], limit=2) == ''
+        assert await companion_session_history(pair[0], pair[1], limit=10) != ''
+
+    async def test_threshold_from_workflow_comes_as_text(self, pair):
+        """⚠ Из workflow порог приходит строкой — и обязан сработать."""
+        made = await companion_session_add(pair[0], pair[1], answer='наш инвайт')
+        await companion_session_delivered(int(made['id']))
+
+        assert await companion_session_history(
+            pair[0], pair[1], companion_message_at_least='2') == ''
+        assert await companion_session_history(
+            pair[0], pair[1], companion_message_at_least='') != ''
