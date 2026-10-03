@@ -10,6 +10,18 @@ import {renderDiceWidget, DICE_TOOL_NAME} from './dice-widget.js';
 import {renderSubflowMaps, subflowMapsCollect} from './subflow-maps.js';
 import {textModalIcon} from './text-modal.js';
 
+// Число оборотов подflow, взятое из переменной: метка **целиком**, без текста
+// вокруг. Движок возвращает исходный тип значения только для строки, равной
+// одной метке (`ai_workflow_variables_render`); `%invite_count% раз` осталось бы
+// строкой, и прогон упал бы на `int()`.
+export const REPEAT_COUNT_VAR_RE = /^%([A-Za-z_][A-Za-z0-9_]*)%$/;
+
+// Предохранитель этого режима по умолчанию. ⚠ Нужен именно здесь: число
+// приходит снаружи, и опечатка вызывающего обернулась бы сотнями прогонов
+// подflow, каждый ценой вызовов LLM. Пятьдесят — то значение, с которым цикл
+// инвайтов живёт на проде.
+export const REPEAT_COUNT_VAR_CAP = 50;
+
 export function renderCustomStepFields(step, metadata) {
     const container = document.getElementById('dynamicStepFieldsContainer');
     if (!container) return;
@@ -595,11 +607,31 @@ export function renderCustomStepFields(step, metadata) {
             repeatTitle.textContent = "Повтор вызова:";
             repeatContainer.appendChild(repeatTitle);
 
+            // ⚠⚠ **Сохранённое `count` бывает двух видов, и второй UI терял.**
+            //
+            // Число (`6`) человек ставит руками, а метку переменной
+            // (`%invite_count%`) — тот, кому число известно только в работе:
+            // инвайты просят столько реплик, сколько девушек сейчас в сети.
+            //
+            // Поле `count` было `type="number"`, и метка в нём не показывалась
+            // вовсе; хуже того, сборка писала `parseInt(...) || 1`, то есть
+            // **затирала метку единицей** — а сборка висит на `change` любого
+            // поля блока. Достаточно было открыть шаг и тронуть что угодно.
+            //
+            // Цена известна: цикл инвайтов стал давать один шаблон на весь пул
+            // вместо своего каждой девушке, и нашлось это по журналу панели, а
+            // не по ошибке — её не было ни одной.
+            const repeatCountSaved = currentValue?.repeat?.count;
+            const repeatCountVar = REPEAT_COUNT_VAR_RE.exec(
+                typeof repeatCountSaved === 'string' ? repeatCountSaved.trim() : '');
+            const repeatCountVarName = repeatCountVar ? repeatCountVar[1] : '';
+
             const repeatModeSelect = document.createElement('select');
             repeatModeSelect.className = 'form-control repeat-mode-select';
             repeatModeSelect.style = "padding: 6px; font-size: 12px; height: 32px;";
             [['none', 'Не повторять'], ['until', 'Повторять, пока условие не выполнено'],
-                ['count', 'Фиксированное число попыток']].forEach(([val, label]) => {
+                ['count', 'Фиксированное число попыток'],
+                ['count_var', 'Число попыток из переменной']].forEach(([val, label]) => {
                 const opt = document.createElement('option');
                 opt.value = val;
                 opt.textContent = label;
@@ -677,7 +709,9 @@ export function renderCustomStepFields(step, metadata) {
             countInput.min = '1';
             countInput.max = '20';
             countInput.className = 'form-control repeat-count';
-            countInput.value = (currentValue?.repeat?.count) || 3;
+            // ⚠ Метку переменной сюда не кладём: поле числовое, она в нём не
+            // покажется, а её режим — свой, ниже.
+            countInput.value = (repeatCountVarName ? '' : repeatCountSaved) || 3;
             countInput.style = "width: 55px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
 
             const countSuffix = document.createElement('span');
@@ -687,15 +721,63 @@ export function renderCustomStepFields(step, metadata) {
             countRow.append(countLabel, countInput, countSuffix);
             repeatContainer.appendChild(countRow);
 
+            // count из переменной: число оборотов известно только в работе.
+            //
+            // ⚠ Движок подставляет значения в метаданные шага **до** разбора
+            // (`ai_workflow_variables_render`), и строка, целиком состоящая из
+            // одной метки, возвращается исходным типом — то есть `%invite_count%`
+            // становится числом. Поэтому режим и возможен без правок движка.
+            const countVarRow = document.createElement('div');
+            countVarRow.className = 'repeat-count-var-row';
+            countVarRow.style = "display: none; gap: 6px; align-items: center; background: #f9fafb; "
+                + "padding: 8px; border-radius: 6px; border: 1px solid #edf2f7;";
+
+            const countVarLabel = document.createElement('span');
+            countVarLabel.textContent = 'Повторить';
+            countVarLabel.style = "font-size: 12px; color: #4a5568; white-space: nowrap;";
+
+            const countVarSelect = document.createElement('select');
+            countVarSelect.className = 'form-control repeat-count-variable';
+            countVarSelect.style = "flex: 1.5; padding: 4px; font-size: 12px; height: 32px;";
+            countVarSelect.title = 'Сколько раз повторить — значение этой переменной на момент прогона';
+            fillVariablesSelectOptions(countVarSelect, repeatCountVarName);
+
+            const countVarSuffix = document.createElement('span');
+            countVarSuffix.textContent = 'раз(а), но не больше';
+            countVarSuffix.style = "font-size: 12px; color: #a0aec0; white-space: nowrap;";
+
+            // ⚠⚠ **Предохранитель обязателен именно здесь.** Число приходит
+            // снаружи, и опечатка в вызывающем («800 девушек») обернулась бы
+            // восемьюстами прогонами подflow, каждый из которых стоит вызовов
+            // LLM. У режима с ручным числом такого риска нет — там человек
+            // видит, что набрал.
+            const countVarCapInput = document.createElement('input');
+            countVarCapInput.type = 'number';
+            countVarCapInput.min = '1';
+            countVarCapInput.max = '100';
+            countVarCapInput.className = 'form-control repeat-count-var-cap';
+            countVarCapInput.value = (repeatCountVarName
+                && currentValue?.repeat?.max_iterations) || REPEAT_COUNT_VAR_CAP;
+            countVarCapInput.title = 'Предохранитель: сколько оборотов максимум, '
+                + 'каким бы большим ни пришло значение переменной';
+            countVarCapInput.style = "width: 60px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
+
+            countVarRow.append(countVarLabel, countVarSelect, countVarSuffix, countVarCapInput);
+            repeatContainer.appendChild(countVarRow);
+
             // Начальный режим — по уже сохраненному значению metadata
             let initialRepeatMode = 'none';
             if (currentValue?.repeat?.until) initialRepeatMode = 'until';
-            else if (currentValue?.repeat?.count) initialRepeatMode = 'count';
+            // ⚠ Метку проверяем **раньше** числа: она тоже лежит в `count`, и
+            // режим «вручную» перехватил бы её — ровно так она и терялась.
+            else if (repeatCountVarName) initialRepeatMode = 'count_var';
+            else if (repeatCountSaved) initialRepeatMode = 'count';
             repeatModeSelect.value = initialRepeatMode;
 
             const updateRepeatRowsVisibility = () => {
                 untilRow.style.display = repeatModeSelect.value === 'until' ? 'flex' : 'none';
                 countRow.style.display = repeatModeSelect.value === 'count' ? 'flex' : 'none';
+                countVarRow.style.display = repeatModeSelect.value === 'count_var' ? 'flex' : 'none';
             };
 
             // Сборка и сохранение metadata.workflow_invoke
@@ -723,8 +805,23 @@ export function renderCustomStepFields(step, metadata) {
                     };
                 } else if (repeatModeSelect.value === 'count') {
                     payload.repeat = {count: parseInt(countInput.value, 10) || 1};
+                } else if (repeatModeSelect.value === 'count_var' && countVarSelect.value) {
+                    // ⚠ Метка целиком, без текста вокруг: только такую строку
+                    // движок возвращает числом, а `%invite_count% раз` осталась
+                    // бы строкой — и `int()` на ней упал бы в прогоне.
+                    payload.repeat = {
+                        count: `%${countVarSelect.value}%`,
+                        max_iterations: parseInt(countVarCapInput.value, 10)
+                            || REPEAT_COUNT_VAR_CAP
+                    };
                 }
                 // mode 'none' — repeat не добавляется в payload: обычный однократный вызов
+                //
+                // ⚠ Сюда же попадает `count_var` с невыбранной переменной: писать
+                // `count: ''` значило бы оставить в метаданных повтор, которого
+                // нет (движок счёл бы его одним оборотом), а пустую метку —
+                // уронить прогон на `int()`. Режим без переменной — это ещё не
+                // настройка, и хранить её нечем.
 
                 saveChanges(payload);
             };
@@ -732,7 +829,8 @@ export function renderCustomStepFields(step, metadata) {
             updateRepeatRowsVisibility();
             untilToggleValueVisibility();
 
-            [repeatModeSelect, untilVarSelect, untilOpSelect, maxIterInput, countInput].forEach(el => {
+            [repeatModeSelect, untilVarSelect, untilOpSelect, maxIterInput, countInput,
+                countVarSelect, countVarCapInput].forEach(el => {
                 el.addEventListener('change', () => {
                     updateRepeatRowsVisibility();
                     untilToggleValueVisibility();

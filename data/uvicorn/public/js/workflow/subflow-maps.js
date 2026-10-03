@@ -92,7 +92,8 @@ export function renderSubflowMaps(host, stepId, onChange) {
 
         const known = await _subflowScope(wfId);
 
-        _renderInputs(inputsPane, known.inputs, (saved && saved.inputs_map) || {}, onChange);
+        _renderInputs(inputsPane, subflowInputsWithSaved(known.inputs, saved),
+                      (saved && saved.inputs_map) || {}, onChange);
         _renderOutputs(outputsPane, known.gives, (saved && saved.outputs_map) || {},
                        wfId, stepId, onChange);
 
@@ -193,6 +194,42 @@ async function _subflowScope(wfId) {
 
         return empty;
     }
+}
+
+/**
+ * Объявленные входы подпотока **плюс уже настроенные**, которых в объявлениях нет.
+ *
+ * ## ⚠⚠ Зачем: настроенный вход исчезал при открытии шага
+ *
+ * Строки рисуются по объявлениям ребёнка, а объявления берутся с фильтром
+ * `type === 'input'` (`_subflowScope`). Пара, у которой переменная ребёнка
+ * объявлена иначе — `workflow`, — не рисовалась **вовсе**; сборка же идёт по
+ * нарисованным строкам, и такая пара пропадала из `inputs_map` от одного
+ * касания любого поля блока. Ни ошибки, ни следа.
+ *
+ * Цена измерена на инвайтах: через такую пару (`invite_done`) цикл передавал
+ * ребёнку уже написанные реплики — ею и держалось «пиши иначе, чем вот это».
+ * Без неё каждый оборот начинал с чистого листа.
+ *
+ * ⚠ Показываем, а не молча доносим: человек должен видеть, что пара есть, и
+ * иметь возможность убрать её сам. Молчаливое восстановление было бы вторым
+ * способом хранить карту — после самой карты.
+ */
+export function subflowInputsWithSaved(inputs, saved) {
+    const rows = [...(inputs || [])];
+    const declared = new Set(rows.map(one => one.name));
+
+    Object.keys((saved && saved.inputs_map) || {})
+        .filter(name => name && !declared.has(name))
+        // ⚠ Помета в `title`: иначе «лишняя» строка читается как объявленный
+        // вход, и человек не поймёт, почему её нет у ребёнка в списке.
+        .forEach(name => rows.push({
+            name,
+            description: 'Настроено на шаге, но у подпотока не объявлено '
+                + 'входящей переменной',
+        }));
+
+    return rows;
 }
 
 /** Строки входящих: имя переменной подпотока ⬅ переменная родителя. */
