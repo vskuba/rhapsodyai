@@ -72,7 +72,6 @@ export async function sessionChatInit() {
     el.stream = document.getElementById('chatSessionStream');
     el.modal = document.getElementById('chatDeleteModal');
     el.modalPreview = document.getElementById('chatDeletePreview');
-    el.modalAlone = document.getElementById('chatDeleteAlone');
     el.modalCancel = document.getElementById('chatDeleteCancel');
     el.modalConfirm = document.getElementById('chatDeleteConfirm');
 
@@ -395,6 +394,11 @@ function exchangeHtml(pair, row) {
                 timeAfterHint: 'ответ сочинён',
                 undelivered: answered && !delivered,
                 marks,
+                // Убранный ответ приходит отдельными полями: в `answer` его
+                // нет, иначе он снова считался бы сказанным (чип доставки, чип
+                // удаления, счётчик ответов).
+                deletedText: row.answer_deleted_text,
+                deletedAt: row.answer_deleted_at,
             })}
         </div>
     `;
@@ -433,7 +437,7 @@ function exchangeHtml(pair, row) {
  */
 function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
                    timeAfter = null, timeAfterHint = '', undelivered = false,
-                   marks = ''}) {
+                   marks = '', deletedText = '', deletedAt = null}) {
     // ⚠ Пустая НАША половина остаётся прочерком, а его — не рисуется вовсе
     // (решает `exchangeHtml`). Разница в том, что каждая из них значит.
     //
@@ -443,9 +447,15 @@ function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
     //     наша половина пуста   агент СМОЛЧАЛ на сказанное. Это решение, и
     //                           видеть его надо: лента без прочерка выглядит
     //                           так, будто разговор на этом кончился сам.
-    const content = String(text || '') !== ''
-        ? htmlEscape(text)
-        : '<span class="chat-half-empty">— нет ответа —</span>';
+    //     ответ убран           третий случай, и он НЕ «нет ответа»: ответ был
+    //                           и был доставлен, его убрали мы. Пометка своя, а
+    //                           текст — в подсказке: правку делает человек и
+    //                           имеет право посмотреть, что именно убрал.
+    const content = deletedAt
+        ? deletedHtml(deletedText, deletedAt)
+        : (String(text || '') !== ''
+            ? htmlEscape(text)
+            : '<span class="chat-half-empty">— нет ответа —</span>');
     // ⚠ Два голых штампа в одной строке без подсказок не различить: оба
     // выглядят датой. Какой из них что — сказано наведением.
     const tail = [
@@ -465,6 +475,29 @@ function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
             ${tail ? `<div class="chat-half-marks">${tail}</div>` : ''}
         </div>
     `;
+}
+
+/** Место убранного ответа: пометка в ленте, текст — подсказкой.
+ *
+ * ⚠⚠ Текст живёт в `title`, а не в ленте. Смысл правки в том, чтобы убранный
+ * ответ не мешал читать разговор: выведи его светло-серым прямо в строку — и он
+ * продолжит мозолить глаза, то есть делать ровно то, из-за чего его и убрали.
+ * Наведение — осознанное действие, им и спрашивают «а что там было».
+ *
+ * ⚠ В подсказку идёт и время: «убрано вчера» и «убрано минуту назад» — разные
+ * ответы на вопрос «это я сейчас нажал или оно давно так?».
+ *
+ * ⚠ Текст приходит из базы и попадает в атрибут — экранируем тем же
+ * `htmlEscape`, что и остальное: кавычка в ответе разорвала бы разметку.
+ */
+function deletedHtml(text, deletedAt) {
+    const said = String(text || '');
+    const hint = said
+        ? `Убрано ${fmtTz(deletedAt)}. Текст ответа:\n\n${said}`
+        : `Убрано ${fmtTz(deletedAt)}`;
+
+    return `<span class="chat-half-deleted" title="${htmlEscape(hint)}">`
+        + 'было удалено</span>';
 }
 
 // ===================== Удаление нашего ответа =====================
@@ -525,10 +558,6 @@ function removeAsk(id) {
 
     state.removing = id;
     el.modalPreview.innerHTML = removePreview(row);
-    // ⚠ Обмен без его реплики — особый случай, и человеку о нём говорят ЗДЕСЬ,
-    // а не постфактум: наш ответ там и есть вся строка, и после очистки в ней
-    // не осталось бы ничего, поэтому она исчезает целиком.
-    el.modalAlone.hidden = String(row.question || '') !== '';
     el.modal.hidden = false;
     // Фокус — на отмене. Окно открылось по разрушающему действию, и случайный
     // Enter обязан означать «нет».
@@ -593,14 +622,10 @@ async function removeRun() {
     el.modalCancel.disabled = true;
 
     try {
-        const answer = await deleteData(`/session/companion/${id}/answer`);
+        await deleteData(`/session/companion/${id}/answer`);
 
-        // Что именно случилось, решает сервер: у обмена без его реплики со
-        // страницы пропадает вся строка. Говорим об этом прямо — «ответ убран»
-        // на месте исчезнувшего обмена читалось бы как потеря.
-        showNotification(answer?.result?.row_hidden
-            ? 'Ответ убран; его реплики в обмене не было — обмен пропал из ленты'
-            : 'Ответ убран, реплика собеседника осталась', 'success');
+        showNotification('Ответ убран; текст виден подсказкой на пометке',
+            'success');
         removeClose();
         // Список целиком, а не вычитание единицы на месте: у разговора четыре
         // счётчика (обмены, его реплики, наши ответы, недоставленные), каждый

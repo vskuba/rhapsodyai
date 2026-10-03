@@ -221,12 +221,14 @@ class TestAnswerDelete:
       а не содержимое: решение «ответ лишний» принимает человек и может
       ошибиться.
 
-    Из второго следует третье: помеченное обязаны прятать **все** читатели —
-    страница и лента в промпт. Здесь проверяются оба.
+    Из второго следует третье, и оно тонкое: читатели расходятся. Лента агента
+    убранного не знает вовсе, а страница знает — рисует «было удалено» и даёт
+    текст подсказкой: человек разбирается в своей же правке. Здесь проверяются
+    обе стороны этого расхождения.
     """
 
     async def test_question_survives(self, client, talk):
-        """Его реплика на месте, нашего ответа страница не отдаёт."""
+        """Его реплика на месте, нашего ответа в `answer` страница не даёт."""
         rows = await _exchanges(client, {'owner_id': talk['owner_id'],
                                          'companion_id': talk['companion_id'],
                                          'kind': 'chat'})
@@ -235,7 +237,7 @@ class TestAnswerDelete:
         response = await client.delete(f'/session/companion/{first["id"]}/answer')
 
         assert response.status_code == 200
-        assert response.json()['result']['row_hidden'] is False
+        assert response.json()['result']['answer_deleted_at']
 
         left = await _exchanges(client, {'owner_id': talk['owner_id'],
                                          'companion_id': talk['companion_id'],
@@ -245,6 +247,41 @@ class TestAnswerDelete:
         assert same['question'] == 'q1'
         assert same['answer'] == ''
         assert same['delivered_at'] is None
+
+    async def test_page_gets_the_text_for_the_tooltip(self, client, talk):
+        """⚠⚠ Страница получает убранный текст — отдельным полем.
+
+        На его месте в ленте стоит «было удалено», а сам текст показывается
+        подсказкой. В `answer` его класть нельзя: по этому полю страница судит
+        «ответ есть», и убранный снова выглядел бы сказанным — с чипом доставки
+        и чипом удаления.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        same = [row for row in left if row['id'] == first['id']][0]
+
+        assert same['answer'] == ''
+        assert same['answer_deleted_text'] == 'a1'
+        assert same['answer_deleted_at']
+
+    async def test_live_answer_has_no_deleted_fields(self, client, talk):
+        """У живого ответа поля пометки пусты — иначе лента метила бы всё."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        assert first['answer'] == 'a1'
+        assert first['answer_deleted_at'] is None
+        assert first['answer_deleted_text'] == ''
 
     async def test_text_stays_in_the_table(self, client, talk):
         """⚠⚠ В базе текст цел — стирается видимость, а не содержимое."""
@@ -327,12 +364,14 @@ class TestAnswerDelete:
 
         assert [(row['question'], row['answer']) for row in mail] == [('m1', 'm2')]
 
-    async def test_row_hides_when_question_is_empty(self, client, talk):
-        """⚠ Обмен без его реплики уходит со страницы целиком.
+    async def test_row_without_question_stays_on_the_page(self, client, talk):
+        """⚠ Обмен без его реплики со страницы НЕ пропадает.
 
-        Инвайт, письмо, инициатива: наш ответ — вся строка, видимых половин в
-        ней больше нет. В таблице строка при этом остаётся — отметка прячет, а
-        не удаляет.
+        Инвайт, письмо, инициатива: наш ответ — вся строка. Показывать в ней
+        всё равно есть что — пометку «было удалено»; исчезай такие строки,
+        человек видел бы одну свою правку пометкой, а другую пропажей строки.
+
+        Из промпта она при этом уходит целиком: там пометок не рисуют.
         """
         alone = await companion_session_add(talk['owner_key'],
                                             talk['companion_key'],
@@ -342,20 +381,19 @@ class TestAnswerDelete:
         response = await client.delete(f'/session/companion/{alone["id"]}/answer')
 
         assert response.status_code == 200
-        assert response.json()['result']['row_hidden'] is True
 
         left = await _exchanges(client, {'owner_id': talk['owner_id'],
                                          'companion_id': talk['companion_id'],
                                          'kind': 'chat'})
+        same = [row for row in left if row['id'] == int(alone['id'])]
 
-        assert [row['id'] for row in left if row['id'] == int(alone['id'])] == []
+        assert len(same) == 1
+        assert same[0]['answer_deleted_text'] == 'наш инвайт'
 
-        async with mysql_get_db_async() as db:
-            await db.execute('SELECT `answer` FROM `companion_session`'
-                             ' WHERE `id` = %s', (int(alone['id']),))
-            stored = await db.fetchone()
+        feed = await companion_session_history(talk['owner_key'],
+                                               talk['companion_key'])
 
-        assert stored['answer'] == 'наш инвайт'
+        assert 'наш инвайт' not in feed
 
     async def test_counters_drop_the_hidden_answer(self, client, talk):
         """Счётчики разговора считают видимое: ответов стало меньше.
