@@ -5,6 +5,16 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import (WORKFLOW_VARIABLE_NODE_PUBLIC,
                                ai_workflow_variables_node_get, ai_workflow_step_refs_remap)
+from src.ai.ai_workflow_history import (HISTORY_ACTION_CREATE,
+                                        HISTORY_ACTION_DELETE,
+                                        HISTORY_ACTION_REORDER,
+                                        HISTORY_ACTION_UPDATE,
+                                        HISTORY_OBJECT_STEP,
+                                        HISTORY_OBJECT_VARIABLE,
+                                        HISTORY_OBJECT_WORKFLOW,
+                                        workflow_history_changes,
+                                        workflow_history_name,
+                                        workflow_history_write)
 from src.mysql_.repository.agent_workflow_repository import AgentWorkflowRepository
 from src.mysql_.repository.agent_workflow_step_repository import AgentWorkflowStepRepository
 from src.mysql_.repository.agent_workflow_step_type_repository import AgentWorkflowStepTypeRepository
@@ -168,7 +178,16 @@ async def workflow_update(
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
 ):
     repo = AgentWorkflowRepository()
-    return {"result": await repo.update(workflow_id, data)}
+
+    was = await repo.find(workflow_id) or {}
+    done = await repo.update(workflow_id, data)
+
+    await workflow_history_write(
+        workflow_id, HISTORY_OBJECT_WORKFLOW, HISTORY_ACTION_UPDATE,
+        changes=workflow_history_changes(was, data), user=user,
+        object_name=workflow_history_name(was))
+
+    return {"result": done}
 
 
 @router.delete("/workflow/{workflow_id}")
@@ -292,6 +311,16 @@ async def workflow_step_add(
 
     new_id = await repo_workflow_step.add(new_step_data)
 
+    # ⚠ У заведения в `changes` идёт род шага, а не все его поля: метаданные у
+    # нового шага пусты, и перечислять пустоту незачем. Важно «появился шаг
+    # такого типа» — дальше его правки видны своими записями.
+    await workflow_history_write(
+        workflow_id, HISTORY_OBJECT_STEP, HISTORY_ACTION_CREATE,
+        changes=[{'field': 'type', 'was': None,
+                  'now': workflow_step_type.get('name') or type_id}],
+        user=user, object_id=int(new_id or 0),
+        object_name=new_step_data['title'])
+
     return {"result": new_id}
 
 
@@ -344,8 +373,21 @@ async def workflow_variable_add(
             """,
             (owner_id, data.get("name"), data.get("default"), variable_type)
         )
+        new_id = db.lastrowid
 
-        return {"result": db.lastrowid}
+    # ⚠ **Вне `async with`**: запись истории берёт своё соединение, и вложенный
+    # заход за ним изнутри открытого держал бы два на один запрос.
+    #
+    # ⚠ Повтор по имени записи не даёт — он возвращается выше: «добавил
+    # существующую» событием не является (страница заводит переменную и кнопкой,
+    # и подхватом из шага).
+    await workflow_history_write(
+        workflow_id, HISTORY_OBJECT_VARIABLE, HISTORY_ACTION_CREATE,
+        changes=[{'field': 'type', 'was': None, 'now': variable_type}],
+        user=user, object_id=int(new_id or 0),
+        object_name=str(data.get('name') or ''))
+
+    return {"result": new_id}
 
 
 @router.put("/workflow/{workflow_id}/steps/reorder")
@@ -358,12 +400,36 @@ async def workflow_steps_reorder(
     repo = AgentWorkflowStepRepository()
     positions = data.get("positions", [])
 
+    # ⚠ «До» читаем до первого `update`: иначе прежние номера уже затёрты, и
+    # сказать «что на что» будет нечем.
+    was = {int(one['id']): one for one in
+           await repo.find_by({'workflow_id': workflow_id}) or []}
+
+    moved = []
     for item in positions:
         step_id = item.get("id")
         new_position = item.get("position")
 
-        if step_id is not None:
-            await repo.update(int(step_id), {"position": int(new_position)})
+        if step_id is None:
+            continue
+
+        step_id, new_position = int(step_id), int(new_position)
+        before = int((was.get(step_id) or {}).get('position') or 0)
+
+        await repo.update(step_id, {"position": new_position})
+
+        # ⚠⚠ Перестановка приезжает **всем** списком, включая шаги, что остались
+        # на месте: без этого отсева одно перетаскивание давало бы запись о
+        # каждом шаге workflow. Событие — только про те, что поехали.
+        if before != new_position:
+            moved.append({'field': workflow_history_name(was.get(step_id)),
+                          'was': before, 'now': new_position})
+
+    # ⚠ Одна запись на всю перестановку, а не по шагу: человек перетащил один
+    # шаг, и это одно событие — даже когда номера сдвинулись у пяти.
+    await workflow_history_write(
+        workflow_id, HISTORY_OBJECT_STEP, HISTORY_ACTION_REORDER,
+        changes=moved, user=user)
 
     return {"result": "success"}
 
@@ -371,22 +437,56 @@ async def workflow_steps_reorder(
 @router.put("/workflow/{workflow_id}/step/{workflow_step_id}")
 async def workflow_step_update(
         request: Request,
+        workflow_id: int,
         workflow_step_id: int,
         data: dict,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_UPDATE]))
 ):
+    """Правка шага. ⚠⚠ **Пишет историю** — через эту ручку прошла поломка 03.10.
+
+    Метка `%invite_count%` в `repeat.count` была затёрта единицей, и узнать
+    «когда и из-за кого» было нечем: ошибки не случилось, а следа правки не
+    существовало. Подробности — `.claude/docs/workflow_history.md`.
+
+    ⚠ **«До» читаем перед правкой, а не после.** Шаг приезжает целиком
+    (`{metadata, title}`), и другого способа узнать, что именно изменилось, нет.
+
+    ⚠ Автосохранение шлёт правку через 400 мс после касания поля, поэтому пустой
+    дифф записи не заводит — решает это `workflow_history_write`.
+    """
     repo = AgentWorkflowStepRepository()
-    return {"result": await repo.update(workflow_step_id, data)}
+
+    was = await repo.find(workflow_step_id) or {}
+    done = await repo.update(workflow_step_id, data)
+
+    await workflow_history_write(
+        workflow_id, HISTORY_OBJECT_STEP, HISTORY_ACTION_UPDATE,
+        changes=workflow_history_changes(was, data), user=user,
+        object_id=workflow_step_id, object_name=workflow_history_name(was))
+
+    return {"result": done}
 
 
 @router.delete("/workflow/{workflow_id}/step/{workflow_step_id}")
 async def workflow_step_delete(
         request: Request,
+        workflow_id: int,
         workflow_step_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))
 ):
     repo = AgentWorkflowStepRepository()
-    return {"result": await repo.delete(workflow_step_id)}
+
+    # ⚠ Читаем **до** удаления: после него имени шага не существует, а запись
+    # «удалён шаг #803» через месяц не читается никак.
+    was = await repo.find(workflow_step_id) or {}
+    done = await repo.delete(workflow_step_id)
+
+    await workflow_history_write(
+        workflow_id, HISTORY_OBJECT_STEP, HISTORY_ACTION_DELETE,
+        changes=[], user=user, object_id=workflow_step_id,
+        object_name=workflow_history_name(was))
+
+    return {"result": done}
 
 
 @router.get("/workflow/{workflow_id}/parents")
@@ -524,11 +624,14 @@ async def workflow_variable_update(
     values.extend([workflow_variable_id, workflow_id])
 
     async with mysql_get_db_async() as db:
+        # ⚠ Строка целиком, а не один `id`: по ней считается дифф и берётся имя
+        # переменной на момент правки.
         await db.execute(
-            "SELECT `id` FROM `agent_workflow_variable` "
+            "SELECT * FROM `agent_workflow_variable` "
             "WHERE `id` = %s AND `workflow_id` = %s",
             (workflow_variable_id, workflow_id))
-        if not await db.fetchone():
+        was = await db.fetchone()
+        if not was:
             raise HTTPException(
                 status_code=404,
                 detail=f"Переменной {workflow_variable_id} у workflow "
@@ -538,6 +641,12 @@ async def workflow_variable_update(
             f"UPDATE `agent_workflow_variable` SET {', '.join(fields)} "
             f"WHERE `id` = %s AND `workflow_id` = %s", tuple(values))
         await db.connection.commit()
+
+    await workflow_history_write(
+        workflow_id, HISTORY_OBJECT_VARIABLE, HISTORY_ACTION_UPDATE,
+        changes=workflow_history_changes(dict(was), data), user=user,
+        object_id=workflow_variable_id,
+        object_name=workflow_history_name(dict(was)))
 
     return {'result': {'id': workflow_variable_id}}
 
@@ -560,12 +669,29 @@ async def workflow_variable_delete(
         dict: `result` — сколько строк удалено (ноль, если переменная чужая).
     """
     async with mysql_get_db_async() as db:
+        # ⚠ Имя читаем **до** удаления: после него его не существует.
+        await db.execute(
+            "SELECT `name` FROM `agent_workflow_variable` "
+            "WHERE `id` = %s AND `workflow_id` = %s",
+            (workflow_variable_id, workflow_id))
+        was = dict((await db.fetchone()) or {})
+
         await db.execute(
             "DELETE FROM `agent_workflow_variable` "
             "WHERE `id` = %s AND `workflow_id` = %s",
             (workflow_variable_id, workflow_id))
         await db.connection.commit()
-        return {"result": db.rowcount}
+        gone = db.rowcount
+
+    # ⚠ Пишем только когда строка правда ушла: ноль означает «переменная чужая»,
+    # и записи о неслучившемся удалении быть не должно.
+    if gone:
+        await workflow_history_write(
+            workflow_id, HISTORY_OBJECT_VARIABLE, HISTORY_ACTION_DELETE,
+            changes=[], user=user, object_id=workflow_variable_id,
+            object_name=workflow_history_name(was))
+
+    return {"result": gone}
 
 
 

@@ -6,6 +6,7 @@ import {showNotification} from '../notification.js';
 import {state} from './state.js';
 import {parseMetadata, activateTab, savedTab, editorWorkflowId} from './utils.js';
 import {initGraphMode, openWorkflowGraph} from './graph.js';
+import {openWorkflowHistory} from './history.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 import {buildGroupTree, renderGroupTree} from '../agent_group_tree.js';
@@ -27,6 +28,7 @@ document.getElementById('tabSteps')?.addEventListener('click', async () => {
     document.getElementById('workflowSettingsView').style.display = 'none';
     document.getElementById('stepsEditorView').style.display = 'flex';
     document.getElementById('stepsGraph').style.display = 'none';
+    document.getElementById('workflowHistory').style.display = 'none';
     document.getElementById('addStepToWorkflowBtn').style.display = 'block';
     // Если шаги не загружены для этого workflow — загружаем
     if (!state.allCurrentStepsData?.length
@@ -41,11 +43,27 @@ document.getElementById('tabSettings')?.addEventListener('click', () => {
     document.getElementById('workflowSettingsView').style.display = 'flex';
     document.getElementById('stepsEditorView').style.display = 'none';
     document.getElementById('stepsGraph').style.display = 'none';
+    document.getElementById('workflowHistory').style.display = 'none';
 });
 
 document.getElementById('tabGraph')?.addEventListener('click', () => {
     activateTab('tabGraph');
+    document.getElementById('workflowHistory').style.display = 'none';
     openWorkflowGraph();
+});
+
+// ⚠⚠ История правок: кто, когда и что на что поменял. Заведена после того, как
+// потерянная метка `repeat.count` сломала инвайты **без единой ошибки**, и время
+// поломки искали по чужой базе (`.claude/docs/workflow_history.md`).
+document.getElementById('tabHistory')?.addEventListener('click', async () => {
+    activateTab('tabHistory');
+    // ⚠ Прячем все три соседние панели, а не только текущую: вкладку открывают
+    // с любой из них, и забытая осталась бы видна под лентой.
+    document.getElementById('workflowSettingsView').style.display = 'none';
+    document.getElementById('stepsEditorView').style.display = 'none';
+    document.getElementById('stepsGraph').style.display = 'none';
+    document.getElementById('addStepToWorkflowBtn').style.display = 'none';
+    await openWorkflowHistory();
 });
 
 const workflowListContainer = document.getElementById('workflowList');

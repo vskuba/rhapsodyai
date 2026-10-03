@@ -632,11 +632,76 @@
         font-weight: bold;
     }
 
-    /* Вкладки Шаги / Настройки / Graph */
+    /* Вкладки Шаги / Настройки / Graph / History */
     .workflow-tabs {
         display: flex;
         gap: 0;
     }
+
+    /* ── История правок (вкладка History) ─────────────────────────────────── */
+    #workflowHistory { padding: 12px 0; }
+
+    .history-head {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 12px; color: #718096; padding: 0 4px 10px;
+    }
+
+    .history-chip {
+        border: 1px solid #cbd5e0; background: #edf2f7; border-radius: 12px;
+        padding: 2px 10px; font-size: 11px; color: #2d3748; cursor: pointer;
+    }
+
+    .history-feed { display: flex; flex-direction: column; gap: 6px; }
+
+    /* ⚠ Сетка, а не таблица: у строки четыре поля, и дифф в четвёртом бывает
+       многострочным — в таблице он растягивал бы ряд целиком. */
+    .history-row {
+        display: grid; grid-template-columns: 130px 140px 1fr; gap: 10px;
+        align-items: start; background: #fff; border: 1px solid #e2e8f0;
+        border-radius: 6px; padding: 8px 10px; font-size: 12px;
+    }
+
+    /* ⚠ Указатель только у строки шага: ведёт к шагу лишь она (`_row`). */
+    .history-row[data-history-step] { cursor: pointer; }
+    .history-row[data-history-step]:hover { border-color: #3498db; }
+
+    .history-when { color: #a0aec0; font-variant-numeric: tabular-nums; }
+    .history-who { color: #4a5568; font-weight: 600; }
+    .history-what { color: #2d3748; }
+
+    /* Дифф занимает всю ширину под тремя полями: путь поля бывает длинным
+       (`metadata.workflow_invoke.repeat.count`), и ужимать его незачем. */
+    .history-diff { grid-column: 1 / -1; display: flex;
+                    flex-direction: column; gap: 3px; margin-top: 4px; }
+
+    .history-change { display: flex; flex-wrap: wrap; align-items: baseline;
+                      gap: 6px; }
+
+    .history-field { color: #805ad5; font-family: monospace; font-size: 11px; }
+    .history-was { color: #c53030; background: #fff5f5; padding: 0 4px;
+                   border-radius: 3px; font-family: monospace; }
+    .history-now { color: #276749; background: #f0fff4; padding: 0 4px;
+                   border-radius: 3px; font-family: monospace; }
+    .history-arrow { color: #a0aec0; }
+    .history-none { color: #a0aec0; font-style: italic; }
+
+    /* Построчный дифф длинных значений: только изменившиеся строки. */
+    .history-line { font-family: monospace; font-size: 11px; white-space: pre-wrap;
+                    padding: 1px 4px; border-radius: 3px; }
+    .history-line-add { background: #f0fff4; color: #276749; }
+    .history-line-cut { background: #fff5f5; color: #c53030; }
+    .history-line-no { color: #a0aec0; margin-right: 8px;
+                       display: inline-block; min-width: 24px; text-align: right; }
+
+    .history-more { color: #a0aec0; font-size: 11px; font-style: italic; }
+    .history-note { color: #718096; font-size: 12px; padding: 16px 4px; }
+
+    .history-pager { display: flex; align-items: center; gap: 10px;
+                     justify-content: center; padding: 12px 0; font-size: 12px;
+                     color: #718096; }
+    .history-pager button { border: 1px solid #cbd5e0; background: #fff;
+                            border-radius: 4px; padding: 2px 10px; cursor: pointer; }
+    .history-pager button:disabled { opacity: .4; cursor: default; }
 
     .tab-btn {
         padding: 10px 20px;
@@ -1718,6 +1783,11 @@
                         <button type="button" class="tab-btn active" id="tabSteps">Шаги</button>
                         <button type="button" class="tab-btn" id="tabSettings">Настройки</button>
                         <button type="button" class="tab-btn" id="tabGraph">Graph</button>
+                        <!-- ⚠ Четвёртая вкладка: правки этого workflow. Заведена
+                             после того, как потерянная метка `repeat.count`
+                             сломала инвайты без единой ошибки, и время поломки
+                             искали по чужой базе. `.claude/docs/workflow_history.md` -->
+                        <button type="button" class="tab-btn" id="tabHistory">History</button>
                     </div>
                     <button type="submit" class="btn-save">Сохранить workflow</button>
                 </div>
@@ -1973,6 +2043,12 @@
                     </div>
                 </div>
             </div>
+
+            <!-- История правок: лента рисуется из `history.js`.
+                 ⚠ Пустой блок намеренно: правки читаются при открытии вкладки, а
+                 не при загрузке страницы — на странице, где историю не смотрят,
+                 это лишний запрос на каждое открытие workflow. -->
+            <div id="workflowHistory" style="display: none;"></div>
 
             <div class="editor-footer">
                 <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
