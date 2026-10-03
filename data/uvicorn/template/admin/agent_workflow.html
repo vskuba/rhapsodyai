@@ -673,8 +673,19 @@
     /* Доли колонок: время узкое и ровное, значения широкие. ⚠ `fixed` выше —
        иначе длинная строка диффа раздувает свою колонку за счёт соседних. */
     .history-table th:nth-child(1) { width: 130px; }
-    .history-table th:nth-child(2) { width: 210px; }
-    .history-table th:nth-child(5) { width: 200px; }
+    .history-table th:nth-child(2) { width: 28px; }
+    .history-table th:nth-child(3) { width: 190px; }
+    .history-table th:nth-child(6) { width: 150px; }
+    .history-table th:nth-child(7) { width: 170px; }
+
+    /* Название шага. ⚠ Именем, а не номером: номер меняется от перестановки
+       шагов, и запись недельной давности указывала бы им на чужой шаг. */
+    .history-step { color: #2d3748; font-weight: 600; }
+
+    /* Значок вида правки. ⚠ По центру и без переноса: столбец пробегают
+       глазами сверху вниз, и ровная колонка знаков читается как указатель. */
+    .history-sign { text-align: center; white-space: nowrap;
+                    font-size: 14px; line-height: 1.2; }
 
     .history-table td {
         padding: 5px 10px; vertical-align: top; word-break: break-word;
@@ -689,11 +700,15 @@
     /* ⚠ Указатель только у ряда шага: ведёт к шагу лишь он (`_row`). */
     .history-tr[data-history-step] { cursor: pointer; }
 
-    .history-when { color: #a0aec0; font-variant-numeric: tabular-nums;
+    .history-when { color: #345e93; font-variant-numeric: tabular-nums;
                     white-space: nowrap; }
     .history-who { color: #4a5568; font-weight: 600; }
     .history-what { color: #2d3748; }
     .history-about { color: #4a5568; }
+
+    /* Предмет правки — над именем поля, обычным шрифтом: это «что правили», а
+       поле под ним — «какую его часть». */
+    .history-subject { color: #2d3748; font-weight: 600; margin-bottom: 2px; }
 
     .history-field { color: #805ad5; font-family: monospace; font-size: 11px; }
 

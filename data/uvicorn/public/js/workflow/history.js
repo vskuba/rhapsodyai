@@ -42,6 +42,49 @@ const FIELD_WORDS = {
     'default': 'значение по умолчанию',
 };
 
+// Флаг — словами. ⚠ Ключи строками: значение приходит и числом (`0` из базы),
+// и строкой (`"1"` из формы), а в ленте это одно и то же «да».
+const BOOL_WORDS = {'0': 'нет', '1': 'да', 'false': 'нет', 'true': 'да'};
+
+// Род переменной — теми же словами, что в реестре слева
+// (`workflowVariableSections`). ⚠ Своими словами нельзя: человек сверяет
+// запись истории с тем, что видит в списке, и расхождение читается как правка
+// чего-то другого.
+const VAR_TYPE_WORDS = {
+    input: 'входящая',
+    workflow: 'workflow',
+    global: 'глобальная',
+};
+
+// Значок правки — чтобы вид события читался до чтения слов.
+//
+// ⚠⚠ Выбирается по паре «действие + поле», а не по одному действию:
+// переименование — это тот же `update`, и без поля оно неотличимо от правки
+// промпта. Разбор — в `_sign`.
+//
+// ⚠ Поля, которые человек правит руками, сюда не попадают: значок ставится
+// только тому, что служба узнаёт наверняка. Незнакомому — общий «изменено».
+const SIGN_WORDS = {
+    create: '➕',
+    delete: '🗑️',
+    reorder: '🔀',
+    import: '📦',
+    update: '✏️',
+    // Особые случаи `update`, по полю.
+    rename: '🏷️',
+    move: '📁',
+    text: '📝',
+};
+
+// Поля, у которых правка — это переименование либо переезд. ⚠ `name` — это
+// технический id workflow, и смена его такое же переименование, как у `title`.
+const SIGN_FIELDS = {
+    title: 'rename',
+    name: 'rename',
+    node_id: 'move',
+    group_name: 'move',
+};
+
 // Что сделали — в роде предмета. ⚠ `reorder` назван «порядок шагов», а не
 // «перестановка»: в ленте читают глазами, и существительное находится быстрее
 // отглагольного.
@@ -158,8 +201,17 @@ async function _draw(host) {
             ? 'У этого предмета правок не записано'
             : 'Правок пока не записано'));
     } else {
-        parts.push('<div class="history-feed">'
-            + rows.map(_row).join('') + '</div>');
+        // ⚠ Обёртка со своей прокруткой: путь поля и строки диффа бывают
+        // длиннее колонки, и без неё таблица растянула бы страницу вбок.
+        parts.push('<div class="history-feed"><table class="history-table">'
+            + '<thead><tr>'
+            // ⚠ Колонка значка без заголовка: слово над ней («вид», «что»)
+            // объясняло бы то, что и так понятно с первого взгляда.
+            + '<th>Дата</th><th></th><th>Действие</th><th>До</th><th>После</th>'
+            + '<th>Шаг</th><th>Кто и что сделал</th>'
+            + '</tr></thead><tbody>'
+            + rows.map(_row).join('')
+            + '</tbody></table></div>');
         parts.push(_pager(answer));
     }
 
@@ -189,6 +241,23 @@ function _head(answer) {
         + `<span>Правок: ${total}</span>${chip}</div>`;
 }
 
+/**
+ * Запись истории — строками таблицы: по одной на каждое изменение.
+ *
+ * ## ⚠⚠⚠ Строка таблицы — изменение, а не запись
+ *
+ * У одной записи правок бывает несколько (`changes`), и колонки «До»/«После»
+ * требуют **пары** значений: уложи запись в один ряд — пришлось бы сваливать
+ * все «до» в одну ячейку и все «после» в другую, и соответствие между ними
+ * читалось бы по порядку. Поэтому ряд на изменение.
+ *
+ * ⚠ Дата и прочее печатаются **только в первом** ряду записи: повтор одного и
+ * того же времени в трёх рядах подряд читается как три события. Связь рядов
+ * держит общая рамка группы (`history-first` снизу).
+ *
+ * ⚠⚠ Запись без изменений (`reorder`, создание) тоже даёт ряд: событие было, и
+ * пропусти мы его — лента врала бы молчанием. «До»/«После» у него пустые.
+ */
 function _row(one) {
     const when = _when(one.created_at);
     const who = one.username || AUTHOR_WORDS[one.author] || '—';
@@ -203,17 +272,32 @@ function _row(one) {
     const what = said ? (said[gender] || said.n) : _safe(one.action);
     const id = Number(one.object_id) || 0;
 
-    // ⚠⚠ У правки самого workflow род и имя **не пишем**. Вкладка показывает
+    // ⚠⚠⚠ Имя предмета живёт в колонке «Что менялось», а не рядом с автором.
+    // Там его и ищут: вопрос «что правили» — про предмет и его поле, а «кто и
+    // что сделал» отвечает на другой. Прежде имя стояло справа, и чтобы понять
+    // строку, глаз ходил через всю таблицу и обратно.
+    //
+    // ⚠ У правки самого workflow род и имя **не пишем**. Вкладка показывает
     // историю одного workflow, его имя стоит в шапке страницы, и строка
-    // «изменено workflow «Инвайт: шаблон: один»» повторяла известное — а
-    // повтор известного в ленте стоит места, которое нужно сути правки.
-    const subject = one.object === 'workflow' ? '' : (() => {
+    // «workflow «Инвайт: шаблон: один»» повторяла бы известное — а повтор
+    // известного стоит места, которое нужно сути правки.
+    // ⚠⚠⚠ Шаг сюда **не пишется**: у него своя колонка. Имя шага — то, по
+    // чему правку ищут чаще всего, и колонка даёт пробежать его столбцом
+    // сверху вниз; продублируй мы имя и здесь, строка читалась бы дважды.
+    const subject = one.object !== 'variable' ? '' : (() => {
         const object = OBJECT_WORDS[one.object] || _safe(one.object);
         const name = one.object_name
             ? `«${_safe(one.object_name)}»` : (id ? `#${id}` : '');
 
-        return ` ${object} ${name}`;
+        return `<div class="history-subject">${object} ${name}</div>`;
     })();
+
+    // Колонка «Шаг»: название, а не номер. ⚠ Номер у шага меняется от
+    // перестановки, и запись недельной давности указывала бы им на чужой шаг;
+    // имя переживает перестановку. Пусто — правка не про шаг.
+    const step = one.object === 'step'
+        ? (one.object_name ? _safe(one.object_name) : (id ? `#${id}` : ''))
+        : '';
 
     // ⚠ Щелчок по строке ведёт **к шагу**: история нужна, чтобы починить, а не
     // чтобы полюбоваться. Тот же порядок, что у ленты событий в DatingAi.
@@ -223,40 +307,132 @@ function _row(one) {
     const goes = one.object === 'step' && id
         ? ` data-history-step="${id}"` : '';
 
-    return `<div class="history-row"${goes}>`
-        + `<div class="history-when">${when}</div>`
-        + `<div class="history-who">${_safe(who)}${mark}</div>`
-        + `<div class="history-what">${what}${subject}</div>`
-        + `<div class="history-diff">${(one.changes || []).map(_diff).join('')}</div>`
-        + '</div>';
+    // Правая колонка: кто правил, что сделал и с чем. ⚠ Одной ячейкой — это
+    // «прочее» по смыслу: смотрят туда, когда нужная строка уже найдена
+    // глазами по левым колонкам.
+    const about = `<div class="history-who">${_safe(who)}${mark}</div>`
+        + `<div class="history-what">${what}</div>`;
+
+    // ⚠ Род предмета доезжает до разбора значений: поле `type` есть и у шага
+    // (`return_response_llm`), и у переменной (`input`), и переводить их надо
+    // по-разному — иначе перевод угадывает.
+    // ⚠ Ячейки собираются **отложенно**: предмет приписывается к первому
+    // ряду, а какой он первый — знает цикл ниже, не этот список.
+    const changes = (one.changes || [])
+        .map(row => (head) => _cells(row, one.object, head));
+
+    if (!changes.length) changes.push((head) => _cells(null, one.object, head));
+
+    const rows = one.changes && one.changes.length ? one.changes : [null];
+    const signs = rows.map(row => _sign(one.action, row));
+
+    return changes.map((cells, at) => {
+        const first = at === 0;
+
+        return `<tr class="history-tr${first ? ' history-first' : ''}"${goes}>`
+            + `<td class="history-when">${first ? when : ''}</td>`
+            // ⚠ Значок — в каждом ряду, а не только в первом: он про само
+            // изменение, и у записи с переименованием и правкой текста они
+            // разные.
+            + `<td class="history-sign">${signs[at]}</td>`
+            // ⚠ Предмет — только в первом ряду записи, как дата: он у неё один
+            // на все правки, и повтор в каждом ряду читался бы как новый
+            // предмет.
+            + cells(first ? subject : '')
+            // ⚠ Имя шага — в каждом ряду записи, в отличие от даты: по этой
+            // колонке ищут глазами, и пропуск в середине читался бы как «эта
+            // правка не про шаг».
+            + `<td class="history-step">${step}</td>`
+            + `<td class="history-about">${first ? about : ''}</td>`
+            + '</tr>';
+    }).join('');
 }
 
-function _diff(one) {
+/**
+ * Значок правки: вид события — до чтения слов.
+ *
+ * Args:
+ *     action: `create` / `update` / `delete` / `reorder` / `import`.
+ *     one: само изменение; `null` — у записи их нет.
+ *
+ * ## ⚠⚠ Почему по паре «действие + поле», а не по одному действию
+ *
+ * Переименование — это тот же `update`, и по действию оно неотличимо от правки
+ * промпта. А глазами лента читается именно по виду события: «что тут удаляли»
+ * ищут, пробегая столбец, и `🗑️` находится мгновенно, а слово «удалена» —
+ * нет.
+ *
+ * ⚠ Поле решает **только у `update`**: у создания и удаления вид события задан
+ * самим действием, и значок поля («переименовано») там был бы ложью — ничего
+ * не переименовывали, предмет завели целиком.
+ */
+function _sign(action, one) {
+    if (action !== 'update') return SIGN_WORDS[action] || SIGN_WORDS.update;
+
+    if (!one) return SIGN_WORDS.update;
+
+    // ⚠ Построчный дифф — это правка текста: промпт, описание. Своим значком,
+    // потому что по объёму и смыслу это другое событие, чем смена одного поля.
+    if (one.lines) return SIGN_WORDS.text;
+
+    const kind = SIGN_FIELDS[one.field];
+
+    return SIGN_WORDS[kind] || SIGN_WORDS.update;
+}
+
+/**
+ * Три средние ячейки ряда: что менялось, до и после.
+ *
+ * Args:
+ *     one: одно изменение из `changes`; `null` — у записи их нет вовсе.
+ *     object: род предмета — нужен разбору значений.
+ *     head: готовая разметка предмета («переменная «invite_done»») либо пусто —
+ *         её печатает только первый ряд записи.
+ *
+ * ⚠⚠ Предмет и поле — в одной ячейке, одно над другим: это ответ на один
+ * вопрос «что правили», и разносить его по двум колонкам значило бы заставить
+ * читать строку в два приёма.
+ */
+function _cells(one, object, head = '') {
+    if (!one) {
+        return `<td class="history-field">${head}</td><td></td><td></td>`;
+    }
+
     if (one.more) {
-        return `<div class="history-more">…и ещё ${Number(one.more) || 0} изменений</div>`;
+        return `<td class="history-field">${head}</td>`
+            + `<td class="history-more" colspan="2">`
+            + `…и ещё ${Number(one.more) || 0} изменений</td>`;
     }
 
-    // ⚠ Длинные значения приходят **только изменившимися строками** (решение
-    // человека: полный промпт в истории не нужен). Показываем их как дифф, с
-    // номерами строк — по ним ищут глазами в поле промпта.
+    // ⚠⚠ Длинные значения приходят **только изменившимися строками** (решение
+    // человека: полный промпт в истории не нужен). В таблице они ложатся
+    // естественно: убранные строки — в «До», добавленные — в «После». Прежде
+    // те и другие шли вперемешку одним списком, и глазами их разделяли сами.
     if (one.lines) {
-        return `<div class="history-field">${_field(one.field)}</div>`
-            + one.lines.map(row => row.more
-                ? `<div class="history-more">…и ещё ${Number(row.more) || 0} строк</div>`
-                : `<div class="history-line history-line-${row.op === '+' ? 'add' : 'cut'}">`
-                  + `<span class="history-line-no">${Number(row.line) || 0}</span>`
-                  + `${row.op === '+' ? '+' : '-'} ${_safe(row.text)}</div>`).join('');
+        return `<td class="history-field">${head}${_field(one.field)}</td>`
+            + `<td class="history-was">${_lines(one.lines, '-')}</td>`
+            + `<td class="history-now">${_lines(one.lines, '+')}</td>`;
     }
 
-    return `<div class="history-change">`
-        + `<span class="history-field">${_field(one.field)}</span>`
-        + `<span class="history-was">${_value(one.was)}</span>`
-        + '<span class="history-arrow">→</span>'
-        + `<span class="history-now">${_value(one.now)}</span>`
-        + '</div>';
+    return `<td class="history-field">${head}${_field(one.field)}</td>`
+        + `<td class="history-was">${_value(one.was, one.field, object)}</td>`
+        + `<td class="history-now">${_value(one.now, one.field, object)}</td>`;
 }
 
-function _value(value) {
+/** Строки построчного диффа одной стороны: `-` в «До», `+` в «После». */
+function _lines(lines, op) {
+    const mine = (lines || []).filter(row => row.more || row.op === op);
+
+    if (!mine.length) return '<i class="history-none">без изменений</i>';
+
+    return mine.map(row => row.more
+        ? `<div class="history-more">…и ещё ${Number(row.more) || 0} строк</div>`
+        : `<div class="history-line">`
+          + `<span class="history-line-no">${Number(row.line) || 0}</span>`
+          + `${_safe(row.text)}</div>`).join('');
+}
+
+function _value(value, field, object) {
     // ⚠ «Пусто» и «не было» — разные вещи, и показывать их одинаково нельзя:
     // первое человек правил, второго не существовало.
     if (value === null || value === undefined) {
@@ -265,8 +441,67 @@ function _value(value) {
 
     if (value === '') return '<i class="history-none">пусто</i>';
 
+    const said = _said(field, value, object);
+    if (said !== null) return said;
+
     return _safe(typeof value === 'object'
         ? JSON.stringify(value) : String(value));
+}
+
+/**
+ * Значение словами — там, где число или код сами по себе ничего не говорят.
+ *
+ * Returns:
+ *     Готовый HTML либо `null`, если поле обычное и переводить нечего.
+ *
+ * ## ⚠⚠⚠ Зачем: «нода 2 → 3» не отвечает ни на один вопрос
+ *
+ * Запись истории читают, чтобы понять, **что сделали**. Номер ноды знает база,
+ * а человек — имя; пара чисел в ленте требует пойти и посмотреть, какая это
+ * нода, то есть ровно того труда, ради избавления от которого лента и
+ * заведена. То же у флага (`0 → 1`) и у рода переменной (`workflow → input`).
+ *
+ * ⚠ Номер не выбрасывается, а уезжает в подсказку: по нему ищут в базе, когда
+ * имя неоднозначно или ноду успели переименовать.
+ */
+function _said(field, value, object) {
+    const text = String(value);
+
+    if (field === 'node_id') {
+        const name = _nodeName(text);
+
+        return name
+            ? `<span title="нода №${_safe(text)}">${_safe(name)}</span>`
+            : `<span title="ноды с таким номером больше нет">№${_safe(text)}</span>`;
+    }
+
+    if (field === 'subflow') {
+        return BOOL_WORDS[text] === undefined ? null : BOOL_WORDS[text];
+    }
+
+    // ⚠⚠ Только у переменной: у шага `type` — это род шага
+    // (`return_response_llm`), и слово «входящая» там было бы ложью.
+    if (field === 'type' && object === 'variable') {
+        return VAR_TYPE_WORDS[text] ? _safe(VAR_TYPE_WORDS[text]) : null;
+    }
+
+    return null;
+}
+
+/**
+ * Имя ноды по номеру — из селекта формы, который сервер уже наполнил.
+ *
+ * ⚠⚠ Не своим запросом и не своим состоянием: список нод на странице один
+ * (`main.js` кладёт его в `#node_id`), и второй источник разошёлся бы с ним
+ * ровно тогда, когда ноду переименуют.
+ */
+function _nodeName(id) {
+    const select = document.getElementById('node_id');
+    if (!select) return '';
+
+    const option = [...select.options].find(one => String(one.value) === String(id));
+
+    return option ? option.textContent.trim() : '';
 }
 
 function _pager(answer) {
