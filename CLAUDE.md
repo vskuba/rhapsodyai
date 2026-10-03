@@ -158,6 +158,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `workflow.md` | Типы шагов, transitions, переменные, правила `tool_invoke` |
 | `tools.md` | Два слоя: общие библиотеки `py_modules` и инструменты `src/tool`; именование, auto-discovery, вызов из workflow |
 | `workflow_trace.md` | Журнал выполнения: схема, токены, `/admin/workflow_trace` |
+| `workflow_history.md` | **Спека, не реализация**: вкладка «History» — история правок workflow (кто, когда, что на что). Заведена после того, как потерянная метка `repeat.count` сломала инвайты **без единой ошибки**, и время поломки искали по чужой базе |
 | `workflow/dating_talk.md` | Пример workflow: 17 шагов, 3 LLM |
 | `detective.md` | Игра-детектив: PWA `/play/detective`, guest-сессии, динамические агенты, workflow 12/13/14 |
 
