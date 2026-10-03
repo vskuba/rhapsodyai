@@ -159,6 +159,23 @@
         color: #d63434;
     }
 
+    .run-summary .run-agent {
+        color: #7f8c8d;
+        font-size: 12px;
+        margin-right: 10px;
+        white-space: nowrap;
+    }
+
+    .run-summary .run-agent a {
+        color: #2b6cb0;
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    .run-summary .run-agent a:hover {
+        text-decoration: underline;
+    }
+
     .run-summary .status-badge {
         margin-right: 10px;
     }
@@ -1104,6 +1121,23 @@
         return node;
     }
 
+    // Агент прогона: подпись и имя ссылкой на его карточку (`/admin/agent?agent_id=`
+    // — страница агентов умеет открываться сразу на нужном, листая карусель нод).
+    // Прогон без агента (его завёл не агент, а, скажем, конвейер задач) блока не
+    // получает: пустая подпись «Агент:» в шапке ничего не сообщает.
+    function agentBlock(run) {
+        if (!run.agent_id) return null;
+        const box = el('span', 'run-agent', 'Агент: ');
+        // Имя может не доехать, если запись агента удалена (FK гасит `agent_id`
+        // не всегда — связь остаётся в прогоне). Тогда показываем номер: ссылка
+        // рабочая, и сам факт «агент был» из шапки не исчезает.
+        const link = el('a', null, run.agent_title || run.agent_name || `#${run.agent_id}`);
+        link.href = `/admin/agent?agent_id=${run.agent_id}`;
+        link.title = run.agent_name ? `Открыть агента: ${run.agent_name}` : 'Открыть агента';
+        box.appendChild(link);
+        return box;
+    }
+
     // Название workflow как ссылка на редактор; без workflow_id (удален) — обычный span
     function workflowLink(text, workflowId, className) {
         if (!workflowId) return el('span', className, text);
@@ -1600,6 +1634,8 @@
         headRow.appendChild(el('span', 'run-pre-title', `#${run.id} agent_workflow_trace `));
         headRow.appendChild(workflowLink(`${run.workflow_title || run.workflow_name || ''} `, run.workflow_id, 'run-title'));
         headRow.appendChild(el('span', 'run-name', `${run.workflow_name || ''} `));
+        const agentBox = agentBlock(run);
+        if (agentBox) headRow.appendChild(agentBox);
         headRow.appendChild(el('span', `status-badge status-${run.status}`, run.status));
         const dateSpan = el('span', 'run-meta');
         const {date: rDate, hm: rHm} = fmtDateParts(run.started_at);

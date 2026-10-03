@@ -110,7 +110,8 @@ async def workflow_trace_run_detail(
     async with mysql_get_db_async() as db:
         await db.execute(
             """
-            SELECT r.*, w.title AS workflow_title, w.name AS workflow_name, a.title AS agent_title
+            SELECT r.*, w.title AS workflow_title, w.name AS workflow_name,
+                   a.title AS agent_title, a.name AS agent_name
             FROM agent_workflow_trace r
             LEFT JOIN agent_workflow w ON w.id = r.workflow_id
             LEFT JOIN agent a ON a.id = r.agent_id
@@ -129,7 +130,8 @@ async def workflow_trace_run_detail(
             placeholders = ', '.join(['%s'] * len(layer))
             await db.execute(
                 f"""
-                SELECT r.*, w.title AS workflow_title, w.name AS workflow_name, a.title AS agent_title
+                SELECT r.*, w.title AS workflow_title, w.name AS workflow_name,
+                       a.title AS agent_title, a.name AS agent_name
                 FROM agent_workflow_trace r
                 LEFT JOIN agent_workflow w ON w.id = r.workflow_id
                 LEFT JOIN agent a ON a.id = r.agent_id
