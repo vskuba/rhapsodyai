@@ -16,10 +16,17 @@
 
 import {deleteData, postData} from '../api.js';
 import {showNotification} from '../notification.js';
-import {htmlEscape, labelClip, numberOf, selectFill, selectValueRestore,
-        stampList, sumOf} from './util.js';
+import {filterLoad, filterSave, htmlEscape, labelClip, numberOf, selectFill,
+        selectValueRestore, stampList, sumOf} from './util.js';
 
-const CHAT_STORE_PREFIX = 'session_chat_';
+// Приставка ключей отбора этой вкладки. Соседняя держит свои под своей
+// (`session_agent_`): отборы у вкладок разные, и общий ключ `limit` означал бы
+// «поменял предел обменов — поехал предел сессий».
+//
+// ⚠ Хранилище при этом долгое (`localStorage`, см. `filterSave`): отбор живёт
+// столько же, сколько запомненная подвкладка, — иначе страница открывается там,
+// где её оставили, но с чужим отбором.
+const CHAT_STORE_PREFIX = 'chat_';
 
 // Номер последнего начатого запроса. Ответ не своего номера выбрасывается.
 //
@@ -96,7 +103,7 @@ async function kindsLoad() {
     (data.result || []).forEach(kind => el.kind.add(new Option(kind, kind)));
 
     ['kind', 'delivered', 'limit'].forEach(name => {
-        selectValueRestore(el[name], sessionStorage.getItem(CHAT_STORE_PREFIX + name));
+        selectValueRestore(el[name], filterLoad(CHAT_STORE_PREFIX + name));
     });
 }
 
@@ -117,11 +124,11 @@ async function pairsLoadAll() {
     state.pairs = data.result || [];
 
     sidesFill();
-    selectValueRestore(el.owner, sessionStorage.getItem(`${CHAT_STORE_PREFIX}owner_id`));
+    selectValueRestore(el.owner, filterLoad(`${CHAT_STORE_PREFIX}owner_id`));
     // Собеседники сужаются нашей стороной — перезаполняем после восстановления.
     companionFill();
     selectValueRestore(el.companion,
-        sessionStorage.getItem(`${CHAT_STORE_PREFIX}companion_id`));
+        filterLoad(`${CHAT_STORE_PREFIX}companion_id`));
 }
 
 function sidesFill() {
@@ -146,14 +153,14 @@ function companionFill() {
 
 function filtersBind() {
     el.owner.onchange = async () => {
-        sessionStorage.setItem(`${CHAT_STORE_PREFIX}owner_id`, el.owner.value);
+        filterSave(`${CHAT_STORE_PREFIX}owner_id`, el.owner.value);
         companionFill();
-        sessionStorage.setItem(`${CHAT_STORE_PREFIX}companion_id`, el.companion.value);
+        filterSave(`${CHAT_STORE_PREFIX}companion_id`, el.companion.value);
         await pairsLoad();
     };
 
     el.companion.onchange = async () => {
-        sessionStorage.setItem(`${CHAT_STORE_PREFIX}companion_id`, el.companion.value);
+        filterSave(`${CHAT_STORE_PREFIX}companion_id`, el.companion.value);
         await pairsLoad();
     };
 
@@ -162,13 +169,13 @@ function filtersBind() {
     // нет обменов» иначе означали бы разные отборы.
     ['kind', 'delivered'].forEach(name => {
         el[name].onchange = async () => {
-            sessionStorage.setItem(CHAT_STORE_PREFIX + name, el[name].value);
+            filterSave(CHAT_STORE_PREFIX + name, el[name].value);
             await pairsLoad();
         };
     });
 
     el.limit.onchange = () => {
-        sessionStorage.setItem(`${CHAT_STORE_PREFIX}limit`, el.limit.value);
+        filterSave(`${CHAT_STORE_PREFIX}limit`, el.limit.value);
 
         if (state.current) exchangesLoad(state.current);
     };
@@ -184,13 +191,24 @@ function filtersBind() {
 
 /** Список разговоров под текущий отбор.
  *
- * `keep` — тройка разговора, который надо оставить открытым (после удаления
- * обмена). Без неё открывается верхний: так список ведёт себя при смене отбора,
- * где «верхний» и означает «самый свежий под новым условием».
+ * `keep` — тройка разговора, который надо оставить открытым. Не передали —
+ * берётся запомненный (`pairRemembered`), то есть тот, который был открыт в
+ * прошлый раз. Не нашёлся под текущим отбором — открывается верхний, самый
+ * свежий.
+ *
+ * ## ⚠⚠ Открывается запомненный, а не верхний, и это правка поведения
+ *
+ * Раньше «верхний» открывался при каждой смене отбора, по доводу «верхний и
+ * означает самый свежий под новым условием». Довод верен для списка и неверен
+ * для ленты: отбор меняют, чтобы посмотреть **на этот же разговор** другим
+ * срезом — сменил доставку на «Доставлен», и вместо своей переписки получаешь
+ * чужую, самую свежую на установке. Правило теперь одно на все поводы: открыт
+ * тот, на кого смотрели, пока он есть под отбором.
  *
  * ⚠ Разговор, из которого удалили последний обмен, из списка исчезает — тогда
  * `keep` не находится, и открывается верхний. Это честнее, чем держать пустую
- * шапку разговора, которого больше нет.
+ * шапку разговора, которого больше нет. Тем же путём работает «запомненного
+ * больше нет под этим отбором».
  */
 async function pairsLoad(keep = null) {
     const request = ++chatRequest;
@@ -243,7 +261,8 @@ async function pairsLoad(keep = null) {
         return;
     }
 
-    const kept = keep ? pairs.findIndex(one => pairSame(one, keep)) : -1;
+    const wanted = keep || pairRemembered();
+    const kept = wanted ? pairs.findIndex(one => pairSame(one, wanted)) : -1;
 
     el.list.selectedIndex = kept >= 0 ? kept : 0;
     await exchangesLoad(pairs[el.list.selectedIndex]);
@@ -256,12 +275,65 @@ function pairSame(one, other) {
         && one.kind === other.kind;
 }
 
+/** Запомнить открытый разговор — чтобы следующий заход начался с него.
+ *
+ * ## ⚠⚠ Запоминается ТРОЙКА, а не номер варианта в списке
+ *
+ * В `value` варианта лежит `companion_id` — он не опознаёт разговор: у одной
+ * пары чат и почта это два разных разговора, и выбор по одному номеру открывал
+ * бы то одну переписку, то другую. Номер варианта (`selectedIndex`) не годится
+ * тем же образом, только хуже: список упорядочен по свежести, и к следующему
+ * заходу под третьей строкой стоит уже другой разговор.
+ *
+ * ⚠ JSON, а не своя строка-ключ («12:34:chat»): её пришлось бы разбирать
+ * обратно — лишний формат на ровном месте. Тот же довод, по которому список
+ * разговоров держится рядом с `<select>`, а не в его `value`.
+ *
+ * ## ⚠⚠ Зовётся из `exchangesLoad` — там, где разговор ОТКРЫВАЕТСЯ
+ *
+ * Не из `el.list.onchange`, хотя соблазн был. Разговор открывается не только
+ * щелчком: его открывает заход на страницу, смена отбора, возврат после
+ * удаления обмена. Пиши память по щелчку — и «запомнено» разошлось бы с тем,
+ * что на экране, причём молча. Одна дверь: запомнено ровно то, что показано.
+ */
+function pairRemember(pair) {
+    filterSave(`${CHAT_STORE_PREFIX}talk`, JSON.stringify({
+        owner_id: pair.owner_id,
+        companion_id: pair.companion_id,
+        kind: pair.kind,
+    }));
+}
+
+/** Запомненный разговор тройкой или `null`.
+ *
+ * ⚠ Разбор под `try`: значение читается на КАЖДОМ заходе, и порченый ключ (чужая
+ * правка в консоли, оборванная запись) ронял бы завод вкладки целиком — страница
+ * показывала бы «Ошибка загрузки» до тех пор, пока человек сам не вычистит
+ * хранилище. Не разобралось — считаем, что не запомнено.
+ *
+ * ⚠ Проверять, что такой разговор ещё существует, здесь не надо: искать его
+ * всё равно `pairsLoad` — в списке под текущим отбором, а не в базе.
+ */
+function pairRemembered() {
+    try {
+        const saved = JSON.parse(filterLoad(`${CHAT_STORE_PREFIX}talk`) || 'null');
+
+        return saved && typeof saved === 'object' ? saved : null;
+    } catch {
+        return null;
+    }
+}
+
 // ===================== Лента обменов =====================
 
 async function exchangesLoad(pair) {
     const request = ++chatRequest;
 
     state.current = pair;
+    // Память разговора идёт рядом с `state.current` и по тому же поводу: это
+    // «какой разговор открыт», только переживающее перезагрузку. Разойдись они
+    // — и запомнилось бы не то, что показано (разбор — у `pairRemember`).
+    pairRemember(pair);
     el.title.textContent = `${sideLabel(pair, 'owner')} ↔ ${sideLabel(pair, 'companion')}`;
     el.stream.innerHTML = '<div class="placeholder">Загрузка...</div>';
 
@@ -292,11 +364,24 @@ function exchangesRender(pair, rows) {
     // Ключи сторон — подсказкой на заголовке: в строке они съели бы её целиком
     // (`966e95ea_Zinaida-Test`), а без них два разговора с одинаковыми именами
     // в шапке неразличимы.
+
+    // Сколько убранных ответов в показанном. Считается по ленте, а не берётся у
+    // разговора: `deleted_count` относится ко всему разговору, а здесь ответ на
+    // «сколько из того, что передо мной», и под `limit`-ом эти числа расходятся.
+    //
+    // ⚠⚠ Число нужно потому, что пометка «было удалено» тихая: она светло-серая
+    // и стоит ровно на месте реплики, и в ленте на пятьдесят обменов её не
+    // видно, пока не прокрутишь всё. С отбором «Доставлен» это и есть ответ на
+    // «сколько доставленного мы убрали» — вопрос, из-за которого отметку
+    // перестали прятать из отбора.
+    const removed = rows.filter(one => one.answer_deleted_at).length;
+
     el.title.title = pairTip(pair);
     el.title.innerHTML =
         `${htmlEscape(sideFull(pair, 'owner'))} ↔ ${htmlEscape(sideFull(pair, 'companion'))}`
         + `<span class="detail-header-note">· ${htmlEscape(pair.kind)},`
-        + ` показано ${rows.length} из ${pair.exchange_count} обменов</span>`;
+        + ` показано ${rows.length} из ${pair.exchange_count} обменов`
+        + `${removed ? `, убрано ответов: ${removed}` : ''}</span>`;
 
     if (!rows.length) {
         el.stream.innerHTML = '<div class="placeholder">Нет обменов под этот отбор</div>';
@@ -452,7 +537,7 @@ function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
     //                           текст — в подсказке: правку делает человек и
     //                           имеет право посмотреть, что именно убрал.
     const content = deletedAt
-        ? deletedHtml(deletedText, deletedAt)
+        ? deletedHtml(deletedText, deletedAt, timeBefore)
         : (String(text || '') !== ''
             ? htmlEscape(text)
             : '<span class="chat-half-empty">— нет ответа —</span>');
@@ -487,14 +572,24 @@ function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
  * ⚠ В подсказку идёт и время: «убрано вчера» и «убрано минуту назад» — разные
  * ответы на вопрос «это я сейчас нажал или оно давно так?».
  *
+ * ⚠⚠ Второй строкой подсказки стоит ДОСТАВКА, и она не украшение. Обмен с
+ * убранным ответом остаётся в выдаче отбора «Доставлен» — отметка о доставке
+ * это запись о случившемся: собеседник ответ получил, а убрали мы его из
+ * памяти агента, а не с его экрана. Чипа «✓ доставлено» у пометки нет
+ * (считается по `answer`, а тот пуст), и без этой строки страница не отвечала
+ * бы, почему строка в отборе оказалась. Доставки не было — строки нет вовсе:
+ * «не доставлено» у убранного читалось бы как упрёк.
+ *
  * ⚠ Текст приходит из базы и попадает в атрибут — экранируем тем же
  * `htmlEscape`, что и остальное: кавычка в ответе разорвала бы разметку.
  */
-function deletedHtml(text, deletedAt) {
+function deletedHtml(text, deletedAt, deliveredAt) {
     const said = String(text || '');
-    const hint = said
-        ? `Убрано ${fmtTz(deletedAt)}. Текст ответа:\n\n${said}`
-        : `Убрано ${fmtTz(deletedAt)}`;
+    const hint = [
+        `Убрано ${fmtTz(deletedAt)}`,
+        deliveredAt ? `Было доставлено ${fmtTz(deliveredAt)}` : '',
+        said ? `Текст ответа:\n\n${said}` : '',
+    ].filter(Boolean).join('\n');
 
     return `<span class="chat-half-deleted" title="${htmlEscape(hint)}">`
         + 'было удалено</span>';
@@ -700,7 +795,12 @@ function pairTip(pair) {
         + `, его реплик: ${pair.question_count}`
         + `, наших ответов: ${pair.answer_count}`,
         `Не доставлено: ${pair.undelivered_count}`,
-    ].join('\n');
+        // ⚠ Строка появляется только когда убирали: нуль в подсказке у каждого
+        // разговора — шум, а отметка стоит у единиц.
+        Number(pair.deleted_count || 0)
+            ? `Убрано ответов: ${pair.deleted_count}`
+            : '',
+    ].filter(Boolean).join('\n');
 }
 
 /** Откуда приехала реплика — одним словом, без номера у источника.

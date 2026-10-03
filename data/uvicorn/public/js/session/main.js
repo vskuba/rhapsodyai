@@ -9,8 +9,17 @@
 
 import {sessionAgentInit} from './agent.js';
 import {sessionChatInit} from './chat.js';
+import {filterLoad, filterSave} from './util.js';
 
-const SESSION_TAB_KEY = 'session_tab';
+// Ключ запомненной вкладки. Хранилище — то же, что у отборов вкладок
+// (`filterSave`), и ключ выходит тем же, каким был раньше (`session_tab`):
+// приставку добавляет помощник.
+//
+// ⚠⚠ Одно хранилище на страницу — не аккуратность, а условие работы. Вкладка
+// лежала в долгом, отборы — в коротком, и страница открывалась там, где её
+// оставили, но с умолчанием вместо отбора. Заводя третью память на этой
+// странице, бери ту же дверь.
+const SESSION_TAB_KEY = 'tab';
 
 // Кто заводит вкладку. Ключ — `data-tab` кнопки и хвост `id` панели.
 const tabStarters = {
@@ -39,7 +48,7 @@ function tabSwitch(name) {
 
 document.querySelectorAll('.page-tab').forEach(tab => {
     tab.onclick = () => {
-        localStorage.setItem(SESSION_TAB_KEY, tab.dataset.tab);
+        filterSave(SESSION_TAB_KEY, tab.dataset.tab);
         tabSwitch(tab.dataset.tab);
     };
 });
@@ -51,7 +60,7 @@ await loadTz();
 
 // Запомненная вкладка, если она ещё существует: кнопку могли убрать, и тогда
 // открывается первая — пустая страница вместо сессий хуже забытого выбора.
-const tabRemembered = localStorage.getItem(SESSION_TAB_KEY);
+const tabRemembered = filterLoad(SESSION_TAB_KEY);
 const tabKnown = [...document.querySelectorAll('.page-tab')].map(one => one.dataset.tab);
 
 tabSwitch(tabKnown.includes(tabRemembered) ? tabRemembered : tabKnown[0]);

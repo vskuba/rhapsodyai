@@ -9,7 +9,10 @@
   получает агент (`companion_session_rows` его прячет). «Что сочинили, но не
   отправили» и есть вопрос, с которым на страницу приходят;
 * отбор «не доставлено» смотрит на **нашу половину**: строка без ответа не
-  может быть недоставленной.
+  может быть недоставленной;
+* **отбор не прячет строк** — убранный нами ответ не выносит из выдачи обмен, в
+  котором лежит настоящая реплика собеседника (`TestDeletedUnderDeliveredFilter`,
+  там же беда, из-за которой класс написан).
 
 ⚠ Данные заводит сам тест, инструментом (`companion_session_add`), а не ищет в
 базе: на пустой установке искать нечего, а на живой числа меняются от прогона
@@ -246,7 +249,12 @@ class TestAnswerDelete:
 
         assert same['question'] == 'q1'
         assert same['answer'] == ''
-        assert same['delivered_at'] is None
+        # ⚠⚠ `delivered_at` остаётся, в отличие от текста и времени сочинения:
+        # отметка о доставке — запись о случившемся, собеседник ответ получил, и
+        # наша правка убрала его из памяти агента, а не с его экрана. Обнули её —
+        # и обмен, найденный отбором «Доставлен», приходил бы без единого следа
+        # доставки, то есть страница не могла бы объяснить, почему он в выдаче.
+        assert same['delivered_at'] is not None
 
     async def test_page_gets_the_text_for_the_tooltip(self, client, talk):
         """⚠⚠ Страница получает убранный текст — отдельным полем.
@@ -447,6 +455,183 @@ class TestAnswerDelete:
             f'/session/companion/{first["id"]}/answer')).status_code == 200
         assert (await client.delete(
             f'/session/companion/{first["id"]}/answer')).status_code == 404
+
+
+class TestDeletedUnderDeliveredFilter:
+    """⚠⚠ Отбор по доставке не имеет права прятать обмен с убранным ответом.
+
+    Беда, из-за которой класс написан: в `_delivered_condition` стояло
+    `AND answer_deleted_at IS NULL`, и под отбором «Доставлен» обмен с убранным
+    ответом исчезал **строкой целиком** — вместе с вопросом собеседника. Тот
+    вопрос настоящий, он был доставлен, и к нашей правке отношения не имеет:
+    убирали мы свою половину.
+
+    Условие было написано по доводу «убранного на странице нет, незачем его и
+    отбирать», и довод неверен дважды. Отметка ничего не отменяет в прошлом —
+    ответ был доставлен, собеседник его прочёл; и условие про НАШУ половину,
+    применённое к строке, выкидывает заодно его половину.
+
+    ⚠ Поэтому здесь проверяется не формулировка условия, а то, что видно
+    человеку: строка под «Доставлен» на месте, его слова целы, пометка и текст
+    подсказки при ней.
+    """
+
+    async def test_delivered_filter_keeps_the_question(self, client, talk):
+        """Под «Доставлен» обмен остаётся, и его реплика вместе с ним."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat', 'delivered': 'yes'})
+        same = [row for row in left if row['id'] == first['id']]
+
+        assert len(same) == 1, 'обмен с убранным ответом выпал из «Доставлен»'
+        assert same[0]['question'] == 'q1'
+        assert same[0]['answer'] == ''
+        assert same[0]['answer_deleted_text'] == 'a1'
+        assert same[0]['delivered_at'] is not None
+
+    async def test_delivered_filter_keeps_a_row_without_question(self, client,
+                                                                 talk):
+        """⚠⚠ И обмен, где убранный ответ был ВСЕЙ строкой, тоже остаётся.
+
+        Инвайт, письмо, инициатива — две трети строк установки. Показывать в
+        такой строке после правки нечего, кроме пометки, — и именно поэтому её
+        нельзя прятать: иначе «сколько доставленного мы убрали» не видно ничем,
+        строка просто исчезает из разговора.
+        """
+        alone = await companion_session_add(talk['owner_key'],
+                                            talk['companion_key'],
+                                            answer='наш инвайт')
+        await companion_session_delivered(int(alone['id']))
+        await client.delete(f'/session/companion/{alone["id"]}/answer')
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat', 'delivered': 'yes'})
+        same = [row for row in left if row['id'] == int(alone['id'])]
+
+        assert len(same) == 1
+        assert same[0]['question'] == ''
+        assert same[0]['answer_deleted_text'] == 'наш инвайт'
+        assert same[0]['delivered_at'] is not None
+
+    async def test_undelivered_filter_does_not_claim_it(self, client, talk):
+        """В «Не доставлено» убранный доставленный ответ не попадает.
+
+        Иначе отбор читался бы упрёком: ответ как раз доставлен, и убрали его
+        ровно потому, что собеседник его получил.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat', 'delivered': 'no'})
+
+        assert [row['question'] for row in left] == ['q2']
+
+    async def test_undelivered_filter_keeps_the_undelivered_one(self, client,
+                                                                talk):
+        """А сочинённый и не отправленный — остаётся в «Не доставлено».
+
+        Отбор отвечает про `delivered_at`, и отметка «убрано» этого ответа не
+        меняет: отправлен он так и не был.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        second = [row for row in rows if row['question'] == 'q2'][0]
+
+        await client.delete(f'/session/companion/{second["id"]}/answer')
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat', 'delivered': 'no'})
+        same = [row for row in left if row['id'] == second['id']]
+
+        assert len(same) == 1
+        assert same[0]['answer_deleted_text'] == 'a2'
+
+    async def test_pair_list_keeps_the_talk(self, client, talk):
+        """Разговор не пропадает из списка, даже если убрали всё доставленное.
+
+        Разговор с одним доставленным обменом: убрали ответ — и список под
+        «Доставлен» обязан его показать. Пропади он, человек решил бы, что
+        правкой снёс переписку.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        pairs = await _pairs(client, {'owner_id': talk['owner_id'],
+                                      'kind': 'chat', 'delivered': 'yes'})
+
+        assert len(pairs) == 1
+        assert pairs[0]['exchange_count'] == 1
+
+    async def test_deleted_count_answers_how_many(self, client, talk):
+        """`deleted_count` считает убранное — под тем же отбором, что соседи.
+
+        Под «Доставлен» это и есть ответ на «сколько доставленного мы убрали»:
+        вопрос, из-за которого отметку и перестали прятать из отбора.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+        second = [row for row in rows if row['question'] == 'q2'][0]
+
+        before = await _pairs(client, {'owner_id': talk['owner_id'],
+                                       'kind': 'chat'})
+
+        assert before[0]['deleted_count'] == 0
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+        await client.delete(f'/session/companion/{second["id"]}/answer')
+
+        both = await _pairs(client, {'owner_id': talk['owner_id'],
+                                     'kind': 'chat'})
+
+        assert both[0]['deleted_count'] == 2
+
+        # Доставлен был только первый — отбор отделяет один от другого.
+        delivered = await _pairs(client, {'owner_id': talk['owner_id'],
+                                          'kind': 'chat', 'delivered': 'yes'})
+
+        assert delivered[0]['deleted_count'] == 1
+
+    async def test_prompt_feed_still_forgets_it(self, client, talk):
+        """⚠⚠ Послабление отбора НЕ протекло в ленту агента.
+
+        Страница показывает убранное, модель — нет, и это ровно то расхождение,
+        ради которого отметка заведена. Правка отбора на странице обязана
+        оставить ленту в покое; проверяем после правки, а не вместо неё.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        feed = await companion_session_history(talk['owner_key'],
+                                               talk['companion_key'])
+
+        assert 'a1' not in feed
+        assert 'q1' in feed
 
 
 async def _pairs(client, body):

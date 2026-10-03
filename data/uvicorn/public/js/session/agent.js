@@ -11,12 +11,16 @@
 
 import {postData, deleteData} from '../api.js';
 import {showNotification} from '../notification.js';
-import {htmlEscape, labelClip, labelOf, numberOf, selectFill,
-        selectValueRestore, sumOf} from './util.js';
+import {filterLoad, filterSave, htmlEscape, labelClip, labelOf, numberOf,
+        selectFill, selectValueRestore, sumOf} from './util.js';
 
 // Отбор помним между заходами: с сессиями разбираются длинными заходами, и
 // сбрасывать выбранного агента на каждый F5 — терять место, где остановились.
-const AGENT_STORE_PREFIX = 'session_agent_';
+//
+// ⚠ «Между заходами» и означает долгое хранилище (`filterSave`) — то, на
+// котором это стояло раньше, живёт в одной вкладке браузера, и обещанная здесь
+// память кончалась на открытии «Сессий» в новой вкладке.
+const AGENT_STORE_PREFIX = 'agent_';
 
 // Типы записей, выбранные по умолчанию: диалог без служебной обвязки. Служебные
 // (`llm-request` и прочие) включают руками — они нужны вопросу «что уехало в
@@ -104,14 +108,14 @@ async function dictionariesLoad() {
     agentFill();
     userFill();
 
-    selectValueRestore(el.agent, sessionStorage.getItem(`${AGENT_STORE_PREFIX}agent_id`));
+    selectValueRestore(el.agent, filterLoad(`${AGENT_STORE_PREFIX}agent_id`));
     // Список пользователей зависит от выбранного агента — перезаполняем после
     // восстановления, иначе запомненный агент сузил бы его только со второго
     // раза.
     userFill();
-    selectValueRestore(el.user, sessionStorage.getItem(`${AGENT_STORE_PREFIX}user_id`));
+    selectValueRestore(el.user, filterLoad(`${AGENT_STORE_PREFIX}user_id`));
 
-    const limitSaved = sessionStorage.getItem(`${AGENT_STORE_PREFIX}limit`);
+    const limitSaved = filterLoad(`${AGENT_STORE_PREFIX}limit`);
 
     selectValueRestore(el.limit, limitSaved);
 }
@@ -143,7 +147,7 @@ function userFill() {
 
 async function kindsLoad() {
     const data = await fetch('/session/kind_type/list').then(r => r.json());
-    const saved = JSON.parse(sessionStorage.getItem(`${AGENT_STORE_PREFIX}kinds`) || 'null');
+    const saved = JSON.parse(filterLoad(`${AGENT_STORE_PREFIX}kinds`) || 'null');
 
     el.kind.innerHTML = '';
     (data.result || []).forEach(kind => {
@@ -160,14 +164,14 @@ function filtersBind() {
     // новым отбором либо пуста, либо показывает чужую середину — и то и
     // другое читается как «фильтр сломался».
     el.agent.onchange = async () => {
-        sessionStorage.setItem(`${AGENT_STORE_PREFIX}agent_id`, el.agent.value);
+        filterSave(`${AGENT_STORE_PREFIX}agent_id`, el.agent.value);
         userFill();
-        sessionStorage.setItem(`${AGENT_STORE_PREFIX}user_id`, el.user.value);
+        filterSave(`${AGENT_STORE_PREFIX}user_id`, el.user.value);
         await sessionsLoad(1);
     };
 
     el.user.onchange = async () => {
-        sessionStorage.setItem(`${AGENT_STORE_PREFIX}user_id`, el.user.value);
+        filterSave(`${AGENT_STORE_PREFIX}user_id`, el.user.value);
         await sessionsLoad(1);
     };
 
@@ -175,13 +179,13 @@ function filtersBind() {
     el.pageNext.onclick = () => sessionsLoad(state.page + 1);
 
     el.kind.onchange = () => {
-        sessionStorage.setItem(`${AGENT_STORE_PREFIX}kinds`,
+        filterSave(`${AGENT_STORE_PREFIX}kinds`,
             JSON.stringify(kindsSelected()));
         messagesRender();
     };
 
     el.limit.onchange = () => {
-        sessionStorage.setItem(`${AGENT_STORE_PREFIX}limit`, el.limit.value);
+        filterSave(`${AGENT_STORE_PREFIX}limit`, el.limit.value);
 
         if (el.list.value) messagesLoad(el.list.value);
     };
