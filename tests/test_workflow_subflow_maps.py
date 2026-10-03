@@ -142,6 +142,86 @@ class TestNothingSetMeansEmptyMaps:
         assert _collect([]) == {'inputs_map': {}, 'outputs_map': {}}
 
 
+class TestASavedInputSurvivesWithoutDeclaration:
+    """⚠⚠⚠ Настроенный вход не исчезает оттого, что его не объявили входящим.
+
+    Строки рисуются по объявлениям ребёнка (`type = 'input'`), а сборка идёт по
+    нарисованным строкам. Значит пара, чья переменная у ребёнка объявлена иначе
+    (`workflow`), пропадала из `inputs_map` от одного касания любого поля шага —
+    без ошибки и без следа в журнале.
+
+    ## ⚠⚠ Цена измерена: так сломался цикл инвайтов
+
+    Миграция `20260918260000` задавала его прямо: «`invite_done` стоит и во
+    входах, и в выходах — в этом весь цикл». Выход остался, вход исчез. Каждый
+    оборот начинал с чистого листа, и вторая реплика сочинялась, не зная
+    первой, — ровно то, против чего цикл и заведён.
+
+    Опознали по улике: карта входов стала **в точности равна** списку
+    объявленных входов ребёнка. Случайно так не бывает — миграции клали туда и
+    `invite_done` (тип `workflow`), и переменную другого workflow.
+    """
+
+    def test_a_declared_input_is_listed_plainly(self):
+        rows = _inputs([{'name': 'invite_avoid'}],
+                       {'invite_avoid': 'invite_avoid'})
+
+        assert rows == [{'name': 'invite_avoid'}], \
+            f'объявленный вход изменился при сборке списка: {rows}'
+
+    def test_a_saved_but_undeclared_input_is_kept(self):
+        """⚠ Главное: пара остаётся строкой, значит переживёт сохранение."""
+        rows = _inputs([{'name': 'invite_avoid'}],
+                       {'invite_avoid': 'invite_avoid',
+                        'invite_done': 'invite_done'})
+        names = [one['name'] for one in rows]
+
+        assert names == ['invite_avoid', 'invite_done'], \
+            f'спасённая пара не попала в список строк: {rows}'
+
+    def test_the_kept_one_is_marked(self):
+        """⚠⚠ Помечена отдельным полем, а не наличием описания.
+
+        Описание ручка отдаёт и у обычных переменных — пометка по нему
+        покрасила бы весь список.
+        """
+        rows = _inputs([{'name': 'invite_avoid', 'description': 'чего избегать'}],
+                       {'invite_done': 'invite_done'})
+        marked = {one['name']: bool(one.get('undeclared')) for one in rows}
+
+        assert marked == {'invite_avoid': False, 'invite_done': True}, \
+            f'пометка необъявленного входа разошлась: {marked}'
+
+    def test_nothing_saved_changes_nothing(self):
+        """⚠ Пустая карта ничего не добавляет: список — ровно объявления."""
+        rows = _inputs([{'name': 'invite_avoid'}], {})
+
+        assert rows == [{'name': 'invite_avoid'}], f'список вырос на пустом: {rows}'
+
+
+def _inputs(declared: list, saved_map: dict) -> list:
+    """Строки вкладки «Входящие» живой функцией страницы.
+
+    Args:
+        declared: что ребёнок объявил входящим (как отдаёт ручка переменных).
+        saved_map: `inputs_map`, уже сохранённый на шаге.
+    """
+    if not shutil.which('node'):
+        pytest.skip('node недоступен — сборку списка проверить нечем')
+
+    script = (SHIM
+              + f"const {{subflowInputsWithSaved}} = await import('{MODULE}');\n"
+              + f'process.stdout.write(JSON.stringify(subflowInputsWithSaved('
+                f'{json.dumps(declared)}, '
+                f'{json.dumps({"inputs_map": saved_map})})));')
+    done = subprocess.run(['node', '--input-type=module', '-e', script],
+                          capture_output=True, text=True)
+
+    assert done.returncode == 0, f'node: {done.stderr}'
+
+    return json.loads(done.stdout)
+
+
 def _collect(rows: list) -> dict:
     """Прогнать живой сбор через node и вернуть, что он собрал.
 

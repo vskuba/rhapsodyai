@@ -223,8 +223,12 @@ export function subflowInputsWithSaved(inputs, saved) {
         .filter(name => name && !declared.has(name))
         // ⚠ Помета в `title`: иначе «лишняя» строка читается как объявленный
         // вход, и человек не поймёт, почему её нет у ребёнка в списке.
+        // ⚠⚠ Признак — отдельное поле `undeclared`, а не наличие `description`:
+        // описание есть и у объявленных переменных (его отдаёт ручка), и
+        // пометка по нему покрасила бы весь список.
         .forEach(name => rows.push({
             name,
+            undeclared: true,
             description: 'Настроено на шаге, но у подпотока не объявлено '
                 + 'входящей переменной',
         }));
@@ -251,8 +255,13 @@ function _renderInputs(pane, inputs, saved, onChange) {
         name.value = one.name;
 
         const title = document.createElement('span');
-        title.style = 'flex: 1; padding: 4px; font-size: 12px; color: #2b6cb0; font-weight: bold;';
-        title.textContent = one.name;
+        title.style = 'flex: 1; padding: 4px; font-size: 12px; font-weight: bold;'
+            // ⚠ Необъявленный вход — другим цветом и со значком. Иначе строка
+            // читается как обычная, и человек не поймёт, почему её имени нет в
+            // списке переменных ребёнка.
+            + ` color: ${one.undeclared ? '#b45309' : '#2b6cb0'};`;
+        title.textContent = one.undeclared ? `⚠ ${one.name}` : one.name;
+        if (one.undeclared) title.title = one.description;
 
         const value = document.createElement('select');
         value.className = 'form-control map-var-select';
