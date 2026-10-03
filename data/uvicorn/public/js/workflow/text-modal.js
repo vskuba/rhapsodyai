@@ -12,6 +12,12 @@
 //
 // ⚠ Поэтому окно живёт в `document.body`, а не внутри колонки: делегирование ловит
 // события **исходного** поля, и лишние всплытия из окна ему только мешали бы.
+//
+// ⚠ Перевод выделенного куска (три флага в шапке) живёт отдельным модулем —
+// `text-translate.js`: он про разговор с моделью и защиту меток, а это окно —
+// про показ текста. Общего у них ровно одно поле.
+
+import {textTranslateSection} from './text-translate.js';
 
 // Сколько места занимает окно. ⚠ Не 100%: рамка экрана нужна, чтобы «щёлкнуть в
 // сторону» было куда — этим окно и закрывается.
@@ -83,8 +89,14 @@ export function textModalOpen(textarea, title = '') {
     done.onmouseenter = () => { done.style.background = '#c2410c'; };
     done.onmouseleave = () => { done.style.background = TEXT_MODAL_COLOR; };
 
+    // ⚠ Правый край шапки: раздел перевода и кнопка выхода. Имя поля прижато
+    // влево и растягивает промежуток между ними — иначе флаги оказывались бы
+    // то у середины, то у края, в зависимости от длины подписи.
+    const tools = document.createElement('div');
+    tools.style = 'display: flex; align-items: center; gap: 14px;';
+
     head.appendChild(name);
-    head.appendChild(done);
+    head.appendChild(tools);
 
     // ── Поле: два слоя, совпадающие до пикселя ───────────────────────────────
     //
@@ -126,6 +138,11 @@ export function textModalOpen(textarea, title = '') {
 
     big.addEventListener('scroll', follow);
     big.addEventListener('input', repaint);
+
+    // ⚠ Раздел перевода заводится **здесь**, а не вместе с шапкой: ему нужно
+    // само поле `big` и уже готовая перерисовка `repaint`.
+    tools.appendChild(textTranslateSection(big, repaint));
+    tools.appendChild(done);
 
     field.appendChild(paint);
     field.appendChild(big);

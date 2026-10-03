@@ -651,45 +651,62 @@
         padding: 2px 10px; font-size: 11px; color: #2d3748; cursor: pointer;
     }
 
-    .history-feed { display: flex; flex-direction: column; gap: 6px; }
+    /* ⚠ Своя прокрутка вбок: путь поля и строки диффа длиннее колонки, и без
+       обёртки таблица растянула бы страницу. */
+    .history-feed { overflow-x: auto; }
 
-    /* ⚠ Сетка, а не таблица: у строки четыре поля, и дифф в четвёртом бывает
-       многострочным — в таблице он растягивал бы ряд целиком. */
-    .history-row {
-        display: grid; grid-template-columns: 130px 140px 1fr; gap: 10px;
-        align-items: start; background: #fff; border: 1px solid #e2e8f0;
-        border-radius: 6px; padding: 8px 10px; font-size: 12px;
+    /* ⚠⚠ Таблица, а не сетка карточек: «до» и «после» — колонки, и сравнивают
+       их глазами **по вертикали**, пробегая столбец сверху вниз. В карточках
+       пара стояла в строке, и такого прохода не получалось. */
+    .history-table {
+        width: 100%; border-collapse: collapse; font-size: 12px;
+        background: #fff; table-layout: fixed;
     }
 
-    /* ⚠ Указатель только у строки шага: ведёт к шагу лишь она (`_row`). */
-    .history-row[data-history-step] { cursor: pointer; }
-    .history-row[data-history-step]:hover { border-color: #3498db; }
+    .history-table th {
+        text-align: left; font-weight: 600; color: #718096; font-size: 11px;
+        text-transform: uppercase; letter-spacing: .03em;
+        padding: 6px 10px; border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc; position: sticky; top: 0;
+    }
 
-    .history-when { color: #a0aec0; font-variant-numeric: tabular-nums; }
+    /* Доли колонок: время узкое и ровное, значения широкие. ⚠ `fixed` выше —
+       иначе длинная строка диффа раздувает свою колонку за счёт соседних. */
+    .history-table th:nth-child(1) { width: 130px; }
+    .history-table th:nth-child(2) { width: 210px; }
+    .history-table th:nth-child(5) { width: 200px; }
+
+    .history-table td {
+        padding: 5px 10px; vertical-align: top; word-break: break-word;
+    }
+
+    /* ⚠⚠ Линия — только над первым рядом записи: у записи рядов столько,
+       сколько в ней правок, и линия между ними резала бы одно событие на
+       куски. Так группа читается как одно целое. */
+    .history-tr.history-first > td { border-top: 1px solid #e2e8f0; }
+    .history-tr:hover > td { background: #f8fafc; }
+
+    /* ⚠ Указатель только у ряда шага: ведёт к шагу лишь он (`_row`). */
+    .history-tr[data-history-step] { cursor: pointer; }
+
+    .history-when { color: #a0aec0; font-variant-numeric: tabular-nums;
+                    white-space: nowrap; }
     .history-who { color: #4a5568; font-weight: 600; }
     .history-what { color: #2d3748; }
-
-    /* Дифф занимает всю ширину под тремя полями: путь поля бывает длинным
-       (`metadata.workflow_invoke.repeat.count`), и ужимать его незачем. */
-    .history-diff { grid-column: 1 / -1; display: flex;
-                    flex-direction: column; gap: 3px; margin-top: 4px; }
-
-    .history-change { display: flex; flex-wrap: wrap; align-items: baseline;
-                      gap: 6px; }
+    .history-about { color: #4a5568; }
 
     .history-field { color: #805ad5; font-family: monospace; font-size: 11px; }
-    .history-was { color: #c53030; background: #fff5f5; padding: 0 4px;
-                   border-radius: 3px; font-family: monospace; }
-    .history-now { color: #276749; background: #f0fff4; padding: 0 4px;
-                   border-radius: 3px; font-family: monospace; }
-    .history-arrow { color: #a0aec0; }
+
+    /* ⚠ Цвет на ячейке целиком, а не на значении: колонку пробегают глазами
+       сверху вниз, и ровная полоса читается быстрее, чем пятна по словам. */
+    td.history-was { color: #c53030; background: #fff5f5; font-family: monospace; }
+    td.history-now { color: #276749; background: #f0fff4; font-family: monospace; }
+
     .history-none { color: #a0aec0; font-style: italic; }
 
-    /* Построчный дифф длинных значений: только изменившиеся строки. */
-    .history-line { font-family: monospace; font-size: 11px; white-space: pre-wrap;
-                    padding: 1px 4px; border-radius: 3px; }
-    .history-line-add { background: #f0fff4; color: #276749; }
-    .history-line-cut { background: #fff5f5; color: #c53030; }
+    /* Построчный дифф длинных значений: только изменившиеся строки. ⚠ Знак
+       `+`/`-` не пишем — сторону говорит колонка. */
+    .history-line { font-family: monospace; font-size: 11px; white-space: pre-wrap; }
     .history-line-no { color: #a0aec0; margin-right: 8px;
                        display: inline-block; min-width: 24px; text-align: right; }
 
@@ -2071,5 +2088,5 @@
     initSidebarResizer('settingsResizer', 'workflow_settings_width',
         document.querySelector('#workflowSettingsView .settings-column'), 240, 900);
 </script>
-<script type="module" src="/static/js/workflow/main.js?v=15"></script>
+<script type="module" src="/static/js/workflow/main.js?v=16"></script>
 {% endblock %}

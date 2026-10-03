@@ -113,7 +113,8 @@ pytest.mark.integration]`.
 он.
 
 Тесты фронтенда (`test_workflow_undefined_index.py`, `test_workflow_undefined_vars.py`,
-`test_workflow_graph_vars_list.py`, `test_workflow_trace_var_chips.py`) стоят в группе
+`test_workflow_graph_vars_list.py`, `test_workflow_trace_var_chips.py`,
+`test_workflow_text_translate.py`) стоят в группе
 `core` и проверяют **настоящие** `.js`-модули `data/uvicorn/public/js/workflow/`: харнесс
 вписывает пути модулей токенами в скрипт и гоняет его на `node`, заглушки у харнесса —
 только DOM и сеть. Правку модуля такой тест ловит сразу; свою копию модуля в тесте не
