@@ -31,7 +31,8 @@ import httpx
 from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
 from src.tool.companion.companion_session import (companion_session_add,
-                                                  companion_session_delivered)
+                                                  companion_session_delivered,
+                                                  companion_session_history)
 from tests.conftest import BASE_URL
 
 pytestmark = pytest.mark.auth
@@ -74,7 +75,10 @@ async def talk():
                          (owner_key, companion_key))
         rows = {row['unique_id']: row['id'] for row in await db.fetchall()}
 
-    yield {'owner_id': rows[owner_key], 'companion_id': rows[companion_key]}
+    # Ключи отдаём вместе с номерами: номера нужны ручкам страницы, ключи —
+    # инструменту, когда тест дописывает в тот же разговор свой обмен.
+    yield {'owner_id': rows[owner_key], 'companion_id': rows[companion_key],
+           'owner_key': owner_key, 'companion_key': companion_key}
 
     async with mysql_get_db_async() as db:
         await db.execute(
@@ -88,7 +92,11 @@ async def talk():
 
 class TestAuth:
     async def test_endpoints_require_auth(self):
-        """Без входа — 401 на всех трёх ручках, а не пустой список."""
+        """Без входа — 401 на всех ручках, а не пустой список.
+
+        ⚠ Удаление в списке обязательно: ручка разрушающая, и «гостю отвечаем
+        пустым списком» для неё означало бы «гость удаляет».
+        """
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False,
                                      timeout=10.0) as guest:
             assert (await guest.get('/session/companion/kind/list')).status_code == 401
@@ -97,6 +105,8 @@ class TestAuth:
             assert (await guest.post('/session/companion/messages',
                                      json={'owner_id': 1,
                                            'companion_id': 2})).status_code == 401
+            assert (await guest.delete(
+                '/session/companion/1/answer')).status_code == 401
 
 
 class TestKindList:
@@ -198,6 +208,207 @@ class TestExchanges:
                                          'kind': 'chat', 'delivered': 'no'})
 
         assert [row['question'] for row in rows] == ['q2']
+
+
+class TestAnswerDelete:
+    """Чип «удалить» в хвосте нашей половины: убрать НАШ ответ.
+
+    ⚠⚠ Стережётся здесь два разных обещания, и оба легко потерять правкой:
+
+    * **его слова остаются** — строка в таблице это обмен, обе половины лежат в
+      её колонках, и `DELETE` строки стёр бы заодно реплику собеседника;
+    * **наш текст остаётся в базе** — убирается видимость (`answer_deleted_at`),
+      а не содержимое: решение «ответ лишний» принимает человек и может
+      ошибиться.
+
+    Из второго следует третье: помеченное обязаны прятать **все** читатели —
+    страница и лента в промпт. Здесь проверяются оба.
+    """
+
+    async def test_question_survives(self, client, talk):
+        """Его реплика на месте, нашего ответа страница не отдаёт."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        response = await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        assert response.status_code == 200
+        assert response.json()['result']['row_hidden'] is False
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        same = [row for row in left if row['id'] == first['id']][0]
+
+        assert same['question'] == 'q1'
+        assert same['answer'] == ''
+        assert same['delivered_at'] is None
+
+    async def test_text_stays_in_the_table(self, client, talk):
+        """⚠⚠ В базе текст цел — стирается видимость, а не содержимое."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT `answer`, `answer_at`, `delivered_at`,'
+                             ' `answer_deleted_at` FROM `companion_session`'
+                             ' WHERE `id` = %s', (first['id'],))
+            stored = await db.fetchone()
+
+        assert stored['answer'] == 'a1'
+        assert stored['answer_at'] is not None
+        assert stored['delivered_at'] is not None
+        assert stored['answer_deleted_at'] is not None
+
+    async def test_prompt_feed_forgets_it(self, client, talk):
+        """⚠⚠ Лента в промпт агента убранного ответа не знает.
+
+        Ради этого отметка и заведена: пока ответ в ленте, модель продолжает
+        разговор от сказанного по ошибке. Страница и промпт обязаны
+        договариваться — проверяем именно `companion_session_rows`, а не только
+        ручку.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        before = await companion_session_history(talk['owner_key'],
+                                                 talk['companion_key'])
+
+        assert 'a1' in before
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        after = await companion_session_history(talk['owner_key'],
+                                                talk['companion_key'])
+
+        assert 'a1' not in after
+        # Его реплика остаётся и в промпте: убрали нашу половину, не обмен.
+        assert 'q1' in after
+
+    async def test_neighbours_survive(self, client, talk):
+        """Соседние обмены разговора не трогаются.
+
+        Берём средний (`q2`): правка первого или последнего прошла бы и при
+        ошибке в условии — «задели всё до/после».
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        second = [row for row in rows if row['question'] == 'q2'][0]
+
+        await client.delete(f'/session/companion/{second["id"]}/answer')
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+
+        assert [row['question'] for row in left] == ['q1', 'q2', 'q3']
+        assert [row['answer'] for row in left] == ['a1', '', '']
+
+    async def test_other_channel_untouched(self, client, talk):
+        """Письмо той же пары не трогается: правится строка, а не разговор."""
+        chat = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+
+        await client.delete(f'/session/companion/{chat[0]["id"]}/answer')
+
+        mail = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'mail'})
+
+        assert [(row['question'], row['answer']) for row in mail] == [('m1', 'm2')]
+
+    async def test_row_hides_when_question_is_empty(self, client, talk):
+        """⚠ Обмен без его реплики уходит со страницы целиком.
+
+        Инвайт, письмо, инициатива: наш ответ — вся строка, видимых половин в
+        ней больше нет. В таблице строка при этом остаётся — отметка прячет, а
+        не удаляет.
+        """
+        alone = await companion_session_add(talk['owner_key'],
+                                            talk['companion_key'],
+                                            answer='наш инвайт')
+        await companion_session_delivered(int(alone['id']))
+
+        response = await client.delete(f'/session/companion/{alone["id"]}/answer')
+
+        assert response.status_code == 200
+        assert response.json()['result']['row_hidden'] is True
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+
+        assert [row['id'] for row in left if row['id'] == int(alone['id'])] == []
+
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT `answer` FROM `companion_session`'
+                             ' WHERE `id` = %s', (int(alone['id']),))
+            stored = await db.fetchone()
+
+        assert stored['answer'] == 'наш инвайт'
+
+    async def test_counters_drop_the_hidden_answer(self, client, talk):
+        """Счётчики разговора считают видимое: ответов стало меньше.
+
+        Иначе «наших ответов 2» стояло бы над лентой, в которой их один, —
+        и человек искал бы пропажу.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        await client.delete(f'/session/companion/{first["id"]}/answer')
+
+        pairs = await _pairs(client, {'owner_id': talk['owner_id'],
+                                      'kind': 'chat'})
+
+        assert pairs[0]['exchange_count'] == 3
+        assert pairs[0]['question_count'] == 3
+        assert pairs[0]['answer_count'] == 1
+
+    async def test_missing_row_is_404(self, client):
+        """Нет такой строки — 404, а не «убрано ноль»."""
+        response = await client.delete('/session/companion/2147483647/answer')
+
+        assert response.status_code == 404
+
+    async def test_without_answer_is_404(self, client, talk):
+        """Нечего убирать (он написал, мы смолчали) — тоже 404."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        silent = [row for row in rows if row['question'] == 'q3'][0]
+
+        response = await client.delete(f'/session/companion/{silent["id"]}/answer')
+
+        assert response.status_code == 404
+
+    async def test_second_time_is_404(self, client, talk):
+        """Повторное нажатие — 404: убирать уже нечего.
+
+        «Ноль, и всё хорошо» означало бы, что нажатие по уже убранному ответу
+        выглядит как новая работа.
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        first = [row for row in rows if row['question'] == 'q1'][0]
+
+        assert (await client.delete(
+            f'/session/companion/{first["id"]}/answer')).status_code == 200
+        assert (await client.delete(
+            f'/session/companion/{first["id"]}/answer')).status_code == 404
 
 
 async def _pairs(client, body):

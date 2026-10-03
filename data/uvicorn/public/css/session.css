@@ -448,6 +448,46 @@
     border: 1px solid #f2d3a0;
 }
 
+/* Канал обмена — в шапке строки, сразу за её номером.
+   Чат и почта разведены цветом, а не только словом: в ленте они читаются
+   боковым зрением, и одинаково-серые чипы пришлось бы вычитывать. */
+.chip-channel {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 10px;
+}
+
+.chip-channel-chat {
+    background-color: #e6f0fb;
+    color: #2b6cb0;
+    border: 1px solid #cfe3f7;
+}
+
+.chip-channel-mail {
+    background-color: #f3eafe;
+    color: #6b46c1;
+    border: 1px solid #e2d4f7;
+}
+
+/* Удалить обмен. Чип бледен, пока на него не навели: это единственное
+   разрушающее действие ленты, и соблазнять им взгляд незачем — его ищут
+   осознанно, дойдя до строки, которую решили убрать. */
+.chip-delete {
+    background-color: transparent;
+    color: #b0b7c3;
+    border: 1px solid #e2e8f0;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.chip-delete:hover,
+.chip-delete:focus-visible {
+    background-color: #fdecea;
+    color: #c0392b;
+    border-color: #f5c6c0;
+}
+
 /* Откуда приехала реплика. Чип заливной и яркий: это единственное в строке,
    что отвечает на «какой дорогой», и бледно-серым он терялся рядом с текстом.
    ⚠ Без `uppercase` (в отличие от соседних чипов): внутри технические имена
@@ -459,6 +499,166 @@
     text-transform: none;
     letter-spacing: 0;
     font-size: 10px;
+}
+
+/* ===================== Окно подтверждения =====================
+   Своё, а не общий модуль: общей библиотеки диалогов в проекте нет
+   (dashboard_frontend.md), и соседние страницы держат такие окна у себя же
+   (`admin/project/task.html`). Имена классов те же, что там, — чтобы при
+   появлении общего модуля переехать одним движением. */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+}
+
+.modal-overlay[hidden] {
+    display: none;
+}
+
+.modal-box {
+    background: #fff;
+    border-radius: 8px;
+    width: min(620px, calc(100vw - 40px));
+    max-height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.25);
+}
+
+.modal-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.modal-body {
+    padding: 16px 18px;
+    overflow-y: auto;
+}
+
+/* Чем это кончится — до того, как нажмут, а не в подсказке за кнопкой. */
+.modal-note {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #92500c;
+    background: #fdf6ec;
+    border: 1px solid #f2d3a0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+}
+
+/* Сам обмен в окне: тем же шрифтом и теми же отступами, что в ленте, —
+   человек сверяет глазами, что убирает именно ту строку. */
+.modal-preview {
+    font-size: 12px;
+    color: #2d3748;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: #f8fafc;
+}
+
+.modal-preview .modal-preview-row {
+    display: flex;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.modal-preview .modal-preview-who {
+    flex: 0 0 90px;
+    color: #718096;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.modal-preview .modal-preview-text {
+    flex: 1;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Судьба половины словом, а не только цветом: «уйдёт» и «останется» —
+   единственный вопрос, с которым в это окно смотрят, и отвечать на него
+   оттенком фона значило бы не ответить дальтонику вовсе. */
+.modal-preview .modal-preview-fate {
+    flex: 0 0 72px;
+    text-align: right;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 700;
+}
+
+.modal-preview .modal-preview-goes {
+    background: #fdecea;
+    border-radius: 4px;
+}
+
+.modal-preview .modal-preview-goes .modal-preview-fate {
+    color: #c0392b;
+}
+
+.modal-preview .modal-preview-stays .modal-preview-fate {
+    color: #2f6f2f;
+}
+
+.modal-preview .modal-preview-head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.modal-footer {
+    padding: 12px 18px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.btn-modal {
+    font-size: 13px;
+    padding: 7px 16px;
+    border-radius: 6px;
+    border: 1px solid #cbd5e0;
+    background: #fff;
+    color: #2d3748;
+    cursor: pointer;
+}
+
+.btn-modal:hover {
+    background: #f1f5f9;
+}
+
+.btn-modal-danger {
+    border-color: #c0392b;
+    background: #c0392b;
+    color: #fff;
+}
+
+.btn-modal-danger:hover {
+    background: #a93226;
+}
+
+.btn-modal:disabled {
+    opacity: 0.6;
+    cursor: default;
 }
 
 /* ===================== Полоса прокрутки ===================== */

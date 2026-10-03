@@ -22,16 +22,45 @@ LLM: строка на промпт, на ответ, на вызов инстр
 умолчанию, `auth_role.py`). Появится заполненный `request_uuid` — отбор можно
 будет построить по нему; до тех пор это известная дырка, а не недосмотр.
 
-## ⚠ Удаления здесь нет намеренно
+## ⚠⚠ Удаляется НАШ ОТВЕТ, а не строка и не разговор
 
-У вкладки «Агенты» кнопка удаления есть: журнал вызовов можно чистить, он
-только журнал. Разговор — **память агента**: `companion_session_history`
-собирает из него ленту для промпта. Удалив переписку, агент начинает говорить с
-человеком как с незнакомым — ровно та беда, от которой таблицу и заводили.
-Понадобится — завести отдельным правом и с предупреждением в интерфейсе.
+Разговор целиком отсюда снести нельзя, и это не недоделка: разговор — **память
+агента**, `companion_session_history` собирает из него ленту для промпта, и без
+неё агент заговорит с человеком как с незнакомым — ровно та беда, от которой
+таблицу и заводили.
+
+Но и строку целиком не сносят. Строка — это **обмен**: его реплика и наш ответ
+лежат в колонках одной записи. Ошибочно доставленным бывает наш ответ, а его
+слова настоящие — снеси запись, и вместе с нашей ошибкой пропало бы то, что он
+правда написал. Поэтому `DELETE /session/companion/{exchange_id}/answer`
+помечает только нашу половину, и обмен читается как «он написал, мы смолчали»
+— случай, который лента рисует прочерком.
+
+## ⚠⚠ И даже половина не стирается: ставится отметка
+
+`answer_deleted_at` (миграция `20261003212000`), сам текст остаётся в базе.
+Решение «ответ лишний» принимает человек и может ошибиться, а разбирать потом
+«что же там было написано» будет не по чему. Видимости это не меняет: ни один
+читатель помеченное не берёт —
+
+    companion_session_rows        лента в промпт агента (и `..._history` над ней)
+    session_companion_messages    лента вкладки «Чат»
+    session_companion_list        список разговоров и его счётчики
+
+⚠ Условие у всех одно: `answer_deleted_at IS NULL`. Забыть его в одном месте —
+это «на странице ответа нет, а модель его помнит», то есть ровно та беда, от
+которой отметку и заводили.
+
+Зачем вообще: ответ, доставленный по ошибке, ленту **портит**. Он уезжает в
+промпт наравне с настоящими, и чем дальше, тем больше ответов модели опирается
+на него.
+
+Отсюда и устройство: право своё (`session_companion:delete`, не
+`session:delete` — тем чистят журнал вызовов, а это память), поштучно, и в
+интерфейсе спрашивается модальным окном, показывающим обе половины целиком.
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from mysql_.mysql_ import mysql_get_db_async
@@ -48,6 +77,20 @@ router = APIRouter()
 # в промпт и стоит токенов на каждом ответе, здесь её читает человек глазами.
 SESSION_COMPANION_LIMIT = 50
 SESSION_COMPANION_LIMIT_MAX = 500
+
+# Какие строки странице вообще видны.
+#
+# ⚠⚠ Обмен, у которого убрали наш ответ, а его реплики не было вовсе (инвайт,
+# письмо, наша инициатива — две трети строк установки), показывать нечем: в нём
+# не осталось ни одной видимой половины. Такие строки прячутся **до**
+# группировки и до `LIMIT` — иначе счётчик разговора считал бы невидимое, а
+# «показано 9 из 10» расходилось бы с лентой без всякой причины на экране.
+#
+# ⚠ Условие одно на список и на ленту: разойдись они, «в разговоре 3 обмена» и
+# «в ленте пусто» означали бы разные отборы. Тот же довод, что у
+# `_delivered_condition`.
+SESSION_COMPANION_VISIBLE = (
+    "(s.`question` <> '' OR s.`answer_deleted_at` IS NULL)")
 
 
 class SessionCompanionListRequest(BaseModel):
@@ -98,7 +141,7 @@ async def session_companion_list(
     `MAX()` же повторил бы грабли соседней ручки, где `MAX(role)` выглядит
     «последней ролью», ею не являясь (session.md, грабли №1).
     """
-    sql = """
+    sql = f"""
         SELECT s.`owner_id`,
                o.`unique_id` AS owner_unique_id,
                o.`title`     AS owner_title,
@@ -108,15 +151,19 @@ async def session_companion_list(
                s.`kind`,
                COUNT(*) AS exchange_count,
                SUM(s.`question` <> '') AS question_count,
-               SUM(s.`answer` <> '') AS answer_count,
-               SUM(s.`answer` <> '' AND s.`delivered_at` IS NULL)
-                   AS undelivered_count,
+               -- ⚠ Убранный ответ не считается ни ответом, ни недоставленным:
+               -- на странице его нет, и счётчик, который его помнит, читался бы
+               -- как «ответов 9» над лентой с восемью.
+               SUM(s.`answer` <> '' AND s.`answer_deleted_at` IS NULL)
+                   AS answer_count,
+               SUM(s.`answer` <> '' AND s.`answer_deleted_at` IS NULL
+                   AND s.`delivered_at` IS NULL) AS undelivered_count,
                MAX(COALESCE(s.`question_at`, s.`answer_at`, s.`created_at`))
                    AS last_at
           FROM `companion_session` s
           JOIN `companion` o ON o.`id` = s.`owner_id`
           JOIN `companion` c ON c.`id` = s.`companion_id`
-         WHERE 1=1
+         WHERE {SESSION_COMPANION_VISIBLE}
     """
     params = []
 
@@ -199,19 +246,25 @@ async def session_companion_messages(
     Перенесённые обмены ложатся в базу позже, чем стоят в разговоре: тот же
     довод, что у индекса таблицы и у `companion_session_rows`.
     """
-    sql = """
+    sql = f"""
         SELECT s.`id`,
                s.`kind`,
                s.`question`,
                s.`question_at`,
-               s.`answer`,
-               s.`answer_at`,
-               s.`delivered_at`,
+               -- ⚠⚠ Убранный ответ не уезжает со страницы ВООБЩЕ: ни текстом,
+               -- ни временем, ни отметкой доставки. Текст остаётся в базе — на
+               -- случай «а что там было» и разбора задним числом, — но страница
+               -- его не показывает, иначе отметка не значила бы ничего.
+               IF(s.`answer_deleted_at` IS NULL, s.`answer`, '') AS `answer`,
+               IF(s.`answer_deleted_at` IS NULL, s.`answer_at`, NULL) AS `answer_at`,
+               IF(s.`answer_deleted_at` IS NULL, s.`delivered_at`, NULL)
+                   AS `delivered_at`,
                s.`source_uid`,
                s.`request_uuid`,
                s.`created_at`
           FROM `companion_session` s
          WHERE s.`owner_id` = %s AND s.`companion_id` = %s
+           AND {SESSION_COMPANION_VISIBLE}
     """
     params = [json_request.owner_id, json_request.companion_id]
 
@@ -238,6 +291,93 @@ async def session_companion_messages(
     return {'result': list(reversed(rows or []))}
 
 
+@router.delete('/session/companion/{exchange_id}/answer')
+async def session_companion_answer_delete(
+        request: Request,
+        exchange_id: int,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.SESSION_COMPANION_DELETE]))
+):
+    """Убирает из обмена НАШ ответ. Реплика собеседника остаётся.
+
+    Returns:
+        dict: `result` с `id` обмена, временем отметки (`answer_deleted_at`) и
+        `row_hidden` — пропадёт ли со страницы вся строка (его реплики в обмене
+        не было, и показывать больше нечего).
+
+    ## ⚠⚠ Убирается половина, а не строка
+
+    В таблице строка — это ОБМЕН: его реплика и наш ответ лежат в колонках
+    одной записи (`question` против `answer`). Снести запись значило бы стереть
+    заодно его слова, а они настоящие: ошибочно доставленным бывает **наш**
+    ответ. Обмен после отметки читается как «он написал, мы смолчали» — лента
+    такой случай знает и показывает прочерком.
+
+    ## ⚠⚠ Текст остаётся в базе — стирается только видимость
+
+    Ставится `answer_deleted_at`, сам `answer` не трогается. Решение «ответ
+    лишний» принимает человек и может ошибиться, а разбирать потом «что же там
+    было написано» будет не по чему. Поэтому читатели (`companion_session_rows`
+    — лента в промпт, `session_companion_messages` и `session_companion_list` —
+    страница) просто не берут помеченное: модель его не видит, человек на
+    странице тоже, а в базе оно цело.
+
+    Отсюда и `UPDATE` вместо `DELETE` даже в случае, когда его реплики в обмене
+    не было (инвайт, письмо, наша инициатива — две трети строк установки).
+    Такая строка со страницы исчезает целиком (`row_hidden`), но в таблице
+    остаётся.
+
+    ⚠ Нечего убирать — `404`: строки нет вовсе, нашего ответа в ней нет (он
+    написал дважды подряд, агент смолчал) либо его уже убрали. «Убрали ноль, и
+    всё хорошо» означало бы, что повторное нажатие выглядит как новая работа.
+
+    ## ⚠ Сужения по роли нет — его не из чего сделать
+
+    У `companion_session` агента нет (шапка модуля), поэтому ограничить правку
+    «своими» агентами нечем: право `session_companion:delete` открывает все
+    разговоры установки. В наборе по умолчанию его нет — не-админские роли
+    получают только `session:view`.
+    """
+    async with db:
+        await db.execute(
+            'SELECT `question`, `answer`, `answer_deleted_at`'
+            ' FROM `companion_session` WHERE `id` = %s', (exchange_id,))
+        row = await db.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail='Обмен не найден')
+
+        if str(row['answer'] or '') == '':
+            raise HTTPException(status_code=404,
+                                detail='В этом обмене нашего ответа нет')
+
+        if row['answer_deleted_at'] is not None:
+            raise HTTPException(status_code=404,
+                                detail='Этот ответ уже убран')
+
+        # Время ставит база, а не Python: у соседних отметок строки
+        # (`delivered_at`, `created_at`) источник времени тот же, и два разных
+        # разъехались бы на величину, которую потом не объяснить.
+        await db.execute(
+            'UPDATE `companion_session` SET `answer_deleted_at` = UTC_TIMESTAMP()'
+            ' WHERE `id` = %s AND `answer_deleted_at` IS NULL', (exchange_id,))
+
+        await db.execute(
+            'SELECT `answer_deleted_at` FROM `companion_session` WHERE `id` = %s',
+            (exchange_id,))
+        stamped = await db.fetchone()
+
+        await db.connection.commit()
+
+    return {'result': {
+        'id': exchange_id,
+        'answer_deleted_at': stamped['answer_deleted_at'],
+        # Со страницы такая строка пропадёт целиком: видимых половин в ней не
+        # осталось. В базе она на месте — отсюда `hidden`, а не `removed`.
+        'row_hidden': str(row['question'] or '') == '',
+    }}
+
+
 def _kind_of(kind: str) -> str:
     """Канал из запроса или пустая строка, если фильтра нет.
 
@@ -262,13 +402,19 @@ def _delivered_condition(delivered: str) -> str:
     ⚠ `no` смотрит и на `answer`: строка без нашего ответа (он написал дважды
     подряд) отметки не имеет и иметь не может, а в «не доставлено» она читалась
     бы как потерянная реплика.
+
+    ⚠⚠ Убранный ответ не попадает **ни в один** из двух отборов: его на странице
+    нет вовсе. Иначе «доставленные» показывали бы обмены с прочерком вместо
+    ответа — то есть отбор по доставке отвечал бы про текст, которого не видно.
     """
     choice = str(delivered or '').strip().lower()
 
     if choice == 'yes':
-        return ' AND s.`delivered_at` IS NOT NULL'
+        return (' AND s.`delivered_at` IS NOT NULL'
+                ' AND s.`answer_deleted_at` IS NULL')
 
     if choice == 'no':
-        return " AND s.`answer` <> '' AND s.`delivered_at` IS NULL"
+        return (" AND s.`answer` <> '' AND s.`delivered_at` IS NULL"
+                ' AND s.`answer_deleted_at` IS NULL')
 
     return ''

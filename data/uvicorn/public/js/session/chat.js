@@ -14,7 +14,8 @@
 // агент (`companion_session_rows` его прячет: продолжать несказанное нельзя).
 // «Что сочинили, но не отправили» и есть вопрос, с которым сюда приходят.
 
-import {postData} from '../api.js';
+import {deleteData, postData} from '../api.js';
+import {showNotification} from '../notification.js';
 import {htmlEscape, labelClip, numberOf, selectFill, selectValueRestore,
         stampList, sumOf} from './util.js';
 
@@ -51,6 +52,13 @@ const state = {
     pairs: [],
     // Выбранный разговор тройкой — её же отправляем за обменами.
     current: null,
+    // Показанные обмены как пришли с сервера. Нужны окну подтверждения: оно
+    // показывает текст обеих половин, а в разметке он уже экранирован и обрезан
+    // стилями — вытаскивать его обратно из DOM значило бы разбирать то, что сами
+    // же собрали.
+    rows: [],
+    // Номер обмена, про который открыто окно. Пока оно закрыто — null.
+    removing: null,
 };
 
 export async function sessionChatInit() {
@@ -62,11 +70,17 @@ export async function sessionChatInit() {
     el.list = document.getElementById('chatSessionSelect');
     el.title = document.getElementById('chatSessionTitle');
     el.stream = document.getElementById('chatSessionStream');
+    el.modal = document.getElementById('chatDeleteModal');
+    el.modalPreview = document.getElementById('chatDeletePreview');
+    el.modalAlone = document.getElementById('chatDeleteAlone');
+    el.modalCancel = document.getElementById('chatDeleteCancel');
+    el.modalConfirm = document.getElementById('chatDeleteConfirm');
 
     try {
         await kindsLoad();
         await pairsLoadAll();
         filtersBind();
+        removeBind();
         await pairsLoad();
     } catch (e) {
         el.stream.innerHTML =
@@ -169,7 +183,17 @@ function filtersBind() {
 
 // ===================== Разговоры =====================
 
-async function pairsLoad() {
+/** Список разговоров под текущий отбор.
+ *
+ * `keep` — тройка разговора, который надо оставить открытым (после удаления
+ * обмена). Без неё открывается верхний: так список ведёт себя при смене отбора,
+ * где «верхний» и означает «самый свежий под новым условием».
+ *
+ * ⚠ Разговор, из которого удалили последний обмен, из списка исчезает — тогда
+ * `keep` не находится, и открывается верхний. Это честнее, чем держать пустую
+ * шапку разговора, которого больше нет.
+ */
+async function pairsLoad(keep = null) {
     const request = ++chatRequest;
 
     el.list.innerHTML = '<option>Загрузка...</option>';
@@ -213,14 +237,24 @@ async function pairsLoad() {
 
     if (!pairs.length) {
         state.current = null;
+        state.rows = [];
         el.title.textContent = 'Нет разговоров под этот отбор';
         el.stream.innerHTML = '<div class="placeholder">Нет разговоров</div>';
 
         return;
     }
 
-    el.list.selectedIndex = 0;
-    await exchangesLoad(pairs[0]);
+    const kept = keep ? pairs.findIndex(one => pairSame(one, keep)) : -1;
+
+    el.list.selectedIndex = kept >= 0 ? kept : 0;
+    await exchangesLoad(pairs[el.list.selectedIndex]);
+}
+
+/** Один ли это разговор. Тройка целиком: пара без канала — два разговора. */
+function pairSame(one, other) {
+    return one.owner_id === other.owner_id
+        && one.companion_id === other.companion_id
+        && one.kind === other.kind;
 }
 
 // ===================== Лента обменов =====================
@@ -254,6 +288,8 @@ async function exchangesLoad(pair) {
 }
 
 function exchangesRender(pair, rows) {
+    state.rows = rows;
+
     // Ключи сторон — подсказкой на заголовке: в строке они съели бы её целиком
     // (`966e95ea_Zinaida-Test`), а без них два разговора с одинаковыми именами
     // в шапке неразличимы.
@@ -292,6 +328,12 @@ function exchangeHtml(pair, row) {
     //
     // ⚠ В чипе доставки слово, а не время: само время стоит столбцом ПЕРЕД
     // репликой, и в чипе оно было бы вторым отпечатком того же значения.
+    //
+    // ⚠⚠ Чип удаления стоит здесь же, в хвосте НАШЕЙ строки, и это не вопрос
+    // вкуса: убирается наш ответ, а не обмен. Поставь его в шапку строки — и он
+    // читался бы как «снести запись», то есть вместе с его репликой, которая
+    // настоящая и мешать не может. У обмена без нашего ответа чипа нет вовсе:
+    // убирать там нечего.
     const marks = [
         answered ? (delivered
             ? '<span class="chip chip-delivered">✓ доставлено</span>'
@@ -299,6 +341,10 @@ function exchangeHtml(pair, row) {
         row.source_uid
             ? `<span class="chip chip-source" title="ключ у источника: ${htmlEscape(row.source_uid)}">`
               + `${htmlEscape(sourceLabel(row.source_uid))}</span>`
+            : '',
+        answered
+            ? `<button type="button" class="chip chip-delete" data-answer-delete="${htmlEscape(row.id)}"`
+              + ' title="Убрать наш ответ; реплика собеседника останется">🗑 удалить</button>'
             : '',
     ].filter(Boolean).join('');
 
@@ -309,10 +355,20 @@ function exchangeHtml(pair, row) {
     // прятать здесь нечего. `created_at` — когда строка легла в базу, а не
     // когда это сказали; у привезённых он на месяц позже разговора, поэтому
     // живёт подсказкой, а не строкой.
+    // Шапка строки отвечает на «что это за строка»: её номер и канал. Канал
+    // стоит здесь, а не в хвосте с доставкой: тот хвост — про наш ответ
+    // (сочинён, доставлен, каким путём приехал, убрать), а канал — свойство
+    // обмена целиком, как и номер.
+    //
+    // ⚠ Канал виден, хотя в открытом разговоре он один и тот же у всех строк:
+    // разговор опознаётся тройкой, и чат с почтой одной пары лежат врозь. Чип
+    // отвечает на «а это сейчас какая из двух переписок» не глядя в сайдбар.
     return `
         <div class="chat-exchange">
             <div class="chips-container">
                 <span class="chip chip-id" title="строка в базе с ${fmtTz(row.created_at)}">#${htmlEscape(row.id)}</span>
+                <span class="chip chip-channel chip-channel-${htmlEscape(row.kind)}"
+                      title="канал разговора">${row.kind === 'mail' ? '✉' : '💬'} ${htmlEscape(row.kind)}</span>
             </div>
             ${String(row.question || '') === '' ? '' : halfHtml({
                 side: 'his',
@@ -409,6 +465,160 @@ function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
             ${tail ? `<div class="chat-half-marks">${tail}</div>` : ''}
         </div>
     `;
+}
+
+// ===================== Удаление нашего ответа =====================
+//
+// ⚠⚠ Убирается НАША ПОЛОВИНА обмена, а не строка и не разговор. Строка здесь —
+// обмен: его реплика и наш ответ лежат в колонках одной записи. Ошибочно
+// доставленным бывает наш ответ, а его слова настоящие, и сносить запись
+// целиком значило бы стирать заодно их. Поэтому чистится `answer` — и обмен
+// становится «он написал, мы смолчали», случай, который лента рисует прочерком.
+//
+// ⚠ Кнопки «очистить переписку» здесь нет и не будет: разговор — это память
+// агента, из него собирается лента для промпта (`companion_session_history`), и
+// без неё агент заговорит с человеком как с незнакомым. Чип — про обратное:
+// ответ, доставленный по ошибке, ту же ленту ПОРТИТ, и дальше каждый ответ
+// модели опирается и на него.
+//
+// ⚠ Окно подтверждения, а не `confirm()` соседней вкладки. `confirm()` умеет
+// показать только строку текста — человек подтверждал бы удаление «обмена #512»,
+// не видя, что в нём написано. Решение здесь принимается по тексту: в окне обе
+// половины, и видно, какая из них уйдёт, а какая останется.
+
+function removeBind() {
+    // ⚠ Слушатель на ленте, а не на чипах: лента перерисовывается целиком на
+    // каждую загрузку, и обработчики на кнопках пришлось бы развешивать заново
+    // после каждого запроса — ровно тот случай, когда одна забытая перерисовка
+    // даёт «кнопка не нажимается» без единой ошибки в консоли.
+    el.stream.addEventListener('click', event => {
+        const chip = event.target.closest('[data-answer-delete]');
+
+        if (chip) removeAsk(Number(chip.dataset.answerDelete));
+    });
+
+    el.modalCancel.onclick = removeClose;
+    el.modalConfirm.onclick = removeRun;
+
+    // Щелчок по затемнению — отмена; по самому окну — нет. Слушаем `mousedown`:
+    // выделение текста обмена мышью кончается отпусканием кнопки за окном, и на
+    // `click` такое движение закрывало бы окно посреди чтения.
+    el.modal.addEventListener('mousedown', event => {
+        if (event.target === el.modal) removeClose();
+    });
+
+    // Esc закрывает окно. Обработчик живёт на документе и не снимается:
+    // панели обеих вкладок лежат в одном документе, и ловить нечего, пока
+    // `state.removing` пуст.
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && state.removing !== null) removeClose();
+    });
+}
+
+/** Спросить про удаление: показать обмен целиком и ждать решения. */
+function removeAsk(id) {
+    const row = state.rows.find(one => Number(one.id) === id);
+
+    // Строки нет в показанном — лента успела перезагрузиться под другим
+    // отбором. Молча ничего не делаем: спрашивать про исчезнувшее не о чем.
+    if (!row) return;
+
+    state.removing = id;
+    el.modalPreview.innerHTML = removePreview(row);
+    // ⚠ Обмен без его реплики — особый случай, и человеку о нём говорят ЗДЕСЬ,
+    // а не постфактум: наш ответ там и есть вся строка, и после очистки в ней
+    // не осталось бы ничего, поэтому она исчезает целиком.
+    el.modalAlone.hidden = String(row.question || '') !== '';
+    el.modal.hidden = false;
+    // Фокус — на отмене. Окно открылось по разрушающему действию, и случайный
+    // Enter обязан означать «нет».
+    el.modalCancel.focus();
+}
+
+/** Обмен в окне: шапка строки и обе половины целиком.
+ *
+ * ⚠⚠ Половины помечены словами «останется» и «уйдёт». Без пометок окно
+ * показывало бы просто две реплики, и вопрос «а его слова тоже пропадут?» —
+ * ровно тот, на который окно обязано отвечать до нажатия, — остался бы без
+ * ответа.
+ *
+ * ⚠ Текст НЕ обрезается, в отличие от ленты: письмо в десяток строк тем и
+ * опасно, что первая его строка выглядит безобидно. Решают по тексту — значит
+ * текст должен быть весь; длинное окно прокручивается.
+ */
+function removePreview(row) {
+    const pair = state.current;
+    const delivered = Boolean(row.delivered_at);
+
+    const halves = [
+        String(row.question || '') === '' ? '' : removePreviewRow(
+            sideLabel(pair, 'companion'), row.question, 'останется'),
+        removePreviewRow(sideLabel(pair, 'owner'), row.answer, 'уйдёт'),
+    ].filter(Boolean).join('');
+
+    return `
+        <div class="modal-preview-head">
+            <span class="chip chip-id">#${htmlEscape(row.id)}</span>
+            <span class="chip chip-channel chip-channel-${htmlEscape(row.kind)}">${
+                row.kind === 'mail' ? '✉' : '💬'} ${htmlEscape(row.kind)}</span>
+            ${delivered
+                ? '<span class="chip chip-delivered">✓ доставлено</span>'
+                : '<span class="chip chip-undelivered">⏳ не доставлено</span>'}
+        </div>
+        ${halves}
+    `;
+}
+
+function removePreviewRow(who, text, fate) {
+    return `
+        <div class="modal-preview-row modal-preview-${fate === 'уйдёт' ? 'goes' : 'stays'}">
+            <div class="modal-preview-who" title="${htmlEscape(who)}">${htmlEscape(who)}</div>
+            <div class="modal-preview-text">${htmlEscape(text)}</div>
+            <div class="modal-preview-fate">${htmlEscape(fate)}</div>
+        </div>
+    `;
+}
+
+async function removeRun() {
+    const id = state.removing;
+
+    if (id === null) return;
+
+    // Разговор запоминаем до запроса: `removeClose` чистит только состояние
+    // окна, но список после удаления перезагружается, и открытым должен
+    // остаться тот же разговор, а не верхний.
+    const pair = state.current;
+
+    el.modalConfirm.disabled = true;
+    el.modalCancel.disabled = true;
+
+    try {
+        const answer = await deleteData(`/session/companion/${id}/answer`);
+
+        // Что именно случилось, решает сервер: у обмена без его реплики со
+        // страницы пропадает вся строка. Говорим об этом прямо — «ответ убран»
+        // на месте исчезнувшего обмена читалось бы как потеря.
+        showNotification(answer?.result?.row_hidden
+            ? 'Ответ убран; его реплики в обмене не было — обмен пропал из ленты'
+            : 'Ответ убран, реплика собеседника осталась', 'success');
+        removeClose();
+        // Список целиком, а не вычитание единицы на месте: у разговора четыре
+        // счётчика (обмены, его реплики, наши ответы, недоставленные), каждый
+        // считается по своему условию, и повторять эти правила в браузере
+        // значило бы завести вторую их копию.
+        await pairsLoad(pair);
+    } catch (e) {
+        showNotification(`Ошибка удаления: ${e.message}`, 'error');
+    } finally {
+        el.modalConfirm.disabled = false;
+        el.modalCancel.disabled = false;
+    }
+}
+
+function removeClose() {
+    state.removing = null;
+    el.modal.hidden = true;
+    el.modalPreview.innerHTML = '';
 }
 
 // ===================== Мелочь =====================

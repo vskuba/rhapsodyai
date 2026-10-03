@@ -83,6 +83,18 @@ class AuthPermission(str, Enum):
     SESSION_VIEW = "session:view"
     SESSION_DELETE = "session:delete"
 
+    # Убрать из обмена наш ответ — вкладка «Чат» страницы `/admin/session`.
+    # Реплика собеседника при этом остаётся: удаляется половина строки, а не
+    # строка (`session_companion.py`, шапка).
+    #
+    # ⚠⚠ Право своё, а не `session:delete`, и это не формальность. То чистит
+    # `agent_session` — журнал вызовов модели, который можно вымести целиком без
+    # последствий. Здесь удаляется **память агента**: строка `companion_session`
+    # едет в промпт лентой `companion_session_history`, и выдав это право вместе
+    # с уборкой журнала, мы отдали бы заодно возможность менять то, что агент
+    # помнит о человеке.
+    SESSION_COMPANION_DELETE = "session_companion:delete"
+
     # Setting permissions
     SETTING_VIEW = "setting:view"
     SETTING_UPDATE = "setting:update"
