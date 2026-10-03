@@ -196,6 +196,52 @@ async def text_split(text: str, separator: str = ',') -> dict:
     return {"list": items, "qty": len(items)}
 
 
+async def text_substr(text: str, substr: str, ignore_case: bool = False) -> dict:
+    """
+    Ищет подстроку в тексте: отдаёт позицию первого вхождения или признак «нет».
+
+    Ответ на вопрос «встречается ли это слово в ответе модели и где именно».
+    Поиск буквальный, по знакам — ни регулярок, ни границ слова: `substr` ищется
+    как есть, и `кот` найдётся внутри `котлеты`.
+
+    ⚠ Работа для кода, а не для LLM. «Есть ли в тексте эта фраза?» модель
+    отвечает утвердительно почти всегда — сверку знак за знаком она не делает.
+
+    ⚠⚠ Судить о находке в workflow — **по `found`, а не по `pos`**. Вхождение в
+    самом начале строки даёт `pos = 0`, а условие на пустое значение считает ноль
+    за «пусто» — и найденное прочитается как ненайденное. Отсюда и два ключа:
+    `found` отвечает «есть ли», `pos` — «где».
+
+     - text: где ищем.
+     - substr: что ищем. Пусто — считаем, что искать нечего: `found = '0'`.
+     - ignore_case: не различать прописные и строчные.
+
+    Пример:
+        text = "User: John Doe, Age: 30"
+        result = await text_substr(text, "Age:")
+        # result будет {"found": "1", "pos": 16}
+
+    Returns:
+        A dictionary with the search result.
+        found (str): '1' — подстрока в тексте есть, '0' — нет.
+        pos (int): Позиция первого вхождения, счёт с нуля; -1 — вхождения нет.
+    """
+    text = str(text if text is not None else '')
+    substr = str(substr if substr is not None else '')
+
+    # Пустую иглу `str.find` находит в любом стоге на позиции 0 — для workflow это
+    # ложное «нашлось»: искать не просили ничего.
+    if not substr:
+        return {"found": '0', "pos": -1}
+
+    if ignore_case:
+        pos = text.lower().find(substr.lower())
+    else:
+        pos = text.find(substr)
+
+    return {"found": '1' if pos >= 0 else '0', "pos": pos}
+
+
 async def text_translit_cyr_to_lat(text: str) -> str:
     """
     Трансформация кириллицы в латиницу.
