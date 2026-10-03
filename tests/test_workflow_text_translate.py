@@ -60,13 +60,17 @@ class TestTheMarkersNeverReachTheModel:
         assert '[<' not in got['text'], got['text']
 
     def test_every_marker_is_remembered(self):
-        """⚠ Пять меток: две переменные и три части условного блока."""
+        """⚠ Пять меток движка: две переменные и три части условного блока.
+
+        ⚠⚠ Переносы строк заслоняются наравне с ними и в этом же списке —
+        сверяем только метки, чтобы тест говорил об одном предмете.
+        """
         got = _run(f"""
             const m = await import('{TRANSLATE}');
             console.log(JSON.stringify(m.textTranslateMask({json.dumps(PROMPT)})));
         """)
 
-        assert got['marks'] == [
+        assert [one for one in got['marks'] if one != '\n'] == [
             '%girl_name%',
             "[<if mail_kind == 'invite'>]",
             '[<else>]',
@@ -193,6 +197,89 @@ class TestALostMarkerStopsEverything:
         """)
 
         assert got['back'] is None, 'переписанная заслонка принята за метку'
+
+
+class TestTheLineBreaksSurvive:
+    """⚠⚠⚠ Перенос строки заслоняется наравне с метками. Куплено жалобой.
+
+    «Выделяю строку — захватывает соседние». Причина: модель **съедает**
+    переносы. Замер на живой ручке:
+
+        'Пиши коротко.\\nНе используй списки.'  →  'Write briefly. Do not use lists.'
+
+    Выделяя строку мышкой, человек почти всегда захватывает и её `\\n`; модель
+    его съедала, следующая строка подтягивалась вверх, и выглядело это так,
+    будто в перевод попал чужой текст.
+    """
+
+    def test_a_newline_is_masked(self):
+        got = _run(f"""
+            const m = await import('{TRANSLATE}');
+            console.log(JSON.stringify(m.textTranslateMask('Раз.\\nДва.')));
+        """)
+
+        assert '\n' not in got['text'], repr(got['text'])
+        assert got['marks'] == ['\n'], got['marks']
+
+    def test_the_shape_of_a_block_comes_back_whole(self):
+        """⚠ Пустая строка между абзацами — две заслонки подряд, и обе нужны:
+        один перенос вместо двух склеит абзацы в один."""
+        block = 'Правила:\\n1. Коротко.\\n\\n2. Без списков.'
+        got = _run(f"""
+            const m = await import('{TRANSLATE}');
+            const out = m.textTranslateMask('{block}');
+            console.log(JSON.stringify(
+                {{marks: out.marks.length,
+                  back: m.textTranslateUnmask(out.text, out.marks)}}));
+        """)
+
+        assert got['marks'] == 3, got['marks']
+        assert got['back'] == 'Правила:\n1. Коротко.\n\n2. Без списков.'
+
+
+class TestTheEdgesAreOurs:
+    """⚠⚠ Краевые пробелы возвращаются свои, а не от модели.
+
+    Отданный `'Пиши коротко.\\n'` вернулся как `'Write concisely.'` — край
+    модель переписывает как хочет. Заслонка ловит `\\n`, но не пробелы, а они
+    держат отступ списка. Дешевле не отдавать края вовсе.
+    """
+
+    def test_a_trailing_newline_is_peeled_off(self):
+        got = _run(f"""
+            const m = await import('{TRANSLATE}');
+            console.log(JSON.stringify(m.textTranslatePeel('Пиши коротко.\\n')));
+        """)
+
+        assert got == {'head': '', 'core': 'Пиши коротко.', 'tail': '\n'}, got
+
+    def test_an_indent_is_kept(self):
+        """⚠ Отступ пункта списка — слева, и он часть вида, а не текста."""
+        got = _run(f"""
+            const m = await import('{TRANSLATE}');
+            console.log(JSON.stringify(m.textTranslatePeel('   — пункт  ')));
+        """)
+
+        assert got['head'] == '   ', got
+        assert got['core'] == '— пункт', got
+        assert got['tail'] == '  ', got
+
+    def test_whitespace_only_has_no_core(self):
+        """⚠ Переводить нечего — и звать модель незачем."""
+        got = _run(f"""
+            const m = await import('{TRANSLATE}');
+            console.log(JSON.stringify(m.textTranslatePeel('  \\n ')));
+        """)
+
+        assert got['core'] == '', got
+
+    def test_a_clean_piece_is_left_as_is(self):
+        got = _run(f"""
+            const m = await import('{TRANSLATE}');
+            console.log(JSON.stringify(m.textTranslatePeel('Пиши коротко.')));
+        """)
+
+        assert got == {'head': '', 'core': 'Пиши коротко.', 'tail': ''}, got
 
 
 class TestAnEmptyAnswerNeverReplacesAnything:
