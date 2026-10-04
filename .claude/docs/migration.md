@@ -90,7 +90,7 @@ date +%Y%m%d%H%M%S      # 20260831150226
    - count == 0 → применяем seed
    - count > 0 → пропускаем
    - `pymysql.Error` (таблица не существует и т.п.) → пропускаем (`return False`)
-3. Парсит SQL через `_mysql_seed_split` — корректный сплиттер, игнорирует `;` внутри строк
+3. Парсит SQL через `mysql_seed_split` — корректный сплиттер, игнорирует `;` внутри строк
 4. Выполняет все statements через pymysql, при ошибке — `rollback`
 
 ### Формат seed-файла
@@ -128,11 +128,17 @@ SET FOREIGN_KEY_CHECKS = 1;
 | `POST` | `/seed/config` | Сохранить выбор таблиц в `setting.seed_table_config` |
 | `GET` | `/seed/files` | Список файлов в `data/seeds/` |
 | `POST` | `/seed/generate` | Создать `data/seeds/seed_YYYY-MM-DD_HH-MM-SS.sql` из переданного списка таблиц |
-| `POST` | `/seed/apply/{filename}` | Применить seed-файл к текущей БД (использует свой `_seed_split_sql`) |
+| `POST` | `/seed/apply/{filename}` | Применить seed-файл к текущей БД (`mysql_seed_split` общего слоя) |
 | `GET` | `/seed/download/{filename}` | Скачать файл |
 | `DELETE` | `/seed/{filename}` | Удалить файл |
 
-> **Два парсера:** `_mysql_seed_split` в `mysql_seed_up.py` (авто-старт) и `_seed_split_sql` в `seed.py` (ручное применение через UI) — одинаковая логика, разные функции.
+> **Парсер один** — `mysql_seed_split` из `py_modules/mysql_/mysql_seed.py`: его зовут
+> и авто-старт, и ручное применение через UI.
+>
+> ⚠ Здесь было **два** парсера, и эта страница их же и описывала: «одинаковая логика,
+> разные функции». Пока они стояли порознь, правка одного молча не доезжала до
+> второго — а разрезка SQL решает, уедет ли половина запроса в базу отдельной
+> командой. Копия в `seed.py` снята.
 
 ### Какие таблицы включать в seed
 

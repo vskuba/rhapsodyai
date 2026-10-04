@@ -10,6 +10,8 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import FileResponse
 
 from mysql_.mysql_ import mysql_conn_get
+from mysql_.mysql_seed import mysql_seed_split
+from mysql_.sql_export import sql_export_value
 from setting_.setting_ import setting_get, setting_set
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -99,7 +101,7 @@ async def seed_apply(filename: str, request: Request, user_=Depends(AuthChecker(
     conn = mysql_conn_get()
     try:
         with conn.cursor() as cur:
-            for stmt in _seed_split_sql(sql_content):
+            for stmt in mysql_seed_split(sql_content):
                 cur.execute(stmt)
         conn.commit()
         return {"result": f"Seed {filename} успешно применён"}
@@ -187,7 +189,7 @@ def _seed_table_to_sql(conn: pymysql.Connection, table_name: str) -> str:
     cols = list(rows[0].keys())
     col_str = ", ".join(f"`{c}`" for c in cols)
     values_list = [
-        "  (" + ", ".join(_seed_escape_value(row[c]) for c in cols) + ")"
+        "  (" + ", ".join(sql_export_value(row[c]) for c in cols) + ")"
         for row in rows
     ]
 
@@ -196,50 +198,5 @@ def _seed_table_to_sql(conn: pymysql.Connection, table_name: str) -> str:
     return "\n".join(lines)
 
 
-def _seed_escape_value(val) -> str:
-    if val is None:
-        return "NULL"
-    if isinstance(val, (int, float)):
-        return str(val)
-    if isinstance(val, (bytes, bytearray)):
-        return f"'{pymysql.converters.escape_string(val.decode('utf-8', errors='replace'))}'"
-    return f"'{pymysql.converters.escape_string(str(val))}'"
-
-
 def _seed_filename_safe(filename: str) -> bool:
     return '/' not in filename and '..' not in filename and filename.endswith('.sql')
-
-
-def _seed_split_sql(sql: str) -> list[str]:
-    """Split SQL by semicolons, ignoring semicolons inside quoted strings."""
-    statements = []
-    buf = []
-    in_quote = None
-    i = 0
-    while i < len(sql):
-        c = sql[i]
-        if c == '\\' and in_quote:
-            buf.append(c)
-            i += 1
-            if i < len(sql):
-                buf.append(sql[i])
-                i += 1
-            continue
-        if c in ("'", '"'):
-            if in_quote == c:
-                in_quote = None
-            elif in_quote is None:
-                in_quote = c
-        elif c == ';' and in_quote is None:
-            stmt = ''.join(buf).strip()
-            if stmt:
-                statements.append(stmt)
-            buf = []
-            i += 1
-            continue
-        buf.append(c)
-        i += 1
-    stmt = ''.join(buf).strip()
-    if stmt:
-        statements.append(stmt)
-    return statements

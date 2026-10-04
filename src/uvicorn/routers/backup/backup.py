@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import FileResponse
 
 from mysql_.mysql_ import host, port, user, password, db, mysql_conn_get
+from mysql_.sql_export import sql_export_value
 from setting_.setting_ import setting_get
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -172,7 +173,7 @@ def _backup_via_python(filepath: str, ts: str = ""):
                 cols = list(rows[0].keys())
                 col_str = ", ".join(f"`{c}`" for c in cols)
                 values_list = [
-                    "  (" + ", ".join(_backup_escape_value(row[c]) for c in cols) + ")"
+                    "  (" + ", ".join(sql_export_value(row[c]) for c in cols) + ")"
                     for row in rows
                 ]
                 buf.write(f"INSERT INTO `{table}` ({col_str}) VALUES\n")
@@ -184,16 +185,6 @@ def _backup_via_python(filepath: str, ts: str = ""):
             gz.write(buf.getvalue().encode('utf-8'))
     finally:
         conn.close()
-
-
-def _backup_escape_value(val) -> str:
-    if val is None:
-        return "NULL"
-    if isinstance(val, (int, float)):
-        return str(val)
-    if isinstance(val, (bytes, bytearray)):
-        return f"'{pymysql.converters.escape_string(val.decode('utf-8', errors='replace'))}'"
-    return f"'{pymysql.converters.escape_string(str(val))}'"
 
 
 def _backup_list():

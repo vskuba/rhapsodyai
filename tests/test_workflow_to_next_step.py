@@ -28,12 +28,11 @@
 «агент решил промолчать», и настроенный тупик выглядел бы обычной работой.
 """
 
-import ast
-import inspect
 import pathlib
-import textwrap
 
 import pytest
+
+from pytest_.pytest_guard import pytest_guard_code as _source
 
 from src.ai.framework.agent import ai_framework_manager as mod
 from src.ai.framework.agent.ai_framework_manager import (
@@ -216,23 +215,3 @@ def _decide(meta: dict, step_type: str, transition_fired: bool) -> str:
         return 'stop'
 
     return 'next'
-
-
-def _source(func) -> str:
-    """Код функции без комментариев и docstring.
-
-    ⚠ Нужен затем, чтобы сторож не ловил **объяснения**: причины правки названы
-    в комментариях рядом, и поиск подстрокой находил бы их.
-    """
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-
-    for node in ast.walk(tree):
-        body = getattr(node, 'body', None)
-        if not isinstance(body, list):
-            continue
-        if (body and isinstance(body[0], ast.Expr)
-                and isinstance(body[0].value, ast.Constant)
-                and isinstance(body[0].value.value, str)):
-            body.pop(0)
-
-    return ast.unparse(tree)

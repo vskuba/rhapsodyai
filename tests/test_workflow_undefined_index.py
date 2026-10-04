@@ -16,17 +16,16 @@ node, то и увидит браузер.
 """
 from __future__ import annotations
 
-import ast
-import inspect
 import json
 import shutil
 import subprocess
-import textwrap
 
 import pytest
 
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
+from pytest_.pytest_guard import pytest_guard_code as _source
+
 from src.ai import ai_workflow_undefined
 from src.ai.ai_workflow_undefined import ai_workflow_undefined_index
 
@@ -338,26 +337,6 @@ def _parent_inputs_by_child(workflows: dict) -> dict:
             found.setdefault(child_id, set()).update(str(one) for one in inputs_map)
 
     return found
-
-
-def _source(func) -> str:
-    """Код функции без docstring — сторож приёма не должен ловить объяснения.
-
-    ⚠ И `agent_workflow_trace`, и `JSON_KEYS` названы в шапке ручки, где
-    объяснено, зачем они. Поиск подстрокой нашёл бы пояснение вместо запроса.
-    """
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-
-    for node in ast.walk(tree):
-        body = getattr(node, 'body', None)
-        if not isinstance(body, list):
-            continue
-        if (body and isinstance(body[0], ast.Expr)
-                and isinstance(body[0].value, ast.Constant)
-                and isinstance(body[0].value.value, str)):
-            body.pop(0)
-
-    return ast.unparse(tree)
 
 
 def _script(body: str, fetched: object = None, **tokens: str) -> str:

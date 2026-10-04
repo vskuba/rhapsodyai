@@ -29,11 +29,10 @@
 `proxy` не виден ни один.
 """
 
-import ast
-import inspect
-import textwrap
 
 import pytest
+
+from pytest_.pytest_guard import pytest_guard_code as _source
 
 from src.ai.ai_workflow import ai_workflow_variables_node_get
 from src.uvicorn.routers.workflow import workflow
@@ -204,24 +203,3 @@ async def _node_vars(workflow_id: int) -> list:
     node_id = int((row or {}).get('node_id') or 0)
 
     return await ai_workflow_variables_node_get(node_id) if node_id else []
-
-
-def _source(func) -> str:
-    """Код функции без комментариев и docstring.
-
-    ⚠ Нужен затем, чтобы сторож приёма не ловил **объяснения**: и связка, и тип
-    названы рядом в пояснениях, зачем так сделано, — поиск подстрокой находил бы
-    их вместо настоящего возврата.
-    """
-    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
-
-    for node in ast.walk(tree):
-        body = getattr(node, 'body', None)
-        if not isinstance(body, list):
-            continue
-        if (body and isinstance(body[0], ast.Expr)
-                and isinstance(body[0].value, ast.Constant)
-                and isinstance(body[0].value.value, str)):
-            body.pop(0)
-
-    return ast.unparse(tree)
