@@ -9,26 +9,24 @@ from typing import AsyncGenerator
 from tests.constants import TEST_SESSION_UUID, TEST_SESSION_AGENT_ID, TEST_AUTH, TEST_AUTH_ROLE
 from tests_llm.mark import TEST_MARK
 
-# Тесты идут с хоста, а `MYSQL_HOST=mysql` — имя сервиса внутри compose-сети.
+# ⚠⚠ **Адрес базы правится до всякого импорта из `src/`** — и в окружении, и на
+# самом модуле базы. Одного `os.environ` мало: `config.config` накатывает
+# `.env.local` с `override=True` **позже** нас и возвращает прежнее значение, а
+# `mysql_.mysql_` читает адрес один раз, на импорте.
 #
-# Правкой одного `os.environ` тут не обойтись: `mysql_.mysql_` читает адрес
-# один раз, на импорте модуля, а `config.config` вдобавок накатывает `.env.local`
-# с `override=True` — то есть любое значение, выставленное до импорта, вернётся
-# обратно в `mysql`. Поэтому переопределяем и окружение (для всего, что читает
-# конфиг позже), и уже связанные атрибуты модуля.
-#
-# Делается на импорте conftest — раньше, чем pytest импортирует модули тестов, и
-# значит раньше любого их `from mysql_.mysql_ import ...`.
+# Это знание уехало в слой вместе с обвязкой — `.claude/docs-common/tests_panel.md`,
+# §3; здесь остаётся только порт этой установки.
+from tests_.tests_db import tests_db_pin  # noqa: E402
+
 MYSQL_TEST_HOST = 'localhost'
 MYSQL_TEST_PORT = '3302'
 
 os.environ['MYSQL_HOST'] = MYSQL_TEST_HOST
 os.environ['MYSQL_PORT'] = MYSQL_TEST_PORT
 
-import mysql_.mysql_ as _mysql_module  # noqa: E402  импорт после правки окружения — намеренно
+import mysql_.mysql_ as _mysql_module  # noqa: E402,F401  импорт после правки — намеренно
 
-_mysql_module.host = MYSQL_TEST_HOST
-_mysql_module.port = int(MYSQL_TEST_PORT)
+tests_db_pin(MYSQL_TEST_HOST, MYSQL_TEST_PORT)
 
 
 @pytest.fixture(scope="session")
