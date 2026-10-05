@@ -1,103 +1,82 @@
-from fastapi import HTTPException, Request, status, Depends
+"""Вход и проверка прав: **дверь** к общему скелету `py_modules/panel_/`.
 
-from logging_.logging_ import logger_info
+Своей копии механизма здесь больше нет. Модель прав при этом не менялась — её
+**взяли отсюда**: у двух соседних проектов панель умела только `is_admin`, и
+общим скелетом сделали богатый вариант, а не бедный.
+
+Что уехало в слой: проверка права, разбор «кто пришёл» (сессия или токен),
+правила про людей, точки `/api/users`. Что осталось здесь: каталог
+(`auth_permission.py`, `auth_role.py`, `auth_field_policy.py` — не тронуты) и два
+переходника, `auth_access.py` и `auth_store.py`.
+
+## ⚠ Дверь, а не прямой импорт слоя по месту
+
+`AuthChecker` стоит в 391 объявлении роутов, `AuthSession` — в 56. Переименовать
+их в `panel_auth_need`/`PanelUser` значило бы тронуть почти полтысячи строк ради
+того, чтобы имя стало другим, — и всё это в единственном месте, которое нельзя
+сломать незаметно: право доступа.
+
+⚠ `auth_token_of` остаётся видимым отсюда: его импортирует `main_uvicorn`.
+Живёт он в общем слое (`auth_/auth_primitive.py`) и давно — здесь только
+проходит насквозь.
+
+## ⚠⚠ Два договора подключаются здесь, на импорте модуля
+
+Не в `lifespan`: `AuthChecker` зовут и из тестов, которые приложение не
+поднимают вовсе. Подключи мы договоры на старте — в таких прогонах права
+остались бы незаведёнными, то есть полными у всех, и тест на отказ зеленел бы,
+ничего не проверив.
+"""
+
+from fastapi import HTTPException, Request, status
+
+from auth_.auth_primitive import auth_token_of
+from panel_.panel_access import panel_access_use
+from panel_.panel_auth import (PanelUser, panel_auth_need,
+                               panel_auth_required as auth_get_current_user,
+                               panel_auth_token_user)
+from panel_.panel_store import panel_store_use
+
+from src.auth.auth_access import AuthAccess
 from src.auth.auth_permission import AuthPermission
-from src.auth.auth_role import auth_role_permissions
-from src.auth.auth_session import AuthSession
+from src.auth.auth_store import AuthStore
+
+panel_access_use(AuthAccess())
+panel_store_use(AuthStore())
 
 
 class AuthChecker:
-    def __init__(self, required_permissions: list[AuthPermission]):
-        self.required_permissions = required_permissions
+    """Зависимость роута: пускает того, у кого есть **все** названные права.
 
-    async def __call__(self, request: Request) -> AuthSession:
-        current_user = await auth_get_current_user(request)
-
-        logger_info('🔒 Текущий пользователь: ' + str(current_user))
-
-        user_permissions = auth_role_permissions(current_user.role)
-
-        # 2. Проверяем, есть ли у пользователя ВСЕ необходимые для эндпоинта права
-        for perm in self.required_permissions:
-            if perm not in user_permissions:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="У вас недостаточно прав для выполнения этой операции"
-                )
-
-        return current_user
-
-
-async def auth_get_current_user(request: Request) -> AuthSession:
-    """Пользователь запроса: сессия админки либо токен доступа.
-
-    Токен принимается двумя заголовками — `Authorization: Bearer <token>` и
-    `X-API-KEY`. Первый — общепринятый и им пользуются готовые клиенты; второй
-    остаётся, потому что на нём уже написаны интеграции, и ломать их незачем.
-
-    Проверка живёт здесь одна на всех: точки зовут `AuthChecker`, а он — эту
-    функцию. Поэтому новый способ авторизации появляется сразу во всех точках, а
-    не в тех, куда его не забыли добавить.
+    ⚠ Класс, а не функция, потому что так её зовут 391 раз:
+    `Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))`. Внутри — зависимость
+    слоя, никакой своей проверки здесь не осталось.
     """
-    user_id = request.session.get("user_id", 0)
-    username = request.session.get("username", '')
-    role = request.session.get("role", '')
 
-    if user_id and username and role:
-        return AuthSession(user_id=user_id, username=username, role=role)
+    def __init__(self, required_permissions: list):
+        self.required_permissions = list(required_permissions or [])
+        self._check = panel_auth_need(*self.required_permissions)
 
-    token = auth_token_of(request)
-    if token:
-        return await auth_token_user(token)
+    async def __call__(self, request: Request) -> PanelUser:
+        """⚠⚠ Аннотация `Request` **обязательна**. Без неё FastAPI считает
+        довод с именем `request` обычным query-параметром и отвечает 422
+        «Field required» на каждую точку, где стоит эта зависимость, — то есть
+        на все 391. Поймано сюитой: `telegram` и `ai` покраснели разом.
 
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not authenticated"
-    )
-
-
-def auth_token_of(request: Request) -> str:
-    """Токен доступа из заголовков запроса. Нет ни одного — пустая строка.
-
-    `Bearer` в `Authorization` необязателен: клиенты шлют и голый токен, а
-    отказывать им из-за отсутствующего слова — придирка, а не безопасность.
-    """
-    header = (request.headers.get("Authorization") or '').strip()
-    if header:
-        parts = header.split(None, 1)
-        if len(parts) == 2 and parts[0].lower() in ('bearer', 'token'):
-            return parts[1].strip()
-
-        return header
-
-    return (request.headers.get("X-API-KEY") or request.headers.get("x-api-key") or '').strip()
+        ⚠ Зависимость слоя просит `PanelUser` доводом, а FastAPI здесь даёт
+        только запрос: разрешаем его сами и зовём проверку напрямую."""
+        return await self._check(await auth_get_current_user(request))
 
 
-async def auth_token_user(token: str) -> AuthSession:
-    """Владелец токена доступа. Неизвестный токен — 401, а не безымянный гость."""
-    from mysql_.mysql_ import mysql_get_db_async
+async def auth_token_user(token: str) -> PanelUser:
+    """Владелец токена. ⚠ Неизвестный — 401, а не безымянный гость."""
+    user = await panel_auth_token_user(token)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail='Invalid API Key')
 
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            """
-            SELECT u.id as user_id, u.username, r.name as role
-            FROM `user_access_token` t
-            JOIN `user` u ON t.user_id = u.id
-            LEFT JOIN `role` r ON r.id = u.role_id
-            WHERE t.token = %s
-            """,
-            (token,)
-        )
-        row = await db.fetchone()
+    return user
 
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API Key"
-        )
 
-    role = row["role"] or ''
-    if row["user_id"] == 1:  # Если пользователь с ID 1, то он admin
-        role = "admin"
-
-    return AuthSession(user_id=row["user_id"], username=row["username"], role=role)
+__all__ = ['AuthChecker', 'AuthPermission', 'auth_get_current_user',
+           'auth_token_of', 'auth_token_user']

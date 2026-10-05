@@ -1,7 +1,18 @@
-from pydantic import BaseModel
+"""Кто выполняет запрос — **псевдоним** `PanelUser` из общего скелета.
 
+Поля те же: `user_id`, `username`, `role`. Сверх них у `PanelUser` есть
+`permissions`, `can(...)` и `is_admin` — полнота считается совпадением набора
+прав с каталогом, а не именем роли.
 
-class AuthSession(BaseModel):
-    user_id: int
-    username: str
-    role: str
+⚠ Имя оставлено прежним: `AuthSession` стоит в 56 объявлениях, и все они —
+аннотации либо сборка с теми же ключевыми доводами. Переименование не дало бы
+ничего, кроме правки 56 строк.
+
+⚠⚠ Это больше **не pydantic-модель**. Проверено, что ею никто и не пользовался
+как моделью: ни `model_dump`, ни ответа ручки из неё — только аннотация и сборка
+по ключам.
+"""
+
+from panel_.panel_auth import PanelUser as AuthSession
+
+__all__ = ['AuthSession']
