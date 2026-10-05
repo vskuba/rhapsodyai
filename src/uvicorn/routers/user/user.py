@@ -1,199 +1,63 @@
-from fastapi import APIRouter, Request, Depends, HTTPException
-import uuid
-import bcrypt
+"""Люди: то, чего нет в общем скелете панели.
+
+Список, карточка, заведение, правка, удаление и токены уехали в слой
+(`py_modules/panel_/panel_user_api.py`, страница `.claude/docs-common/panel.md`).
+Вместе с ними приехали три запрета, которых здесь не было вовсе: нельзя менять
+роль себе, нельзя удалить себя, нельзя тронуть последнего полноправного. Каждый
+закрывает состояние, из которого нет выхода через панель.
+
+⚠⚠ Приехало и ещё одно: **значения токенов больше не отдаются списком**. Прежде
+страница показывала действующие ключи целиком, с кнопкой «скопировать»; теперь
+токен виден один раз — в ответ на выдачу, — а в списке остаются пометка и хвост
+в шесть знаков. Потерянный токен не восстанавливают, а отзывают и выдают новый.
+
+Здесь остаются две точки, аналогов которым в скелете нет: «кто я» по токену и
+«мой токен» для окна мини-приложения.
+
+## ⚠⚠ Почему «мой токен» не противоречит правилу скрытых значений
+
+Скелет прячет значения в списке потому, что там видны ключи **всех** людей
+установки: открытая страница показывала бы их всякому, кто стоит за спиной.
+Здесь отдаётся свой собственный ключ и только тому, у кого уже есть сессия, —
+то есть тому, кто и так может действовать от этого человека. Ничего сверх уже
+имеющегося такой ответ не даёт.
+
+⚠ Нужна она затем, что окно мини-приложения открывается `iframe`-ом с токеном в
+адресе: своей сессии у него нет. Выдавать под это новый токен на каждый показ
+значило бы копить их десятками.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from mysql_.mysql_ import mysql_get_db_async
-from src.mysql_.repository.user_repository import UserRepository
+
 from src.auth.auth import AuthChecker
-from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
 
-@router.get("/user/list")
-async def user_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
-    async with db:
-        await db.execute(
-            """
-            SELECT u.*, r.name AS role, s.value AS language
-            FROM `user` u
-            LEFT JOIN `role` r ON r.id = u.role_id
-            LEFT JOIN `setting` s ON s.user_id = u.id AND s.node_id IS NULL AND s.`key` = 'language'
-            WHERE u.dynamic = 0
-            """
-        )
-        users = await db.fetchall()
-
-        # Fetch all user_node associations
-        await db.execute("SELECT user_id, node_id FROM user_node")
-        user_nodes = await db.fetchall()
-
-        # Build mapping of user_id -> list of node_ids
-        mapping = {}
-        for row in user_nodes:
-            uid = row["user_id"]
-            nid = row["node_id"]
-            if uid not in mapping:
-                mapping[uid] = []
-            mapping[uid].append(nid)
-
-        for u in users:
-            u["node_ids"] = mapping.get(u["id"], [])
-
-        return {"result": users}
-
-
-@router.get("/user/{user_id}")
-async def user_get(request: Request, user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
-    async with db:
-        await db.execute(
-            """
-            SELECT u.*, r.name AS role, s.value AS language
-            FROM `user` u
-            LEFT JOIN `role` r ON r.id = u.role_id
-            LEFT JOIN `setting` s ON s.user_id = u.id AND s.node_id IS NULL AND s.`key` = 'language'
-            WHERE u.id = %s
-            """,
-            user_id
-        )
-        user_data = await db.fetchone()
-        if user_data:
-            await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
-            rows = await db.fetchall()
-            user_data["node_ids"] = [row["node_id"] for row in rows]
-    return {"result": user_data}
-
-
-@router.post("/user")
-async def user_create(request: Request, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_CREATE]))):
-    repo = UserRepository()
-    insert_data = {
-        "username": data.get("username"),
-        "email": data.get("email"),
-    }
-
-    password = data.get("password")
-    if password:
-        insert_data["password_hash"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-    insert_data["role_id"] = data.get("role_id")
-
-    user_id = await repo.add(insert_data)
-
-    async with db:
-        if "node_ids" in data and data["node_ids"]:
-            for nid in data["node_ids"]:
-                await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
-
-        await db.execute(
-            "SELECT u.*, r.name AS role FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id WHERE u.id = %s",
-            user_id
-        )
-        created_user = await db.fetchone()
-        if created_user:
-            await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
-            created_user["node_ids"] = [row["node_id"] for row in await db.fetchall()]
-
-    return {"result": created_user}
-
-
-@router.put("/user/{user_id}")
-async def user_update(request: Request, user_id: int, data: dict, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_UPDATE]))):
-    repo = UserRepository()
-    update_data = {}
-    if data.get("username") is not None:
-        update_data["username"] = data.get("username")
-    if data.get("email") is not None:
-        update_data["email"] = data.get("email")
-    if data.get("role_id") is not None:
-        update_data["role_id"] = data.get("role_id")
-
-    if data.get("password"):
-        password = str(data.get("password"))
-        if len(password) < 8:
-            raise HTTPException(status_code=400, detail="Пароль должен быть не короче 8 символов")
-        update_data["password_hash"] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-    if update_data:
-        await repo.update(user_id, update_data)
-
-    async with db:
-        if "node_ids" in data:
-            node_ids = data["node_ids"] or []
-            await db.execute("DELETE FROM user_node WHERE user_id = %s", user_id)
-            for nid in node_ids:
-                await db.execute("INSERT INTO user_node (user_id, node_id) VALUES (%s, %s)", (user_id, nid))
-
-        await db.execute(
-            "SELECT u.*, r.name AS role FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id WHERE u.id = %s",
-            user_id
-        )
-        updated_user = await db.fetchone()
-        if updated_user:
-            await db.execute("SELECT node_id FROM user_node WHERE user_id = %s", user_id)
-            updated_user["node_ids"] = [row["node_id"] for row in await db.fetchall()]
-
-    return {"result": updated_user}
-
-
-@router.delete("/user/{user_id}")
-async def user_delete(request: Request, user_id: int, user=Depends(AuthChecker([AuthPermission.USER_DELETE]))):
-    repo = UserRepository()
-    await repo.delete(user_id)
-    return {"result": {"deleted": True, "id": user_id}}
-
-
-@router.get("/role/list")
-async def user_role_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
-    async with db:
-        await db.execute("SELECT id, name FROM `role` ORDER BY id")
-        return {"result": await db.fetchall()}
-
-
-@router.get("/user/{user_id}/token")
-async def user_tokens_get(user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_VIEW]))):
-    async with db:
-        await db.execute("SELECT id, user_id, token FROM `user_access_token` WHERE user_id = %s", user_id)
-        tokens = await db.fetchall()
-        return {"result": tokens}
-
-
-@router.post("/user/{user_id}/token")
-async def user_token_create(user_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_UPDATE]))):
-    new_token = str(uuid.uuid4())
-    async with db:
-        await db.execute(
-            "INSERT INTO `user_access_token` (user_id, token) VALUES (%s, %s)",
-            (user_id, new_token)
-        )
-        await db.execute("SELECT LAST_INSERT_ID() as id")
-        row = await db.fetchone()
-        token_id = row["id"] if row else None
-
-        return {
-            "result": {
-                "id": token_id,
-                "user_id": user_id,
-                "token": new_token
-            }
-        }
-
-
-@router.delete("/user/token/{token_id}")
-async def user_token_delete(token_id: int, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.USER_DELETE]))):
-    async with db:
-        await db.execute("DELETE FROM `user_access_token` WHERE id = %s", token_id)
-        return {"result": {"deleted": True, "id": token_id}}
-
-
 @router.get("/user")
-async def user_get_by_api_key(
-    request: Request,
-    user=Depends(AuthChecker([]))
-):
-    return {
-        "result": {
-            "id": user.user_id,
-            "username": user.username
-        }
-    }
+async def user_get_by_api_key(user=Depends(AuthChecker([]))):
+    """Кто ходит этим токеном. ⚠ Прав не спрашивает: вопрос «чей ключ» задаёт
+    тот, у кого ключ, и ответ не выдаёт ничего сверх уже известного ему."""
+    return {"result": {"id": user.user_id, "username": user.username}}
+
+
+@router.get("/user/token/mine")
+async def user_token_mine(user=Depends(AuthChecker([]))):
+    """Значение **своего** токена — для окна мини-приложения.
+
+    Нет ни одного — 404 со словами: человек заводит токен в личном кабинете, и
+    молчаливый пустой ответ выглядел бы поломкой окна.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT token FROM `user_access_token` WHERE user_id = %s"
+            " ORDER BY id LIMIT 1", (int(user.user_id),))
+        row = await db.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="у вас нет токена доступа")
+
+    return {"result": {"token": row["token"]}}

@@ -251,15 +251,19 @@ class TestAgentCRUD:
         """Test filtering the agent list by user role and nodes (dual criteria)."""
         # 1. Create a test user with 'manager_dating' role and associated nodes [2, 4]
         user_res = await client.post(
-            "/user",
+            "/api/users",
             json={
                 "username": "test_filter_user",
                 "email": "test_filter_user@example.com",
-                "role_id": 2,
+                "role": "manager_dating",
+                # ⚠ Пароль обязателен: скелет людей не заводит учётку, которой
+                # нельзя войти.
+                "password": "testpass123",
                 "node_ids": [2, 4]
             },
         )
-        assert user_res.status_code == 200
+        # ⚠ 201, а не 200: скелет отвечает «создано».
+        assert user_res.status_code == 201, user_res.text
         user_id = user_res.json()["result"]["id"]
 
         # 2. Create 3 agents:
@@ -337,7 +341,7 @@ class TestAgentCRUD:
         assert agent_c_id in admin_agent_ids
 
         # Clean up
-        await client.delete(f"/user/{user_id}")
+        await client.delete(f"/api/users/{user_id}")
         await client.delete(f"/agent/{agent_a_id}")
         await client.delete(f"/agent/{agent_b_id}")
         await client.delete(f"/agent/{agent_c_id}")
@@ -349,16 +353,17 @@ class TestAgentCRUD:
         restricted to role_id == 'admin'."""
         # 1. Create a non-admin user with a real password (so it can log in) and node access
         user_res = await client.post(
-            "/user",
+            "/api/users",
             json={
                 "username": "test_role_filter_user",
                 "email": "test_role_filter_user@example.com",
-                "role_id": 2,
+                "role": "manager_dating",
                 "password": "testpass123",
                 "node_ids": [2, 4],
             },
         )
-        assert user_res.status_code == 200
+        # ⚠ 201, а не 200: скелет отвечает «создано».
+        assert user_res.status_code == 201, user_res.text
         user_id = user_res.json()["result"]["id"]
 
         # 2. Create an admin-only agent and a manager_dating-role agent, both on a node the user has access to
@@ -412,7 +417,7 @@ class TestAgentCRUD:
                 assert user_agent_id in agent_ids
         finally:
             # Clean up (back on the admin session)
-            await client.delete(f"/user/{user_id}")
+            await client.delete(f"/api/users/{user_id}")
             await client.delete(f"/agent/{admin_agent_id}")
             await client.delete(f"/agent/{user_agent_id}")
 

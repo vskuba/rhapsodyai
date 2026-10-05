@@ -150,15 +150,18 @@
                 return;
             }
 
-            const res = await getData(`/user/${userId}/token`);
-            const tokens = res.result || [];
-            if (tokens.length === 0) {
+            // ⚠ Значение своего токена — своей точкой: общий список людей
+            // отдаёт только хвосты, а окну нужен работающий ключ в адресе.
+            let token = '';
+            try {
+                token = (await getData('/user/token/mine')).result.token;
+            } catch {
                 stub.innerHTML = 'Нет access-токена — мини-приложение не открыть.<br>'
                     + 'Создайте токен в <a href="/admin/cabinet">личном кабинете</a>.';
                 return;
             }
 
-            miniAppUrl = `/telegram-app?access_token=${encodeURIComponent(tokens[0].token)}`;
+            miniAppUrl = `/telegram-app?access_token=${encodeURIComponent(token)}`;
             frame.src = miniAppUrl;
             frame.style.display = 'block';
             stub.style.display = 'none';

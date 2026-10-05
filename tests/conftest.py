@@ -452,14 +452,17 @@ def seed_test_session():
 async def _cleanup_test_users(client: httpx.AsyncClient) -> None:
     """Delete all users with username starting with TEST_USER_PREFIX."""
     try:
-        response = await client.get("/user/list")
+        response = await client.get("/api/users")
         if response.status_code != 200:
             return
-        users = response.json().get("result", [])
+        # ⚠ Список лежит под `users`: форма общего скелета панели. Пока
+        # здесь стоял голый `result`, уборка не находила ни одной учётки
+        # и молча не убирала ничего.
+        users = (response.json().get("result") or {}).get("users", [])
         test_users = [u for u in users if u.get("username", "").startswith(TEST_USER_PREFIX)]
         for user in test_users:
             try:
-                await client.delete(f"/user/{user['id']}")
+                await client.delete(f"/api/users/{user['id']}")
             except Exception:
                 pass  # Ignore individual deletion errors
     except Exception:

@@ -30,27 +30,31 @@ class TestPermissions:
         role_resp = await admin.post("/role", json={"name": f"{TEST_PERM_PREFIX}role", "node_ids": []})
         assert role_resp.status_code == 200
         role_id = role_resp.json()["result"]["id"]
+        # ⚠ Скелет людей знает роли **по именам**: номер остаётся только
+        # для уборки роли в конце.
+        role_name = f"{TEST_PERM_PREFIX}role"
 
         # Create user with that role
         username = f"{TEST_PERM_PREFIX}user"
         password = "TestPerm123!"
         # Pre-cleanup: remove leftover from a failed previous run
         try:
-            users = (await admin.get("/user/list")).json().get("result", [])
+            users = ((await admin.get("/api/users")).json().get("result") or {}).get("users", [])
             for u in users:
                 if u.get("username") == username:
-                    await admin.delete(f"/user/{u['id']}")
+                    await admin.delete(f"/api/users/{u['id']}")
         except Exception:
             pass
 
-        user_resp = await admin.post("/user", json={
+        user_resp = await admin.post("/api/users", json={
             "username": username,
             "email": f"{username}@test.local",
             "password": password,
-            "role_id": role_id,
+            "role": role_name,
             "node_ids": [],
         })
-        assert user_resp.status_code == 200
+        # ⚠ 201, а не 200: скелет отвечает «создано».
+        assert user_resp.status_code == 201, user_resp.text
         user_id = user_resp.json()["result"]["id"]
 
         async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False, timeout=10.0) as client:
@@ -58,23 +62,23 @@ class TestPermissions:
             assert login.status_code == 200
             yield client
 
-        await admin.delete(f"/user/{user_id}")
+        await admin.delete(f"/api/users/{user_id}")
         await admin.delete(f"/role/{role_id}")
 
     # --- User write operations ---
 
     async def test_non_admin_cannot_create_user(self, non_admin: httpx.AsyncClient):
-        resp = await non_admin.post("/user", json={
+        resp = await non_admin.post("/api/users", json={
             "username": "hacked_user", "email": "h@x.com", "password": "pass1234"
         })
         assert resp.status_code == 403
 
     async def test_non_admin_cannot_delete_user(self, non_admin: httpx.AsyncClient):
-        resp = await non_admin.delete("/user/1")
+        resp = await non_admin.delete("/api/users/1")
         assert resp.status_code == 403
 
     async def test_non_admin_cannot_update_user(self, non_admin: httpx.AsyncClient):
-        resp = await non_admin.put("/user/1", json={"email": "h@x.com"})
+        resp = await non_admin.put("/api/users/1", json={"email": "h@x.com"})
         assert resp.status_code == 403
 
     # --- Agent write operations ---

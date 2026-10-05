@@ -28,12 +28,14 @@ from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from mysql_.mysql_seed import mysql_seed_up
 from queue_.queue_ import queue_init
 from panel_.panel_backup_api import panel_backup_api_router
+from panel_.panel_user_api import panel_user_api_router
 from panel_.panel_seed_api import panel_seed_api_router
 from panel_.panel_setting_api import panel_setting_api_router
 from redis_.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
 from src.auth.auth_permission import AuthPermission
+from src.auth.auth_store import AUTH_STORE_EXTRA
 from src.auth.auth_session_slide import auth_session_slide_touch
 
 # Таблицы, которые в списке seed **есть, но не отмечены**: их наполняет работа
@@ -586,6 +588,9 @@ app.include_router(blog_router.router)
 app.include_router(agent.router)
 app.include_router(auth_router.router, include_in_schema=False)
 app.include_router(user.router, include_in_schema=False)
+app.include_router(panel_user_api_router(
+    view=AuthPermission.USER_VIEW, manage=AuthPermission.USER_UPDATE,
+    extra_fields=AUTH_STORE_EXTRA), include_in_schema=False)
 app.include_router(cronjob.router, include_in_schema=False)
 app.include_router(fact.router, include_in_schema=False)
 app.include_router(setting.router, include_in_schema=False)

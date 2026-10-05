@@ -1,5 +1,13 @@
 # User — пользователи, ноды и токены доступа
 
+⚠⚠ **Ручки живут в общем скелете панели** (`py_modules/panel_/panel_user_api.py`,
+страница `.claude/docs-common/panel.md`). Столбцы этой установки — почта и связи
+с узлами — приезжают туда швом `extra_fields`, а роль задаётся **именем**.
+
+⚠⚠ Значения токенов списком больше не отдаются: токен виден один раз, в ответ
+на выдачу, дальше остаются пометка и хвост. Потерянный отзывают и выдают новый.
+⚠ Своё значение для окна мини-приложения — узкой точкой `/user/token/mine`.
+
 > Админский CRUD пользователей: список с ролями и нодами, создание с
 > bcrypt-хешем, обновление, удаление; плюс выдача/отзыв токенов и
 > self-профиль по API-ключу. Каждое действие — своё право `USER_*`.
@@ -19,15 +27,15 @@
 
 | Метод | Путь | Право | Что делает |
 |-------|------|-------|-----------|
-| GET | `/user/list` | `USER_VIEW` | Пользователи с `role`, `language`, `node_ids`; только `dynamic = 0` |
-| GET | `/user/{user_id}` | `USER_VIEW` | Один пользователь + его `node_ids` |
-| POST | `/user` | `USER_CREATE` | Создаёт; `password` → bcrypt-хеш; `node_ids` → `user_node` |
-| PUT | `/user/{user_id}` | `USER_UPDATE` | Частичное обновление; `password` минимум 8 символов; `node_ids` — полная замена |
-| DELETE | `/user/{user_id}` | `USER_DELETE` | Удаляет пользователя |
+| GET | `/api/users` | `USER_VIEW` | Пользователи с `role`, `language`, `node_ids`; только `dynamic = 0` |
+| GET | `/api/users/{user_id}` | `USER_VIEW` | Один пользователь + его `node_ids` |
+| POST | `/api/users` | `USER_CREATE` | Создаёт; `password` → bcrypt-хеш; `node_ids` → `user_node` |
+| PUT | `/api/users/{user_id}` | `USER_UPDATE` | Частичное обновление; `password` минимум 8 символов; `node_ids` — полная замена |
+| DELETE | `/api/users/{user_id}` | `USER_DELETE` | Удаляет пользователя |
 | GET | `/role/list` | `USER_VIEW` | Дубликат точки role.md (см. там «дублирующийся `/role/list»`) |
-| GET | `/user/{user_id}/token` | `USER_VIEW` | Токены пользователя |
-| POST | `/user/{user_id}/token` | `USER_UPDATE` | Создаёт uuid-токен, возвращает `token` в ответе |
-| DELETE | `/user/token/{token_id}` | `USER_DELETE` | Удаляет токен |
+| GET | `/api/users/{user_id}/token` | `USER_VIEW` | Токены пользователя |
+| POST | `/api/users/{user_id}/token` | `USER_UPDATE` | Создаёт uuid-токен, возвращает `token` в ответе |
+| DELETE | `/api/users/token/{token_id}` | `USER_DELETE` | Удаляет токен |
 | GET | `/user` | любой залогиненный | Self-профиль: `id`, `username` текущего пользователя |
 
 ## 2. Пароль — только хеш, только через эти точки
@@ -60,7 +68,7 @@
 
 ## Грабли
 
-1. **`dynamic = 1` не виден в `/user/list`.** Список фильтрует
+1. **`dynamic = 1` не виден в `/api/users`.** Список фильтрует
    `WHERE u.dynamic = 0` — динамические (служебные, созданные не вручную)
    пользователи в админке не показываются, хотя `GET /user/{id}` их
    отдаст. **Симптом** — «пользователь в БД есть, в списке нет».

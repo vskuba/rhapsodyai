@@ -6,7 +6,7 @@ export async function loadUserTokens(userId) {
     if (!tokensList) return;
 
     try {
-        const response = await getData(`/user/${userId}/token`);
+        const response = await getData(`/api/users/${userId}/token`);
         tokensList.innerHTML = '';
 
         const tokens = response.result || [];
@@ -22,24 +22,15 @@ export async function loadUserTokens(userId) {
         tokens.forEach(t => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td style="font-family: monospace; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
-                    <span>${t.token}</span>
-                    <button type="button" class="btn-token-copy" title="Копировать токен" style="background: transparent; border: none; cursor: pointer; font-size: 14px; padding: 2px; line-height: 1; transition: transform 0.1s; display: inline-flex; align-items: center;" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'">📋</button>
+                <td style="font-family: monospace; letter-spacing: 0.5px;">
+                    <span title="Значение токена видно только при выдаче">…${t.tail || ''}</span>
+                    ${t.note ? `<span style="font-family: inherit; color: #666; margin-left: 8px;">${t.note}</span>` : ''}
                 </td>
                 <td style="text-align: right;">
                     <button type="button" class="btn-token-delete" data-id="${t.id}">Удалить</button>
                 </td>
             `;
             
-            tr.querySelector('.btn-token-copy').onclick = () => {
-                navigator.clipboard.writeText(t.token).then(() => {
-                    showNotification('Токен скопирован в буфер обмена!', 'success');
-                }).catch(err => {
-                    console.error('Ошибка копирования:', err);
-                    showNotification('Не удалось скопировать токен', 'error');
-                });
-            };
-
             tr.querySelector('.btn-token-delete').onclick = () => deleteToken(t.id, userId);
             
             tokensList.appendChild(tr);
@@ -52,7 +43,7 @@ export async function loadUserTokens(userId) {
 export async function deleteToken(tokenId, userId) {
     if (confirm('Вы уверены, что хотите удалить этот токен доступа?')) {
         try {
-            await deleteData(`/user/token/${tokenId}`);
+            await deleteData(`/api/users/token/${tokenId}`);
             showNotification('Токен успешно удален', 'success');
             await loadUserTokens(userId);
         } catch (e) {
@@ -70,8 +61,22 @@ export function initTokenGeneration(generateBtn, getUserIdFn) {
         if (!userId) return;
 
         try {
-            await postData(`/user/${userId}/token`, {});
-            showNotification('Новый токен доступа успешно сгенерирован!', 'success');
+            // ⚠⚠ Значение приходит **только здесь** и больше нигде: в списке
+            // остаются пометка и хвост. Поэтому показываем его сразу и даём
+            // скопировать — второго случая не будет, потерянный токен отзывают
+            // и выдают новый.
+            const made = await postData(`/api/users/${userId}/token`, {});
+            const value = made && made.result && made.result.token;
+            if (value) {
+                try {
+                    await navigator.clipboard.writeText(value);
+                    showNotification(`Токен выдан и скопирован: ${value}`, 'success');
+                } catch {
+                    showNotification(`Токен выдан (скопируйте сейчас): ${value}`, 'success');
+                }
+            } else {
+                showNotification('Новый токен доступа выдан', 'success');
+            }
             await loadUserTokens(userId);
         } catch (e) {
             console.error("Ошибка при генерации токена:", e);

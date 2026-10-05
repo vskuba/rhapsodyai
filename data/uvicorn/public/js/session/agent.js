@@ -88,16 +88,16 @@ export async function sessionAgentInit() {
 async function dictionariesLoad() {
     const [agents, users, pairs] = await Promise.all([
         fetch('/agent/list').then(r => r.json()).catch(() => ({})),
-        // ⚠ Не падаем без пользователей: `/user/list` требует своего права, и
+        // ⚠ Не падаем без пользователей: `/api/users` требует своего права, и
         // роль без него должна видеть сессии, просто без имён в отборе.
-        fetch('/user/list').then(r => r.json()).catch(() => ({})),
+        fetch('/api/users').then(r => r.json()).catch(() => ({})),
         fetch('/session/agent/list').then(r => r.json()),
     ]);
 
     (agents.result || []).forEach(one => {
         state.agents[one.id] = one;
     });
-    (users.result || []).forEach(one => {
+    ((users.result || {}).users || []).forEach(one => {
         state.users[one.id] = one;
     });
     state.pairs = pairs.result || [];

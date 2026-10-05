@@ -27,25 +27,29 @@ class TestAuthPassword:
 
         # Pre-cleanup: remove any leftover from a failed previous run
         try:
-            users = (await admin.get("/user/list")).json().get("result", [])
+            users = ((await admin.get("/api/users")).json().get("result") or {}).get("users", [])
             for u in users:
                 if u.get("username") == username:
-                    await admin.delete(f"/user/{u['id']}")
+                    await admin.delete(f"/api/users/{u['id']}")
         except Exception:
             pass
 
-        resp = await admin.post("/user", json={
+        resp = await admin.post("/api/users", json={
             "username": username,
             "email": f"{username}@test.local",
             "password": password,
+            # ⚠ Роль обязательна: скелет людей не заводит учётку без роли —
+            # она попала бы в список, не умея ни одной страницы.
+            "role": "manager_dating",
             "node_ids": [],
         })
-        assert resp.status_code == 200
+        # ⚠ 201, а не 200: скелет отвечает «создано».
+        assert resp.status_code == 201, resp.text
         user_id = resp.json()["result"]["id"]
 
         yield username, password, user_id
 
-        await admin.delete(f"/user/{user_id}")
+        await admin.delete(f"/api/users/{user_id}")
 
     # --- GET /auth/me/languages ---
 

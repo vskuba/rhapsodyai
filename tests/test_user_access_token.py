@@ -50,64 +50,79 @@ class TestUserAccessToken:
         assert me.status_code == 200, 'сюита не вошла — токен выдавать некому'
         user_id = me.json()['user']['id']
 
-        made = await client.post(f'/user/{user_id}/token')
+        made = await client.post(f'/api/users/{user_id}/token', json={})
         assert made.status_code == 200, f'токен не выдался: {made.text[:200]}'
         row = made.json()['result']
 
         yield row['token']
 
-        await client.delete(f"/user/token/{row['id']}")
+        await client.delete(f"/api/users/token/{row['id']}")
 
     async def test_access_token_lifecycle(self, client: httpx.AsyncClient):
         # 1. Create a temporary test user
         user_response = await client.post(
-            "/user",
+            "/api/users",
             json={
                 "username": "test_token_user",
                 "email": "test_token_user@example.com",
-                "llm_id": None
+                # ⚠ Пароль и роль обязательны: скелет не заводит учётку, которой
+                # нельзя войти, и не принимает несуществующую роль.
+                "password": "TestToken123!",
+                "role": "manager_dating",
             },
         )
-        assert user_response.status_code == 200
+        # ⚠ 201, а не 200: скелет отвечает «создано».
+        assert user_response.status_code == 201, user_response.text
         user = user_response.json()["result"]
         user_id = user["id"]
 
         try:
             # 2. Get initial tokens list (should be empty)
-            tokens_response = await client.get(f"/user/{user_id}/token")
+            tokens_response = await client.get(f"/api/users/{user_id}/token")
             assert tokens_response.status_code == 200
             assert tokens_response.json()["result"] == []
 
             # 3. Generate a new token
-            create_response = await client.post(f"/user/{user_id}/token")
-            assert create_response.status_code == 200
+            create_response = await client.post(f"/api/users/{user_id}/token",
+                                                json={"note": "проба сюиты"})
+            assert create_response.status_code == 200, create_response.text
             new_token = create_response.json()["result"]
-            assert new_token["user_id"] == user_id
-            assert len(new_token["token"]) == 36  # UUIDv4 is 36 chars
+            # ⚠⚠ Значение приходит **только здесь** — это и есть договор скелета.
+            # ⚠⚠ 43 знака: `secrets.token_urlsafe(32)` общего скелета, а не
+            # прежний uuid4 на 36. Столбец обязан их вмещать — иначе база
+            # обрежет молча, и выданный токен не сработает ни разу
+            # (миграция `20261005160000_user_access_token_width`).
+            assert len(new_token["token"]) == 43
+            assert new_token["note"] == "проба сюиты"
 
             token_id = new_token["id"]
 
             # 4. Fetch list again, check that the token is present
-            tokens_response2 = await client.get(f"/user/{user_id}/token")
+            tokens_response2 = await client.get(f"/api/users/{user_id}/token")
             assert tokens_response2.status_code == 200
             tokens = tokens_response2.json()["result"]
             assert len(tokens) == 1
             assert tokens[0]["id"] == token_id
-            assert tokens[0]["token"] == new_token["token"]
+            # ⚠⚠ В списке значения **нет** — только пометка и хвост. Прежде оно
+            # отдавалось целиком, и страница показывала действующие ключи
+            # всякому, кто стоит за спиной. Потерянный токен теперь не
+            # восстанавливают, а отзывают и выдают новый.
+            assert "token" not in tokens[0]
+            assert tokens[0]["tail"] == new_token["token"][-6:]
+            assert tokens[0]["note"] == "проба сюиты"
 
             # 5. Delete the token
-            delete_response = await client.delete(f"/user/token/{token_id}")
+            delete_response = await client.delete(f"/api/users/token/{token_id}")
             assert delete_response.status_code == 200
-            assert delete_response.json()["result"]["deleted"] is True
 
             # 6. Fetch list again, check that it is empty
-            tokens_response3 = await client.get(f"/user/{user_id}/token")
+            tokens_response3 = await client.get(f"/api/users/{user_id}/token")
             assert tokens_response3.status_code == 200
             assert tokens_response3.json()["result"] == []
 
         finally:
             # Cleanup: delete the test user
-            await client.delete(f"/user/{user_id}")
+            await client.delete(f"/api/users/{user_id}")
 
     async def test_agent_list_with_api_key(self, own_key: str):
         """Test querying agent list via POST /agent/list using an API Key.

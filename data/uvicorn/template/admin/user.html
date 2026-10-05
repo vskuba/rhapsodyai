@@ -336,7 +336,7 @@
                         <div class="form-group" style="flex: 1; margin-bottom: 0;">
                             <label>Роль</label>
                             <select id="role" class="form-control">
-                                <!-- Options will be rendered here by JS from /role/list -->
+                                <!-- Options will be rendered here by JS from /role/list; value — имя роли -->
                             </select>
                         </div>
                     </div>
@@ -416,7 +416,7 @@
         select.innerHTML = '';
         roles.forEach(role => {
             const opt = document.createElement('option');
-            opt.value = role.id;
+            opt.value = role.name;
             opt.textContent = role.name;
             select.appendChild(opt);
         });
@@ -430,12 +430,12 @@
 
         try {
             const [usersRes, nodesRes, rolesRes] = await Promise.all([
-                getData('/user/list'),
+                getData('/api/users'),
                 getData('/node/list'),
                 getData('/role/list')
             ]);
 
-            const users = usersRes.result;
+            const users = usersRes.result.users;
             allNodes = nodesRes.result.sort((a, b) => (a.position || 0) - (b.position || 0));
 
             renderRoleSelect(rolesRes.result);
@@ -499,7 +499,7 @@
         element.classList.add('active');
 
         try {
-            const data = await getData(`/user/${userId}`);
+            const data = await getData(`/api/users/${userId}`);
             const user = data.result;
 
             if (!user) return;
@@ -509,7 +509,7 @@
             document.getElementById('username').value = user.username;
             document.getElementById('email').value = user.email;
             document.getElementById('password').value = ''; // пароль не «прилипает» между пользователями
-            document.getElementById('role').value = user.role_id ?? '';
+            document.getElementById('role').value = user.role ?? '';
 
             // Update selected options in the select element
             const userNodeIds = user.node_ids || [];
@@ -585,7 +585,10 @@
         const payload = {
             username: document.getElementById('username').value,
             email: document.getElementById('email').value,
-            role_id: roleValue ? parseInt(roleValue, 10) : null,
+            // ⚠ Роль уходит **именем**, а не номером: правами ведает каталог
+            // (`auth_access.py`), и он знает роли по именам. Перевод имени в
+            // `role_id` делает хранилище (`auth_store.py`).
+            role: roleValue || '',
             node_ids: selectedNodeIds
         };
 
@@ -604,10 +607,10 @@
         try {
             let targetId = id;
             if (id) {
-                await putData(`/user/${id}`, payload);
+                await putData(`/api/users/${id}`, payload);
                 showNotification(`Пользователь "${payload.username}" обновлен`, 'success');
             } else {
-                const res = await postData('/user', payload);
+                const res = await postData('/api/users', payload);
                 showNotification(`Пользователь "${payload.username}" создан`, 'success');
                 if (res && res.result && res.result.id) {
                     targetId = res.result.id;
@@ -636,7 +639,7 @@
 
         if (confirm(`Вы уверены, что хотите удалить пользователя "${username}"?`)) {
             try {
-                await deleteData(`/user/${id}`);
+                await deleteData(`/api/users/${id}`);
                 showNotification(`Пользователь "${username}" удален`, 'success');
 
                 resetFormForCreate();
