@@ -11,6 +11,14 @@
 процессе установки оставляет здесь строку. Поэтому новый код попадает в журнал
 сам, без единой строчки про журнал в нём.
 
+## ⚠⚠ Устройство — в общем слое `py_modules/journal_/`
+
+Отпечаток (`journal_key`), синхронная запись своим соединением
+(`journal_sink_write`) и застава на корневом логгере (`journal_catch_install`)
+уехали в слой: они нужны любому проекту с базой, и у соседей их недоставало.
+Здесь остаётся предмет этого проекта — таблица `journal`, реестр источников,
+страницы, чистка по сроку и решение «что считать своим».
+
 ## ⚠ Строка одна на отпечаток, а не на каждое падение
 
 Сломавшийся цикл даёт одну и ту же ошибку каждую секунду. Строка на каждую — это
@@ -30,23 +38,20 @@
 Логгер зовут откуда угодно: из обработчика запроса, из потока `rq`, из
 кронджоба, у которого цикл событий вот-вот закроется. Асинхронная запись
 «в фоне» в двух последних случаях теряется молча — задача не успевает
-выполниться до конца процесса. Поэтому `journal_write` — обычная функция с
-одним соединением pymysql на процесс: несколько миллисекунд на ошибке, которая
-и так случается редко, дешевле потерянной записи.
+выполниться до конца процесса. Поэтому `journal_write` — обычная функция, а
+запись идёт своим соединением под замком (`journal_sink_write` слоя):
+несколько миллисекунд на ошибке, которая и так случается редко, дешевле
+потерянной записи.
 
 Чтение (`journal_rows` и соседи) — асинхронное: его зовёт роутер, и там пул
 уже есть.
 """
 
-import hashlib
 import json
-import re
-import threading
 
-import pymysql
-
-from logging_.logging_ import logger_info
-from mysql_.mysql_ import mysql_conn_get, mysql_get_db_async
+from journal_.journal_key import journal_key
+from journal_.journal_sink import journal_sink_write
+from mysql_.mysql_ import mysql_get_db_async
 
 # Кто поймал ошибку. Ключи — те же слова, что ложатся в колонку `source`; подписи
 # для человека страница берёт отсюда, своей копии не держит.
@@ -75,47 +80,6 @@ JOURNAL_PAGE_MAX = 200
 # трассы workflow (там 7 дней): трасса пишется на каждый запуск, а сюда
 # попадают только падения.
 JOURNAL_KEEP_DAYS = 30
-
-# Что вычёркиваем из текста, считая отпечаток: меняющиеся куски. Иначе одна и та
-# же ошибка с другим id в сообщении заводит новую строку, и счётчик повторов
-# теряет смысл.
-_JOURNAL_VARIABLE = (
-    # uuid целиком
-    re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I),
-    # адреса в памяти (`at 0x7f…`)
-    re.compile(r'\b0x[0-9a-f]+\b', re.I),
-    # числа от трёх знаков: id, порты, миллисекунды
-    re.compile(r'\b\d{3,}\b'),
-)
-
-
-def journal_fingerprint(source: str, logger_name: str, message: str) -> str:
-    """Отпечаток «той же самой ошибки» — по нему повтор находит свою строку.
-
-    Args:
-        source: процесс, поймавший ошибку.
-        logger_name: имя логгера — оно же подсистема.
-        message: текст ошибки.
-
-    Returns:
-        str: 32 шестнадцатеричных знака (md5).
-
-    ⚠ Из текста вычёркиваются меняющиеся куски — uuid, адреса в памяти, числа от
-    трёх знаков. Без этого «задача 5219 не найдена» и «задача 5220 не найдена»
-    были бы разными ошибками, и вместо одной строки со счётчиком журнал копил бы
-    по строке на задачу.
-
-    ⚠ Отпечаток считается **только по первой строке** сообщения: логгер часто
-    получает текст вместе с приклеенной трассировкой, и её адреса развели бы
-    одинаковые ошибки по разным строкам.
-    """
-    head = str(message or '').strip().split('\n', 1)[0]
-    for pattern in _JOURNAL_VARIABLE:
-        head = pattern.sub('#', head)
-
-    raw = f'{source}|{logger_name}|{head[:JOURNAL_MESSAGE_MAX]}'
-    return hashlib.md5(raw.encode('utf-8', errors='ignore')).hexdigest()
-
 
 def journal_write(source: str, message: str, level: str = 'ERROR',
                   logger_name: str = '', traceback_text: str = '',
@@ -152,18 +116,10 @@ def journal_write(source: str, message: str, level: str = 'ERROR',
         message,
         (traceback_text or '')[:JOURNAL_TRACEBACK_MAX] or None,
         json.dumps(context or {}, ensure_ascii=False, default=str),
-        journal_fingerprint(str(source or ''), str(logger_name or ''), message),
+        journal_key(str(source or ''), str(logger_name or ''), message=message),
     )
 
-    with _journal_lock:
-        try:
-            connection = _journal_connection()
-            with connection.cursor() as cursor:
-                cursor.execute(_JOURNAL_INSERT, row)
-            connection.commit()
-        except Exception as e:
-            _journal_connection_drop()
-            logger_info(f'[journal] ошибка не записалась в журнал: {e}')
+    journal_sink_write(_JOURNAL_INSERT, row, what='journal')
 
 
 async def journal_rows(source: str = '', level: str = '', q: str = '',
@@ -266,11 +222,6 @@ async def journal_trim(keep_days: int = JOURNAL_KEEP_DAYS) -> int:
 
 # ── Приватное ────────────────────────────────────────────────────────────────
 
-# Соединение на процесс и замок к нему. pymysql не умеет работать из двух потоков
-# сразу, а логгер зовут откуда угодно — включая потоки `rq`.
-_journal_conn: pymysql.Connection | None = None
-_journal_lock = threading.Lock()
-
 # Текст и трассировку обновляем: интересна последняя, а не первая — по ней
 # смотрят, что происходит сейчас. Время ставим явно: MySQL не трогает
 # `ON UPDATE`-колонку, когда все значения совпали, и у зациклившейся ошибки
@@ -292,38 +243,6 @@ _JOURNAL_INSERT = (
     '   hits = hits + 1,'
     '   last_at = NOW(3)'
 )
-
-
-def _journal_connection() -> pymysql.Connection:
-    """Живое соединение: заводит при первом обращении, поднимает после обрыва.
-
-    ⚠ Зовётся только под `_journal_lock`.
-    """
-    global _journal_conn
-
-    if _journal_conn is None:
-        _journal_conn = mysql_conn_get()
-    else:
-        # База рвёт простаивающие соединения по `wait_timeout`, а журнал молчит
-        # сутками: без пинга первая же ночная ошибка ушла бы в закрытый сокет.
-        _journal_conn.ping(reconnect=True)
-
-    return _journal_conn
-
-
-def _journal_connection_drop() -> None:
-    """Забывает соединение после неудачи — следующая запись заведёт новое.
-
-    ⚠ Зовётся только под `_journal_lock`.
-    """
-    global _journal_conn
-
-    if _journal_conn is not None:
-        try:
-            _journal_conn.close()
-        except Exception:
-            pass
-        _journal_conn = None
 
 
 def _journal_row(row: dict) -> dict:

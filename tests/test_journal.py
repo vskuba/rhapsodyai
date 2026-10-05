@@ -23,7 +23,8 @@ import pytest
 from tests.conftest import BASE_URL
 from tests.constants import TEST_AUTH
 
-from src.journal.journal import journal_fingerprint, journal_write
+from journal_.journal_key import journal_key
+from src.journal.journal import journal_write
 from src.journal.journal_handler import journal_handler_install, journal_handler_remove
 
 pytestmark = pytest.mark.core
@@ -118,32 +119,37 @@ class TestJournalWrite:
 
 
 class TestJournalFingerprint:
-    """Отпечаток решает, что считать «той же самой ошибкой»."""
+    """Отпечаток решает, что считать «той же самой ошибкой».
+
+    ⚠ Сама функция — в общем слое (`journal_key`), а проверки остались
+    здесь: они стерегут **поведение**, на которое опирается наш журнал, и
+    у слоя своих проверок нет.
+    """
 
     def test_changing_numbers_do_not_split_rows(self):
         """«Задача 5219 не найдена» и «задача 5220 не найдена» — одна ошибка."""
-        first = journal_fingerprint('worker', 'tests', 'задача 5219 не найдена')
-        second = journal_fingerprint('worker', 'tests', 'задача 5220 не найдена')
+        first = journal_key('worker', 'tests', message='задача 5219 не найдена')
+        second = journal_key('worker', 'tests', message='задача 5220 не найдена')
 
         assert first == second
 
     def test_different_text_splits_rows(self):
-        first = journal_fingerprint('worker', 'tests', 'задача не найдена')
-        second = journal_fingerprint('worker', 'tests', 'агент не найден')
+        first = journal_key('worker', 'tests', message='задача не найдена')
+        second = journal_key('worker', 'tests', message='агент не найден')
 
         assert first != second
 
     def test_traceback_tail_does_not_split_rows(self):
         """⚠ Отпечаток считается по первой строке: адреса в трассировке плавают."""
-        first = journal_fingerprint('worker', 'tests', 'сбой\nFile "a.py", line 1')
-        second = journal_fingerprint('worker', 'tests', 'сбой\nFile "b.py", line 2')
+        first = journal_key('worker', 'tests', message='сбой\nFile "a.py", line 1')
+        second = journal_key('worker', 'tests', message='сбой\nFile "b.py", line 2')
 
         assert first == second
 
     def test_source_splits_rows(self):
         """Одна ошибка у воркера и у сервера — разные строки: чинят разное."""
-        first = journal_fingerprint('worker', 'tests', 'нет соединения')
-        second = journal_fingerprint('uvicorn', 'tests', 'нет соединения')
+        first = journal_key('worker', 'tests', message='нет соединения')
+        second = journal_key('uvicorn', 'tests', message='нет соединения')
 
         assert first != second
 
