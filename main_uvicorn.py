@@ -27,7 +27,7 @@ from mysql_.migration.mysql_migration_up import mysql_migration_up
 from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from mysql_.mysql_seed import mysql_seed_up
 from queue_.queue_ import queue_init
-from redis_queue.redis_queue import redis_queue_init
+from redis_.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
 from src.auth.auth_session_slide import auth_session_slide_touch

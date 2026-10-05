@@ -32,7 +32,7 @@ from mysql_.mysql_ import mysql_pool_close
 from ai.ai_thread import ai_thread_framework_run
 from queue_.queue_ import queue_init
 from redis_.redis_ import redis_conn_get
-from redis_queue.redis_queue import redis_queue_get
+from redis_.redis_queue import redis_queue_get
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 
 TASK_WORKER_QUEUE_NAME = 'default'
