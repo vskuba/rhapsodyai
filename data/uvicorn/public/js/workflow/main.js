@@ -2,7 +2,7 @@
 // список workflow, переключение режимов, сохранение/удаление workflow
 
 import {getData, putData, postData, deleteData} from '../api.js';
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 import {state} from './state.js';
 import {parseMetadata, activateTab, savedTab, editorWorkflowId} from './utils.js';
 import {initGraphMode, openWorkflowGraph} from './graph.js';

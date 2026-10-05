@@ -6,7 +6,7 @@ const TO_NEXT_STEP = 'to_next_step';
 
 import {state} from './state.js';
 import {parseMetadata, graphLabelEscape, activateTab, editorWorkflowId} from './utils.js';
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
 import {getData} from '../api.js';
 import {variablesTrace, VAR_GROUP_UNKNOWN} from './variable-group.js';

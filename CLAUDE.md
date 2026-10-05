@@ -6,7 +6,7 @@
 - **Telegram Bot** (`main_telegram.py`)
 - **FastAPI/Uvicorn Server** (`main_uvicorn.py`) — Web API + HTML frontend
 
-`py_modules/` — shared libraries (общий submodule, каталог — `.claude/docs-common/py_modules.md`) | `src/` — application code
+`py_modules/` — shared libraries, только Python (общий submodule, каталог — `.claude/docs-common/py_modules.md`) | `dashboard/` — общая статика панелей, второй submodule (⚠ раздача ищет файл **сперва у нас**, потом там: свой файл с тем же именем перекрывает общий. ⚠⚠ Общие модули подключаются **абсолютным путём** `/static/js/notification.js` — относительный требовал бы файла на диске проекта, то есть общего submodule при нём не бывает; прогон такого модуля на node — `js_static_run`) | `src/` — application code
 
 See `.claude/docs/quickstart.md` for development commands and setup.
 

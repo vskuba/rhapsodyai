@@ -1,7 +1,7 @@
 // Динамические поля формы шага по его типу: textarea/checkbox и виджеты
 // widget_json_variable, widget_tool_invoke, widget_variable_conversion
 
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 import {state, WORKFLOW_STEP_CONFIG} from './state.js';
 import {parseMetadata, editorWorkflowId} from './utils.js';
 import {getToolOutputKeys} from './variable-group.js';

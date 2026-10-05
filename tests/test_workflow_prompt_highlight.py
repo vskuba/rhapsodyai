@@ -31,10 +31,19 @@
 """
 
 import json
+import os
 import shutil
 import subprocess
 
 import pytest
+
+from js_.js_static import js_static_run
+
+# ⚠ Каталоги статики в порядке поиска — свой проекта, затем общий submodule
+# `dashboard`. Тот же порядок, что у раздачи панели: разойдись они, тест
+# проверял бы не тот файл, который отдаёт сервер.
+JS_ROOTS = [os.path.join(os.getcwd(), 'data', 'uvicorn', 'public'),
+            os.path.join(os.getcwd(), 'dashboard')]
 
 pytestmark = pytest.mark.core
 
@@ -202,8 +211,7 @@ def _highlight(text: str) -> str:
     script = (f"import {{textModalHighlight}} from '{MODULE}';\n"
               f'process.stdout.write(textModalHighlight({json.dumps(text)}));')
 
-    done = subprocess.run(['node', '--input-type=module', '-e', script],
-                          capture_output=True, text=True)
+    done = js_static_run(script, JS_ROOTS)
 
     assert done.returncode == 0, f'node: {done.stderr}'
 

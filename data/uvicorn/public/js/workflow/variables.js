@@ -2,7 +2,7 @@
 // tool/workflow-подсветки выбранного шага, входящие переменные формы настроек
 
 import {getData, putData, postData, deleteData} from '../api.js';
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 import {state} from './state.js';
 import {parseMetadata, editorWorkflowId} from './utils.js';
 import {stepVariables, groupWorkflowVariables, variableGroupIndex,

@@ -2,7 +2,7 @@
 // drag-and-drop сортировка, добавление/удаление шагов
 
 import {getData, putData, postData, deleteData} from '../api.js';
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 import {state} from './state.js';
 import {parseMetadata, getDragAfterElement, editorWorkflowId} from './utils.js';
 import {renderWorkflowVariables, extractVariablesFromSteps, fillVariablesSelectOptions,

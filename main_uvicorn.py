@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -28,6 +27,7 @@ from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from mysql_.mysql_seed import mysql_seed_up
 from queue_.queue_ import queue_init
 from panel_.panel_backup_api import panel_backup_api_router
+from panel_.panel_static import panel_static_files
 from panel_.panel_user_api import panel_user_api_router
 from panel_.panel_seed_api import panel_seed_api_router
 from panel_.panel_setting_api import panel_setting_api_router
@@ -534,18 +534,12 @@ for tool_name in UVICORN_TOOL_NAMES:
 app.state.jinja2_template.env.globals['GRAFANA_URL'] = config_get('GRAFANA_URL')
 
 
-class NoCacheStaticFiles(StaticFiles):
-    """Статика без heuristic-кэша браузера: no-cache заставляет ревалидировать
-    файл (304 по ETag/Last-Modified, если не менялся) — правки js/css видны
-    после обычного обновления страницы, без версионирования импортов."""
-
-    def file_response(self, *args, **kwargs):
-        response = super().file_response(*args, **kwargs)
-        response.headers['Cache-Control'] = 'no-cache'
-        return response
-
-
-app.mount("/static", NoCacheStaticFiles(directory=public_static_path), name="static")
+# ⚠ Общая статика — submodule `dashboard` рядом с `py_modules`: раздача ищет
+# файл сперва у нас, потом там. Свой файл с тем же именем перекрывает общий.
+app.mount("/static",
+          panel_static_files(public_static_path,
+                             shared=os.path.join(current_dir, "dashboard")),
+          name="static")
 
 
 @app.get('/docs', include_in_schema=False)
@@ -576,7 +570,7 @@ async def swagger_ui_docs():
 # (нужно для start_url/scope PWA-манифеста и открытия без явного /index.html)
 apps_static_path = os.path.join(current_dir, "apps")
 if os.path.isdir(apps_static_path):
-    app.mount("/play", NoCacheStaticFiles(directory=apps_static_path, html=True), name="play")
+    app.mount("/play", panel_static_files(apps_static_path, html=True), name="play")
 
 app.include_router(detective.router)
 app.include_router(dashboard.router, include_in_schema=False)

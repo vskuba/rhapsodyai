@@ -10,7 +10,7 @@
 // тело запроса его не знало. Собеседник — на вкладке «Чат» (`chat.js`).
 
 import {postData, deleteData} from '../api.js';
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 import {filterLoad, filterSave, htmlEscape, labelClip, labelOf, numberOf,
         selectFill, selectValueRestore, sumOf} from './util.js';
 

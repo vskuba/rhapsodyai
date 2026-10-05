@@ -15,7 +15,7 @@
 // «Что сочинили, но не отправили» и есть вопрос, с которым сюда приходят.
 
 import {deleteData, postData} from '../api.js';
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 import {filterLoad, filterSave, htmlEscape, labelClip, numberOf, selectFill,
         selectValueRestore, stampList, sumOf} from './util.js';
 

@@ -15,7 +15,7 @@
 // «виджет живёт своим файлом» в папке уже есть: `dice-widget.js`.
 
 import {getData} from '../api.js';
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 import {state} from './state.js';
 import {stepResultVariables} from './variable-group.js';
 import {fillVariablesSelectOptions} from './variables.js';

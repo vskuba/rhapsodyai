@@ -1,5 +1,5 @@
 import {getData, postData, deleteData} from './api.js';
-import {showNotification} from './notification.js';
+import {showNotification} from '/static/js/notification.js';
 
 export async function loadUserTokens(userId) {
     const tokensList = document.getElementById('tokensList');

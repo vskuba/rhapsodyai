@@ -28,11 +28,20 @@ Mapping)» ровно одно автоимя — `%{подпоток}_{шаг}_
 """
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+
+from js_.js_static import js_static_run
+
+# ⚠ Каталоги статики в порядке поиска — свой проекта, затем общий submodule
+# `dashboard`. Тот же порядок, что у раздачи панели: разойдись они, тест
+# проверял бы не тот файл, который отдаёт сервер.
+JS_ROOTS = [os.path.join(os.getcwd(), 'data', 'uvicorn', 'public'),
+            os.path.join(os.getcwd(), 'dashboard')]
 
 pytestmark = pytest.mark.core
 
@@ -214,8 +223,7 @@ def _inputs(declared: list, saved_map: dict) -> list:
               + f'process.stdout.write(JSON.stringify(subflowInputsWithSaved('
                 f'{json.dumps(declared)}, '
                 f'{json.dumps({"inputs_map": saved_map})})));')
-    done = subprocess.run(['node', '--input-type=module', '-e', script],
-                          capture_output=True, text=True)
+    done = js_static_run(script, JS_ROOTS)
 
     assert done.returncode == 0, f'node: {done.stderr}'
 
@@ -241,8 +249,7 @@ def _collect(rows: list) -> dict:
               + ROWS
               + f'process.stdout.write(JSON.stringify('
                 f'subflowMapsCollect(host([{listed}]))));')
-    done = subprocess.run(['node', '--input-type=module', '-e', script],
-                          capture_output=True, text=True)
+    done = js_static_run(script, JS_ROOTS)
 
     assert done.returncode == 0, f'node: {done.stderr}'
 

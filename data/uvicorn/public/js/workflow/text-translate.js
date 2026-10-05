@@ -31,7 +31,7 @@
 // выделенная строка склеивалась с соседней. Разбор — у `TRANSLATE_MARK_RE`.
 
 import {postData} from '../api.js';
-import {showNotification} from '../notification.js';
+import {showNotification} from '/static/js/notification.js';
 
 // Языки раздела: флаг, код для ручки, подпись.
 //
