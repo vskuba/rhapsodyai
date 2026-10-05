@@ -22,8 +22,8 @@ import pytest
 
 from tests_llm.dating_mail_write.conftest import (HEAD_AVOID, HEAD_GREETING,
                                                   HEAD_STORY, NO_GREETING,
-                                                  STEP_SAME, STEP_WRITE,
-                                                  VARS_TEXT)
+                                                  RULE_ANY_GIRL, STEP_SAME,
+                                                  STEP_WRITE, VARS_TEXT)
 
 pytestmark = pytest.mark.llm
 
@@ -145,7 +145,7 @@ class TestTheStoryIsADice:
         """
         got = await letter(mail_story=STORY)
 
-        assert 'подходить ЛЮБОЙ девушке' in got.prompt_of(STEP_WRITE), \
+        assert RULE_ANY_GIRL in got.prompt_of(STEP_WRITE), \
             f'правило «рассказ годится каждой» пропало из промпта.{got}'
 
     async def test_no_story_hides_the_section(self, letter):

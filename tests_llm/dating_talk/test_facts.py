@@ -164,8 +164,10 @@ class TestWhatWasKeptIsLookedUp:
         Это и есть смысл всей цепочки: искали затем, чтобы агент прочёл. Шаг
         нашёл, а промпт не включил — маршрут зелёный, память не работает.
 
-        Проверяем по заголовку раздела в промпте: он ставится `%if%`-блоком
-        ровно тогда, когда поиск что-то вернул.
+        ⚠⚠ Сверяем **найденное с подставленным**, а не заголовок раздела:
+        заголовок — слово workflow, его правят в админке. Зато сверка видит и
+        беду, которой заголовок не видел вовсе: раздел на месте, а под ним
+        пусто.
         """
         got = await talk('Tell me about your weekends.',
                          variables={'companion_name': stranger, **ANYWAY})
@@ -178,8 +180,9 @@ class TestWhatWasKeptIsLookedUp:
                  or got.output_of(STEP_FACTS_PLAIN).strip())
 
         if found:
-            assert 'в базе данных' in prompt, \
-                f'факты нашлись, а в промпт не попали.{got}'
+            line = next((one.strip() for one in found.splitlines() if one.strip()), '')
+            assert line and line[:40] in prompt, \
+                f'факты нашлись ({line[:60]!r}), а в промпт не попали.{got}'
 
 
 class TestHerOwnFactsAreInvented:

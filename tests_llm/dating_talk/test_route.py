@@ -38,7 +38,7 @@ from tests_llm.dating_talk.conftest import (FACTS_MAN,
                                             STEP_FACT_INVENT_ADD,
                                             STEP_FACT_SAVE, STEP_FACT_SAVE_MAN,
                                             STEP_FACT_SAVE_TALK, STEP_INITIATIVE,
-                                            STEP_JUDGE, STEP_MAIL_WRITE,
+                                            STEP_JUDGE, STEP_MAIL_PROMPT,
                                             STEP_REPEAT, STEP_SILENCE,
                                             STEP_FACTS_MAN,
                                             STEP_FACTS_PLAIN,
@@ -183,7 +183,12 @@ class TestWhatThePanelAlwaysSendsArrives:
                                               answer_anyway='1'))
         # ⚠ Длины здесь нет: её бросает «Жребий» внутри workflow, и своего
         # значения у теста не бывает. Что метка раскрылась — `test_branches.py`.
-        missing = MARKS.missing(got, STEP_MAIL_WRITE, (
+        #
+        # ⚠⚠ Спрашивается шаг **сочинения**, а не развилка канала: у развилки
+        # промпта нет вовсе, и `prompt_of` на ней отдаёт пустоту. Пустота же
+        # ломает проверки по-разному — «нет такой метки» краснеет честно, а
+        # «метки быть не должно» зеленеет молча (см. соседний класс).
+        missing = MARKS.missing(got, STEP_MAIL_PROMPT, (
             'companion_bio', 'talk_history_chat', 'talk_history_mail'))
 
         assert not missing, f'до промпта ветки письма не доехало: {missing}.{got}'
@@ -216,9 +221,12 @@ class TestWhatThePanelAlwaysSendsArrives:
 
         assert MARKS['girl_bio'] in prompt, \
             f'анкета девушки не доехала до промпта.{got}'
-        assert 'Твоя анкета на сайте знакомств' in prompt, \
-            f'анкета попала в промпт без своего заголовка.{got}'
-        # ⚠ Имя агента в промпте — признак возврата прежней подстановки.
+        # ⚠ Имя агента в промпте — признак возврата прежней подстановки. Им и
+        # проверяется «названа своим именем»: заголовок раздела утверждать
+        # нельзя — это слово workflow, его правят в админке.
+        #
+        # ⚠⚠ Пара утверждений поймала бы ту поломку целиком: анкета доехала
+        # (своё значение на месте) и названа не системным именем агента.
         assert 'dating_girl_universal' not in prompt, \
             f'в промпте имя агента вместо имени девушки.{got}'
 
@@ -230,12 +238,23 @@ class TestTheDiceSectionsOpenAndClose:
     избранным переехали в ветки `dating_talk`, а их workflow осиротел. Поведение
     при этом живо, и без переноса покрытие ушло бы вместе с папкой.
 
-    Пустой заголовок хуже отсутствия блока: «Расскажи о себе. Тема:» и пустота
-    модель читает как задание без темы и придумывает её сама — то есть каждый
-    раз одну и ту же. Оттого секция и стоит под `%if%`.
+    Пустая секция хуже отсутствия блока: заголовок без темы под ним модель
+    читает как задание придумать тему — то есть каждый раз одну и ту же. Оттого
+    секция и стоит под `%if%`.
+
+    ⚠⚠ Оба теста сверяют **выпавшее с подставленным**, а не ищут заголовок
+    словом. Слово заголовка живёт в workflow, его правят в админке; выпавшее
+    лежит в трассе того же прогона, и правка меняет обе половины сверки разом.
+
+    ⚠⚠ Цена прежней привязки измерена дважды. Подписи `Opening:` и `Концовка:`
+    переименовали — шесть тестов покраснели на исправном коде. А «секции нет»
+    при этом **зеленело молча**: промпт читался у развилки канала, у которой
+    промпта нет вовсе, и `'Расскажи о себе' not in ''` истинно всегда. Утверждая
+    отсутствие, проверка обязана сперва убедиться, что смотрит не в пустоту.
     """
 
     async def test_a_story_opens_its_section(self, talk, llm_answers):
+        """Доля `100` — «всегда»: выпавшая тема стоит в промпте."""
         await llm_answers(talk_plan())
 
         got = await talk(TALK_MAIL_ASK,
@@ -243,12 +262,17 @@ class TestTheDiceSectionsOpenAndClose:
                                               mail_kind=TALK_MAIL_WRITE,
                                               answer_anyway='1',
                                               dice_mail_story_percent='100'))
+        prompt = got.prompt_of(STEP_MAIL_PROMPT)
+        story = str(got.vars.get('dice_mail_story') or '')
 
-        assert 'Расскажи о себе' in got.prompt_of(STEP_MAIL_WRITE), \
-            f'жребий выпал, а секции рассказа в промпте нет.{got}'
+        assert prompt, f'промпт шага сочинения письма не прочитался.{got}'
+        assert got.vars.get('dice_mail_story_on') == '1', \
+            f'при доле 100% рассказ не выпал — настройка не доехала.{got}'
+        assert story and story[:40] in prompt, \
+            f'рассказ выпал ({story[:60]!r}), а в промпт не попал.{got}'
 
     async def test_no_story_hides_the_section(self, talk, llm_answers):
-        """⚠ Доля `0` — «никогда»: секции быть не должно вовсе."""
+        """⚠ Доля `0` — «никогда»: выпавшей темы в промпте быть не должно."""
         await llm_answers(talk_plan())
 
         got = await talk(TALK_MAIL_ASK,
@@ -256,9 +280,16 @@ class TestTheDiceSectionsOpenAndClose:
                                               mail_kind=TALK_MAIL_WRITE,
                                               answer_anyway='1',
                                               dice_mail_story_percent='0'))
+        prompt = got.prompt_of(STEP_MAIL_PROMPT)
+        story = str(got.vars.get('dice_mail_story') or '')
 
-        assert 'Расскажи о себе' not in got.prompt_of(STEP_MAIL_WRITE), \
-            f'жребий не выпал, а секция рассказа осталась.{got}'
+        # ⚠⚠ Первым делом — что промпт вообще есть: без этого утверждение об
+        # отсутствии зеленеет на пустоте, чем оно и зеленело.
+        assert prompt, f'промпт шага сочинения письма не прочитался.{got}'
+        assert got.vars.get('dice_mail_story_on') == '0', \
+            f'при доле 0% рассказ всё равно выпал — настройка не доехала.{got}'
+        assert not story or story[:40] not in prompt, \
+            f'рассказ не выпал, а секция с темой в промпте осталась.{got}'
 
     async def test_the_judge_knows_the_asked_length(self, talk, llm_answers):
         """⚠⚠ Судья обязан знать **заказанную** длину, а не судить на глаз.

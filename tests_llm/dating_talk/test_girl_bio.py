@@ -47,11 +47,12 @@ pytestmark = pytest.mark.llm
 GIRL_BIO = ('My name is Vera. I am 29 years old. I live in Lviv. '
             'I teach piano at a music school and bake bread on weekends.')
 
-# Заголовок ветки анкеты в промпте.
-BIO_HEAD = 'Твоя анкета на сайте знакомств'
-
-# Заголовок ветки фактов — он один на обе «факты» ветки.
-FACTS_HEAD = 'в базе данных'
+# По чему узнаём анкету в промпте — по её собственному началу.
+#
+# ⚠⚠ Не по заголовку раздела: заголовок — **слово workflow**, его правят в
+# админке соседа, и тест на нём краснеет от редактуры. Здесь же лежит значение,
+# которое послали мы сами: разойдись оно с промптом — виноват код.
+BIO_MARK = GIRL_BIO[:24]
 
 
 @pytest.fixture
@@ -85,7 +86,7 @@ class TestTheGirlBioReachesThePrompt:
         prompt = got.prompt_of(STEP_MAKE)
 
         assert prompt, f'промпт шага сочинения не прочитался.{got}'
-        assert FACTS_HEAD in prompt or BIO_HEAD in prompt, \
+        assert _facts_reached(_found(got), prompt) or BIO_MARK in prompt, \
             f'о девушке в промпте нет ничего — ни фактов, ни анкеты.{got}'
 
     async def test_facts_win_over_the_bio(self, talk, stranger):
@@ -104,28 +105,29 @@ class TestTheGirlBioReachesThePrompt:
                                     'girl_bio': GIRL_BIO, **ANYWAY})
 
         prompt = got.prompt_of(STEP_MAKE)
-        found = (got.output_of(STEP_FACTS_TAGS).strip()
-                 or got.output_of(STEP_FACTS_PLAIN).strip())
+        found = _found(got)
 
         if found:
-            assert BIO_HEAD not in prompt, \
+            assert BIO_MARK not in prompt, \
                 f'факты нашлись, а анкета всё равно подставлена.{got}'
-            assert FACTS_HEAD in prompt, \
+            assert _facts_reached(found, prompt), \
                 f'факты нашлись, а в промпт не попали.{got}'
         else:
-            assert BIO_HEAD in prompt, \
+            assert BIO_MARK in prompt, \
                 f'фактов нет, а анкета не подставилась.{got}'
-            assert GIRL_BIO[:24] in prompt, \
-                f'заголовок анкеты есть, а самой анкеты нет.{got}'
 
-    async def test_without_the_bio_the_block_is_absent(self, talk, stranger):
-        """⚠ Не передали анкету — заголовка нет вовсе, а не пустой.
+    async def test_without_the_bio_nothing_appears_instead(self, talk, stranger):
+        """⚠ Не передали анкету — её и нет, ничего не подставилось вместо.
 
-        Пустой заголовок «Твоя анкета ===» без строк под ним модель читает как
-        факт «анкета пуста». Оттого внутри стоит второй `%if%`.
+        Сторожит подстановку из чужого источника: прошлого прогона, значения по
+        умолчанию, соседней переменной. Такая подмена тиха — промпт выглядит
+        полным, и девушка рассказывает о себе чужую жизнь.
 
-        ⚠⚠ Проверка условная и здесь: нашлись факты — ветка анкеты не при чём, и
-        требовать от неё чего-либо бессмысленно.
+        ⚠⚠ Что **заголовок раздела** тоже исчезает (пустой «Твоя анкета ===»
+        модель читает как «анкета пуста», и оттого внутри стоит второй `%if%`),
+        сюита больше не утверждает: это слово workflow, а его правят в админке.
+        Проверка сюда и вернётся — но утверждением о нашем значении, не о чужом
+        тексте.
         """
         got = await talk('Tell me about your weekends.',
                          variables={'companion_name': stranger, **ANYWAY})
@@ -133,8 +135,8 @@ class TestTheGirlBioReachesThePrompt:
         prompt = got.prompt_of(STEP_MAKE)
 
         assert prompt, f'промпт шага сочинения не прочитался.{got}'
-        assert BIO_HEAD not in prompt, \
-            f'заголовок анкеты в промпте, хотя анкету не передавали.{got}'
+        assert BIO_MARK not in prompt, \
+            f'анкета в промпте, хотя её не передавали.{got}'
 
 
 class TestTheGirlKeyIsTheTestOne:
@@ -158,3 +160,28 @@ class TestTheGirlKeyIsTheTestOne:
 
         assert TEST_GIRL_ID in where, \
             f'в фильтре фактов девушки не тестовый ключ: {where}.{got}'
+
+
+def _found(got) -> str:
+    """Что вправду нашёл поиск фактов о девушке — любым из двух шагов.
+
+    ⚠ Спрашивается у трассы, а не предполагается: поисков два, какой сработал —
+    решает состояние памяти, и тест, ждущий одного, краснел бы через раз.
+    """
+    return (got.output_of(STEP_FACTS_TAGS).strip()
+            or got.output_of(STEP_FACTS_PLAIN).strip())
+
+
+def _facts_reached(found: str, prompt: str) -> bool:
+    """Доехало ли найденное до промпта — сверкой вывода шага с промптом.
+
+    ⚠⚠ Сверяется **найденное с подставленным**: заголовок раздела тут не при
+    чём, он слово workflow. Зато так проверка видит и беду, которую заголовок не
+    видел вовсе, — раздел на месте, а факты под ним чужие или пустые.
+
+    ⚠ Пустое найденное — это «везти нечего», а не «доехало»: `'' in prompt`
+    истинно всегда, и проверка на срезе пустой строки зеленела бы молча.
+    """
+    line = next((one.strip() for one in str(found).splitlines() if one.strip()), '')
+
+    return bool(line) and line[:40] in prompt

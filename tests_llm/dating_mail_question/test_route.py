@@ -13,7 +13,7 @@ from tests_llm.dating_mail_question.fixtures import (PLAN_FLAT,
 
 from tests_llm.datingai import (CARD_MAN_NONE, MARK_GIRL, MARK_MAN)
 from tests_llm.dating_mail_question.conftest import (HEAD_GIRL, HEAD_HINT,
-                                                     HEAD_MAN, STEP_ASK,
+                                                     HEAD_LANG, HEAD_MAN, STEP_ASK,
                                                      STEP_CHECK, STEP_OUT,
                                                      STEP_WHY, TRIES_MAX)
 
@@ -80,10 +80,19 @@ class TestTheCardsReachThePrompt:
             f'«о собеседнике ничего не известно» не доехало до промпта.{got}'
 
     async def test_the_language_is_demanded(self, question):
-        got = await question(user_language='en')
+        """⚠ Наш код языка стоит в строке требования — её и смотрим.
 
-        assert 'ЯЗЫК ВОПРОСА — en' in got.prompt_of(STEP_ASK), \
-            f'требование языка не доехало до промпта.{got}'
+        ⚠⚠ Не `'en' in prompt`: две буквы совпадут с любым словом промпта, где
+        они есть, и проверка зеленела бы, даже не доехав. Поэтому сперва
+        находится строка требования, и значение ищется **в ней**.
+        """
+        got = await question(user_language='en')
+        prompt = got.prompt_of(STEP_ASK)
+        line = next((one for one in prompt.splitlines() if HEAD_LANG in one), '')
+
+        assert line, f'строки требования языка в промпте нет.{got}'
+        assert 'en' in line, \
+            f'требование языка есть, а наш код в него не подставился: {line!r}.{got}'
 
 
 class TestTheRewriteLoop:
