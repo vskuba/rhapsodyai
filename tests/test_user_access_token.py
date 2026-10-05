@@ -141,12 +141,18 @@ class TestUserAccessToken:
             headers_invalid = {"X-API-KEY": "invalid-token-value"}
             response_invalid = await anon_client.post("/agent/list", json=payload, headers=headers_invalid)
             assert response_invalid.status_code == 401
-            assert "Invalid API Key" in response_invalid.text
+            # ⚠ Текст отказа общий у всех панелей («нужен вход»), а не наш
+            # прежний «Invalid API Key»: разбор «кто пришёл» уехал в скелет
+            # (`panel_auth_required`). Сторожим **код**: он и есть договор —
+            # по тексту отказа клиенты не ветвятся, а перевод его на язык
+            # установки менял бы проверку, ничего не проверяя.
+            assert response_invalid.json()["detail"]
 
             # 3. Query new token-route without header (should fail validation with 401)
             response_no_header = await anon_client.post("/agent/list", json=payload)
             assert response_no_header.status_code == 401
-            assert "Not authenticated" in response_no_header.text
+            # ⚠ Тот же довод, что и ниже: сторожим код, а не текст отказа.
+            assert response_no_header.json()["detail"]
 
             # 4. Query session-route without session (should return 401)
             response_no_auth = await anon_client.get("/agent/list")
@@ -171,9 +177,15 @@ class TestUserAccessToken:
             headers_invalid = {"X-API-KEY": "invalid-token-value"}
             response_invalid = await anon_client.get("/user", headers=headers_invalid)
             assert response_invalid.status_code == 401
-            assert "Invalid API Key" in response_invalid.text
+            # ⚠ Текст отказа общий у всех панелей («нужен вход»), а не наш
+            # прежний «Invalid API Key»: разбор «кто пришёл» уехал в скелет
+            # (`panel_auth_required`). Сторожим **код**: он и есть договор —
+            # по тексту отказа клиенты не ветвятся, а перевод его на язык
+            # установки менял бы проверку, ничего не проверяя.
+            assert response_invalid.json()["detail"]
 
             # 3. Query without API key (should fail validation with 401)
             response_no_header = await anon_client.get("/user")
             assert response_no_header.status_code == 401
-            assert "Not authenticated" in response_no_header.text
+            # ⚠ Тот же довод, что и ниже: сторожим код, а не текст отказа.
+            assert response_no_header.json()["detail"]

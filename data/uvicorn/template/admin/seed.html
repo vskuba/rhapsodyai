@@ -282,49 +282,61 @@
 
 <script src="/static/js/sidebar_resizer.js"></script>
 <script>
+// ⚠ Слой отвечает **кодом HTTP** и полем `detail`, а прежние ручки отвечали 200
+// с полем `error`. Помощник сводит оба вида к прежней форме `{result}` /
+// `{error}`, чтобы остальной код страницы не менялся.
+async function ask(url, opts) {
+    const r = await fetch(url, opts);
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) return body;
+    const d = body.detail;
+    return {error: (typeof d === 'string' && d) ? d : `Ошибка ${r.status}`};
+}
+
 async function init() {
     await loadTz();
     const [tablesResp, filesResp] = await Promise.all([
-        fetch('/seed/tables').then(r => r.json()),
-        fetch('/seed/files').then(r => r.json()),
+        ask('/api/seed/table'),
+        ask('/api/seed/file'),
     ]);
 
-    const groups = tablesResp.result || [];
-    const defaults = new Set(tablesResp.defaults || []);
-    renderGroups(groups, defaults);
+    renderGroups(tablesResp.result || []);
     renderFiles(filesResp.result || []);
 }
 
-function renderGroups(groups, defaults) {
+// ⚠⚠ Выбор таблиц помнит **браузер**, а не сервер. Прежде он лежал в настройке
+// `seed_table_config`: строка в базе ради набора галочек. Первый заход берёт
+// отметки от сервера (`default`) — что заводят руками, отмечено, что копит сама
+// работа установки, нет; дальше решает человек, и его выбор держит `localStorage`.
+const SEED_PICK_KEY = 'seed:tables';
+
+function renderGroups(groups) {
     const container = document.getElementById('tableGroups');
     container.innerHTML = '';
+
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(SEED_PICK_KEY)); } catch (e) {}
+    const on = Array.isArray(saved) ? new Set(saved) : null;
+
     for (const group of groups) {
         const header = document.createElement('div');
         header.className = 'table-group-header';
         header.textContent = group.label;
         container.appendChild(header);
         for (const tbl of group.tables) {
-            const id = `tbl_${tbl}`;
+            const id = `tbl_${tbl.name}`;
             const item = document.createElement('div');
             item.className = 'table-item';
-            item.innerHTML = `<input type="checkbox" id="${id}" value="${tbl}" ${defaults.has(tbl) ? 'checked' : ''}>
-                              <label for="${id}">${tbl}</label>`;
+            item.innerHTML = `<input type="checkbox" id="${id}" value="${tbl.name}" ${(on ? on.has(tbl.name) : tbl.default) ? 'checked' : ''}>
+                              <label for="${id}">${tbl.name}</label>`;
             container.appendChild(item);
         }
     }
     container.addEventListener('change', saveConfig);
 }
 
-let _saveConfigTimer = null;
 function saveConfig() {
-    clearTimeout(_saveConfigTimer);
-    _saveConfigTimer = setTimeout(() => {
-        fetch('/seed/config', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({tables: getSelected()}),
-        });
-    }, 400);
+    localStorage.setItem(SEED_PICK_KEY, JSON.stringify(getSelected()));
 }
 
 function renderFiles(files) {
@@ -386,17 +398,17 @@ async function generateSeed() {
     hideStatus();
 
     try {
-        const resp = await fetch('/seed/generate', {
+        const resp = await ask('/api/seed/generate', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({tables}),
-        }).then(r => r.json());
+        });
 
         if (resp.error) {
             showStatus('Ошибка: ' + resp.error, false);
         } else {
             showStatus(`Создан: ${resp.result.name} (${formatSize(resp.result.size)})`, true);
-            const filesResp = await fetch('/seed/files').then(r => r.json());
+            const filesResp = await ask('/api/seed/file');
             renderFiles(filesResp.result || []);
         }
     } catch (e) {
@@ -410,7 +422,7 @@ async function generateSeed() {
 async function applySeed(name) {
     if (!confirm(`Применить seed к текущей базе данных?\n\n${name}\n\nINSERT IGNORE — существующие записи не перезапишутся.`)) return;
     try {
-        const resp = await fetch(`/seed/apply/${name}`, {method: 'POST'}).then(r => r.json());
+        const resp = await ask(`/api/seed/apply/${name}`, {method: 'POST'});
         if (resp.error) showStatus('Ошибка: ' + resp.error, false);
         else showStatus(resp.result, true);
     } catch (e) {
@@ -419,16 +431,16 @@ async function applySeed(name) {
 }
 
 function downloadSeed(name) {
-    window.location.href = `/seed/download/${name}`;
+    window.location.href = `/api/seed/download/${name}`;
 }
 
 async function deleteSeed(name) {
     if (!confirm(`Удалить файл:\n${name}`)) return;
     try {
-        const resp = await fetch(`/seed/${name}`, {method: 'DELETE'}).then(r => r.json());
+        const resp = await ask(`/api/seed/${name}`, {method: 'DELETE'});
         if (resp.error) showStatus('Ошибка: ' + resp.error, false);
         else {
-            const filesResp = await fetch('/seed/files').then(r => r.json());
+            const filesResp = await ask('/api/seed/file');
             renderFiles(filesResp.result || []);
         }
     } catch (e) {

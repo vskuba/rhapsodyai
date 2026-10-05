@@ -57,10 +57,10 @@ async def telegram_app_auth(request: Request, data: dict):
 async def telegram_app_config(request: Request):
     """Переменные `.env` для фронтенда Mini App.
 
-    Отдельно от `/setting/config`, хотя список тот же: тот закрыт `AuthChecker` по праву
+    Отдельно от `/api/setting/config`, хотя список тот же: тот закрыт `AuthChecker` по праву
     роли, а у Mini App обычной сессии с ролью нет — вход кладёт в сессию только
     `telegram_owner_id`. Пока своей ручки не было, конфиг из Mini App не читался вовсе:
-    `/setting/config` отвечал «Not authenticated», а `config.js` кэшировал пустой словарь
+    `/api/setting/config` отвечал «Not authenticated», а `config.js` кэшировал пустой словарь
     до перезагрузки страницы. Подробности — `src/setting/setting_config.py`.
     """
     _require_telegram_owner(request)

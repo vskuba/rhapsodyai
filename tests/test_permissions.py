@@ -134,7 +134,7 @@ class TestPermissions:
     # --- Setting write operations ---
 
     async def test_non_admin_cannot_save_setting(self, non_admin: httpx.AsyncClient):
-        resp = await non_admin.post("/setting", json={"key": "hacked_key", "value": "hacked"})
+        resp = await non_admin.post("/api/setting", json={"key": "hacked_key", "value": "hacked"})
         assert resp.status_code == 403
 
     # --- Non-admin CAN read (view permissions) ---

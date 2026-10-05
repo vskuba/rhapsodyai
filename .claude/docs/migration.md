@@ -124,12 +124,11 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 | Метод | URL | Действие |
 |-------|-----|----------|
-| `GET` | `/seed/tables` | Список всех таблиц БД, сгруппированных по префиксу; возвращает также сохранённый выбор из `setting.seed_table_config` |
-| `POST` | `/seed/config` | Сохранить выбор таблиц в `setting.seed_table_config` |
-| `GET` | `/seed/files` | Список файлов в `data/seeds/` |
-| `POST` | `/seed/generate` | Создать `data/seeds/seed_YYYY-MM-DD_HH-MM-SS.sql` из переданного списка таблиц |
-| `POST` | `/seed/apply/{filename}` | Применить seed-файл к текущей БД (`mysql_seed_split` общего слоя) |
-| `GET` | `/seed/download/{filename}` | Скачать файл |
+| `GET` | `/api/seed/table` | Список всех таблиц БД по префиксу; у каждой `default` — отмечать ли при первом заходе |
+| `GET` | `/api/seed/file` | Список файлов в `data/seeds/` |
+| `POST` | `/api/seed/generate` | Создать `data/seeds/seed_YYYY-MM-DD_HH-MM-SS.sql` из переданного списка таблиц |
+| `POST` | `/api/seed/apply/{filename}` | Применить seed-файл к текущей БД (`mysql_seed_split` общего слоя) |
+| `GET` | `/api/seed/download/{filename}` | Скачать файл |
 | `DELETE` | `/seed/{filename}` | Удалить файл |
 
 > **Парсер один** — `mysql_seed_split` из `py_modules/mysql_/mysql_seed.py`: его зовут

@@ -184,9 +184,20 @@
 </div>
 
 <script>
+// ⚠ Слой отвечает **кодом HTTP** и полем `detail`, а прежние ручки отвечали 200
+// с полем `error`. Помощник сводит оба вида к прежней форме `{result}` /
+// `{error}`, чтобы остальной код страницы не менялся.
+async function ask(url, opts) {
+    const r = await fetch(url, opts);
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) return body;
+    const d = body.detail;
+    return {error: (typeof d === 'string' && d) ? d : `Ошибка ${r.status}`};
+}
+
 async function loadList() {
     await loadTz();
-    const resp = await fetch('/backup/list').then(r => r.json());
+    const resp = await ask('/api/backup/file');
     renderList(resp.result || []);
 }
 
@@ -245,7 +256,7 @@ async function createBackup() {
     hideStatus();
 
     try {
-        const resp = await fetch('/backup/create', {method: 'POST'}).then(r => r.json());
+        const resp = await ask('/api/backup/create', {method: 'POST'});
         if (resp.error) {
             showStatus('Ошибка: ' + resp.error, false);
         } else {
@@ -261,7 +272,7 @@ async function createBackup() {
 }
 
 function downloadBackup(name) {
-    window.location.href = `/backup/download/${name}`;
+    window.location.href = `/api/backup/download/${name}`;
 }
 
 async function restoreBackup(name) {
@@ -269,7 +280,7 @@ async function restoreBackup(name) {
 
     hideStatus();
     try {
-        const resp = await fetch(`/backup/restore/${name}`, {method: 'POST'}).then(r => r.json());
+        const resp = await ask(`/api/backup/restore/${name}`, {method: 'POST'});
         if (resp.error) showStatus('Ошибка: ' + resp.error, false);
         else showStatus(resp.result, true);
     } catch (e) {
@@ -280,7 +291,7 @@ async function restoreBackup(name) {
 async function deleteBackup(name) {
     if (!confirm(`Удалить бэкап:\n${name}`)) return;
     try {
-        const resp = await fetch(`/backup/${name}`, {method: 'DELETE'}).then(r => r.json());
+        const resp = await ask(`/api/backup/${name}`, {method: 'DELETE'});
         if (resp.error) showStatus('Ошибка: ' + resp.error, false);
         else await loadList();
     } catch (e) {

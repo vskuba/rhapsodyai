@@ -633,13 +633,22 @@ class TestBackupOrder:
         return str(tmp_path)
 
     def _list(self, monkeypatch, path):
-        from src.uvicorn.routers.backup import backup
+        """Список копий глазами общего скелета панели.
 
-        monkeypatch.setattr(backup, 'BACKUPS_DIR', path)
+        ⚠⚠ Порядок там задаёт **имя**, а не время файла: имя начинается с метки
+        времени, а `mtime` сбивается копированием каталога. Своя копия сортировала
+        по `mtime` с именем как разрешителем ничьей — на настоящих именах
+        (`backup_<метка>.sql.gz`) оба порядка совпадают, и проверки ниже это
+        подтверждают.
+        """
+        from panel_.panel_backup_api import PANEL_BACKUP_EXT
+        from panel_.panel_file import panel_file_list
 
-        return [f['name'] for f in backup._backup_list()]
+        return [f['name'] for f in panel_file_list(path, PANEL_BACKUP_EXT)]
 
-    def test_task_state_backup_newest_first_not_alphabetical(self, tmp_path, monkeypatch):
+    def test_task_state_backup_newest_first(self, tmp_path, monkeypatch):
+        """Свежие сверху. ⚠ У настоящих копий имя начинается с метки времени,
+        поэтому «по имени вниз» и «по времени вниз» — один порядок."""
         path = self._dir(tmp_path, {
             'aaa_старый.sql.gz':  1_000_000,
             'zzz_свежий.sql.gz':  3_000_000,

@@ -22,11 +22,11 @@
 
 | Метод | Путь | Описание |
 |-------|------|---------|
-| `GET` | `/backup/list` | Список файлов из `data/backups/` |
-| `POST` | `/backup/create` | Создать новый бэкап |
-| `GET` | `/backup/download/{filename}` | Скачать `.sql.gz` файл |
-| `POST` | `/backup/restore/{filename}` | Восстановить БД из бэкапа |
-| `DELETE` | `/backup/{filename}` | Удалить файл |
+| `GET` | `/api/backup/file` | Список файлов из `data/backups/` |
+| `POST` | `/api/backup/create` | Создать новый бэкап |
+| `GET` | `/api/backup/download/{name}` | Скачать `.sql.gz` файл |
+| `POST` | `/api/backup/restore/{name}` | Восстановить БД из бэкапа |
+| `DELETE` | `/api/backup/{name}` | Удалить файл |
 
 **Файл роутера:** `src/uvicorn/routers/backup/backup.py`
 

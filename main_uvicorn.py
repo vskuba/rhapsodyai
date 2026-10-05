@@ -27,10 +27,36 @@ from mysql_.migration.mysql_migration_up import mysql_migration_up
 from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from mysql_.mysql_seed import mysql_seed_up
 from queue_.queue_ import queue_init
+from panel_.panel_backup_api import panel_backup_api_router
+from panel_.panel_seed_api import panel_seed_api_router
+from panel_.panel_setting_api import panel_setting_api_router
 from redis_.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close
+from src.auth.auth_permission import AuthPermission
 from src.auth.auth_session_slide import auth_session_slide_touch
+
+# Таблицы, которые в списке seed **есть, но не отмечены**: их наполняет работа
+# установки, а не человек — сессии, трассы, журналы, замки, метрики задач.
+#
+# ⚠ Собрано не на глаз: это ровно то, что оставалось неотмеченным в прежней
+# серверной памяти выбора (`seed_table_config`). Сама память убрана — выбор
+# таблиц держать в базе значит платить схемой за галочку, и общий скелет его не
+# хранит; умолчание считает сервер, остальное помнит страница.
+#
+# ⚠ Живёт здесь, а не в слое: какие таблицы рабочие, знает установка.
+MAIN_UVICORN_SEED_RUNTIME = (
+    'agent_session', 'agent_workflow_history', 'agent_workflow_trace',
+    'agent_workflow_trace_step', 'ai_claude_session',
+    'ai_claude_session_registry', 'browser_error', 'browser_proxy',
+    'browser_scenario_run', 'companion', 'companion_session', 'detective_case',
+    'developing_project', 'developing_task', 'event_log', 'fact', 'journal',
+    'journal_mysql', 'llm_request', 'migration_manual_log', 'plan',
+    'project_design_prototype_page', 'project_design_prototype_page_block',
+    'project_design_prototype_widget', 'project_planning_document',
+    'project_task_attempt', 'project_task_depend', 'project_task_metric',
+    'project_task_plan_revision', 'session', 'team_llm_lock', 'team_shell_lock',
+    'tool', 'tool_group')
 from src.journal.journal_handler import journal_handler_install
 from src.journal.journal_mysql import (journal_mysql_flush_forever,
                                        journal_mysql_watch_start)
@@ -88,8 +114,6 @@ from src.uvicorn.routers.user import user
 from src.uvicorn.routers.companion import companion
 from src.uvicorn.routers.role import role
 from src.uvicorn.routers.detective import detective
-from src.uvicorn.routers.seed import seed
-from src.uvicorn.routers.backup import backup
 from src.uvicorn.routers.project import project_team as project_team_router
 from src.uvicorn.routers.playwright import playwright
 from src.uvicorn.routers.stt import stt
@@ -565,6 +589,9 @@ app.include_router(user.router, include_in_schema=False)
 app.include_router(cronjob.router, include_in_schema=False)
 app.include_router(fact.router, include_in_schema=False)
 app.include_router(setting.router, include_in_schema=False)
+app.include_router(panel_setting_api_router(
+    view=AuthPermission.SETTING_VIEW, manage=AuthPermission.SETTING_UPDATE),
+    include_in_schema=False)
 app.include_router(translate.router, include_in_schema=False)
 app.include_router(llm.router, include_in_schema=False)
 app.include_router(gx10.router, include_in_schema=False)
@@ -617,8 +644,13 @@ app.include_router(event_router.router, include_in_schema=False)
 # попытался бы прочитать «mysql» номером и ответил бы 422 вместо чистки.
 app.include_router(journal_mysql_router.router, include_in_schema=False)
 app.include_router(journal_router.router, include_in_schema=False)
-app.include_router(seed.router, include_in_schema=False)
-app.include_router(backup.router, include_in_schema=False)
+app.include_router(panel_seed_api_router(
+    runtime_tables=MAIN_UVICORN_SEED_RUNTIME, title='RhapsodyAi',
+    view=AuthPermission.SETTING_VIEW, manage=AuthPermission.SETTING_UPDATE),
+    include_in_schema=False)
+app.include_router(panel_backup_api_router(
+    view=AuthPermission.SETTING_VIEW, manage=AuthPermission.SETTING_UPDATE),
+    include_in_schema=False)
 app.include_router(project_team_router.router, include_in_schema=False)
 app.include_router(playwright.router, include_in_schema=False)
 # Браузер наружу: этими точками работает DatingAi — заводит сессию, гоняет по ней

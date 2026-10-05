@@ -4,7 +4,7 @@ export async function SettingSet(key, value, userId) {
     if (!userId || userId === 'loading') return;
 
     try {
-        const result = await postData(`/setting/${key}/user/${userId}`, {
+        const result = await postData(`/api/setting/${key}/user/${userId}`, {
             value: value
         });
         return result.result;
@@ -18,7 +18,7 @@ export async function SettingGet(key, userId) {
     if (!userId || userId === 'loading') return;
 
     try {
-        const response = await fetch(`/setting/${key}/user/${userId}`);
+        const response = await fetch(`/api/setting/${key}/user/${userId}`);
         const data = await response.json();
 
         if (data.result && data.result !== 'null') {

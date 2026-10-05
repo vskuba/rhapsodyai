@@ -110,8 +110,8 @@ export async function userLanguageGet() {
  */
 export async function nodeLanguagesGet(nodeId) {
     try {
-        const res = await getData('/setting/list');
-        const rows = (res.result || []).filter(r => r.key === 'languages');
+        const res = await getData('/api/setting');
+        const rows = (res.result?.settings || []).filter(r => r.key === 'languages');
         const nodeRow = nodeId ? rows.find(r => String(r.node_id) === String(nodeId)) : null;
         const globalRow = rows.find(r => !r.node_id);
         const raw = (nodeRow || globalRow || {}).value || 'ru';

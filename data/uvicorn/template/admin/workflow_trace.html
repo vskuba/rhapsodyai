@@ -1377,8 +1377,8 @@
     async function init() {
         // Загружаем часовой пояс из настроек (key = 'timezone', value = '+3' / '-2' / '0')
         try {
-            const settingsRes = await getData('/setting/list');
-            const tzRow = (settingsRes.result || []).find(s => s.key === 'timezone' && !s.node_id);
+            const settingsRes = await getData('/api/setting');
+            const tzRow = (settingsRes.result?.settings || []).find(s => s.key === 'timezone' && !s.node_id);
             if (tzRow) {
                 const match = String(tzRow.value || '').match(/([+-]?\d+)/);
                 if (match) _tzOffsetMinutes = parseInt(match[1], 10) * 60;

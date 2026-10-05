@@ -227,14 +227,14 @@
     async function initManager() {
         try {
             const [settingsRes, nodesRes] = await Promise.all([
-                getData('/setting/list'),
+                getData('/api/setting'),
                 getData('/node/list')
             ]);
 
             nodes = (nodesRes.result || []).sort((a, b) => (a.position || 0) - (b.position || 0));
 
             settingsMap = {};
-            (settingsRes.result || []).forEach(row => {
+            (settingsRes.result?.settings || []).forEach(row => {
                 const entry = (settingsMap[row.key] ||= {global: null, nodes: {}});
                 if (row.node_id) entry.nodes[row.node_id] = row.value;
                 else entry.global = row.value;
@@ -332,7 +332,7 @@
         if (value === input.dataset.saved) return;
 
         try {
-            await postData('/setting', {key, node_id: nodeId, value});
+            await postData('/api/setting', {key, node_id: nodeId, value});
             input.dataset.saved = value;
 
             const entry = settingsMap[key];
@@ -357,7 +357,7 @@
     async function deleteSetting(key) {
         if (!confirm(`Удалить настройку "${key}" полностью (общее значение и все нодовые)?`)) return;
         try {
-            await deleteData(`/setting/key/${encodeURIComponent(key)}`);
+            await deleteData(`/api/setting/${encodeURIComponent(key)}`);
             delete settingsMap[key];
             renderBody();
             showNotification(`Удалено: ${key}`, 'success');
@@ -411,7 +411,7 @@
                 return;
             }
             try {
-                await postData('/setting', {key, node_id: null, value: valueInput.value});
+                await postData('/api/setting', {key, node_id: null, value: valueInput.value});
                 settingsMap[key] = {global: valueInput.value || null, nodes: {}};
                 renderBody();
                 showNotification(`Создано: ${key}`, 'success');

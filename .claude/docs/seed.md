@@ -23,9 +23,12 @@
 ### Sidebar: выбор таблиц
 
 - Таблицы подгружаются из `INFORMATION_SCHEMA.TABLES` — всегда актуальный список
-- Выбор сохраняется в `setting.seed_table_config` (JSON-массив имён таблиц)
-- Debounce 400ms на изменение чекбоксов → автосохранение через `POST /seed/config`
-- При открытии страницы `GET /seed/tables` возвращает `result` (группы) + `defaults` (сохранённый выбор)
+- ⚠ Выбор помнит **браузер** (`localStorage`, ключ `seed:tables`), а не сервер.
+  Прежде он лежал в `setting.seed_table_config` — строка в базе ради набора
+  галочек. Первый заход берёт отметки от сервера (`default`): что заводят
+  руками, отмечено, что копит сама работа установки — нет
+
+- При открытии страницы `GET /api/seed/table` возвращает группы, у каждой таблицы `name` и `default`
 
 ### Таблица файлов
 
@@ -37,12 +40,11 @@
 
 | Метод | Путь | Описание |
 |-------|------|---------|
-| `GET` | `/seed/tables` | Список групп таблиц + сохранённый выбор |
-| `POST` | `/seed/config` | Сохранить выбор таблиц в setting |
-| `GET` | `/seed/files` | Список seed-файлов из `data/seeds/` |
-| `POST` | `/seed/generate` | Сгенерировать новый seed из выбранных таблиц |
-| `POST` | `/seed/apply/{filename}` | Применить seed к текущей БД (INSERT IGNORE) |
-| `GET` | `/seed/download/{filename}` | Скачать .sql файл |
+| `GET` | `/api/seed/table` | Список групп таблиц + сохранённый выбор |
+| `GET` | `/api/seed/file` | Список seed-файлов из `data/seeds/` |
+| `POST` | `/api/seed/generate` | Сгенерировать новый seed из выбранных таблиц |
+| `POST` | `/api/seed/apply/{filename}` | Применить seed к текущей БД (INSERT IGNORE) |
+| `GET` | `/api/seed/download/{filename}` | Скачать .sql файл |
 | `DELETE` | `/seed/{filename}` | Удалить файл |
 
 **Файл роутера:** `src/uvicorn/routers/seed/seed.py`

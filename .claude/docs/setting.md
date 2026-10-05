@@ -1,18 +1,18 @@
 # Settings — конфигурация системы
 
 > Настройки хранятся в таблице `setting` со скоупами (общая / нодовая / пользовательская).
-> Отдельно есть endpoint `/setting/config` — публикует часть переменных `.env` для фронтенда.
+> Отдельно есть endpoint `/api/setting/config` — публикует часть переменных `.env` для фронтенда.
 
 ## Ключевые файлы
 
 | Файл | Назначение |
 |------|-----------|
 | `py_modules/setting_/setting_.py` | `setting_get()` / `setting_set()` / `setting_delete()` — доступ к таблице |
-| `src/uvicorn/routers/setting/setting.py` | REST API настроек + `/setting/config` |
+| `src/uvicorn/routers/setting/setting.py` | REST API настроек + `/api/setting/config` |
 | `src/uvicorn/routers/dashboard.py` | Роут страницы `/admin/setting` |
 | `data/uvicorn/template/admin/setting.html` | Страница настроек |
 | `data/uvicorn/public/js/setting.js` | JS страницы настроек |
-| `data/uvicorn/public/js/telegram_app/config.js` | Клиент `/setting/config` для Mini App |
+| `data/uvicorn/public/js/telegram_app/config.js` | Клиент `/api/setting/config` для Mini App |
 
 ## Таблица `setting`
 
@@ -80,12 +80,12 @@ now    = await datetime_now()                                # «сейчас» 
 
 | Метод | Путь | Права | Назначение |
 |-------|------|-------|-----------|
-| GET | `/setting/list` | `setting:view` | Общие и нодовые настройки (без `dynamic = 1`) |
+| GET | `/api/setting` | `setting:view` | Общие и нодовые настройки (без `dynamic = 1`) |
 | POST | `/setting` | `setting:update` | Upsert; пустой `value` удаляет запись |
-| DELETE | `/setting/key/{key}` | `setting:update` | Удалить настройку целиком (общее + все нодовые) |
+| DELETE | `/api/setting/{key}` | `setting:update` | Удалить настройку целиком (общее + все нодовые) |
 | GET | `/setting/{key}/user/{user_id}` | `setting:view` | Значение настройки пользователя |
 | POST | `/setting/{key}/user/{user_id}` | `setting:update` | Записать настройку пользователя |
-| GET | `/setting/config` | `setting:view` | Конфиг для фронтенда (значения из `.env`) |
+| GET | `/api/setting/config` | `setting:view` | Конфиг для фронтенда (значения из `.env`) |
 
 Тело `POST /setting`:
 
@@ -149,7 +149,7 @@ await task_setting_timeout_set('timeout_worker_job', 4000)  # ValueError вне 
 API — в `project_team.py`: `GET /api/team/timeout` (весь реестр + `problem`),
 `POST /api/team/timeout` (`{key, value}`, 422 на неизвестный ключ и выход за границы).
 
-## `/setting/config` — переменные для фронтенда
+## `/api/setting/config` — переменные для фронтенда
 
 ```python
 @router.get("/setting/config")
@@ -191,7 +191,7 @@ const url = getConfig('SITE_LOGIN_REMOTE_URL', '');  // второй аргум�
 `loadConfig()` дедуплицирует параллельные вызовы (общий `_loadPromise`) и при
 ошибке сети кладёт в кэш `{}`, не бросая исключение. `resetConfig()` нужен тестам.
 
-## Добавление новой переменной в `/setting/config`
+## Добавление новой переменной в `/api/setting/config`
 
 1. Добавить переменную в `.env` (и на проде — через secret `ENV_FILE`, иначе деплой её сотрёт).
 2. Добавить ключ в `dict` внутри `setting_config_route()`.

@@ -114,7 +114,7 @@ class TestSlideOverHttp:
         Анониму куки не выдаём ни на странице входа, ни на закрытой ручке, ни на
         статике — иначе каждый заход заводил бы сессию.
         """
-        for path in ('/login', '/setting/list', '/static/js/api.js'):
+        for path in ('/login', '/api/setting', '/static/js/api.js'):
             got = await client.get(path)
 
             assert 'set-cookie' not in got.headers, f'кука уехала анониму на {path}'
@@ -131,5 +131,5 @@ class TestSlideOverHttp:
         assert 'expires=Thu, 01 Jan 1970' in got.headers.get('set-cookie', ''), \
             'кука не погашена'
 
-        after = await client.get('/setting/list')
+        after = await client.get('/api/setting')
         assert after.status_code == 401, 'сессия пережила выход'

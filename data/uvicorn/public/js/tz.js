@@ -5,9 +5,9 @@
 
     window.loadTz = async function () {
         try {
-            const r = await fetch('/setting/list');
+            const r = await fetch('/api/setting');
             const data = await r.json();
-            const row = (data.result || []).find(s => s.key === 'timezone' && !s.node_id);
+            const row = (data.result?.settings || []).find(s => s.key === 'timezone' && !s.node_id);
             if (row) {
                 const m = String(row.value || '').match(/([+-]?\d+)/);
                 if (m) window.APP_TZ_OFFSET = parseInt(m[1], 10) * 60;

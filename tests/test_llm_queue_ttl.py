@@ -63,20 +63,22 @@ async def ttl_setting():
                                  timeout=30.0) as client:
         await client.post('/auth/login', json=TEST_AUTH)
 
-        listed = (await client.get('/setting/list')).json().get('result') or []
+        # ⚠ Список лежит под `settings`: форма общего скелета панели.
+        listed = ((await client.get('/api/setting')).json()
+                  .get('result') or {}).get('settings') or []
         was = next((one.get('value') for one in listed
                     if one.get('key') == AI_LLM_QUEUE_TTL_KEY
                     and not one.get('node_id')), None)
 
         async def _put(value) -> None:
-            await client.post('/setting', json={'key': AI_LLM_QUEUE_TTL_KEY,
+            await client.post('/api/setting', json={'key': AI_LLM_QUEUE_TTL_KEY,
                                                 'value': str(value)})
 
         yield _put
 
         # ⚠ Возвращаем как было: `''` удаляет строку — ровно то, что нужно, если
         # настройки до теста не существовало.
-        await client.post('/setting', json={'key': AI_LLM_QUEUE_TTL_KEY,
+        await client.post('/api/setting', json={'key': AI_LLM_QUEUE_TTL_KEY,
                                             'value': '' if was is None else was})
 
 
