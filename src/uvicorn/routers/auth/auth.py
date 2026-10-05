@@ -4,6 +4,7 @@ import bcrypt
 from fastapi import APIRouter, Request, HTTPException
 from event_.event_ import event_emit
 from mysql_.mysql_ import mysql_get_db_async
+from panel_.panel_auth import panel_auth_user_check
 from setting_.setting_ import setting_get, setting_set
 from i18n_.i18n_ import i18n_languages_parse
 from src.tool.setting.setting_ import setting_value_get
@@ -58,27 +59,26 @@ async def auth_login(request: Request, data: dict):
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password required")
 
+    # ⚠⚠ Проверку пары делает общий скелет, а не свой запрос рядом. Дело не в
+    # экономии строк: он сравнивает хеш **всегда**, даже когда логина в базе
+    # нет. Здесь стоял мгновенный отказ на неизвестном имени — то есть логины
+    # можно было перебирать по времени ответа, не пробуя ни одного пароля.
+    #
+    # ⚠ Правило «пользователь №1 — админ» тоже уехало: оно живёт в хранилище
+    # (`auth_store.py`), и вторая копия разошлась бы с первой на первой правке.
+    checked = await panel_auth_user_check(username, password)
+    if not checked:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    user_id = checked.user_id
+    role = checked.role
+
     async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT u.id, u.username, u.email, u.password_hash, r.name as role "
-            "FROM `user` u LEFT JOIN `role` r ON r.id = u.role_id "
-            "WHERE u.username = %s",
-            (username,)
-        )
-        user = await db.fetchone()
+        await db.execute("SELECT email FROM `user` WHERE id = %s", (user_id,))
+        row = await db.fetchone()
 
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    # Verify password
-    if not bcrypt.checkpw(password.encode(), user['password_hash'].encode()):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    # Create session
-    user_id = user['id']
-    role = user['role'] or ''
-    if user_id == 1:  # Если пользователь с ID 1, то он админ
-        role = "admin"
+    user = {'id': user_id, 'username': checked.username,
+            'email': (row or {}).get('email') or ''}
 
     request.session["user_id"] = user_id
     request.session["username"] = user['username']
