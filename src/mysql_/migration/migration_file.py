@@ -28,6 +28,7 @@ import time
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+from sql_.sql_split import sql_split_statements
 
 # Где лежат файлы. Общая папка миграций: в ветке подзадачи она своя, и новый файл
 # лежит там же, где все остальные, — при слиянии он просто встаёт в общий ряд.
@@ -96,7 +97,7 @@ async def migration_file_list(repo_dir: str, database: str = '',
     items = []
     for name in names:
         sql = _read(os.path.join(directory, name))
-        statements = migration_file_split(sql)
+        statements = sql_split_statements(sql)
         items.append({
             'name': name,
             # Сам текст — страница раскрывает файл прямо в списке: имя и число
@@ -152,7 +153,7 @@ async def migration_file_apply(repo_dir: str, name: str, dry: bool = False,
         return _result(MIGRATION_FILE_STATUS_ERROR, error='Файл не найден')
 
     sql = _read(path)
-    statements = migration_file_split(sql)
+    statements = sql_split_statements(sql)
     if not statements:
         return _result(MIGRATION_FILE_STATUS_ERROR, error='В файле нет ни одной команды')
 
@@ -188,62 +189,6 @@ async def migration_file_database() -> str:
         row = await db.fetchone()
 
     return str((row or {}).get('name') or '')
-
-
-def migration_file_split(sql: str) -> list[str]:
-    """
-    Файл на отдельные команды: по точке с запятой вне строк и комментариев.
-
-    Свой разбор, а не `split(';')`: точка с запятой живёт внутри значений (в
-    промптах workflow их десятки) и внутри комментариев с шапкой файла. Наивное
-    деление рвало бы команду посередине.
-    """
-    statements, buf = [], []
-    quote = None
-    i = 0
-    while i < len(sql):
-        char = sql[i]
-
-        if quote:
-            buf.append(char)
-            # Экранированный символ внутри строки берём парой: одиночный `\'`
-            # иначе закрыл бы строку и увёл разбор в мусор.
-            if char == '\\' and i + 1 < len(sql):
-                buf.append(sql[i + 1])
-                i += 2
-                continue
-            if char == quote:
-                quote = None
-            i += 1
-            continue
-
-        if char in ("'", '"', '`'):
-            quote = char
-            buf.append(char)
-            i += 1
-            continue
-
-        # Комментарии до конца строки: `--` и `#`. Внутри них точка с запятой не
-        # разделитель, а текст шапки.
-        if sql.startswith('--', i) or char == '#':
-            end = sql.find('\n', i)
-            i = len(sql) if end < 0 else end
-            continue
-
-        if char == ';':
-            statements.append(''.join(buf).strip())
-            buf = []
-            i += 1
-            continue
-
-        buf.append(char)
-        i += 1
-
-    tail = ''.join(buf).strip()
-    if tail:
-        statements.append(tail)
-
-    return [s for s in statements if s]
 
 
 async def _run(statements: list[str], dry: bool) -> tuple[int, int, str]:

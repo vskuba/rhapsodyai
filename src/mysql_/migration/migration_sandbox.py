@@ -1,4 +1,4 @@
-"""
+r"""
 Песочница: одноразовая копия схемы, где проверяют миграции и новый код.
 
 Зачем. До сих пор всё проверялось на рабочей базе: QA гонял тесты по ней же,
@@ -29,6 +29,7 @@ import time
 
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
+from sql_.sql_split import sql_split_statements
 
 # Как называются песочницы. Общий префикс — чтобы их было видно в списке баз и
 # чтобы уборка могла найти брошенные, не трогая ничего чужого.
@@ -156,13 +157,11 @@ async def _schema_apply(name: str, files: list) -> tuple[int, str]:
     вернув обратно в `finally`. Иначе следующий запрос приложения, взяв это же
     подключение, ушёл бы работать в песочницу.
     """
-    from src.mysql_.migration.migration_file import migration_file_split
-
     async with mysql_get_db_async() as db:
         await db.execute(f'USE `{name}`')
         try:
             for path in files:
-                statements = migration_file_split(_read(path))
+                statements = sql_split_statements(_read(path))
                 for number, statement in enumerate(statements, 1):
                     try:
                         await db.execute(statement)
