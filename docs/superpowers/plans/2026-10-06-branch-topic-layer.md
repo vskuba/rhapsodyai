@@ -469,25 +469,19 @@ Expected: FAIL на первых двух (словаря ещё нет — ве
 from src.ai.ai_workflow_branch import ai_workflow_branch_catalog, ai_workflow_branch_pick, ai_workflow_branch_topics
 ```
 
-- [ ] **Step 4: Написать тест на сквозной проброс и прогнать**
+- [ ] **Step 4: Проверить, что стенд поднимается с новым импортом**
 
-Дописать в `tests/test_workflow_branch_catalog.py`:
+Проверка чтением исходника (`inspect.getsource`) из плана убрана: она сторожит текст, а не поведение. Вместо неё — перезапуск и журнал:
 
-```python
-class TestCatalogInRun:
-    async def test_catalog_lands_in_run_variables(self):
-        """Переменная обязана появиться в scope прогона сама, без объявления
-        в реестре переменных workflow."""
-        from src.ai.framework.agent.ai_framework_manager import AiFrameworkManager
-        assert hasattr(AiFrameworkManager, '_workflow_steps_run')
-
-        import inspect
-        source = inspect.getsource(AiFrameworkManager._workflow_steps_run)
-        assert "setdefault(\n                'topic_catalog'" in source or "'topic_catalog'" in source
+```bash
+docker restart uvicorn
+for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8011/); \
+  [ "$code" != "000" ] && echo "поднялся: $code" && break; sleep 4; done
+docker logs uvicorn --since 120s 2>&1 | grep -iE "traceback|importerror|modulenotfound"
 ```
+Expected: «поднялся: 307», grep пуст.
 
-Run: `pytest tests/test_workflow_branch_catalog.py -v`
-Expected: PASS.
+⚠⚠ Тесты `test_workflow_branch_catalog.py` — **синхронные и со своим циклом событий**: пул соединений лежит в модульной переменной и привязан к циклу, в котором создан, а pytest-asyncio заводит на каждый тест новый. Второй поход в базу иначе встречает пул закрытым («Event loop is closed»), и красным становится не то, что сломалось. Идиома — `asyncio.new_event_loop()` + `mysql_pool_close()` + `loop.close()`, та же, что у чисток в `conftest.py`.
 
 - [ ] **Step 5: Коммит**
 

@@ -17,6 +17,8 @@ from src.ai.ai_workflow_trace import (ai_workflow_trace_run_start, ai_workflow_t
                                       ai_workflow_trace_step, ai_workflow_trace_variables_diff)
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
+from src.ai.ai_workflow_branch import (ai_workflow_branch_catalog, ai_workflow_branch_pick,
+                                       ai_workflow_branch_tags_split, ai_workflow_branch_topics)
 from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.ai.ai_tool import ai_tool_args_prepare
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
@@ -316,6 +318,20 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
         # Снапшот переменных на входе: continue_workflow сохранит изменения относительно него
         variables_run_start = dict(variables) if depth == 0 else {}
+
+        # Словарь меток тем ноды — для шага-развилки, выбирающего метки.
+        #
+        # ⚠ Служебная переменная, по образцу `user_language` и `node_languages`
+        # у workflow_invoke: источник у неё реестр веток, а не родитель, и
+        # объявлять её в каждом workflow не нужно.
+        #
+        # ⚠ Только на верхнем уровне: в sub-workflow она приедет сквозным
+        # scope, второй поход в базу на каждую ветку не нужен.
+        if depth == 0:
+            variables.setdefault(
+                'topic_catalog',
+                await ai_workflow_branch_catalog(model.entity_agent.get('node_id') or 0)
+            )
 
         current_index = start_index
         iteration = 0
