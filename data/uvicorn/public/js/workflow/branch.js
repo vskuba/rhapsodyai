@@ -31,6 +31,48 @@ import {textTranslateGuess} from './text-translate.js';
 
 const PAGE_SIZE = 20;
 
+/**
+ * Дороги веток ноды: `номер ветки → номер подпотока`.
+ *
+ * ⚠⚠ Один источник на троих. У шага `branch` номера подпотока в метаданных
+ * **нет** — там только номер ветки, а дорогу задаёт реестр. Спрашивают это
+ * трое: граф (нарисовать подпоток за шагом), список переменных (показать ли
+ * группу «Branch») и сама вкладка. Вторая копия карты разошлась бы с первой
+ * молча — ровно так, как уже бывало с правилами отбора.
+ */
+const branchRoads = {nodeId: null, byBranch: {}, workflowIds: new Set()};
+
+export async function branchRoadsLoad(nodeId) {
+    branchRoads.nodeId = nodeId || null;
+    branchRoads.byBranch = {};
+    branchRoads.workflowIds = new Set();
+
+    if (!nodeId) return;
+
+    try {
+        const response = await fetch(`/workflow_branch/list?node_id=${nodeId}`);
+        const body = await response.json();
+        (body.result || []).forEach(branch => {
+            if (!branch.workflow_id) return;
+            branchRoads.byBranch[String(branch.id)] = String(branch.workflow_id);
+            branchRoads.workflowIds.add(String(branch.workflow_id));
+        });
+    } catch (e) {
+        // Молча: реестр недоступен — значит ни группы, ни стрелки, а страница
+        // работает дальше
+    }
+}
+
+/** Подпоток ветки по её номеру; `null` — ветка сужает общий ответ. */
+export function branchRoadOf(branchId) {
+    return branchRoads.byBranch[String(branchId)] || null;
+}
+
+/** Этот workflow — дорога какой-нибудь ветки? */
+export function branchRoadIs(workflowId) {
+    return branchRoads.workflowIds.has(String(workflowId));
+}
+
 // Языки перевода меток — те же три и в том же порядке, что у промптов
 // (`text-translate.js`): английский первым, остальные два на обратную дорогу.
 const TAG_LANGS = [
@@ -167,6 +209,7 @@ export async function openWorkflowBranch(node) {
 
     await workflowsLoad();
     await treeLoad();
+    await branchRoadsLoad(branchState.nodeId);
     detailRender();
 }
 

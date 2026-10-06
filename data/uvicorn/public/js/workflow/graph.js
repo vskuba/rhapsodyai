@@ -5,6 +5,7 @@
 const TO_NEXT_STEP = 'to_next_step';
 
 import {state} from './state.js';
+import {branchRoadOf, branchRoadsLoad} from './branch.js';
 import {parseMetadata, graphLabelEscape, activateTab, editorWorkflowId} from './utils.js';
 import {showNotification} from '/static/js/notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
@@ -31,29 +32,11 @@ async function _fetchSubflowSteps(workflowId) {
     }
 }
 
-// Реестр веток: номер ветки → её subflow.
-//
-// ⚠ У шага `branch` номера подпотока в метаданных НЕТ — там только номер ветки,
-// а дорогу ветки задаёт реестр. Без этой карты граф нарисовал бы шаг ветки
-// пустым прямоугольником, хотя за ним стоит целый подпоток.
-let _branchWorkflowById = {};
-
-async function _branchRegistryLoad(nodeId) {
-    if (!nodeId) return;
-    try {
-        const response = await fetch(`/workflow_branch/list?node_id=${nodeId}`);
-        const body = await response.json();
-        _branchWorkflowById = {};
-        (body.result || []).forEach(branch => {
-            if (branch.workflow_id) _branchWorkflowById[String(branch.id)] = String(branch.workflow_id);
-        });
-    } catch (e) {
-        _branchWorkflowById = {};
-    }
-}
-
 // Подпоток, который стоит за шагом: у `workflow_invoke` он в метаданных, у
 // `branch` — в реестре веток по номеру ветки.
+//
+// ⚠ Реестр спрашивается общей `branchRoadOf` (`branch.js`): своей копии карты
+// здесь быть не должно, её читают трое.
 function _stepSubflowId(step) {
     const type = state.allWorkflowStepsType[step.type_id] || {};
     const meta = parseMetadata(step.metadata);
@@ -64,7 +47,7 @@ function _stepSubflowId(step) {
     }
     if (type.name === 'branch') {
         const branchId = meta?.branch?.branch_id;
-        return branchId ? (_branchWorkflowById[String(branchId)] || null) : null;
+        return branchId ? branchRoadOf(branchId) : null;
     }
     return null;
 }
@@ -326,7 +309,7 @@ export async function openWorkflowGraph() {
     // знает, какой подпоток за ним стоит, и граф нарисовал бы его пустым.
     const graphWorkflow = (state.allWorkflows || [])
         .find(w => String(w.id) === String(workflowId));
-    await _branchRegistryLoad(graphWorkflow && graphWorkflow.node_id);
+    await branchRoadsLoad(graphWorkflow && graphWorkflow.node_id);
 
     // Fetch all sub-workflow steps recursively
     const subflowStepsMap = await _fetchAllSubflowSteps(state.allCurrentStepsData);

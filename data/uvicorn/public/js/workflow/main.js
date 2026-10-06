@@ -7,7 +7,7 @@ import {state} from './state.js';
 import {parseMetadata, activateTab, savedTab, editorWorkflowId} from './utils.js';
 import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {openWorkflowHistory} from './history.js';
-import {openWorkflowBranch} from './branch.js';
+import {openWorkflowBranch, branchRoadsLoad} from './branch.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 import {buildGroupTree, renderGroupTree} from '../agent_group_tree.js';
@@ -418,6 +418,11 @@ async function fillWorkflowForm(workflow) {
     document.getElementById('group_name').value = workflow.group_name || '';
     document.getElementById('description').value = workflow.description || '';
     document.getElementById('subflow').checked = !!workflow.subflow;
+
+    // ⚠⚠ Реестр веток — ДО переменных: по нему решается, показывать ли группу
+    // «Branch переменные». Спроси мы его после, список успел бы отрисоваться
+    // без неё, и человек увидел бы семь `topic_*` красными в «Undefined».
+    await branchRoadsLoad(workflow.node_id);
 
     if (workflow.id) {
         await loadWorkflowVariables(workflow.id);

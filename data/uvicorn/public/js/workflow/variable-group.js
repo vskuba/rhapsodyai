@@ -47,6 +47,28 @@ export const VAR_GROUP_UNKNOWN = {key: 'unknown', icon: '∅', label: 'не об
 export const VAR_ID_TOOL = -2;
 export const VAR_ID_DYNAMIC = -3;
 export const VAR_ID_UNDEFINED = -4;
+export const VAR_ID_BRANCH = -5;
+
+/**
+ * Семь значений, которые шаг `branch` кладёт подпотоку сам.
+ *
+ * ⚠⚠ Записи в `agent_workflow_variable` у них нет и не будет: шаг протаскивает
+ * их сквозь, как движок протаскивает `user_language`. Карты для них тоже нет —
+ * с ней один забытый маппинг выключал бы тему молча. Но **увидеть** их в
+ * подпотоке надо: без списка человек пишет `%topic_accept%` вслепую и не знает,
+ * ни что ещё приедет, ни как оно пишется.
+ *
+ * Устройство слоя — `.claude/docs/workflow_branch.md`.
+ */
+export const VAR_BRANCH_TOPIC = [
+    ['topic_name', 'код темы — он же виден в журнале прогона'],
+    ['topic_title', 'название темы'],
+    ['topic_tags', 'все метки темы через запятую'],
+    ['topic_accept', 'разрешено: что можно и как отвечать'],
+    ['topic_direction', 'желательно: куда вести разговор'],
+    ['topic_restrict', 'запрещено: о чём нельзя'],
+    ['topic_score', 'сколько меток совпало'],
+];
 
 // Приставка литерала в `inputs_map`: значение за ней — текст, а не имя переменной.
 // ⚠ Метки внутри него всё равно читаются: движок подставляет их до вызова
@@ -547,8 +569,19 @@ export function undefinedVariables(variables, stepsData, workflows, tools, hidde
  *     шаги нужны подписи «читают N шагов» и подсказке, своего места в строке
  *     им не отдавать.
  */
-export function groupWorkflowVariables(variables, stepsData, workflows, tools, hiddenNames) {
+export function groupWorkflowVariables(variables, stepsData, workflows, tools, hiddenNames,
+                                       isBranchRoad = false) {
     const variablesArray = Array.isArray(variables) ? variables : [];
+
+    // ⚠ Группа только у подпотока, который **и есть дорога ветки**. У прочих
+    // (`girl_fact_invent`, `companion_fact_extract`) этих значений не бывает, и
+    // список из семи никому не нужных имён сбивал бы с толку.
+    const branchGroup = isBranchRoad
+        ? VAR_BRANCH_TOPIC.map(([name, description]) => ({
+            id: VAR_ID_BRANCH, name, default: null, description,
+        }))
+        : [];
+    const branchNames = new Set(branchGroup.map(item => item.name));
     const commonGroup = [];
     const nodeGroup = [];
     const workflowGroup = [];
@@ -622,6 +655,13 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools, h
     if (Array.isArray(stepsData)) {
         undefinedVariables(variablesArray, stepsData, workflows, tools, hiddenNames)
             .forEach((readers, name) => {
+                // ⚠⚠ `topic_*` в дороге ветки — не «неопределённая»: записи в
+                // реестре у неё нет по устройству, а значение приедет. Без этого
+                // отсева `%topic_accept%` в промпте горел бы красным «нигде не
+                // заведена», и человек заводил бы её руками — а заведённая пустой
+                // она **перекрыла** бы приехавшую.
+                if (branchNames.has(name)) return;
+
                 undefinedGroup.push({
                     // ⚠ Свой номер: в реестре такой переменной нет — кнопки
                     // удаления и формы правки у её строки быть не должно.
@@ -633,7 +673,8 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools, h
             });
     }
 
-    return {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup, dynamicGroup, undefinedGroup};
+    return {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup, dynamicGroup,
+            undefinedGroup, branchGroup};
 }
 
 /**
@@ -698,6 +739,10 @@ export function workflowVariableSections(groups) {
         {key: 'node', icon: '🇳', label: 'Node переменные', items: groups.nodeGroup},
         {key: 'tool', icon: '⚙️', label: 'Tool переменные', items: groups.toolGroup},
         {key: 'workflow', icon: '🇼', label: 'Workflow переменные', items: groups.workflowGroup},
+        // ⚠ Значок тот же, что у типа шага `branch`: связь «эти значения кладёт
+        // вон тот шаг» должна читаться без объяснений. Пустую секцию списки не
+        // рисуют, поэтому у обычных подпотоков её не видно вовсе.
+        {key: 'branch', icon: '🌿', label: 'Branch переменные', items: groups.branchGroup || []},
         // ⚠ Перед dynamic: «про то, что не заведено нигде» важнее для глаза, чем
         // «про то, что кладёт шаг», а пустую секцию списки не рисуют вовсе.
         {key: 'undefined', icon: '⚠️', label: 'Undefined переменные', items: groups.undefinedGroup || []},

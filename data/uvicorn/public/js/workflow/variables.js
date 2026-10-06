@@ -9,6 +9,7 @@ import {stepVariables, groupWorkflowVariables, variableGroupIndex,
     workflowVariableSections, VAR_ID_TOOL, VAR_ID_DYNAMIC,
     VAR_ID_UNDEFINED} from './variable-group.js';
 import {hiddenNamesFor, invalidateUndefinedIndex} from './variable-undefined.js';
+import {branchRoadIs} from './branch.js';
 
 /**
  * Разбивка переменных по группам для **открытого в редакторе** workflow.
@@ -22,7 +23,8 @@ import {hiddenNamesFor, invalidateUndefinedIndex} from './variable-undefined.js'
 export function editorVariableGroups(variables) {
     return groupWorkflowVariables(variables, state.allCurrentStepsData,
                                   state.allWorkflows, state.allAvailableTools,
-                                  hiddenNamesFor(editorWorkflowId()));
+                                  hiddenNamesFor(editorWorkflowId()),
+                                  branchRoadIs(editorWorkflowId()));
 }
 
 /**
@@ -723,7 +725,7 @@ export function renderWorkflowVariables(variables) {
     // туда, где человек ещё ничего не завёл, и шаг с `%имя%` без хозяина там
     // виден лучше всего.
     const {commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup,
-           dynamicGroup, undefinedGroup} = editorVariableGroups(variablesArray);
+           dynamicGroup, undefinedGroup, branchGroup} = editorVariableGroups(variablesArray);
 
     // 2. Функция создания DOM-элемента отдельной переменной
     function createVariableElement(variable) {
@@ -895,10 +897,15 @@ export function renderWorkflowVariables(variables) {
     // 4. Добавляем секции аккордеона в контейнер
     // ⚠ Секцию `undefined` показываем: в этом списке переменную и надо показать —
     // её некому нести в форму, кроме как предупредить об этом списке.
-    workflowVariableSections({commonGroup, nodeGroup, workflowGroup, toolGroup,
-                              inputGroup, dynamicGroup, undefinedGroup}).forEach(({title, items, key}) => {
-        container.appendChild(createAccordionSection(title, items, key));
-    });
+    workflowVariableSections({commonGroup, nodeGroup, workflowGroup, toolGroup, inputGroup,
+                              dynamicGroup, undefinedGroup, branchGroup})
+        .forEach(({title, items, key}) => {
+            // ⚠ Пустые секции список рисует (их видно числом «(0)»), но группу
+            // ветки — нет: у обычного подпотока она не «пустая», а неприменимая
+            if (key === 'branch' && !items.length) return;
+
+            container.appendChild(createAccordionSection(title, items, key));
+        });
 
     // 5. Помечаем неиспользуемые переменные workflow (если шаги уже загружены)
     markUnusedWorkflowVariables();
