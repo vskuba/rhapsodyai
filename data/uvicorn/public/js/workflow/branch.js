@@ -749,8 +749,9 @@ async function branchSave() {
         });
         await treeLoad();
         detailRender();
+        showNotification(`Ветка «${branch.title}» сохранена`, 'success');
     } catch (e) {
-        alert(e.message);
+        showNotification(e.message, 'error');
     }
 }
 
@@ -758,10 +759,16 @@ async function branchDelete() {
     const branch = branchCurrent();
     // ⚠ Удаление необратимо и уносит темы каскадом — спрашиваем всегда
     if (!confirm(`Удалить ветку «${branch.title}» вместе с её темами?`)) return;
-    await branchApi(`/workflow_branch/${branch.id}`, {method: 'DELETE'});
-    branchState.picked = {kind: null, id: null};
-    await treeLoad();
-    detailRender();
+
+    try {
+        await branchApi(`/workflow_branch/${branch.id}`, {method: 'DELETE'});
+        branchState.picked = {kind: null, id: null};
+        await treeLoad();
+        detailRender();
+        showNotification(`Ветка «${branch.title}» удалена`, 'success');
+    } catch (e) {
+        showNotification(e.message, 'error');
+    }
 }
 
 async function branchSubflowCreate() {
@@ -770,11 +777,13 @@ async function branchSubflowCreate() {
         const created = await branchApi(`/workflow_branch/${branch.id}/subflow`, {method: 'POST'});
         await workflowsLoad();
         await treeLoad();
+        await branchRoadsLoad(branchState.nodeId);
         detailRender();
-        alert(`Subflow заведён (id ${created.result.workflow_id}). `
-              + `Его шаги правятся на вкладке «Шаги».`);
+        showNotification(
+            `Subflow заведён (id ${created.result.workflow_id}) — его шаги правятся на «Шагах»`,
+            'success');
     } catch (e) {
-        alert(e.message);
+        showNotification(e.message, 'error');
     }
 }
 
@@ -802,34 +811,47 @@ function topicBody() {
 
 async function topicSave(topicId) {
     const headers = {'Content-Type': 'application/json'};
-    const body = JSON.stringify(topicBody());
+    const payload = topicBody();
+    const body = JSON.stringify(payload);
+    const title = payload.title || payload.name || 'тема';
     const branch = branchCurrent();
     try {
         if (topicId) {
             await branchApi(`/workflow_branch/topic/${topicId}`, {method: 'PUT', headers, body});
             await treeLoad();
+            detailRender();
+            showNotification(`Тема «${title}» сохранена`, 'success');
         } else {
             const created = await branchApi(`/workflow_branch/${branch.id}/topic`,
                                             {method: 'POST', headers, body});
             await treeLoad();
             branchState.picked = {kind: 'topic', id: created.result.id};
             treeRender();
+            detailRender();
+            showNotification(`Тема «${title}» заведена`, 'success');
         }
-        detailRender();
     } catch (e) {
-        alert(e.message);
+        showNotification(e.message, 'error');
     }
 }
 
 async function topicDelete(topicId) {
-    if (!confirm('Удалить тему?')) return;
+    const topic = topicCurrent();
+    const title = (topic && topic.title) || 'тема';
+    if (!confirm(`Удалить тему «${title}»?`)) return;
+
     const branch = branchCurrent();
-    await branchApi(`/workflow_branch/topic/${topicId}`, {method: 'DELETE'});
-    // После удаления темы показываем её ветку: пустая правая колонка выглядела
-    // бы так, будто выбор сбросился сам
-    branchState.picked = branch ? {kind: 'branch', id: branch.id} : {kind: null, id: null};
-    await treeLoad();
-    detailRender();
+    try {
+        await branchApi(`/workflow_branch/topic/${topicId}`, {method: 'DELETE'});
+        // После удаления темы показываем её ветку: пустая правая колонка
+        // выглядела бы так, будто выбор сбросился сам
+        branchState.picked = branch ? {kind: 'branch', id: branch.id} : {kind: null, id: null};
+        await treeLoad();
+        detailRender();
+        showNotification(`Тема «${title}» удалена`, 'success');
+    } catch (e) {
+        showNotification(e.message, 'error');
+    }
 }
 
 async function branchNew() {
@@ -846,7 +868,8 @@ async function branchNew() {
         });
         await treeLoad();
         pick('branch', created.result.id);
+        showNotification(`Ветка «${created.result.title}» заведена`, 'success');
     } catch (e) {
-        alert(e.message);
+        showNotification(e.message, 'error');
     }
 }
