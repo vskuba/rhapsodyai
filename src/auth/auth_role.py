@@ -16,6 +16,7 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.AGENT_VIEW,
     AuthPermission.WORKFLOW_VIEW,
     AuthPermission.WORKFLOW_VARIABLE_VIEW,
+    AuthPermission.WORKFLOW_BRANCH_VIEW,
     AuthPermission.WORKFLOW_TRACE_VIEW,
     # Журнал ошибок читают все, кто видит трассы: страницы соседние, под одной
     # вкладкой меню, и «одна открылась, вторая отвечает 403» читается как
