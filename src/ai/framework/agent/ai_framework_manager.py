@@ -525,15 +525,21 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
         # Словарь меток тем ноды — для шага-развилки, выбирающего метки.
         #
-        # ⚠ Служебная переменная, по образцу `user_language` и `node_languages`
-        # у workflow_invoke: источник у неё реестр веток, а не родитель, и
-        # объявлять её в каждом workflow не нужно.
+        # ⚠ Служебная переменная, по образцу `user_language` и `node_languages`:
+        # источник у неё реестр веток, а не родитель, и объявлять её в каждом
+        # workflow не нужно. Запись `type = 'global'` в реестре у неё всё же
+        # есть — иначе её не видно в списках переменных редактора, и человек
+        # пишет метку вслепую (так же объявлены `user_language`, `session_uuid`).
+        #
+        # ⚠ Имя с приставкой `branch_`: в списке переменных рядом с `topic_*`
+        # шага ветки «topic_catalog» читался бы как восьмая переменная темы, а он
+        # про весь реестр ноды и живёт раньше любой ветки.
         #
         # ⚠ Только на верхнем уровне: в sub-workflow она приедет сквозным
         # scope, второй поход в базу на каждую ветку не нужен.
         if depth == 0:
             variables.setdefault(
-                'topic_catalog',
+                'branch_topic_catalog',
                 await ai_workflow_branch_catalog(model.entity_agent.get('node_id') or 0)
             )
 
