@@ -730,8 +730,17 @@
     }
     .branch-card { max-width: 820px; }
 
-    .branch-form-row { display: flex; gap: 12px; }
+    .branch-form-row { display: flex; gap: 12px; align-items: flex-start; }
     .branch-form-row > .branch-field { flex: 1; }
+
+    /* Галочка стоит в одной строке с полями, по линии их рамок: у соседей сверху
+       подпись, и без отступа она уехала бы к верхнему краю строки */
+    .branch-field-check { flex: 0 0 auto; margin-top: 23px; }
+    .branch-check {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 13px; color: #333; cursor: pointer; white-space: nowrap;
+    }
+    .branch-check input { margin: 0; cursor: pointer; }
     .branch-field { margin-bottom: 12px; }
     .branch-field label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; }
 
@@ -778,6 +787,31 @@
     }
 
     .tag-counter { color: #8a8a8a; font-weight: 400; }
+
+    /* ── Три критерия темы вкладками ──────────────────────────────────────── */
+    .crit-tabs {
+        display: flex; gap: 0; margin: 16px 0 0;
+        border-bottom: 1px solid #e3e3e3;
+    }
+
+    .crit-tab {
+        position: relative;
+        padding: 7px 14px; border: none; background: none; cursor: pointer;
+        font-size: 13px; color: #6b7a8c; border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+    }
+    .crit-tab:hover { color: #2f6fb0; }
+    .crit-tab.is-on { color: #1f3a57; font-weight: 600; border-bottom-color: #2f6fb0; }
+
+    /* ⚠ Точка говорит, что текст на вкладке есть: спрятанное содержимое иначе
+       не видно вовсе, и пустой критерий не отличить от заполненного. */
+    .crit-tab.is-filled::after {
+        content: ''; position: absolute; top: 6px; right: 5px;
+        width: 5px; height: 5px; border-radius: 50%; background: #3fa45b;
+    }
+
+    .crit-pane { padding-top: 10px; }
+    textarea.crit-area { min-height: 150px; }
 
     /* ⚠ Цвет текста задаётся явно: в общем `common.css` у `button` стоит
        `color: white`, и кнопка на белом фоне выходит пустой коробкой — текст

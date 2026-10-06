@@ -316,11 +316,12 @@ function branchCardRender(detail) {
         <div class="branch-form-row">
           <div class="branch-field"><label>Название</label>
             <input class="branch-control" id="b_title" value="${esc(branch.title)}"></div>
-          <div class="branch-field"><label>Включена</label>
-            <select class="branch-control" id="b_is_enabled">
-              <option value="1" ${branch.is_enabled ? 'selected' : ''}>да</option>
-              <option value="0" ${branch.is_enabled ? '' : 'selected'}>нет</option>
-            </select></div>
+          <div class="branch-field branch-field-check">
+            <label class="branch-check">
+              <input type="checkbox" id="b_is_enabled" ${branch.is_enabled ? 'checked' : ''}>
+              Включена
+            </label>
+          </div>
         </div>
         <div class="branch-field" style="max-width:50%">
           <label>Минимум совпавших меток</label>
@@ -374,6 +375,12 @@ function topicCardRender(detail) {
             <input class="branch-control" id="t_name" value="${esc(topic.name)}">
             <div class="branch-hint">Под ним тема видна в журнале прогона
                  и приезжает агенту переменной <code>%topic_name%</code>.</div></div>
+          <div class="branch-field branch-field-check">
+            <label class="branch-check">
+              <input type="checkbox" id="t_is_enabled" ${topic.is_enabled ? 'checked' : ''}>
+              Включена
+            </label>
+          </div>
         </div>
         <div class="branch-field">
           <label>Метки <span class="tag-counter" id="t_tags_count"></span></label>
@@ -383,26 +390,28 @@ function topicCardRender(detail) {
           <div class="branch-hint">Каждая из двух слов и больше: «обмен письмами»,
                «пришли письмо». Односложные не различают близкие темы.</div>
         </div>
-        <div class="branch-field">
-          <label>Разрешено — что можно и как отвечать</label>
-          <textarea class="branch-control" id="t_acceptance">${esc(topic.acceptance)}</textarea>
+        <div class="crit-tabs">
+          <button type="button" class="crit-tab is-on" data-crit="acceptance">Разрешено</button>
+          <button type="button" class="crit-tab" data-crit="direction">Желательно</button>
+          <button type="button" class="crit-tab" data-crit="restriction">Запрещено</button>
         </div>
-        <div class="branch-field">
-          <label>Желательно — куда вести разговор</label>
-          <textarea class="branch-control" id="t_direction">${esc(topic.direction)}</textarea>
+        <div class="crit-pane" data-pane="acceptance">
+          <textarea class="branch-control crit-area" id="t_acceptance"
+                    placeholder="Что в этой теме можно и как отвечать"
+                    >${esc(topic.acceptance)}</textarea>
+          <div class="branch-hint">Реакция: что делать, когда тема поднята.</div>
+        </div>
+        <div class="crit-pane" data-pane="direction" style="display:none">
+          <textarea class="branch-control crit-area" id="t_direction"
+                    placeholder="Куда вести разговор"
+                    >${esc(topic.direction)}</textarea>
           <div class="branch-hint">То, ради чего слой и заведён: не реакция, а направление.</div>
         </div>
-        <div class="branch-field">
-          <label>Запрещено — о чём нельзя</label>
-          <textarea class="branch-control" id="t_restriction">${esc(topic.restriction)}</textarea>
+        <div class="crit-pane" data-pane="restriction" style="display:none">
+          <textarea class="branch-control crit-area" id="t_restriction"
+                    placeholder="О чём нельзя и куда не двигаться"
+                    >${esc(topic.restriction)}</textarea>
           <div class="branch-hint">Уезжает и в генерацию ответа, и к судье.</div>
-        </div>
-        <div class="branch-field">
-          <label>Включена</label>
-          <select class="branch-control" id="t_is_enabled">
-            <option value="1" ${topic.is_enabled ? 'selected' : ''}>да</option>
-            <option value="0" ${topic.is_enabled ? '' : 'selected'}>нет</option>
-          </select>
         </div>
         <div class="branch-actions">
           <button type="button" class="btn-branch btn-branch-primary" id="t_save">Сохранить тему</button>
@@ -411,10 +420,47 @@ function topicCardRender(detail) {
       </div>`;
 
     tagsEditorInit(tagList(topic.tags));
+    critTabsInit();
 
     document.getElementById('t_save').onclick = () => topicSave(isNew ? null : topic.id);
     const removeButton = document.getElementById('t_delete');
     if (removeButton) removeButton.onclick = () => topicDelete(topic.id);
+}
+
+// ── Три критерия вкладками ──────────────────────────────────────────────────
+//
+// ⚠⚠ Все три поля живут в DOM всегда, скрыта лишь неактивная вкладка. Рисуй мы
+// только открытую — переключение теряло бы несохранённые правки соседних, и
+// пропажа была бы молчаливой: человек напечатал запрет, глянул разрешение,
+// нажал «Сохранить» — и запрета нет.
+//
+// ⚠ Точка на вкладке говорит, что текст там есть: спрятанное содержимое иначе
+// не видно вовсе, и пустой критерий не отличить от заполненного.
+
+function critTabsInit() {
+    const tabs = Array.from(document.querySelectorAll('.crit-tab'));
+    if (!tabs.length) return;
+
+    const markFilled = () => tabs.forEach(tab => {
+        const area = document.getElementById(`t_${tab.dataset.crit}`);
+        tab.classList.toggle('is-filled', Boolean(area && area.value.trim()));
+    });
+
+    tabs.forEach(tab => {
+        tab.onclick = () => {
+            tabs.forEach(other => other.classList.toggle('is-on', other === tab));
+            document.querySelectorAll('.crit-pane').forEach(pane => {
+                pane.style.display = pane.dataset.pane === tab.dataset.crit ? 'block' : 'none';
+            });
+            const area = document.getElementById(`t_${tab.dataset.crit}`);
+            if (area) area.focus();
+        };
+
+        const area = document.getElementById(`t_${tab.dataset.crit}`);
+        if (area) area.oninput = markFilled;
+    });
+
+    markFilled();
 }
 
 // ── Редактор меток: чипсы вместо строки через запятую ───────────────────────
@@ -533,7 +579,7 @@ async function branchSave() {
             body: JSON.stringify({
                 title: document.getElementById('b_title').value.trim(),
                 match_min: Number(document.getElementById('b_match_min').value) || 1,
-                is_enabled: Number(document.getElementById('b_is_enabled').value),
+                is_enabled: document.getElementById('b_is_enabled').checked ? 1 : 0,
                 workflow_id: document.getElementById('b_workflow_id').value || null,
             }),
         });
@@ -586,7 +632,7 @@ function topicBody() {
         acceptance: document.getElementById('t_acceptance').value,
         direction: document.getElementById('t_direction').value,
         restriction: document.getElementById('t_restriction').value,
-        is_enabled: Number(document.getElementById('t_is_enabled').value),
+        is_enabled: document.getElementById('t_is_enabled').checked ? 1 : 0,
     };
 }
 
