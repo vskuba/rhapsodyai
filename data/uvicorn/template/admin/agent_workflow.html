@@ -657,8 +657,10 @@
 
     .branch-list { flex: 1; overflow-y: auto; max-height: 520px; }
 
+    .tree-branch { border-bottom: 1px solid #ececec; }
+
     .branch-row {
-        padding: 10px 12px; border-bottom: 1px solid #ececec; cursor: pointer;
+        padding: 10px 12px; cursor: pointer;
         display: flex; align-items: center; gap: 8px;
     }
     .branch-row:hover { background: #f0f4f8; }
@@ -668,6 +670,48 @@
     .branch-row-title { font-weight: 600; font-size: 13px; }
     .branch-row-name { color: #8a8a8a; font-size: 11px; font-family: monospace; }
     .branch-row-count { color: #666; font-size: 11px; white-space: nowrap; }
+
+    /* ── Темы дочерними узлами: локти рисуются границами ──────────────────── */
+    /* ⚠ Границами, а не символами `├─`: псевдографики в шрифте headless Chrome
+       может не быть, и на кадре выходят пустые квадраты — так уже случилось со
+       стрелками `‹ ›` у пагинации. Границы рисуются всегда. */
+    .tree-child {
+        position: relative;
+        padding: 7px 12px 7px 34px;
+        cursor: pointer;
+        display: flex; align-items: center; gap: 8px;
+        font-size: 12px;
+    }
+    .tree-child:hover { background: #f0f4f8; }
+    .tree-child.is-active { background: #e6f0fb; }
+
+    /* Локоть: вертикаль сверху до середины строки плюс горизонталь вправо */
+    .tree-child::before {
+        content: ''; position: absolute;
+        left: 18px; top: 0; height: 50%; width: 9px;
+        border-left: 1px solid #c8d3e0;
+        border-bottom: 1px solid #c8d3e0;
+    }
+    /* Продолжение ствола вниз — у всех, кроме последнего узла ветки */
+    .tree-child:not(.is-last)::after {
+        content: ''; position: absolute;
+        left: 18px; top: 50%; bottom: 0;
+        border-left: 1px solid #c8d3e0;
+    }
+
+    .tree-child-main { flex: 1; min-width: 0; }
+    .tree-child-title { font-weight: 500; font-size: 12px; }
+
+    .tree-add { color: #2f6fb0; }
+    .tree-add:hover { background: #eef4fb; }
+    .tree-add-text { font-size: 12px; font-weight: 500; }
+
+    .branch-card-head {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+        color: #8a8a8a; margin-bottom: 14px;
+    }
+    .branch-crumb { color: #b8651b; font-weight: 600; }
+    .branch-crumb::after { content: ' › '; color: #c0c0c0; font-weight: 400; }
 
     .branch-dot {
         width: 8px; height: 8px; border-radius: 50%;
@@ -697,27 +741,9 @@
     }
     textarea.branch-control { min-height: 70px; resize: vertical; font-family: inherit; }
 
-    .branch-section {
-        margin: 22px 0 10px; font-size: 14px; font-weight: 600;
-        border-bottom: 1px solid #e3e3e3; padding-bottom: 6px;
-    }
-
-    .topic-row {
-        border: 1px solid #e3e3e3; border-radius: 6px;
-        padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
-    }
-    .topic-row:hover { background: #f7f9fb; }
-    .topic-row.is-active { border-color: #7aa7d9; background: #f2f7fd; }
-    .topic-row-head { display: flex; align-items: center; gap: 8px; }
-    .topic-row-title { font-weight: 600; font-size: 13px; flex: 1; }
-    .topic-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
-    .topic-tag {
-        background: #eef2f6; border-radius: 10px; padding: 1px 8px;
-        font-size: 11px; color: #456;
-    }
-    /* ⚠ Число меток видно в строке намеренно: тема с двадцатью метками набирает
-       совпадений чаще темы с тремя просто потому, что меток больше. Перекос
-       должен быть виден глазами. */
+    /* ⚠ Число меток видно в строке дерева намеренно: тема с двадцатью метками
+       набирает совпадений чаще темы с тремя просто потому, что меток больше.
+       Перекос должен быть виден глазами. */
     .topic-count { color: #8a8a8a; font-size: 11px; white-space: nowrap; }
 
     /* ⚠ Цвет текста задаётся явно: в общем `common.css` у `button` стоит
