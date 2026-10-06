@@ -140,6 +140,14 @@ async def dashboard_agent_workflow_page(request: Request, user: AuthSession = De
     )
 
 
+@router.get("/admin/workflow_branch", response_class=HTMLResponse)
+async def dashboard_workflow_branch_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/workflow_branch.html"
+    )
+
+
 @router.get("/admin/workflow_trace", response_class=HTMLResponse)
 async def dashboard_workflow_trace_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(
