@@ -26,6 +26,7 @@
 
 import {postData} from '../api.js';
 import {showNotification} from '/static/js/notification.js';
+import {textModalIcon} from './text-modal.js';
 import {textTranslateGuess} from './text-translate.js';
 
 const PAGE_SIZE = 20;
@@ -409,6 +410,8 @@ function topicCardRender(detail) {
           <button type="button" class="crit-tab is-on" data-crit="acceptance">Разрешено</button>
           <button type="button" class="crit-tab" data-crit="direction">Желательно</button>
           <button type="button" class="crit-tab" data-crit="restriction">Запрещено</button>
+          <span class="crit-grow"></span>
+          <span class="crit-big" id="t_crit_big"></span>
         </div>
         <div class="crit-pane" data-pane="acceptance">
           <textarea class="branch-control crit-area" id="t_acceptance"
@@ -452,6 +455,12 @@ function topicCardRender(detail) {
 // ⚠ Точка на вкладке говорит, что текст там есть: спрятанное содержимое иначе
 // не видно вовсе, и пустой критерий не отличить от заполненного.
 
+const CRIT_TITLES = {
+    acceptance: 'Разрешено — что можно и как отвечать',
+    direction: 'Желательно — куда вести разговор',
+    restriction: 'Запрещено — о чём нельзя',
+};
+
 function critTabsInit() {
     const tabs = Array.from(document.querySelectorAll('.crit-tab'));
     if (!tabs.length) return;
@@ -461,12 +470,25 @@ function critTabsInit() {
         tab.classList.toggle('is-filled', Boolean(area && area.value.trim()));
     });
 
+    // Иконка большого окна — общая `textModalIcon`, та же, что у промптов шага.
+    //
+    // ⚠ Она **перевешивается** на открытую вкладку: критериев три, а видно один,
+    // и иконка на всю карточку открывала бы не то, на что смотрит человек.
+    const bigHost = document.getElementById('t_crit_big');
+    const bigShow = (crit) => {
+        if (!bigHost) return;
+        bigHost.innerHTML = '';
+        const area = document.getElementById(`t_${crit}`);
+        if (area) bigHost.appendChild(textModalIcon(area, CRIT_TITLES[crit] || ''));
+    };
+
     tabs.forEach(tab => {
         tab.onclick = () => {
             tabs.forEach(other => other.classList.toggle('is-on', other === tab));
             document.querySelectorAll('.crit-pane').forEach(pane => {
                 pane.style.display = pane.dataset.pane === tab.dataset.crit ? 'block' : 'none';
             });
+            bigShow(tab.dataset.crit);
             const area = document.getElementById(`t_${tab.dataset.crit}`);
             if (area) area.focus();
         };
@@ -476,6 +498,7 @@ function critTabsInit() {
     });
 
     markFilled();
+    bigShow('acceptance');
 }
 
 // ── Редактор меток: чипсы вместо строки через запятую ───────────────────────
