@@ -7,6 +7,7 @@ import {state} from './state.js';
 import {parseMetadata, activateTab, savedTab, editorWorkflowId} from './utils.js';
 import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {openWorkflowHistory} from './history.js';
+import {openWorkflowBranch} from './branch.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 import {buildGroupTree, renderGroupTree} from '../agent_group_tree.js';
@@ -29,6 +30,7 @@ document.getElementById('tabSteps')?.addEventListener('click', async () => {
     document.getElementById('stepsEditorView').style.display = 'flex';
     document.getElementById('stepsGraph').style.display = 'none';
     document.getElementById('workflowHistory').style.display = 'none';
+    document.getElementById('workflowBranch').style.display = 'none';
     document.getElementById('addStepToWorkflowBtn').style.display = 'block';
     // Если шаги не загружены для этого workflow — загружаем
     if (!state.allCurrentStepsData?.length
@@ -44,11 +46,13 @@ document.getElementById('tabSettings')?.addEventListener('click', () => {
     document.getElementById('stepsEditorView').style.display = 'none';
     document.getElementById('stepsGraph').style.display = 'none';
     document.getElementById('workflowHistory').style.display = 'none';
+    document.getElementById('workflowBranch').style.display = 'none';
 });
 
 document.getElementById('tabGraph')?.addEventListener('click', () => {
     activateTab('tabGraph');
     document.getElementById('workflowHistory').style.display = 'none';
+    document.getElementById('workflowBranch').style.display = 'none';
     openWorkflowGraph();
 });
 
@@ -63,7 +67,23 @@ document.getElementById('tabHistory')?.addEventListener('click', async () => {
     document.getElementById('stepsEditorView').style.display = 'none';
     document.getElementById('stepsGraph').style.display = 'none';
     document.getElementById('addStepToWorkflowBtn').style.display = 'none';
+    document.getElementById('workflowBranch').style.display = 'none';
     await openWorkflowHistory();
+});
+
+// ⚠⚠ Ветки принадлежат НОДЕ, а не открытому workflow: их читает шаг `branch`
+// любого workflow этой ноды. Поэтому вкладка работает и когда workflow не
+// выбран, — нужна только нода из карусели слева.
+document.getElementById('tabBranch')?.addEventListener('click', async () => {
+    activateTab('tabBranch');
+    // ⚠ Прячем все четыре соседние панели, а не только текущую: вкладку
+    // открывают с любой из них, и забытая осталась бы видна под списком.
+    document.getElementById('workflowSettingsView').style.display = 'none';
+    document.getElementById('stepsEditorView').style.display = 'none';
+    document.getElementById('stepsGraph').style.display = 'none';
+    document.getElementById('workflowHistory').style.display = 'none';
+    document.getElementById('addStepToWorkflowBtn').style.display = 'none';
+    await openWorkflowBranch(currentCarouselNode());
 });
 
 const workflowListContainer = document.getElementById('workflowList');

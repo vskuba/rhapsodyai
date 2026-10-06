@@ -638,6 +638,105 @@
         gap: 0;
     }
 
+    /* ── Ветки и темы (вкладка Branch) ────────────────────────────────────── */
+    #workflowBranch { padding: 12px 0; }
+
+    .branch-body { display: flex; gap: 0; min-height: 420px; background: #fff; }
+
+    .branch-sidebar {
+        width: 300px; flex-shrink: 0; display: flex; flex-direction: column;
+        background: #fafafa; border: 1px solid #e3e3e3; border-radius: 6px 0 0 6px;
+    }
+
+    .branch-sidebar-head {
+        padding: 10px 12px; border-bottom: 1px solid #e3e3e3;
+        display: flex; gap: 8px; align-items: center; justify-content: space-between;
+    }
+
+    .branch-node-name { font-weight: 600; font-size: 13px; color: #b8651b; }
+
+    .branch-list { flex: 1; overflow-y: auto; max-height: 520px; }
+
+    .branch-row {
+        padding: 10px 12px; border-bottom: 1px solid #ececec; cursor: pointer;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .branch-row:hover { background: #f0f4f8; }
+    .branch-row.is-active { background: #e6f0fb; }
+
+    .branch-row-main { flex: 1; min-width: 0; }
+    .branch-row-title { font-weight: 600; font-size: 13px; }
+    .branch-row-name { color: #8a8a8a; font-size: 11px; font-family: monospace; }
+    .branch-row-count { color: #666; font-size: 11px; white-space: nowrap; }
+
+    .branch-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: #c7c7c7; flex-shrink: 0;
+    }
+    .branch-dot.is-on { background: #3fa45b; }
+
+    .branch-pager {
+        padding: 8px 12px; border-top: 1px solid #e3e3e3;
+        display: flex; gap: 8px; align-items: center; font-size: 12px;
+    }
+
+    .branch-detail {
+        flex: 1; overflow-y: auto; max-height: 600px; padding: 16px 20px;
+        min-width: 0; border: 1px solid #e3e3e3; border-left: none; border-radius: 0 6px 6px 0;
+    }
+    .branch-card { max-width: 820px; }
+
+    .branch-form-row { display: flex; gap: 12px; }
+    .branch-form-row > .branch-field { flex: 1; }
+    .branch-field { margin-bottom: 12px; }
+    .branch-field label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; }
+
+    .branch-control {
+        width: 100%; padding: 6px 8px; border: 1px solid #ccc;
+        border-radius: 4px; font-size: 13px; box-sizing: border-box;
+    }
+    textarea.branch-control { min-height: 70px; resize: vertical; font-family: inherit; }
+
+    .branch-section {
+        margin: 22px 0 10px; font-size: 14px; font-weight: 600;
+        border-bottom: 1px solid #e3e3e3; padding-bottom: 6px;
+    }
+
+    .topic-row {
+        border: 1px solid #e3e3e3; border-radius: 6px;
+        padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
+    }
+    .topic-row:hover { background: #f7f9fb; }
+    .topic-row.is-active { border-color: #7aa7d9; background: #f2f7fd; }
+    .topic-row-head { display: flex; align-items: center; gap: 8px; }
+    .topic-row-title { font-weight: 600; font-size: 13px; flex: 1; }
+    .topic-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .topic-tag {
+        background: #eef2f6; border-radius: 10px; padding: 1px 8px;
+        font-size: 11px; color: #456;
+    }
+    /* ⚠ Число меток видно в строке намеренно: тема с двадцатью метками набирает
+       совпадений чаще темы с тремя просто потому, что меток больше. Перекос
+       должен быть виден глазами. */
+    .topic-count { color: #8a8a8a; font-size: 11px; white-space: nowrap; }
+
+    /* ⚠ Цвет текста задаётся явно: в общем `common.css` у `button` стоит
+       `color: white`, и кнопка на белом фоне выходит пустой коробкой — текст
+       есть, но не виден. Поймано кадром, в коде не видно вовсе. */
+    .btn-branch {
+        padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px;
+        background: #fff; color: #333; cursor: pointer; font-size: 13px;
+    }
+    .btn-branch:hover { background: #f0f0f0; }
+    .btn-branch:disabled { opacity: .5; cursor: default; }
+    .btn-branch-primary { background: #2f6fb0; color: #fff; border-color: #2f6fb0; }
+    .btn-branch-primary:hover { background: #28618f; }
+    .btn-branch-danger { color: #a33; }
+
+    .branch-hint { font-size: 11px; color: #777; margin-top: 4px; }
+    .branch-empty { color: #888; padding: 24px; text-align: center; }
+    .branch-actions { display: flex; gap: 8px; margin-top: 12px; }
+
     /* ── История правок (вкладка History) ─────────────────────────────────── */
     #workflowHistory { padding: 12px 0; }
 
@@ -1820,6 +1919,11 @@
                              сломала инвайты без единой ошибки, и время поломки
                              искали по чужой базе. `.claude/docs/workflow_history.md` -->
                         <button type="button" class="tab-btn" id="tabHistory">History</button>
+                        <!-- ⚠ Пятая вкладка: ветки разговора и темы внутри них.
+                             Ветки принадлежат НОДЕ, а не открытому workflow —
+                             их читает шаг `branch` любого workflow этой ноды.
+                             Устройство — `.claude/docs/workflow_branch.md` -->
+                        <button type="button" class="tab-btn" id="tabBranch">🌿 Branch</button>
                     </div>
                     <button type="submit" class="btn-save">Сохранить workflow</button>
                 </div>
@@ -2081,6 +2185,7 @@
                  не при загрузке страницы — на странице, где историю не смотрят,
                  это лишний запрос на каждое открытие workflow. -->
             <div id="workflowHistory" style="display: none;"></div>
+            <div id="workflowBranch" style="display: none;"></div>
 
             <div class="editor-footer">
                 <button type="button" class="btn-delete" id="deleteBtn" style="display: none;">Удалить</button>
