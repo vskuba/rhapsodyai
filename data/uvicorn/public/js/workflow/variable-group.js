@@ -60,6 +60,10 @@ export const VAR_ID_BRANCH = -5;
  *
  * Устройство слоя — `.claude/docs/workflow_branch.md`.
  */
+export function branchTopicNames() {
+    return new Set(VAR_BRANCH_TOPIC.map(([name]) => name));
+}
+
 export const VAR_BRANCH_TOPIC = [
     ['topic_name', 'код темы — он же виден в журнале прогона'],
     ['topic_title', 'название темы'],
@@ -697,8 +701,10 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools, h
  * разбивка стоит разбора метаданных всех шагов. Перебирать её на каждое имя — та
  * самая работа, которую видно пальцами в фильтре графа.
  */
-export function variableGroupIndex(variables, stepsData, workflows, tools, hiddenNames) {
-    const groups = groupWorkflowVariables(variables, stepsData, workflows, tools, hiddenNames);
+export function variableGroupIndex(variables, stepsData, workflows, tools, hiddenNames,
+                                   isBranchRoad = false) {
+    const groups = groupWorkflowVariables(variables, stepsData, workflows, tools, hiddenNames,
+                                          isBranchRoad);
     const index = new Map();
 
     for (const {items, ...section} of workflowVariableSections(groups)) {

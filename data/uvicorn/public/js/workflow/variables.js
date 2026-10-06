@@ -37,7 +37,8 @@ export function editorVariableGroups(variables) {
 export function editorVariableGroupIndex() {
     return variableGroupIndex(state.allCurrentVariables || [], state.allCurrentStepsData,
                               state.allWorkflows, state.allAvailableTools,
-                              hiddenNamesFor(editorWorkflowId()));
+                              hiddenNamesFor(editorWorkflowId()),
+                              branchRoadIs(editorWorkflowId()));
 }
 
 /**
