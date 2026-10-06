@@ -18,6 +18,8 @@
 - Имена: таблицы `agent_workflow_branch`, `agent_workflow_branch_topic`; роутер `src/uvicorn/routers/workflow/workflow_branch.py`; пути ручек `/workflow_branch/…` (без `/api` — его вешает монтирование); страница `data/uvicorn/template/admin/workflow_branch.html`.
 - Семь переменных темы: `topic_name`, `topic_title`, `topic_tags`, `topic_accept`, `topic_direction`, `topic_restrict`, `topic_score`.
 - Тесты ходят по HTTP на `BASE_URL` (умолчание `http://localhost:8011`), логин — `TEST_AUTH` из `tests/constants.py`, модуль метится `pytestmark = pytest.mark.ai`. Чистые функции проверяются вызовом, без HTTP.
+- ⚠ Прогон — **своим интерпретатором**: `.venv/bin/python -m pytest …`. Голый `python` в этой оболочке подхватывает venv соседнего проекта (DatingAi, 3.14) — тесты при этом зелёные, но проверено не то окружение, в котором работает стенд (3.12).
+- ⚠ Миграции накатывает приложение при старте: применить — `docker restart uvicorn` (проект compose `rhapsodyai`). Проверять применённое по `_yoyo_migration`, а **не** по `mysql_migration_pending`: без `--source` он с базой не сверяется вовсе и печатает всё, что лежит в корне каталога.
 - Коммит после каждой задачи. Сообщение — одной строкой по-русски, как в истории репозитория.
 
 ---
