@@ -31,16 +31,50 @@ async function _fetchSubflowSteps(workflowId) {
     }
 }
 
-// Collect workflow_invoke sub-workflow IDs referenced in steps
+// Реестр веток: номер ветки → её subflow.
+//
+// ⚠ У шага `branch` номера подпотока в метаданных НЕТ — там только номер ветки,
+// а дорогу ветки задаёт реестр. Без этой карты граф нарисовал бы шаг ветки
+// пустым прямоугольником, хотя за ним стоит целый подпоток.
+let _branchWorkflowById = {};
+
+async function _branchRegistryLoad(nodeId) {
+    if (!nodeId) return;
+    try {
+        const response = await fetch(`/workflow_branch/list?node_id=${nodeId}`);
+        const body = await response.json();
+        _branchWorkflowById = {};
+        (body.result || []).forEach(branch => {
+            if (branch.workflow_id) _branchWorkflowById[String(branch.id)] = String(branch.workflow_id);
+        });
+    } catch (e) {
+        _branchWorkflowById = {};
+    }
+}
+
+// Подпоток, который стоит за шагом: у `workflow_invoke` он в метаданных, у
+// `branch` — в реестре веток по номеру ветки.
+function _stepSubflowId(step) {
+    const type = state.allWorkflowStepsType[step.type_id] || {};
+    const meta = parseMetadata(step.metadata);
+
+    if (type.name === 'workflow_invoke') {
+        const wfId = meta?.workflow_invoke?.workflow_id;
+        return wfId ? String(wfId) : null;
+    }
+    if (type.name === 'branch') {
+        const branchId = meta?.branch?.branch_id;
+        return branchId ? (_branchWorkflowById[String(branchId)] || null) : null;
+    }
+    return null;
+}
+
+// Collect workflow_invoke / branch sub-workflow IDs referenced in steps
 function _collectSubflowIds(steps) {
     const ids = new Set();
     steps.forEach(step => {
-        const type = state.allWorkflowStepsType[step.type_id] || {};
-        if (type.name === 'workflow_invoke') {
-            const meta = parseMetadata(step.metadata);
-            const wfId = meta?.workflow_invoke?.workflow_id;
-            if (wfId) ids.add(String(wfId));
-        }
+        const wfId = _stepSubflowId(step);
+        if (wfId) ids.add(wfId);
     });
     return ids;
 }
@@ -78,11 +112,9 @@ function _buildInnerLines(steps, prefix, subflowStepsMap, warnings, includeStart
         const nodeId = `${prefix}S${step.id}`;
         lines.push(`  ${nodeId}${shape}:::type_${typeName}`);
 
-        // Inline subgraph for workflow_invoke with known sub-workflow steps
-        if (typeName === 'workflow_invoke') {
-            const meta = parseMetadata(step.metadata);
-            const invoke = meta?.workflow_invoke || {};
-            const subWfId = invoke.workflow_id ? String(invoke.workflow_id) : null;
+        // Inline subgraph for workflow_invoke / branch with known sub-workflow steps
+        if (typeName === 'workflow_invoke' || typeName === 'branch') {
+            const subWfId = _stepSubflowId(step);
             const subSteps = subWfId ? subflowStepsMap[subWfId] : null;
             if (subSteps && subSteps.length > 0) {
                 const subWf = (state.allWorkflows || []).find(w => String(w.id) === subWfId);
@@ -253,6 +285,7 @@ export function buildWorkflowGraphDefinition(steps, subflowStepsMap = {}) {
     lines.push('classDef type_variable_conversion fill:#e3f0ff,stroke:#2974df,color:#1a4d8f;');
     lines.push('classDef type_workflow_invoke fill:#fff3e0,stroke:#f39c12,color:#9c640c;');
     lines.push('classDef type_llm_to_image fill:#fef9c3,stroke:#d97706,color:#78350f;');
+    lines.push('classDef type_branch fill:#e8f6ec,stroke:#3fa45b,color:#1e6b3a;');
     lines.push('classDef unreachable fill:#fdecea,stroke:#e74c3c,color:#922b21,stroke-width:2px;');
     lines.push('classDef subflow_group fill:#f0f9ff,stroke:#3b82f6,color:#1e40af,stroke-width:2px;');
     return {definition: lines.join('\n'), warnings};
@@ -288,6 +321,12 @@ export async function openWorkflowGraph() {
         container.innerHTML = '<div style="color:#999; text-align:center; padding:40px;">У этого workflow пока нет шагов</div>';
         return;
     }
+
+    // ⚠ Реестр веток читается ДО обхода подпотоков: без него шаг `branch` не
+    // знает, какой подпоток за ним стоит, и граф нарисовал бы его пустым.
+    const graphWorkflow = (state.allWorkflows || [])
+        .find(w => String(w.id) === String(workflowId));
+    await _branchRegistryLoad(graphWorkflow && graphWorkflow.node_id);
 
     // Fetch all sub-workflow steps recursively
     const subflowStepsMap = await _fetchAllSubflowSteps(state.allCurrentStepsData);

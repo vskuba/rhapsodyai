@@ -68,6 +68,12 @@ export const WORKFLOW_STEP_CONFIG = {
             type: 'widget_workflow_invoke',
         }
     ],
+    'branch': [ // Ветка разговора: тема из реестра и её subflow
+        {
+            key: 'branch',
+            type: 'widget_branch',
+        }
+    ],
     'llm_to_image': [ // Генерация изображения через LLM
         {
             key: 'prompt_user',

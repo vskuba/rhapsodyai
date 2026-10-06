@@ -884,6 +884,127 @@ export function renderCustomStepFields(step, metadata) {
             wfContainer.appendChild(repeatContainer);
             fieldWrapper.appendChild(wfContainer);
 
+        } else if (field.type === 'widget_branch') {
+            // --- Виджет ветки разговора ---
+            //
+            // Ветка выбирается статически: только так редактор покажет её
+            // контракт, а граф сумеет нарисовать стрелку к subflow.
+            const branchContainer = document.createElement('div');
+            branchContainer.id = `field_${field.key}`;
+            branchContainer.style = "display: flex; flex-direction: column; gap: 12px; "
+                + "background: #f8fafc; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px;";
+
+            // 1. Селект ветки
+            const branchSelect = document.createElement('select');
+            branchSelect.className = 'form-control branch-select';
+            branchSelect.style = "width: 100%; padding: 6px; font-size: 13px; height: 36px; font-weight: 500;";
+            branchSelect.innerHTML = '<option value="">-- Выберите ветку --</option>';
+
+            // 2. Переменная, в которой лежат метки от шага-развилки
+            const tagsRow = document.createElement('div');
+            tagsRow.style = 'display: flex; flex-direction: column; gap: 4px;';
+            const tagsLabel = document.createElement('div');
+            tagsLabel.style = 'font-size: 12px; color: #475569;';
+            tagsLabel.textContent = 'Переменная с метками (их называет шаг-развилка)';
+            const tagsSelect = document.createElement('select');
+            tagsSelect.className = 'form-control branch-tags-select';
+            tagsSelect.style = "padding: 6px; font-size: 13px; height: 36px;";
+            fillVariablesSelectOptions(tagsSelect, (currentValue && currentValue.tags) || '',
+                                       '-- переменная с метками --');
+            tagsRow.append(tagsLabel, tagsSelect);
+
+            // 3. Семь `topic_*` — показываем, но не даём править
+            //
+            // ⚠⚠ Карты для них нет намеренно: с ней один забытый маппинг
+            // выключал бы тему молча — ветка отработала, промпт собрался,
+            // инструкций в нём нет. Отказ не виден ни в журнале, ни в ответе.
+            const topicNote = document.createElement('div');
+            topicNote.style = "font-size: 12px; color: #64748b; background: #f1f5f9; "
+                + "padding: 8px 10px; border-radius: 4px; line-height: 1.5;";
+            topicNote.innerHTML = 'Из темы приедут сами, настраивать нечего:<br>'
+                + '<code style="color:#475569">topic_name, topic_title, topic_tags, '
+                + 'topic_accept, topic_direction, topic_restrict, topic_score</code>';
+
+            // 4. Карты вызова — те же, что у `workflow_invoke`
+            const branchMaps = document.createElement('div');
+            branchMaps.style = 'display: flex; flex-direction: column; gap: 6px;';
+
+            const branchHint = document.createElement('div');
+            branchHint.style = 'font-size: 12px; color: #64748b;';
+
+            const collectBranchData = () => {
+                const maps = subflowMapsCollect(branchMaps);
+                saveChanges({
+                    branch_id: branchSelect.value ? parseInt(branchSelect.value) : null,
+                    tags: tagsSelect.value,
+                    inputs_map: maps.inputs_map,
+                    outputs_map: maps.outputs_map,
+                });
+            };
+
+            const renderBranchMaps = renderSubflowMaps(branchMaps, step.id, () => {
+                collectBranchData();
+                document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
+            });
+
+            let branchRows = [];
+
+            const branchApply = async (saved) => {
+                const branch = branchRows.find(b => String(b.id) === String(branchSelect.value));
+                branchMaps.style.display = branch && branch.workflow_id ? 'flex' : 'none';
+                if (!branch) {
+                    branchHint.textContent = '';
+                    return;
+                }
+                if (branch.workflow_id) {
+                    branchHint.textContent = `Своя дорога: темы этой ветки отвечают подпотоком `
+                        + `(порог совпадений ${branch.match_min}).`;
+                    await renderBranchMaps(branch.workflow_id, saved);
+                } else {
+                    branchHint.textContent = 'Ветка сужает общий ответ: критерии темы приедут '
+                        + `метками в промпт генерации (порог совпадений ${branch.match_min}).`;
+                }
+            };
+
+            // Ветки берутся у ноды текущего workflow
+            const branchNodeId = (state.allWorkflows || [])
+                .find(w => String(w.id) === String(editorWorkflowId()))?.node_id;
+
+            if (branchNodeId) {
+                fetch(`/workflow_branch/list?node_id=${branchNodeId}`)
+                    .then(response => response.json())
+                    .then(async (body) => {
+                        branchRows = body.result || [];
+                        branchRows.forEach(branch => {
+                            const option = document.createElement('option');
+                            option.value = branch.id;
+                            option.textContent = (branch.workflow_id ? '🌿 ' : '')
+                                + `${branch.title} (${branch.topic_count})`;
+                            if (currentValue && String(currentValue.branch_id) === String(branch.id)) {
+                                option.selected = true;
+                            }
+                            branchSelect.appendChild(option);
+                        });
+                        await branchApply(currentValue);
+                    })
+                    .catch(() => {
+                        branchHint.textContent = 'Список веток не загрузился — вкладка Branch';
+                    });
+            }
+
+            branchSelect.onchange = async () => {
+                await branchApply(null);
+                collectBranchData();
+                document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
+            };
+            tagsSelect.onchange = () => {
+                collectBranchData();
+                document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
+            };
+
+            branchContainer.append(branchSelect, tagsRow, topicNote, branchHint, branchMaps);
+            fieldWrapper.appendChild(branchContainer);
+
         } else if (field.type === 'widget_llm_to_image') {
             // --- Виджет настроек генерации изображения ---
             const imgContainer = document.createElement('div');
