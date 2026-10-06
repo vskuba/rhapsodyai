@@ -9,6 +9,8 @@
 разошлась бы с движком на первой же правке.
 """
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from mysql_.mysql_ import mysql_get_db_async
@@ -30,6 +32,35 @@ BRANCH_COLUMNS = ('name', 'title', 'description', 'workflow_id', 'match_min',
 TOPIC_COLUMNS = ('name', 'title', 'tags', 'acceptance', 'direction', 'restriction',
                  'is_enabled', 'position')
 
+STEP_TYPE_LLM_TO_JSON = 2
+STEP_TYPE_RETURN_TEXT = 4
+
+# Начальный контракт ветки: что передаёт вызывающий и что он забирает обратно.
+#
+# ⚠ Семи `topic_*` здесь нет намеренно — их шаг `branch` протаскивает сам,
+# сквозными значениями, и объявлять их ребёнку не требуется: тем же приёмом
+# движок протаскивает `user_language`.
+BRANCH_SKELETON_INPUTS = ('prompt_user', 'talk_history', 'companion_title',
+                          'girl_name', 'user_language')
+BRANCH_SKELETON_OUTPUTS = ('branch_response', 'branch_result')
+
+BRANCH_SKELETON_PROMPT = (
+    '=== %companion_title% пишет ===\n%prompt_user%\n\n'
+    '%if talk_history%=== Разговор с этим человеком ===\n%talk_history%\n\n%endif%'
+    '=== Что нужно ===\n'
+    '%if topic_accept%%topic_accept%\n\n%endif%'
+    '%if topic_direction%Куда вести разговор: %topic_direction%\n\n%endif%'
+    '%if topic_restrict%⚠ Нельзя: %topic_restrict%\n\n%endif%'
+    'Отвечай строго на языке: %user_language%.\n\n'
+    '=== Important information about final response ===\n'
+    'Please return your response in JSON format. The JSON response must contain '
+    'follow keys: \n'
+    '- "branch_response": твой ответ\n'
+    '- "branch_result": чем кончилось, одним словом\n\n'
+    'Example of JSON response:\n'
+    '{\n  "branch_response": "of course, send them",\n  "branch_result": "agreed"\n}'
+)
+
 
 async def _branch_row(branch_id: int) -> dict:
     async with mysql_get_db_async() as db:
@@ -41,13 +72,46 @@ async def _branch_row(branch_id: int) -> dict:
     return row
 
 
-async def _branch_contract_check(branch_id: int, workflow_id: int) -> None:
-    """Совпадает ли контракт subflow с контрактом ветки.
+async def _workflow_contract(workflow_id: int) -> dict:
+    """Объявленный контракт workflow: имена входов и выходов."""
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            """SELECT `name`, `type` FROM `agent_workflow_variable`
+                WHERE `workflow_id` = %s AND `type` IN ('input', 'output')""",
+            (workflow_id,)
+        )
+        rows = await db.fetchall() or []
+    return {
+        'input': sorted(row['name'] for row in rows if row['type'] == 'input'),
+        'output': sorted(row['name'] for row in rows if row['type'] == 'output'),
+    }
 
-    ⚠ Заглушка до задачи 7: проверка появится вместе с кнопкой «Создать subflow».
-    Пока привязка принимается как есть.
+
+async def _branch_contract_check(branch_id: int, workflow_id: int) -> None:
+    """Совпадает ли контракт нового subflow с тем, что у ветки уже был.
+
+    ⚠⚠ Отдельного хранилища контракта у ветки нет — он и есть `input`/`output`
+    переменные её subflow. Поэтому первый привязанный subflow контракт
+    **задаёт**, а подмена требует совпадения: шаги `branch` в workflow уже несут
+    карты, собранные под прежние имена, и молча разошлись бы с новым ребёнком.
+    Движок узнал бы об этом только в проде, отказом на непереданном входе.
     """
-    return None
+    branch = await _branch_row(branch_id)
+    current = branch.get('workflow_id')
+    if not current or int(current) == int(workflow_id):
+        return
+
+    was = await _workflow_contract(int(current))
+    now = await _workflow_contract(int(workflow_id))
+    if was == now:
+        return
+
+    raise HTTPException(
+        status_code=400,
+        detail=('Контракт subflow не совпадает с контрактом ветки: '
+                f"было входы {was['input']}, выходы {was['output']}; "
+                f"стало входы {now['input']}, выходы {now['output']}")
+    )
 
 
 async def _topic_row(topic_id: int) -> dict:
@@ -285,6 +349,94 @@ async def workflow_branch_update(
         )
 
     return {"result": await _branch_row(branch_id)}
+
+
+@router.post("/workflow_branch/{branch_id}/subflow")
+async def workflow_branch_subflow_create(
+        branch_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_BRANCH_CREATE]))
+):
+    """Завести ветке её дорогу: subflow со скелетом и привязать.
+
+    ⚠⚠ Шагов в скелете ДВА, и второй обязателен. Движок отдаёт результат
+    родителю только на `return_response_text` / `return_response_llm`; дойдя до
+    конца списка без них, `_workflow_steps_run` возвращает `None`, родитель
+    кладёт в результат пустую строку — и **без ошибки**. Скелет из одного
+    `llm_to_json` молча возвращал бы пустоту.
+    """
+    branch = await _branch_row(branch_id)
+    if branch.get('workflow_id'):
+        raise HTTPException(status_code=400, detail='У ветки уже есть subflow')
+
+    name = f"branch_{branch['name']}"[:50]
+    async with mysql_get_db_async() as db:
+        await db.execute("SELECT `id` FROM `agent_workflow` WHERE `name` = %s", (name,))
+        if await db.fetchone():
+            # ⚠ `agent_workflow.name` уникален по всей базе, не по ноде
+            name = f"branch_{branch_id}_{branch['name']}"[:50]
+
+        await db.execute(
+            """INSERT INTO `agent_workflow`
+                      (`node_id`, `name`, `title`, `description`, `position`,
+                       `subflow`, `group_name`)
+               SELECT %s, %s, %s, %s,
+                      (SELECT COALESCE(MAX(w.`position`), 0) + 1
+                         FROM (SELECT `position` FROM `agent_workflow`) w),
+                      1, %s""",
+            (branch['node_id'], name, str(branch['title'])[:50],
+             f"Ветка разговора: {branch['title']}"[:200], 'branch')
+        )
+        workflow_id = db.lastrowid
+
+        for variable in BRANCH_SKELETON_INPUTS:
+            await db.execute(
+                """INSERT INTO `agent_workflow_variable`
+                          (`workflow_id`, `name`, `type`, `default`, `description`)
+                   VALUES (%s, %s, 'input', '', %s)""",
+                (workflow_id, variable, 'Вход ветки, передаётся шагом branch')
+            )
+        for variable in BRANCH_SKELETON_OUTPUTS:
+            await db.execute(
+                """INSERT INTO `agent_workflow_variable`
+                          (`workflow_id`, `name`, `type`, `default`, `description`)
+                   VALUES (%s, %s, 'output', '', %s)""",
+                (workflow_id, variable, 'Выход ветки, забирается outputs_map')
+            )
+
+        await db.execute(
+            """INSERT INTO `agent_workflow_step` (`workflow_id`, `type_id`, `title`,
+                                                  `position`, `metadata`)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (workflow_id, STEP_TYPE_LLM_TO_JSON, 'Ответ по теме', 0,
+             json.dumps({
+                 'prompt_user': BRANCH_SKELETON_PROMPT,
+                 'transitions_after': [],
+                 'transitions_before': [],
+                 'llm_to_json_variable': [
+                     {'variable': 'branch_response', 'text': 'ответ собеседнику'},
+                     {'variable': 'branch_result', 'text': 'чем кончилось, одним словом'},
+                 ],
+             }, ensure_ascii=False))
+        )
+        await db.execute(
+            """INSERT INTO `agent_workflow_step` (`workflow_id`, `type_id`, `title`,
+                                                  `position`, `metadata`)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (workflow_id, STEP_TYPE_RETURN_TEXT, 'Ответ', 1,
+             json.dumps({
+                 'prompt_user': '%branch_response%',
+                 'continue_workflow': False,
+                 'transitions_after': [],
+                 'transitions_before': [],
+             }, ensure_ascii=False))
+        )
+
+        await db.execute(
+            "UPDATE `agent_workflow_branch` SET `workflow_id` = %s WHERE `id` = %s",
+            (workflow_id, branch_id)
+        )
+
+    return {"result": {"workflow_id": workflow_id, "branch": await _branch_row(branch_id)}}
 
 
 @router.delete("/workflow_branch/{branch_id}")
