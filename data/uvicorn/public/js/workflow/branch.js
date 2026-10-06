@@ -126,10 +126,19 @@ export async function openWorkflowBranch(node) {
     if (branchState.branchId) await branchOpen(branchState.branchId);
 }
 
+/**
+ * Подпотоки ноды — кандидаты в «свою дорогу» ветки.
+ *
+ * ⚠ Только `subflow = 1`. Обычный workflow дорогой ветки быть не может: его
+ * зовут запросом к агенту, у него свой вход и свой ответ наружу, — а шаг
+ * `branch` вызывает ребёнка той же подпрограммой, что `workflow_invoke`, и ждёт
+ * от него возврата родителю. Полный список предлагал бы выбрать то, что сломает
+ * прогон, и узналось бы это уже в проде.
+ */
 async function workflowsLoad() {
     try {
-        branchState.workflows = (await branchApi(
-            `/workflow/${branchState.nodeId}/list`)).result || [];
+        const rows = (await branchApi(`/workflow/${branchState.nodeId}/list`)).result || [];
+        branchState.workflows = rows.filter(w => Number(w.subflow) === 1);
     } catch (e) {
         branchState.workflows = [];
     }

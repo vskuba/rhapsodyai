@@ -87,6 +87,32 @@ async def _workflow_contract(workflow_id: int) -> dict:
     }
 
 
+async def _branch_subflow_check(workflow_id: int) -> None:
+    """Дорогой ветки может быть только подпоток (`subflow = 1`).
+
+    ⚠ Обычный workflow сюда не годится: его зовут запросом к агенту, у него свой
+    вход и свой ответ наружу, — а шаг `branch` вызывает ребёнка той же
+    подпрограммой, что `workflow_invoke`, и ждёт возврата родителю.
+
+    ⚠⚠ Проверка стоит и здесь, хотя селект на странице показывает только
+    подпотоки: спрятать вариант в списке — не защита, ручка принимает любой
+    номер. Правило из чек-листа страниц админки.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT `name`, `subflow` FROM `agent_workflow` WHERE `id` = %s", (workflow_id,))
+        row = await db.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=400, detail='Такого workflow нет')
+    if not int(row.get('subflow') or 0):
+        raise HTTPException(
+            status_code=400,
+            detail=f"«{row['name']}» — обычный workflow, а не подпоток: "
+                   f"дорогой ветки он быть не может"
+        )
+
+
 async def _branch_contract_check(branch_id: int, workflow_id: int) -> None:
     """Совпадает ли контракт нового subflow с тем, что у ветки уже был.
 
@@ -284,6 +310,11 @@ async def workflow_branch_create(
     if not node_id or not name:
         raise HTTPException(status_code=400, detail='Нужны node_id и name')
 
+    # ⚠ Подпоток можно задать прямо при заведении — проверяем здесь же, иначе
+    # дверь осталась бы открытой в обход `PUT`
+    if body.get('workflow_id'):
+        await _branch_subflow_check(int(body['workflow_id']))
+
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT `id` FROM `agent_workflow_branch` WHERE `node_id` = %s AND `name` = %s",
@@ -337,6 +368,7 @@ async def workflow_branch_update(
         fields['name'] = name
 
     if fields.get('workflow_id'):
+        await _branch_subflow_check(int(fields['workflow_id']))
         await _branch_contract_check(branch_id, int(fields['workflow_id']))
 
     # ⚠ Имена колонок уходят в SQL текстом — потому и берутся только из
