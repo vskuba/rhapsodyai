@@ -746,6 +746,39 @@
        Перекос должен быть виден глазами. */
     .topic-count { color: #8a8a8a; font-size: 11px; white-space: nowrap; }
 
+    /* ── Метки чипсами ────────────────────────────────────────────────────── */
+    /* ⚠ Строкой через запятую их было не прочитать: восьми меток не хватало
+       ширины поля, и хвост уезжал за край. А метка — единица отбора темы, и
+       смотрят на них поштучно. */
+    .tag-editor {
+        display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+        min-height: 34px; padding: 5px 6px;
+        border: 1px solid #ccc; border-radius: 4px; background: #fff;
+        cursor: text;
+    }
+    .tag-editor:focus-within { border-color: #7aa7d9; }
+
+    .tag-chip {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: #eef2f6; border: 1px solid #dde4ec; border-radius: 12px;
+        padding: 2px 4px 2px 10px; font-size: 12px; color: #39506b;
+        white-space: nowrap;
+    }
+
+    .tag-x {
+        border: none; background: none; cursor: pointer;
+        color: #8ea3bb; font-size: 14px; line-height: 1;
+        padding: 0 3px; border-radius: 50%;
+    }
+    .tag-x:hover { background: #d9e2ec; color: #c0392b; }
+
+    .tag-input {
+        flex: 1; min-width: 150px; border: none; outline: none;
+        font-size: 12px; padding: 3px 2px; background: transparent; color: #333;
+    }
+
+    .tag-counter { color: #8a8a8a; font-weight: 400; }
+
     /* ⚠ Цвет текста задаётся явно: в общем `common.css` у `button` стоит
        `color: white`, и кнопка на белом фоне выходит пустой коробкой — текст
        есть, но не виден. Поймано кадром, в коде не видно вовсе. */

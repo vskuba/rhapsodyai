@@ -35,6 +35,9 @@ const branchState = {
     // выбрано всегда что-то одно, и второго показывать нечего.
     picked: {kind: null, id: null},
     workflows: [],
+    // Метки открытой темы, уже приведённые. Живут отдельно от карточки: поле
+    // ввода перерисовывать нельзя, иначе уедет фокус.
+    tags: [],
 };
 
 async function branchApi(url, options) {
@@ -373,10 +376,12 @@ function topicCardRender(detail) {
                  и приезжает агенту переменной <code>%topic_name%</code>.</div></div>
         </div>
         <div class="branch-field">
-          <label>Метки</label>
-          <input class="branch-control" id="t_tags" value="${esc(topic.tags)}">
-          <div class="branch-hint">Через запятую, каждая из двух слов и больше:
-               «обмен письмами, пришли письмо». Односложные не различают близкие темы.</div>
+          <label>Метки <span class="tag-counter" id="t_tags_count"></span></label>
+          <div class="tag-editor" id="t_tags_box">
+            <input class="tag-input" id="t_tags_input" placeholder="добавить метку и Enter…">
+          </div>
+          <div class="branch-hint">Каждая из двух слов и больше: «обмен письмами»,
+               «пришли письмо». Односложные не различают близкие темы.</div>
         </div>
         <div class="branch-field">
           <label>Разрешено — что можно и как отвечать</label>
@@ -405,9 +410,114 @@ function topicCardRender(detail) {
         </div>
       </div>`;
 
+    tagsEditorInit(tagList(topic.tags));
+
     document.getElementById('t_save').onclick = () => topicSave(isNew ? null : topic.id);
     const removeButton = document.getElementById('t_delete');
     if (removeButton) removeButton.onclick = () => topicDelete(topic.id);
+}
+
+// ── Редактор меток: чипсы вместо строки через запятую ───────────────────────
+//
+// ⚠ Строкой их было не прочитать: восьми меток не хватало ширины поля, и хвост
+// уезжал за край. А метка — единица отбора темы, и смотрят на них поштучно:
+// «есть ли такая», «не завелась ли дважды».
+
+/** Приведение — **то же**, что у движка (`ai_workflow_branch_tags_split`).
+ *
+ * ⚠ Нижний регистр и схлопнутые пробелы: сравнение идёт приведёнными, и человек
+ * должен видеть ровно то, что будет сравниваться. Покажи мы «Обмен Письмами»,
+ * а сравнивай «обмен письмами» — вышли бы две метки, неразличимые на глаз.
+ */
+function tagNormalize(raw) {
+    return String(raw || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function tagsEditorInit(tags) {
+    branchState.tags = tags.map(tagNormalize).filter(Boolean);
+
+    const input = document.getElementById('t_tags_input');
+    if (!input) return;
+
+    input.onkeydown = (event) => {
+        if (event.key === 'Enter' || event.key === ',') {
+            event.preventDefault();
+            tagsAdd(input.value);
+            input.value = '';
+            tagsEditorRender();
+        } else if (event.key === 'Backspace' && !input.value && branchState.tags.length) {
+            // Привычное поведение поля с чипсами: пустой ввод и Backspace
+            // снимают последнюю метку
+            branchState.tags.pop();
+            tagsEditorRender();
+        }
+    };
+
+    // Вставка из буфера: там обычно вся строка через запятую — разбираем сразу,
+    // не дожидаясь Enter
+    input.oninput = () => {
+        if (!input.value.includes(',')) return;
+        tagsAdd(input.value);
+        input.value = '';
+        tagsEditorRender();
+    };
+
+    // Набрал и ушёл мышью — метка не должна пропасть
+    input.onblur = () => {
+        if (!input.value.trim()) return;
+        tagsAdd(input.value);
+        input.value = '';
+        tagsEditorRender();
+    };
+
+    document.getElementById('t_tags_box').onclick = (event) => {
+        if (event.target.id === 't_tags_box') input.focus();
+    };
+
+    tagsEditorRender();
+}
+
+function tagsAdd(raw) {
+    String(raw || '').split(',').forEach(part => {
+        const tag = tagNormalize(part);
+        // Повтор молча не добавляется: в словаре он всё равно схлопнется
+        if (tag && !branchState.tags.includes(tag)) branchState.tags.push(tag);
+    });
+}
+
+function tagsEditorRender() {
+    const box = document.getElementById('t_tags_box');
+    const input = document.getElementById('t_tags_input');
+    if (!box || !input) return;
+
+    // ⚠ Перерисовываем только чипсы, а поле ввода оставляем на месте: пересборка
+    // всего блока уносила бы фокус и набранный текст на каждой метке
+    box.querySelectorAll('.tag-chip').forEach(node => node.remove());
+
+    branchState.tags.forEach((tag, index) => {
+        const chip = document.createElement('span');
+        chip.className = 'tag-chip';
+        chip.textContent = tag;
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'tag-x';
+        remove.textContent = '×';
+        remove.title = 'убрать метку';
+        remove.onclick = () => {
+            branchState.tags.splice(index, 1);
+            tagsEditorRender();
+        };
+
+        chip.appendChild(remove);
+        box.insertBefore(chip, input);
+    });
+
+    const counter = document.getElementById('t_tags_count');
+    if (counter) {
+        counter.textContent = branchState.tags.length
+            ? plural(branchState.tags.length, 'метка', 'метки', 'меток') : '';
+    }
 }
 
 // ── Правки ──────────────────────────────────────────────────────────────────
@@ -459,10 +569,20 @@ async function branchSubflowCreate() {
 }
 
 function topicBody() {
+    // ⚠ Недонабранное в поле ввода тоже уходит в метки: человек напечатал
+    // «скинь фотку» и нажал «Сохранить тему», не нажав Enter, — потерять это
+    // молча хуже всего
+    const input = document.getElementById('t_tags_input');
+    if (input && input.value.trim()) {
+        tagsAdd(input.value);
+        input.value = '';
+        tagsEditorRender();
+    }
+
     return {
         name: document.getElementById('t_name').value.trim(),
         title: document.getElementById('t_title').value.trim(),
-        tags: document.getElementById('t_tags').value.trim(),
+        tags: branchState.tags.join(', '),
         acceptance: document.getElementById('t_acceptance').value,
         direction: document.getElementById('t_direction').value,
         restriction: document.getElementById('t_restriction').value,
