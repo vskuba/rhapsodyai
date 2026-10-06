@@ -1063,6 +1063,77 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             logger_info(
                                 f"🏷️ Переменная '%{variable_name}%' получила значение '{value}'")
 
+            # ОБРАБОТКА ШАГА: Ветка разговора (тема из реестра + её subflow)
+            elif step_type == 'branch':
+                branch_meta = step_meta.get('branch', {})
+                branch_id = int(branch_meta.get('branch_id') or 0)
+                tags_var = str(branch_meta.get('tags') or '').strip()
+                step_id = current_step.get('id')
+
+                if not branch_id:
+                    raise ValueError(f"Шаг '{current_step['title']}': в branch не выбрана ветка.")
+
+                tags_named = variables.get(tags_var, '') if tags_var else ''
+                node_id = model.entity_agent.get('node_id') or 0
+
+                # ⚠⚠ Победитель ищется ПО ВСЕМУ реестру ноды, а не среди тем своей
+                # ветки. Шагов `branch` в потоке несколько, и считай каждый только
+                # своё — цепочка брала бы первую прошедшую порог, а не лучшую.
+                topic = ai_workflow_branch_pick(
+                    await ai_workflow_branch_topics(node_id), tags_named)
+
+                if topic is None or int(topic['branch_id']) != branch_id:
+                    # ⚠⚠ Тема не моя — НЕ ТРОГАЕМ переменные вовсе. Пустые строки
+                    # здесь затёрли бы значения победителя, стоящего выше в
+                    # цепочке, и «Генерация ответа» увидела бы пустоту при верно
+                    # выбранной теме. Отказ был бы молчаливым и плавал бы от
+                    # порядка шагов.
+                    trace_output = ''
+                    logger_info(
+                        f"🌿 Ветка '{current_step['title']}': тема не моя "
+                        f"({(topic or {}).get('name') or 'темы нет'}) — пропускаем"
+                    )
+                else:
+                    named = ai_workflow_branch_tags_split(tags_named)
+                    own = ai_workflow_branch_tags_split(topic.get('tags'))
+                    topic_scope = {
+                        'topic_name': topic.get('name') or '',
+                        'topic_title': topic.get('title') or '',
+                        'topic_tags': topic.get('tags') or '',
+                        'topic_accept': topic.get('acceptance') or '',
+                        'topic_direction': topic.get('direction') or '',
+                        'topic_restrict': topic.get('restriction') or '',
+                        'topic_score': str(sum(1 for tag in own if tag in named)),
+                    }
+                    variables.update(topic_scope)
+                    trace_output = topic_scope['topic_name']
+                    logger_info(
+                        f"🌿 Ветка '{current_step['title']}': тема "
+                        f"'{topic_scope['topic_name']}' (совпало "
+                        f"{topic_scope['topic_score']} меток)"
+                    )
+
+                    # Ветка со своей дорогой — вызов subflow общей подпрограммой.
+                    # ⚠ Семь `topic_*` едут `scope_extra`: объявлять их в
+                    # контракте ребёнка не требуется, как не требуется объявлять
+                    # `user_language`.
+                    if topic.get('workflow_id'):
+                        invoke_meta = dict(branch_meta)
+                        invoke_meta['workflow_id'] = topic['workflow_id']
+                        child_result, _ = await self._workflow_child_run(
+                            model, variables, invoke_meta, current_step['title'], step_id,
+                            depth, workflow_stack, trace_run_id,
+                            scope_extra=topic_scope,
+                            trace_error=lambda err: trace_current_step(status='error', error=err)
+                        )
+
+                        # ⚠⚠ Алиас НЕСЁТ НОМЕР ШАГА, и это не украшение: переход
+                        # «я сработала» обязан проверять именно его. Проверка вида
+                        # `topic_name != ''` сработала бы и у проигравшего шага,
+                        # если выше по цепочке уже победила ветка без subflow.
+                        variables[f'branch_{step_id}_result_str'] = child_result or ''
+                        trace_output = child_result
+
             # ОБРАБОТКА ШАГА: Вызов вложенного workflow (sub-workflow)
             elif step_type == 'workflow_invoke':
                 step_id = current_step.get('id')
