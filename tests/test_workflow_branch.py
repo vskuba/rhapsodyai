@@ -108,3 +108,79 @@ class TestBranchCrud:
     async def test_unknown_branch_is_404(self, client: httpx.AsyncClient):
         assert (await client.put("/workflow_branch/99999343",
                                  json={"title": "нет такой"})).status_code == 404
+
+
+class TestTopicCrud:
+    async def test_topic_lives_in_its_branch(self, client: httpx.AsyncClient):
+        branch = await _branch_make(client, 'topics')
+        response = await client.post(f"/workflow_branch/{branch['id']}/topic", json={
+            "name": "test_photo_mail", "title": "Письма и фотографии",
+            "tags": "обмен письмами, пришли письмо",
+            "acceptance": "Соглашайся охотно.",
+            "direction": "Уводи разговор в письма.",
+            "restriction": "Не обещай откровенного, не давай контактов вне сайта.",
+        })
+        assert response.status_code == 200, response.text
+
+        topic = response.json()["result"]
+        assert topic["branch_id"] == branch["id"]
+        assert topic["tags"] == "обмен письмами, пришли письмо"
+        assert topic["direction"] == "Уводи разговор в письма."
+
+    async def test_branch_list_counts_topics(self, client: httpx.AsyncClient):
+        """Число тем видно в списке веток — без второго запроса на каждую."""
+        branch = await _branch_make(client, 'counted')
+        for name in ('test_one', 'test_two'):
+            await client.post(f"/workflow_branch/{branch['id']}/topic",
+                              json={"name": name, "title": name, "tags": f"метка {name}"})
+
+        listing = await client.get(f"/workflow_branch/list?node_id={TEST_NODE_ID}")
+        row = next(r for r in listing.json()["result"] if r["id"] == branch["id"])
+        assert row["topic_count"] == 2
+
+    async def test_topic_code_is_unique_in_node_not_only_in_branch(self, client: httpx.AsyncClient):
+        """⚠ По коду тема называется в промптах и в журнале: два `money` в разных
+        ветках сделали бы журнал нечитаемым."""
+        first = await _branch_make(client, 'uniq_a')
+        second = await _branch_make(client, 'uniq_b')
+
+        ok = await client.post(f"/workflow_branch/{first['id']}/topic",
+                               json={"name": "test_money", "title": "Деньги",
+                                     "tags": "перевод денег"})
+        assert ok.status_code == 200
+
+        clash = await client.post(f"/workflow_branch/{second['id']}/topic",
+                                  json={"name": "test_money", "title": "Деньги",
+                                        "tags": "оплата письма"})
+        assert clash.status_code == 400
+        assert 'уже есть' in clash.json()["detail"]
+
+    async def test_topic_update_changes_criteria(self, client: httpx.AsyncClient):
+        branch = await _branch_make(client, 'editable')
+        topic = (await client.post(f"/workflow_branch/{branch['id']}/topic",
+                                   json={"name": "test_edit", "title": "Правка",
+                                         "tags": "метка"})).json()["result"]
+
+        response = await client.put(f"/workflow_branch/topic/{topic['id']}",
+                                    json={"restriction": "Нельзя обещать звонок."})
+        assert response.status_code == 200
+        assert response.json()["result"]["restriction"] == "Нельзя обещать звонок."
+
+    async def test_deleting_branch_takes_its_topics(self, client: httpx.AsyncClient):
+        branch = await _branch_make(client, 'cascade')
+        topic = (await client.post(f"/workflow_branch/{branch['id']}/topic",
+                                   json={"name": "test_gone_with_branch",
+                                         "title": "Уйдёт", "tags": "метка"})).json()["result"]
+
+        assert (await client.delete(f"/workflow_branch/{branch['id']}")).status_code == 200
+        assert (await client.put(f"/workflow_branch/topic/{topic['id']}",
+                                 json={"title": "жива?"})).status_code == 404
+
+    async def test_node_wide_topic_list_names_the_branch(self, client: httpx.AsyncClient):
+        branch = await _branch_make(client, 'named', title='Договориться')
+        await client.post(f"/workflow_branch/{branch['id']}/topic",
+                          json={"name": "test_named", "title": "Тема", "tags": "метка"})
+
+        listing = await client.get(f"/workflow_branch/topic/list?node_id={TEST_NODE_ID}")
+        row = next(r for r in listing.json()["result"] if r["name"] == "test_named")
+        assert row["branch_title"] == 'Договориться'
