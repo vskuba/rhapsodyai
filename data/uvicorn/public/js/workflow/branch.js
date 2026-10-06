@@ -24,7 +24,19 @@
  * Устройство слоя — `.claude/docs/workflow_branch.md`.
  */
 
+import {postData} from '../api.js';
+import {showNotification} from '/static/js/notification.js';
+import {textTranslateGuess} from './text-translate.js';
+
 const PAGE_SIZE = 20;
+
+// Языки перевода меток — те же три и в том же порядке, что у промптов
+// (`text-translate.js`): английский первым, остальные два на обратную дорогу.
+const TAG_LANGS = [
+    {code: 'en', flag: '🇬🇧', word: 'английский'},
+    {code: 'uk', flag: '🇺🇦', word: 'украинский'},
+    {code: 'ru', flag: '🇷🇺', word: 'русский'},
+];
 
 const branchState = {
     nodeId: null,
@@ -383,7 +395,10 @@ function topicCardRender(detail) {
           </div>
         </div>
         <div class="branch-field">
-          <label>Метки <span class="tag-counter" id="t_tags_count"></span></label>
+          <div class="tag-head">
+            <label>Метки <span class="tag-counter" id="t_tags_count"></span></label>
+            <div class="tag-langs" id="t_tags_langs"></div>
+          </div>
           <div class="tag-editor" id="t_tags_box">
             <input class="tag-input" id="t_tags_input" placeholder="добавить метку и Enter…">
           </div>
@@ -479,8 +494,91 @@ function tagNormalize(raw) {
     return String(raw || '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+/**
+ * Перевести **все** метки темы разом.
+ *
+ * ⚠⚠ По одной метке за запрос, а не списком одной строкой. Список модель
+ * склеивает и перенумеровывает — у соседа это записано прямо: «переносы строк
+ * модель съедает». Метка короткая, восемь запросов уходят разом (`Promise.all`)
+ * и стоят по времени одного.
+ *
+ * ⚠⚠ Не перевелась хоть одна — **не меняем ничего**. То же правило, что у
+ * промптов: половина переведённых меток хуже непереведённых, потому что словарь
+ * станет смешанным незаметно.
+ *
+ * ⚠ Перевод не сохраняется сам: человек смотрит на него и жмёт «Сохранить
+ * тему». Промахнулся языком — ушёл с темы, и ничего не случилось.
+ */
+async function tagsTranslate(lang, button) {
+    if (!branchState.tags.length) {
+        showNotification('Меток нет', 'error');
+        return;
+    }
+
+    const source = textTranslateGuess(branchState.tags.join(' '));
+    if (source === lang.code) {
+        showNotification(`Метки и так на ${lang.word}`, 'info');
+        return;
+    }
+
+    const was = button.textContent;
+    button.disabled = true;
+    button.textContent = '…';
+
+    try {
+        const done = await Promise.all(branchState.tags.map(async (tag) => {
+            const answer = await postData('/translate', {
+                text: tag,
+                language_from: source,
+                language_to: lang.code,
+            });
+            return tagNormalize(answer.result || '');
+        }));
+
+        const lost = branchState.tags.filter((tag, index) => !done[index]);
+        if (lost.length) {
+            showNotification(
+                `Не перевелось: «${lost[0]}» — метки оставлены как были`, 'error');
+            return;
+        }
+
+        // Перевод мог свести две метки в одну — повтор не держим
+        const kept = [];
+        done.forEach(tag => {
+            if (!kept.includes(tag)) kept.push(tag);
+        });
+        branchState.tags = kept;
+        tagsEditorRender();
+
+        showNotification(
+            `Метки на ${lang.word}. Не забудьте «Сохранить тему»`, 'success');
+    } catch (e) {
+        showNotification(`Не перевелось: ${e.message}`, 'error');
+    } finally {
+        button.disabled = false;
+        button.textContent = was;
+    }
+}
+
+function tagsLangsRender() {
+    const host = document.getElementById('t_tags_langs');
+    if (!host) return;
+
+    host.innerHTML = '';
+    TAG_LANGS.forEach(lang => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tag-lang';
+        button.textContent = lang.flag;
+        button.title = `перевести все метки на ${lang.word}`;
+        button.onclick = () => tagsTranslate(lang, button);
+        host.appendChild(button);
+    });
+}
+
 function tagsEditorInit(tags) {
     branchState.tags = tags.map(tagNormalize).filter(Boolean);
+    tagsLangsRender();
 
     const input = document.getElementById('t_tags_input');
     if (!input) return;

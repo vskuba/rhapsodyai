@@ -788,6 +788,23 @@
 
     .tag-counter { color: #8a8a8a; font-weight: 400; }
 
+    /* Подпись меток и флаги перевода — по краям одной строки */
+    .tag-head {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 4px;
+    }
+    .tag-head label { margin: 0; }
+
+    .tag-langs { display: flex; gap: 2px; }
+
+    .tag-lang {
+        border: 1px solid transparent; background: none; cursor: pointer;
+        font-size: 14px; line-height: 1; padding: 2px 5px; border-radius: 4px;
+        opacity: .75;
+    }
+    .tag-lang:hover { opacity: 1; background: #eef2f6; border-color: #dde4ec; }
+    .tag-lang:disabled { opacity: .4; cursor: default; }
+
     /* ── Три критерия темы вкладками ──────────────────────────────────────── */
     .crit-tabs {
         display: flex; gap: 0; margin: 16px 0 0;
