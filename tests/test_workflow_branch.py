@@ -87,12 +87,50 @@ class TestBranchCrud:
         assert branch["workflow_id"] is None
 
     async def test_name_is_unique_in_node(self, client: httpx.AsyncClient):
+        """Код всё ещё можно прислать явно — так делают сиды и импорт."""
         await _branch_make(client, 'twice')
         clash = await client.post("/workflow_branch", json={
             "node_id": TEST_NODE_ID, "name": f"{TEST_BRANCH_PREFIX}twice", "title": "Дубль",
         })
         assert clash.status_code == 400
         assert 'уже есть' in clash.json()["detail"]
+
+    async def test_code_is_made_from_title(self, client: httpx.AsyncClient):
+        """⚠ Со страницы код не присылают: его собирает сервер из названия.
+
+        Поле убрано с формы намеренно — в рантайме код не читает никто, а живёт
+        он там, где важна неизменность: имя скелета подпотока и поиск ветки в
+        миграциях-сидах.
+        """
+        response = await client.post("/workflow_branch", json={
+            "node_id": TEST_NODE_ID, "title": f"{TEST_BRANCH_PREFIX}Договориться",
+        })
+        assert response.status_code == 200, response.text
+        assert response.json()["result"]["name"] == f"{TEST_BRANCH_PREFIX}dogovoritsya"
+
+    async def test_made_code_steps_aside_when_taken(self, client: httpx.AsyncClient):
+        """Занятый код получает номер, а не отказ: человек назвал ветку как хотел."""
+        title = f"{TEST_BRANCH_PREFIX}Уклониться"
+        first = await client.post("/workflow_branch", json={"node_id": TEST_NODE_ID, "title": title})
+        second = await client.post("/workflow_branch", json={"node_id": TEST_NODE_ID, "title": title})
+
+        assert first.json()["result"]["name"] == f"{TEST_BRANCH_PREFIX}uklonitsya"
+        assert second.json()["result"]["name"] == f"{TEST_BRANCH_PREFIX}uklonitsya_2"
+
+    async def test_code_is_not_editable(self, client: httpx.AsyncClient):
+        """⚠ Переименуй код руками — и сид заведёт рядом вторую ветку вместо
+        того, чтобы найти свою. Поэтому `PUT` его просто не принимает."""
+        branch = await _branch_make(client, 'code_frozen')
+        response = await client.put(f"/workflow_branch/{branch['id']}",
+                                    json={"name": "подменённый", "title": "Новое название"})
+        assert response.status_code == 200
+        assert response.json()["result"]["name"] == branch["name"]
+        assert response.json()["result"]["title"] == "Новое название"
+
+    async def test_title_cannot_be_emptied(self, client: httpx.AsyncClient):
+        branch = await _branch_make(client, 'needs_title')
+        assert (await client.put(f"/workflow_branch/{branch['id']}",
+                                 json={"title": "  "})).status_code == 400
 
     async def test_update_changes_threshold(self, client: httpx.AsyncClient):
         branch = await _branch_make(client, 'strict')

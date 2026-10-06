@@ -10,9 +10,11 @@
 """
 
 import json
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from i18n_.i18n_ import i18n_translit_cyr
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -23,7 +25,13 @@ router = APIRouter()
 #
 # ⚠ Белым списком, а не `**body`: `id`, `node_id` и отметки времени правит сервер,
 # и присланное поле не должно их достать.
-BRANCH_COLUMNS = ('name', 'title', 'description', 'workflow_id', 'match_min',
+#
+# ⚠⚠ `name` здесь НЕТ намеренно: код ветки правке не подлежит. В рантайме его не
+# читает никто — ветку выбирают номером, — а живёт он в двух местах, где важна
+# неизменность: имя скелета подпотока (`branch_deal`) и поиск ветки в
+# миграциях-сидах (`WHERE name = 'deal'`). Переименуй его руками, и сид заведёт
+# рядом вторую ветку вместо того, чтобы найти свою.
+BRANCH_COLUMNS = ('title', 'description', 'workflow_id', 'match_min',
                   'is_enabled', 'position')
 
 # ⚠ Набор полей темы одинаков во всех ветках. Дать ветке объявлять свои поля
@@ -60,6 +68,31 @@ BRANCH_SKELETON_PROMPT = (
     'Example of JSON response:\n'
     '{\n  "branch_response": "of course, send them",\n  "branch_result": "agreed"\n}'
 )
+
+
+async def _branch_code_make(node_id: int, title: str) -> str:
+    """Код ветки из её названия: «Договориться» → `dogovoritsya`.
+
+    ⚠ Транслит берётся общей `i18n_translit_cyr` — она заведена ровно для
+    устойчивых идентификаторов и меняться не должна: по её выводу заводят
+    записи, которые потом ищут по имени.
+
+    ⚠ Занятый код получает номер (`dogovoritsya_2`), а не отказ: человек назвал
+    ветку как хотел, и спорить с ним из-за служебного поля не о чем.
+    """
+    base = re.sub(r'[^a-z0-9]+', '_', i18n_translit_cyr(title).lower()).strip('_')[:40]
+    base = base or 'branch'
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT `name` FROM `agent_workflow_branch` WHERE `node_id` = %s", (node_id,))
+        taken = {row['name'] for row in await db.fetchall() or []}
+
+    code, number = base, 2
+    while code in taken:
+        code = f'{base}_{number}'
+        number += 1
+    return code
 
 
 async def _branch_row(branch_id: int) -> dict:
@@ -306,9 +339,13 @@ async def workflow_branch_create(
 ):
     body = await request.json()
     node_id = int(body.get('node_id') or 0)
-    name = str(body.get('name') or '').strip()
-    if not node_id or not name:
-        raise HTTPException(status_code=400, detail='Нужны node_id и name')
+    title = str(body.get('title') or '').strip()
+    if not node_id or not title:
+        raise HTTPException(status_code=400, detail='Нужны node_id и title')
+
+    # Код задаётся явно только сидами и импортом; со страницы его не присылают —
+    # там человек вводит одно название
+    name = str(body.get('name') or '').strip() or await _branch_code_make(node_id, title)
 
     # ⚠ Подпоток можно задать прямо при заведении — проверяем здесь же, иначе
     # дверь осталась бы открытой в обход `PUT`
@@ -328,7 +365,7 @@ async def workflow_branch_create(
                       (`node_id`, `name`, `title`, `description`, `workflow_id`,
                        `match_min`, `is_enabled`, `position`)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            (node_id, name, str(body.get('title') or name),
+            (node_id, name, title,
              body.get('description') or None,
              body.get('workflow_id') or None,
              int(body.get('match_min') or 1),
@@ -353,19 +390,8 @@ async def workflow_branch_update(
     if not fields:
         return {"result": branch}
 
-    if 'name' in fields:
-        name = str(fields['name'] or '').strip()
-        if not name:
-            raise HTTPException(status_code=400, detail='Имя ветки не может быть пустым')
-        async with mysql_get_db_async() as db:
-            await db.execute(
-                """SELECT `id` FROM `agent_workflow_branch`
-                    WHERE `node_id` = %s AND `name` = %s AND `id` <> %s""",
-                (branch['node_id'], name, branch_id)
-            )
-            if await db.fetchone():
-                raise HTTPException(status_code=400, detail='Ветка с таким именем в ноде уже есть')
-        fields['name'] = name
+    if 'title' in fields and not str(fields['title'] or '').strip():
+        raise HTTPException(status_code=400, detail='Название ветки не может быть пустым')
 
     if fields.get('workflow_id'):
         await _branch_subflow_check(int(fields['workflow_id']))

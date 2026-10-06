@@ -313,22 +313,18 @@ function branchCardRender(detail) {
         <div class="branch-form-row">
           <div class="branch-field"><label>Название</label>
             <input class="branch-control" id="b_title" value="${esc(branch.title)}"></div>
-          <div class="branch-field"><label>Код</label>
-            <input class="branch-control" id="b_name" value="${esc(branch.name)}"></div>
-        </div>
-        <div class="branch-form-row">
-          <div class="branch-field">
-            <label>Минимум совпавших меток</label>
-            <input class="branch-control" id="b_match_min" type="number" min="1" max="10"
-                   value="${branch.match_min}">
-            <div class="branch-hint">Тема ниже этого порога в выборе не участвует.
-                 Порог живёт у ветки: на шаге он глушил бы и чужие темы.</div>
-          </div>
           <div class="branch-field"><label>Включена</label>
             <select class="branch-control" id="b_is_enabled">
               <option value="1" ${branch.is_enabled ? 'selected' : ''}>да</option>
               <option value="0" ${branch.is_enabled ? '' : 'selected'}>нет</option>
             </select></div>
+        </div>
+        <div class="branch-field" style="max-width:50%">
+          <label>Минимум совпавших меток</label>
+          <input class="branch-control" id="b_match_min" type="number" min="1" max="10"
+                 value="${branch.match_min}">
+          <div class="branch-hint">Тема ниже этого порога в выборе не участвует.
+               Порог живёт у ветки: на шаге он глушил бы и чужие темы.</div>
         </div>
         <div class="branch-field">
           <label>Своя дорога (subflow)</label>
@@ -372,7 +368,9 @@ function topicCardRender(detail) {
           <div class="branch-field"><label>Название</label>
             <input class="branch-control" id="t_title" value="${esc(topic.title)}"></div>
           <div class="branch-field"><label>Код</label>
-            <input class="branch-control" id="t_name" value="${esc(topic.name)}"></div>
+            <input class="branch-control" id="t_name" value="${esc(topic.name)}">
+            <div class="branch-hint">Под ним тема видна в журнале прогона
+                 и приезжает агенту переменной <code>%topic_name%</code>.</div></div>
         </div>
         <div class="branch-field">
           <label>Метки</label>
@@ -420,9 +418,10 @@ async function branchSave() {
         await branchApi(`/workflow_branch/${branch.id}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
+            // ⚠ Кода здесь нет: он служебный и правке не подлежит — на нём
+            // держатся имя скелета подпотока и поиск ветки в миграциях-сидах
             body: JSON.stringify({
                 title: document.getElementById('b_title').value.trim(),
-                name: document.getElementById('b_name').value.trim(),
                 match_min: Number(document.getElementById('b_match_min').value) || 1,
                 is_enabled: Number(document.getElementById('b_is_enabled').value),
                 workflow_id: document.getElementById('b_workflow_id').value || null,
@@ -504,17 +503,16 @@ async function topicDelete(topicId) {
 }
 
 async function branchNew() {
+    // ⚠ Один вопрос, а не два: код ветки собирает сервер из названия
+    // («Договориться» → `dogovoritsya`). Спрашивать его у человека значило бы
+    // просить придумать то, чего он нигде не увидит.
     const title = prompt('Название ветки (например «Договориться»)');
     if (!title) return;
-    const name = prompt('Код ветки латиницей (например deal)');
-    if (!name) return;
     try {
         const created = await branchApi('/workflow_branch', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                node_id: branchState.nodeId, name: name.trim(), title: title.trim(),
-            }),
+            body: JSON.stringify({node_id: branchState.nodeId, title: title.trim()}),
         });
         await treeLoad();
         pick('branch', created.result.id);
