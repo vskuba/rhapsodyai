@@ -93,6 +93,11 @@ const branchState = {
     // Метки открытой темы, уже приведённые. Живут отдельно от карточки: поле
     // ввода перерисовывать нельзя, иначе уедет фокус.
     tags: [],
+    // Открытый критерий. ⚠ Живёт в состоянии, а не в разметке: сохранение темы
+    // пересобирает карточку целиком, и без памяти вкладка отскакивала бы на
+    // первую — человек правил «Запрещено», нажал «Сохранить», и смотрит на
+    // «Разрешено», будто попал не туда.
+    crit: 'acceptance',
 };
 
 async function branchApi(url, options) {
@@ -525,23 +530,32 @@ function critTabsInit() {
         if (area) bigHost.appendChild(textModalIcon(area, CRIT_TITLES[crit] || ''));
     };
 
+    const show = (crit, focus) => {
+        branchState.crit = crit;
+        tabs.forEach(tab => tab.classList.toggle('is-on', tab.dataset.crit === crit));
+        document.querySelectorAll('.crit-pane').forEach(pane => {
+            pane.style.display = pane.dataset.pane === crit ? 'block' : 'none';
+        });
+        bigShow(crit);
+
+        const area = document.getElementById(`t_${crit}`);
+        // ⚠ Фокус — только по щелчку человека. На восстановлении после
+        // сохранения он утащил бы страницу к полю, которое никто не трогал.
+        if (area && focus) area.focus();
+    };
+
     tabs.forEach(tab => {
-        tab.onclick = () => {
-            tabs.forEach(other => other.classList.toggle('is-on', other === tab));
-            document.querySelectorAll('.crit-pane').forEach(pane => {
-                pane.style.display = pane.dataset.pane === tab.dataset.crit ? 'block' : 'none';
-            });
-            bigShow(tab.dataset.crit);
-            const area = document.getElementById(`t_${tab.dataset.crit}`);
-            if (area) area.focus();
-        };
+        tab.onclick = () => show(tab.dataset.crit, true);
 
         const area = document.getElementById(`t_${tab.dataset.crit}`);
         if (area) area.oninput = markFilled;
     });
 
     markFilled();
-    bigShow('acceptance');
+
+    // Открытой остаётся та вкладка, на которой человек работал
+    const known = tabs.some(tab => tab.dataset.crit === branchState.crit);
+    show(known ? branchState.crit : 'acceptance', false);
 }
 
 // ── Редактор меток: чипсы вместо строки через запятую ───────────────────────
