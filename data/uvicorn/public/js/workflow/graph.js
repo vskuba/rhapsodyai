@@ -5,7 +5,7 @@
 const TO_NEXT_STEP = 'to_next_step';
 
 import {state} from './state.js';
-import {branchRoadOf, branchRoadsLoad} from './branch-roads.js';
+import {branchRoadsLoad} from './branch-roads.js';
 import {parseMetadata, graphLabelEscape, activateTab, editorWorkflowId} from './utils.js';
 import {showNotification} from '/static/js/notification.js';
 import {loadWorkflowSteps, selectStep} from './steps.js';
@@ -32,11 +32,12 @@ async function _fetchSubflowSteps(workflowId) {
     }
 }
 
-// Подпоток, который стоит за шагом: у `workflow_invoke` он в метаданных, у
-// `branch` — в реестре веток по номеру ветки.
+// Подпоток, который стоит за шагом. У обоих типов он лежит в метаданных шага, и
+// спрашивается одинаково.
 //
-// ⚠ Реестр спрашивается общей `branchRoadOf` (`branch-roads.js`): своей копии
-// карты здесь быть не должно, её читают трое.
+// ⚠⚠ У `branch` он прежде брался из реестра веток (`branchRoadOf`): дорогу
+// задавала ветка, а не шаг. Теперь выбор живёт на шаге, рядом с картами вызова,
+// и граф читает его там же, где движок, — вторая дорога к одному ответу ушла.
 function _stepSubflowId(step) {
     const type = state.allWorkflowStepsType[step.type_id] || {};
     const meta = parseMetadata(step.metadata);
@@ -46,8 +47,8 @@ function _stepSubflowId(step) {
         return wfId ? String(wfId) : null;
     }
     if (type.name === 'branch') {
-        const branchId = meta?.branch?.branch_id;
-        return branchId ? branchRoadOf(branchId) : null;
+        const wfId = meta?.branch?.workflow_id;
+        return wfId ? String(wfId) : null;
     }
     return null;
 }

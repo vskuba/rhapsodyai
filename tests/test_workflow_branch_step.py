@@ -24,17 +24,21 @@ TOPIC_VARIABLES = ('topic_name', 'topic_title', 'topic_tags',
 
 MY_BRANCH_ID = 1
 
+# ⚠ Записи тем приходят БЕЗ `workflow_id`: дорогу выбирает шаг, в своих
+# метаданных, а не ветка. Положи его сюда — и образец разошёлся бы с тем, что
+# отдаёт `ai_workflow_branch_topics`, то есть проверялось бы несуществующее.
+
 
 def _topics():
     return [
         {'id': 1, 'branch_id': 1, 'name': 'photo_mail', 'title': 'Письма и фото',
          'tags': 'обмен письмами, пришли письмо', 'acceptance': 'соглашайся',
          'direction': 'веди в письма', 'restriction': 'не обещай откровенного',
-         'branch_name': 'deal', 'match_min': 1, 'workflow_id': None},
+         'branch_name': 'deal', 'match_min': 1},
         {'id': 2, 'branch_id': 2, 'name': 'money', 'title': 'Деньги',
          'tags': 'перевод денег', 'acceptance': '', 'direction': '',
          'restriction': 'не проси денег',
-         'branch_name': 'dodge', 'match_min': 1, 'workflow_id': None},
+         'branch_name': 'dodge', 'match_min': 1},
     ]
 
 

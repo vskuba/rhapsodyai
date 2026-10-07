@@ -1123,9 +1123,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     # ⚠ Семь `topic_*` едут `scope_extra`: объявлять их в
                     # контракте ребёнка не требуется, как не требуется объявлять
                     # `user_language`.
-                    if topic.get('workflow_id'):
+                    #
+                    # ⚠⚠ Подпоток берётся у ШАГА (`branch.workflow_id`), а не у
+                    # ветки. Прежде он лежал в реестре веток, и настройка была
+                    # разорвана пополам: карты вызова правятся здесь же, на шаге,
+                    # а кого зовут — выбиралось на вкладке Branch. Сменить дорогу
+                    # из другого места значило оставить карты от прежней — молча,
+                    # без единой ошибки: на карту в никуда движок ругается в лог,
+                    # которого никто не читает. Разбор — `workflow_branch.md` §5.
+                    if branch_meta.get('workflow_id'):
                         invoke_meta = dict(branch_meta)
-                        invoke_meta['workflow_id'] = topic['workflow_id']
                         child_result, _ = await self._workflow_child_run(
                             model, variables, invoke_meta, current_step['title'], step_id,
                             depth, workflow_stack, trace_run_id,

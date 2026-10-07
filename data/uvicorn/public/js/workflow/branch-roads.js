@@ -1,11 +1,19 @@
 /**
- * Дороги веток ноды: `номер ветки → номер подпотока`.
+ * Дороги веток ноды: какие подпотоки кто-то зовёт своей дорогой.
  *
- * ⚠⚠ Один источник на троих. У шага `branch` номера подпотока в метаданных
- * **нет** — там только номер ветки, а дорогу задаёт реестр. Спрашивают это
- * трое: граф (нарисовать подпоток за шагом), список переменных (показать ли
- * группу «Branch») и сама вкладка. Вторая копия карты разошлась бы с первой
- * молча — ровно так, как уже бывало с правилами отбора.
+ * ## ⚠⚠ Вопрос здесь ОБРАТНЫЙ, и потому модуль существует
+ *
+ * «Какая дорога у этого шага» спрашивать не надо — она лежит в метаданных самого
+ * шага, и граф читает её там же, где движок. Здесь отвечают на другое: **открытый
+ * workflow — он чья-то дорога?** Ответ на это лежит в ЧУЖИХ шагах, в других
+ * workflow той же ноды, которых страница не грузит; собрать его может только
+ * сервер (`/workflow_branch/road/list`).
+ *
+ * Спрашивают двое, и оба про одно: список переменных — показывать ли группу
+ * «🌿 Branch переменные», и сторож «Undefined» — снимать ли с `topic_*` красный.
+ *
+ * ⚠ Прежде источником был реестр веток (`branch.workflow_id`), и карта была
+ * «ветка → подпоток». Дорога переехала на шаг, и у ветки спрашивать стало нечего.
  *
  * ## ⚠⚠ Почему отдельным файлом, а не внутри `branch.js`
  *
@@ -19,35 +27,25 @@
  * и в браузере, и в node; больше ничего здесь быть не должно.
  */
 
-const roads = {nodeId: null, byBranch: {}, workflowIds: new Set()};
+const roads = {nodeId: null, workflowIds: new Set()};
 
-/** Прочитать реестр веток ноды. Молчит при отказе: нет реестра — нет и дорог. */
+/** Прочитать дороги ноды. Молчит при отказе: нет ответа — нет и дорог. */
 export async function branchRoadsLoad(nodeId) {
     roads.nodeId = nodeId || null;
-    roads.byBranch = {};
     roads.workflowIds = new Set();
 
     if (!nodeId) return;
 
     try {
-        const response = await fetch(`/workflow_branch/list?node_id=${nodeId}`);
+        const response = await fetch(`/workflow_branch/road/list?node_id=${nodeId}`);
         const body = await response.json();
-        (body.result || []).forEach(branch => {
-            if (!branch.workflow_id) return;
-            roads.byBranch[String(branch.id)] = String(branch.workflow_id);
-            roads.workflowIds.add(String(branch.workflow_id));
-        });
+        (body.result || []).forEach(id => roads.workflowIds.add(String(id)));
     } catch (e) {
-        // Реестр недоступен — ни группы, ни стрелки, а страница работает дальше
+        // Ответа нет — ни группы, ни снятия красного, а страница работает дальше
     }
 }
 
-/** Подпоток ветки по её номеру; `null` — ветка сужает общий ответ. */
-export function branchRoadOf(branchId) {
-    return roads.byBranch[String(branchId)] || null;
-}
-
-/** Этот workflow — дорога какой-нибудь ветки? */
+/** Этот workflow — дорога какого-нибудь шага `branch`? */
 export function branchRoadIs(workflowId) {
     return roads.workflowIds.has(String(workflowId));
 }

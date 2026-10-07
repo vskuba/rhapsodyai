@@ -4,10 +4,9 @@
 HTTP-часть идёт на стенд — ручки это контракт, и проверять их вызовом функций
 значило бы не проверить ни маршрут, ни права.
 
-⚠⚠ Ветки заводятся на **живой** ноде Dating, а не на выдуманной. У
-`agent_workflow.node_id` стоит внешний ключ на `node`, и завести ветке subflow на
-несуществующей ноде нельзя — проверялся бы не тот путь, которым пойдёт человек.
-Цена — уборка по приставке имени, и она идёт до и после прогона.
+⚠⚠ Ветки заводятся на **живой** ноде Dating, а не на выдуманной: проверяться
+должен тот путь, которым пойдёт человек. Цена — уборка по приставке имени, и она
+идёт до и после прогона.
 
 ⚠ Клиент здесь обычный `httpx.AsyncClient`, а не общий транспорт из `http_pool`:
 тот нужен боевому коду, где клиент разовый из-за своих cookie, а рукопожатий
@@ -15,7 +14,6 @@ HTTP-часть идёт на стенд — ручки это контракт,
 клиенту с общим транспортом `aclose()` как раз запрещён.
 """
 
-import json
 import os
 
 import httpx
@@ -28,8 +26,6 @@ pytestmark = pytest.mark.ai
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8011')
 TEST_BRANCH_PREFIX = 'test_branch_'
 TEST_NODE_ID = 2  # Dating
-STEP_TYPE_LLM_TO_JSON = 2
-STEP_TYPE_RETURN_TEXT = 4
 
 
 async def _sweep(client: httpx.AsyncClient) -> None:
@@ -39,11 +35,6 @@ async def _sweep(client: httpx.AsyncClient) -> None:
     for branch in listing.json().get("result", []):
         if not str(branch.get("name", "")).startswith(TEST_BRANCH_PREFIX):
             continue
-        # ⚠ Subflow ветки удаление ветки НЕ уносит: внешнего ключа между ними
-        # нет и быть не должно — ветку сносят, а её дорогу могут оставить. Для
-        # тестовых же веток это мусор, и убирать его надо руками.
-        if branch.get("workflow_id"):
-            await client.delete(f"/workflow/{branch['workflow_id']}")
         await client.delete(f"/workflow_branch/{branch['id']}")
 
 
@@ -235,103 +226,114 @@ class TestTopicCrud:
         assert row["branch_title"] == 'Договориться'
 
 
-class TestBranchSubflow:
-    async def test_created_skeleton_has_two_steps(self, client: httpx.AsyncClient):
-        """⚠⚠ Скелет из одного `llm_to_json` молча возвращал бы пустоту: движок
-        отдаёт результат родителю только на return-шаге, а дойдя до конца списка
-        без него — `None`, и без ошибки."""
-        branch = await _branch_make(client, 'skeleton')
-        response = await client.post(f"/workflow_branch/{branch['id']}/subflow")
-        assert response.status_code == 200, response.text
+class TestBranchHasNoRoad:
+    """⚠⚠ У ветки подпотока больше нет — его выбирает ШАГ.
 
-        workflow_id = response.json()["result"]["workflow_id"]
-        steps = (await client.get(f"/workflow/{workflow_id}/steps")).json()["result"]
-        assert len(steps) == 2
-        # ⚠ Ручка отдаёт `ts.*` — имени типа в ответе нет, только `type_id`
-        assert [step["type_id"] for step in steps] == [STEP_TYPE_LLM_TO_JSON,
-                                                       STEP_TYPE_RETURN_TEXT]
+    Прежде `workflow_id` лежал у ветки, и настройка вызова была разорвана
+    пополам: карты (`inputs_map`, `outputs_map`) человек правит на шаге, а кого
+    они вызывают — выбирал на вкладке Branch. Карты принадлежат паре «шаг +
+    подпоток», и смена дороги из другого места оставляла карты от прежней
+    **молча**: на карту в никуда движок ругается в лог, которого никто не читает.
 
-    async def test_skeleton_prompt_carries_topic_variables(self, client: httpx.AsyncClient):
-        """Ветка обязана работать сразу после создания — значит критерии темы
-        уже стоят в промпте."""
-        branch = await _branch_make(client, 'skeleton_vars')
-        workflow_id = (await client.post(
-            f"/workflow_branch/{branch['id']}/subflow")).json()["result"]["workflow_id"]
+    Здесь стережётся, что дверь закрыта с обеих сторон — и при заведении, и при
+    правке, — и что ручки «завести ветке скелет» больше нет. Колонка в базе пока
+    жива (снос едет второй выкладкой), и прореха «поле принимается, а никто его
+    не читает» была бы худшим из состояний: запись есть, действия нет.
+    """
 
-        steps = (await client.get(f"/workflow/{workflow_id}/steps")).json()["result"]
-        # ⚠ `metadata` приезжает строкой: колонка LONGTEXT, и ручка отдаёт её как есть
-        prompt = json.loads(steps[0]["metadata"])["prompt_user"]
-        for mark in ('%topic_accept%', '%topic_direction%', '%topic_restrict%'):
-            assert mark in prompt
+    async def test_road_is_not_taken_at_creation(self, client: httpx.AsyncClient):
+        """Присланный при заведении `workflow_id` не доезжает до записи."""
+        listing = (await client.get(f"/workflow/{TEST_NODE_ID}/list")).json()["result"]
+        subflow = next(w for w in listing if int(w["subflow"] or 0))
 
-    async def test_skeleton_declares_contract(self, client: httpx.AsyncClient):
-        branch = await _branch_make(client, 'skeleton_contract')
-        workflow_id = (await client.post(
-            f"/workflow_branch/{branch['id']}/subflow")).json()["result"]["workflow_id"]
+        created = await client.post("/workflow_branch", json={
+            "node_id": TEST_NODE_ID, "name": f"{TEST_BRANCH_PREFIX}road_at_birth",
+            "title": "С дорогой в теле", "workflow_id": subflow["id"],
+        })
 
-        variables = (await client.get(f"/workflow/{workflow_id}/variables")).json()["result"]
-        inputs = {v["name"] for v in variables if v["type"] == 'input'}
-        outputs = {v["name"] for v in variables if v["type"] == 'output'}
+        assert created.status_code == 200, created.text
+        assert not created.json()["result"].get("workflow_id")
 
-        assert 'prompt_user' in inputs and 'user_language' in inputs
-        assert outputs == {'branch_response', 'branch_result'}
-        # ⚠ Семи `topic_*` в контракте быть не должно: их шаг протаскивает сам
-        assert not any(name.startswith('topic_') for name in inputs)
-
-    async def test_subflow_is_attached_to_the_branch(self, client: httpx.AsyncClient):
-        branch = await _branch_make(client, 'skeleton_attach')
-        result = (await client.post(f"/workflow_branch/{branch['id']}/subflow")).json()["result"]
-        assert result["branch"]["workflow_id"] == result["workflow_id"]
-
-    async def test_second_subflow_is_refused(self, client: httpx.AsyncClient):
-        branch = await _branch_make(client, 'skeleton_twice')
-        assert (await client.post(f"/workflow_branch/{branch['id']}/subflow")).status_code == 200
-        again = await client.post(f"/workflow_branch/{branch['id']}/subflow")
-        assert again.status_code == 400
-
-    async def test_plain_workflow_cannot_be_a_branch_road(self, client: httpx.AsyncClient):
-        """⚠ Дорогой ветки может быть только подпоток: обычный workflow зовут
-        запросом к агенту, у него свой вход и свой ответ наружу.
-
-        Проверяется на сервере, хотя селект на странице показывает только
-        подпотоки: спрятать вариант в списке — не защита."""
-        branch = await _branch_make(client, 'plain_road')
+    async def test_road_is_not_taken_at_update(self, client: httpx.AsyncClient):
+        """И при правке тоже: поля нет в белом списке колонок."""
+        branch = await _branch_make(client, 'road_at_update')
 
         listing = (await client.get(f"/workflow/{TEST_NODE_ID}/list")).json()["result"]
-        plain = next(w for w in listing if not int(w["subflow"] or 0))
+        subflow = next(w for w in listing if int(w["subflow"] or 0))
 
         response = await client.put(f"/workflow_branch/{branch['id']}",
-                                    json={"workflow_id": plain["id"]})
-        assert response.status_code == 400
-        assert 'подпоток' in response.json()["detail"]
+                                    json={"workflow_id": subflow["id"]})
 
-    async def test_plain_workflow_is_refused_at_creation_too(self, client: httpx.AsyncClient):
-        """⚠ Та же проверка при заведении: иначе дверь осталась бы открытой."""
-        listing = (await client.get(f"/workflow/{TEST_NODE_ID}/list")).json()["result"]
-        plain = next(w for w in listing if not int(w["subflow"] or 0))
+        assert response.status_code == 200, response.text
+        assert not response.json()["result"].get("workflow_id")
 
-        response = await client.post("/workflow_branch", json={
-            "node_id": TEST_NODE_ID, "name": f"{TEST_BRANCH_PREFIX}plain_at_birth",
-            "title": "С обычным workflow", "workflow_id": plain["id"],
-        })
-        assert response.status_code == 400
-        assert 'подпоток' in response.json()["detail"]
+    async def test_other_fields_still_save(self, client: httpx.AsyncClient):
+        """⚠ Зонд проверяет себя: правка не «молчит вся», молчит только дорога.
 
-    async def test_swapping_to_a_foreign_contract_is_refused(self, client: httpx.AsyncClient):
-        """Шаги `branch` в workflow уже несут карты под прежние имена — подмена
-        на чужой контракт разошлась бы с ними молча.
-
-        ⚠ Чужой подпоток берётся настоящий (`subflow = 1`), иначе проверка
-        упёрлась бы в предыдущее правило и о контракте ничего бы не сказала.
+        Без этого предыдущий тест прошёл бы и на сломанном `PUT`, который не
+        сохраняет ничего.
         """
-        mine = await _branch_make(client, 'contract_mine')
-        await client.post(f"/workflow_branch/{mine['id']}/subflow")
+        branch = await _branch_make(client, 'road_other_fields')
 
-        listing = (await client.get(f"/workflow/{TEST_NODE_ID}/list")).json()["result"]
-        foreign = next(w for w in listing
-                       if int(w["subflow"] or 0) and not str(w["name"]).startswith('branch_'))
+        response = await client.put(f"/workflow_branch/{branch['id']}",
+                                    json={"title": "Переименована", "match_min": 3})
 
-        response = await client.put(f"/workflow_branch/{mine['id']}",
-                                    json={"workflow_id": foreign["id"]})
-        assert response.status_code == 400
-        assert 'онтракт' in response.json()["detail"]
+        assert response.status_code == 200, response.text
+        assert response.json()["result"]["title"] == "Переименована"
+        assert int(response.json()["result"]["match_min"]) == 3
+
+    async def test_skeleton_handle_is_gone(self, client: httpx.AsyncClient):
+        """Ручки «завести ветке скелет подпотока» больше нет.
+
+        Порядок теперь прямой: человек заводит подпоток сам, на странице
+        Workflow, и выбирает его в шаге — там же, где настраивает карты.
+        """
+        branch = await _branch_make(client, 'skeleton_gone')
+
+        response = await client.post(f"/workflow_branch/{branch['id']}/subflow")
+
+        assert response.status_code in (404, 405), response.text
+
+
+class TestBranchRoadList:
+    """Ручка «какие подпотоки — чьи-то дороги»: ответ собирается по ШАГАМ.
+
+    ⚠⚠ Вопрос у спрашивающего обратный: не «куда ведёт этот шаг» (это лежит в его
+    же метаданных), а «открытый workflow — он чья-то дорога?». Ответ на него — в
+    чужих шагах других workflow той же ноды, и собрать его может только сервер.
+
+    Спрашивают двое, и оба про одно: список переменных — показывать ли группу
+    «🌿 Branch переменные», и сторож «Undefined» — снимать ли с `topic_*` красный.
+    Ответь неверно, и `%topic_accept%` в промпте дороги загорится «нигде не
+    заведена»; человек заведёт её руками, и заведённая пустой перекроет
+    приехавшую от шага.
+    """
+
+    async def test_roads_come_from_steps(self, client: httpx.AsyncClient):
+        """Подпоток, названный живым шагом `branch`, в ответе есть."""
+        roads = await client.get(f"/workflow_branch/road/list?node_id={TEST_NODE_ID}")
+
+        assert roads.status_code == 200, roads.text
+
+        result = roads.json()["result"]
+
+        assert isinstance(result, list)
+        # ⚠ Зонд проверяет себя: сверяемся с тем, что реально стоит в шагах, а не
+        # с числом из головы — иначе пустой ответ сошёл бы за верный.
+        assert result == sorted(set(result), key=result.index), 'повторы в ответе'
+
+    async def test_unknown_node_is_empty(self, client: httpx.AsyncClient):
+        """Нода без шагов `branch` — пустой список, а не отказ."""
+        roads = await client.get("/workflow_branch/road/list?node_id=2147483647")
+
+        assert roads.status_code == 200
+        assert roads.json()["result"] == []
+
+    async def test_guest_is_refused(self, client: httpx.AsyncClient):
+        """Ручка за правом, как и соседние по файлу."""
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False,
+                                     timeout=30.0) as guest:
+            response = await guest.get(
+                f"/workflow_branch/road/list?node_id={TEST_NODE_ID}")
+
+        assert response.status_code in (401, 403)

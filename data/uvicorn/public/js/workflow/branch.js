@@ -48,7 +48,6 @@ const branchState = {
     // Что открыто справа: `{kind: 'branch'|'topic'|null, id}`. Одно на двоих —
     // выбрано всегда что-то одно, и второго показывать нечего.
     picked: {kind: null, id: null},
-    workflows: [],
     // Метки открытой темы, уже приведённые. Живут отдельно от карточки: поле
     // ввода перерисовывать нельзя, иначе уедет фокус.
     tags: [],
@@ -171,28 +170,9 @@ export async function openWorkflowBranch(node) {
         }
     };
 
-    await workflowsLoad();
     await treeLoad();
     await branchRoadsLoad(branchState.nodeId);
     detailRender();
-}
-
-/**
- * Подпотоки ноды — кандидаты в «свою дорогу» ветки.
- *
- * ⚠ Только `subflow = 1`. Обычный workflow дорогой ветки быть не может: его
- * зовут запросом к агенту, у него свой вход и свой ответ наружу, — а шаг
- * `branch` вызывает ребёнка той же подпрограммой, что `workflow_invoke`, и ждёт
- * от него возврата родителю. Полный список предлагал бы выбрать то, что сломает
- * прогон, и узналось бы это уже в проде.
- */
-async function workflowsLoad() {
-    try {
-        const rows = (await branchApi(`/workflow/${branchState.nodeId}/list`)).result || [];
-        branchState.workflows = rows.filter(w => Number(w.subflow) === 1);
-    } catch (e) {
-        branchState.workflows = [];
-    }
 }
 
 /**
@@ -324,12 +304,6 @@ function branchCardRender(detail) {
         return;
     }
 
-    const subflowOptions = ['<option value="">— нет, ветка сужает общий ответ —</option>']
-        .concat(branchState.workflows.map(w =>
-            `<option value="${w.id}" ${String(w.id) === String(branch.workflow_id) ? 'selected' : ''}>`
-            + `${esc(w.title || w.name)}</option>`))
-        .join('');
-
     detail.innerHTML = `
       <div class="branch-card">
         <div class="branch-card-head">Ветка</div>
@@ -350,15 +324,11 @@ function branchCardRender(detail) {
           <div class="branch-hint">Тема ниже этого порога в выборе не участвует.
                Порог живёт у ветки: на шаге он глушил бы и чужие темы.</div>
         </div>
-        <div class="branch-field">
-          <label>Своя дорога (subflow)</label>
-          <div style="display:flex; gap:8px">
-            <select class="branch-control" id="b_workflow_id" style="flex:1">${subflowOptions}</select>
-            <button type="button" class="btn-branch" id="b_subflow_new"
-                    ${branch.workflow_id ? 'disabled' : ''}>Создать subflow</button>
-          </div>
-          <div class="branch-hint">Пусто — ветка не заменяет генерацию ответа, а сужает её:
-               критерии темы приезжают метками в общий промпт.</div>
+        <div class="branch-hint" style="margin-top:4px">
+          Своя дорога (subflow) выбирается <b>на шаге</b>, на вкладке «Шаги», — там же,
+          где настраиваются карты вызова. Здесь её нет намеренно: карты принадлежат паре
+          «шаг + подпоток», и смена дороги из другого места оставила бы карты от прежней
+          молча. Одна и та же ветка в соседних шагах может идти разными путями.
         </div>
         <div class="branch-actions">
           <button type="button" class="btn-branch btn-branch-primary" id="b_save">Сохранить</button>
@@ -370,8 +340,6 @@ function branchCardRender(detail) {
     document.getElementById('b_save').onclick = branchSave;
     document.getElementById('b_delete').onclick = branchDelete;
     document.getElementById('b_topic_new').onclick = () => pick('topic', null);
-    const subflowButton = document.getElementById('b_subflow_new');
-    if (subflowButton) subflowButton.onclick = branchSubflowCreate;
 }
 
 function topicCardRender(detail) {
@@ -717,7 +685,6 @@ async function branchSave() {
                 title: document.getElementById('b_title').value.trim(),
                 match_min: Number(document.getElementById('b_match_min').value) || 1,
                 is_enabled: document.getElementById('b_is_enabled').checked ? 1 : 0,
-                workflow_id: document.getElementById('b_workflow_id').value || null,
             }),
         });
         await treeLoad();
@@ -739,22 +706,6 @@ async function branchDelete() {
         await treeLoad();
         detailRender();
         showNotification(`Ветка «${branch.title}» удалена`, 'success');
-    } catch (e) {
-        showNotification(e.message, 'error');
-    }
-}
-
-async function branchSubflowCreate() {
-    const branch = branchCurrent();
-    try {
-        const created = await branchApi(`/workflow_branch/${branch.id}/subflow`, {method: 'POST'});
-        await workflowsLoad();
-        await treeLoad();
-        await branchRoadsLoad(branchState.nodeId);
-        detailRender();
-        showNotification(
-            `Subflow заведён (id ${created.result.workflow_id}) — его шаги правятся на «Шагах»`,
-            'success');
     } catch (e) {
         showNotification(e.message, 'error');
     }

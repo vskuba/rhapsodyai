@@ -889,6 +889,18 @@ export function renderCustomStepFields(step, metadata) {
             //
             // Ветка выбирается статически: только так редактор покажет её
             // контракт, а граф сумеет нарисовать стрелку к subflow.
+            //
+            // ## ⚠⚠ Подпоток выбирается ЗДЕСЬ, рядом с картами
+            //
+            // Прежде он жил у ветки, на вкладке Branch, и настройка вызова была
+            // разорвана пополам: карты человек правит тут, а кого они вызывают —
+            // выбирал на другой вкладке. Карты принадлежат паре «шаг +
+            // подпоток»: имена в них — переменные конкретного подпотока, и
+            // смена дороги из другого места оставляла карты от прежней молча.
+            //
+            // ⚠ Отбор списка — тот же, что у `workflow_invoke`: только
+            // `subflow = 1`. Обычный workflow дорогой ветки быть не может — его
+            // зовут запросом к агенту, а шаг `branch` ждёт возврата родителю.
             const branchContainer = document.createElement('div');
             branchContainer.id = `field_${field.key}`;
             branchContainer.style = "display: flex; flex-direction: column; gap: 12px; "
@@ -913,6 +925,63 @@ export function renderCustomStepFields(step, metadata) {
                                        '-- переменная с метками --');
             tagsRow.append(tagsLabel, tagsSelect);
 
+            // 2.5. Своя дорога: подпоток, которым отвечает тема этой ветки
+            const roadRow = document.createElement('div');
+            roadRow.style = 'display: flex; flex-direction: column; gap: 4px;';
+            const roadLabel = document.createElement('div');
+            roadLabel.style = 'font-size: 12px; color: #475569;';
+            roadLabel.textContent = 'Своя дорога (subflow)';
+
+            const roadSelect = document.createElement('select');
+            roadSelect.className = 'form-control branch-road-select';
+            roadSelect.style = "padding: 6px; font-size: 13px; height: 36px;";
+            roadSelect.innerHTML =
+                '<option value="">— нет, ветка сужает общий ответ —</option>';
+
+            // ⚠ Подпоток заводится человеком заранее, на странице Workflow:
+            // кнопки «создать» здесь нет и у ветки больше нет. Порядок прямой —
+            // сперва завести дорогу, потом выбрать её в шаге.
+            (state.allWorkflows || [])
+                .filter(wf => Number(wf.subflow) === 1
+                              && String(wf.id) !== String(editorWorkflowId()))
+                .forEach(wf => {
+                    const option = document.createElement('option');
+                    option.value = wf.id;
+                    option.textContent = `🔁 ${wf.title || wf.name}`;
+                    if (currentValue && String(currentValue.workflow_id) === String(wf.id)) {
+                        option.selected = true;
+                    }
+                    roadSelect.appendChild(option);
+                });
+
+            // Ссылка на выбранную дорогу — чтобы править её шаги не через поиск.
+            // ⚠ Переход событием, а не вызовом `main.js`: импортировать его
+            // отсюда нельзя, замкнётся круг. Тем же приёмом ходит соседний
+            // `workflow_invoke`.
+            const roadLink = document.createElement('a');
+            roadLink.style = "display: none; align-self: flex-start; font-size: 12px; "
+                + "font-weight: 600; color: #3e8ee3; text-decoration: none;";
+            roadLink.onclick = (e) => {
+                if (e.ctrlKey || e.metaKey) return;
+                e.preventDefault();
+                document.dispatchEvent(new CustomEvent('workflow:open',
+                    {detail: {workflowId: roadSelect.value}}));
+            };
+
+            const roadLinkUpdate = () => {
+                const wf = (state.allWorkflows || [])
+                    .find(w => String(w.id) === String(roadSelect.value));
+                if (!wf) {
+                    roadLink.style.display = 'none';
+                    return;
+                }
+                roadLink.textContent = `🔗 Перейти в '${wf.title || wf.name}'`;
+                roadLink.href = `/admin/workflow?workflow_id=${wf.id}`;
+                roadLink.style.display = 'inline-flex';
+            };
+
+            roadRow.append(roadLabel, roadSelect, roadLink);
+
             // 3. Семь `topic_*` — показываем, но не даём править
             //
             // ⚠⚠ Карты для них нет намеренно: с ней один забытый маппинг
@@ -934,12 +1003,19 @@ export function renderCustomStepFields(step, metadata) {
 
             const collectBranchData = () => {
                 const maps = subflowMapsCollect(branchMaps);
-                saveChanges({
+                const payload = {
                     branch_id: branchSelect.value ? parseInt(branchSelect.value) : null,
                     tags: tagsSelect.value,
                     inputs_map: maps.inputs_map,
                     outputs_map: maps.outputs_map,
-                });
+                };
+
+                // ⚠ Без дороги ключа нет вовсе, а не `null`: движок читает
+                // `branch_meta.get('workflow_id')`, и отсутствие отвечает тем же
+                // — зато в метаданных не остаётся следа от снятого выбора.
+                if (roadSelect.value) payload.workflow_id = parseInt(roadSelect.value);
+
+                saveChanges(payload);
             };
 
             const renderBranchMaps = renderSubflowMaps(branchMaps, step.id, () => {
@@ -949,20 +1025,26 @@ export function renderCustomStepFields(step, metadata) {
 
             let branchRows = [];
 
+            // Что показывать под селектами. Дорогу спрашиваем у ШАГА, порог — у
+            // ветки: он общий для всех её шагов и живёт в реестре.
             const branchApply = async (saved) => {
                 const branch = branchRows.find(b => String(b.id) === String(branchSelect.value));
-                branchMaps.style.display = branch && branch.workflow_id ? 'flex' : 'none';
-                if (!branch) {
-                    branchHint.textContent = '';
-                    return;
-                }
-                if (branch.workflow_id) {
-                    branchHint.textContent = `Своя дорога: темы этой ветки отвечают подпотоком `
-                        + `(порог совпадений ${branch.match_min}).`;
-                    await renderBranchMaps(branch.workflow_id, saved);
-                } else {
+                const road = roadSelect.value;
+
+                roadLinkUpdate();
+                branchMaps.style.display = road ? 'flex' : 'none';
+
+                const threshold = branch ? ` (порог совпадений ${branch.match_min})` : '';
+
+                if (road) {
+                    branchHint.textContent =
+                        `Своя дорога: тема этой ветки отвечает подпотоком${threshold}.`;
+                    await renderBranchMaps(road, saved);
+                } else if (branch) {
                     branchHint.textContent = 'Ветка сужает общий ответ: критерии темы приедут '
-                        + `метками в промпт генерации (порог совпадений ${branch.match_min}).`;
+                        + `метками в промпт генерации${threshold}.`;
+                } else {
+                    branchHint.textContent = '';
                 }
             };
 
@@ -978,8 +1060,10 @@ export function renderCustomStepFields(step, metadata) {
                         branchRows.forEach(branch => {
                             const option = document.createElement('option');
                             option.value = branch.id;
-                            option.textContent = (branch.workflow_id ? '🌿 ' : '')
-                                + `${branch.title} (${branch.topic_count})`;
+                            // ⚠ Значка дороги в этой строке больше нет: дорога
+                            // теперь у шага, а не у ветки, и одна и та же ветка
+                            // в соседних шагах может идти разными путями.
+                            option.textContent = `${branch.title} (${branch.topic_count})`;
                             if (currentValue && String(currentValue.branch_id) === String(branch.id)) {
                                 option.selected = true;
                             }
@@ -997,12 +1081,21 @@ export function renderCustomStepFields(step, metadata) {
                 collectBranchData();
                 document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
             };
+            // ⚠⚠ Сменили дорогу — карты рисуются ПУСТЫМИ (`branchApply(null)`):
+            // прежние пары называли переменные другого подпотока, и перенеси мы
+            // их, в метаданных осталась бы карта в никуда. Тот же довод, что у
+            // соседнего `workflow_invoke`.
+            roadSelect.onchange = async () => {
+                await branchApply(null);
+                collectBranchData();
+                document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
+            };
             tagsSelect.onchange = () => {
                 collectBranchData();
                 document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
             };
 
-            branchContainer.append(branchSelect, tagsRow, topicNote, branchHint, branchMaps);
+            branchContainer.append(branchSelect, tagsRow, roadRow, topicNote, branchHint, branchMaps);
             fieldWrapper.appendChild(branchContainer);
 
         } else if (field.type === 'widget_llm_to_image') {
