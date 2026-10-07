@@ -14,7 +14,7 @@
 
 import {getData} from '../api.js';
 import {branchTopicNames, undefinedVariables} from './variable-group.js';
-import {branchRoadIs} from './branch.js';
+import {branchRoadIs} from './branch-roads.js';
 import {state} from './state.js';
 import {editorWorkflowId} from './utils.js';
 

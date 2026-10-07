@@ -11,7 +11,14 @@
 там, ради чего заведены двухсловные метки.
 """
 
+import pytest
+
 from src.ai.ai_workflow_branch import ai_workflow_branch_pick, ai_workflow_branch_tags_split
+
+# ⚠ Группа `ai`, как у соседей по слою: правило относится к движку workflow.
+# Без маркера файл не попал бы ни в один прогон по группе — это стережёт
+# `test_marks.py`, и он же меня поймал.
+pytestmark = pytest.mark.ai
 
 
 def _topic(name, tags, branch_id=1, match_min=1):

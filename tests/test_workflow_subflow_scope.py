@@ -173,18 +173,33 @@ class TestTheOnlyRoadOut:
 
 
 def _invoke_nodes() -> list:
-    """Тело ветки `workflow_invoke` движка — узлами разбора.
+    """Код вызова подпотока — узлами разбора.
 
-    ⚠ Берём **ветку**, а не всю функцию: соседние шаги вправе делать с
-    `variables` что угодно, и поиск подстрокой по функции целиком ловил бы их.
+    ⚠ Берём **не всю функцию**: соседние шаги вправе делать с `variables` что
+    угодно, и поиск подстрокой по функции целиком ловил бы их.
+
+    ## ⚠⚠ Мест стало два, и это не размывание сторожа
+
+    Сборка области видимости переехала из ветки `workflow_invoke` в метод
+    `_workflow_child_run`: тот же вызов понадобился шагу `branch`, и второй копии
+    ста восьмидесяти строк (рекурсия, вложенная трассировка, `repeat`) в проекте
+    быть не должно.
+
+    Правило от переезда не изменилось, поэтому сторож смотрит **оба** места:
+    scope собирается в методе, а результат родителю кладёт ветка. Пропусти мы
+    одно — половина правила осталась бы без охраны.
     """
+    child = ast.parse(textwrap.dedent(inspect.getsource(
+        mod.AiFrameworkAgentManager._workflow_child_run)))
+    nodes = list(child.body[0].body)
+
     tree = ast.parse(textwrap.dedent(inspect.getsource(
         mod.AiFrameworkAgentManager._workflow_steps_run)))
 
     for node in ast.walk(tree):
         if (isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
                 and ast.unparse(node.test) == "step_type == 'workflow_invoke'"):
-            return node.body
+            return nodes + node.body
 
     raise AssertionError('в движке больше нет ветки step_type == workflow_invoke')
 
