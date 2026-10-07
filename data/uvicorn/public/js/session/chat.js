@@ -541,6 +541,15 @@ function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
         : (String(text || '') !== ''
             ? htmlEscape(text)
             : '<span class="chat-half-empty">— нет ответа —</span>');
+    // В половине не реплика, а пометка на её месте. Разметке это нужно знать:
+    // пузырь подменной строки не растягивается (`css/session.css`).
+    //
+    // ⚠⚠ Признак считается ЗДЕСЬ, рядом с самим выбором подмены, а не ищется
+    // потом по вложенному классу (`:has(.chat-half-deleted)`). Решение «текста
+    // нет» принимается одним выражением выше, и третий случай подмены, если он
+    // заведётся, попадёт под правило сам. Поиск по классу о нём не узнал бы — и
+    // новая пометка молча поехала бы в растянутом пузыре.
+    const blank = Boolean(deletedAt) || String(text || '') === '';
     // ⚠ Два голых штампа в одной строке без подсказок не различить: оба
     // выглядят датой. Какой из них что — сказано наведением.
     const tail = [
@@ -556,7 +565,7 @@ function halfHtml({side, who, text, timeBefore, timeBeforeHint = '',
             <div class="chat-half-who" title="${htmlEscape(who)}">${htmlEscape(who)}</div>
             <div class="chat-half-time" title="${htmlEscape(timeBeforeHint)}">${
                 timeBefore ? fmtTz(timeBefore) : ''}</div>
-            <div class="chat-half-text">${content}</div>
+            <div class="chat-half-text${blank ? ' chat-half-text-blank' : ''}">${content}</div>
             ${tail ? `<div class="chat-half-marks">${tail}</div>` : ''}
         </div>
     `;
