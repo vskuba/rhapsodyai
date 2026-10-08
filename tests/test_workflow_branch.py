@@ -156,16 +156,15 @@ class TestTopicCrud:
         response = await client.post(f"/workflow_branch/{branch['id']}/topic", json={
             "name": "test_photo_mail", "title": "Письма и фотографии",
             "tags": "обмен письмами, пришли письмо",
-            "acceptance": "Соглашайся охотно.",
-            "direction": "Уводи разговор в письма.",
-            "restriction": "Не обещай откровенного, не давай контактов вне сайта.",
+            "instructions": "Соглашайся охотно. Уводи разговор в письма.\n"
+                            "Не обещай откровенного, не давай контактов вне сайта.",
         })
         assert response.status_code == 200, response.text
 
         topic = response.json()["result"]
         assert topic["branch_id"] == branch["id"]
         assert topic["tags"] == "обмен письмами, пришли письмо"
-        assert topic["direction"] == "Уводи разговор в письма."
+        assert "Уводи разговор в письма." in topic["instructions"]
 
     async def test_branch_list_counts_topics(self, client: httpx.AsyncClient):
         """Число тем видно в списке веток — без второго запроса на каждую."""
@@ -195,16 +194,16 @@ class TestTopicCrud:
         assert clash.status_code == 400
         assert 'уже есть' in clash.json()["detail"]
 
-    async def test_topic_update_changes_criteria(self, client: httpx.AsyncClient):
+    async def test_topic_update_changes_instructions(self, client: httpx.AsyncClient):
         branch = await _branch_make(client, 'editable')
         topic = (await client.post(f"/workflow_branch/{branch['id']}/topic",
                                    json={"name": "test_edit", "title": "Правка",
                                          "tags": "метка"})).json()["result"]
 
         response = await client.put(f"/workflow_branch/topic/{topic['id']}",
-                                    json={"restriction": "Нельзя обещать звонок."})
+                                    json={"instructions": "Нельзя обещать звонок."})
         assert response.status_code == 200
-        assert response.json()["result"]["restriction"] == "Нельзя обещать звонок."
+        assert response.json()["result"]["instructions"] == "Нельзя обещать звонок."
 
     async def test_deleting_branch_takes_its_topics(self, client: httpx.AsyncClient):
         branch = await _branch_make(client, 'cascade')
@@ -304,7 +303,7 @@ class TestBranchRoadList:
 
     Спрашивают двое, и оба про одно: список переменных — показывать ли группу
     «🌿 Branch переменные», и сторож «Undefined» — снимать ли с `topic_*` красный.
-    Ответь неверно, и `%topic_accept%` в промпте дороги загорится «нигде не
+    Ответь неверно, и `%topic_instructions%` в промпте дороги загорится «нигде не
     заведена»; человек заведёт её руками, и заведённая пустой перекроет
     приехавшую от шага.
     """

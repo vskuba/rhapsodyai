@@ -2,7 +2,7 @@
 Ветки разговора и темы внутри них: реестр, из которого читает шаг `branch`.
 
 Ветка — род разговора: имя, порог совпадений и темы. Тема — запись внутри ветки:
-метки и три текста (разрешено / желательно / запрещено).
+метки и один текст инструкции.
 
 ⚠ Правила выбора темы живут не здесь, а в `src/ai/ai_workflow_branch.py`: тут
 только хранение и контракт HTTP. Своя копия арифметики на странице или в ручке
@@ -54,73 +54,15 @@ router = APIRouter()
 BRANCH_COLUMNS = ('title', 'description', 'match_min', 'is_enabled', 'position')
 
 # ⚠ Набор полей темы одинаков во всех ветках. Дать ветке объявлять свои поля
-# значило бы превратить вкладку в конструктор форм, а смысл слоя — ровно в трёх
-# текстах: разрешено, желательно, запрещено.
-TOPIC_COLUMNS = ('name', 'title', 'tags', 'acceptance', 'direction', 'restriction',
-                 'is_enabled', 'position')
-
-
-async def _branch_code_make(node_id: int, title: str) -> str:
-    """Код ветки из её названия: «Договориться» → `dogovoritsya`.
-
-    ⚠ Транслит берётся общей `i18n_translit_cyr` — она заведена ровно для
-    устойчивых идентификаторов и меняться не должна: по её выводу заводят
-    записи, которые потом ищут по имени.
-
-    ⚠ Занятый код получает номер (`dogovoritsya_2`), а не отказ: человек назвал
-    ветку как хотел, и спорить с ним из-за служебного поля не о чем.
-    """
-    base = re.sub(r'[^a-z0-9]+', '_', i18n_translit_cyr(title).lower()).strip('_')[:40]
-    base = base or 'branch'
-
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT `name` FROM `agent_workflow_branch` WHERE `node_id` = %s", (node_id,))
-        taken = {row['name'] for row in await db.fetchall() or []}
-
-    code, number = base, 2
-    while code in taken:
-        code = f'{base}_{number}'
-        number += 1
-    return code
-
-
-async def _branch_row(branch_id: int) -> dict:
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT * FROM `agent_workflow_branch` WHERE `id` = %s", (branch_id,))
-        row = await db.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail='Ветка не найдена')
-    return row
-
-
-async def _topic_row(topic_id: int) -> dict:
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            "SELECT * FROM `agent_workflow_branch_topic` WHERE `id` = %s", (topic_id,))
-        row = await db.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail='Тема не найдена')
-    return row
-
-
-async def _topic_name_free(node_id: int, name: str, topic_id: int = 0) -> None:
-    """Код темы уникален в пределах НОДЫ, а не только ветки.
-
-    ⚠ Ключ в базе держит пару «ветка + имя»: по коду тема называется в промптах и
-    в журнале прогона, и два `money` в разных ветках сделали бы журнал
-    нечитаемым. Поэтому вторая проверка — здесь, запросом по ветвям ноды.
-    """
-    sql = """
-        SELECT t.`id` FROM `agent_workflow_branch_topic` t
-          JOIN `agent_workflow_branch` b ON b.`id` = t.`branch_id`
-         WHERE b.`node_id` = %s AND t.`name` = %s AND t.`id` <> %s
-    """
-    async with mysql_get_db_async() as db:
-        await db.execute(sql, (node_id, name, topic_id))
-        if await db.fetchone():
-            raise HTTPException(status_code=400, detail='Тема с таким кодом в ноде уже есть')
+# значило бы превратить вкладку в конструктор форм.
+#
+# ⚠⚠ Текст инструкции ОДИН. Прежде их было три — `acceptance` / `direction` /
+# `restriction`, — и деление оказалось вымышленным: человек пишет инструкцию
+# целиком, а раскладывать её по трём коробкам может только гадая, в какую ляжет
+# «соглашайся, но не обещай часа». Старые колонки ещё стоят в схеме (снос —
+# второй выкладкой), но сюда не принимаются: иначе у темы снова стало бы два
+# места с инструкциями, и промпт читал бы одно, а человек правил другое.
+TOPIC_COLUMNS = ('name', 'title', 'tags', 'instructions', 'is_enabled', 'position')
 
 
 @router.get("/workflow_branch/topic/list")
@@ -176,14 +118,12 @@ async def workflow_branch_topic_create(
     async with mysql_get_db_async() as db:
         await db.execute(
             """INSERT INTO `agent_workflow_branch_topic`
-                      (`branch_id`, `name`, `title`, `tags`, `acceptance`,
-                       `direction`, `restriction`, `is_enabled`, `position`)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                      (`branch_id`, `name`, `title`, `tags`, `instructions`,
+                       `is_enabled`, `position`)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (branch_id, name, str(body.get('title') or name),
              str(body.get('tags') or ''),
-             body.get('acceptance') or None,
-             body.get('direction') or None,
-             body.get('restriction') or None,
+             body.get('instructions') or None,
              int(body.get('is_enabled', 1)),
              int(body.get('position') or 0))
         )
@@ -274,7 +214,7 @@ async def workflow_branch_road_list(
 
     Спрашивают двое, и оба про одно: список переменных — показывать ли группу
     «🌿 Branch переменные», и сторож «Undefined» — снимать ли с `topic_*` красный.
-    Ошибись здесь, и `%topic_accept%` в промпте дороги горел бы «нигде не
+    Ошибись здесь, и `%topic_instructions%` в промпте дороги горел бы «нигде не
     заведена», человек завёл бы её руками — и заведённая пустой **перекрыла** бы
     приехавшую от шага.
 
@@ -384,3 +324,66 @@ async def workflow_branch_delete(
         # ⚠ Темы уносит каскад внешнего ключа — отдельного DELETE не нужно.
         await db.execute("DELETE FROM `agent_workflow_branch` WHERE `id` = %s", (branch_id,))
     return {"result": {"deleted": branch_id}}
+
+
+async def _branch_code_make(node_id: int, title: str) -> str:
+    """Код ветки из её названия: «Договориться» → `dogovoritsya`.
+
+    ⚠ Транслит берётся общей `i18n_translit_cyr` — она заведена ровно для
+    устойчивых идентификаторов и меняться не должна: по её выводу заводят
+    записи, которые потом ищут по имени.
+
+    ⚠ Занятый код получает номер (`dogovoritsya_2`), а не отказ: человек назвал
+    ветку как хотел, и спорить с ним из-за служебного поля не о чем.
+    """
+    base = re.sub(r'[^a-z0-9]+', '_', i18n_translit_cyr(title).lower()).strip('_')[:40]
+    base = base or 'branch'
+
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT `name` FROM `agent_workflow_branch` WHERE `node_id` = %s", (node_id,))
+        taken = {row['name'] for row in await db.fetchall() or []}
+
+    code, number = base, 2
+    while code in taken:
+        code = f'{base}_{number}'
+        number += 1
+    return code
+
+
+async def _branch_row(branch_id: int) -> dict:
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT * FROM `agent_workflow_branch` WHERE `id` = %s", (branch_id,))
+        row = await db.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail='Ветка не найдена')
+    return row
+
+
+async def _topic_row(topic_id: int) -> dict:
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            "SELECT * FROM `agent_workflow_branch_topic` WHERE `id` = %s", (topic_id,))
+        row = await db.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail='Тема не найдена')
+    return row
+
+
+async def _topic_name_free(node_id: int, name: str, topic_id: int = 0) -> None:
+    """Код темы уникален в пределах НОДЫ, а не только ветки.
+
+    ⚠ Ключ в базе держит пару «ветка + имя»: по коду тема называется в промптах и
+    в журнале прогона, и два `money` в разных ветках сделали бы журнал
+    нечитаемым. Поэтому вторая проверка — здесь, запросом по ветвям ноды.
+    """
+    sql = """
+        SELECT t.`id` FROM `agent_workflow_branch_topic` t
+          JOIN `agent_workflow_branch` b ON b.`id` = t.`branch_id`
+         WHERE b.`node_id` = %s AND t.`name` = %s AND t.`id` <> %s
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(sql, (node_id, name, topic_id))
+        if await db.fetchone():
+            raise HTTPException(status_code=400, detail='Тема с таким кодом в ноде уже есть')

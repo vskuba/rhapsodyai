@@ -982,7 +982,7 @@ export function renderCustomStepFields(step, metadata) {
 
             roadRow.append(roadLabel, roadSelect, roadLink);
 
-            // 3. Семь `topic_*` — показываем, но не даём править
+            // 3. Пять `topic_*` — показываем, но не даём править
             //
             // ⚠⚠ Карты для них нет намеренно: с ней один забытый маппинг
             // выключал бы тему молча — ветка отработала, промпт собрался,
@@ -992,7 +992,7 @@ export function renderCustomStepFields(step, metadata) {
                 + "padding: 8px 10px; border-radius: 4px; line-height: 1.5;";
             topicNote.innerHTML = 'Из темы приедут сами, настраивать нечего:<br>'
                 + '<code style="color:#475569">topic_name, topic_title, topic_tags, '
-                + 'topic_accept, topic_direction, topic_restrict, topic_score</code>';
+                + 'topic_instructions, topic_score</code>';
 
             // 4. Карты вызова — те же, что у `workflow_invoke`
             const branchMaps = document.createElement('div');

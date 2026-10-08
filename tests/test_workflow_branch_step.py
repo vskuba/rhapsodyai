@@ -16,11 +16,11 @@ from src.ai.ai_workflow_branch import ai_workflow_branch_pick, ai_workflow_branc
 
 pytestmark = pytest.mark.ai
 
-# Семь значений, которые шаг кладёт сам. Карты для них нет: с ней один забытый
+# Пять значений, которые шаг кладёт сам. Карты для них нет: с ней один забытый
 # маппинг выключал бы тему молча — ветка отработала, промпт собрался, инструкций
 # в нём нет.
 TOPIC_VARIABLES = ('topic_name', 'topic_title', 'topic_tags',
-                   'topic_accept', 'topic_direction', 'topic_restrict', 'topic_score')
+                   'topic_instructions', 'topic_score')
 
 MY_BRANCH_ID = 1
 
@@ -32,12 +32,11 @@ MY_BRANCH_ID = 1
 def _topics():
     return [
         {'id': 1, 'branch_id': 1, 'name': 'photo_mail', 'title': 'Письма и фото',
-         'tags': 'обмен письмами, пришли письмо', 'acceptance': 'соглашайся',
-         'direction': 'веди в письма', 'restriction': 'не обещай откровенного',
+         'tags': 'обмен письмами, пришли письмо',
+         'instructions': 'соглашайся, веди в письма, не обещай откровенного',
          'branch_name': 'deal', 'match_min': 1},
         {'id': 2, 'branch_id': 2, 'name': 'money', 'title': 'Деньги',
-         'tags': 'перевод денег', 'acceptance': '', 'direction': '',
-         'restriction': 'не проси денег',
+         'tags': 'перевод денег', 'instructions': 'не проси денег',
          'branch_name': 'dodge', 'match_min': 1},
     ]
 

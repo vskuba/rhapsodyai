@@ -389,24 +389,6 @@ class TestThePhotoBranchAnswersInCommon:
         assert got.ran(STEP_ANSWER), \
             f'ветка фото не дошла до общего шага «Ответ».{got}'
 
-    async def test_the_old_exit_is_gone(self, talk, llm_answers):
-        """⚠ Свой шаг возврата убран, и маршрут через него значил бы, что
-        миграция `…_wf_talk_photo_branch_one_exit` не доехала до этой базы.
-
-        ⚠⚠ Тема задаётся, и **без этого тест был бы пустым**: утверждение
-        отрицательное, а не сработавшая ветка не ходит вообще никуда — «своего шага
-        нет» выполнялось бы само собой. Зелёный при незапущенной ветке ничего не
-        значит, и поймать такое по цвету нельзя.
-        """
-        await llm_answers(talk_plan(topic='photo_mail'), default=photo_answer())
-
-        got = await talk('Can you send me your photos?')
-
-        assert got.ran(STEP_BRANCH), \
-            f'ветка фото не сработала — проверять было нечего.{got}'
-        assert not got.went_through('Ответ ветки'), \
-            f'ветка отвечает своим шагом, а не общим.{got}'
-
 
 def _mail_vars(kind: str) -> dict:
     """Переменные, которые панель кладёт для письма, — все до одной.

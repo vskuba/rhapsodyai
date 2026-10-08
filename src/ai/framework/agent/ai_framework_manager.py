@@ -1106,9 +1106,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         'topic_name': topic.get('name') or '',
                         'topic_title': topic.get('title') or '',
                         'topic_tags': topic.get('tags') or '',
-                        'topic_accept': topic.get('acceptance') or '',
-                        'topic_direction': topic.get('direction') or '',
-                        'topic_restrict': topic.get('restriction') or '',
+                        'topic_instructions': topic.get('instructions') or '',
                         'topic_score': str(sum(1 for tag in own if tag in named)),
                     }
                     variables.update(topic_scope)
@@ -1120,7 +1118,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     )
 
                     # Ветка со своей дорогой — вызов subflow общей подпрограммой.
-                    # ⚠ Семь `topic_*` едут `scope_extra`: объявлять их в
+                    # ⚠ Пять `topic_*` едут `scope_extra`: объявлять их в
                     # контракте ребёнка не требуется, как не требуется объявлять
                     # `user_language`.
                     #

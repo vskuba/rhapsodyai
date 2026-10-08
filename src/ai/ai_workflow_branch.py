@@ -2,7 +2,7 @@
 Реестр веток и тем: чтение и выбор темы по меткам.
 
 Ветка — род разговора: имя, порог совпадений и темы. Тема — запись внутри ветки:
-метки и три текста (разрешено / желательно / запрещено). Подпоток у ветки не
+метки и один текст инструкции. Подпоток у ветки не
 хранится: его выбирает ШАГ, рядом со своими картами вызова.
 Правила здесь, хранение — в `agent_workflow_branch` и `agent_workflow_branch_topic`,
 исполнение — в шаге `branch` движка.
@@ -109,7 +109,7 @@ async def ai_workflow_branch_topics(node_id: int) -> list[dict]:
     """
     sql = """
         SELECT t.`id`, t.`branch_id`, t.`name`, t.`title`, t.`tags`,
-               t.`acceptance`, t.`direction`, t.`restriction`,
+               t.`instructions`,
                b.`name` AS `branch_name`, b.`title` AS `branch_title`,
                b.`match_min`
           FROM `agent_workflow_branch_topic` t

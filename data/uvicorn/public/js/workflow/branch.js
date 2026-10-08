@@ -2,7 +2,7 @@
  * Вкладка «Branch» страницы Workflow: ветки разговора и темы внутри них.
  *
  * Ветка — род разговора со своим контрактом и необязательным подпотоком. Тема —
- * запись внутри ветки: метки и три текста (разрешено / желательно / запрещено).
+ * запись внутри ветки: метки и один текст инструкции.
  *
  * ## Устройство страницы
  *
@@ -51,11 +51,6 @@ const branchState = {
     // Метки открытой темы, уже приведённые. Живут отдельно от карточки: поле
     // ввода перерисовывать нельзя, иначе уедет фокус.
     tags: [],
-    // Открытый критерий. ⚠ Живёт в состоянии, а не в разметке: сохранение темы
-    // пересобирает карточку целиком, и без памяти вкладка отскакивала бы на
-    // первую — человек правил «Запрещено», нажал «Сохранить», и смотрит на
-    // «Разрешено», будто попал не туда.
-    crit: 'acceptance',
 };
 
 async function branchApi(url, options) {
@@ -345,8 +340,7 @@ function branchCardRender(detail) {
 function topicCardRender(detail) {
     const branch = branchCurrent();
     const topic = topicCurrent() || {
-        name: '', title: '', tags: '', acceptance: '', direction: '', restriction: '',
-        is_enabled: 1,
+        name: '', title: '', tags: '', instructions: '', is_enabled: 1,
     };
     const isNew = !topicCurrent();
 
@@ -381,30 +375,16 @@ function topicCardRender(detail) {
           <div class="branch-hint">Каждая из двух слов и больше: «обмен письмами»,
                «пришли письмо». Односложные не различают близкие темы.</div>
         </div>
-        <div class="crit-tabs">
-          <button type="button" class="crit-tab is-on" data-crit="acceptance">Разрешено</button>
-          <button type="button" class="crit-tab" data-crit="direction">Желательно</button>
-          <button type="button" class="crit-tab" data-crit="restriction">Запрещено</button>
-          <span class="crit-grow"></span>
-          <span class="crit-big" id="t_crit_big"></span>
-        </div>
-        <div class="crit-pane" data-pane="acceptance">
-          <textarea class="branch-control crit-area" id="t_acceptance"
-                    placeholder="Что в этой теме можно и как отвечать"
-                    >${esc(topic.acceptance)}</textarea>
-          <div class="branch-hint">Реакция: что делать, когда тема поднята.</div>
-        </div>
-        <div class="crit-pane" data-pane="direction" style="display:none">
-          <textarea class="branch-control crit-area" id="t_direction"
-                    placeholder="Куда вести разговор"
-                    >${esc(topic.direction)}</textarea>
-          <div class="branch-hint">То, ради чего слой и заведён: не реакция, а направление.</div>
-        </div>
-        <div class="crit-pane" data-pane="restriction" style="display:none">
-          <textarea class="branch-control crit-area" id="t_restriction"
-                    placeholder="О чём нельзя и куда не двигаться"
-                    >${esc(topic.restriction)}</textarea>
-          <div class="branch-hint">Уезжает и в генерацию ответа, и к судье.</div>
+        <div class="branch-field">
+          <div class="instr-head">
+            <label>Инструкция</label>
+            <span class="instr-big" id="t_instructions_big"></span>
+          </div>
+          <textarea class="branch-control instr-area" id="t_instructions"
+                    placeholder="Что делать, когда тема поднята: как отвечать, куда вести разговор, чего нельзя"
+                    >${esc(topic.instructions)}</textarea>
+          <div class="branch-hint">Весь текст уезжает агенту переменной
+               <code>%topic_instructions%</code> — и в генерацию ответа, и к судье.</div>
         </div>
         <div class="branch-actions">
           <button type="button" class="btn-branch btn-branch-primary" id="t_save">Сохранить тему</button>
@@ -413,76 +393,30 @@ function topicCardRender(detail) {
       </div>`;
 
     tagsEditorInit(tagList(topic.tags));
-    critTabsInit();
+    instructionsBigInit();
 
     document.getElementById('t_save').onclick = () => topicSave(isNew ? null : topic.id);
     const removeButton = document.getElementById('t_delete');
     if (removeButton) removeButton.onclick = () => topicDelete(topic.id);
 }
 
-// ── Три критерия вкладками ──────────────────────────────────────────────────
+// ── Инструкция темы ─────────────────────────────────────────────────────────
 //
-// ⚠⚠ Все три поля живут в DOM всегда, скрыта лишь неактивная вкладка. Рисуй мы
-// только открытую — переключение теряло бы несохранённые правки соседних, и
-// пропажа была бы молчаливой: человек напечатал запрет, глянул разрешение,
-// нажал «Сохранить» — и запрета нет.
-//
-// ⚠ Точка на вкладке говорит, что текст там есть: спрятанное содержимое иначе
-// не видно вовсе, и пустой критерий не отличить от заполненного.
+// ⚠⚠ Текст ОДИН, и прежде их было три — «разрешено / желательно / запрещено»
+// вкладками. Деление оказалось вымышленным: человек пишет инструкцию целиком, а
+// раскладывать её по трём коробкам мог только гадая, в какую ляжет «соглашайся,
+// но не обещай часа». Вкладки при этом прятали написанное — заполненность
+// приходилось показывать точкой на корешке, и всё равно два поля из трёх были
+// не видны.
 
-const CRIT_TITLES = {
-    acceptance: 'Разрешено — что можно и как отвечать',
-    direction: 'Желательно — куда вести разговор',
-    restriction: 'Запрещено — о чём нельзя',
-};
-
-function critTabsInit() {
-    const tabs = Array.from(document.querySelectorAll('.crit-tab'));
-    if (!tabs.length) return;
-
-    const markFilled = () => tabs.forEach(tab => {
-        const area = document.getElementById(`t_${tab.dataset.crit}`);
-        tab.classList.toggle('is-filled', Boolean(area && area.value.trim()));
-    });
-
+function instructionsBigInit() {
     // Иконка большого окна — общая `textModalIcon`, та же, что у промптов шага.
-    //
-    // ⚠ Она **перевешивается** на открытую вкладку: критериев три, а видно один,
-    // и иконка на всю карточку открывала бы не то, на что смотрит человек.
-    const bigHost = document.getElementById('t_crit_big');
-    const bigShow = (crit) => {
-        if (!bigHost) return;
-        bigHost.innerHTML = '';
-        const area = document.getElementById(`t_${crit}`);
-        if (area) bigHost.appendChild(textModalIcon(area, CRIT_TITLES[crit] || ''));
-    };
+    const bigHost = document.getElementById('t_instructions_big');
+    const area = document.getElementById('t_instructions');
+    if (!bigHost || !area) return;
 
-    const show = (crit, focus) => {
-        branchState.crit = crit;
-        tabs.forEach(tab => tab.classList.toggle('is-on', tab.dataset.crit === crit));
-        document.querySelectorAll('.crit-pane').forEach(pane => {
-            pane.style.display = pane.dataset.pane === crit ? 'block' : 'none';
-        });
-        bigShow(crit);
-
-        const area = document.getElementById(`t_${crit}`);
-        // ⚠ Фокус — только по щелчку человека. На восстановлении после
-        // сохранения он утащил бы страницу к полю, которое никто не трогал.
-        if (area && focus) area.focus();
-    };
-
-    tabs.forEach(tab => {
-        tab.onclick = () => show(tab.dataset.crit, true);
-
-        const area = document.getElementById(`t_${tab.dataset.crit}`);
-        if (area) area.oninput = markFilled;
-    });
-
-    markFilled();
-
-    // Открытой остаётся та вкладка, на которой человек работал
-    const known = tabs.some(tab => tab.dataset.crit === branchState.crit);
-    show(known ? branchState.crit : 'acceptance', false);
+    bigHost.innerHTML = '';
+    bigHost.appendChild(textModalIcon(area, 'Инструкция темы'));
 }
 
 // ── Редактор меток: чипсы вместо строки через запятую ───────────────────────
@@ -726,9 +660,7 @@ function topicBody() {
         name: document.getElementById('t_name').value.trim(),
         title: document.getElementById('t_title').value.trim(),
         tags: branchState.tags.join(', '),
-        acceptance: document.getElementById('t_acceptance').value,
-        direction: document.getElementById('t_direction').value,
-        restriction: document.getElementById('t_restriction').value,
+        instructions: document.getElementById('t_instructions').value,
         is_enabled: document.getElementById('t_is_enabled').checked ? 1 : 0,
     };
 }
