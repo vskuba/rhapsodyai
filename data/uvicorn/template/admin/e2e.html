@@ -1,0 +1,794 @@
+{% extends "base.html" %}
+
+{% block title %}E2E{% endblock %}
+
+{% block head %}
+<style>
+    /* Раскладка: слева прогоны, справа тесты открытого прогона. Та же пара
+       «список — содержимое», что у трасс (`workflow_trace.html`): соседние
+       страницы админки читаются одними глазами. */
+    .e2e-page {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        min-height: 0;
+    }
+
+    /* ===================== Левая колонка: прогоны ===================== */
+    .e2e-runs {
+        flex: 0 0 240px;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #e2e8f0;
+        background: #fafafa;
+        min-height: 0;
+    }
+
+    .e2e-runs-head {
+        padding: 10px 14px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #718096;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+    }
+
+    .e2e-runs-list {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+    }
+
+    .e2e-run {
+        padding: 10px 14px;
+        border-bottom: 1px solid #edf2f7;
+        cursor: pointer;
+        border-left: 3px solid transparent;
+    }
+
+    .e2e-run:hover {
+        background: #f1f5f9;
+    }
+
+    .e2e-run.active {
+        background: #fff;
+        border-left-color: #3498db;
+    }
+
+    .e2e-run-time {
+        font-size: 12px;
+        color: #2d3748;
+        font-weight: 600;
+    }
+
+    .e2e-run-sub {
+        margin-top: 3px;
+        font-size: 11px;
+        color: #718096;
+    }
+
+    /* ===================== Правая колонка ===================== */
+    .e2e-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .e2e-tools {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        border-bottom: 1px solid #e0e0e0;
+        background: #fafafa;
+        flex-shrink: 0;
+    }
+
+    .e2e-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+        border: 1px solid #cbd5e0;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        color: #2d3748;
+    }
+
+    .e2e-btn:hover {
+        background: #edf2f7;
+    }
+
+    .e2e-btn-run {
+        border-color: #9ae6b4;
+        background: #f0fff4;
+        color: #22543d;
+        font-weight: 600;
+    }
+
+    .e2e-btn-run:hover {
+        background: #c6f6d5;
+    }
+
+    /* Идущий прогон: кнопка заперта и говорит об этом. ⚠ Ширина не фиксируется
+       — подпись меняется с «▶ Прогнать сейчас» на «⏳ Идёт прогон…», и жёсткая
+       ширина обрезала бы одну из них. Соседние кнопки при этом не дёргаются:
+       панель выравнивает их по левому краю. */
+    .e2e-btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+    }
+
+    .e2e-count {
+        font-size: 12px;
+        color: #718096;
+        margin-left: auto;
+    }
+
+    .e2e-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px 16px;
+        min-height: 0;
+    }
+
+    .e2e-empty {
+        padding: 30px;
+        text-align: center;
+        color: #a0aec0;
+        font-size: 13px;
+    }
+
+    /* ===================== Карточка теста =====================
+       Карточка — ТЕСТ, а не строка таблицы: у одного случая строк столько,
+       сколько ширин, и показывать их врозь значило бы три карточки с одним
+       именем. Внутри карточки — кадр на ширину. */
+    .e2e-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        margin-bottom: 14px;
+        background: #fff;
+        border-left: 3px solid #48bb78;
+    }
+
+    .e2e-card.fail {
+        border-left-color: #e53e3e;
+    }
+
+    .e2e-card.error {
+        border-left-color: #dd6b20;
+    }
+
+    .e2e-card-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 10px 14px 0;
+        flex-wrap: wrap;
+    }
+
+    .e2e-card-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: #2d3748;
+    }
+
+    .e2e-card-page {
+        font-size: 12px;
+        color: #4299e1;
+        font-family: monospace;
+    }
+
+    /* Описание случая из YAML. Оно отвечает на вопрос «что этот тест
+       стережёт», и читают его, когда тест покраснел, — поэтому не прячется
+       под раскрытие. */
+    .e2e-card-desc {
+        padding: 4px 14px 0;
+        font-size: 12px;
+        color: #718096;
+        line-height: 1.45;
+    }
+
+    .e2e-shots {
+        display: flex;
+        gap: 12px;
+        padding: 12px 14px 14px;
+        flex-wrap: wrap;
+    }
+
+    .e2e-shot {
+        width: 260px;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        overflow: hidden;
+        cursor: pointer;
+        background: #f7fafc;
+    }
+
+    .e2e-shot:hover {
+        border-color: #3498db;
+    }
+
+    .e2e-shot-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px;
+        font-size: 11px;
+        background: #f7fafc;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .e2e-shot-width {
+        font-weight: 700;
+        color: #2d3748;
+    }
+
+    .e2e-shot-areas {
+        margin-left: auto;
+        color: #718096;
+    }
+
+    /* ⚠ `display: block` обязателен: inline-картинка оставляет под собой
+       полосу базовой линии, и у плитки появляется лишний светлый поясок.
+
+       ⚠⚠ Высота подрезана, и это не вкусовщина. Кадры трёх ширин имеют разные
+       пропорции: 360×800 на плитке в 260 px даёт 578 px высоты, а 1440×900 —
+       162 px. Без подрезки ряд «ступенькой», а карточка одного теста вырастает
+       на полтора экрана. `object-position: top` — потому что смотрят верх
+       страницы: шапка, панель, первые строки. Целый кадр открывается щелчком. */
+    .e2e-shot img {
+        display: block;
+        width: 100%;
+        height: 300px;
+        object-fit: cover;
+        object-position: top;
+        background: #fff;
+    }
+
+    .e2e-shot-none {
+        padding: 24px 8px;
+        text-align: center;
+        font-size: 11px;
+        color: #a0aec0;
+    }
+
+    /* ===================== Значки вердикта ===================== */
+    .e2e-badge {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .e2e-badge.ok {
+        background: #c6f6d5;
+        color: #22543d;
+    }
+
+    .e2e-badge.fail {
+        background: #fed7d7;
+        color: #742a2a;
+    }
+
+    .e2e-badge.error {
+        background: #feebc8;
+        color: #7b341e;
+    }
+
+    /* ===================== Окно кадра крупно ===================== */
+    .e2e-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 1000;
+        padding: 24px;
+    }
+
+    .e2e-modal.open {
+        display: flex;
+        gap: 0;
+    }
+
+    /* ⚠ `fit-content`, а не `100%`: кадр мобильной ширины — 360 настоящих
+       пикселей, и в окне на всю ширину рядом с ним оставалось 700 пустых —
+       то самое «пустое рядом со сжатым» (§ 2.4 frontend_check_rules). Окно
+       сжимается до кадра, а широкий кадр упирается в `max-width` и ужимается
+       сам. */
+    .e2e-modal-box {
+        display: flex;
+        width: fit-content;
+        max-width: 1500px;
+        margin: auto;
+        max-height: 100%;
+        background: #fff;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .e2e-modal-shot {
+        flex: 0 1 auto;
+        overflow: auto;
+        background: #edf2f7;
+        min-width: 0;
+    }
+
+    /* ⚠ `width: auto`, а не `100%`: кадр мобильной ширины — это 360 настоящих
+       пикселей, и растянутый на 1085 он врёт втрое. Здесь смотрят «что было на
+       экране», то есть кадр в натуральную величину; шире окна — ужимается. */
+    .e2e-modal-shot img {
+        display: block;
+        max-width: 100%;
+        width: auto;
+        height: auto;
+        margin: 0 auto;
+    }
+
+    /* Правая панель окна: что именно проверено на этом кадре. Вердикт —
+       число, а не мнение: «x+w = 1452 при вьюпорте 1440». */
+    .e2e-modal-side {
+        flex: 0 0 330px;
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid #e2e8f0;
+        min-height: 0;
+    }
+
+    .e2e-modal-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 13px;
+        font-weight: 700;
+        color: #2d3748;
+    }
+
+    .e2e-modal-close {
+        margin-left: auto;
+        border: none;
+        background: none;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+        color: #a0aec0;
+    }
+
+    .e2e-modal-close:hover {
+        color: #2d3748;
+    }
+
+    .e2e-areas {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 0;
+        min-height: 0;
+    }
+
+    .e2e-area {
+        padding: 8px 14px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .e2e-area-name {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #2d3748;
+    }
+
+    .e2e-area-sel {
+        font-family: monospace;
+        font-size: 11px;
+        color: #a0aec0;
+        margin-top: 2px;
+        word-break: break-all;
+    }
+
+    .e2e-rule {
+        display: flex;
+        gap: 6px;
+        font-size: 11px;
+        margin-top: 4px;
+        color: #4a5568;
+    }
+
+    .e2e-rule.bad {
+        color: #c53030;
+    }
+
+    .e2e-rule-mark {
+        flex-shrink: 0;
+    }
+
+    .e2e-console {
+        border-top: 1px solid #e2e8f0;
+        padding: 8px 14px;
+        font-size: 11px;
+        font-family: monospace;
+        color: #c53030;
+        max-height: 120px;
+        overflow-y: auto;
+        flex-shrink: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{# E2E-проверки интерфейса: прогон снимает страницы панели, меряет области
+   числами и кладёт строку в `test_e2e`. Здесь — чтение этой таблицы.
+
+   ⚠ Карточка на странице — ТЕСТ, а в таблице строка на тест × ширину: сетка,
+   собранная на широкой, ломается на мобильной, и вердикты там разные. Поэтому
+   строки группируются по имени, а ширины показываются кадрами внутри карточки.
+
+   Устройство прогона — `.claude/docs/e2e.md`, общий каркас — `py_modules/tests_e2e/`. #}
+<div class="e2e-page">
+
+    <div class="e2e-runs">
+        <div class="e2e-runs-head">Прогоны</div>
+        <div class="e2e-runs-list" id="e2eRuns">
+            <div class="e2e-empty">Загрузка…</div>
+        </div>
+    </div>
+
+    <div class="e2e-main">
+        <div class="e2e-tools">
+            <button type="button" class="e2e-btn" id="e2eReload"
+                    title="Перечитать список прогонов">⟳ Обновить</button>
+            {# Прогон, а не обновление списка: кнопки стоят рядом и раньше их
+               путали — у «⟳» значок читался как «прогнать заново». Поэтому у
+               обеих подпись словами. #}
+            <button type="button" class="e2e-btn e2e-btn-run" id="e2eRun"
+                    title="Прогнать случаи сейчас, не дожидаясь ночи">▶ Прогнать сейчас</button>
+            <span class="e2e-badge" id="e2eRunStatus" style="display:none"></span>
+            <span class="e2e-count" id="e2eCount"></span>
+        </div>
+
+        <div class="e2e-list" id="e2eList">
+            <div class="e2e-empty">Загрузка…</div>
+        </div>
+    </div>
+</div>
+
+<div class="e2e-modal" id="e2eModal">
+    <div class="e2e-modal-box">
+        <div class="e2e-modal-shot" id="e2eModalShot"></div>
+        <div class="e2e-modal-side">
+            <div class="e2e-modal-head">
+                <span id="e2eModalTitle">—</span>
+                <button type="button" class="e2e-modal-close" id="e2eModalClose">×</button>
+            </div>
+            <div class="e2e-areas" id="e2eModalAreas"></div>
+            <div class="e2e-console" id="e2eModalConsole" style="display:none"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, postData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const runsEl = document.getElementById('e2eRuns');
+    const listEl = document.getElementById('e2eList');
+    const countEl = document.getElementById('e2eCount');
+    const statusEl = document.getElementById('e2eRunStatus');
+    const modalEl = document.getElementById('e2eModal');
+
+    // Строки открытого прогона — по номеру строки: окно кадра берёт их отсюда,
+    // второй раз сервер не спрашивает.
+    const rowsById = new Map();
+    let openRun = '';
+
+    const STATUS_TEXT = {ok: 'прошёл', fail: 'есть провалы', error: 'сорвался'};
+
+    function el(tag, cls, text) {
+        const node = document.createElement(tag);
+        if (cls) node.className = cls;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    function badge(status) {
+        const node = el('span', `e2e-badge ${status}`, STATUS_TEXT[status] || status);
+        return node;
+    }
+
+    async function loadRuns() {
+        const answer = await getData('/api/e2e/run?limit=30');
+        const runs = answer.result || [];
+
+        runsEl.replaceChildren();
+        if (!runs.length) {
+            runsEl.append(el('div', 'e2e-empty', 'Прогонов ещё не было'));
+            return runs;
+        }
+
+        runs.forEach(run => {
+            const node = el('div', 'e2e-run');
+            node.dataset.run = run.run_uuid;
+            node.append(el('div', 'e2e-run-time', fmtTz(run.started_at, false)));
+
+            const sub = el('div', 'e2e-run-sub');
+            sub.append(badge(run.status));
+            sub.append(document.createTextNode(
+                ` · тестов ${run.tests}` + (run.failed ? `, провалов ${run.failed}` : '')));
+            node.append(sub);
+
+            node.onclick = () => openRunRows(run.run_uuid);
+            runsEl.append(node);
+        });
+        return runs;
+    }
+
+    async function openRunRows(runUuid) {
+        openRun = runUuid;
+        document.querySelectorAll('.e2e-run').forEach(node => {
+            node.classList.toggle('active', node.dataset.run === runUuid);
+        });
+
+        const answer = await getData(`/api/e2e/run/${runUuid || 'last'}`);
+        const result = answer.result || {};
+        const rows = result.rows || [];
+
+        rowsById.clear();
+        rows.forEach(row => rowsById.set(row.id, row));
+
+        const run = result.run || {};
+        if (run.run_uuid) {
+            openRun = run.run_uuid;
+            document.querySelectorAll('.e2e-run').forEach(node => {
+                node.classList.toggle('active', node.dataset.run === run.run_uuid);
+            });
+            statusEl.style.display = '';
+            statusEl.className = `e2e-badge ${run.status}`;
+            statusEl.textContent = STATUS_TEXT[run.status] || run.status;
+            countEl.textContent = `${fmtTz(run.started_at, true)} · тестов ${run.tests}`
+                + (run.failed ? ` · провалов ${run.failed}` : '')
+                + (run.errored ? ` · сорвалось ${run.errored}` : '');
+        } else {
+            statusEl.style.display = 'none';
+            countEl.textContent = '';
+        }
+
+        drawRows(rows);
+    }
+
+    // Строки → карточки: одна карточка на ИМЯ теста, внутри кадр на ширину.
+    function drawRows(rows) {
+        listEl.replaceChildren();
+        if (!rows.length) {
+            listEl.append(el('div', 'e2e-empty',
+                'Прогонов ещё не было. Случаи лежат в tests_e2e/, прогон идёт раз в сутки.'));
+            return;
+        }
+
+        const byName = new Map();
+        rows.forEach(row => {
+            if (!byName.has(row.name)) byName.set(row.name, []);
+            byName.get(row.name).push(row);
+        });
+
+        byName.forEach((group, name) => {
+            // Вердикт карточки — худший из её ширин: одна красная ширина делает
+            // красным весь тест, иначе зелёная карточка прятала бы провал.
+            const worst = group.some(row => row.status === 'error') ? 'error'
+                : group.some(row => row.status === 'fail') ? 'fail' : 'ok';
+
+            const card = el('div', `e2e-card ${worst}`);
+
+            const head = el('div', 'e2e-card-head');
+            head.append(el('span', 'e2e-card-name', name));
+            head.append(badge(worst));
+            head.append(el('span', 'e2e-card-page', group[0].page));
+            card.append(head);
+
+            if (group[0].description) {
+                card.append(el('div', 'e2e-card-desc', group[0].description));
+            }
+
+            const shots = el('div', 'e2e-shots');
+            group.sort((a, b) => a.width - b.width).forEach(row => shots.append(shotTile(row)));
+            card.append(shots);
+
+            listEl.append(card);
+        });
+    }
+
+    function shotTile(row) {
+        const tile = el('div', 'e2e-shot');
+
+        const bar = el('div', 'e2e-shot-bar');
+        bar.append(el('span', 'e2e-shot-width', `${row.width}px`));
+        bar.append(badge(row.status));
+        bar.append(el('span', 'e2e-shot-areas',
+            row.areas_failed ? `${row.areas_failed} из ${row.areas_total}`
+                : `областей ${row.areas_total}`));
+        tile.append(bar);
+
+        if (row.shot_url) {
+            const img = document.createElement('img');
+            img.src = row.shot_url;
+            img.alt = `${row.name}, ${row.width}px`;
+            img.loading = 'lazy';
+            tile.append(img);
+        } else {
+            tile.append(el('div', 'e2e-shot-none', row.error || 'кадра нет'));
+        }
+
+        tile.onclick = () => openShot(row.id);
+        return tile;
+    }
+
+    function openShot(rowId) {
+        const row = rowsById.get(rowId);
+        if (!row) return;
+
+        document.getElementById('e2eModalTitle').textContent =
+            `${row.name} · ${row.width}px`;
+
+        const shotBox = document.getElementById('e2eModalShot');
+        shotBox.replaceChildren();
+        if (row.shot_url) {
+            const img = document.createElement('img');
+            img.src = row.shot_url;
+            img.alt = row.name;
+            shotBox.append(img);
+        }
+
+        const areasBox = document.getElementById('e2eModalAreas');
+        areasBox.replaceChildren();
+        (row.areas || []).forEach(area => areasBox.append(areaRow(area)));
+        if (!(row.areas || []).length) {
+            areasBox.append(el('div', 'e2e-empty', row.error || 'областей нет'));
+        }
+
+        const consoleBox = document.getElementById('e2eModalConsole');
+        const lines = row.console || [];
+        consoleBox.style.display = lines.length ? '' : 'none';
+        consoleBox.textContent = lines.join('\n');
+
+        modalEl.classList.add('open');
+    }
+
+    function areaRow(area) {
+        const node = el('div', 'e2e-area');
+
+        const head = el('div', 'e2e-area-name');
+        head.append(el('span', '', area.name || '—'));
+        head.append(badge(area.status || 'ok'));
+        node.append(head);
+        node.append(el('div', 'e2e-area-sel', area.selector || ''));
+
+        (area.rules || []).forEach(rule => {
+            const bad = rule.status !== 'ok';
+            const line = el('div', `e2e-rule${bad ? ' bad' : ''}`);
+            line.append(el('span', 'e2e-rule-mark', bad ? '✕' : '✓'));
+            // Числом, а не словом: «не вылезла» без числа не отличить от
+            // «не проверяли», а 1452 при вьюпорте 1440 — уже готовый ответ.
+            line.append(el('span', '', rule.detail
+                ? `${rule.name} — ${rule.detail}` : rule.name));
+            node.append(line);
+        });
+
+        return node;
+    }
+
+    function closeShot() {
+        modalEl.classList.remove('open');
+        document.getElementById('e2eModalShot').replaceChildren();
+    }
+
+    document.getElementById('e2eModalClose').onclick = closeShot;
+    modalEl.onclick = event => {
+        if (event.target === modalEl) closeShot();
+    };
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeShot();
+    });
+
+    const runBtn = document.getElementById('e2eRun');
+
+    // Пока прогон идёт, страница опрашивает его состояние и сама подхватывает
+    // результат. ⚠ Опрос заводится ТОЛЬКО на время прогона и гасится по его
+    // окончании: вечный таймер на открытой вкладке — это запрос в секунду к
+    // панели круглые сутки.
+    let pollTimer = 0;
+
+    function paintRun(running) {
+        runBtn.disabled = running;
+        runBtn.textContent = running ? '⏳ Идёт прогон…' : '▶ Прогнать сейчас';
+    }
+
+    function pollStop() {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = 0;
+    }
+
+    function pollStart() {
+        pollStop();
+        paintRun(true);
+        pollTimer = setInterval(async () => {
+            try {
+                const answer = await getData('/api/e2e/run/status');
+                if (answer.result && answer.result.running) return;
+                pollStop();
+                paintRun(false);
+                // Прогон кончился — список обновляем сами: человек нажал кнопку
+                // и ждёт результата, а не ещё одного нажатия.
+                openRun = '';
+                await load();
+                showNotification('Прогон закончен', 'success');
+            } catch (err) {
+                pollStop();
+                paintRun(false);
+                showNotification(err.message, 'error');
+            }
+        }, 3000);
+    }
+
+    runBtn.onclick = async () => {
+        runBtn.disabled = true;
+        try {
+            const answer = await postData('/api/e2e/run', {});
+            const result = answer.result || {};
+            if (!result.started) {
+                showNotification(result.reason || 'Прогон уже идёт', 'warning');
+            } else {
+                showNotification('Прогон запущен', 'success');
+            }
+            pollStart();
+        } catch (err) {
+            showNotification(err.message, 'error');
+            paintRun(false);
+        }
+    };
+
+    document.getElementById('e2eReload').onclick = () => load();
+
+    async function load() {
+        try {
+            const runs = await loadRuns();
+            if (runs.length) {
+                await openRunRows(openRun || runs[0].run_uuid);
+            } else {
+                listEl.replaceChildren(el('div', 'e2e-empty',
+                    'Прогонов ещё не было. Случаи лежат в tests_e2e/, прогон идёт раз в сутки.'));
+            }
+        } catch (err) {
+            showNotification(err.message, 'error');
+            listEl.replaceChildren(el('div', 'e2e-empty', err.message));
+        }
+    }
+
+    // ⚠ `loadTz()` до первой отрисовки: без него `fmtTz` покажет UTC, а
+    // настройка `timezone` сдвигает время на всех страницах админки.
+    await loadTz();
+    await load();
+
+    // ⚠⚠ Состояние прогона спрашиваем и при заходе, а не только после нажатия.
+    // Прогон живёт в очереди, а не во вкладке: его мог завести сосед или ночное
+    // расписание, а страницу — перезагрузить посреди прогона. Без этой проверки
+    // кнопка предлагала бы завести второй, и человек получал бы отказ вместо
+    // честного «идёт».
+    try {
+        const answer = await getData('/api/e2e/run/status');
+        if (answer.result && answer.result.running) pollStart();
+    } catch (err) {
+        // Состояние не узнали — кнопка остаётся доступной: отказ придёт от
+        // ручки, и это честнее, чем запереть её из-за молчания Redis.
+    }
+</script>
+{% endblock %}

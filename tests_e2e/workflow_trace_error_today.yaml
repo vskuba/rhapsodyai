@@ -1,0 +1,43 @@
+name: Трассы — нет ошибок за сегодня
+description: >
+  Вкладка «Error» страницы трасс (/admin/workflow_trace). Стережёт главное:
+  за текущую дату не записано ни одной ошибки workflow. Хотя бы одна запись
+  сегодняшним числом — тест не пройден, и смотреть надо сразу в неё.
+
+page: /admin/workflow_trace
+widths: [1440]
+
+# Страница открывается на вкладке «Running»; без нажатия мерили бы не ту ленту.
+steps:
+  - click: '.status-tab[data-status="error"]'
+  # ⚠⚠ Ждём ПРИЗНАК, а не секунды. Лента добирается запросом к базе, и пустой
+  # список от «ещё не пришло» неотличим от «ошибок нет»: тест зеленел бы на
+  # непроверенной странице. Признак готовности — лента перестала показывать
+  # «Загрузка...»: дальше в ней либо карточки, либо честное «Запусков нет».
+  - wait_for: |
+      const list = document.querySelector('#runsList');
+      if (!list) return false;
+      return !list.textContent.includes('Загрузка');
+    timeout: 15000
+
+areas:
+  - name: Вкладка Error
+    selector: '.status-tab[data-status="error"]'
+    rules: [видна, не_вылезла]
+  - name: Лента запусков
+    selector: '#runsList'
+    rules: [видна, не_вылезла]
+
+checks:
+  - name: ошибок за сегодня
+    expect: 0
+    # ⚠ `loadTz()` зовётся здесь намеренно. Дата в карточке считается поясом из
+    # настройки `timezone`, а `fmtTz` берёт его из `window.APP_TZ_OFFSET` —
+    # страница трасс держит своё собственное смещение и эту глобаль не трогает.
+    # Без вызова «сегодня» считалось бы по UTC, и около полуночи вердикт
+    # расходился бы с тем, что человек видит на экране.
+    js: |
+      await window.loadTz();
+      const today = window.fmtTz(new Date().toISOString()).slice(0, 10);
+      return [...document.querySelectorAll('.run-card .run-meta')]
+        .filter(meta => (meta.textContent || '').trim().startsWith(today)).length;
