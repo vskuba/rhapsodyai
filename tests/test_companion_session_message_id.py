@@ -22,7 +22,7 @@
 import pytest
 
 from src.tool.companion.companion_session import (COMPANION_SESSION_TOOL,
-                                                  chat_message_id_of)
+                                                  companion_session_message_id)
 
 pytestmark = pytest.mark.core
 
@@ -33,7 +33,7 @@ SILENCE_VAR = f'{COMPANION_SESSION_TOOL}_744_result_id'
 
 def test_answer_branch_gives_its_number():
     """Обычный случай: агент ответил, обмен записан, номер уехал наружу."""
-    assert chat_message_id_of({ANSWER_VAR: '1094'}) == 1094
+    assert companion_session_message_id({ANSWER_VAR: '1094'}) == 1094
 
 
 def test_silence_branch_gives_its_number_too():
@@ -43,13 +43,13 @@ def test_silence_branch_gives_its_number_too():
     только после удачной отправки. Прятать номер здесь незачем: это сделало бы
     функцию умнее, чем она знает.
     """
-    assert chat_message_id_of({SILENCE_VAR: '77'}) == 77
+    assert companion_session_message_id({SILENCE_VAR: '77'}) == 77
 
 
 def test_silence_is_not_a_failure():
     """⚠ Ноль — законный исход, а не отказ: обмена не записали вовсе."""
-    assert chat_message_id_of({}) == 0
-    assert chat_message_id_of(None) == 0
+    assert companion_session_message_id({}) == 0
+    assert companion_session_message_id(None) == 0
 
 
 def test_the_stale_alias_is_ignored():
@@ -59,7 +59,7 @@ def test_the_stale_alias_is_ignored():
     `outputs_map`, если тот у шага уцелел, — и значение в нём может быть любым.
     Читать надо то, что вернул инструмент, а не то, что кто-то настроил.
     """
-    assert chat_message_id_of({'talk_message_id': '9', ANSWER_VAR: '1094'}) == 1094
+    assert companion_session_message_id({'talk_message_id': '9', ANSWER_VAR: '1094'}) == 1094
 
 
 def test_other_tools_are_not_mistaken_for_it():
@@ -72,7 +72,7 @@ def test_other_tools_are_not_mistaken_for_it():
                  'companion_session_incoming_9_result_id': '6',
                  ANSWER_VAR: '1094'}
 
-    assert chat_message_id_of(variables) == 1094
+    assert companion_session_message_id(variables) == 1094
 
 
 def test_both_branches_give_the_freshest():
@@ -80,7 +80,7 @@ def test_both_branches_give_the_freshest():
 
     Берём наибольший номер: свежая строка и есть та, которую отправляют.
     """
-    assert chat_message_id_of({SILENCE_VAR: '77', ANSWER_VAR: '1094'}) == 1094
+    assert companion_session_message_id({SILENCE_VAR: '77', ANSWER_VAR: '1094'}) == 1094
 
 
 def test_junk_does_not_raise():
@@ -89,6 +89,6 @@ def test_junk_does_not_raise():
     Ручка отдаёт ответ агента, уже сочинённый и оплаченный вызовом модели;
     падать на разборе номера значило бы потерять его из-за мелочи.
     """
-    assert chat_message_id_of({ANSWER_VAR: 'нет'}) == 0
-    assert chat_message_id_of({ANSWER_VAR: None}) == 0
-    assert chat_message_id_of({ANSWER_VAR: '0'}) == 0
+    assert companion_session_message_id({ANSWER_VAR: 'нет'}) == 0
+    assert companion_session_message_id({ANSWER_VAR: None}) == 0
+    assert companion_session_message_id({ANSWER_VAR: '0'}) == 0

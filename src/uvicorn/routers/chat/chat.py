@@ -251,9 +251,9 @@ async def chat_ask_ai(
         #
         # ⚠ Ноль — законный исход, а не отказ: агент промолчал, прогон ушёл в
         # «Тишину», и доставлять нечего.
-        from src.tool.companion.companion_session import chat_message_id_of
+        from src.tool.companion.companion_session import companion_session_message_id
 
-        message_id = chat_message_id_of(framework_model.workflow_variables)
+        message_id = companion_session_message_id(framework_model.workflow_variables)
 
         return {"result": result_text, "message_id": message_id}
     except asyncio.TimeoutError:

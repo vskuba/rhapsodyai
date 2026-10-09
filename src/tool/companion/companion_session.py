@@ -57,7 +57,7 @@ COMPANION_SESSION_PENDING_SEC = 86400
 
 # Имя инструмента записи обмена — им же движок именует переменную результата
 # (`{инструмент}_{шаг}_result_{ключ}`). Постоянной, потому что имя читают
-# двое: сам инструмент и поиск номера `chat_message_id_of` ниже.
+# двое: сам инструмент и поиск номера `companion_session_message_id` ниже.
 COMPANION_SESSION_TOOL = 'companion_session_add'
 
 
@@ -212,7 +212,7 @@ async def companion_session_incoming(owner_unique_id: str,
     return {'id': int(made or 0), 'saved': 1, 'why': ''}
 
 
-def chat_message_id_of(variables: dict) -> int:
+def companion_session_message_id(variables: dict) -> int:
     """Номер записанного обмена — из переменных прогона, по имени инструмента.
 
     Args:
