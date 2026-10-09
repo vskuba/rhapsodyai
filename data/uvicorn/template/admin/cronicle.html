@@ -1,0 +1,433 @@
+{% extends "base.html" %}
+
+{% block title %}Cronicle{% endblock %}
+
+{% block head %}
+<style>
+    .cron-page {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        min-height: 0;
+    }
+
+    .cron-tools {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        border-bottom: 1px solid #e0e0e0;
+        background: #fafafa;
+        flex-shrink: 0;
+    }
+
+    .cron-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+        border: 1px solid #cbd5e0;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        color: #2d3748;
+    }
+
+    .cron-btn:hover {
+        background: #edf2f7;
+    }
+
+    .cron-count {
+        font-size: 12px;
+        color: #718096;
+        margin-left: auto;
+    }
+
+    .cron-body {
+        flex: 1;
+        overflow: auto;
+        padding: 14px 16px;
+        min-height: 0;
+    }
+
+    /* Состояние «ключа нет» — не ошибка, а инструкция: установка живёт без
+       ключа, пока его не завели. Поэтому не красный тост, а спокойная рамка. */
+    .cron-note {
+        border: 1px solid #fbd38d;
+        background: #fffaf0;
+        color: #744210;
+        border-radius: 6px;
+        padding: 12px 14px;
+        font-size: 13px;
+        line-height: 1.5;
+        margin-bottom: 14px;
+    }
+
+    .cron-note code {
+        background: #fff;
+        border: 1px solid #f6e05e;
+        border-radius: 3px;
+        padding: 0 4px;
+        font-size: 12px;
+    }
+
+    .cron-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .cron-table th {
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #718096;
+        padding: 8px 10px;
+        border-bottom: 2px solid #e2e8f0;
+        white-space: nowrap;
+    }
+
+    .cron-table td {
+        padding: 9px 10px;
+        border-bottom: 1px solid #edf2f7;
+        vertical-align: top;
+    }
+
+    /* ⚠ Слабину забирает ПЕРВАЯ колонка, а не последняя. Без этого авто-раскладка
+       отдавала её колонке «последний удачный», и между расписанием и датой
+       зияла пустота в треть экрана при обрезанных названиях событий. */
+    .cron-table th:first-child,
+    .cron-table td:first-child {
+        width: 100%;
+    }
+
+    .cron-table tr.off td {
+        color: #a0aec0;
+    }
+
+    .cron-title {
+        font-weight: 600;
+        color: #2d3748;
+    }
+
+    .cron-target {
+        font-family: monospace;
+        font-size: 11px;
+        color: #a0aec0;
+        margin-top: 2px;
+    }
+
+    /* Заметка события из Cronicle: то, ради чего раньше шли в его панель.
+       ⚠ Ширина ограничена: заметки бывают в несколько предложений, и без
+       потолка строка растягивается на весь экран — читать её глазами тяжело,
+       взгляд теряет начало следующей строки. */
+    .cron-notes {
+        margin-top: 4px;
+        max-width: 68ch;
+        font-size: 12px;
+        line-height: 1.45;
+        color: #718096;
+        white-space: pre-wrap;
+    }
+
+    .cron-timing {
+        font-family: monospace;
+        font-size: 12px;
+        color: #4a5568;
+        white-space: nowrap;
+    }
+
+    /* ⚠ Числовые колонки к правому краю: их сравнивают глазами по столбцу,
+       а разноширокие числа слева друг с другом не сопоставляются.
+
+       ⚠⚠ Заголовок назван вместе с `th`, иначе он остаётся слева: у правила
+       `.cron-table th` вес выше, чем у одиночного класса, и выравнивание
+       молча не применялось — шапка влево, значения вправо. */
+    .cron-num,
+    .cron-table th.cron-num {
+        text-align: right;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .cron-ok {
+        color: #22543d;
+    }
+
+    /* «Сколько назад» — второй строкой и бледнее: точное время сравнивают по
+       столбцу, а возраст читают по одной строке. В одну строку они не влезают
+       на узком экране и рвали бы колонку. */
+    .cron-ago {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        color: #718096;
+    }
+
+    .cron-none {
+        color: #a0aec0;
+    }
+
+    /* Переключатель: ширина фиксированная, чтобы колонка не дёргалась при
+       смене подписи «вкл»/«выкл». */
+    .cron-switch {
+        width: 64px;
+        padding: 3px 0;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        cursor: pointer;
+    }
+
+    .cron-switch.on {
+        background: #c6f6d5;
+        color: #22543d;
+        border-color: #9ae6b4;
+    }
+
+    .cron-switch.off {
+        background: #edf2f7;
+        color: #718096;
+        border-color: #e2e8f0;
+    }
+
+    .cron-switch:disabled {
+        opacity: 0.55;
+        cursor: default;
+    }
+
+    .cron-empty {
+        padding: 30px;
+        text-align: center;
+        color: #a0aec0;
+        font-size: 13px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{# Планировщик Cronicle глазами этой установки: что запланировано, что сегодня
+   отработало удачно и выключатель события.
+
+   ⚠ Страница НЕ заменяет панель Cronicle. Заведение событий, цепочки, веб-хуки
+   и журнал прогонов остаются там — ссылка в «Инструментах». Здесь три вопроса,
+   ради которых не хочется открывать чужую панель с полным доступом.
+
+   Устройство — `.claude/docs/cronicle.md`. #}
+<div class="cron-page">
+
+    <div class="cron-tools">
+        <button type="button" class="cron-btn" id="cronReload" title="Спросить заново">⟳</button>
+        <span class="cron-count" id="cronCount"></span>
+    </div>
+
+    <div class="cron-body">
+        <div id="cronNote"></div>
+        <div id="cronList">
+            <div class="cron-empty">Загрузка…</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+    import {getData, putData} from '/static/js/api.js';
+    import {showNotification} from '/static/js/notification.js';
+
+    const listEl = document.getElementById('cronList');
+    const noteEl = document.getElementById('cronNote');
+    const countEl = document.getElementById('cronCount');
+
+    function el(tag, cls, text) {
+        const node = document.createElement(tag);
+        if (cls) node.className = cls;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    // Расписание Cronicle приходит полями `timing`, а не строкой crontab:
+    // {hours: [4], minutes: [0]} — это «каждый день в 04:00». Пустое поле
+    // означает «каждый», поэтому отсутствие ключа и пустой массив читаются
+    // одинаково: звёздочкой.
+    function timingText(timing) {
+        if (!timing || !Object.keys(timing).length) return 'каждую минуту';
+        const part = (list, pad) => {
+            if (!list || !list.length) return '*';
+            return list.map(v => pad ? String(v).padStart(2, '0') : v).join(',');
+        };
+        const hm = `${part(timing.hours, true)}:${part(timing.minutes, true)}`;
+        const days = [];
+        if (timing.weekdays && timing.weekdays.length) {
+            const names = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+            days.push(timing.weekdays.map(d => names[d] || d).join(','));
+        }
+        if (timing.days && timing.days.length) days.push(`число ${part(timing.days)}`);
+        if (timing.months && timing.months.length) days.push(`месяц ${part(timing.months)}`);
+        return days.length ? `${hm} · ${days.join(' · ')}` : hm;
+    }
+
+    function elapsedText(seconds) {
+        const value = Number(seconds || 0);
+        if (!value) return '';
+        if (value < 60) return `${value.toFixed(1)} с`;
+        const min = Math.floor(value / 60);
+        return `${min}м ${Math.round(value % 60)}с`;
+    }
+
+    // Сколько прошло с прогона. Длительность отвечает «сколько он шёл», это —
+    // «когда он был»: без второго дата в колонке требует считать в уме, а
+    // смотрят в неё именно за этим — «крон вообще отрабатывал недавно?».
+    //
+    // ⚠ Показываем старшую единицу и СОСЕДНЮЮ с ней, а не любые две ненулевые.
+    // Разница не косметическая: «любые две» на возрасте ровно в пять часов
+    // давали «5 ч 14 с назад» — минуты нулевые, и разряд перескакивал через
+    // них к секундам. Читается это как ошибка, и один раз так и прочиталось.
+    //
+    // Все четыре единицы сразу тоже не годятся: «0 дн 5 ч 12 мин 3 с» длиннее
+    // и хуже «5 ч 12 мин». Секунды видны там, где важны, — у свежего прогона.
+    //
+    // ⚠⚠ Разница берётся от epoch-секунд Cronicle напрямую, без пояса: «сколько
+    // назад» — это промежуток, и часовой пояс на него не влияет. Пояс нужен
+    // соседней дате, и путать их нельзя.
+    function agoText(epochSeconds) {
+        const started = Number(epochSeconds || 0);
+        if (!started) return '';
+        const total = Math.max(0, Math.round(Date.now() / 1000 - started));
+
+        const units = [['дн', 86400], ['ч', 3600], ['мин', 60], ['с', 1]];
+        const top = units.findIndex(([, size]) => total >= size);
+        if (top < 0) return 'только что';
+
+        const parts = [];
+        let rest = total;
+        for (const [label, size] of units.slice(top, top + 2)) {
+            const qty = Math.floor(rest / size);
+            rest -= qty * size;
+            if (qty) parts.push(`${qty} ${label}`);
+        }
+        return `${parts.join(' ')} назад`;
+    }
+
+    function lastOkCell(run) {
+        if (!run) return el('span', 'cron-none', '—');
+        const box = el('span', 'cron-ok');
+        // Cronicle отдаёт время секундами epoch; fmtTz ждёт строку UTC.
+        const when = new Date(Number(run.time_start) * 1000).toISOString();
+        box.append(el('span', '', `${fmtTz(when, false)} · ${elapsedText(run.elapsed)}`));
+        box.append(el('span', 'cron-ago', agoText(run.time_start)));
+        return box;
+    }
+
+    async function toggle(button, event) {
+        const want = !button.classList.contains('on');
+        button.disabled = true;
+        try {
+            await putData(`/api/cronicle/event/${encodeURIComponent(event.id)}/enabled`,
+                          {enabled: want});
+            event.enabled = want;
+            paintSwitch(button, want);
+            showNotification(want ? 'Событие включено' : 'Событие выключено', 'success');
+        } catch (err) {
+            showNotification(err.message, 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    function paintSwitch(button, on) {
+        button.className = `cron-switch ${on ? 'on' : 'off'}`;
+        button.textContent = on ? 'включено' : 'выключено';
+        const row = button.closest('tr');
+        if (row) row.classList.toggle('off', !on);
+    }
+
+    function draw(result) {
+        noteEl.replaceChildren();
+        listEl.replaceChildren();
+
+        if (!result.ready) {
+            const note = el('div', 'cron-note');
+            note.append(document.createTextNode(result.reason || 'Cronicle недоступен'));
+            noteEl.append(note);
+            countEl.textContent = '';
+            return;
+        }
+
+        const events = result.events || [];
+        const on = events.filter(one => one.enabled).length;
+        const ranToday = events.filter(one => one.last_ok).length;
+        countEl.textContent = `событий ${events.length} · включено ${on} · `
+            + `удачно сегодня ${ranToday}`;
+
+        if (!events.length) {
+            listEl.append(el('div', 'cron-empty', 'В расписании нет событий'));
+            return;
+        }
+
+        const table = el('table', 'cron-table');
+        const head = document.createElement('tr');
+        ['Событие', 'Расписание', 'Последний удачный сегодня', ''].forEach((title, i) => {
+            const th = el('th', i === 3 ? '' : null, title);
+            if (i === 2) th.className = 'cron-num';
+            head.append(th);
+        });
+        table.append(head);
+
+        events.forEach(event => {
+            const row = document.createElement('tr');
+            if (!event.enabled) row.classList.add('off');
+
+            const first = document.createElement('td');
+            first.append(el('div', 'cron-title', event.title));
+            if (event.target) first.append(el('div', 'cron-target', event.target));
+            // Заметка события — здесь же, а не под раскрытием: по имени
+            // `dating_chat` не догадаться, что оно делает, и читают её именно
+            // затем, чтобы это понять.
+            if (event.notes) first.append(el('div', 'cron-notes', event.notes));
+            row.append(first);
+
+            const timing = document.createElement('td');
+            timing.append(el('span', 'cron-timing', timingText(event.timing)));
+            row.append(timing);
+
+            const last = document.createElement('td');
+            last.className = 'cron-num';
+            last.append(lastOkCell(event.last_ok));
+            row.append(last);
+
+            const act = document.createElement('td');
+            const button = document.createElement('button');
+            button.type = 'button';
+            paintSwitch(button, event.enabled);
+            button.onclick = () => toggle(button, event);
+            act.append(button);
+            row.append(act);
+
+            table.append(row);
+        });
+
+        listEl.append(table);
+    }
+
+    async function load() {
+        try {
+            const answer = await getData('/api/cronicle/event');
+            draw(answer.result || {});
+        } catch (err) {
+            showNotification(err.message, 'error');
+            listEl.replaceChildren(el('div', 'cron-empty', err.message));
+        }
+    }
+
+    document.getElementById('cronReload').onclick = load;
+
+    // ⚠ `loadTz()` до первой отрисовки: без него `fmtTz` покажет UTC, а
+    // «последний удачный сегодня» смотрят в поясе установки.
+    await loadTz();
+    await load();
+</script>
+{% endblock %}
