@@ -52,6 +52,21 @@ AI_FRAMEWORK_NO_MORE_STEP = 'no more step available'
 # заканчивают прогон, и запрет следующего шага для них ничего не значит.
 AI_FRAMEWORK_STEP_RETURNS = ('return_response_text', 'return_response_llm')
 
+# Инструмент записи обмена разговора: его номер движок кладёт в модель, и оттуда
+# его забирает ручка `/chat/ask` (`model.companion_session_message_id`).
+#
+# ⚠⚠ Имя здесь **дублирует** `COMPANION_SESSION_TOOL` из
+# `src/tool/companion/companion_session.py`, и это осознанный размен. Движок
+# зовёт инструменты **динамически**, по реестру путей (`model.metadata['tools']`),
+# и ни разу не импортирует из `src.tool` — первый такой импорт связал бы ядро с
+# конкретным инструментом намертво. Дубль строки дешевле этой связи.
+#
+# ⚠ Цена дубля названа прямо: переименуй инструмент — движок промолчит, номер
+# перестанет доезжать, и беда будет тихой (пустой номер законен). Поэтому имя
+# инструмента менять нельзя и по другой причине — оно ключ в реестре, по
+# которому его зовут шаги workflow.
+AI_FRAMEWORK_SESSION_TOOL = 'companion_session_add'
+
 # Реестр живых запусков workflow: run_uuid -> asyncio.Task.
 # Кнопка «Стоп» (/workflow_trace/run/{uuid}/stop) отменяет задачу по run_uuid
 workflow_runs_active: dict[str, asyncio.Task] = {}
@@ -991,6 +1006,30 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     logger_info(f"🛠 Инструмент '{tool_name}'({tool_args}) вернул ответ: {str(raw_result)}")
                     trace_output = str(raw_result)
+
+                    # ⚠⚠ Номер записанного обмена — в модель, прямо из ответа
+                    # инструмента. Его ждёт ручка `/chat/ask`: DatingAi отмечает
+                    # им доставку, и без номера агент не узнает, что его слова
+                    # дошли, — продолжит разговор от непрочитанного.
+                    #
+                    # ⚠ Читать его из переменных прогона нельзя: движок кладёт
+                    # туда ключи ответа под склеенным именем
+                    # `{инструмент}_{шаг}_result_{ключ}`, и такое чтение завязано
+                    # на шаблон склейки, который нигде не объявлен контрактом.
+                    # Прежде пробовали и хуже — через псевдоним в `outputs_map`
+                    # шага; его стёр редактор workflow, и отметок доставки не
+                    # было шесть дней (486 обменов). Оба способа ломаются молча:
+                    # пустой номер — законный исход, агент мог промолчать.
+                    #
+                    # ⚠ Последний вызов побеждает: шагов, зовущих инструмент,
+                    # два — запись ответа и запись тишины, — и они
+                    # взаимоисключающие ветки. Сработают когда-нибудь обе —
+                    # свежая строка и есть та, которую отправляют.
+                    if tool_name == AI_FRAMEWORK_SESSION_TOOL and isinstance(raw_result, dict):
+                        try:
+                            model.companion_session_message_id = int(raw_result.get('id') or 0)
+                        except (TypeError, ValueError):
+                            model.companion_session_message_id = 0
 
                     # Запись выполнения в историю сессии
                     await ai_session_message_add(

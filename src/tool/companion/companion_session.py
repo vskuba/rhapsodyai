@@ -55,12 +55,6 @@ COMPANION_SESSION_TEXT_MAX = {'chat': 1000, 'mail': 2000}
 COMPANION_SESSION_PENDING_SEC = 86400
 
 
-# Имя инструмента записи обмена — им же движок именует переменную результата
-# (`{инструмент}_{шаг}_result_{ключ}`). Постоянной, потому что имя читают
-# двое: сам инструмент и поиск номера `companion_session_message_id` ниже.
-COMPANION_SESSION_TOOL = 'companion_session_add'
-
-
 async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
                                 question: str = '', answer: str = '',
                                 kind: str = 'chat',
@@ -210,56 +204,6 @@ async def companion_session_incoming(owner_unique_id: str,
     made = await CompanionSessionRepository().add(row)
 
     return {'id': int(made or 0), 'saved': 1, 'why': ''}
-
-
-def companion_session_message_id(variables: dict) -> int:
-    """Номер записанного обмена — из переменных прогона, по имени инструмента.
-
-    Args:
-        variables: `workflow_variables` после прогона.
-
-    Returns:
-        int: номер строки `companion_session` либо `0` — обмена не записали
-        (агент промолчал, прогон ушёл в «Тишину»).
-
-    ## ⚠⚠ Почему по имени инструмента, а не по имени переменной
-
-    Движок сам кладёт каждый ключ ответа инструмента в переменную вида
-    `{инструмент}_{шаг}_result_{ключ}` — то есть номер обмена **уже лежит** в
-    `companion_session_add_743_result_id` без единой настройки.
-
-    Прежде ручка читала не его, а псевдоним `talk_message_id`, который надо было
-    завести шагу в `tool_invoke.outputs_map`. Цена этого решения оказалась такой:
-    редактор workflow пишет `outputs_map` пустым **безусловно**
-    (`step-widgets.js`, сборщик инструментального шага), и первое же сохранение
-    шага 743 человеком стёрло псевдоним. Номер перестал выходить наружу, панель
-    стала получать `0`, отметок доставки не было **с 03.10.2026 по 08.10.2026 —
-    486 обменов, ни одного отмеченного**, и не заметил этого никто: нулевой номер
-    — законный исход, его отличают от беды только глазами.
-
-    Имя инструмента живёт в коде и редактором не стирается. Номер шага сюда не
-    входит намеренно: шаг могут пересобрать, а искать по имени переменной
-    пришлось бы снова договариваться.
-
-    ## ⚠ Шагов, зовущих инструмент, два
-
-    `companion_session_add` стоит и на записи ответа, и на записи тишины — это
-    взаимоисключающие ветки, за прогон срабатывает одна. Берём наибольший номер:
-    при одной сработавшей ветке он единственный, а если когда-нибудь сработают
-    обе, свежая строка и есть та, которую отправляют.
-    """
-    found = []
-    for name, value in (variables or {}).items():
-        if not (str(name).startswith(f'{COMPANION_SESSION_TOOL}_')
-                and str(name).endswith('_result_id')):
-            continue
-
-        try:
-            found.append(int(value or 0))
-        except (TypeError, ValueError):
-            continue
-
-    return max(found) if found else 0
 
 
 async def companion_session_delivered(message_id: int) -> dict:

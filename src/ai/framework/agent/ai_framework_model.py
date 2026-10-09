@@ -26,4 +26,6 @@ class AiFrameworkAgentModel(AiFrameworkModel):
         # переносятся в следующий снапшот, чтобы пережить несколько границ запросов
         self.workflow_variables_restored: dict = {}
 
+        self.companion_session_message_id: int = 0
+
 
