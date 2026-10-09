@@ -48,6 +48,24 @@ class AuthPermission(str, Enum):
     JOURNAL_VIEW = "journal:view"
     JOURNAL_DELETE = "journal:delete"
 
+    # E2E-проверки интерфейса — страница «Тесты → E2E» (/admin/e2e).
+    #
+    # ⚠ `E2E_RUN` отдельно от `E2E_VIEW`: смотреть вчерашний прогон — чтение, а
+    # кнопка «Прогнать сейчас» поднимает браузер и ходит по страницам панели от
+    # имени установки. Разные по цене действия одним правом не раздают.
+    E2E_VIEW = "e2e:view"
+    E2E_RUN = "e2e:run"
+    E2E_DELETE = "e2e:delete"
+
+    # Планировщик Cronicle — страница «Настройки → Cronicle» (/admin/cronicle).
+    #
+    # ⚠ Включатель отдельным правом от чтения, и разница тут по существу.
+    # Смотреть расписание — значит знать, что на установке происходит ночью;
+    # выключить событие — значит сделать так, чтобы оно не произошло, и узнают
+    # об этом не сразу, а по не случившейся работе.
+    CRONICLE_VIEW = "cronicle:view"
+    CRONICLE_UPDATE = "cronicle:update"
+
     # Node permissions
     NODE_VIEW = "node:view"
     NODE_CREATE = "node:create"

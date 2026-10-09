@@ -167,6 +167,35 @@ async def dashboard_journal_page(request: Request, user: AuthSession = Depends(d
     )
 
 
+@router.get("/admin/cronicle", response_class=HTMLResponse)
+async def dashboard_cronicle_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
+    """Планировщик Cronicle: расписание, включатель и прогоны за сегодня.
+
+    ⚠ Страница **не заменяет** панель Cronicle и не пытается: заведение событий,
+    цепочки и веб-хуки остаются там. Здесь три вопроса, за которыми в чужую
+    панель ходить не хочется: что запланировано, что сегодня отработало и как
+    выключить событие на время.
+    """
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/cronicle.html"
+    )
+
+
+@router.get("/admin/e2e", response_class=HTMLResponse)
+async def dashboard_e2e_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
+    """E2E-проверки интерфейса: прогоны, их кадры и разъехавшиеся области.
+
+    ⚠ «Тесты» — своя группа меню, а не подпункт «Логов». Предмет другой: журнал
+    отвечает «что упало», а здесь — «что нарисовалось не так», и падения при этом
+    нет ни одного. Соседние виды проверок добавляются сюда же, кнопкой и панелью.
+    """
+    return request.app.state.jinja2_template.TemplateResponse(
+        request,
+        "admin/e2e.html"
+    )
+
+
 @router.get("/admin/llm", response_class=HTMLResponse)
 async def dashboard_llm_page(request: Request, user: AuthSession = Depends(dashboard_require_auth)):
     return request.app.state.jinja2_template.TemplateResponse(

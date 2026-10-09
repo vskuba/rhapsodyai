@@ -58,7 +58,7 @@ MAIN_UVICORN_SEED_RUNTIME = (
     'project_design_prototype_widget', 'project_planning_document',
     'project_task_attempt', 'project_task_depend', 'project_task_metric',
     'project_task_plan_revision', 'session', 'team_llm_lock', 'team_shell_lock',
-    'tool', 'tool_group')
+    'test_e2e', 'tool', 'tool_group')
 from src.journal.journal_handler import journal_handler_install
 from src.journal.journal_mysql import (journal_mysql_flush_forever,
                                        journal_mysql_watch_start)
@@ -66,6 +66,8 @@ from src.event.event_handlers import event_handlers_register
 from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import dashboard
+from src.uvicorn.routers.cronicle import cronicle as cronicle_router
+from src.uvicorn.routers.e2e import e2e as e2e_router
 from src.uvicorn.routers.journal import journal as journal_router
 from src.uvicorn.routers.journal import journal_mysql as journal_mysql_router
 from src.uvicorn.routers.event import event as event_router
@@ -644,6 +646,8 @@ app.include_router(event_router.router, include_in_schema=False)
 # попытался бы прочитать «mysql» номером и ответил бы 422 вместо чистки.
 app.include_router(journal_mysql_router.router, include_in_schema=False)
 app.include_router(journal_router.router, include_in_schema=False)
+app.include_router(e2e_router.router, include_in_schema=False)
+app.include_router(cronicle_router.router, include_in_schema=False)
 app.include_router(panel_seed_api_router(
     runtime_tables=MAIN_UVICORN_SEED_RUNTIME, title='RhapsodyAi',
     view=AuthPermission.SETTING_VIEW, manage=AuthPermission.SETTING_UPDATE),

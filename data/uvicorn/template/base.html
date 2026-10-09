@@ -47,6 +47,7 @@
             <a class="tabnav-group" data-group="browser" href="/admin/browser">🖥️ Браузер</a>
             <a class="tabnav-group" data-group="setting" href="/admin/setting">⚙️ Настройки</a>
             <a class="tabnav-group" data-group="tool" href="/admin/tool">🔧 Инструменты</a>
+            <a class="tabnav-group" data-group="test" href="/admin/e2e">🧪 Тесты</a>
             {% endif %}
 
             <div class="topbar-spacer"></div>
@@ -156,6 +157,11 @@
                 <a href="/admin/seed">Seed SQL</a>
                 <a href="/admin/backup">Backup</a>
                 <span class="tabnav-sep"></span>
+                {# Своя страница планировщика, а не ссылка на его панель: там
+                   другой вход, другой порт и полный доступ ко всему расписанию
+                   заодно. Ссылка на саму панель осталась в «Инструментах». #}
+                <a href="/admin/cronicle">⏰ Cronicle</a>
+                <span class="tabnav-sep"></span>
             </div>
             {% endif %}
 
@@ -171,6 +177,17 @@
                 <a href="http://localhost:{{ CRONICLE_PORT }}" target="_blank">⏰ Cronicle</a>
                 <span class="tabnav-sep"></span>
                 <a href="{{ GRAFANA_URL }}" target="_blank">📈 Grafana</a>
+                <span class="tabnav-sep"></span>
+            </div>
+            {% endif %}
+
+            {# Тесты: сейчас одна подвкладка, E2E. Соседние виды проверок
+               (нагрузка, доступность) добавляются сюда ссылкой — страница у
+               каждого своя, потому что доказательство у каждого своё. #}
+            {% if request.session.get('role') == 'admin' %}
+            <div class="tabnav-panel" data-group="test">
+                <span class="tabnav-sep"></span>
+                <a href="/admin/e2e">🧪 E2E</a>
                 <span class="tabnav-sep"></span>
             </div>
             {% endif %}
@@ -253,8 +270,10 @@
             '/admin/role': 'setting',
             '/admin/backup': 'setting',
             '/admin/seed': 'setting',
+            '/admin/cronicle': 'setting',
             '/admin/tool': 'tool',
             '/admin/queue': 'tool',
+            '/admin/e2e': 'test',
         };
 
         function activateGroup(groupId) {

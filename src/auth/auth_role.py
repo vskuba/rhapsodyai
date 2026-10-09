@@ -22,6 +22,10 @@ AUTH_PERMISSIONS_DEFAULT = {
     # вкладкой меню, и «одна открылась, вторая отвечает 403» читается как
     # поломка, а не как отсутствие права.
     AuthPermission.JOURNAL_VIEW,
+    # Результаты E2E читают те же, кто читает журнал и трассы: это соседний
+    # ответ на вопрос «что на установке сломалось». Прогон (`E2E_RUN`) в набор
+    # не входит — он поднимает браузер и ходит по панели.
+    AuthPermission.E2E_VIEW,
     AuthPermission.WORKFLOW_VARIABLE_UPDATE,
     AuthPermission.NODE_VIEW,
     AuthPermission.TOOL_VIEW,

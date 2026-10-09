@@ -132,6 +132,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `quickstart.md` | Запуск через Docker, порты, тесты, переменные `.env` |
 | `testing.md` | Группы тестов по подсистемам: что запускать под свою правку, как делить новые |
 | `testing_browser.md` | Живой Chromium (`tests_browser/`): контейнер ходит наружу мимо сторожа сети, пул вкладок общий. ⚠⚠ Вне `testpaths`: запуск только руками и с согласия человека |
+| `e2e.md` | Страница «Тесты → E2E» (`/admin/e2e`): прогон снимает страницы панели, меряет названные области числами из DOM и рисует рамки на кадре. ⚠ Контейнер-браузер не нужен — голова своя, playwright-овская; ⚠⚠ под root Chrome молча не стартует без `--no-sandbox`. Случаи — `tests_e2e/*.yaml`, каркас — `py_modules/tests_e2e/` |
 | `testing_llm.md` | Прогон workflow (`tests_llm/`): папка на workflow, утверждения только по трассе — текст ответа не проверяется никогда. ⚠ Метка `llm` идёт сама (подменная модель), `llm_live` — только руками: нода общая с продом |
 | `architecture.md` | Модули, зависимости, Docker-сервисы, очереди |
 | `architecture_rules.md` | Код-правила проекта (общая часть — `docs-common/code_rules.md`) |
@@ -140,6 +141,7 @@ asyncio.run(telegram_notify_send_owner('your message'))
 | `browser.md` | Контейнер-браузер: как подключён `py_modules/browser_`, страница админки, прокси вебсокета, API :8014, инструменты над страницей. ⚠ Там же §4.3 — **реестр сетевых прокси** (своя страница `/admin/browser/proxy`, не вкладка сайта: выход общий на установку и к закладке не привязан): какие выходы есть и какие живые. **Раздачу он не ведёт** — про потребителей здесь не знают; кому какой выход достанется, решает тот, кто их ведёт, по `check_ip` из списка |
 | `auth.md` | Роли, права, `AuthChecker`, field-level policies |
 | `setting.md` | Таблица `setting`, REST API, `/setting/config` для фронтенда, `gx10_autocompact_limit` |
+| `cronicle.md` | Страница «Настройки → Cronicle» (`/admin/cronicle`): расписание, включатель события, последний удачный прогон за сегодня. ⚠ Нужен `CRONICLE_API_KEY` в `.env` с правами `get_schedule` и `edit_events`; ⚠⚠ «сегодня» считается в поясе настройки `timezone`, а не в UTC |
 | `dashboard_frontend.md` | Паттерны админ-страниц: JS, CSS, контракты API |
 | `deploy.md` | Blue-Green деплой, `bluegreen.sh`, rollback |
 | `worktree.md` | Выкладки задач: где работают роли, проверка контекста, git-хук |
