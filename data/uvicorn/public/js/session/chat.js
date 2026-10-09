@@ -19,6 +19,11 @@ import {showNotification} from '/static/js/notification.js';
 import {filterLoad, filterSave, htmlEscape, labelClip, numberOf, selectFill,
         selectValueRestore, stampList, sumOf} from './util.js';
 
+// Сколько знаков реплики влезает в строку окна «убрать все». Обрезается в
+// разметке, а не стилями: текст целиком всё равно едет подсказкой, и гнать в
+// атрибут и в строку по письму на десять абзацев пятьдесят раз незачем.
+const CHAT_WIPE_LINE_MAX = 160;
+
 // Приставка ключей отбора этой вкладки. Соседняя держит свои под своей
 // (`session_agent_`): отборы у вкладок разные, и общий ключ `limit` означал бы
 // «поменял предел обменов — поехал предел сессий».
@@ -66,6 +71,14 @@ const state = {
     rows: [],
     // Номер обмена, про который открыто окно. Пока оно закрыто — null.
     removing: null,
+    // Номера обменов, про которые открыто окно «убрать все». Пока оно закрыто
+    // — null.
+    //
+    // ⚠⚠ Список снимается в момент вопроса и уезжает на сервер КАК ЕСТЬ, а не
+    // пересобирается при нажатии. Человек согласился на перечисленное: лента
+    // к тому времени может прийти другая (разговор пишет инструмент, не
+    // спрашивая страницу), и пересборка убрала бы то, чего в окне не было.
+    wiping: null,
 };
 
 export async function sessionChatInit() {
@@ -81,12 +94,19 @@ export async function sessionChatInit() {
     el.modalPreview = document.getElementById('chatDeletePreview');
     el.modalCancel = document.getElementById('chatDeleteCancel');
     el.modalConfirm = document.getElementById('chatDeleteConfirm');
+    el.wipe = document.getElementById('chatSessionWipe');
+    el.wipeModal = document.getElementById('chatWipeModal');
+    el.wipeNote = document.getElementById('chatWipeNote');
+    el.wipePreview = document.getElementById('chatWipePreview');
+    el.wipeCancel = document.getElementById('chatWipeCancel');
+    el.wipeConfirm = document.getElementById('chatWipeConfirm');
 
     try {
         await kindsLoad();
         await pairsLoadAll();
         filtersBind();
         removeBind();
+        wipeBind();
         await pairsLoad();
     } catch (e) {
         el.stream.innerHTML =
@@ -257,6 +277,7 @@ async function pairsLoad(keep = null) {
         state.rows = [];
         el.title.textContent = 'Нет разговоров под этот отбор';
         el.stream.innerHTML = '<div class="placeholder">Нет разговоров</div>';
+        wipeShow([]);
 
         return;
     }
@@ -336,6 +357,9 @@ async function exchangesLoad(pair) {
     pairRemember(pair);
     el.title.textContent = `${sideLabel(pair, 'owner')} ↔ ${sideLabel(pair, 'companion')}`;
     el.stream.innerHTML = '<div class="placeholder">Загрузка...</div>';
+    // Кнопка прячется на время загрузки: её число считается по показанному, и
+    // счёт от прошлого разговора над чужой лентой врал бы молча.
+    wipeShow([]);
 
     try {
         const data = await postData('/session/companion/messages', {
@@ -355,6 +379,10 @@ async function exchangesLoad(pair) {
     } catch (e) {
         el.stream.innerHTML =
             `<div class="placeholder">Ошибка загрузки: ${htmlEscape(e.message)}</div>`;
+        // Ленты нет — убирать нечего: кнопка над сообщением об ошибке
+        // предлагала бы правку вслепую.
+        state.rows = [];
+        wipeShow([]);
     }
 }
 
@@ -385,11 +413,16 @@ function exchangesRender(pair, rows) {
 
     if (!rows.length) {
         el.stream.innerHTML = '<div class="placeholder">Нет обменов под этот отбор</div>';
+        wipeShow([]);
 
         return;
     }
 
     el.stream.innerHTML = rows.map(row => exchangeHtml(pair, row)).join('');
+    // Кнопка «убрать все» считает ровно то же, что чипы в строках: обмены, где
+    // наш ответ есть и ещё не убран. Пересчитывается здесь, на каждой
+    // перерисовке ленты, — другого места, где показанное меняется, нет.
+    wipeShow(rows.filter(one => String(one.answer || '') !== ''));
 }
 
 function exchangeHtml(pair, row) {
@@ -618,6 +651,10 @@ function deletedHtml(text, deletedAt, deliveredAt) {
 // ответ, доставленный по ошибке, ту же ленту ПОРТИТ, и дальше каждый ответ
 // модели опирается и на него.
 //
+// ⚠ «Удалить все» в шапке (ниже, свой раздел) этому не противоречит: она
+// делает ту же правку пачкой — наши ответы показанных обменов, — а переписку
+// не трогает.
+//
 // ⚠ Окно подтверждения, а не `confirm()` соседней вкладки. `confirm()` умеет
 // показать только строку текста — человек подтверждал бы удаление «обмена #512»,
 // не видя, что в нём написано. Решение здесь принимается по тексту: в окне обе
@@ -748,6 +785,164 @@ function removeClose() {
     state.removing = null;
     el.modal.hidden = true;
     el.modalPreview.innerHTML = '';
+}
+
+// ===================== Убрать все ответы разговора =====================
+//
+// ⚠⚠ Это та же правка, что чип в строке, только пачкой: уходят НАШИ ответы, и
+// только у показанных обменов. Строки остаются, реплики собеседника остаются
+// все до одной, тексты наших ответов лежат в базе под отметкой. «Очистить
+// переписку» этим по-прежнему нельзя и будет нельзя — разбор в шапке
+// `src/uvicorn/routers/session/session_companion.py`.
+//
+// ⚠⚠ Берётся ПОКАЗАННОЕ, а не весь разговор. Под `limit`-ом в 50 у разговора
+// из 127 обменов эти множества расходятся, и «все» без уточнения означало бы
+// правку того, чего человек не видел. Поэтому в окне стоят оба числа, а список
+// обменов перечислен целиком.
+//
+// ⚠ Окно своё, а не общее с поштучным. Там решают по тексту одной реплики,
+// здесь — по объёму пачки: число в шапке кнопки, список под ним, каждая
+// реплика одной строкой.
+
+function wipeBind() {
+    el.wipe.onclick = wipeAsk;
+    el.wipeCancel.onclick = wipeClose;
+    el.wipeConfirm.onclick = wipeRun;
+
+    // Щелчок по затемнению — отмена; по самому окну — нет. `mousedown` по тому
+    // же доводу, что у соседнего окна: выделение текста мышью кончается
+    // отпусканием кнопки за окном.
+    el.wipeModal.addEventListener('mousedown', event => {
+        if (event.target === el.wipeModal) wipeClose();
+    });
+
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && state.wiping !== null) wipeClose();
+    });
+}
+
+/** Показать кнопку с числом — или спрятать, если убирать нечего.
+ *
+ * ⚠ Прячется, а не гасится: кнопка в шапке читается как обещание работы, и
+ * над лентой из одних пометок «было удалено» это обещание ложное.
+ */
+function wipeShow(rows) {
+    const count = rows.length;
+
+    el.wipe.hidden = count === 0;
+    el.wipe.textContent = `🗑 Удалить все (${count})`;
+}
+
+/** Спросить про пачку: сколько уйдёт, что именно, и что останется. */
+function wipeAsk() {
+    const pair = state.current;
+    const rows = state.rows.filter(one => String(one.answer || '') !== '');
+
+    // Лента успела перезагрузиться и убирать стало нечего — спрашивать не о
+    // чем. Молча ничего не делаем, как и поштучное окно про исчезнувшую строку.
+    if (!pair || !rows.length) return;
+
+    state.wiping = rows.map(one => Number(one.id));
+    el.wipeNote.textContent = wipeNote(pair, rows);
+    el.wipePreview.innerHTML = rows.map(one => wipePreviewRow(pair, one)).join('');
+    el.wipeConfirm.textContent = `Убрать ответы (${rows.length})`;
+    el.wipeModal.hidden = false;
+    // Фокус — на отмене: окно открылось по разрушающему действию, и случайный
+    // Enter обязан означать «нет».
+    el.wipeCancel.focus();
+}
+
+/** Чем это кончится — числами, до нажатия.
+ *
+ * ⚠⚠ Строка про обмены вне предела показа появляется, только когда они есть, и
+ * она здесь главная: «все» у кнопки означает «все показанные», и человек,
+ * нажавший её на разговоре из 127 обменов под пределом в 50, обязан узнать об
+ * этом до нажатия, а не по тому, что лента не опустела.
+ */
+function wipeNote(pair, rows) {
+    const hidden = Math.max(0, Number(pair.exchange_count || 0) - state.rows.length);
+
+    // ⚠ Числа отдельными предложениями, без склонения по количеству: «уйдёт 1
+    // обмена» — ровно та мелочь, которой окно подтверждения теряет доверие.
+    return [
+        `Наших ответов уйдёт: ${rows.length}`
+        + ` (показано обменов: ${state.rows.length}).`,
+        'Слова собеседника остаются на месте, обмены из ленты не пропадают: на'
+        + ' месте каждого ответа встанет пометка «было удалено», текст виден'
+        + ' подсказкой при наведении.',
+        'Для агента разговор станет таким, будто на эти реплики мы смолчали:'
+        + ' убранные ответы не попадают в промпт.',
+        hidden
+            ? `⚠ Обменов вне показанного: ${hidden} — их правка не тронет.`
+              + ' Нужны и они — поднимите «Limit обменов» в отборе слева.'
+            : '',
+    ].filter(Boolean).join(' ');
+}
+
+/** Строка списка: номер обмена, чей ответ, сама реплика одной строкой.
+ *
+ * ⚠ Реплика обрезана, а целиком — подсказкой: решают здесь по объёму пачки, и
+ * полсотни писем по десять строк каждое прячут её размер под прокруткой.
+ * Поштучное окно наоборот показывает текст целиком — там вопрос про текст.
+ */
+function wipePreviewRow(pair, row) {
+    const said = String(row.answer || '');
+
+    return `
+        <div class="modal-preview-row modal-preview-goes">
+            <div class="modal-preview-num">#${htmlEscape(row.id)}</div>
+            <div class="modal-preview-who" title="${htmlEscape(sideLabel(pair, 'owner'))}">${
+                htmlEscape(sideLabel(pair, 'owner'))}</div>
+            <div class="modal-preview-line" title="${htmlEscape(said)}">${
+                htmlEscape(labelClip(said, CHAT_WIPE_LINE_MAX))}</div>
+            <div class="modal-preview-fate">уйдёт</div>
+        </div>
+    `;
+}
+
+async function wipeRun() {
+    const ids = state.wiping;
+
+    if (!ids || !ids.length) return;
+
+    // Разговор запоминаем до запроса: `wipeClose` чистит только состояние окна,
+    // а список после правки перезагружается, и открытым должен остаться тот же
+    // разговор, а не верхний.
+    const pair = state.current;
+
+    el.wipeConfirm.disabled = true;
+    el.wipeCancel.disabled = true;
+
+    try {
+        const data = await postData('/session/companion/answer/delete', {ids});
+        const done = Number(data.result?.deleted || 0);
+        const skipped = Number(data.result?.skipped || 0);
+
+        // ⚠ Пропуски называются вслух. Сервер молча пропускает обмен, у
+        // которого ответа уже нет (его убрали из соседнего окна, из другой
+        // вкладки браузера), и «убрано 47» над списком из 50 без этой строки
+        // выглядело бы потерей трёх правок.
+        showNotification(
+            `Убрано ответов: ${done}`
+            + (skipped ? `; пропущено: ${skipped} (ответа нет либо уже убран)` : ''),
+            done ? 'success' : 'info');
+        wipeClose();
+        // Список целиком, а не вычитание на месте: у разговора четыре
+        // счётчика, каждый считается по своему условию, и повторять эти правила
+        // в браузере значило бы завести вторую их копию.
+        await pairsLoad(pair);
+    } catch (e) {
+        showNotification(`Ошибка удаления: ${e.message}`, 'error');
+    } finally {
+        el.wipeConfirm.disabled = false;
+        el.wipeCancel.disabled = false;
+    }
+}
+
+function wipeClose() {
+    state.wiping = null;
+    el.wipeModal.hidden = true;
+    el.wipePreview.innerHTML = '';
 }
 
 // ===================== Мелочь =====================

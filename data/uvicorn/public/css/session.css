@@ -241,6 +241,52 @@
     margin-left: 10px;
 }
 
+/* Шапка с действием над разговором целиком (вкладка «Чат»).
+   ⚠ Модификатор, а не правка `.detail-header`: у соседней вкладки шапка та же
+   и кнопки в ней нет — `flex` там сломал бы перенос длинного заголовка. */
+.detail-header-action {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.detail-header-text {
+    flex: 1;
+    min-width: 0;
+}
+
+/* «Удалить все». Бледная до наведения — тем же доводом, что чип в строке: это
+   самое разрушающее действие страницы, и соблазнять им взгляд незачем. Но
+   рамка у неё есть всегда: кнопку в шапке ищут глазами, а не доходят до неё
+   построчно. */
+.btn-header-danger {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 4px 12px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #94a3b8;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.btn-header-danger:hover,
+.btn-header-danger:focus-visible {
+    background: #fdecea;
+    color: #c0392b;
+    border-color: #f5c6c0;
+}
+
+.btn-header-danger:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 .session-stream {
     flex: 1;
     overflow-y: auto;
@@ -658,6 +704,28 @@
     align-items: center;
     flex-wrap: wrap;
     margin-bottom: 6px;
+}
+
+/* Список обменов в окне пачки. Номер обмена столбцом слева: по нему строку
+   находят в ленте после закрытия окна, а в пачке на полсотни строк это
+   единственное, чем «вот этот» отличается от соседнего. */
+.modal-preview .modal-preview-num {
+    flex: 0 0 56px;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ⚠ Строка реплики в пачке обрезана ОДНОЙ строкой, в отличие от окна
+   поштучной правки, где текст показан целиком. Вопрос здесь другой: там
+   решают по тексту одного ответа, здесь — по объёму и составу пачки, и
+   полсотни писем по десять строк каждое прячут это число под прокруткой.
+   Текст целиком остаётся подсказкой. */
+.modal-preview .modal-preview-line {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .modal-footer {

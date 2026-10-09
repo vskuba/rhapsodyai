@@ -110,6 +110,8 @@ class TestAuth:
                                            'companion_id': 2})).status_code == 401
             assert (await guest.delete(
                 '/session/companion/1/answer')).status_code == 401
+            assert (await guest.post('/session/companion/answer/delete',
+                                     json={'ids': [1]})).status_code == 401
 
 
 class TestKindList:
@@ -632,6 +634,176 @@ class TestDeletedUnderDeliveredFilter:
 
         assert 'a1' not in feed
         assert 'q1' in feed
+
+
+class TestAnswerDeleteMany:
+    """Кнопка «Удалить все»: та же правка пачкой по списку номеров.
+
+    ⚠⚠ Стережётся здесь то же, что у поштучной, плюс обещание самой пачки:
+    **она не делает ничего нового**. Уходят наши ответы перечисленных обменов,
+    реплики собеседника остаются все, тексты остаются в базе, соседний канал не
+    трогается. Разойдись пачка с поштучной хоть одним условием — и «убрал всё
+    кнопкой» значило бы не то же самое, что «нащёлкал чипами».
+
+    ⚠ Отдельно стережётся ответ числами, а не `404`: пропуски здесь обычны
+    (обмен без ответа, уже убранный), и отказ всей пачке из-за одного такого
+    заставил бы страницу повторять отбор сервера.
+    """
+
+    async def test_two_answers_go_at_once(self, client, talk):
+        """Два обмена одним запросом: ответов нет, вопросы на месте."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        ids = [row['id'] for row in rows if row['answer']]
+
+        assert len(ids) == 2
+
+        response = await client.post('/session/companion/answer/delete',
+                                     json={'ids': ids})
+
+        assert response.status_code == 200
+        assert response.json()['result'] == {'deleted': 2, 'skipped': 0}
+
+        left = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+
+        assert [row['answer'] for row in left] == ['', '', '']
+        assert sorted(row['question'] for row in left) == ['q1', 'q2', 'q3']
+        # Текст убранного приходит отдельным полем — тем же, что у поштучной:
+        # страница рисует «было удалено» и кладёт его в подсказку.
+        assert sorted(row['answer_deleted_text'] for row in left) \
+            == ['', 'a1', 'a2']
+
+    async def test_text_stays_in_the_table(self, client, talk):
+        """⚠⚠ В базе тексты целы — у пачки стирается та же видимость."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        ids = [row['id'] for row in rows if row['answer']]
+
+        await client.post('/session/companion/answer/delete', json={'ids': ids})
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT `answer`, `answer_deleted_at` FROM `companion_session`'
+                f' WHERE `id` IN ({", ".join(["%s"] * len(ids))})', tuple(ids))
+            stored = await db.fetchall()
+
+        assert sorted(row['answer'] for row in stored) == ['a1', 'a2']
+        assert all(row['answer_deleted_at'] is not None for row in stored)
+
+    async def test_prompt_feed_forgets_them(self, client, talk):
+        """⚠⚠ Лента в промпт агента не знает ни одного из убранных пачкой.
+
+        Ради этого отметка и заведена. Пачка ставит её одним `UPDATE`, и забыть
+        в нём условие — это «на странице ответов нет, а модель их помнит».
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        ids = [row['id'] for row in rows if row['answer']]
+
+        await client.post('/session/companion/answer/delete', json={'ids': ids})
+
+        feed = await companion_session_history(talk['owner_key'],
+                                               talk['companion_key'])
+
+        assert 'a1' not in feed
+        assert 'a2' not in feed
+        assert 'q1' in feed
+
+    async def test_other_channel_untouched(self, client, talk):
+        """Почта той же пары не трогается: в пачке только показанные номера."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+
+        await client.post('/session/companion/answer/delete',
+                          json={'ids': [row['id'] for row in rows
+                                        if row['answer']]})
+
+        mail = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'mail'})
+
+        assert [row['answer'] for row in mail] == ['m2']
+
+    async def test_skipped_are_counted_not_refused(self, client, talk):
+        """⚠⚠ Уже убранный и обмен без ответа — число `skipped`, а не отказ.
+
+        Повторное нажатие кнопки — обычное дело (лента перечиталась, человек
+        нажал ещё раз), и `404` всей пачке из-за одной такой строки означал бы
+        «кнопка сломалась».
+        """
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        answered = [row['id'] for row in rows if row['answer']]
+        silent = [row['id'] for row in rows if not row['answer']]
+
+        await client.delete(f'/session/companion/{answered[0]}/answer')
+
+        response = await client.post('/session/companion/answer/delete',
+                                     json={'ids': answered + silent})
+
+        assert response.status_code == 200
+        # Лёг один: первый уже убран поштучно, у третьего ответа нет вовсе.
+        assert response.json()['result'] == {'deleted': 1, 'skipped': 2}
+
+    async def test_repeat_deletes_nothing(self, client, talk):
+        """Повтор той же пачки — `deleted: 0`: отметка не переставляется."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+        ids = [row['id'] for row in rows if row['answer']]
+
+        await client.post('/session/companion/answer/delete', json={'ids': ids})
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT `answer_deleted_at` FROM `companion_session`'
+                ' WHERE `id` = %s', (ids[0],))
+            first = (await db.fetchone())['answer_deleted_at']
+
+        response = await client.post('/session/companion/answer/delete',
+                                     json={'ids': ids})
+
+        assert response.json()['result'] == {'deleted': 0, 'skipped': 2}
+
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT `answer_deleted_at` FROM `companion_session`'
+                ' WHERE `id` = %s', (ids[0],))
+
+            assert (await db.fetchone())['answer_deleted_at'] == first
+
+    async def test_empty_list_is_400(self, client):
+        """Пустой список — отказ, а не «убрано ноль, и всё хорошо»."""
+        response = await client.post('/session/companion/answer/delete',
+                                     json={'ids': []})
+
+        assert response.status_code == 400
+
+    async def test_counters_drop_the_hidden_answers(self, client, talk):
+        """Счётчики разговора считают убранное пачкой так же, как поштучное."""
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat'})
+
+        await client.post('/session/companion/answer/delete',
+                          json={'ids': [row['id'] for row in rows
+                                        if row['answer']]})
+
+        pairs = await _pairs(client, {'owner_id': talk['owner_id'],
+                                      'kind': 'chat'})
+
+        assert pairs[0]['answer_count'] == 0
+        assert pairs[0]['undelivered_count'] == 0
+        assert pairs[0]['deleted_count'] == 2
+        # ⚠ Обмены из ленты не пропадают: убрана половина, а не строка.
+        assert pairs[0]['exchange_count'] == 3
 
 
 async def _pairs(client, body):
